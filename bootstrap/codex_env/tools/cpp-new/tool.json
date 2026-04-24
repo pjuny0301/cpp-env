@@ -1,0 +1,13 @@
+{
+  "name": "cpp-new",
+  "version": "0.2.0",
+  "language": "python",
+  "summary": "Create Windows-first, Linux-portable C++ desktop and game project scaffolds.",
+  "entrypoint": "cpp_new.py",
+  "supports": [
+    "--help",
+    "--version",
+    "--self-test",
+    "--json"
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "name": "plan-doc",
+  "version": "0.2.0",
+  "language": "python",
+  "summary": "Generate a polished plan_summary.docx plus editable isolated bundle metadata, prompts, and reusable assets from plan markdown or text.",
+  "entrypoint": "plan_doc.py",
+  "supports": [
+    "--help",
+    "--version",
+    "--self-test",
+    "--json"
+  ]
+}

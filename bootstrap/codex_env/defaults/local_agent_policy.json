@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "delegation_mode": "ask-user",
+  "safety_critical_always_direct": true,
+  "trusted_local_agent": {
+    "enabled": true,
+    "allowed_task_classes": [
+      "bounded read-only repo search",
+      "small file content inspection",
+      "simple issue detection",
+      "lightweight document verification",
+      "non-blocking asset prompt drafting",
+      "installation wait and polling work",
+      "long-running log monitoring"
+    ],
+    "blocked_task_classes": [
+      "safety-critical or high-stakes tasks",
+      "destructive file operations",
+      "secrets or credential handling",
+      "cross-machine environment mutation without user approval",
+      "blocking architectural decisions",
+      "large context sweeps over many files"
+    ]
+  },
+  "token_budget": {
+    "prefer_compact_metadata": true,
+    "read_manifest_before_docx": true,
+    "avoid_large_context_when_bounded_read_is_enough": true
+  }
+}

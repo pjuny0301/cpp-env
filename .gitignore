@@ -1,3 +1,7 @@
 __pycache__/
 *.pyc
+mcp/
+quiz/
+plan/*/placeholder_notice.txt
 plan/*/*.pdf
+plan/*/source_snapshot.*

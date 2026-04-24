@@ -2,6 +2,7 @@
 
 - For plan work, read `plan/bundle_manifest.json` first.
 - Read `plan/prompt_overrides.json` second.
+- If you move into the generated bundle itself, read `plan/AGENTS.md` there first.
 - Read `plan/render_spec.json` or `plan/prompts.json` only if needed.
 - Avoid `plan/plan_summary.docx` and `plan/plan_summary.pdf` unless the task is layout or render verification.
 - Keep images isolated inside the source-specific plan bundle.

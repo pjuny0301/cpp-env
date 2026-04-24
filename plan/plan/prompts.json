@@ -1,6 +1,6 @@
 {
-  "provider_requested": "placeholder",
-  "provider_used": "placeholder",
+  "provider_requested": "auto",
+  "provider_used": "openai",
   "image_model": "gpt-image-1.5",
   "prompt_override_file": "C:\\aa\\plan\\plan\\prompt_overrides.json",
   "prompts": [

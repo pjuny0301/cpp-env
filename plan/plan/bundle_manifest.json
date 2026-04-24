@@ -16,6 +16,14 @@
     "default_reuse_key": "prompt hash",
     "pinned_asset_behavior": "reuse an existing file inside the same bundle without regeneration"
   },
+  "placeholder_generation": {
+    "automatic_placeholder_mode": false,
+    "detected_this_run": false,
+    "placeholder_count": 0,
+    "notice_file": null,
+    "assets": [],
+    "reasons": []
+  },
   "token_budget_guidance": {
     "read_first": [
       "bundle_manifest.json",

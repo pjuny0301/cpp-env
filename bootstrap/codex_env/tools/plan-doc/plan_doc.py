@@ -22,7 +22,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
 
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 DEFAULT_MODEL = "gpt-image-1.5"
 
 
@@ -345,6 +345,10 @@ def bundle_manifest_path(bundle_root: Path) -> Path:
     return bundle_root / "bundle_manifest.json"
 
 
+def placeholder_notice_path(bundle_root: Path) -> Path:
+    return bundle_root / "placeholder_notice.txt"
+
+
 def override_entries_from_payload(payload: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
     if not payload:
         return {}
@@ -563,15 +567,28 @@ def generate_openai_image(prompt: str, output_path: Path, model: str) -> None:
     output_path.write_bytes(base64.b64decode(image_data[0]["b64_json"]))
 
 
-def create_assets(bundle_root: Path, spec: dict[str, Any], provider: str, model: str) -> tuple[list[dict[str, Any]], str]:
+def create_assets(
+    bundle_root: Path,
+    spec: dict[str, Any],
+    provider: str,
+    model: str,
+) -> tuple[list[dict[str, Any]], str, list[dict[str, Any]], list[str]]:
     assets_root = bundle_root / "assets"
     assets_root.mkdir(parents=True, exist_ok=True)
 
     chosen_provider = provider
+    provider_notes: list[str] = []
     if provider == "auto":
-        chosen_provider = "openai" if os.environ.get("OPENAI_API_KEY") else "placeholder"
+        if os.environ.get("OPENAI_API_KEY"):
+            chosen_provider = "openai"
+        else:
+            chosen_provider = "placeholder"
+            provider_notes.append(
+                "OPENAI_API_KEY was not set, so plan-doc generated placeholder graphics automatically."
+            )
 
     results: list[dict[str, Any]] = []
+    placeholder_assets: list[dict[str, Any]] = []
     for visual in spec["visuals"]:
         pinned_asset = resolve_pinned_asset(bundle_root, visual.get("pinned_asset"))
         if pinned_asset is not None:
@@ -589,21 +606,31 @@ def create_assets(bundle_root: Path, spec: dict[str, Any], provider: str, model:
             except Exception:
                 generate_placeholder_image(output_path, visual, spec["theme"])
                 used_provider = "placeholder"
+                provider_notes.append(
+                    f"OpenAI image generation failed for {visual['id']}; a placeholder graphic was generated instead."
+                )
         elif pinned_asset is None:
             generate_placeholder_image(output_path, visual, spec["theme"])
+            used_provider = "placeholder"
 
-        results.append(
-            {
-                **visual,
-                "asset_path": str(output_path),
-                "asset_relpath": str(output_path.relative_to(bundle_root.parent)),
-                "asset_bundle_relpath": str(output_path.relative_to(bundle_root)),
-                "provider": used_provider,
-                "pinned_asset": visual.get("pinned_asset") or None,
-            }
-        )
+        asset_record = {
+            **visual,
+            "asset_path": str(output_path),
+            "asset_relpath": str(output_path.relative_to(bundle_root.parent)),
+            "asset_bundle_relpath": str(output_path.relative_to(bundle_root)),
+            "provider": used_provider,
+            "pinned_asset": visual.get("pinned_asset") or None,
+        }
+        results.append(asset_record)
+        if used_provider == "placeholder":
+            placeholder_assets.append(asset_record)
 
-    return results, chosen_provider
+    deduped_notes: list[str] = []
+    for note in provider_notes:
+        if note not in deduped_notes:
+            deduped_notes.append(note)
+
+    return results, chosen_provider, placeholder_assets, deduped_notes
 
 
 def apply_doc_style(document: Document, theme: dict[str, Any]) -> None:
@@ -733,7 +760,12 @@ def generate_plan_doc(
     parsed = parse_markdown_plan(source_path.read_text(encoding="utf-8"))
     spec = build_render_spec(parsed, theme, max_inline_images)
     override_payload = build_override_payload(bundle_root, source_path, spec)
-    assets, provider_used = create_assets(bundle_root, spec, provider, image_model)
+    assets, provider_used, placeholder_assets, provider_notes = create_assets(
+        bundle_root,
+        spec,
+        provider,
+        image_model,
+    )
     asset_lookup = {asset["id"]: asset for asset in assets}
 
     for entry in override_payload["overrides"]:
@@ -789,6 +821,21 @@ def generate_plan_doc(
             "default_reuse_key": "prompt hash",
             "pinned_asset_behavior": "reuse an existing file inside the same bundle without regeneration",
         },
+        "placeholder_generation": {
+            "automatic_placeholder_mode": bool(provider_notes),
+            "detected_this_run": bool(placeholder_assets),
+            "placeholder_count": len(placeholder_assets),
+            "notice_file": str(placeholder_notice_path(bundle_root)) if (placeholder_assets or provider_notes) else None,
+            "assets": [
+                {
+                    "id": asset["id"],
+                    "title": asset["title"],
+                    "asset_bundle_relpath": asset["asset_bundle_relpath"],
+                }
+                for asset in placeholder_assets
+            ],
+            "reasons": provider_notes,
+        },
         "token_budget_guidance": {
             "read_first": ["bundle_manifest.json", "prompt_overrides.json"],
             "read_second": ["render_spec.json", "prompts.json"],
@@ -812,12 +859,38 @@ def generate_plan_doc(
     source_snapshot = bundle_root / f"source_snapshot{source_path.suffix}"
     override_path = prompt_override_path(bundle_root)
     manifest_path = bundle_manifest_path(bundle_root)
+    notice_path = placeholder_notice_path(bundle_root)
 
     render_spec_path.write_text(json.dumps(render_spec_payload, indent=2, ensure_ascii=False), encoding="utf-8")
     prompts_path.write_text(json.dumps(prompts_payload, indent=2, ensure_ascii=False), encoding="utf-8")
     override_path.write_text(json.dumps(override_payload, indent=2, ensure_ascii=False), encoding="utf-8")
     manifest_path.write_text(json.dumps(bundle_manifest_payload, indent=2, ensure_ascii=False), encoding="utf-8")
     source_snapshot.write_text(source_path.read_text(encoding="utf-8"), encoding="utf-8")
+    if placeholder_assets or provider_notes:
+        notice_lines = [
+            "Automatic placeholder fallback information for this plan bundle.",
+            "",
+            f"Source: {source_path}",
+            f"Bundle: {bundle_root}",
+            f"Placeholder assets generated this run: {len(placeholder_assets)}",
+        ]
+        if provider_notes:
+            notice_lines.extend(["", "Reasons:"])
+            notice_lines.extend(f"- {note}" for note in provider_notes)
+        if placeholder_assets:
+            notice_lines.extend(["", "Assets:"])
+            notice_lines.extend(
+                f"- {asset['id']}: {asset['asset_bundle_relpath']}" for asset in placeholder_assets
+            )
+        notice_lines.extend(
+            [
+                "",
+                "Re-run plan-doc with a working OpenAI image configuration to replace placeholder outputs when needed.",
+            ]
+        )
+        notice_path.write_text("\n".join(notice_lines) + "\n", encoding="utf-8")
+    elif notice_path.exists():
+        notice_path.unlink()
     compose_docx(output_docx, parsed["title"], spec["sections"], assets, theme, source_path)
 
     return {
@@ -832,6 +905,11 @@ def generate_plan_doc(
         "bundle_manifest": str(manifest_path),
         "docx": str(output_docx),
         "asset_count": len(assets),
+        "placeholder_generated": bool(placeholder_assets),
+        "placeholder_mode": bool(provider_notes),
+        "placeholder_count": len(placeholder_assets),
+        "placeholder_notice": str(notice_path) if (placeholder_assets or provider_notes) else None,
+        "warnings": provider_notes,
     }
 
 

@@ -7,6 +7,11 @@
     "AGENTS.md",
     "bootstrap/codex_env/defaults/local_agent_policy.json"
   ],
+  "subtree_guides": {
+    "agent": "agent/AGENTS.md",
+    "bootstrap": "bootstrap/AGENTS.md",
+    "plan": "plan/AGENTS.md"
+  },
   "working_set": [
     ".gitignore",
     "AGENTS.md",
@@ -24,6 +29,11 @@
     "setup_script": "bootstrap/setup_codex_env.ps1",
     "installer": "bootstrap/install_codex_env.py"
   },
+  "new_machine_install_contract": [
+    "Ask the user for scaffold command name, plan command name, and delegation mode.",
+    "Install only the Codex-specific command environment under C:/codex-local and C:/dev.",
+    "Do not treat bootstrap as a whole-machine reset."
+  ],
   "plan_bundle_read_order": [
     "plan/plan/bundle_manifest.json",
     "plan/plan/prompt_overrides.json",

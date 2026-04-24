@@ -40,6 +40,7 @@ When this repo is opened on a new machine:
 3. Keep durable runtime and tool paths ASCII-only under `C:\codex-local` and `C:\dev`.
 4. When coordinating multiple local agents, write the shared task once in `agent/shared_command.json` and tell sub-agents to read that file first.
 5. Unless the user explicitly asks otherwise, keep the working set to `.gitignore`, `AGENTS.md`, `README.md`, `agent/`, `bootstrap/`, and `plan/`, and ignore `quiz/` and `mcp/`.
+6. When working inside `agent/`, `bootstrap/`, or `plan/`, prefer that subtree's local `AGENTS.md` before broad repo files.
 
 ## Token Budget
 

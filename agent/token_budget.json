@@ -3,7 +3,8 @@
   "read_first": [
     "agent/shared_command.json",
     "agent/token_budget.json",
-    "bootstrap/codex_env/defaults/local_agent_policy.json"
+    "bootstrap/codex_env/defaults/local_agent_policy.json",
+    "agent/AGENTS.md"
   ],
   "working_set": [
     ".gitignore",

@@ -10,6 +10,7 @@ This repository is the source of truth for a Windows-first, Linux-portable Codex
 - `bootstrap/codex_env/tools/plan-doc`: reusable plan document tool source
 - `bootstrap/codex_env/defaults/local_agent_policy.json`: default low-risk local-agent and token-budget policy
 - `agent/shared_command.json`: single-file handoff for trusted local sub-agents
+- `agent/AGENTS.md`, `bootstrap/AGENTS.md`, `plan/AGENTS.md`: subtree-local instructions to keep scans narrow
 - `plan/plan.txt`: sample planning input
 - `plan/plan/`: generated plan bundle for `plan.txt`
 
@@ -22,6 +23,11 @@ This repository is the source of truth for a Windows-first, Linux-portable Codex
 5. Use the installed scaffold tool to create projects under `C:\dev\projects`.
 6. Use the installed plan tool to regenerate per-plan bundles next to source plan files.
 7. When multiple local agents are needed, write the shared task once in `agent/shared_command.json` and point sub-agents there first.
+
+## New Machine Contract
+
+This repo does not reset the machine.
+It asks the user for the global command names and delegation mode, then installs only the Codex-specific command environment under `C:\codex-local` and `C:\dev`.
 
 ## Plan bundle contract
 

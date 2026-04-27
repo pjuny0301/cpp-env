@@ -72,33 +72,6 @@ std::vector<domain::deck> load_initial_decks(const app_config& config, platform_
     return decks;
 }
 
-bool dispatch_preview_answer(app_state& quiz_state, std::int64_t now_ms)
-{
-    const domain::app_snapshot snapshot = quiz_state.snapshot();
-    if (!snapshot.active_session.has_value() || !snapshot.active_session->current_question.has_value()) {
-        return false;
-    }
-
-    const domain::question_snapshot& question = *snapshot.active_session->current_question;
-    if (question.type == domain::question_type::blank) {
-        quiz_state.dispatch(domain::make_submit_text_answer_action("scene snapshot"), now_ms);
-        return true;
-    }
-
-    if (question.options.empty()) {
-        quiz_state.dispatch(domain::make_skip_question_action(), now_ms);
-        return true;
-    }
-
-    if (question.type == domain::question_type::multiselect) {
-        quiz_state.dispatch(domain::make_submit_multiselect_action({0}), now_ms);
-        return true;
-    }
-
-    quiz_state.dispatch(domain::make_submit_option_action(0), now_ms);
-    return true;
-}
-
 std::int64_t now_ms()
 {
     const auto now = std::chrono::steady_clock::now().time_since_epoch();
@@ -163,40 +136,6 @@ int app::run()
 
     app_state quiz_state(std::move(decks));
     app_render_frame latest_frame = render_and_report(*shell_, config_.shell, "deck-list", quiz_state.snapshot());
-
-    const domain::deck& initial_deck = quiz_state.decks().front();
-    quiz_state.dispatch(domain::make_select_deck_action(initial_deck.id));
-    if (initial_deck.days.empty()) {
-        latest_frame = render_and_report(*shell_, config_.shell, "deck-without-days", quiz_state.snapshot());
-        while (shell_->pump_events() == platform_shell_status::keep_running) {
-            bool should_render = false;
-            for (const platform_input_event& event : shell_->drain_input_events()) {
-                should_render = dispatch_platform_input(quiz_state, event, latest_frame.placed_scene, *shell_) || should_render;
-            }
-            if (should_render) {
-                latest_frame = render_and_report(*shell_, config_.shell, "input", quiz_state.snapshot());
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(16));
-        }
-        return 0;
-    }
-
-    quiz_state.dispatch(domain::make_select_day_action(initial_deck.days.front().id));
-    quiz_state.dispatch(domain::make_start_quiz_action(domain::quiz_mode::normal), 100);
-    latest_frame = render_and_report(*shell_, config_.shell, "quiz-active", quiz_state.snapshot());
-
-    dispatch_preview_answer(quiz_state, 200);
-    latest_frame = render_and_report(*shell_, config_.shell, "quiz-feedback", quiz_state.snapshot());
-
-    quiz_state.dispatch(domain::make_continue_after_feedback_action(), 300);
-    latest_frame = render_and_report(*shell_, config_.shell, "quiz-next-or-completed", quiz_state.snapshot());
-
-    if (dispatch_preview_answer(quiz_state, 400)) {
-        latest_frame = render_and_report(*shell_, config_.shell, "quiz-second-feedback", quiz_state.snapshot());
-    }
-
-    quiz_state.dispatch(domain::make_continue_after_feedback_action(), 500);
-    latest_frame = render_and_report(*shell_, config_.shell, "quiz-completed", quiz_state.snapshot());
 
     while (shell_->pump_events() == platform_shell_status::keep_running) {
         bool should_render = false;

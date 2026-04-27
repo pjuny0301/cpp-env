@@ -104,6 +104,7 @@ target_sources(
     quiz_vulkan
     PRIVATE
         src/app/app.cpp
+        src/app/app_demo.cpp
         src/app/app_state.cpp
         src/app/main.cpp
     PUBLIC
@@ -111,6 +112,7 @@ target_sources(
         BASE_DIRS src
         FILES
             src/app/app.h
+            src/app/app_demo.h
             src/app/app_state.h
 )
 target_compile_features(quiz_vulkan PRIVATE cxx_std_20)
@@ -139,6 +141,10 @@ if(BUILD_TESTING)
     add_executable(quiz_vulkan_app_state_tests tests/app/app_state_tests.cpp src/app/app_state.cpp)
     target_link_libraries(quiz_vulkan_app_state_tests PRIVATE quiz_vulkan_domain)
     add_test(NAME quiz_vulkan_app_state_tests COMMAND quiz_vulkan_app_state_tests)
+
+    add_executable(quiz_vulkan_app_demo_tests tests/app/app_demo_tests.cpp src/app/app_demo.cpp src/app/app_state.cpp)
+    target_link_libraries(quiz_vulkan_app_demo_tests PRIVATE quiz_vulkan_renderer quiz_vulkan_domain)
+    add_test(NAME quiz_vulkan_app_demo_tests COMMAND quiz_vulkan_app_demo_tests)
 
     add_executable(quiz_vulkan_scene_layout_data_tests tests/scene/scene_layout_data_tests.cpp)
     target_link_libraries(quiz_vulkan_scene_layout_data_tests PRIVATE quiz_vulkan_scene)

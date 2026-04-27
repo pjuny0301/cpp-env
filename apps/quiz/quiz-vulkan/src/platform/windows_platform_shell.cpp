@@ -18,6 +18,31 @@ std::wstring widen_ascii(std::string_view value)
     return std::wstring(value.begin(), value.end());
 }
 
+platform_client_size configured_client_size(const platform_shell_config& config)
+{
+    return {
+        std::max(config.width, 1),
+        std::max(config.height, 1),
+    };
+}
+
+platform_client_size client_size_for_window(HWND window_handle, platform_client_size fallback)
+{
+    if (window_handle == nullptr) {
+        return fallback;
+    }
+
+    RECT client_rect{};
+    if (GetClientRect(window_handle, &client_rect) == 0) {
+        return fallback;
+    }
+
+    return {
+        std::max(static_cast<int>(client_rect.right - client_rect.left), 0),
+        std::max(static_cast<int>(client_rect.bottom - client_rect.top), 0),
+    };
+}
+
 LRESULT CALLBACK window_proc(HWND window_handle, UINT message, WPARAM w_param, LPARAM l_param)
 {
     switch (message) {
@@ -37,6 +62,8 @@ public:
     bool create(const platform_shell_config& config) override
     {
         instance_handle_ = GetModuleHandleW(nullptr);
+        window_title_ = config.title;
+        state_.client_size = configured_client_size(config);
 
         WNDCLASSEXW window_class{};
         window_class.cbSize = sizeof(window_class);
@@ -50,16 +77,14 @@ public:
         }
 
         const DWORD window_style = WS_OVERLAPPEDWINDOW;
-        const int client_width = std::max(config.width, 1);
-        const int client_height = std::max(config.height, 1);
-        RECT window_rect{ 0, 0, client_width, client_height };
+        RECT window_rect{ 0, 0, state_.client_size.width, state_.client_size.height };
         if (AdjustWindowRect(&window_rect, window_style, FALSE) == 0) {
             return false;
         }
 
         const int window_width = window_rect.right - window_rect.left;
         const int window_height = window_rect.bottom - window_rect.top;
-        const std::wstring window_title = widen_ascii(config.title);
+        const std::wstring window_title = widen_ascii(window_title_);
 
         window_handle_ = CreateWindowExW(
             0,
@@ -79,6 +104,7 @@ public:
             return false;
         }
 
+        state_.client_size = client_size_for_window(window_handle_, state_.client_size);
         ShowWindow(window_handle_, SW_SHOW);
         UpdateWindow(window_handle_);
         return true;
@@ -99,6 +125,34 @@ public:
         return platform_shell_status::keep_running;
     }
 
+    [[nodiscard]] platform_shell_state state() const override
+    {
+        platform_shell_state current_state = state_;
+        current_state.client_size = client_size_for_window(window_handle_, state_.client_size);
+        return current_state;
+    }
+
+    void set_frame_status(std::string_view status) override
+    {
+        const std::string next_status(status);
+        if (state_.frame_status == next_status) {
+            return;
+        }
+
+        state_.frame_status = next_status;
+
+        if (window_handle_ == nullptr) {
+            return;
+        }
+
+        std::string title = window_title_;
+        if (!state_.frame_status.empty()) {
+            title.append(" - ").append(state_.frame_status);
+        }
+
+        SetWindowTextW(window_handle_, widen_ascii(title).c_str());
+    }
+
     void show_message(std::string_view message) override
     {
         std::cout << message << '\n';
@@ -108,6 +162,8 @@ public:
 private:
     HINSTANCE instance_handle_ = nullptr;
     HWND window_handle_ = nullptr;
+    std::string window_title_;
+    platform_shell_state state_;
 };
 
 } // namespace

@@ -12,6 +12,16 @@ struct platform_shell_config {
     int height = 720;
 };
 
+struct platform_client_size {
+    int width = 0;
+    int height = 0;
+};
+
+struct platform_shell_state {
+    platform_client_size client_size;
+    std::string frame_status;
+};
+
 enum class platform_shell_status {
     keep_running,
     exit_requested
@@ -23,6 +33,8 @@ public:
 
     virtual bool create(const platform_shell_config& config) = 0;
     virtual platform_shell_status pump_events() = 0;
+    [[nodiscard]] virtual platform_shell_state state() const { return {}; }
+    virtual void set_frame_status(std::string_view status) { (void)status; }
     virtual void show_message(std::string_view message) = 0;
 };
 

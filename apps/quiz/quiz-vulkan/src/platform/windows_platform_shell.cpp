@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -28,6 +29,8 @@ platform_client_size configured_client_size(const platform_shell_config& config)
     };
 }
 
+LRESULT CALLBACK window_proc(HWND window_handle, UINT message, WPARAM w_param, LPARAM l_param);
+
 platform_client_size client_size_for_window(HWND window_handle, platform_client_size fallback)
 {
     if (window_handle == nullptr) {
@@ -45,34 +48,37 @@ platform_client_size client_size_for_window(HWND window_handle, platform_client_
     };
 }
 
-LRESULT CALLBACK window_proc(HWND window_handle, UINT message, WPARAM w_param, LPARAM l_param)
-{
-    (void)w_param;
-
-    switch (message) {
-    case WM_LBUTTONUP: {
-        auto* input_events = reinterpret_cast<std::vector<platform_input_event>*>(
-            GetWindowLongPtrW(window_handle, GWLP_USERDATA));
-        if (input_events != nullptr) {
-            const auto x = static_cast<float>(static_cast<short>(LOWORD(l_param)));
-            const auto y = static_cast<float>(static_cast<short>(HIWORD(l_param)));
-            input_events->push_back(platform_input_event{platform_input_event_type::pointer_press, x, y});
-        }
-        return 0;
-    }
-    case WM_CLOSE:
-        DestroyWindow(window_handle);
-        return 0;
-    case WM_DESTROY:
-        PostQuitMessage(0);
-        return 0;
-    default:
-        return DefWindowProcW(window_handle, message, w_param, l_param);
-    }
-}
-
 class windows_platform_shell final : public platform_shell {
 public:
+    LRESULT handle_message(HWND window_handle, UINT message, WPARAM w_param, LPARAM l_param)
+    {
+        (void)w_param;
+
+        switch (message) {
+        case WM_LBUTTONUP: {
+            const auto x = static_cast<float>(static_cast<short>(LOWORD(l_param)));
+            const auto y = static_cast<float>(static_cast<short>(HIWORD(l_param)));
+            input_events_.push_back(platform_input_event{platform_input_event_type::pointer_press, x, y});
+            return 0;
+        }
+        case WM_PAINT:
+            paint_framebuffer(window_handle);
+            return 0;
+        case WM_SIZE:
+            state_.client_size = client_size_for_window(window_handle_, state_.client_size);
+            InvalidateRect(window_handle_, nullptr, FALSE);
+            return 0;
+        case WM_CLOSE:
+            DestroyWindow(window_handle);
+            return 0;
+        case WM_DESTROY:
+            PostQuitMessage(0);
+            return 0;
+        default:
+            return DefWindowProcW(window_handle, message, w_param, l_param);
+        }
+    }
+
     bool create(const platform_shell_config& config) override
     {
         instance_handle_ = GetModuleHandleW(nullptr);
@@ -118,7 +124,7 @@ public:
             return false;
         }
 
-        SetWindowLongPtrW(window_handle_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&input_events_));
+        SetWindowLongPtrW(window_handle_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
         state_.client_size = client_size_for_window(window_handle_, state_.client_size);
         ShowWindow(window_handle_, SW_SHOW);
         UpdateWindow(window_handle_);
@@ -154,6 +160,29 @@ public:
         return current_state;
     }
 
+    void present_framebuffer(std::size_t width, std::size_t height, const unsigned char* rgba) override
+    {
+        framebuffer_width_ = width;
+        framebuffer_height_ = height;
+        framebuffer_bgra_.clear();
+
+        if (rgba != nullptr && width > 0 && height > 0) {
+            framebuffer_bgra_.resize(width * height * 4);
+            for (std::size_t index = 0; index < width * height; ++index) {
+                const std::size_t offset = index * 4;
+                framebuffer_bgra_[offset] = rgba[offset + 2];
+                framebuffer_bgra_[offset + 1] = rgba[offset + 1];
+                framebuffer_bgra_[offset + 2] = rgba[offset];
+                framebuffer_bgra_[offset + 3] = rgba[offset + 3];
+            }
+        }
+
+        if (window_handle_ != nullptr) {
+            InvalidateRect(window_handle_, nullptr, FALSE);
+            UpdateWindow(window_handle_);
+        }
+    }
+
     void set_frame_status(std::string_view status) override
     {
         const std::string next_status(status);
@@ -182,12 +211,76 @@ public:
     }
 
 private:
+    void paint_framebuffer(HWND window_handle)
+    {
+        PAINTSTRUCT paint{};
+        HDC device_context = BeginPaint(window_handle, &paint);
+        if (device_context == nullptr) {
+            return;
+        }
+
+        const platform_client_size client_size = client_size_for_window(window_handle, state_.client_size);
+        if (framebuffer_bgra_.empty() || framebuffer_width_ == 0 || framebuffer_height_ == 0) {
+            RECT client_rect{0, 0, client_size.width, client_size.height};
+            FillRect(device_context, &client_rect, reinterpret_cast<HBRUSH>(GetStockObject(BLACK_BRUSH)));
+            EndPaint(window_handle, &paint);
+            return;
+        }
+
+        BITMAPINFO bitmap_info{};
+        bitmap_info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        bitmap_info.bmiHeader.biWidth = static_cast<LONG>(framebuffer_width_);
+        bitmap_info.bmiHeader.biHeight = -static_cast<LONG>(framebuffer_height_);
+        bitmap_info.bmiHeader.biPlanes = 1;
+        bitmap_info.bmiHeader.biBitCount = 32;
+        bitmap_info.bmiHeader.biCompression = BI_RGB;
+
+        StretchDIBits(
+            device_context,
+            0,
+            0,
+            client_size.width,
+            client_size.height,
+            0,
+            0,
+            static_cast<int>(framebuffer_width_),
+            static_cast<int>(framebuffer_height_),
+            framebuffer_bgra_.data(),
+            &bitmap_info,
+            DIB_RGB_COLORS,
+            SRCCOPY);
+
+        EndPaint(window_handle, &paint);
+    }
+
     HINSTANCE instance_handle_ = nullptr;
     HWND window_handle_ = nullptr;
     std::string window_title_;
     platform_shell_state state_;
     std::vector<platform_input_event> input_events_;
+    std::size_t framebuffer_width_ = 0;
+    std::size_t framebuffer_height_ = 0;
+    std::vector<unsigned char> framebuffer_bgra_;
 };
+
+LRESULT CALLBACK window_proc(HWND window_handle, UINT message, WPARAM w_param, LPARAM l_param)
+{
+    auto* shell = reinterpret_cast<windows_platform_shell*>(GetWindowLongPtrW(window_handle, GWLP_USERDATA));
+    if (shell != nullptr) {
+        return shell->handle_message(window_handle, message, w_param, l_param);
+    }
+
+    switch (message) {
+    case WM_CLOSE:
+        DestroyWindow(window_handle);
+        return 0;
+    case WM_DESTROY:
+        PostQuitMessage(0);
+        return 0;
+    default:
+        return DefWindowProcW(window_handle, message, w_param, l_param);
+    }
+}
 
 } // namespace
 

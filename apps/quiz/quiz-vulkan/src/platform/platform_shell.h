@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -46,6 +47,12 @@ public:
     virtual platform_shell_status pump_events() = 0;
     [[nodiscard]] virtual std::vector<platform_input_event> drain_input_events() { return {}; }
     [[nodiscard]] virtual platform_shell_state state() const { return {}; }
+    virtual void present_framebuffer(std::size_t width, std::size_t height, const unsigned char* rgba)
+    {
+        (void)width;
+        (void)height;
+        (void)rgba;
+    }
     virtual void set_frame_status(std::string_view status) { (void)status; }
     virtual void show_message(std::string_view message) = 0;
 };

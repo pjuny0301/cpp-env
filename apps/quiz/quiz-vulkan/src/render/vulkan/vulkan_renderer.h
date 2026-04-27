@@ -32,6 +32,12 @@ struct vulkan_renderer_frame_stats {
     }
 };
 
+struct vulkan_renderer_framebuffer {
+    std::size_t width = 0;
+    std::size_t height = 0;
+    std::vector<unsigned char> rgba;
+};
+
 enum class vulkan_renderer_backend {
     cpu_fallback,
     vulkan,
@@ -77,6 +83,7 @@ public:
     const ui::ui_draw_list& last_draw_list() const;
     const vulkan_renderer_frame_stats& last_frame_stats() const;
     const vulkan_renderer_frame_summary& last_frame_summary() const;
+    const vulkan_renderer_framebuffer& last_framebuffer() const;
 
     const vulkan_renderer_options& options() const;
     void set_options(vulkan_renderer_options options);
@@ -89,11 +96,15 @@ private:
         const ui::ui_draw_list& draw_list,
         const vulkan_renderer_frame_stats& stats,
         const vulkan_renderer_options& options);
+    static vulkan_renderer_framebuffer rasterize_cpu_fallback_framebuffer(
+        const ui::ui_draw_list& draw_list,
+        const vulkan_renderer_options& options);
 
     vulkan_renderer_options options_;
     ui::ui_draw_list last_draw_list_;
     vulkan_renderer_frame_stats last_frame_stats_;
     vulkan_renderer_frame_summary last_frame_summary_;
+    vulkan_renderer_framebuffer last_framebuffer_;
 };
 
 } // namespace quiz_vulkan::render

@@ -23,6 +23,7 @@ struct app_render_report {
 struct app_render_frame {
     app_render_report report;
     scene::placed_scene placed_scene;
+    render::vulkan_renderer_framebuffer framebuffer;
 };
 
 domain::deck make_demo_deck();

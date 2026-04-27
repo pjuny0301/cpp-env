@@ -90,11 +90,11 @@
 | 75 | 0. 작업 기준 고정<br>6. 본문 학습/카툰/Codexbot | 선지 애니메이션은 76의 테마구현자 자유 | [75](구현/75.md); [quiz-vulkan](quiz-vulkan/구현/75.md) | - | 계획 문서화 | 하위 프로젝트 구현 착수 시 fixture/test 추가 |
 | 76 | 0. 작업 기준 고정<br>6. 본문 학습/카툰/Codexbot | 퀴즈앱의 디자인(덱선택창, 메인화면, 선택형문제선지 디자인) 등을 마음대로 제작하고 적용할 수 있는 테마... | [76](구현/76.md); [quiz-vulkan](quiz-vulkan/구현/76.md) | - | 계획 문서화 | 하위 프로젝트 구현 착수 시 fixture/test 추가 |
 | 77 | 0. 작업 기준 고정<br>3. Editor 데이터 제작 | Deck에 pdf 넣으면 서버로 전송 -> 텍스트화, 퀴즈화후 다시 폰으로 전송 -> 다음 앱에 접속시... | [77](구현/77.md); [quiz-editor](quiz-editor/구현/77.md) | - | 계획 문서화 | 하위 프로젝트 구현 착수 시 fixture/test 추가 |
-| 78 | 0. 작업 기준 고정<br>4. Vulkan 플레이어 재작성 | 앱 자체가 굉장히 가볍고 빠르게 | [78](구현/78.md); [quiz-vulkan](quiz-vulkan/구현/78.md) | `src/render/vulkan/vulkan_renderer.*`, `tests/render/vulkan_renderer_tests.cpp` | 부분 구현 | renderer backend 교체 전까지 CPU fallback diagnostics 유지 |
+| 78 | 0. 작업 기준 고정<br>4. Vulkan 플레이어 재작성 | 앱 자체가 굉장히 가볍고 빠르게 | [78](구현/78.md); [quiz-vulkan](quiz-vulkan/구현/78.md) | `src/render/vulkan/vulkan_renderer.*`, CPU fallback RGBA framebuffer, `tests/render/vulkan_renderer_tests.cpp` | 부분 구현 | renderer backend 교체 전까지 CPU fallback diagnostics와 framebuffer smoke 유지 |
 | 79 | 0. 작업 기준 고정<br>1. 공통 데이터 계약/도메인<br>7. 배포/동기화/QA | 위 계획들을 일관적으로 시행하기 위해서는 어찌해야하는지? | [79](구현/79.md); [quiz-vulkan](quiz-vulkan/구현/79.md) | `tests/test_manifest.json`, `tools/run_windows_mingw_ascii.ps1`, `CMakeLists.txt`, `quiz_vulkan.exe --help`, 10-test CTest suite | 부분 구현 | CI에서도 MinGW runtime DLL 복사와 direct exe 실행 검증 |
 | 80 | 0. 작업 기준 고정<br>6. 본문 학습/카툰/Codexbot | 퀴즈앱 전반을 카툰렌더링게임처렁 만들고싶음. 아까 코덱스갸 나와서 설명하는 것도 카툰렌더링게임의 npc가... | [80](구현/80.md); [quiz-vulkan](quiz-vulkan/구현/80.md) | - | 계획 문서화 | 하위 프로젝트 구현 착수 시 fixture/test 추가 |
 | 81 | 0. 작업 기준 고정<br>6. 본문 학습/카툰/Codexbot | 토큰관리햐기 위해선 어찌해야하는지? | [81](구현/81.md); [quiz-vulkan](quiz-vulkan/구현/81.md) | - | 계획 문서화 | 하위 프로젝트 구현 착수 시 fixture/test 추가 |
-| 82 | 0. 작업 기준 고정<br>4. Vulkan 플레이어 재작성 | vulkan 렌더러로 구현 - 순수 c++ | [82](구현/82.md); [quiz-vulkan](quiz-vulkan/구현/82.md) | `src/app/app_demo.*`, `src/app/app.cpp`, `src/app/main.cpp`, `src/platform/windows_platform_shell.cpp`, `tests/app/app_demo_tests.cpp`, `src/render/vulkan/*` | 부분 구현 | swapchain backend 추가 전까지 app snapshot render path와 입력 route 확대 |
+| 82 | 0. 작업 기준 고정<br>4. Vulkan 플레이어 재작성 | vulkan 렌더러로 구현 - 순수 c++ | [82](구현/82.md); [quiz-vulkan](quiz-vulkan/구현/82.md) | `src/app/app_demo.*`, `src/app/app.cpp`, `src/app/main.cpp`, `src/platform/windows_platform_shell.cpp`, `tests/app/app_demo_tests.cpp`, `src/render/vulkan/*`, Win32 framebuffer present path | 부분 구현 | swapchain backend 추가 전까지 app snapshot render path와 입력 route 확대 |
 | 25 | 0. 작업 기준 고정 | 원본 요구사항 목록에 25번 없음 | - | - | 원본 없음 | 번호 재사용 금지, 새 요구는 새 ID로 추가 |
 
 ## 코드 증거 묶음
@@ -102,7 +102,7 @@
 - Domain/FSM: `apps/quiz/quiz-vulkan/src/core/domain/*`, `apps/quiz/quiz-vulkan/src/app/app_state.*`
 - Artifact loading: `apps/quiz/quiz-vulkan/src/core/domain/deck_artifact_loader.*`, `apps/quiz/quiz-vulkan/src/app/app.*`, `apps/quiz/quiz-vulkan/tests/domain/deck_artifact_loader_tests.cpp`
 - Scene/Layout/UI: `apps/quiz/quiz-vulkan/src/core/scene/*`, `apps/quiz/quiz-vulkan/src/core/layout/layout_placer.h`, `apps/quiz/quiz-vulkan/src/core/layout/input_hit_test.h`, `apps/quiz/quiz-vulkan/src/core/ui/*`
-- Renderer/App smoke: `apps/quiz/quiz-vulkan/src/render/vulkan/*`, `apps/quiz/quiz-vulkan/src/app/app_demo.*`, `apps/quiz/quiz-vulkan/src/app/app.cpp`, `apps/quiz/quiz-vulkan/src/app/app_action_router.*`, `apps/quiz/quiz-vulkan/src/platform/*`
+- Renderer/App smoke: `apps/quiz/quiz-vulkan/src/render/vulkan/*`, `apps/quiz/quiz-vulkan/src/app/app_demo.*`, `apps/quiz/quiz-vulkan/src/app/app.cpp`, `apps/quiz/quiz-vulkan/src/app/app_action_router.*`, `apps/quiz/quiz-vulkan/src/platform/*`, CPU fallback framebuffer present path
 - Tests: `apps/quiz/quiz-vulkan/tests/**`, `apps/quiz/quiz-vulkan/tests/test_manifest.json`
 - Build wrapper/runtime: `apps/quiz/quiz-vulkan/CMakeLists.txt`, `tools/run_windows_mingw_ascii.ps1`
 

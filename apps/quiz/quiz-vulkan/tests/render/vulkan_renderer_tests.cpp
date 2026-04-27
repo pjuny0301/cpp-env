@@ -33,6 +33,48 @@ void require(bool condition, const char* message)
     assert((condition) && message);
 }
 
+std::size_t framebuffer_pixel_offset(
+    const quiz_vulkan::render::vulkan_renderer_framebuffer& framebuffer,
+    std::size_t x,
+    std::size_t y)
+{
+    return (y * framebuffer.width + x) * 4;
+}
+
+std::size_t count_nonzero_framebuffer_pixels(
+    const quiz_vulkan::render::vulkan_renderer_framebuffer& framebuffer)
+{
+    std::size_t count = 0;
+    for (std::size_t offset = 0; offset + 3 < framebuffer.rgba.size(); offset += 4) {
+        if (framebuffer.rgba[offset] != 0 || framebuffer.rgba[offset + 1] != 0
+            || framebuffer.rgba[offset + 2] != 0 || framebuffer.rgba[offset + 3] != 0) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+bool framebuffer_pixel_is(
+    const quiz_vulkan::render::vulkan_renderer_framebuffer& framebuffer,
+    std::size_t x,
+    std::size_t y,
+    unsigned char red,
+    unsigned char green,
+    unsigned char blue,
+    unsigned char alpha)
+{
+    if (x >= framebuffer.width || y >= framebuffer.height) {
+        return false;
+    }
+
+    const std::size_t offset = framebuffer_pixel_offset(framebuffer, x, y);
+    return offset + 3 < framebuffer.rgba.size()
+        && framebuffer.rgba[offset] == red
+        && framebuffer.rgba[offset + 1] == green
+        && framebuffer.rgba[offset + 2] == blue
+        && framebuffer.rgba[offset + 3] == alpha;
+}
+
 quiz_vulkan::scene::placed_scene make_simple_scene_snapshot()
 {
     using namespace quiz_vulkan;
@@ -228,6 +270,9 @@ void test_scene_snapshot_submission()
     assert(renderer.last_draw_list().empty());
     assert(renderer.last_frame_stats().empty());
     assert(!renderer.last_frame_summary().nonblank());
+    assert(renderer.last_framebuffer().width == 0);
+    assert(renderer.last_framebuffer().height == 0);
+    assert(renderer.last_framebuffer().rgba.empty());
 }
 
 void test_cpu_fallback_clips_and_discards()
@@ -287,6 +332,15 @@ void test_cpu_fallback_clips_and_discards()
     assert(summary.clipped_draw_call_count == 1);
     assert(summary.discarded_draw_call_count == 1);
     assert(summary.shaded_pixel_count == 9);
+
+    const render::vulkan_renderer_framebuffer& framebuffer = renderer.last_framebuffer();
+    require(framebuffer.width == options.fallback_surface_width, "framebuffer records fallback width");
+    require(framebuffer.height == options.fallback_surface_height, "framebuffer records fallback height");
+    require(framebuffer.rgba.size() == framebuffer.width * framebuffer.height * 4, "framebuffer stores RGBA bytes");
+    require(count_nonzero_framebuffer_pixels(framebuffer) == 9, "only clipped visible quad pixels are colored");
+    require(framebuffer_pixel_is(framebuffer, 2, 2, 0, 255, 0, 255), "visible clipped quad writes green RGBA");
+    require(framebuffer_pixel_is(framebuffer, 1, 1, 0, 0, 0, 0), "transparent command does not color pixels");
+    require(framebuffer_pixel_is(framebuffer, 5, 5, 0, 0, 0, 0), "clipped command does not color out-of-clip pixels");
 }
 
 void test_semantic_scene_stats_distinguish_quiz_draw_work()
@@ -398,6 +452,12 @@ void test_app_snapshot_renders_nonblank_frame()
     require(summary.surface_height == options.fallback_surface_height, "fallback surface height recorded");
     require(summary.shaded_pixel_count > fallback_surface_area / 2, "app frame shades a meaningful portion of the surface");
     require(summary.discarded_draw_call_count == 0, "no app draw calls were discarded");
+
+    const render::vulkan_renderer_framebuffer& framebuffer = renderer.last_framebuffer();
+    require(framebuffer.width == options.fallback_surface_width, "app framebuffer records fallback width");
+    require(framebuffer.height == options.fallback_surface_height, "app framebuffer records fallback height");
+    require(framebuffer.rgba.size() == fallback_surface_area * 4, "app framebuffer stores RGBA bytes");
+    require(count_nonzero_framebuffer_pixels(framebuffer) > 0, "app framebuffer has nonzero pixels");
 }
 
 } // namespace

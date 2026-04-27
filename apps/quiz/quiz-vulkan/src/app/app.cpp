@@ -33,6 +33,10 @@ app_render_frame render_and_report(
     const domain::app_snapshot& snapshot)
 {
     app_render_frame frame = render_app_frame(snapshot, viewport_for_shell(shell.state(), shell_config));
+    shell.present_framebuffer(
+        frame.framebuffer.width,
+        frame.framebuffer.height,
+        frame.framebuffer.rgba.empty() ? nullptr : frame.framebuffer.rgba.data());
     const std::string line = format_render_report(label, frame.report);
     shell.show_message(line);
     shell.set_frame_status(line);

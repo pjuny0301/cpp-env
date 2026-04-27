@@ -113,6 +113,7 @@ app_render_frame render_app_frame(const domain::app_snapshot& snapshot, scene::s
     frame.report.input_region_count = frame.placed_scene.input_regions.size();
     frame.report.frame_stats = renderer.last_frame_stats();
     frame.report.frame_summary = renderer.last_frame_summary();
+    frame.framebuffer = renderer.last_framebuffer();
     return frame;
 }
 

@@ -7,6 +7,8 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 namespace quiz_vulkan {
 namespace {
@@ -45,7 +47,19 @@ platform_client_size client_size_for_window(HWND window_handle, platform_client_
 
 LRESULT CALLBACK window_proc(HWND window_handle, UINT message, WPARAM w_param, LPARAM l_param)
 {
+    (void)w_param;
+
     switch (message) {
+    case WM_LBUTTONUP: {
+        auto* input_events = reinterpret_cast<std::vector<platform_input_event>*>(
+            GetWindowLongPtrW(window_handle, GWLP_USERDATA));
+        if (input_events != nullptr) {
+            const auto x = static_cast<float>(static_cast<short>(LOWORD(l_param)));
+            const auto y = static_cast<float>(static_cast<short>(HIWORD(l_param)));
+            input_events->push_back(platform_input_event{platform_input_event_type::pointer_press, x, y});
+        }
+        return 0;
+    }
     case WM_CLOSE:
         DestroyWindow(window_handle);
         return 0;
@@ -104,6 +118,7 @@ public:
             return false;
         }
 
+        SetWindowLongPtrW(window_handle_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&input_events_));
         state_.client_size = client_size_for_window(window_handle_, state_.client_size);
         ShowWindow(window_handle_, SW_SHOW);
         UpdateWindow(window_handle_);
@@ -123,6 +138,13 @@ public:
         }
 
         return platform_shell_status::keep_running;
+    }
+
+    [[nodiscard]] std::vector<platform_input_event> drain_input_events() override
+    {
+        std::vector<platform_input_event> drained;
+        drained.swap(input_events_);
+        return drained;
     }
 
     [[nodiscard]] platform_shell_state state() const override
@@ -164,6 +186,7 @@ private:
     HWND window_handle_ = nullptr;
     std::string window_title_;
     platform_shell_state state_;
+    std::vector<platform_input_event> input_events_;
 };
 
 } // namespace

@@ -55,6 +55,14 @@
       "manual_command_wsl": "/mnt/c/MinGW/bin/g++.exe -std=c++1z -Wall -Wextra -pedantic -Isrc tests/layout/layout_placer_tests.cpp -o /mnt/c/aa/build/out/quiz/quiz-vulkan/manual/layout_placer_tests.exe && /mnt/c/aa/build/out/quiz/quiz-vulkan/manual/layout_placer_tests.exe"
     },
     {
+      "id": "input_hit_test",
+      "area": "layout",
+      "path": "tests/layout/input_hit_test_tests.cpp",
+      "type": "ctest",
+      "compiler_profile": "windows_mingw_ascii_gcc13",
+      "supported_with_available_mingw": true
+    },
+    {
       "id": "domain_smoke",
       "area": "domain",
       "path": "tests/domain/domain_smoke_test.cpp",

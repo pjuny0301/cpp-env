@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <sstream>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace quiz_vulkan {
@@ -75,16 +76,16 @@ domain::deck make_demo_deck()
     return demo_deck;
 }
 
-app_render_report render_app_snapshot(const domain::app_snapshot& snapshot, scene::scene_rect viewport)
+app_render_frame render_app_frame(const domain::app_snapshot& snapshot, scene::scene_rect viewport)
 {
     scene::scene_layout_data scene_data("quiz_app");
     const scene::scene_layout_patch patch = ui::make_quiz_screen_patch(snapshot);
     const scene::scene_layout_apply_result apply_result = patch.apply_to(scene_data);
 
-    app_render_report report;
-    report.screen_id = scene_data.route_state().screen_id;
+    app_render_frame frame;
+    frame.report.screen_id = scene_data.route_state().screen_id;
     if (!apply_result.applied()) {
-        return report;
+        return frame;
     }
 
     scene::scene_layout_environment environment;
@@ -98,7 +99,7 @@ app_render_report render_app_snapshot(const domain::app_snapshot& snapshot, scen
     }
 
     const demo_text_metrics text_metrics;
-    const scene::placed_scene placed_scene = scene::layout_placer{}.place_with_environment(
+    frame.placed_scene = scene::layout_placer{}.place_with_environment(
         scene_data,
         environment,
         text_metrics);
@@ -106,13 +107,18 @@ app_render_report render_app_snapshot(const domain::app_snapshot& snapshot, scen
     render::vulkan_renderer_options renderer_options;
     renderer_options.viewport = environment.viewport;
     render::vulkan_renderer renderer(renderer_options);
-    renderer.submit(placed_scene);
+    renderer.submit(frame.placed_scene);
 
-    report.node_count = placed_scene.nodes.size();
-    report.input_region_count = placed_scene.input_regions.size();
-    report.frame_stats = renderer.last_frame_stats();
-    report.frame_summary = renderer.last_frame_summary();
-    return report;
+    frame.report.node_count = frame.placed_scene.nodes.size();
+    frame.report.input_region_count = frame.placed_scene.input_regions.size();
+    frame.report.frame_stats = renderer.last_frame_stats();
+    frame.report.frame_summary = renderer.last_frame_summary();
+    return frame;
+}
+
+app_render_report render_app_snapshot(const domain::app_snapshot& snapshot, scene::scene_rect viewport)
+{
+    return render_app_frame(snapshot, viewport).report;
 }
 
 std::string format_render_report(std::string_view label, const app_render_report& report)

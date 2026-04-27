@@ -2,6 +2,7 @@
 
 #include "core/domain/app_snapshot.hpp"
 #include "core/domain/quiz_model.hpp"
+#include "core/layout/layout_placer.h"
 #include "core/scene/scene_layout_data.h"
 #include "render/vulkan/vulkan_renderer.h"
 
@@ -19,7 +20,15 @@ struct app_render_report {
     render::vulkan_renderer_frame_summary frame_summary;
 };
 
+struct app_render_frame {
+    app_render_report report;
+    scene::placed_scene placed_scene;
+};
+
 domain::deck make_demo_deck();
+app_render_frame render_app_frame(
+    const domain::app_snapshot& snapshot,
+    scene::scene_rect viewport = {0.0f, 0.0f, 1280.0f, 720.0f});
 app_render_report render_app_snapshot(
     const domain::app_snapshot& snapshot,
     scene::scene_rect viewport = {0.0f, 0.0f, 1280.0f, 720.0f});

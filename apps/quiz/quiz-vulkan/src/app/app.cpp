@@ -1,10 +1,13 @@
 #include "app/app.h"
 
+#include "app/app_action_router.h"
 #include "app/app_demo.h"
 #include "app/app_state.h"
 #include "core/domain/deck_artifact_loader.hpp"
+#include "core/layout/input_hit_test.h"
 
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <iostream>
@@ -23,17 +26,17 @@ scene::scene_rect viewport_for_shell(const platform_shell_state& state, const pl
     return scene::scene_rect{0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height)};
 }
 
-app_render_report render_and_report(
+app_render_frame render_and_report(
     platform_shell& shell,
     const platform_shell_config& shell_config,
     std::string_view label,
     const domain::app_snapshot& snapshot)
 {
-    const app_render_report report = render_app_snapshot(snapshot, viewport_for_shell(shell.state(), shell_config));
-    const std::string line = format_render_report(label, report);
+    app_render_frame frame = render_app_frame(snapshot, viewport_for_shell(shell.state(), shell_config));
+    const std::string line = format_render_report(label, frame.report);
     shell.show_message(line);
     shell.set_frame_status(line);
-    return report;
+    return frame;
 }
 
 std::vector<domain::deck> load_initial_decks(const app_config& config, platform_shell& shell)
@@ -92,6 +95,42 @@ bool dispatch_preview_answer(app_state& quiz_state, std::int64_t now_ms)
     return true;
 }
 
+std::int64_t now_ms()
+{
+    const auto now = std::chrono::steady_clock::now().time_since_epoch();
+    return std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
+}
+
+bool dispatch_platform_input(
+    app_state& quiz_state,
+    const platform_input_event& event,
+    const scene::placed_scene& placed_scene,
+    platform_shell& shell)
+{
+    if (event.type != platform_input_event_type::pointer_press) {
+        return false;
+    }
+
+    const scene::scene_input_region* region = hit_test_input_region(
+        placed_scene,
+        event.x,
+        event.y,
+        scene::scene_action_trigger::press);
+    if (region == nullptr) {
+        return false;
+    }
+
+    const app_action_route_result routed_action = route_scene_action(region->action);
+    if (!routed_action.ok() || !routed_action.action.has_value()) {
+        shell.show_message("input action rejected: " + routed_action.error);
+        return false;
+    }
+
+    quiz_state.dispatch(*routed_action.action, now_ms());
+    shell.show_message("input action: " + std::string(domain::to_string(domain::type_of(*routed_action.action))));
+    return true;
+}
+
 } // namespace
 
 app::app(app_config config)
@@ -119,13 +158,20 @@ int app::run()
     }
 
     app_state quiz_state(std::move(decks));
-    render_and_report(*shell_, config_.shell, "deck-list", quiz_state.snapshot());
+    app_render_frame latest_frame = render_and_report(*shell_, config_.shell, "deck-list", quiz_state.snapshot());
 
     const domain::deck& initial_deck = quiz_state.decks().front();
     quiz_state.dispatch(domain::make_select_deck_action(initial_deck.id));
     if (initial_deck.days.empty()) {
-        render_and_report(*shell_, config_.shell, "deck-without-days", quiz_state.snapshot());
+        latest_frame = render_and_report(*shell_, config_.shell, "deck-without-days", quiz_state.snapshot());
         while (shell_->pump_events() == platform_shell_status::keep_running) {
+            bool should_render = false;
+            for (const platform_input_event& event : shell_->drain_input_events()) {
+                should_render = dispatch_platform_input(quiz_state, event, latest_frame.placed_scene, *shell_) || should_render;
+            }
+            if (should_render) {
+                latest_frame = render_and_report(*shell_, config_.shell, "input", quiz_state.snapshot());
+            }
             std::this_thread::sleep_for(std::chrono::milliseconds(16));
         }
         return 0;
@@ -133,22 +179,29 @@ int app::run()
 
     quiz_state.dispatch(domain::make_select_day_action(initial_deck.days.front().id));
     quiz_state.dispatch(domain::make_start_quiz_action(domain::quiz_mode::normal), 100);
-    render_and_report(*shell_, config_.shell, "quiz-active", quiz_state.snapshot());
+    latest_frame = render_and_report(*shell_, config_.shell, "quiz-active", quiz_state.snapshot());
 
     dispatch_preview_answer(quiz_state, 200);
-    render_and_report(*shell_, config_.shell, "quiz-feedback", quiz_state.snapshot());
+    latest_frame = render_and_report(*shell_, config_.shell, "quiz-feedback", quiz_state.snapshot());
 
     quiz_state.dispatch(domain::make_continue_after_feedback_action(), 300);
-    render_and_report(*shell_, config_.shell, "quiz-next-or-completed", quiz_state.snapshot());
+    latest_frame = render_and_report(*shell_, config_.shell, "quiz-next-or-completed", quiz_state.snapshot());
 
     if (dispatch_preview_answer(quiz_state, 400)) {
-        render_and_report(*shell_, config_.shell, "quiz-second-feedback", quiz_state.snapshot());
+        latest_frame = render_and_report(*shell_, config_.shell, "quiz-second-feedback", quiz_state.snapshot());
     }
 
     quiz_state.dispatch(domain::make_continue_after_feedback_action(), 500);
-    render_and_report(*shell_, config_.shell, "quiz-completed", quiz_state.snapshot());
+    latest_frame = render_and_report(*shell_, config_.shell, "quiz-completed", quiz_state.snapshot());
 
     while (shell_->pump_events() == platform_shell_status::keep_running) {
+        bool should_render = false;
+        for (const platform_input_event& event : shell_->drain_input_events()) {
+            should_render = dispatch_platform_input(quiz_state, event, latest_frame.placed_scene, *shell_) || should_render;
+        }
+        if (should_render) {
+            latest_frame = render_and_report(*shell_, config_.shell, "input", quiz_state.snapshot());
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
     }
 

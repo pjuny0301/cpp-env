@@ -85,6 +85,7 @@ target_sources(
             src/core/scene/scene_layout_edit_data.h
             src/core/scene/scene_layout_patch.h
             src/core/scene/scene_modifier.h
+            src/core/layout/input_hit_test.h
             src/core/layout/layout_placer.h
 )
 target_compile_features(quiz_vulkan_scene INTERFACE cxx_std_20)
@@ -194,6 +195,11 @@ if(BUILD_TESTING)
     target_link_libraries(quiz_vulkan_layout_placer_tests PRIVATE quiz_vulkan_scene)
     quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_layout_placer_tests)
     add_test(NAME quiz_vulkan_layout_placer_tests COMMAND quiz_vulkan_layout_placer_tests)
+
+    add_executable(quiz_vulkan_input_hit_test_tests tests/layout/input_hit_test_tests.cpp)
+    target_link_libraries(quiz_vulkan_input_hit_test_tests PRIVATE quiz_vulkan_scene)
+    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_input_hit_test_tests)
+    add_test(NAME quiz_vulkan_input_hit_test_tests COMMAND quiz_vulkan_input_hit_test_tests)
 
     add_executable(quiz_vulkan_quiz_screens_tests tests/ui/quiz_screens_tests.cpp)
     target_link_libraries(quiz_vulkan_quiz_screens_tests PRIVATE quiz_vulkan_ui)

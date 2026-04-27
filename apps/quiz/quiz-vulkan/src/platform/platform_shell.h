@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace quiz_vulkan {
 
@@ -27,12 +28,23 @@ enum class platform_shell_status {
     exit_requested
 };
 
+enum class platform_input_event_type {
+    pointer_press,
+};
+
+struct platform_input_event {
+    platform_input_event_type type = platform_input_event_type::pointer_press;
+    float x = 0.0f;
+    float y = 0.0f;
+};
+
 class platform_shell {
 public:
     virtual ~platform_shell() = default;
 
     virtual bool create(const platform_shell_config& config) = 0;
     virtual platform_shell_status pump_events() = 0;
+    [[nodiscard]] virtual std::vector<platform_input_event> drain_input_events() { return {}; }
     [[nodiscard]] virtual platform_shell_state state() const { return {}; }
     virtual void set_frame_status(std::string_view status) { (void)status; }
     virtual void show_message(std::string_view message) = 0;

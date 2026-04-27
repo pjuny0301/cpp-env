@@ -343,6 +343,46 @@ inline scene::scene_action_binding change_action(std::string action_type, std::s
     return action;
 }
 
+inline scene::scene_quiz_stage quiz_stage_for_screen(quiz_screen_kind screen)
+{
+    return screen == quiz_screen_kind::quiz_feedback
+        ? scene::scene_quiz_stage::feedback
+        : scene::scene_quiz_stage::question;
+}
+
+inline scene::scene_quiz_feedback_state feedback_state_for_outcome(domain::answer_outcome outcome)
+{
+    switch (outcome) {
+        case domain::answer_outcome::correct:
+            return scene::scene_quiz_feedback_state::correct;
+        case domain::answer_outcome::incorrect:
+            return scene::scene_quiz_feedback_state::incorrect;
+        case domain::answer_outcome::skipped:
+            return scene::scene_quiz_feedback_state::skipped;
+        case domain::answer_outcome::marked_unknown:
+            return scene::scene_quiz_feedback_state::marked_unknown;
+        case domain::answer_outcome::marked_known:
+        case domain::answer_outcome::unanswered:
+            return scene::scene_quiz_feedback_state::none;
+    }
+
+    return scene::scene_quiz_feedback_state::none;
+}
+
+inline scene::scene_node_semantics quiz_node_semantics(
+    scene::scene_node_role role,
+    scene::scene_quiz_stage stage,
+    const domain::question_snapshot& question)
+{
+    scene::scene_node_semantics semantics;
+    semantics.role = role;
+    semantics.quiz.stage = stage;
+    semantics.quiz.question_length = scene::classify_question_length(
+        question.prompt,
+        question.long_text.value_or(std::string{}));
+    return semantics;
+}
+
 inline void append_text(
     scene::scene_layout_edit_data& edit_data,
     std::string_view parent_id,
@@ -458,6 +498,8 @@ inline scene::scene_route_state route_for(
     route.metadata["learning_count"] = std::to_string(snapshot.learning.learning_count);
     route.metadata["known_count"] = std::to_string(snapshot.learning.known_count);
     route.metadata["unknown_count"] = std::to_string(snapshot.learning.unknown_count);
+    route.metadata["keyboard_safe_layout"] = bool_string(
+        screen == quiz_screen_kind::quiz_active || screen == quiz_screen_kind::quiz_feedback);
     const bool has_pending_feedback = snapshot.active_session.has_value() && snapshot.active_session->feedback.has_value();
     route.metadata["input_locked"] = bool_string(
         screen == quiz_screen_kind::quiz_feedback
@@ -559,7 +601,10 @@ inline void append_screen_shell(
         "quiz screens root",
         vertical_rule(14.0f, {24.0f, 24.0f, 24.0f, 24.0f}),
         style("screen", "#101820", "#f6f7f9"));
+    root.layout_rule.respect_safe_area = true;
+    root.layout_rule.avoid_keyboard = true;
     root.layout_rule.clip_children = true;
+    root.semantics.role = scene::scene_node_role::app_shell;
     edit_data.append_node("", std::move(root));
 }
 
@@ -806,6 +851,9 @@ inline void append_feedback_banner(
         fixed_height_rule(44.0f, {12.0f, 10.0f, 12.0f, 10.0f}),
         style(is_correct ? "feedback_correct" : "feedback_needs_work", is_correct ? "#28503a" : "#5a3d2c", "#ffffff", 6.0f));
     banner.text_runs.push_back({display_outcome(feedback.outcome), banner.style.token});
+    banner.semantics.role = scene::scene_node_role::quiz_feedback;
+    banner.semantics.quiz.stage = scene::scene_quiz_stage::feedback;
+    banner.semantics.quiz.feedback = feedback_state_for_outcome(feedback.outcome);
     edit_data.append_node(to_string_copy(parent_id), std::move(banner));
 }
 
@@ -818,6 +866,12 @@ inline void append_question_options(
 {
     const std::string section_id = to_string_copy(prefix) + "_options";
     append_section(edit_data, parent_id, section_id, 8.0f);
+    edit_data.set_semantics(
+        section_id,
+        quiz_node_semantics(
+            scene::scene_node_role::quiz_option_group,
+            feedback_visible ? scene::scene_quiz_stage::feedback : scene::scene_quiz_stage::question,
+            question));
 
     for (std::size_t index = 0; index < question.options.size(); ++index) {
         const domain::option_snapshot& option = question.options[index];
@@ -838,6 +892,19 @@ inline void append_question_options(
         }
         option_node.text_runs.push_back({option.text, option_node.style.token});
         option_node.input_enabled = !feedback_visible;
+        option_node.semantics = quiz_node_semantics(
+            scene::scene_node_role::quiz_option,
+            feedback_visible ? scene::scene_quiz_stage::feedback : scene::scene_quiz_stage::question,
+            question);
+        option_node.semantics.quiz.option_index = index;
+        if (option.reveal_correctness) {
+            option_node.semantics.quiz.option_state = option.is_correct
+                ? scene::scene_quiz_option_state::correct
+                : scene::scene_quiz_option_state::incorrect;
+            option_node.semantics.quiz.reveal_correctness = true;
+        } else if (feedback_visible) {
+            option_node.semantics.quiz.option_state = scene::scene_quiz_option_state::disabled;
+        }
         edit_data.append_node(section_id, std::move(option_node));
 
         if (!feedback_visible) {
@@ -855,7 +922,26 @@ inline void append_text_answer_input(
     std::string_view prefix,
     const domain::question_snapshot& question)
 {
+    const std::string dock_id = to_string_copy(prefix) + "_answer_dock";
     const std::string input_id = to_string_copy(prefix) + "_text_answer";
+
+    scene::scene_layout_rule dock_rule = vertical_rule(8.0f);
+    dock_rule.has_height = true;
+    dock_rule.height = 100.0f;
+    dock_rule.anchor_to_keyboard = true;
+
+    scene::scene_node_data dock = node(
+        dock_id,
+        scene::scene_node_kind::container,
+        "answer dock",
+        dock_rule,
+        style("answer_dock"));
+    dock.semantics = quiz_node_semantics(
+        scene::scene_node_role::quiz_answer_dock,
+        scene::scene_quiz_stage::question,
+        question);
+    edit_data.append_node(to_string_copy(parent_id), std::move(dock));
+
     scene::scene_node_data input = node(
         input_id,
         scene::scene_node_kind::input,
@@ -863,12 +949,17 @@ inline void append_text_answer_input(
         fixed_height_rule(48.0f, {12.0f, 12.0f, 12.0f, 12.0f}),
         style("text_input", "#162532", "#ffffff", 6.0f));
     input.text_runs.push_back({"Type answer", "text_input"});
-    edit_data.append_node(to_string_copy(parent_id), std::move(input));
+    input.semantics = quiz_node_semantics(
+        scene::scene_node_role::quiz_answer_input,
+        scene::scene_quiz_stage::question,
+        question);
+    input.semantics.quiz.accepts_keyboard_input = true;
+    edit_data.append_node(dock_id, std::move(input));
     edit_data.bind_action(input_id, change_action("submit_text_answer", question.question_id));
 
     append_button(
         edit_data,
-        parent_id,
+        dock_id,
         to_string_copy(prefix) + "_submit_text",
         "Submit answer",
         press_action("submit_text_answer", question.question_id),
@@ -1075,6 +1166,7 @@ inline void build_quiz_session_screen(
 
     const domain::question_snapshot& question = *session.current_question;
     const bool feedback_visible = screen == quiz_screen_kind::quiz_feedback || session.feedback.has_value();
+    const scene::scene_quiz_stage quiz_stage = detail::quiz_stage_for_screen(screen);
     if (feedback_visible) {
         if (session.feedback.has_value()) {
             detail::append_feedback_banner(edit_data, detail::quiz_screens_root_id, prefix, *session.feedback);
@@ -1089,10 +1181,19 @@ inline void build_quiz_session_screen(
         detail::to_string_copy(prefix) + "_learning_state",
         detail::question_type_name(question.type) + " / " + detail::learning_state_name(question.learning),
         "question_meta");
-    detail::append_text(edit_data, detail::quiz_screens_root_id, detail::to_string_copy(prefix) + "_prompt", question.prompt, "prompt", "#ffffff");
+
+    const std::string prompt_id = detail::to_string_copy(prefix) + "_prompt";
+    detail::append_text(edit_data, detail::quiz_screens_root_id, prompt_id, question.prompt, "prompt", "#ffffff");
+    edit_data.set_semantics(
+        prompt_id,
+        detail::quiz_node_semantics(scene::scene_node_role::quiz_question_prompt, quiz_stage, question));
 
     if (question.long_text.has_value() && !question.long_text->empty()) {
-        detail::append_text(edit_data, detail::quiz_screens_root_id, detail::to_string_copy(prefix) + "_long_text", *question.long_text, "body", "#d8e1e7");
+        const std::string body_id = detail::to_string_copy(prefix) + "_long_text";
+        detail::append_text(edit_data, detail::quiz_screens_root_id, body_id, *question.long_text, "body", "#d8e1e7");
+        edit_data.set_semantics(
+            body_id,
+            detail::quiz_node_semantics(scene::scene_node_role::quiz_question_body, quiz_stage, question));
     }
 
     if (question.image_uri.has_value() && !question.image_uri->empty()) {
@@ -1106,6 +1207,7 @@ inline void build_quiz_session_screen(
         image.image.alt_text = question.prompt;
         image.image.aspect_ratio = 1.777778f;
         image.has_image = true;
+        image.semantics = detail::quiz_node_semantics(scene::scene_node_role::quiz_question_image, quiz_stage, question);
         edit_data.append_node(detail::to_string_copy(detail::quiz_screens_root_id), std::move(image));
     }
 

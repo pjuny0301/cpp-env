@@ -64,6 +64,96 @@ quiz_vulkan::domain::deck make_test_deck()
     return quiz_deck;
 }
 
+void return_to_first_question(quiz_vulkan::app_state& state, std::int64_t now_ms)
+{
+    state.dispatch(quiz_vulkan::domain::make_continue_after_feedback_action(), now_ms);
+    state.dispatch(quiz_vulkan::domain::make_previous_question_action(), now_ms);
+}
+
+void start_first_day_quiz(quiz_vulkan::app_state& state, std::int64_t now_ms)
+{
+    state.dispatch(quiz_vulkan::domain::make_select_day_action("day1"));
+    state.dispatch(quiz_vulkan::domain::make_start_quiz_action(quiz_vulkan::domain::quiz_mode::normal), now_ms);
+}
+
+void test_wrong_note_settings_take_effect()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+    state.dispatch(domain::make_update_setting_action("wrong_note_enabled", "yes"));
+    state.dispatch(domain::make_update_setting_action("wrong_note_threshold", "2"));
+    state.dispatch(domain::make_update_setting_action("wrong_note_release_correct_streak", "2"));
+    start_first_day_quiz(state, 100);
+
+    state.dispatch(domain::make_submit_option_action(1), 110);
+    require(state.learning().at("q1").state == domain::learning_state::learning, "wrong note threshold waits for second miss");
+
+    return_to_first_question(state, 120);
+    state.dispatch(domain::make_submit_option_action(1), 130);
+    require(state.learning().at("q1").state == domain::learning_state::wrong_note, "wrong note threshold moves question after second miss");
+
+    domain::app_snapshot snapshot = state.snapshot();
+    require(snapshot.learning.wrong_note_count == 1, "wrong note setting updates learning summary");
+
+    return_to_first_question(state, 140);
+    state.dispatch(domain::make_submit_option_action(0), 150);
+    require(state.learning().at("q1").state == domain::learning_state::wrong_note, "wrong note release waits for configured streak");
+
+    return_to_first_question(state, 160);
+    state.dispatch(domain::make_submit_option_action(0), 170);
+    require(state.learning().at("q1").state == domain::learning_state::learning, "wrong note release streak restores learning state");
+}
+
+void test_invalid_setting_preserves_prior_rule()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+    state.dispatch(domain::make_update_setting_action("wrong_note_enabled", "on"));
+    state.dispatch(domain::make_update_setting_action("wrong_note_threshold", "2"));
+    state.dispatch(domain::make_update_setting_action("wrong_note_threshold", "0"));
+
+    domain::app_snapshot snapshot = state.snapshot();
+    require(snapshot.error_message.has_value(), "invalid setting surfaces an error");
+    require(*snapshot.error_message == "Invalid setting value for wrong_note_threshold: 0", "invalid setting error message is stable");
+
+    start_first_day_quiz(state, 100);
+    state.dispatch(domain::make_submit_option_action(1), 110);
+    require(state.learning().at("q1").state == domain::learning_state::learning, "invalid setting keeps prior threshold after one miss");
+
+    return_to_first_question(state, 120);
+    state.dispatch(domain::make_submit_option_action(1), 130);
+    require(state.learning().at("q1").state == domain::learning_state::wrong_note, "invalid setting keeps prior threshold after second miss");
+}
+
+void test_known_settings_update_mark_and_auto_promote()
+{
+    using namespace quiz_vulkan;
+
+    app_state marked_state({make_test_deck()});
+    marked_state.dispatch(domain::make_update_setting_action("known_threshold", "5"));
+    marked_state.dispatch(domain::make_update_setting_action("known_review_interval_ms", "2500"));
+    start_first_day_quiz(marked_state, 200);
+    marked_state.dispatch(domain::make_mark_question_known_action(), 210);
+
+    require(marked_state.learning().at("q1").state == domain::learning_state::known, "known setting still marks question known");
+    require(marked_state.learning().at("q1").correct_streak == 5, "known threshold setting changes mark known streak");
+    require(marked_state.learning().at("q1").due_at_ms == 2710, "known interval setting changes review schedule");
+
+    app_state promoted_state({make_test_deck()});
+    promoted_state.dispatch(domain::make_update_setting_action("known_threshold", "2"));
+    promoted_state.dispatch(domain::make_update_setting_action("auto_promote_correct_answers", "true"));
+    start_first_day_quiz(promoted_state, 300);
+
+    promoted_state.dispatch(domain::make_submit_option_action(0), 310);
+    require(promoted_state.learning().at("q1").state == domain::learning_state::learning, "auto promote waits for configured known threshold");
+
+    return_to_first_question(promoted_state, 320);
+    promoted_state.dispatch(domain::make_submit_option_action(0), 330);
+    require(promoted_state.learning().at("q1").state == domain::learning_state::known, "auto promote uses configured known threshold");
+}
+
 } // namespace
 
 int main()
@@ -213,6 +303,10 @@ int main()
     require(snapshot.error_message.has_value(), "error snapshot carries message");
     require(*snapshot.error_message == "Day not found: missing", "invalid day error message is stable");
     require(state.selected_day_id().has_value() && *state.selected_day_id() == "day1", "invalid day does not replace selection");
+
+    test_wrong_note_settings_take_effect();
+    test_invalid_setting_preserves_prior_rule();
+    test_known_settings_update_mark_and_auto_promote();
 
     return 0;
 }

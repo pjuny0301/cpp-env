@@ -93,6 +93,7 @@ private:
     }
 
     static scene_size measure_content(
+        const scene_layout_data& data,
         const scene_node_data& node,
         float max_width,
         const text_metrics_interface& text_metrics)
@@ -110,10 +111,21 @@ private:
             }
         }
 
+        if (!node.children.empty()) {
+            if (node.layout_rule.mode == scene_layout_mode::vertical) {
+                return measure_vertical_children(data, node, max_width, text_metrics);
+            }
+            if (node.layout_rule.mode == scene_layout_mode::horizontal) {
+                return measure_horizontal_children(data, node, max_width, text_metrics);
+            }
+            return measure_overlay_children(data, node, max_width, text_metrics);
+        }
+
         return scene_size{};
     }
 
     static float resolve_width(
+        const scene_layout_data& data,
         const scene_node_data& node,
         const scene_rect& parent_content,
         scene_layout_mode parent_mode,
@@ -125,7 +137,7 @@ private:
             return positive(node.layout_rule.width);
         }
 
-        const scene_size measured = measure_content(node, available, text_metrics);
+        const scene_size measured = measure_content(data, node, available, text_metrics);
         if (node.layout_rule.horizontal_alignment == scene_alignment::stretch || parent_mode == scene_layout_mode::horizontal) {
             return available;
         }
@@ -138,6 +150,7 @@ private:
     }
 
     static float resolve_height(
+        const scene_layout_data& data,
         const scene_node_data& node,
         const scene_rect& parent_content,
         scene_layout_mode parent_mode,
@@ -150,7 +163,7 @@ private:
             return positive(node.layout_rule.height);
         }
 
-        const scene_size measured = measure_content(node, resolved_width, text_metrics);
+        const scene_size measured = measure_content(data, node, resolved_width, text_metrics);
         if (measured.height > 0.0f) {
             return positive(measured.height + node.layout_rule.padding.vertical());
         }
@@ -165,6 +178,97 @@ private:
         }
 
         return 0.0f;
+    }
+
+    static scene_rect measurement_content_rect(float max_width)
+    {
+        return scene_rect{0.0f, 0.0f, positive(max_width), 0.0f};
+    }
+
+    static scene_size measure_vertical_children(
+        const scene_layout_data& data,
+        const scene_node_data& node,
+        float max_width,
+        const text_metrics_interface& text_metrics)
+    {
+        const scene_rect content = measurement_content_rect(max_width - node.layout_rule.padding.horizontal());
+        scene_size measured;
+        bool first = true;
+
+        for (const auto& child_id : node.children) {
+            const scene_node_data* child = data.find_node(child_id);
+            if (child == nullptr || !child->visible) {
+                continue;
+            }
+
+            if (!first) {
+                measured.height += node.layout_rule.gap;
+            }
+
+            const float child_width = resolve_width(data, *child, content, scene_layout_mode::vertical, text_metrics);
+            const float child_height = resolve_height(data, *child, content, scene_layout_mode::vertical, child_width, text_metrics);
+            measured.width = std::max(measured.width, child_width + child->layout_rule.margin.horizontal());
+            measured.height += child->layout_rule.margin.top + child_height + child->layout_rule.margin.bottom;
+            first = false;
+        }
+
+        return measured;
+    }
+
+    static scene_size measure_horizontal_children(
+        const scene_layout_data& data,
+        const scene_node_data& node,
+        float max_width,
+        const text_metrics_interface& text_metrics)
+    {
+        const scene_rect content = measurement_content_rect(max_width - node.layout_rule.padding.horizontal());
+        scene_size measured;
+        bool first = true;
+
+        for (const auto& child_id : node.children) {
+            const scene_node_data* child = data.find_node(child_id);
+            if (child == nullptr || !child->visible) {
+                continue;
+            }
+
+            if (!first) {
+                measured.width += node.layout_rule.gap;
+            }
+
+            const float child_width = resolve_width(data, *child, content, scene_layout_mode::horizontal, text_metrics);
+            const float child_height = resolve_height(data, *child, content, scene_layout_mode::horizontal, child_width, text_metrics);
+            measured.width += child->layout_rule.margin.left + child_width + child->layout_rule.margin.right;
+            measured.height = std::max(measured.height, child->layout_rule.margin.top + child_height + child->layout_rule.margin.bottom);
+            first = false;
+        }
+
+        return measured;
+    }
+
+    static scene_size measure_overlay_children(
+        const scene_layout_data& data,
+        const scene_node_data& node,
+        float max_width,
+        const text_metrics_interface& text_metrics)
+    {
+        const scene_rect content = measurement_content_rect(max_width - node.layout_rule.padding.horizontal());
+        scene_size measured;
+
+        for (const auto& child_id : node.children) {
+            const scene_node_data* child = data.find_node(child_id);
+            if (child == nullptr || !child->visible) {
+                continue;
+            }
+
+            const float child_width = resolve_width(data, *child, content, scene_layout_mode::overlay, text_metrics);
+            const float child_height = resolve_height(data, *child, content, scene_layout_mode::overlay, child_width, text_metrics);
+            const float child_x = (child->layout_rule.has_x ? child->layout_rule.x : 0.0f) + child->layout_rule.margin.left;
+            const float child_y = (child->layout_rule.has_y ? child->layout_rule.y : 0.0f) + child->layout_rule.margin.top;
+            measured.width = std::max(measured.width, child_x + child_width + child->layout_rule.margin.right);
+            measured.height = std::max(measured.height, child_y + child_height + child->layout_rule.margin.bottom);
+        }
+
+        return measured;
     }
 
     static float align_x(const scene_node_data& node, const scene_rect& parent_content, float width)
@@ -196,35 +300,38 @@ private:
     }
 
     static scene_rect child_bounds_for_overlay(
+        const scene_layout_data& data,
         const scene_node_data& child,
         const scene_rect& parent_content,
         const text_metrics_interface& text_metrics)
     {
-        const float width = resolve_width(child, parent_content, scene_layout_mode::overlay, text_metrics);
-        const float height = resolve_height(child, parent_content, scene_layout_mode::overlay, width, text_metrics);
+        const float width = resolve_width(data, child, parent_content, scene_layout_mode::overlay, text_metrics);
+        const float height = resolve_height(data, child, parent_content, scene_layout_mode::overlay, width, text_metrics);
         return scene_rect{align_x(child, parent_content, width), align_y(child, parent_content, height), width, height};
     }
 
     static scene_rect child_bounds_for_vertical(
+        const scene_layout_data& data,
         const scene_node_data& child,
         const scene_rect& parent_content,
         float y,
         const text_metrics_interface& text_metrics)
     {
-        const float width = resolve_width(child, parent_content, scene_layout_mode::vertical, text_metrics);
-        const float height = resolve_height(child, parent_content, scene_layout_mode::vertical, width, text_metrics);
+        const float width = resolve_width(data, child, parent_content, scene_layout_mode::vertical, text_metrics);
+        const float height = resolve_height(data, child, parent_content, scene_layout_mode::vertical, width, text_metrics);
         const float x = align_x(child, parent_content, width);
         return scene_rect{x, y + child.layout_rule.margin.top, width, height};
     }
 
     static scene_rect child_bounds_for_horizontal(
+        const scene_layout_data& data,
         const scene_node_data& child,
         const scene_rect& parent_content,
         float x,
         const text_metrics_interface& text_metrics)
     {
-        const float width = resolve_width(child, parent_content, scene_layout_mode::horizontal, text_metrics);
-        const float height = resolve_height(child, parent_content, scene_layout_mode::horizontal, width, text_metrics);
+        const float width = resolve_width(data, child, parent_content, scene_layout_mode::horizontal, text_metrics);
+        const float height = resolve_height(data, child, parent_content, scene_layout_mode::horizontal, width, text_metrics);
         const float y = align_y(child, parent_content, height);
         return scene_rect{x + child.layout_rule.margin.left, y, width, height};
     }
@@ -249,7 +356,7 @@ private:
                 if (!first) {
                     y += node.layout_rule.gap;
                 }
-                scene_rect child_bounds = child_bounds_for_vertical(*child, content_bounds, y, text_metrics);
+                scene_rect child_bounds = child_bounds_for_vertical(data, *child, content_bounds, y, text_metrics);
                 place_node(data, *child, child_bounds, environment, text_metrics, output, depth + 1);
                 y = child_bounds.bottom() + child->layout_rule.margin.bottom;
                 first = false;
@@ -268,7 +375,7 @@ private:
                 if (!first) {
                     x += node.layout_rule.gap;
                 }
-                scene_rect child_bounds = child_bounds_for_horizontal(*child, content_bounds, x, text_metrics);
+                scene_rect child_bounds = child_bounds_for_horizontal(data, *child, content_bounds, x, text_metrics);
                 place_node(data, *child, child_bounds, environment, text_metrics, output, depth + 1);
                 x = child_bounds.right() + child->layout_rule.margin.right;
                 first = false;
@@ -281,7 +388,7 @@ private:
             if (child == nullptr || !child->visible) {
                 continue;
             }
-            scene_rect child_bounds = child_bounds_for_overlay(*child, content_bounds, text_metrics);
+            scene_rect child_bounds = child_bounds_for_overlay(data, *child, content_bounds, text_metrics);
             place_node(data, *child, child_bounds, environment, text_metrics, output, depth + 1);
         }
     }

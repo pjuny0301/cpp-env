@@ -1,7 +1,10 @@
+#include "core/layout/layout_placer.h"
 #include "core/domain/app_snapshot.hpp"
 #include "core/ui/quiz_screens.h"
 
 #include <cassert>
+#include <cmath>
+#include <cstddef>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -15,6 +18,26 @@ void require(bool condition, const char* message)
     assert((condition) && message);
 }
 
+bool near(float actual, float expected)
+{
+    return std::fabs(actual - expected) < 0.001f;
+}
+
+class fixed_text_metrics final : public quiz_vulkan::scene::text_metrics_interface {
+public:
+    quiz_vulkan::scene::scene_size measure_text(
+        const std::vector<quiz_vulkan::scene::scene_text_run>& text_runs,
+        const quiz_vulkan::scene::scene_style&,
+        float) const override
+    {
+        std::size_t character_count = 0;
+        for (const auto& run : text_runs) {
+            character_count += run.text.size();
+        }
+        return quiz_vulkan::scene::scene_size{static_cast<float>(character_count * 8), 18.0f};
+    }
+};
+
 quiz_vulkan::domain::deck make_test_deck()
 {
     using namespace quiz_vulkan::domain;
@@ -25,6 +48,28 @@ quiz_vulkan::domain::deck make_test_deck()
     quiz_question.type = question_type::answer;
     quiz_question.options.push_back(option{"Seoul", true});
     quiz_question.options.push_back(option{"Busan", false});
+
+    day quiz_day;
+    quiz_day.id = "day1";
+    quiz_day.title = "Day 1";
+    quiz_day.questions.push_back(std::move(quiz_question));
+
+    deck quiz_deck;
+    quiz_deck.id = "deck1";
+    quiz_deck.title = "Geography";
+    quiz_deck.days.push_back(std::move(quiz_day));
+    return quiz_deck;
+}
+
+quiz_vulkan::domain::deck make_blank_input_deck()
+{
+    using namespace quiz_vulkan::domain;
+
+    question quiz_question;
+    quiz_question.id = "q_blank";
+    quiz_question.prompt = "Fill the blank";
+    quiz_question.type = question_type::blank;
+    quiz_question.accepted_answers.push_back("Seoul");
 
     day quiz_day;
     quiz_day.id = "day1";
@@ -68,6 +113,16 @@ void apply_patch_to_scene(
 {
     const quiz_vulkan::scene::scene_layout_apply_result result = patch.apply_to(data);
     require(result.applied(), "screen patch applies");
+}
+
+void require_within_visible_bottom(
+    const quiz_vulkan::scene::placed_scene& placed,
+    const char* node_id,
+    const char* message)
+{
+    const quiz_vulkan::scene::placed_scene_node* node = placed.find_node(node_id);
+    require(node != nullptr, message);
+    require(node->bounds.bottom() <= placed.usable_bounds.bottom() + 0.001f, message);
 }
 
 } // namespace
@@ -131,6 +186,56 @@ int main()
     require(first_option->input_enabled, "active first option is enabled");
     require(first_option->has_action_binding, "active first option action exists");
     require(first_option->action_binding.action_type == "submit_option", "active first option submits option");
+
+    std::vector<domain::deck> blank_decks;
+    blank_decks.push_back(make_blank_input_deck());
+    domain::quiz_session blank_session = make_active_session(blank_decks.front());
+    const domain::app_snapshot blank_snapshot = make_snapshot(blank_decks, &blank_session);
+    scene::scene_layout_data blank_data("test_blank_input");
+    apply_patch_to_scene(ui::make_quiz_screen_patch(blank_snapshot), blank_data);
+    require(blank_data.route_state().screen_id == "quiz_active", "blank input route selected");
+    require(blank_data.route_state().metadata.at("keyboard_safe_layout") == "true", "blank input advertises keyboard-safe layout");
+    require(blank_data.has_focus(), "blank input screen has focus");
+    require(blank_data.focus_id() == "quiz_active_text_answer", "blank input focuses text answer");
+
+    const scene::scene_node_data* blank_root = blank_data.find_node("quiz_screens_root");
+    require(blank_root != nullptr, "blank input root exists");
+    require(blank_root->layout_rule.respect_safe_area, "blank input root respects safe area");
+    require(blank_root->layout_rule.avoid_keyboard, "blank input root avoids keyboard");
+
+    const scene::scene_node_data* answer_dock = blank_data.find_node("quiz_active_answer_dock");
+    require(answer_dock != nullptr, "blank input answer dock exists");
+    require(answer_dock->layout_rule.anchor_to_keyboard, "blank input answer dock anchors to keyboard");
+    require(answer_dock->semantics.role == scene::scene_node_role::quiz_answer_dock, "blank input answer dock is tagged");
+
+    const scene::scene_node_data* text_answer = blank_data.find_node("quiz_active_text_answer");
+    require(text_answer != nullptr, "blank input text answer exists");
+    require(text_answer->semantics.role == scene::scene_node_role::quiz_answer_input, "blank input answer is tagged");
+    require(text_answer->semantics.quiz.accepts_keyboard_input, "blank input answer accepts keyboard input");
+
+    fixed_text_metrics metrics;
+    scene::scene_layout_environment keyboard_environment;
+    keyboard_environment.viewport = {0.0f, 0.0f, 360.0f, 640.0f};
+    keyboard_environment.safe_area = {0.0f, 24.0f, 0.0f, 16.0f};
+    keyboard_environment.keyboard.visible = true;
+    keyboard_environment.keyboard.bottom_inset = 220.0f;
+    keyboard_environment.keyboard.focused_node_id = blank_data.focus_id();
+
+    const scene::placed_scene blank_placed = scene::layout_placer().place_with_environment(
+        blank_data,
+        keyboard_environment,
+        metrics);
+    require(near(blank_placed.usable_bounds.bottom(), 420.0f), "keyboard inset sets visible bottom");
+    require_within_visible_bottom(blank_placed, "quiz_active_prompt", "blank input prompt remains visible");
+    require_within_visible_bottom(blank_placed, "quiz_active_answer_dock", "blank input dock remains visible");
+    require_within_visible_bottom(blank_placed, "quiz_active_text_answer", "blank input text answer remains visible");
+
+    const scene::placed_scene_node* placed_answer_dock = blank_placed.find_node("quiz_active_answer_dock");
+    const scene::placed_scene_node* placed_text_answer = blank_placed.find_node("quiz_active_text_answer");
+    require(placed_answer_dock != nullptr, "placed answer dock exists");
+    require(placed_text_answer != nullptr, "placed text answer exists");
+    require(near(placed_answer_dock->bounds.y, 180.0f), "answer dock has stable keyboard-safe placement");
+    require(near(placed_text_answer->bounds.y, 180.0f), "text answer starts at the dock top");
 
     domain::quiz_session feedback_session = make_active_session(decks.front());
     const std::optional<domain::answer_record> feedback_record = domain::submit_option_answer(

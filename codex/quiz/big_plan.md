@@ -4,6 +4,8 @@
 
 요구사항 번호는 실행 순서가 아니라 추적 ID다. 실제 구현은 아래 의존관계 기반 단계 순서를 따르며, 뒤 단계는 앞 단계의 계약과 검증 결과를 소비한다.
 
+요구사항별 문서, 하위 프로젝트 계획, 현재 코드/테스트 증거는 [requirements_traceability_matrix.md](requirements_traceability_matrix.md)에서 추적한다.
+
 ## 목표
 
 - PDF 본문/문제/이미지에서 학습 자료를 추출하고, AI로 퀴즈와 해설을 생성한다.

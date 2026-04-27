@@ -1,6 +1,11 @@
 #include "app/app_state.h"
 
+#include <charconv>
+#include <cctype>
+#include <limits>
 #include <string>
+#include <string_view>
+#include <system_error>
 #include <utility>
 #include <variant>
 
@@ -11,6 +16,190 @@ template <typename T>
 const T* payload_if(const domain::app_action& action)
 {
     return std::get_if<T>(&action.payload);
+}
+
+enum class setting_rule_result {
+    applied,
+    ignored,
+    invalid,
+};
+
+bool is_space(char value)
+{
+    return std::isspace(static_cast<unsigned char>(value)) != 0;
+}
+
+std::string_view trim(std::string_view value)
+{
+    while (!value.empty() && is_space(value.front())) {
+        value.remove_prefix(1);
+    }
+
+    while (!value.empty() && is_space(value.back())) {
+        value.remove_suffix(1);
+    }
+
+    return value;
+}
+
+std::string normalized_setting_value(std::string_view value)
+{
+    value = trim(value);
+
+    std::string normalized;
+    normalized.reserve(value.size());
+
+    for (const char character : value) {
+        normalized.push_back(static_cast<char>(
+            std::tolower(static_cast<unsigned char>(character))));
+    }
+
+    return normalized;
+}
+
+std::optional<bool> parse_bool_setting(std::string_view value)
+{
+    const std::string normalized = normalized_setting_value(value);
+
+    if (normalized == "true" || normalized == "1" || normalized == "yes" || normalized == "on") {
+        return true;
+    }
+
+    if (normalized == "false" || normalized == "0" || normalized == "no" || normalized == "off") {
+        return false;
+    }
+
+    return std::nullopt;
+}
+
+std::optional<std::int64_t> parse_positive_int64_setting(std::string_view value)
+{
+    value = trim(value);
+    if (value.empty()) {
+        return std::nullopt;
+    }
+
+    std::int64_t parsed = 0;
+    const char* begin = value.data();
+    const char* end = value.data() + value.size();
+    const auto [parse_end, error] = std::from_chars(begin, end, parsed);
+
+    if (error != std::errc{} || parse_end != end || parsed <= 0) {
+        return std::nullopt;
+    }
+
+    return parsed;
+}
+
+std::optional<int> parse_positive_int_setting(std::string_view value)
+{
+    const std::optional<std::int64_t> parsed = parse_positive_int64_setting(value);
+    if (!parsed.has_value() || *parsed > std::numeric_limits<int>::max()) {
+        return std::nullopt;
+    }
+
+    return static_cast<int>(*parsed);
+}
+
+std::string invalid_setting_message(const domain::update_setting_action& setting)
+{
+    return "Invalid setting value for " + setting.name + ": " + setting.value;
+}
+
+setting_rule_result apply_learning_rule_setting(
+    const domain::update_setting_action& setting,
+    domain::learning_update_rules& rules,
+    std::string& error_message)
+{
+    if (setting.name == "wrong_note_enabled") {
+        const std::optional<bool> parsed = parse_bool_setting(setting.value);
+        if (!parsed.has_value()) {
+            error_message = invalid_setting_message(setting);
+            return setting_rule_result::invalid;
+        }
+
+        rules.wrong_note_enabled = *parsed;
+        return setting_rule_result::applied;
+    }
+
+    if (setting.name == "auto_promote_correct_answers") {
+        const std::optional<bool> parsed = parse_bool_setting(setting.value);
+        if (!parsed.has_value()) {
+            error_message = invalid_setting_message(setting);
+            return setting_rule_result::invalid;
+        }
+
+        rules.auto_promote_correct_answers = *parsed;
+        return setting_rule_result::applied;
+    }
+
+    if (setting.name == "wrong_note_threshold") {
+        const std::optional<int> parsed = parse_positive_int_setting(setting.value);
+        if (!parsed.has_value()) {
+            error_message = invalid_setting_message(setting);
+            return setting_rule_result::invalid;
+        }
+
+        rules.wrong_note_threshold = *parsed;
+        return setting_rule_result::applied;
+    }
+
+    if (setting.name == "wrong_note_release_correct_streak") {
+        const std::optional<int> parsed = parse_positive_int_setting(setting.value);
+        if (!parsed.has_value()) {
+            error_message = invalid_setting_message(setting);
+            return setting_rule_result::invalid;
+        }
+
+        rules.wrong_note_release_correct_streak = *parsed;
+        return setting_rule_result::applied;
+    }
+
+    if (setting.name == "known_threshold") {
+        const std::optional<int> parsed = parse_positive_int_setting(setting.value);
+        if (!parsed.has_value()) {
+            error_message = invalid_setting_message(setting);
+            return setting_rule_result::invalid;
+        }
+
+        rules.known_threshold = *parsed;
+        return setting_rule_result::applied;
+    }
+
+    if (setting.name == "swipe_known_threshold") {
+        const std::optional<int> parsed = parse_positive_int_setting(setting.value);
+        if (!parsed.has_value()) {
+            error_message = invalid_setting_message(setting);
+            return setting_rule_result::invalid;
+        }
+
+        rules.swipe_known_threshold = *parsed;
+        return setting_rule_result::applied;
+    }
+
+    if (setting.name == "wrong_release") {
+        const std::optional<int> parsed = parse_positive_int_setting(setting.value);
+        if (!parsed.has_value()) {
+            error_message = invalid_setting_message(setting);
+            return setting_rule_result::invalid;
+        }
+
+        rules.wrong_release = *parsed;
+        return setting_rule_result::applied;
+    }
+
+    if (setting.name == "known_review_interval_ms") {
+        const std::optional<std::int64_t> parsed = parse_positive_int64_setting(setting.value);
+        if (!parsed.has_value()) {
+            error_message = invalid_setting_message(setting);
+            return setting_rule_result::invalid;
+        }
+
+        rules.known_review_interval_ms = *parsed;
+        return setting_rule_result::applied;
+    }
+
+    return setting_rule_result::ignored;
 }
 
 } // namespace
@@ -155,6 +344,21 @@ void app_state::dispatch(const domain::app_action& action, std::int64_t now_ms)
         return;
     }
 
+    if (const auto* payload = payload_if<domain::update_setting_action>(action)) {
+        settings_[payload->name] = payload->value;
+
+        std::string setting_error;
+        const setting_rule_result result = apply_learning_rule_setting(
+            *payload,
+            learning_rules_,
+            setting_error);
+        if (result == setting_rule_result::invalid) {
+            error_message_ = std::move(setting_error);
+        }
+
+        return;
+    }
+
     const domain::deck* deck = selected_deck();
     if (deck == nullptr || !active_session_.has_value()) {
         error_message_ = "No active quiz";
@@ -216,10 +420,6 @@ void app_state::dispatch(const domain::app_action& action, std::int64_t now_ms)
     if (payload_if<domain::continue_after_feedback_action>(action) != nullptr) {
         domain::continue_after_feedback(*active_session_);
         return;
-    }
-
-    if (const auto* payload = payload_if<domain::update_setting_action>(action)) {
-        settings_[payload->name] = payload->value;
     }
 }
 

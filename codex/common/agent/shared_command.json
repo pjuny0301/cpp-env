@@ -61,6 +61,24 @@
     "credential handling",
     "cross-machine environment mutation without user approval"
   ],
+  "quiz_vulkan_remake_coordination": {
+    "main_agent_role": "Project manager, reviewer, merge integrator, and final verifier.",
+    "sub_agent_rule": "Use sub-agents only for bounded, non-overlapping work scopes; each worker owns its listed files and must not revert others.",
+    "plugin_policy": "Give role-specific plugins only when they directly help the assigned scope. Native C++/Vulkan/domain workers usually need no plugin. Frontend or browser UI workers may get Playwright/browser tooling. Android runtime validation workers may get the Android testing plugin.",
+    "read_order": [
+      "codex/quiz/big_plan.md",
+      "codex/quiz/requirements_traceability_matrix.md",
+      "codex/quiz/구현/NN.md",
+      "codex/quiz/<project>/big_plan.md",
+      "codex/quiz/<project>/구현/NN.md",
+      "apps/quiz/<project>/AGENTS.md"
+    ],
+    "current_priority": [
+      "Keep apps/quiz code-only, build/out for outputs, and build/external for dependencies.",
+      "Advance native C++/Vulkan replacement from domain/FSM contracts to scene/layout to renderer smoke.",
+      "Update codex/quiz/requirements_traceability_matrix.md whenever code or test evidence changes."
+    ]
+  },
   "token_budget_rules": [
     "Prefer compact JSON metadata before large rendered artifacts.",
     "Write shared task instructions here once, then have local agents read this file before acting."

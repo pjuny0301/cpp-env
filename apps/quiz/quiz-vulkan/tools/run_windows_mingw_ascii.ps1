@@ -1,0 +1,63 @@
+$ErrorActionPreference = "Stop"
+
+$repoRoot = Split-Path -Parent $PSScriptRoot
+$buildRoot = Join-Path $repoRoot "..\..\..\build\out\quiz\quiz-vulkan\windows-mingw-ascii"
+$cmake = "C:\Program Files\CMake\bin\cmake.exe"
+$ctest = "C:\Program Files\CMake\bin\ctest.exe"
+$commandProcessorKey = "HKCU:\Software\Microsoft\Command Processor"
+$hadAutoRun = $false
+$oldAutoRun = $null
+$exitCode = 0
+
+function Invoke-Step {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $Name,
+        [Parameter(Mandatory = $true)]
+        [string] $FilePath,
+        [Parameter(Mandatory = $true)]
+        [string[]] $ArgumentList
+    )
+
+    Write-Host "==> $Name"
+    $process = Start-Process `
+        -FilePath $FilePath `
+        -ArgumentList $ArgumentList `
+        -WorkingDirectory $repoRoot `
+        -NoNewWindow `
+        -Wait `
+        -PassThru
+    if ($process.ExitCode -ne 0) {
+        throw "$Name failed with exit code $($process.ExitCode)"
+    }
+}
+
+try {
+    if (Test-Path $commandProcessorKey) {
+        $autoRun = Get-ItemProperty -Path $commandProcessorKey -Name AutoRun -ErrorAction SilentlyContinue
+        if ($null -ne $autoRun) {
+            $hadAutoRun = $true
+            $oldAutoRun = $autoRun.AutoRun
+            Remove-ItemProperty -Path $commandProcessorKey -Name AutoRun
+        }
+    }
+
+    $env:PATH = "C:\qtmingw1310_ascii\bin;C:\qtmingw1310_ascii\x86_64-w64-mingw32\bin;C:\dev\tools\ninja-1.13.2;C:\Program Files\CMake\bin;C:\Windows\System32;C:\Windows"
+    Set-Location -LiteralPath $repoRoot
+
+    Invoke-Step "configure" $cmake @("--preset", "windows-mingw-ascii")
+    Invoke-Step "build" $cmake @("--build", "--preset", "windows-mingw-ascii-debug")
+    Invoke-Step "test" $ctest @("--test-dir", $buildRoot, "--output-on-failure")
+}
+catch {
+    $exitCode = 1
+    Write-Error $_
+}
+finally {
+    if ($hadAutoRun) {
+        New-Item -Path $commandProcessorKey -Force | Out-Null
+        New-ItemProperty -Path $commandProcessorKey -Name AutoRun -Value $oldAutoRun -PropertyType String -Force | Out-Null
+    }
+}
+
+exit $exitCode

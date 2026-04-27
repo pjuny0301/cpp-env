@@ -1,0 +1,51 @@
+퀴즈관리앱/퀴즈앱 요구사항 시행표
+작성일: 2026-04-18
+
+표기:
+O = 시행 또는 검증 완료
+X = 아직 미시행
+
+1. [O] 파일/폴더 생성은 Git 트리 빈 영역 우클릭으로 이동했고, 폴더/파일 항목 우클릭은 이름 바꾸기와 삭제만 표시한다.
+2. [O] 가로모드에서 퀴즈 발견 요약을 접어 퀴즈가 더 보이게 했다.
+3. [O] 퀴즈앱 이미지 로딩을 로컬 HTTP Git 폴더 구조에서 스크린샷으로 확인했다.
+4. [O] Git 트리와 추출결과 패널이 겹치지 않도록 dock offset을 적용했다.
+5. [O] 추출결과 패널의 하단/오른쪽 스냅 임계값을 키워 붙이기 쉽게 했다.
+6. [O] 레이아웃 미리보기 색을 구분선과 다른 흐린 emerald 계열로 바꿨다.
+7. [O] Git commit 창을 draggable 상단바가 있는 작은 창으로 바꿨다.
+8. [O] Git tree 하단 dock 폭을 적당히 늘리고 새로고침/Commit/Push 버튼을 재배치했다.
+9. [O] Pull 버튼은 새로고침 버튼으로 대체했다.
+10. [O] 퀴즈앱 오답 상태에서 빨간 테두리를 제거하고 빨간 글씨만 남겼다.
+11. [O] Ctrl+Enter 두 번으로 다음 문제를 선택형으로 지정하고 #Quiz. N 옆에 #Select를 추가한다.
+12. [O] 구분선을 클릭한 상태에서 Ctrl+Enter로 선택형 전환되게 했다.
+13. [O] #Select 우클릭 Delete로 선택형 표시를 제거한다.
+14. [O] Ctrl+' 단축키를 현재 문제 정답 입력 이동으로 지정했다.
+15. [O] 선택형 정답 입력에서 Enter 두 번으로 본문형 #Selection List 편집창을 띄운다.
+16. [O] #Selection List 전용창은 흐린 회색/푸른색 영역, #1/#2 입력, Enter 추가, Enter 두 번 반영, 더블클릭/Ctrl+i 확인 흐름을 구현했다.
+17. [O] Tab 다음 퀴즈, Ctrl+Tab 후 Ctrl+Backspace 이전 퀴즈 이동을 구현했다.
+18. [O] Codex 창은 더 크게 만들고 이동 가능하게 했으며, Tauri에서는 codex exec 응답을 채팅으로 표시하고 quiz-editor-json 패치를 편집기에 바로 반영한다.
+19. [O] 퀴즈앱/안드로이드 데이터 정규화에서 선지가 부족하면 다른 문제의 정답에서 가져온다.
+20. [O] 전체랜덤학습은 Day가 아니라 Deck 화면에서 Deck 전체 대상으로 동작한다.
+21. [O] Ctrl+Enter 시 오른쪽으로 불필요하게 밀리는 문제와 구분선 과다 줄바꿈을 수정했다.
+22. [O] 모바일 앱은 Git URL을 파일이 아니라 폴더로 받아 바로 하단 폴더를 Deck, 그 밑 JSON 파일을 Day로 인식한다.
+23. [O] 데스크톱 Git 트리는 하위 폴더를 더블클릭하면 해당 폴더 기준으로 이동하고, 경로 입력에 슬래시를 허용한다.
+24. [O] Git 트리에서 하위 폴더/파일은 상위 폴더 화면에서 숨기고 현재 상대경로의 직계 항목만 표시한다.
+25. [O] 데스크톱 퀴즈관리앱/데스크톱 퀴즈앱 배포 빌드를 완료했다.
+26. [O] Android arm64 release APK를 빌드했고, 설치 확인용 debug-signed APK도 생성했다.
+27. [O] 파일 메뉴에서 연결 가능한 Git 퀴즈데이터 레포지토리를 선택할 수 있게 했다.
+28. [O] Git 편집 후 Commit할 때 선택된 파일 내용을 먼저 저장한 다음 커밋하도록 수정했다.
+29. [O] 퀴즈앱 결과 화면에 전체다시풀기, 오답만, 다음 Day 이동을 추가했다.
+30. [O] 단답형(answer) 퀴즈 유형을 추가하고 정답 입력/채점/결과 표시를 구현했다.
+31. [O] C:\pdf 자료를 읽어 시험대비용 퀴즈 49개와 SVG 그림 2개를 생성해 pjuny0301/quiz-data에 커밋/푸시했다.
+32. [O] Android/퀴즈앱 Git 입력 링크 `https://github.com/pjuny0301/quiz-data/tree/main/mobile-decks` 로딩을 브라우저에서 검증했다.
+33. [O] 특정 Deck 직접 링크 `https://github.com/pjuny0301/quiz-data/tree/main/mobile-decks/software-engineering-exam-prep` 도 Deck 1개/Day 7개로 로딩되게 수정하고 검증했다.
+34. [O] Android Git 입력 실패 대응: repo 루트, `.git`, `pjuny0301\quiz-data` 입력도 자동으로 `mobile-decks` 경로로 정규화하고 실패 상세 메시지를 표시하게 했다.
+35. [O] Android release APK가 `http://localhost:5173` 개발 서버를 보던 문제를 수정했다. Android 전용 Tauri 설정에서 devUrl을 제거하고 `custom-protocol` 릴리스 feature로 다시 빌드/서명했으며, 최종 APK에 `localhost:5173` 문자열이 없음을 확인했다.
+36. [O] `C:\pdf` 강의자료를 다시 추출해 시험대비용 `software-engineering-exam-prep` 덱을 7 Days, 132문항, 이미지 5개로 확장했고 `pjuny0301/quiz-data`에 커밋/푸시했다. GitHub 원격 JSON과 asset 접근, 앱 Git 로딩 화면을 검증했다.
+37. [O] (B1) 문제 화면에서 좌/우 스와이프(60px 이상, 800ms 이내, 세로 40px 이하)로 피드백 없이 다음 문제로 넘어가도록 QuizActive에 PointerEvent 기반 제스처를 추가했다.
+38. [O] (B5) 선택형 정답 확인 시 표시되던 "내 선택 / 정답" 빨간·파란 박스를 제거했다 — 옵션 자체의 노란/회색 상태만 남겼다.
+39. [O] (B6) 선택형 오답/정답 시 화면 중앙에 뜨던 큰 원형 X/Check 오버레이를 제거했다 — 정답 이동 속도감 확보.
+40. [O] (A1 최소) data.ts의 QuestionType에 `multiselect`를 추가하고 normalizeQuestion/normalizeOptions/rebuildOptionsFromPeerAnswers에 경로를 열었다.
+41. [O] (B7) multiselect 유형 UI를 QuizActive에 추가했다 — 상단에 정답 개수만큼 빈칸 슬롯이 뜨고, 선지를 순서대로 탭하면 슬롯을 차례로 채우며 scale/transform 애니메이션 없이 반응한다. 완료 버튼이 `n / N` 진행을 표시하다 집계 끝나면 "제출"로 바뀐다.
+42. [O] (E2 최소 + B2) context.tsx에 `LearningMap` (correctStreak/wrongCount/state) 과 `knownThreshold`·`wrongRelease` 설정을 추가하고, QuizActive가 모든 정답 제출 시 `recordQuestionAnswer`를 호출해 연속 정답이 임계값에 도달하면 자동으로 'known'으로 승급, known 상태에서 오답이 해제 임계값에 도달하면 'learning'으로 복귀한다. 인-퀴즈 설정 모달에 두 임계값 슬라이더를 노출했다.
+43. [O] (B4) 문제 영역 롱프레스 600ms 이상 시 `markQuestionUnknown` 호출 + 즉시 다음 문제로 스킵. 스와이프 핸들러와 충돌 없이 동작하도록 `longPressTriggeredRef` 가드를 두었다.
+44. [O] (B3) QuizActive baseQuestions 단계에서 기본적으로 'known' 상태 문제를 제외하고, URL `?mode=known` 일 때만 'known' 문제를 본다. DayIntro에 "이미 앎 N문제 다시 보기" 버튼과 학습 대기/이미 앎 카운트 표시를 추가했다.

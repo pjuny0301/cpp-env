@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "project": "quiz-vulkan",
+  "goal": "Native C++ Vulkan quiz player rewrite. Keep the user's UI pipeline as a UI subsystem, not the whole app architecture.",
+  "naming": {
+    "types": "snake_case",
+    "functions": "snake_case",
+    "files": "snake_case"
+  },
+  "architecture": {
+    "domain_services": [
+      "quiz data loading and normalization",
+      "learning state",
+      "quiz session state machine",
+      "persistence",
+      "remote/local asset loading"
+    ],
+    "ui_subsystem": [
+      "modifier_interface",
+      "scene_layout_data_modifier",
+      "scene_layout_patch",
+      "scene_layout_edit_data",
+      "scene_layout_data",
+      "layout_placer",
+      "ui_renderer",
+      "vulkan_renderer"
+    ],
+    "flow": "ui modifier emits app_action; app shell applies it to domain services; next frame passes app_snapshot back to UI"
+  },
+  "write_owners": {
+    "agent_a_scaffold_platform": [
+      "CMakeLists.txt",
+      "CMakePresets.json",
+      "vcpkg.json",
+      "src/app/",
+      "src/platform/"
+    ],
+    "agent_b_domain": [
+      "src/core/domain/",
+      "tests/domain/"
+    ],
+    "agent_c_scene_layout": [
+      "src/core/scene/",
+      "src/core/layout/",
+      "tests/scene/",
+      "tests/layout/"
+    ],
+    "agent_d_renderer": [
+      "src/render/vulkan/",
+      "src/core/ui/ui_renderer*"
+    ],
+    "agent_e_quiz_screens": [
+      "src/core/ui/quiz_screens*"
+    ],
+    "agent_f_verification": [
+      "tests/",
+      "tools/",
+      "docs/test-plan.md"
+    ]
+  },
+  "source_context": {
+    "react_reference": "C:/aa/apps/quiz/android-quiz-app/src/app",
+    "quiz_data": "C:/aa/build/external/quiz/quiz-data/mobile-decks",
+    "do_not_repeatedly_read_large_react_files": true
+  },
+  "token_rules": [
+    "Read this brief first.",
+    "Read only your owned files plus required headers.",
+    "Keep build log excerpts to the last 100-200 relevant lines.",
+    "Ask main agent before changing shared contracts outside your owner scope."
+  ]
+}

@@ -1,0 +1,20 @@
+# Build outputs
+build/
+out/
+dist/
+target/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+
+# Local IDE state
+.vs/
+.vscode/.browse.VC.db*
+.vscode/ipch/
+
+# Runtime artifacts
+*.log
+*.tmp
+screenshots/
+

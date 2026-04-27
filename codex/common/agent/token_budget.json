@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "read_first": [
+    "codex/common/agent/shared_command.json",
+    "codex/common/agent/token_budget.json",
+    "build/external/tools/bootstrap/codex_env/defaults/local_agent_policy.json",
+    "codex/common/agent/AGENTS.md"
+  ],
+  "working_set": [
+    ".gitignore",
+    "AGENTS.md",
+    "README.md",
+    "codex/common/agent/",
+    "build/external/tools/bootstrap/",
+    "codex/quiz/"
+  ],
+  "ignore_by_default": [
+    ".git/",
+    "codex/common/mcp/",
+    "build/out/",
+    "build/external/quiz/dependencies/",
+    "build/external/quiz/legacy/"
+  ],
+  "hard_skip_globs": [
+    "**/src-tauri/target-codex-build/**",
+    "**/src-tauri/target-codex-desktop/**",
+    "**/build-artifacts/**",
+    "build/out/**",
+    "build/external/quiz/dependencies/**"
+  ],
+  "generated_or_large_text_rules": [
+    {
+      "paths": [
+        "**/package-lock.json"
+      ],
+      "policy": "Read only for dependency or install-version issues."
+    },
+    {
+      "paths": [
+        "**/src-tauri/gen/schemas/**"
+      ],
+      "policy": "Treat as generated output. Read source config first and delegate summarization when possible."
+    },
+    {
+      "paths": [
+        "codex/quiz/일자별요구사항/*/generated/*/plan_summary.docx",
+        "codex/quiz/일자별요구사항/*/generated/*/plan_summary.pdf"
+      ],
+      "policy": "Avoid unless the task is layout or render verification."
+    }
+  ],
+  "tool_discovery_read_order": [
+    "C:/codex-local/registry/tool-registry.json",
+    "C:/codex-local/tools/*/tool.json",
+    "C:/codex-local/tools/*/README.md"
+  ]
+}

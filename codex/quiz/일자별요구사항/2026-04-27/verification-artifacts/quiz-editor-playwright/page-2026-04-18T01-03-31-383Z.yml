@@ -1,0 +1,58 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - img [ref=e7]
+      - heading "Bulk Quiz Manager" [level=1] [ref=e12]
+    - generic [ref=e13]:
+      - button "구분선 삽입 (Ctrl+Enter)" [ref=e14]:
+        - img [ref=e15]
+        - text: 구분선 삽입 (Ctrl+Enter)
+      - button "Git 트리" [ref=e17]:
+        - img [ref=e18]
+        - text: Git 트리
+      - button "정답 입력" [ref=e20]:
+        - img [ref=e21]
+        - text: 정답 입력
+      - generic [ref=e25]:
+        - button "파일 메뉴" [active] [ref=e26]:
+          - img [ref=e27]
+        - generic [ref=e71]:
+          - button "파일 열기" [ref=e72]:
+            - img [ref=e73]
+            - text: 파일 열기
+          - button "Git 레포 선택" [ref=e75]:
+            - img [ref=e76]
+            - text: Git 레포 선택
+          - button "JSON 내보내기" [ref=e80]:
+            - img [ref=e81]
+            - text: JSON 내보내기
+  - main [ref=e30]:
+    - generic [ref=e31]:
+      - generic [ref=e32]:
+        - generic [ref=e33]:
+          - img [ref=e34]
+          - generic [ref=e36]: 에디터
+        - generic [ref=e38]: "Tip: 이미지 붙여넣기(Ctrl+V) · 구분선(Ctrl+Enter)"
+      - generic [ref=e40]:
+        - generic:
+          - paragraph: 여기에 퀴즈 내용을 입력하거나 붙여넣으세요...
+          - list:
+            - listitem: 텍스트를 자유롭게 입력할 수 있습니다.
+            - listitem: 이미지를 복사(Ctrl+C)하고 붙여넣기(Ctrl+V)할 수 있습니다.
+            - listitem: 상단의 '구분선 삽입' 버튼을 눌러 퀴즈를 나눌 수 있습니다.
+    - generic [ref=e42]:
+      - generic "추출 결과 너비 조절" [ref=e43]
+      - generic [ref=e44]:
+        - generic [ref=e45]:
+          - img [ref=e46]
+          - img [ref=e53]
+          - generic [ref=e56]: 추출 결과
+        - generic [ref=e57]:
+          - button "오른쪽에 고정" [ref=e58]:
+            - img [ref=e59]
+          - button "하단에 고정" [ref=e61]:
+            - img [ref=e62]
+      - generic [ref=e65]:
+        - img [ref=e66]
+        - paragraph [ref=e69]: 분석된 퀴즈가 없습니다.
+        - paragraph [ref=e70]: 에디터에 내용을 입력하면 여기에 요약이 표시됩니다.

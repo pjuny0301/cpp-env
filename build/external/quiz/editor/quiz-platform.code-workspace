@@ -1,0 +1,26 @@
+{
+  "folders": [
+    {
+      "name": "quiz-platform",
+      "path": "."
+    },
+    {
+      "name": "Android Quiz App",
+      "path": "quizquiz/SimpleAndroidQuizAppBuild"
+    },
+    {
+      "name": "Figma Make Quiz Web",
+      "path": "figma-make/quiz-web"
+    },
+    {
+      "name": "Quiz Editor",
+      "path": "quiz builder/Quiz app editor"
+    }
+  ],
+  "settings": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": false,
+    "typescript.preferences.importModuleSpecifier": "relative",
+    "javascript.preferences.importModuleSpecifier": "relative"
+  }
+}

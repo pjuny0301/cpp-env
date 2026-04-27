@@ -1,0 +1,87 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "windows-msvc",
+      "displayName": "Windows MSVC x64",
+      "description": "Windows-first local build using the Visual Studio generator.",
+      "generator": "Visual Studio 17 2022",
+      "binaryDir": "${sourceDir}/../../../build/out/quiz/quiz-vulkan/windows-msvc",
+      "architecture": "x64"
+    },
+    {
+      "name": "windows-msvc-vcpkg",
+      "displayName": "Windows MSVC x64 with vcpkg",
+      "description": "Windows build using vcpkg manifest mode. Requires VCPKG_ROOT.",
+      "inherits": "windows-msvc",
+      "binaryDir": "${sourceDir}/../../../build/out/quiz/quiz-vulkan/windows-msvc-vcpkg",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+      }
+    },
+    {
+      "name": "windows-mingw-ascii",
+      "displayName": "Windows MinGW x64 ASCII",
+      "description": "Windows Ninja build pinned to ASCII-only local tool paths.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/../../../build/out/quiz/quiz-vulkan/windows-mingw-ascii",
+      "environment": {
+        "PATH": "C:/qtmingw1310_ascii/bin;C:/qtmingw1310_ascii/x86_64-w64-mingw32/bin;C:/dev/tools/ninja-1.13.2;C:/Program Files/CMake/bin;C:/Windows/System32;C:/Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_COMPILER": "C:/qtmingw1310_ascii/bin/g++.exe",
+        "CMAKE_MAKE_PROGRAM": "C:/dev/tools/ninja-1.13.2/ninja.exe"
+      }
+    },
+    {
+      "name": "linux-ninja",
+      "displayName": "Linux Ninja Debug",
+      "description": "Portable Linux build for WSL or native Linux.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/../../../build/out/quiz/quiz-vulkan/linux-ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "linux-ninja-vcpkg",
+      "displayName": "Linux Ninja Debug with vcpkg",
+      "description": "Linux build using vcpkg manifest mode. Requires VCPKG_ROOT.",
+      "inherits": "linux-ninja",
+      "binaryDir": "${sourceDir}/../../../build/out/quiz/quiz-vulkan/linux-ninja-vcpkg",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-msvc-debug",
+      "configurePreset": "windows-msvc",
+      "configuration": "Debug"
+    },
+    {
+      "name": "windows-msvc-vcpkg-debug",
+      "configurePreset": "windows-msvc-vcpkg",
+      "configuration": "Debug"
+    },
+    {
+      "name": "windows-mingw-ascii-debug",
+      "configurePreset": "windows-mingw-ascii"
+    },
+    {
+      "name": "linux-debug",
+      "configurePreset": "linux-ninja"
+    },
+    {
+      "name": "linux-vcpkg-debug",
+      "configurePreset": "linux-ninja-vcpkg"
+    }
+  ]
+}

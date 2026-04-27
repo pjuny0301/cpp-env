@@ -12,12 +12,15 @@ enum class learning_state {
     learning,
     known,
     unknown,
+    wrong_note,
 };
 
 struct question_learning {
     int correct_streak = 0;
     int wrong_count = 0;
     int review_count = 0;
+    int skip_streak = 0;
+    int wrong_note_correct_streak = 0;
     learning_state state = learning_state::learning;
     std::int64_t known_at_ms = 0;
     std::int64_t due_at_ms = 0;
@@ -29,6 +32,11 @@ struct learning_update_rules {
     int wrong_release = 1;
     std::int64_t known_review_interval_ms = 86'400'000;
     int review_interval_multiplier = 2;
+    bool auto_promote_correct_answers = false;
+    int swipe_known_threshold = 3;
+    bool wrong_note_enabled = false;
+    int wrong_note_threshold = 1;
+    int wrong_note_release_correct_streak = 3;
 };
 
 using learning_state_map = std::unordered_map<std::string, question_learning>;
@@ -60,6 +68,14 @@ void record_correct_answer(
     std::int64_t updated_at_ms,
     const learning_update_rules& rules = {});
 void record_wrong_answer(
+    question_learning& learning,
+    std::int64_t updated_at_ms,
+    const learning_update_rules& rules = {});
+void record_skipped_question(question_learning& learning, std::int64_t updated_at_ms);
+bool can_offer_known_by_swipe(
+    const question_learning& learning,
+    const learning_update_rules& rules = {});
+void mark_question_known(
     question_learning& learning,
     std::int64_t updated_at_ms,
     const learning_update_rules& rules = {});

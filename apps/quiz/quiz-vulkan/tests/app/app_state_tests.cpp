@@ -60,9 +60,18 @@ int main()
     assert(domain::phase_of(*state.active_session()) == domain::quiz_session_phase::completed);
     assert(state.snapshot().screen == domain::app_screen::completed);
 
-    state.dispatch(domain::make_start_quiz_action(domain::quiz_mode::normal), 40);
+    state.dispatch(domain::make_previous_question_action(), 35);
+    assert(domain::phase_of(*state.active_session()) == domain::quiz_session_phase::active);
+    assert(state.active_session()->current_index == 0);
+
+    state.dispatch(domain::make_mark_question_known_action(), 36);
+    assert(state.learning().at("q1").state == domain::learning_state::known);
+    assert(state.snapshot().learning.known_count == 1);
+
+    state.dispatch(domain::make_start_quiz_action(domain::quiz_mode::known), 40);
     state.dispatch(domain::make_submit_option_action(1), 50);
     assert(state.learning().at("q1").wrong_count == 1);
+    assert(state.learning().at("q1").state == domain::learning_state::learning);
 
     state.dispatch(domain::make_select_day_action("missing"));
     assert(state.snapshot().screen == domain::app_screen::error);

@@ -141,7 +141,10 @@ void verify_learning_updates()
     record_correct_answer(learning, 20, rules);
     require(learning.state == learning_state::learning, "two correct answers stay learning by default");
     record_correct_answer(learning, 25, rules);
-    require(learning.state == learning_state::known, "default three-answer correct streak promotes to known");
+    require(learning.state == learning_state::learning, "correct streak does not auto-promote when swipe-only known is default");
+
+    mark_question_known(learning, 25, rules);
+    require(learning.state == learning_state::known, "manual swipe known action promotes to known");
     require(learning.known_at_ms == 25, "known promotion stores known timestamp");
     require(learning.due_at_ms == 1025, "known promotion schedules first review");
     require(!is_question_due_for_review(learning, 1024), "known question is not due before due timestamp");
@@ -158,10 +161,32 @@ void verify_learning_updates()
     mark_question_unknown(learning, 40);
     require(learning.state == learning_state::unknown, "manual mark sets unknown");
     require(learning.wrong_count == 0, "manual unknown clears wrong count");
-    record_correct_answer(learning, 50, rules);
-    record_correct_answer(learning, 60, rules);
-    record_correct_answer(learning, 70, rules);
-    require(learning.state == learning_state::known, "unknown can be promoted by correct streak");
+
+    question_learning skipped_learning;
+    record_skipped_question(skipped_learning, 80);
+    record_skipped_question(skipped_learning, 90);
+    require(!can_offer_known_by_swipe(skipped_learning, rules), "two swipe skips do not offer known by default");
+    record_skipped_question(skipped_learning, 100);
+    require(can_offer_known_by_swipe(skipped_learning, rules), "third swipe skip can offer known");
+
+    learning_update_rules wrong_note_rules = rules;
+    wrong_note_rules.wrong_note_enabled = true;
+    question_learning wrong_learning;
+    record_wrong_answer(wrong_learning, 110, wrong_note_rules);
+    require(wrong_learning.state == learning_state::wrong_note, "wrong note enabled moves wrong answer to wrong note");
+    record_correct_answer(wrong_learning, 120, wrong_note_rules);
+    record_correct_answer(wrong_learning, 130, wrong_note_rules);
+    require(wrong_learning.state == learning_state::wrong_note, "wrong note waits for release streak");
+    record_correct_answer(wrong_learning, 140, wrong_note_rules);
+    require(wrong_learning.state == learning_state::learning, "wrong note releases after correct streak");
+
+    learning_update_rules auto_rules = rules;
+    auto_rules.auto_promote_correct_answers = true;
+    question_learning auto_learning;
+    record_correct_answer(auto_learning, 50, auto_rules);
+    record_correct_answer(auto_learning, 60, auto_rules);
+    record_correct_answer(auto_learning, 70, auto_rules);
+    require(auto_learning.state == learning_state::known, "auto mode can still promote by correct streak");
 }
 
 void verify_session_filters(const deck& test_deck)
@@ -232,7 +257,9 @@ void verify_session_flow_and_snapshot(const deck& test_deck)
     apply_answer_to_learning(learning_by_question_id, *first_record);
     apply_answer_to_learning(learning_by_question_id, *first_record);
     apply_answer_to_learning(learning_by_question_id, *first_record);
-    require(is_question_known(learning_by_question_id, "q_option"), "answer records update learning state");
+    require(
+        learning_by_question_id["q_option"].correct_streak == 3,
+        "answer records update learning state without auto known promotion");
 
     app_snapshot feedback_snapshot = make_app_snapshot(
         std::vector<deck>{test_deck},
@@ -263,6 +290,15 @@ void verify_session_flow_and_snapshot(const deck& test_deck)
     require(third_record->outcome == answer_outcome::skipped, "skip records skipped outcome");
     require(session.completed, "skip advances and completes final question");
     require(phase_of(session) == quiz_session_phase::completed, "final skip completes session");
+
+    go_to_previous_question(session);
+    require(!session.completed, "previous question reopens completed session");
+    require(session.current_index == 2, "previous question from completed session targets final question");
+
+    std::optional<answer_record> known_record = mark_current_question_known(session, learning_by_question_id, 400);
+    require(known_record.has_value(), "mark known returns a record");
+    require(known_record->outcome == answer_outcome::marked_known, "mark known records marked_known outcome");
+    require(is_question_known(learning_by_question_id, "q_multiselect"), "mark known updates learning map");
 }
 
 void verify_actions()
@@ -275,6 +311,12 @@ void verify_actions()
     require(payload->mode == quiz_mode::known, "start quiz action stores mode");
     require(payload->random_seed.has_value() && *payload->random_seed == 123U, "start quiz action stores seed");
     require(payload->shuffle, "start quiz action stores shuffle flag");
+
+    app_action mark_known = make_mark_question_known_action();
+    require(type_of(mark_known) == app_action_type::mark_question_known, "mark known action reports type");
+
+    app_action previous = make_previous_question_action();
+    require(type_of(previous) == app_action_type::previous_question, "previous action reports type");
 }
 
 }  // namespace

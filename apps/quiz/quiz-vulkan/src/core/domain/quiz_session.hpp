@@ -24,6 +24,7 @@ enum class answer_outcome {
     correct,
     incorrect,
     skipped,
+    marked_known,
     marked_unknown,
 };
 
@@ -105,7 +106,13 @@ std::optional<answer_record> mark_current_question_unknown(
     quiz_session& session,
     learning_state_map& learning_by_question_id,
     std::int64_t answered_at_ms);
+std::optional<answer_record> mark_current_question_known(
+    quiz_session& session,
+    learning_state_map& learning_by_question_id,
+    std::int64_t answered_at_ms,
+    const learning_update_rules& rules = {});
 
+void go_to_previous_question(quiz_session& session);
 void continue_after_feedback(quiz_session& session);
 void apply_answer_to_learning(
     learning_state_map& learning_by_question_id,

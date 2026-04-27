@@ -3,10 +3,17 @@
 
 #include <cassert>
 #include <optional>
+#include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
 namespace {
+
+void require(bool condition, const char* message)
+{
+    assert((condition) && message);
+}
 
 quiz_vulkan::domain::deck make_test_deck()
 {
@@ -31,6 +38,38 @@ quiz_vulkan::domain::deck make_test_deck()
     return quiz_deck;
 }
 
+quiz_vulkan::domain::app_snapshot make_snapshot(
+    const std::vector<quiz_vulkan::domain::deck>& decks,
+    const quiz_vulkan::domain::quiz_session* session = nullptr,
+    std::unordered_map<std::string, std::string> settings = {},
+    std::optional<std::string> error_message = std::nullopt)
+{
+    const quiz_vulkan::domain::learning_state_map learning;
+    return quiz_vulkan::domain::make_app_snapshot(
+        decks,
+        std::optional<std::string>{"deck1"},
+        std::optional<std::string>{"day1"},
+        session,
+        learning,
+        std::move(settings),
+        std::move(error_message));
+}
+
+quiz_vulkan::domain::quiz_session make_active_session(const quiz_vulkan::domain::deck& deck)
+{
+    const quiz_vulkan::domain::learning_state_map learning;
+    const quiz_vulkan::domain::previous_answer_map previous_answers;
+    return quiz_vulkan::domain::start_quiz_session(deck, learning, previous_answers);
+}
+
+void apply_patch_to_scene(
+    const quiz_vulkan::scene::scene_layout_patch& patch,
+    quiz_vulkan::scene::scene_layout_data& data)
+{
+    const quiz_vulkan::scene::scene_layout_apply_result result = patch.apply_to(data);
+    require(result.applied(), "screen patch applies");
+}
+
 } // namespace
 
 int main()
@@ -41,51 +80,110 @@ int main()
     decks.push_back(make_test_deck());
 
     const domain::learning_state_map learning;
-    const domain::app_snapshot home_snapshot = domain::make_app_snapshot(
+    const domain::app_snapshot deck_list_snapshot = domain::make_app_snapshot(
         decks,
         std::nullopt,
         std::nullopt,
         nullptr,
         learning);
 
-    scene::scene_layout_data data("test");
-    const scene::scene_layout_patch patch = ui::make_quiz_screen_patch(home_snapshot);
-    const scene::scene_layout_apply_result result = patch.apply_to(data);
+    const ui::quiz_screen_descriptor deck_list_descriptor = ui::describe_quiz_screen(deck_list_snapshot);
+    require(deck_list_descriptor.kind == ui::quiz_screen_kind::deck_list, "deck list descriptor selected");
+    require(deck_list_descriptor.route.metadata.at("descriptor_version") == "quiz_screen_descriptor_v1", "descriptor version emitted");
+    require(deck_list_descriptor.route.metadata.at("layout_contract") == "deck_grid", "deck list layout contract emitted");
 
-    assert(result.applied());
-    assert(data.contains_node("quiz_screens_root"));
-    assert(data.contains_node("home_deck_deck1"));
-    assert(data.has_focus());
-    assert(data.focus_id() == "home_deck_deck1");
-    assert(data.route_state().screen_id == "home");
+    scene::scene_layout_data deck_list_data("test_deck_list");
+    apply_patch_to_scene(ui::make_quiz_screen_patch(deck_list_snapshot), deck_list_data);
+    require(deck_list_data.contains_node("quiz_screens_root"), "deck list root exists");
+    require(deck_list_data.contains_node("deck_list_deck_deck1"), "deck button exists");
+    require(deck_list_data.has_focus(), "deck list has focus");
+    require(deck_list_data.focus_id() == "deck_list_deck_deck1", "deck list focuses first deck");
+    require(deck_list_data.route_state().screen_id == "deck_list", "deck list route set");
 
-    const scene::scene_node_data* deck_button = data.find_node("home_deck_deck1");
-    assert(deck_button != nullptr);
-    assert(deck_button->has_action_binding);
-    assert(deck_button->action_binding.action_type == "select_deck");
-    assert(deck_button->action_binding.payload == "deck1");
+    const scene::scene_node_data* deck_button = deck_list_data.find_node("deck_list_deck_deck1");
+    require(deck_button != nullptr, "deck button can be found");
+    require(deck_button->has_action_binding, "deck button action exists");
+    require(deck_button->action_binding.action_type == "select_deck", "deck button selects deck");
+    require(deck_button->action_binding.payload == "deck1", "deck button payload contains deck id");
 
-    domain::previous_answer_map previous_answers;
-    domain::quiz_session session = domain::start_quiz_session(decks.front(), learning, previous_answers);
-    const domain::app_snapshot quiz_snapshot = domain::make_app_snapshot(
+    const domain::app_snapshot day_intro_snapshot = make_snapshot(decks);
+    scene::scene_layout_data day_intro_data("test_day_intro");
+    apply_patch_to_scene(ui::make_quiz_screen_patch(day_intro_snapshot), day_intro_data);
+    require(day_intro_data.route_state().screen_id == "day_intro", "day intro route selected");
+    require(day_intro_data.route_state().metadata.at("selected_day_id") == "day1", "day intro selected day metadata emitted");
+    require(day_intro_data.route_state().metadata.at("selected_day_question_count") == "1", "day intro question count metadata emitted");
+    require(day_intro_data.contains_node("day_intro_start_normal"), "day intro normal start action exists");
+    require(day_intro_data.contains_node("day_intro_start_known"), "day intro known start action exists");
+
+    domain::quiz_session active_session = make_active_session(decks.front());
+    const domain::app_snapshot active_snapshot = make_snapshot(decks, &active_session);
+    scene::scene_layout_data active_data("test_active");
+    apply_patch_to_scene(ui::make_quiz_screen_patch(active_snapshot), active_data);
+    require(active_data.route_state().screen_id == "quiz_active", "active quiz route selected");
+    require(active_data.route_state().metadata.at("session_phase") == "active", "active session phase metadata emitted");
+    require(active_data.route_state().metadata.at("question_id") == "q1", "active question id metadata emitted");
+    require(active_data.route_state().metadata.at("question_option_count") == "2", "active option count metadata emitted");
+    require(active_data.route_state().metadata.at("input_locked") == "false", "active input is unlocked");
+    require(active_data.contains_node("quiz_active_option_0"), "active first option exists");
+
+    const scene::scene_node_data* first_option = active_data.find_node("quiz_active_option_0");
+    require(first_option != nullptr, "active first option can be found");
+    require(first_option->input_enabled, "active first option is enabled");
+    require(first_option->has_action_binding, "active first option action exists");
+    require(first_option->action_binding.action_type == "submit_option", "active first option submits option");
+
+    domain::quiz_session feedback_session = make_active_session(decks.front());
+    const std::optional<domain::answer_record> feedback_record = domain::submit_option_answer(
+        feedback_session,
+        decks.front(),
+        1,
+        100);
+    require(feedback_record.has_value(), "submitting option creates feedback");
+    const domain::app_snapshot feedback_snapshot = make_snapshot(decks, &feedback_session);
+    scene::scene_layout_data feedback_data("test_feedback");
+    apply_patch_to_scene(ui::make_quiz_screen_patch(feedback_snapshot), feedback_data);
+    require(feedback_data.route_state().screen_id == "quiz_feedback", "feedback route selected");
+    require(feedback_data.route_state().metadata.at("feedback_outcome") == "incorrect", "feedback outcome metadata emitted");
+    require(feedback_data.route_state().metadata.at("input_locked") == "true", "feedback input is locked");
+    require(feedback_data.contains_node("quiz_feedback_continue"), "feedback continue button exists");
+
+    const scene::scene_node_data* feedback_option = feedback_data.find_node("quiz_feedback_option_1");
+    require(feedback_option != nullptr, "feedback submitted option exists");
+    require(!feedback_option->input_enabled, "feedback option is disabled");
+    require(!feedback_option->has_action_binding, "feedback option cannot submit again");
+
+    domain::continue_after_feedback(feedback_session);
+    const domain::app_snapshot results_snapshot = make_snapshot(decks, &feedback_session);
+    scene::scene_layout_data results_data("test_results");
+    apply_patch_to_scene(ui::make_quiz_screen_patch(results_snapshot), results_data);
+    require(results_data.route_state().screen_id == "quiz_results", "results route selected");
+    require(results_data.route_state().metadata.at("completed") == "true", "results completed metadata emitted");
+    require(results_data.contains_node("quiz_results_start_wrong_only"), "results wrong-only action exists");
+
+    const domain::app_snapshot settings_snapshot = make_snapshot(
         decks,
-        std::optional<std::string>{"deck1"},
-        std::optional<std::string>{"day1"},
-        &session,
-        learning);
+        nullptr,
+        {{"ui_screen", "settings"}, {"source_uri", "fixture://deck"}});
+    scene::scene_layout_data settings_data("test_settings");
+    apply_patch_to_scene(ui::make_quiz_screen_patch(settings_snapshot), settings_data);
+    require(settings_data.route_state().screen_id == "settings", "settings route selected");
+    require(settings_data.route_state().metadata.at("layout_contract") == "settings_list", "settings layout contract emitted");
+    require(settings_data.route_state().metadata.at("settings_count") == "2", "settings count metadata emitted");
+    require(settings_data.contains_node("settings_entry_source_uri"), "settings source entry exists");
+    require(settings_data.contains_node("settings_close"), "settings close action exists");
 
-    scene::scene_layout_data quiz_data("test_quiz");
-    const scene::scene_layout_patch quiz_patch = ui::make_quiz_active_screen_patch(quiz_snapshot);
-    assert(quiz_patch.apply_to(quiz_data).applied());
-    assert(quiz_data.route_state().screen_id == "quiz_active");
-    assert(quiz_data.route_state().metadata.at("session_phase") == "active");
-    assert(quiz_data.contains_node("quiz_active_option_0"));
-
-    const scene::scene_node_data* first_option = quiz_data.find_node("quiz_active_option_0");
-    assert(first_option != nullptr);
-    assert(first_option->input_enabled);
-    assert(first_option->has_action_binding);
-    assert(first_option->action_binding.action_type == "submit_option");
+    const domain::app_snapshot error_snapshot = make_snapshot(
+        decks,
+        nullptr,
+        {},
+        std::optional<std::string>{"Deck not found: missing"});
+    scene::scene_layout_data error_data("test_error");
+    apply_patch_to_scene(ui::make_quiz_screen_patch(error_snapshot), error_data);
+    require(error_data.route_state().screen_id == "error", "error route selected");
+    require(error_data.route_state().metadata.at("has_error") == "true", "error metadata emitted");
+    require(error_data.route_state().metadata.at("layout_contract") == "error_recovery", "error layout contract emitted");
+    require(error_data.contains_node("error_error_banner"), "error banner exists");
+    require(error_data.contains_node("error_deck_deck1"), "error recovery deck action exists");
 
     return 0;
 }

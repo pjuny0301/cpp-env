@@ -108,6 +108,8 @@ std::string_view to_string(answer_outcome outcome)
             return "incorrect";
         case answer_outcome::skipped:
             return "skipped";
+        case answer_outcome::marked_known:
+            return "marked_known";
         case answer_outcome::marked_unknown:
             return "marked_unknown";
     }
@@ -130,6 +132,9 @@ std::optional<answer_outcome> parse_answer_outcome(std::string_view value)
     }
     if (normalized == "skipped") {
         return answer_outcome::skipped;
+    }
+    if (normalized == "marked_known" || normalized == "marked known") {
+        return answer_outcome::marked_known;
     }
     if (normalized == "marked_unknown" || normalized == "marked unknown") {
         return answer_outcome::marked_unknown;
@@ -332,6 +337,27 @@ std::optional<answer_record> skip_current_question(
     return record;
 }
 
+std::optional<answer_record> mark_current_question_known(
+    quiz_session& session,
+    learning_state_map& learning_by_question_id,
+    std::int64_t answered_at_ms,
+    const learning_update_rules& rules)
+{
+    if (!has_current_question(session) || has_pending_feedback(session)) {
+        return std::nullopt;
+    }
+
+    answer_record record = make_record(session, answer_outcome::marked_known, answered_at_ms);
+    question_learning& learning = get_or_create_question_learning(
+        learning_by_question_id,
+        record.question_id);
+    mark_question_known(learning, answered_at_ms, rules);
+
+    session.answer_records.push_back(record);
+    advance_current_question(session);
+    return record;
+}
+
 std::optional<answer_record> mark_current_question_unknown(
     quiz_session& session,
     learning_state_map& learning_by_question_id,
@@ -350,6 +376,25 @@ std::optional<answer_record> mark_current_question_unknown(
     session.answer_records.push_back(record);
     advance_current_question(session);
     return record;
+}
+
+void go_to_previous_question(quiz_session& session)
+{
+    if (!session.started || session.question_ids.empty()) {
+        return;
+    }
+
+    session.pending_feedback.reset();
+
+    if (session.completed) {
+        session.completed = false;
+        session.current_index = session.question_ids.size() - 1;
+        return;
+    }
+
+    if (session.current_index > 0) {
+        session.current_index -= 1;
+    }
 }
 
 void continue_after_feedback(quiz_session& session)
@@ -382,10 +427,15 @@ void apply_answer_to_learning(
         case answer_outcome::incorrect:
             record_wrong_answer(learning, record.answered_at_ms, rules);
             return;
+        case answer_outcome::skipped:
+            record_skipped_question(learning, record.answered_at_ms);
+            return;
+        case answer_outcome::marked_known:
+            mark_question_known(learning, record.answered_at_ms, rules);
+            return;
         case answer_outcome::marked_unknown:
             mark_question_unknown(learning, record.answered_at_ms);
             return;
-        case answer_outcome::skipped:
         case answer_outcome::unanswered:
             return;
     }

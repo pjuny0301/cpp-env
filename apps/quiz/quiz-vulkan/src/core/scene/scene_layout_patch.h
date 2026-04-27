@@ -16,6 +16,7 @@ enum class scene_layout_patch_operation_type {
     set_bounds_rule,
     set_image,
     bind_action,
+    set_semantics,
     set_focus,
     set_route,
     start_transition,
@@ -32,6 +33,7 @@ struct scene_layout_patch_operation {
     scene_layout_rule bounds_rule;
     scene_image_ref image;
     scene_action_binding action;
+    scene_node_semantics semantics;
     scene_route_state route_state;
     scene_animation_state animation_state;
 };
@@ -116,6 +118,16 @@ public:
         operation.type = scene_layout_patch_operation_type::bind_action;
         operation.node_id = std::move(node_id);
         operation.action = std::move(action);
+        operations_.push_back(std::move(operation));
+        return *this;
+    }
+
+    scene_layout_patch& set_semantics(scene_node_id node_id, scene_node_semantics semantics)
+    {
+        scene_layout_patch_operation operation;
+        operation.type = scene_layout_patch_operation_type::set_semantics;
+        operation.node_id = std::move(node_id);
+        operation.semantics = std::move(semantics);
         operations_.push_back(std::move(operation));
         return *this;
     }
@@ -215,6 +227,11 @@ private:
         case scene_layout_patch_operation_type::bind_action:
             if (!data.bind_action(operation.node_id, operation.action, &error)) {
                 add_error(result, "bind_action", error);
+            }
+            break;
+        case scene_layout_patch_operation_type::set_semantics:
+            if (!data.set_semantics(operation.node_id, operation.semantics, &error)) {
+                add_error(result, "set_semantics", error);
             }
             break;
         case scene_layout_patch_operation_type::set_focus:

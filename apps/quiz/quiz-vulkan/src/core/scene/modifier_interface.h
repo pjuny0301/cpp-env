@@ -13,6 +13,7 @@ namespace quiz_vulkan::scene {
 struct scene_modifier_context {
     const scene_layout_data* current_scene = nullptr;
     scene_rect viewport;
+    scene_layout_environment layout_environment;
     float delta_seconds = 0.0f;
     scene_route_state route_state;
 };

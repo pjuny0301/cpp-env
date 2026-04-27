@@ -38,6 +38,7 @@ private:
     std::optional<domain::quiz_session> active_session_;
     domain::learning_state_map learning_by_question_id_;
     domain::previous_answer_map previous_answers_;
+    domain::learning_update_rules learning_rules_;
     std::unordered_map<std::string, std::string> settings_;
     std::optional<std::string> error_message_;
 };

@@ -33,11 +33,19 @@ int main()
     choice.id = "choice_a";
     choice.kind = quiz_vulkan::scene::scene_node_kind::input;
 
+    quiz_vulkan::scene::scene_node_semantics choice_semantics;
+    choice_semantics.role = quiz_vulkan::scene::scene_node_role::quiz_option;
+    choice_semantics.label = "Choice A";
+    choice_semantics.quiz.stage = quiz_vulkan::scene::scene_quiz_stage::question;
+    choice_semantics.quiz.option_state = quiz_vulkan::scene::scene_quiz_option_state::selected;
+    choice_semantics.quiz.option_index = 0;
+
     quiz_vulkan::scene::scene_layout_edit_data edit("test");
     edit.append_node("", panel)
         .append_node("panel", choice)
         .set_text("choice_a", {{"Choice A", "body"}})
         .bind_action("choice_a", {quiz_vulkan::scene::scene_action_trigger::press, "answer_selected", "A"})
+        .set_semantics("choice_a", choice_semantics)
         .set_style("choice_a", quiz_vulkan::scene::scene_style{"choice", "#223344", "#ffffff", 1.0f, 4.0f})
         .set_route({"quiz/question", "quiz", {{"question_id", "1"}}})
         .start_transition({false, "fade_in", 0.0f, 0.2f});
@@ -51,9 +59,17 @@ int main()
     assert(scene.find_node("choice_a")->text_runs.front().text == "Choice A");
     assert(scene.find_node("choice_a")->has_action_binding);
     assert(scene.find_node("choice_a")->action_binding.action_type == "answer_selected");
+    assert(scene.find_node("choice_a")->semantics.role == quiz_vulkan::scene::scene_node_role::quiz_option);
+    assert(scene.find_node("choice_a")->semantics.quiz.option_state == quiz_vulkan::scene::scene_quiz_option_state::selected);
+    assert(scene.find_node("choice_a")->semantics.quiz.option_index == 0);
     assert(scene.style_tokens().at("choice").background_color == "#223344");
     assert(scene.route_state().route_id == "quiz/question");
     assert(scene.animation_state().active);
+    assert(std::string(quiz_vulkan::scene::to_string(scene.find_node("choice_a")->semantics.quiz.stage)) == "question");
+    assert(quiz_vulkan::scene::classify_question_length("short prompt") == quiz_vulkan::scene::scene_question_length_class::short_question);
+    assert(quiz_vulkan::scene::classify_question_length(
+        "A prompt that intentionally passes the long question threshold so the scene can switch layout profiles "
+        "without asking the renderer to infer quiz domain state from raw text") == quiz_vulkan::scene::scene_question_length_class::long_question);
 
     quiz_vulkan::scene::scene_layout_patch bad_patch;
     bad_patch.set_focus("missing");

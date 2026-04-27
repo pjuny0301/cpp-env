@@ -69,6 +69,48 @@ struct scene_rect {
         const float inset_height = std::max(0.0f, height - edges.vertical());
         return scene_rect{x + edges.left, y + edges.top, inset_width, inset_height};
     }
+
+    scene_rect clipped_to(scene_rect clip) const
+    {
+        const float clipped_x = std::max(x, clip.x);
+        const float clipped_y = std::max(y, clip.y);
+        const float clipped_right = std::min(right(), clip.right());
+        const float clipped_bottom = std::min(bottom(), clip.bottom());
+        return scene_rect{
+            clipped_x,
+            clipped_y,
+            std::max(0.0f, clipped_right - clipped_x),
+            std::max(0.0f, clipped_bottom - clipped_y)};
+    }
+};
+
+struct scene_keyboard_state {
+    bool visible = false;
+    float bottom_inset = 0.0f;
+    scene_node_id focused_node_id;
+};
+
+struct scene_layout_environment {
+    scene_rect viewport;
+    scene_edges safe_area;
+    scene_keyboard_state keyboard;
+
+    scene_rect safe_bounds() const
+    {
+        return viewport.inset(safe_area);
+    }
+
+    scene_rect keyboard_safe_bounds() const
+    {
+        scene_rect bounds = safe_bounds();
+        if (keyboard.visible && keyboard.bottom_inset > 0.0f) {
+            const float keyboard_top = viewport.bottom() - keyboard.bottom_inset;
+            if (bounds.bottom() > keyboard_top) {
+                bounds.height = std::max(0.0f, keyboard_top - bounds.y);
+            }
+        }
+        return bounds;
+    }
 };
 
 enum class scene_node_kind {
@@ -109,6 +151,9 @@ struct scene_layout_rule {
     scene_alignment horizontal_alignment = scene_alignment::stretch;
     scene_alignment vertical_alignment = scene_alignment::start;
     bool clip_children = false;
+    bool respect_safe_area = false;
+    bool avoid_keyboard = false;
+    bool anchor_to_keyboard = false;
 };
 
 struct scene_style {
@@ -147,11 +192,185 @@ struct scene_action_binding {
     }
 };
 
+enum class scene_node_role {
+    generic,
+    app_shell,
+    quiz_question_stage,
+    quiz_question_header,
+    quiz_question_prompt,
+    quiz_question_body,
+    quiz_question_image,
+    quiz_option_group,
+    quiz_option,
+    quiz_feedback,
+    quiz_answer_input,
+    quiz_answer_dock,
+    quiz_controls,
+};
+
+enum class scene_quiz_stage {
+    none,
+    question,
+    feedback,
+    completed,
+};
+
+enum class scene_quiz_feedback_state {
+    none,
+    correct,
+    incorrect,
+    skipped,
+    marked_unknown,
+};
+
+enum class scene_quiz_option_state {
+    idle,
+    selected,
+    correct,
+    incorrect,
+    disabled,
+};
+
+enum class scene_question_length_class {
+    unspecified,
+    short_question,
+    long_question,
+};
+
+struct scene_quiz_semantics {
+    static constexpr std::size_t no_option_index = std::numeric_limits<std::size_t>::max();
+
+    scene_quiz_stage stage = scene_quiz_stage::none;
+    scene_quiz_feedback_state feedback = scene_quiz_feedback_state::none;
+    scene_quiz_option_state option_state = scene_quiz_option_state::idle;
+    scene_question_length_class question_length = scene_question_length_class::unspecified;
+    std::size_t option_index = no_option_index;
+    bool reveal_correctness = false;
+    bool accepts_keyboard_input = false;
+};
+
+struct scene_node_semantics {
+    scene_node_role role = scene_node_role::generic;
+    std::string label;
+    scene_quiz_semantics quiz;
+};
+
+inline const char* to_string(scene_node_role role)
+{
+    switch (role) {
+        case scene_node_role::generic:
+            return "generic";
+        case scene_node_role::app_shell:
+            return "app_shell";
+        case scene_node_role::quiz_question_stage:
+            return "quiz_question_stage";
+        case scene_node_role::quiz_question_header:
+            return "quiz_question_header";
+        case scene_node_role::quiz_question_prompt:
+            return "quiz_question_prompt";
+        case scene_node_role::quiz_question_body:
+            return "quiz_question_body";
+        case scene_node_role::quiz_question_image:
+            return "quiz_question_image";
+        case scene_node_role::quiz_option_group:
+            return "quiz_option_group";
+        case scene_node_role::quiz_option:
+            return "quiz_option";
+        case scene_node_role::quiz_feedback:
+            return "quiz_feedback";
+        case scene_node_role::quiz_answer_input:
+            return "quiz_answer_input";
+        case scene_node_role::quiz_answer_dock:
+            return "quiz_answer_dock";
+        case scene_node_role::quiz_controls:
+            return "quiz_controls";
+    }
+
+    return "generic";
+}
+
+inline const char* to_string(scene_quiz_stage stage)
+{
+    switch (stage) {
+        case scene_quiz_stage::none:
+            return "none";
+        case scene_quiz_stage::question:
+            return "question";
+        case scene_quiz_stage::feedback:
+            return "feedback";
+        case scene_quiz_stage::completed:
+            return "completed";
+    }
+
+    return "none";
+}
+
+inline const char* to_string(scene_quiz_feedback_state feedback)
+{
+    switch (feedback) {
+        case scene_quiz_feedback_state::none:
+            return "none";
+        case scene_quiz_feedback_state::correct:
+            return "correct";
+        case scene_quiz_feedback_state::incorrect:
+            return "incorrect";
+        case scene_quiz_feedback_state::skipped:
+            return "skipped";
+        case scene_quiz_feedback_state::marked_unknown:
+            return "marked_unknown";
+    }
+
+    return "none";
+}
+
+inline const char* to_string(scene_quiz_option_state state)
+{
+    switch (state) {
+        case scene_quiz_option_state::idle:
+            return "idle";
+        case scene_quiz_option_state::selected:
+            return "selected";
+        case scene_quiz_option_state::correct:
+            return "correct";
+        case scene_quiz_option_state::incorrect:
+            return "incorrect";
+        case scene_quiz_option_state::disabled:
+            return "disabled";
+    }
+
+    return "idle";
+}
+
+inline const char* to_string(scene_question_length_class length_class)
+{
+    switch (length_class) {
+        case scene_question_length_class::unspecified:
+            return "unspecified";
+        case scene_question_length_class::short_question:
+            return "short";
+        case scene_question_length_class::long_question:
+            return "long";
+    }
+
+    return "unspecified";
+}
+
+inline scene_question_length_class classify_question_length(
+    const std::string& prompt,
+    const std::string& body = std::string(),
+    std::size_t long_threshold = 120)
+{
+    return prompt.size() + body.size() >= long_threshold
+        ? scene_question_length_class::long_question
+        : scene_question_length_class::short_question;
+}
+
 struct scene_input_region {
     scene_node_id node_id;
     scene_rect bounds;
     scene_action_binding action;
     bool enabled = true;
+    scene_node_semantics semantics;
 };
 
 struct scene_animation_state {
@@ -179,6 +398,7 @@ struct scene_node_data {
     bool has_image = false;
     scene_action_binding action_binding;
     bool has_action_binding = false;
+    scene_node_semantics semantics;
     std::vector<scene_node_id> children;
     bool visible = true;
     bool input_enabled = true;
@@ -411,6 +631,18 @@ public:
 
         node->action_binding = std::move(action);
         node->has_action_binding = !node->action_binding.empty();
+        return true;
+    }
+
+    bool set_semantics(const scene_node_id& id, scene_node_semantics semantics, std::string* error = nullptr)
+    {
+        auto* node = find_node(id);
+        if (node == nullptr) {
+            set_error(error, "node does not exist: " + id);
+            return false;
+        }
+
+        node->semantics = std::move(semantics);
         return true;
     }
 

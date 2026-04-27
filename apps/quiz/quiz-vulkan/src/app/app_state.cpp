@@ -94,7 +94,7 @@ void app_state::submit_record(std::optional<domain::answer_record> record)
     }
 
     remember_answer(*record);
-    domain::apply_answer_to_learning(learning_by_question_id_, *record);
+    domain::apply_answer_to_learning(learning_by_question_id_, *record, learning_rules_);
 }
 
 void app_state::dispatch(const domain::app_action& action, std::int64_t now_ms)
@@ -180,6 +180,19 @@ void app_state::dispatch(const domain::app_action& action, std::int64_t now_ms)
         const std::optional<domain::answer_record> record = domain::skip_current_question(*active_session_, now_ms);
         if (record.has_value()) {
             remember_answer(*record);
+            domain::apply_answer_to_learning(learning_by_question_id_, *record, learning_rules_);
+        }
+        return;
+    }
+
+    if (payload_if<domain::mark_question_known_action>(action) != nullptr) {
+        const std::optional<domain::answer_record> record = domain::mark_current_question_known(
+            *active_session_,
+            learning_by_question_id_,
+            now_ms,
+            learning_rules_);
+        if (record.has_value()) {
+            remember_answer(*record);
         }
         return;
     }
@@ -192,6 +205,11 @@ void app_state::dispatch(const domain::app_action& action, std::int64_t now_ms)
         if (record.has_value()) {
             remember_answer(*record);
         }
+        return;
+    }
+
+    if (payload_if<domain::previous_question_action>(action) != nullptr) {
+        domain::go_to_previous_question(*active_session_);
         return;
     }
 

@@ -23,8 +23,12 @@ std::string_view to_string(app_action_type type)
             return "submit_multiselect";
         case app_action_type::skip_question:
             return "skip_question";
+        case app_action_type::mark_question_known:
+            return "mark_question_known";
         case app_action_type::mark_question_unknown:
             return "mark_question_unknown";
+        case app_action_type::previous_question:
+            return "previous_question";
         case app_action_type::continue_after_feedback:
             return "continue_after_feedback";
         case app_action_type::update_setting:
@@ -60,8 +64,14 @@ app_action_type type_of(const app_action& action)
     if (std::holds_alternative<skip_question_action>(action.payload)) {
         return app_action_type::skip_question;
     }
+    if (std::holds_alternative<mark_question_known_action>(action.payload)) {
+        return app_action_type::mark_question_known;
+    }
     if (std::holds_alternative<mark_question_unknown_action>(action.payload)) {
         return app_action_type::mark_question_unknown;
+    }
+    if (std::holds_alternative<previous_question_action>(action.payload)) {
+        return app_action_type::previous_question;
     }
     if (std::holds_alternative<continue_after_feedback_action>(action.payload)) {
         return app_action_type::continue_after_feedback;
@@ -113,9 +123,19 @@ app_action make_skip_question_action()
     return app_action{skip_question_action{}};
 }
 
+app_action make_mark_question_known_action()
+{
+    return app_action{mark_question_known_action{}};
+}
+
 app_action make_mark_question_unknown_action()
 {
     return app_action{mark_question_unknown_action{}};
+}
+
+app_action make_previous_question_action()
+{
+    return app_action{previous_question_action{}};
 }
 
 app_action make_continue_after_feedback_action()

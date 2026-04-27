@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace quiz_vulkan::scene {
@@ -32,12 +33,15 @@ struct placed_scene_node {
     bool has_image = false;
     scene_action_binding action_binding;
     bool has_action_binding = false;
+    scene_node_semantics semantics;
     std::size_t depth = 0;
     bool visible = true;
     bool input_enabled = true;
 };
 
 struct placed_scene {
+    scene_layout_environment environment;
+    scene_rect usable_bounds;
     std::vector<placed_scene_node> nodes;
     std::vector<scene_input_region> input_regions;
 
@@ -60,13 +64,25 @@ public:
         scene_rect viewport,
         const text_metrics_interface& text_metrics) const
     {
+        scene_layout_environment environment;
+        environment.viewport = viewport;
+        return place_with_environment(data, environment, text_metrics);
+    }
+
+    placed_scene place_with_environment(
+        const scene_layout_data& data,
+        scene_layout_environment environment,
+        const text_metrics_interface& text_metrics) const
+    {
         placed_scene output;
+        output.environment = std::move(environment);
+        output.usable_bounds = output.environment.keyboard_safe_bounds();
         const scene_node_data* root = data.find_node(data.root_node_id());
         if (root == nullptr || !root->visible) {
             return output;
         }
 
-        place_node(data, *root, viewport, text_metrics, output, 0);
+        place_node(data, *root, output.environment.viewport, output.environment, text_metrics, output, 0);
         return output;
     }
 
@@ -217,6 +233,7 @@ private:
         const scene_layout_data& data,
         const scene_node_data& node,
         const scene_rect& content_bounds,
+        const scene_layout_environment& environment,
         const text_metrics_interface& text_metrics,
         placed_scene& output,
         std::size_t depth)
@@ -233,7 +250,7 @@ private:
                     y += node.layout_rule.gap;
                 }
                 scene_rect child_bounds = child_bounds_for_vertical(*child, content_bounds, y, text_metrics);
-                place_node(data, *child, child_bounds, text_metrics, output, depth + 1);
+                place_node(data, *child, child_bounds, environment, text_metrics, output, depth + 1);
                 y = child_bounds.bottom() + child->layout_rule.margin.bottom;
                 first = false;
             }
@@ -252,7 +269,7 @@ private:
                     x += node.layout_rule.gap;
                 }
                 scene_rect child_bounds = child_bounds_for_horizontal(*child, content_bounds, x, text_metrics);
-                place_node(data, *child, child_bounds, text_metrics, output, depth + 1);
+                place_node(data, *child, child_bounds, environment, text_metrics, output, depth + 1);
                 x = child_bounds.right() + child->layout_rule.margin.right;
                 first = false;
             }
@@ -265,18 +282,44 @@ private:
                 continue;
             }
             scene_rect child_bounds = child_bounds_for_overlay(*child, content_bounds, text_metrics);
-            place_node(data, *child, child_bounds, text_metrics, output, depth + 1);
+            place_node(data, *child, child_bounds, environment, text_metrics, output, depth + 1);
         }
+    }
+
+    static scene_rect apply_environment_constraints(
+        const scene_node_data& node,
+        scene_rect bounds,
+        const scene_layout_environment& environment)
+    {
+        if (node.layout_rule.respect_safe_area) {
+            bounds = bounds.clipped_to(environment.safe_bounds());
+        }
+
+        if (node.layout_rule.avoid_keyboard) {
+            bounds = bounds.clipped_to(environment.keyboard_safe_bounds());
+        }
+
+        if (node.layout_rule.anchor_to_keyboard && environment.keyboard.visible && environment.keyboard.bottom_inset > 0.0f) {
+            const scene_rect usable_bounds = environment.keyboard_safe_bounds();
+            const float overflow = bounds.bottom() - usable_bounds.bottom();
+            if (overflow > 0.0f) {
+                bounds.y = std::max(usable_bounds.y, bounds.y - overflow);
+            }
+        }
+
+        return bounds;
     }
 
     static void place_node(
         const scene_layout_data& data,
         const scene_node_data& node,
         scene_rect bounds,
+        const scene_layout_environment& environment,
         const text_metrics_interface& text_metrics,
         placed_scene& output,
         std::size_t depth)
     {
+        bounds = apply_environment_constraints(node, bounds, environment);
         const scene_rect content_bounds = bounds.inset(node.layout_rule.padding);
 
         placed_scene_node placed;
@@ -292,16 +335,17 @@ private:
         placed.has_image = node.has_image;
         placed.action_binding = node.action_binding;
         placed.has_action_binding = node.has_action_binding;
+        placed.semantics = node.semantics;
         placed.depth = depth;
         placed.visible = node.visible;
         placed.input_enabled = node.input_enabled;
         output.nodes.push_back(std::move(placed));
 
         if (node.has_action_binding && !node.action_binding.empty()) {
-            output.input_regions.push_back(scene_input_region{node.id, bounds, node.action_binding, node.input_enabled});
+            output.input_regions.push_back(scene_input_region{node.id, bounds, node.action_binding, node.input_enabled, node.semantics});
         }
 
-        place_children(data, node, content_bounds, text_metrics, output, depth);
+        place_children(data, node, content_bounds, environment, text_metrics, output, depth);
     }
 };
 

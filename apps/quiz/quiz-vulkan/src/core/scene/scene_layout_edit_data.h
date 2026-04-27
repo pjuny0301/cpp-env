@@ -77,6 +77,12 @@ public:
         return *this;
     }
 
+    scene_layout_edit_data& set_semantics(scene_node_id node_id, scene_node_semantics semantics)
+    {
+        patch_.set_semantics(std::move(node_id), std::move(semantics));
+        return *this;
+    }
+
     scene_layout_edit_data& set_focus(scene_node_id node_id)
     {
         patch_.set_focus(std::move(node_id));

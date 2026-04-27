@@ -49,6 +49,8 @@ std::string_view to_string(learning_state state)
             return "known";
         case learning_state::unknown:
             return "unknown";
+        case learning_state::wrong_note:
+            return "wrong_note";
     }
 
     return "learning";
@@ -66,6 +68,9 @@ std::optional<learning_state> parse_learning_state(std::string_view value)
     }
     if (normalized == "unknown") {
         return learning_state::unknown;
+    }
+    if (normalized == "wrong_note" || normalized == "wrong note") {
+        return learning_state::wrong_note;
     }
 
     return std::nullopt;
@@ -124,6 +129,7 @@ void record_correct_answer(
 {
     learning.correct_streak += 1;
     learning.wrong_count = 0;
+    learning.skip_streak = 0;
     learning.updated_at_ms = updated_at_ms;
 
     if (learning.state == learning_state::known) {
@@ -132,7 +138,17 @@ void record_correct_answer(
         return;
     }
 
-    if ((learning.state == learning_state::learning || learning.state == learning_state::unknown)
+    if (learning.state == learning_state::wrong_note) {
+        learning.wrong_note_correct_streak += 1;
+        if (learning.wrong_note_correct_streak >= rules.wrong_note_release_correct_streak) {
+            learning.state = learning_state::learning;
+            learning.wrong_note_correct_streak = 0;
+        }
+        return;
+    }
+
+    if (rules.auto_promote_correct_answers
+        && (learning.state == learning_state::learning || learning.state == learning_state::unknown)
         && learning.correct_streak >= rules.known_threshold) {
         learning.state = learning_state::known;
         learning.review_count = 0;
@@ -146,19 +162,60 @@ void record_wrong_answer(
     const learning_update_rules& rules)
 {
     learning.correct_streak = 0;
+    learning.skip_streak = 0;
+    learning.wrong_note_correct_streak = 0;
     learning.wrong_count += 1;
     learning.updated_at_ms = updated_at_ms;
 
     if (learning.state == learning_state::known && learning.wrong_count >= rules.wrong_release) {
         learning.state = learning_state::learning;
         clear_known_review(learning);
+        return;
     }
+
+    if (rules.wrong_note_enabled
+        && learning.state != learning_state::known
+        && learning.wrong_count >= rules.wrong_note_threshold) {
+        learning.state = learning_state::wrong_note;
+        clear_known_review(learning);
+    }
+}
+
+void record_skipped_question(question_learning& learning, std::int64_t updated_at_ms)
+{
+    learning.skip_streak += 1;
+    learning.updated_at_ms = updated_at_ms;
+}
+
+bool can_offer_known_by_swipe(
+    const question_learning& learning,
+    const learning_update_rules& rules)
+{
+    return learning.state != learning_state::known
+        && learning.skip_streak >= rules.swipe_known_threshold;
+}
+
+void mark_question_known(
+    question_learning& learning,
+    std::int64_t updated_at_ms,
+    const learning_update_rules& rules)
+{
+    learning.state = learning_state::known;
+    learning.correct_streak = rules.known_threshold;
+    learning.wrong_count = 0;
+    learning.skip_streak = 0;
+    learning.wrong_note_correct_streak = 0;
+    learning.review_count = 0;
+    learning.updated_at_ms = updated_at_ms;
+    schedule_known_review(learning, updated_at_ms, rules);
 }
 
 void mark_question_unknown(question_learning& learning, std::int64_t updated_at_ms)
 {
     learning.correct_streak = 0;
     learning.wrong_count = 0;
+    learning.skip_streak = 0;
+    learning.wrong_note_correct_streak = 0;
     learning.state = learning_state::unknown;
     clear_known_review(learning);
     learning.updated_at_ms = updated_at_ms;

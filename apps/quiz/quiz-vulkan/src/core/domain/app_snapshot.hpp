@@ -44,6 +44,7 @@ struct learning_summary {
     std::size_t learning_count = 0;
     std::size_t known_count = 0;
     std::size_t unknown_count = 0;
+    std::size_t wrong_note_count = 0;
 };
 
 struct session_snapshot {

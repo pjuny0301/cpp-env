@@ -82,6 +82,9 @@ learning_summary summarize_learning(
             case learning_state::unknown:
                 summary.unknown_count += 1;
                 break;
+            case learning_state::wrong_note:
+                summary.wrong_note_count += 1;
+                break;
         }
     }
 

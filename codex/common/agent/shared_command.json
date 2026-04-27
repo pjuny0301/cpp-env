@@ -64,6 +64,7 @@
   "quiz_vulkan_remake_coordination": {
     "main_agent_role": "Project manager, reviewer, merge integrator, and final verifier.",
     "sub_agent_rule": "Use sub-agents only for bounded, non-overlapping work scopes; each worker owns its listed files and must not revert others.",
+    "long_running_rule": "If a worker is running long and the next dependency is not blocked by that result, start another bounded worker for the next non-overlapping task while the main agent also continues useful local work.",
     "plugin_policy": "Give role-specific plugins only when they directly help the assigned scope. Native C++/Vulkan/domain workers usually need no plugin. Frontend or browser UI workers may get Playwright/browser tooling. Android runtime validation workers may get the Android testing plugin.",
     "read_order": [
       "codex/quiz/big_plan.md",

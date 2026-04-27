@@ -98,6 +98,39 @@
       ]
     },
     {
+      "id": "app_action_router",
+      "area": "app",
+      "path": "tests/app/app_action_router_tests.cpp",
+      "type": "ctest",
+      "compiler_profile": "windows_mingw_ascii_gcc13",
+      "supported_with_available_mingw": true,
+      "source_dependencies": [
+        "src/app/app_action_router.cpp",
+        "src/core/domain/app_action.cpp",
+        "src/core/domain/quiz_model.cpp",
+        "src/core/domain/quiz_session.cpp"
+      ]
+    },
+    {
+      "id": "app_demo_render_path",
+      "area": "app",
+      "path": "tests/app/app_demo_tests.cpp",
+      "type": "ctest",
+      "compiler_profile": "windows_mingw_ascii_gcc13",
+      "supported_with_available_mingw": true,
+      "source_dependencies": [
+        "src/app/app_demo.cpp",
+        "src/app/app_state.cpp",
+        "src/core/domain/app_action.cpp",
+        "src/core/domain/app_snapshot.cpp",
+        "src/core/domain/learning_state.cpp",
+        "src/core/domain/quiz_model.cpp",
+        "src/core/domain/quiz_session.cpp",
+        "src/core/ui/ui_renderer.cpp",
+        "src/render/vulkan/vulkan_renderer.cpp"
+      ]
+    },
+    {
       "id": "quiz_screens_smoke",
       "area": "ui",
       "path": "tests/ui/quiz_screens_tests.cpp",

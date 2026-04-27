@@ -2,12 +2,16 @@
 
 #include "app/app_demo.h"
 #include "app/app_state.h"
+#include "core/domain/deck_artifact_loader.hpp"
 
 #include <chrono>
+#include <filesystem>
 #include <string>
 #include <iostream>
+#include <sstream>
 #include <thread>
 #include <utility>
+#include <vector>
 
 namespace quiz_vulkan {
 namespace {
@@ -32,6 +36,62 @@ app_render_report render_and_report(
     return report;
 }
 
+std::vector<domain::deck> load_initial_decks(const app_config& config, platform_shell& shell)
+{
+    if (config.deck_artifacts.empty()) {
+        return {make_demo_deck()};
+    }
+
+    std::vector<domain::deck> decks;
+    for (const std::filesystem::path& artifact_path : config.deck_artifacts) {
+        const domain::deck_artifact_load_result result = domain::load_deck_artifact_file(artifact_path);
+        if (result.ok() && result.value.has_value()) {
+            shell.show_message("loaded deck artifact: " + artifact_path.string());
+            decks.push_back(*result.value);
+            continue;
+        }
+
+        std::ostringstream message;
+        message << "failed to load deck artifact: " << artifact_path.string();
+        shell.show_message(message.str());
+
+        for (const domain::deck_artifact_parse_error& error : result.errors) {
+            std::ostringstream error_line;
+            error_line << "  line " << error.line << ": " << error.message;
+            shell.show_message(error_line.str());
+        }
+    }
+
+    return decks;
+}
+
+bool dispatch_preview_answer(app_state& quiz_state, std::int64_t now_ms)
+{
+    const domain::app_snapshot snapshot = quiz_state.snapshot();
+    if (!snapshot.active_session.has_value() || !snapshot.active_session->current_question.has_value()) {
+        return false;
+    }
+
+    const domain::question_snapshot& question = *snapshot.active_session->current_question;
+    if (question.type == domain::question_type::blank) {
+        quiz_state.dispatch(domain::make_submit_text_answer_action("scene snapshot"), now_ms);
+        return true;
+    }
+
+    if (question.options.empty()) {
+        quiz_state.dispatch(domain::make_skip_question_action(), now_ms);
+        return true;
+    }
+
+    if (question.type == domain::question_type::multiselect) {
+        quiz_state.dispatch(domain::make_submit_multiselect_action({0}), now_ms);
+        return true;
+    }
+
+    quiz_state.dispatch(domain::make_submit_option_action(0), now_ms);
+    return true;
+}
+
 } // namespace
 
 app::app(app_config config)
@@ -52,22 +112,38 @@ int app::run()
         return 1;
     }
 
-    app_state quiz_state({make_demo_deck()});
+    std::vector<domain::deck> decks = load_initial_decks(config_, *shell_);
+    if (decks.empty()) {
+        shell_->show_message("no valid quiz deck is available");
+        return 1;
+    }
+
+    app_state quiz_state(std::move(decks));
     render_and_report(*shell_, config_.shell, "deck-list", quiz_state.snapshot());
 
-    quiz_state.dispatch(domain::make_select_deck_action("demo_deck"));
-    quiz_state.dispatch(domain::make_select_day_action("day_1"));
+    const domain::deck& initial_deck = quiz_state.decks().front();
+    quiz_state.dispatch(domain::make_select_deck_action(initial_deck.id));
+    if (initial_deck.days.empty()) {
+        render_and_report(*shell_, config_.shell, "deck-without-days", quiz_state.snapshot());
+        while (shell_->pump_events() == platform_shell_status::keep_running) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        }
+        return 0;
+    }
+
+    quiz_state.dispatch(domain::make_select_day_action(initial_deck.days.front().id));
     quiz_state.dispatch(domain::make_start_quiz_action(domain::quiz_mode::normal), 100);
     render_and_report(*shell_, config_.shell, "quiz-active", quiz_state.snapshot());
 
-    quiz_state.dispatch(domain::make_submit_option_action(0), 200);
+    dispatch_preview_answer(quiz_state, 200);
     render_and_report(*shell_, config_.shell, "quiz-feedback", quiz_state.snapshot());
 
     quiz_state.dispatch(domain::make_continue_after_feedback_action(), 300);
-    render_and_report(*shell_, config_.shell, "quiz-blank-input", quiz_state.snapshot());
+    render_and_report(*shell_, config_.shell, "quiz-next-or-completed", quiz_state.snapshot());
 
-    quiz_state.dispatch(domain::make_submit_text_answer_action("scene snapshot"), 400);
-    render_and_report(*shell_, config_.shell, "quiz-blank-feedback", quiz_state.snapshot());
+    if (dispatch_preview_answer(quiz_state, 400)) {
+        render_and_report(*shell_, config_.shell, "quiz-second-feedback", quiz_state.snapshot());
+    }
 
     quiz_state.dispatch(domain::make_continue_after_feedback_action(), 500);
     render_and_report(*shell_, config_.shell, "quiz-completed", quiz_state.snapshot());

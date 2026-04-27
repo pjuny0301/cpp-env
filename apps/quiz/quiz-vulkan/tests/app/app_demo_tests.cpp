@@ -31,6 +31,23 @@ int main()
     assert(feedback_report.screen_id == "quiz_feedback");
     assert(feedback_report.frame_summary.nonblank());
 
+    state.dispatch(domain::make_continue_after_feedback_action(), 300);
+    app_render_report blank_input_report = render_app_snapshot(state.snapshot());
+    assert(blank_input_report.screen_id == "quiz_active");
+    assert(blank_input_report.input_region_count > 0);
+    assert(blank_input_report.frame_summary.nonblank());
+    assert(blank_input_report.frame_summary.shaded_pixel_count > 0);
+
+    state.dispatch(domain::make_submit_text_answer_action("scene snapshot"), 400);
+    app_render_report blank_feedback_report = render_app_snapshot(state.snapshot());
+    assert(blank_feedback_report.screen_id == "quiz_feedback");
+    assert(blank_feedback_report.frame_summary.nonblank());
+
+    state.dispatch(domain::make_continue_after_feedback_action(), 500);
+    app_render_report completed_report = render_app_snapshot(state.snapshot());
+    assert(completed_report.screen_id == "quiz_results");
+    assert(completed_report.frame_summary.nonblank());
+
     const std::string formatted = format_render_report("feedback", feedback_report);
     assert(formatted.find("feedback") != std::string::npos);
     assert(formatted.find("nonblank=true") != std::string::npos);

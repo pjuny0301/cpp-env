@@ -105,6 +105,30 @@ void test_wrong_note_settings_take_effect()
     require(state.learning().at("q1").state == domain::learning_state::learning, "wrong note release streak restores learning state");
 }
 
+void test_wrong_note_quiz_mode_filters_learning_state()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+    state.dispatch(domain::make_update_setting_action("wrong_note_enabled", "yes"));
+    start_first_day_quiz(state, 100);
+
+    state.dispatch(domain::make_submit_option_action(1), 110);
+    require(state.learning().at("q1").state == domain::learning_state::wrong_note, "wrong note mode setup marks missed question");
+
+    state.dispatch(domain::make_start_quiz_action(domain::quiz_mode::wrong_note), 120);
+    require(state.active_session().has_value(), "wrong note mode creates a session");
+    require(state.active_session()->mode == domain::quiz_mode::wrong_note, "wrong note mode stores mode");
+    require(domain::phase_of(*state.active_session()) == domain::quiz_session_phase::active, "wrong note mode starts active when a wrong-note question exists");
+    require(state.active_session()->question_ids.size() == 1, "wrong note mode includes only wrong-note questions");
+    require(state.active_session()->question_ids[0] == "q1", "wrong note mode selects missed question");
+
+    domain::app_snapshot snapshot = state.snapshot();
+    require(snapshot.active_session.has_value(), "wrong note mode snapshot exposes session");
+    require(snapshot.active_session->mode == domain::quiz_mode::wrong_note, "wrong note mode snapshot exposes mode");
+    require(snapshot.active_session->current_question->learning == domain::learning_state::wrong_note, "wrong note mode snapshot exposes wrong-note learning state");
+}
+
 void test_invalid_setting_preserves_prior_rule()
 {
     using namespace quiz_vulkan;
@@ -305,6 +329,7 @@ int main()
     require(state.selected_day_id().has_value() && *state.selected_day_id() == "day1", "invalid day does not replace selection");
 
     test_wrong_note_settings_take_effect();
+    test_wrong_note_quiz_mode_filters_learning_state();
     test_invalid_setting_preserves_prior_rule();
     test_known_settings_update_mark_and_auto_promote();
 

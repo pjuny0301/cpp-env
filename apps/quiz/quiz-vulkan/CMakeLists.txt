@@ -6,6 +6,27 @@ project(
     LANGUAGES CXX
 )
 
+function(quiz_vulkan_copy_mingw_runtime_dlls target_name)
+    if(NOT MINGW)
+        return()
+    endif()
+
+    get_filename_component(mingw_runtime_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    foreach(runtime_dll IN ITEMS libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll)
+        set(runtime_dll_path "${mingw_runtime_dir}/${runtime_dll}")
+        if(EXISTS "${runtime_dll_path}")
+            add_custom_command(
+                TARGET ${target_name}
+                POST_BUILD
+                COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                    "${runtime_dll_path}"
+                    "$<TARGET_FILE_DIR:${target_name}>"
+                VERBATIM
+            )
+        endif()
+    endforeach()
+endfunction()
+
 add_library(quiz_vulkan_platform_shell STATIC)
 target_sources(
     quiz_vulkan_platform_shell
@@ -34,6 +55,7 @@ target_sources(
     PRIVATE
         src/core/domain/app_action.cpp
         src/core/domain/app_snapshot.cpp
+        src/core/domain/deck_artifact_loader.cpp
         src/core/domain/learning_state.cpp
         src/core/domain/quiz_model.cpp
         src/core/domain/quiz_session.cpp
@@ -43,6 +65,7 @@ target_sources(
         FILES
             src/core/domain/app_action.hpp
             src/core/domain/app_snapshot.hpp
+            src/core/domain/deck_artifact_loader.hpp
             src/core/domain/learning_state.hpp
             src/core/domain/quiz_model.hpp
             src/core/domain/quiz_session.hpp
@@ -117,6 +140,7 @@ target_sources(
 )
 target_compile_features(quiz_vulkan PRIVATE cxx_std_20)
 target_link_libraries(quiz_vulkan PRIVATE quiz_vulkan_platform_shell quiz_vulkan_renderer quiz_vulkan_domain)
+quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan)
 
 if(MSVC)
     target_compile_options(quiz_vulkan_platform_shell PRIVATE /W4 /permissive-)
@@ -136,29 +160,41 @@ include(CTest)
 if(BUILD_TESTING)
     add_executable(quiz_vulkan_domain_smoke_test tests/domain/domain_smoke_test.cpp)
     target_link_libraries(quiz_vulkan_domain_smoke_test PRIVATE quiz_vulkan_domain)
+    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_domain_smoke_test)
     add_test(NAME quiz_vulkan_domain_smoke_test COMMAND quiz_vulkan_domain_smoke_test)
+
+    add_executable(quiz_vulkan_deck_artifact_loader_tests tests/domain/deck_artifact_loader_tests.cpp)
+    target_link_libraries(quiz_vulkan_deck_artifact_loader_tests PRIVATE quiz_vulkan_domain)
+    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_deck_artifact_loader_tests)
+    add_test(NAME quiz_vulkan_deck_artifact_loader_tests COMMAND quiz_vulkan_deck_artifact_loader_tests)
 
     add_executable(quiz_vulkan_app_state_tests tests/app/app_state_tests.cpp src/app/app_state.cpp)
     target_link_libraries(quiz_vulkan_app_state_tests PRIVATE quiz_vulkan_domain)
+    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_app_state_tests)
     add_test(NAME quiz_vulkan_app_state_tests COMMAND quiz_vulkan_app_state_tests)
 
     add_executable(quiz_vulkan_app_demo_tests tests/app/app_demo_tests.cpp src/app/app_demo.cpp src/app/app_state.cpp)
     target_link_libraries(quiz_vulkan_app_demo_tests PRIVATE quiz_vulkan_renderer quiz_vulkan_domain)
+    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_app_demo_tests)
     add_test(NAME quiz_vulkan_app_demo_tests COMMAND quiz_vulkan_app_demo_tests)
 
     add_executable(quiz_vulkan_scene_layout_data_tests tests/scene/scene_layout_data_tests.cpp)
     target_link_libraries(quiz_vulkan_scene_layout_data_tests PRIVATE quiz_vulkan_scene)
+    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_scene_layout_data_tests)
     add_test(NAME quiz_vulkan_scene_layout_data_tests COMMAND quiz_vulkan_scene_layout_data_tests)
 
     add_executable(quiz_vulkan_layout_placer_tests tests/layout/layout_placer_tests.cpp)
     target_link_libraries(quiz_vulkan_layout_placer_tests PRIVATE quiz_vulkan_scene)
+    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_layout_placer_tests)
     add_test(NAME quiz_vulkan_layout_placer_tests COMMAND quiz_vulkan_layout_placer_tests)
 
     add_executable(quiz_vulkan_quiz_screens_tests tests/ui/quiz_screens_tests.cpp)
     target_link_libraries(quiz_vulkan_quiz_screens_tests PRIVATE quiz_vulkan_ui)
+    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_quiz_screens_tests)
     add_test(NAME quiz_vulkan_quiz_screens_tests COMMAND quiz_vulkan_quiz_screens_tests)
 
     add_executable(quiz_vulkan_renderer_tests tests/render/vulkan_renderer_tests.cpp)
     target_link_libraries(quiz_vulkan_renderer_tests PRIVATE quiz_vulkan_renderer)
+    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_renderer_tests)
     add_test(NAME quiz_vulkan_renderer_tests COMMAND quiz_vulkan_renderer_tests)
 endif()

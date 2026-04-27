@@ -83,13 +83,56 @@ quiz_vulkan::domain::deck make_blank_input_deck()
     return quiz_deck;
 }
 
+quiz_vulkan::domain::deck make_learning_groups_deck()
+{
+    using namespace quiz_vulkan::domain;
+
+    day quiz_day;
+    quiz_day.id = "day1";
+    quiz_day.title = "Day 1";
+
+    const std::vector<std::string> question_ids = {"q_learning", "q_known", "q_wrong"};
+    for (const std::string& question_id : question_ids) {
+        question quiz_question;
+        quiz_question.id = question_id;
+        quiz_question.prompt = "Question " + question_id;
+        quiz_question.type = question_type::answer;
+        quiz_question.options.push_back(option{"Yes", true});
+        quiz_question.options.push_back(option{"No", false});
+        quiz_day.questions.push_back(std::move(quiz_question));
+    }
+
+    deck quiz_deck;
+    quiz_deck.id = "deck1";
+    quiz_deck.title = "Learning groups";
+    quiz_deck.days.push_back(std::move(quiz_day));
+    return quiz_deck;
+}
+
+quiz_vulkan::domain::learning_state_map make_learning_groups_state()
+{
+    using namespace quiz_vulkan::domain;
+
+    learning_state_map learning;
+
+    question_learning known;
+    known.state = learning_state::known;
+    learning["q_known"] = known;
+
+    question_learning wrong_note;
+    wrong_note.state = learning_state::wrong_note;
+    learning["q_wrong"] = wrong_note;
+
+    return learning;
+}
+
 quiz_vulkan::domain::app_snapshot make_snapshot(
     const std::vector<quiz_vulkan::domain::deck>& decks,
     const quiz_vulkan::domain::quiz_session* session = nullptr,
     std::unordered_map<std::string, std::string> settings = {},
-    std::optional<std::string> error_message = std::nullopt)
+    std::optional<std::string> error_message = std::nullopt,
+    quiz_vulkan::domain::learning_state_map learning = {})
 {
-    const quiz_vulkan::domain::learning_state_map learning;
     return quiz_vulkan::domain::make_app_snapshot(
         decks,
         std::optional<std::string>{"deck1"},
@@ -105,6 +148,21 @@ quiz_vulkan::domain::quiz_session make_active_session(const quiz_vulkan::domain:
     const quiz_vulkan::domain::learning_state_map learning;
     const quiz_vulkan::domain::previous_answer_map previous_answers;
     return quiz_vulkan::domain::start_quiz_session(deck, learning, previous_answers);
+}
+
+quiz_vulkan::domain::quiz_session make_completed_session(const quiz_vulkan::domain::deck& deck)
+{
+    quiz_vulkan::domain::quiz_session session = make_active_session(deck);
+
+    while (!session.completed) {
+        if (session.pending_feedback.has_value()) {
+            quiz_vulkan::domain::continue_after_feedback(session);
+        } else {
+            (void)quiz_vulkan::domain::skip_current_question(session, 100);
+        }
+    }
+
+    return session;
 }
 
 void apply_patch_to_scene(
@@ -123,6 +181,30 @@ void require_within_visible_bottom(
     const quiz_vulkan::scene::placed_scene_node* node = placed.find_node(node_id);
     require(node != nullptr, message);
     require(node->bounds.bottom() <= placed.usable_bounds.bottom() + 0.001f, message);
+}
+
+void require_start_quiz_action(
+    const quiz_vulkan::scene::scene_layout_data& data,
+    const char* node_id,
+    const char* payload,
+    const char* message)
+{
+    const quiz_vulkan::scene::scene_node_data* node = data.find_node(node_id);
+    require(node != nullptr, message);
+    require(node->has_action_binding, message);
+    require(node->action_binding.action_type == "start_quiz", message);
+    require(node->action_binding.payload == payload, message);
+}
+
+void require_node_role(
+    const quiz_vulkan::scene::scene_layout_data& data,
+    const char* node_id,
+    quiz_vulkan::scene::scene_node_role role,
+    const char* message)
+{
+    const quiz_vulkan::scene::scene_node_data* node = data.find_node(node_id);
+    require(node != nullptr, message);
+    require(node->semantics.role == role, message);
 }
 
 } // namespace
@@ -146,6 +228,8 @@ int main()
     require(deck_list_descriptor.kind == ui::quiz_screen_kind::deck_list, "deck list descriptor selected");
     require(deck_list_descriptor.route.metadata.at("descriptor_version") == "quiz_screen_descriptor_v1", "descriptor version emitted");
     require(deck_list_descriptor.route.metadata.at("layout_contract") == "deck_grid", "deck list layout contract emitted");
+    require(deck_list_descriptor.route.metadata.at("known_count") == "0", "deck list known count metadata emitted");
+    require(deck_list_descriptor.route.metadata.at("wrong_note_count") == "0", "deck list wrong-note count metadata emitted");
 
     scene::scene_layout_data deck_list_data("test_deck_list");
     apply_patch_to_scene(ui::make_quiz_screen_patch(deck_list_snapshot), deck_list_data);
@@ -168,7 +252,30 @@ int main()
     require(day_intro_data.route_state().metadata.at("selected_day_id") == "day1", "day intro selected day metadata emitted");
     require(day_intro_data.route_state().metadata.at("selected_day_question_count") == "1", "day intro question count metadata emitted");
     require(day_intro_data.contains_node("day_intro_start_normal"), "day intro normal start action exists");
-    require(day_intro_data.contains_node("day_intro_start_known"), "day intro known start action exists");
+    require(!day_intro_data.contains_node("day_intro_start_known"), "day intro known action is hidden without known questions");
+    require(!day_intro_data.contains_node("day_intro_start_wrong_note"), "day intro wrong-note action is hidden without wrong notes");
+    require_start_quiz_action(day_intro_data, "day_intro_start_normal", "normal", "day intro normal action starts normal quiz");
+
+    std::vector<domain::deck> learning_decks;
+    learning_decks.push_back(make_learning_groups_deck());
+    const domain::learning_state_map learning_groups = make_learning_groups_state();
+    const domain::app_snapshot learning_day_intro_snapshot = make_snapshot(
+        learning_decks,
+        nullptr,
+        {},
+        std::nullopt,
+        learning_groups);
+    scene::scene_layout_data learning_day_intro_data("test_learning_day_intro");
+    apply_patch_to_scene(ui::make_quiz_screen_patch(learning_day_intro_snapshot), learning_day_intro_data);
+    require(learning_day_intro_data.route_state().screen_id == "day_intro", "learning day intro route selected");
+    require(learning_day_intro_data.route_state().metadata.at("known_count") == "1", "known count metadata emitted");
+    require(learning_day_intro_data.route_state().metadata.at("wrong_note_count") == "1", "wrong-note count metadata emitted");
+    require(learning_day_intro_data.contains_node("day_intro_start_known"), "known mode action exists when known questions exist");
+    require(learning_day_intro_data.contains_node("day_intro_start_wrong_note"), "wrong-note mode action exists when wrong notes exist");
+    require_node_role(learning_day_intro_data, "day_intro_modes", scene::scene_node_role::quiz_controls, "day intro mode actions are tagged as controls");
+    require_start_quiz_action(learning_day_intro_data, "day_intro_start_normal", "normal", "learning day intro normal action starts normal quiz");
+    require_start_quiz_action(learning_day_intro_data, "day_intro_start_known", "known", "known action starts known quiz");
+    require_start_quiz_action(learning_day_intro_data, "day_intro_start_wrong_note", "wrong_note", "wrong-note action starts wrong-note quiz");
 
     domain::quiz_session active_session = make_active_session(decks.front());
     const domain::app_snapshot active_snapshot = make_snapshot(decks, &active_session);
@@ -263,7 +370,26 @@ int main()
     apply_patch_to_scene(ui::make_quiz_screen_patch(results_snapshot), results_data);
     require(results_data.route_state().screen_id == "quiz_results", "results route selected");
     require(results_data.route_state().metadata.at("completed") == "true", "results completed metadata emitted");
-    require(results_data.contains_node("quiz_results_start_wrong_only"), "results wrong-only action exists");
+    require(results_data.contains_node("quiz_results_start_normal"), "results normal action exists");
+    require(!results_data.contains_node("quiz_results_start_known"), "results known action is hidden without known questions");
+    require(!results_data.contains_node("quiz_results_start_wrong_note"), "results wrong-note action is hidden without wrong notes");
+
+    domain::quiz_session learning_completed_session = make_completed_session(learning_decks.front());
+    const domain::app_snapshot learning_results_snapshot = make_snapshot(
+        learning_decks,
+        &learning_completed_session,
+        {},
+        std::nullopt,
+        learning_groups);
+    scene::scene_layout_data learning_results_data("test_learning_results");
+    apply_patch_to_scene(ui::make_quiz_screen_patch(learning_results_snapshot), learning_results_data);
+    require(learning_results_data.route_state().screen_id == "quiz_results", "learning results route selected");
+    require(learning_results_data.route_state().metadata.at("known_count") == "1", "results known count metadata emitted");
+    require(learning_results_data.route_state().metadata.at("wrong_note_count") == "1", "results wrong-note count metadata emitted");
+    require_node_role(learning_results_data, "quiz_results_actions", scene::scene_node_role::quiz_controls, "results mode actions are tagged as controls");
+    require_start_quiz_action(learning_results_data, "quiz_results_start_normal", "normal", "results normal action starts normal quiz");
+    require_start_quiz_action(learning_results_data, "quiz_results_start_known", "known", "results known action starts known quiz");
+    require_start_quiz_action(learning_results_data, "quiz_results_start_wrong_note", "wrong_note", "results wrong-note action starts wrong-note quiz");
 
     const domain::app_snapshot settings_snapshot = make_snapshot(
         decks,

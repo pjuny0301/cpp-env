@@ -127,6 +127,17 @@ void verify_answer_matching(const deck& test_deck)
     require(!multiselect_matches(*multiselect, std::vector<std::size_t>{0, 1, 2}), "multiselect rejects extra option");
 }
 
+void verify_quiz_mode_strings()
+{
+    require(to_string(quiz_mode::wrong_only) == "wrong_only", "wrong only mode string stays stable");
+    require(to_string(quiz_mode::wrong_note) == "wrong_note", "wrong note mode string is stable");
+    require(parse_quiz_mode("wrong_only") == quiz_mode::wrong_only, "wrong only mode parses underscore form");
+    require(parse_quiz_mode("wrong only") == quiz_mode::wrong_only, "wrong only mode parses spaced form");
+    require(parse_quiz_mode("wrong_note") == quiz_mode::wrong_note, "wrong note mode parses underscore form");
+    require(parse_quiz_mode("wrong note") == quiz_mode::wrong_note, "wrong note mode parses spaced form");
+    require(parse_quiz_mode("wrong-note") == quiz_mode::wrong_note, "wrong note mode parses hyphen form");
+}
+
 void verify_learning_updates()
 {
     const learning_update_rules rules{
@@ -236,6 +247,32 @@ void verify_session_filters(const deck& test_deck)
         wrong_options);
     require(wrong_session.question_ids.size() == 1, "wrong mode uses previous result record");
     require(wrong_session.question_ids[0] == "q_multi_text", "wrong mode selected prior incorrect question");
+
+    learning_state_map wrong_note_learning;
+    wrong_note_learning["q_multi_text"].state = learning_state::wrong_note;
+    wrong_note_learning["q_multiselect"].state = learning_state::known;
+
+    previous_answer_map wrong_note_previous_answers;
+    wrong_note_previous_answers["q_option"] = answer_outcome::incorrect;
+    wrong_note_previous_answers["q_multi_text"] = answer_outcome::correct;
+
+    quiz_session_options wrong_note_options;
+    wrong_note_options.mode = quiz_mode::wrong_note;
+    quiz_session wrong_note_session = start_quiz_session(
+        test_deck,
+        wrong_note_learning,
+        wrong_note_previous_answers,
+        wrong_note_options);
+    require(wrong_note_session.question_ids.size() == 1, "wrong note mode includes wrong-note questions only");
+    require(wrong_note_session.question_ids[0] == "q_multi_text", "wrong note mode selected wrong-note question");
+
+    quiz_session empty_wrong_note_session = start_quiz_session(
+        test_deck,
+        learning_by_question_id,
+        previous_answers,
+        wrong_note_options);
+    require(empty_wrong_note_session.question_ids.empty(), "empty wrong note mode has no questions");
+    require(empty_wrong_note_session.completed, "empty wrong note mode starts completed");
 }
 
 void verify_session_flow_and_snapshot(const deck& test_deck)
@@ -327,6 +364,7 @@ int main()
 
     verify_contract_metadata(test_deck);
     verify_answer_matching(test_deck);
+    verify_quiz_mode_strings();
     verify_learning_updates();
     verify_session_filters(test_deck);
     verify_session_flow_and_snapshot(test_deck);

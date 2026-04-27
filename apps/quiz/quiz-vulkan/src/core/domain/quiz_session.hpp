@@ -16,6 +16,7 @@ enum class quiz_mode {
     normal,
     random,
     wrong_only,
+    wrong_note,
     known,
 };
 

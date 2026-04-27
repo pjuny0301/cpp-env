@@ -63,6 +63,15 @@ int app::run()
     quiz_state.dispatch(domain::make_submit_option_action(0), 200);
     render_and_report(*shell_, config_.shell, "quiz-feedback", quiz_state.snapshot());
 
+    quiz_state.dispatch(domain::make_continue_after_feedback_action(), 300);
+    render_and_report(*shell_, config_.shell, "quiz-blank-input", quiz_state.snapshot());
+
+    quiz_state.dispatch(domain::make_submit_text_answer_action("scene snapshot"), 400);
+    render_and_report(*shell_, config_.shell, "quiz-blank-feedback", quiz_state.snapshot());
+
+    quiz_state.dispatch(domain::make_continue_after_feedback_action(), 500);
+    render_and_report(*shell_, config_.shell, "quiz-completed", quiz_state.snapshot());
+
     while (shell_->pump_events() == platform_shell_status::keep_running) {
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
     }

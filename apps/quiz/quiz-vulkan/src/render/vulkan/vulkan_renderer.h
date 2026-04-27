@@ -19,6 +19,12 @@ struct vulkan_renderer_frame_stats {
     std::size_t debug_bounds_count = 0;
     std::size_t text_run_count = 0;
     std::size_t text_character_count = 0;
+    std::size_t input_enabled_draw_node_count = 0;
+    std::size_t disabled_draw_node_count = 0;
+    std::size_t quiz_option_draw_command_count = 0;
+    std::size_t quiz_feedback_draw_command_count = 0;
+    std::size_t quiz_answer_input_draw_command_count = 0;
+    std::size_t quiz_answer_dock_draw_command_count = 0;
 
     bool empty() const
     {
@@ -76,7 +82,9 @@ public:
     void set_options(vulkan_renderer_options options);
 
 private:
-    static vulkan_renderer_frame_stats count_commands(const ui::ui_draw_list& draw_list);
+    static vulkan_renderer_frame_stats count_commands(
+        const ui::ui_draw_list& draw_list,
+        const scene::placed_scene* placed_scene = nullptr);
     static vulkan_renderer_frame_summary summarize_cpu_fallback(
         const ui::ui_draw_list& draw_list,
         const vulkan_renderer_frame_stats& stats,

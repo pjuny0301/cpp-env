@@ -101,6 +101,8 @@ inline std::string quiz_mode_name(domain::quiz_mode mode)
             return "random";
         case domain::quiz_mode::wrong_only:
             return "wrong_only";
+        case domain::quiz_mode::wrong_note:
+            return "wrong_note";
         case domain::quiz_mode::known:
             return "known";
     }
@@ -498,6 +500,7 @@ inline scene::scene_route_state route_for(
     route.metadata["learning_count"] = std::to_string(snapshot.learning.learning_count);
     route.metadata["known_count"] = std::to_string(snapshot.learning.known_count);
     route.metadata["unknown_count"] = std::to_string(snapshot.learning.unknown_count);
+    route.metadata["wrong_note_count"] = std::to_string(snapshot.learning.wrong_note_count);
     route.metadata["keyboard_safe_layout"] = bool_string(
         screen == quiz_screen_kind::quiz_active || screen == quiz_screen_kind::quiz_feedback);
     const bool has_pending_feedback = snapshot.active_session.has_value() && snapshot.active_session->feedback.has_value();
@@ -790,6 +793,7 @@ inline void append_learning_summary(
     append_pill(edit_data, row_id, to_string_copy(prefix) + "_learning_count", "Learning " + std::to_string(summary.learning_count), "learning_pill");
     append_pill(edit_data, row_id, to_string_copy(prefix) + "_known_count", "Known " + std::to_string(summary.known_count), "known_pill");
     append_pill(edit_data, row_id, to_string_copy(prefix) + "_unknown_count", "Unknown " + std::to_string(summary.unknown_count), "unknown_pill");
+    append_pill(edit_data, row_id, to_string_copy(prefix) + "_wrong_note_count", "Wrong note " + std::to_string(summary.wrong_note_count), "wrong_note_pill");
 }
 
 inline void append_error_banner(
@@ -835,6 +839,29 @@ inline void append_start_mode_button(
         std::move(label),
         press_action("start_quiz", mode_name),
         "button");
+}
+
+inline void tag_mode_action_group(scene::scene_layout_edit_data& edit_data, std::string_view node_id)
+{
+    scene::scene_node_semantics semantics;
+    semantics.role = scene::scene_node_role::quiz_controls;
+    semantics.label = "Quiz modes";
+    edit_data.set_semantics(to_string_copy(node_id), std::move(semantics));
+}
+
+inline void append_learning_mode_buttons(
+    scene::scene_layout_edit_data& edit_data,
+    std::string_view parent_id,
+    std::string_view prefix,
+    const domain::learning_summary& summary)
+{
+    if (summary.known_count > 0) {
+        append_start_mode_button(edit_data, parent_id, prefix, domain::quiz_mode::known, "Known questions");
+    }
+
+    if (summary.wrong_note_count > 0) {
+        append_start_mode_button(edit_data, parent_id, prefix, domain::quiz_mode::wrong_note, "Wrong notes");
+    }
 }
 
 inline void append_feedback_banner(
@@ -1125,10 +1152,10 @@ inline void build_day_intro_screen(const domain::app_snapshot& snapshot, scene::
         "#aeb9c2");
 
     detail::append_section(edit_data, detail::quiz_screens_root_id, "day_intro_modes", 8.0f);
+    detail::tag_mode_action_group(edit_data, "day_intro_modes");
     detail::append_start_mode_button(edit_data, "day_intro_modes", "day_intro", domain::quiz_mode::normal, "Start due questions");
     detail::append_start_mode_button(edit_data, "day_intro_modes", "day_intro", domain::quiz_mode::random, "Random order");
-    detail::append_start_mode_button(edit_data, "day_intro_modes", "day_intro", domain::quiz_mode::wrong_only, "Review wrong answers");
-    detail::append_start_mode_button(edit_data, "day_intro_modes", "day_intro", domain::quiz_mode::known, "Review known questions");
+    detail::append_learning_mode_buttons(edit_data, "day_intro_modes", "day_intro", snapshot.learning);
     edit_data.set_focus("day_intro_start_normal");
 }
 
@@ -1277,9 +1304,9 @@ inline void build_quiz_results_screen(const domain::app_snapshot& snapshot, scen
     detail::append_learning_summary(edit_data, detail::quiz_screens_root_id, "quiz_results", snapshot.learning);
 
     detail::append_section(edit_data, detail::quiz_screens_root_id, "quiz_results_actions", 8.0f);
+    detail::tag_mode_action_group(edit_data, "quiz_results_actions");
     detail::append_start_mode_button(edit_data, "quiz_results_actions", "quiz_results", domain::quiz_mode::normal, "Restart due questions");
-    detail::append_start_mode_button(edit_data, "quiz_results_actions", "quiz_results", domain::quiz_mode::wrong_only, "Review wrong answers");
-    detail::append_start_mode_button(edit_data, "quiz_results_actions", "quiz_results", domain::quiz_mode::known, "Review known questions");
+    detail::append_learning_mode_buttons(edit_data, "quiz_results_actions", "quiz_results", snapshot.learning);
     edit_data.set_focus("quiz_results_start_normal");
 }
 

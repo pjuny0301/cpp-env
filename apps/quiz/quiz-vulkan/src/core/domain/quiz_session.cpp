@@ -54,6 +54,10 @@ bool should_include_question(
         return previous_answer != previous_answers.end() && previous_answer->second == answer_outcome::incorrect;
     }
 
+    if (options.mode == quiz_mode::wrong_note) {
+        return state == learning_state::wrong_note;
+    }
+
     return state != learning_state::known
         || (options.include_due_known
             && is_question_due_for_review(learning_by_question_id, quiz_question.id, options.now_ms));
@@ -70,6 +74,8 @@ std::string_view to_string(quiz_mode mode)
             return "random";
         case quiz_mode::wrong_only:
             return "wrong_only";
+        case quiz_mode::wrong_note:
+            return "wrong_note";
         case quiz_mode::known:
             return "known";
     }
@@ -89,6 +95,9 @@ std::optional<quiz_mode> parse_quiz_mode(std::string_view value)
     }
     if (normalized == "wrong_only" || normalized == "wrong only") {
         return quiz_mode::wrong_only;
+    }
+    if (normalized == "wrong_note" || normalized == "wrong note" || normalized == "wrong-note") {
+        return quiz_mode::wrong_note;
     }
     if (normalized == "known") {
         return quiz_mode::known;

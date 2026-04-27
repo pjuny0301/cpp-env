@@ -70,6 +70,18 @@
       ]
     },
     {
+      "id": "deck_artifact_loader",
+      "area": "domain",
+      "path": "tests/domain/deck_artifact_loader_tests.cpp",
+      "type": "ctest",
+      "compiler_profile": "windows_mingw_ascii_gcc13",
+      "supported_with_available_mingw": true,
+      "source_dependencies": [
+        "src/core/domain/deck_artifact_loader.cpp",
+        "src/core/domain/quiz_model.cpp"
+      ]
+    },
+    {
       "id": "app_state_dispatch",
       "area": "app",
       "path": "tests/app/app_state_tests.cpp",

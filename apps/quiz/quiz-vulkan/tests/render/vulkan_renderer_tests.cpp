@@ -507,6 +507,90 @@ void test_vulkan_frame_plan_builds_scissored_batches_from_render_contracts()
     require(text_batch.scissor.height == 1, "text scissor height maps to surface");
 }
 
+void test_vulkan_frame_plan_applies_nested_clips()
+{
+    using namespace quiz_vulkan::render;
+
+    render_draw_command outer_clip{
+        .type = render_draw_command_type::push_clip,
+        .node_id = "outer_clip",
+        .parent_node_id = {},
+        .depth = 0,
+        .bounds = render_rect{0.0f, 0.0f, 80.0f, 80.0f},
+        .content_bounds = render_rect{0.0f, 0.0f, 80.0f, 80.0f},
+        .paint = {},
+        .border_radius = 0.0f,
+        .text_runs = {},
+        .image = {},
+    };
+    render_draw_command inner_clip{
+        .type = render_draw_command_type::push_clip,
+        .node_id = "inner_clip",
+        .parent_node_id = {},
+        .depth = 0,
+        .bounds = render_rect{20.0f, 20.0f, 40.0f, 40.0f},
+        .content_bounds = render_rect{20.0f, 20.0f, 40.0f, 40.0f},
+        .paint = {},
+        .border_radius = 0.0f,
+        .text_runs = {},
+        .image = {},
+    };
+    render_draw_command quad = make_quad_command(
+        "nested_quad",
+        render_rect{10.0f, 10.0f, 60.0f, 60.0f},
+        render_color{0.4f, 0.6f, 0.8f, 1.0f});
+    render_draw_command pop_inner{
+        .type = render_draw_command_type::pop_clip,
+        .node_id = "inner_clip",
+        .parent_node_id = {},
+        .depth = 0,
+        .bounds = inner_clip.bounds,
+        .content_bounds = inner_clip.content_bounds,
+        .paint = {},
+        .border_radius = 0.0f,
+        .text_runs = {},
+        .image = {},
+    };
+    render_draw_command pop_outer{
+        .type = render_draw_command_type::pop_clip,
+        .node_id = "outer_clip",
+        .parent_node_id = {},
+        .depth = 0,
+        .bounds = outer_clip.bounds,
+        .content_bounds = outer_clip.content_bounds,
+        .paint = {},
+        .border_radius = 0.0f,
+        .text_runs = {},
+        .image = {},
+    };
+
+    render_draw_list draw_list;
+    draw_list.commands = {outer_clip, inner_clip, quad, pop_inner, pop_outer};
+
+    const vulkan_backend::vulkan_frame_plan plan = vulkan_backend::build_vulkan_frame_plan(
+        draw_list,
+        vulkan_backend::vulkan_frame_plan_options{
+            .viewport = render_rect{0.0f, 0.0f, 100.0f, 100.0f},
+            .surface_width = 10,
+            .surface_height = 10,
+        });
+
+    require(plan.batches.size() == 1, "nested clips produce one drawable batch");
+    require(plan.clipped_draw_call_count == 1, "nested clips mark clipped draw call");
+    require(plan.discarded_draw_call_count == 0, "nested clips do not discard visible batch");
+
+    const vulkan_backend::vulkan_draw_batch& batch = plan.batches.front();
+    require(batch.command_index == 2, "nested clipped batch keeps source command index");
+    require(batch.clipped_bounds.x == 20.0f, "nested clipped batch x");
+    require(batch.clipped_bounds.y == 20.0f, "nested clipped batch y");
+    require(batch.clipped_bounds.width == 40.0f, "nested clipped batch width");
+    require(batch.clipped_bounds.height == 40.0f, "nested clipped batch height");
+    require(batch.scissor.x == 2, "nested clipped batch scissor x");
+    require(batch.scissor.y == 2, "nested clipped batch scissor y");
+    require(batch.scissor.width == 4, "nested clipped batch scissor width");
+    require(batch.scissor.height == 4, "nested clipped batch scissor height");
+}
+
 void test_vulkan_backend_adapter_completes_fake_device_lifecycle()
 {
     using namespace quiz_vulkan::render;
@@ -899,6 +983,7 @@ int main()
     test_cpu_fallback_clips_and_discards();
     test_degenerate_surface_discards_draw_calls();
     test_vulkan_frame_plan_builds_scissored_batches_from_render_contracts();
+    test_vulkan_frame_plan_applies_nested_clips();
     test_vulkan_backend_adapter_completes_fake_device_lifecycle();
     test_vulkan_backend_adapter_preserves_plan_diagnostics();
     test_vulkan_backend_adapter_completes_empty_frame();

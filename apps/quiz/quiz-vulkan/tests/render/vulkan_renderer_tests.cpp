@@ -591,6 +591,54 @@ void test_vulkan_frame_plan_applies_nested_clips()
     require(batch.scissor.height == 4, "nested clipped batch scissor height");
 }
 
+void test_vulkan_frame_plan_ignores_unmatched_pop_clip()
+{
+    using namespace quiz_vulkan::render;
+
+    render_draw_command unmatched_pop{
+        .type = render_draw_command_type::pop_clip,
+        .node_id = "unmatched_pop",
+        .parent_node_id = {},
+        .depth = 0,
+        .bounds = {},
+        .content_bounds = {},
+        .paint = {},
+        .border_radius = 0.0f,
+        .text_runs = {},
+        .image = {},
+    };
+    render_draw_command quad = make_quad_command(
+        "quad",
+        render_rect{10.0f, 20.0f, 30.0f, 40.0f},
+        render_color{0.8f, 0.7f, 0.6f, 1.0f});
+
+    render_draw_list draw_list;
+    draw_list.commands = {unmatched_pop, quad};
+
+    const vulkan_backend::vulkan_frame_plan plan = vulkan_backend::build_vulkan_frame_plan(
+        draw_list,
+        vulkan_backend::vulkan_frame_plan_options{
+            .viewport = render_rect{0.0f, 0.0f, 100.0f, 100.0f},
+            .surface_width = 10,
+            .surface_height = 10,
+        });
+
+    require(plan.batches.size() == 1, "unmatched pop clip does not discard later batch");
+    require(plan.clipped_draw_call_count == 0, "unmatched pop clip does not clip later batch");
+    require(plan.discarded_draw_call_count == 0, "unmatched pop clip does not discard later batch");
+
+    const vulkan_backend::vulkan_draw_batch& batch = plan.batches.front();
+    require(batch.command_index == 1, "batch after unmatched pop keeps source command index");
+    require(batch.clipped_bounds.x == 10.0f, "batch after unmatched pop x");
+    require(batch.clipped_bounds.y == 20.0f, "batch after unmatched pop y");
+    require(batch.clipped_bounds.width == 30.0f, "batch after unmatched pop width");
+    require(batch.clipped_bounds.height == 40.0f, "batch after unmatched pop height");
+    require(batch.scissor.x == 1, "batch after unmatched pop scissor x");
+    require(batch.scissor.y == 2, "batch after unmatched pop scissor y");
+    require(batch.scissor.width == 3, "batch after unmatched pop scissor width");
+    require(batch.scissor.height == 4, "batch after unmatched pop scissor height");
+}
+
 void test_vulkan_backend_adapter_completes_fake_device_lifecycle()
 {
     using namespace quiz_vulkan::render;
@@ -984,6 +1032,7 @@ int main()
     test_degenerate_surface_discards_draw_calls();
     test_vulkan_frame_plan_builds_scissored_batches_from_render_contracts();
     test_vulkan_frame_plan_applies_nested_clips();
+    test_vulkan_frame_plan_ignores_unmatched_pop_clip();
     test_vulkan_backend_adapter_completes_fake_device_lifecycle();
     test_vulkan_backend_adapter_preserves_plan_diagnostics();
     test_vulkan_backend_adapter_completes_empty_frame();

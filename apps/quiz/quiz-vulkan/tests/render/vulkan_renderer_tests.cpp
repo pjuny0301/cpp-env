@@ -547,6 +547,39 @@ void test_vulkan_backend_adapter_falls_back_without_surface()
     require(device.calls.empty(), "backend does not call device lifecycle without surface");
 }
 
+void test_vulkan_backend_adapter_falls_back_when_begin_fails()
+{
+    using namespace quiz_vulkan::render;
+
+    render_draw_list draw_list;
+    draw_list.commands.push_back(make_quad_command(
+        "quad",
+        render_rect{0.0f, 0.0f, 100.0f, 100.0f},
+        render_color{1.0f, 1.0f, 1.0f, 1.0f}));
+
+    fake_vulkan_backend_device device(vulkan_backend::vulkan_surface_extent{.width = 16, .height = 16});
+    device.begin_succeeds = false;
+    const vulkan_backend::vulkan_backend_frame_result result = vulkan_backend::submit_vulkan_backend_frame(
+        device,
+        draw_list,
+        render_rect{0.0f, 0.0f, 100.0f, 100.0f});
+
+    require(!result.completed(), "backend cannot complete when frame begin fails");
+    require(result.attempted, "backend records attempted frame when begin fails");
+    require(result.fallback_required, "backend requires fallback when begin fails");
+    require(
+        result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::begin_frame_failed,
+        "backend reports begin fallback reason");
+    require(result.surface_ready, "backend had a surface before begin failed");
+    require(!result.frame_begun, "backend reports failed frame begin");
+    require(!result.commands_recorded, "backend does not record commands after failed begin");
+    require(!result.frame_submitted, "backend does not submit after failed begin");
+    require(!result.frame_presented, "backend does not present after failed begin");
+    require(result.planned_batch_count == 1, "backend reports planned batch count before begin failure");
+    require(device.calls.size() == 1, "backend stops lifecycle after failed begin");
+    require(device.calls[0] == "begin", "backend calls begin before stopping");
+}
+
 void test_vulkan_backend_adapter_falls_back_when_recording_fails()
 {
     using namespace quiz_vulkan::render;
@@ -579,6 +612,41 @@ void test_vulkan_backend_adapter_falls_back_when_recording_fails()
     require(device.calls.size() == 2, "backend stops lifecycle after failed recording");
     require(device.calls[0] == "begin", "backend begins before failed recording");
     require(device.calls[1] == "record", "backend records before stopping");
+}
+
+void test_vulkan_backend_adapter_falls_back_when_submit_fails()
+{
+    using namespace quiz_vulkan::render;
+
+    render_draw_list draw_list;
+    draw_list.commands.push_back(make_quad_command(
+        "quad",
+        render_rect{0.0f, 0.0f, 100.0f, 100.0f},
+        render_color{1.0f, 1.0f, 1.0f, 1.0f}));
+
+    fake_vulkan_backend_device device(vulkan_backend::vulkan_surface_extent{.width = 16, .height = 16});
+    device.submit_succeeds = false;
+    const vulkan_backend::vulkan_backend_frame_result result = vulkan_backend::submit_vulkan_backend_frame(
+        device,
+        draw_list,
+        render_rect{0.0f, 0.0f, 100.0f, 100.0f});
+
+    require(!result.completed(), "backend cannot complete when frame submit fails");
+    require(result.attempted, "backend records attempted frame when submit fails");
+    require(result.fallback_required, "backend requires fallback when submit fails");
+    require(
+        result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::submit_frame_failed,
+        "backend reports submit fallback reason");
+    require(result.surface_ready, "backend had a surface before submit failed");
+    require(result.frame_begun, "backend began frame before submit failed");
+    require(result.commands_recorded, "backend recorded commands before submit failed");
+    require(!result.frame_submitted, "backend reports failed frame submit");
+    require(!result.frame_presented, "backend does not present after failed submit");
+    require(result.planned_batch_count == 1, "backend reports planned batch count before submit failure");
+    require(device.calls.size() == 3, "backend stops lifecycle after failed submit");
+    require(device.calls[0] == "begin", "backend begins before failed submit");
+    require(device.calls[1] == "record", "backend records before failed submit");
+    require(device.calls[2] == "submit", "backend submits before stopping");
 }
 
 void test_vulkan_backend_adapter_falls_back_when_present_fails()
@@ -628,7 +696,9 @@ int main()
     test_vulkan_frame_plan_builds_scissored_batches_from_render_contracts();
     test_vulkan_backend_adapter_completes_fake_device_lifecycle();
     test_vulkan_backend_adapter_falls_back_without_surface();
+    test_vulkan_backend_adapter_falls_back_when_begin_fails();
     test_vulkan_backend_adapter_falls_back_when_recording_fails();
+    test_vulkan_backend_adapter_falls_back_when_submit_fails();
     test_vulkan_backend_adapter_falls_back_when_present_fails();
     return 0;
 }

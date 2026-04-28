@@ -370,6 +370,36 @@ void test_ime_preedit_commit_edges()
     require(engine.text_model().text() == std::string(utf8(u8"한")) + "x", "raw text appends after ime commit");
 }
 
+void test_ime_composition_restart_cancels_visible_preedit()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    engine.focus_text_target("answer");
+
+    require(engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 100, "draft")).size() == 1,
+        "preedit before restart starts composition");
+    require(engine.text_model().preedit_text() == "draft", "preedit before restart is visible");
+
+    std::vector<input_event> events =
+        engine.process_raw_event(ime(raw_platform_ime_phase::composition_start, 110));
+    require(events.size() == 1, "composition restart emits one event for stale preedit");
+    const ime_event& cancel = require_event<ime_event>(events, 0);
+    require(cancel.kind == ime_event_kind::cancel, "composition restart emits cancel for stale preedit");
+    require(cancel.target_id == "answer", "composition restart cancel preserves target id");
+    require(cancel.utf8_text.empty(), "composition restart cancel carries no text");
+    require(engine.text_model().preedit_text().empty(), "composition restart clears stale preedit");
+
+    require(engine.process_raw_event(text(120, "duplicate")).empty(),
+        "raw text remains suppressed after composition restart");
+    events = engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 130, "new"));
+    require(events.size() == 1, "preedit resumes after composition restart");
+    const ime_event& preedit = require_event<ime_event>(events, 0);
+    require(preedit.kind == ime_event_kind::preedit, "post-restart preedit kind is emitted");
+    require(preedit.utf8_text == "new", "post-restart preedit text is emitted");
+}
+
 void test_empty_ime_commit_and_end_cancel_preedit()
 {
     using namespace quiz_vulkan;
@@ -549,6 +579,7 @@ int main()
     test_key_code_fallback_edges();
     test_ime_composition_suppresses_text_and_key_events();
     test_ime_preedit_commit_edges();
+    test_ime_composition_restart_cancels_visible_preedit();
     test_empty_ime_commit_and_end_cancel_preedit();
     test_ime_empty_preedit_and_commit_only_edges();
     test_reset_clears_text_ime_and_pointer_state();

@@ -164,8 +164,19 @@ std::vector<input_event> input_engine::process_ime_event(const raw_platform_ime_
     const bool had_composition = ime_composing_ || !text_.preedit_text().empty();
 
     if (event.phase == raw_platform_ime_phase::composition_start) {
+        const bool had_preedit = !text_.preedit_text().empty();
         ime_composing_ = true;
-        text_.set_preedit("");
+        if (had_preedit) {
+            text_.cancel_ime();
+            events.emplace_back(ime_event{
+                .kind = ime_event_kind::cancel,
+                .timestamp_ms = event.timestamp_ms,
+                .target_id = target_id,
+                .utf8_text = {},
+            });
+        } else {
+            text_.set_preedit("");
+        }
         return events;
     }
 

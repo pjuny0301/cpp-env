@@ -16,6 +16,7 @@ constexpr std::uint32_t replacement_character = 0xfffd;
 struct utf8_scalar {
     std::uint32_t code_point = replacement_character;
     std::size_t byte_count = 1;
+    bool valid = false;
 };
 
 struct shaped_glyph {
@@ -43,7 +44,7 @@ utf8_scalar decode_utf8_scalar(const std::string_view text, const std::size_t by
 {
     const auto byte = static_cast<unsigned char>(text[byte_offset]);
     if (byte < 0x80U) {
-        return utf8_scalar{byte, 1};
+        return utf8_scalar{byte, 1, true};
     }
 
     const std::size_t remaining = text.size() - byte_offset;
@@ -52,7 +53,8 @@ utf8_scalar decode_utf8_scalar(const std::string_view text, const std::size_t by
         if (is_continuation_byte(second)) {
             return utf8_scalar{
                 static_cast<std::uint32_t>(((byte & 0x1fU) << 6U) | (second & 0x3fU)),
-                2};
+                2,
+                true};
         }
     }
 
@@ -67,7 +69,8 @@ utf8_scalar decode_utf8_scalar(const std::string_view text, const std::size_t by
             return utf8_scalar{
                 static_cast<std::uint32_t>(
                     ((byte & 0x0fU) << 12U) | ((second & 0x3fU) << 6U) | (third & 0x3fU)),
-                3};
+                3,
+                true};
         }
     }
 
@@ -84,7 +87,8 @@ utf8_scalar decode_utf8_scalar(const std::string_view text, const std::size_t by
                 static_cast<std::uint32_t>(
                     ((byte & 0x07U) << 18U) | ((second & 0x3fU) << 12U)
                     | ((third & 0x3fU) << 6U) | (fourth & 0x3fU)),
-                4};
+                4,
+                true};
         }
     }
 
@@ -149,17 +153,31 @@ float glyph_advance_for(const render_text_style& style, const std::uint32_t code
     return (style.font_size * 0.5f) + style.letter_spacing;
 }
 
-std::vector<shaped_glyph> shape_request(const render_text_request& request)
+std::vector<shaped_glyph> shape_request(
+    const render_text_request& request,
+    fake_text_engine_diagnostics& diagnostics)
 {
     std::vector<shaped_glyph> glyphs;
 
     for (std::size_t run_index = 0; run_index < request.text_runs.size(); ++run_index) {
         const render_text_run& run = request.text_runs[run_index];
-        const render_text_style& style = request.style_catalog.resolve(run.style_token);
+        const render_text_style* requested_style = request.style_catalog.find(run.style_token);
+        const render_text_style& style =
+            requested_style == nullptr ? request.style_catalog.fallback_style : *requested_style;
+        if (requested_style == nullptr) {
+            diagnostics.style_fallbacks.push_back(fake_text_engine_style_fallback{
+                .run_index = run_index,
+                .requested_style_token = run.style_token,
+                .fallback_style_token = request.style_catalog.fallback_style.id,
+            });
+        }
 
         for (std::size_t byte_offset = 0; byte_offset < run.text.size();) {
             const utf8_scalar scalar = decode_utf8_scalar(run.text, byte_offset);
             const std::uint32_t code_point = scalar.code_point;
+            if (!scalar.valid) {
+                ++diagnostics.invalid_utf8_sequence_count;
+            }
             glyphs.push_back(shaped_glyph{
                 .run_index = run_index,
                 .byte_offset = byte_offset,
@@ -342,13 +360,15 @@ render_text_revision update_atlas_for_layout(
 
 render_text_measure fake_text_engine::measure_text(const render_text_request& request) const
 {
-    const std::vector<shaped_glyph> glyphs = shape_request(request);
+    diagnostics_ = {};
+    const std::vector<shaped_glyph> glyphs = shape_request(request, diagnostics_);
     return measure_lines(break_lines(request, glyphs));
 }
 
 render_text_layout fake_text_engine::layout_text(const render_text_request& request) const
 {
-    const std::vector<shaped_glyph> shaped_glyphs = shape_request(request);
+    diagnostics_ = {};
+    const std::vector<shaped_glyph> shaped_glyphs = shape_request(request, diagnostics_);
     const std::vector<laid_out_line> lines = break_lines(request, shaped_glyphs);
     const render_text_revision atlas_revision =
         update_atlas_for_layout(shaped_glyphs, lines, cached_glyph_ids_, atlas_revision_, atlas_updates_);
@@ -384,6 +404,11 @@ render_text_layout fake_text_engine::layout_text(const render_text_request& requ
 std::vector<render_text_atlas_update> fake_text_engine::consume_atlas_updates()
 {
     return std::exchange(atlas_updates_, {});
+}
+
+const fake_text_engine_diagnostics& fake_text_engine::last_diagnostics() const
+{
+    return diagnostics_;
 }
 
 } // namespace quiz_vulkan::render

@@ -213,6 +213,15 @@ void test_fake_style_fallback_shapes_missing_tokens()
     const render_text_measure measure = engine.measure_text(request);
     require(near(measure.width, 12.0f), "missing style token uses fallback width");
     require(near(measure.height, 14.0f), "missing style token uses fallback line height");
+    require(engine.last_diagnostics().used_style_fallback(), "missing style token records fallback diagnostics");
+    require(engine.last_diagnostics().style_fallbacks.size() == 1, "one missing style fallback is recorded");
+    require(engine.last_diagnostics().style_fallbacks[0].run_index == 0, "fallback diagnostic records run index");
+    require(
+        engine.last_diagnostics().style_fallbacks[0].requested_style_token == "missing",
+        "fallback diagnostic records requested style token");
+    require(
+        engine.last_diagnostics().style_fallbacks[0].fallback_style_token == "fallback",
+        "fallback diagnostic records fallback style token");
 
     const render_text_layout layout = engine.layout_text(request);
     require(layout.glyphs.size() == 2, "fallback layout emits requested glyphs");
@@ -321,9 +330,17 @@ void test_fake_utf8_handles_wide_combining_and_invalid_sequences()
     const render_text_measure measure = engine.measure_text(request);
     require(near(measure.width, 70.0f), "UTF-8 edge cases produce deterministic width");
     require(near(measure.height, 24.0f), "UTF-8 edge cases use body line height");
+    require(engine.last_diagnostics().saw_invalid_utf8(), "invalid UTF-8 measure records diagnostics");
+    require(
+        engine.last_diagnostics().invalid_utf8_sequence_count == 4,
+        "invalid UTF-8 measure records each replacement sequence");
 
     const render_text_layout layout = engine.layout_text(request);
     require(layout.glyphs.size() == 7, "UTF-8 edge cases emit one glyph per decoded scalar or replacement");
+    require(engine.last_diagnostics().saw_invalid_utf8(), "invalid UTF-8 layout records diagnostics");
+    require(
+        engine.last_diagnostics().invalid_utf8_sequence_count == 4,
+        "invalid UTF-8 layout records each replacement sequence");
     require(layout.glyphs[0].glyph_id == 0x1f642, "four-byte UTF-8 decodes to Unicode scalar");
     require(layout.glyphs[0].byte_offset == 0, "four-byte scalar records starting byte");
     require(near(layout.glyphs[0].bounds.width, 20.0f), "wide emoji-like scalar uses full-width advance");

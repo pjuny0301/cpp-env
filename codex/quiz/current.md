@@ -1,6 +1,6 @@
 # Quiz Current Handoff
 
-Last updated: 2026-04-29
+Last updated: 2026-04-30
 
 ## Top priorities
 
@@ -18,6 +18,7 @@ Last updated: 2026-04-29
 - 46: source/translation split-view scene support.
 - 79: verification discipline and interface locks.
 - 82: pure C++/Vulkan remake engine path.
+- 57: known bucket and long-press unknown behavior.
 
 ## Contracts
 

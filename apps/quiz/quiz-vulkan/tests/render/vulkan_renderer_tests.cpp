@@ -625,6 +625,34 @@ void test_vulkan_backend_adapter_preserves_plan_diagnostics()
     require(batch.scissor.height == 3, "recorded clipped batch scissor height");
 }
 
+void test_vulkan_backend_adapter_completes_empty_frame()
+{
+    using namespace quiz_vulkan::render;
+
+    render_draw_list draw_list;
+    fake_vulkan_backend_device device(vulkan_backend::vulkan_surface_extent{.width = 16, .height = 16});
+    const vulkan_backend::vulkan_backend_frame_result result = vulkan_backend::submit_vulkan_backend_frame(
+        device,
+        draw_list,
+        render_rect{0.0f, 0.0f, 100.0f, 100.0f});
+
+    require(result.completed(), "backend completes empty frame lifecycle");
+    require(result.attempted, "backend records attempted empty frame");
+    require(!result.fallback_required, "empty frame does not require fallback with fake device");
+    require(result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::none, "empty frame has no fallback reason");
+    require(result.surface_ready, "backend surface is ready for empty frame");
+    require(result.frame_begun, "backend begins empty frame");
+    require(result.commands_recorded, "backend records empty frame commands");
+    require(result.frame_submitted, "backend submits empty frame");
+    require(result.frame_presented, "backend presents empty frame");
+    require(result.planned_batch_count == 0, "empty frame has no planned batches");
+    require(result.recorded_batch_count == 0, "empty frame has no recorded batches");
+    require(result.clipped_draw_call_count == 0, "empty frame has no clipped draw calls");
+    require(result.discarded_draw_call_count == 0, "empty frame has no discarded draw calls");
+    require(device.recorded_plan.empty(), "empty frame records empty plan");
+    require(device.calls.size() == 4, "empty frame still runs lifecycle");
+}
+
 void test_vulkan_backend_adapter_falls_back_without_surface()
 {
     using namespace quiz_vulkan::render;
@@ -845,6 +873,7 @@ int main()
     test_vulkan_frame_plan_builds_scissored_batches_from_render_contracts();
     test_vulkan_backend_adapter_completes_fake_device_lifecycle();
     test_vulkan_backend_adapter_preserves_plan_diagnostics();
+    test_vulkan_backend_adapter_completes_empty_frame();
     test_vulkan_backend_adapter_falls_back_without_surface();
     test_vulkan_backend_adapter_falls_back_without_viewport();
     test_vulkan_backend_adapter_falls_back_when_begin_fails();

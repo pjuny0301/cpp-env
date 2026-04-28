@@ -12,13 +12,16 @@ Last updated: 2026-04-30
 
 ## Active requirement IDs
 
+- 06: swipe/known/unknown quiz flow.
+- 20: known/unknown learning state aging.
 - 02: quiz UI/design upgrade through native renderer contracts.
 - 24: FSM/app action routing and input normalization.
+- 30: previous-question swipe routing.
 - 31: keyboard-safe blank input and caret/IME handling.
 - 46: source/translation split-view scene support.
+- 57: known bucket and long-press unknown behavior.
 - 79: verification discipline and interface locks.
 - 82: pure C++/Vulkan remake engine path.
-- 57: known bucket and long-press unknown behavior.
 
 ## Contracts
 

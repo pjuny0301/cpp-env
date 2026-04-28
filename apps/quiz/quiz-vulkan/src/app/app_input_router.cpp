@@ -125,11 +125,11 @@ std::optional<scene::scene_action_binding> non_tap_gesture_action(
         return swipe_right_action(placed_scene);
     }
     if (kind == input::gesture_kind::long_press) {
-        if (const std::optional<scene::scene_action_binding> known_action =
-                first_enabled_action(placed_scene, "mark_question_known")) {
-            return known_action;
+        if (const std::optional<scene::scene_action_binding> unknown_action =
+                first_enabled_action(placed_scene, "mark_question_unknown")) {
+            return unknown_action;
         }
-        return app_gesture_action("mark_question_known");
+        return app_gesture_action("mark_question_unknown");
     }
 
     return std::nullopt;

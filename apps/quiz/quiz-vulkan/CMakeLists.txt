@@ -303,10 +303,19 @@ target_sources(
             src/app/app.h
             src/app/app_demo.h
             src/app/app_render_pipeline.h
+            src/app/app_sound_router.h
             src/app/app_state.h
 )
 target_compile_features(quiz_vulkan PRIVATE cxx_std_23)
-target_link_libraries(quiz_vulkan PRIVATE quiz_vulkan_platform_shell quiz_vulkan_renderer quiz_vulkan_ui quiz_vulkan_domain)
+target_link_libraries(
+    quiz_vulkan
+    PRIVATE
+        quiz_vulkan_platform_shell
+        quiz_vulkan_renderer
+        quiz_vulkan_ui
+        quiz_vulkan_domain
+        quiz_vulkan_audio_contract
+)
 quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan)
 
 if(MSVC)
@@ -348,6 +357,11 @@ if(BUILD_TESTING)
     target_link_libraries(quiz_vulkan_app_action_router_tests PRIVATE quiz_vulkan_domain quiz_vulkan_scene)
     quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_app_action_router_tests)
     add_test(NAME quiz_vulkan_app_action_router_tests COMMAND quiz_vulkan_app_action_router_tests)
+
+    add_executable(quiz_vulkan_app_sound_router_tests tests/app/app_sound_router_tests.cpp)
+    target_link_libraries(quiz_vulkan_app_sound_router_tests PRIVATE quiz_vulkan_domain quiz_vulkan_audio_contract)
+    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_app_sound_router_tests)
+    add_test(NAME quiz_vulkan_app_sound_router_tests COMMAND quiz_vulkan_app_sound_router_tests)
 
     add_executable(quiz_vulkan_app_demo_tests tests/app/app_demo_tests.cpp src/app/app_demo.cpp src/app/app_state.cpp)
     target_link_libraries(quiz_vulkan_app_demo_tests PRIVATE quiz_vulkan_renderer quiz_vulkan_ui quiz_vulkan_domain)

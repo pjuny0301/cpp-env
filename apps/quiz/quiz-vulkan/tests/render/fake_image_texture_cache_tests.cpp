@@ -178,6 +178,62 @@ void test_texture_cache_reuses_matching_key_and_misses_on_sampler_change()
     require(cache.release_unused_count() == 1, "cache release hook is callable");
 }
 
+void test_texture_cache_reuses_normalized_equivalent_cache_keys()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    fake_image_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+    const render_image_sampler_policy sampler;
+
+    const render_resolved_image_source local_slashes = resolver.resolve(
+        render_image_resolve_request{.uri = "  ./textures\\cards\\front.fake  "})
+                                                            .source;
+    const render_resolved_image_source local_canonical = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/cards/front.fake"})
+                                                               .source;
+    require(
+        local_slashes.cache_key() == "textures/cards/front.fake",
+        "local path cache key strips current directory and normalizes slashes");
+    require(
+        local_slashes.cache_key() == local_canonical.cache_key(),
+        "equivalent local image refs resolve to one cache key");
+
+    const render_image_texture_result local_first = cache.acquire_texture(
+        render_image_texture_request{.source = local_slashes, .sampler = sampler});
+    const render_image_texture_result local_second = cache.acquire_texture(
+        render_image_texture_request{.source = local_canonical, .sampler = sampler});
+    require(local_first.ok(), "first normalized local source creates a texture");
+    require(local_second.ok(), "second equivalent local source returns a texture");
+    require(local_second.cache_hit, "equivalent local source is a cache hit");
+    require(local_second.texture.id == local_first.texture.id, "equivalent local source reuses texture id");
+    require(local_second.key.source_key == local_first.key.source_key, "equivalent local source reuses texture key");
+
+    const render_resolved_image_source asset_slashes = resolver.resolve(
+        render_image_resolve_request{.uri = "  ASSET://./Deck\\cards\\front.fake  "})
+                                                            .source;
+    const render_resolved_image_source asset_canonical = resolver.resolve(
+        render_image_resolve_request{.uri = "asset:////Deck/cards/front.fake"})
+                                                               .source;
+    require(
+        asset_slashes.cache_key() == "asset://Deck/cards/front.fake",
+        "asset uri cache key strips redundant asset slashes");
+    require(
+        asset_slashes.cache_key() == asset_canonical.cache_key(),
+        "equivalent asset image refs resolve to one cache key");
+
+    const render_image_texture_result asset_first = cache.acquire_texture(
+        render_image_texture_request{.source = asset_slashes, .sampler = sampler});
+    const render_image_texture_result asset_second = cache.acquire_texture(
+        render_image_texture_request{.source = asset_canonical, .sampler = sampler});
+    require(asset_first.ok(), "first normalized asset source creates a texture");
+    require(asset_second.ok(), "second equivalent asset source returns a texture");
+    require(asset_second.cache_hit, "equivalent asset source is a cache hit");
+    require(asset_second.texture.id == asset_first.texture.id, "equivalent asset source reuses texture id");
+    require(asset_second.key.source_key == asset_first.key.source_key, "equivalent asset source reuses texture key");
+}
+
 void test_texture_cache_reports_explicit_failures()
 {
     using namespace quiz_vulkan::render;
@@ -255,6 +311,7 @@ int main()
     test_decoder_interface_shape();
     test_decoder_reports_explicit_failures();
     test_texture_cache_reuses_matching_key_and_misses_on_sampler_change();
+    test_texture_cache_reuses_normalized_equivalent_cache_keys();
     test_texture_cache_reports_explicit_failures();
     test_texture_cache_propagates_decoder_failures();
     return 0;

@@ -71,6 +71,18 @@ target_sources(
 target_compile_features(quiz_vulkan_domain PUBLIC cxx_std_23)
 target_include_directories(quiz_vulkan_domain PUBLIC src)
 
+add_library(quiz_vulkan_asset_contract INTERFACE)
+target_sources(
+    quiz_vulkan_asset_contract
+    INTERFACE
+        FILE_SET HEADERS
+        BASE_DIRS src
+        FILES
+            src/assets/asset_resolver.h
+)
+target_compile_features(quiz_vulkan_asset_contract INTERFACE cxx_std_23)
+target_include_directories(quiz_vulkan_asset_contract INTERFACE src)
+
 add_library(quiz_vulkan_scene INTERFACE)
 target_sources(
     quiz_vulkan_scene
@@ -351,6 +363,15 @@ if(BUILD_TESTING)
     )
     quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_fake_audio_engine_tests)
     add_test(NAME quiz_vulkan_fake_audio_engine_tests COMMAND quiz_vulkan_fake_audio_engine_tests)
+
+    add_executable(quiz_vulkan_asset_resolver_tests tests/assets/asset_resolver_tests.cpp)
+    target_link_libraries(
+        quiz_vulkan_asset_resolver_tests
+        PRIVATE
+            quiz_vulkan_asset_contract
+    )
+    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_asset_resolver_tests)
+    add_test(NAME quiz_vulkan_asset_resolver_tests COMMAND quiz_vulkan_asset_resolver_tests)
 
     add_library(
         quiz_vulkan_interface_contract_compile_tests

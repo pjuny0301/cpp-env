@@ -483,6 +483,35 @@ void test_reset_clears_text_ime_and_pointer_state()
         "up after reset emits no stale tap");
 }
 
+void test_unfocused_ime_and_focus_gained_edges()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    require(engine.process_raw_event(ime(raw_platform_ime_phase::composition_start, 100)).empty(),
+        "unfocused composition start is ignored");
+    require(engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 110, "draft")).empty(),
+        "unfocused preedit is ignored");
+    require(engine.process_raw_event(ime(raw_platform_ime_phase::commit, 120, utf8(u8"한"))).empty(),
+        "unfocused ime commit is ignored");
+    require(engine.process_raw_event(focus(raw_platform_focus_phase::gained, 130)).empty(),
+        "focus gained without text target emits no event");
+
+    engine.focus_text_target("answer");
+    std::vector<input_event> events = engine.process_raw_event(focus(raw_platform_focus_phase::gained, 140));
+    require(events.size() == 1, "focus gained with text target emits one event");
+    const text_event& gained = require_event<text_event>(events, 0);
+    require(gained.kind == text_event_kind::focus_gained, "focus gained emits focus gained kind");
+    require(gained.target_id == "answer", "focus gained preserves target id");
+
+    events = engine.process_raw_event(text(150, "x"));
+    require(events.size() == 1, "text commits after ignored unfocused ime events");
+    const text_event& commit = require_event<text_event>(events, 0);
+    require(commit.kind == text_event_kind::commit, "post-unfocused-ime text emits commit kind");
+    require(engine.text_model().text() == "x", "post-unfocused-ime text updates model");
+}
+
 void test_focus_loss_cancels_composition_and_pointer_state()
 {
     using namespace quiz_vulkan;
@@ -523,6 +552,7 @@ int main()
     test_empty_ime_commit_and_end_cancel_preedit();
     test_ime_empty_preedit_and_commit_only_edges();
     test_reset_clears_text_ime_and_pointer_state();
+    test_unfocused_ime_and_focus_gained_edges();
     test_focus_loss_cancels_composition_and_pointer_state();
 
     std::cout << "input_engine_tests passed\n";

@@ -23,6 +23,7 @@ concept AudioEngineInterface = requires(
 
 static_assert(AudioEngineInterface<audio::audio_engine_interface>);
 static_assert(AudioEngineInterface<audio::catalog_audio_engine>);
+static_assert(AudioEngineInterface<audio::procedural_audio_engine>);
 static_assert(AudioEngineInterface<audio::null_audio_engine>);
 
 static_assert(requires(audio::sound_catalog catalog, const audio::sound_id& id) {

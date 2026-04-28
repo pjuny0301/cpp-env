@@ -12,6 +12,7 @@
 #include "../platform/platform_shell_interface_contract_tests.cpp"
 #include "../render/image/image_engine_interface_contract_tests.cpp"
 #include "../render/text/text_engine_interface_contract_tests.cpp"
+#include "../render/vulkan/vulkan_backend_interface_contract_tests.cpp"
 #include "../scene/scene_modifier_interface_contract_tests.cpp"
 #include "../theme/theme_tokens_interface_contract_tests.cpp"
 #include "../ui/ui_renderer_interface_contract_tests.cpp"

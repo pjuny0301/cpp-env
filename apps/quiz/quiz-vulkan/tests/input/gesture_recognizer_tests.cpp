@@ -190,6 +190,29 @@ void test_unknown_pointer_reset_and_timing_edges()
         "up after reset emits no stale tap");
 }
 
+void test_pointer_id_reuse_replaces_pending_state()
+{
+    using namespace quiz_vulkan::input;
+
+    gesture_recognizer recognizer;
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 100, 0.0f, 0.0f, 5)),
+        "reused pointer first down emits no gesture");
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::move, 150, 100.0f, 0.0f, 5)),
+        "reused pointer first move emits no gesture");
+
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 200, 10.0f, 10.0f, 5)),
+        "reused pointer second down replaces first state");
+    require_empty(recognizer.update_time(799), "reused pointer old long press state is discarded");
+
+    std::vector<gesture_event> gestures =
+        recognizer.process_pointer_event(pointer(pointer_phase::up, 740, 11.0f, 11.0f, 5));
+    require(gestures.size() == 1, "reused pointer emits tap from replacement state");
+    require(gestures[0].kind == gesture_kind::tap, "reused pointer replacement emits tap kind");
+    require(gestures[0].duration_ms == 540, "reused pointer duration starts at replacement down");
+    require(gestures[0].start_x == 10.0f, "reused pointer start x is replacement down");
+    require(gestures[0].start_y == 10.0f, "reused pointer start y is replacement down");
+}
+
 } // namespace
 
 int main()
@@ -198,6 +221,7 @@ int main()
     test_tap_and_long_press_suppression();
     test_touch_cancel_and_multi_pointer_edges();
     test_unknown_pointer_reset_and_timing_edges();
+    test_pointer_id_reuse_replaces_pending_state();
 
     std::cout << "gesture_recognizer_tests passed\n";
     return 0;

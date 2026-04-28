@@ -241,6 +241,34 @@ void test_pointer_filter_and_timing_edges()
         "engine long press suppresses release after duplicate update check");
 }
 
+void test_pointer_id_reuse_routes_replacement_state()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 100, 0.0f, 0.0f, raw_platform_pointer_button::primary, 8))
+                .empty(),
+        "reused raw pointer first down emits no gesture");
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::move, 150, 100.0f, 0.0f, raw_platform_pointer_button::primary, 8))
+                .empty(),
+        "reused raw pointer first move emits no gesture");
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 200, 20.0f, 20.0f, raw_platform_pointer_button::primary, 8))
+                .empty(),
+        "reused raw pointer second down replaces first state");
+    require(engine.update_time(799).empty(), "reused raw pointer old long press state is discarded");
+
+    std::vector<input_event> events =
+        engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 740, 21.0f, 21.0f, raw_platform_pointer_button::primary, 8));
+    require(events.size() == 1, "reused raw pointer emits one replacement tap");
+    const gesture_event& tap = require_event<gesture_event>(events, 0);
+    require(tap.kind == gesture_kind::tap, "reused raw pointer emits tap kind");
+    require(tap.pointer_id == 8, "reused raw pointer preserves pointer id");
+    require(tap.duration_ms == 540, "reused raw pointer duration starts at replacement down");
+    require(tap.start_x == 20.0f, "reused raw pointer start x is replacement down");
+    require(tap.start_y == 20.0f, "reused raw pointer start y is replacement down");
+}
+
 void test_text_key_flow()
 {
     using namespace quiz_vulkan;
@@ -575,6 +603,7 @@ int main()
     test_primary_pointer_gestures_and_secondary_filter();
     test_touch_pointer_cancel_and_multi_pointer_edges();
     test_pointer_filter_and_timing_edges();
+    test_pointer_id_reuse_routes_replacement_state();
     test_text_key_flow();
     test_key_code_fallback_edges();
     test_ime_composition_suppresses_text_and_key_events();

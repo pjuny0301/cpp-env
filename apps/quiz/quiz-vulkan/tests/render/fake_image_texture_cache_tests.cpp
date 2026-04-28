@@ -69,6 +69,14 @@ void test_resolver_normalizes_without_fetching()
     const render_image_resolve_result empty = resolver.resolve(render_image_resolve_request{.uri = "  "});
     require(!empty.ok(), "empty uri does not resolve");
     require(empty.status == render_image_resolve_status::empty_uri, "empty uri reports empty status");
+
+    const render_image_resolve_result unsupported = resolver.resolve(
+        render_image_resolve_request{.uri = "ftp://example.test/image.fake"});
+    require(!unsupported.ok(), "unsupported uri scheme does not resolve");
+    require(
+        unsupported.status == render_image_resolve_status::unsupported_scheme,
+        "unsupported uri reports unsupported scheme");
+    require(!unsupported.diagnostic.empty(), "unsupported uri includes diagnostic");
 }
 
 void test_decoder_interface_shape()
@@ -93,6 +101,47 @@ void test_decoder_interface_shape()
     require(decoded.image.pixels.size() == 8, "decoded image carries rgba bytes");
     require(decoder.support_requests.size() == 1, "support request was recorded");
     require(decoder.decode_requests.size() == 1, "decode request was recorded");
+}
+
+void test_decoder_reports_explicit_failures()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_image_decoder decoder;
+    const render_image_decode_request unsupported_request{
+        .source = render_resolved_image_source{
+            .original_uri = "asset://card.png",
+            .normalized_uri = "asset://card.png",
+            .kind = render_image_source_kind::asset_uri,
+        },
+        .encoded_bytes = {std::byte{0x01}},
+    };
+    require(!decoder.supports(unsupported_request), "fake decoder rejects unsupported extension");
+
+    const render_image_decode_result unsupported = decoder.decode(unsupported_request);
+    require(!unsupported.ok(), "unsupported decode does not return an image");
+    require(
+        unsupported.status == render_image_decode_status::unsupported_format,
+        "unsupported decode reports unsupported format");
+    require(!unsupported.diagnostic.empty(), "unsupported decode includes diagnostic");
+
+    const render_image_decode_request empty_request{
+        .source = render_resolved_image_source{
+            .original_uri = "asset://card.fake",
+            .normalized_uri = "asset://card.fake",
+            .kind = render_image_source_kind::asset_uri,
+        },
+        .encoded_bytes = {},
+    };
+    require(decoder.supports(empty_request), "fake decoder support is independent of byte availability");
+
+    const render_image_decode_result empty = decoder.decode(empty_request);
+    require(!empty.ok(), "empty decode does not return an image");
+    require(empty.status == render_image_decode_status::empty_input, "empty decode reports empty input");
+    require(!empty.diagnostic.empty(), "empty decode includes diagnostic");
+
+    require(decoder.support_requests.size() == 2, "failure support requests were recorded");
+    require(decoder.decode_requests.size() == 2, "failure decode requests were recorded");
 }
 
 void test_texture_cache_reuses_matching_key_and_misses_on_sampler_change()
@@ -163,6 +212,40 @@ void test_texture_cache_reports_explicit_failures()
     require(decoder.support_requests.empty(), "early source failures do not reach the decoder");
 }
 
+void test_texture_cache_propagates_decoder_failures()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source unsupported_source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/card.png"})
+                                                              .source;
+    fake_image_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+
+    const render_image_texture_result unsupported = cache.acquire_texture(
+        render_image_texture_request{.source = unsupported_source, .sampler = render_image_sampler_policy{}});
+    require(!unsupported.ok(), "unsupported decoder source does not create a texture");
+    require(
+        unsupported.status == render_image_texture_status::decode_failed,
+        "unsupported decoder source reports decode failure");
+    require(!unsupported.diagnostic.empty(), "unsupported decoder source includes diagnostic");
+    require(decoder.support_requests.size() == 1, "unsupported source reached decoder support check");
+    require(decoder.decode_requests.empty(), "unsupported source does not decode");
+
+    const render_resolved_image_source fake_source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/card.fake"})
+                                                         .source;
+    cache.set_placeholder_encoded_bytes({});
+    const render_image_texture_result empty = cache.acquire_texture(
+        render_image_texture_request{.source = fake_source, .sampler = render_image_sampler_policy{}});
+    require(!empty.ok(), "decoder empty input does not create a texture");
+    require(empty.status == render_image_texture_status::decode_failed, "decoder empty input reports decode failure");
+    require(!empty.diagnostic.empty(), "decoder empty input diagnostic is propagated");
+    require(decoder.support_requests.size() == 2, "empty input reached decoder support check");
+    require(decoder.decode_requests.size() == 1, "empty input reached decoder decode");
+}
+
 } // namespace
 
 int main()
@@ -170,7 +253,9 @@ int main()
     test_sampler_defaults_are_appended_to_render_image_ref();
     test_resolver_normalizes_without_fetching();
     test_decoder_interface_shape();
+    test_decoder_reports_explicit_failures();
     test_texture_cache_reuses_matching_key_and_misses_on_sampler_change();
     test_texture_cache_reports_explicit_failures();
+    test_texture_cache_propagates_decoder_failures();
     return 0;
 }

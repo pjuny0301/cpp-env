@@ -502,6 +502,50 @@ void test_manifest_validation_detects_rooted_cache_key_collisions()
         "cache-key collision is reported on later entry");
 }
 
+void test_manifest_validation_normalizes_manifest_cache_keys_before_collision_checks()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path root = reset_fixture_root();
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "fixture_a",
+        .root_path = root / "a",
+    });
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "fixture_b",
+        .root_path = root / "b",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "shader_a",
+        .type = asset_type::shader,
+        .uri = " ASSET:///shaders\\menu.vert.spv ",
+        .root_id = "fixture_a",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "shader_b",
+        .type = asset_type::shader,
+        .uri = "asset://shaders/./menu.vert.spv",
+        .root_id = "fixture_b",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "shader_revision",
+        .type = asset_type::shader,
+        .uri = "asset://shaders/menu.vert.spv",
+        .root_id = "fixture_b",
+        .cache_revision = "next",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const asset_manifest_validation_result result = validate_asset_manifest(manifest, resolver);
+
+    require(!result.ok(), "normalized manifest cache-key collision makes validation fail");
+    require(result.issues.size() == 1U, "only equivalent unrevised cache keys collide");
+    require(
+        issue_at(result, 0U, asset_manifest_validation_issue_kind::cache_key_collision, "shader_b"),
+        "normalized asset uri cache-key collision is reported on later entry");
+}
+
 void test_manifest_validation_allows_equivalent_aliases_to_same_rooted_path()
 {
     using namespace quiz_vulkan::assets;
@@ -546,6 +590,7 @@ int main()
     test_manifest_validation_issue_order_is_stable();
     test_manifest_validation_reports_resolver_failures();
     test_manifest_validation_detects_rooted_cache_key_collisions();
+    test_manifest_validation_normalizes_manifest_cache_keys_before_collision_checks();
     test_manifest_validation_allows_equivalent_aliases_to_same_rooted_path();
     return 0;
 }

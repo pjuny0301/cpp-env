@@ -6,11 +6,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdio>
-#include <map>
 #include <string>
-#include <tuple>
-#include <utility>
-#include <vector>
 
 namespace {
 
@@ -22,161 +18,14 @@ void require(bool condition, const char* message)
     assert((condition) && message);
 }
 
-class fake_decoder final : public quiz_vulkan::render::image_decoder_interface {
-public:
-    bool supports(const quiz_vulkan::render::render_image_decode_request& request) const override
-    {
-        support_requests.push_back(request);
-        return request.source.normalized_uri.ends_with(".fake");
-    }
-
-    quiz_vulkan::render::render_image_decode_result decode(
-        const quiz_vulkan::render::render_image_decode_request& request) const override
-    {
-        decode_requests.push_back(request);
-        if (request.encoded_bytes.empty()) {
-            return quiz_vulkan::render::render_image_decode_result{
-                .status = quiz_vulkan::render::render_image_decode_status::empty_input,
-                .diagnostic = "fake decoder requires bytes",
-            };
-        }
-
-        return quiz_vulkan::render::render_image_decode_result{
-            .status = quiz_vulkan::render::render_image_decode_status::decoded,
-            .image = quiz_vulkan::render::render_decoded_image{
-                .width = 2,
-                .height = 1,
-                .pixel_format = quiz_vulkan::render::render_image_pixel_format::rgba8_srgb,
-                .pixels = {
-                    std::byte{0xff},
-                    std::byte{0x00},
-                    std::byte{0x00},
-                    std::byte{0xff},
-                    std::byte{0x00},
-                    std::byte{0xff},
-                    std::byte{0x00},
-                    std::byte{0xff},
-                },
-            },
-        };
-    }
-
-    mutable std::vector<quiz_vulkan::render::render_image_decode_request> support_requests;
-    mutable std::vector<quiz_vulkan::render::render_image_decode_request> decode_requests;
-};
-
-class fake_texture_cache final : public quiz_vulkan::render::image_texture_cache_interface {
-public:
-    explicit fake_texture_cache(const fake_decoder& decoder)
-        : decoder_(decoder)
-    {
-    }
-
-    quiz_vulkan::render::render_image_texture_result acquire_texture(
-        const quiz_vulkan::render::render_image_texture_request& request) override
-    {
-        const quiz_vulkan::render::render_image_texture_key key{
-            .source_key = request.source.cache_key(),
-            .sampler = request.sampler,
-        };
-
-        const auto existing = textures_.find(key);
-        if (existing != textures_.end()) {
-            return quiz_vulkan::render::render_image_texture_result{
-                .status = quiz_vulkan::render::render_image_texture_status::ready,
-                .key = key,
-                .texture = existing->second,
-                .cache_hit = true,
-            };
-        }
-
-        quiz_vulkan::render::render_image_decode_request decode_request{
-            .source = request.source,
-            .encoded_bytes = {std::byte{0x01}},
-        };
-        if (!decoder_.supports(decode_request)) {
-            return quiz_vulkan::render::render_image_texture_result{
-                .status = quiz_vulkan::render::render_image_texture_status::decode_failed,
-                .key = key,
-                .diagnostic = "unsupported fake image",
-            };
-        }
-
-        const quiz_vulkan::render::render_image_decode_result decoded = decoder_.decode(decode_request);
-        if (!decoded.ok()) {
-            return quiz_vulkan::render::render_image_texture_result{
-                .status = quiz_vulkan::render::render_image_texture_status::decode_failed,
-                .key = key,
-                .diagnostic = decoded.diagnostic,
-            };
-        }
-
-        const quiz_vulkan::render::render_image_texture_handle handle{
-            .id = next_id_++,
-            .revision = 1,
-            .width = decoded.image.width,
-            .height = decoded.image.height,
-        };
-        textures_.emplace(key, handle);
-        return quiz_vulkan::render::render_image_texture_result{
-            .status = quiz_vulkan::render::render_image_texture_status::ready,
-            .key = key,
-            .texture = handle,
-            .cache_hit = false,
-        };
-    }
-
-    void release_unused() override
-    {
-        ++release_unused_count;
-    }
-
-    int release_unused_count = 0;
-
-private:
-    struct key_less {
-        static std::tuple<
-            quiz_vulkan::render::render_image_filter,
-            quiz_vulkan::render::render_image_filter,
-            quiz_vulkan::render::render_image_mipmap_mode,
-            quiz_vulkan::render::render_image_wrap_mode,
-            quiz_vulkan::render::render_image_wrap_mode>
-        sampler_tuple(const quiz_vulkan::render::render_image_sampler_policy& sampler)
-        {
-            return {
-                sampler.min_filter,
-                sampler.mag_filter,
-                sampler.mipmap_mode,
-                sampler.wrap_u,
-                sampler.wrap_v,
-            };
-        }
-
-        bool operator()(
-            const quiz_vulkan::render::render_image_texture_key& left,
-            const quiz_vulkan::render::render_image_texture_key& right) const
-        {
-            if (left.source_key != right.source_key) {
-                return left.source_key < right.source_key;
-            }
-            return sampler_tuple(left.sampler) < sampler_tuple(right.sampler);
-        }
-    };
-
-    const fake_decoder& decoder_;
-    quiz_vulkan::render::render_image_texture_id next_id_ = 1;
-    std::map<
-        quiz_vulkan::render::render_image_texture_key,
-        quiz_vulkan::render::render_image_texture_handle,
-        key_less>
-        textures_;
-};
-
 void test_sampler_defaults_are_appended_to_render_image_ref()
 {
     using namespace quiz_vulkan::render;
 
-    const render_image_ref image{.uri = "assets/card.fake", .alt_text = "card", .aspect_ratio = 1.6f};
+    render_image_ref image;
+    image.uri = "assets/card.fake";
+    image.alt_text = "card";
+    image.aspect_ratio = 1.6f;
     require(image.sampler.min_filter == render_image_filter::linear, "default min filter is linear");
     require(image.sampler.mag_filter == render_image_filter::linear, "default mag filter is linear");
     require(image.sampler.mipmap_mode == render_image_mipmap_mode::none, "default mipmap mode is none");
@@ -197,6 +46,19 @@ void test_resolver_normalizes_without_fetching()
     require(local.source.kind == render_image_source_kind::local_path, "resolver classifies local paths");
     require(!local.source.is_remote(), "local path is not remote");
 
+    const render_image_resolve_result windows_local = resolver.resolve(
+        render_image_resolve_request{.uri = "C:\\quiz\\cards\\front.fake"});
+    require(windows_local.ok(), "windows local path resolves");
+    require(windows_local.source.normalized_uri == "C:/quiz/cards/front.fake", "resolver preserves drive paths");
+    require(windows_local.source.kind == render_image_source_kind::local_path, "resolver classifies drive paths");
+
+    const render_image_resolve_result asset = resolver.resolve(
+        render_image_resolve_request{.uri = "  ASSET://./Deck\\cards\\front.fake  "});
+    require(asset.ok(), "asset uri resolves");
+    require(asset.source.normalized_uri == "asset://Deck/cards/front.fake", "resolver canonicalizes asset uri");
+    require(asset.source.kind == render_image_source_kind::asset_uri, "resolver classifies asset uris");
+    require(!asset.source.is_remote(), "asset uri is not remote");
+
     const render_image_resolve_result remote = resolver.resolve(
         render_image_resolve_request{.uri = "HTTPS://example.test/image.fake"});
     require(remote.ok(), "remote uri resolves as a source contract");
@@ -213,7 +75,7 @@ void test_decoder_interface_shape()
 {
     using namespace quiz_vulkan::render;
 
-    fake_decoder decoder;
+    fake_image_decoder decoder;
     const render_image_decode_request request{
         .source = render_resolved_image_source{
             .original_uri = "asset://card.fake",
@@ -241,8 +103,8 @@ void test_texture_cache_reuses_matching_key_and_misses_on_sampler_change()
     const render_resolved_image_source source = resolver.resolve(
         render_image_resolve_request{.uri = "textures/card.fake"})
                                                     .source;
-    fake_decoder decoder;
-    fake_texture_cache cache(decoder);
+    fake_image_decoder decoder;
+    fake_image_texture_cache cache(decoder);
 
     const render_image_texture_request first_request{.source = source, .sampler = render_image_sampler_policy{}};
     const render_image_texture_result first = cache.acquire_texture(first_request);
@@ -264,7 +126,41 @@ void test_texture_cache_reuses_matching_key_and_misses_on_sampler_change()
     require(sampler_miss.texture.id != first.texture.id, "sampler variant receives a different texture");
 
     cache.release_unused();
-    require(cache.release_unused_count == 1, "cache release hook is callable");
+    require(cache.release_unused_count() == 1, "cache release hook is callable");
+}
+
+void test_texture_cache_reports_explicit_failures()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_image_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+
+    const render_image_texture_result missing = cache.acquire_texture(
+        render_image_texture_request{.source = {}, .sampler = render_image_sampler_policy{}});
+    require(!missing.ok(), "empty source does not create a texture");
+    require(missing.status == render_image_texture_status::missing_source, "empty source reports missing source");
+    require(!missing.diagnostic.empty(), "empty source includes diagnostic");
+
+    render_resolved_image_source control_character_source{
+        .original_uri = "bad\n.fake",
+        .normalized_uri = std::string("bad\n.fake"),
+        .kind = render_image_source_kind::local_path,
+    };
+    const render_image_texture_result invalid_key = cache.acquire_texture(
+        render_image_texture_request{.source = control_character_source, .sampler = render_image_sampler_policy{}});
+    require(!invalid_key.ok(), "control character cache key does not create a texture");
+    require(invalid_key.status == render_image_texture_status::missing_source, "invalid cache key reports missing source");
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source remote = resolver.resolve(
+        render_image_resolve_request{.uri = "https://example.test/card.fake"})
+                                                    .source;
+    const render_image_texture_result remote_result = cache.acquire_texture(
+        render_image_texture_request{.source = remote, .sampler = render_image_sampler_policy{}});
+    require(!remote_result.ok(), "fake texture cache does not fetch remote image bytes");
+    require(remote_result.status == render_image_texture_status::missing_source, "remote image reports missing source");
+    require(decoder.support_requests.empty(), "early source failures do not reach the decoder");
 }
 
 } // namespace
@@ -275,5 +171,6 @@ int main()
     test_resolver_normalizes_without_fetching();
     test_decoder_interface_shape();
     test_texture_cache_reuses_matching_key_and_misses_on_sampler_change();
+    test_texture_cache_reports_explicit_failures();
     return 0;
 }

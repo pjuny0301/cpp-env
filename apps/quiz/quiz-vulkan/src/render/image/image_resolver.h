@@ -6,6 +6,7 @@
 #include <cctype>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace quiz_vulkan::render {
 
@@ -48,6 +49,33 @@ inline std::string trim_image_uri(std::string_view uri)
     return std::string(begin, end);
 }
 
+inline bool has_windows_drive_prefix(std::string_view uri)
+{
+    return uri.size() >= 3 && std::isalpha(static_cast<unsigned char>(uri[0])) != 0 && uri[1] == ':'
+        && uri[2] == '/';
+}
+
+inline void remove_leading_current_directory_segments(std::string& path)
+{
+    while (path.starts_with("./")) {
+        path.erase(0, 2);
+    }
+}
+
+inline std::string normalize_asset_image_uri(std::string normalized_uri)
+{
+    const std::string::size_type scheme_separator = normalized_uri.find(':');
+    std::string asset_path = scheme_separator == std::string::npos
+        ? std::string{}
+        : normalized_uri.substr(scheme_separator + 1);
+
+    while (asset_path.starts_with('/')) {
+        asset_path.erase(0, 1);
+    }
+    remove_leading_current_directory_segments(asset_path);
+    return "asset://" + asset_path;
+}
+
 inline std::string normalize_image_uri(std::string_view uri)
 {
     std::string normalized = trim_image_uri(uri);
@@ -55,23 +83,30 @@ inline std::string normalize_image_uri(std::string_view uri)
 
     const std::string::size_type scheme_separator = normalized.find(':');
     if (scheme_separator != std::string::npos) {
+        if (has_windows_drive_prefix(normalized)) {
+            return normalized;
+        }
+
         for (std::string::size_type index = 0; index < scheme_separator; ++index) {
             normalized[index] = static_cast<char>(
                 std::tolower(static_cast<unsigned char>(normalized[index])));
         }
+
+        if (std::string_view(normalized.data(), scheme_separator) == "asset") {
+            return normalize_asset_image_uri(std::move(normalized));
+        }
+
         return normalized;
     }
 
-    while (normalized.starts_with("./")) {
-        normalized.erase(0, 2);
-    }
+    remove_leading_current_directory_segments(normalized);
     return normalized;
 }
 
 inline render_image_source_kind image_source_kind_for(std::string_view normalized_uri)
 {
     const std::string::size_type scheme_separator = normalized_uri.find(':');
-    if (scheme_separator == std::string_view::npos) {
+    if (scheme_separator == std::string_view::npos || has_windows_drive_prefix(normalized_uri)) {
         return render_image_source_kind::local_path;
     }
 

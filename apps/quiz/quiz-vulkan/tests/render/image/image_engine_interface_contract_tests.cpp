@@ -35,7 +35,9 @@ concept ImageTextureCacheInterface = requires(
 static_assert(ImageResolverInterface<render::image_resolver_interface>);
 static_assert(ImageResolverInterface<render::normalizing_image_resolver>);
 static_assert(ImageDecoderInterface<render::image_decoder_interface>);
+static_assert(ImageDecoderInterface<render::fake_image_decoder>);
 static_assert(ImageTextureCacheInterface<render::image_texture_cache_interface>);
+static_assert(ImageTextureCacheInterface<render::fake_image_texture_cache>);
 
 static_assert(requires(render::render_image_ref image) {
     { image.sampler } -> std::same_as<render::render_image_sampler_policy&>;
@@ -44,6 +46,11 @@ static_assert(requires(render::render_image_ref image) {
 static_assert(requires(render::render_resolved_image_source source) {
     { source.cache_key() } -> std::same_as<render::render_image_cache_key>;
     { source.is_remote() } -> std::same_as<bool>;
+});
+
+static_assert(requires(const render::render_image_texture_request& request, const render::render_image_texture_key& key) {
+    { render::make_render_image_texture_key(request) } -> std::same_as<render::render_image_texture_key>;
+    { render::is_valid_render_image_texture_key(key) } -> std::same_as<bool>;
 });
 
 } // namespace

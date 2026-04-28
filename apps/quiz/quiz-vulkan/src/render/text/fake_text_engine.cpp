@@ -34,6 +34,8 @@ struct laid_out_line {
     std::vector<std::size_t> glyph_indices;
     float width = 0.0f;
     float height = 0.0f;
+    std::size_t caret_run_index = 0;
+    std::size_t caret_byte_offset = 0;
 };
 
 bool is_continuation_byte(const unsigned char byte)
@@ -256,6 +258,8 @@ std::vector<laid_out_line> break_lines(const render_text_request& request, const
     std::vector<std::size_t> current_line;
     float current_width = 0.0f;
     float pending_empty_line_height = 0.0f;
+    std::size_t pending_empty_line_run_index = 0;
+    std::size_t pending_empty_line_byte_offset = 0;
     const bool wrap_words =
         request.options.wrap == render_text_wrap_mode::word && request.bounds.width > 0.0f;
 
@@ -263,13 +267,19 @@ std::vector<laid_out_line> break_lines(const render_text_request& request, const
         const shaped_glyph& glyph = glyphs[glyph_index];
         if (glyph.newline) {
             if (current_line.empty()) {
-                lines.push_back(laid_out_line{.height = glyph.line_height});
+                lines.push_back(laid_out_line{
+                    .height = glyph.line_height,
+                    .caret_run_index = glyph.run_index,
+                    .caret_byte_offset = glyph.byte_offset,
+                });
             } else {
                 append_line(glyphs, lines, std::move(current_line));
             }
             current_line = {};
             current_width = 0.0f;
             pending_empty_line_height = glyph.line_height;
+            pending_empty_line_run_index = glyph.run_index;
+            pending_empty_line_byte_offset = glyph.byte_offset + glyph.byte_count;
             continue;
         }
 
@@ -300,6 +310,8 @@ std::vector<laid_out_line> break_lines(const render_text_request& request, const
         }
 
         pending_empty_line_height = 0.0f;
+        pending_empty_line_run_index = 0;
+        pending_empty_line_byte_offset = 0;
         current_line.push_back(glyph_index);
         current_width += glyph.advance;
     }
@@ -307,7 +319,11 @@ std::vector<laid_out_line> break_lines(const render_text_request& request, const
     if (!current_line.empty() || glyphs.empty()) {
         append_line(glyphs, lines, std::move(current_line));
     } else if (pending_empty_line_height > 0.0f) {
-        lines.push_back(laid_out_line{.height = pending_empty_line_height});
+        lines.push_back(laid_out_line{
+            .height = pending_empty_line_height,
+            .caret_run_index = pending_empty_line_run_index,
+            .caret_byte_offset = pending_empty_line_byte_offset,
+        });
     }
 
     if (request.options.max_lines > 0 && lines.size() > request.options.max_lines) {
@@ -461,6 +477,16 @@ std::vector<fake_text_engine_caret> fake_text_engine::caret_positions(const rend
         float x = aligned_line_x(request, line.width);
         std::size_t last_run_index = 0;
         bool has_prior_glyph = false;
+
+        if (line.glyph_indices.empty()) {
+            carets.push_back(fake_text_engine_caret{
+                .run_index = line.caret_run_index,
+                .byte_offset = line.caret_byte_offset,
+                .bounds = render_rect{x, y, 0.0f, caret_height},
+            });
+            y += line.height;
+            continue;
+        }
 
         for (const std::size_t glyph_index : line.glyph_indices) {
             const shaped_glyph& glyph = shaped_glyphs[glyph_index];

@@ -218,6 +218,14 @@ void test_fake_newline_edge_cases_preserve_empty_line_height()
     require(trailing_layout.glyphs.size() == 1, "trailing newline does not emit visible glyph");
     require(near(trailing_layout.measure.height, 48.0f), "trailing newline layout keeps empty line height");
 
+    const std::vector<fake_text_engine_caret> trailing_carets = engine.caret_positions(request);
+    require(trailing_carets.size() == 3, "trailing newline caret positions include empty line caret");
+    require(trailing_carets[0].byte_offset == 0, "trailing newline first caret starts visible glyph");
+    require(trailing_carets[1].byte_offset == 1, "trailing newline second caret follows visible glyph");
+    require(trailing_carets[2].byte_offset == 2, "trailing newline third caret follows newline byte");
+    require(near(trailing_carets[2].bounds.y, 24.0f), "trailing newline empty caret moves to second line");
+    require(near(trailing_carets[2].bounds.height, 24.0f), "trailing newline empty caret keeps line height");
+
     request.text_runs = {
         render_text_run{.text = "\nA", .style_token = "body"},
     };
@@ -226,6 +234,14 @@ void test_fake_newline_edge_cases_preserve_empty_line_height()
     require(near(leading_layout.measure.height, 48.0f), "leading newline contributes empty line height");
     require(leading_layout.glyphs.size() == 1, "leading newline does not emit visible glyph");
     require(near(leading_layout.glyphs[0].bounds.y, 24.0f), "glyph after leading newline moves to second line");
+
+    const std::vector<fake_text_engine_caret> leading_carets = engine.caret_positions(request);
+    require(leading_carets.size() == 3, "leading newline caret positions include empty line caret");
+    require(leading_carets[0].byte_offset == 0, "leading newline first caret sits before newline byte");
+    require(leading_carets[1].byte_offset == 1, "leading newline second caret starts visible glyph");
+    require(leading_carets[2].byte_offset == 2, "leading newline third caret follows visible glyph");
+    require(near(leading_carets[0].bounds.y, 0.0f), "leading newline empty caret uses first line y");
+    require(near(leading_carets[1].bounds.y, 24.0f), "leading newline visible caret moves to second line");
 }
 
 void test_fake_style_fallback_shapes_missing_tokens()

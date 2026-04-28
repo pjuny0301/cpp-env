@@ -6,6 +6,7 @@
 #include "core/ui/ui_renderer.h"
 
 #include <algorithm>
+#include <memory>
 #include <sstream>
 #include <string_view>
 #include <vector>
@@ -116,14 +117,8 @@ app_render_frame render_app_frame(
     app_render_view_state view_state)
 {
     scene::scene_layout_data scene_data("quiz_app");
-    const scene::scene_layout_patch patch = ui::make_quiz_screen_patch(snapshot);
-    const scene::scene_layout_apply_result apply_result = patch.apply_to(scene_data);
 
     app_render_frame frame;
-    frame.report.screen_id = scene_data.route_state().screen_id;
-    if (!apply_result.applied()) {
-        return frame;
-    }
 
     scene::scene_layout_environment environment;
     environment.viewport = viewport;
@@ -135,15 +130,26 @@ app_render_frame render_app_frame(
         environment.keyboard.bottom_inset = 260.0f;
     }
 
-    scene::scene_modifier_context modifier_context{
-        .current_scene = &scene_data,
-        .viewport = viewport,
-        .layout_environment = environment,
-        .route_state = scene_data.route_state(),
-    };
-    scene::scene_layout_edit_data view_state_edit_data("app_render_view_state");
-    app_render_view_state_modifier{view_state}.modify(modifier_context, view_state_edit_data);
-    view_state_edit_data.finish_patch().apply_to(scene_data);
+    scene::scene_layout_data_modifier scene_modifiers;
+    scene_modifiers.add_modifier(ui::make_app_snapshot_screen_modifier(snapshot));
+    scene_modifiers.add_modifier(std::make_shared<app_render_view_state_modifier>(view_state));
+
+    const scene::scene_layout_apply_result apply_result = scene_modifiers.apply(
+        scene_data,
+        scene::scene_modifier_context{
+            .current_scene = nullptr,
+            .viewport = viewport,
+            .layout_environment = environment,
+            .route_state = scene_data.route_state(),
+        });
+    frame.report.screen_id = scene_data.route_state().screen_id;
+    if (!apply_result.applied()) {
+        return frame;
+    }
+
+    if (scene_data.has_focus()) {
+        environment.keyboard.focused_node_id = scene_data.focus_id();
+    }
 
     const demo_text_metrics text_metrics;
     frame.placed_scene = scene::layout_placer{}.place_with_environment(

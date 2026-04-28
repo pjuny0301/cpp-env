@@ -19,6 +19,16 @@ public:
     }
 };
 
+class rewrite_title_modifier final : public quiz_vulkan::scene::scene_modifier {
+public:
+    void modify(const quiz_vulkan::scene::scene_modifier_context& context, quiz_vulkan::scene::scene_layout_edit_data& edit_data) override
+    {
+        assert(context.current_scene != nullptr);
+        assert(context.current_scene->contains_node("title"));
+        edit_data.set_text("title", {{"Question 1 updated", "heading"}});
+    }
+};
+
 } // namespace
 
 int main()
@@ -85,12 +95,14 @@ int main()
 
     quiz_vulkan::scene::scene_layout_data_modifier modifier;
     modifier.add_modifier(std::make_shared<append_title_modifier>());
+    modifier.add_modifier(std::make_shared<rewrite_title_modifier>());
     quiz_vulkan::scene::scene_modifier_context context;
     context.viewport = {0.0f, 0.0f, 800.0f, 600.0f};
     assert(modifier.apply(scene, context).applied());
     assert(scene.contains_node("title"));
     assert(scene.has_focus());
     assert(scene.focus_id() == "title");
+    assert(scene.find_node("title")->text_runs.front().text == "Question 1 updated");
 
     return 0;
 }

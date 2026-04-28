@@ -57,9 +57,22 @@ public:
 
     scene_layout_apply_result apply(scene_layout_data& data, scene_modifier_context context) const
     {
-        context.current_scene = &data;
-        scene_layout_patch patch = build_patch(context);
-        return patch.apply_to(data);
+        scene_layout_apply_result result;
+        for (const auto& modifier : modifiers_) {
+            if (!modifier) {
+                continue;
+            }
+
+            context.current_scene = &data;
+            scene_layout_edit_data edit_data("scene_layout_data_modifier");
+            modifier->modify(context, edit_data);
+            scene_layout_apply_result modifier_result = edit_data.finish_patch().apply_to(data);
+            result.errors.insert(
+                result.errors.end(),
+                modifier_result.errors.begin(),
+                modifier_result.errors.end());
+        }
+        return result;
     }
 
 private:

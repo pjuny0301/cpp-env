@@ -36,7 +36,9 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_frame_result resul
     { result.commands_recorded } -> std::same_as<bool&>;
     { result.frame_submitted } -> std::same_as<bool&>;
     { result.frame_presented } -> std::same_as<bool&>;
+    { result.attempted } -> std::same_as<bool&>;
     { result.fallback_required } -> std::same_as<bool&>;
+    { result.fallback_reason } -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
     { result.planned_batch_count } -> std::same_as<std::size_t&>;
     { result.clipped_draw_call_count } -> std::same_as<std::size_t&>;
     { result.discarded_draw_call_count } -> std::same_as<std::size_t&>;
@@ -50,5 +52,27 @@ static_assert(requires(
     { render::vulkan_backend::submit_vulkan_backend_frame(device, draw_list, viewport) }
         -> std::same_as<render::vulkan_backend::vulkan_backend_frame_result>;
 });
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_fallback_reason::none),
+    render::vulkan_backend::vulkan_backend_fallback_reason>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_fallback_reason::not_requested),
+    render::vulkan_backend::vulkan_backend_fallback_reason>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_fallback_reason::surface_unavailable),
+    render::vulkan_backend::vulkan_backend_fallback_reason>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_fallback_reason::begin_frame_failed),
+    render::vulkan_backend::vulkan_backend_fallback_reason>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_fallback_reason::record_commands_failed),
+    render::vulkan_backend::vulkan_backend_fallback_reason>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_fallback_reason::submit_frame_failed),
+    render::vulkan_backend::vulkan_backend_fallback_reason>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_fallback_reason::present_frame_failed),
+    render::vulkan_backend::vulkan_backend_fallback_reason>);
 
 } // namespace

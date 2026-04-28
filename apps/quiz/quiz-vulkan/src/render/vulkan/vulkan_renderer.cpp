@@ -265,7 +265,9 @@ vulkan_renderer_frame_summary vulkan_renderer::summarize_cpu_fallback(
     summary.backend_commands_recorded = backend_result.commands_recorded;
     summary.backend_frame_submitted = backend_result.frame_submitted;
     summary.backend_frame_presented = backend_result.frame_presented;
+    summary.backend_attempted = backend_result.attempted;
     summary.backend_fallback_required = backend_result.fallback_required;
+    summary.backend_fallback_reason = backend_result.fallback_reason;
 
     if (stats.draw_call_count == 0 || !has_visible_area(options.viewport)
         || options.fallback_surface_width == 0 || options.fallback_surface_height == 0) {

@@ -7,6 +7,16 @@
 
 namespace quiz_vulkan::render::vulkan_backend {
 
+enum class vulkan_backend_fallback_reason {
+    none,
+    not_requested,
+    surface_unavailable,
+    begin_frame_failed,
+    record_commands_failed,
+    submit_frame_failed,
+    present_frame_failed,
+};
+
 struct vulkan_surface_extent {
     std::size_t width = 0;
     std::size_t height = 0;
@@ -24,7 +34,9 @@ struct vulkan_backend_frame_result {
     bool commands_recorded = false;
     bool frame_submitted = false;
     bool frame_presented = false;
+    bool attempted = false;
     bool fallback_required = true;
+    vulkan_backend_fallback_reason fallback_reason = vulkan_backend_fallback_reason::not_requested;
     std::size_t planned_batch_count = 0;
     std::size_t clipped_draw_call_count = 0;
     std::size_t discarded_draw_call_count = 0;

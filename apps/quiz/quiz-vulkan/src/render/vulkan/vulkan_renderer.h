@@ -61,7 +61,10 @@ struct vulkan_renderer_frame_summary {
     bool backend_commands_recorded = false;
     bool backend_frame_submitted = false;
     bool backend_frame_presented = false;
+    bool backend_attempted = false;
     bool backend_fallback_required = true;
+    vulkan_backend::vulkan_backend_fallback_reason backend_fallback_reason =
+        vulkan_backend::vulkan_backend_fallback_reason::not_requested;
 
     bool used_cpu_fallback() const
     {

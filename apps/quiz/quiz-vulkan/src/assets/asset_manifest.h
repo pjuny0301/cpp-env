@@ -14,11 +14,38 @@ namespace quiz_vulkan::assets {
 
 struct asset_manifest_root {
     std::string id;
+    std::vector<std::string> aliases;
     std::filesystem::path root_path;
+
+    [[nodiscard]] bool aliases_valid() const
+    {
+        for (const std::string& alias : aliases) {
+            if (alias.empty()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    [[nodiscard]] bool matches(std::string_view value) const
+    {
+        if (value.empty()) {
+            return false;
+        }
+        if (id == value) {
+            return true;
+        }
+        for (const std::string& alias : aliases) {
+            if (alias == value) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     [[nodiscard]] bool valid() const
     {
-        return !id.empty() && !root_path.empty();
+        return !id.empty() && !root_path.empty() && aliases_valid();
     }
 };
 
@@ -42,7 +69,7 @@ struct asset_manifest {
     [[nodiscard]] const asset_manifest_root* find_root(std::string_view id) const
     {
         for (const asset_manifest_root& root : roots) {
-            if (root.id == id) {
+            if (root.matches(id)) {
                 return &root;
             }
         }
@@ -273,16 +300,32 @@ inline void add_manifest_validation_issue(
     });
 }
 
-inline bool manifest_contains_duplicate_root_id(
+inline bool manifest_contains_prior_root_identifier(
     const asset_manifest& manifest,
-    std::size_t root_index)
+    std::size_t root_index,
+    std::string_view identifier)
 {
-    const std::string& id = manifest.roots[root_index].id;
-    if (id.empty()) {
+    if (identifier.empty()) {
         return false;
     }
     for (std::size_t index = 0; index < root_index; ++index) {
-        if (manifest.roots[index].id == id) {
+        if (manifest.roots[index].matches(identifier)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+inline bool root_contains_prior_identifier(
+    const asset_manifest_root& root,
+    std::size_t alias_index,
+    std::string_view identifier)
+{
+    if (identifier.empty() || root.id == identifier) {
+        return !identifier.empty();
+    }
+    for (std::size_t index = 0; index < alias_index; ++index) {
+        if (root.aliases[index] == identifier) {
             return true;
         }
     }
@@ -321,19 +364,41 @@ inline asset_manifest_validation_result validate_asset_manifest(
     asset_manifest_validation_result result;
     for (std::size_t index = 0; index < manifest.roots.size(); ++index) {
         const asset_manifest_root& root = manifest.roots[index];
-        if (!root.valid()) {
+        if (root.id.empty() || root.root_path.empty()) {
             detail::add_manifest_validation_issue(
                 result,
                 asset_manifest_validation_issue_kind::invalid_root,
                 root.id,
                 "asset manifest root requires an id and path");
         }
-        if (detail::manifest_contains_duplicate_root_id(manifest, index)) {
+        if (!root.aliases_valid()) {
+            detail::add_manifest_validation_issue(
+                result,
+                asset_manifest_validation_issue_kind::invalid_root,
+                root.id,
+                "asset manifest root aliases must not be empty");
+        }
+        if (detail::manifest_contains_prior_root_identifier(manifest, index, root.id)) {
             detail::add_manifest_validation_issue(
                 result,
                 asset_manifest_validation_issue_kind::duplicate_root_id,
                 root.id,
-                "asset manifest root id is duplicated");
+                "asset manifest root id or alias is duplicated");
+        }
+        for (std::size_t alias_index = 0; alias_index < root.aliases.size(); ++alias_index) {
+            const std::string& alias = root.aliases[alias_index];
+            if (alias.empty()) {
+                continue;
+            }
+            if (detail::manifest_contains_prior_root_identifier(manifest, index, alias)
+                || detail::root_contains_prior_identifier(root, alias_index, alias)) {
+                detail::add_manifest_validation_issue(
+                    result,
+                    asset_manifest_validation_issue_kind::duplicate_root_id,
+                    alias,
+                    "asset manifest root id or alias is duplicated",
+                    root.id);
+            }
         }
     }
 

@@ -233,6 +233,38 @@ void test_missing_root_and_type_mismatch_are_reported()
         "missing root status is explicit");
 }
 
+void test_manifest_root_alias_resolves_to_canonical_root()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "fixture",
+        .aliases = {"fixture_alias", "images"},
+        .root_path = fixture_root,
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "aliased_card",
+        .type = asset_type::image,
+        .uri = "asset://cards/front.png",
+        .root_id = "images",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const asset_manifest_resolve_result result = resolve_asset_manifest_entry(
+        manifest,
+        asset_manifest_resolve_request{.id = "aliased_card", .expected_type = asset_type::image},
+        resolver);
+
+    require(result.ok(), "root alias resolves manifest entry");
+    require(result.asset.rooted_path.has_value(), "aliased root produces rooted path");
+    require(
+        result.asset.rooted_path->lexically_normal()
+            == (std::filesystem::absolute(fixture_root) / "cards" / "front.png").lexically_normal(),
+        "root alias uses the canonical root path");
+}
+
 void test_manifest_validation_reports_duplicate_ids_and_missing_roots()
 {
     using namespace quiz_vulkan::assets;
@@ -282,6 +314,55 @@ void test_manifest_validation_reports_duplicate_ids_and_missing_roots()
     require(
         has_issue(result, asset_manifest_validation_issue_kind::invalid_entry, "empty_uri"),
         "invalid entry is reported");
+}
+
+void test_manifest_validation_reports_root_alias_collisions()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "fixture",
+        .aliases = {"images", "shared"},
+        .root_path = fixture_root / "fixture",
+    });
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "shared",
+        .root_path = fixture_root / "shared",
+    });
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "alternate",
+        .aliases = {"images"},
+        .root_path = fixture_root / "alternate",
+    });
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "self_alias",
+        .aliases = {"self_alias"},
+        .root_path = fixture_root / "self_alias",
+    });
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "empty_alias",
+        .aliases = {""},
+        .root_path = fixture_root / "empty_alias",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const asset_manifest_validation_result result = validate_asset_manifest(manifest, resolver);
+
+    require(!result.ok(), "root alias collisions make manifest validation fail");
+    require(
+        has_issue(result, asset_manifest_validation_issue_kind::duplicate_root_id, "shared"),
+        "root id collision with prior alias is reported");
+    require(
+        has_issue(result, asset_manifest_validation_issue_kind::duplicate_root_id, "images"),
+        "root alias collision with prior alias is reported");
+    require(
+        has_issue(result, asset_manifest_validation_issue_kind::duplicate_root_id, "self_alias"),
+        "root alias collision with its own id is reported");
+    require(
+        has_issue(result, asset_manifest_validation_issue_kind::invalid_root, "empty_alias"),
+        "empty root alias is reported");
 }
 
 void test_manifest_validation_reports_resolver_failures()
@@ -378,7 +459,9 @@ int main()
     test_local_fixture_roots_use_normalized_relative_paths();
     test_path_traversal_is_rejected_before_rooting();
     test_missing_root_and_type_mismatch_are_reported();
+    test_manifest_root_alias_resolves_to_canonical_root();
     test_manifest_validation_reports_duplicate_ids_and_missing_roots();
+    test_manifest_validation_reports_root_alias_collisions();
     test_manifest_validation_reports_resolver_failures();
     test_manifest_validation_detects_rooted_cache_key_collisions();
     test_manifest_validation_allows_equivalent_aliases_to_same_rooted_path();

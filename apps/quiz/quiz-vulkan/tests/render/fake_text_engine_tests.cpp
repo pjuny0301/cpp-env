@@ -542,6 +542,56 @@ void test_fake_utf8_handles_wide_combining_and_invalid_sequences()
     require(layout.glyphs[6].byte_offset == 10, "truncated continuation byte offset is stable");
 }
 
+void test_fake_diagnostics_reset_after_clean_request()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "\xc0", .style_token = "missing"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 200.0f, 0.0f};
+    request.style_catalog = make_style_catalog();
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    (void)engine.measure_text(request);
+    require(engine.last_diagnostics().used_style_fallback(), "dirty request records style fallback");
+    require(engine.last_diagnostics().saw_invalid_utf8(), "dirty request records invalid UTF-8");
+
+    request.text_runs = {
+        render_text_run{.text = "ok", .style_token = "body"},
+    };
+    (void)engine.layout_text(request);
+    require(!engine.last_diagnostics().used_style_fallback(), "clean layout clears style fallback diagnostics");
+    require(!engine.last_diagnostics().saw_invalid_utf8(), "clean layout clears invalid UTF-8 diagnostics");
+
+    request.text_runs = {
+        render_text_run{.text = "\xc0", .style_token = "missing"},
+    };
+    (void)engine.caret_positions(request);
+    require(engine.last_diagnostics().used_style_fallback(), "dirty caret request records fallback diagnostics");
+    require(engine.last_diagnostics().saw_invalid_utf8(), "dirty caret request records invalid UTF-8");
+
+    request.text_runs = {
+        render_text_run{.text = "ok", .style_token = "body"},
+    };
+    (void)engine.selection_rects(
+        request,
+        fake_text_engine_selection_range{
+            .start_run_index = 0,
+            .start_byte_offset = 0,
+            .end_run_index = 0,
+            .end_byte_offset = 2,
+        });
+    require(!engine.last_diagnostics().used_style_fallback(), "clean selection clears fallback diagnostics");
+    require(!engine.last_diagnostics().saw_invalid_utf8(), "clean selection clears invalid UTF-8 diagnostics");
+}
+
 void test_fake_word_wraps_hangul_and_clips_max_lines()
 {
     using namespace quiz_vulkan::render;
@@ -667,6 +717,7 @@ int main()
     test_fake_selection_rects_follow_wrapped_hangul_lines();
     test_fake_utf8_hangul_uses_codepoints();
     test_fake_utf8_handles_wide_combining_and_invalid_sequences();
+    test_fake_diagnostics_reset_after_clean_request();
     test_fake_word_wraps_hangul_and_clips_max_lines();
     test_fake_word_wraps_unspaced_hangul_syllables();
     test_scene_text_metrics_adapter_feeds_layout_placer();

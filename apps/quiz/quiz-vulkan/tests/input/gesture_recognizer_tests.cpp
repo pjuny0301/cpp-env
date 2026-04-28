@@ -150,6 +150,46 @@ void test_touch_cancel_and_multi_pointer_edges()
     require(gestures[0].kind == gesture_kind::long_press, "slop boundary long press kind is emitted");
 }
 
+void test_unknown_pointer_reset_and_timing_edges()
+{
+    using namespace quiz_vulkan::input;
+
+    gesture_recognizer recognizer;
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::move, 100, 10.0f, 10.0f, 99)),
+        "unknown move emits no gesture");
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::up, 110, 10.0f, 10.0f, 99)),
+        "unknown up emits no gesture");
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::cancel, 120, 10.0f, 10.0f, 99)),
+        "unknown cancel emits no gesture");
+    require_empty(recognizer.update_time(1000), "unknown pointer phases retain no pending state");
+
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 2000, 0.0f, 0.0f)),
+        "max duration swipe down emits no gesture");
+    std::vector<gesture_event> gestures =
+        recognizer.process_pointer_event(pointer(pointer_phase::up, 2800, 60.0f, 40.0f));
+    require(gestures.size() == 1, "swipe at max duration emits one gesture");
+    require(gestures[0].kind == gesture_kind::swipe_right, "swipe at max duration keeps swipe kind");
+    require(gestures[0].duration_ms == 800, "swipe at max duration preserves duration");
+
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 3000, 20.0f, 20.0f)),
+        "idempotent long press down emits no gesture");
+    gestures = recognizer.update_time(3600);
+    require(gestures.size() == 1, "first long press update emits one gesture");
+    require(gestures[0].kind == gesture_kind::long_press, "first long press update kind is emitted");
+    require_empty(recognizer.update_time(3700), "second long press update emits no duplicate gesture");
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::move, 3710, 20.0f, 20.0f)),
+        "move after long press emits no duplicate gesture");
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::up, 3720, 20.0f, 20.0f)),
+        "release after idempotent long press is suppressed");
+
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 4000, 1.0f, 1.0f)),
+        "reset edge down emits no gesture");
+    recognizer.reset();
+    require_empty(recognizer.update_time(4600), "reset clears pending long press state");
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::up, 4610, 1.0f, 1.0f)),
+        "up after reset emits no stale tap");
+}
+
 } // namespace
 
 int main()
@@ -157,6 +197,7 @@ int main()
     test_swipe_thresholds();
     test_tap_and_long_press_suppression();
     test_touch_cancel_and_multi_pointer_edges();
+    test_unknown_pointer_reset_and_timing_edges();
 
     std::cout << "gesture_recognizer_tests passed\n";
     return 0;

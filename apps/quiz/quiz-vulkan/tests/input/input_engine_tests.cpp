@@ -190,6 +190,44 @@ void test_touch_pointer_cancel_and_multi_pointer_edges()
         "long-pressed concurrent touch suppresses release");
 }
 
+void test_pointer_filter_and_timing_edges()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::move, 100, 5.0f, 5.0f)).empty(),
+        "unknown raw pointer move emits no gesture");
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 110, 5.0f, 5.0f)).empty(),
+        "unknown raw pointer up emits no gesture");
+
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 200, 10.0f, 10.0f, raw_platform_pointer_button::primary, 5))
+                .empty(),
+        "primary pointer down emits no gesture");
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::cancel, 210, 10.0f, 10.0f, raw_platform_pointer_button::secondary, 5))
+                .empty(),
+        "secondary cancel with matching id is filtered");
+    std::vector<input_event> events =
+        engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 230, 10.0f, 10.0f, raw_platform_pointer_button::primary, 5));
+    require(events.size() == 1, "filtered secondary cancel does not disturb primary tap");
+    const gesture_event& tap = require_event<gesture_event>(events, 0);
+    require(tap.kind == gesture_kind::tap, "primary tap survives filtered secondary cancel");
+    require(tap.pointer_id == 5, "primary tap preserves pointer id after filtered cancel");
+
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 1000, 30.0f, 30.0f, raw_platform_pointer_button::primary, 6))
+                .empty(),
+        "long press timing down emits no gesture");
+    events = engine.update_time(1600);
+    require(events.size() == 1, "engine long press update emits once");
+    const gesture_event& long_press = require_event<gesture_event>(events, 0);
+    require(long_press.kind == gesture_kind::long_press, "engine long press update kind is emitted");
+    require(long_press.pointer_id == 6, "engine long press preserves pointer id");
+    require(engine.update_time(1700).empty(), "engine long press update emits no duplicate");
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 1710, 30.0f, 30.0f, raw_platform_pointer_button::primary, 6))
+                .empty(),
+        "engine long press suppresses release after duplicate update check");
+}
+
 void test_text_key_flow()
 {
     using namespace quiz_vulkan;
@@ -411,6 +449,7 @@ int main()
 {
     test_primary_pointer_gestures_and_secondary_filter();
     test_touch_pointer_cancel_and_multi_pointer_edges();
+    test_pointer_filter_and_timing_edges();
     test_text_key_flow();
     test_ime_composition_suppresses_text_and_key_events();
     test_ime_preedit_commit_edges();

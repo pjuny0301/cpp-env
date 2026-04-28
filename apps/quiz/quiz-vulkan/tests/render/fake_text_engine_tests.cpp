@@ -421,6 +421,46 @@ void test_fake_caret_and_selection_clip_to_request_height()
     require(near(rects[1].height, 6.0f), "second clipped selection height stops at bounds bottom");
 }
 
+void test_fake_selection_rects_follow_wrapped_hangul_lines()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "\xed\x95\x9c\xea\xb8\x80\xeb\x82\xa0", .style_token = "body"},
+    };
+    request.bounds = render_rect{4.0f, 6.0f, 25.0f, 0.0f};
+    request.style_catalog = make_style_catalog();
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::word,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    const std::vector<render_rect> rects = engine.selection_rects(
+        request,
+        fake_text_engine_selection_range{
+            .start_run_index = 0,
+            .start_byte_offset = 0,
+            .end_run_index = 0,
+            .end_byte_offset = 9,
+        });
+    require(rects.size() == 3, "wrapped Hangul selection emits one rect per wrapped line");
+    require(near(rects[0].x, 4.0f), "first wrapped Hangul selection starts at request x");
+    require(near(rects[1].x, 4.0f), "second wrapped Hangul selection starts at request x");
+    require(near(rects[2].x, 4.0f), "third wrapped Hangul selection starts at request x");
+    require(near(rects[0].y, 6.0f), "first wrapped Hangul selection y is request y");
+    require(near(rects[1].y, 30.0f), "second wrapped Hangul selection y advances by line height");
+    require(near(rects[2].y, 54.0f), "third wrapped Hangul selection y advances by two line heights");
+    require(near(rects[0].width, 20.0f), "first wrapped Hangul selection covers one syllable");
+    require(near(rects[1].width, 20.0f), "second wrapped Hangul selection covers one syllable");
+    require(near(rects[2].width, 20.0f), "third wrapped Hangul selection covers one syllable");
+    require(near(rects[0].height, 24.0f), "wrapped Hangul selection uses line height");
+    require(near(rects[1].height, 24.0f), "wrapped Hangul selection keeps line height");
+    require(near(rects[2].height, 24.0f), "wrapped Hangul selection keeps final line height");
+}
+
 void test_fake_utf8_hangul_uses_codepoints()
 {
     using namespace quiz_vulkan::render;
@@ -624,6 +664,7 @@ int main()
     test_fake_caret_positions_follow_utf8_runs_and_combining_marks();
     test_fake_selection_rects_cover_utf8_ranges_without_atlas_updates();
     test_fake_caret_and_selection_clip_to_request_height();
+    test_fake_selection_rects_follow_wrapped_hangul_lines();
     test_fake_utf8_hangul_uses_codepoints();
     test_fake_utf8_handles_wide_combining_and_invalid_sequences();
     test_fake_word_wraps_hangul_and_clips_max_lines();

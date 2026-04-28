@@ -42,6 +42,7 @@ Use tmux. It leaves a real terminal session alive, so the worker is not killed i
 /mnt/c/aa/codex-workers/run-codex-tmux.sh image-texture
 /mnt/c/aa/codex-workers/run-codex-tmux.sh input-ime
 /mnt/c/aa/codex-workers/run-codex-tmux.sh audio-engine
+/mnt/c/aa/codex-workers/run-codex-tmux.sh feedback-sync
 ```
 
 Start `vulkan-backend` and `asset-system` after the lower contracts settle, unless the integrator explicitly wants them in parallel.
@@ -94,3 +95,8 @@ Each worker should:
 - `input-ime`
 - `vulkan-backend`
 - `asset-system`
+- `feedback-sync`
+
+## Feedback Sync Worker
+
+Use `feedback-sync` for review feedback that crosses docs, traceability, and app-level UX routing. This role may edit the specific app router/test files named in its prompt, but engine workers still must not edit `src/app/*`.

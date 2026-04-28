@@ -12,6 +12,7 @@ roles=(
   input-ime
   vulkan-backend
   asset-system
+  feedback-sync
 )
 
 mkdir -p "${worker_root}/logs"

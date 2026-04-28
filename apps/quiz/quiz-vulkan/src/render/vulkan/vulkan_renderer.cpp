@@ -120,16 +120,16 @@ std::size_t shade_rect(
     return newly_shaded;
 }
 
-void submit_optional_vulkan_backend_frame(
+vulkan_backend::vulkan_backend_frame_result submit_optional_vulkan_backend_frame(
     const render_draw_list& draw_list,
     const vulkan_renderer_options& options)
 {
     if (!options.prefer_vulkan) {
-        return;
+        return {};
     }
 
     vulkan_backend::null_vulkan_backend_device device;
-    static_cast<void>(vulkan_backend::submit_vulkan_backend_frame(device, draw_list, options.viewport));
+    return vulkan_backend::submit_vulkan_backend_frame(device, draw_list, options.viewport);
 }
 
 } // namespace
@@ -143,8 +143,12 @@ void vulkan_renderer::submit(const render_draw_list& draw_list)
 {
     last_draw_list_ = draw_list;
     last_frame_stats_ = count_commands(last_draw_list_);
-    submit_optional_vulkan_backend_frame(last_draw_list_, options_);
-    last_frame_summary_ = summarize_cpu_fallback(last_draw_list_, last_frame_stats_, options_);
+    last_backend_frame_result_ = submit_optional_vulkan_backend_frame(last_draw_list_, options_);
+    last_frame_summary_ = summarize_cpu_fallback(
+        last_draw_list_,
+        last_frame_stats_,
+        last_backend_frame_result_,
+        options_);
     last_framebuffer_ = rasterize_cpu_fallback_framebuffer(last_draw_list_, options_);
 }
 
@@ -160,6 +164,7 @@ void vulkan_renderer::clear()
     last_draw_list_.clear();
     last_frame_stats_ = {};
     last_frame_summary_ = {};
+    last_backend_frame_result_ = {};
     last_framebuffer_ = {};
 }
 
@@ -176,6 +181,11 @@ const vulkan_renderer_frame_stats& vulkan_renderer::last_frame_stats() const
 const vulkan_renderer_frame_summary& vulkan_renderer::last_frame_summary() const
 {
     return last_frame_summary_;
+}
+
+const vulkan_backend::vulkan_backend_frame_result& vulkan_renderer::last_backend_frame_result() const
+{
+    return last_backend_frame_result_;
 }
 
 const vulkan_renderer_framebuffer& vulkan_renderer::last_framebuffer() const
@@ -239,6 +249,7 @@ vulkan_renderer_frame_stats vulkan_renderer::count_commands(
 vulkan_renderer_frame_summary vulkan_renderer::summarize_cpu_fallback(
     const render_draw_list& draw_list,
     const vulkan_renderer_frame_stats& stats,
+    const vulkan_backend::vulkan_backend_frame_result& backend_result,
     const vulkan_renderer_options& options)
 {
     vulkan_renderer_frame_summary summary;
@@ -246,6 +257,15 @@ vulkan_renderer_frame_summary vulkan_renderer::summarize_cpu_fallback(
     summary.viewport = options.viewport;
     summary.surface_width = options.fallback_surface_width;
     summary.surface_height = options.fallback_surface_height;
+    summary.backend_surface_width = backend_result.surface.width;
+    summary.backend_surface_height = backend_result.surface.height;
+    summary.backend_planned_batch_count = backend_result.planned_batch_count;
+    summary.backend_surface_ready = backend_result.surface_ready;
+    summary.backend_frame_begun = backend_result.frame_begun;
+    summary.backend_commands_recorded = backend_result.commands_recorded;
+    summary.backend_frame_submitted = backend_result.frame_submitted;
+    summary.backend_frame_presented = backend_result.frame_presented;
+    summary.backend_fallback_required = backend_result.fallback_required;
 
     if (stats.draw_call_count == 0 || !has_visible_area(options.viewport)
         || options.fallback_surface_width == 0 || options.fallback_surface_height == 0) {

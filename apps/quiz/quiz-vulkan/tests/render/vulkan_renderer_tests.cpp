@@ -211,12 +211,32 @@ void test_draw_list_submission_counts_generic_work()
     require(summary.surface_width == renderer.options().fallback_surface_width, "surface width is recorded");
     require(summary.surface_height == renderer.options().fallback_surface_height, "surface height is recorded");
     require(summary.discarded_draw_call_count == 0, "all explicit draw calls are drawable");
+    require(summary.backend_fallback_required, "renderer summary exposes backend fallback requirement");
+    require(!summary.backend_surface_ready, "renderer summary exposes missing backend surface");
+    require(!summary.backend_frame_begun, "renderer summary exposes frame begin status");
+    require(!summary.backend_commands_recorded, "renderer summary exposes command recording status");
+    require(!summary.backend_frame_submitted, "renderer summary exposes frame submit status");
+    require(!summary.backend_frame_presented, "renderer summary exposes frame present status");
+    require(summary.backend_planned_batch_count == 0, "renderer summary exposes backend planned batch count");
+    require(summary.backend_surface_width == 0, "renderer summary exposes backend surface width");
+    require(summary.backend_surface_height == 0, "renderer summary exposes backend surface height");
+
+    const vulkan_backend::vulkan_backend_frame_result& backend_result = renderer.last_backend_frame_result();
+    require(backend_result.fallback_required, "renderer retains backend fallback requirement");
+    require(!backend_result.surface_ready, "renderer retains backend surface readiness");
+    require(!backend_result.frame_begun, "renderer retains backend begin status");
+    require(!backend_result.commands_recorded, "renderer retains backend record status");
+    require(!backend_result.frame_submitted, "renderer retains backend submit status");
+    require(!backend_result.frame_presented, "renderer retains backend present status");
+    require(backend_result.planned_batch_count == 0, "renderer retains backend planned batch count");
     require(count_nonzero_framebuffer_pixels(renderer.last_framebuffer()) > 0, "fallback framebuffer receives pixels");
 
     renderer.clear();
     require(renderer.last_draw_list().empty(), "clear drops the retained draw list");
     require(renderer.last_frame_stats().empty(), "clear drops frame stats");
     require(!renderer.last_frame_summary().nonblank(), "clear drops summary coverage");
+    require(renderer.last_frame_summary().backend_fallback_required, "clear resets backend summary diagnostics");
+    require(renderer.last_backend_frame_result().fallback_required, "clear resets retained backend result");
     require(renderer.last_framebuffer().rgba.empty(), "clear drops framebuffer bytes");
 }
 

@@ -34,6 +34,13 @@ struct fake_text_engine_caret {
     render_rect bounds;
 };
 
+struct fake_text_engine_selection_range {
+    std::size_t start_run_index = 0;
+    std::size_t start_byte_offset = 0;
+    std::size_t end_run_index = 0;
+    std::size_t end_byte_offset = 0;
+};
+
 class fake_text_engine final : public text_engine_interface {
 public:
     render_text_measure measure_text(const render_text_request& request) const override;
@@ -42,6 +49,9 @@ public:
 
     const fake_text_engine_diagnostics& last_diagnostics() const;
     std::vector<fake_text_engine_caret> caret_positions(const render_text_request& request) const;
+    std::vector<render_rect> selection_rects(
+        const render_text_request& request,
+        fake_text_engine_selection_range range) const;
 
 private:
     mutable render_text_revision atlas_revision_ = 0;

@@ -320,6 +320,62 @@ void test_fake_caret_positions_follow_utf8_runs_and_combining_marks()
     require(near(carets[5].bounds.x, 38.0f), "combining mark caret keeps previous x");
 }
 
+void test_fake_selection_rects_cover_utf8_ranges_without_atlas_updates()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "A\xed\x95\x9c", .style_token = "body"},
+        render_text_run{.text = "bc", .style_token = "caption"},
+    };
+    request.bounds = render_rect{2.0f, 3.0f, 200.0f, 0.0f};
+    request.style_catalog = make_style_catalog();
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    const std::vector<render_rect> rects = engine.selection_rects(
+        request,
+        fake_text_engine_selection_range{
+            .start_run_index = 0,
+            .start_byte_offset = 1,
+            .end_run_index = 1,
+            .end_byte_offset = 1,
+        });
+    require(rects.size() == 1, "selection across UTF-8 and run boundary coalesces on one line");
+    require(near(rects[0].x, 12.0f), "selection starts after ASCII caret");
+    require(near(rects[0].y, 3.0f), "selection rect uses request y origin");
+    require(near(rects[0].width, 26.0f), "selection covers Hangul and one caption glyph");
+    require(near(rects[0].height, 24.0f), "selection rect uses line height");
+    require(engine.consume_atlas_updates().empty(), "selection rects do not enqueue atlas updates");
+
+    const std::vector<render_rect> reversed_rects = engine.selection_rects(
+        request,
+        fake_text_engine_selection_range{
+            .start_run_index = 1,
+            .start_byte_offset = 1,
+            .end_run_index = 0,
+            .end_byte_offset = 1,
+        });
+    require(reversed_rects.size() == 1, "selection normalizes reversed ranges");
+    require(near(reversed_rects[0].x, rects[0].x), "reversed selection keeps same x");
+    require(near(reversed_rects[0].width, rects[0].width), "reversed selection keeps same width");
+
+    const std::vector<render_rect> collapsed_rects = engine.selection_rects(
+        request,
+        fake_text_engine_selection_range{
+            .start_run_index = 1,
+            .start_byte_offset = 1,
+            .end_run_index = 1,
+            .end_byte_offset = 1,
+        });
+    require(collapsed_rects.empty(), "collapsed selection has no rects");
+}
+
 void test_fake_utf8_hangul_uses_codepoints()
 {
     using namespace quiz_vulkan::render;
@@ -521,6 +577,7 @@ int main()
     test_fake_style_fallback_shapes_missing_tokens();
     test_fake_atlas_updates_are_revisioned_and_consumed();
     test_fake_caret_positions_follow_utf8_runs_and_combining_marks();
+    test_fake_selection_rects_cover_utf8_ranges_without_atlas_updates();
     test_fake_utf8_hangul_uses_codepoints();
     test_fake_utf8_handles_wide_combining_and_invalid_sequences();
     test_fake_word_wraps_hangul_and_clips_max_lines();

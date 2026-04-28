@@ -140,6 +140,25 @@ bool contains_glyph_id(const std::vector<std::uint32_t>& glyph_ids, const std::u
     return std::find(glyph_ids.begin(), glyph_ids.end(), glyph_id) != glyph_ids.end();
 }
 
+bool before_position(
+    const std::size_t left_run_index,
+    const std::size_t left_byte_offset,
+    const std::size_t right_run_index,
+    const std::size_t right_byte_offset)
+{
+    return left_run_index < right_run_index
+        || (left_run_index == right_run_index && left_byte_offset < right_byte_offset);
+}
+
+bool same_position(
+    const std::size_t left_run_index,
+    const std::size_t left_byte_offset,
+    const std::size_t right_run_index,
+    const std::size_t right_byte_offset)
+{
+    return left_run_index == right_run_index && left_byte_offset == right_byte_offset;
+}
+
 float glyph_advance_for(const render_text_style& style, const std::uint32_t code_point)
 {
     if (code_point == '\n' || code_point == '\r' || is_combining_mark(code_point)) {
@@ -439,6 +458,72 @@ std::vector<fake_text_engine_caret> fake_text_engine::caret_positions(const rend
     }
 
     return carets;
+}
+
+std::vector<render_rect> fake_text_engine::selection_rects(
+    const render_text_request& request,
+    fake_text_engine_selection_range range) const
+{
+    diagnostics_ = {};
+    if (before_position(
+            range.end_run_index,
+            range.end_byte_offset,
+            range.start_run_index,
+            range.start_byte_offset)) {
+        std::swap(range.start_run_index, range.end_run_index);
+        std::swap(range.start_byte_offset, range.end_byte_offset);
+    }
+    if (same_position(
+            range.start_run_index,
+            range.start_byte_offset,
+            range.end_run_index,
+            range.end_byte_offset)) {
+        return {};
+    }
+
+    const std::vector<shaped_glyph> shaped_glyphs = shape_request(request, diagnostics_);
+    const std::vector<laid_out_line> lines = break_lines(request, shaped_glyphs);
+
+    std::vector<render_rect> rects;
+    float y = request.bounds.y;
+    for (const laid_out_line& line : lines) {
+        float x = aligned_line_x(request, line.width);
+        bool has_active_rect = false;
+        render_rect active_rect;
+
+        for (const std::size_t glyph_index : line.glyph_indices) {
+            const shaped_glyph& glyph = shaped_glyphs[glyph_index];
+            const bool selection_starts_before_glyph_end = before_position(
+                range.start_run_index,
+                range.start_byte_offset,
+                glyph.run_index,
+                glyph.byte_offset + glyph.byte_count);
+            const bool glyph_starts_before_selection_end = before_position(
+                glyph.run_index,
+                glyph.byte_offset,
+                range.end_run_index,
+                range.end_byte_offset);
+            if (selection_starts_before_glyph_end && glyph_starts_before_selection_end && glyph.advance > 0.0f) {
+                if (!has_active_rect) {
+                    active_rect = render_rect{x, y, glyph.advance, line.height};
+                    has_active_rect = true;
+                } else {
+                    active_rect.width = (x + glyph.advance) - active_rect.x;
+                }
+            } else if (has_active_rect) {
+                rects.push_back(active_rect);
+                has_active_rect = false;
+            }
+            x += glyph.advance;
+        }
+
+        if (has_active_rect) {
+            rects.push_back(active_rect);
+        }
+        y += line.height;
+    }
+
+    return rects;
 }
 
 std::vector<render_text_atlas_update> fake_text_engine::consume_atlas_updates()

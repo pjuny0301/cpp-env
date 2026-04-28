@@ -28,6 +28,12 @@ struct fake_text_engine_diagnostics {
     }
 };
 
+struct fake_text_engine_caret {
+    std::size_t run_index = 0;
+    std::size_t byte_offset = 0;
+    render_rect bounds;
+};
+
 class fake_text_engine final : public text_engine_interface {
 public:
     render_text_measure measure_text(const render_text_request& request) const override;
@@ -35,6 +41,7 @@ public:
     std::vector<render_text_atlas_update> consume_atlas_updates() override;
 
     const fake_text_engine_diagnostics& last_diagnostics() const;
+    std::vector<fake_text_engine_caret> caret_positions(const render_text_request& request) const;
 
 private:
     mutable render_text_revision atlas_revision_ = 0;

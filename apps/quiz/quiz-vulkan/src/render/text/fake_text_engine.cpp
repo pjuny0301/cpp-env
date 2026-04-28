@@ -22,6 +22,7 @@ struct utf8_scalar {
 struct shaped_glyph {
     std::size_t run_index = 0;
     std::size_t byte_offset = 0;
+    std::size_t byte_count = 1;
     std::uint32_t code_point = 0;
     float advance = 0.0f;
     float line_height = 0.0f;
@@ -181,6 +182,7 @@ std::vector<shaped_glyph> shape_request(
             glyphs.push_back(shaped_glyph{
                 .run_index = run_index,
                 .byte_offset = byte_offset,
+                .byte_count = scalar.byte_count,
                 .code_point = code_point,
                 .advance = glyph_advance_for(style, code_point),
                 .line_height = line_height_for(style),
@@ -399,6 +401,44 @@ render_text_layout fake_text_engine::layout_text(const render_text_request& requ
     }
 
     return layout;
+}
+
+std::vector<fake_text_engine_caret> fake_text_engine::caret_positions(const render_text_request& request) const
+{
+    diagnostics_ = {};
+    const std::vector<shaped_glyph> shaped_glyphs = shape_request(request, diagnostics_);
+    const std::vector<laid_out_line> lines = break_lines(request, shaped_glyphs);
+
+    std::vector<fake_text_engine_caret> carets;
+    float y = request.bounds.y;
+    for (const laid_out_line& line : lines) {
+        float x = aligned_line_x(request, line.width);
+        std::size_t last_run_index = 0;
+        bool has_prior_glyph = false;
+
+        for (const std::size_t glyph_index : line.glyph_indices) {
+            const shaped_glyph& glyph = shaped_glyphs[glyph_index];
+            if (!has_prior_glyph || glyph.run_index != last_run_index) {
+                carets.push_back(fake_text_engine_caret{
+                    .run_index = glyph.run_index,
+                    .byte_offset = glyph.byte_offset,
+                    .bounds = render_rect{x, y, 0.0f, line.height},
+                });
+            }
+
+            x += glyph.advance;
+            carets.push_back(fake_text_engine_caret{
+                .run_index = glyph.run_index,
+                .byte_offset = glyph.byte_offset + glyph.byte_count,
+                .bounds = render_rect{x, y, 0.0f, line.height},
+            });
+            last_run_index = glyph.run_index;
+            has_prior_glyph = true;
+        }
+        y += line.height;
+    }
+
+    return carets;
 }
 
 std::vector<render_text_atlas_update> fake_text_engine::consume_atlas_updates()

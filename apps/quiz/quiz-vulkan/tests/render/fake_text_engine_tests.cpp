@@ -280,6 +280,46 @@ void test_fake_atlas_updates_are_revisioned_and_consumed()
     require(second_updates[0].page.revision == 2, "later atlas update increments revision");
 }
 
+void test_fake_caret_positions_follow_utf8_runs_and_combining_marks()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "A\xed\x95\x9c", .style_token = "body"},
+        render_text_run{.text = "e\xcc\x81", .style_token = "caption"},
+    };
+    request.bounds = render_rect{2.0f, 3.0f, 200.0f, 0.0f};
+    request.style_catalog = make_style_catalog();
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    const std::vector<fake_text_engine_caret> carets = engine.caret_positions(request);
+    require(carets.size() == 6, "caret positions include run starts and scalar boundaries");
+    require(engine.consume_atlas_updates().empty(), "caret positions do not enqueue atlas updates");
+
+    require(carets[0].run_index == 0 && carets[0].byte_offset == 0, "first caret starts first run");
+    require(near(carets[0].bounds.x, 2.0f), "first caret uses request x origin");
+    require(near(carets[0].bounds.y, 3.0f), "first caret uses request y origin");
+    require(near(carets[0].bounds.height, 24.0f), "caret height uses line height");
+
+    require(carets[1].run_index == 0 && carets[1].byte_offset == 1, "second caret follows ASCII byte");
+    require(near(carets[1].bounds.x, 12.0f), "second caret advances by ASCII width");
+    require(carets[2].run_index == 0 && carets[2].byte_offset == 4, "third caret follows Hangul bytes");
+    require(near(carets[2].bounds.x, 32.0f), "third caret advances by Hangul width");
+
+    require(carets[3].run_index == 1 && carets[3].byte_offset == 0, "fourth caret starts second run");
+    require(near(carets[3].bounds.x, 32.0f), "second run starts at prior run x");
+    require(carets[4].run_index == 1 && carets[4].byte_offset == 1, "fifth caret follows second run ASCII");
+    require(near(carets[4].bounds.x, 38.0f), "fifth caret advances by caption width");
+    require(carets[5].run_index == 1 && carets[5].byte_offset == 3, "sixth caret follows combining mark bytes");
+    require(near(carets[5].bounds.x, 38.0f), "combining mark caret keeps previous x");
+}
+
 void test_fake_utf8_hangul_uses_codepoints()
 {
     using namespace quiz_vulkan::render;
@@ -480,6 +520,7 @@ int main()
     test_fake_multirun_layout_tracks_lines_offsets_and_alignment();
     test_fake_style_fallback_shapes_missing_tokens();
     test_fake_atlas_updates_are_revisioned_and_consumed();
+    test_fake_caret_positions_follow_utf8_runs_and_combining_marks();
     test_fake_utf8_hangul_uses_codepoints();
     test_fake_utf8_handles_wide_combining_and_invalid_sequences();
     test_fake_word_wraps_hangul_and_clips_max_lines();

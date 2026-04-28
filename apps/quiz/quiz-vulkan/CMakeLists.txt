@@ -317,6 +317,8 @@ target_link_libraries(
         quiz_vulkan_platform_shell
         quiz_vulkan_renderer
         quiz_vulkan_ui
+        quiz_vulkan_text_engine
+        quiz_vulkan_text_scene_bridge
         quiz_vulkan_domain
         quiz_vulkan_input
         quiz_vulkan_audio_contract
@@ -379,7 +381,15 @@ if(BUILD_TESTING)
     add_test(NAME quiz_vulkan_app_input_router_tests COMMAND quiz_vulkan_app_input_router_tests)
 
     add_executable(quiz_vulkan_app_demo_tests tests/app/app_demo_tests.cpp src/app/app_demo.cpp src/app/app_state.cpp)
-    target_link_libraries(quiz_vulkan_app_demo_tests PRIVATE quiz_vulkan_renderer quiz_vulkan_ui quiz_vulkan_domain)
+    target_link_libraries(
+        quiz_vulkan_app_demo_tests
+        PRIVATE
+            quiz_vulkan_renderer
+            quiz_vulkan_ui
+            quiz_vulkan_text_engine
+            quiz_vulkan_text_scene_bridge
+            quiz_vulkan_domain
+    )
     quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_app_demo_tests)
     add_test(NAME quiz_vulkan_app_demo_tests COMMAND quiz_vulkan_app_demo_tests)
 

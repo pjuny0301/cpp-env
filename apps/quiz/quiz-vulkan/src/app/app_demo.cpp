@@ -4,12 +4,14 @@
 #include "core/scene/modifier_interface.h"
 #include "core/ui/quiz_screens.h"
 #include "core/ui/ui_renderer.h"
+#include "render/text/fake_text_engine.h"
+#include "render/text/scene_text_metrics_adapter.h"
 
-#include <algorithm>
 #include <memory>
 #include <sstream>
+#include <string>
 #include <string_view>
-#include <vector>
+#include <utility>
 
 namespace quiz_vulkan {
 namespace {
@@ -19,26 +21,52 @@ render::render_rect to_render_rect(scene::scene_rect rect)
     return render::render_rect{rect.x, rect.y, rect.width, rect.height};
 }
 
-class demo_text_metrics final : public scene::text_metrics_interface {
-public:
-    scene::scene_size measure_text(
-        const std::vector<scene::scene_text_run>& text_runs,
-        const scene::scene_style&,
-        float max_width) const override
-    {
-        std::size_t character_count = 0;
-        for (const scene::scene_text_run& run : text_runs) {
-            character_count += run.text.size();
-        }
+render::render_text_style make_text_style(
+    render::render_style_id id,
+    float font_size,
+    float line_height,
+    int font_weight = 400)
+{
+    return render::render_text_style{
+        .id = std::move(id),
+        .font_family = "DemoSans",
+        .font_size = font_size,
+        .line_height = line_height,
+        .letter_spacing = 0.0f,
+        .font_weight = font_weight,
+        .italic = false,
+    };
+}
 
-        const float raw_width = static_cast<float>(character_count * 8);
-        const float width = max_width > 0.0f ? std::min(raw_width, max_width) : raw_width;
-        const float line_count = max_width > 0.0f && raw_width > max_width
-            ? static_cast<float>(static_cast<int>((raw_width / max_width) + 1.0f))
-            : 1.0f;
-        return scene::scene_size{width, 20.0f * line_count};
-    }
-};
+render::render_text_style_catalog make_demo_text_style_catalog()
+{
+    render::render_text_style_catalog catalog;
+    catalog.fallback_style = make_text_style("body", 16.0f, 20.0f);
+    catalog.styles = {
+        make_text_style("body", 16.0f, 20.0f),
+        make_text_style("muted", 14.0f, 18.0f),
+        make_text_style("heading", 24.0f, 30.0f, 700),
+        make_text_style("button", 16.0f, 20.0f, 600),
+        make_text_style("section", 16.0f, 20.0f, 600),
+        make_text_style("summary_row", 16.0f, 20.0f),
+        make_text_style("text_input", 16.0f, 20.0f),
+        make_text_style("error", 16.0f, 20.0f, 600),
+        make_text_style("feedback_correct", 16.0f, 20.0f, 600),
+        make_text_style("feedback_needs_work", 16.0f, 20.0f, 600),
+        make_text_style("option_correct", 16.0f, 20.0f, 600),
+        make_text_style("option_incorrect", 16.0f, 20.0f, 600),
+    };
+    return catalog;
+}
+
+render::render_text_options make_demo_text_options()
+{
+    return render::render_text_options{
+        .wrap = render::render_text_wrap_mode::word,
+        .alignment = render::render_text_alignment::start,
+        .max_lines = 0,
+    };
+}
 
 class app_render_view_state_modifier final : public scene::scene_modifier {
 public:
@@ -151,7 +179,11 @@ app_render_frame render_app_frame(
         environment.keyboard.focused_node_id = scene_data.focus_id();
     }
 
-    const demo_text_metrics text_metrics;
+    render::fake_text_engine text_engine;
+    scene::render_text_metrics text_metrics(
+        text_engine,
+        make_demo_text_style_catalog(),
+        make_demo_text_options());
     frame.placed_scene = scene::layout_placer{}.place_with_environment(
         scene_data,
         environment,

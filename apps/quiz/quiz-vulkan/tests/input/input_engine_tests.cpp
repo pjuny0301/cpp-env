@@ -130,6 +130,66 @@ void test_primary_pointer_gestures_and_secondary_filter()
     require(tap.pointer_id == 1, "pointer id is preserved");
 }
 
+void test_touch_pointer_cancel_and_multi_pointer_edges()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    require(engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::down,
+                100,
+                20.0f,
+                30.0f,
+                raw_platform_pointer_button::none,
+                42))
+                .empty(),
+        "touch-style pointer down emits no gesture");
+    std::vector<input_event> events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::up,
+        140,
+        21.0f,
+        31.0f,
+        raw_platform_pointer_button::none,
+        42));
+    require(events.size() == 1, "touch-style pointer button none emits tap");
+    const gesture_event& touch_tap = require_event<gesture_event>(events, 0);
+    require(touch_tap.kind == gesture_kind::tap, "touch-style pointer tap kind is emitted");
+    require(touch_tap.pointer_id == 42, "touch-style pointer id is preserved");
+
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 200, 0.0f, 0.0f, raw_platform_pointer_button::primary, 7))
+                .empty(),
+        "cancel edge down emits no gesture");
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::cancel, 220, 0.0f, 0.0f, raw_platform_pointer_button::primary, 7))
+                .empty(),
+        "cancel edge cancel emits no gesture");
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 240, 0.0f, 0.0f, raw_platform_pointer_button::primary, 7))
+                .empty(),
+        "up after cancel emits no stale tap");
+
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 1000, 5.0f, 5.0f, raw_platform_pointer_button::primary, 1))
+                .empty(),
+        "first concurrent touch down emits no gesture");
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 1010, 90.0f, 10.0f, raw_platform_pointer_button::primary, 2))
+                .empty(),
+        "second concurrent touch down emits no gesture");
+    events = engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 1040, 91.0f, 11.0f, raw_platform_pointer_button::primary, 2));
+    require(events.size() == 1, "second concurrent touch can tap independently");
+    const gesture_event& second_touch_tap = require_event<gesture_event>(events, 0);
+    require(second_touch_tap.kind == gesture_kind::tap, "second concurrent touch emits tap kind");
+    require(second_touch_tap.pointer_id == 2, "second concurrent touch preserves pointer id");
+
+    events = engine.update_time(1600);
+    require(events.size() == 1, "first concurrent touch remains active for long press");
+    const gesture_event& first_touch_long_press = require_event<gesture_event>(events, 0);
+    require(first_touch_long_press.kind == gesture_kind::long_press, "first concurrent touch emits long press kind");
+    require(first_touch_long_press.pointer_id == 1, "first concurrent touch preserves pointer id");
+
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 1610, 5.0f, 5.0f, raw_platform_pointer_button::primary, 1))
+                .empty(),
+        "long-pressed concurrent touch suppresses release");
+}
+
 void test_text_key_flow()
 {
     using namespace quiz_vulkan;
@@ -293,6 +353,7 @@ void test_focus_loss_cancels_composition_and_pointer_state()
 int main()
 {
     test_primary_pointer_gestures_and_secondary_filter();
+    test_touch_pointer_cancel_and_multi_pointer_edges();
     test_text_key_flow();
     test_ime_composition_suppresses_text_and_key_events();
     test_ime_preedit_commit_edges();

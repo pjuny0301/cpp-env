@@ -111,12 +111,52 @@ void test_tap_and_long_press_suppression()
     require(gestures.empty(), "moving beyond tap slop prevents long press");
 }
 
+void test_touch_cancel_and_multi_pointer_edges()
+{
+    using namespace quiz_vulkan::input;
+
+    gesture_recognizer recognizer;
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 100, 0.0f, 0.0f, 10)),
+        "cancel test down emits no gesture");
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::cancel, 120, 0.0f, 0.0f, 10)),
+        "cancel emits no gesture");
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::up, 140, 0.0f, 0.0f, 10)),
+        "up after cancel emits no stale gesture");
+    require_empty(recognizer.update_time(1000), "canceled pointer is not retained for long press");
+
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 2000, 10.0f, 10.0f, 1)),
+        "first touch down emits no gesture");
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 2010, 80.0f, 20.0f, 2)),
+        "second touch down emits no gesture");
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::cancel, 2020, 10.0f, 10.0f, 1)),
+        "canceling first touch emits no gesture");
+
+    std::vector<gesture_event> gestures = recognizer.update_time(2610);
+    require(gestures.size() == 1, "only uncanceled second touch emits long press");
+    require(gestures[0].kind == gesture_kind::long_press, "second touch emits long press kind");
+    require(gestures[0].pointer_id == 2, "long press preserves uncanceled pointer id");
+    require(gestures[0].duration_ms == 600, "long press duration is measured from second touch down");
+
+    gestures = recognizer.process_pointer_event(pointer(pointer_phase::up, 2620, 80.0f, 20.0f, 2));
+    require(gestures.empty(), "long press suppresses second touch release");
+
+    gesture_recognizer slop_recognizer;
+    require_empty(slop_recognizer.process_pointer_event(pointer(pointer_phase::down, 3000, 20.0f, 20.0f)),
+        "slop boundary down emits no gesture");
+    require_empty(slop_recognizer.process_pointer_event(pointer(pointer_phase::move, 3100, 28.0f, 28.0f)),
+        "move exactly at tap slop emits no gesture");
+    gestures = slop_recognizer.update_time(3600);
+    require(gestures.size() == 1, "move exactly at tap slop still allows long press");
+    require(gestures[0].kind == gesture_kind::long_press, "slop boundary long press kind is emitted");
+}
+
 } // namespace
 
 int main()
 {
     test_swipe_thresholds();
     test_tap_and_long_press_suppression();
+    test_touch_cancel_and_multi_pointer_edges();
 
     std::cout << "gesture_recognizer_tests passed\n";
     return 0;

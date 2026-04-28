@@ -1,14 +1,12 @@
 #include "core/layout/layout_placer.h"
+#include "render/text/fake_text_engine.h"
 #include "render/text/scene_text_metrics_adapter.h"
 #include "render/text/text_engine.h"
 
 #include <algorithm>
 #include <cassert>
 #include <cmath>
-#include <cstddef>
 #include <cstdio>
-#include <string>
-#include <utility>
 #include <vector>
 
 namespace {
@@ -36,7 +34,7 @@ float glyph_advance_for(const quiz_vulkan::render::render_text_style& style)
     return (style.font_size * 0.5f) + style.letter_spacing;
 }
 
-class fake_text_engine final : public quiz_vulkan::render::text_engine_interface {
+class recording_text_engine final : public quiz_vulkan::render::text_engine_interface {
 public:
     quiz_vulkan::render::render_text_measure measure_text(
         const quiz_vulkan::render::render_text_request& request) const override
@@ -66,44 +64,16 @@ public:
 
         quiz_vulkan::render::render_text_layout layout;
         layout.measure = measure_text(request);
-
-        float x = 0.0f;
-        for (std::size_t run_index = 0; run_index < request.text_runs.size(); ++run_index) {
-            const quiz_vulkan::render::render_text_run& run = request.text_runs[run_index];
-            const quiz_vulkan::render::render_text_style& style = request.style_catalog.resolve(run.style_token);
-            const float advance = glyph_advance_for(style);
-            const float line_height = line_height_for(style);
-
-            for (std::size_t byte_offset = 0; byte_offset < run.text.size(); ++byte_offset) {
-                const unsigned char character = static_cast<unsigned char>(run.text[byte_offset]);
-                layout.glyphs.push_back(quiz_vulkan::render::render_text_glyph{
-                    .atlas_page_id = 1,
-                    .atlas_revision = 7,
-                    .run_index = run_index,
-                    .byte_offset = byte_offset,
-                    .glyph_id = character,
-                    .bounds = quiz_vulkan::render::render_rect{x, 0.0f, advance, line_height},
-                    .atlas_bounds = quiz_vulkan::render::render_rect{
-                        static_cast<float>(character),
-                        0.0f,
-                        advance,
-                        line_height},
-                });
-                x += advance;
-            }
-        }
-
         return layout;
     }
 
     std::vector<quiz_vulkan::render::render_text_atlas_update> consume_atlas_updates() override
     {
-        return std::exchange(atlas_updates, {});
+        return {};
     }
 
     mutable std::vector<quiz_vulkan::render::render_text_request> measure_requests;
     mutable std::vector<quiz_vulkan::render::render_text_request> layout_requests;
-    std::vector<quiz_vulkan::render::render_text_atlas_update> atlas_updates;
 };
 
 quiz_vulkan::render::render_text_style_catalog make_style_catalog()
@@ -174,7 +144,7 @@ void test_fake_measure_and_layout_emit_stable_glyphs()
     require(near(measure.height, 24.0f), "fake engine measures max line height");
 
     const render_text_layout layout = engine.layout_text(request);
-    require(layout.glyphs.size() == 3, "fake engine emits one glyph per byte");
+    require(layout.glyphs.size() == 3, "fake engine emits one glyph per ASCII codepoint");
     require(layout.glyphs[0].glyph_id == 'A', "first glyph id is stable");
     require(layout.glyphs[1].byte_offset == 1, "second glyph byte offset is stable");
     require(layout.glyphs[2].run_index == 1, "third glyph records source run");
@@ -182,11 +152,73 @@ void test_fake_measure_and_layout_emit_stable_glyphs()
     require(near(layout.glyphs[2].bounds.width, 6.0f), "third glyph width uses caption style");
 }
 
+void test_fake_utf8_hangul_uses_codepoints()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "\xed\x95\x9c\xea\xb8\x80", .style_token = "body"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 200.0f, 0.0f};
+    request.style_catalog = make_style_catalog();
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    const render_text_measure measure = engine.measure_text(request);
+    require(near(measure.width, 40.0f), "Hangul text measures by full-width codepoint");
+    require(near(measure.height, 24.0f), "Hangul text uses body line height");
+
+    const render_text_layout layout = engine.layout_text(request);
+    require(layout.glyphs.size() == 2, "Hangul UTF-8 emits one glyph per codepoint");
+    require(layout.glyphs[0].glyph_id == 0xd55c, "first Hangul glyph id is Unicode scalar");
+    require(layout.glyphs[1].glyph_id == 0xae00, "second Hangul glyph id is Unicode scalar");
+    require(layout.glyphs[0].byte_offset == 0, "first Hangul byte offset is stable");
+    require(layout.glyphs[1].byte_offset == 3, "second Hangul byte offset advances by UTF-8 width");
+    require(near(layout.glyphs[1].bounds.x, 20.0f), "second Hangul glyph advances by full width");
+}
+
+void test_fake_word_wraps_hangul_and_clips_max_lines()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "\xed\x95\x9c \xea\xb8\x80", .style_token = "body"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 25.0f, 0.0f};
+    request.style_catalog = make_style_catalog();
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::word,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    const render_text_measure wrapped_measure = engine.measure_text(request);
+    require(near(wrapped_measure.width, 20.0f), "wrapped Hangul line width tracks widest line");
+    require(near(wrapped_measure.height, 48.0f), "wrapped Hangul text measures two lines");
+
+    const render_text_layout wrapped_layout = engine.layout_text(request);
+    require(wrapped_layout.glyphs.size() == 2, "wrapped Hangul layout omits wrapping separator");
+    require(near(wrapped_layout.glyphs[0].bounds.y, 0.0f), "first wrapped Hangul glyph remains on first line");
+    require(near(wrapped_layout.glyphs[1].bounds.y, 24.0f), "second wrapped Hangul glyph moves to next line");
+
+    request.options.max_lines = 1;
+    const render_text_layout clipped_layout = engine.layout_text(request);
+    require(near(clipped_layout.measure.height, 24.0f), "max lines clips measured height");
+    require(clipped_layout.glyphs.size() == 1, "max lines clips glyph output");
+}
+
 void test_scene_text_metrics_adapter_feeds_layout_placer()
 {
     using namespace quiz_vulkan::scene;
 
-    fake_text_engine engine;
+    recording_text_engine engine;
     render_text_metrics metrics(
         engine,
         make_style_catalog(),
@@ -229,6 +261,8 @@ int main()
 {
     test_style_catalog_find_and_resolve();
     test_fake_measure_and_layout_emit_stable_glyphs();
+    test_fake_utf8_hangul_uses_codepoints();
+    test_fake_word_wraps_hangul_and_clips_max_lines();
     test_scene_text_metrics_adapter_feeds_layout_placer();
     return 0;
 }

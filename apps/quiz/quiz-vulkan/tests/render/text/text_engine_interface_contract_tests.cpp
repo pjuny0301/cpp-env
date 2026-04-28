@@ -1,4 +1,5 @@
 #include "render/render_draw_list.h"
+#include "render/text/fake_text_engine.h"
 #include "render/text/scene_text_metrics_adapter.h"
 #include "render/text/text_engine.h"
 
@@ -20,6 +21,7 @@ concept TextEngineInterface = requires(
 };
 
 static_assert(TextEngineInterface<render::text_engine_interface>);
+static_assert(TextEngineInterface<render::fake_text_engine>);
 
 static_assert(requires(render::render_draw_command command) {
     { command.text_runs } -> std::same_as<std::vector<render::render_text_run>&>;

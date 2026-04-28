@@ -187,6 +187,21 @@ target_sources(
 )
 target_compile_features(quiz_vulkan_text_scene_bridge INTERFACE cxx_std_23)
 target_include_directories(quiz_vulkan_text_scene_bridge INTERFACE src)
+
+add_library(quiz_vulkan_text_engine STATIC)
+target_sources(
+    quiz_vulkan_text_engine
+    PRIVATE
+        src/render/text/fake_text_engine.cpp
+    PUBLIC
+        FILE_SET HEADERS
+        BASE_DIRS src
+        FILES
+            src/render/text/fake_text_engine.h
+)
+target_compile_features(quiz_vulkan_text_engine PUBLIC cxx_std_23)
+target_include_directories(quiz_vulkan_text_engine PUBLIC src)
+target_link_libraries(quiz_vulkan_text_engine PUBLIC quiz_vulkan_render_contract)
 target_link_libraries(quiz_vulkan_text_scene_bridge INTERFACE quiz_vulkan_scene quiz_vulkan_render_contract)
 
 add_library(quiz_vulkan_ui_renderer STATIC)
@@ -350,6 +365,7 @@ if(BUILD_TESTING)
         PRIVATE
             quiz_vulkan_render_contract
             quiz_vulkan_scene
+            quiz_vulkan_text_engine
             quiz_vulkan_text_scene_bridge
     )
     quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_fake_text_engine_tests)

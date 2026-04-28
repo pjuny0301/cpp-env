@@ -45,11 +45,15 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     vulkan_backend_frame_result result;
     result.attempted = true;
     result.surface = device.current_surface_extent();
-    result.surface_ready = result.surface.valid() && has_visible_area(viewport);
-    if (!result.surface_ready) {
+    if (!result.surface.valid()) {
         result.fallback_reason = vulkan_backend_fallback_reason::surface_unavailable;
         return result;
     }
+    if (!has_visible_area(viewport)) {
+        result.fallback_reason = vulkan_backend_fallback_reason::viewport_unavailable;
+        return result;
+    }
+    result.surface_ready = true;
 
     const vulkan_frame_plan plan = build_vulkan_frame_plan(
         draw_list,

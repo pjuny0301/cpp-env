@@ -547,6 +547,39 @@ void test_vulkan_backend_adapter_falls_back_without_surface()
     require(device.calls.empty(), "backend does not call device lifecycle without surface");
 }
 
+void test_vulkan_backend_adapter_falls_back_without_viewport()
+{
+    using namespace quiz_vulkan::render;
+
+    render_draw_list draw_list;
+    draw_list.commands.push_back(make_quad_command(
+        "quad",
+        render_rect{0.0f, 0.0f, 100.0f, 100.0f},
+        render_color{1.0f, 1.0f, 1.0f, 1.0f}));
+
+    fake_vulkan_backend_device device(vulkan_backend::vulkan_surface_extent{.width = 16, .height = 16});
+    const vulkan_backend::vulkan_backend_frame_result result = vulkan_backend::submit_vulkan_backend_frame(
+        device,
+        draw_list,
+        render_rect{0.0f, 0.0f, 0.0f, 100.0f});
+
+    require(!result.completed(), "backend cannot complete without a viewport");
+    require(result.attempted, "backend records attempted frame without viewport");
+    require(result.fallback_required, "backend requires fallback without viewport");
+    require(
+        result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::viewport_unavailable,
+        "backend reports viewport unavailable fallback reason");
+    require(result.surface.width == 16, "backend records available surface width without viewport");
+    require(result.surface.height == 16, "backend records available surface height without viewport");
+    require(!result.surface_ready, "backend surface is not frame-ready without viewport");
+    require(!result.frame_begun, "backend does not begin frame without viewport");
+    require(!result.commands_recorded, "backend does not record without viewport");
+    require(!result.frame_submitted, "backend does not submit without viewport");
+    require(!result.frame_presented, "backend does not present without viewport");
+    require(result.planned_batch_count == 0, "backend does not build batches without viewport");
+    require(device.calls.empty(), "backend does not call device lifecycle without viewport");
+}
+
 void test_vulkan_backend_adapter_falls_back_when_begin_fails()
 {
     using namespace quiz_vulkan::render;
@@ -696,6 +729,7 @@ int main()
     test_vulkan_frame_plan_builds_scissored_batches_from_render_contracts();
     test_vulkan_backend_adapter_completes_fake_device_lifecycle();
     test_vulkan_backend_adapter_falls_back_without_surface();
+    test_vulkan_backend_adapter_falls_back_without_viewport();
     test_vulkan_backend_adapter_falls_back_when_begin_fails();
     test_vulkan_backend_adapter_falls_back_when_recording_fails();
     test_vulkan_backend_adapter_falls_back_when_submit_fails();

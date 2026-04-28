@@ -63,6 +63,9 @@ static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_backend_fallback_reason::surface_unavailable),
     render::vulkan_backend::vulkan_backend_fallback_reason>);
 static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_fallback_reason::viewport_unavailable),
+    render::vulkan_backend::vulkan_backend_fallback_reason>);
+static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_backend_fallback_reason::begin_frame_failed),
     render::vulkan_backend::vulkan_backend_fallback_reason>);
 static_assert(std::same_as<

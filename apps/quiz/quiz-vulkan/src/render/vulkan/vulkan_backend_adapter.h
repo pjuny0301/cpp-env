@@ -11,6 +11,7 @@ enum class vulkan_backend_fallback_reason {
     none,
     not_requested,
     surface_unavailable,
+    viewport_unavailable,
     begin_frame_failed,
     record_commands_failed,
     submit_frame_failed,

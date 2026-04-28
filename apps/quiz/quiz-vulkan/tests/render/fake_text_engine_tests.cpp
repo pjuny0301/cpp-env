@@ -461,6 +461,42 @@ void test_fake_selection_rects_follow_wrapped_hangul_lines()
     require(near(rects[2].height, 24.0f), "wrapped Hangul selection keeps final line height");
 }
 
+void test_fake_caret_positions_follow_wrapped_hangul_lines()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "\xed\x95\x9c\xea\xb8\x80\xeb\x82\xa0", .style_token = "body"},
+    };
+    request.bounds = render_rect{4.0f, 6.0f, 25.0f, 0.0f};
+    request.style_catalog = make_style_catalog();
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::word,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    const std::vector<fake_text_engine_caret> carets = engine.caret_positions(request);
+    require(carets.size() == 6, "wrapped Hangul carets include start and end for each line");
+    require(carets[0].byte_offset == 0, "first wrapped Hangul caret starts first syllable");
+    require(carets[1].byte_offset == 3, "second wrapped Hangul caret follows first syllable");
+    require(carets[2].byte_offset == 3, "third wrapped Hangul caret starts second syllable");
+    require(carets[3].byte_offset == 6, "fourth wrapped Hangul caret follows second syllable");
+    require(carets[4].byte_offset == 6, "fifth wrapped Hangul caret starts third syllable");
+    require(carets[5].byte_offset == 9, "sixth wrapped Hangul caret follows third syllable");
+    require(near(carets[0].bounds.x, 4.0f), "first wrapped Hangul caret starts at request x");
+    require(near(carets[1].bounds.x, 24.0f), "second wrapped Hangul caret advances by syllable width");
+    require(near(carets[2].bounds.x, 4.0f), "third wrapped Hangul caret resets x on wrapped line");
+    require(near(carets[3].bounds.x, 24.0f), "fourth wrapped Hangul caret advances on second line");
+    require(near(carets[4].bounds.x, 4.0f), "fifth wrapped Hangul caret resets x on third line");
+    require(near(carets[5].bounds.x, 24.0f), "sixth wrapped Hangul caret advances on third line");
+    require(near(carets[0].bounds.y, 6.0f), "first wrapped Hangul caret y is request y");
+    require(near(carets[2].bounds.y, 30.0f), "third wrapped Hangul caret y advances by line height");
+    require(near(carets[4].bounds.y, 54.0f), "fifth wrapped Hangul caret y advances by two line heights");
+}
+
 void test_fake_utf8_hangul_uses_codepoints()
 {
     using namespace quiz_vulkan::render;
@@ -715,6 +751,7 @@ int main()
     test_fake_selection_rects_cover_utf8_ranges_without_atlas_updates();
     test_fake_caret_and_selection_clip_to_request_height();
     test_fake_selection_rects_follow_wrapped_hangul_lines();
+    test_fake_caret_positions_follow_wrapped_hangul_lines();
     test_fake_utf8_hangul_uses_codepoints();
     test_fake_utf8_handles_wide_combining_and_invalid_sequences();
     test_fake_diagnostics_reset_after_clean_request();

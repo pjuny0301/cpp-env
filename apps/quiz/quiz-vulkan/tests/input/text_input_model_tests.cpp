@@ -12,6 +12,11 @@ std::string utf8(const char8_t* text)
     return reinterpret_cast<const char*>(text);
 }
 
+std::string byte(unsigned char value)
+{
+    return std::string(1, static_cast<char>(value));
+}
+
 void require(bool condition, const char* message)
 {
     if (condition) {
@@ -68,6 +73,26 @@ void test_mixed_width_utf8_backspace_edges()
 
     require(model.backspace(), "backspace removes remaining ascii");
     require(model.text().empty(), "ascii is removed after preedit clear");
+}
+
+void test_malformed_utf8_backspace_preserves_valid_prefix()
+{
+    quiz_vulkan::input::text_input_model model;
+    model.focus("answer");
+
+    require(model.commit_utf8(std::string("A") + byte(0x80)), "orphan continuation commit succeeds");
+    require(model.backspace(), "backspace removes orphan continuation byte");
+    require(model.text() == "A", "orphan continuation backspace preserves valid ascii prefix");
+    require(model.backspace(), "backspace removes ascii after orphan continuation");
+    require(model.text().empty(), "ascii is removed after orphan continuation");
+
+    require(model.commit_utf8(std::string("B") + byte(0xe2) + byte(0x82)), "truncated utf8 commit succeeds");
+    require(model.backspace(), "backspace removes truncated continuation suffix byte");
+    require(model.text() == std::string("B") + byte(0xe2), "truncated suffix preserves lead byte initially");
+    require(model.backspace(), "backspace removes dangling utf8 lead byte");
+    require(model.text() == "B", "dangling lead backspace preserves valid ascii prefix");
+    require(model.backspace(), "backspace removes ascii after dangling lead");
+    require(model.text().empty(), "ascii is removed after dangling lead");
 }
 
 void test_ime_preedit_and_commit()
@@ -185,6 +210,7 @@ int main()
 {
     test_focus_and_utf8_backspace();
     test_mixed_width_utf8_backspace_edges();
+    test_malformed_utf8_backspace_preserves_valid_prefix();
     test_ime_preedit_and_commit();
     test_ime_commit_edges();
     test_empty_preedit_edges();

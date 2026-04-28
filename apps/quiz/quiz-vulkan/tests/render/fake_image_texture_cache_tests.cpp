@@ -64,6 +64,7 @@ void test_sampler_defaults_are_appended_to_render_image_ref()
     require(image.sampler.mipmap_mode == render_image_mipmap_mode::none, "default mipmap mode is none");
     require(image.sampler.wrap_u == render_image_wrap_mode::clamp_to_edge, "default wrap_u clamps");
     require(image.sampler.wrap_v == render_image_wrap_mode::clamp_to_edge, "default wrap_v clamps");
+    require(is_valid_render_image_sampler_policy(image.sampler), "default sampler policy is valid");
 }
 
 void test_resolver_normalizes_without_fetching()
@@ -179,6 +180,33 @@ void test_decoder_reports_explicit_failures()
     require(decoder.decode_requests.size() == 2, "failure decode requests were recorded");
 }
 
+void test_sampler_policy_validation_rejects_unknown_enum_values()
+{
+    using namespace quiz_vulkan::render;
+
+    render_image_sampler_policy sampler;
+    require(is_valid_render_image_sampler_policy(sampler), "baseline sampler policy is valid");
+
+    sampler.min_filter = static_cast<render_image_filter>(99);
+    require(!is_valid_render_image_sampler_policy(sampler), "unknown min filter is invalid");
+    sampler.min_filter = render_image_filter::linear;
+
+    sampler.mag_filter = static_cast<render_image_filter>(99);
+    require(!is_valid_render_image_sampler_policy(sampler), "unknown mag filter is invalid");
+    sampler.mag_filter = render_image_filter::linear;
+
+    sampler.mipmap_mode = static_cast<render_image_mipmap_mode>(99);
+    require(!is_valid_render_image_sampler_policy(sampler), "unknown mipmap mode is invalid");
+    sampler.mipmap_mode = render_image_mipmap_mode::none;
+
+    sampler.wrap_u = static_cast<render_image_wrap_mode>(99);
+    require(!is_valid_render_image_sampler_policy(sampler), "unknown wrap_u mode is invalid");
+    sampler.wrap_u = render_image_wrap_mode::clamp_to_edge;
+
+    sampler.wrap_v = static_cast<render_image_wrap_mode>(99);
+    require(!is_valid_render_image_sampler_policy(sampler), "unknown wrap_v mode is invalid");
+}
+
 void test_texture_cache_reuses_matching_key_and_misses_on_sampler_change()
 {
     using namespace quiz_vulkan::render;
@@ -267,6 +295,30 @@ void test_texture_cache_reuses_normalized_equivalent_cache_keys()
     require(asset_second.cache_hit, "equivalent asset source is a cache hit");
     require(asset_second.texture.id == asset_first.texture.id, "equivalent asset source reuses texture id");
     require(asset_second.key.source_key == asset_first.key.source_key, "equivalent asset source reuses texture key");
+}
+
+void test_texture_cache_rejects_invalid_sampler_policy_before_decode()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/invalid-sampler.fake"})
+                                                    .source;
+    fake_image_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+
+    render_image_sampler_policy invalid_sampler;
+    invalid_sampler.wrap_v = static_cast<render_image_wrap_mode>(99);
+
+    const render_image_texture_result result = cache.acquire_texture(
+        render_image_texture_request{.source = source, .sampler = invalid_sampler});
+    require(!result.ok(), "invalid sampler policy does not create a texture");
+    require(result.status == render_image_texture_status::upload_failed, "invalid sampler reports upload failure");
+    require(!result.texture.valid(), "invalid sampler returns no texture handle");
+    require(!result.diagnostic.empty(), "invalid sampler includes diagnostic");
+    require(decoder.support_requests.empty(), "invalid sampler fails before decoder support check");
+    require(decoder.decode_requests.empty(), "invalid sampler fails before decode");
 }
 
 void test_texture_cache_release_unused_evicts_fake_entries()
@@ -414,8 +466,10 @@ int main()
     test_resolver_normalizes_without_fetching();
     test_decoder_interface_shape();
     test_decoder_reports_explicit_failures();
+    test_sampler_policy_validation_rejects_unknown_enum_values();
     test_texture_cache_reuses_matching_key_and_misses_on_sampler_change();
     test_texture_cache_reuses_normalized_equivalent_cache_keys();
+    test_texture_cache_rejects_invalid_sampler_policy_before_decode();
     test_texture_cache_release_unused_evicts_fake_entries();
     test_texture_cache_reports_explicit_failures();
     test_texture_cache_propagates_decoder_failures();

@@ -74,6 +74,50 @@ inline bool is_valid_render_image_texture_key(const render_image_texture_key& ke
     return is_valid_render_image_cache_key(key.source_key);
 }
 
+inline bool is_valid_render_image_filter(render_image_filter filter)
+{
+    switch (filter) {
+    case render_image_filter::nearest:
+    case render_image_filter::linear:
+        return true;
+    }
+
+    return false;
+}
+
+inline bool is_valid_render_image_mipmap_mode(render_image_mipmap_mode mode)
+{
+    switch (mode) {
+    case render_image_mipmap_mode::none:
+    case render_image_mipmap_mode::nearest:
+    case render_image_mipmap_mode::linear:
+        return true;
+    }
+
+    return false;
+}
+
+inline bool is_valid_render_image_wrap_mode(render_image_wrap_mode mode)
+{
+    switch (mode) {
+    case render_image_wrap_mode::clamp_to_edge:
+    case render_image_wrap_mode::repeat:
+    case render_image_wrap_mode::mirrored_repeat:
+        return true;
+    }
+
+    return false;
+}
+
+inline bool is_valid_render_image_sampler_policy(const render_image_sampler_policy& sampler)
+{
+    return is_valid_render_image_filter(sampler.min_filter)
+        && is_valid_render_image_filter(sampler.mag_filter)
+        && is_valid_render_image_mipmap_mode(sampler.mipmap_mode)
+        && is_valid_render_image_wrap_mode(sampler.wrap_u)
+        && is_valid_render_image_wrap_mode(sampler.wrap_v);
+}
+
 inline std::size_t render_image_pixel_format_byte_count(render_image_pixel_format pixel_format)
 {
     switch (pixel_format) {
@@ -173,6 +217,16 @@ public:
                 .texture = {},
                 .cache_hit = false,
                 .diagnostic = "fake image texture cache does not fetch remote images",
+            };
+        }
+
+        if (!is_valid_render_image_sampler_policy(request.sampler)) {
+            return render_image_texture_result{
+                .status = render_image_texture_status::upload_failed,
+                .key = key,
+                .texture = {},
+                .cache_hit = false,
+                .diagnostic = "image sampler policy contains unsupported enum value",
             };
         }
 

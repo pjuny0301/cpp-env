@@ -54,6 +54,17 @@ static_assert(requires(const render::render_image_texture_request& request, cons
     { render::is_valid_render_image_texture_key(key) } -> std::same_as<bool>;
 });
 
+static_assert(requires(
+    const render::render_image_sampler_policy& sampler,
+    render::render_image_filter filter,
+    render::render_image_mipmap_mode mipmap_mode,
+    render::render_image_wrap_mode wrap_mode) {
+    { render::is_valid_render_image_filter(filter) } -> std::same_as<bool>;
+    { render::is_valid_render_image_mipmap_mode(mipmap_mode) } -> std::same_as<bool>;
+    { render::is_valid_render_image_wrap_mode(wrap_mode) } -> std::same_as<bool>;
+    { render::is_valid_render_image_sampler_policy(sampler) } -> std::same_as<bool>;
+});
+
 static_assert(requires(const render::render_decoded_image& image, render::render_image_pixel_format pixel_format) {
     { render::render_image_pixel_format_byte_count(pixel_format) } -> std::same_as<std::size_t>;
     { render::expected_render_decoded_image_byte_count(image) } -> std::same_as<std::size_t>;

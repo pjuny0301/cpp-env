@@ -241,6 +241,54 @@ void test_texture_cache_reuses_matching_key_and_misses_on_sampler_change()
     require(cache.release_unused_count() == 1, "cache release hook is callable");
 }
 
+void test_texture_cache_keys_include_all_sampler_policy_fields()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/sampler-fields.fake"})
+                                                    .source;
+    fake_image_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+
+    const render_image_sampler_policy base_sampler;
+    const render_image_texture_result base = cache.acquire_texture(
+        render_image_texture_request{.source = source, .sampler = base_sampler});
+    require(base.ok(), "base sampler creates a texture");
+
+    auto require_sampler_miss = [&](render_image_sampler_policy sampler, const char* message) {
+        const render_image_texture_result result = cache.acquire_texture(
+            render_image_texture_request{.source = source, .sampler = sampler});
+        require(result.ok(), message);
+        require(!result.cache_hit, "sampler field variant is a cache miss");
+        require(result.texture.id != base.texture.id, "sampler field variant receives a distinct texture id");
+        require(result.key.source_key == base.key.source_key, "sampler field variant preserves source key");
+    };
+
+    render_image_sampler_policy mag_filter_sampler = base_sampler;
+    mag_filter_sampler.mag_filter = render_image_filter::nearest;
+    require_sampler_miss(mag_filter_sampler, "mag filter variant creates a texture");
+
+    render_image_sampler_policy mipmap_sampler = base_sampler;
+    mipmap_sampler.mipmap_mode = render_image_mipmap_mode::nearest;
+    require_sampler_miss(mipmap_sampler, "mipmap variant creates a texture");
+
+    render_image_sampler_policy wrap_u_sampler = base_sampler;
+    wrap_u_sampler.wrap_u = render_image_wrap_mode::repeat;
+    require_sampler_miss(wrap_u_sampler, "wrap_u variant creates a texture");
+
+    render_image_sampler_policy wrap_v_sampler = base_sampler;
+    wrap_v_sampler.wrap_v = render_image_wrap_mode::mirrored_repeat;
+    require_sampler_miss(wrap_v_sampler, "wrap_v variant creates a texture");
+
+    const render_image_texture_result base_again = cache.acquire_texture(
+        render_image_texture_request{.source = source, .sampler = base_sampler});
+    require(base_again.ok(), "base sampler can still be reacquired");
+    require(base_again.cache_hit, "base sampler remains cached after sampler variants");
+    require(base_again.texture.id == base.texture.id, "base sampler cache entry is unchanged");
+}
+
 void test_texture_cache_reuses_normalized_equivalent_cache_keys()
 {
     using namespace quiz_vulkan::render;
@@ -468,6 +516,7 @@ int main()
     test_decoder_reports_explicit_failures();
     test_sampler_policy_validation_rejects_unknown_enum_values();
     test_texture_cache_reuses_matching_key_and_misses_on_sampler_change();
+    test_texture_cache_keys_include_all_sampler_policy_fields();
     test_texture_cache_reuses_normalized_equivalent_cache_keys();
     test_texture_cache_rejects_invalid_sampler_policy_before_decode();
     test_texture_cache_release_unused_evicts_fake_entries();

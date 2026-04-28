@@ -13,7 +13,7 @@ namespace {
 struct active_clip_scope {
     scene::scene_node_id node_id;
     std::size_t depth = 0;
-    scene::scene_rect bounds;
+    ui_rect bounds;
 };
 
 float clamp01(float value)
@@ -24,6 +24,26 @@ float clamp01(float value)
 bool has_visible_area(const scene::scene_rect& rect)
 {
     return rect.width > 0.0f && rect.height > 0.0f;
+}
+
+ui_rect to_ui_rect(const scene::scene_rect& rect)
+{
+    return ui_rect{rect.x, rect.y, rect.width, rect.height};
+}
+
+std::vector<ui_text_run> to_ui_text_runs(const std::vector<scene::scene_text_run>& text_runs)
+{
+    std::vector<ui_text_run> converted;
+    converted.reserve(text_runs.size());
+    for (const scene::scene_text_run& run : text_runs) {
+        converted.push_back(ui_text_run{run.text, run.style_token});
+    }
+    return converted;
+}
+
+ui_image_ref to_ui_image_ref(const scene::scene_image_ref& image)
+{
+    return ui_image_ref{image.uri, image.alt_text, image.aspect_ratio};
 }
 
 std::string_view trim(std::string_view value)
@@ -205,13 +225,9 @@ ui_draw_command make_command(
     command.node_id = node.id;
     command.parent_node_id = node.parent_id;
     command.depth = node.depth;
-    command.bounds = bounds;
-    command.content_bounds = content_bounds;
+    command.bounds = to_ui_rect(bounds);
+    command.content_bounds = to_ui_rect(content_bounds);
     command.border_radius = node.style.border_radius;
-    command.semantics = node.semantics;
-    command.action_binding = node.action_binding;
-    command.has_action_binding = node.has_action_binding;
-    command.input_enabled = node.input_enabled;
     return command;
 }
 
@@ -278,7 +294,7 @@ ui_draw_list ui_renderer::build_draw_list(const scene::placed_scene& placed_scen
             ui_paint image_paint = make_default_paint(ui_color{1.0f, 1.0f, 1.0f, 1.0f}, node.style.opacity);
             if (image_paint.color.visible()) {
                 ui_draw_command command = make_command(ui_draw_command_type::image, node, node.content_bounds, node.content_bounds);
-                command.image = node.image;
+                command.image = to_ui_image_ref(node.image);
                 command.paint = std::move(image_paint);
                 draw_list.commands.push_back(std::move(command));
             }
@@ -294,7 +310,7 @@ ui_draw_list ui_renderer::build_draw_list(const scene::placed_scene& placed_scen
             if (text_paint.color.visible()) {
                 ui_draw_command command = make_command(ui_draw_command_type::text, node, node.content_bounds, node.content_bounds);
                 command.paint = std::move(text_paint);
-                command.text_runs = node.text_runs;
+                command.text_runs = to_ui_text_runs(node.text_runs);
                 draw_list.commands.push_back(std::move(command));
             }
         }
@@ -309,7 +325,7 @@ ui_draw_list ui_renderer::build_draw_list(const scene::placed_scene& placed_scen
         if (node.layout_rule.clip_children && has_visible_area(node.content_bounds)) {
             ui_draw_command command = make_command(ui_draw_command_type::push_clip, node, node.content_bounds, node.content_bounds);
             draw_list.commands.push_back(std::move(command));
-            active_clips.push_back(active_clip_scope{node.id, node.depth, node.content_bounds});
+            active_clips.push_back(active_clip_scope{node.id, node.depth, to_ui_rect(node.content_bounds)});
         }
     }
 

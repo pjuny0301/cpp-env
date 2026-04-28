@@ -13,6 +13,11 @@
 namespace quiz_vulkan {
 namespace {
 
+render::render_rect to_render_rect(scene::scene_rect rect)
+{
+    return render::render_rect{rect.x, rect.y, rect.width, rect.height};
+}
+
 class demo_text_metrics final : public scene::text_metrics_interface {
 public:
     scene::scene_size measure_text(
@@ -147,7 +152,7 @@ app_render_frame render_app_frame(
         text_metrics);
     const ui::ui_draw_list draw_list = ui::ui_renderer{}.build_draw_list(frame.placed_scene);
 
-    render::vulkan_renderer_options renderer_options{.viewport = environment.viewport};
+    render::vulkan_renderer_options renderer_options{.viewport = to_render_rect(environment.viewport)};
     render::vulkan_renderer renderer(renderer_options);
     renderer.submit(draw_list);
 

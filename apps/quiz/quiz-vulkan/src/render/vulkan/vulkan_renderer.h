@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/ui/ui_renderer.h"
+#include "render/render_draw_list.h"
 
 #include <cstddef>
 #include <vector>
@@ -19,12 +19,6 @@ struct vulkan_renderer_frame_stats {
     std::size_t debug_bounds_count = 0;
     std::size_t text_run_count = 0;
     std::size_t text_character_count = 0;
-    std::size_t input_enabled_draw_node_count = 0;
-    std::size_t disabled_draw_node_count = 0;
-    std::size_t quiz_option_draw_command_count = 0;
-    std::size_t quiz_feedback_draw_command_count = 0;
-    std::size_t quiz_answer_input_draw_command_count = 0;
-    std::size_t quiz_answer_dock_draw_command_count = 0;
 
     bool empty() const
     {
@@ -44,7 +38,7 @@ enum class vulkan_renderer_backend {
 };
 
 struct vulkan_renderer_options {
-    scene::scene_rect viewport{0.0f, 0.0f, 1280.0f, 720.0f};
+    render_rect viewport{0.0f, 0.0f, 1280.0f, 720.0f};
     std::size_t fallback_surface_width = 160;
     std::size_t fallback_surface_height = 90;
     bool prefer_vulkan = true;
@@ -52,7 +46,7 @@ struct vulkan_renderer_options {
 
 struct vulkan_renderer_frame_summary {
     vulkan_renderer_backend backend = vulkan_renderer_backend::cpu_fallback;
-    scene::scene_rect viewport;
+    render_rect viewport;
     std::size_t surface_width = 0;
     std::size_t surface_height = 0;
     std::size_t shaded_pixel_count = 0;
@@ -75,11 +69,11 @@ public:
     vulkan_renderer() = default;
     explicit vulkan_renderer(vulkan_renderer_options options);
 
-    void submit(const ui::ui_draw_list& draw_list);
-    void submit(const std::vector<ui::ui_draw_command>& commands);
+    void submit(const render_draw_list& draw_list);
+    void submit(const std::vector<render_draw_command>& commands);
     void clear();
 
-    const ui::ui_draw_list& last_draw_list() const;
+    const render_draw_list& last_draw_list() const;
     const vulkan_renderer_frame_stats& last_frame_stats() const;
     const vulkan_renderer_frame_summary& last_frame_summary() const;
     const vulkan_renderer_framebuffer& last_framebuffer() const;
@@ -88,17 +82,17 @@ public:
     void set_options(vulkan_renderer_options options);
 
 private:
-    static vulkan_renderer_frame_stats count_commands(const ui::ui_draw_list& draw_list);
+    static vulkan_renderer_frame_stats count_commands(const render_draw_list& draw_list);
     static vulkan_renderer_frame_summary summarize_cpu_fallback(
-        const ui::ui_draw_list& draw_list,
+        const render_draw_list& draw_list,
         const vulkan_renderer_frame_stats& stats,
         const vulkan_renderer_options& options);
     static vulkan_renderer_framebuffer rasterize_cpu_fallback_framebuffer(
-        const ui::ui_draw_list& draw_list,
+        const render_draw_list& draw_list,
         const vulkan_renderer_options& options);
 
     vulkan_renderer_options options_;
-    ui::ui_draw_list last_draw_list_;
+    render_draw_list last_draw_list_;
     vulkan_renderer_frame_stats last_frame_stats_;
     vulkan_renderer_frame_summary last_frame_summary_;
     vulkan_renderer_framebuffer last_framebuffer_;

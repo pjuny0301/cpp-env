@@ -64,6 +64,7 @@ target_sources(
             src/core/domain/app_action.hpp
             src/core/domain/app_snapshot.hpp
             src/core/domain/deck_artifact_loader.hpp
+            src/core/domain/deck_source.h
             src/core/domain/learning_state.hpp
             src/core/domain/quiz_model.hpp
             src/core/domain/quiz_session.hpp

@@ -105,6 +105,20 @@ target_sources(
 target_compile_features(quiz_vulkan_render_contract INTERFACE cxx_std_23)
 target_include_directories(quiz_vulkan_render_contract INTERFACE src)
 
+add_library(quiz_vulkan_audio_contract INTERFACE)
+target_sources(
+    quiz_vulkan_audio_contract
+    INTERFACE
+        FILE_SET HEADERS
+        BASE_DIRS src
+        FILES
+            src/audio/audio_engine.h
+            src/audio/sound_definition.h
+            src/audio/sound_event.h
+)
+target_compile_features(quiz_vulkan_audio_contract INTERFACE cxx_std_23)
+target_include_directories(quiz_vulkan_audio_contract INTERFACE src)
+
 add_library(quiz_vulkan_text_scene_bridge INTERFACE)
 target_sources(
     quiz_vulkan_text_scene_bridge
@@ -257,4 +271,13 @@ if(BUILD_TESTING)
     )
     quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_fake_image_texture_cache_tests)
     add_test(NAME quiz_vulkan_fake_image_texture_cache_tests COMMAND quiz_vulkan_fake_image_texture_cache_tests)
+
+    add_executable(quiz_vulkan_fake_audio_engine_tests tests/audio/fake_audio_engine_tests.cpp)
+    target_link_libraries(
+        quiz_vulkan_fake_audio_engine_tests
+        PRIVATE
+            quiz_vulkan_audio_contract
+    )
+    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_fake_audio_engine_tests)
+    add_test(NAME quiz_vulkan_fake_audio_engine_tests COMMAND quiz_vulkan_fake_audio_engine_tests)
 endif()

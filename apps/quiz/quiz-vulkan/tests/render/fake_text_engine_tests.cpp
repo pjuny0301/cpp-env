@@ -376,6 +376,51 @@ void test_fake_selection_rects_cover_utf8_ranges_without_atlas_updates()
     require(collapsed_rects.empty(), "collapsed selection has no rects");
 }
 
+void test_fake_caret_and_selection_clip_to_request_height()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "A\nB\nC", .style_token = "body"},
+    };
+    request.bounds = render_rect{0.0f, 10.0f, 100.0f, 30.0f};
+    request.style_catalog = make_style_catalog();
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    const std::vector<fake_text_engine_caret> carets = engine.caret_positions(request);
+    require(carets.size() == 4, "bounded caret positions omit fully clipped lines");
+    require(carets[0].byte_offset == 0, "first clipped caret starts first visible line");
+    require(carets[1].byte_offset == 1, "second clipped caret ends first visible line");
+    require(carets[2].byte_offset == 2, "third clipped caret starts partially visible line");
+    require(carets[3].byte_offset == 3, "fourth clipped caret ends partially visible line");
+    require(near(carets[0].bounds.y, 10.0f), "first clipped caret y is request y");
+    require(near(carets[0].bounds.height, 24.0f), "first clipped caret keeps full line height");
+    require(near(carets[2].bounds.y, 34.0f), "partially clipped caret y advances by line height");
+    require(near(carets[2].bounds.height, 6.0f), "partially clipped caret height stops at bounds bottom");
+
+    const std::vector<render_rect> rects = engine.selection_rects(
+        request,
+        fake_text_engine_selection_range{
+            .start_run_index = 0,
+            .start_byte_offset = 0,
+            .end_run_index = 0,
+            .end_byte_offset = 5,
+        });
+    require(rects.size() == 2, "bounded selection rects omit fully clipped lines");
+    require(near(rects[0].x, 0.0f), "first clipped selection starts at request x");
+    require(near(rects[0].y, 10.0f), "first clipped selection y is request y");
+    require(near(rects[0].width, 10.0f), "first clipped selection covers first glyph");
+    require(near(rects[0].height, 24.0f), "first clipped selection keeps full line height");
+    require(near(rects[1].y, 34.0f), "second clipped selection y advances by line height");
+    require(near(rects[1].height, 6.0f), "second clipped selection height stops at bounds bottom");
+}
+
 void test_fake_utf8_hangul_uses_codepoints()
 {
     using namespace quiz_vulkan::render;
@@ -578,6 +623,7 @@ int main()
     test_fake_atlas_updates_are_revisioned_and_consumed();
     test_fake_caret_positions_follow_utf8_runs_and_combining_marks();
     test_fake_selection_rects_cover_utf8_ranges_without_atlas_updates();
+    test_fake_caret_and_selection_clip_to_request_height();
     test_fake_utf8_hangul_uses_codepoints();
     test_fake_utf8_handles_wide_combining_and_invalid_sequences();
     test_fake_word_wraps_hangul_and_clips_max_lines();

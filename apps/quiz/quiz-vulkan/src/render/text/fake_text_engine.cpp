@@ -336,6 +336,19 @@ float aligned_line_x(const render_text_request& request, const float line_width)
     return request.bounds.x;
 }
 
+float visible_line_height(const render_text_request& request, const float y, const float line_height)
+{
+    if (request.bounds.height <= 0.0f) {
+        return line_height;
+    }
+
+    const float clip_bottom = request.bounds.y + request.bounds.height;
+    if (y >= clip_bottom) {
+        return 0.0f;
+    }
+    return std::min(line_height, clip_bottom - y);
+}
+
 render_text_revision update_atlas_for_layout(
     const std::vector<shaped_glyph>& shaped_glyphs,
     const std::vector<laid_out_line>& lines,
@@ -431,6 +444,11 @@ std::vector<fake_text_engine_caret> fake_text_engine::caret_positions(const rend
     std::vector<fake_text_engine_caret> carets;
     float y = request.bounds.y;
     for (const laid_out_line& line : lines) {
+        const float caret_height = visible_line_height(request, y, line.height);
+        if (caret_height <= 0.0f) {
+            break;
+        }
+
         float x = aligned_line_x(request, line.width);
         std::size_t last_run_index = 0;
         bool has_prior_glyph = false;
@@ -441,7 +459,7 @@ std::vector<fake_text_engine_caret> fake_text_engine::caret_positions(const rend
                 carets.push_back(fake_text_engine_caret{
                     .run_index = glyph.run_index,
                     .byte_offset = glyph.byte_offset,
-                    .bounds = render_rect{x, y, 0.0f, line.height},
+                    .bounds = render_rect{x, y, 0.0f, caret_height},
                 });
             }
 
@@ -449,7 +467,7 @@ std::vector<fake_text_engine_caret> fake_text_engine::caret_positions(const rend
             carets.push_back(fake_text_engine_caret{
                 .run_index = glyph.run_index,
                 .byte_offset = glyph.byte_offset + glyph.byte_count,
-                .bounds = render_rect{x, y, 0.0f, line.height},
+                .bounds = render_rect{x, y, 0.0f, caret_height},
             });
             last_run_index = glyph.run_index;
             has_prior_glyph = true;
@@ -487,6 +505,11 @@ std::vector<render_rect> fake_text_engine::selection_rects(
     std::vector<render_rect> rects;
     float y = request.bounds.y;
     for (const laid_out_line& line : lines) {
+        const float selection_height = visible_line_height(request, y, line.height);
+        if (selection_height <= 0.0f) {
+            break;
+        }
+
         float x = aligned_line_x(request, line.width);
         bool has_active_rect = false;
         render_rect active_rect;
@@ -505,7 +528,7 @@ std::vector<render_rect> fake_text_engine::selection_rects(
                 range.end_byte_offset);
             if (selection_starts_before_glyph_end && glyph_starts_before_selection_end && glyph.advance > 0.0f) {
                 if (!has_active_rect) {
-                    active_rect = render_rect{x, y, glyph.advance, line.height};
+                    active_rect = render_rect{x, y, glyph.advance, selection_height};
                     has_active_rect = true;
                 } else {
                     active_rect.width = (x + glyph.advance) - active_rect.x;

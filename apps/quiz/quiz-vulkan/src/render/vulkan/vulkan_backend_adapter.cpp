@@ -10,6 +10,30 @@ bool has_visible_area(const render_rect& rect)
 
 } // namespace
 
+std::string_view fallback_reason_name(vulkan_backend_fallback_reason reason)
+{
+    switch (reason) {
+    case vulkan_backend_fallback_reason::none:
+        return "none";
+    case vulkan_backend_fallback_reason::not_requested:
+        return "not_requested";
+    case vulkan_backend_fallback_reason::surface_unavailable:
+        return "surface_unavailable";
+    case vulkan_backend_fallback_reason::viewport_unavailable:
+        return "viewport_unavailable";
+    case vulkan_backend_fallback_reason::begin_frame_failed:
+        return "begin_frame_failed";
+    case vulkan_backend_fallback_reason::record_commands_failed:
+        return "record_commands_failed";
+    case vulkan_backend_fallback_reason::submit_frame_failed:
+        return "submit_frame_failed";
+    case vulkan_backend_fallback_reason::present_frame_failed:
+        return "present_frame_failed";
+    }
+
+    return "unknown";
+}
+
 vulkan_surface_extent null_vulkan_backend_device::current_surface_extent() const
 {
     return {};

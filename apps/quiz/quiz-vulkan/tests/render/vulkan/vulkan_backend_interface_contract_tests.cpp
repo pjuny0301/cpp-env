@@ -2,6 +2,7 @@
 
 #include <concepts>
 #include <cstddef>
+#include <string_view>
 
 namespace {
 
@@ -77,5 +78,9 @@ static_assert(std::same_as<
 static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_backend_fallback_reason::present_frame_failed),
     render::vulkan_backend::vulkan_backend_fallback_reason>);
+
+static_assert(requires(render::vulkan_backend::vulkan_backend_fallback_reason reason) {
+    { render::vulkan_backend::fallback_reason_name(reason) } -> std::same_as<std::string_view>;
+});
 
 } // namespace

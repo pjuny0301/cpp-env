@@ -5,6 +5,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdio>
+#include <string_view>
 #include <string>
 #include <utility>
 #include <vector>
@@ -109,6 +110,44 @@ bool framebuffer_pixel_is(
         && framebuffer.rgba[offset + 1] == green
         && framebuffer.rgba[offset + 2] == blue
         && framebuffer.rgba[offset + 3] == alpha;
+}
+
+void test_vulkan_backend_fallback_reason_names_are_stable()
+{
+    using namespace quiz_vulkan::render;
+
+    require(
+        vulkan_backend::fallback_reason_name(vulkan_backend::vulkan_backend_fallback_reason::none)
+            == std::string_view{"none"},
+        "fallback reason name for none is stable");
+    require(
+        vulkan_backend::fallback_reason_name(vulkan_backend::vulkan_backend_fallback_reason::not_requested)
+            == std::string_view{"not_requested"},
+        "fallback reason name for not requested is stable");
+    require(
+        vulkan_backend::fallback_reason_name(vulkan_backend::vulkan_backend_fallback_reason::surface_unavailable)
+            == std::string_view{"surface_unavailable"},
+        "fallback reason name for surface unavailable is stable");
+    require(
+        vulkan_backend::fallback_reason_name(vulkan_backend::vulkan_backend_fallback_reason::viewport_unavailable)
+            == std::string_view{"viewport_unavailable"},
+        "fallback reason name for viewport unavailable is stable");
+    require(
+        vulkan_backend::fallback_reason_name(vulkan_backend::vulkan_backend_fallback_reason::begin_frame_failed)
+            == std::string_view{"begin_frame_failed"},
+        "fallback reason name for begin frame failure is stable");
+    require(
+        vulkan_backend::fallback_reason_name(vulkan_backend::vulkan_backend_fallback_reason::record_commands_failed)
+            == std::string_view{"record_commands_failed"},
+        "fallback reason name for command recording failure is stable");
+    require(
+        vulkan_backend::fallback_reason_name(vulkan_backend::vulkan_backend_fallback_reason::submit_frame_failed)
+            == std::string_view{"submit_frame_failed"},
+        "fallback reason name for submit failure is stable");
+    require(
+        vulkan_backend::fallback_reason_name(vulkan_backend::vulkan_backend_fallback_reason::present_frame_failed)
+            == std::string_view{"present_frame_failed"},
+        "fallback reason name for present failure is stable");
 }
 
 quiz_vulkan::render::render_draw_command make_quad_command(
@@ -788,6 +827,7 @@ void test_vulkan_backend_adapter_falls_back_when_present_fails()
 
 int main()
 {
+    test_vulkan_backend_fallback_reason_names_are_stable();
     test_draw_list_submission_counts_generic_work();
     test_renderer_backend_diagnostics_report_vulkan_not_requested();
     test_cpu_fallback_clips_and_discards();

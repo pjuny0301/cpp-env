@@ -4,6 +4,7 @@
 #include "render/vulkan/vulkan_frame_plan.h"
 
 #include <cstddef>
+#include <string_view>
 
 namespace quiz_vulkan::render::vulkan_backend {
 
@@ -17,6 +18,8 @@ enum class vulkan_backend_fallback_reason {
     submit_frame_failed,
     present_frame_failed,
 };
+
+std::string_view fallback_reason_name(vulkan_backend_fallback_reason reason);
 
 struct vulkan_surface_extent {
     std::size_t width = 0;

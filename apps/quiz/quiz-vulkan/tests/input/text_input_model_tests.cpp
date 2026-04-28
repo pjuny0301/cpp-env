@@ -161,6 +161,24 @@ void test_submit_consumes_buffer()
     require(!model.consume_submit_text().has_value(), "second consume is empty");
 }
 
+void test_submit_excludes_preedit()
+{
+    quiz_vulkan::input::text_input_model model;
+    model.focus("answer");
+
+    require(model.commit_utf8("base"), "commit before preedit submit succeeds");
+    require(model.set_preedit("draft"), "preedit before submit succeeds");
+    require(model.display_text() == "basedraft", "display includes preedit before submit");
+
+    require(model.submit(), "submit with preedit succeeds");
+    require(model.text().empty(), "submit with preedit clears committed buffer");
+    require(model.preedit_text().empty(), "submit with preedit clears preedit buffer");
+
+    std::optional<std::string> submitted = model.consume_submit_text();
+    require(submitted.has_value(), "submit with preedit produces submitted text");
+    require(*submitted == "base", "submit excludes uncommitted preedit text");
+}
+
 } // namespace
 
 int main()
@@ -172,6 +190,7 @@ int main()
     test_empty_preedit_edges();
     test_clear_focus_ignores_text();
     test_submit_consumes_buffer();
+    test_submit_excludes_preedit();
 
     std::cout << "text_input_model_tests passed\n";
     return 0;

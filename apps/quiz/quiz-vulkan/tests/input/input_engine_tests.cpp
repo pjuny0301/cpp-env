@@ -86,6 +86,19 @@ quiz_vulkan::raw_platform_input_event key(
     };
 }
 
+quiz_vulkan::raw_platform_input_event key_code(
+    std::int64_t timestamp_ms,
+    std::int32_t code,
+    quiz_vulkan::raw_platform_key_phase phase = quiz_vulkan::raw_platform_key_phase::down)
+{
+    return quiz_vulkan::raw_platform_key_event{
+        .timestamp_ms = timestamp_ms,
+        .phase = phase,
+        .key_code = code,
+        .logical_key = {},
+    };
+}
+
 quiz_vulkan::raw_platform_input_event focus(
     quiz_vulkan::raw_platform_focus_phase phase,
     std::int64_t timestamp_ms)
@@ -263,6 +276,34 @@ void test_text_key_flow()
     require(engine.text_model().has_submit_text(), "text model retains consumable submit text");
 
     require(engine.process_raw_event(key(151, "Enter", true)).empty(), "repeat enter is ignored");
+}
+
+void test_key_code_fallback_edges()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    require(engine.process_raw_event(key_code(100, 8)).empty(), "unfocused key-code backspace is ignored");
+
+    engine.focus_text_target("answer");
+    require(engine.process_raw_event(text(110, utf8(u8"한"))).size() == 1, "text before key-code backspace commits");
+    std::vector<input_event> events = engine.process_raw_event(key_code(120, 8));
+    require(events.size() == 1, "key-code backspace emits one text event");
+    const text_event& backspace = require_event<text_event>(events, 0);
+    require(backspace.kind == text_event_kind::backspace, "key-code backspace emits backspace kind");
+    require(backspace.target_id == "answer", "key-code backspace preserves target id");
+    require(engine.text_model().text().empty(), "key-code backspace removes utf8 codepoint");
+
+    require(engine.process_raw_event(text(130, "ok")).size() == 1, "text before key-code enter commits");
+    require(engine.process_raw_event(key_code(140, 13, raw_platform_key_phase::up)).empty(),
+        "key-code enter keyup is ignored");
+    events = engine.process_raw_event(key_code(150, 13));
+    require(events.size() == 1, "key-code enter emits one submit event");
+    const text_event& submit = require_event<text_event>(events, 0);
+    require(submit.kind == text_event_kind::submit, "key-code enter emits submit kind");
+    require(submit.target_id == "answer", "key-code enter preserves target id");
+    require(submit.utf8_text == "ok", "key-code enter submits committed text");
 }
 
 void test_ime_composition_suppresses_text_and_key_events()
@@ -451,6 +492,7 @@ int main()
     test_touch_pointer_cancel_and_multi_pointer_edges();
     test_pointer_filter_and_timing_edges();
     test_text_key_flow();
+    test_key_code_fallback_edges();
     test_ime_composition_suppresses_text_and_key_events();
     test_ime_preedit_commit_edges();
     test_empty_ime_commit_and_end_cancel_preedit();

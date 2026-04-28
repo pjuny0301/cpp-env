@@ -76,6 +76,17 @@ quiz_vulkan::scene::placed_scene scene_with_text_answer()
     return placed;
 }
 
+quiz_vulkan::input::gesture_event gesture(quiz_vulkan::input::gesture_kind kind)
+{
+    return quiz_vulkan::input::gesture_event{
+        .kind = kind,
+        .timestamp_ms = 100,
+        .pointer_id = 1,
+        .x = 10.0f,
+        .y = 10.0f,
+    };
+}
+
 template <typename Payload>
 const Payload* payload_if(const quiz_vulkan::app_input_route_result& result)
 {
@@ -183,21 +194,66 @@ void test_pointer_text_submit_uses_current_committed_text()
 {
     using namespace quiz_vulkan;
 
-    const input::gesture_event tap{
-        .kind = input::gesture_kind::tap,
-        .timestamp_ms = 100,
-        .pointer_id = 1,
-        .x = 10.0f,
-        .y = 10.0f,
-    };
-
     const app_input_route_result result =
-        route_normalized_input_event(input::input_event{tap}, scene_with_text_answer(), "button text");
+        route_normalized_input_event(input::input_event{gesture(input::gesture_kind::tap)}, scene_with_text_answer(), "button text");
     require(result.ok(), "pointer submit route succeeds");
     require(result.clear_text_after_action, "pointer submit requests text clear");
     const auto* payload = payload_if<domain::submit_text_answer_action>(result);
     require(payload != nullptr, "pointer submit creates text answer action");
     require(payload->answer_text == "button text", "pointer submit uses current committed text");
+}
+
+void test_swipe_left_routes_previous_question()
+{
+    using namespace quiz_vulkan;
+
+    const app_input_route_result result =
+        route_normalized_input_event(input::input_event{gesture(input::gesture_kind::swipe_left)}, {}, {});
+    require(result.ok(), "swipe left route succeeds");
+    require(result.handled, "swipe left is handled");
+    require(result.needs_render, "swipe left requests render");
+    require(!result.clear_text_after_action, "swipe left does not clear text");
+    require(payload_if<domain::previous_question_action>(result) != nullptr, "swipe left routes previous question");
+}
+
+void test_swipe_right_prefers_scene_continue_then_skip()
+{
+    using namespace quiz_vulkan;
+
+    scene::placed_scene feedback_scene;
+    feedback_scene.input_regions.push_back(region(
+        "continue",
+        {0.0f, 0.0f, 80.0f, 40.0f},
+        action("continue_after_feedback")));
+    const app_input_route_result continue_result =
+        route_normalized_input_event(input::input_event{gesture(input::gesture_kind::swipe_right)}, feedback_scene, {});
+    require(continue_result.ok(), "swipe right continue route succeeds");
+    require(payload_if<domain::continue_after_feedback_action>(continue_result) != nullptr,
+        "swipe right uses scene continue action when present");
+
+    scene::placed_scene active_scene;
+    active_scene.input_regions.push_back(region(
+        "skip",
+        {0.0f, 0.0f, 80.0f, 40.0f},
+        action("skip_question")));
+    const app_input_route_result skip_result =
+        route_normalized_input_event(input::input_event{gesture(input::gesture_kind::swipe_right)}, active_scene, {});
+    require(skip_result.ok(), "swipe right skip route succeeds");
+    require(payload_if<domain::skip_question_action>(skip_result) != nullptr,
+        "swipe right uses scene skip action when continue is absent");
+}
+
+void test_long_press_routes_mark_known()
+{
+    using namespace quiz_vulkan;
+
+    const app_input_route_result result =
+        route_normalized_input_event(input::input_event{gesture(input::gesture_kind::long_press)}, {}, {});
+    require(result.ok(), "long press route succeeds");
+    require(result.handled, "long press is handled");
+    require(result.needs_render, "long press requests render");
+    require(payload_if<domain::mark_question_known_action>(result) != nullptr,
+        "long press routes mark question known");
 }
 
 void test_route_errors_stay_in_app_layer()
@@ -210,15 +266,8 @@ void test_route_errors_stay_in_app_layer()
         {0.0f, 0.0f, 50.0f, 50.0f},
         action("submit_option", "bad")));
 
-    const input::gesture_event tap{
-        .kind = input::gesture_kind::tap,
-        .timestamp_ms = 100,
-        .pointer_id = 1,
-        .x = 10.0f,
-        .y = 10.0f,
-    };
-
-    const app_input_route_result result = route_normalized_input_event(input::input_event{tap}, placed, {});
+    const app_input_route_result result =
+        route_normalized_input_event(input::input_event{gesture(input::gesture_kind::tap)}, placed, {});
     require(!result.ok(), "bad scene action returns app route error");
     require(result.handled, "bad scene action is still handled");
     require(!result.action.has_value(), "bad scene action does not create domain action");
@@ -233,6 +282,9 @@ int main()
     test_text_focus_and_commit_route();
     test_submit_key_routes_committed_text();
     test_pointer_text_submit_uses_current_committed_text();
+    test_swipe_left_routes_previous_question();
+    test_swipe_right_prefers_scene_continue_then_skip();
+    test_long_press_routes_mark_known();
     test_route_errors_stay_in_app_layer();
     return 0;
 }

@@ -79,28 +79,90 @@ std::optional<scene::scene_action_binding> text_submit_action(const scene::place
     return std::nullopt;
 }
 
+std::optional<scene::scene_action_binding> first_enabled_action(
+    const scene::placed_scene& placed_scene,
+    std::string_view action_type)
+{
+    for (auto region = placed_scene.input_regions.rbegin(); region != placed_scene.input_regions.rend(); ++region) {
+        if (!region->enabled || std::string_view{region->action.action_type} != action_type) {
+            continue;
+        }
+        return region->action;
+    }
+    return std::nullopt;
+}
+
+scene::scene_action_binding app_gesture_action(std::string action_type)
+{
+    scene::scene_action_binding binding;
+    binding.action_type = std::move(action_type);
+    return binding;
+}
+
+scene::scene_action_binding swipe_right_action(const scene::placed_scene& placed_scene)
+{
+    if (const std::optional<scene::scene_action_binding> continue_action =
+            first_enabled_action(placed_scene, "continue_after_feedback")) {
+        return *continue_action;
+    }
+
+    if (const std::optional<scene::scene_action_binding> skip_action =
+            first_enabled_action(placed_scene, "skip_question")) {
+        return *skip_action;
+    }
+
+    return app_gesture_action("skip_question");
+}
+
+std::optional<scene::scene_action_binding> non_tap_gesture_action(
+    input::gesture_kind kind,
+    const scene::placed_scene& placed_scene)
+{
+    if (kind == input::gesture_kind::swipe_left) {
+        return app_gesture_action("previous_question");
+    }
+    if (kind == input::gesture_kind::swipe_right) {
+        return swipe_right_action(placed_scene);
+    }
+    if (kind == input::gesture_kind::long_press) {
+        if (const std::optional<scene::scene_action_binding> known_action =
+                first_enabled_action(placed_scene, "mark_question_known")) {
+            return known_action;
+        }
+        return app_gesture_action("mark_question_known");
+    }
+
+    return std::nullopt;
+}
+
 app_input_route_result route_gesture(
     const input::gesture_event& event,
     const scene::placed_scene& placed_scene,
     std::string_view committed_text)
 {
-    if (event.kind != input::gesture_kind::tap) {
+    if (event.kind == input::gesture_kind::tap) {
+        const scene::scene_input_region* region = hit_test_input_region(
+            placed_scene,
+            event.x,
+            event.y,
+            scene::scene_action_trigger::press);
+        if (region == nullptr) {
+            return {};
+        }
+
+        const bool submits_text = region->action.action_type == "submit_text_answer";
+        const std::optional<std::string_view> submitted_text =
+            submits_text ? std::optional<std::string_view>{committed_text} : std::nullopt;
+        return route_action_result(region->action, submitted_text, submits_text);
+    }
+
+    const std::optional<scene::scene_action_binding> binding =
+        non_tap_gesture_action(event.kind, placed_scene);
+    if (!binding.has_value()) {
         return {};
     }
 
-    const scene::scene_input_region* region = hit_test_input_region(
-        placed_scene,
-        event.x,
-        event.y,
-        scene::scene_action_trigger::press);
-    if (region == nullptr) {
-        return {};
-    }
-
-    const bool submits_text = region->action.action_type == "submit_text_answer";
-    const std::optional<std::string_view> submitted_text =
-        submits_text ? std::optional<std::string_view>{committed_text} : std::nullopt;
-    return route_action_result(region->action, submitted_text, submits_text);
+    return route_action_result(*binding, std::nullopt, false);
 }
 
 app_input_route_result route_text_event(

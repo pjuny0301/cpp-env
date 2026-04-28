@@ -458,6 +458,31 @@ void test_ime_empty_preedit_and_commit_only_edges()
         "raw text appends after commit-only ime flow");
 }
 
+void test_reset_clears_text_ime_and_pointer_state()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    engine.focus_text_target("answer");
+    require(engine.process_raw_event(text(100, "base")).size() == 1, "text before reset commits");
+    require(engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 110, "draft")).size() == 1,
+        "preedit before reset starts composition");
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 120, 4.0f, 4.0f)).empty(),
+        "pointer before reset is tracked");
+
+    engine.reset();
+    require(!engine.has_text_focus(), "reset clears text focus");
+    require(engine.text_focus_id().empty(), "reset clears text focus id");
+    require(engine.text_model().text().empty(), "reset clears committed text");
+    require(engine.text_model().preedit_text().empty(), "reset clears preedit text");
+    require(engine.process_raw_event(text(130, "ignored")).empty(), "text after reset is ignored without focus");
+    require(engine.process_raw_event(key(140, "Backspace")).empty(), "key after reset is ignored without focus");
+    require(engine.update_time(800).empty(), "reset clears pending long press state");
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 810, 4.0f, 4.0f)).empty(),
+        "up after reset emits no stale tap");
+}
+
 void test_focus_loss_cancels_composition_and_pointer_state()
 {
     using namespace quiz_vulkan;
@@ -497,6 +522,7 @@ int main()
     test_ime_preedit_commit_edges();
     test_empty_ime_commit_and_end_cancel_preedit();
     test_ime_empty_preedit_and_commit_only_edges();
+    test_reset_clears_text_ime_and_pointer_state();
     test_focus_loss_cancels_composition_and_pointer_state();
 
     std::cout << "input_engine_tests passed\n";

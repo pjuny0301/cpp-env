@@ -1,14 +1,16 @@
 #include "app/app_demo.h"
 
 #include "core/layout/layout_placer.h"
+#include "core/scene/modifier_interface.h"
 #include "core/ui/quiz_screens.h"
+#include "core/ui/ui_renderer.h"
 
 #include <algorithm>
 #include <cstdint>
 #include <sstream>
 #include <string_view>
-#include <utility>
 #include <vector>
+#include <utility>
 
 namespace quiz_vulkan {
 namespace {
@@ -136,6 +138,34 @@ std::vector<platform_text_overlay> make_text_overlays(
     return overlays;
 }
 
+class app_render_view_state_modifier final : public scene::scene_modifier {
+public:
+    explicit app_render_view_state_modifier(app_render_view_state view_state)
+        : typed_text_answer_(view_state.typed_text_answer)
+    {
+    }
+
+    void modify(const scene::scene_modifier_context& context, scene::scene_layout_edit_data& edit_data) override
+    {
+        if (typed_text_answer_.empty() || context.current_scene == nullptr) {
+            return;
+        }
+
+        for (const auto& [node_id, node] : context.current_scene->nodes()) {
+            if (node.semantics.role != scene::scene_node_role::quiz_answer_input
+                || !node.semantics.quiz.accepts_keyboard_input) {
+                continue;
+            }
+
+            edit_data.set_text(node_id, {scene::scene_text_run{typed_text_answer_, "text_input"}});
+            edit_data.set_focus(node_id);
+        }
+    }
+
+private:
+    std::string typed_text_answer_;
+};
+
 } // namespace
 
 domain::deck make_demo_deck()
@@ -179,7 +209,10 @@ domain::deck make_demo_deck()
     return demo_deck;
 }
 
-app_render_frame render_app_frame(const domain::app_snapshot& snapshot, scene::scene_rect viewport)
+app_render_frame render_app_frame(
+    const domain::app_snapshot& snapshot,
+    scene::scene_rect viewport,
+    app_render_view_state view_state)
 {
     scene::scene_layout_data scene_data("quiz_app");
     const scene::scene_layout_patch patch = ui::make_quiz_screen_patch(snapshot);
@@ -201,16 +234,26 @@ app_render_frame render_app_frame(const domain::app_snapshot& snapshot, scene::s
         environment.keyboard.bottom_inset = 260.0f;
     }
 
+    scene::scene_modifier_context modifier_context;
+    modifier_context.current_scene = &scene_data;
+    modifier_context.viewport = viewport;
+    modifier_context.layout_environment = environment;
+    modifier_context.route_state = scene_data.route_state();
+    scene::scene_layout_edit_data view_state_edit_data("app_render_view_state");
+    app_render_view_state_modifier{view_state}.modify(modifier_context, view_state_edit_data);
+    view_state_edit_data.finish_patch().apply_to(scene_data);
+
     const demo_text_metrics text_metrics;
     frame.placed_scene = scene::layout_placer{}.place_with_environment(
         scene_data,
         environment,
         text_metrics);
+    const ui::ui_draw_list draw_list = ui::ui_renderer{}.build_draw_list(frame.placed_scene);
 
     render::vulkan_renderer_options renderer_options;
     renderer_options.viewport = environment.viewport;
     render::vulkan_renderer renderer(renderer_options);
-    renderer.submit(frame.placed_scene);
+    renderer.submit(draw_list);
 
     frame.report.node_count = frame.placed_scene.nodes.size();
     frame.report.input_region_count = frame.placed_scene.input_regions.size();

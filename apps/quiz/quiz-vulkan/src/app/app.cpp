@@ -31,9 +31,13 @@ app_render_frame render_and_report(
     platform_shell& shell,
     const platform_shell_config& shell_config,
     std::string_view label,
-    const domain::app_snapshot& snapshot)
+    const domain::app_snapshot& snapshot,
+    std::string_view typed_text_answer = {})
 {
-    app_render_frame frame = render_app_frame(snapshot, viewport_for_shell(shell.state(), shell_config));
+    app_render_frame frame = render_app_frame(
+        snapshot,
+        viewport_for_shell(shell.state(), shell_config),
+        app_render_view_state{typed_text_answer});
     shell.present_frame(
         frame.framebuffer.width,
         frame.framebuffer.height,
@@ -43,6 +47,19 @@ app_render_frame render_and_report(
     shell.show_message(line);
     shell.set_frame_status(line);
     return frame;
+}
+
+void pop_last_utf8_codepoint(std::string& value)
+{
+    if (value.empty()) {
+        return;
+    }
+
+    std::size_t start = value.size() - 1;
+    while (start > 0 && (static_cast<unsigned char>(value[start]) & 0xc0U) == 0x80U) {
+        --start;
+    }
+    value.erase(start);
 }
 
 std::vector<domain::deck> load_initial_decks(const app_config& config, platform_shell& shell)
@@ -114,16 +131,16 @@ bool dispatch_platform_input(
         }
         submitted_text_buffer.append(event.text);
         shell.show_message("typed answer: " + submitted_text_buffer);
-        return false;
+        return true;
     }
 
     if (event.type == platform_input_event_type::text_backspace) {
         if (!scene_accepts_keyboard_input(placed_scene) || submitted_text_buffer.empty()) {
             return false;
         }
-        submitted_text_buffer.pop_back();
+        pop_last_utf8_codepoint(submitted_text_buffer);
         shell.show_message("typed answer: " + submitted_text_buffer);
-        return false;
+        return true;
     }
 
     if (event.type == platform_input_event_type::text_submit) {
@@ -207,7 +224,12 @@ int app::run()
 
     app_state quiz_state(std::move(decks));
     std::string submitted_text_buffer;
-    app_render_frame latest_frame = render_and_report(*shell_, config_.shell, "deck-list", quiz_state.snapshot());
+    app_render_frame latest_frame = render_and_report(
+        *shell_,
+        config_.shell,
+        "deck-list",
+        quiz_state.snapshot(),
+        submitted_text_buffer);
 
     while (shell_->pump_events() == platform_shell_status::keep_running) {
         bool should_render = false;
@@ -220,7 +242,12 @@ int app::run()
                 *shell_) || should_render;
         }
         if (should_render) {
-            latest_frame = render_and_report(*shell_, config_.shell, "input", quiz_state.snapshot());
+            latest_frame = render_and_report(
+                *shell_,
+                config_.shell,
+                "input",
+                quiz_state.snapshot(),
+                submitted_text_buffer);
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
     }

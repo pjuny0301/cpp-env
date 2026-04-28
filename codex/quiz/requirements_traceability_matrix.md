@@ -1,6 +1,6 @@
 # Quiz 요구사항 추적 매트릭스
 
-마지막 갱신: 2026-04-27
+마지막 갱신: 2026-04-28
 
 이 문서는 요구사항 번호를 실행 순서가 아니라 추적 ID로 관리한다. 실제 구현 순서는 `big_plan.md`의 의존관계 기반 단계가 기준이며, 각 행은 루트 구현 문서, 하위 프로젝트 문서, 현재 C++/문서 증거를 연결한다.
 
@@ -42,7 +42,7 @@
 | 28 | 0. 작업 기준 고정<br>1. 공통 데이터 계약/도메인<br>3. Editor 데이터 제작 | 문단 / 문제 개념 / 정답 | [28](구현/28.md); [android-quiz-app](android-quiz-app/구현/28.md), [quiz-editor](quiz-editor/구현/28.md) | `src/core/domain/quiz_model.*`, `src/core/domain/deck_artifact_loader.*` | 부분 구현 | 프로젝트 구현 문서의 검증 기준을 native 테스트로 확대 |
 | 29 | 0. 작업 기준 고정<br>3. Editor 데이터 제작 | 선지의 오답들은 정답인 개념과 헷갈리되 절대 아닌 것들로 구성 | [29](구현/29.md); [android-quiz-app](android-quiz-app/구현/29.md), [quiz-editor](quiz-editor/구현/29.md) | - | 계획 문서화 | 하위 프로젝트 구현 착수 시 fixture/test 추가 |
 | 30 | 0. 작업 기준 고정<br>2. Android UX 기준/FSM | 왼쪽으로 슬라이드하면 이전 퀴즈 볼 수 있게 | [30](구현/30.md); [android-quiz-app](android-quiz-app/구현/30.md), [quiz-vulkan](quiz-vulkan/구현/30.md) | `tests/app/app_state_tests.cpp` | 부분 구현 | 프로젝트 구현 문서의 검증 기준을 native 테스트로 확대 |
-| 31 | 0. 작업 기준 고정<br>2. Android UX 기준/FSM<br>4. Vulkan 플레이어 재작성 | 빈칸유형에 입력하기 위해서 입력창 터치하면 키보드가 위로 올라오면서 문제가 위로 밀리고 화면밖으로 나가서... | [31](구현/31.md); [android-quiz-app](android-quiz-app/구현/31.md), [quiz-vulkan](quiz-vulkan/구현/31.md) | `src/core/layout/layout_placer.h`, `src/core/ui/quiz_screens.h`, `tests/ui/quiz_screens_tests.cpp` | 부분 구현 | 프로젝트 구현 문서의 검증 기준을 native 테스트로 확대 |
+| 31 | 0. 작업 기준 고정<br>2. Android UX 기준/FSM<br>4. Vulkan 플레이어 재작성 | 빈칸유형에 입력하기 위해서 입력창 터치하면 키보드가 위로 올라오면서 문제가 위로 밀리고 화면밖으로 나가서... | [31](구현/31.md); [android-quiz-app](android-quiz-app/구현/31.md), [quiz-vulkan](quiz-vulkan/구현/31.md) | `src/core/layout/layout_placer.h`, `src/core/ui/quiz_screens.h`, `src/app/app.cpp`, `src/app/app_demo.cpp`, `tests/app/app_demo_tests.cpp`, `tests/ui/quiz_screens_tests.cpp` | 부분 구현 | 실제 OS 키보드/IME 입력과 blank 답안 제출을 창 실행으로 재확인 |
 | 32 | 0. 작업 기준 고정<br>2. Android UX 기준/FSM | 유저가 옵션에서 허용시 한 번 틀리면 그 문제가 오답노트로 이동하는 기능도 추가 유저가 설정한 숫자만큼... | [32](구현/32.md); [android-quiz-app](android-quiz-app/구현/32.md), [quiz-vulkan](quiz-vulkan/구현/32.md) | `src/app/app_state.cpp`, `src/core/domain/learning_state.*`, `tests/app/app_state_tests.cpp` | 부분 구현 | 프로젝트 구현 문서의 검증 기준을 native 테스트로 확대 |
 | 33 | 0. 작업 기준 고정<br>7. 배포/동기화/QA | 지금 하고있는 배포/테스트/디자인파이프라인 문제점 분석 -> 제언 | [33](구현/33.md); [quiz-editor](quiz-editor/구현/33.md) | - | 계획 문서화 | 하위 프로젝트 구현 착수 시 fixture/test 추가 |
 | 34 | 0. 작업 기준 고정<br>5. AI/OCR/Proof/Code worker | 수학증명을 태블릿으로 쓰거나 찍어서 바로 앱으로 전달할 수 있게 함. 카메라모드로 쓸지 태블릿증명모드로... | [34](구현/34.md); [quiz-editor](quiz-editor/구현/34.md) | - | 계획 문서화 | 하위 프로젝트 구현 착수 시 fixture/test 추가 |
@@ -91,10 +91,10 @@
 | 76 | 0. 작업 기준 고정<br>6. 본문 학습/카툰/Codexbot | 퀴즈앱의 디자인(덱선택창, 메인화면, 선택형문제선지 디자인) 등을 마음대로 제작하고 적용할 수 있는 테마... | [76](구현/76.md); [quiz-vulkan](quiz-vulkan/구현/76.md) | - | 계획 문서화 | 하위 프로젝트 구현 착수 시 fixture/test 추가 |
 | 77 | 0. 작업 기준 고정<br>3. Editor 데이터 제작 | Deck에 pdf 넣으면 서버로 전송 -> 텍스트화, 퀴즈화후 다시 폰으로 전송 -> 다음 앱에 접속시... | [77](구현/77.md); [quiz-editor](quiz-editor/구현/77.md) | - | 계획 문서화 | 하위 프로젝트 구현 착수 시 fixture/test 추가 |
 | 78 | 0. 작업 기준 고정<br>4. Vulkan 플레이어 재작성 | 앱 자체가 굉장히 가볍고 빠르게 | [78](구현/78.md); [quiz-vulkan](quiz-vulkan/구현/78.md) | `src/render/vulkan/vulkan_renderer.*`, CPU fallback RGBA framebuffer, `tests/render/vulkan_renderer_tests.cpp` | 부분 구현 | renderer backend 교체 전까지 CPU fallback diagnostics와 framebuffer smoke 유지 |
-| 79 | 0. 작업 기준 고정<br>1. 공통 데이터 계약/도메인<br>7. 배포/동기화/QA | 위 계획들을 일관적으로 시행하기 위해서는 어찌해야하는지? | [79](구현/79.md); [quiz-vulkan](quiz-vulkan/구현/79.md) | `tests/test_manifest.json`, `tools/run_windows_mingw_ascii.ps1`, `CMakeLists.txt`, `quiz_vulkan.exe --help`, 10-test CTest suite | 부분 구현 | CI에서도 MinGW runtime DLL 복사와 direct exe 실행 검증 |
+| 79 | 0. 작업 기준 고정<br>1. 공통 데이터 계약/도메인<br>7. 배포/동기화/QA | 위 계획들을 일관적으로 시행하기 위해서는 어찌해야하는지? | [79](구현/79.md); [quiz-vulkan](quiz-vulkan/구현/79.md) | `tests/test_manifest.json`, `tools/run_windows_mingw_ascii.ps1`, `CMakeLists.txt`, `quiz_vulkan.exe --help`, 10-test CTest suite, 앱 렌더 경계 `layout_placer -> ui_renderer -> vulkan_renderer(draw_list)` | 부분 구현 | CI에서도 MinGW runtime DLL 복사와 direct exe 실행 검증 |
 | 80 | 0. 작업 기준 고정<br>6. 본문 학습/카툰/Codexbot | 퀴즈앱 전반을 카툰렌더링게임처렁 만들고싶음. 아까 코덱스갸 나와서 설명하는 것도 카툰렌더링게임의 npc가... | [80](구현/80.md); [quiz-vulkan](quiz-vulkan/구현/80.md) | - | 계획 문서화 | 하위 프로젝트 구현 착수 시 fixture/test 추가 |
 | 81 | 0. 작업 기준 고정<br>6. 본문 학습/카툰/Codexbot | 토큰관리햐기 위해선 어찌해야하는지? | [81](구현/81.md); [quiz-vulkan](quiz-vulkan/구현/81.md) | - | 계획 문서화 | 하위 프로젝트 구현 착수 시 fixture/test 추가 |
-| 82 | 0. 작업 기준 고정<br>4. Vulkan 플레이어 재작성 | vulkan 렌더러로 구현 - 순수 c++ | [82](구현/82.md); [quiz-vulkan](quiz-vulkan/구현/82.md) | `src/app/app_demo.*`, `src/app/app.cpp`, `src/app/main.cpp`, `src/platform/windows_platform_shell.cpp`, `tests/app/app_demo_tests.cpp`, `src/render/vulkan/*`, Win32 framebuffer/text overlay present path | 부분 구현 | swapchain backend 추가 전까지 app snapshot render path와 입력 route 확대 |
+| 82 | 0. 작업 기준 고정<br>4. Vulkan 플레이어 재작성 | vulkan 렌더러로 구현 - 순수 c++ | [82](구현/82.md); [quiz-vulkan](quiz-vulkan/구현/82.md) | `src/app/app_demo.*`, `src/app/app.cpp`, `src/app/main.cpp`, `src/platform/windows_platform_shell.cpp`, `tests/app/app_demo_tests.cpp`, `src/render/vulkan/*`, scene modifier 기반 입력 표시, Win32 framebuffer/text overlay present path | 부분 구현 | swapchain/text backend 추가 전까지 app snapshot render path와 입력 route 확대 |
 | 25 | 0. 작업 기준 고정 | 원본 요구사항 목록에 25번 없음 | - | - | 원본 없음 | 번호 재사용 금지, 새 요구는 새 ID로 추가 |
 
 ## 코드 증거 묶음

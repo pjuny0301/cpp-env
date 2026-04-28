@@ -29,10 +29,15 @@ struct app_render_frame {
     std::vector<platform_text_overlay> text_overlays;
 };
 
+struct app_render_view_state {
+    std::string_view typed_text_answer;
+};
+
 domain::deck make_demo_deck();
 app_render_frame render_app_frame(
     const domain::app_snapshot& snapshot,
-    scene::scene_rect viewport = {0.0f, 0.0f, 1280.0f, 720.0f});
+    scene::scene_rect viewport = {0.0f, 0.0f, 1280.0f, 720.0f},
+    app_render_view_state view_state = {});
 app_render_report render_app_snapshot(
     const domain::app_snapshot& snapshot,
     scene::scene_rect viewport = {0.0f, 0.0f, 1280.0f, 720.0f});

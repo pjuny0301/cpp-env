@@ -56,6 +56,7 @@ struct vulkan_renderer_frame_summary {
     std::size_t backend_surface_width = 0;
     std::size_t backend_surface_height = 0;
     std::size_t backend_planned_batch_count = 0;
+    std::size_t backend_recorded_batch_count = 0;
     bool backend_surface_ready = false;
     bool backend_frame_begun = false;
     bool backend_commands_recorded = false;

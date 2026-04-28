@@ -258,6 +258,7 @@ void test_draw_list_submission_counts_generic_work()
     require(!summary.backend_frame_presented, "renderer summary exposes frame present status");
     require(summary.backend_attempted, "renderer summary exposes backend attempt status");
     require(summary.backend_planned_batch_count == 0, "renderer summary exposes backend planned batch count");
+    require(summary.backend_recorded_batch_count == 0, "renderer summary exposes backend recorded batch count");
     require(summary.backend_surface_width == 0, "renderer summary exposes backend surface width");
     require(summary.backend_surface_height == 0, "renderer summary exposes backend surface height");
     require(
@@ -273,6 +274,7 @@ void test_draw_list_submission_counts_generic_work()
     require(!backend_result.frame_submitted, "renderer retains backend submit status");
     require(!backend_result.frame_presented, "renderer retains backend present status");
     require(backend_result.planned_batch_count == 0, "renderer retains backend planned batch count");
+    require(backend_result.recorded_batch_count == 0, "renderer retains backend recorded batch count");
     require(
         backend_result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::surface_unavailable,
         "renderer retains backend fallback reason");
@@ -533,6 +535,7 @@ void test_vulkan_backend_adapter_completes_fake_device_lifecycle()
     require(result.frame_submitted, "fake backend submits frame");
     require(result.frame_presented, "fake backend presents frame");
     require(result.planned_batch_count == 1, "fake backend receives one planned batch");
+    require(result.recorded_batch_count == 1, "fake backend records one batch");
     require(result.clipped_draw_call_count == 0, "unclipped fake backend batch is not clipped");
     require(result.discarded_draw_call_count == 0, "visible fake backend batch is not discarded");
 
@@ -603,6 +606,7 @@ void test_vulkan_backend_adapter_preserves_plan_diagnostics()
 
     require(result.completed(), "backend completes clipped diagnostic frame");
     require(result.planned_batch_count == 1, "backend reports drawable clipped batch count");
+    require(result.recorded_batch_count == 1, "backend reports recorded clipped batch count");
     require(result.clipped_draw_call_count == 1, "backend reports clipped draw call count");
     require(result.discarded_draw_call_count == 1, "backend reports discarded draw call count");
     require(device.recorded_plan.batches.size() == 1, "recorded plan contains only visible clipped batch");
@@ -649,6 +653,7 @@ void test_vulkan_backend_adapter_falls_back_without_surface()
     require(!result.frame_submitted, "backend does not submit without surface");
     require(!result.frame_presented, "backend does not present without surface");
     require(result.planned_batch_count == 0, "backend does not build batches without surface");
+    require(result.recorded_batch_count == 0, "backend does not record batches without surface");
     require(device.calls.empty(), "backend does not call device lifecycle without surface");
 }
 
@@ -682,6 +687,7 @@ void test_vulkan_backend_adapter_falls_back_without_viewport()
     require(!result.frame_submitted, "backend does not submit without viewport");
     require(!result.frame_presented, "backend does not present without viewport");
     require(result.planned_batch_count == 0, "backend does not build batches without viewport");
+    require(result.recorded_batch_count == 0, "backend does not record batches without viewport");
     require(device.calls.empty(), "backend does not call device lifecycle without viewport");
 }
 
@@ -714,6 +720,7 @@ void test_vulkan_backend_adapter_falls_back_when_begin_fails()
     require(!result.frame_submitted, "backend does not submit after failed begin");
     require(!result.frame_presented, "backend does not present after failed begin");
     require(result.planned_batch_count == 1, "backend reports planned batch count before begin failure");
+    require(result.recorded_batch_count == 0, "backend does not record batches after begin failure");
     require(device.calls.size() == 1, "backend stops lifecycle after failed begin");
     require(device.calls[0] == "begin", "backend calls begin before stopping");
 }
@@ -747,6 +754,7 @@ void test_vulkan_backend_adapter_falls_back_when_recording_fails()
     require(!result.frame_submitted, "backend does not submit after failed recording");
     require(!result.frame_presented, "backend does not present after failed recording");
     require(result.planned_batch_count == 1, "backend still reports planned batch count before failure");
+    require(result.recorded_batch_count == 0, "backend does not count batches after failed recording");
     require(device.calls.size() == 2, "backend stops lifecycle after failed recording");
     require(device.calls[0] == "begin", "backend begins before failed recording");
     require(device.calls[1] == "record", "backend records before stopping");
@@ -781,6 +789,7 @@ void test_vulkan_backend_adapter_falls_back_when_submit_fails()
     require(!result.frame_submitted, "backend reports failed frame submit");
     require(!result.frame_presented, "backend does not present after failed submit");
     require(result.planned_batch_count == 1, "backend reports planned batch count before submit failure");
+    require(result.recorded_batch_count == 1, "backend reports recorded batch count before submit failure");
     require(device.calls.size() == 3, "backend stops lifecycle after failed submit");
     require(device.calls[0] == "begin", "backend begins before failed submit");
     require(device.calls[1] == "record", "backend records before failed submit");
@@ -816,6 +825,7 @@ void test_vulkan_backend_adapter_falls_back_when_present_fails()
     require(result.frame_submitted, "backend submitted frame before presentation failed");
     require(!result.frame_presented, "backend reports failed presentation");
     require(result.planned_batch_count == 1, "backend reports planned batch count before presentation failure");
+    require(result.recorded_batch_count == 1, "backend reports recorded batch count before presentation failure");
     require(device.calls.size() == 4, "backend reaches present call before failing");
     require(device.calls[0] == "begin", "backend begins before presentation failure");
     require(device.calls[1] == "record", "backend records before presentation failure");

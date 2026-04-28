@@ -101,6 +101,7 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
         result.fallback_reason = vulkan_backend_fallback_reason::record_commands_failed;
         return result;
     }
+    result.recorded_batch_count = plan.batches.size();
 
     result.frame_submitted = device.submit_frame();
     if (!result.frame_submitted) {

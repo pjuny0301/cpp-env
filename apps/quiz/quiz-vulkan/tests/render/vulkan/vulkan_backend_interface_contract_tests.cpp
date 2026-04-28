@@ -41,6 +41,7 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_frame_result resul
     { result.fallback_required } -> std::same_as<bool&>;
     { result.fallback_reason } -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
     { result.planned_batch_count } -> std::same_as<std::size_t&>;
+    { result.recorded_batch_count } -> std::same_as<std::size_t&>;
     { result.clipped_draw_call_count } -> std::same_as<std::size_t&>;
     { result.discarded_draw_call_count } -> std::same_as<std::size_t&>;
     { result.completed() } -> std::same_as<bool>;

@@ -42,6 +42,7 @@ struct vulkan_backend_frame_result {
     bool fallback_required = true;
     vulkan_backend_fallback_reason fallback_reason = vulkan_backend_fallback_reason::not_requested;
     std::size_t planned_batch_count = 0;
+    std::size_t recorded_batch_count = 0;
     std::size_t clipped_draw_call_count = 0;
     std::size_t discarded_draw_call_count = 0;
 

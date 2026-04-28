@@ -3,6 +3,7 @@
 
 #include "../audio/audio_engine_interface_contract_tests.cpp"
 #include "../app/app_render_pipeline_interface_contract_tests.cpp"
+#include "../assets/deck_source_asset_adapter_interface_contract_tests.cpp"
 #include "../assets/asset_resolver_interface_contract_tests.cpp"
 #include "../domain/deck_source_interface_contract_tests.cpp"
 #include "../input/input_engine_interface_contract_tests.cpp"

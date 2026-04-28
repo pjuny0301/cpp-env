@@ -84,6 +84,26 @@ target_sources(
 target_compile_features(quiz_vulkan_asset_contract INTERFACE cxx_std_23)
 target_include_directories(quiz_vulkan_asset_contract INTERFACE src)
 
+add_library(quiz_vulkan_deck_source_asset_adapter STATIC)
+target_sources(
+    quiz_vulkan_deck_source_asset_adapter
+    PRIVATE
+        src/assets/deck_source_asset_adapter.cpp
+    PUBLIC
+        FILE_SET HEADERS
+        BASE_DIRS src
+        FILES
+            src/assets/deck_source_asset_adapter.h
+)
+target_compile_features(quiz_vulkan_deck_source_asset_adapter PUBLIC cxx_std_23)
+target_include_directories(quiz_vulkan_deck_source_asset_adapter PUBLIC src)
+target_link_libraries(
+    quiz_vulkan_deck_source_asset_adapter
+    PUBLIC
+        quiz_vulkan_asset_contract
+        quiz_vulkan_domain
+)
+
 add_library(quiz_vulkan_scene INTERFACE)
 target_sources(
     quiz_vulkan_scene
@@ -292,6 +312,7 @@ quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan)
 if(MSVC)
     target_compile_options(quiz_vulkan_platform_shell PRIVATE /W4 /permissive-)
     target_compile_options(quiz_vulkan_domain PRIVATE /W4 /permissive-)
+    target_compile_options(quiz_vulkan_deck_source_asset_adapter PRIVATE /W4 /permissive-)
     target_compile_options(quiz_vulkan_input PRIVATE /W4 /permissive-)
     target_compile_options(quiz_vulkan_ui_renderer PRIVATE /W4 /permissive-)
     target_compile_options(quiz_vulkan_renderer PRIVATE /W4 /permissive-)
@@ -299,6 +320,7 @@ if(MSVC)
 else()
     target_compile_options(quiz_vulkan_platform_shell PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(quiz_vulkan_domain PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(quiz_vulkan_deck_source_asset_adapter PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(quiz_vulkan_input PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(quiz_vulkan_ui_renderer PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(quiz_vulkan_renderer PRIVATE -Wall -Wextra -Wpedantic)
@@ -410,6 +432,15 @@ if(BUILD_TESTING)
     )
     quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_asset_resolver_tests)
     add_test(NAME quiz_vulkan_asset_resolver_tests COMMAND quiz_vulkan_asset_resolver_tests)
+
+    add_executable(quiz_vulkan_deck_source_asset_adapter_tests tests/assets/deck_source_asset_adapter_tests.cpp)
+    target_link_libraries(
+        quiz_vulkan_deck_source_asset_adapter_tests
+        PRIVATE
+            quiz_vulkan_deck_source_asset_adapter
+    )
+    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_deck_source_asset_adapter_tests)
+    add_test(NAME quiz_vulkan_deck_source_asset_adapter_tests COMMAND quiz_vulkan_deck_source_asset_adapter_tests)
 
     add_library(
         quiz_vulkan_interface_contract_compile_tests

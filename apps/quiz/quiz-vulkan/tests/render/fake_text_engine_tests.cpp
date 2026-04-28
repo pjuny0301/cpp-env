@@ -193,6 +193,41 @@ void test_fake_multirun_layout_tracks_lines_offsets_and_alignment()
     require(near(layout.glyphs[2].bounds.height, 12.0f), "caption glyph keeps run style line height");
 }
 
+void test_fake_newline_edge_cases_preserve_empty_line_height()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "A\n", .style_token = "body"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 200.0f, 0.0f};
+    request.style_catalog = make_style_catalog();
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    const render_text_measure trailing_measure = engine.measure_text(request);
+    require(near(trailing_measure.width, 10.0f), "trailing newline keeps prior line width");
+    require(near(trailing_measure.height, 48.0f), "trailing newline contributes empty line height");
+
+    const render_text_layout trailing_layout = engine.layout_text(request);
+    require(trailing_layout.glyphs.size() == 1, "trailing newline does not emit visible glyph");
+    require(near(trailing_layout.measure.height, 48.0f), "trailing newline layout keeps empty line height");
+
+    request.text_runs = {
+        render_text_run{.text = "\nA", .style_token = "body"},
+    };
+    const render_text_layout leading_layout = engine.layout_text(request);
+    require(near(leading_layout.measure.width, 10.0f), "leading newline measures following line width");
+    require(near(leading_layout.measure.height, 48.0f), "leading newline contributes empty line height");
+    require(leading_layout.glyphs.size() == 1, "leading newline does not emit visible glyph");
+    require(near(leading_layout.glyphs[0].bounds.y, 24.0f), "glyph after leading newline moves to second line");
+}
+
 void test_fake_style_fallback_shapes_missing_tokens()
 {
     using namespace quiz_vulkan::render;
@@ -745,6 +780,7 @@ int main()
     test_style_catalog_find_and_resolve();
     test_fake_measure_and_layout_emit_stable_glyphs();
     test_fake_multirun_layout_tracks_lines_offsets_and_alignment();
+    test_fake_newline_edge_cases_preserve_empty_line_height();
     test_fake_style_fallback_shapes_missing_tokens();
     test_fake_atlas_updates_are_revisioned_and_consumed();
     test_fake_caret_positions_follow_utf8_runs_and_combining_marks();

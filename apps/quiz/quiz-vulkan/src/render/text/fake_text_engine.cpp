@@ -255,15 +255,21 @@ std::vector<laid_out_line> break_lines(const render_text_request& request, const
     std::vector<laid_out_line> lines;
     std::vector<std::size_t> current_line;
     float current_width = 0.0f;
+    float pending_empty_line_height = 0.0f;
     const bool wrap_words =
         request.options.wrap == render_text_wrap_mode::word && request.bounds.width > 0.0f;
 
     for (std::size_t glyph_index = 0; glyph_index < glyphs.size(); ++glyph_index) {
         const shaped_glyph& glyph = glyphs[glyph_index];
         if (glyph.newline) {
-            append_line(glyphs, lines, std::move(current_line));
+            if (current_line.empty()) {
+                lines.push_back(laid_out_line{.height = glyph.line_height});
+            } else {
+                append_line(glyphs, lines, std::move(current_line));
+            }
             current_line = {};
             current_width = 0.0f;
+            pending_empty_line_height = glyph.line_height;
             continue;
         }
 
@@ -293,12 +299,15 @@ std::vector<laid_out_line> break_lines(const render_text_request& request, const
             continue;
         }
 
+        pending_empty_line_height = 0.0f;
         current_line.push_back(glyph_index);
         current_width += glyph.advance;
     }
 
     if (!current_line.empty() || glyphs.empty()) {
         append_line(glyphs, lines, std::move(current_line));
+    } else if (pending_empty_line_height > 0.0f) {
+        lines.push_back(laid_out_line{.height = pending_empty_line_height});
     }
 
     if (request.options.max_lines > 0 && lines.size() > request.options.max_lines) {

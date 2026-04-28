@@ -137,12 +137,14 @@ target_sources(
     quiz_vulkan_input
     PRIVATE
         src/core/input/gesture_recognizer.cpp
+        src/core/input/input_engine.cpp
         src/core/input/text_input_model.cpp
     PUBLIC
         FILE_SET HEADERS
         BASE_DIRS src
         FILES
             src/core/input/gesture_recognizer.h
+            src/core/input/input_engine.h
             src/core/input/input_event.h
             src/core/input/text_input_model.h
 )
@@ -324,6 +326,11 @@ if(BUILD_TESTING)
     target_link_libraries(quiz_vulkan_text_input_model_tests PRIVATE quiz_vulkan_input)
     quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_text_input_model_tests)
     add_test(NAME quiz_vulkan_text_input_model_tests COMMAND quiz_vulkan_text_input_model_tests)
+
+    add_executable(quiz_vulkan_input_engine_tests tests/input/input_engine_tests.cpp)
+    target_link_libraries(quiz_vulkan_input_engine_tests PRIVATE quiz_vulkan_input)
+    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_input_engine_tests)
+    add_test(NAME quiz_vulkan_input_engine_tests COMMAND quiz_vulkan_input_engine_tests)
 
     add_executable(quiz_vulkan_quiz_screens_tests tests/ui/quiz_screens_tests.cpp)
     target_link_libraries(quiz_vulkan_quiz_screens_tests PRIVATE quiz_vulkan_ui)

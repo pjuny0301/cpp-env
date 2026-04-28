@@ -1,4 +1,5 @@
 #include "core/input/gesture_recognizer.h"
+#include "core/input/input_engine.h"
 #include "core/input/text_input_model.h"
 #include "platform/platform_input_event.h"
 
@@ -49,6 +50,25 @@ concept TextInputModelInterface = requires(
 
 static_assert(GestureRecognizerInterface<input::gesture_recognizer>);
 static_assert(TextInputModelInterface<input::text_input_model>);
+
+template <typename T>
+concept InputEngineInterface = requires(
+    T& engine,
+    std::string target,
+    const raw_platform_input_event& event,
+    std::int64_t timestamp_ms) {
+    { engine.focus_text_target(target) } -> std::same_as<void>;
+    { engine.clear_text_focus() } -> std::same_as<void>;
+    { engine.has_text_focus() } -> std::same_as<bool>;
+    { engine.text_focus_id() } -> std::same_as<const std::string&>;
+    { engine.text_model() } -> std::same_as<const input::text_input_model&>;
+    { engine.process_raw_event(event) } -> std::same_as<std::vector<input::input_event>>;
+    { engine.update_time(timestamp_ms) } -> std::same_as<std::vector<input::input_event>>;
+    { engine.reset() } -> std::same_as<void>;
+};
+
+static_assert(std::is_constructible_v<input::input_engine>);
+static_assert(InputEngineInterface<input::input_engine>);
 
 static_assert(std::variant_size_v<raw_platform_input_event> == 5);
 static_assert(std::is_same_v<

@@ -10,11 +10,13 @@ Task:
 Implement the next Image/Texture step behind the existing resolver/decoder/cache interfaces.
 
 Scope:
+- Own only `apps/quiz/quiz-vulkan/src/render/image/*`, `apps/quiz/quiz-vulkan/tests/render/image/*`, and existing image-owned tests explicitly named in the prompt.
 - Add concrete local/asset resolver behavior, cache-key validation, or fake decoder/cache implementation.
 - Keep failure behavior explicit and placeholder-friendly.
 - Keep image contracts render-neutral.
 
 Do not:
+- Edit `src/app/*`, `app.cpp`, `main.cpp`, top-level `CMakeLists.txt`, renderer integration, or aggregate contract registration.
 - Add network image loading.
 - Move or rename image interface headers.
 - Make renderer depend on quiz/domain/UI.

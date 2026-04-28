@@ -13,6 +13,8 @@ Hard rules:
   renderer must not own quiz/domain/UI/input/audio state.
 - Prefer C++23 style.
 - Keep changes scoped and commit on your branch.
+- Engine workers must not edit `src/app/*`, `app.cpp`, `main.cpp`, top-level `CMakeLists.txt`, or aggregate contract registration unless the integrator explicitly assigns that write set in the current prompt.
+- If app/runtime/CMake wiring is needed, write a short proposal in the final report. The integrator applies wiring on the baseline branch.
 - Final report must include changed files, verification commands/results, risks, and commit hash.
 
 Useful commands:

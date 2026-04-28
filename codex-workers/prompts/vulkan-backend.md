@@ -12,11 +12,13 @@ Task:
 Implement the next Vulkan backend step while consuming only existing render contracts.
 
 Scope:
+- Own only `apps/quiz/quiz-vulkan/src/render/vulkan/*`, `apps/quiz/quiz-vulkan/tests/render/vulkan/*`, and renderer-owned tests explicitly named in the prompt.
 - Incrementally introduce real Vulkan backend pieces behind renderer boundaries.
 - Keep CPU fallback if useful for tests.
 - Add smoke/diagnostic tests that do not require renderer to know scene/domain/UI.
 
 Do not:
+- Edit `src/app/*`, `app.cpp`, `main.cpp`, top-level `CMakeLists.txt`, scene/domain/UI/input/audio, or aggregate contract registration.
 - Include scene/domain/app_state/UI/input/audio headers in renderer.
 - Change text/image interfaces without integrator approval.
 

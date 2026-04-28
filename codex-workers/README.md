@@ -82,6 +82,8 @@ Each worker should:
 - run role-specific tests,
 - run `git diff --check`,
 - commit on its role branch,
+- treat `src/app/*`, `app.cpp`, `main.cpp`, top-level `CMakeLists.txt`, and aggregate contract registration as integrator-owned unless the prompt explicitly grants that write set,
+- propose app/runtime/CMake wiring instead of editing those files from an engine worker,
 - report changed files, verification, risks, and commit hash.
 
 ## Current Role Names

@@ -44,12 +44,16 @@ enum class platform_shell_status {
 
 enum class platform_input_event_type {
     pointer_press,
+    text_input,
+    text_backspace,
+    text_submit,
 };
 
 struct platform_input_event {
     platform_input_event_type type = platform_input_event_type::pointer_press;
     float x = 0.0f;
     float y = 0.0f;
+    std::string text;
 };
 
 class platform_shell {

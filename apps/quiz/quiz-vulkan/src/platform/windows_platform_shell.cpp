@@ -54,6 +54,53 @@ std::wstring widen_utf8(std::string_view value)
     return wide;
 }
 
+std::string narrow_utf16(std::wstring_view value)
+{
+    if (value.empty()) {
+        return {};
+    }
+
+    const int narrow_length = WideCharToMultiByte(
+        CP_UTF8,
+        0,
+        value.data(),
+        static_cast<int>(value.size()),
+        nullptr,
+        0,
+        nullptr,
+        nullptr);
+    if (narrow_length <= 0) {
+        return {};
+    }
+
+    std::string narrow(static_cast<std::size_t>(narrow_length), '\0');
+    const int converted_length = WideCharToMultiByte(
+        CP_UTF8,
+        0,
+        value.data(),
+        static_cast<int>(value.size()),
+        narrow.data(),
+        narrow_length,
+        nullptr,
+        nullptr);
+    if (converted_length <= 0) {
+        return {};
+    }
+
+    narrow.resize(static_cast<std::size_t>(converted_length));
+    return narrow;
+}
+
+bool is_high_surrogate(wchar_t value)
+{
+    return value >= 0xD800 && value <= 0xDBFF;
+}
+
+bool is_low_surrogate(wchar_t value)
+{
+    return value >= 0xDC00 && value <= 0xDFFF;
+}
+
 platform_client_size configured_client_size(const platform_shell_config& config)
 {
     return {
@@ -100,15 +147,16 @@ class windows_platform_shell final : public platform_shell {
 public:
     LRESULT handle_message(HWND window_handle, UINT message, WPARAM w_param, LPARAM l_param)
     {
-        (void)w_param;
-
         switch (message) {
         case WM_LBUTTONUP: {
             const auto x = static_cast<float>(static_cast<short>(LOWORD(l_param)));
             const auto y = static_cast<float>(static_cast<short>(HIWORD(l_param)));
-            input_events_.push_back(platform_input_event{platform_input_event_type::pointer_press, x, y});
+            input_events_.push_back(platform_input_event{platform_input_event_type::pointer_press, x, y, {}});
             return 0;
         }
+        case WM_CHAR:
+            handle_character_input(static_cast<wchar_t>(w_param));
+            return 0;
         case WM_PAINT:
             paint_framebuffer(window_handle);
             return 0;
@@ -269,6 +317,51 @@ public:
     }
 
 private:
+    void push_text_event(std::wstring_view text)
+    {
+        std::string utf8_text = narrow_utf16(text);
+        if (!utf8_text.empty()) {
+            input_events_.push_back(
+                platform_input_event{platform_input_event_type::text_input, 0.0f, 0.0f, std::move(utf8_text)});
+        }
+    }
+
+    void handle_character_input(wchar_t code_unit)
+    {
+        if (code_unit == L'\b') {
+            pending_high_surrogate_ = 0;
+            input_events_.push_back(platform_input_event{platform_input_event_type::text_backspace, 0.0f, 0.0f, {}});
+            return;
+        }
+
+        if (code_unit == L'\r' || code_unit == L'\n') {
+            pending_high_surrogate_ = 0;
+            input_events_.push_back(platform_input_event{platform_input_event_type::text_submit, 0.0f, 0.0f, {}});
+            return;
+        }
+
+        if (code_unit < L' ' || code_unit == 0x7F) {
+            return;
+        }
+
+        if (is_high_surrogate(code_unit)) {
+            pending_high_surrogate_ = code_unit;
+            return;
+        }
+
+        if (is_low_surrogate(code_unit)) {
+            if (pending_high_surrogate_ != 0) {
+                const wchar_t surrogate_pair[] = { pending_high_surrogate_, code_unit };
+                pending_high_surrogate_ = 0;
+                push_text_event(std::wstring_view(surrogate_pair, 2));
+            }
+            return;
+        }
+
+        pending_high_surrogate_ = 0;
+        push_text_event(std::wstring_view(&code_unit, 1));
+    }
+
     void paint_framebuffer(HWND window_handle)
     {
         PAINTSTRUCT paint{};
@@ -392,6 +485,7 @@ private:
     std::size_t framebuffer_height_ = 0;
     std::vector<unsigned char> framebuffer_bgra_;
     std::vector<platform_text_overlay> text_overlays_;
+    wchar_t pending_high_surrogate_ = 0;
 };
 
 LRESULT CALLBACK window_proc(HWND window_handle, UINT message, WPARAM w_param, LPARAM l_param)

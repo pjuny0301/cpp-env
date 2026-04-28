@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <string>
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <thread>
 #include <utility>
@@ -79,12 +80,74 @@ std::int64_t now_ms()
     return std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
 }
 
+bool scene_accepts_keyboard_input(const scene::placed_scene& placed_scene)
+{
+    for (const scene::placed_scene_node& node : placed_scene.nodes) {
+        if (node.visible && node.input_enabled && node.semantics.quiz.accepts_keyboard_input) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::optional<scene::scene_action_binding> text_submit_action(const scene::placed_scene& placed_scene)
+{
+    for (auto region = placed_scene.input_regions.rbegin(); region != placed_scene.input_regions.rend(); ++region) {
+        if (!region->enabled || region->action.action_type != "submit_text_answer") {
+            continue;
+        }
+        return region->action;
+    }
+    return std::nullopt;
+}
+
 bool dispatch_platform_input(
     app_state& quiz_state,
     const platform_input_event& event,
     const scene::placed_scene& placed_scene,
+    std::string& submitted_text_buffer,
     platform_shell& shell)
 {
+    if (event.type == platform_input_event_type::text_input) {
+        if (!scene_accepts_keyboard_input(placed_scene) || event.text.empty()) {
+            return false;
+        }
+        submitted_text_buffer.append(event.text);
+        shell.show_message("typed answer: " + submitted_text_buffer);
+        return false;
+    }
+
+    if (event.type == platform_input_event_type::text_backspace) {
+        if (!scene_accepts_keyboard_input(placed_scene) || submitted_text_buffer.empty()) {
+            return false;
+        }
+        submitted_text_buffer.pop_back();
+        shell.show_message("typed answer: " + submitted_text_buffer);
+        return false;
+    }
+
+    if (event.type == platform_input_event_type::text_submit) {
+        if (!scene_accepts_keyboard_input(placed_scene)) {
+            return false;
+        }
+
+        const std::optional<scene::scene_action_binding> binding = text_submit_action(placed_scene);
+        if (!binding.has_value()) {
+            return false;
+        }
+
+        const app_action_route_result routed_action = route_scene_action(*binding, submitted_text_buffer);
+        if (!routed_action.ok() || !routed_action.action.has_value()) {
+            shell.show_message("input action rejected: " + routed_action.error);
+            return false;
+        }
+
+        quiz_state.dispatch(*routed_action.action, now_ms());
+        submitted_text_buffer.clear();
+        shell.show_message("input action: " + std::string(domain::to_string(domain::type_of(*routed_action.action))));
+        return true;
+    }
+
     if (event.type != platform_input_event_type::pointer_press) {
         return false;
     }
@@ -98,13 +161,20 @@ bool dispatch_platform_input(
         return false;
     }
 
-    const app_action_route_result routed_action = route_scene_action(region->action);
+    const std::optional<std::string_view> submitted_text =
+        region->action.action_type == "submit_text_answer"
+            ? std::optional<std::string_view>{submitted_text_buffer}
+            : std::nullopt;
+    const app_action_route_result routed_action = route_scene_action(region->action, submitted_text);
     if (!routed_action.ok() || !routed_action.action.has_value()) {
         shell.show_message("input action rejected: " + routed_action.error);
         return false;
     }
 
     quiz_state.dispatch(*routed_action.action, now_ms());
+    if (region->action.action_type == "submit_text_answer") {
+        submitted_text_buffer.clear();
+    }
     shell.show_message("input action: " + std::string(domain::to_string(domain::type_of(*routed_action.action))));
     return true;
 }
@@ -136,12 +206,18 @@ int app::run()
     }
 
     app_state quiz_state(std::move(decks));
+    std::string submitted_text_buffer;
     app_render_frame latest_frame = render_and_report(*shell_, config_.shell, "deck-list", quiz_state.snapshot());
 
     while (shell_->pump_events() == platform_shell_status::keep_running) {
         bool should_render = false;
         for (const platform_input_event& event : shell_->drain_input_events()) {
-            should_render = dispatch_platform_input(quiz_state, event, latest_frame.placed_scene, *shell_) || should_render;
+            should_render = dispatch_platform_input(
+                quiz_state,
+                event,
+                latest_frame.placed_scene,
+                submitted_text_buffer,
+                *shell_) || should_render;
         }
         if (should_render) {
             latest_frame = render_and_report(*shell_, config_.shell, "input", quiz_state.snapshot());

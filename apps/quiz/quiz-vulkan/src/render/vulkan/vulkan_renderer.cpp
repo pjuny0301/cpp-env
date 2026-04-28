@@ -1,4 +1,5 @@
 #include "render/vulkan/vulkan_renderer.h"
+#include "render/vulkan/vulkan_backend_adapter.h"
 #include "render/vulkan/vulkan_frame_plan.h"
 
 #include <algorithm>
@@ -119,6 +120,18 @@ std::size_t shade_rect(
     return newly_shaded;
 }
 
+void submit_optional_vulkan_backend_frame(
+    const render_draw_list& draw_list,
+    const vulkan_renderer_options& options)
+{
+    if (!options.prefer_vulkan) {
+        return;
+    }
+
+    vulkan_backend::null_vulkan_backend_device device;
+    static_cast<void>(vulkan_backend::submit_vulkan_backend_frame(device, draw_list, options.viewport));
+}
+
 } // namespace
 
 vulkan_renderer::vulkan_renderer(vulkan_renderer_options options)
@@ -130,6 +143,7 @@ void vulkan_renderer::submit(const render_draw_list& draw_list)
 {
     last_draw_list_ = draw_list;
     last_frame_stats_ = count_commands(last_draw_list_);
+    submit_optional_vulkan_backend_frame(last_draw_list_, options_);
     last_frame_summary_ = summarize_cpu_fallback(last_draw_list_, last_frame_stats_, options_);
     last_framebuffer_ = rasterize_cpu_fallback_framebuffer(last_draw_list_, options_);
 }

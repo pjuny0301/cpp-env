@@ -273,6 +273,8 @@ add_library(quiz_vulkan_renderer STATIC)
 target_sources(
     quiz_vulkan_renderer
     PRIVATE
+        src/render/vulkan/vulkan_backend_adapter.cpp
+        src/render/vulkan/vulkan_backend_adapter.h
         src/render/vulkan/vulkan_frame_plan.cpp
         src/render/vulkan/vulkan_frame_plan.h
         src/render/vulkan/vulkan_renderer.cpp

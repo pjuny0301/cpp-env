@@ -1,4 +1,5 @@
 #include "render/vulkan/vulkan_renderer.h"
+#include "render/vulkan/vulkan_backend_adapter.h"
 #include "render/vulkan/vulkan_frame_plan.h"
 
 #include <cassert>
@@ -9,6 +10,56 @@
 #include <vector>
 
 namespace {
+
+class fake_vulkan_backend_device final : public quiz_vulkan::render::vulkan_backend::vulkan_backend_device_interface {
+public:
+    explicit fake_vulkan_backend_device(quiz_vulkan::render::vulkan_backend::vulkan_surface_extent surface)
+        : surface_(surface)
+    {
+    }
+
+    quiz_vulkan::render::vulkan_backend::vulkan_surface_extent current_surface_extent() const override
+    {
+        return surface_;
+    }
+
+    bool begin_frame(quiz_vulkan::render::vulkan_backend::vulkan_surface_extent surface) override
+    {
+        calls.push_back("begin");
+        begun_surface = surface;
+        return begin_succeeds;
+    }
+
+    bool record_frame_commands(const quiz_vulkan::render::vulkan_backend::vulkan_frame_plan& plan) override
+    {
+        calls.push_back("record");
+        recorded_plan = plan;
+        return record_succeeds;
+    }
+
+    bool submit_frame() override
+    {
+        calls.push_back("submit");
+        return submit_succeeds;
+    }
+
+    bool present_frame() override
+    {
+        calls.push_back("present");
+        return present_succeeds;
+    }
+
+    bool begin_succeeds = true;
+    bool record_succeeds = true;
+    bool submit_succeeds = true;
+    bool present_succeeds = true;
+    quiz_vulkan::render::vulkan_backend::vulkan_surface_extent begun_surface;
+    quiz_vulkan::render::vulkan_backend::vulkan_frame_plan recorded_plan;
+    std::vector<std::string> calls;
+
+private:
+    quiz_vulkan::render::vulkan_backend::vulkan_surface_extent surface_;
+};
 
 void require(bool condition, const char* message)
 {
@@ -345,6 +396,109 @@ void test_vulkan_frame_plan_builds_scissored_batches_from_render_contracts()
     require(text_batch.scissor.height == 1, "text scissor height maps to surface");
 }
 
+void test_vulkan_backend_adapter_completes_fake_device_lifecycle()
+{
+    using namespace quiz_vulkan::render;
+
+    render_draw_list draw_list;
+    draw_list.commands.push_back(make_quad_command(
+        "quad",
+        render_rect{8.0f, 16.0f, 16.0f, 16.0f},
+        render_color{0.25f, 0.5f, 0.75f, 1.0f}));
+
+    fake_vulkan_backend_device device(vulkan_backend::vulkan_surface_extent{.width = 64, .height = 32});
+    const vulkan_backend::vulkan_backend_frame_result result = vulkan_backend::submit_vulkan_backend_frame(
+        device,
+        draw_list,
+        render_rect{0.0f, 0.0f, 64.0f, 64.0f});
+
+    require(result.completed(), "fake backend completes frame lifecycle");
+    require(!result.fallback_required, "completed fake backend frame does not require fallback");
+    require(result.surface_ready, "fake backend surface is ready");
+    require(result.frame_begun, "fake backend begins a frame");
+    require(result.commands_recorded, "fake backend records frame commands");
+    require(result.frame_submitted, "fake backend submits frame");
+    require(result.frame_presented, "fake backend presents frame");
+    require(result.planned_batch_count == 1, "fake backend receives one planned batch");
+    require(result.clipped_draw_call_count == 0, "unclipped fake backend batch is not clipped");
+    require(result.discarded_draw_call_count == 0, "visible fake backend batch is not discarded");
+
+    require(device.calls.size() == 4, "fake backend lifecycle call count");
+    require(device.calls[0] == "begin", "fake backend begins before recording");
+    require(device.calls[1] == "record", "fake backend records before submit");
+    require(device.calls[2] == "submit", "fake backend submits before present");
+    require(device.calls[3] == "present", "fake backend presents last");
+    require(device.begun_surface.width == 64, "fake backend begin receives surface width");
+    require(device.begun_surface.height == 32, "fake backend begin receives surface height");
+
+    require(device.recorded_plan.surface_width == 64, "recorded frame plan uses device surface width");
+    require(device.recorded_plan.surface_height == 32, "recorded frame plan uses device surface height");
+    require(device.recorded_plan.batches.size() == 1, "recorded frame plan keeps one batch");
+    const vulkan_backend::vulkan_draw_batch& batch = device.recorded_plan.batches.front();
+    require(batch.kind == vulkan_backend::vulkan_batch_kind::quad, "recorded batch remains a quad");
+    require(batch.scissor.x == 8, "recorded batch scissor x maps to device surface");
+    require(batch.scissor.y == 8, "recorded batch scissor y maps to device surface");
+    require(batch.scissor.width == 16, "recorded batch scissor width maps to device surface");
+    require(batch.scissor.height == 8, "recorded batch scissor height maps to device surface");
+}
+
+void test_vulkan_backend_adapter_falls_back_without_surface()
+{
+    using namespace quiz_vulkan::render;
+
+    render_draw_list draw_list;
+    draw_list.commands.push_back(make_quad_command(
+        "quad",
+        render_rect{0.0f, 0.0f, 100.0f, 100.0f},
+        render_color{1.0f, 1.0f, 1.0f, 1.0f}));
+
+    fake_vulkan_backend_device device(vulkan_backend::vulkan_surface_extent{});
+    const vulkan_backend::vulkan_backend_frame_result result = vulkan_backend::submit_vulkan_backend_frame(
+        device,
+        draw_list,
+        render_rect{0.0f, 0.0f, 100.0f, 100.0f});
+
+    require(!result.completed(), "backend cannot complete without a surface");
+    require(result.fallback_required, "backend requires fallback without a surface");
+    require(!result.surface_ready, "zero surface is not ready");
+    require(!result.frame_begun, "backend does not begin frame without surface");
+    require(!result.commands_recorded, "backend does not record without surface");
+    require(!result.frame_submitted, "backend does not submit without surface");
+    require(!result.frame_presented, "backend does not present without surface");
+    require(result.planned_batch_count == 0, "backend does not build batches without surface");
+    require(device.calls.empty(), "backend does not call device lifecycle without surface");
+}
+
+void test_vulkan_backend_adapter_falls_back_when_recording_fails()
+{
+    using namespace quiz_vulkan::render;
+
+    render_draw_list draw_list;
+    draw_list.commands.push_back(make_quad_command(
+        "quad",
+        render_rect{0.0f, 0.0f, 100.0f, 100.0f},
+        render_color{1.0f, 1.0f, 1.0f, 1.0f}));
+
+    fake_vulkan_backend_device device(vulkan_backend::vulkan_surface_extent{.width = 16, .height = 16});
+    device.record_succeeds = false;
+    const vulkan_backend::vulkan_backend_frame_result result = vulkan_backend::submit_vulkan_backend_frame(
+        device,
+        draw_list,
+        render_rect{0.0f, 0.0f, 100.0f, 100.0f});
+
+    require(!result.completed(), "backend cannot complete when command recording fails");
+    require(result.fallback_required, "backend requires fallback when command recording fails");
+    require(result.surface_ready, "backend had a surface before recording failed");
+    require(result.frame_begun, "backend began frame before recording failed");
+    require(!result.commands_recorded, "backend reports failed command recording");
+    require(!result.frame_submitted, "backend does not submit after failed recording");
+    require(!result.frame_presented, "backend does not present after failed recording");
+    require(result.planned_batch_count == 1, "backend still reports planned batch count before failure");
+    require(device.calls.size() == 2, "backend stops lifecycle after failed recording");
+    require(device.calls[0] == "begin", "backend begins before failed recording");
+    require(device.calls[1] == "record", "backend records before stopping");
+}
+
 } // namespace
 
 int main()
@@ -353,5 +507,8 @@ int main()
     test_cpu_fallback_clips_and_discards();
     test_degenerate_surface_discards_draw_calls();
     test_vulkan_frame_plan_builds_scissored_batches_from_render_contracts();
+    test_vulkan_backend_adapter_completes_fake_device_lifecycle();
+    test_vulkan_backend_adapter_falls_back_without_surface();
+    test_vulkan_backend_adapter_falls_back_when_recording_fails();
     return 0;
 }

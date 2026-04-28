@@ -165,6 +165,18 @@ target_compile_features(quiz_vulkan_persistence_contract INTERFACE cxx_std_23)
 target_include_directories(quiz_vulkan_persistence_contract INTERFACE src)
 target_link_libraries(quiz_vulkan_persistence_contract INTERFACE quiz_vulkan_domain)
 
+add_library(quiz_vulkan_theme_contract INTERFACE)
+target_sources(
+    quiz_vulkan_theme_contract
+    INTERFACE
+        FILE_SET HEADERS
+        BASE_DIRS src
+        FILES
+            src/core/theme/theme_tokens.h
+)
+target_compile_features(quiz_vulkan_theme_contract INTERFACE cxx_std_23)
+target_include_directories(quiz_vulkan_theme_contract INTERFACE src)
+
 add_library(quiz_vulkan_external_worker_contract INTERFACE)
 target_sources(
     quiz_vulkan_external_worker_contract

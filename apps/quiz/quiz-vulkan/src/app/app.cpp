@@ -1,19 +1,19 @@
 #include "app/app.h"
 
-#include "app/app_action_router.h"
 #include "app/app_demo.h"
+#include "app/app_input_router.h"
 #include "app/app_render_pipeline.h"
 #include "app/app_state.h"
 #include "core/domain/deck_artifact_loader.hpp"
-#include "core/layout/input_hit_test.h"
+#include "core/input/input_engine.h"
 
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
-#include <string>
 #include <iostream>
 #include <optional>
 #include <sstream>
+#include <string>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -51,19 +51,6 @@ app_render_frame render_and_report(
     return frame;
 }
 
-void pop_last_utf8_codepoint(std::string& value)
-{
-    if (value.empty()) {
-        return;
-    }
-
-    std::size_t start = value.size() - 1;
-    while (start > 0 && (static_cast<unsigned char>(value[start]) & 0xc0U) == 0x80U) {
-        --start;
-    }
-    value.erase(start);
-}
-
 std::vector<domain::deck> load_initial_decks(const app_config& config, platform_shell& shell)
 {
     if (config.deck_artifacts.empty()) {
@@ -99,103 +86,62 @@ std::int64_t now_ms()
     return std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
 }
 
-bool scene_accepts_keyboard_input(const scene::placed_scene& placed_scene)
+void sync_text_focus(input::input_engine& input_engine, const scene::placed_scene& placed_scene)
 {
-    for (const scene::placed_scene_node& node : placed_scene.nodes) {
-        if (node.visible && node.input_enabled && node.semantics.quiz.accepts_keyboard_input) {
-            return true;
+    const std::optional<std::string> target_id = keyboard_input_target(placed_scene);
+    if (target_id.has_value()) {
+        if (!input_engine.has_text_focus() || input_engine.text_focus_id() != *target_id) {
+            input_engine.focus_text_target(*target_id);
         }
+        return;
     }
-    return false;
-}
 
-std::optional<scene::scene_action_binding> text_submit_action(const scene::placed_scene& placed_scene)
-{
-    for (auto region = placed_scene.input_regions.rbegin(); region != placed_scene.input_regions.rend(); ++region) {
-        if (!region->enabled || region->action.action_type != "submit_text_answer") {
-            continue;
-        }
-        return region->action;
+    if (input_engine.has_text_focus()) {
+        input_engine.clear_text_focus();
     }
-    return std::nullopt;
 }
 
 bool dispatch_platform_input(
     app_state& quiz_state,
     const platform_input_event& event,
     const scene::placed_scene& placed_scene,
-    std::string& submitted_text_buffer,
+    input::input_engine& input_engine,
     platform_shell& shell)
 {
-    if (event.type == platform_input_event_type::text_input) {
-        if (!scene_accepts_keyboard_input(placed_scene) || event.text.empty()) {
-            return false;
+    bool should_render = false;
+    sync_text_focus(input_engine, placed_scene);
+
+    const std::vector<raw_platform_input_event> raw_events = normalize_platform_input_event(event, now_ms());
+    for (const raw_platform_input_event& raw_event : raw_events) {
+        for (const input::input_event& input_event : input_engine.process_raw_event(raw_event)) {
+            const app_input_route_result route_result = route_normalized_input_event(
+                input_event,
+                placed_scene,
+                input_engine.text_model().text());
+
+            if (!route_result.handled) {
+                continue;
+            }
+            if (!route_result.ok()) {
+                shell.show_message("input action rejected: " + route_result.error);
+                continue;
+            }
+
+            should_render = route_result.needs_render || should_render;
+            if (!route_result.action.has_value()) {
+                shell.show_message("typed answer: " + input_engine.text_model().display_text());
+                continue;
+            }
+
+            quiz_state.dispatch(*route_result.action, now_ms());
+            if (route_result.clear_text_after_action) {
+                input_engine.reset();
+            }
+            shell.show_message("input action: " + std::string(domain::to_string(domain::type_of(*route_result.action))));
         }
-        submitted_text_buffer.append(event.text);
-        shell.show_message("typed answer: " + submitted_text_buffer);
-        return true;
     }
 
-    if (event.type == platform_input_event_type::text_backspace) {
-        if (!scene_accepts_keyboard_input(placed_scene) || submitted_text_buffer.empty()) {
-            return false;
-        }
-        pop_last_utf8_codepoint(submitted_text_buffer);
-        shell.show_message("typed answer: " + submitted_text_buffer);
-        return true;
-    }
-
-    if (event.type == platform_input_event_type::text_submit) {
-        if (!scene_accepts_keyboard_input(placed_scene)) {
-            return false;
-        }
-
-        const std::optional<scene::scene_action_binding> binding = text_submit_action(placed_scene);
-        if (!binding.has_value()) {
-            return false;
-        }
-
-        const app_action_route_result routed_action = route_scene_action(*binding, submitted_text_buffer);
-        if (!routed_action.ok() || !routed_action.action.has_value()) {
-            shell.show_message("input action rejected: " + routed_action.error);
-            return false;
-        }
-
-        quiz_state.dispatch(*routed_action.action, now_ms());
-        submitted_text_buffer.clear();
-        shell.show_message("input action: " + std::string(domain::to_string(domain::type_of(*routed_action.action))));
-        return true;
-    }
-
-    if (event.type != platform_input_event_type::pointer_press) {
-        return false;
-    }
-
-    const scene::scene_input_region* region = hit_test_input_region(
-        placed_scene,
-        event.x,
-        event.y,
-        scene::scene_action_trigger::press);
-    if (region == nullptr) {
-        return false;
-    }
-
-    const std::optional<std::string_view> submitted_text =
-        region->action.action_type == "submit_text_answer"
-            ? std::optional<std::string_view>{submitted_text_buffer}
-            : std::nullopt;
-    const app_action_route_result routed_action = route_scene_action(region->action, submitted_text);
-    if (!routed_action.ok() || !routed_action.action.has_value()) {
-        shell.show_message("input action rejected: " + routed_action.error);
-        return false;
-    }
-
-    quiz_state.dispatch(*routed_action.action, now_ms());
-    if (region->action.action_type == "submit_text_answer") {
-        submitted_text_buffer.clear();
-    }
-    shell.show_message("input action: " + std::string(domain::to_string(domain::type_of(*routed_action.action))));
-    return true;
+    return should_render;
 }
 
 } // namespace
@@ -226,14 +172,15 @@ int app::run()
 
     app_state quiz_state(std::move(decks));
     default_app_render_pipeline render_pipeline;
-    std::string submitted_text_buffer;
+    input::input_engine input_engine;
     app_render_frame latest_frame = render_and_report(
         render_pipeline,
         *shell_,
         config_.shell,
         "deck-list",
         quiz_state.snapshot(),
-        submitted_text_buffer);
+        input_engine.text_model().display_text());
+    sync_text_focus(input_engine, latest_frame.placed_scene);
 
     while (shell_->pump_events() == platform_shell_status::keep_running) {
         bool should_render = false;
@@ -242,7 +189,7 @@ int app::run()
                 quiz_state,
                 event,
                 latest_frame.placed_scene,
-                submitted_text_buffer,
+                input_engine,
                 *shell_) || should_render;
         }
         if (should_render) {
@@ -252,7 +199,8 @@ int app::run()
                 config_.shell,
                 "input",
                 quiz_state.snapshot(),
-                submitted_text_buffer);
+                input_engine.text_model().display_text());
+            sync_text_focus(input_engine, latest_frame.placed_scene);
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
     }

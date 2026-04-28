@@ -43,7 +43,12 @@ std::vector<ui_text_run> to_ui_text_runs(const std::vector<scene::scene_text_run
 
 ui_image_ref to_ui_image_ref(const scene::scene_image_ref& image)
 {
-    return ui_image_ref{image.uri, image.alt_text, image.aspect_ratio};
+    return ui_image_ref{
+        .uri = image.uri,
+        .alt_text = image.alt_text,
+        .aspect_ratio = image.aspect_ratio,
+        .sampler = {},
+    };
 }
 
 std::string_view trim(std::string_view value)

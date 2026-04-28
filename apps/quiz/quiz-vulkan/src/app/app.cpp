@@ -2,6 +2,7 @@
 
 #include "app/app_action_router.h"
 #include "app/app_demo.h"
+#include "app/app_render_pipeline.h"
 #include "app/app_state.h"
 #include "core/domain/deck_artifact_loader.hpp"
 #include "core/layout/input_hit_test.h"
@@ -28,16 +29,18 @@ scene::scene_rect viewport_for_shell(const platform_shell_state& state, const pl
 }
 
 app_render_frame render_and_report(
+    app_render_pipeline_interface& render_pipeline,
     platform_shell& shell,
     const platform_shell_config& shell_config,
     std::string_view label,
     const domain::app_snapshot& snapshot,
     std::string_view typed_text_answer = {})
 {
-    app_render_frame frame = render_app_frame(
-        snapshot,
-        viewport_for_shell(shell.state(), shell_config),
-        app_render_view_state{.typed_text_answer = typed_text_answer});
+    app_render_frame frame = render_pipeline.render(app_render_request{
+        .snapshot = &snapshot,
+        .viewport = viewport_for_shell(shell.state(), shell_config),
+        .view_state = app_render_view_state{.typed_text_answer = typed_text_answer},
+    });
     shell.present_framebuffer(
         frame.framebuffer.width,
         frame.framebuffer.height,
@@ -222,8 +225,10 @@ int app::run()
     }
 
     app_state quiz_state(std::move(decks));
+    default_app_render_pipeline render_pipeline;
     std::string submitted_text_buffer;
     app_render_frame latest_frame = render_and_report(
+        render_pipeline,
         *shell_,
         config_.shell,
         "deck-list",
@@ -242,6 +247,7 @@ int app::run()
         }
         if (should_render) {
             latest_frame = render_and_report(
+                render_pipeline,
                 *shell_,
                 config_.shell,
                 "input",

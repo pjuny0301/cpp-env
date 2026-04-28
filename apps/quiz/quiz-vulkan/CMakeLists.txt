@@ -137,6 +137,19 @@ target_sources(
 target_compile_features(quiz_vulkan_input PUBLIC cxx_std_23)
 target_include_directories(quiz_vulkan_input PUBLIC src)
 
+add_library(quiz_vulkan_persistence_contract INTERFACE)
+target_sources(
+    quiz_vulkan_persistence_contract
+    INTERFACE
+        FILE_SET HEADERS
+        BASE_DIRS src
+        FILES
+            src/core/persistence/learning_state_store.h
+)
+target_compile_features(quiz_vulkan_persistence_contract INTERFACE cxx_std_23)
+target_include_directories(quiz_vulkan_persistence_contract INTERFACE src)
+target_link_libraries(quiz_vulkan_persistence_contract INTERFACE quiz_vulkan_domain)
+
 add_library(quiz_vulkan_text_scene_bridge INTERFACE)
 target_sources(
     quiz_vulkan_text_scene_bridge
@@ -150,22 +163,37 @@ target_compile_features(quiz_vulkan_text_scene_bridge INTERFACE cxx_std_23)
 target_include_directories(quiz_vulkan_text_scene_bridge INTERFACE src)
 target_link_libraries(quiz_vulkan_text_scene_bridge INTERFACE quiz_vulkan_scene quiz_vulkan_render_contract)
 
-add_library(quiz_vulkan_ui STATIC)
+add_library(quiz_vulkan_ui_renderer STATIC)
 target_sources(
-    quiz_vulkan_ui
+    quiz_vulkan_ui_renderer
     PRIVATE
         src/core/ui/ui_renderer.cpp
     PUBLIC
         FILE_SET HEADERS
         BASE_DIRS src
         FILES
-            src/core/ui/quiz_screens.h
-            src/core/ui/quiz_screens.hpp
             src/core/ui/ui_renderer.h
 )
-target_compile_features(quiz_vulkan_ui PUBLIC cxx_std_23)
-target_include_directories(quiz_vulkan_ui PUBLIC src)
-target_link_libraries(quiz_vulkan_ui PUBLIC quiz_vulkan_domain quiz_vulkan_scene quiz_vulkan_render_contract)
+target_compile_features(quiz_vulkan_ui_renderer PUBLIC cxx_std_23)
+target_include_directories(quiz_vulkan_ui_renderer PUBLIC src)
+target_link_libraries(quiz_vulkan_ui_renderer PUBLIC quiz_vulkan_scene quiz_vulkan_render_contract)
+
+add_library(quiz_vulkan_quiz_screens INTERFACE)
+target_sources(
+    quiz_vulkan_quiz_screens
+    INTERFACE
+        FILE_SET HEADERS
+        BASE_DIRS src
+        FILES
+            src/core/ui/quiz_screens.h
+            src/core/ui/quiz_screens.hpp
+)
+target_compile_features(quiz_vulkan_quiz_screens INTERFACE cxx_std_23)
+target_include_directories(quiz_vulkan_quiz_screens INTERFACE src)
+target_link_libraries(quiz_vulkan_quiz_screens INTERFACE quiz_vulkan_domain quiz_vulkan_scene)
+
+add_library(quiz_vulkan_ui INTERFACE)
+target_link_libraries(quiz_vulkan_ui INTERFACE quiz_vulkan_ui_renderer quiz_vulkan_quiz_screens)
 
 add_library(quiz_vulkan_renderer STATIC)
 target_sources(
@@ -198,6 +226,7 @@ target_sources(
             src/app/app_action_router.h
             src/app/app.h
             src/app/app_demo.h
+            src/app/app_render_pipeline.h
             src/app/app_state.h
 )
 target_compile_features(quiz_vulkan PRIVATE cxx_std_23)
@@ -208,14 +237,14 @@ if(MSVC)
     target_compile_options(quiz_vulkan_platform_shell PRIVATE /W4 /permissive-)
     target_compile_options(quiz_vulkan_domain PRIVATE /W4 /permissive-)
     target_compile_options(quiz_vulkan_input PRIVATE /W4 /permissive-)
-    target_compile_options(quiz_vulkan_ui PRIVATE /W4 /permissive-)
+    target_compile_options(quiz_vulkan_ui_renderer PRIVATE /W4 /permissive-)
     target_compile_options(quiz_vulkan_renderer PRIVATE /W4 /permissive-)
     target_compile_options(quiz_vulkan PRIVATE /W4 /permissive-)
 else()
     target_compile_options(quiz_vulkan_platform_shell PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(quiz_vulkan_domain PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(quiz_vulkan_input PRIVATE -Wall -Wextra -Wpedantic)
-    target_compile_options(quiz_vulkan_ui PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(quiz_vulkan_ui_renderer PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(quiz_vulkan_renderer PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(quiz_vulkan PRIVATE -Wall -Wextra -Wpedantic)
 endif()

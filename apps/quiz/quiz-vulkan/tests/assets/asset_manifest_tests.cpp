@@ -1,6 +1,7 @@
 #include "assets/asset_manifest.h"
 
 #include <cassert>
+#include <cstddef>
 #include <filesystem>
 #include <iostream>
 #include <string>
@@ -35,6 +36,16 @@ bool has_issue(
         }
     }
     return false;
+}
+
+bool issue_at(
+    const quiz_vulkan::assets::asset_manifest_validation_result& result,
+    std::size_t index,
+    quiz_vulkan::assets::asset_manifest_validation_issue_kind kind,
+    std::string_view id)
+{
+    return result.issues.size() > index && result.issues[index].kind == kind
+        && std::string_view(result.issues[index].id) == id;
 }
 
 void test_manifest_normalizes_asset_uri_and_roots_fixture_path()
@@ -365,6 +376,76 @@ void test_manifest_validation_reports_root_alias_collisions()
         "empty root alias is reported");
 }
 
+void test_manifest_validation_issue_order_is_stable()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "root",
+        .root_path = fixture_root,
+    });
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "broken",
+    });
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "broken",
+        .root_path = fixture_root / "duplicate",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "empty_uri",
+        .type = asset_type::image,
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "missing_root",
+        .type = asset_type::image,
+        .uri = "asset://images/card.png",
+        .root_id = "missing",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "traversal",
+        .type = asset_type::image,
+        .uri = "asset://images/%2e%2e/secret.png",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "duplicate_entry",
+        .type = asset_type::image,
+        .uri = "asset://images/front.png",
+        .root_id = "root",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "duplicate_entry",
+        .type = asset_type::image,
+        .uri = "asset://images/back.png",
+        .root_id = "root",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const asset_manifest_validation_result result = validate_asset_manifest(manifest, resolver);
+
+    require(!result.ok(), "issue-order fixture is invalid");
+    require(result.issues.size() == 6U, "issue-order fixture reports the expected issue count");
+    require(
+        issue_at(result, 0U, asset_manifest_validation_issue_kind::invalid_root, "broken"),
+        "root invalid issue is first");
+    require(
+        issue_at(result, 1U, asset_manifest_validation_issue_kind::duplicate_root_id, "broken"),
+        "root duplicate issue follows root invalid issue");
+    require(
+        issue_at(result, 2U, asset_manifest_validation_issue_kind::invalid_entry, "empty_uri"),
+        "entry invalid issue starts entry validation order");
+    require(
+        issue_at(result, 3U, asset_manifest_validation_issue_kind::missing_root, "missing_root"),
+        "missing root issue follows invalid entry issue");
+    require(
+        issue_at(result, 4U, asset_manifest_validation_issue_kind::asset_resolve_failed, "traversal"),
+        "resolver failure issue follows missing root issue");
+    require(
+        issue_at(result, 5U, asset_manifest_validation_issue_kind::duplicate_entry_id, "duplicate_entry"),
+        "duplicate entry issue follows prior entry issues");
+}
+
 void test_manifest_validation_reports_resolver_failures()
 {
     using namespace quiz_vulkan::assets;
@@ -462,6 +543,7 @@ int main()
     test_manifest_root_alias_resolves_to_canonical_root();
     test_manifest_validation_reports_duplicate_ids_and_missing_roots();
     test_manifest_validation_reports_root_alias_collisions();
+    test_manifest_validation_issue_order_is_stable();
     test_manifest_validation_reports_resolver_failures();
     test_manifest_validation_detects_rooted_cache_key_collisions();
     test_manifest_validation_allows_equivalent_aliases_to_same_rooted_path();

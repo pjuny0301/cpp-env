@@ -1,0 +1,87 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - img [ref=e7]
+      - heading "Bulk Quiz Manager" [level=1] [ref=e12]
+    - generic [ref=e13]:
+      - button "구분선 삽입 (Ctrl+Enter)" [ref=e14]:
+        - img [ref=e15]
+        - text: 구분선 삽입 (Ctrl+Enter)
+      - button "Git 트리" [active] [ref=e17]:
+        - img [ref=e18]
+        - text: Git 트리
+      - button "정답 입력" [ref=e20]:
+        - img [ref=e21]
+        - text: 정답 입력
+      - button "파일 메뉴" [ref=e26]:
+        - img [ref=e27]
+  - main [ref=e30]:
+    - generic [ref=e31]:
+      - generic [ref=e32]:
+        - generic [ref=e33]:
+          - img [ref=e34]
+          - generic [ref=e36]: 에디터
+        - generic [ref=e38]: "Tip: 이미지 붙여넣기(Ctrl+V) · 구분선(Ctrl+Enter)"
+      - generic [ref=e40]:
+        - generic:
+          - paragraph: 여기에 퀴즈 내용을 입력하거나 붙여넣으세요...
+          - list:
+            - listitem: 텍스트를 자유롭게 입력할 수 있습니다.
+            - listitem: 이미지를 복사(Ctrl+C)하고 붙여넣기(Ctrl+V)할 수 있습니다.
+            - listitem: 상단의 '구분선 삽입' 버튼을 눌러 퀴즈를 나눌 수 있습니다.
+    - generic [ref=e42]:
+      - generic "추출 결과 너비 조절" [ref=e43]
+      - generic [ref=e44]:
+        - generic [ref=e45]:
+          - img [ref=e46]
+          - img [ref=e53]
+          - generic [ref=e56]: 추출 결과
+        - generic [ref=e57]:
+          - button "오른쪽에 고정" [ref=e58]:
+            - img [ref=e59]
+          - button "하단에 고정" [ref=e61]:
+            - img [ref=e62]
+      - generic [ref=e65]:
+        - img [ref=e66]
+        - paragraph [ref=e69]: 분석된 퀴즈가 없습니다.
+        - paragraph [ref=e70]: 에디터에 내용을 입력하면 여기에 요약이 표시됩니다.
+  - generic [ref=e71]:
+    - generic [ref=e72]:
+      - generic [ref=e73]:
+        - img [ref=e74]
+        - img [ref=e81]
+        - text: Git 트리
+      - generic [ref=e83]:
+        - button "새로고침" [ref=e84]:
+          - img [ref=e85]
+        - button "닫기" [ref=e90]:
+          - img [ref=e91]
+    - generic [ref=e94]:
+      - textbox "상대경로 기준" [ref=e95]
+      - generic [ref=e96]:
+        - button "새로고침" [ref=e97]:
+          - img [ref=e98]
+          - text: 새로고침
+        - button "Commit" [ref=e103]
+        - button "Push" [ref=e104]:
+          - img [ref=e105]
+          - text: Push
+      - generic [ref=e108]: Tauri에서 실행하면 실제 Git 트리를 표시합니다.
+      - generic [ref=e109]:
+        - button "README.md" [ref=e110]:
+          - img [ref=e111]
+          - generic [ref=e114]: README.md
+        - button "bulk.md" [ref=e115]:
+          - img [ref=e116]
+          - generic [ref=e119]: bulk.md
+        - button "quizzes.json" [ref=e120]:
+          - img [ref=e121]
+          - generic [ref=e124]: quizzes.json
+        - button "assets" [ref=e125]:
+          - img [ref=e126]
+          - generic [ref=e128]: assets
+    - generic "Git 트리 위쪽 크기 조절" [ref=e129]
+    - generic "Git 트리 아래쪽 크기 조절" [ref=e130]
+    - generic "Git 트리 왼쪽 크기 조절" [ref=e131]
+    - generic "Git 트리 오른쪽 크기 조절" [ref=e132]
+    - generic "Git 트리 크기 조절" [ref=e133]

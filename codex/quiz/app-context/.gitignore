@@ -1,0 +1,58 @@
+# OS / editor state
+.DS_Store
+Thumbs.db
+.vs/
+.idea/
+.vscode/*
+!.vscode/
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+# Dependencies
+node_modules/
+
+# Web build output
+dist/
+build/
+
+# Rust / Tauri build output
+target/
+target-*/
+src-tauri/target/
+src-tauri/target-*/
+
+# Android / Gradle build output
+.gradle/
+**/.gradle/
+**/build/
+**/captures/
+
+# Local browser/test artifacts
+.playwright-cli/
+screenshots/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+
+# Packaged artifacts
+build-artifacts/
+*.zip
+*.exe
+*.msi
+*.apk
+*.idsig
+
+# Existing separate data repository
+quiz-data/
+
+# Duplicate/local-only project copies not used as the canonical source
+legacy/
+quiz builder/
+quizquiz/
+quizquiz/Simple Android Quiz App/
+quizquiz/SimpleAndroidQuizApp/
+tools/

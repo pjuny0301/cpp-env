@@ -1,0 +1,67 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - img [ref=e7]
+      - heading "Bulk Quiz Manager" [level=1] [ref=e12]
+    - generic [ref=e13]:
+      - button "구분선 삽입 (Ctrl+Enter)" [ref=e14]:
+        - img [ref=e15]
+        - text: 구분선 삽입 (Ctrl+Enter)
+      - button "Git 트리" [ref=e17]:
+        - img [ref=e18]
+        - text: Git 트리
+      - button "정답 입력" [ref=e20]:
+        - img [ref=e21]
+        - text: 정답 입력
+      - button "파일 메뉴" [ref=e26]:
+        - img [ref=e27]
+  - main [ref=e30]:
+    - generic [ref=e31]:
+      - generic [ref=e32]:
+        - generic [ref=e33]:
+          - img [ref=e34]
+          - generic [ref=e36]: 에디터
+        - generic [ref=e38]: "Tip: 이미지 붙여넣기(Ctrl+V) · 구분선(Ctrl+Enter)"
+      - generic [ref=e41]:
+        - text: 문제 1 내용
+        - generic [ref=e183]:
+          - generic [ref=e184]: "#Quiz. 1"
+          - separator [ref=e185]
+        - text: 문제 2 내용
+    - generic [ref=e197]:
+      - generic "추출 결과 높이 조절" [ref=e198]
+      - generic [ref=e199]:
+        - generic [ref=e200]:
+          - img [ref=e201]
+          - img [ref=e208]
+          - generic [ref=e211]: 추출 결과
+        - generic [ref=e212]:
+          - button "오른쪽에 고정" [ref=e213]:
+            - img [ref=e214]
+          - button "하단에 고정" [ref=e216]:
+            - img [ref=e217]
+      - generic [ref=e220]:
+        - generic [ref=e221]:
+          - heading "총 2개의 퀴즈 발견" [level=3] [ref=e222]:
+            - img [ref=e223]
+            - text: 총 2개의 퀴즈 발견
+          - paragraph [ref=e226]:
+            - generic [ref=e227]:
+              - img [ref=e228]
+              - text: 2 세트
+            - generic [ref=e231]:
+              - img [ref=e232]
+              - text: 0 이미지
+        - generic [ref=e236]:
+          - generic [ref=e237]:
+            - generic [ref=e239]: "Quiz #1"
+            - paragraph [ref=e240]: 문제 1 내용
+            - generic [ref=e242]:
+              - generic [ref=e243]: "정답:"
+              - textbox "정답 입력" [ref=e244]
+          - generic [ref=e245]:
+            - generic [ref=e247]: "Quiz #2"
+            - paragraph [ref=e248]: 문제 2 내용
+            - generic [ref=e250]:
+              - generic [ref=e251]: "정답:"
+              - textbox "정답 입력" [ref=e252]

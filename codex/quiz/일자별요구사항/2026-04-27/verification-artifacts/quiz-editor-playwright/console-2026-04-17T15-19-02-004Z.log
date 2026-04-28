@@ -1,0 +1,594 @@
+[     283ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:21606
+[     480ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:5173/favicon.ico:0
+[ 3720552ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5173/@vite/client:963
+[ 3720565ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:5173/' failed: Error in connection establishment: net::ERR_NETWORK_IO_SUSPENDED @ http://127.0.0.1:5173/@vite/client:1034
+[ 4944413ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:21606
+[ 5973959ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5173/@vite/client:963
+[ 5973966ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:5173/' failed: Error in connection establishment: net::ERR_NETWORK_IO_SUSPENDED @ http://127.0.0.1:5173/@vite/client:1034
+[15790064ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:21606
+[16449987ms] [ERROR] [vite] SyntaxError: The requested module '/src/app/components/PreviewPane.tsx?t=1776438873397' does not provide an export named 'splitQuizHtml' @ http://127.0.0.1:5173/@vite/client:881
+[16449995ms] [ERROR] [vite] Failed to reload /src/app/App.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[16456066ms] [ERROR] [vite] SyntaxError: The requested module '/src/app/components/PreviewPane.tsx?t=1776438873397' does not provide an export named 'splitQuizHtml' @ http://127.0.0.1:5173/@vite/client:881
+[16456067ms] [ERROR] [vite] Failed to reload /src/app/App.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[16465570ms] [ERROR] [vite] SyntaxError: The requested module '/src/app/components/PreviewPane.tsx?t=1776438873397' does not provide an export named 'splitQuizHtml' @ http://127.0.0.1:5173/@vite/client:881
+[16465571ms] [ERROR] [vite] Failed to reload /src/app/App.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[16482645ms] [ERROR] [vite] SyntaxError: The requested module '/src/app/components/PreviewPane.tsx?t=1776438873397' does not provide an export named 'splitQuizHtml' @ http://127.0.0.1:5173/@vite/client:881
+[16482645ms] [ERROR] [vite] Failed to reload /src/app/App.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[16488790ms] [ERROR] [vite] SyntaxError: The requested module '/src/app/components/PreviewPane.tsx?t=1776438873397' does not provide an export named 'splitQuizHtml' @ http://127.0.0.1:5173/@vite/client:881
+[16488790ms] [ERROR] [vite] Failed to reload /src/app/App.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[16502169ms] [ERROR] [vite] SyntaxError: The requested module '/src/app/components/PreviewPane.tsx?t=1776438873397' does not provide an export named 'splitQuizHtml' @ http://127.0.0.1:5173/@vite/client:881
+[16502170ms] [ERROR] [vite] Failed to reload /src/app/App.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[16506217ms] [ERROR] [vite] SyntaxError: The requested module '/src/app/components/PreviewPane.tsx?t=1776438873397' does not provide an export named 'splitQuizHtml' @ http://127.0.0.1:5173/@vite/client:881
+[16506218ms] [ERROR] [vite] Failed to reload /src/app/App.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[16511718ms] [ERROR] [vite] SyntaxError: The requested module '/src/app/components/PreviewPane.tsx?t=1776438873397' does not provide an export named 'splitQuizHtml' @ http://127.0.0.1:5173/@vite/client:881
+[16511718ms] [ERROR] [vite] Failed to reload /src/app/App.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[16530894ms] [ERROR] [vite] SyntaxError: The requested module '/src/app/components/PreviewPane.tsx?t=1776438873397' does not provide an export named 'splitQuizHtml' @ http://127.0.0.1:5173/@vite/client:881
+[16530895ms] [ERROR] [vite] Failed to reload /src/app/App.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[16544847ms] [ERROR] [vite] SyntaxError: The requested module '/src/app/components/PreviewPane.tsx?t=1776438873397' does not provide an export named 'splitQuizHtml' @ http://127.0.0.1:5173/@vite/client:881
+[16544847ms] [ERROR] [vite] Failed to reload /src/app/App.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[16555104ms] [ERROR] [vite] SyntaxError: The requested module '/src/app/components/PreviewPane.tsx?t=1776438873397' does not provide an export named 'splitQuizHtml' @ http://127.0.0.1:5173/@vite/client:881
+[16555105ms] [ERROR] [vite] Failed to reload /src/app/App.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[16573345ms] [ERROR] [vite] SyntaxError: The requested module '/src/app/components/PreviewPane.tsx?t=1776438873397' does not provide an export named 'splitQuizHtml' @ http://127.0.0.1:5173/@vite/client:881
+[16573345ms] [ERROR] [vite] Failed to reload /src/app/App.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[16585908ms] [ERROR] [vite] SyntaxError: The requested module '/src/app/components/PreviewPane.tsx?t=1776438873397' does not provide an export named 'splitQuizHtml' @ http://127.0.0.1:5173/@vite/client:881
+[16585909ms] [ERROR] [vite] Failed to reload /src/app/App.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[23350299ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5173/@vite/client:963
+[23350319ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:5173/' failed: Error in connection establishment: net::ERR_NETWORK_IO_SUSPENDED @ http://127.0.0.1:5173/@vite/client:1034
+[23380566ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:21606
+[26465152ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5173/@vite/client:963
+[26465198ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:5173/' failed: Error in connection establishment: net::ERR_NETWORK_IO_SUSPENDED @ http://127.0.0.1:5173/@vite/client:1034
+[28286405ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:21606
+[29836407ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5173/@vite/client:963
+[29836416ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:5173/' failed: Error in connection establishment: net::ERR_NETWORK_IO_SUSPENDED @ http://127.0.0.1:5173/@vite/client:1034
+[34039565ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:21606
+[41531516ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5173/@vite/client:963
+[41531616ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:5173/' failed: Error in connection establishment: net::ERR_NETWORK_IO_SUSPENDED @ http://127.0.0.1:5173/@vite/client:1034
+[60976558ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:21606
+[64550298ms] ReferenceError: PlusSquare is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503691548:1351:38)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at updateFunctionComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14628:28)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15970:22)
+    at HTMLUnknownElement.callCallback2 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3678:22)
+    at Object.invokeGuardedCallbackDev (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3703:24)
+    at invokeGuardedCallback (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3737:39)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19816:15)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19188:13)
+[64550307ms] ReferenceError: PlusSquare is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503691548:1351:38)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at updateFunctionComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14628:28)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15970:22)
+    at HTMLUnknownElement.callCallback2 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3678:22)
+    at Object.invokeGuardedCallbackDev (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3703:24)
+    at invokeGuardedCallback (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3737:39)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19816:15)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19188:13)
+[64550249ms] [ERROR] The above error occurred in the <App> component:
+
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503691548:197:21)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries. @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14077
+[64550307ms] ReferenceError: PlusSquare is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503691548:1351:38)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at updateFunctionComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14628:28)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15970:22)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19804:22)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19188:13)
+    at renderRootSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19167:15)
+    at recoverFromConcurrentError (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:18784:28)
+    at performSyncWorkOnRoot (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:18930:28)
+[64573555ms] ReferenceError: PlusSquare is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503714755:1358:38)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at mountIndeterminateComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14972:21)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15960:22)
+    at HTMLUnknownElement.callCallback2 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3678:22)
+    at Object.invokeGuardedCallbackDev (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3703:24)
+    at invokeGuardedCallback (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3737:39)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19816:15)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19188:13)
+[64573558ms] ReferenceError: PlusSquare is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503714755:1358:38)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at mountIndeterminateComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14972:21)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15960:22)
+    at HTMLUnknownElement.callCallback2 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3678:22)
+    at Object.invokeGuardedCallbackDev (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3703:24)
+    at invokeGuardedCallback (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3737:39)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19816:15)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19188:13)
+[64573558ms] [ERROR] The above error occurred in the <App> component:
+
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503714755:197:21)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries. @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14077
+[64573560ms] ReferenceError: PlusSquare is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503714755:1358:38)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at mountIndeterminateComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14972:21)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15960:22)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19804:22)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19188:13)
+    at renderRootSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19167:15)
+    at recoverFromConcurrentError (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:18784:28)
+    at performSyncWorkOnRoot (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:18930:28)
+[64583813ms] ReferenceError: PlusSquare is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503725145:1385:38)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at mountIndeterminateComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14972:21)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15960:22)
+    at HTMLUnknownElement.callCallback2 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3678:22)
+    at Object.invokeGuardedCallbackDev (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3703:24)
+    at invokeGuardedCallback (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3737:39)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19816:15)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19188:13)
+[64583817ms] ReferenceError: PlusSquare is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503725145:1385:38)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at mountIndeterminateComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14972:21)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15960:22)
+    at HTMLUnknownElement.callCallback2 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3678:22)
+    at Object.invokeGuardedCallbackDev (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3703:24)
+    at invokeGuardedCallback (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3737:39)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19816:15)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19188:13)
+[64583817ms] [ERROR] The above error occurred in the <App> component:
+
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503725145:197:21)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries. @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14077
+[64583818ms] ReferenceError: PlusSquare is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503725145:1385:38)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at mountIndeterminateComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14972:21)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15960:22)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19804:22)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19188:13)
+    at renderRootSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19167:15)
+    at recoverFromConcurrentError (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:18784:28)
+    at performSyncWorkOnRoot (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:18930:28)
+[64594472ms] ReferenceError: PlusSquare is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503735800:1405:38)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at mountIndeterminateComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14972:21)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15960:22)
+    at HTMLUnknownElement.callCallback2 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3678:22)
+    at Object.invokeGuardedCallbackDev (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3703:24)
+    at invokeGuardedCallback (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3737:39)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19816:15)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19188:13)
+[64594473ms] ReferenceError: PlusSquare is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503735800:1405:38)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at mountIndeterminateComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14972:21)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15960:22)
+    at HTMLUnknownElement.callCallback2 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3678:22)
+    at Object.invokeGuardedCallbackDev (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3703:24)
+    at invokeGuardedCallback (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3737:39)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19816:15)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19188:13)
+[64594473ms] [ERROR] The above error occurred in the <App> component:
+
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503735800:197:21)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries. @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14077
+[64594474ms] ReferenceError: PlusSquare is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503735800:1405:38)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at mountIndeterminateComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14972:21)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15960:22)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19804:22)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19188:13)
+    at renderRootSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19167:15)
+    at recoverFromConcurrentError (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:18784:28)
+    at performSyncWorkOnRoot (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:18930:28)
+[64602488ms] ReferenceError: PlusSquare is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503743792:1406:38)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at mountIndeterminateComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14972:21)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15960:22)
+    at HTMLUnknownElement.callCallback2 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3678:22)
+    at Object.invokeGuardedCallbackDev (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3703:24)
+    at invokeGuardedCallback (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3737:39)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19816:15)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19188:13)
+[64602491ms] ReferenceError: PlusSquare is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503743792:1406:38)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at mountIndeterminateComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14972:21)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15960:22)
+    at HTMLUnknownElement.callCallback2 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3678:22)
+    at Object.invokeGuardedCallbackDev (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3703:24)
+    at invokeGuardedCallback (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3737:39)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19816:15)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19188:13)
+[64602491ms] [ERROR] The above error occurred in the <App> component:
+
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503743792:197:21)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries. @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14077
+[64602493ms] ReferenceError: PlusSquare is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503743792:1406:38)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at mountIndeterminateComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14972:21)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15960:22)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19804:22)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19188:13)
+    at renderRootSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19167:15)
+    at recoverFromConcurrentError (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:18784:28)
+    at performSyncWorkOnRoot (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:18930:28)
+[64638902ms] ReferenceError: PlusSquare is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503780180:1457:38)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at mountIndeterminateComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14972:21)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15960:22)
+    at HTMLUnknownElement.callCallback2 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3678:22)
+    at Object.invokeGuardedCallbackDev (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3703:24)
+    at invokeGuardedCallback (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3737:39)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19816:15)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19188:13)
+[64638904ms] ReferenceError: PlusSquare is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503780180:1457:38)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at mountIndeterminateComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14972:21)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15960:22)
+    at HTMLUnknownElement.callCallback2 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3678:22)
+    at Object.invokeGuardedCallbackDev (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3703:24)
+    at invokeGuardedCallback (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3737:39)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19816:15)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19188:13)
+[64638905ms] [ERROR] The above error occurred in the <App> component:
+
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503780180:197:21)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries. @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14077
+[64638906ms] ReferenceError: PlusSquare is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503780180:1457:38)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at mountIndeterminateComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14972:21)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15960:22)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19804:22)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19188:13)
+    at renderRootSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19167:15)
+    at recoverFromConcurrentError (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:18784:28)
+    at performSyncWorkOnRoot (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:18930:28)
+[64647046ms] ReferenceError: PlusSquare is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503788367:1457:38)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at mountIndeterminateComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14972:21)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15960:22)
+    at HTMLUnknownElement.callCallback2 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3678:22)
+    at Object.invokeGuardedCallbackDev (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3703:24)
+    at invokeGuardedCallback (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3737:39)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19816:15)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19188:13)
+[64647048ms] ReferenceError: PlusSquare is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503788367:1457:38)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at mountIndeterminateComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14972:21)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15960:22)
+    at HTMLUnknownElement.callCallback2 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3678:22)
+    at Object.invokeGuardedCallbackDev (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3703:24)
+    at invokeGuardedCallback (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3737:39)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19816:15)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19188:13)
+[64647049ms] [ERROR] The above error occurred in the <App> component:
+
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503788367:197:21)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries. @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14077
+[64647051ms] ReferenceError: PlusSquare is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503788367:1457:38)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at mountIndeterminateComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14972:21)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15960:22)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19804:22)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19188:13)
+    at renderRootSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19167:15)
+    at recoverFromConcurrentError (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:18784:28)
+    at performSyncWorkOnRoot (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:18930:28)
+[64651560ms] ReferenceError: PlusSquare is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503792884:1458:38)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at mountIndeterminateComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14972:21)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15960:22)
+    at HTMLUnknownElement.callCallback2 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3678:22)
+    at Object.invokeGuardedCallbackDev (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3703:24)
+    at invokeGuardedCallback (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3737:39)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19816:15)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19188:13)
+[64651562ms] ReferenceError: PlusSquare is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503792884:1458:38)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at mountIndeterminateComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14972:21)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15960:22)
+    at HTMLUnknownElement.callCallback2 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3678:22)
+    at Object.invokeGuardedCallbackDev (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3703:24)
+    at invokeGuardedCallback (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3737:39)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19816:15)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19188:13)
+[64651561ms] [ERROR] The above error occurred in the <App> component:
+
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503792884:197:21)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries. @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14077
+[64651562ms] ReferenceError: PlusSquare is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503792884:1458:38)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at mountIndeterminateComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14972:21)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15960:22)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19804:22)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19188:13)
+    at renderRootSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19167:15)
+    at recoverFromConcurrentError (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:18784:28)
+    at performSyncWorkOnRoot (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:18930:28)
+[64661757ms] ReferenceError: PlusSquare is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503803113:1460:38)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at mountIndeterminateComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14972:21)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15960:22)
+    at HTMLUnknownElement.callCallback2 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3678:22)
+    at Object.invokeGuardedCallbackDev (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3703:24)
+    at invokeGuardedCallback (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3737:39)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19816:15)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19188:13)
+[64661759ms] ReferenceError: PlusSquare is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503803113:1460:38)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at mountIndeterminateComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14972:21)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15960:22)
+    at HTMLUnknownElement.callCallback2 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3678:22)
+    at Object.invokeGuardedCallbackDev (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3703:24)
+    at invokeGuardedCallback (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3737:39)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19816:15)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19188:13)
+[64661760ms] [ERROR] The above error occurred in the <App> component:
+
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503803113:197:21)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries. @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14077
+[64661767ms] ReferenceError: PlusSquare is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503803113:1460:38)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at mountIndeterminateComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14972:21)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15960:22)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19804:22)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19188:13)
+    at renderRootSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19167:15)
+    at recoverFromConcurrentError (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:18784:28)
+    at performSyncWorkOnRoot (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:18930:28)
+[64669344ms] ReferenceError: PlusSquare is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503810681:1461:38)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at mountIndeterminateComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14972:21)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15960:22)
+    at HTMLUnknownElement.callCallback2 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3678:22)
+    at Object.invokeGuardedCallbackDev (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3703:24)
+    at invokeGuardedCallback (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3737:39)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19816:15)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19188:13)
+[64669346ms] ReferenceError: PlusSquare is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503810681:1461:38)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at mountIndeterminateComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14972:21)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15960:22)
+    at HTMLUnknownElement.callCallback2 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3678:22)
+    at Object.invokeGuardedCallbackDev (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3703:24)
+    at invokeGuardedCallback (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3737:39)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19816:15)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19188:13)
+[64669346ms] [ERROR] The above error occurred in the <App> component:
+
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503810681:197:21)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries. @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14077
+[64669347ms] ReferenceError: PlusSquare is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503810681:1461:38)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at mountIndeterminateComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14972:21)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15960:22)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19804:22)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19188:13)
+    at renderRootSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19167:15)
+    at recoverFromConcurrentError (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:18784:28)
+    at performSyncWorkOnRoot (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:18930:28)
+[64677120ms] ReferenceError: PlusSquare is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503818371:1477:38)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at mountIndeterminateComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14972:21)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15960:22)
+    at HTMLUnknownElement.callCallback2 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3678:22)
+    at Object.invokeGuardedCallbackDev (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3703:24)
+    at invokeGuardedCallback (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3737:39)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19816:15)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19188:13)
+[64677127ms] ReferenceError: PlusSquare is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503818371:1477:38)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at mountIndeterminateComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14972:21)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15960:22)
+    at HTMLUnknownElement.callCallback2 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3678:22)
+    at Object.invokeGuardedCallbackDev (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3703:24)
+    at invokeGuardedCallback (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3737:39)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19816:15)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19188:13)
+[64677123ms] [ERROR] The above error occurred in the <App> component:
+
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503818371:197:21)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries. @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14077
+[64677128ms] ReferenceError: PlusSquare is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503818371:1477:38)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at mountIndeterminateComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14972:21)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15960:22)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19804:22)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19188:13)
+    at renderRootSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19167:15)
+    at recoverFromConcurrentError (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:18784:28)
+    at performSyncWorkOnRoot (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:18930:28)
+[64688882ms] ReferenceError: ListChecks is not defined
+    at renderQuizPanel (http://127.0.0.1:5173/src/app/App.tsx?t=1776503830261:1296:42)
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503830261:1669:31)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at mountIndeterminateComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14972:21)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15960:22)
+    at HTMLUnknownElement.callCallback2 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3678:22)
+    at Object.invokeGuardedCallbackDev (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3703:24)
+    at invokeGuardedCallback (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3737:39)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19816:15)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+[64688886ms] ReferenceError: ListChecks is not defined
+    at renderQuizPanel (http://127.0.0.1:5173/src/app/App.tsx?t=1776503830261:1296:42)
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503830261:1669:31)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at mountIndeterminateComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14972:21)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15960:22)
+    at HTMLUnknownElement.callCallback2 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3678:22)
+    at Object.invokeGuardedCallbackDev (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3703:24)
+    at invokeGuardedCallback (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:3737:39)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19816:15)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+[64688886ms] [ERROR] The above error occurred in the <App> component:
+
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503830261:197:21)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries. @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14077
+[64688889ms] ReferenceError: ListChecks is not defined
+    at renderQuizPanel (http://127.0.0.1:5173/src/app/App.tsx?t=1776503830261:1296:42)
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776503830261:1669:31)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:11594:26)
+    at mountIndeterminateComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:14972:21)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:15960:22)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19804:22)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19188:13)
+    at renderRootSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:19167:15)
+    at recoverFromConcurrentError (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=c4fd74ae:18784:28)
+[66064007ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5173/@vite/client:963
+[66089278ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5173/@vite/client:963
+[66089286ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:5173/src/styles/index.css:0
+[66089295ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:5173/src/app/App.tsx:0
+[66089295ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:5173/node_modules/.vite/deps/react-dom_client.js?v=8855774e:0
+[66091317ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:5173/' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5173/@vite/client:1034
+[66091332ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5173/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=3b7ad2f5:0
+[66094387ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:5173/' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5173/@vite/client:1034
+[66097448ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:5173/' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5173/@vite/client:1034
+[66100505ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:5173/' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5173/@vite/client:1034
+[66103572ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:5173/' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5173/@vite/client:1034
+[66106607ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:5173/' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5173/@vite/client:1034
+[66109638ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:5173/' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5173/@vite/client:1034
+[66112676ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:5173/' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5173/@vite/client:1034
+[66115695ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:5173/' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5173/@vite/client:1034
+[66121655ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=680c235d:21606
+[66125309ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5173/@vite/client:963
+[66125314ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:5173/' failed: Error during WebSocket handshake: net::ERR_CONNECTION_RESET @ http://127.0.0.1:5173/@vite/client:1034
+[66128352ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:5173/' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5173/@vite/client:1034
+[66148374ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:21606
+[71414404ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5173/@vite/client:963
+[71414457ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:5173/' failed: Error in connection establishment: net::ERR_NETWORK_IO_SUSPENDED @ http://127.0.0.1:5173/@vite/client:1034
+[79439086ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:21606
+[82850884ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5173/@vite/client:963
+[82852579ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:5173/' failed: Error in connection establishment: net::ERR_NETWORK_IO_SUSPENDED @ http://127.0.0.1:5173/@vite/client:1034
+[84866804ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:21606
+[94806634ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5173/@vite/client:963
+[94806820ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:5173/' failed: Error in connection establishment: net::ERR_NETWORK_IO_SUSPENDED @ http://127.0.0.1:5173/@vite/client:1034
+[95439419ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:21606
+[102921316ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5173/@vite/client:963
+[102921434ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:5173/' failed: Error in connection establishment: net::ERR_NETWORK_IO_SUSPENDED @ http://127.0.0.1:5173/@vite/client:1034
+[102961464ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:21606
+[110966753ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5173/@vite/client:963
+[110966783ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:5173/' failed: Error in connection establishment: net::ERR_NETWORK_IO_SUSPENDED @ http://127.0.0.1:5173/@vite/client:1034
+[121865930ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:21606
+[122565268ms] ReferenceError: Plus is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776561706471:1915:46)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:11594:26)
+    at updateFunctionComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:14628:28)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:15970:22)
+    at HTMLUnknownElement.callCallback2 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:3678:22)
+    at Object.invokeGuardedCallbackDev (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:3703:24)
+    at invokeGuardedCallback (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:3737:39)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:19816:15)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:19188:13)
+[122565273ms] ReferenceError: Plus is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776561706471:1915:46)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:11594:26)
+    at updateFunctionComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:14628:28)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:15970:22)
+    at HTMLUnknownElement.callCallback2 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:3678:22)
+    at Object.invokeGuardedCallbackDev (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:3703:24)
+    at invokeGuardedCallback (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:3737:39)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:19816:15)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:19188:13)
+[122565253ms] [ERROR] The above error occurred in the <App> component:
+
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776561706471:240:21)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries. @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:14077
+[122565274ms] ReferenceError: Plus is not defined
+    at App (http://127.0.0.1:5173/src/app/App.tsx?t=1776561706471:1915:46)
+    at renderWithHooks (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:11594:26)
+    at updateFunctionComponent (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:14628:28)
+    at beginWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:15970:22)
+    at beginWork$1 (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:19804:22)
+    at performUnitOfWork (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:19249:20)
+    at workLoopSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:19188:13)
+    at renderRootSync (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:19167:15)
+    at recoverFromConcurrentError (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:18784:28)
+    at performSyncWorkOnRoot (http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:18930:28)
+[123398349ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:5173/src/app/components/PreviewPane.tsx?t=1776562540181:0
+[123398351ms] [ERROR] [vite] Failed to reload /src/app/components/PreviewPane.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[129663244ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5173/@vite/client:963
+[129663282ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:5173/' failed: Error in connection establishment: net::ERR_NETWORK_IO_SUSPENDED @ http://127.0.0.1:5173/@vite/client:1034
+[151374507ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-SVG7M4VJ.js?v=39c08c51:21606
+                                                                                                                                                                                                                                                                                                           

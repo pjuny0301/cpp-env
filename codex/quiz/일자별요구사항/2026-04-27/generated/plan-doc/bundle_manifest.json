@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "source": "C:\\aa\\plan\\plan.txt",
+  "bundle_root": "C:\\aa\\plan\\plan",
+  "editable_files": {
+    "source": "C:\\aa\\plan\\plan.txt",
+    "prompt_overrides": "C:\\aa\\plan\\plan\\prompt_overrides.json",
+    "render_spec": "C:\\aa\\plan\\plan\\render_spec.json",
+    "prompts": "C:\\aa\\plan\\plan\\prompts.json",
+    "docx": "C:\\aa\\plan\\plan\\plan_summary.docx"
+  },
+  "asset_policy": {
+    "scope": "source-local bundle",
+    "reusable": true,
+    "isolation": "assets stay inside the source-specific bundle and should not be shared across sibling bundles",
+    "default_reuse_key": "prompt hash",
+    "pinned_asset_behavior": "reuse an existing file inside the same bundle without regeneration"
+  },
+  "placeholder_generation": {
+    "automatic_placeholder_mode": false,
+    "detected_this_run": false,
+    "placeholder_count": 0,
+    "notice_file": null,
+    "assets": [],
+    "reasons": []
+  },
+  "token_budget_guidance": {
+    "read_first": [
+      "bundle_manifest.json",
+      "prompt_overrides.json"
+    ],
+    "read_second": [
+      "render_spec.json",
+      "prompts.json"
+    ],
+    "avoid_until_needed": [
+      "plan_summary.docx"
+    ]
+  },
+  "assets": [
+    {
+      "id": "cover-hero",
+      "kind": "cover",
+      "title": "C++26 오케스트레이터 + 내장 Python 워커 기반 PDF 자동 텍스트 변환 파이프라인",
+      "asset_bundle_relpath": "assets\\cover-hero-c7665d7ef1.png",
+      "provider": "reused"
+    },
+    {
+      "id": "section-01-banner",
+      "kind": "banner",
+      "title": "Summary",
+      "asset_bundle_relpath": "assets\\section-summary-df33980f8e.png",
+      "provider": "reused"
+    },
+    {
+      "id": "section-01-inline-01",
+      "kind": "inline",
+      "title": "Summary",
+      "asset_bundle_relpath": "assets\\inline-summary-01-9d7fd05adc.png",
+      "provider": "reused"
+    },
+    {
+      "id": "section-02-banner",
+      "kind": "banner",
+      "title": "Key Changes",
+      "asset_bundle_relpath": "assets\\section-key-changes-88c3936633.png",
+      "provider": "reused"
+    },
+    {
+      "id": "section-02-inline-06",
+      "kind": "inline",
+      "title": "Key Changes",
+      "asset_bundle_relpath": "assets\\inline-key-changes-06-4d895ca7ed.png",
+      "provider": "reused"
+    },
+    {
+      "id": "section-03-banner",
+      "kind": "banner",
+      "title": "Pipeline",
+      "asset_bundle_relpath": "assets\\section-pipeline-9f76a8b8b9.png",
+      "provider": "reused"
+    },
+    {
+      "id": "section-03-inline-02",
+      "kind": "inline",
+      "title": "Pipeline",
+      "asset_bundle_relpath": "assets\\inline-pipeline-02-13cd2e4a12.png",
+      "provider": "reused"
+    },
+    {
+      "id": "section-04-banner",
+      "kind": "banner",
+      "title": "Test Plan",
+      "asset_bundle_relpath": "assets\\section-test-plan-7f78ee0b77.png",
+      "provider": "reused"
+    },
+    {
+      "id": "section-04-inline-01",
+      "kind": "inline",
+      "title": "Test Plan",
+      "asset_bundle_relpath": "assets\\inline-test-plan-01-d2ac027326.png",
+      "provider": "reused"
+    },
+    {
+      "id": "section-05-banner",
+      "kind": "banner",
+      "title": "Assumptions",
+      "asset_bundle_relpath": "assets\\section-assumptions-66ca3d8aaf.png",
+      "provider": "reused"
+    }
+  ]
+}

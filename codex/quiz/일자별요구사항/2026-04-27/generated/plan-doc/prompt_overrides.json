@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "source": "C:\\aa\\plan\\plan.txt",
+  "bundle_root": "C:\\aa\\plan\\plan",
+  "instructions": [
+    "Edit prompt to regenerate only that visual on the next run.",
+    "Set pinned_asset to a file inside this bundle to reuse it without regeneration.",
+    "Keep pinned_asset relative and inside this bundle so plan assets stay isolated from other plan files."
+  ],
+  "overrides": [
+    {
+      "id": "cover-hero",
+      "kind": "cover",
+      "title": "C++26 오케스트레이터 + 내장 Python 워커 기반 PDF 자동 텍스트 변환 파이프라인",
+      "role": "cover",
+      "layout_variant": "cover-hero",
+      "prompt": "cinematic technical editorial art, polished presentation graphic, clean whitespace, strong hierarchy. Focus on 'C++26 오케스트레이터 + 내장 Python 워커 기반 PDF 자동 텍스트 변환 파이프라인'. Support the planning role 'cover'. Use visual metaphors grounded in the following plan text: - 최종 제품은 Windows용 `pdf2text.exe`이며, 외부 인터페이스와 핵심 I/O는 `C++26 + CMake + Clang`으로 구현한다. - 문서 해석 엔진은 내장 Python 런타임에서 실행한다. C++는 입력 탐색, PDF 사전분석, 렌더/자산 관리, 캐시, 상태파일, 프로세스 제어를 맡고, Python은 `Docling`, `OCRmyPDF`, `Surya` 어댑터만 담당한다.. High clarity, presentation-ready, avoid extra text labels unless they materially help understanding.",
+      "pinned_asset": "",
+      "note": "",
+      "default_asset_bundle_relpath": "assets/cover-hero-c7665d7ef1.png",
+      "asset_bundle_relpath": "assets\\cover-hero-c7665d7ef1.png",
+      "provider": "reused"
+    },
+    {
+      "id": "section-01-banner",
+      "kind": "banner",
+      "title": "Summary",
+      "role": "summary",
+      "layout_variant": "hero-summary",
+      "prompt": "editorial systems illustration, modern technical concept art, crisp shapes, layered gradients. Focus on 'Summary'. Support the planning role 'summary'. Use visual metaphors grounded in the following plan text: - 최종 제품은 Windows용 `pdf2text.exe`이며, 외부 인터페이스와 핵심 I/O는 `C++26 + CMake + Clang`으로 구현한다. - 문서 해석 엔진은 내장 Python 런타임에서 실행한다. C++는 입력 탐색, PDF 사전분석, 렌더/자산 관리, 캐시, 상태파일, 프로세스 제어를 맡고, Python은 `Docling`, `OCRmyPDF`, `Surya` 어댑터만 담당한다.. High clarity, presentation-ready, avoid extra text labels unless they materially help understanding.",
+      "pinned_asset": "",
+      "note": "",
+      "default_asset_bundle_relpath": "assets/section-summary-df33980f8e.png",
+      "asset_bundle_relpath": "assets\\section-summary-df33980f8e.png",
+      "provider": "reused"
+    },
+    {
+      "id": "section-01-inline-01",
+      "kind": "inline",
+      "title": "Summary",
+      "role": "summary",
+      "layout_variant": "inline-concept",
+      "prompt": "clean infographic-style concept art, grounded technical details, restrained composition. Focus on 'Summary'. Support the planning role 'summary'. Use visual metaphors grounded in the following plan text: - 최종 제품은 Windows용 `pdf2text.exe`이며, 외부 인터페이스와 핵심 I/O는 `C++26 + CMake + Clang`으로 구현한다.. High clarity, presentation-ready, avoid extra text labels unless they materially help understanding.",
+      "pinned_asset": "",
+      "note": "",
+      "default_asset_bundle_relpath": "assets/inline-summary-01-9d7fd05adc.png",
+      "asset_bundle_relpath": "assets\\inline-summary-01-9d7fd05adc.png",
+      "provider": "reused"
+    },
+    {
+      "id": "section-02-banner",
+      "kind": "banner",
+      "title": "Key Changes",
+      "role": "key_changes",
+      "layout_variant": "stacked-highlights",
+      "prompt": "editorial systems illustration, modern technical concept art, crisp shapes, layered gradients. Focus on 'Key Changes'. Support the planning role 'key_changes'. Use visual metaphors grounded in the following plan text: - 배포 형식은 `단일 exe`가 아니라 `배포 폴더형`으로 고정한다. - 루트에 `pdf2text.exe`. High clarity, presentation-ready, avoid extra text labels unless they materially help understanding.",
+      "pinned_asset": "",
+      "note": "",
+      "default_asset_bundle_relpath": "assets/section-key-changes-88c3936633.png",
+      "asset_bundle_relpath": "assets\\section-key-changes-88c3936633.png",
+      "provider": "reused"
+    },
+    {
+      "id": "section-02-inline-06",
+      "kind": "inline",
+      "title": "Key Changes",
+      "role": "key_changes",
+      "layout_variant": "inline-concept",
+      "prompt": "clean infographic-style concept art, grounded technical details, restrained composition. Focus on 'Key Changes'. Support the planning role 'key_changes'. Use visual metaphors grounded in the following plan text: - 이유는 내장 Python, OCR 모델, Docling 계열 의존성을 안정적으로 묶으려면 self-extracting onefile보다 폴더형이 훨씬 안전하기 때문이다.. High clarity, presentation-ready, avoid extra text labels unless they materially help understanding.",
+      "pinned_asset": "",
+      "note": "",
+      "default_asset_bundle_relpath": "assets/inline-key-changes-06-4d895ca7ed.png",
+      "asset_bundle_relpath": "assets\\inline-key-changes-06-4d895ca7ed.png",
+      "provider": "reused"
+    },
+    {
+      "id": "section-03-banner",
+      "kind": "banner",
+      "title": "Pipeline",
+      "role": "architecture",
+      "layout_variant": "system-diagram",
+      "prompt": "editorial systems illustration, modern technical concept art, crisp shapes, layered gradients. Focus on 'Pipeline'. Support the planning role 'architecture'. Use visual metaphors grounded in the following plan text: - 1단계 `preflight` - C++가 PDFium으로 페이지별 텍스트 객체, 폰트 매핑 품질, 이미지 비중, 회전, 손상 징후를 조사해 `debug/preflight.json`을 만든다.. High clarity, presentation-ready, avoid extra text labels unless they materially help understanding.",
+      "pinned_asset": "",
+      "note": "",
+      "default_asset_bundle_relpath": "assets/section-pipeline-9f76a8b8b9.png",
+      "asset_bundle_relpath": "assets\\section-pipeline-9f76a8b8b9.png",
+      "provider": "reused"
+    },
+    {
+      "id": "section-03-inline-02",
+      "kind": "inline",
+      "title": "Pipeline",
+      "role": "architecture",
+      "layout_variant": "inline-concept",
+      "prompt": "clean infographic-style concept art, grounded technical details, restrained composition. Focus on 'Pipeline'. Support the planning role 'architecture'. Use visual metaphors grounded in the following plan text: - C++가 PDFium으로 페이지별 텍스트 객체, 폰트 매핑 품질, 이미지 비중, 회전, 손상 징후를 조사해 `debug/preflight.json`을 만든다.. High clarity, presentation-ready, avoid extra text labels unless they materially help understanding.",
+      "pinned_asset": "",
+      "note": "",
+      "default_asset_bundle_relpath": "assets/inline-pipeline-02-13cd2e4a12.png",
+      "asset_bundle_relpath": "assets\\inline-pipeline-02-13cd2e4a12.png",
+      "provider": "reused"
+    },
+    {
+      "id": "section-04-banner",
+      "kind": "banner",
+      "title": "Test Plan",
+      "role": "testing",
+      "layout_variant": "checklist-grid",
+      "prompt": "editorial systems illustration, modern technical concept art, crisp shapes, layered gradients. Focus on 'Test Plan'. Support the planning role 'testing'. Use visual metaphors grounded in the following plan text: - 한국어/영어 혼합 텍스트 PDF에서 OCR 없이도 `document.json`과 `document.md`가 정상 생성되는지 확인한다. - 전체 스캔 PDF에서 `ocrmypdf_pass -> docling_parse` 경로가 동작하고 searchable PDF와 구조 결과가 모두 생성되는지 확인한다.. High clarity, presentation-ready, avoid extra text labels unless they materially help understanding.",
+      "pinned_asset": "",
+      "note": "",
+      "default_asset_bundle_relpath": "assets/section-test-plan-7f78ee0b77.png",
+      "asset_bundle_relpath": "assets\\section-test-plan-7f78ee0b77.png",
+      "provider": "reused"
+    },
+    {
+      "id": "section-04-inline-01",
+      "kind": "inline",
+      "title": "Test Plan",
+      "role": "testing",
+      "layout_variant": "inline-concept",
+      "prompt": "clean infographic-style concept art, grounded technical details, restrained composition. Focus on 'Test Plan'. Support the planning role 'testing'. Use visual metaphors grounded in the following plan text: - 한국어/영어 혼합 텍스트 PDF에서 OCR 없이도 `document.json`과 `document.md`가 정상 생성되는지 확인한다.. High clarity, presentation-ready, avoid extra text labels unless they materially help understanding.",
+      "pinned_asset": "",
+      "note": "",
+      "default_asset_bundle_relpath": "assets/inline-test-plan-01-d2ac027326.png",
+      "asset_bundle_relpath": "assets\\inline-test-plan-01-d2ac027326.png",
+      "provider": "reused"
+    },
+    {
+      "id": "section-05-banner",
+      "kind": "banner",
+      "title": "Assumptions",
+      "role": "assumptions",
+      "layout_variant": "callout-panel",
+      "prompt": "editorial systems illustration, modern technical concept art, crisp shapes, layered gradients. Focus on 'Assumptions'. Support the planning role 'assumptions'. Use visual metaphors grounded in the following plan text: - 대상 플랫폼은 Windows 고정이다. - C++26은 “표준을 26으로 선언하고, 선택한 Clang이 실제 지원하는 부분집합만 사용”으로 해석한다. 현재 머신에는 Clang이 없으므로 LLVM 설치가 선행 조건이다.. High clarity, presentation-ready, avoid extra text labels unless they materially help understanding.",
+      "pinned_asset": "",
+      "note": "",
+      "default_asset_bundle_relpath": "assets/section-assumptions-66ca3d8aaf.png",
+      "asset_bundle_relpath": "assets\\section-assumptions-66ca3d8aaf.png",
+      "provider": "reused"
+    }
+  ]
+}

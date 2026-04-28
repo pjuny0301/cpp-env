@@ -1,0 +1,172 @@
+{
+  "schema_version": 1,
+  "project": "quiz-vulkan",
+  "generated_for": "current scaffold verification",
+  "compiler_profiles": {
+    "mingw_gcc_6_cxx1z": {
+      "description": "Available local MinGW GCC 6.3.0. Use only for scene/layout scaffold smoke tests that avoid modern C++17 standard library dependencies.",
+      "windows_compiler": "C:/MinGW/bin/g++.exe",
+      "wsl_compiler": "/mnt/c/MinGW/bin/g++.exe",
+      "flags": [
+        "-std=c++1z",
+        "-Wall",
+        "-Wextra",
+        "-pedantic",
+        "-Isrc"
+      ]
+    },
+    "windows_mingw_ascii_gcc13": {
+      "description": "Preferred local Windows toolchain pinned to ASCII-only paths.",
+      "compiler": "C:/qtmingw1310_ascii/bin/g++.exe",
+      "linker_bin": "C:/qtmingw1310_ascii/x86_64-w64-mingw32/bin",
+      "ninja": "C:/dev/tools/ninja-1.13.2/ninja.exe",
+      "cmake": "C:/Program Files/CMake/bin/cmake.exe",
+      "minimum_standard": "C++20",
+      "helper_script": "tools/run_windows_mingw_ascii.ps1"
+    },
+    "modern_cxx17_or_newer": {
+      "description": "Required for domain smoke tests because they use <optional>, <variant>, and related modern standard library features.",
+      "minimum_standard": "C++17"
+    },
+    "modern_cxx20_app": {
+      "description": "Required for the full app/CMake presets described in README.md.",
+      "minimum_standard": "C++20"
+    }
+  },
+  "suites": [
+    {
+      "id": "scene_layout_data_smoke",
+      "area": "scene",
+      "path": "tests/scene/scene_layout_data_tests.cpp",
+      "type": "standalone_cpp",
+      "compiler_profile": "mingw_gcc_6_cxx1z",
+      "supported_with_available_mingw": true,
+      "manual_command_windows": "C:/MinGW/bin/g++.exe -std=c++1z -Wall -Wextra -pedantic -Isrc tests/scene/scene_layout_data_tests.cpp -o C:/aa/build/out/quiz/quiz-vulkan/manual/scene_layout_data_tests.exe && C:/aa/build/out/quiz/quiz-vulkan/manual/scene_layout_data_tests.exe",
+      "manual_command_wsl": "/mnt/c/MinGW/bin/g++.exe -std=c++1z -Wall -Wextra -pedantic -Isrc tests/scene/scene_layout_data_tests.cpp -o /mnt/c/aa/build/out/quiz/quiz-vulkan/manual/scene_layout_data_tests.exe && /mnt/c/aa/build/out/quiz/quiz-vulkan/manual/scene_layout_data_tests.exe"
+    },
+    {
+      "id": "layout_placer_smoke",
+      "area": "layout",
+      "path": "tests/layout/layout_placer_tests.cpp",
+      "type": "standalone_cpp",
+      "compiler_profile": "mingw_gcc_6_cxx1z",
+      "supported_with_available_mingw": true,
+      "manual_command_windows": "C:/MinGW/bin/g++.exe -std=c++1z -Wall -Wextra -pedantic -Isrc tests/layout/layout_placer_tests.cpp -o C:/aa/build/out/quiz/quiz-vulkan/manual/layout_placer_tests.exe && C:/aa/build/out/quiz/quiz-vulkan/manual/layout_placer_tests.exe",
+      "manual_command_wsl": "/mnt/c/MinGW/bin/g++.exe -std=c++1z -Wall -Wextra -pedantic -Isrc tests/layout/layout_placer_tests.cpp -o /mnt/c/aa/build/out/quiz/quiz-vulkan/manual/layout_placer_tests.exe && /mnt/c/aa/build/out/quiz/quiz-vulkan/manual/layout_placer_tests.exe"
+    },
+    {
+      "id": "input_hit_test",
+      "area": "layout",
+      "path": "tests/layout/input_hit_test_tests.cpp",
+      "type": "ctest",
+      "compiler_profile": "windows_mingw_ascii_gcc13",
+      "supported_with_available_mingw": true
+    },
+    {
+      "id": "domain_smoke",
+      "area": "domain",
+      "path": "tests/domain/domain_smoke_test.cpp",
+      "type": "ctest",
+      "compiler_profile": "windows_mingw_ascii_gcc13",
+      "supported_with_available_mingw": true,
+      "source_dependencies": [
+        "src/core/domain/app_action.cpp",
+        "src/core/domain/app_snapshot.cpp",
+        "src/core/domain/learning_state.cpp",
+        "src/core/domain/quiz_model.cpp",
+        "src/core/domain/quiz_session.cpp"
+      ]
+    },
+    {
+      "id": "deck_artifact_loader",
+      "area": "domain",
+      "path": "tests/domain/deck_artifact_loader_tests.cpp",
+      "type": "ctest",
+      "compiler_profile": "windows_mingw_ascii_gcc13",
+      "supported_with_available_mingw": true,
+      "source_dependencies": [
+        "src/core/domain/deck_artifact_loader.cpp",
+        "src/core/domain/quiz_model.cpp"
+      ]
+    },
+    {
+      "id": "app_state_dispatch",
+      "area": "app",
+      "path": "tests/app/app_state_tests.cpp",
+      "type": "ctest",
+      "compiler_profile": "windows_mingw_ascii_gcc13",
+      "supported_with_available_mingw": true,
+      "source_dependencies": [
+        "src/app/app_state.cpp",
+        "src/core/domain/app_action.cpp",
+        "src/core/domain/app_snapshot.cpp",
+        "src/core/domain/learning_state.cpp",
+        "src/core/domain/quiz_model.cpp",
+        "src/core/domain/quiz_session.cpp"
+      ]
+    },
+    {
+      "id": "app_action_router",
+      "area": "app",
+      "path": "tests/app/app_action_router_tests.cpp",
+      "type": "ctest",
+      "compiler_profile": "windows_mingw_ascii_gcc13",
+      "supported_with_available_mingw": true,
+      "source_dependencies": [
+        "src/app/app_action_router.cpp",
+        "src/core/domain/app_action.cpp",
+        "src/core/domain/quiz_model.cpp",
+        "src/core/domain/quiz_session.cpp"
+      ]
+    },
+    {
+      "id": "app_demo_render_path",
+      "area": "app",
+      "path": "tests/app/app_demo_tests.cpp",
+      "type": "ctest",
+      "compiler_profile": "windows_mingw_ascii_gcc13",
+      "supported_with_available_mingw": true,
+      "source_dependencies": [
+        "src/app/app_demo.cpp",
+        "src/app/app_state.cpp",
+        "src/core/domain/app_action.cpp",
+        "src/core/domain/app_snapshot.cpp",
+        "src/core/domain/learning_state.cpp",
+        "src/core/domain/quiz_model.cpp",
+        "src/core/domain/quiz_session.cpp",
+        "src/core/ui/ui_renderer.cpp",
+        "src/render/vulkan/vulkan_renderer.cpp"
+      ]
+    },
+    {
+      "id": "quiz_screens_smoke",
+      "area": "ui",
+      "path": "tests/ui/quiz_screens_tests.cpp",
+      "type": "ctest",
+      "compiler_profile": "windows_mingw_ascii_gcc13",
+      "supported_with_available_mingw": true
+    },
+    {
+      "id": "vulkan_renderer_smoke",
+      "area": "render",
+      "path": "tests/render/vulkan_renderer_tests.cpp",
+      "type": "ctest",
+      "compiler_profile": "windows_mingw_ascii_gcc13",
+      "supported_with_available_mingw": true
+    },
+    {
+      "id": "full_app_cmake",
+      "area": "app",
+      "path": "CMakePresets.json",
+      "type": "cmake_preset_build",
+      "compiler_profile": "windows_mingw_ascii_gcc13",
+      "supported_with_available_mingw": true,
+      "manual_command_windows": "powershell -ExecutionPolicy Bypass -File .\\tools\\run_windows_mingw_ascii.ps1"
+    }
+  ],
+  "helper_scripts": [
+    "tools/run_windows_mingw_ascii.ps1",
+    "tools/run_mingw_scene_layout_smoke.ps1",
+    "tools/run_mingw_scene_layout_smoke.sh"
+  ]
+}

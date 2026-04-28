@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
 #include <vector>
 
@@ -152,6 +153,124 @@ void test_fake_measure_and_layout_emit_stable_glyphs()
     require(near(layout.glyphs[2].bounds.width, 6.0f), "third glyph width uses caption style");
 }
 
+void test_fake_multirun_layout_tracks_lines_offsets_and_alignment()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "A\nB", .style_token = "body"},
+        render_text_run{.text = "cd", .style_token = "caption"},
+    };
+    request.bounds = render_rect{5.0f, 7.0f, 100.0f, 0.0f};
+    request.style_catalog = make_style_catalog();
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::center,
+        .max_lines = 0,
+    };
+
+    const render_text_layout layout = engine.layout_text(request);
+    require(near(layout.measure.width, 22.0f), "multi-run layout measures widest line");
+    require(near(layout.measure.height, 48.0f), "multi-run layout sums line heights");
+    require(layout.glyphs.size() == 4, "multi-run layout omits newline glyph");
+
+    require(layout.glyphs[0].run_index == 0, "first line glyph records first run");
+    require(layout.glyphs[0].byte_offset == 0, "first line glyph byte offset is stable");
+    require(near(layout.glyphs[0].bounds.x, 50.0f), "first line is center aligned independently");
+    require(near(layout.glyphs[0].bounds.y, 7.0f), "first line uses request y origin");
+
+    require(layout.glyphs[1].run_index == 0, "second line starts in first run");
+    require(layout.glyphs[1].byte_offset == 2, "newline advances source byte offset");
+    require(near(layout.glyphs[1].bounds.x, 44.0f), "second line is center aligned by line width");
+    require(near(layout.glyphs[1].bounds.y, 31.0f), "second line y advances by first line height");
+
+    require(layout.glyphs[2].run_index == 1, "second line continues into next run");
+    require(layout.glyphs[2].byte_offset == 0, "new run byte offsets restart at zero");
+    require(near(layout.glyphs[2].bounds.x, 54.0f), "caption glyph advances after body glyph");
+    require(near(layout.glyphs[2].bounds.width, 6.0f), "caption glyph keeps run style width");
+    require(near(layout.glyphs[2].bounds.height, 12.0f), "caption glyph keeps run style line height");
+}
+
+void test_fake_style_fallback_shapes_missing_tokens()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "xy", .style_token = "missing"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 200.0f, 0.0f};
+    request.style_catalog = make_style_catalog();
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    const render_text_measure measure = engine.measure_text(request);
+    require(near(measure.width, 12.0f), "missing style token uses fallback width");
+    require(near(measure.height, 14.0f), "missing style token uses fallback line height");
+
+    const render_text_layout layout = engine.layout_text(request);
+    require(layout.glyphs.size() == 2, "fallback layout emits requested glyphs");
+    require(near(layout.glyphs[0].bounds.width, 6.0f), "fallback glyph width uses fallback font size");
+    require(near(layout.glyphs[0].bounds.height, 14.0f), "fallback glyph height uses fallback line height");
+    require(near(layout.glyphs[1].bounds.x, 6.0f), "fallback glyph advances from prior fallback glyph");
+}
+
+void test_fake_atlas_updates_are_revisioned_and_consumed()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "A", .style_token = "body"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 200.0f, 0.0f};
+    request.style_catalog = make_style_catalog();
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    const render_text_measure measure = engine.measure_text(request);
+    require(near(measure.width, 10.0f), "measure works before atlas population");
+    require(engine.consume_atlas_updates().empty(), "measure does not enqueue atlas updates");
+
+    const render_text_layout first_layout = engine.layout_text(request);
+    require(first_layout.glyphs.size() == 1, "first atlas layout emits one glyph");
+    require(first_layout.glyphs[0].atlas_page_id == 1, "fake atlas page id is stable");
+    require(first_layout.glyphs[0].atlas_revision == 1, "first new glyph uses atlas revision one");
+
+    std::vector<render_text_atlas_update> first_updates = engine.consume_atlas_updates();
+    require(first_updates.size() == 1, "first new glyph enqueues one atlas update");
+    require(first_updates[0].page.id == 1, "atlas update page id is stable");
+    require(first_updates[0].page.revision == 1, "first atlas update uses revision one");
+    require(first_updates[0].rgba.size() == 4, "fake atlas update carries one RGBA pixel");
+    require(engine.consume_atlas_updates().empty(), "atlas updates are consumed once");
+
+    const render_text_layout repeated_layout = engine.layout_text(request);
+    require(repeated_layout.glyphs[0].atlas_revision == 1, "cached glyph keeps atlas revision");
+    require(engine.consume_atlas_updates().empty(), "cached glyph does not enqueue atlas update");
+
+    request.text_runs = {
+        render_text_run{.text = "AB", .style_token = "body"},
+    };
+    const render_text_layout second_layout = engine.layout_text(request);
+    require(second_layout.glyphs.size() == 2, "second atlas layout emits cached and new glyphs");
+    require(second_layout.glyphs[0].atlas_revision == 2, "cached glyph points at latest atlas revision");
+    require(second_layout.glyphs[1].atlas_revision == 2, "new glyph points at latest atlas revision");
+
+    std::vector<render_text_atlas_update> second_updates = engine.consume_atlas_updates();
+    require(second_updates.size() == 1, "new glyph enqueues one later atlas update");
+    require(second_updates[0].page.revision == 2, "later atlas update increments revision");
+}
+
 void test_fake_utf8_hangul_uses_codepoints()
 {
     using namespace quiz_vulkan::render;
@@ -180,6 +299,49 @@ void test_fake_utf8_hangul_uses_codepoints()
     require(layout.glyphs[0].byte_offset == 0, "first Hangul byte offset is stable");
     require(layout.glyphs[1].byte_offset == 3, "second Hangul byte offset advances by UTF-8 width");
     require(near(layout.glyphs[1].bounds.x, 20.0f), "second Hangul glyph advances by full width");
+}
+
+void test_fake_utf8_handles_wide_combining_and_invalid_sequences()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "\xf0\x9f\x99\x82" "e" "\xcc\x81" "\xc0\xaf" "\xe2\x82", .style_token = "body"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 200.0f, 0.0f};
+    request.style_catalog = make_style_catalog();
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    const render_text_measure measure = engine.measure_text(request);
+    require(near(measure.width, 70.0f), "UTF-8 edge cases produce deterministic width");
+    require(near(measure.height, 24.0f), "UTF-8 edge cases use body line height");
+
+    const render_text_layout layout = engine.layout_text(request);
+    require(layout.glyphs.size() == 7, "UTF-8 edge cases emit one glyph per decoded scalar or replacement");
+    require(layout.glyphs[0].glyph_id == 0x1f642, "four-byte UTF-8 decodes to Unicode scalar");
+    require(layout.glyphs[0].byte_offset == 0, "four-byte scalar records starting byte");
+    require(near(layout.glyphs[0].bounds.width, 20.0f), "wide emoji-like scalar uses full-width advance");
+
+    require(layout.glyphs[1].glyph_id == 'e', "ASCII scalar after four-byte UTF-8 is decoded");
+    require(layout.glyphs[1].byte_offset == 4, "ASCII scalar offset follows four-byte UTF-8");
+    require(layout.glyphs[2].glyph_id == 0x0301, "combining mark scalar is decoded");
+    require(layout.glyphs[2].byte_offset == 5, "combining mark offset follows ASCII byte");
+    require(near(layout.glyphs[2].bounds.width, 0.0f), "combining mark has zero advance");
+    require(near(layout.glyphs[3].bounds.x, 30.0f), "next glyph starts at combining mark anchor");
+
+    for (std::size_t index = 3; index < layout.glyphs.size(); ++index) {
+        require(layout.glyphs[index].glyph_id == 0xfffd, "invalid UTF-8 byte emits replacement glyph");
+    }
+    require(layout.glyphs[3].byte_offset == 7, "first invalid byte offset is stable");
+    require(layout.glyphs[4].byte_offset == 8, "second invalid byte offset is stable");
+    require(layout.glyphs[5].byte_offset == 9, "truncated leading byte offset is stable");
+    require(layout.glyphs[6].byte_offset == 10, "truncated continuation byte offset is stable");
 }
 
 void test_fake_word_wraps_hangul_and_clips_max_lines()
@@ -261,7 +423,11 @@ int main()
 {
     test_style_catalog_find_and_resolve();
     test_fake_measure_and_layout_emit_stable_glyphs();
+    test_fake_multirun_layout_tracks_lines_offsets_and_alignment();
+    test_fake_style_fallback_shapes_missing_tokens();
+    test_fake_atlas_updates_are_revisioned_and_consumed();
     test_fake_utf8_hangul_uses_codepoints();
+    test_fake_utf8_handles_wide_combining_and_invalid_sequences();
     test_fake_word_wraps_hangul_and_clips_max_lines();
     test_scene_text_metrics_adapter_feeds_layout_placer();
     return 0;

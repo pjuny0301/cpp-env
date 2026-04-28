@@ -125,6 +125,16 @@ bool is_wrapping_space(const std::uint32_t code_point)
     return code_point == 0x09U || code_point == 0x20U;
 }
 
+bool glyph_needs_atlas(const shaped_glyph& glyph)
+{
+    return !glyph.newline && glyph.advance > 0.0f;
+}
+
+bool contains_glyph_id(const std::vector<std::uint32_t>& glyph_ids, const std::uint32_t glyph_id)
+{
+    return std::find(glyph_ids.begin(), glyph_ids.end(), glyph_id) != glyph_ids.end();
+}
+
 float glyph_advance_for(const render_text_style& style, const std::uint32_t code_point)
 {
     if (code_point == '\n' || code_point == '\r' || is_combining_mark(code_point)) {
@@ -287,6 +297,47 @@ float aligned_line_x(const render_text_request& request, const float line_width)
     return request.bounds.x;
 }
 
+render_text_revision update_atlas_for_layout(
+    const std::vector<shaped_glyph>& shaped_glyphs,
+    const std::vector<laid_out_line>& lines,
+    std::vector<std::uint32_t>& cached_glyph_ids,
+    render_text_revision& atlas_revision,
+    std::vector<render_text_atlas_update>& atlas_updates)
+{
+    bool added_glyph = false;
+    for (const laid_out_line& line : lines) {
+        for (const std::size_t glyph_index : line.glyph_indices) {
+            const shaped_glyph& glyph = shaped_glyphs[glyph_index];
+            if (glyph_needs_atlas(glyph) && !contains_glyph_id(cached_glyph_ids, glyph.code_point)) {
+                cached_glyph_ids.push_back(glyph.code_point);
+                added_glyph = true;
+            }
+        }
+    }
+
+    if (!added_glyph) {
+        return atlas_revision;
+    }
+
+    ++atlas_revision;
+    atlas_updates.push_back(render_text_atlas_update{
+        .page = render_text_atlas_page{
+            .id = 1,
+            .revision = atlas_revision,
+            .width = 1,
+            .height = 1,
+        },
+        .updated_bounds = render_rect{0.0f, 0.0f, 1.0f, 1.0f},
+        .rgba = std::vector<unsigned char>{
+            255U,
+            255U,
+            255U,
+            static_cast<unsigned char>(atlas_revision & 0xffU),
+        },
+    });
+    return atlas_revision;
+}
+
 } // namespace
 
 render_text_measure fake_text_engine::measure_text(const render_text_request& request) const
@@ -299,6 +350,8 @@ render_text_layout fake_text_engine::layout_text(const render_text_request& requ
 {
     const std::vector<shaped_glyph> shaped_glyphs = shape_request(request);
     const std::vector<laid_out_line> lines = break_lines(request, shaped_glyphs);
+    const render_text_revision atlas_revision =
+        update_atlas_for_layout(shaped_glyphs, lines, cached_glyph_ids_, atlas_revision_, atlas_updates_);
 
     render_text_layout layout;
     layout.measure = measure_lines(lines);
@@ -313,7 +366,7 @@ render_text_layout fake_text_engine::layout_text(const render_text_request& requ
             }
             layout.glyphs.push_back(render_text_glyph{
                 .atlas_page_id = 1,
-                .atlas_revision = 1,
+                .atlas_revision = atlas_revision,
                 .run_index = glyph.run_index,
                 .byte_offset = glyph.byte_offset,
                 .glyph_id = glyph.code_point,
@@ -330,7 +383,7 @@ render_text_layout fake_text_engine::layout_text(const render_text_request& requ
 
 std::vector<render_text_atlas_update> fake_text_engine::consume_atlas_updates()
 {
-    return {};
+    return std::exchange(atlas_updates_, {});
 }
 
 } // namespace quiz_vulkan::render

@@ -322,6 +322,63 @@ void test_empty_ime_commit_and_end_cancel_preedit()
     require(engine.text_model().preedit_text().empty(), "empty composition end clears preedit");
 }
 
+void test_ime_empty_preedit_and_commit_only_edges()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    engine.focus_text_target("answer");
+
+    require(engine.process_raw_event(ime(raw_platform_ime_phase::composition_start, 100)).empty(),
+        "empty composition start emits no event");
+    require(engine.process_raw_event(key(105, "Backspace")).empty(),
+        "backspace is suppressed during empty composition");
+    require(engine.process_raw_event(text(106, "duplicate")).empty(),
+        "raw text is suppressed during empty composition");
+    require(engine.text_model().text().empty(), "empty composition suppresses duplicate raw text");
+
+    std::vector<input_event> events = engine.process_raw_event(ime(raw_platform_ime_phase::commit, 110));
+    require(events.size() == 1, "empty ime commit after composition start emits cancel");
+    const ime_event& empty_commit = require_event<ime_event>(events, 0);
+    require(empty_commit.kind == ime_event_kind::cancel, "empty commit after composition start is cancel kind");
+    require(empty_commit.target_id == "answer", "empty commit cancel preserves target id");
+
+    events = engine.process_raw_event(text(120, "a"));
+    require(events.size() == 1, "raw text resumes after empty composition commit");
+    require(engine.text_model().text() == "a", "raw text commits after empty composition commit");
+
+    events = engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 130));
+    require(events.size() == 1, "empty preedit update emits preedit event");
+    const ime_event& empty_preedit = require_event<ime_event>(events, 0);
+    require(empty_preedit.kind == ime_event_kind::preedit, "empty preedit event uses preedit kind");
+    require(empty_preedit.utf8_text.empty(), "empty preedit event carries no text");
+    require(engine.text_model().display_text() == "a", "empty preedit displays committed text only");
+
+    events = engine.process_raw_event(ime(raw_platform_ime_phase::composition_end, 140));
+    require(events.size() == 1, "empty composition end after empty preedit emits cancel");
+    const ime_event& empty_end = require_event<ime_event>(events, 0);
+    require(empty_end.kind == ime_event_kind::cancel, "empty composition end after empty preedit is cancel kind");
+    require(engine.text_model().text() == "a", "empty composition end after empty preedit preserves text");
+
+    require(engine.process_raw_event(ime(raw_platform_ime_phase::cancel, 150)).empty(),
+        "cancel without active composition emits no event");
+
+    input_engine commit_only_engine;
+    commit_only_engine.focus_text_target("answer");
+    events = commit_only_engine.process_raw_event(ime(raw_platform_ime_phase::commit, 200, utf8(u8"한")));
+    require(events.size() == 1, "commit-only ime flow emits commit");
+    const ime_event& commit_only = require_event<ime_event>(events, 0);
+    require(commit_only.kind == ime_event_kind::commit, "commit-only ime flow uses commit kind");
+    require(commit_only.utf8_text == utf8(u8"한"), "commit-only ime flow preserves utf8 text");
+    require(commit_only_engine.text_model().text() == utf8(u8"한"), "commit-only ime flow updates text model");
+
+    events = commit_only_engine.process_raw_event(text(210, "x"));
+    require(events.size() == 1, "raw text resumes after commit-only ime flow");
+    require(commit_only_engine.text_model().text() == std::string(utf8(u8"한")) + "x",
+        "raw text appends after commit-only ime flow");
+}
+
 void test_focus_loss_cancels_composition_and_pointer_state()
 {
     using namespace quiz_vulkan;
@@ -358,6 +415,7 @@ int main()
     test_ime_composition_suppresses_text_and_key_events();
     test_ime_preedit_commit_edges();
     test_empty_ime_commit_and_end_cancel_preedit();
+    test_ime_empty_preedit_and_commit_only_edges();
     test_focus_loss_cancels_composition_and_pointer_state();
 
     std::cout << "input_engine_tests passed\n";

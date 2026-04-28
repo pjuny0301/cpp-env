@@ -107,6 +107,25 @@ void test_ime_commit_edges()
     require(!model.cancel_ime(), "cancel with no preedit reports no mutation");
 }
 
+void test_empty_preedit_edges()
+{
+    quiz_vulkan::input::text_input_model model;
+    model.focus("answer");
+
+    require(model.commit_utf8("base"), "base text before empty preedit succeeds");
+    require(model.set_preedit("draft"), "draft preedit succeeds before empty replacement");
+    require(model.display_text() == "basedraft", "display includes draft preedit");
+
+    require(model.set_preedit(""), "empty preedit replacement succeeds");
+    require(model.preedit_text().empty(), "empty preedit leaves no preedit text");
+    require(model.display_text() == "base", "empty preedit display falls back to committed text");
+    require(!model.cancel_ime(), "cancel empty preedit reports no mutation");
+    require(model.text() == "base", "empty preedit cancel preserves committed text");
+
+    require(!model.commit_ime(""), "empty ime commit after empty preedit reports no committed text");
+    require(model.text() == "base", "empty ime commit after empty preedit preserves text");
+}
+
 void test_clear_focus_ignores_text()
 {
     quiz_vulkan::input::text_input_model model;
@@ -150,6 +169,7 @@ int main()
     test_mixed_width_utf8_backspace_edges();
     test_ime_preedit_and_commit();
     test_ime_commit_edges();
+    test_empty_preedit_edges();
     test_clear_focus_ignores_text();
     test_submit_consumes_buffer();
 

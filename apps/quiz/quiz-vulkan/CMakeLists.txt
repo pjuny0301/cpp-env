@@ -348,30 +348,66 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
-    add_executable(quiz_vulkan_domain_smoke_test tests/domain/domain_smoke_test.cpp)
-    target_link_libraries(quiz_vulkan_domain_smoke_test PRIVATE quiz_vulkan_domain)
-    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_domain_smoke_test)
-    add_test(NAME quiz_vulkan_domain_smoke_test COMMAND quiz_vulkan_domain_smoke_test)
+    function(quiz_vulkan_add_test_executable target_name)
+        add_executable(${target_name} ${ARGN})
+        quiz_vulkan_copy_mingw_runtime_dlls(${target_name})
+        add_test(NAME ${target_name} COMMAND ${target_name})
+    endfunction()
 
-    add_executable(quiz_vulkan_deck_artifact_loader_tests tests/domain/deck_artifact_loader_tests.cpp)
-    target_link_libraries(quiz_vulkan_deck_artifact_loader_tests PRIVATE quiz_vulkan_domain)
-    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_deck_artifact_loader_tests)
-    add_test(NAME quiz_vulkan_deck_artifact_loader_tests COMMAND quiz_vulkan_deck_artifact_loader_tests)
+    function(quiz_vulkan_add_test_directory test_dir)
+        set(options)
+        set(one_value_args)
+        set(multi_value_args LINK_LIBRARIES SOURCES)
+        cmake_parse_arguments(
+            QUIZ_TEST_DIR
+            "${options}"
+            "${one_value_args}"
+            "${multi_value_args}"
+            ${ARGN}
+        )
 
-    add_executable(quiz_vulkan_app_state_tests tests/app/app_state_tests.cpp src/app/app_state.cpp)
+        file(
+            GLOB test_sources
+            CONFIGURE_DEPENDS
+            "${CMAKE_CURRENT_SOURCE_DIR}/${test_dir}/*_test.cpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/${test_dir}/*_tests.cpp"
+        )
+        foreach(test_source IN LISTS test_sources)
+            get_filename_component(test_name "${test_source}" NAME_WE)
+            if(test_name MATCHES "_interface_contract_tests$")
+                continue()
+            endif()
+
+            set(target_name "quiz_vulkan_${test_name}")
+            quiz_vulkan_add_test_executable(
+                ${target_name}
+                "${test_source}"
+                ${QUIZ_TEST_DIR_SOURCES}
+            )
+            if(QUIZ_TEST_DIR_LINK_LIBRARIES)
+                target_link_libraries(${target_name} PRIVATE ${QUIZ_TEST_DIR_LINK_LIBRARIES})
+            endif()
+        endforeach()
+    endfunction()
+
+    quiz_vulkan_add_test_directory(tests/domain LINK_LIBRARIES quiz_vulkan_domain)
+
+    quiz_vulkan_add_test_executable(
+        quiz_vulkan_app_state_tests
+        tests/app/app_state_tests.cpp
+        src/app/app_state.cpp
+    )
     target_link_libraries(quiz_vulkan_app_state_tests PRIVATE quiz_vulkan_domain)
-    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_app_state_tests)
-    add_test(NAME quiz_vulkan_app_state_tests COMMAND quiz_vulkan_app_state_tests)
 
-    add_executable(quiz_vulkan_app_action_router_tests tests/app/app_action_router_tests.cpp src/app/app_action_router.cpp)
+    quiz_vulkan_add_test_executable(
+        quiz_vulkan_app_action_router_tests
+        tests/app/app_action_router_tests.cpp
+        src/app/app_action_router.cpp
+    )
     target_link_libraries(quiz_vulkan_app_action_router_tests PRIVATE quiz_vulkan_domain quiz_vulkan_scene)
-    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_app_action_router_tests)
-    add_test(NAME quiz_vulkan_app_action_router_tests COMMAND quiz_vulkan_app_action_router_tests)
 
-    add_executable(quiz_vulkan_app_sound_router_tests tests/app/app_sound_router_tests.cpp)
+    quiz_vulkan_add_test_executable(quiz_vulkan_app_sound_router_tests tests/app/app_sound_router_tests.cpp)
     target_link_libraries(quiz_vulkan_app_sound_router_tests PRIVATE quiz_vulkan_domain quiz_vulkan_audio_contract)
-    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_app_sound_router_tests)
-    add_test(NAME quiz_vulkan_app_sound_router_tests COMMAND quiz_vulkan_app_sound_router_tests)
 
     add_executable(
         quiz_vulkan_app_deck_loader_tests
@@ -410,40 +446,10 @@ if(BUILD_TESTING)
     quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_app_demo_tests)
     add_test(NAME quiz_vulkan_app_demo_tests COMMAND quiz_vulkan_app_demo_tests)
 
-    add_executable(quiz_vulkan_scene_layout_data_tests tests/scene/scene_layout_data_tests.cpp)
-    target_link_libraries(quiz_vulkan_scene_layout_data_tests PRIVATE quiz_vulkan_scene)
-    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_scene_layout_data_tests)
-    add_test(NAME quiz_vulkan_scene_layout_data_tests COMMAND quiz_vulkan_scene_layout_data_tests)
-
-    add_executable(quiz_vulkan_layout_placer_tests tests/layout/layout_placer_tests.cpp)
-    target_link_libraries(quiz_vulkan_layout_placer_tests PRIVATE quiz_vulkan_scene)
-    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_layout_placer_tests)
-    add_test(NAME quiz_vulkan_layout_placer_tests COMMAND quiz_vulkan_layout_placer_tests)
-
-    add_executable(quiz_vulkan_input_hit_test_tests tests/layout/input_hit_test_tests.cpp)
-    target_link_libraries(quiz_vulkan_input_hit_test_tests PRIVATE quiz_vulkan_scene)
-    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_input_hit_test_tests)
-    add_test(NAME quiz_vulkan_input_hit_test_tests COMMAND quiz_vulkan_input_hit_test_tests)
-
-    add_executable(quiz_vulkan_gesture_recognizer_tests tests/input/gesture_recognizer_tests.cpp)
-    target_link_libraries(quiz_vulkan_gesture_recognizer_tests PRIVATE quiz_vulkan_input)
-    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_gesture_recognizer_tests)
-    add_test(NAME quiz_vulkan_gesture_recognizer_tests COMMAND quiz_vulkan_gesture_recognizer_tests)
-
-    add_executable(quiz_vulkan_text_input_model_tests tests/input/text_input_model_tests.cpp)
-    target_link_libraries(quiz_vulkan_text_input_model_tests PRIVATE quiz_vulkan_input)
-    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_text_input_model_tests)
-    add_test(NAME quiz_vulkan_text_input_model_tests COMMAND quiz_vulkan_text_input_model_tests)
-
-    add_executable(quiz_vulkan_input_engine_tests tests/input/input_engine_tests.cpp)
-    target_link_libraries(quiz_vulkan_input_engine_tests PRIVATE quiz_vulkan_input)
-    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_input_engine_tests)
-    add_test(NAME quiz_vulkan_input_engine_tests COMMAND quiz_vulkan_input_engine_tests)
-
-    add_executable(quiz_vulkan_quiz_screens_tests tests/ui/quiz_screens_tests.cpp)
-    target_link_libraries(quiz_vulkan_quiz_screens_tests PRIVATE quiz_vulkan_ui)
-    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_quiz_screens_tests)
-    add_test(NAME quiz_vulkan_quiz_screens_tests COMMAND quiz_vulkan_quiz_screens_tests)
+    quiz_vulkan_add_test_directory(tests/scene LINK_LIBRARIES quiz_vulkan_scene)
+    quiz_vulkan_add_test_directory(tests/layout LINK_LIBRARIES quiz_vulkan_scene)
+    quiz_vulkan_add_test_directory(tests/input LINK_LIBRARIES quiz_vulkan_input)
+    quiz_vulkan_add_test_directory(tests/ui LINK_LIBRARIES quiz_vulkan_ui)
 
     add_executable(quiz_vulkan_renderer_tests tests/render/vulkan_renderer_tests.cpp)
     target_link_libraries(quiz_vulkan_renderer_tests PRIVATE quiz_vulkan_renderer)
@@ -471,32 +477,11 @@ if(BUILD_TESTING)
     quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_fake_image_texture_cache_tests)
     add_test(NAME quiz_vulkan_fake_image_texture_cache_tests COMMAND quiz_vulkan_fake_image_texture_cache_tests)
 
-    add_executable(quiz_vulkan_fake_audio_engine_tests tests/audio/fake_audio_engine_tests.cpp)
-    target_link_libraries(
-        quiz_vulkan_fake_audio_engine_tests
-        PRIVATE
-            quiz_vulkan_audio_contract
-    )
-    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_fake_audio_engine_tests)
-    add_test(NAME quiz_vulkan_fake_audio_engine_tests COMMAND quiz_vulkan_fake_audio_engine_tests)
-
-    add_executable(quiz_vulkan_asset_resolver_tests tests/assets/asset_resolver_tests.cpp)
-    target_link_libraries(
-        quiz_vulkan_asset_resolver_tests
-        PRIVATE
-            quiz_vulkan_asset_contract
-    )
-    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_asset_resolver_tests)
-    add_test(NAME quiz_vulkan_asset_resolver_tests COMMAND quiz_vulkan_asset_resolver_tests)
-
-    add_executable(quiz_vulkan_deck_source_asset_adapter_tests tests/assets/deck_source_asset_adapter_tests.cpp)
-    target_link_libraries(
-        quiz_vulkan_deck_source_asset_adapter_tests
-        PRIVATE
-            quiz_vulkan_deck_source_asset_adapter
-    )
-    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_deck_source_asset_adapter_tests)
-    add_test(NAME quiz_vulkan_deck_source_asset_adapter_tests COMMAND quiz_vulkan_deck_source_asset_adapter_tests)
+    quiz_vulkan_add_test_directory(tests/render/text LINK_LIBRARIES quiz_vulkan_render_contract quiz_vulkan_scene quiz_vulkan_text_engine quiz_vulkan_text_scene_bridge)
+    quiz_vulkan_add_test_directory(tests/render/image LINK_LIBRARIES quiz_vulkan_render_contract)
+    quiz_vulkan_add_test_directory(tests/render/vulkan LINK_LIBRARIES quiz_vulkan_renderer)
+    quiz_vulkan_add_test_directory(tests/audio LINK_LIBRARIES quiz_vulkan_audio_contract)
+    quiz_vulkan_add_test_directory(tests/assets LINK_LIBRARIES quiz_vulkan_asset_contract quiz_vulkan_deck_source_asset_adapter)
 
     add_library(
         quiz_vulkan_interface_contract_compile_tests

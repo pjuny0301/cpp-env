@@ -213,6 +213,24 @@ void test_pointer_id_reuse_replaces_pending_state()
     require(gestures[0].start_y == 10.0f, "reused pointer start y is replacement down");
 }
 
+void test_multi_pointer_long_press_order_is_stable()
+{
+    using namespace quiz_vulkan::input;
+
+    gesture_recognizer recognizer;
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 100, 90.0f, 0.0f, 9)),
+        "stable order high id down emits no gesture");
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 100, 10.0f, 0.0f, 1)),
+        "stable order low id down emits no gesture");
+
+    std::vector<gesture_event> gestures = recognizer.update_time(700);
+    require(gestures.size() == 2, "simultaneous long presses emit two gestures");
+    require(gestures[0].kind == gesture_kind::long_press, "first stable gesture is long press");
+    require(gestures[1].kind == gesture_kind::long_press, "second stable gesture is long press");
+    require(gestures[0].pointer_id == 1, "stable long press order starts with lower pointer id");
+    require(gestures[1].pointer_id == 9, "stable long press order ends with higher pointer id");
+}
+
 } // namespace
 
 int main()
@@ -222,6 +240,7 @@ int main()
     test_touch_cancel_and_multi_pointer_edges();
     test_unknown_pointer_reset_and_timing_edges();
     test_pointer_id_reuse_replaces_pending_state();
+    test_multi_pointer_long_press_order_is_stable();
 
     std::cout << "gesture_recognizer_tests passed\n";
     return 0;

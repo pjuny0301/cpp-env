@@ -269,6 +269,29 @@ void test_pointer_id_reuse_routes_replacement_state()
     require(tap.start_y == 20.0f, "reused raw pointer start y is replacement down");
 }
 
+void test_multi_pointer_long_press_order_routes_stably()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 100, 90.0f, 0.0f, raw_platform_pointer_button::primary, 9))
+                .empty(),
+        "engine stable order high id down emits no gesture");
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 100, 10.0f, 0.0f, raw_platform_pointer_button::primary, 1))
+                .empty(),
+        "engine stable order low id down emits no gesture");
+
+    std::vector<input_event> events = engine.update_time(700);
+    require(events.size() == 2, "engine simultaneous long presses emit two events");
+    const gesture_event& first = require_event<gesture_event>(events, 0);
+    const gesture_event& second = require_event<gesture_event>(events, 1);
+    require(first.kind == gesture_kind::long_press, "engine first stable gesture is long press");
+    require(second.kind == gesture_kind::long_press, "engine second stable gesture is long press");
+    require(first.pointer_id == 1, "engine stable long press order starts with lower pointer id");
+    require(second.pointer_id == 9, "engine stable long press order ends with higher pointer id");
+}
+
 void test_text_key_flow()
 {
     using namespace quiz_vulkan;
@@ -604,6 +627,7 @@ int main()
     test_touch_pointer_cancel_and_multi_pointer_edges();
     test_pointer_filter_and_timing_edges();
     test_pointer_id_reuse_routes_replacement_state();
+    test_multi_pointer_long_press_order_routes_stably();
     test_text_key_flow();
     test_key_code_fallback_edges();
     test_ime_composition_suppresses_text_and_key_events();

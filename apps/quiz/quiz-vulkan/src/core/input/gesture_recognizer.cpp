@@ -1,5 +1,6 @@
 #include "core/input/gesture_recognizer.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 
@@ -103,6 +104,9 @@ std::vector<gesture_event> gesture_recognizer::update_time(std::int64_t timestam
             gestures.push_back(*long_press);
         }
     }
+    std::ranges::sort(gestures, [](const gesture_event& lhs, const gesture_event& rhs) {
+        return lhs.pointer_id < rhs.pointer_id;
+    });
     return gestures;
 }
 

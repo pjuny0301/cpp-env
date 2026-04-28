@@ -1,5 +1,7 @@
 #pragma once
 
+#include "render/image/image_types.h"
+
 #include <cstddef>
 #include <string>
 #include <vector>
@@ -100,6 +102,7 @@ struct render_image_ref {
     std::string uri;
     std::string alt_text;
     float aspect_ratio = 0.0f;
+    render_image_sampler_policy sampler;
 };
 
 enum class render_draw_command_type {

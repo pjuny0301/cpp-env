@@ -95,6 +95,10 @@ target_sources(
         FILE_SET HEADERS
         BASE_DIRS src
         FILES
+            src/render/image/image_decoder.h
+            src/render/image/image_resolver.h
+            src/render/image/image_texture_cache.h
+            src/render/image/image_types.h
             src/render/render_draw_list.h
             src/render/text/text_engine.h
 )
@@ -244,4 +248,13 @@ if(BUILD_TESTING)
     )
     quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_fake_text_engine_tests)
     add_test(NAME quiz_vulkan_fake_text_engine_tests COMMAND quiz_vulkan_fake_text_engine_tests)
+
+    add_executable(quiz_vulkan_fake_image_texture_cache_tests tests/render/fake_image_texture_cache_tests.cpp)
+    target_link_libraries(
+        quiz_vulkan_fake_image_texture_cache_tests
+        PRIVATE
+            quiz_vulkan_render_contract
+    )
+    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_fake_image_texture_cache_tests)
+    add_test(NAME quiz_vulkan_fake_image_texture_cache_tests COMMAND quiz_vulkan_fake_image_texture_cache_tests)
 endif()

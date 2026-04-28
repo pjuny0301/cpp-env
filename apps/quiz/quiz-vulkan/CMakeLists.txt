@@ -31,6 +31,7 @@ target_sources(
         FILE_SET HEADERS
         BASE_DIRS src
         FILES
+            src/platform/platform_input_event.h
             src/platform/platform_shell.h
 )
 target_compile_features(quiz_vulkan_platform_shell PUBLIC cxx_std_23)
@@ -119,6 +120,23 @@ target_sources(
 target_compile_features(quiz_vulkan_audio_contract INTERFACE cxx_std_23)
 target_include_directories(quiz_vulkan_audio_contract INTERFACE src)
 
+add_library(quiz_vulkan_input OBJECT)
+target_sources(
+    quiz_vulkan_input
+    PRIVATE
+        src/core/input/gesture_recognizer.cpp
+        src/core/input/text_input_model.cpp
+    PUBLIC
+        FILE_SET HEADERS
+        BASE_DIRS src
+        FILES
+            src/core/input/gesture_recognizer.h
+            src/core/input/input_event.h
+            src/core/input/text_input_model.h
+)
+target_compile_features(quiz_vulkan_input PUBLIC cxx_std_23)
+target_include_directories(quiz_vulkan_input PUBLIC src)
+
 add_library(quiz_vulkan_text_scene_bridge INTERFACE)
 target_sources(
     quiz_vulkan_text_scene_bridge
@@ -189,12 +207,14 @@ quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan)
 if(MSVC)
     target_compile_options(quiz_vulkan_platform_shell PRIVATE /W4 /permissive-)
     target_compile_options(quiz_vulkan_domain PRIVATE /W4 /permissive-)
+    target_compile_options(quiz_vulkan_input PRIVATE /W4 /permissive-)
     target_compile_options(quiz_vulkan_ui PRIVATE /W4 /permissive-)
     target_compile_options(quiz_vulkan_renderer PRIVATE /W4 /permissive-)
     target_compile_options(quiz_vulkan PRIVATE /W4 /permissive-)
 else()
     target_compile_options(quiz_vulkan_platform_shell PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(quiz_vulkan_domain PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(quiz_vulkan_input PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(quiz_vulkan_ui PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(quiz_vulkan_renderer PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(quiz_vulkan PRIVATE -Wall -Wextra -Wpedantic)
@@ -242,6 +262,16 @@ if(BUILD_TESTING)
     quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_input_hit_test_tests)
     add_test(NAME quiz_vulkan_input_hit_test_tests COMMAND quiz_vulkan_input_hit_test_tests)
 
+    add_executable(quiz_vulkan_gesture_recognizer_tests tests/input/gesture_recognizer_tests.cpp)
+    target_link_libraries(quiz_vulkan_gesture_recognizer_tests PRIVATE quiz_vulkan_input)
+    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_gesture_recognizer_tests)
+    add_test(NAME quiz_vulkan_gesture_recognizer_tests COMMAND quiz_vulkan_gesture_recognizer_tests)
+
+    add_executable(quiz_vulkan_text_input_model_tests tests/input/text_input_model_tests.cpp)
+    target_link_libraries(quiz_vulkan_text_input_model_tests PRIVATE quiz_vulkan_input)
+    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_text_input_model_tests)
+    add_test(NAME quiz_vulkan_text_input_model_tests COMMAND quiz_vulkan_text_input_model_tests)
+
     add_executable(quiz_vulkan_quiz_screens_tests tests/ui/quiz_screens_tests.cpp)
     target_link_libraries(quiz_vulkan_quiz_screens_tests PRIVATE quiz_vulkan_ui)
     quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_quiz_screens_tests)
@@ -280,4 +310,13 @@ if(BUILD_TESTING)
     )
     quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_fake_audio_engine_tests)
     add_test(NAME quiz_vulkan_fake_audio_engine_tests COMMAND quiz_vulkan_fake_audio_engine_tests)
+
+    add_library(
+        quiz_vulkan_interface_contract_compile_tests
+        OBJECT
+        EXCLUDE_FROM_ALL
+        tests/contracts/interface_contract_compile_tests.cpp
+    )
+    target_include_directories(quiz_vulkan_interface_contract_compile_tests PRIVATE src)
+    target_compile_features(quiz_vulkan_interface_contract_compile_tests PRIVATE cxx_std_23)
 endif()

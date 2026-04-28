@@ -376,6 +376,43 @@ void test_fake_word_wraps_hangul_and_clips_max_lines()
     require(clipped_layout.glyphs.size() == 1, "max lines clips glyph output");
 }
 
+void test_fake_word_wraps_unspaced_hangul_syllables()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "\xed\x95\x9c\xea\xb8\x80\xeb\x82\xa0", .style_token = "body"},
+    };
+    request.bounds = render_rect{3.0f, 5.0f, 25.0f, 0.0f};
+    request.style_catalog = make_style_catalog();
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::word,
+        .alignment = render_text_alignment::end,
+        .max_lines = 0,
+    };
+
+    const render_text_measure measure = engine.measure_text(request);
+    require(near(measure.width, 20.0f), "unspaced Hangul wrap measures one syllable per line");
+    require(near(measure.height, 72.0f), "unspaced Hangul wrap measures three lines");
+
+    const render_text_layout layout = engine.layout_text(request);
+    require(layout.glyphs.size() == 3, "unspaced Hangul wrap emits three syllable glyphs");
+    require(layout.glyphs[0].glyph_id == 0xd55c, "first unspaced Hangul glyph id is stable");
+    require(layout.glyphs[1].glyph_id == 0xae00, "second unspaced Hangul glyph id is stable");
+    require(layout.glyphs[2].glyph_id == 0xb0a0, "third unspaced Hangul glyph id is stable");
+    require(layout.glyphs[0].byte_offset == 0, "first unspaced Hangul byte offset is stable");
+    require(layout.glyphs[1].byte_offset == 3, "second unspaced Hangul byte offset is stable");
+    require(layout.glyphs[2].byte_offset == 6, "third unspaced Hangul byte offset is stable");
+    require(near(layout.glyphs[0].bounds.x, 8.0f), "first unspaced Hangul line end-aligns inside bounds");
+    require(near(layout.glyphs[1].bounds.x, 8.0f), "second unspaced Hangul line end-aligns inside bounds");
+    require(near(layout.glyphs[2].bounds.x, 8.0f), "third unspaced Hangul line end-aligns inside bounds");
+    require(near(layout.glyphs[0].bounds.y, 5.0f), "first unspaced Hangul line uses request y origin");
+    require(near(layout.glyphs[1].bounds.y, 29.0f), "second unspaced Hangul line advances by line height");
+    require(near(layout.glyphs[2].bounds.y, 53.0f), "third unspaced Hangul line advances by two line heights");
+}
+
 void test_scene_text_metrics_adapter_feeds_layout_placer()
 {
     using namespace quiz_vulkan::scene;
@@ -429,6 +466,7 @@ int main()
     test_fake_utf8_hangul_uses_codepoints();
     test_fake_utf8_handles_wide_combining_and_invalid_sequences();
     test_fake_word_wraps_hangul_and_clips_max_lines();
+    test_fake_word_wraps_unspaced_hangul_syllables();
     test_scene_text_metrics_adapter_feeds_layout_placer();
     return 0;
 }

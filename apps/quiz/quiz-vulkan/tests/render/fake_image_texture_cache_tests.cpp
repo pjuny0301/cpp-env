@@ -18,6 +18,39 @@ void require(bool condition, const char* message)
     assert((condition) && message);
 }
 
+class malformed_payload_decoder final : public quiz_vulkan::render::image_decoder_interface {
+public:
+    bool supports(const quiz_vulkan::render::render_image_decode_request&) const override
+    {
+        ++support_request_count;
+        return true;
+    }
+
+    quiz_vulkan::render::render_image_decode_result decode(
+        const quiz_vulkan::render::render_image_decode_request&) const override
+    {
+        ++decode_request_count;
+        return quiz_vulkan::render::render_image_decode_result{
+            .status = quiz_vulkan::render::render_image_decode_status::decoded,
+            .image = quiz_vulkan::render::render_decoded_image{
+                .width = 2,
+                .height = 2,
+                .pixel_format = quiz_vulkan::render::render_image_pixel_format::rgba8_srgb,
+                .pixels = {
+                    std::byte{0xff},
+                    std::byte{0x00},
+                    std::byte{0x00},
+                    std::byte{0xff},
+                },
+            },
+            .diagnostic = {},
+        };
+    }
+
+    mutable int support_request_count = 0;
+    mutable int decode_request_count = 0;
+};
+
 void test_sampler_defaults_are_appended_to_render_image_ref()
 {
     using namespace quiz_vulkan::render;
@@ -99,6 +132,8 @@ void test_decoder_interface_shape()
     require(decoded.image.width == 2, "decoded image carries width");
     require(decoded.image.height == 1, "decoded image carries height");
     require(decoded.image.pixels.size() == 8, "decoded image carries rgba bytes");
+    require(expected_render_decoded_image_byte_count(decoded.image) == 8, "decoded image byte count is derived");
+    require(has_valid_render_decoded_image_payload(decoded.image), "decoded image payload matches dimensions");
     require(decoder.support_requests.size() == 1, "support request was recorded");
     require(decoder.decode_requests.size() == 1, "decode request was recorded");
 }
@@ -333,6 +368,44 @@ void test_texture_cache_propagates_decoder_failures()
     require(decoder.decode_requests.size() == 1, "empty input reached decoder decode");
 }
 
+void test_texture_cache_rejects_malformed_decoded_payload()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/malformed.fake"})
+                                                    .source;
+    malformed_payload_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+
+    const render_image_texture_request request{.source = source, .sampler = render_image_sampler_policy{}};
+    const render_image_texture_result first = cache.acquire_texture(request);
+    require(!first.ok(), "malformed decoded payload does not create a texture");
+    require(
+        first.status == render_image_texture_status::upload_failed,
+        "malformed decoded payload reports upload failure");
+    require(!first.texture.valid(), "malformed decoded payload returns no texture handle");
+    require(!first.diagnostic.empty(), "malformed decoded payload includes diagnostic");
+    require(decoder.support_request_count == 1, "malformed payload reached support check");
+    require(decoder.decode_request_count == 1, "malformed payload reached decode");
+
+    const render_decoded_image malformed_image{
+        .width = 2,
+        .height = 2,
+        .pixel_format = render_image_pixel_format::rgba8_srgb,
+        .pixels = {std::byte{0xff}, std::byte{0x00}, std::byte{0x00}, std::byte{0xff}},
+    };
+    require(expected_render_decoded_image_byte_count(malformed_image) == 16, "expected byte count includes all pixels");
+    require(!has_valid_render_decoded_image_payload(malformed_image), "malformed payload helper rejects short bytes");
+
+    const render_image_texture_result second = cache.acquire_texture(request);
+    require(!second.ok(), "malformed decoded payload remains uncached");
+    require(!second.cache_hit, "malformed decoded payload is not a cache hit");
+    require(decoder.support_request_count == 2, "malformed payload retry reaches support check");
+    require(decoder.decode_request_count == 2, "malformed payload retry decodes again");
+}
+
 } // namespace
 
 int main()
@@ -346,5 +419,6 @@ int main()
     test_texture_cache_release_unused_evicts_fake_entries();
     test_texture_cache_reports_explicit_failures();
     test_texture_cache_propagates_decoder_failures();
+    test_texture_cache_rejects_malformed_decoded_payload();
     return 0;
 }

@@ -4,6 +4,7 @@
 #include "render/render_draw_list.h"
 
 #include <concepts>
+#include <cstddef>
 
 namespace {
 
@@ -51,6 +52,12 @@ static_assert(requires(render::render_resolved_image_source source) {
 static_assert(requires(const render::render_image_texture_request& request, const render::render_image_texture_key& key) {
     { render::make_render_image_texture_key(request) } -> std::same_as<render::render_image_texture_key>;
     { render::is_valid_render_image_texture_key(key) } -> std::same_as<bool>;
+});
+
+static_assert(requires(const render::render_decoded_image& image, render::render_image_pixel_format pixel_format) {
+    { render::render_image_pixel_format_byte_count(pixel_format) } -> std::same_as<std::size_t>;
+    { render::expected_render_decoded_image_byte_count(image) } -> std::same_as<std::size_t>;
+    { render::has_valid_render_decoded_image_payload(image) } -> std::same_as<bool>;
 });
 
 } // namespace

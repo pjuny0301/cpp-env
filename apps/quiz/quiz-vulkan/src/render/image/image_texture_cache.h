@@ -4,6 +4,7 @@
 #include "render/image/image_types.h"
 
 #include <cctype>
+#include <limits>
 #include <map>
 #include <string>
 #include <string_view>
@@ -71,6 +72,41 @@ inline bool is_valid_render_image_cache_key(std::string_view cache_key)
 inline bool is_valid_render_image_texture_key(const render_image_texture_key& key)
 {
     return is_valid_render_image_cache_key(key.source_key);
+}
+
+inline std::size_t render_image_pixel_format_byte_count(render_image_pixel_format pixel_format)
+{
+    switch (pixel_format) {
+    case render_image_pixel_format::rgba8_unorm:
+    case render_image_pixel_format::rgba8_srgb:
+        return 4;
+    }
+
+    return 0;
+}
+
+inline std::size_t expected_render_decoded_image_byte_count(const render_decoded_image& image)
+{
+    const std::size_t bytes_per_pixel = render_image_pixel_format_byte_count(image.pixel_format);
+    if (bytes_per_pixel == 0 || image.width == 0 || image.height == 0) {
+        return 0;
+    }
+
+    constexpr std::size_t max_size = std::numeric_limits<std::size_t>::max();
+    if (image.width > max_size / image.height) {
+        return 0;
+    }
+    const std::size_t pixel_count = image.width * image.height;
+    if (pixel_count > max_size / bytes_per_pixel) {
+        return 0;
+    }
+    return pixel_count * bytes_per_pixel;
+}
+
+inline bool has_valid_render_decoded_image_payload(const render_decoded_image& image)
+{
+    const std::size_t expected_byte_count = expected_render_decoded_image_byte_count(image);
+    return expected_byte_count != 0 && image.pixels.size() == expected_byte_count;
 }
 
 struct render_image_texture_key_less {
@@ -183,6 +219,16 @@ public:
                 .texture = {},
                 .cache_hit = false,
                 .diagnostic = "decoded image is empty",
+            };
+        }
+
+        if (!has_valid_render_decoded_image_payload(decoded.image)) {
+            return render_image_texture_result{
+                .status = render_image_texture_status::upload_failed,
+                .key = key,
+                .texture = {},
+                .cache_hit = false,
+                .diagnostic = "decoded image pixel payload size does not match dimensions and format",
             };
         }
 

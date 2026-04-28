@@ -653,6 +653,34 @@ void test_vulkan_backend_adapter_completes_empty_frame()
     require(device.calls.size() == 4, "empty frame still runs lifecycle");
 }
 
+void test_vulkan_backend_adapter_completes_all_discarded_frame()
+{
+    using namespace quiz_vulkan::render;
+
+    render_draw_list draw_list;
+    draw_list.commands.push_back(make_quad_command(
+        "transparent",
+        render_rect{0.0f, 0.0f, 100.0f, 100.0f},
+        render_color{1.0f, 1.0f, 1.0f, 0.0f}));
+
+    fake_vulkan_backend_device device(vulkan_backend::vulkan_surface_extent{.width = 16, .height = 16});
+    const vulkan_backend::vulkan_backend_frame_result result = vulkan_backend::submit_vulkan_backend_frame(
+        device,
+        draw_list,
+        render_rect{0.0f, 0.0f, 100.0f, 100.0f});
+
+    require(result.completed(), "backend completes all-discarded frame lifecycle");
+    require(!result.fallback_required, "all-discarded frame does not require fallback with fake device");
+    require(result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::none, "all-discarded frame has no fallback reason");
+    require(result.planned_batch_count == 0, "all-discarded frame has no planned batches");
+    require(result.recorded_batch_count == 0, "all-discarded frame has no recorded batches");
+    require(result.clipped_draw_call_count == 0, "all-discarded frame has no clipped draw calls");
+    require(result.discarded_draw_call_count == 1, "all-discarded frame reports discarded draw call");
+    require(device.recorded_plan.empty(), "all-discarded frame records empty plan");
+    require(device.recorded_plan.discarded_draw_call_count == 1, "recorded all-discarded plan preserves discarded count");
+    require(device.calls.size() == 4, "all-discarded frame still runs lifecycle");
+}
+
 void test_vulkan_backend_adapter_falls_back_without_surface()
 {
     using namespace quiz_vulkan::render;
@@ -874,6 +902,7 @@ int main()
     test_vulkan_backend_adapter_completes_fake_device_lifecycle();
     test_vulkan_backend_adapter_preserves_plan_diagnostics();
     test_vulkan_backend_adapter_completes_empty_frame();
+    test_vulkan_backend_adapter_completes_all_discarded_frame();
     test_vulkan_backend_adapter_falls_back_without_surface();
     test_vulkan_backend_adapter_falls_back_without_viewport();
     test_vulkan_backend_adapter_falls_back_when_begin_fails();

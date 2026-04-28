@@ -43,6 +43,33 @@ void test_focus_and_utf8_backspace()
     require(!model.backspace(), "empty backspace reports no mutation");
 }
 
+void test_mixed_width_utf8_backspace_edges()
+{
+    quiz_vulkan::input::text_input_model model;
+    model.focus("answer");
+
+    const std::string mixed = std::string("A") + utf8(u8"¢") + utf8(u8"한") + utf8(u8"😀");
+    require(model.commit_utf8(mixed), "mixed width utf8 commit succeeds");
+    require(model.text() == mixed, "mixed width utf8 is stored exactly");
+
+    require(model.backspace(), "backspace removes 4-byte utf8 codepoint");
+    require(model.text() == std::string("A") + utf8(u8"¢") + utf8(u8"한"), "4-byte codepoint is removed");
+
+    require(model.backspace(), "backspace removes 3-byte utf8 codepoint");
+    require(model.text() == std::string("A") + utf8(u8"¢"), "3-byte codepoint is removed");
+
+    require(model.backspace(), "backspace removes 2-byte utf8 codepoint");
+    require(model.text() == "A", "2-byte codepoint is removed");
+
+    require(model.set_preedit(utf8(u8"ㅎ")), "preedit succeeds before backspace edge");
+    require(model.backspace(), "backspace clears preedit before committed text");
+    require(model.preedit_text().empty(), "preedit is cleared by backspace");
+    require(model.text() == "A", "committed text is preserved when preedit is cleared");
+
+    require(model.backspace(), "backspace removes remaining ascii");
+    require(model.text().empty(), "ascii is removed after preedit clear");
+}
+
 void test_ime_preedit_and_commit()
 {
     quiz_vulkan::input::text_input_model model;
@@ -59,6 +86,25 @@ void test_ime_preedit_and_commit()
     require(model.set_preedit("draft"), "second preedit succeeds");
     require(model.cancel_ime(), "cancel ime clears active preedit");
     require(model.preedit_text().empty(), "cancel leaves preedit empty");
+}
+
+void test_ime_commit_edges()
+{
+    quiz_vulkan::input::text_input_model model;
+    model.focus("answer");
+
+    require(model.commit_utf8("base"), "base text commit succeeds");
+    require(model.set_preedit(utf8(u8"ㅎ")), "preedit before ime commit succeeds");
+    require(model.commit_ime(utf8(u8"한")), "ime commit with preedit succeeds");
+    require(model.text() == std::string("base") + utf8(u8"한"), "ime commit appends to existing committed text");
+    require(model.preedit_text().empty(), "ime commit clears preedit edge");
+
+    require(model.set_preedit("draft"), "preedit before empty commit succeeds");
+    require(!model.commit_ime(""), "empty ime commit reports no committed text");
+    require(model.preedit_text().empty(), "empty ime commit still clears preedit");
+    require(model.text() == std::string("base") + utf8(u8"한"), "empty ime commit preserves committed text");
+
+    require(!model.cancel_ime(), "cancel with no preedit reports no mutation");
 }
 
 void test_clear_focus_ignores_text()
@@ -101,7 +147,9 @@ void test_submit_consumes_buffer()
 int main()
 {
     test_focus_and_utf8_backspace();
+    test_mixed_width_utf8_backspace_edges();
     test_ime_preedit_and_commit();
+    test_ime_commit_edges();
     test_clear_focus_ignores_text();
     test_submit_consumes_buffer();
 

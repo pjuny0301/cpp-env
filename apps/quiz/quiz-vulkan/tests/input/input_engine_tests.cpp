@@ -198,6 +198,70 @@ void test_ime_composition_suppresses_text_and_key_events()
     require(engine.text_model().preedit_text().empty(), "ime commit clears preedit");
 }
 
+void test_ime_preedit_commit_edges()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    engine.focus_text_target("answer");
+
+    std::vector<input_event> events =
+        engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 100, utf8(u8"ㅎ")));
+    require(events.size() == 1, "first preedit emits one event");
+    require(require_event<ime_event>(events, 0).utf8_text == utf8(u8"ㅎ"), "first preedit text is emitted");
+    require(engine.text_model().display_text() == utf8(u8"ㅎ"), "first preedit is displayed");
+
+    events = engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 110, utf8(u8"하")));
+    require(events.size() == 1, "replacement preedit emits one event");
+    require(require_event<ime_event>(events, 0).utf8_text == utf8(u8"하"), "replacement preedit text is emitted");
+    require(engine.text_model().text().empty(), "replacement preedit does not commit text");
+    require(engine.text_model().display_text() == utf8(u8"하"), "replacement preedit replaces displayed preedit");
+
+    events = engine.process_raw_event(ime(raw_platform_ime_phase::commit, 120, utf8(u8"한")));
+    require(events.size() == 1, "explicit ime commit emits one event");
+    const ime_event& commit = require_event<ime_event>(events, 0);
+    require(commit.kind == ime_event_kind::commit, "explicit ime commit emits commit kind");
+    require(commit.utf8_text == utf8(u8"한"), "explicit ime commit preserves final text");
+    require(engine.text_model().text() == utf8(u8"한"), "explicit ime commit updates committed text");
+    require(engine.text_model().preedit_text().empty(), "explicit ime commit clears preedit");
+
+    events = engine.process_raw_event(text(130, "x"));
+    require(events.size() == 1, "raw text resumes after explicit ime commit");
+    require(engine.text_model().text() == std::string(utf8(u8"한")) + "x", "raw text appends after ime commit");
+}
+
+void test_empty_ime_commit_and_end_cancel_preedit()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    engine.focus_text_target("answer");
+
+    require(engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 100, "draft")).size() == 1,
+        "preedit before empty commit starts composition");
+    std::vector<input_event> events = engine.process_raw_event(ime(raw_platform_ime_phase::commit, 110));
+    require(events.size() == 1, "empty ime commit emits cancellation");
+    const ime_event& empty_commit = require_event<ime_event>(events, 0);
+    require(empty_commit.kind == ime_event_kind::cancel, "empty ime commit emits cancel kind");
+    require(empty_commit.utf8_text.empty(), "empty ime commit cancel carries no text");
+    require(engine.text_model().text().empty(), "empty ime commit does not append text");
+    require(engine.text_model().preedit_text().empty(), "empty ime commit clears preedit");
+
+    require(engine.process_raw_event(text(120, "a")).size() == 1, "raw text resumes after empty ime commit");
+    require(engine.text_model().text() == "a", "raw text is committed after empty ime commit");
+
+    require(engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 130, "draft")).size() == 1,
+        "preedit before empty composition end starts composition");
+    events = engine.process_raw_event(ime(raw_platform_ime_phase::composition_end, 140));
+    require(events.size() == 1, "empty composition end emits cancellation");
+    const ime_event& empty_end = require_event<ime_event>(events, 0);
+    require(empty_end.kind == ime_event_kind::cancel, "empty composition end emits cancel kind");
+    require(engine.text_model().text() == "a", "empty composition end preserves committed text");
+    require(engine.text_model().preedit_text().empty(), "empty composition end clears preedit");
+}
+
 void test_focus_loss_cancels_composition_and_pointer_state()
 {
     using namespace quiz_vulkan;
@@ -231,6 +295,8 @@ int main()
     test_primary_pointer_gestures_and_secondary_filter();
     test_text_key_flow();
     test_ime_composition_suppresses_text_and_key_events();
+    test_ime_preedit_commit_edges();
+    test_empty_ime_commit_and_end_cancel_preedit();
     test_focus_loss_cancels_composition_and_pointer_state();
 
     std::cout << "input_engine_tests passed\n";

@@ -4,13 +4,11 @@
 #include "core/domain/quiz_model.hpp"
 #include "core/layout/layout_placer.h"
 #include "core/scene/scene_layout_data.h"
-#include "platform/platform_shell.h"
 #include "render/vulkan/vulkan_renderer.h"
 
 #include <cstddef>
 #include <string>
 #include <string_view>
-#include <vector>
 
 namespace quiz_vulkan {
 
@@ -26,7 +24,6 @@ struct app_render_frame {
     app_render_report report;
     scene::placed_scene placed_scene;
     render::vulkan_renderer_framebuffer framebuffer;
-    std::vector<platform_text_overlay> text_overlays;
 };
 
 struct app_render_view_state {

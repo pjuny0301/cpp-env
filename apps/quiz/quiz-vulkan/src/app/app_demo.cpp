@@ -6,11 +6,9 @@
 #include "core/ui/ui_renderer.h"
 
 #include <algorithm>
-#include <cstdint>
 #include <sstream>
 #include <string_view>
 #include <vector>
-#include <utility>
 
 namespace quiz_vulkan {
 namespace {
@@ -35,108 +33,6 @@ public:
         return scene::scene_size{width, 20.0f * line_count};
     }
 };
-
-bool has_visible_area(const scene::scene_rect& rect)
-{
-    return rect.width > 0.0f && rect.height > 0.0f;
-}
-
-scene::scene_rect active_clip_rect(
-    const scene::scene_rect& viewport,
-    const std::vector<scene::scene_rect>& clip_stack)
-{
-    scene::scene_rect clip = viewport;
-    for (const scene::scene_rect& scope : clip_stack) {
-        clip = clip.clipped_to(scope);
-    }
-    return clip;
-}
-
-std::uint8_t color_channel_byte(float value)
-{
-    return static_cast<std::uint8_t>((std::clamp(value, 0.0f, 1.0f) * 255.0f) + 0.5f);
-}
-
-std::string concatenate_text_runs(const std::vector<scene::scene_text_run>& text_runs)
-{
-    std::string text;
-    for (const scene::scene_text_run& run : text_runs) {
-        text.append(run.text);
-    }
-    return text;
-}
-
-platform_text_overlay make_text_overlay(
-    const ui::ui_draw_command& command,
-    const scene::scene_rect& clipped_bounds,
-    const scene::scene_rect& viewport,
-    std::size_t framebuffer_width,
-    std::size_t framebuffer_height)
-{
-    const float scale_x = static_cast<float>(framebuffer_width) / viewport.width;
-    const float scale_y = static_cast<float>(framebuffer_height) / viewport.height;
-
-    platform_text_overlay overlay;
-    overlay.x = (clipped_bounds.x - viewport.x) * scale_x;
-    overlay.y = (clipped_bounds.y - viewport.y) * scale_y;
-    overlay.width = clipped_bounds.width * scale_x;
-    overlay.height = clipped_bounds.height * scale_y;
-    overlay.text = concatenate_text_runs(command.text_runs);
-    overlay.red = color_channel_byte(command.paint.color.red);
-    overlay.green = color_channel_byte(command.paint.color.green);
-    overlay.blue = color_channel_byte(command.paint.color.blue);
-    overlay.alpha = color_channel_byte(command.paint.color.alpha);
-    return overlay;
-}
-
-std::vector<platform_text_overlay> make_text_overlays(
-    const ui::ui_draw_list& draw_list,
-    const scene::scene_rect& viewport,
-    std::size_t framebuffer_width,
-    std::size_t framebuffer_height)
-{
-    std::vector<platform_text_overlay> overlays;
-    if (!has_visible_area(viewport) || framebuffer_width == 0 || framebuffer_height == 0) {
-        return overlays;
-    }
-
-    std::vector<scene::scene_rect> clip_stack;
-    for (const ui::ui_draw_command& command : draw_list.commands) {
-        if (command.type == ui::ui_draw_command_type::push_clip) {
-            clip_stack.push_back(command.bounds.clipped_to(active_clip_rect(viewport, clip_stack)));
-            continue;
-        }
-
-        if (command.type == ui::ui_draw_command_type::pop_clip) {
-            if (!clip_stack.empty()) {
-                clip_stack.pop_back();
-            }
-            continue;
-        }
-
-        if (command.type != ui::ui_draw_command_type::text || !command.paint.color.visible()
-            || command.text_runs.empty()) {
-            continue;
-        }
-
-        scene::scene_rect clipped_bounds = command.content_bounds.clipped_to(active_clip_rect(viewport, clip_stack));
-        if (!has_visible_area(clipped_bounds)) {
-            continue;
-        }
-
-        platform_text_overlay overlay = make_text_overlay(
-            command,
-            clipped_bounds,
-            viewport,
-            framebuffer_width,
-            framebuffer_height);
-        if (!overlay.text.empty() && overlay.alpha > 0) {
-            overlays.push_back(std::move(overlay));
-        }
-    }
-
-    return overlays;
-}
 
 class app_render_view_state_modifier final : public scene::scene_modifier {
 public:
@@ -234,11 +130,12 @@ app_render_frame render_app_frame(
         environment.keyboard.bottom_inset = 260.0f;
     }
 
-    scene::scene_modifier_context modifier_context;
-    modifier_context.current_scene = &scene_data;
-    modifier_context.viewport = viewport;
-    modifier_context.layout_environment = environment;
-    modifier_context.route_state = scene_data.route_state();
+    scene::scene_modifier_context modifier_context{
+        .current_scene = &scene_data,
+        .viewport = viewport,
+        .layout_environment = environment,
+        .route_state = scene_data.route_state(),
+    };
     scene::scene_layout_edit_data view_state_edit_data("app_render_view_state");
     app_render_view_state_modifier{view_state}.modify(modifier_context, view_state_edit_data);
     view_state_edit_data.finish_patch().apply_to(scene_data);
@@ -250,8 +147,7 @@ app_render_frame render_app_frame(
         text_metrics);
     const ui::ui_draw_list draw_list = ui::ui_renderer{}.build_draw_list(frame.placed_scene);
 
-    render::vulkan_renderer_options renderer_options;
-    renderer_options.viewport = environment.viewport;
+    render::vulkan_renderer_options renderer_options{.viewport = environment.viewport};
     render::vulkan_renderer renderer(renderer_options);
     renderer.submit(draw_list);
 
@@ -260,11 +156,6 @@ app_render_frame render_app_frame(
     frame.report.frame_stats = renderer.last_frame_stats();
     frame.report.frame_summary = renderer.last_frame_summary();
     frame.framebuffer = renderer.last_framebuffer();
-    frame.text_overlays = make_text_overlays(
-        renderer.last_draw_list(),
-        renderer.options().viewport,
-        frame.framebuffer.width,
-        frame.framebuffer.height);
     return frame;
 }
 

@@ -36,7 +36,7 @@ target_sources(
         FILES
             src/platform/platform_shell.h
 )
-target_compile_features(quiz_vulkan_platform_shell PUBLIC cxx_std_20)
+target_compile_features(quiz_vulkan_platform_shell PUBLIC cxx_std_23)
 target_include_directories(quiz_vulkan_platform_shell PUBLIC src)
 
 if(WIN32)
@@ -70,7 +70,7 @@ target_sources(
             src/core/domain/quiz_model.hpp
             src/core/domain/quiz_session.hpp
 )
-target_compile_features(quiz_vulkan_domain PUBLIC cxx_std_20)
+target_compile_features(quiz_vulkan_domain PUBLIC cxx_std_23)
 target_include_directories(quiz_vulkan_domain PUBLIC src)
 
 add_library(quiz_vulkan_scene INTERFACE)
@@ -88,7 +88,7 @@ target_sources(
             src/core/layout/input_hit_test.h
             src/core/layout/layout_placer.h
 )
-target_compile_features(quiz_vulkan_scene INTERFACE cxx_std_20)
+target_compile_features(quiz_vulkan_scene INTERFACE cxx_std_23)
 target_include_directories(quiz_vulkan_scene INTERFACE src)
 
 add_library(quiz_vulkan_ui STATIC)
@@ -104,7 +104,7 @@ target_sources(
             src/core/ui/quiz_screens.hpp
             src/core/ui/ui_renderer.h
 )
-target_compile_features(quiz_vulkan_ui PUBLIC cxx_std_20)
+target_compile_features(quiz_vulkan_ui PUBLIC cxx_std_23)
 target_include_directories(quiz_vulkan_ui PUBLIC src)
 target_link_libraries(quiz_vulkan_ui PUBLIC quiz_vulkan_domain quiz_vulkan_scene)
 
@@ -119,7 +119,7 @@ target_sources(
         FILES
             src/render/vulkan/vulkan_renderer.h
 )
-target_compile_features(quiz_vulkan_renderer PUBLIC cxx_std_20)
+target_compile_features(quiz_vulkan_renderer PUBLIC cxx_std_23)
 target_include_directories(quiz_vulkan_renderer PUBLIC src)
 target_link_libraries(quiz_vulkan_renderer PUBLIC quiz_vulkan_ui)
 
@@ -141,7 +141,7 @@ target_sources(
             src/app/app_demo.h
             src/app/app_state.h
 )
-target_compile_features(quiz_vulkan PRIVATE cxx_std_20)
+target_compile_features(quiz_vulkan PRIVATE cxx_std_23)
 target_link_libraries(quiz_vulkan PRIVATE quiz_vulkan_platform_shell quiz_vulkan_renderer quiz_vulkan_domain)
 quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan)
 

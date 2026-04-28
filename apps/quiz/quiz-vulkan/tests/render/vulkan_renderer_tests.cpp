@@ -6,6 +6,7 @@
 
 #include <cassert>
 #include <cstddef>
+#include <cstdio>
 #include <optional>
 #include <string>
 #include <utility>
@@ -30,6 +31,9 @@ public:
 
 void require(bool condition, const char* message)
 {
+    if (!condition) {
+        std::fprintf(stderr, "Requirement failed: %s\n", message);
+    }
     assert((condition) && message);
 }
 
@@ -247,7 +251,8 @@ void test_scene_snapshot_submission()
     assert(!expected_draw_list.empty());
 
     render::vulkan_renderer renderer;
-    renderer.submit(snapshot);
+    // The Vulkan boundary intentionally consumes UI draw commands, not placed_scene.
+    renderer.submit(expected_draw_list);
 
     const render::vulkan_renderer_frame_stats& stats = renderer.last_frame_stats();
     assert(stats.command_count == expected_draw_list.size());
@@ -348,6 +353,8 @@ void test_semantic_scene_stats_distinguish_quiz_draw_work()
     using namespace quiz_vulkan;
 
     const scene::placed_scene placed_scene = make_quiz_semantic_scene();
+    const ui::ui_draw_list draw_list = ui::ui_renderer{}.build_draw_list(placed_scene);
+    require(!draw_list.empty(), "semantic scene produces UI draw commands before Vulkan submission");
 
     render::vulkan_renderer_options options;
     options.viewport = placed_scene.environment.viewport;
@@ -355,7 +362,8 @@ void test_semantic_scene_stats_distinguish_quiz_draw_work()
     options.fallback_surface_height = 64;
 
     render::vulkan_renderer renderer(options);
-    renderer.submit(placed_scene);
+    // Renderer callers must submit ui_draw_list; placed_scene remains owned by layout/UI.
+    renderer.submit(draw_list);
 
     const render::vulkan_renderer_frame_stats& stats = renderer.last_frame_stats();
     require(stats.command_count == 9, "semantic scene emits expected draw command count");
@@ -432,10 +440,11 @@ void test_app_snapshot_renders_nonblank_frame()
     options.fallback_surface_height = 144;
 
     render::vulkan_renderer renderer(options);
-    renderer.submit(placed_scene);
+    // The Vulkan renderer receives only the explicit UI draw list built above.
+    renderer.submit(expected_draw_list);
 
     const render::vulkan_renderer_frame_stats& stats = renderer.last_frame_stats();
-    require(stats.command_count == expected_draw_list.size(), "renderer consumed the placed-scene draw list");
+    require(stats.command_count == expected_draw_list.size(), "renderer consumed the explicit UI draw list");
     require(stats.draw_call_count >= 18, "app snapshot produces a substantial draw call set");
     require(stats.visible_draw_call_count == stats.draw_call_count, "all app draw calls are visible");
     require(stats.quad_count >= 7, "app frame includes background and button quads");

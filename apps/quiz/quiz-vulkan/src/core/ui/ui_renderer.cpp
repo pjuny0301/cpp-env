@@ -208,6 +208,10 @@ ui_draw_command make_command(
     command.bounds = bounds;
     command.content_bounds = content_bounds;
     command.border_radius = node.style.border_radius;
+    command.semantics = node.semantics;
+    command.action_binding = node.action_binding;
+    command.has_action_binding = node.has_action_binding;
+    command.input_enabled = node.input_enabled;
     return command;
 }
 

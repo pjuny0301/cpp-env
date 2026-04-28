@@ -45,6 +45,10 @@ struct ui_draw_command {
     float border_radius = 0.0f;
     std::vector<scene::scene_text_run> text_runs;
     scene::scene_image_ref image;
+    scene::scene_node_semantics semantics;
+    scene::scene_action_binding action_binding;
+    bool has_action_binding = false;
+    bool input_enabled = true;
 };
 
 struct ui_draw_list {

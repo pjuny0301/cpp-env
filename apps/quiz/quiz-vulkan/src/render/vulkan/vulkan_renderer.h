@@ -75,7 +75,6 @@ public:
     vulkan_renderer() = default;
     explicit vulkan_renderer(vulkan_renderer_options options);
 
-    void submit(const scene::placed_scene& placed_scene);
     void submit(const ui::ui_draw_list& draw_list);
     void submit(const std::vector<ui::ui_draw_command>& commands);
     void clear();
@@ -89,9 +88,7 @@ public:
     void set_options(vulkan_renderer_options options);
 
 private:
-    static vulkan_renderer_frame_stats count_commands(
-        const ui::ui_draw_list& draw_list,
-        const scene::placed_scene* placed_scene = nullptr);
+    static vulkan_renderer_frame_stats count_commands(const ui::ui_draw_list& draw_list);
     static vulkan_renderer_frame_summary summarize_cpu_fallback(
         const ui::ui_draw_list& draw_list,
         const vulkan_renderer_frame_stats& stats,

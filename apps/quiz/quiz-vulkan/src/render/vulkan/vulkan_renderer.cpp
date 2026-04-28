@@ -30,17 +30,6 @@ bool is_draw_command(ui::ui_draw_command_type type)
     return false;
 }
 
-const scene::placed_scene_node* find_command_node(
-    const scene::placed_scene* placed_scene,
-    const ui::ui_draw_command& command)
-{
-    if (placed_scene == nullptr) {
-        return nullptr;
-    }
-
-    return placed_scene->find_node(command.node_id);
-}
-
 bool remember_node_id(std::vector<scene::scene_node_id>& node_ids, const scene::scene_node_id& node_id)
 {
     if (std::find(node_ids.begin(), node_ids.end(), node_id) != node_ids.end()) {
@@ -53,27 +42,27 @@ bool remember_node_id(std::vector<scene::scene_node_id>& node_ids, const scene::
 
 void count_input_draw_node(
     vulkan_renderer_frame_stats& stats,
-    const scene::placed_scene_node& node,
+    const ui::ui_draw_command& command,
     std::vector<scene::scene_node_id>& input_enabled_draw_node_ids,
     std::vector<scene::scene_node_id>& disabled_draw_node_ids)
 {
-    if (!node.input_enabled) {
-        if (remember_node_id(disabled_draw_node_ids, node.id)) {
+    if (!command.input_enabled) {
+        if (remember_node_id(disabled_draw_node_ids, command.node_id)) {
             ++stats.disabled_draw_node_count;
         }
         return;
     }
 
-    if (node.has_action_binding && remember_node_id(input_enabled_draw_node_ids, node.id)) {
+    if (command.has_action_binding && remember_node_id(input_enabled_draw_node_ids, command.node_id)) {
         ++stats.input_enabled_draw_node_count;
     }
 }
 
 void count_semantic_draw_command(
     vulkan_renderer_frame_stats& stats,
-    const scene::placed_scene_node& node)
+    const ui::ui_draw_command& command)
 {
-    switch (node.semantics.role) {
+    switch (command.semantics.role) {
     case scene::scene_node_role::quiz_option:
         ++stats.quiz_option_draw_command_count;
         break;
@@ -225,14 +214,6 @@ vulkan_renderer::vulkan_renderer(vulkan_renderer_options options)
 {
 }
 
-void vulkan_renderer::submit(const scene::placed_scene& placed_scene)
-{
-    last_draw_list_ = ui::ui_renderer{}.build_draw_list(placed_scene);
-    last_frame_stats_ = count_commands(last_draw_list_, &placed_scene);
-    last_frame_summary_ = summarize_cpu_fallback(last_draw_list_, last_frame_stats_, options_);
-    last_framebuffer_ = rasterize_cpu_fallback_framebuffer(last_draw_list_, options_);
-}
-
 void vulkan_renderer::submit(const ui::ui_draw_list& draw_list)
 {
     last_draw_list_ = draw_list;
@@ -287,8 +268,7 @@ void vulkan_renderer::set_options(vulkan_renderer_options options)
 }
 
 vulkan_renderer_frame_stats vulkan_renderer::count_commands(
-    const ui::ui_draw_list& draw_list,
-    const scene::placed_scene* placed_scene)
+    const ui::ui_draw_list& draw_list)
 {
     vulkan_renderer_frame_stats stats;
     stats.command_count = draw_list.commands.size();
@@ -302,14 +282,12 @@ vulkan_renderer_frame_stats vulkan_renderer::count_commands(
                 ++stats.visible_draw_call_count;
             }
 
-            if (const scene::placed_scene_node* node = find_command_node(placed_scene, command)) {
-                count_input_draw_node(
-                    stats,
-                    *node,
-                    input_enabled_draw_node_ids,
-                    disabled_draw_node_ids);
-                count_semantic_draw_command(stats, *node);
-            }
+            count_input_draw_node(
+                stats,
+                command,
+                input_enabled_draw_node_ids,
+                disabled_draw_node_ids);
+            count_semantic_draw_command(stats, command);
         }
 
         switch (command.type) {

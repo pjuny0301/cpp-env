@@ -51,6 +51,39 @@ public:
     mutable int decode_request_count = 0;
 };
 
+class unknown_pixel_format_decoder final : public quiz_vulkan::render::image_decoder_interface {
+public:
+    bool supports(const quiz_vulkan::render::render_image_decode_request&) const override
+    {
+        ++support_request_count;
+        return true;
+    }
+
+    quiz_vulkan::render::render_image_decode_result decode(
+        const quiz_vulkan::render::render_image_decode_request&) const override
+    {
+        ++decode_request_count;
+        return quiz_vulkan::render::render_image_decode_result{
+            .status = quiz_vulkan::render::render_image_decode_status::decoded,
+            .image = quiz_vulkan::render::render_decoded_image{
+                .width = 1,
+                .height = 1,
+                .pixel_format = static_cast<quiz_vulkan::render::render_image_pixel_format>(99),
+                .pixels = {
+                    std::byte{0xff},
+                    std::byte{0x00},
+                    std::byte{0x00},
+                    std::byte{0xff},
+                },
+            },
+            .diagnostic = {},
+        };
+    }
+
+    mutable int support_request_count = 0;
+    mutable int decode_request_count = 0;
+};
+
 void test_sampler_defaults_are_appended_to_render_image_ref()
 {
     using namespace quiz_vulkan::render;
@@ -506,6 +539,41 @@ void test_texture_cache_rejects_malformed_decoded_payload()
     require(decoder.decode_request_count == 2, "malformed payload retry decodes again");
 }
 
+void test_texture_cache_rejects_unknown_pixel_format()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/unknown-format.fake"})
+                                                    .source;
+    unknown_pixel_format_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+
+    const render_decoded_image unknown_format_image{
+        .width = 1,
+        .height = 1,
+        .pixel_format = static_cast<render_image_pixel_format>(99),
+        .pixels = {std::byte{0xff}, std::byte{0x00}, std::byte{0x00}, std::byte{0xff}},
+    };
+    require(
+        render_image_pixel_format_byte_count(unknown_format_image.pixel_format) == 0,
+        "unknown pixel format has no byte count");
+    require(
+        expected_render_decoded_image_byte_count(unknown_format_image) == 0,
+        "unknown pixel format has no expected payload size");
+    require(!has_valid_render_decoded_image_payload(unknown_format_image), "unknown pixel format is invalid");
+
+    const render_image_texture_result result = cache.acquire_texture(
+        render_image_texture_request{.source = source, .sampler = render_image_sampler_policy{}});
+    require(!result.ok(), "unknown pixel format does not create a texture");
+    require(result.status == render_image_texture_status::upload_failed, "unknown pixel format reports upload failure");
+    require(!result.texture.valid(), "unknown pixel format returns no texture handle");
+    require(!result.diagnostic.empty(), "unknown pixel format includes diagnostic");
+    require(decoder.support_request_count == 1, "unknown pixel format reached support check");
+    require(decoder.decode_request_count == 1, "unknown pixel format reached decode");
+}
+
 } // namespace
 
 int main()
@@ -523,5 +591,6 @@ int main()
     test_texture_cache_reports_explicit_failures();
     test_texture_cache_propagates_decoder_failures();
     test_texture_cache_rejects_malformed_decoded_payload();
+    test_texture_cache_rejects_unknown_pixel_format();
     return 0;
 }

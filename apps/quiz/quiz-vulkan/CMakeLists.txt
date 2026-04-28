@@ -225,6 +225,8 @@ add_library(quiz_vulkan_renderer STATIC)
 target_sources(
     quiz_vulkan_renderer
     PRIVATE
+        src/render/vulkan/vulkan_frame_plan.cpp
+        src/render/vulkan/vulkan_frame_plan.h
         src/render/vulkan/vulkan_renderer.cpp
     PUBLIC
         FILE_SET HEADERS

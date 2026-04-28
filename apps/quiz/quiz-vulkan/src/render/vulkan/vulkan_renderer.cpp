@@ -1,4 +1,5 @@
 #include "render/vulkan/vulkan_renderer.h"
+#include "render/vulkan/vulkan_frame_plan.h"
 
 #include <algorithm>
 #include <cmath>
@@ -28,37 +29,6 @@ bool is_draw_command(render_draw_command_type type)
     }
 
     return false;
-}
-
-render_rect intersect_rect(const render_rect& left, const render_rect& right)
-{
-    const float x0 = std::max(left.x, right.x);
-    const float y0 = std::max(left.y, right.y);
-    const float x1 = std::min(left.right(), right.right());
-    const float y1 = std::min(left.bottom(), right.bottom());
-
-    if (x1 <= x0 || y1 <= y0) {
-        return render_rect{x0, y0, 0.0f, 0.0f};
-    }
-
-    return render_rect{x0, y0, x1 - x0, y1 - y0};
-}
-
-bool rect_was_clipped(const render_rect& original, const render_rect& clipped)
-{
-    return clipped.x > original.x || clipped.y > original.y
-        || clipped.right() < original.right() || clipped.bottom() < original.bottom();
-}
-
-render_rect active_clip_rect(
-    const render_rect& viewport,
-    const std::vector<render_rect>& clip_stack)
-{
-    render_rect clip = viewport;
-    for (const render_rect& scope : clip_stack) {
-        clip = intersect_rect(clip, scope);
-    }
-    return clip;
 }
 
 int surface_coordinate(float value, float origin, float extent, std::size_t surface_extent, bool upper)
@@ -270,47 +240,24 @@ vulkan_renderer_frame_summary vulkan_renderer::summarize_cpu_fallback(
     }
 
     std::vector<unsigned char> coverage(options.fallback_surface_width * options.fallback_surface_height, 0);
-    std::vector<render_rect> clip_stack;
+    const vulkan_backend::vulkan_frame_plan plan = vulkan_backend::build_vulkan_frame_plan(
+        draw_list,
+        vulkan_backend::vulkan_frame_plan_options{
+            .viewport = options.viewport,
+            .surface_width = options.fallback_surface_width,
+            .surface_height = options.fallback_surface_height,
+        });
 
-    for (const render_draw_command& command : draw_list.commands) {
-        if (command.type == render_draw_command_type::push_clip) {
-            clip_stack.push_back(intersect_rect(command.bounds, active_clip_rect(options.viewport, clip_stack)));
-            continue;
-        }
+    summary.clipped_draw_call_count = plan.clipped_draw_call_count;
+    summary.discarded_draw_call_count = plan.discarded_draw_call_count;
 
-        if (command.type == render_draw_command_type::pop_clip) {
-            if (!clip_stack.empty()) {
-                clip_stack.pop_back();
-            }
-            continue;
-        }
-
-        if (!is_draw_command(command.type)) {
-            continue;
-        }
-
-        if (!command.paint.color.visible() || !has_visible_area(command.bounds)) {
-            ++summary.discarded_draw_call_count;
-            continue;
-        }
-
-        const render_rect clip = active_clip_rect(options.viewport, clip_stack);
-        const render_rect clipped_bounds = intersect_rect(command.bounds, clip);
-        if (!has_visible_area(clipped_bounds)) {
-            ++summary.discarded_draw_call_count;
-            continue;
-        }
-
-        if (rect_was_clipped(command.bounds, clipped_bounds)) {
-            ++summary.clipped_draw_call_count;
-        }
-
+    for (const vulkan_backend::vulkan_draw_batch& batch : plan.batches) {
         summary.shaded_pixel_count += shade_rect(
             coverage,
             options.viewport,
             options.fallback_surface_width,
             options.fallback_surface_height,
-            clipped_bounds);
+            batch.clipped_bounds);
     }
 
     return summary;
@@ -333,34 +280,16 @@ vulkan_renderer_framebuffer vulkan_renderer::rasterize_cpu_fallback_framebuffer(
         return framebuffer;
     }
 
-    std::vector<render_rect> clip_stack;
+    const vulkan_backend::vulkan_frame_plan plan = vulkan_backend::build_vulkan_frame_plan(
+        draw_list,
+        vulkan_backend::vulkan_frame_plan_options{
+            .viewport = options.viewport,
+            .surface_width = framebuffer.width,
+            .surface_height = framebuffer.height,
+        });
 
-    for (const render_draw_command& command : draw_list.commands) {
-        if (command.type == render_draw_command_type::push_clip) {
-            clip_stack.push_back(intersect_rect(command.bounds, active_clip_rect(options.viewport, clip_stack)));
-            continue;
-        }
-
-        if (command.type == render_draw_command_type::pop_clip) {
-            if (!clip_stack.empty()) {
-                clip_stack.pop_back();
-            }
-            continue;
-        }
-
-        if (!is_draw_command(command.type) || command.type == render_draw_command_type::text
-            || !command.paint.color.visible()) {
-            continue;
-        }
-
-        const render_rect raster_bounds = command.bounds;
-        if (!has_visible_area(raster_bounds)) {
-            continue;
-        }
-
-        const render_rect clip = active_clip_rect(options.viewport, clip_stack);
-        const render_rect clipped_bounds = intersect_rect(raster_bounds, clip);
-        if (!has_visible_area(clipped_bounds)) {
+    for (const vulkan_backend::vulkan_draw_batch& batch : plan.batches) {
+        if (batch.kind == vulkan_backend::vulkan_batch_kind::text) {
             continue;
         }
 
@@ -369,8 +298,8 @@ vulkan_renderer_framebuffer vulkan_renderer::rasterize_cpu_fallback_framebuffer(
             options.viewport,
             framebuffer.width,
             framebuffer.height,
-            clipped_bounds,
-            command.paint.color);
+            batch.clipped_bounds,
+            batch.paint.color);
     }
 
     return framebuffer;

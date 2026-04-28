@@ -1,4 +1,5 @@
 #include "render/vulkan/vulkan_renderer.h"
+#include "render/vulkan/vulkan_frame_plan.h"
 
 #include <cassert>
 #include <cstddef>
@@ -263,6 +264,87 @@ void test_degenerate_surface_discards_draw_calls()
     require(count_nonzero_framebuffer_pixels(renderer.last_framebuffer()) == 0, "degenerate viewport leaves framebuffer blank");
 }
 
+void test_vulkan_frame_plan_builds_scissored_batches_from_render_contracts()
+{
+    using namespace quiz_vulkan::render;
+
+    render_draw_command clip{
+        .type = render_draw_command_type::push_clip,
+        .node_id = "clip",
+        .parent_node_id = {},
+        .depth = 0,
+        .bounds = render_rect{10.0f, 20.0f, 50.0f, 40.0f},
+        .content_bounds = render_rect{10.0f, 20.0f, 50.0f, 40.0f},
+        .paint = {},
+        .border_radius = 0.0f,
+        .text_runs = {},
+        .image = {},
+    };
+    render_draw_command quad = make_quad_command(
+        "quad",
+        render_rect{0.0f, 0.0f, 30.0f, 40.0f},
+        render_color{1.0f, 0.0f, 0.0f, 1.0f});
+    render_draw_command text = make_text_command(
+        "text",
+        render_rect{20.0f, 30.0f, 10.0f, 10.0f},
+        "batch");
+    render_draw_command transparent = make_quad_command(
+        "transparent",
+        render_rect{20.0f, 30.0f, 10.0f, 10.0f},
+        render_color{0.0f, 0.0f, 0.0f, 0.0f});
+    render_draw_command pop{
+        .type = render_draw_command_type::pop_clip,
+        .node_id = "clip",
+        .parent_node_id = {},
+        .depth = 0,
+        .bounds = clip.bounds,
+        .content_bounds = clip.content_bounds,
+        .paint = {},
+        .border_radius = 0.0f,
+        .text_runs = {},
+        .image = {},
+    };
+
+    render_draw_list draw_list;
+    draw_list.commands = {clip, quad, text, transparent, pop};
+
+    const vulkan_backend::vulkan_frame_plan plan = vulkan_backend::build_vulkan_frame_plan(
+        draw_list,
+        vulkan_backend::vulkan_frame_plan_options{
+            .viewport = render_rect{0.0f, 0.0f, 100.0f, 100.0f},
+            .surface_width = 10,
+            .surface_height = 10,
+        });
+
+    require(plan.batches.size() == 2, "frame plan emits drawable quad and text batches");
+    require(plan.clipped_draw_call_count == 1, "frame plan records clipped backend batch");
+    require(plan.discarded_draw_call_count == 1, "frame plan discards transparent backend batch");
+
+    const vulkan_backend::vulkan_draw_batch& quad_batch = plan.batches[0];
+    require(quad_batch.kind == vulkan_backend::vulkan_batch_kind::quad, "first backend batch is a quad");
+    require(quad_batch.command_index == 1, "quad backend batch keeps source command index");
+    require(quad_batch.clipped_bounds.x == 10.0f, "quad clipped x");
+    require(quad_batch.clipped_bounds.y == 20.0f, "quad clipped y");
+    require(quad_batch.clipped_bounds.width == 20.0f, "quad clipped width");
+    require(quad_batch.clipped_bounds.height == 20.0f, "quad clipped height");
+    require(quad_batch.scissor.x == 1, "quad scissor x maps to surface");
+    require(quad_batch.scissor.y == 2, "quad scissor y maps to surface");
+    require(quad_batch.scissor.width == 2, "quad scissor width maps to surface");
+    require(quad_batch.scissor.height == 2, "quad scissor height maps to surface");
+    require(quad_batch.vertices[0].x == 10.0f, "quad vertex 0 x uses clipped bounds");
+    require(quad_batch.vertices[0].y == 20.0f, "quad vertex 0 y uses clipped bounds");
+    require(quad_batch.vertices[2].x == 30.0f, "quad vertex 2 x uses clipped bounds");
+    require(quad_batch.vertices[2].y == 40.0f, "quad vertex 2 y uses clipped bounds");
+
+    const vulkan_backend::vulkan_draw_batch& text_batch = plan.batches[1];
+    require(text_batch.kind == vulkan_backend::vulkan_batch_kind::text, "text command becomes a text backend batch");
+    require(text_batch.command_index == 2, "text backend batch keeps source command index");
+    require(text_batch.scissor.x == 2, "text scissor x maps to surface");
+    require(text_batch.scissor.y == 3, "text scissor y maps to surface");
+    require(text_batch.scissor.width == 1, "text scissor width maps to surface");
+    require(text_batch.scissor.height == 1, "text scissor height maps to surface");
+}
+
 } // namespace
 
 int main()
@@ -270,5 +352,6 @@ int main()
     test_draw_list_submission_counts_generic_work();
     test_cpu_fallback_clips_and_discards();
     test_degenerate_surface_discards_draw_calls();
+    test_vulkan_frame_plan_builds_scissored_batches_from_render_contracts();
     return 0;
 }

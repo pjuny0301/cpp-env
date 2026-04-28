@@ -1,18 +1,18 @@
 #include "app/app.h"
 
+#include "assets/asset_resolver.h"
+#include "assets/deck_source_asset_adapter.h"
+#include "app/app_deck_loader.h"
 #include "app/app_demo.h"
 #include "app/app_input_router.h"
 #include "app/app_render_pipeline.h"
 #include "app/app_state.h"
-#include "core/domain/deck_artifact_loader.hpp"
 #include "core/input/input_engine.h"
 
 #include <chrono>
 #include <cstdint>
-#include <filesystem>
 #include <iostream>
 #include <optional>
-#include <sstream>
 #include <string>
 #include <thread>
 #include <utility>
@@ -53,31 +53,28 @@ app_render_frame render_and_report(
 
 std::vector<domain::deck> load_initial_decks(const app_config& config, platform_shell& shell)
 {
-    if (config.deck_artifacts.empty()) {
+    if (config.deck_artifacts.empty() && config.deck_sources.requests.empty()) {
         return {make_demo_deck()};
     }
 
-    std::vector<domain::deck> decks;
-    for (const std::filesystem::path& artifact_path : config.deck_artifacts) {
-        const domain::deck_artifact_load_result result = domain::load_deck_artifact_file(artifact_path);
-        if (result.ok() && result.value.has_value()) {
-            shell.show_message("loaded deck artifact: " + artifact_path.string());
-            decks.push_back(*result.value);
-            continue;
-        }
+    assets::normalizing_asset_resolver asset_resolver;
+    assets::asset_deck_source_provider deck_source_provider(
+        asset_resolver,
+        assets::deck_source_asset_adapter_config{
+            .local_root = config.deck_sources.local_root,
+            .asset_root = config.deck_sources.asset_root,
+        });
 
-        std::ostringstream message;
-        message << "failed to load deck artifact: " << artifact_path.string();
-        shell.show_message(message.str());
-
-        for (const domain::deck_artifact_parse_error& error : result.errors) {
-            std::ostringstream error_line;
-            error_line << "  line " << error.line << ": " << error.message;
-            shell.show_message(error_line.str());
-        }
+    app_deck_load_result load_result = load_app_decks(app_deck_load_request{
+        .deck_artifacts = config.deck_artifacts,
+        .deck_sources = config.deck_sources.requests,
+        .deck_source_provider = &deck_source_provider,
+    });
+    for (const std::string& message : load_result.messages) {
+        shell.show_message(message);
     }
 
-    return decks;
+    return load_result.decks;
 }
 
 std::int64_t now_ms()

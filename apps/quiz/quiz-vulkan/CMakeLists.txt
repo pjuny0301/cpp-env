@@ -294,6 +294,7 @@ target_sources(
     PRIVATE
         src/app/app_action_router.cpp
         src/app/app.cpp
+        src/app/app_deck_loader.cpp
         src/app/app_demo.cpp
         src/app/app_input_router.cpp
         src/app/app_state.cpp
@@ -304,6 +305,7 @@ target_sources(
         FILES
             src/app/app_action_router.h
             src/app/app.h
+            src/app/app_deck_loader.h
             src/app/app_demo.h
             src/app/app_input_router.h
             src/app/app_render_pipeline.h
@@ -320,6 +322,7 @@ target_link_libraries(
         quiz_vulkan_text_engine
         quiz_vulkan_text_scene_bridge
         quiz_vulkan_domain
+        quiz_vulkan_deck_source_asset_adapter
         quiz_vulkan_input
         quiz_vulkan_audio_contract
 )
@@ -369,6 +372,20 @@ if(BUILD_TESTING)
     target_link_libraries(quiz_vulkan_app_sound_router_tests PRIVATE quiz_vulkan_domain quiz_vulkan_audio_contract)
     quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_app_sound_router_tests)
     add_test(NAME quiz_vulkan_app_sound_router_tests COMMAND quiz_vulkan_app_sound_router_tests)
+
+    add_executable(
+        quiz_vulkan_app_deck_loader_tests
+        tests/app/app_deck_loader_tests.cpp
+        src/app/app_deck_loader.cpp
+    )
+    target_link_libraries(
+        quiz_vulkan_app_deck_loader_tests
+        PRIVATE
+            quiz_vulkan_domain
+            quiz_vulkan_deck_source_asset_adapter
+    )
+    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_app_deck_loader_tests)
+    add_test(NAME quiz_vulkan_app_deck_loader_tests COMMAND quiz_vulkan_app_deck_loader_tests)
 
     add_executable(
         quiz_vulkan_app_input_router_tests

@@ -12,19 +12,16 @@ function(quiz_vulkan_copy_mingw_runtime_dlls target_name)
     endif()
 
     get_filename_component(mingw_runtime_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    set(runtime_dll_paths)
     foreach(runtime_dll IN ITEMS libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll)
         set(runtime_dll_path "${mingw_runtime_dir}/${runtime_dll}")
         if(EXISTS "${runtime_dll_path}")
-            add_custom_command(
-                TARGET ${target_name}
-                POST_BUILD
-                COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-                    "${runtime_dll_path}"
-                    "$<TARGET_FILE_DIR:${target_name}>"
-                VERBATIM
-            )
+            list(APPEND runtime_dll_paths "${runtime_dll_path}")
         endif()
     endforeach()
+    if(runtime_dll_paths)
+        file(COPY ${runtime_dll_paths} DESTINATION "${CMAKE_BINARY_DIR}")
+    endif()
 endfunction()
 
 add_library(quiz_vulkan_platform_shell STATIC)
@@ -99,9 +96,23 @@ target_sources(
         BASE_DIRS src
         FILES
             src/render/render_draw_list.h
+            src/render/text/text_engine.h
 )
 target_compile_features(quiz_vulkan_render_contract INTERFACE cxx_std_23)
 target_include_directories(quiz_vulkan_render_contract INTERFACE src)
+
+add_library(quiz_vulkan_text_scene_bridge INTERFACE)
+target_sources(
+    quiz_vulkan_text_scene_bridge
+    INTERFACE
+        FILE_SET HEADERS
+        BASE_DIRS src
+        FILES
+            src/render/text/scene_text_metrics_adapter.h
+)
+target_compile_features(quiz_vulkan_text_scene_bridge INTERFACE cxx_std_23)
+target_include_directories(quiz_vulkan_text_scene_bridge INTERFACE src)
+target_link_libraries(quiz_vulkan_text_scene_bridge INTERFACE quiz_vulkan_scene quiz_vulkan_render_contract)
 
 add_library(quiz_vulkan_ui STATIC)
 target_sources(
@@ -222,4 +233,15 @@ if(BUILD_TESTING)
     target_link_libraries(quiz_vulkan_renderer_tests PRIVATE quiz_vulkan_renderer)
     quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_renderer_tests)
     add_test(NAME quiz_vulkan_renderer_tests COMMAND quiz_vulkan_renderer_tests)
+
+    add_executable(quiz_vulkan_fake_text_engine_tests tests/render/fake_text_engine_tests.cpp)
+    target_link_libraries(
+        quiz_vulkan_fake_text_engine_tests
+        PRIVATE
+            quiz_vulkan_render_contract
+            quiz_vulkan_scene
+            quiz_vulkan_text_scene_bridge
+    )
+    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_fake_text_engine_tests)
+    add_test(NAME quiz_vulkan_fake_text_engine_tests COMMAND quiz_vulkan_fake_text_engine_tests)
 endif()

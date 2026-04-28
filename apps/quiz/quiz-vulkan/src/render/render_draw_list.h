@@ -48,6 +48,54 @@ struct render_text_run {
     render_style_id style_token;
 };
 
+enum class render_text_wrap_mode {
+    no_wrap,
+    word,
+};
+
+enum class render_text_alignment {
+    start,
+    center,
+    end,
+};
+
+struct render_text_style {
+    render_style_id id;
+    std::string font_family;
+    float font_size = 16.0f;
+    float line_height = 0.0f;
+    float letter_spacing = 0.0f;
+    int font_weight = 400;
+    bool italic = false;
+};
+
+struct render_text_style_catalog {
+    render_text_style fallback_style;
+    std::vector<render_text_style> styles;
+
+    const render_text_style* find(const render_style_id& id) const
+    {
+        for (const render_text_style& style : styles) {
+            if (style.id == id) {
+                return &style;
+            }
+        }
+        return nullptr;
+    }
+
+    const render_text_style& resolve(const render_style_id& id) const
+    {
+        const render_text_style* style = find(id);
+        return style == nullptr ? fallback_style : *style;
+    }
+};
+
+struct render_text_options {
+    render_text_wrap_mode wrap = render_text_wrap_mode::no_wrap;
+    render_text_alignment alignment = render_text_alignment::start;
+    std::size_t max_lines = 0;
+};
+
 struct render_image_ref {
     std::string uri;
     std::string alt_text;
@@ -74,10 +122,12 @@ struct render_draw_command {
     float border_radius = 0.0f;
     std::vector<render_text_run> text_runs;
     render_image_ref image;
+    render_text_options text_options;
 };
 
 struct render_draw_list {
     std::vector<render_draw_command> commands;
+    render_text_style_catalog text_styles;
 
     bool empty() const
     {

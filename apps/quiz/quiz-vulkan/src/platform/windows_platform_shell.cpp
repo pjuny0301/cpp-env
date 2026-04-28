@@ -21,12 +21,60 @@ std::wstring widen_ascii(std::string_view value)
     return std::wstring(value.begin(), value.end());
 }
 
+std::wstring widen_utf8(std::string_view value)
+{
+    if (value.empty()) {
+        return {};
+    }
+
+    const int wide_length = MultiByteToWideChar(
+        CP_UTF8,
+        0,
+        value.data(),
+        static_cast<int>(value.size()),
+        nullptr,
+        0);
+    if (wide_length <= 0) {
+        return widen_ascii(value);
+    }
+
+    std::wstring wide(static_cast<std::size_t>(wide_length), L'\0');
+    const int converted_length = MultiByteToWideChar(
+        CP_UTF8,
+        0,
+        value.data(),
+        static_cast<int>(value.size()),
+        wide.data(),
+        wide_length);
+    if (converted_length <= 0) {
+        return widen_ascii(value);
+    }
+
+    wide.resize(static_cast<std::size_t>(converted_length));
+    return wide;
+}
+
 platform_client_size configured_client_size(const platform_shell_config& config)
 {
     return {
         std::max(config.width, 1),
         std::max(config.height, 1),
     };
+}
+
+int scale_framebuffer_coordinate(float value, int client_extent, std::size_t framebuffer_extent)
+{
+    if (client_extent <= 0 || framebuffer_extent == 0) {
+        return 0;
+    }
+
+    const float scaled = value * static_cast<float>(client_extent) / static_cast<float>(framebuffer_extent);
+    return std::clamp(static_cast<int>(scaled + 0.5f), 0, client_extent);
+}
+
+COLORREF text_color_ref(const platform_text_overlay& overlay)
+{
+    return RGB(overlay.red, overlay.green, overlay.blue);
 }
 
 LRESULT CALLBACK window_proc(HWND window_handle, UINT message, WPARAM w_param, LPARAM l_param);
@@ -162,9 +210,19 @@ public:
 
     void present_framebuffer(std::size_t width, std::size_t height, const unsigned char* rgba) override
     {
+        present_frame(width, height, rgba, {});
+    }
+
+    void present_frame(
+        std::size_t width,
+        std::size_t height,
+        const unsigned char* rgba,
+        const std::vector<platform_text_overlay>& text_overlays) override
+    {
         framebuffer_width_ = width;
         framebuffer_height_ = height;
         framebuffer_bgra_.clear();
+        text_overlays_ = text_overlays;
 
         if (rgba != nullptr && width > 0 && height > 0) {
             framebuffer_bgra_.resize(width * height * 4);
@@ -250,7 +308,79 @@ private:
             DIB_RGB_COLORS,
             SRCCOPY);
 
+        paint_text_overlays(device_context, client_size);
+
         EndPaint(window_handle, &paint);
+    }
+
+    void paint_text_overlays(HDC device_context, platform_client_size client_size)
+    {
+        if (text_overlays_.empty() || framebuffer_width_ == 0 || framebuffer_height_ == 0
+            || client_size.width <= 0 || client_size.height <= 0) {
+            return;
+        }
+
+        const int previous_background_mode = SetBkMode(device_context, TRANSPARENT);
+        const COLORREF previous_text_color = GetTextColor(device_context);
+
+        for (const platform_text_overlay& overlay : text_overlays_) {
+            if (overlay.text.empty() || overlay.alpha == 0 || overlay.width <= 0.0f || overlay.height <= 0.0f) {
+                continue;
+            }
+
+            RECT text_rect{
+                scale_framebuffer_coordinate(overlay.x, client_size.width, framebuffer_width_),
+                scale_framebuffer_coordinate(overlay.y, client_size.height, framebuffer_height_),
+                scale_framebuffer_coordinate(overlay.x + overlay.width, client_size.width, framebuffer_width_),
+                scale_framebuffer_coordinate(overlay.y + overlay.height, client_size.height, framebuffer_height_),
+            };
+            if (text_rect.right <= text_rect.left || text_rect.bottom <= text_rect.top) {
+                continue;
+            }
+
+            const int rect_height = std::max(static_cast<int>(text_rect.bottom - text_rect.top), 1);
+            const int font_height = std::clamp(static_cast<int>(static_cast<float>(rect_height) * 0.82f), 13, 28);
+            HFONT font = CreateFontW(
+                -font_height,
+                0,
+                0,
+                0,
+                FW_SEMIBOLD,
+                FALSE,
+                FALSE,
+                FALSE,
+                DEFAULT_CHARSET,
+                OUT_DEFAULT_PRECIS,
+                CLIP_DEFAULT_PRECIS,
+                CLEARTYPE_QUALITY,
+                DEFAULT_PITCH | FF_DONTCARE,
+                L"Malgun Gothic");
+            HGDIOBJ previous_font = nullptr;
+            if (font != nullptr) {
+                previous_font = SelectObject(device_context, font);
+            }
+
+            const std::wstring text = widen_utf8(overlay.text);
+            SetTextColor(device_context, text_color_ref(overlay));
+            DrawTextW(
+                device_context,
+                text.c_str(),
+                -1,
+                &text_rect,
+                DT_LEFT | DT_TOP | DT_WORDBREAK | DT_NOPREFIX);
+
+            if (font != nullptr) {
+                if (previous_font != nullptr) {
+                    SelectObject(device_context, previous_font);
+                }
+                DeleteObject(font);
+            }
+        }
+
+        SetTextColor(device_context, previous_text_color);
+        if (previous_background_mode != 0) {
+            SetBkMode(device_context, previous_background_mode);
+        }
     }
 
     HINSTANCE instance_handle_ = nullptr;
@@ -261,6 +391,7 @@ private:
     std::size_t framebuffer_width_ = 0;
     std::size_t framebuffer_height_ = 0;
     std::vector<unsigned char> framebuffer_bgra_;
+    std::vector<platform_text_overlay> text_overlays_;
 };
 
 LRESULT CALLBACK window_proc(HWND window_handle, UINT message, WPARAM w_param, LPARAM l_param)

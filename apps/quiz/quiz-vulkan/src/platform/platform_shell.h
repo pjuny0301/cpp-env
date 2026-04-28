@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -22,6 +23,18 @@ struct platform_client_size {
 struct platform_shell_state {
     platform_client_size client_size;
     std::string frame_status;
+};
+
+struct platform_text_overlay {
+    float x = 0.0f;
+    float y = 0.0f;
+    float width = 0.0f;
+    float height = 0.0f;
+    std::string text;
+    std::uint8_t red = 255;
+    std::uint8_t green = 255;
+    std::uint8_t blue = 255;
+    std::uint8_t alpha = 255;
 };
 
 enum class platform_shell_status {
@@ -52,6 +65,15 @@ public:
         (void)width;
         (void)height;
         (void)rgba;
+    }
+    virtual void present_frame(
+        std::size_t width,
+        std::size_t height,
+        const unsigned char* rgba,
+        const std::vector<platform_text_overlay>& text_overlays)
+    {
+        (void)text_overlays;
+        present_framebuffer(width, height, rgba);
     }
     virtual void set_frame_status(std::string_view status) { (void)status; }
     virtual void show_message(std::string_view message) = 0;

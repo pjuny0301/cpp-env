@@ -145,15 +145,6 @@ unsigned char color_channel_byte(float value)
     return static_cast<unsigned char>(std::round(clamped * 255.0f));
 }
 
-scene::scene_rect raster_bounds_for_command(const ui::ui_draw_command& command)
-{
-    if (command.type == ui::ui_draw_command_type::text) {
-        return command.content_bounds;
-    }
-
-    return command.bounds;
-}
-
 void fill_rect(
     std::vector<unsigned char>& rgba,
     const scene::scene_rect& viewport,
@@ -446,11 +437,12 @@ vulkan_renderer_framebuffer vulkan_renderer::rasterize_cpu_fallback_framebuffer(
             continue;
         }
 
-        if (!is_draw_command(command.type) || !command.paint.color.visible()) {
+        if (!is_draw_command(command.type) || command.type == ui::ui_draw_command_type::text
+            || !command.paint.color.visible()) {
             continue;
         }
 
-        const scene::scene_rect raster_bounds = raster_bounds_for_command(command);
+        const scene::scene_rect raster_bounds = command.bounds;
         if (!has_visible_area(raster_bounds)) {
             continue;
         }

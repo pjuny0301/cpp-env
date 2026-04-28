@@ -516,6 +516,72 @@ void test_vulkan_backend_adapter_completes_fake_device_lifecycle()
     require(batch.scissor.height == 8, "recorded batch scissor height maps to device surface");
 }
 
+void test_vulkan_backend_adapter_preserves_plan_diagnostics()
+{
+    using namespace quiz_vulkan::render;
+
+    render_draw_command clip{
+        .type = render_draw_command_type::push_clip,
+        .node_id = "clip",
+        .parent_node_id = {},
+        .depth = 0,
+        .bounds = render_rect{0.0f, 0.0f, 50.0f, 50.0f},
+        .content_bounds = render_rect{0.0f, 0.0f, 50.0f, 50.0f},
+        .paint = {},
+        .border_radius = 0.0f,
+        .text_runs = {},
+        .image = {},
+    };
+    render_draw_command quad = make_quad_command(
+        "quad",
+        render_rect{25.0f, 25.0f, 50.0f, 50.0f},
+        render_color{0.0f, 1.0f, 0.0f, 1.0f});
+    render_draw_command transparent = make_quad_command(
+        "transparent",
+        render_rect{10.0f, 10.0f, 10.0f, 10.0f},
+        render_color{0.0f, 0.0f, 0.0f, 0.0f});
+    render_draw_command pop{
+        .type = render_draw_command_type::pop_clip,
+        .node_id = "clip",
+        .parent_node_id = {},
+        .depth = 0,
+        .bounds = clip.bounds,
+        .content_bounds = clip.content_bounds,
+        .paint = {},
+        .border_radius = 0.0f,
+        .text_runs = {},
+        .image = {},
+    };
+
+    render_draw_list draw_list;
+    draw_list.commands = {clip, quad, transparent, pop};
+
+    fake_vulkan_backend_device device(vulkan_backend::vulkan_surface_extent{.width = 10, .height = 10});
+    const vulkan_backend::vulkan_backend_frame_result result = vulkan_backend::submit_vulkan_backend_frame(
+        device,
+        draw_list,
+        render_rect{0.0f, 0.0f, 100.0f, 100.0f});
+
+    require(result.completed(), "backend completes clipped diagnostic frame");
+    require(result.planned_batch_count == 1, "backend reports drawable clipped batch count");
+    require(result.clipped_draw_call_count == 1, "backend reports clipped draw call count");
+    require(result.discarded_draw_call_count == 1, "backend reports discarded draw call count");
+    require(device.recorded_plan.batches.size() == 1, "recorded plan contains only visible clipped batch");
+    require(device.recorded_plan.clipped_draw_call_count == 1, "recorded plan preserves clipped draw count");
+    require(device.recorded_plan.discarded_draw_call_count == 1, "recorded plan preserves discarded draw count");
+
+    const vulkan_backend::vulkan_draw_batch& batch = device.recorded_plan.batches.front();
+    require(batch.command_index == 1, "recorded clipped batch keeps source command index");
+    require(batch.clipped_bounds.x == 25.0f, "recorded clipped batch x");
+    require(batch.clipped_bounds.y == 25.0f, "recorded clipped batch y");
+    require(batch.clipped_bounds.width == 25.0f, "recorded clipped batch width");
+    require(batch.clipped_bounds.height == 25.0f, "recorded clipped batch height");
+    require(batch.scissor.x == 2, "recorded clipped batch scissor x");
+    require(batch.scissor.y == 2, "recorded clipped batch scissor y");
+    require(batch.scissor.width == 3, "recorded clipped batch scissor width");
+    require(batch.scissor.height == 3, "recorded clipped batch scissor height");
+}
+
 void test_vulkan_backend_adapter_falls_back_without_surface()
 {
     using namespace quiz_vulkan::render;
@@ -728,6 +794,7 @@ int main()
     test_degenerate_surface_discards_draw_calls();
     test_vulkan_frame_plan_builds_scissored_batches_from_render_contracts();
     test_vulkan_backend_adapter_completes_fake_device_lifecycle();
+    test_vulkan_backend_adapter_preserves_plan_diagnostics();
     test_vulkan_backend_adapter_falls_back_without_surface();
     test_vulkan_backend_adapter_falls_back_without_viewport();
     test_vulkan_backend_adapter_falls_back_when_begin_fails();

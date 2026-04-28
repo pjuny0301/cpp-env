@@ -234,6 +234,37 @@ void test_texture_cache_reuses_normalized_equivalent_cache_keys()
     require(asset_second.key.source_key == asset_first.key.source_key, "equivalent asset source reuses texture key");
 }
 
+void test_texture_cache_release_unused_evicts_fake_entries()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/releasable.fake"})
+                                                    .source;
+    fake_image_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+
+    const render_image_texture_request request{.source = source, .sampler = render_image_sampler_policy{}};
+    const render_image_texture_result first = cache.acquire_texture(request);
+    const render_image_texture_result cached = cache.acquire_texture(request);
+    require(first.ok(), "first releasable texture request succeeds");
+    require(cached.ok(), "cached releasable texture request succeeds");
+    require(cached.cache_hit, "matching texture request hits before release");
+    require(cached.texture.id == first.texture.id, "matching texture request reuses id before release");
+
+    cache.release_unused();
+    require(cache.release_unused_count() == 1, "release hook count increments during eviction");
+
+    const render_image_texture_result after_release = cache.acquire_texture(request);
+    require(after_release.ok(), "texture request after release succeeds");
+    require(!after_release.cache_hit, "texture request after release is a cache miss");
+    require(after_release.texture.id != first.texture.id, "texture request after release receives new id");
+    require(after_release.key.source_key == first.key.source_key, "release preserves stable source key");
+    require(decoder.support_requests.size() == 2, "release forces a second decoder support check");
+    require(decoder.decode_requests.size() == 2, "release forces a second decode");
+}
+
 void test_texture_cache_reports_explicit_failures()
 {
     using namespace quiz_vulkan::render;
@@ -312,6 +343,7 @@ int main()
     test_decoder_reports_explicit_failures();
     test_texture_cache_reuses_matching_key_and_misses_on_sampler_change();
     test_texture_cache_reuses_normalized_equivalent_cache_keys();
+    test_texture_cache_release_unused_evicts_fake_entries();
     test_texture_cache_reports_explicit_failures();
     test_texture_cache_propagates_decoder_failures();
     return 0;

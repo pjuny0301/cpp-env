@@ -205,6 +205,7 @@ public:
     void release_unused() override
     {
         ++release_unused_count_;
+        textures_.clear();
     }
 
     int release_unused_count() const

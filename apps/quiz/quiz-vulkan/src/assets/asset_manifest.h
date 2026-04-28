@@ -2,6 +2,7 @@
 
 #include "assets/asset_resolver.h"
 
+#include <cstddef>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -89,6 +90,34 @@ struct asset_manifest_resolve_result {
     [[nodiscard]] bool ok() const
     {
         return status == asset_manifest_resolve_status::resolved;
+    }
+};
+
+enum class asset_manifest_validation_issue_kind {
+    invalid_root,
+    duplicate_root_id,
+    invalid_entry,
+    duplicate_entry_id,
+    missing_root,
+    asset_resolve_failed,
+    invalid_root_path,
+    cache_key_collision,
+};
+
+struct asset_manifest_validation_issue {
+    asset_manifest_validation_issue_kind kind = asset_manifest_validation_issue_kind::invalid_entry;
+    std::string id;
+    std::string related_id;
+    asset_cache_key cache_key;
+    std::string diagnostic;
+};
+
+struct asset_manifest_validation_result {
+    std::vector<asset_manifest_validation_issue> issues;
+
+    [[nodiscard]] bool ok() const
+    {
+        return issues.empty();
     }
 };
 
@@ -216,6 +245,176 @@ inline asset_manifest_resolve_result resolve_asset_manifest_entry(
     }
 
     result.status = asset_manifest_resolve_status::resolved;
+    return result;
+}
+
+namespace detail {
+
+struct asset_manifest_cache_record {
+    std::string id;
+    asset_cache_key cache_key;
+    std::optional<std::filesystem::path> rooted_path;
+};
+
+inline void add_manifest_validation_issue(
+    asset_manifest_validation_result& result,
+    asset_manifest_validation_issue_kind kind,
+    std::string id,
+    std::string diagnostic,
+    std::string related_id = {},
+    asset_cache_key cache_key = {})
+{
+    result.issues.push_back(asset_manifest_validation_issue{
+        .kind = kind,
+        .id = std::move(id),
+        .related_id = std::move(related_id),
+        .cache_key = std::move(cache_key),
+        .diagnostic = std::move(diagnostic),
+    });
+}
+
+inline bool manifest_contains_duplicate_root_id(
+    const asset_manifest& manifest,
+    std::size_t root_index)
+{
+    const std::string& id = manifest.roots[root_index].id;
+    if (id.empty()) {
+        return false;
+    }
+    for (std::size_t index = 0; index < root_index; ++index) {
+        if (manifest.roots[index].id == id) {
+            return true;
+        }
+    }
+    return false;
+}
+
+inline bool manifest_contains_duplicate_entry_id(
+    const asset_manifest& manifest,
+    std::size_t entry_index)
+{
+    const std::string& id = manifest.entries[entry_index].id;
+    if (id.empty()) {
+        return false;
+    }
+    for (std::size_t index = 0; index < entry_index; ++index) {
+        if (manifest.entries[index].id == id) {
+            return true;
+        }
+    }
+    return false;
+}
+
+inline bool rooted_paths_conflict(
+    const std::optional<std::filesystem::path>& left,
+    const std::optional<std::filesystem::path>& right)
+{
+    return left.has_value() && right.has_value() && left->lexically_normal() != right->lexically_normal();
+}
+
+} // namespace detail
+
+inline asset_manifest_validation_result validate_asset_manifest(
+    const asset_manifest& manifest,
+    const asset_resolver_interface& resolver)
+{
+    asset_manifest_validation_result result;
+    for (std::size_t index = 0; index < manifest.roots.size(); ++index) {
+        const asset_manifest_root& root = manifest.roots[index];
+        if (!root.valid()) {
+            detail::add_manifest_validation_issue(
+                result,
+                asset_manifest_validation_issue_kind::invalid_root,
+                root.id,
+                "asset manifest root requires an id and path");
+        }
+        if (detail::manifest_contains_duplicate_root_id(manifest, index)) {
+            detail::add_manifest_validation_issue(
+                result,
+                asset_manifest_validation_issue_kind::duplicate_root_id,
+                root.id,
+                "asset manifest root id is duplicated");
+        }
+    }
+
+    std::vector<detail::asset_manifest_cache_record> cache_records;
+    for (std::size_t index = 0; index < manifest.entries.size(); ++index) {
+        const asset_manifest_entry& entry = manifest.entries[index];
+        if (!entry.valid()) {
+            detail::add_manifest_validation_issue(
+                result,
+                asset_manifest_validation_issue_kind::invalid_entry,
+                entry.id,
+                "asset manifest entry requires an id and uri");
+            continue;
+        }
+        if (detail::manifest_contains_duplicate_entry_id(manifest, index)) {
+            detail::add_manifest_validation_issue(
+                result,
+                asset_manifest_validation_issue_kind::duplicate_entry_id,
+                entry.id,
+                "asset manifest entry id is duplicated");
+        }
+
+        const asset_manifest_root* root = nullptr;
+        if (!entry.root_id.empty()) {
+            root = manifest.find_root(entry.root_id);
+            if (root == nullptr || !root->valid()) {
+                detail::add_manifest_validation_issue(
+                    result,
+                    asset_manifest_validation_issue_kind::missing_root,
+                    entry.id,
+                    "asset manifest entry references an unconfigured root",
+                    entry.root_id);
+            }
+        }
+
+        const asset_resolve_result resolved = resolver.resolve(asset_resolve_request{
+            .type = entry.type,
+            .uri = entry.uri,
+        });
+        if (!resolved.ok()) {
+            detail::add_manifest_validation_issue(
+                result,
+                asset_manifest_validation_issue_kind::asset_resolve_failed,
+                entry.id,
+                resolved.diagnostic);
+            continue;
+        }
+
+        std::optional<std::filesystem::path> rooted_path;
+        if (root != nullptr && root->valid()) {
+            const std::string_view relative_path = asset_manifest_root_relative_path(resolved.source);
+            rooted_path = make_manifest_rooted_path(root->root_path, relative_path);
+            if (!rooted_path.has_value()) {
+                detail::add_manifest_validation_issue(
+                    result,
+                    asset_manifest_validation_issue_kind::invalid_root_path,
+                    entry.id,
+                    "asset manifest entry cannot be rooted under the configured path",
+                    root->id);
+            }
+        }
+
+        const asset_cache_key cache_key = make_manifest_asset_cache_key(entry, resolved.source);
+        for (const detail::asset_manifest_cache_record& record : cache_records) {
+            if (record.cache_key == cache_key && detail::rooted_paths_conflict(record.rooted_path, rooted_path)) {
+                detail::add_manifest_validation_issue(
+                    result,
+                    asset_manifest_validation_issue_kind::cache_key_collision,
+                    entry.id,
+                    "asset manifest cache key maps to multiple rooted paths",
+                    record.id,
+                    cache_key);
+            }
+        }
+        cache_records.push_back(detail::asset_manifest_cache_record{
+            .id = entry.id,
+            .cache_key = cache_key,
+            .rooted_path = std::move(rooted_path),
+        });
+    }
+
     return result;
 }
 

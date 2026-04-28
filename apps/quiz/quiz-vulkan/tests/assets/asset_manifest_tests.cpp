@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <string_view>
 
 namespace {
 
@@ -21,6 +22,19 @@ std::filesystem::path reset_fixture_root()
     std::filesystem::remove_all(root);
     std::filesystem::create_directories(root / "fixtures" / "images");
     return root;
+}
+
+bool has_issue(
+    const quiz_vulkan::assets::asset_manifest_validation_result& result,
+    quiz_vulkan::assets::asset_manifest_validation_issue_kind kind,
+    std::string_view id)
+{
+    for (const quiz_vulkan::assets::asset_manifest_validation_issue& issue : result.issues) {
+        if (issue.kind == kind && issue.id == id) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void test_manifest_normalizes_asset_uri_and_roots_fixture_path()
@@ -219,6 +233,142 @@ void test_missing_root_and_type_mismatch_are_reported()
         "missing root status is explicit");
 }
 
+void test_manifest_validation_reports_duplicate_ids_and_missing_roots()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "fixture",
+        .root_path = fixture_root,
+    });
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "fixture",
+        .root_path = fixture_root / "other",
+    });
+    manifest.roots.push_back(asset_manifest_root{.id = "broken"});
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "shared",
+        .type = asset_type::image,
+        .uri = "asset://images/card.png",
+        .root_id = "fixture",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "shared",
+        .type = asset_type::image,
+        .uri = "asset://images/other.png",
+        .root_id = "missing",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "empty_uri",
+        .type = asset_type::image,
+    });
+
+    const normalizing_asset_resolver resolver;
+    const asset_manifest_validation_result result = validate_asset_manifest(manifest, resolver);
+
+    require(!result.ok(), "invalid manifest reports validation issues");
+    require(
+        has_issue(result, asset_manifest_validation_issue_kind::duplicate_root_id, "fixture"),
+        "duplicate root id is reported");
+    require(has_issue(result, asset_manifest_validation_issue_kind::invalid_root, "broken"), "invalid root is reported");
+    require(
+        has_issue(result, asset_manifest_validation_issue_kind::duplicate_entry_id, "shared"),
+        "duplicate entry id is reported");
+    require(
+        has_issue(result, asset_manifest_validation_issue_kind::missing_root, "shared"),
+        "missing root reference is reported");
+    require(
+        has_issue(result, asset_manifest_validation_issue_kind::invalid_entry, "empty_uri"),
+        "invalid entry is reported");
+}
+
+void test_manifest_validation_reports_resolver_failures()
+{
+    using namespace quiz_vulkan::assets;
+
+    asset_manifest manifest;
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "traversal",
+        .type = asset_type::image,
+        .uri = "asset://images/%2e%2e/secret.png",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const asset_manifest_validation_result result = validate_asset_manifest(manifest, resolver);
+
+    require(!result.ok(), "resolver failures make manifest validation fail");
+    require(
+        has_issue(result, asset_manifest_validation_issue_kind::asset_resolve_failed, "traversal"),
+        "path traversal resolver failure is reported");
+}
+
+void test_manifest_validation_detects_rooted_cache_key_collisions()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path root = reset_fixture_root();
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "fixture_a",
+        .root_path = root / "a",
+    });
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "fixture_b",
+        .root_path = root / "b",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_a",
+        .type = asset_type::image,
+        .uri = "images/card.png",
+        .root_id = "fixture_a",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_b",
+        .type = asset_type::image,
+        .uri = "./images/./card.png",
+        .root_id = "fixture_b",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const asset_manifest_validation_result result = validate_asset_manifest(manifest, resolver);
+
+    require(!result.ok(), "rooted cache-key collision makes manifest validation fail");
+    require(
+        has_issue(result, asset_manifest_validation_issue_kind::cache_key_collision, "card_b"),
+        "cache-key collision is reported on later entry");
+}
+
+void test_manifest_validation_allows_equivalent_aliases_to_same_rooted_path()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path root = reset_fixture_root();
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "fixture",
+        .root_path = root,
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_a",
+        .type = asset_type::image,
+        .uri = "images/card.png",
+        .root_id = "fixture",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_b",
+        .type = asset_type::image,
+        .uri = "./images/./card.png",
+        .root_id = "fixture",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const asset_manifest_validation_result result = validate_asset_manifest(manifest, resolver);
+
+    require(result.ok(), "equivalent aliases to the same rooted path validate");
+}
+
 } // namespace
 
 int main()
@@ -228,5 +378,9 @@ int main()
     test_local_fixture_roots_use_normalized_relative_paths();
     test_path_traversal_is_rejected_before_rooting();
     test_missing_root_and_type_mismatch_are_reported();
+    test_manifest_validation_reports_duplicate_ids_and_missing_roots();
+    test_manifest_validation_reports_resolver_failures();
+    test_manifest_validation_detects_rooted_cache_key_collisions();
+    test_manifest_validation_allows_equivalent_aliases_to_same_rooted_path();
     return 0;
 }

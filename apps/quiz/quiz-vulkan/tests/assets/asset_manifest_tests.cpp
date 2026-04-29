@@ -69,6 +69,116 @@ bool contains_string(const std::vector<std::string>& values, std::string_view ex
     return false;
 }
 
+bool manifests_equal(
+    const quiz_vulkan::assets::asset_manifest& left,
+    const quiz_vulkan::assets::asset_manifest& right)
+{
+    if (left.roots.size() != right.roots.size() || left.entries.size() != right.entries.size()) {
+        return false;
+    }
+    for (std::size_t index = 0U; index < left.roots.size(); ++index) {
+        const quiz_vulkan::assets::asset_manifest_root& left_root = left.roots[index];
+        const quiz_vulkan::assets::asset_manifest_root& right_root = right.roots[index];
+        if (left_root.id != right_root.id || left_root.aliases != right_root.aliases
+            || left_root.root_path.generic_string() != right_root.root_path.generic_string()) {
+            return false;
+        }
+    }
+    for (std::size_t index = 0U; index < left.entries.size(); ++index) {
+        const quiz_vulkan::assets::asset_manifest_entry& left_entry = left.entries[index];
+        const quiz_vulkan::assets::asset_manifest_entry& right_entry = right.entries[index];
+        if (left_entry.id != right_entry.id || left_entry.type != right_entry.type || left_entry.uri != right_entry.uri
+            || left_entry.root_id != right_entry.root_id || left_entry.cache_revision != right_entry.cache_revision) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void test_format_asset_manifest_writes_deterministic_records()
+{
+    using namespace quiz_vulkan::assets;
+
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "packaged",
+        .aliases = {"images", "shared pack", "tab\talias"},
+        .root_path = std::filesystem::path("assets/root folder"),
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_front",
+        .type = asset_type::image,
+        .uri = "asset://images/card \"front\".png",
+        .root_id = "images",
+        .cache_revision = "rev\\one\tline\nnext",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "main_deck",
+        .type = asset_type::deck,
+        .uri = "decks/main deck.quiz",
+    });
+
+    const std::string expected =
+        "root id=\"packaged\" path=\"assets/root folder\" aliases=\"images,shared pack,tab\\talias\"\n"
+        "entry id=\"card_front\" type=\"image\" uri=\"asset://images/card \\\"front\\\".png\" root=\"images\" "
+        "rev=\"rev\\\\one\\tline\\nnext\"\n"
+        "entry id=\"main_deck\" type=\"deck\" uri=\"decks/main deck.quiz\"\n";
+
+    require(format_asset_manifest(manifest) == expected, "manifest formatter emits deterministic quoted records");
+}
+
+void test_format_asset_manifest_round_trips_through_parser()
+{
+    using namespace quiz_vulkan::assets;
+
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "packaged",
+        .aliases = {"images", "shared pack"},
+        .root_path = std::filesystem::path("assets/root folder"),
+    });
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "external",
+        .root_path = std::filesystem::path("external/assets"),
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "font_regular",
+        .type = asset_type::font,
+        .uri = "fonts/Inter Regular.ttf",
+        .root_id = "packaged",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_front",
+        .type = asset_type::image,
+        .uri = "asset://images/card \"front\".png",
+        .root_id = "images",
+        .cache_revision = "rev\\one\tline\nnext",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "answer_sound",
+        .type = asset_type::sound,
+        .uri = "asset://sounds/answer.wav",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "ui_shader",
+        .type = asset_type::shader,
+        .uri = "asset://shaders/ui.vert.spv",
+        .root_id = "external",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "main_deck",
+        .type = asset_type::deck,
+        .uri = "decks/main deck.quiz",
+    });
+
+    const std::string formatted = format_asset_manifest(manifest);
+    const asset_manifest_parse_result parsed = parse_asset_manifest(formatted);
+
+    require(parsed.ok(), "formatted manifest parses");
+    require(manifests_equal(parsed.manifest, manifest), "formatted manifest round-trips through parser");
+    require(format_asset_manifest(parsed.manifest) == formatted, "manifest formatter is idempotent after parse");
+}
+
 void test_parse_asset_manifest_text_loads_roots_entries_and_aliases()
 {
     using namespace quiz_vulkan::assets;
@@ -1097,6 +1207,8 @@ void test_manifest_validation_allows_equivalent_aliases_to_same_rooted_path()
 
 int main()
 {
+    test_format_asset_manifest_writes_deterministic_records();
+    test_format_asset_manifest_round_trips_through_parser();
     test_parse_asset_manifest_text_loads_roots_entries_and_aliases();
     test_parse_asset_manifest_text_supports_quoted_values_and_escapes();
     test_parse_asset_manifest_text_reports_errors_without_partial_records();

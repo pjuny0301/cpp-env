@@ -416,6 +416,156 @@ void test_summarize_asset_manifest_catalog_carries_validation_and_skips_invalid_
         "catalog summary carries resolver validation issue");
 }
 
+void test_asset_manifest_diagnostic_report_summarizes_targeted_issues()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "fixture_a",
+        .root_path = fixture_root / "a",
+    });
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "fixture_b",
+        .root_path = fixture_root / "b",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "missing_deck",
+        .type = asset_type::deck,
+        .uri = "asset://decks/main.quiz",
+        .root_id = "missing",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "ftp_sound",
+        .type = asset_type::sound,
+        .uri = "ftp://cdn.example.test/sounds/click.wav",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_a",
+        .type = asset_type::image,
+        .uri = "images/card.png",
+        .root_id = "fixture_a",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_b",
+        .type = asset_type::image,
+        .uri = "./images/./card.png",
+        .root_id = "fixture_b",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "traversal",
+        .type = asset_type::image,
+        .uri = "asset://images/%2e%2e/secret.png",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const asset_manifest_diagnostic_report report = make_asset_manifest_diagnostic_report(manifest, resolver);
+
+    require(!report.ok(), "diagnostic report fails when targeted issues are present");
+    require(report.missing_roots.size() == 1U, "diagnostic report summarizes missing roots");
+    require(report.missing_roots[0].entry_id == "missing_deck", "missing-root report keeps entry id");
+    require(report.missing_roots[0].root_id == "missing", "missing-root report keeps root id");
+
+    require(report.unsupported_schemes.size() == 1U, "diagnostic report summarizes unsupported schemes");
+    require(report.unsupported_schemes[0].entry_id == "ftp_sound", "unsupported-scheme report keeps entry id");
+    require(
+        report.unsupported_schemes[0].uri == "ftp://cdn.example.test/sounds/click.wav",
+        "unsupported-scheme report keeps original uri");
+    require(
+        report.unsupported_schemes[0].diagnostic == "asset uri scheme is not supported",
+        "unsupported-scheme report keeps resolver diagnostic");
+
+    require(report.cache_key_collisions.size() == 1U, "diagnostic report summarizes cache-key collisions");
+    require(report.cache_key_collisions[0].entry_id == "card_b", "collision report keeps later entry id");
+    require(report.cache_key_collisions[0].related_entry_id == "card_a", "collision report keeps related entry id");
+    require(report.cache_key_collisions[0].cache_key == "image|images/card.png", "collision report keeps cache key");
+
+    require(
+        has_issue(report.validation, asset_manifest_validation_issue_kind::asset_resolve_failed, "traversal"),
+        "diagnostic report preserves full validation context");
+    require(report.unsupported_schemes.size() == 1U, "diagnostic report does not classify traversal as unsupported");
+}
+
+void test_asset_manifest_diagnostic_report_preserves_stable_order()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "root_a",
+        .root_path = fixture_root / "a",
+    });
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "root_b",
+        .root_path = fixture_root / "b",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "missing_first",
+        .type = asset_type::image,
+        .uri = "asset://images/first.png",
+        .root_id = "missing_a",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "unsupported_first",
+        .type = asset_type::sound,
+        .uri = "ftp://cdn.example.test/first.wav",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "missing_second",
+        .type = asset_type::deck,
+        .uri = "asset://decks/second.quiz",
+        .root_id = "missing_b",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "unsupported_second",
+        .type = asset_type::shader,
+        .uri = "s3://bucket/shader.spv",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_a",
+        .type = asset_type::image,
+        .uri = "images/card.png",
+        .root_id = "root_a",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_b",
+        .type = asset_type::image,
+        .uri = "images/./card.png",
+        .root_id = "root_b",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "font_a",
+        .type = asset_type::font,
+        .uri = "fonts/Inter.ttf",
+        .root_id = "root_a",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "font_b",
+        .type = asset_type::font,
+        .uri = "./fonts/Inter.ttf",
+        .root_id = "root_b",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const asset_manifest_diagnostic_report report = make_asset_manifest_diagnostic_report(manifest, resolver);
+
+    require(report.missing_roots.size() == 2U, "diagnostic report keeps missing-root count");
+    require(report.missing_roots[0].entry_id == "missing_first", "diagnostic report keeps first missing-root order");
+    require(report.missing_roots[1].entry_id == "missing_second", "diagnostic report keeps second missing-root order");
+    require(report.unsupported_schemes.size() == 2U, "diagnostic report keeps unsupported-scheme count");
+    require(
+        report.unsupported_schemes[0].entry_id == "unsupported_first",
+        "diagnostic report keeps first unsupported-scheme order");
+    require(
+        report.unsupported_schemes[1].entry_id == "unsupported_second",
+        "diagnostic report keeps second unsupported-scheme order");
+    require(report.cache_key_collisions.size() == 2U, "diagnostic report keeps collision count");
+    require(report.cache_key_collisions[0].entry_id == "card_b", "diagnostic report keeps first collision order");
+    require(report.cache_key_collisions[1].entry_id == "font_b", "diagnostic report keeps second collision order");
+}
+
 void test_manifest_normalizes_asset_uri_and_roots_fixture_path()
 {
     using namespace quiz_vulkan::assets;
@@ -957,6 +1107,8 @@ int main()
     test_normalize_asset_manifest_skips_invalid_entries_but_reports_validation();
     test_summarize_asset_manifest_catalog_groups_all_asset_types();
     test_summarize_asset_manifest_catalog_carries_validation_and_skips_invalid_entries();
+    test_asset_manifest_diagnostic_report_summarizes_targeted_issues();
+    test_asset_manifest_diagnostic_report_preserves_stable_order();
     test_manifest_normalizes_asset_uri_and_roots_fixture_path();
     test_cache_key_is_stable_for_equivalent_normalized_uris();
     test_local_fixture_roots_use_normalized_relative_paths();

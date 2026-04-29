@@ -1075,4 +1075,79 @@ inline asset_manifest_catalog_summary summarize_asset_manifest_catalog(
     return summarize_asset_manifest_catalog(normalize_asset_manifest(manifest, resolver));
 }
 
+struct asset_manifest_missing_root_report {
+    std::string entry_id;
+    std::string root_id;
+};
+
+struct asset_manifest_unsupported_scheme_report {
+    std::string entry_id;
+    std::string uri;
+    std::string diagnostic;
+};
+
+struct asset_manifest_cache_key_collision_report {
+    std::string entry_id;
+    std::string related_entry_id;
+    asset_cache_key cache_key;
+};
+
+struct asset_manifest_diagnostic_report {
+    std::vector<asset_manifest_missing_root_report> missing_roots;
+    std::vector<asset_manifest_unsupported_scheme_report> unsupported_schemes;
+    std::vector<asset_manifest_cache_key_collision_report> cache_key_collisions;
+    asset_manifest_validation_result validation;
+
+    [[nodiscard]] bool ok() const
+    {
+        return missing_roots.empty() && unsupported_schemes.empty() && cache_key_collisions.empty();
+    }
+};
+
+inline asset_manifest_diagnostic_report make_asset_manifest_diagnostic_report(
+    const asset_manifest& manifest,
+    const asset_resolver_interface& resolver)
+{
+    asset_manifest_diagnostic_report report{
+        .validation = validate_asset_manifest(manifest, resolver),
+    };
+
+    for (const asset_manifest_validation_issue& issue : report.validation.issues) {
+        if (issue.kind == asset_manifest_validation_issue_kind::missing_root) {
+            report.missing_roots.push_back(asset_manifest_missing_root_report{
+                .entry_id = issue.id,
+                .root_id = issue.related_id,
+            });
+            continue;
+        }
+        if (issue.kind == asset_manifest_validation_issue_kind::cache_key_collision) {
+            report.cache_key_collisions.push_back(asset_manifest_cache_key_collision_report{
+                .entry_id = issue.id,
+                .related_entry_id = issue.related_id,
+                .cache_key = issue.cache_key,
+            });
+        }
+    }
+
+    for (const asset_manifest_entry& entry : manifest.entries) {
+        if (!entry.valid()) {
+            continue;
+        }
+
+        const asset_resolve_result resolved = resolver.resolve(asset_resolve_request{
+            .type = entry.type,
+            .uri = entry.uri,
+        });
+        if (resolved.status == asset_resolve_status::unsupported_scheme) {
+            report.unsupported_schemes.push_back(asset_manifest_unsupported_scheme_report{
+                .entry_id = entry.id,
+                .uri = entry.uri,
+                .diagnostic = resolved.diagnostic,
+            });
+        }
+    }
+
+    return report;
+}
+
 } // namespace quiz_vulkan::assets

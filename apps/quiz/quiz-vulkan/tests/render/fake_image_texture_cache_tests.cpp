@@ -55,6 +55,16 @@ std::vector<std::byte> make_short_ppm_2x1_encoded_bytes()
     return bytes;
 }
 
+std::vector<std::byte> make_ppm_1x1_encoded_bytes()
+{
+    std::vector<std::byte> bytes;
+    append_ascii(bytes, "P6\n1 1\n255\n");
+    append_byte(bytes, 0x00);
+    append_byte(bytes, 0x00);
+    append_byte(bytes, 0xff);
+    return bytes;
+}
+
 class malformed_payload_decoder final : public quiz_vulkan::render::image_decoder_interface {
 public:
     bool supports(const quiz_vulkan::render::render_image_decode_request&) const override
@@ -650,6 +660,37 @@ void test_texture_cache_propagates_ppm_decoder_payload_failure()
     require(!result.diagnostic.empty(), "short ppm payload propagates decoder diagnostic");
 }
 
+void test_texture_cache_uses_source_specific_placeholder_bytes()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source one_pixel_source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/one.ppm"})
+                                                        .source;
+    const render_resolved_image_source two_pixel_source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/two.ppm"})
+                                                        .source;
+    ppm_image_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+    cache.set_placeholder_encoded_bytes({});
+    cache.set_placeholder_encoded_bytes_for_source(one_pixel_source.cache_key(), make_ppm_1x1_encoded_bytes());
+    cache.set_placeholder_encoded_bytes_for_source(two_pixel_source.cache_key(), make_ppm_2x1_encoded_bytes());
+
+    const render_image_texture_result one_pixel = cache.acquire_texture(
+        render_image_texture_request{.source = one_pixel_source, .sampler = render_image_sampler_policy{}});
+    require(one_pixel.ok(), "source-specific one-pixel ppm creates a texture");
+    require(one_pixel.texture.width == 1, "source-specific one-pixel ppm preserves width");
+    require(one_pixel.texture.height == 1, "source-specific one-pixel ppm preserves height");
+
+    const render_image_texture_result two_pixel = cache.acquire_texture(
+        render_image_texture_request{.source = two_pixel_source, .sampler = render_image_sampler_policy{}});
+    require(two_pixel.ok(), "source-specific two-pixel ppm creates a texture");
+    require(two_pixel.texture.width == 2, "source-specific two-pixel ppm preserves width");
+    require(two_pixel.texture.height == 1, "source-specific two-pixel ppm preserves height");
+    require(two_pixel.texture.id != one_pixel.texture.id, "source-specific byte fixtures keep cache entries separate");
+}
+
 void test_texture_cache_rejects_malformed_decoded_payload()
 {
     using namespace quiz_vulkan::render;
@@ -743,6 +784,7 @@ int main()
     test_texture_cache_propagates_decoder_failures();
     test_texture_cache_uses_ppm_decoder_placeholder_bytes();
     test_texture_cache_propagates_ppm_decoder_payload_failure();
+    test_texture_cache_uses_source_specific_placeholder_bytes();
     test_texture_cache_rejects_malformed_decoded_payload();
     test_texture_cache_rejects_unknown_pixel_format();
     return 0;

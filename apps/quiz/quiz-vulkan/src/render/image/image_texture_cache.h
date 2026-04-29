@@ -243,7 +243,7 @@ public:
 
         const render_image_decode_request decode_request{
             .source = request.source,
-            .encoded_bytes = placeholder_encoded_bytes_,
+            .encoded_bytes = placeholder_encoded_bytes_for(key.source_key),
         };
         if (!decoder_.supports(decode_request)) {
             return render_image_texture_result{
@@ -318,11 +318,28 @@ public:
         placeholder_encoded_bytes_ = std::move(encoded_bytes);
     }
 
+    void set_placeholder_encoded_bytes_for_source(
+        render_image_cache_key source_key,
+        std::vector<std::byte> encoded_bytes)
+    {
+        source_placeholder_encoded_bytes_.insert_or_assign(std::move(source_key), std::move(encoded_bytes));
+    }
+
 private:
+    const std::vector<std::byte>& placeholder_encoded_bytes_for(const render_image_cache_key& source_key) const
+    {
+        const auto source_bytes = source_placeholder_encoded_bytes_.find(source_key);
+        if (source_bytes != source_placeholder_encoded_bytes_.end()) {
+            return source_bytes->second;
+        }
+        return placeholder_encoded_bytes_;
+    }
+
     const image_decoder_interface& decoder_;
     render_image_texture_id next_id_ = 1;
     int release_unused_count_ = 0;
     std::vector<std::byte> placeholder_encoded_bytes_ = {std::byte{0x01}};
+    std::map<render_image_cache_key, std::vector<std::byte>> source_placeholder_encoded_bytes_;
     std::map<render_image_texture_key, render_image_texture_handle, render_image_texture_key_less> textures_;
 };
 

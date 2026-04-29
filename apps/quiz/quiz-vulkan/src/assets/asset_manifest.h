@@ -836,6 +836,7 @@ struct asset_manifest_normalized_entry {
     asset_manifest_entry entry;
     resolved_asset_source source;
     asset_cache_key cache_key;
+    std::string resolved_root_id;
     std::optional<std::filesystem::path> rooted_path;
 };
 
@@ -901,6 +902,7 @@ inline asset_manifest_normalization_result normalize_asset_manifest(
                 continue;
             }
 
+            normalized.resolved_root_id = root->id;
             normalized.rooted_path = make_manifest_rooted_path(
                 root->root_path,
                 asset_manifest_root_relative_path(normalized.source));
@@ -913,6 +915,164 @@ inline asset_manifest_normalization_result normalize_asset_manifest(
     }
 
     return result;
+}
+
+struct asset_manifest_catalog_root_summary {
+    std::string root_id;
+    std::vector<std::string> entry_ids;
+    std::vector<asset_cache_key> cache_keys;
+};
+
+struct asset_manifest_catalog_cache_key_summary {
+    asset_cache_key cache_key;
+    std::vector<std::string> entry_ids;
+    std::vector<std::string> root_ids;
+};
+
+struct asset_manifest_catalog_type_summary {
+    asset_type type = asset_type::generic;
+    std::vector<std::string> entry_ids;
+    std::vector<asset_manifest_catalog_root_summary> roots;
+    std::vector<asset_manifest_catalog_cache_key_summary> cache_keys;
+
+    [[nodiscard]] const asset_manifest_catalog_root_summary* find_root(std::string_view root_id) const
+    {
+        for (const asset_manifest_catalog_root_summary& root : roots) {
+            if (root.root_id == root_id) {
+                return &root;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const asset_manifest_catalog_cache_key_summary* find_cache_key(std::string_view cache_key) const
+    {
+        for (const asset_manifest_catalog_cache_key_summary& key : cache_keys) {
+            if (key.cache_key == cache_key) {
+                return &key;
+            }
+        }
+        return nullptr;
+    }
+};
+
+struct asset_manifest_catalog_summary {
+    std::vector<asset_manifest_catalog_type_summary> types;
+    asset_manifest_validation_result validation;
+
+    [[nodiscard]] bool ok() const
+    {
+        return validation.ok();
+    }
+
+    [[nodiscard]] const asset_manifest_catalog_type_summary* find_type(asset_type type) const
+    {
+        for (const asset_manifest_catalog_type_summary& bucket : types) {
+            if (bucket.type == type) {
+                return &bucket;
+            }
+        }
+        return nullptr;
+    }
+};
+
+namespace detail {
+
+inline bool manifest_catalog_contains_string(
+    const std::vector<std::string>& values,
+    std::string_view value)
+{
+    for (const std::string& existing : values) {
+        if (existing == value) {
+            return true;
+        }
+    }
+    return false;
+}
+
+inline void add_manifest_catalog_string(
+    std::vector<std::string>& values,
+    std::string value)
+{
+    if (!manifest_catalog_contains_string(values, value)) {
+        values.push_back(std::move(value));
+    }
+}
+
+inline asset_manifest_catalog_type_summary& find_or_add_manifest_catalog_type(
+    asset_manifest_catalog_summary& summary,
+    asset_type type)
+{
+    for (asset_manifest_catalog_type_summary& bucket : summary.types) {
+        if (bucket.type == type) {
+            return bucket;
+        }
+    }
+    summary.types.push_back(asset_manifest_catalog_type_summary{.type = type});
+    return summary.types.back();
+}
+
+inline asset_manifest_catalog_root_summary& find_or_add_manifest_catalog_root(
+    asset_manifest_catalog_type_summary& type,
+    std::string_view root_id)
+{
+    for (asset_manifest_catalog_root_summary& root : type.roots) {
+        if (root.root_id == root_id) {
+            return root;
+        }
+    }
+    type.roots.push_back(asset_manifest_catalog_root_summary{.root_id = std::string(root_id)});
+    return type.roots.back();
+}
+
+inline asset_manifest_catalog_cache_key_summary& find_or_add_manifest_catalog_cache_key(
+    asset_manifest_catalog_type_summary& type,
+    const asset_cache_key& cache_key)
+{
+    for (asset_manifest_catalog_cache_key_summary& key : type.cache_keys) {
+        if (key.cache_key == cache_key) {
+            return key;
+        }
+    }
+    type.cache_keys.push_back(asset_manifest_catalog_cache_key_summary{.cache_key = cache_key});
+    return type.cache_keys.back();
+}
+
+} // namespace detail
+
+inline asset_manifest_catalog_summary summarize_asset_manifest_catalog(
+    const asset_manifest_normalization_result& normalized)
+{
+    asset_manifest_catalog_summary summary{
+        .validation = normalized.validation,
+    };
+
+    for (const asset_manifest_normalized_entry& entry : normalized.entries) {
+        asset_manifest_catalog_type_summary& type =
+            detail::find_or_add_manifest_catalog_type(summary, entry.entry.type);
+        detail::add_manifest_catalog_string(type.entry_ids, entry.entry.id);
+
+        const std::string_view root_id = entry.resolved_root_id.empty()
+            ? std::string_view(entry.entry.root_id)
+            : std::string_view(entry.resolved_root_id);
+        asset_manifest_catalog_root_summary& root = detail::find_or_add_manifest_catalog_root(type, root_id);
+        detail::add_manifest_catalog_string(root.entry_ids, entry.entry.id);
+        detail::add_manifest_catalog_string(root.cache_keys, entry.cache_key);
+
+        asset_manifest_catalog_cache_key_summary& key =
+            detail::find_or_add_manifest_catalog_cache_key(type, entry.cache_key);
+        detail::add_manifest_catalog_string(key.entry_ids, entry.entry.id);
+        detail::add_manifest_catalog_string(key.root_ids, std::string(root_id));
+    }
+
+    return summary;
+}
+
+inline asset_manifest_catalog_summary summarize_asset_manifest_catalog(
+    const asset_manifest& manifest,
+    const asset_resolver_interface& resolver)
+{
+    return summarize_asset_manifest_catalog(normalize_asset_manifest(manifest, resolver));
 }
 
 } // namespace quiz_vulkan::assets

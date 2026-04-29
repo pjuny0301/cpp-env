@@ -7,6 +7,7 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -56,6 +57,16 @@ bool parse_issue_at(
     std::size_t line)
 {
     return result.issues.size() > index && result.issues[index].kind == kind && result.issues[index].line == line;
+}
+
+bool contains_string(const std::vector<std::string>& values, std::string_view expected)
+{
+    for (const std::string& value : values) {
+        if (value == expected) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void test_parse_asset_manifest_text_loads_roots_entries_and_aliases()
@@ -256,6 +267,7 @@ void test_normalize_asset_manifest_projects_resolved_cache_entries()
         card->rooted_path->lexically_normal()
             == (std::filesystem::absolute(fixture_root) / "cards" / "front.png").lexically_normal(),
         "normalization rooted path uses canonical root");
+    require(card->resolved_root_id == "packaged", "normalization stores canonical root id for aliased entries");
 
     const asset_manifest_normalized_entry* deck = normalized.find_entry("main_deck");
     require(deck != nullptr, "normalization projects deck entries");
@@ -305,6 +317,103 @@ void test_normalize_asset_manifest_skips_invalid_entries_but_reports_validation(
     require(
         has_issue(normalized.validation, asset_manifest_validation_issue_kind::missing_root, "missing_root"),
         "normalization reports missing-root validation failures");
+}
+
+void test_summarize_asset_manifest_catalog_groups_all_asset_types()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    const asset_manifest_parse_result parsed = parse_asset_manifest(
+        "root id=packaged path="
+        + fixture_root.generic_string()
+        + " aliases=images,fonts\n"
+          "root id=external path="
+        + (fixture_root / "external").generic_string()
+        + "\n"
+          "entry id=font_regular type=font uri=\"fonts/Inter Regular.ttf\" root=fonts\n"
+          "entry id=card_front type=image uri=\"asset://images/card front.png\" root=images rev=v1\n"
+          "entry id=answer_sound type=sound uri=asset://sounds/answer.wav root=packaged\n"
+          "entry id=ui_shader type=shader uri=asset://shaders/ui.vert.spv root=external\n"
+          "entry id=main_deck type=deck uri=\"decks/main deck.quiz\"\n");
+
+    const normalizing_asset_resolver resolver;
+    const asset_manifest_catalog_summary summary = summarize_asset_manifest_catalog(parsed.manifest, resolver);
+
+    require(parsed.ok(), "catalog fixture parses");
+    require(summary.ok(), "catalog fixture validates");
+    require(summary.types.size() == 5U, "catalog groups all typed asset entries");
+
+    const asset_manifest_catalog_type_summary* fonts = summary.find_type(asset_type::font);
+    require(fonts != nullptr, "catalog includes font group");
+    require(contains_string(fonts->entry_ids, "font_regular"), "catalog font group includes entry id");
+    const asset_manifest_catalog_root_summary* font_root = fonts->find_root("packaged");
+    require(font_root != nullptr, "catalog font group uses canonical root id");
+    require(contains_string(font_root->cache_keys, "font|fonts/Inter Regular.ttf"), "catalog font root includes key");
+
+    const asset_manifest_catalog_type_summary* images = summary.find_type(asset_type::image);
+    require(images != nullptr, "catalog includes image group");
+    require(contains_string(images->entry_ids, "card_front"), "catalog image group includes entry id");
+    const asset_manifest_catalog_root_summary* image_root = images->find_root("packaged");
+    require(image_root != nullptr, "catalog image group canonicalizes root alias");
+    require(
+        contains_string(image_root->cache_keys, "image|asset://images/card front.png|rev=v1"),
+        "catalog image root includes revised cache key");
+    const asset_manifest_catalog_cache_key_summary* image_key =
+        images->find_cache_key("image|asset://images/card front.png|rev=v1");
+    require(image_key != nullptr, "catalog image group exposes cache-key lookup");
+    require(contains_string(image_key->entry_ids, "card_front"), "catalog cache-key group includes entry id");
+    require(contains_string(image_key->root_ids, "packaged"), "catalog cache-key group includes canonical root id");
+
+    const asset_manifest_catalog_type_summary* sounds = summary.find_type(asset_type::sound);
+    require(sounds != nullptr, "catalog includes sound group");
+    require(sounds->find_cache_key("sound|asset://sounds/answer.wav") != nullptr, "catalog includes sound key");
+
+    const asset_manifest_catalog_type_summary* shaders = summary.find_type(asset_type::shader);
+    require(shaders != nullptr, "catalog includes shader group");
+    require(shaders->find_root("external") != nullptr, "catalog includes shader external root group");
+
+    const asset_manifest_catalog_type_summary* decks = summary.find_type(asset_type::deck);
+    require(decks != nullptr, "catalog includes deck group");
+    require(decks->find_root("") != nullptr, "catalog tracks rootless deck entries");
+    require(decks->find_cache_key("deck|decks/main deck.quiz") != nullptr, "catalog includes deck cache key");
+}
+
+void test_summarize_asset_manifest_catalog_carries_validation_and_skips_invalid_entries()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "fixture",
+        .root_path = fixture_root,
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "good",
+        .type = asset_type::image,
+        .uri = "asset://images/card.png",
+        .root_id = "fixture",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "bad",
+        .type = asset_type::image,
+        .uri = "asset://images/%2e%2e/secret.png",
+        .root_id = "fixture",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const asset_manifest_catalog_summary summary = summarize_asset_manifest_catalog(manifest, resolver);
+
+    require(!summary.ok(), "catalog summary carries validation failures");
+    require(summary.types.size() == 1U, "catalog summary includes only valid typed groups");
+    const asset_manifest_catalog_type_summary* images = summary.find_type(asset_type::image);
+    require(images != nullptr, "catalog summary keeps valid image group");
+    require(contains_string(images->entry_ids, "good"), "catalog summary keeps valid entry");
+    require(!contains_string(images->entry_ids, "bad"), "catalog summary skips invalid entry");
+    require(
+        has_issue(summary.validation, asset_manifest_validation_issue_kind::asset_resolve_failed, "bad"),
+        "catalog summary carries resolver validation issue");
 }
 
 void test_manifest_normalizes_asset_uri_and_roots_fixture_path()
@@ -846,6 +955,8 @@ int main()
     test_load_asset_manifest_file_reports_missing_files();
     test_normalize_asset_manifest_projects_resolved_cache_entries();
     test_normalize_asset_manifest_skips_invalid_entries_but_reports_validation();
+    test_summarize_asset_manifest_catalog_groups_all_asset_types();
+    test_summarize_asset_manifest_catalog_carries_validation_and_skips_invalid_entries();
     test_manifest_normalizes_asset_uri_and_roots_fixture_path();
     test_cache_key_is_stable_for_equivalent_normalized_uris();
     test_local_fixture_roots_use_normalized_relative_paths();

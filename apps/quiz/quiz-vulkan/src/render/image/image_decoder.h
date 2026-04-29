@@ -3,6 +3,7 @@
 #include "render/image/image_types.h"
 
 #include <cstddef>
+#include <functional>
 #include <limits>
 #include <string>
 #include <utility>
@@ -39,6 +40,54 @@ public:
 
     virtual bool supports(const render_image_decode_request& request) const = 0;
     virtual render_image_decode_result decode(const render_image_decode_request& request) const = 0;
+};
+
+class image_decoder_chain final : public image_decoder_interface {
+public:
+    image_decoder_chain() = default;
+
+    explicit image_decoder_chain(std::vector<std::reference_wrapper<const image_decoder_interface>> decoders)
+        : decoders_(std::move(decoders))
+    {
+    }
+
+    void add_decoder(const image_decoder_interface& decoder)
+    {
+        decoders_.push_back(std::cref(decoder));
+    }
+
+    std::size_t decoder_count() const
+    {
+        return decoders_.size();
+    }
+
+    bool supports(const render_image_decode_request& request) const override
+    {
+        for (const std::reference_wrapper<const image_decoder_interface> decoder : decoders_) {
+            if (decoder.get().supports(request)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    render_image_decode_result decode(const render_image_decode_request& request) const override
+    {
+        for (const std::reference_wrapper<const image_decoder_interface> decoder : decoders_) {
+            if (decoder.get().supports(request)) {
+                return decoder.get().decode(request);
+            }
+        }
+
+        return render_image_decode_result{
+            .status = render_image_decode_status::unsupported_format,
+            .image = {},
+            .diagnostic = "no image decoder in the chain supports the source",
+        };
+    }
+
+private:
+    std::vector<std::reference_wrapper<const image_decoder_interface>> decoders_;
 };
 
 namespace detail {

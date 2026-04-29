@@ -6,6 +6,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdio>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -325,6 +326,67 @@ void test_ppm_decoder_reports_invalid_payload_size()
     require(
         unsupported.status == render_image_decode_status::unsupported_format,
         "non-ppm source reports unsupported format");
+}
+
+void test_decoder_chain_routes_supported_formats()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source fake_source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/card.fake"})
+                                                     .source;
+    const render_resolved_image_source ppm_source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/card.ppm"})
+                                                    .source;
+
+    fake_image_decoder fake_decoder;
+    ppm_image_decoder ppm_decoder;
+    image_decoder_chain decoder_chain({std::cref(fake_decoder), std::cref(ppm_decoder)});
+    require(decoder_chain.decoder_count() == 2, "decoder chain stores both decoders");
+
+    const render_image_decode_request fake_request{
+        .source = fake_source,
+        .encoded_bytes = {std::byte{0x01}},
+    };
+    require(decoder_chain.supports(fake_request), "decoder chain supports fake decoder source");
+    const render_image_decode_result fake_decoded = decoder_chain.decode(fake_request);
+    require(fake_decoded.ok(), "decoder chain routes fake source to fake decoder");
+    require(fake_decoded.image.width == 2, "decoder chain returns fake decoded width");
+
+    const render_image_decode_request ppm_request{
+        .source = ppm_source,
+        .encoded_bytes = make_ppm_1x1_encoded_bytes(),
+    };
+    require(decoder_chain.supports(ppm_request), "decoder chain supports ppm decoder source");
+    const render_image_decode_result ppm_decoded = decoder_chain.decode(ppm_request);
+    require(ppm_decoded.ok(), "decoder chain routes ppm source to ppm decoder");
+    require(ppm_decoded.image.width == 1, "decoder chain returns ppm decoded width");
+    require(fake_decoder.decode_requests.size() == 1, "decoder chain decodes fake source only once");
+}
+
+void test_decoder_chain_reports_unsupported_sources()
+{
+    using namespace quiz_vulkan::render;
+
+    ppm_image_decoder ppm_decoder;
+    image_decoder_chain decoder_chain({std::cref(ppm_decoder)});
+    const render_image_decode_request request{
+        .source = render_resolved_image_source{
+            .original_uri = "asset://card.png",
+            .normalized_uri = "asset://card.png",
+            .kind = render_image_source_kind::asset_uri,
+        },
+        .encoded_bytes = make_ppm_1x1_encoded_bytes(),
+    };
+
+    require(!decoder_chain.supports(request), "decoder chain rejects unsupported source");
+    const render_image_decode_result decoded = decoder_chain.decode(request);
+    require(!decoded.ok(), "decoder chain unsupported source does not decode");
+    require(
+        decoded.status == render_image_decode_status::unsupported_format,
+        "decoder chain unsupported source reports unsupported format");
+    require(!decoded.diagnostic.empty(), "decoder chain unsupported source includes diagnostic");
 }
 
 void test_sampler_policy_validation_rejects_unknown_enum_values()
@@ -691,6 +753,37 @@ void test_texture_cache_uses_source_specific_placeholder_bytes()
     require(two_pixel.texture.id != one_pixel.texture.id, "source-specific byte fixtures keep cache entries separate");
 }
 
+void test_texture_cache_uses_decoder_chain_for_source_specific_formats()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source fake_source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/chain.fake"})
+                                                     .source;
+    const render_resolved_image_source ppm_source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/chain.ppm"})
+                                                    .source;
+
+    fake_image_decoder fake_decoder;
+    ppm_image_decoder ppm_decoder;
+    image_decoder_chain decoder_chain({std::cref(fake_decoder), std::cref(ppm_decoder)});
+    fake_image_texture_cache cache(decoder_chain);
+    cache.set_placeholder_encoded_bytes_for_source(fake_source.cache_key(), {std::byte{0x01}});
+    cache.set_placeholder_encoded_bytes_for_source(ppm_source.cache_key(), make_ppm_1x1_encoded_bytes());
+
+    const render_image_texture_result fake_texture = cache.acquire_texture(
+        render_image_texture_request{.source = fake_source, .sampler = render_image_sampler_policy{}});
+    require(fake_texture.ok(), "decoder chain fake source creates a texture");
+    require(fake_texture.texture.width == 2, "decoder chain fake source uses fake decoder dimensions");
+
+    const render_image_texture_result ppm_texture = cache.acquire_texture(
+        render_image_texture_request{.source = ppm_source, .sampler = render_image_sampler_policy{}});
+    require(ppm_texture.ok(), "decoder chain ppm source creates a texture");
+    require(ppm_texture.texture.width == 1, "decoder chain ppm source uses ppm decoder dimensions");
+    require(ppm_texture.texture.id != fake_texture.texture.id, "decoder chain textures remain keyed by source");
+}
+
 void test_texture_cache_rejects_malformed_decoded_payload()
 {
     using namespace quiz_vulkan::render;
@@ -774,6 +867,8 @@ int main()
     test_decoder_reports_explicit_failures();
     test_ppm_decoder_decodes_binary_rgb_to_rgba();
     test_ppm_decoder_reports_invalid_payload_size();
+    test_decoder_chain_routes_supported_formats();
+    test_decoder_chain_reports_unsupported_sources();
     test_sampler_policy_validation_rejects_unknown_enum_values();
     test_texture_cache_reuses_matching_key_and_misses_on_sampler_change();
     test_texture_cache_keys_include_all_sampler_policy_fields();
@@ -785,6 +880,7 @@ int main()
     test_texture_cache_uses_ppm_decoder_placeholder_bytes();
     test_texture_cache_propagates_ppm_decoder_payload_failure();
     test_texture_cache_uses_source_specific_placeholder_bytes();
+    test_texture_cache_uses_decoder_chain_for_source_specific_formats();
     test_texture_cache_rejects_malformed_decoded_payload();
     test_texture_cache_rejects_unknown_pixel_format();
     return 0;

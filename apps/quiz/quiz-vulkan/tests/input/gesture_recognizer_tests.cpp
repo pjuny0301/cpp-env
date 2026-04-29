@@ -265,6 +265,31 @@ void test_drag_gesture_lifecycle_and_cancel()
         "up after drag cancel emits no stale gesture");
 }
 
+void test_drag_start_slop_is_configurable()
+{
+    using namespace quiz_vulkan::input;
+
+    gesture_thresholds thresholds;
+    thresholds.drag_start_slop = 12.0f;
+    gesture_recognizer recognizer(thresholds);
+
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 100, 0.0f, 0.0f)),
+        "custom drag slop down emits no gesture");
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::move, 120, 9.0f, 0.0f)),
+        "move outside tap slop but inside drag slop emits no drag");
+    require_empty(recognizer.update_time(700), "move outside tap slop still prevents long press");
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::up, 720, 9.0f, 0.0f)),
+        "release inside custom drag slop emits no tap or drag");
+
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 1000, 0.0f, 0.0f)),
+        "custom drag slop second down emits no gesture");
+    std::vector<gesture_event> gestures =
+        recognizer.process_pointer_event(pointer(pointer_phase::move, 1020, 13.0f, 0.0f));
+    require(gestures.size() == 1, "move outside custom drag slop starts drag");
+    require(gestures[0].kind == gesture_kind::drag_start, "custom drag slop emits drag start");
+    require(gestures[0].delta_x == 13.0f, "custom drag slop drag start delta is preserved");
+}
+
 void test_multi_pointer_long_press_order_is_stable()
 {
     using namespace quiz_vulkan::input;
@@ -293,6 +318,7 @@ int main()
     test_unknown_pointer_reset_and_timing_edges();
     test_pointer_id_reuse_replaces_pending_state();
     test_drag_gesture_lifecycle_and_cancel();
+    test_drag_start_slop_is_configurable();
     test_multi_pointer_long_press_order_is_stable();
 
     std::cout << "gesture_recognizer_tests passed\n";

@@ -104,7 +104,7 @@ std::vector<gesture_event> gesture_recognizer::process_pointer_event(const point
             return gestures;
         }
 
-        if (state.moved_outside_tap_slop) {
+        if (!inside_drag_slop(state, event.x, event.y)) {
             state.dragging = true;
             state.suppress_release_gesture = true;
             gestures.push_back(drag_event(
@@ -228,6 +228,12 @@ bool gesture_recognizer::inside_tap_slop(const pointer_state& state, float x, fl
 {
     return abs_float(x - state.start_x) <= thresholds_.tap_slop
         && abs_float(y - state.start_y) <= thresholds_.tap_slop;
+}
+
+bool gesture_recognizer::inside_drag_slop(const pointer_state& state, float x, float y) const
+{
+    return abs_float(x - state.start_x) <= thresholds_.drag_start_slop
+        && abs_float(y - state.start_y) <= thresholds_.drag_start_slop;
 }
 
 } // namespace quiz_vulkan::input

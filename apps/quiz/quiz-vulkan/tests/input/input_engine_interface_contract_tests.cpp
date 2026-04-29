@@ -67,6 +67,16 @@ static_assert(drag_contract_event.kind == input::gesture_kind::drag_update);
 static_assert(drag_contract_event.delta_x == 3.0f);
 static_assert(drag_contract_event.delta_y == 4.0f);
 
+constexpr input::gesture_thresholds drag_threshold_contract{
+    .swipe_min_dx = 60.0f,
+    .swipe_max_dy = 40.0f,
+    .swipe_max_duration_ms = 800,
+    .long_press_min_duration_ms = 600,
+    .tap_slop = 8.0f,
+    .drag_start_slop = 12.0f,
+};
+static_assert(drag_threshold_contract.drag_start_slop == 12.0f);
+
 template <typename T>
 concept InputEngineInterface = requires(
     T& engine,

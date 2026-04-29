@@ -323,6 +323,33 @@ void test_drag_gestures_route_from_raw_pointer()
     require(cancel.delta_y == 3.0f, "raw touch drag cancel delta y is from previous pointer");
 }
 
+void test_drag_start_slop_routes_from_engine_thresholds()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    gesture_thresholds thresholds;
+    thresholds.drag_start_slop = 12.0f;
+    input_engine engine(thresholds);
+
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 100, 0.0f, 0.0f)).empty(),
+        "engine custom drag slop down emits no gesture");
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::move, 120, 9.0f, 0.0f)).empty(),
+        "engine move outside tap slop but inside drag slop emits no drag");
+    require(engine.update_time(700).empty(), "engine move outside tap slop still prevents long press");
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 720, 9.0f, 0.0f)).empty(),
+        "engine release inside custom drag slop emits no tap or drag");
+
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 1000, 0.0f, 0.0f)).empty(),
+        "engine custom drag slop second down emits no gesture");
+    std::vector<input_event> events =
+        engine.process_raw_event(pointer(raw_platform_pointer_phase::move, 1020, 13.0f, 0.0f));
+    require(events.size() == 1, "engine move outside custom drag slop starts drag");
+    const gesture_event& drag = require_event<gesture_event>(events, 0);
+    require(drag.kind == gesture_kind::drag_start, "engine custom drag slop emits drag start");
+    require(drag.delta_x == 13.0f, "engine custom drag slop delta is preserved");
+}
+
 void test_multi_pointer_long_press_order_routes_stably()
 {
     using namespace quiz_vulkan;
@@ -682,6 +709,7 @@ int main()
     test_pointer_filter_and_timing_edges();
     test_pointer_id_reuse_routes_replacement_state();
     test_drag_gestures_route_from_raw_pointer();
+    test_drag_start_slop_routes_from_engine_thresholds();
     test_multi_pointer_long_press_order_routes_stably();
     test_text_key_flow();
     test_key_code_fallback_edges();

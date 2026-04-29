@@ -48,6 +48,81 @@ bool issue_at(
         && std::string_view(result.issues[index].id) == id;
 }
 
+bool parse_issue_at(
+    const quiz_vulkan::assets::asset_manifest_parse_result& result,
+    std::size_t index,
+    quiz_vulkan::assets::asset_manifest_parse_issue_kind kind,
+    std::size_t line)
+{
+    return result.issues.size() > index && result.issues[index].kind == kind && result.issues[index].line == line;
+}
+
+void test_parse_asset_manifest_text_loads_roots_entries_and_aliases()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    const std::string manifest_text = "# fixture manifest\n"
+                                      "root id=packaged path="
+        + fixture_root.generic_string()
+        + " aliases=images,shared\n"
+          "entry id=card_front type=image uri=ASSET:///cards\\front.png root=images rev=v2\n"
+          "entry id=main_deck type=deck uri=decks/main.quiz root_id=packaged cache_revision=build42\n";
+
+    const asset_manifest_parse_result parsed = parse_asset_manifest(manifest_text);
+
+    require(parsed.ok(), "manifest parser accepts root and entry records");
+    require(parsed.manifest.roots.size() == 1U, "manifest parser loads one root");
+    require(parsed.manifest.entries.size() == 2U, "manifest parser loads entries");
+    require(parsed.manifest.find_root("shared") != nullptr, "manifest parser loads root aliases");
+    require(parsed.manifest.entries[0].type == asset_type::image, "manifest parser loads image type");
+    require(parsed.manifest.entries[0].root_id == "images", "manifest parser loads entry root alias");
+    require(parsed.manifest.entries[0].cache_revision == "v2", "manifest parser loads rev shorthand");
+    require(parsed.manifest.entries[1].type == asset_type::deck, "manifest parser loads deck type");
+    require(parsed.manifest.entries[1].root_id == "packaged", "manifest parser loads root_id field");
+    require(parsed.manifest.entries[1].cache_revision == "build42", "manifest parser loads cache_revision field");
+
+    const normalizing_asset_resolver resolver;
+    const asset_manifest_resolve_result result = resolve_asset_manifest_entry(
+        parsed.manifest,
+        asset_manifest_resolve_request{.id = "card_front", .expected_type = asset_type::image},
+        resolver);
+
+    require(result.ok(), "parsed manifest entry resolves through root alias");
+    require(result.asset.source.normalized_uri == "asset://cards/front.png", "parsed manifest asset uri normalizes");
+    require(result.asset.cache_key == "image|asset://cards/front.png|rev=v2", "parsed manifest cache key is stable");
+}
+
+void test_parse_asset_manifest_text_reports_errors_without_partial_records()
+{
+    using namespace quiz_vulkan::assets;
+
+    const asset_manifest_parse_result parsed = parse_asset_manifest(
+        "bundle id=unknown\n"
+        "root path=missing_id\n"
+        "entry id=missing_uri type=image\n"
+        "entry id=bad_type type=movie uri=asset://clips/intro.mp4\n"
+        "entry id=click type=sound uri=asset://sounds/click.wav\n");
+
+    require(!parsed.ok(), "manifest parser reports malformed records");
+    require(parsed.issues.size() == 4U, "manifest parser reports expected issue count");
+    require(
+        parse_issue_at(parsed, 0U, asset_manifest_parse_issue_kind::unknown_record, 1U),
+        "manifest parser reports unknown record line");
+    require(
+        parse_issue_at(parsed, 1U, asset_manifest_parse_issue_kind::missing_field, 2U),
+        "manifest parser reports missing root id line");
+    require(
+        parse_issue_at(parsed, 2U, asset_manifest_parse_issue_kind::missing_field, 3U),
+        "manifest parser reports missing entry uri line");
+    require(
+        parse_issue_at(parsed, 3U, asset_manifest_parse_issue_kind::unknown_asset_type, 4U),
+        "manifest parser reports unknown asset type line");
+    require(parsed.manifest.roots.empty(), "manifest parser skips invalid root records");
+    require(parsed.manifest.entries.size() == 1U, "manifest parser keeps valid records after errors");
+    require(parsed.manifest.entries[0].id == "click", "manifest parser preserves valid later entry");
+}
+
 void test_manifest_normalizes_asset_uri_and_roots_fixture_path()
 {
     using namespace quiz_vulkan::assets;
@@ -579,6 +654,8 @@ void test_manifest_validation_allows_equivalent_aliases_to_same_rooted_path()
 
 int main()
 {
+    test_parse_asset_manifest_text_loads_roots_entries_and_aliases();
+    test_parse_asset_manifest_text_reports_errors_without_partial_records();
     test_manifest_normalizes_asset_uri_and_roots_fixture_path();
     test_cache_key_is_stable_for_equivalent_normalized_uris();
     test_local_fixture_roots_use_normalized_relative_paths();

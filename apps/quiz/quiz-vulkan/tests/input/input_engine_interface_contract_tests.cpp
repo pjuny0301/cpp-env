@@ -38,8 +38,13 @@ concept TextInputModelInterface = requires(
     { model.text() } -> std::same_as<const std::string&>;
     { model.preedit_text() } -> std::same_as<const std::string&>;
     { model.display_text() } -> std::same_as<std::string>;
+    { model.caret_byte_offset() } -> std::same_as<std::size_t>;
     { model.caret_range() } -> std::same_as<input::text_range>;
     { model.preedit_range() } -> std::same_as<std::optional<input::text_range>>;
+    { model.move_caret_to_start() } -> std::same_as<bool>;
+    { model.move_caret_to_end() } -> std::same_as<bool>;
+    { model.move_caret_left() } -> std::same_as<bool>;
+    { model.move_caret_right() } -> std::same_as<bool>;
     { model.commit_utf8(text) } -> std::same_as<bool>;
     { model.backspace() } -> std::same_as<bool>;
     { model.set_preedit(text) } -> std::same_as<bool>;

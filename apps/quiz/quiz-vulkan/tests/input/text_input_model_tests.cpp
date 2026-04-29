@@ -110,15 +110,18 @@ void test_caret_and_preedit_ranges()
 {
     quiz_vulkan::input::text_input_model model;
     require_range(model.caret_range(), 0, 0, "unfocused caret starts at zero");
+    require(model.caret_byte_offset() == 0, "unfocused caret byte offset starts at zero");
     require(!model.preedit_range().has_value(), "unfocused model has no preedit range");
 
     model.focus("answer");
     require_range(model.caret_range(), 0, 0, "focused empty caret starts at zero");
+    require(model.caret_byte_offset() == 0, "focused empty caret byte offset starts at zero");
     require(!model.preedit_range().has_value(), "focused empty model has no preedit range");
 
     const std::string committed = std::string("A") + utf8(u8"한");
     require(model.commit_utf8(committed), "commit before caret range succeeds");
     require_range(model.caret_range(), committed.size(), committed.size(), "committed caret is at byte end");
+    require(model.caret_byte_offset() == committed.size(), "committed caret byte offset is at text end");
     require(!model.preedit_range().has_value(), "committed text alone has no preedit range");
 
     const std::string preedit = utf8(u8"ㅎ");
@@ -154,6 +157,61 @@ void test_caret_and_preedit_ranges()
         committed.size() + final_text.size(),
         "focus clear preserves committed caret");
     require(!model.preedit_range().has_value(), "focus clear removes preedit range");
+}
+
+void test_caret_movement_insert_and_backspace()
+{
+    quiz_vulkan::input::text_input_model model;
+    require(!model.move_caret_to_start(), "unfocused move start is ignored");
+    require(!model.move_caret_to_end(), "unfocused move end is ignored");
+    require(!model.move_caret_left(), "unfocused move left is ignored");
+    require(!model.move_caret_right(), "unfocused move right is ignored");
+
+    model.focus("answer");
+    const std::string initial = std::string("A") + utf8(u8"한") + "B";
+    require(model.commit_utf8(initial), "initial commit for caret movement succeeds");
+    require(model.text() == initial, "initial caret movement text is stored");
+    require(model.caret_byte_offset() == initial.size(), "initial caret starts at end");
+
+    require(model.move_caret_to_start(), "move caret to start succeeds");
+    require(model.caret_byte_offset() == 0, "caret moved to start");
+    require(!model.move_caret_left(), "move left at start is ignored");
+    require(model.commit_utf8(">"), "insert at start succeeds");
+    require(model.text() == std::string(">") + initial, "insert at start mutates committed text");
+    require(model.caret_byte_offset() == 1, "caret advances after start insert");
+
+    require(model.move_caret_right(), "move right over ascii succeeds");
+    require(model.caret_byte_offset() == 2, "move right over ascii advances one byte");
+    require(model.move_caret_right(), "move right over utf8 succeeds");
+    require(model.caret_byte_offset() == 5, "move right over utf8 advances whole codepoint");
+
+    const std::string preedit = utf8(u8"ㅎ");
+    require(model.set_preedit(preedit), "preedit at middle caret succeeds");
+    require(model.display_text() == std::string(">A") + utf8(u8"한") + preedit + "B",
+        "preedit is displayed at caret before trailing text");
+    std::optional<quiz_vulkan::input::text_range> active_preedit = model.preedit_range();
+    require(active_preedit.has_value(), "middle caret preedit exposes range");
+    require_range(*active_preedit, 5, 5 + preedit.size(), "middle caret preedit range starts at caret");
+    require_range(model.caret_range(), 5 + preedit.size(), 5 + preedit.size(), "display caret follows preedit");
+
+    require(model.commit_ime("C"), "ime commit inserts at middle caret");
+    require(model.text() == std::string(">A") + utf8(u8"한") + "CB", "ime commit inserts before trailing text");
+    require(model.caret_byte_offset() == 6, "caret advances after middle ime commit");
+    require(!model.preedit_range().has_value(), "ime commit clears middle preedit range");
+
+    require(model.backspace(), "backspace before caret removes inserted codepoint");
+    require(model.text() == std::string(">A") + utf8(u8"한") + "B", "backspace before caret removes middle insert");
+    require(model.caret_byte_offset() == 5, "caret retreats after middle backspace");
+
+    require(model.move_caret_left(), "move left over utf8 before caret succeeds");
+    require(model.caret_byte_offset() == 2, "move left retreats by whole utf8 codepoint");
+    require(model.backspace(), "backspace before utf8 caret removes previous ascii");
+    require(model.text() == std::string(">") + utf8(u8"한") + "B", "backspace removes ascii before utf8");
+    require(model.caret_byte_offset() == 1, "caret retreats to after prefix");
+
+    require(model.move_caret_to_end(), "move caret to end succeeds");
+    require(model.caret_byte_offset() == model.text().size(), "caret moved to end");
+    require(!model.move_caret_right(), "move right at end is ignored");
 }
 
 void test_ime_preedit_and_commit()
@@ -273,6 +331,7 @@ int main()
     test_mixed_width_utf8_backspace_edges();
     test_malformed_utf8_backspace_preserves_valid_prefix();
     test_caret_and_preedit_ranges();
+    test_caret_movement_insert_and_backspace();
     test_ime_preedit_and_commit();
     test_ime_commit_edges();
     test_empty_preedit_edges();

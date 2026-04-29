@@ -43,6 +43,10 @@ concept VulkanCommandRecorderInterface = requires(
 
 static_assert(VulkanCommandRecorderInterface<render::vulkan_backend::vulkan_command_recorder_interface>);
 static_assert(VulkanCommandRecorderInterface<render::vulkan_backend::diagnostic_vulkan_command_recorder>);
+static_assert(std::constructible_from<render::vulkan_backend::diagnostic_vulkan_command_recorder, bool>);
+static_assert(std::constructible_from<
+    render::vulkan_backend::diagnostic_vulkan_command_recorder,
+    render::vulkan_backend::diagnostic_vulkan_command_recorder_options>);
 
 static_assert(requires(render::vulkan_backend::vulkan_surface_extent surface) {
     { surface.width } -> std::same_as<std::size_t&>;
@@ -68,15 +72,41 @@ static_assert(requires(render::vulkan_backend::vulkan_recorded_draw_batch record
     { recorded_batch.scissor } -> std::same_as<render::vulkan_backend::vulkan_scissor_rect&>;
 });
 
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_command_recorder_failure_stage::none),
+    render::vulkan_backend::vulkan_command_recorder_failure_stage>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_command_recorder_failure_stage::begin_recording),
+    render::vulkan_backend::vulkan_command_recorder_failure_stage>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_command_recorder_failure_stage::record_draw_batch),
+    render::vulkan_backend::vulkan_command_recorder_failure_stage>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_command_recorder_failure_stage::finish_recording),
+    render::vulkan_backend::vulkan_command_recorder_failure_stage>);
+
+static_assert(requires(render::vulkan_backend::vulkan_command_recorder_failure_stage stage) {
+    { render::vulkan_backend::command_recorder_failure_stage_name(stage) } -> std::same_as<std::string_view>;
+});
+
 static_assert(requires(render::vulkan_backend::vulkan_backend_command_recorder_state recorder) {
     { recorder.ready } -> std::same_as<bool&>;
     { recorder.frame_open } -> std::same_as<bool&>;
     { recorder.command_buffer_recorded } -> std::same_as<bool&>;
+    { recorder.failure_stage } -> std::same_as<render::vulkan_backend::vulkan_command_recorder_failure_stage&>;
+    { recorder.failure_recording_index } -> std::same_as<std::size_t&>;
     { recorder.planned_batch_count } -> std::same_as<std::size_t&>;
     { recorder.recorded_batch_count } -> std::same_as<std::size_t&>;
     { recorder.recorded_batches } -> std::same_as<std::vector<render::vulkan_backend::vulkan_recorded_draw_batch>&>;
     { recorder.empty() } -> std::same_as<bool>;
     { recorder.completed() } -> std::same_as<bool>;
+    { recorder.failed() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::diagnostic_vulkan_command_recorder_options options) {
+    { options.ready } -> std::same_as<bool&>;
+    { options.fail_at } -> std::same_as<render::vulkan_backend::vulkan_command_recorder_failure_stage&>;
+    { options.fail_recording_index } -> std::same_as<std::size_t&>;
 });
 
 static_assert(requires(render::vulkan_backend::vulkan_backend_frame_result result) {

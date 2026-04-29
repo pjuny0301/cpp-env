@@ -74,10 +74,21 @@ struct vulkan_recorded_draw_batch {
     vulkan_scissor_rect scissor;
 };
 
+enum class vulkan_command_recorder_failure_stage {
+    none,
+    begin_recording,
+    record_draw_batch,
+    finish_recording,
+};
+
+std::string_view command_recorder_failure_stage_name(vulkan_command_recorder_failure_stage stage);
+
 struct vulkan_backend_command_recorder_state {
     bool ready = false;
     bool frame_open = false;
     bool command_buffer_recorded = false;
+    vulkan_command_recorder_failure_stage failure_stage = vulkan_command_recorder_failure_stage::none;
+    std::size_t failure_recording_index = 0;
     std::size_t planned_batch_count = 0;
     std::size_t recorded_batch_count = 0;
     std::vector<vulkan_recorded_draw_batch> recorded_batches;
@@ -94,6 +105,17 @@ struct vulkan_backend_command_recorder_state {
             && recorded_batch_count == planned_batch_count
             && recorded_batches.size() == recorded_batch_count;
     }
+
+    bool failed() const
+    {
+        return failure_stage != vulkan_command_recorder_failure_stage::none;
+    }
+};
+
+struct diagnostic_vulkan_command_recorder_options {
+    bool ready = true;
+    vulkan_command_recorder_failure_stage fail_at = vulkan_command_recorder_failure_stage::none;
+    std::size_t fail_recording_index = 0;
 };
 
 class vulkan_command_recorder_interface {
@@ -109,6 +131,7 @@ public:
 class diagnostic_vulkan_command_recorder final : public vulkan_command_recorder_interface {
 public:
     explicit diagnostic_vulkan_command_recorder(bool ready = true);
+    explicit diagnostic_vulkan_command_recorder(diagnostic_vulkan_command_recorder_options options);
 
     bool begin_recording(vulkan_surface_extent surface, std::size_t planned_batch_count) override;
     bool record_draw_batch(const vulkan_draw_batch& batch) override;
@@ -116,7 +139,7 @@ public:
     const vulkan_backend_command_recorder_state& recorder_state() const override;
 
 private:
-    bool ready_ = true;
+    diagnostic_vulkan_command_recorder_options options_;
     vulkan_backend_command_recorder_state state_;
 };
 

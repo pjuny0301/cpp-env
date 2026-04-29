@@ -1,5 +1,7 @@
 #include "render/vulkan/vulkan_backend_adapter.h"
 
+#include <utility>
+
 namespace quiz_vulkan::render::vulkan_backend {
 namespace {
 
@@ -51,6 +53,73 @@ void mark_recorder_failure(
 {
     state.failure_stage = stage;
     state.failure_recording_index = recording_index;
+}
+
+std::vector<vulkan_pipeline_capability> make_pipeline_capabilities(bool available)
+{
+    return {
+        vulkan_pipeline_capability{.kind = vulkan_batch_kind::quad, .available = available},
+        vulkan_pipeline_capability{.kind = vulkan_batch_kind::text, .available = available},
+        vulkan_pipeline_capability{.kind = vulkan_batch_kind::image, .available = available},
+        vulkan_pipeline_capability{.kind = vulkan_batch_kind::debug_bounds, .available = available},
+    };
+}
+
+std::vector<vulkan_pipeline_cache_entry> make_pipeline_cache_entries(
+    const std::vector<vulkan_pipeline_capability>& capabilities)
+{
+    std::vector<vulkan_pipeline_cache_entry> entries;
+    entries.reserve(capabilities.size());
+    for (const vulkan_pipeline_capability& capability : capabilities) {
+        entries.push_back(vulkan_pipeline_cache_entry{
+            .kind = capability.kind,
+            .available = capability.available,
+        });
+    }
+    return entries;
+}
+
+void apply_pipeline_overrides(
+    std::vector<vulkan_pipeline_capability>& capabilities,
+    const std::vector<vulkan_pipeline_capability>& overrides)
+{
+    for (const vulkan_pipeline_capability& override_capability : overrides) {
+        for (vulkan_pipeline_capability& capability : capabilities) {
+            if (capability.kind == override_capability.kind) {
+                capability.available = override_capability.available;
+                break;
+            }
+        }
+    }
+}
+
+vulkan_pipeline_cache_entry* find_pipeline_entry(
+    std::vector<vulkan_pipeline_cache_entry>& entries,
+    vulkan_batch_kind kind)
+{
+    for (vulkan_pipeline_cache_entry& entry : entries) {
+        if (entry.kind == kind) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
+bool ensure_frame_plan_pipelines(
+    vulkan_pipeline_cache_interface& pipeline_cache,
+    const vulkan_frame_plan& plan,
+    vulkan_backend_frame_result& result)
+{
+    for (const vulkan_draw_batch& batch : plan.batches) {
+        if (!pipeline_cache.ensure_pipeline(batch)) {
+            result.pipeline = pipeline_cache.pipeline_state();
+            result.fallback_reason = vulkan_backend_fallback_reason::pipeline_unavailable;
+            return false;
+        }
+    }
+
+    result.pipeline = pipeline_cache.pipeline_state();
+    return true;
 }
 
 } // namespace
@@ -131,6 +200,21 @@ std::string_view command_recorder_failure_stage_name(vulkan_command_recorder_fai
     return "unknown";
 }
 
+bool vulkan_backend_pipeline_state::supports(vulkan_batch_kind kind) const
+{
+    for (const vulkan_pipeline_capability& capability : capabilities) {
+        if (capability.kind == kind) {
+            return capability.available;
+        }
+    }
+    return false;
+}
+
+bool vulkan_backend_pipeline_state::completed() const
+{
+    return ready && !missing_pipeline;
+}
+
 vulkan_backend_lifecycle_readiness null_vulkan_backend_device::current_lifecycle_readiness() const
 {
     return {};
@@ -161,6 +245,55 @@ bool null_vulkan_backend_device::submit_frame()
 bool null_vulkan_backend_device::present_frame()
 {
     return false;
+}
+
+diagnostic_vulkan_pipeline_cache::diagnostic_vulkan_pipeline_cache()
+    : diagnostic_vulkan_pipeline_cache(diagnostic_vulkan_pipeline_cache_options{})
+{
+}
+
+diagnostic_vulkan_pipeline_cache::diagnostic_vulkan_pipeline_cache(
+    diagnostic_vulkan_pipeline_cache_options options)
+    : options_(std::move(options))
+{
+    state_.capabilities = make_pipeline_capabilities(options_.default_available);
+    apply_pipeline_overrides(state_.capabilities, options_.overrides);
+    state_.cache_entries = make_pipeline_cache_entries(state_.capabilities);
+    state_.ready = true;
+}
+
+bool diagnostic_vulkan_pipeline_cache::ensure_pipeline(const vulkan_draw_batch& batch)
+{
+    state_.cache_checked = true;
+    ++state_.requested_pipeline_count;
+
+    vulkan_pipeline_cache_entry* entry = find_pipeline_entry(state_.cache_entries, batch.kind);
+    if (entry == nullptr) {
+        state_.missing_pipeline = true;
+        state_.ready = false;
+        state_.missing_batch_kind = batch.kind;
+        state_.missing_command_index = batch.command_index;
+        return false;
+    }
+
+    entry->requested = true;
+    ++entry->request_count;
+    entry->last_command_index = batch.command_index;
+    if (!entry->available) {
+        state_.missing_pipeline = true;
+        state_.ready = false;
+        state_.missing_batch_kind = batch.kind;
+        state_.missing_command_index = batch.command_index;
+        return false;
+    }
+
+    state_.ready = !state_.missing_pipeline;
+    return true;
+}
+
+const vulkan_backend_pipeline_state& diagnostic_vulkan_pipeline_cache::pipeline_state() const
+{
+    return state_;
 }
 
 diagnostic_vulkan_command_recorder::diagnostic_vulkan_command_recorder(bool ready)
@@ -268,12 +401,24 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     const render_draw_list& draw_list,
     render_rect viewport)
 {
+    diagnostic_vulkan_pipeline_cache pipeline_cache;
     diagnostic_vulkan_command_recorder command_recorder;
-    return submit_vulkan_backend_frame(device, command_recorder, draw_list, viewport);
+    return submit_vulkan_backend_frame(device, pipeline_cache, command_recorder, draw_list, viewport);
 }
 
 vulkan_backend_frame_result submit_vulkan_backend_frame(
     vulkan_backend_device_interface& device,
+    vulkan_command_recorder_interface& command_recorder,
+    const render_draw_list& draw_list,
+    render_rect viewport)
+{
+    diagnostic_vulkan_pipeline_cache pipeline_cache;
+    return submit_vulkan_backend_frame(device, pipeline_cache, command_recorder, draw_list, viewport);
+}
+
+vulkan_backend_frame_result submit_vulkan_backend_frame(
+    vulkan_backend_device_interface& device,
+    vulkan_pipeline_cache_interface& pipeline_cache,
     vulkan_command_recorder_interface& command_recorder,
     const render_draw_list& draw_list,
     render_rect viewport)
@@ -314,6 +459,10 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     result.clipped_draw_call_count = plan.clipped_draw_call_count;
     result.discarded_draw_call_count = plan.discarded_draw_call_count;
     result.reached_stage = vulkan_backend_frame_stage::frame_plan_ready;
+
+    if (!ensure_frame_plan_pipelines(pipeline_cache, plan, result)) {
+        return result;
+    }
 
     result.frame_begun = device.begin_frame(result.surface);
     if (!result.frame_begun) {

@@ -964,6 +964,113 @@ void test_vulkan_diagnostic_command_recorder_reports_finish_failure()
     require(state.recorded_batches.size() == 1, "finish failure preserves recorded batches");
 }
 
+void test_vulkan_diagnostic_pipeline_cache_reports_batch_capabilities()
+{
+    using namespace quiz_vulkan::render;
+
+    render_draw_list draw_list;
+    draw_list.commands.push_back(make_quad_command(
+        "quad",
+        render_rect{10.0f, 10.0f, 20.0f, 20.0f},
+        render_color{1.0f, 0.0f, 0.0f, 1.0f}));
+    draw_list.commands.push_back(make_image_command(
+        "image",
+        render_rect{40.0f, 40.0f, 20.0f, 20.0f},
+        "fixture://renderer/image.png"));
+
+    const vulkan_backend::vulkan_frame_plan plan = vulkan_backend::build_vulkan_frame_plan(
+        draw_list,
+        vulkan_backend::vulkan_frame_plan_options{
+            .viewport = render_rect{0.0f, 0.0f, 100.0f, 100.0f},
+            .surface_width = 10,
+            .surface_height = 10,
+        });
+
+    vulkan_backend::diagnostic_vulkan_pipeline_cache cache;
+    require(cache.ensure_pipeline(plan.batches[0]), "diagnostic pipeline cache provides quad pipeline");
+    require(cache.ensure_pipeline(plan.batches[1]), "diagnostic pipeline cache provides image pipeline");
+
+    const vulkan_backend::vulkan_backend_pipeline_state& state = cache.pipeline_state();
+    require(state.cache_checked, "pipeline cache records that pipelines were checked");
+    require(state.ready, "pipeline cache remains ready when all requested pipelines exist");
+    require(state.completed(), "pipeline cache reports completed state when all requested pipelines exist");
+    require(!state.missing_pipeline, "pipeline cache reports no missing pipeline");
+    require(state.requested_pipeline_count == 2, "pipeline cache records requested pipeline count");
+    require(state.capabilities.size() == 4, "pipeline cache exposes one capability per batch kind");
+    require(state.cache_entries.size() == 4, "pipeline cache exposes one cache entry per batch kind");
+    require(state.supports(vulkan_backend::vulkan_batch_kind::quad), "pipeline cache supports quad pipeline");
+    require(state.supports(vulkan_backend::vulkan_batch_kind::text), "pipeline cache supports text pipeline");
+    require(state.supports(vulkan_backend::vulkan_batch_kind::image), "pipeline cache supports image pipeline");
+    require(state.supports(vulkan_backend::vulkan_batch_kind::debug_bounds), "pipeline cache supports debug pipeline");
+
+    require(state.cache_entries[0].kind == vulkan_backend::vulkan_batch_kind::quad, "first pipeline cache entry is quad");
+    require(state.cache_entries[0].requested, "quad pipeline cache entry is requested");
+    require(state.cache_entries[0].request_count == 1, "quad pipeline cache entry records request count");
+    require(state.cache_entries[0].last_command_index == 0, "quad pipeline cache entry records source command index");
+    require(state.cache_entries[1].kind == vulkan_backend::vulkan_batch_kind::text, "second pipeline cache entry is text");
+    require(!state.cache_entries[1].requested, "text pipeline cache entry is not requested");
+    require(state.cache_entries[2].kind == vulkan_backend::vulkan_batch_kind::image, "third pipeline cache entry is image");
+    require(state.cache_entries[2].requested, "image pipeline cache entry is requested");
+    require(state.cache_entries[2].request_count == 1, "image pipeline cache entry records request count");
+    require(state.cache_entries[2].last_command_index == 1, "image pipeline cache entry records source command index");
+    require(
+        state.cache_entries[3].kind == vulkan_backend::vulkan_batch_kind::debug_bounds,
+        "fourth pipeline cache entry is debug bounds");
+    require(!state.cache_entries[3].requested, "debug pipeline cache entry is not requested");
+}
+
+void test_vulkan_diagnostic_pipeline_cache_identifies_missing_batch_pipeline()
+{
+    using namespace quiz_vulkan::render;
+
+    render_draw_list draw_list;
+    draw_list.commands.push_back(make_quad_command(
+        "quad",
+        render_rect{10.0f, 10.0f, 20.0f, 20.0f},
+        render_color{1.0f, 0.0f, 0.0f, 1.0f}));
+    draw_list.commands.push_back(make_image_command(
+        "image",
+        render_rect{40.0f, 40.0f, 20.0f, 20.0f},
+        "fixture://renderer/image.png"));
+
+    const vulkan_backend::vulkan_frame_plan plan = vulkan_backend::build_vulkan_frame_plan(
+        draw_list,
+        vulkan_backend::vulkan_frame_plan_options{
+            .viewport = render_rect{0.0f, 0.0f, 100.0f, 100.0f},
+            .surface_width = 10,
+            .surface_height = 10,
+        });
+
+    vulkan_backend::diagnostic_vulkan_pipeline_cache cache(
+        vulkan_backend::diagnostic_vulkan_pipeline_cache_options{
+            .default_available = true,
+            .overrides = {vulkan_backend::vulkan_pipeline_capability{
+                .kind = vulkan_backend::vulkan_batch_kind::image,
+                .available = false,
+            }},
+        });
+
+    require(cache.ensure_pipeline(plan.batches[0]), "pipeline cache provides available quad pipeline");
+    require(!cache.ensure_pipeline(plan.batches[1]), "pipeline cache reports missing image pipeline");
+
+    const vulkan_backend::vulkan_backend_pipeline_state& state = cache.pipeline_state();
+    require(state.cache_checked, "missing pipeline cache records that pipelines were checked");
+    require(!state.ready, "missing pipeline cache is not ready");
+    require(!state.completed(), "missing pipeline cache does not complete");
+    require(state.missing_pipeline, "missing pipeline cache records missing pipeline");
+    require(
+        state.missing_batch_kind == vulkan_backend::vulkan_batch_kind::image,
+        "missing pipeline cache records missing image pipeline");
+    require(state.missing_command_index == 1, "missing pipeline cache records source command index");
+    require(state.requested_pipeline_count == 2, "missing pipeline cache records request count through failure");
+    require(state.supports(vulkan_backend::vulkan_batch_kind::quad), "missing pipeline cache still supports quad");
+    require(!state.supports(vulkan_backend::vulkan_batch_kind::image), "missing pipeline cache reports unsupported image");
+    require(state.cache_entries[0].requested, "missing pipeline cache records quad request");
+    require(state.cache_entries[2].requested, "missing pipeline cache records image request");
+    require(!state.cache_entries[2].available, "missing pipeline cache entry records unavailable image pipeline");
+    require(state.cache_entries[2].last_command_index == 1, "missing pipeline cache entry records failed command index");
+}
+
 void test_vulkan_backend_adapter_completes_fake_device_lifecycle()
 {
     using namespace quiz_vulkan::render;
@@ -1002,6 +1109,10 @@ void test_vulkan_backend_adapter_completes_fake_device_lifecycle()
     require(result.recorded_batch_count == 1, "fake backend records one batch");
     require(result.clipped_draw_call_count == 0, "unclipped fake backend batch is not clipped");
     require(result.discarded_draw_call_count == 0, "visible fake backend batch is not discarded");
+    require(result.pipeline.completed(), "fake backend pipeline cache reports completed state");
+    require(result.pipeline.supports(vulkan_backend::vulkan_batch_kind::quad), "fake backend pipeline cache supports quads");
+    require(result.pipeline.requested_pipeline_count == 1, "fake backend pipeline cache records one pipeline request");
+    require(result.pipeline.cache_entries[0].requested, "fake backend pipeline cache records quad request");
     require(result.command_recorder.ready, "fake backend command recorder is ready");
     require(result.command_recorder.frame_open, "fake backend command recorder opens a frame");
     require(result.command_recorder.command_buffer_recorded, "fake backend command buffer is recorded");
@@ -1259,6 +1370,68 @@ void test_vulkan_backend_adapter_falls_back_when_injected_recorder_rejects_frame
     require(device.calls.size() == 1, "backend stops device lifecycle after begin when recorder rejects frame");
     require(device.calls[0] == "begin", "backend begins before injected recorder rejects frame");
     require(!recorder.recorder_state().ready, "injected recorder exposes rejected state");
+}
+
+void test_vulkan_backend_adapter_falls_back_when_batch_pipeline_is_missing()
+{
+    using namespace quiz_vulkan::render;
+
+    render_draw_list draw_list;
+    draw_list.commands.push_back(make_quad_command(
+        "quad",
+        render_rect{0.0f, 0.0f, 40.0f, 40.0f},
+        render_color{1.0f, 0.0f, 0.0f, 1.0f}));
+    draw_list.commands.push_back(make_image_command(
+        "image",
+        render_rect{50.0f, 50.0f, 20.0f, 20.0f},
+        "fixture://renderer/image.png"));
+
+    fake_vulkan_backend_device device(vulkan_backend::vulkan_surface_extent{.width = 16, .height = 16});
+    vulkan_backend::diagnostic_vulkan_pipeline_cache pipeline_cache(
+        vulkan_backend::diagnostic_vulkan_pipeline_cache_options{
+            .default_available = true,
+            .overrides = {vulkan_backend::vulkan_pipeline_capability{
+                .kind = vulkan_backend::vulkan_batch_kind::image,
+                .available = false,
+            }},
+        });
+    vulkan_backend::diagnostic_vulkan_command_recorder recorder;
+    const vulkan_backend::vulkan_backend_frame_result result = vulkan_backend::submit_vulkan_backend_frame(
+        device,
+        pipeline_cache,
+        recorder,
+        draw_list,
+        render_rect{0.0f, 0.0f, 100.0f, 100.0f});
+
+    require(!result.completed(), "backend cannot complete when a required batch pipeline is missing");
+    require(result.lifecycle_ready, "backend lifecycle is ready before missing pipeline fallback");
+    require(result.surface_ready, "backend surface is ready before missing pipeline fallback");
+    require(!result.frame_begun, "backend does not begin frame when a batch pipeline is missing");
+    require(!result.commands_recorded, "backend does not record commands when a batch pipeline is missing");
+    require(
+        result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::pipeline_unavailable,
+        "backend reports pipeline unavailable when a batch pipeline is missing");
+    require(
+        result.reached_stage == vulkan_backend::vulkan_backend_frame_stage::frame_plan_ready,
+        "backend stops after frame plan when a batch pipeline is missing");
+    require(result.planned_batch_count == 2, "backend reports planned batches before missing pipeline fallback");
+    require(result.recorded_batch_count == 0, "backend records no batches when a pipeline is missing");
+    require(result.pipeline.cache_checked, "backend records pipeline cache check before missing pipeline fallback");
+    require(!result.pipeline.ready, "backend records unready pipeline cache");
+    require(result.pipeline.missing_pipeline, "backend records missing pipeline");
+    require(
+        result.pipeline.missing_batch_kind == vulkan_backend::vulkan_batch_kind::image,
+        "backend records missing image pipeline");
+    require(result.pipeline.missing_command_index == 1, "backend records command index for missing pipeline");
+    require(result.pipeline.requested_pipeline_count == 2, "backend records pipeline requests through missing pipeline");
+    require(result.pipeline.cache_entries[0].requested, "backend records successful quad pipeline request");
+    require(result.pipeline.cache_entries[2].requested, "backend records failed image pipeline request");
+    require(!result.pipeline.cache_entries[2].available, "backend records unavailable image pipeline");
+    require(result.command_recorder.ready, "backend keeps command recorder ready before missing pipeline fallback");
+    require(!result.command_recorder.frame_open, "backend does not open command recorder when pipeline is missing");
+    require(result.command_recorder.planned_batch_count == 2, "backend preserves planned batch count before recorder");
+    require(device.calls.empty(), "backend does not call device lifecycle when a batch pipeline is missing");
+    require(!recorder.recorder_state().frame_open, "injected recorder is not opened when a batch pipeline is missing");
 }
 
 void test_vulkan_backend_adapter_falls_back_when_injected_recorder_fails_record_batch()
@@ -1621,12 +1794,15 @@ int main()
     test_vulkan_diagnostic_command_recorder_reports_begin_failure();
     test_vulkan_diagnostic_command_recorder_reports_record_failure();
     test_vulkan_diagnostic_command_recorder_reports_finish_failure();
+    test_vulkan_diagnostic_pipeline_cache_reports_batch_capabilities();
+    test_vulkan_diagnostic_pipeline_cache_identifies_missing_batch_pipeline();
     test_vulkan_backend_adapter_completes_fake_device_lifecycle();
     test_vulkan_backend_adapter_preserves_plan_diagnostics();
     test_vulkan_backend_adapter_completes_empty_frame();
     test_vulkan_backend_adapter_completes_all_discarded_frame();
     test_vulkan_backend_adapter_falls_back_when_command_recorder_is_unready();
     test_vulkan_backend_adapter_falls_back_when_injected_recorder_rejects_frame();
+    test_vulkan_backend_adapter_falls_back_when_batch_pipeline_is_missing();
     test_vulkan_backend_adapter_falls_back_when_injected_recorder_fails_record_batch();
     test_vulkan_backend_adapter_falls_back_when_injected_recorder_fails_finish();
     test_vulkan_backend_adapter_falls_back_without_surface();

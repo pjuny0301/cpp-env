@@ -28,6 +28,23 @@ static_assert(VulkanBackendDeviceInterface<render::vulkan_backend::vulkan_backen
 static_assert(VulkanBackendDeviceInterface<render::vulkan_backend::null_vulkan_backend_device>);
 
 template <typename T>
+concept VulkanPipelineCacheInterface = requires(
+    const T& const_cache,
+    T& cache,
+    const render::vulkan_backend::vulkan_draw_batch& batch) {
+    { cache.ensure_pipeline(batch) } -> std::same_as<bool>;
+    { const_cache.pipeline_state() }
+        -> std::same_as<const render::vulkan_backend::vulkan_backend_pipeline_state&>;
+};
+
+static_assert(VulkanPipelineCacheInterface<render::vulkan_backend::vulkan_pipeline_cache_interface>);
+static_assert(VulkanPipelineCacheInterface<render::vulkan_backend::diagnostic_vulkan_pipeline_cache>);
+static_assert(std::default_initializable<render::vulkan_backend::diagnostic_vulkan_pipeline_cache>);
+static_assert(std::constructible_from<
+    render::vulkan_backend::diagnostic_vulkan_pipeline_cache,
+    render::vulkan_backend::diagnostic_vulkan_pipeline_cache_options>);
+
+template <typename T>
 concept VulkanCommandRecorderInterface = requires(
     const T& const_recorder,
     T& recorder,
@@ -72,6 +89,37 @@ static_assert(requires(render::vulkan_backend::vulkan_recorded_draw_batch record
     { recorded_batch.scissor } -> std::same_as<render::vulkan_backend::vulkan_scissor_rect&>;
 });
 
+static_assert(requires(render::vulkan_backend::vulkan_pipeline_capability capability) {
+    { capability.kind } -> std::same_as<render::vulkan_backend::vulkan_batch_kind&>;
+    { capability.available } -> std::same_as<bool&>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_pipeline_cache_entry entry) {
+    { entry.kind } -> std::same_as<render::vulkan_backend::vulkan_batch_kind&>;
+    { entry.available } -> std::same_as<bool&>;
+    { entry.requested } -> std::same_as<bool&>;
+    { entry.request_count } -> std::same_as<std::size_t&>;
+    { entry.last_command_index } -> std::same_as<std::size_t&>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_backend_pipeline_state pipeline) {
+    { pipeline.cache_checked } -> std::same_as<bool&>;
+    { pipeline.ready } -> std::same_as<bool&>;
+    { pipeline.missing_pipeline } -> std::same_as<bool&>;
+    { pipeline.missing_batch_kind } -> std::same_as<render::vulkan_backend::vulkan_batch_kind&>;
+    { pipeline.missing_command_index } -> std::same_as<std::size_t&>;
+    { pipeline.requested_pipeline_count } -> std::same_as<std::size_t&>;
+    { pipeline.capabilities } -> std::same_as<std::vector<render::vulkan_backend::vulkan_pipeline_capability>&>;
+    { pipeline.cache_entries } -> std::same_as<std::vector<render::vulkan_backend::vulkan_pipeline_cache_entry>&>;
+    { pipeline.supports(render::vulkan_backend::vulkan_batch_kind::quad) } -> std::same_as<bool>;
+    { pipeline.completed() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::diagnostic_vulkan_pipeline_cache_options options) {
+    { options.default_available } -> std::same_as<bool&>;
+    { options.overrides } -> std::same_as<std::vector<render::vulkan_backend::vulkan_pipeline_capability>&>;
+});
+
 static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_command_recorder_failure_stage::none),
     render::vulkan_backend::vulkan_command_recorder_failure_stage>);
@@ -112,6 +160,7 @@ static_assert(requires(render::vulkan_backend::diagnostic_vulkan_command_recorde
 static_assert(requires(render::vulkan_backend::vulkan_backend_frame_result result) {
     { result.surface } -> std::same_as<render::vulkan_backend::vulkan_surface_extent&>;
     { result.lifecycle } -> std::same_as<render::vulkan_backend::vulkan_backend_lifecycle_readiness&>;
+    { result.pipeline } -> std::same_as<render::vulkan_backend::vulkan_backend_pipeline_state&>;
     { result.command_recorder } -> std::same_as<render::vulkan_backend::vulkan_backend_command_recorder_state&>;
     { result.reached_stage } -> std::same_as<render::vulkan_backend::vulkan_backend_frame_stage&>;
     { result.lifecycle_ready } -> std::same_as<bool&>;
@@ -132,12 +181,15 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_frame_result resul
 
 static_assert(requires(
     render::vulkan_backend::vulkan_backend_device_interface& device,
+    render::vulkan_backend::vulkan_pipeline_cache_interface& pipeline_cache,
     render::vulkan_backend::vulkan_command_recorder_interface& command_recorder,
     const render::render_draw_list& draw_list,
     render::render_rect viewport) {
     { render::vulkan_backend::submit_vulkan_backend_frame(device, draw_list, viewport) }
         -> std::same_as<render::vulkan_backend::vulkan_backend_frame_result>;
     { render::vulkan_backend::submit_vulkan_backend_frame(device, command_recorder, draw_list, viewport) }
+        -> std::same_as<render::vulkan_backend::vulkan_backend_frame_result>;
+    { render::vulkan_backend::submit_vulkan_backend_frame(device, pipeline_cache, command_recorder, draw_list, viewport) }
         -> std::same_as<render::vulkan_backend::vulkan_backend_frame_result>;
 });
 

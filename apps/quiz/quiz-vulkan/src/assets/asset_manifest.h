@@ -154,6 +154,7 @@ enum class asset_manifest_parse_issue_kind {
     unknown_record,
     missing_field,
     unknown_asset_type,
+    invalid_field,
     file_read_failed,
 };
 
@@ -308,6 +309,22 @@ struct asset_manifest_cache_record {
     std::optional<std::filesystem::path> rooted_path;
 };
 
+struct asset_manifest_field {
+    std::string key;
+    std::string value;
+    bool has_value = false;
+};
+
+struct asset_manifest_field_parse_result {
+    std::vector<asset_manifest_field> fields;
+    std::string diagnostic;
+
+    [[nodiscard]] bool ok() const
+    {
+        return diagnostic.empty();
+    }
+};
+
 inline void add_manifest_parse_issue(
     asset_manifest_parse_result& result,
     asset_manifest_parse_issue_kind kind,
@@ -321,36 +338,105 @@ inline void add_manifest_parse_issue(
     });
 }
 
-inline std::vector<std::string_view> split_manifest_fields(std::string_view line)
+inline char decode_manifest_escape(char value)
 {
-    std::vector<std::string_view> fields;
+    switch (value) {
+        case 'n':
+            return '\n';
+        case 'r':
+            return '\r';
+        case 't':
+            return '\t';
+        case '"':
+        case '\\':
+            return value;
+        default:
+            return value;
+    }
+}
+
+inline asset_manifest_field_parse_result split_manifest_fields(std::string_view line)
+{
+    asset_manifest_field_parse_result result;
     std::string_view::size_type index = 0U;
     while (index < line.size()) {
         while (index < line.size() && is_ascii_space(line[index])) {
             ++index;
         }
+        if (index == line.size()) {
+            break;
+        }
+
         const std::string_view::size_type begin = index;
-        while (index < line.size() && !is_ascii_space(line[index])) {
+        while (index < line.size() && line[index] != '=' && !is_ascii_space(line[index])) {
             ++index;
         }
-        if (begin != index) {
-            fields.push_back(line.substr(begin, index - begin));
+        if (begin == index) {
+            result.diagnostic = "asset manifest field key is empty";
+            return result;
         }
+
+        asset_manifest_field field;
+        field.key = std::string(line.substr(begin, index - begin));
+        while (index < line.size() && is_ascii_space(line[index])) {
+            ++index;
+        }
+
+        if (index < line.size() && line[index] == '=') {
+            field.has_value = true;
+            ++index;
+            if (index < line.size() && line[index] == '"') {
+                ++index;
+                bool closed_quote = false;
+                while (index < line.size()) {
+                    const char value = line[index];
+                    if (value == '"') {
+                        ++index;
+                        closed_quote = true;
+                        break;
+                    }
+                    if (value == '\\') {
+                        ++index;
+                        if (index == line.size()) {
+                            result.diagnostic = "asset manifest quoted field ends with an escape";
+                            return result;
+                        }
+                        field.value.push_back(decode_manifest_escape(line[index]));
+                        ++index;
+                        continue;
+                    }
+                    field.value.push_back(value);
+                    ++index;
+                }
+                if (!closed_quote) {
+                    result.diagnostic = "asset manifest quoted field is not closed";
+                    return result;
+                }
+                if (index < line.size() && !is_ascii_space(line[index])) {
+                    result.diagnostic = "asset manifest quoted field must end before the next field";
+                    return result;
+                }
+            } else {
+                const std::string_view::size_type value_begin = index;
+                while (index < line.size() && !is_ascii_space(line[index])) {
+                    ++index;
+                }
+                field.value = std::string(line.substr(value_begin, index - value_begin));
+            }
+        }
+
+        result.fields.push_back(std::move(field));
     }
-    return fields;
+    return result;
 }
 
 inline std::optional<std::string_view> manifest_field_value(
-    const std::vector<std::string_view>& fields,
+    const std::vector<asset_manifest_field>& fields,
     std::string_view key)
 {
-    for (std::string_view field : fields) {
-        const std::string_view::size_type separator = field.find('=');
-        if (separator == std::string_view::npos) {
-            continue;
-        }
-        if (field.substr(0U, separator) == key) {
-            return field.substr(separator + 1U);
+    for (const asset_manifest_field& field : fields) {
+        if (field.has_value && field.key == key) {
+            return std::string_view(field.value);
         }
     }
     return std::nullopt;
@@ -496,78 +582,88 @@ inline asset_manifest_parse_result parse_asset_manifest(std::string_view text)
         }
 
         if (!line.empty() && line.front() != '#') {
-            const std::vector<std::string_view> fields = detail::split_manifest_fields(line);
-            const std::string_view record = fields.empty() ? std::string_view{} : fields.front();
-            if (record == "root") {
-                const std::optional<std::string_view> id = detail::manifest_field_value(fields, "id");
-                const std::optional<std::string_view> path = detail::manifest_field_value(fields, "path");
-                if (!id.has_value() || id->empty() || !path.has_value() || path->empty()) {
-                    detail::add_manifest_parse_issue(
-                        result,
-                        asset_manifest_parse_issue_kind::missing_field,
-                        line_number,
-                        "asset manifest root records require id and path fields");
-                } else {
-                    asset_manifest_root root{
-                        .id = std::string(*id),
-                        .root_path = std::filesystem::path(std::string(*path)),
-                    };
-                    const std::optional<std::string_view> aliases = detail::manifest_field_value(fields, "aliases");
-                    if (aliases.has_value()) {
-                        root.aliases = detail::split_manifest_aliases(*aliases);
-                    }
-                    result.manifest.roots.push_back(std::move(root));
-                }
-            } else if (record == "entry") {
-                const std::optional<std::string_view> id = detail::manifest_field_value(fields, "id");
-                const std::optional<std::string_view> uri = detail::manifest_field_value(fields, "uri");
-                if (!id.has_value() || id->empty() || !uri.has_value() || uri->empty()) {
-                    detail::add_manifest_parse_issue(
-                        result,
-                        asset_manifest_parse_issue_kind::missing_field,
-                        line_number,
-                        "asset manifest entry records require id and uri fields");
-                } else {
-                    asset_manifest_entry entry{
-                        .id = std::string(*id),
-                        .uri = std::string(*uri),
-                    };
-                    if (const std::optional<std::string_view> type = detail::manifest_field_value(fields, "type");
-                        type.has_value() && !detail::parse_manifest_asset_type(*type, entry.type)) {
-                        detail::add_manifest_parse_issue(
-                            result,
-                            asset_manifest_parse_issue_kind::unknown_asset_type,
-                            line_number,
-                            "asset manifest entry type is not recognized");
-                    } else {
-                        if (const std::optional<std::string_view> root = detail::manifest_field_value(fields, "root");
-                            root.has_value()) {
-                            entry.root_id = std::string(*root);
-                        }
-                        if (const std::optional<std::string_view> root_id =
-                                detail::manifest_field_value(fields, "root_id");
-                            root_id.has_value()) {
-                            entry.root_id = std::string(*root_id);
-                        }
-                        if (const std::optional<std::string_view> revision =
-                                detail::manifest_field_value(fields, "rev");
-                            revision.has_value()) {
-                            entry.cache_revision = std::string(*revision);
-                        }
-                        if (const std::optional<std::string_view> cache_revision =
-                                detail::manifest_field_value(fields, "cache_revision");
-                            cache_revision.has_value()) {
-                            entry.cache_revision = std::string(*cache_revision);
-                        }
-                        result.manifest.entries.push_back(std::move(entry));
-                    }
-                }
-            } else {
+            const detail::asset_manifest_field_parse_result parsed_fields = detail::split_manifest_fields(line);
+            if (!parsed_fields.ok()) {
                 detail::add_manifest_parse_issue(
                     result,
-                    asset_manifest_parse_issue_kind::unknown_record,
+                    asset_manifest_parse_issue_kind::invalid_field,
                     line_number,
-                    "asset manifest record kind is not recognized");
+                    parsed_fields.diagnostic);
+            } else {
+                const std::vector<detail::asset_manifest_field>& fields = parsed_fields.fields;
+                const std::string_view record = fields.empty() ? std::string_view{} : std::string_view(fields.front().key);
+                if (record == "root") {
+                    const std::optional<std::string_view> id = detail::manifest_field_value(fields, "id");
+                    const std::optional<std::string_view> path = detail::manifest_field_value(fields, "path");
+                    if (!id.has_value() || id->empty() || !path.has_value() || path->empty()) {
+                        detail::add_manifest_parse_issue(
+                            result,
+                            asset_manifest_parse_issue_kind::missing_field,
+                            line_number,
+                            "asset manifest root records require id and path fields");
+                    } else {
+                        asset_manifest_root root{
+                            .id = std::string(*id),
+                            .root_path = std::filesystem::path(std::string(*path)),
+                        };
+                        const std::optional<std::string_view> aliases = detail::manifest_field_value(fields, "aliases");
+                        if (aliases.has_value()) {
+                            root.aliases = detail::split_manifest_aliases(*aliases);
+                        }
+                        result.manifest.roots.push_back(std::move(root));
+                    }
+                } else if (record == "entry") {
+                    const std::optional<std::string_view> id = detail::manifest_field_value(fields, "id");
+                    const std::optional<std::string_view> uri = detail::manifest_field_value(fields, "uri");
+                    if (!id.has_value() || id->empty() || !uri.has_value() || uri->empty()) {
+                        detail::add_manifest_parse_issue(
+                            result,
+                            asset_manifest_parse_issue_kind::missing_field,
+                            line_number,
+                            "asset manifest entry records require id and uri fields");
+                    } else {
+                        asset_manifest_entry entry{
+                            .id = std::string(*id),
+                            .uri = std::string(*uri),
+                        };
+                        if (const std::optional<std::string_view> type = detail::manifest_field_value(fields, "type");
+                            type.has_value() && !detail::parse_manifest_asset_type(*type, entry.type)) {
+                            detail::add_manifest_parse_issue(
+                                result,
+                                asset_manifest_parse_issue_kind::unknown_asset_type,
+                                line_number,
+                                "asset manifest entry type is not recognized");
+                        } else {
+                            if (const std::optional<std::string_view> root =
+                                    detail::manifest_field_value(fields, "root");
+                                root.has_value()) {
+                                entry.root_id = std::string(*root);
+                            }
+                            if (const std::optional<std::string_view> root_id =
+                                    detail::manifest_field_value(fields, "root_id");
+                                root_id.has_value()) {
+                                entry.root_id = std::string(*root_id);
+                            }
+                            if (const std::optional<std::string_view> revision =
+                                    detail::manifest_field_value(fields, "rev");
+                                revision.has_value()) {
+                                entry.cache_revision = std::string(*revision);
+                            }
+                            if (const std::optional<std::string_view> cache_revision =
+                                    detail::manifest_field_value(fields, "cache_revision");
+                                cache_revision.has_value()) {
+                                entry.cache_revision = std::string(*cache_revision);
+                            }
+                            result.manifest.entries.push_back(std::move(entry));
+                        }
+                    }
+                } else {
+                    detail::add_manifest_parse_issue(
+                        result,
+                        asset_manifest_parse_issue_kind::unknown_record,
+                        line_number,
+                        "asset manifest record kind is not recognized");
+                }
             }
         }
 

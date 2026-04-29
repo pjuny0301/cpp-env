@@ -94,6 +94,51 @@ void test_parse_asset_manifest_text_loads_roots_entries_and_aliases()
     require(result.asset.cache_key == "image|asset://cards/front.png|rev=v2", "parsed manifest cache key is stable");
 }
 
+void test_parse_asset_manifest_text_supports_quoted_values_and_escapes()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root() / "fixture root";
+    const std::string manifest_text = "root id=fixture path=\""
+        + fixture_root.generic_string()
+        + "\" aliases=\"cards,shared pack\"\n"
+          R"(entry id=card_front type=image uri="asset://cards/front face.png" root="shared pack" rev="rev \"two\"")"
+          "\n"
+          R"(entry id=main_deck type=deck uri="decks/main deck.quiz" root=fixture cache_revision="build\\42")"
+          "\n";
+
+    const asset_manifest_parse_result parsed = parse_asset_manifest(manifest_text);
+
+    require(parsed.ok(), "manifest parser accepts quoted values");
+    require(parsed.manifest.roots.size() == 1U, "quoted parser loads one root");
+    require(parsed.manifest.roots[0].root_path == fixture_root, "quoted parser preserves spaces in paths");
+    require(parsed.manifest.find_root("shared pack") != nullptr, "quoted parser preserves spaced aliases");
+    require(parsed.manifest.entries.size() == 2U, "quoted parser loads entries");
+    require(
+        parsed.manifest.entries[0].uri == "asset://cards/front face.png",
+        "quoted parser preserves spaces in uris");
+    require(parsed.manifest.entries[0].root_id == "shared pack", "quoted parser preserves spaced root ids");
+    require(parsed.manifest.entries[0].cache_revision == "rev \"two\"", "quoted parser decodes escaped quotes");
+    require(parsed.manifest.entries[1].uri == "decks/main deck.quiz", "quoted parser preserves local uri spaces");
+    require(parsed.manifest.entries[1].cache_revision == "build\\42", "quoted parser decodes escaped backslashes");
+
+    const normalizing_asset_resolver resolver;
+    const asset_manifest_resolve_result result = resolve_asset_manifest_entry(
+        parsed.manifest,
+        asset_manifest_resolve_request{.id = "card_front", .expected_type = asset_type::image},
+        resolver);
+
+    require(result.ok(), "quoted manifest entry resolves through spaced root alias");
+    require(
+        result.asset.cache_key == "image|asset://cards/front face.png|rev=rev \"two\"",
+        "quoted manifest cache key includes decoded revision");
+    require(result.asset.rooted_path.has_value(), "quoted manifest entry produces rooted path");
+    require(
+        result.asset.rooted_path->lexically_normal()
+            == (std::filesystem::absolute(fixture_root) / "cards" / "front face.png").lexically_normal(),
+        "quoted manifest rooted path preserves uri spaces");
+}
+
 void test_parse_asset_manifest_text_reports_errors_without_partial_records()
 {
     using namespace quiz_vulkan::assets;
@@ -122,6 +167,27 @@ void test_parse_asset_manifest_text_reports_errors_without_partial_records()
     require(parsed.manifest.roots.empty(), "manifest parser skips invalid root records");
     require(parsed.manifest.entries.size() == 1U, "manifest parser keeps valid records after errors");
     require(parsed.manifest.entries[0].id == "click", "manifest parser preserves valid later entry");
+}
+
+void test_parse_asset_manifest_text_reports_malformed_quoted_values()
+{
+    using namespace quiz_vulkan::assets;
+
+    const asset_manifest_parse_result parsed = parse_asset_manifest(
+        "entry id=unterminated type=image uri=\"asset://cards/front.png\n"
+        "entry id=joined type=image uri=\"asset://cards/back.png\"root=fixture\n"
+        "entry id=good type=image uri=\"asset://cards/good.png\"\n");
+
+    require(!parsed.ok(), "manifest parser reports malformed quoted values");
+    require(parsed.issues.size() == 2U, "manifest parser reports expected quoted-value issue count");
+    require(
+        parse_issue_at(parsed, 0U, asset_manifest_parse_issue_kind::invalid_field, 1U),
+        "manifest parser reports unterminated quoted field");
+    require(
+        parse_issue_at(parsed, 1U, asset_manifest_parse_issue_kind::invalid_field, 2U),
+        "manifest parser reports joined quoted field");
+    require(parsed.manifest.entries.size() == 1U, "manifest parser skips malformed quoted entries");
+    require(parsed.manifest.entries[0].id == "good", "manifest parser keeps valid entries after malformed quotes");
 }
 
 void test_load_asset_manifest_file_reads_and_parses_manifest()
@@ -773,7 +839,9 @@ void test_manifest_validation_allows_equivalent_aliases_to_same_rooted_path()
 int main()
 {
     test_parse_asset_manifest_text_loads_roots_entries_and_aliases();
+    test_parse_asset_manifest_text_supports_quoted_values_and_escapes();
     test_parse_asset_manifest_text_reports_errors_without_partial_records();
+    test_parse_asset_manifest_text_reports_malformed_quoted_values();
     test_load_asset_manifest_file_reads_and_parses_manifest();
     test_load_asset_manifest_file_reports_missing_files();
     test_normalize_asset_manifest_projects_resolved_cache_entries();

@@ -183,6 +183,48 @@ void test_vulkan_backend_fallback_reason_names_are_stable()
         "fallback reason name for present failure is stable");
 }
 
+void test_vulkan_backend_frame_stage_names_are_stable()
+{
+    using namespace quiz_vulkan::render;
+
+    require(
+        vulkan_backend::frame_stage_name(vulkan_backend::vulkan_backend_frame_stage::not_started)
+            == std::string_view{"not_started"},
+        "frame stage name for not started is stable");
+    require(
+        vulkan_backend::frame_stage_name(vulkan_backend::vulkan_backend_frame_stage::backend_attempted)
+            == std::string_view{"backend_attempted"},
+        "frame stage name for backend attempted is stable");
+    require(
+        vulkan_backend::frame_stage_name(vulkan_backend::vulkan_backend_frame_stage::lifecycle_ready)
+            == std::string_view{"lifecycle_ready"},
+        "frame stage name for lifecycle ready is stable");
+    require(
+        vulkan_backend::frame_stage_name(vulkan_backend::vulkan_backend_frame_stage::surface_extent_ready)
+            == std::string_view{"surface_extent_ready"},
+        "frame stage name for surface extent ready is stable");
+    require(
+        vulkan_backend::frame_stage_name(vulkan_backend::vulkan_backend_frame_stage::frame_plan_ready)
+            == std::string_view{"frame_plan_ready"},
+        "frame stage name for frame plan ready is stable");
+    require(
+        vulkan_backend::frame_stage_name(vulkan_backend::vulkan_backend_frame_stage::frame_begun)
+            == std::string_view{"frame_begun"},
+        "frame stage name for frame begun is stable");
+    require(
+        vulkan_backend::frame_stage_name(vulkan_backend::vulkan_backend_frame_stage::commands_recorded)
+            == std::string_view{"commands_recorded"},
+        "frame stage name for commands recorded is stable");
+    require(
+        vulkan_backend::frame_stage_name(vulkan_backend::vulkan_backend_frame_stage::frame_submitted)
+            == std::string_view{"frame_submitted"},
+        "frame stage name for frame submitted is stable");
+    require(
+        vulkan_backend::frame_stage_name(vulkan_backend::vulkan_backend_frame_stage::frame_presented)
+            == std::string_view{"frame_presented"},
+        "frame stage name for frame presented is stable");
+}
+
 quiz_vulkan::render::render_draw_command make_quad_command(
     std::string node_id,
     quiz_vulkan::render::render_rect bounds,
@@ -294,6 +336,9 @@ void test_draw_list_submission_counts_generic_work()
     require(summary.backend_recorded_batch_count == 0, "renderer summary exposes backend recorded batch count");
     require(summary.backend_surface_width == 0, "renderer summary exposes backend surface width");
     require(summary.backend_surface_height == 0, "renderer summary exposes backend surface height");
+    require(
+        summary.backend_reached_stage == vulkan_backend::vulkan_backend_frame_stage::backend_attempted,
+        "renderer summary exposes reached backend stage");
     require(!summary.backend_instance_ready, "renderer summary exposes backend instance readiness");
     require(!summary.backend_device_ready, "renderer summary exposes backend device readiness");
     require(!summary.backend_swapchain_ready, "renderer summary exposes backend swapchain readiness");
@@ -317,6 +362,9 @@ void test_draw_list_submission_counts_generic_work()
     require(backend_result.planned_batch_count == 0, "renderer retains backend planned batch count");
     require(backend_result.recorded_batch_count == 0, "renderer retains backend recorded batch count");
     require(
+        backend_result.reached_stage == vulkan_backend::vulkan_backend_frame_stage::backend_attempted,
+        "renderer retains reached backend stage");
+    require(
         backend_result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::instance_unavailable,
         "renderer retains backend fallback reason");
     require(count_nonzero_framebuffer_pixels(renderer.last_framebuffer()) > 0, "fallback framebuffer receives pixels");
@@ -328,11 +376,19 @@ void test_draw_list_submission_counts_generic_work()
     require(renderer.last_frame_summary().backend_fallback_required, "clear resets backend summary diagnostics");
     require(!renderer.last_frame_summary().backend_attempted, "clear resets backend attempt diagnostics");
     require(
+        renderer.last_frame_summary().backend_reached_stage
+            == vulkan_backend::vulkan_backend_frame_stage::not_started,
+        "clear resets backend reached stage");
+    require(
         renderer.last_frame_summary().backend_fallback_reason
             == vulkan_backend::vulkan_backend_fallback_reason::not_requested,
         "clear resets backend fallback reason");
     require(renderer.last_backend_frame_result().fallback_required, "clear resets retained backend result");
     require(!renderer.last_backend_frame_result().attempted, "clear resets retained backend attempt status");
+    require(
+        renderer.last_backend_frame_result().reached_stage
+            == vulkan_backend::vulkan_backend_frame_stage::not_started,
+        "clear resets retained backend reached stage");
     require(
         renderer.last_backend_frame_result().fallback_reason
             == vulkan_backend::vulkan_backend_fallback_reason::not_requested,
@@ -361,12 +417,18 @@ void test_renderer_backend_diagnostics_report_vulkan_not_requested()
     require(!summary.backend_attempted, "renderer summary records that Vulkan was not attempted");
     require(summary.backend_fallback_required, "renderer summary still requires fallback when Vulkan is not requested");
     require(
+        summary.backend_reached_stage == vulkan_backend::vulkan_backend_frame_stage::not_started,
+        "renderer summary records no reached Vulkan stage when not requested");
+    require(
         summary.backend_fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::not_requested,
         "renderer summary records Vulkan not requested fallback reason");
 
     const vulkan_backend::vulkan_backend_frame_result& backend_result = renderer.last_backend_frame_result();
     require(!backend_result.attempted, "renderer backend result records Vulkan was not attempted");
     require(backend_result.fallback_required, "renderer backend result keeps fallback required");
+    require(
+        backend_result.reached_stage == vulkan_backend::vulkan_backend_frame_stage::not_started,
+        "renderer backend result records no reached Vulkan stage when not requested");
     require(
         backend_result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::not_requested,
         "renderer backend result records Vulkan not requested fallback reason");
@@ -702,6 +764,9 @@ void test_vulkan_backend_adapter_completes_fake_device_lifecycle()
     require(
         result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::none,
         "completed fake backend frame has no fallback reason");
+    require(
+        result.reached_stage == vulkan_backend::vulkan_backend_frame_stage::frame_presented,
+        "completed fake backend reports presented frame stage");
     require(result.lifecycle.ready_for_frame(), "fake backend reports lifecycle resources ready");
     require(result.lifecycle_ready, "fake backend lifecycle is frame-ready");
     require(result.surface_ready, "fake backend surface is ready");
@@ -879,6 +944,9 @@ void test_vulkan_backend_adapter_falls_back_when_command_recorder_is_unready()
     require(
         result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::command_recorder_unavailable,
         "backend reports command recorder readiness fallback reason");
+    require(
+        result.reached_stage == vulkan_backend::vulkan_backend_frame_stage::backend_attempted,
+        "backend stops at attempted stage without command recorder readiness");
     require(result.lifecycle.instance_ready, "backend records ready instance");
     require(result.lifecycle.device_ready, "backend records ready device");
     require(result.lifecycle.swapchain_ready, "backend records ready swapchain");
@@ -919,6 +987,9 @@ void test_vulkan_backend_adapter_falls_back_without_surface()
     require(
         result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::surface_unavailable,
         "backend reports surface unavailable fallback reason");
+    require(
+        result.reached_stage == vulkan_backend::vulkan_backend_frame_stage::lifecycle_ready,
+        "backend reaches lifecycle-ready stage before missing surface fallback");
     require(!result.surface_ready, "zero surface is not ready");
     require(!result.frame_begun, "backend does not begin frame without surface");
     require(!result.commands_recorded, "backend does not record without surface");
@@ -951,6 +1022,9 @@ void test_vulkan_backend_adapter_falls_back_without_viewport()
     require(
         result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::viewport_unavailable,
         "backend reports viewport unavailable fallback reason");
+    require(
+        result.reached_stage == vulkan_backend::vulkan_backend_frame_stage::surface_extent_ready,
+        "backend reaches surface extent stage before missing viewport fallback");
     require(result.surface.width == 16, "backend records available surface width without viewport");
     require(result.surface.height == 16, "backend records available surface height without viewport");
     require(!result.surface_ready, "backend surface is not frame-ready without viewport");
@@ -986,6 +1060,9 @@ void test_vulkan_backend_adapter_falls_back_when_begin_fails()
     require(
         result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::begin_frame_failed,
         "backend reports begin fallback reason");
+    require(
+        result.reached_stage == vulkan_backend::vulkan_backend_frame_stage::frame_plan_ready,
+        "backend reaches frame plan stage before begin failure");
     require(result.surface_ready, "backend had a surface before begin failed");
     require(!result.frame_begun, "backend reports failed frame begin");
     require(!result.commands_recorded, "backend does not record commands after failed begin");
@@ -1020,6 +1097,9 @@ void test_vulkan_backend_adapter_falls_back_when_recording_fails()
     require(
         result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::record_commands_failed,
         "backend reports command recording fallback reason");
+    require(
+        result.reached_stage == vulkan_backend::vulkan_backend_frame_stage::frame_begun,
+        "backend reaches frame begun stage before recording failure");
     require(result.surface_ready, "backend had a surface before recording failed");
     require(result.frame_begun, "backend began frame before recording failed");
     require(!result.commands_recorded, "backend reports failed command recording");
@@ -1055,6 +1135,9 @@ void test_vulkan_backend_adapter_falls_back_when_submit_fails()
     require(
         result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::submit_frame_failed,
         "backend reports submit fallback reason");
+    require(
+        result.reached_stage == vulkan_backend::vulkan_backend_frame_stage::commands_recorded,
+        "backend reaches commands recorded stage before submit failure");
     require(result.surface_ready, "backend had a surface before submit failed");
     require(result.frame_begun, "backend began frame before submit failed");
     require(result.commands_recorded, "backend recorded commands before submit failed");
@@ -1091,6 +1174,9 @@ void test_vulkan_backend_adapter_falls_back_when_present_fails()
     require(
         result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::present_frame_failed,
         "backend reports presentation fallback reason");
+    require(
+        result.reached_stage == vulkan_backend::vulkan_backend_frame_stage::frame_submitted,
+        "backend reaches frame submitted stage before presentation failure");
     require(result.surface_ready, "backend had a surface before presentation failed");
     require(result.frame_begun, "backend began frame before presentation failed");
     require(result.commands_recorded, "backend recorded commands before presentation failed");
@@ -1110,6 +1196,7 @@ void test_vulkan_backend_adapter_falls_back_when_present_fails()
 int main()
 {
     test_vulkan_backend_fallback_reason_names_are_stable();
+    test_vulkan_backend_frame_stage_names_are_stable();
     test_draw_list_submission_counts_generic_work();
     test_renderer_backend_diagnostics_report_vulkan_not_requested();
     test_cpu_fallback_clips_and_discards();

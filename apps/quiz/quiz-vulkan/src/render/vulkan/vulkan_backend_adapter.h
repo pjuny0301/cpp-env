@@ -26,6 +26,20 @@ enum class vulkan_backend_fallback_reason {
 
 std::string_view fallback_reason_name(vulkan_backend_fallback_reason reason);
 
+enum class vulkan_backend_frame_stage {
+    not_started,
+    backend_attempted,
+    lifecycle_ready,
+    surface_extent_ready,
+    frame_plan_ready,
+    frame_begun,
+    commands_recorded,
+    frame_submitted,
+    frame_presented,
+};
+
+std::string_view frame_stage_name(vulkan_backend_frame_stage stage);
+
 struct vulkan_surface_extent {
     std::size_t width = 0;
     std::size_t height = 0;
@@ -53,6 +67,7 @@ struct vulkan_backend_lifecycle_readiness {
 struct vulkan_backend_frame_result {
     vulkan_surface_extent surface;
     vulkan_backend_lifecycle_readiness lifecycle;
+    vulkan_backend_frame_stage reached_stage = vulkan_backend_frame_stage::not_started;
     bool lifecycle_ready = false;
     bool surface_ready = false;
     bool frame_begun = false;
@@ -69,7 +84,8 @@ struct vulkan_backend_frame_result {
 
     bool completed() const
     {
-        return lifecycle_ready && surface_ready && frame_begun && commands_recorded
+        return reached_stage == vulkan_backend_frame_stage::frame_presented
+            && lifecycle_ready && surface_ready && frame_begun && commands_recorded
             && frame_submitted && frame_presented && !fallback_required;
     }
 };

@@ -57,6 +57,8 @@ struct vulkan_renderer_frame_summary {
     std::size_t backend_surface_height = 0;
     std::size_t backend_planned_batch_count = 0;
     std::size_t backend_recorded_batch_count = 0;
+    vulkan_backend::vulkan_backend_frame_stage backend_reached_stage =
+        vulkan_backend::vulkan_backend_frame_stage::not_started;
     bool backend_instance_ready = false;
     bool backend_device_ready = false;
     bool backend_swapchain_ready = false;

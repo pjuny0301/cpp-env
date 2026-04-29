@@ -37,6 +37,7 @@ static_assert(ImageResolverInterface<render::image_resolver_interface>);
 static_assert(ImageResolverInterface<render::normalizing_image_resolver>);
 static_assert(ImageDecoderInterface<render::image_decoder_interface>);
 static_assert(ImageDecoderInterface<render::fake_image_decoder>);
+static_assert(ImageDecoderInterface<render::ppm_image_decoder>);
 static_assert(ImageTextureCacheInterface<render::image_texture_cache_interface>);
 static_assert(ImageTextureCacheInterface<render::fake_image_texture_cache>);
 

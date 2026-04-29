@@ -7,6 +7,8 @@
 #include <cstddef>
 #include <cstdio>
 #include <string>
+#include <string_view>
+#include <vector>
 
 namespace {
 
@@ -16,6 +18,41 @@ void require(bool condition, const char* message)
         std::fprintf(stderr, "Requirement failed: %s\n", message);
     }
     assert((condition) && message);
+}
+
+void append_ascii(std::vector<std::byte>& bytes, std::string_view text)
+{
+    for (const char value : text) {
+        bytes.push_back(std::byte{static_cast<unsigned char>(value)});
+    }
+}
+
+void append_byte(std::vector<std::byte>& bytes, unsigned char value)
+{
+    bytes.push_back(std::byte{value});
+}
+
+std::vector<std::byte> make_ppm_2x1_encoded_bytes()
+{
+    std::vector<std::byte> bytes;
+    append_ascii(bytes, "P6\n# deterministic image test fixture\n2 1\n255\n");
+    append_byte(bytes, 0xff);
+    append_byte(bytes, 0x00);
+    append_byte(bytes, 0x00);
+    append_byte(bytes, 0x00);
+    append_byte(bytes, 0xff);
+    append_byte(bytes, 0x00);
+    return bytes;
+}
+
+std::vector<std::byte> make_short_ppm_2x1_encoded_bytes()
+{
+    std::vector<std::byte> bytes;
+    append_ascii(bytes, "P6\n2 1\n255\n");
+    append_byte(bytes, 0xff);
+    append_byte(bytes, 0x00);
+    append_byte(bytes, 0x00);
+    return bytes;
 }
 
 class malformed_payload_decoder final : public quiz_vulkan::render::image_decoder_interface {
@@ -211,6 +248,73 @@ void test_decoder_reports_explicit_failures()
 
     require(decoder.support_requests.size() == 2, "failure support requests were recorded");
     require(decoder.decode_requests.size() == 2, "failure decode requests were recorded");
+}
+
+void test_ppm_decoder_decodes_binary_rgb_to_rgba()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/card.ppm"})
+                                                    .source;
+    const render_image_decode_request request{
+        .source = source,
+        .encoded_bytes = make_ppm_2x1_encoded_bytes(),
+    };
+
+    ppm_image_decoder decoder;
+    require(decoder.supports(request), "ppm decoder supports ppm source");
+    const render_image_decode_result decoded = decoder.decode(request);
+    require(decoded.ok(), "ppm decoder decodes P6 bytes");
+    require(decoded.image.width == 2, "ppm decoder preserves width");
+    require(decoded.image.height == 1, "ppm decoder preserves height");
+    require(decoded.image.pixel_format == render_image_pixel_format::rgba8_srgb, "ppm decoder emits srgb rgba");
+    require(decoded.image.pixels.size() == 8, "ppm decoder expands rgb bytes to rgba bytes");
+    require(has_valid_render_decoded_image_payload(decoded.image), "ppm decoded payload matches image contract");
+    require(decoded.image.pixels[0] == std::byte{0xff}, "ppm decoder copies first pixel red channel");
+    require(decoded.image.pixels[1] == std::byte{0x00}, "ppm decoder copies first pixel green channel");
+    require(decoded.image.pixels[2] == std::byte{0x00}, "ppm decoder copies first pixel blue channel");
+    require(decoded.image.pixels[3] == std::byte{0xff}, "ppm decoder adds opaque alpha");
+    require(decoded.image.pixels[4] == std::byte{0x00}, "ppm decoder copies second pixel red channel");
+    require(decoded.image.pixels[5] == std::byte{0xff}, "ppm decoder copies second pixel green channel");
+    require(decoded.image.pixels[6] == std::byte{0x00}, "ppm decoder copies second pixel blue channel");
+    require(decoded.image.pixels[7] == std::byte{0xff}, "ppm decoder adds second opaque alpha");
+}
+
+void test_ppm_decoder_reports_invalid_payload_size()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source = resolver.resolve(
+        render_image_resolve_request{.uri = "asset://card.ppm"})
+                                                    .source;
+    const render_image_decode_request request{
+        .source = source,
+        .encoded_bytes = make_short_ppm_2x1_encoded_bytes(),
+    };
+
+    ppm_image_decoder decoder;
+    const render_image_decode_result decoded = decoder.decode(request);
+    require(!decoded.ok(), "short ppm payload does not decode");
+    require(decoded.status == render_image_decode_status::invalid_data, "short ppm payload reports invalid data");
+    require(!decoded.diagnostic.empty(), "short ppm payload includes diagnostic");
+
+    const render_image_decode_request unsupported_request{
+        .source = render_resolved_image_source{
+            .original_uri = "asset://card.png",
+            .normalized_uri = "asset://card.png",
+            .kind = render_image_source_kind::asset_uri,
+        },
+        .encoded_bytes = make_ppm_2x1_encoded_bytes(),
+    };
+    require(!decoder.supports(unsupported_request), "ppm decoder rejects non-ppm source");
+    const render_image_decode_result unsupported = decoder.decode(unsupported_request);
+    require(!unsupported.ok(), "non-ppm source does not decode through ppm decoder");
+    require(
+        unsupported.status == render_image_decode_status::unsupported_format,
+        "non-ppm source reports unsupported format");
 }
 
 void test_sampler_policy_validation_rejects_unknown_enum_values()
@@ -501,6 +605,51 @@ void test_texture_cache_propagates_decoder_failures()
     require(decoder.decode_requests.size() == 1, "empty input reached decoder decode");
 }
 
+void test_texture_cache_uses_ppm_decoder_placeholder_bytes()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/card.ppm"})
+                                                    .source;
+    ppm_image_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+    cache.set_placeholder_encoded_bytes(make_ppm_2x1_encoded_bytes());
+
+    const render_image_texture_request request{.source = source, .sampler = render_image_sampler_policy{}};
+    const render_image_texture_result first = cache.acquire_texture(request);
+    require(first.ok(), "ppm decoder creates a texture through the fake cache");
+    require(!first.cache_hit, "first ppm texture request is a cache miss");
+    require(first.texture.width == 2, "ppm texture preserves decoded width");
+    require(first.texture.height == 1, "ppm texture preserves decoded height");
+
+    const render_image_texture_result second = cache.acquire_texture(request);
+    require(second.ok(), "ppm texture can be reacquired");
+    require(second.cache_hit, "second ppm texture request is a cache hit");
+    require(second.texture.id == first.texture.id, "ppm texture cache reuses the handle");
+}
+
+void test_texture_cache_propagates_ppm_decoder_payload_failure()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/card.ppm"})
+                                                    .source;
+    ppm_image_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+    cache.set_placeholder_encoded_bytes(make_short_ppm_2x1_encoded_bytes());
+
+    const render_image_texture_result result = cache.acquire_texture(
+        render_image_texture_request{.source = source, .sampler = render_image_sampler_policy{}});
+    require(!result.ok(), "short ppm payload does not create a texture");
+    require(result.status == render_image_texture_status::decode_failed, "short ppm payload reports decode failure");
+    require(!result.texture.valid(), "short ppm payload returns no texture handle");
+    require(!result.diagnostic.empty(), "short ppm payload propagates decoder diagnostic");
+}
+
 void test_texture_cache_rejects_malformed_decoded_payload()
 {
     using namespace quiz_vulkan::render;
@@ -582,6 +731,8 @@ int main()
     test_resolver_normalizes_without_fetching();
     test_decoder_interface_shape();
     test_decoder_reports_explicit_failures();
+    test_ppm_decoder_decodes_binary_rgb_to_rgba();
+    test_ppm_decoder_reports_invalid_payload_size();
     test_sampler_policy_validation_rejects_unknown_enum_values();
     test_texture_cache_reuses_matching_key_and_misses_on_sampler_change();
     test_texture_cache_keys_include_all_sampler_policy_fields();
@@ -590,6 +741,8 @@ int main()
     test_texture_cache_release_unused_evicts_fake_entries();
     test_texture_cache_reports_explicit_failures();
     test_texture_cache_propagates_decoder_failures();
+    test_texture_cache_uses_ppm_decoder_placeholder_bytes();
+    test_texture_cache_propagates_ppm_decoder_payload_failure();
     test_texture_cache_rejects_malformed_decoded_payload();
     test_texture_cache_rejects_unknown_pixel_format();
     return 0;

@@ -4,6 +4,8 @@
 
 #include <cstddef>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -152,6 +154,7 @@ enum class asset_manifest_parse_issue_kind {
     unknown_record,
     missing_field,
     unknown_asset_type,
+    file_read_failed,
 };
 
 struct asset_manifest_parse_issue {
@@ -576,6 +579,35 @@ inline asset_manifest_parse_result parse_asset_manifest(std::string_view text)
     }
 
     return result;
+}
+
+inline asset_manifest_parse_result load_asset_manifest_file(const std::filesystem::path& path)
+{
+    asset_manifest_parse_result result;
+    if (path.empty()) {
+        detail::add_manifest_parse_issue(
+            result,
+            asset_manifest_parse_issue_kind::file_read_failed,
+            0U,
+            "asset manifest file path is empty");
+        return result;
+    }
+
+    std::ifstream stream(path, std::ios::binary);
+    if (!stream.is_open()) {
+        detail::add_manifest_parse_issue(
+            result,
+            asset_manifest_parse_issue_kind::file_read_failed,
+            0U,
+            "asset manifest file could not be opened");
+        return result;
+    }
+
+    const std::string text{
+        std::istreambuf_iterator<char>(stream),
+        std::istreambuf_iterator<char>(),
+    };
+    return parse_asset_manifest(text);
 }
 
 inline asset_manifest_validation_result validate_asset_manifest(

@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstddef>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -121,6 +122,41 @@ void test_parse_asset_manifest_text_reports_errors_without_partial_records()
     require(parsed.manifest.roots.empty(), "manifest parser skips invalid root records");
     require(parsed.manifest.entries.size() == 1U, "manifest parser keeps valid records after errors");
     require(parsed.manifest.entries[0].id == "click", "manifest parser preserves valid later entry");
+}
+
+void test_load_asset_manifest_file_reads_and_parses_manifest()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    const std::filesystem::path manifest_path = fixture_root / "asset_manifest.txt";
+    {
+        std::ofstream manifest_file(manifest_path, std::ios::binary);
+        manifest_file << "root id=fixture path=" << fixture_root.generic_string() << " aliases=cards\n"
+                      << "entry id=front type=image uri=asset://cards/front.png root=cards\n";
+    }
+
+    const asset_manifest_parse_result loaded = load_asset_manifest_file(manifest_path);
+
+    require(loaded.ok(), "manifest file loader parses fixture file");
+    require(loaded.manifest.find_root("cards") != nullptr, "manifest file loader preserves aliases");
+    require(loaded.manifest.find_entry("front") != nullptr, "manifest file loader preserves entries");
+}
+
+void test_load_asset_manifest_file_reports_missing_files()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    const asset_manifest_parse_result loaded = load_asset_manifest_file(fixture_root / "missing_manifest.txt");
+
+    require(!loaded.ok(), "manifest file loader reports missing file");
+    require(loaded.issues.size() == 1U, "manifest file loader reports one missing-file issue");
+    require(
+        parse_issue_at(loaded, 0U, asset_manifest_parse_issue_kind::file_read_failed, 0U),
+        "manifest file loader reports missing file as read failure");
+    require(loaded.manifest.roots.empty(), "manifest file loader leaves roots empty on read failure");
+    require(loaded.manifest.entries.empty(), "manifest file loader leaves entries empty on read failure");
 }
 
 void test_normalize_asset_manifest_projects_resolved_cache_entries()
@@ -738,6 +774,8 @@ int main()
 {
     test_parse_asset_manifest_text_loads_roots_entries_and_aliases();
     test_parse_asset_manifest_text_reports_errors_without_partial_records();
+    test_load_asset_manifest_file_reads_and_parses_manifest();
+    test_load_asset_manifest_file_reports_missing_files();
     test_normalize_asset_manifest_projects_resolved_cache_entries();
     test_normalize_asset_manifest_skips_invalid_entries_but_reports_validation();
     test_manifest_normalizes_asset_uri_and_roots_fixture_path();

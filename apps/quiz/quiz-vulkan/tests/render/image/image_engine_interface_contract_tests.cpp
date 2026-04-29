@@ -5,6 +5,8 @@
 
 #include <concepts>
 #include <cstddef>
+#include <string>
+#include <vector>
 
 namespace {
 
@@ -71,6 +73,33 @@ static_assert(requires(const render::render_decoded_image& image, render::render
     { render::render_image_pixel_format_byte_count(pixel_format) } -> std::same_as<std::size_t>;
     { render::expected_render_decoded_image_byte_count(image) } -> std::same_as<std::size_t>;
     { render::has_valid_render_decoded_image_payload(image) } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    render::render_image_decode_metadata metadata,
+    render::render_image_decoder_diagnostic diagnostic,
+    render::render_image_decode_result decode_result,
+    render::render_image_texture_result texture_result,
+    const render::render_image_decode_request& request,
+    const render::render_decoded_image& image) {
+    { metadata.decoder_id } -> std::same_as<std::string&>;
+    { metadata.encoded_byte_count } -> std::same_as<std::size_t&>;
+    { metadata.width } -> std::same_as<std::size_t&>;
+    { metadata.height } -> std::same_as<std::size_t&>;
+    { metadata.pixel_format } -> std::same_as<render::render_image_pixel_format&>;
+    { metadata.decoded_byte_count } -> std::same_as<std::size_t&>;
+    { metadata.has_image() } -> std::same_as<bool>;
+    { diagnostic.decoder_id } -> std::same_as<std::string&>;
+    { diagnostic.supported } -> std::same_as<bool&>;
+    { diagnostic.status } -> std::same_as<render::render_image_decode_status&>;
+    { diagnostic.diagnostic } -> std::same_as<std::string&>;
+    { decode_result.metadata } -> std::same_as<render::render_image_decode_metadata&>;
+    { decode_result.decoder_diagnostics } -> std::same_as<std::vector<render::render_image_decoder_diagnostic>&>;
+    { texture_result.decode_metadata } -> std::same_as<render::render_image_decode_metadata&>;
+    { texture_result.decoder_diagnostics } -> std::same_as<std::vector<render::render_image_decoder_diagnostic>&>;
+    { render::make_render_image_decode_metadata("decoder", request) } -> std::same_as<render::render_image_decode_metadata>;
+    { render::make_render_image_decode_metadata("decoder", request, image) }
+        -> std::same_as<render::render_image_decode_metadata>;
 });
 
 } // namespace

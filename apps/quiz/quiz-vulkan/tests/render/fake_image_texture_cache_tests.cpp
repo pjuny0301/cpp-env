@@ -216,6 +216,13 @@ void test_decoder_interface_shape()
     require(decoded.image.pixels.size() == 8, "decoded image carries rgba bytes");
     require(expected_render_decoded_image_byte_count(decoded.image) == 8, "decoded image byte count is derived");
     require(has_valid_render_decoded_image_payload(decoded.image), "decoded image payload matches dimensions");
+    require(decoded.metadata.decoder_id == "fake_image_decoder", "fake decoder reports decoder id");
+    require(decoded.metadata.encoded_byte_count == 2, "fake decoder reports encoded byte count");
+    require(decoded.metadata.width == 2, "fake decoder reports metadata width");
+    require(decoded.metadata.height == 1, "fake decoder reports metadata height");
+    require(decoded.metadata.decoded_byte_count == 8, "fake decoder reports decoded byte count");
+    require(decoded.metadata.has_image(), "fake decoder metadata reports image");
+    require(decoded.decoder_diagnostics.empty(), "direct fake decoder has no chain diagnostics");
     require(decoder.support_requests.size() == 1, "support request was recorded");
     require(decoder.decode_requests.size() == 1, "decode request was recorded");
 }
@@ -241,6 +248,9 @@ void test_decoder_reports_explicit_failures()
         unsupported.status == render_image_decode_status::unsupported_format,
         "unsupported decode reports unsupported format");
     require(!unsupported.diagnostic.empty(), "unsupported decode includes diagnostic");
+    require(unsupported.metadata.decoder_id == "fake_image_decoder", "unsupported fake decode reports decoder id");
+    require(unsupported.metadata.encoded_byte_count == 1, "unsupported fake decode reports encoded byte count");
+    require(!unsupported.metadata.has_image(), "unsupported fake decode reports no image metadata");
 
     const render_image_decode_request empty_request{
         .source = render_resolved_image_source{
@@ -256,6 +266,9 @@ void test_decoder_reports_explicit_failures()
     require(!empty.ok(), "empty decode does not return an image");
     require(empty.status == render_image_decode_status::empty_input, "empty decode reports empty input");
     require(!empty.diagnostic.empty(), "empty decode includes diagnostic");
+    require(empty.metadata.decoder_id == "fake_image_decoder", "empty fake decode reports decoder id");
+    require(empty.metadata.encoded_byte_count == 0, "empty fake decode reports empty byte count");
+    require(!empty.metadata.has_image(), "empty fake decode reports no image metadata");
 
     require(decoder.support_requests.size() == 2, "failure support requests were recorded");
     require(decoder.decode_requests.size() == 2, "failure decode requests were recorded");
@@ -291,6 +304,12 @@ void test_ppm_decoder_decodes_binary_rgb_to_rgba()
     require(decoded.image.pixels[5] == std::byte{0xff}, "ppm decoder copies second pixel green channel");
     require(decoded.image.pixels[6] == std::byte{0x00}, "ppm decoder copies second pixel blue channel");
     require(decoded.image.pixels[7] == std::byte{0xff}, "ppm decoder adds second opaque alpha");
+    require(decoded.metadata.decoder_id == "ppm_image_decoder", "ppm decoder reports decoder id");
+    require(decoded.metadata.encoded_byte_count == request.encoded_bytes.size(), "ppm decoder reports encoded byte count");
+    require(decoded.metadata.width == 2, "ppm decoder metadata carries width");
+    require(decoded.metadata.height == 1, "ppm decoder metadata carries height");
+    require(decoded.metadata.decoded_byte_count == 8, "ppm decoder metadata carries decoded byte count");
+    require(decoded.metadata.has_image(), "ppm decoder metadata reports image");
 }
 
 void test_ppm_decoder_reports_invalid_payload_size()
@@ -311,6 +330,9 @@ void test_ppm_decoder_reports_invalid_payload_size()
     require(!decoded.ok(), "short ppm payload does not decode");
     require(decoded.status == render_image_decode_status::invalid_data, "short ppm payload reports invalid data");
     require(!decoded.diagnostic.empty(), "short ppm payload includes diagnostic");
+    require(decoded.metadata.decoder_id == "ppm_image_decoder", "short ppm payload reports decoder id");
+    require(decoded.metadata.encoded_byte_count == request.encoded_bytes.size(), "short ppm reports encoded byte count");
+    require(!decoded.metadata.has_image(), "short ppm payload reports no decoded image metadata");
 
     const render_image_decode_request unsupported_request{
         .source = render_resolved_image_source{
@@ -326,6 +348,8 @@ void test_ppm_decoder_reports_invalid_payload_size()
     require(
         unsupported.status == render_image_decode_status::unsupported_format,
         "non-ppm source reports unsupported format");
+    require(unsupported.metadata.decoder_id == "ppm_image_decoder", "unsupported ppm reports decoder id");
+    require(unsupported.metadata.encoded_byte_count == unsupported_request.encoded_bytes.size(), "unsupported ppm reports encoded byte count");
 }
 
 void test_decoder_chain_routes_supported_formats()
@@ -353,6 +377,13 @@ void test_decoder_chain_routes_supported_formats()
     const render_image_decode_result fake_decoded = decoder_chain.decode(fake_request);
     require(fake_decoded.ok(), "decoder chain routes fake source to fake decoder");
     require(fake_decoded.image.width == 2, "decoder chain returns fake decoded width");
+    require(fake_decoded.metadata.decoder_id == "fake_image_decoder", "decoder chain preserves fake decoder id");
+    require(fake_decoded.decoder_diagnostics.size() == 1, "decoder chain reports selected fake diagnostic");
+    require(fake_decoded.decoder_diagnostics[0].decoder_id == "decoder[0]", "decoder chain names first default decoder");
+    require(fake_decoded.decoder_diagnostics[0].supported, "decoder chain marks selected fake decoder supported");
+    require(
+        fake_decoded.decoder_diagnostics[0].status == render_image_decode_status::decoded,
+        "decoder chain records fake decode status");
 
     const render_image_decode_request ppm_request{
         .source = ppm_source,
@@ -362,6 +393,11 @@ void test_decoder_chain_routes_supported_formats()
     const render_image_decode_result ppm_decoded = decoder_chain.decode(ppm_request);
     require(ppm_decoded.ok(), "decoder chain routes ppm source to ppm decoder");
     require(ppm_decoded.image.width == 1, "decoder chain returns ppm decoded width");
+    require(ppm_decoded.metadata.decoder_id == "ppm_image_decoder", "decoder chain preserves ppm decoder id");
+    require(ppm_decoded.decoder_diagnostics.size() == 2, "decoder chain reports skipped and selected decoders");
+    require(!ppm_decoded.decoder_diagnostics[0].supported, "decoder chain marks skipped fake decoder unsupported");
+    require(ppm_decoded.decoder_diagnostics[1].supported, "decoder chain marks selected ppm decoder supported");
+    require(ppm_decoded.decoder_diagnostics[1].decoder_id == "decoder[1]", "decoder chain names second default decoder");
     require(fake_decoder.decode_requests.size() == 1, "decoder chain decodes fake source only once");
 }
 
@@ -370,7 +406,8 @@ void test_decoder_chain_reports_unsupported_sources()
     using namespace quiz_vulkan::render;
 
     ppm_image_decoder ppm_decoder;
-    image_decoder_chain decoder_chain({std::cref(ppm_decoder)});
+    image_decoder_chain decoder_chain;
+    decoder_chain.add_decoder("ppm-fixture", ppm_decoder);
     const render_image_decode_request request{
         .source = render_resolved_image_source{
             .original_uri = "asset://card.png",
@@ -387,6 +424,14 @@ void test_decoder_chain_reports_unsupported_sources()
         decoded.status == render_image_decode_status::unsupported_format,
         "decoder chain unsupported source reports unsupported format");
     require(!decoded.diagnostic.empty(), "decoder chain unsupported source includes diagnostic");
+    require(decoded.metadata.encoded_byte_count == request.encoded_bytes.size(), "decoder chain failure reports encoded byte count");
+    require(decoded.decoder_diagnostics.size() == 1, "decoder chain failure reports checked decoder");
+    require(decoded.decoder_diagnostics[0].decoder_id == "ppm-fixture", "decoder chain failure uses explicit decoder id");
+    require(!decoded.decoder_diagnostics[0].supported, "decoder chain failure marks decoder unsupported");
+    require(
+        decoded.decoder_diagnostics[0].status == render_image_decode_status::unsupported_format,
+        "decoder chain failure records unsupported status");
+    require(!decoded.decoder_diagnostics[0].diagnostic.empty(), "decoder chain failure records support diagnostic");
 }
 
 void test_sampler_policy_validation_rejects_unknown_enum_values()
@@ -673,6 +718,9 @@ void test_texture_cache_propagates_decoder_failures()
     require(!empty.ok(), "decoder empty input does not create a texture");
     require(empty.status == render_image_texture_status::decode_failed, "decoder empty input reports decode failure");
     require(!empty.diagnostic.empty(), "decoder empty input diagnostic is propagated");
+    require(empty.decode_metadata.decoder_id == "fake_image_decoder", "empty cache decode propagates decoder id");
+    require(empty.decode_metadata.encoded_byte_count == 0, "empty cache decode propagates encoded byte count");
+    require(!empty.decode_metadata.has_image(), "empty cache decode propagates no image metadata");
     require(decoder.support_requests.size() == 2, "empty input reached decoder support check");
     require(decoder.decode_requests.size() == 1, "empty input reached decoder decode");
 }
@@ -695,11 +743,17 @@ void test_texture_cache_uses_ppm_decoder_placeholder_bytes()
     require(!first.cache_hit, "first ppm texture request is a cache miss");
     require(first.texture.width == 2, "ppm texture preserves decoded width");
     require(first.texture.height == 1, "ppm texture preserves decoded height");
+    require(first.decode_metadata.decoder_id == "ppm_image_decoder", "ppm texture reports decoder id");
+    require(first.decode_metadata.width == 2, "ppm texture reports decoded metadata width");
+    require(first.decode_metadata.height == 1, "ppm texture reports decoded metadata height");
+    require(first.decode_metadata.has_image(), "ppm texture reports decoded image metadata");
 
     const render_image_texture_result second = cache.acquire_texture(request);
     require(second.ok(), "ppm texture can be reacquired");
     require(second.cache_hit, "second ppm texture request is a cache hit");
     require(second.texture.id == first.texture.id, "ppm texture cache reuses the handle");
+    require(second.decode_metadata.decoder_id == "ppm_image_decoder", "cached ppm texture preserves decoder id");
+    require(second.decode_metadata.decoded_byte_count == first.decode_metadata.decoded_byte_count, "cached ppm texture preserves decoded byte count");
 }
 
 void test_texture_cache_propagates_ppm_decoder_payload_failure()
@@ -720,6 +774,11 @@ void test_texture_cache_propagates_ppm_decoder_payload_failure()
     require(result.status == render_image_texture_status::decode_failed, "short ppm payload reports decode failure");
     require(!result.texture.valid(), "short ppm payload returns no texture handle");
     require(!result.diagnostic.empty(), "short ppm payload propagates decoder diagnostic");
+    require(result.decode_metadata.decoder_id == "ppm_image_decoder", "short ppm texture failure reports decoder id");
+    require(
+        result.decode_metadata.encoded_byte_count == make_short_ppm_2x1_encoded_bytes().size(),
+        "short ppm texture failure reports encoded byte count");
+    require(!result.decode_metadata.has_image(), "short ppm texture failure reports no decoded image metadata");
 }
 
 void test_texture_cache_uses_source_specific_placeholder_bytes()
@@ -744,12 +803,16 @@ void test_texture_cache_uses_source_specific_placeholder_bytes()
     require(one_pixel.ok(), "source-specific one-pixel ppm creates a texture");
     require(one_pixel.texture.width == 1, "source-specific one-pixel ppm preserves width");
     require(one_pixel.texture.height == 1, "source-specific one-pixel ppm preserves height");
+    require(one_pixel.decode_metadata.width == 1, "source-specific one-pixel ppm reports metadata width");
+    require(one_pixel.decode_metadata.decoder_id == "ppm_image_decoder", "source-specific one-pixel ppm reports decoder id");
 
     const render_image_texture_result two_pixel = cache.acquire_texture(
         render_image_texture_request{.source = two_pixel_source, .sampler = render_image_sampler_policy{}});
     require(two_pixel.ok(), "source-specific two-pixel ppm creates a texture");
     require(two_pixel.texture.width == 2, "source-specific two-pixel ppm preserves width");
     require(two_pixel.texture.height == 1, "source-specific two-pixel ppm preserves height");
+    require(two_pixel.decode_metadata.width == 2, "source-specific two-pixel ppm reports metadata width");
+    require(two_pixel.decode_metadata.decoder_id == "ppm_image_decoder", "source-specific two-pixel ppm reports decoder id");
     require(two_pixel.texture.id != one_pixel.texture.id, "source-specific byte fixtures keep cache entries separate");
 }
 
@@ -776,11 +839,18 @@ void test_texture_cache_uses_decoder_chain_for_source_specific_formats()
         render_image_texture_request{.source = fake_source, .sampler = render_image_sampler_policy{}});
     require(fake_texture.ok(), "decoder chain fake source creates a texture");
     require(fake_texture.texture.width == 2, "decoder chain fake source uses fake decoder dimensions");
+    require(fake_texture.decode_metadata.decoder_id == "fake_image_decoder", "decoder chain fake texture reports decoder id");
+    require(fake_texture.decoder_diagnostics.size() == 1, "decoder chain fake texture propagates chain diagnostic");
+    require(fake_texture.decoder_diagnostics[0].supported, "decoder chain fake texture records selected decoder");
 
     const render_image_texture_result ppm_texture = cache.acquire_texture(
         render_image_texture_request{.source = ppm_source, .sampler = render_image_sampler_policy{}});
     require(ppm_texture.ok(), "decoder chain ppm source creates a texture");
     require(ppm_texture.texture.width == 1, "decoder chain ppm source uses ppm decoder dimensions");
+    require(ppm_texture.decode_metadata.decoder_id == "ppm_image_decoder", "decoder chain ppm texture reports decoder id");
+    require(ppm_texture.decoder_diagnostics.size() == 2, "decoder chain ppm texture propagates chain diagnostics");
+    require(!ppm_texture.decoder_diagnostics[0].supported, "decoder chain ppm texture records skipped fake decoder");
+    require(ppm_texture.decoder_diagnostics[1].supported, "decoder chain ppm texture records selected ppm decoder");
     require(ppm_texture.texture.id != fake_texture.texture.id, "decoder chain textures remain keyed by source");
 }
 

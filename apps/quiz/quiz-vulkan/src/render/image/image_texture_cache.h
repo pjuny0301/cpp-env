@@ -32,6 +32,8 @@ struct render_image_texture_result {
     render_image_texture_handle texture;
     bool cache_hit = false;
     std::string diagnostic;
+    render_image_decode_metadata decode_metadata;
+    std::vector<render_image_decoder_diagnostic> decoder_diagnostics;
 
     bool ok() const
     {
@@ -235,9 +237,11 @@ public:
             return render_image_texture_result{
                 .status = render_image_texture_status::ready,
                 .key = key,
-                .texture = existing->second,
+                .texture = existing->second.texture,
                 .cache_hit = true,
                 .diagnostic = {},
+                .decode_metadata = existing->second.decode_metadata,
+                .decoder_diagnostics = existing->second.decoder_diagnostics,
             };
         }
 
@@ -263,6 +267,8 @@ public:
                 .texture = {},
                 .cache_hit = false,
                 .diagnostic = decoded.diagnostic,
+                .decode_metadata = decoded.metadata,
+                .decoder_diagnostics = decoded.decoder_diagnostics,
             };
         }
 
@@ -273,6 +279,8 @@ public:
                 .texture = {},
                 .cache_hit = false,
                 .diagnostic = "decoded image is empty",
+                .decode_metadata = decoded.metadata,
+                .decoder_diagnostics = decoded.decoder_diagnostics,
             };
         }
 
@@ -283,6 +291,8 @@ public:
                 .texture = {},
                 .cache_hit = false,
                 .diagnostic = "decoded image pixel payload size does not match dimensions and format",
+                .decode_metadata = decoded.metadata,
+                .decoder_diagnostics = decoded.decoder_diagnostics,
             };
         }
 
@@ -292,13 +302,21 @@ public:
             .width = decoded.image.width,
             .height = decoded.image.height,
         };
-        textures_.emplace(key, handle);
+        textures_.emplace(
+            key,
+            fake_cached_image_texture{
+                .texture = handle,
+                .decode_metadata = decoded.metadata,
+                .decoder_diagnostics = decoded.decoder_diagnostics,
+            });
         return render_image_texture_result{
             .status = render_image_texture_status::ready,
             .key = key,
             .texture = handle,
             .cache_hit = false,
             .diagnostic = {},
+            .decode_metadata = decoded.metadata,
+            .decoder_diagnostics = decoded.decoder_diagnostics,
         };
     }
 
@@ -326,6 +344,12 @@ public:
     }
 
 private:
+    struct fake_cached_image_texture {
+        render_image_texture_handle texture;
+        render_image_decode_metadata decode_metadata;
+        std::vector<render_image_decoder_diagnostic> decoder_diagnostics;
+    };
+
     const std::vector<std::byte>& placeholder_encoded_bytes_for(const render_image_cache_key& source_key) const
     {
         const auto source_bytes = source_placeholder_encoded_bytes_.find(source_key);
@@ -340,7 +364,7 @@ private:
     int release_unused_count_ = 0;
     std::vector<std::byte> placeholder_encoded_bytes_ = {std::byte{0x01}};
     std::map<render_image_cache_key, std::vector<std::byte>> source_placeholder_encoded_bytes_;
-    std::map<render_image_texture_key, render_image_texture_handle, render_image_texture_key_less> textures_;
+    std::map<render_image_texture_key, fake_cached_image_texture, render_image_texture_key_less> textures_;
 };
 
 } // namespace quiz_vulkan::render

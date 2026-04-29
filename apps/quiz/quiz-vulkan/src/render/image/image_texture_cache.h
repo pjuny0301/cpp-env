@@ -234,6 +234,7 @@ public:
 
         const auto existing = textures_.find(key);
         if (existing != textures_.end()) {
+            existing->second.last_used_sequence = next_access_sequence_++;
             return render_image_texture_result{
                 .status = render_image_texture_status::ready,
                 .key = key,
@@ -302,13 +303,23 @@ public:
             .width = decoded.image.width,
             .height = decoded.image.height,
         };
-        textures_.emplace(
-            key,
-            fake_cached_image_texture{
-                .texture = handle,
-                .decode_metadata = decoded.metadata,
-                .decoder_diagnostics = decoded.decoder_diagnostics,
-            });
+        const std::size_t pixel_count = decoded.image.width * decoded.image.height;
+        const std::size_t decoded_byte_count = decoded.image.pixels.size();
+        if (pixel_count <= max_cached_pixel_count_) {
+            evict_to_fit(pixel_count);
+            cached_pixel_count_ += pixel_count;
+            cached_decoded_byte_count_ += decoded_byte_count;
+            textures_.emplace(
+                key,
+                fake_cached_image_texture{
+                    .texture = handle,
+                    .decode_metadata = decoded.metadata,
+                    .decoder_diagnostics = decoded.decoder_diagnostics,
+                    .pixel_count = pixel_count,
+                    .decoded_byte_count = decoded_byte_count,
+                    .last_used_sequence = next_access_sequence_++,
+                });
+        }
         return render_image_texture_result{
             .status = render_image_texture_status::ready,
             .key = key,
@@ -323,7 +334,7 @@ public:
     void release_unused() override
     {
         ++release_unused_count_;
-        textures_.clear();
+        clear_textures();
     }
 
     int release_unused_count() const
@@ -343,11 +354,63 @@ public:
         source_placeholder_encoded_bytes_.insert_or_assign(std::move(source_key), std::move(encoded_bytes));
     }
 
+    void set_max_cached_pixel_count(std::size_t max_cached_pixel_count)
+    {
+        max_cached_pixel_count_ = max_cached_pixel_count;
+        evict_to_fit(0);
+    }
+
+    std::size_t max_cached_pixel_count() const
+    {
+        return max_cached_pixel_count_;
+    }
+
+    std::size_t cached_texture_count() const
+    {
+        return textures_.size();
+    }
+
+    std::size_t cached_pixel_count() const
+    {
+        return cached_pixel_count_;
+    }
+
+    std::size_t cached_decoded_byte_count() const
+    {
+        return cached_decoded_byte_count_;
+    }
+
+    void invalidate_source(render_image_cache_key source_key)
+    {
+        for (auto texture = textures_.begin(); texture != textures_.end();) {
+            if (texture->first.source_key == source_key) {
+                subtract_cached_entry(texture->second);
+                texture = textures_.erase(texture);
+                continue;
+            }
+            ++texture;
+        }
+    }
+
+    void invalidate_texture(const render_image_texture_key& key)
+    {
+        const auto texture = textures_.find(key);
+        if (texture == textures_.end()) {
+            return;
+        }
+
+        subtract_cached_entry(texture->second);
+        textures_.erase(texture);
+    }
+
 private:
     struct fake_cached_image_texture {
         render_image_texture_handle texture;
         render_image_decode_metadata decode_metadata;
         std::vector<render_image_decoder_diagnostic> decoder_diagnostics;
+        std::size_t pixel_count = 0;
+        std::size_t decoded_byte_count = 0;
+        std::size_t last_used_sequence = 0;
     };
 
     const std::vector<std::byte>& placeholder_encoded_bytes_for(const render_image_cache_key& source_key) const
@@ -359,9 +422,50 @@ private:
         return placeholder_encoded_bytes_;
     }
 
+    void clear_textures()
+    {
+        textures_.clear();
+        cached_pixel_count_ = 0;
+        cached_decoded_byte_count_ = 0;
+    }
+
+    void subtract_cached_entry(const fake_cached_image_texture& entry)
+    {
+        cached_pixel_count_ = entry.pixel_count <= cached_pixel_count_
+            ? cached_pixel_count_ - entry.pixel_count
+            : 0;
+        cached_decoded_byte_count_ = entry.decoded_byte_count <= cached_decoded_byte_count_
+            ? cached_decoded_byte_count_ - entry.decoded_byte_count
+            : 0;
+    }
+
+    void evict_to_fit(std::size_t incoming_pixel_count)
+    {
+        if (incoming_pixel_count > max_cached_pixel_count_) {
+            clear_textures();
+            return;
+        }
+
+        while (!textures_.empty() && cached_pixel_count_ > max_cached_pixel_count_ - incoming_pixel_count) {
+            auto least_recently_used = textures_.begin();
+            for (auto candidate = textures_.begin(); candidate != textures_.end(); ++candidate) {
+                if (candidate->second.last_used_sequence < least_recently_used->second.last_used_sequence) {
+                    least_recently_used = candidate;
+                }
+            }
+
+            subtract_cached_entry(least_recently_used->second);
+            textures_.erase(least_recently_used);
+        }
+    }
+
     const image_decoder_interface& decoder_;
     render_image_texture_id next_id_ = 1;
+    std::size_t next_access_sequence_ = 1;
     int release_unused_count_ = 0;
+    std::size_t max_cached_pixel_count_ = std::numeric_limits<std::size_t>::max();
+    std::size_t cached_pixel_count_ = 0;
+    std::size_t cached_decoded_byte_count_ = 0;
     std::vector<std::byte> placeholder_encoded_bytes_ = {std::byte{0x01}};
     std::map<render_image_cache_key, std::vector<std::byte>> source_placeholder_encoded_bytes_;
     std::map<render_image_texture_key, fake_cached_image_texture, render_image_texture_key_less> textures_;

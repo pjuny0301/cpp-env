@@ -641,9 +641,15 @@ void test_texture_cache_release_unused_evicts_fake_entries()
     require(cached.ok(), "cached releasable texture request succeeds");
     require(cached.cache_hit, "matching texture request hits before release");
     require(cached.texture.id == first.texture.id, "matching texture request reuses id before release");
+    require(cache.cached_texture_count() == 1, "cached texture count tracks releasable entry");
+    require(cache.cached_pixel_count() == 2, "cached pixel count tracks releasable entry");
+    require(cache.cached_decoded_byte_count() == 8, "cached decoded byte count tracks releasable entry");
 
     cache.release_unused();
     require(cache.release_unused_count() == 1, "release hook count increments during eviction");
+    require(cache.cached_texture_count() == 0, "release clears cached texture count");
+    require(cache.cached_pixel_count() == 0, "release clears cached pixel count");
+    require(cache.cached_decoded_byte_count() == 0, "release clears cached decoded byte count");
 
     const render_image_texture_result after_release = cache.acquire_texture(request);
     require(after_release.ok(), "texture request after release succeeds");
@@ -652,6 +658,164 @@ void test_texture_cache_release_unused_evicts_fake_entries()
     require(after_release.key.source_key == first.key.source_key, "release preserves stable source key");
     require(decoder.support_requests.size() == 2, "release forces a second decoder support check");
     require(decoder.decode_requests.size() == 2, "release forces a second decode");
+}
+
+void test_texture_cache_tracks_pixel_budget_and_evicts_lru_entries()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source_a = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/budget-a.ppm"})
+                                                     .source;
+    const render_resolved_image_source source_b = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/budget-b.ppm"})
+                                                     .source;
+    const render_resolved_image_source source_c = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/budget-c.ppm"})
+                                                     .source;
+    const render_resolved_image_source source_d = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/budget-d.ppm"})
+                                                     .source;
+
+    ppm_image_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+    cache.set_max_cached_pixel_count(3);
+    cache.set_placeholder_encoded_bytes_for_source(source_a.cache_key(), make_ppm_1x1_encoded_bytes());
+    cache.set_placeholder_encoded_bytes_for_source(source_b.cache_key(), make_ppm_1x1_encoded_bytes());
+    cache.set_placeholder_encoded_bytes_for_source(source_c.cache_key(), make_ppm_1x1_encoded_bytes());
+    cache.set_placeholder_encoded_bytes_for_source(source_d.cache_key(), make_ppm_1x1_encoded_bytes());
+
+    auto acquire = [&](const render_resolved_image_source& source) {
+        return cache.acquire_texture(
+            render_image_texture_request{.source = source, .sampler = render_image_sampler_policy{}});
+    };
+
+    const render_image_texture_result first_a = acquire(source_a);
+    const render_image_texture_result first_b = acquire(source_b);
+    const render_image_texture_result first_c = acquire(source_c);
+    require(first_a.ok(), "budget source A creates a texture");
+    require(first_b.ok(), "budget source B creates a texture");
+    require(first_c.ok(), "budget source C creates a texture");
+    require(cache.max_cached_pixel_count() == 3, "cache exposes configured pixel budget");
+    require(cache.cached_texture_count() == 3, "cache stores textures up to pixel budget");
+    require(cache.cached_pixel_count() == 3, "cache tracks cached pixel count");
+    require(cache.cached_decoded_byte_count() == 12, "cache tracks cached decoded byte count");
+
+    const render_image_texture_result touched_a = acquire(source_a);
+    require(touched_a.cache_hit, "budget source A hit refreshes recency");
+    require(touched_a.texture.id == first_a.texture.id, "budget source A hit reuses texture");
+
+    const render_image_texture_result first_d = acquire(source_d);
+    require(first_d.ok(), "budget source D creates a texture");
+    require(!first_d.cache_hit, "budget source D is a cache miss");
+    require(cache.cached_texture_count() == 3, "budget insert evicts one texture");
+    require(cache.cached_pixel_count() == 3, "budget insert preserves pixel budget");
+
+    const render_image_texture_result second_b = acquire(source_b);
+    require(second_b.ok(), "budget source B can be reacquired");
+    require(!second_b.cache_hit, "least recently used source B was evicted");
+    require(second_b.texture.id != first_b.texture.id, "evicted source B receives a new texture id");
+
+    const render_image_texture_result second_a = acquire(source_a);
+    require(second_a.ok(), "recently touched source A remains available");
+    require(second_a.cache_hit, "recently touched source A survives LRU eviction");
+    require(second_a.texture.id == first_a.texture.id, "recently touched source A keeps its texture id");
+}
+
+void test_texture_cache_skips_caching_entries_over_pixel_budget()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/over-budget.ppm"})
+                                                .source;
+    ppm_image_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+    cache.set_max_cached_pixel_count(0);
+    cache.set_placeholder_encoded_bytes_for_source(source.cache_key(), make_ppm_1x1_encoded_bytes());
+
+    const render_image_texture_request request{.source = source, .sampler = render_image_sampler_policy{}};
+    const render_image_texture_result first = cache.acquire_texture(request);
+    const render_image_texture_result second = cache.acquire_texture(request);
+    require(first.ok(), "over-budget texture still returns a usable handle");
+    require(second.ok(), "over-budget texture can be decoded again");
+    require(!first.cache_hit, "first over-budget texture is not a cache hit");
+    require(!second.cache_hit, "over-budget texture is not stored for reuse");
+    require(first.texture.id != second.texture.id, "over-budget texture receives a new handle on retry");
+    require(cache.cached_texture_count() == 0, "over-budget texture does not increase cache count");
+    require(cache.cached_pixel_count() == 0, "over-budget texture does not increase cached pixels");
+    require(cache.cached_decoded_byte_count() == 0, "over-budget texture does not increase cached bytes");
+}
+
+void test_texture_cache_invalidates_by_texture_key_and_source()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source_a = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/invalidate-a.ppm"})
+                                                     .source;
+    const render_resolved_image_source source_b = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/invalidate-b.ppm"})
+                                                     .source;
+    ppm_image_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+    cache.set_placeholder_encoded_bytes_for_source(source_a.cache_key(), make_ppm_1x1_encoded_bytes());
+    cache.set_placeholder_encoded_bytes_for_source(source_b.cache_key(), make_ppm_1x1_encoded_bytes());
+
+    render_image_sampler_policy nearest_sampler;
+    nearest_sampler.min_filter = render_image_filter::nearest;
+
+    const render_image_texture_request source_a_default_request{
+        .source = source_a,
+        .sampler = render_image_sampler_policy{},
+    };
+    const render_image_texture_request source_a_nearest_request{
+        .source = source_a,
+        .sampler = nearest_sampler,
+    };
+    const render_image_texture_request source_b_request{
+        .source = source_b,
+        .sampler = render_image_sampler_policy{},
+    };
+
+    const render_image_texture_result source_a_default = cache.acquire_texture(source_a_default_request);
+    const render_image_texture_result source_a_nearest = cache.acquire_texture(source_a_nearest_request);
+    const render_image_texture_result source_b_first = cache.acquire_texture(source_b_request);
+    require(source_a_default.ok(), "source invalidation default sampler creates a texture");
+    require(source_a_nearest.ok(), "source invalidation nearest sampler creates a texture");
+    require(source_b_first.ok(), "source invalidation control source creates a texture");
+    require(cache.cached_texture_count() == 3, "source invalidation starts with three cached textures");
+    require(cache.cached_pixel_count() == 3, "source invalidation starts with three cached pixels");
+
+    cache.invalidate_texture(make_render_image_texture_key(source_a_nearest_request));
+    require(cache.cached_texture_count() == 2, "texture-key invalidation removes one sampler variant");
+    require(cache.cached_pixel_count() == 2, "texture-key invalidation subtracts one pixel");
+
+    const render_image_texture_result source_a_nearest_second = cache.acquire_texture(source_a_nearest_request);
+    require(source_a_nearest_second.ok(), "invalidated sampler variant can be reacquired");
+    require(!source_a_nearest_second.cache_hit, "invalidated sampler variant is a cache miss");
+    require(
+        source_a_nearest_second.texture.id != source_a_nearest.texture.id,
+        "invalidated sampler variant receives a new texture id");
+
+    cache.invalidate_source(source_a.cache_key());
+    require(cache.cached_texture_count() == 1, "source invalidation removes all source variants");
+    require(cache.cached_pixel_count() == 1, "source invalidation leaves only control source pixels");
+
+    const render_image_texture_result source_b_second = cache.acquire_texture(source_b_request);
+    require(source_b_second.ok(), "source invalidation preserves unrelated source");
+    require(source_b_second.cache_hit, "unrelated source remains cached");
+    require(source_b_second.texture.id == source_b_first.texture.id, "unrelated source keeps texture id");
+
+    const render_image_texture_result source_a_default_second = cache.acquire_texture(source_a_default_request);
+    require(source_a_default_second.ok(), "source-invalidated default texture can be reacquired");
+    require(!source_a_default_second.cache_hit, "source-invalidated default texture is a cache miss");
+    require(
+        source_a_default_second.texture.id != source_a_default.texture.id,
+        "source-invalidated default texture receives a new id");
 }
 
 void test_texture_cache_reports_explicit_failures()
@@ -945,6 +1109,9 @@ int main()
     test_texture_cache_reuses_normalized_equivalent_cache_keys();
     test_texture_cache_rejects_invalid_sampler_policy_before_decode();
     test_texture_cache_release_unused_evicts_fake_entries();
+    test_texture_cache_tracks_pixel_budget_and_evicts_lru_entries();
+    test_texture_cache_skips_caching_entries_over_pixel_budget();
+    test_texture_cache_invalidates_by_texture_key_and_source();
     test_texture_cache_reports_explicit_failures();
     test_texture_cache_propagates_decoder_failures();
     test_texture_cache_uses_ppm_decoder_placeholder_bytes();

@@ -243,7 +243,7 @@ void test_swipe_right_prefers_scene_continue_then_skip()
         "swipe right uses scene skip action when continue is absent");
 }
 
-void test_long_press_routes_mark_known()
+void test_long_press_routes_mark_unknown()
 {
     using namespace quiz_vulkan;
 
@@ -252,8 +252,8 @@ void test_long_press_routes_mark_known()
     require(result.ok(), "long press route succeeds");
     require(result.handled, "long press is handled");
     require(result.needs_render, "long press requests render");
-    require(payload_if<domain::mark_question_known_action>(result) != nullptr,
-        "long press routes mark question known");
+    require(payload_if<domain::mark_question_unknown_action>(result) != nullptr,
+        "long press routes mark question unknown");
 }
 
 void test_route_errors_stay_in_app_layer()
@@ -284,7 +284,7 @@ int main()
     test_pointer_text_submit_uses_current_committed_text();
     test_swipe_left_routes_previous_question();
     test_swipe_right_prefers_scene_continue_then_skip();
-    test_long_press_routes_mark_known();
+    test_long_press_routes_mark_unknown();
     test_route_errors_stay_in_app_layer();
     return 0;
 }

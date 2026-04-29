@@ -42,6 +42,7 @@ Use tmux. It leaves a real terminal session alive, so the worker is not killed i
 /mnt/c/aa/codex-workers/run-codex-tmux.sh image-texture
 /mnt/c/aa/codex-workers/run-codex-tmux.sh input-ime
 /mnt/c/aa/codex-workers/run-codex-tmux.sh audio-engine
+/mnt/c/aa/codex-workers/run-codex-tmux.sh feedback-sync
 ```
 
 Start `vulkan-backend` and `asset-system` after the lower contracts settle, unless the integrator explicitly wants them in parallel.
@@ -81,6 +82,9 @@ Each worker should:
 - build `quiz_vulkan_interface_contract_compile_tests`,
 - run role-specific tests,
 - run `git diff --check`,
+- reserve full CTest for app/CMake/public-contract changes, large integration batches, or explicit integrator requests,
+- keep all downloaded dependencies, tools, fixtures, fonts, SDK/header drops, and datasets under `/mnt/c/aa/build/external` or the worker worktree's `build/external` equivalent,
+- report source URL, version/commit, license, exact local path, and reason for each external item used,
 - commit on its role branch,
 - treat `src/app/*`, `app.cpp`, `main.cpp`, top-level `CMakeLists.txt`, and aggregate contract registration as integrator-owned unless the prompt explicitly grants that write set,
 - propose app/runtime/CMake wiring instead of editing those files from an engine worker,
@@ -94,3 +98,8 @@ Each worker should:
 - `input-ime`
 - `vulkan-backend`
 - `asset-system`
+- `feedback-sync`
+
+## Feedback Sync Worker
+
+Use `feedback-sync` for review feedback that crosses docs, traceability, and app-level UX routing. This role may edit the specific app router/test files named in its prompt, but engine workers still must not edit `src/app/*`.

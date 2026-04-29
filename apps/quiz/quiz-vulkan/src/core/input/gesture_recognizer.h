@@ -15,6 +15,7 @@ struct gesture_thresholds {
     std::int64_t swipe_max_duration_ms = 800;
     std::int64_t long_press_min_duration_ms = 600;
     float tap_slop = 8.0f;
+    float drag_start_slop = 8.0f;
 };
 
 class gesture_recognizer {
@@ -34,6 +35,7 @@ private:
         float last_x = 0.0f;
         float last_y = 0.0f;
         bool moved_outside_tap_slop = false;
+        bool dragging = false;
         bool long_press_emitted = false;
         bool suppress_release_gesture = false;
     };
@@ -42,6 +44,7 @@ private:
         std::int32_t pointer_id,
         pointer_state& state,
         std::int64_t timestamp_ms);
+    [[nodiscard]] bool inside_drag_slop(const pointer_state& state, float x, float y) const;
     [[nodiscard]] bool inside_tap_slop(const pointer_state& state, float x, float y) const;
 
     gesture_thresholds thresholds_;

@@ -23,6 +23,7 @@ public:
     [[nodiscard]] const text_input_model& text_model() const;
 
     [[nodiscard]] std::vector<input_event> process_raw_event(const raw_platform_input_event& event);
+    [[nodiscard]] std::vector<input_event> process_scroll_event(const raw_scroll_event& event);
     [[nodiscard]] std::vector<input_event> update_time(std::int64_t timestamp_ms);
     void reset();
 

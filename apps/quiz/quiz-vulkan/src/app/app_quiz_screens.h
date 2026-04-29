@@ -12,7 +12,7 @@
 #include <utility>
 #include <vector>
 
-namespace quiz_vulkan::ui {
+namespace quiz_vulkan::presentation {
 
 enum class quiz_screen_kind {
     deck_list,
@@ -1672,4 +1672,4 @@ inline std::shared_ptr<scene::scene_modifier> make_quiz_screen_modifier(
     return std::make_shared<quiz_screen_scene_modifier>(screen, std::move(snapshot));
 }
 
-} // namespace quiz_vulkan::ui
+} // namespace quiz_vulkan::presentation

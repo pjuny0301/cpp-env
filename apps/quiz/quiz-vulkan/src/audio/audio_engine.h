@@ -104,6 +104,7 @@ enum class sound_mixer_event_kind {
 };
 
 struct sound_mixer_event {
+    sound_event event;
     sound_event_id id = 0;
     sound_mixer_event_kind kind = sound_mixer_event_kind::playback_queued;
     sound_id sound;
@@ -504,6 +505,126 @@ private:
     std::vector<active_sound_playback> active_playbacks_;
     sound_playback_id next_playback_id_ = 1;
     bool muted_ = false;
+};
+
+class procedural_audio_engine final : public audio_engine_interface {
+public:
+    explicit procedural_audio_engine(sound_catalog catalog)
+        : catalog_engine_(std::move(catalog))
+    {
+    }
+
+    sound_playback_result play_sound(const sound_playback_request& request) override
+    {
+        const sound_playback_result result = catalog_engine_.play_sound(request);
+        if (result.status == sound_playback_status::queued) {
+            mixer_events_.push_back(sound_mixer_event{
+                .event = sound_event{
+                    .id = request.event_id,
+                    .kind = sound_event_kind::play,
+                    .sound = request.sound,
+                    .playback_id = result.playback_id,
+                },
+                .definition = result.definition,
+                .mode = request.mode,
+            });
+        }
+        return result;
+    }
+
+    void stop_sound(const sound_stop_request& request) override
+    {
+        const std::vector<active_sound_playback> removed_playbacks = matching_active_playbacks(request);
+        catalog_engine_.stop_sound(request);
+
+        for (const active_sound_playback& playback : removed_playbacks) {
+            mixer_events_.push_back(sound_mixer_event{
+                .event = sound_event{
+                    .kind = sound_event_kind::stop,
+                    .sound = playback.sound,
+                    .playback_id = playback.playback_id,
+                },
+                .definition = catalog_engine_.catalog().resolve(playback.sound),
+                .mode = playback.mode,
+            });
+        }
+    }
+
+    void stop_all_sounds() override
+    {
+        catalog_engine_.stop_all_sounds();
+        mixer_events_.push_back(sound_mixer_event{
+            .event = sound_event{.kind = sound_event_kind::stop_all},
+        });
+    }
+
+    void set_muted(bool muted) override
+    {
+        catalog_engine_.set_muted(muted);
+        mixer_events_.push_back(sound_mixer_event{
+            .event = sound_event{
+                .kind = sound_event_kind::mute_changed,
+                .muted = muted,
+            },
+        });
+    }
+
+    bool muted() const override
+    {
+        return catalog_engine_.muted();
+    }
+
+    const sound_catalog& catalog() const
+    {
+        return catalog_engine_.catalog();
+    }
+
+    const std::vector<sound_event>& events() const
+    {
+        return catalog_engine_.events();
+    }
+
+    const std::vector<active_sound_playback>& active_playbacks() const
+    {
+        return catalog_engine_.active_playbacks();
+    }
+
+    const std::vector<sound_mixer_event>& mixer_events() const
+    {
+        return mixer_events_;
+    }
+
+    void clear_events()
+    {
+        catalog_engine_.clear_events();
+    }
+
+    void clear_mixer_events()
+    {
+        mixer_events_.clear();
+    }
+
+private:
+    std::vector<active_sound_playback> matching_active_playbacks(const sound_stop_request& request) const
+    {
+        std::vector<active_sound_playback> matches;
+        for (const active_sound_playback& playback : catalog_engine_.active_playbacks()) {
+            if (request.all_instances) {
+                if (request.sound.empty() || playback.sound == request.sound) {
+                    matches.push_back(playback);
+                }
+                continue;
+            }
+
+            if (request.playback_id != 0 && playback.playback_id == request.playback_id) {
+                matches.push_back(playback);
+            }
+        }
+        return matches;
+    }
+
+    catalog_audio_engine catalog_engine_;
+    std::vector<sound_mixer_event> mixer_events_;
 };
 
 class null_audio_engine final : public audio_engine_interface {

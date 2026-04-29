@@ -6,7 +6,7 @@ Hard rules:
 - Read the root AGENTS.md and the nearest AGENTS.md before editing.
 - Implement behind the existing interfaces. Do not rename, move, or change public interface signatures without stopping and writing an exact proposal first.
 - Build the aggregate interface lock before handoff:
-  `codex exec` coordinator target: `quiz_vulkan_interface_contract_compile_tests`
+  `quiz_vulkan_interface_contract_compile_tests`
 - Preserve architecture:
   Vulkan renderer <- UI renderer <- layout placer -> scene layout data
   scene modifiers write only through edit/patch data
@@ -15,6 +15,12 @@ Hard rules:
 - Keep changes scoped and commit on your branch.
 - Engine workers must not edit `src/app/*`, `app.cpp`, `main.cpp`, top-level `CMakeLists.txt`, or aggregate contract registration unless the integrator explicitly assigns that write set in the current prompt.
 - If app/runtime/CMake wiring is needed, write a short proposal in the final report. The integrator applies wiring on the baseline branch.
+- If a useful open-source dependency, tool, fixture, font, SDK/header, or dataset would materially improve your owned task, you may download it. All external downloads/source/binaries/data must stay under `/mnt/c/aa/build/external` or your worktree's `build/external` equivalent, never under `apps/quiz`.
+- Report every external item you used with source URL, version or commit, license, exact local path, and why it was needed.
+- Use tiered verification to avoid wasting time:
+  - every scoped commit: focused role test(s), `quiz_vulkan_interface_contract_compile_tests`, and `git diff --check`;
+  - JSON/docs-only changes: relevant parser/format check plus `git diff --check`;
+  - full CTest: only for app/CMake/public-contract changes, large integration batches, or explicit integrator request.
 - Final report must include changed files, verification commands/results, risks, and commit hash.
 
 Useful commands:
@@ -22,5 +28,5 @@ Useful commands:
 - `git pull --ff-only`
 - `"/mnt/c/Program Files/CMake/bin/cmake.exe" --preset windows-mingw-ascii`
 - `"/mnt/c/Program Files/CMake/bin/cmake.exe" --build "C:\\aa\\build\\out\\quiz\\quiz-vulkan\\windows-mingw-ascii" --target quiz_vulkan_interface_contract_compile_tests`
-- `"/mnt/c/Program Files/CMake/bin/ctest.exe" --test-dir "C:\\aa\\build\\out\\quiz\\quiz-vulkan\\windows-mingw-ascii" --output-on-failure`
+- `"/mnt/c/Program Files/CMake/bin/ctest.exe" --test-dir "C:\\aa\\build\\out\\quiz\\quiz-vulkan\\windows-mingw-ascii" -R "<focused_test_regex>" --output-on-failure`
 - `git diff --check`

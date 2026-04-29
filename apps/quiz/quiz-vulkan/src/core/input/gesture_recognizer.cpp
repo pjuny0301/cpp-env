@@ -1,5 +1,6 @@
 #include "core/input/gesture_recognizer.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 
@@ -9,6 +10,52 @@ namespace {
 float abs_float(float value)
 {
     return std::fabs(value);
+}
+
+gesture_event drag_event(
+    gesture_kind kind,
+    const pointer_event& event,
+    std::int64_t start_ms,
+    float start_x,
+    float start_y,
+    float previous_x,
+    float previous_y)
+{
+    const bool start = kind == gesture_kind::drag_start;
+    return gesture_event{
+        .kind = kind,
+        .timestamp_ms = event.timestamp_ms,
+        .duration_ms = event.timestamp_ms - start_ms,
+        .pointer_id = event.pointer_id,
+        .start_x = start_x,
+        .start_y = start_y,
+        .x = event.x,
+        .y = event.y,
+        .delta_x = event.x - (start ? start_x : previous_x),
+        .delta_y = event.y - (start ? start_y : previous_y),
+    };
+}
+
+gesture_event cancel_drag_event(
+    const pointer_event& event,
+    std::int64_t start_ms,
+    float start_x,
+    float start_y,
+    float last_x,
+    float last_y)
+{
+    return gesture_event{
+        .kind = gesture_kind::drag_cancel,
+        .timestamp_ms = event.timestamp_ms,
+        .duration_ms = event.timestamp_ms - start_ms,
+        .pointer_id = event.pointer_id,
+        .start_x = start_x,
+        .start_y = start_y,
+        .x = last_x,
+        .y = last_y,
+        .delta_x = 0.0f,
+        .delta_y = 0.0f,
+    };
 }
 
 } // namespace
@@ -23,6 +70,18 @@ std::vector<gesture_event> gesture_recognizer::process_pointer_event(const point
     std::vector<gesture_event> gestures;
 
     if (event.phase == pointer_phase::down) {
+        if (auto old_pointer = pointers_.find(event.pointer_id);
+            old_pointer != pointers_.end() && old_pointer->second.dragging) {
+            const pointer_state& old_state = old_pointer->second;
+            gestures.push_back(cancel_drag_event(
+                event,
+                old_state.start_ms,
+                old_state.start_x,
+                old_state.start_y,
+                old_state.last_x,
+                old_state.last_y));
+        }
+
         pointers_[event.pointer_id] = pointer_state{
             .start_ms = event.timestamp_ms,
             .last_ms = event.timestamp_ms,
@@ -40,13 +99,57 @@ std::vector<gesture_event> gesture_recognizer::process_pointer_event(const point
     }
 
     pointer_state& state = pointer->second;
+    const float previous_x = state.last_x;
+    const float previous_y = state.last_y;
     state.last_ms = event.timestamp_ms;
     state.last_x = event.x;
     state.last_y = event.y;
     state.moved_outside_tap_slop = state.moved_outside_tap_slop || !inside_tap_slop(state, event.x, event.y);
 
     if (event.phase == pointer_phase::cancel) {
+        if (state.dragging) {
+            gestures.push_back(drag_event(
+                gesture_kind::drag_cancel,
+                event,
+                state.start_ms,
+                state.start_x,
+                state.start_y,
+                previous_x,
+                previous_y));
+        }
         pointers_.erase(pointer);
+        return gestures;
+    }
+
+    if (event.phase == pointer_phase::move) {
+        if (state.long_press_emitted) {
+            return gestures;
+        }
+
+        if (state.dragging) {
+            gestures.push_back(drag_event(
+                gesture_kind::drag_update,
+                event,
+                state.start_ms,
+                state.start_x,
+                state.start_y,
+                previous_x,
+                previous_y));
+            return gestures;
+        }
+
+        if (!inside_drag_slop(state, event.x, event.y)) {
+            state.dragging = true;
+            state.suppress_release_gesture = true;
+            gestures.push_back(drag_event(
+                gesture_kind::drag_start,
+                event,
+                state.start_ms,
+                state.start_x,
+                state.start_y,
+                previous_x,
+                previous_y));
+        }
         return gestures;
     }
 
@@ -55,6 +158,19 @@ std::vector<gesture_event> gesture_recognizer::process_pointer_event(const point
     }
 
     if (event.phase != pointer_phase::up) {
+        return gestures;
+    }
+
+    if (state.dragging) {
+        gestures.push_back(drag_event(
+            gesture_kind::drag_end,
+            event,
+            state.start_ms,
+            state.start_x,
+            state.start_y,
+            previous_x,
+            previous_y));
+        pointers_.erase(pointer);
         return gestures;
     }
 
@@ -103,6 +219,9 @@ std::vector<gesture_event> gesture_recognizer::update_time(std::int64_t timestam
             gestures.push_back(*long_press);
         }
     }
+    std::ranges::sort(gestures, [](const gesture_event& lhs, const gesture_event& rhs) {
+        return lhs.pointer_id < rhs.pointer_id;
+    });
     return gestures;
 }
 
@@ -143,6 +262,12 @@ bool gesture_recognizer::inside_tap_slop(const pointer_state& state, float x, fl
 {
     return abs_float(x - state.start_x) <= thresholds_.tap_slop
         && abs_float(y - state.start_y) <= thresholds_.tap_slop;
+}
+
+bool gesture_recognizer::inside_drag_slop(const pointer_state& state, float x, float y) const
+{
+    return abs_float(x - state.start_x) <= thresholds_.drag_start_slop
+        && abs_float(y - state.start_y) <= thresholds_.drag_start_slop;
 }
 
 } // namespace quiz_vulkan::input

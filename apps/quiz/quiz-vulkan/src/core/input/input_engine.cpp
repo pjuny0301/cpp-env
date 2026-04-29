@@ -110,6 +110,31 @@ std::vector<input_event> input_engine::update_time(std::int64_t timestamp_ms)
     return events;
 }
 
+std::vector<input_event> input_engine::process_scroll_event(const raw_scroll_event& event)
+{
+    std::vector<input_event> events;
+    if (event.delta_x == 0.0f && event.delta_y == 0.0f) {
+        return events;
+    }
+
+    scroll_event normalized{
+        .timestamp_ms = event.timestamp_ms,
+        .x = event.x,
+        .y = event.y,
+    };
+
+    if (event.unit == scroll_delta_unit::lines) {
+        normalized.line_delta_x = event.delta_x;
+        normalized.line_delta_y = event.delta_y;
+    } else {
+        normalized.pixel_delta_x = event.delta_x;
+        normalized.pixel_delta_y = event.delta_y;
+    }
+
+    events.emplace_back(normalized);
+    return events;
+}
+
 void input_engine::reset()
 {
     gestures_.reset();
@@ -164,8 +189,19 @@ std::vector<input_event> input_engine::process_ime_event(const raw_platform_ime_
     const bool had_composition = ime_composing_ || !text_.preedit_text().empty();
 
     if (event.phase == raw_platform_ime_phase::composition_start) {
+        const bool had_preedit = !text_.preedit_text().empty();
         ime_composing_ = true;
-        text_.set_preedit("");
+        if (had_preedit) {
+            text_.cancel_ime();
+            events.emplace_back(ime_event{
+                .kind = ime_event_kind::cancel,
+                .timestamp_ms = event.timestamp_ms,
+                .target_id = target_id,
+                .utf8_text = {},
+            });
+        } else {
+            text_.set_preedit("");
+        }
         return events;
     }
 

@@ -1,6 +1,17 @@
 # Scene Schema
 
-The UI subsystem owns scene data and rendering. It does not own quiz domain state.
+The scene/rendering pipeline owns scene data and draw commands. It must not own
+quiz domain state.
+
+`ui_renderer` means the narrow renderer adapter in `src/core/ui/ui_renderer.*`:
+it consumes a placed scene and emits a `render_draw_list`. It must not include or
+inspect domain headers.
+
+`app_quiz_screens.h` is an app screen presenter that converts
+`domain::app_snapshot` into a scene patch. Treat that as an app/presentation
+bridge, not as the UI renderer boundary. Do not grow that coupling into
+`src/core/ui`; the split is domain snapshot -> app-owned presentation/modifier
+-> scene edit data -> layout -> UI renderer -> Vulkan renderer.
 
 ## Pipeline
 
@@ -13,6 +24,21 @@ modifier_interface
                   -> ui_renderer
                       -> vulkan_renderer
 ```
+
+Dependency direction:
+
+```text
+vulkan_renderer <- ui_renderer <- layout_placer -> scene_layout_data
+                                               ^
+                    scene_layout_data_modifier - writes scene_layout_edit_data
+                                               ^
+                                      modifier_interface <- app/main
+```
+
+`scene_layout_edit_data` is a restricted subset of `scene_layout_data`. Modifiers
+write through that edit surface only. Layout placement does not mutate scene
+data, `ui_renderer` does not call into layout placement, and Vulkan does not know
+about scene, UI, or domain concepts.
 
 ## `scene_layout_data`
 
@@ -60,4 +86,3 @@ Restricted write surface for modifiers. It may append, update, remove, bind acti
 - debug bounds
 
 `vulkan_renderer` owns GPU resources and submits draw commands only.
-

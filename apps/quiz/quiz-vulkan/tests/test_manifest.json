@@ -1,7 +1,13 @@
 {
   "schema_version": 1,
   "project": "quiz-vulkan",
-  "generated_for": "current scaffold verification",
+  "generated_for": "representative smoke-command verification",
+  "manifest_kind": "smoke_commands",
+  "inventory_policy": "This manifest is not a full manual inventory of every source test or CTest target. After configuring the Windows build, use ctest -N from the build directory for the current authoritative test list and count.",
+  "ctest_inventory": {
+    "windows_build_dir": "C:/aa/build/out/quiz/quiz-vulkan/windows-mingw-ascii",
+    "command_windows": "\"C:/Program Files/CMake/bin/ctest.exe\" --test-dir \"C:/aa/build/out/quiz/quiz-vulkan/windows-mingw-ascii\" -N"
+  },
   "compiler_profiles": {
     "mingw_gcc_6_cxx1z": {
       "description": "Available local MinGW GCC 6.3.0. Use only for scene/layout scaffold smoke tests that avoid modern C++17 standard library dependencies.",
@@ -120,6 +126,19 @@
       ]
     },
     {
+      "id": "app_input_router",
+      "area": "app",
+      "path": "tests/app/app_input_router_tests.cpp",
+      "type": "ctest",
+      "compiler_profile": "windows_mingw_ascii_gcc13",
+      "supported_with_available_mingw": true,
+      "source_dependencies": [
+        "src/app/app_input_router.cpp",
+        "src/app/app_action_router.cpp",
+        "src/core/domain/app_action.cpp"
+      ]
+    },
+    {
       "id": "app_demo_render_path",
       "area": "app",
       "path": "tests/app/app_demo_tests.cpp",
@@ -139,9 +158,9 @@
       ]
     },
     {
-      "id": "quiz_screens_smoke",
-      "area": "ui",
-      "path": "tests/ui/quiz_screens_tests.cpp",
+      "id": "app_quiz_screens_smoke",
+      "area": "app",
+      "path": "tests/app/app_quiz_screens_tests.cpp",
       "type": "ctest",
       "compiler_profile": "windows_mingw_ascii_gcc13",
       "supported_with_available_mingw": true
@@ -162,6 +181,15 @@
       "compiler_profile": "windows_mingw_ascii_gcc13",
       "supported_with_available_mingw": true,
       "manual_command_windows": "powershell -ExecutionPolicy Bypass -File .\\tools\\run_windows_mingw_ascii.ps1"
+    },
+    {
+      "id": "aggregate_interface_lock",
+      "area": "contracts",
+      "path": "tests/contracts/interface_contract_compile_tests.cpp",
+      "type": "cmake_target_build",
+      "compiler_profile": "windows_mingw_ascii_gcc13",
+      "supported_with_available_mingw": true,
+      "manual_command_windows": "\"C:/Program Files/CMake/bin/cmake.exe\" --build \"C:/aa/build/out/quiz/quiz-vulkan/windows-mingw-ascii\" --target quiz_vulkan_interface_contract_compile_tests"
     }
   ],
   "helper_scripts": [

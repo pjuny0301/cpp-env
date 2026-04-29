@@ -50,7 +50,7 @@
       "src/core/ui/ui_renderer*"
     ],
     "agent_e_quiz_screens": [
-      "src/core/ui/quiz_screens*"
+      "src/app/app_quiz_screens*"
     ],
     "agent_f_verification": [
       "tests/",

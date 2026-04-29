@@ -12,11 +12,39 @@ void pop_last_utf8_codepoint(std::string& value)
         return;
     }
 
-    std::size_t start = value.size() - 1;
-    while (start > 0 && (static_cast<unsigned char>(value[start]) & 0xc0U) == 0x80U) {
+    auto is_continuation_byte = [](unsigned char byte) {
+        return (byte & 0xc0U) == 0x80U;
+    };
+    auto expected_codepoint_length = [](unsigned char lead) -> std::size_t {
+        if (lead < 0x80U) {
+            return 1;
+        }
+        if (lead >= 0xc2U && lead <= 0xdfU) {
+            return 2;
+        }
+        if (lead >= 0xe0U && lead <= 0xefU) {
+            return 3;
+        }
+        if (lead >= 0xf0U && lead <= 0xf4U) {
+            return 4;
+        }
+        return 0;
+    };
+
+    const std::size_t end = value.size();
+    std::size_t start = end - 1;
+    while (start > 0 && is_continuation_byte(static_cast<unsigned char>(value[start]))) {
         --start;
     }
-    value.erase(start);
+
+    const unsigned char lead = static_cast<unsigned char>(value[start]);
+    const std::size_t actual_length = end - start;
+    if (expected_codepoint_length(lead) == actual_length) {
+        value.erase(start);
+        return;
+    }
+
+    value.erase(end - 1);
 }
 
 } // namespace
@@ -60,6 +88,27 @@ std::string text_input_model::display_text() const
     std::string display = text_;
     display.append(preedit_text_);
     return display;
+}
+
+text_range text_input_model::caret_range() const
+{
+    const std::size_t caret = text_.size() + preedit_text_.size();
+    return text_range{
+        .start_byte = caret,
+        .end_byte = caret,
+    };
+}
+
+std::optional<text_range> text_input_model::preedit_range() const
+{
+    if (preedit_text_.empty()) {
+        return std::nullopt;
+    }
+
+    return text_range{
+        .start_byte = text_.size(),
+        .end_byte = text_.size() + preedit_text_.size(),
+    };
 }
 
 bool text_input_model::commit_utf8(std::string_view utf8_text)

@@ -6,7 +6,10 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdio>
+#include <functional>
 #include <string>
+#include <string_view>
+#include <vector>
 
 namespace {
 
@@ -17,6 +20,117 @@ void require(bool condition, const char* message)
     }
     assert((condition) && message);
 }
+
+void append_ascii(std::vector<std::byte>& bytes, std::string_view text)
+{
+    for (const char value : text) {
+        bytes.push_back(std::byte{static_cast<unsigned char>(value)});
+    }
+}
+
+void append_byte(std::vector<std::byte>& bytes, unsigned char value)
+{
+    bytes.push_back(std::byte{value});
+}
+
+std::vector<std::byte> make_ppm_2x1_encoded_bytes()
+{
+    std::vector<std::byte> bytes;
+    append_ascii(bytes, "P6\n# deterministic image test fixture\n2 1\n255\n");
+    append_byte(bytes, 0xff);
+    append_byte(bytes, 0x00);
+    append_byte(bytes, 0x00);
+    append_byte(bytes, 0x00);
+    append_byte(bytes, 0xff);
+    append_byte(bytes, 0x00);
+    return bytes;
+}
+
+std::vector<std::byte> make_short_ppm_2x1_encoded_bytes()
+{
+    std::vector<std::byte> bytes;
+    append_ascii(bytes, "P6\n2 1\n255\n");
+    append_byte(bytes, 0xff);
+    append_byte(bytes, 0x00);
+    append_byte(bytes, 0x00);
+    return bytes;
+}
+
+std::vector<std::byte> make_ppm_1x1_encoded_bytes()
+{
+    std::vector<std::byte> bytes;
+    append_ascii(bytes, "P6\n1 1\n255\n");
+    append_byte(bytes, 0x00);
+    append_byte(bytes, 0x00);
+    append_byte(bytes, 0xff);
+    return bytes;
+}
+
+class malformed_payload_decoder final : public quiz_vulkan::render::image_decoder_interface {
+public:
+    bool supports(const quiz_vulkan::render::render_image_decode_request&) const override
+    {
+        ++support_request_count;
+        return true;
+    }
+
+    quiz_vulkan::render::render_image_decode_result decode(
+        const quiz_vulkan::render::render_image_decode_request&) const override
+    {
+        ++decode_request_count;
+        return quiz_vulkan::render::render_image_decode_result{
+            .status = quiz_vulkan::render::render_image_decode_status::decoded,
+            .image = quiz_vulkan::render::render_decoded_image{
+                .width = 2,
+                .height = 2,
+                .pixel_format = quiz_vulkan::render::render_image_pixel_format::rgba8_srgb,
+                .pixels = {
+                    std::byte{0xff},
+                    std::byte{0x00},
+                    std::byte{0x00},
+                    std::byte{0xff},
+                },
+            },
+            .diagnostic = {},
+        };
+    }
+
+    mutable int support_request_count = 0;
+    mutable int decode_request_count = 0;
+};
+
+class unknown_pixel_format_decoder final : public quiz_vulkan::render::image_decoder_interface {
+public:
+    bool supports(const quiz_vulkan::render::render_image_decode_request&) const override
+    {
+        ++support_request_count;
+        return true;
+    }
+
+    quiz_vulkan::render::render_image_decode_result decode(
+        const quiz_vulkan::render::render_image_decode_request&) const override
+    {
+        ++decode_request_count;
+        return quiz_vulkan::render::render_image_decode_result{
+            .status = quiz_vulkan::render::render_image_decode_status::decoded,
+            .image = quiz_vulkan::render::render_decoded_image{
+                .width = 1,
+                .height = 1,
+                .pixel_format = static_cast<quiz_vulkan::render::render_image_pixel_format>(99),
+                .pixels = {
+                    std::byte{0xff},
+                    std::byte{0x00},
+                    std::byte{0x00},
+                    std::byte{0xff},
+                },
+            },
+            .diagnostic = {},
+        };
+    }
+
+    mutable int support_request_count = 0;
+    mutable int decode_request_count = 0;
+};
 
 void test_sampler_defaults_are_appended_to_render_image_ref()
 {
@@ -31,6 +145,7 @@ void test_sampler_defaults_are_appended_to_render_image_ref()
     require(image.sampler.mipmap_mode == render_image_mipmap_mode::none, "default mipmap mode is none");
     require(image.sampler.wrap_u == render_image_wrap_mode::clamp_to_edge, "default wrap_u clamps");
     require(image.sampler.wrap_v == render_image_wrap_mode::clamp_to_edge, "default wrap_v clamps");
+    require(is_valid_render_image_sampler_policy(image.sampler), "default sampler policy is valid");
 }
 
 void test_resolver_normalizes_without_fetching()
@@ -99,6 +214,15 @@ void test_decoder_interface_shape()
     require(decoded.image.width == 2, "decoded image carries width");
     require(decoded.image.height == 1, "decoded image carries height");
     require(decoded.image.pixels.size() == 8, "decoded image carries rgba bytes");
+    require(expected_render_decoded_image_byte_count(decoded.image) == 8, "decoded image byte count is derived");
+    require(has_valid_render_decoded_image_payload(decoded.image), "decoded image payload matches dimensions");
+    require(decoded.metadata.decoder_id == "fake_image_decoder", "fake decoder reports decoder id");
+    require(decoded.metadata.encoded_byte_count == 2, "fake decoder reports encoded byte count");
+    require(decoded.metadata.width == 2, "fake decoder reports metadata width");
+    require(decoded.metadata.height == 1, "fake decoder reports metadata height");
+    require(decoded.metadata.decoded_byte_count == 8, "fake decoder reports decoded byte count");
+    require(decoded.metadata.has_image(), "fake decoder metadata reports image");
+    require(decoded.decoder_diagnostics.empty(), "direct fake decoder has no chain diagnostics");
     require(decoder.support_requests.size() == 1, "support request was recorded");
     require(decoder.decode_requests.size() == 1, "decode request was recorded");
 }
@@ -124,6 +248,9 @@ void test_decoder_reports_explicit_failures()
         unsupported.status == render_image_decode_status::unsupported_format,
         "unsupported decode reports unsupported format");
     require(!unsupported.diagnostic.empty(), "unsupported decode includes diagnostic");
+    require(unsupported.metadata.decoder_id == "fake_image_decoder", "unsupported fake decode reports decoder id");
+    require(unsupported.metadata.encoded_byte_count == 1, "unsupported fake decode reports encoded byte count");
+    require(!unsupported.metadata.has_image(), "unsupported fake decode reports no image metadata");
 
     const render_image_decode_request empty_request{
         .source = render_resolved_image_source{
@@ -139,9 +266,199 @@ void test_decoder_reports_explicit_failures()
     require(!empty.ok(), "empty decode does not return an image");
     require(empty.status == render_image_decode_status::empty_input, "empty decode reports empty input");
     require(!empty.diagnostic.empty(), "empty decode includes diagnostic");
+    require(empty.metadata.decoder_id == "fake_image_decoder", "empty fake decode reports decoder id");
+    require(empty.metadata.encoded_byte_count == 0, "empty fake decode reports empty byte count");
+    require(!empty.metadata.has_image(), "empty fake decode reports no image metadata");
 
     require(decoder.support_requests.size() == 2, "failure support requests were recorded");
     require(decoder.decode_requests.size() == 2, "failure decode requests were recorded");
+}
+
+void test_ppm_decoder_decodes_binary_rgb_to_rgba()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/card.ppm"})
+                                                    .source;
+    const render_image_decode_request request{
+        .source = source,
+        .encoded_bytes = make_ppm_2x1_encoded_bytes(),
+    };
+
+    ppm_image_decoder decoder;
+    require(decoder.supports(request), "ppm decoder supports ppm source");
+    const render_image_decode_result decoded = decoder.decode(request);
+    require(decoded.ok(), "ppm decoder decodes P6 bytes");
+    require(decoded.image.width == 2, "ppm decoder preserves width");
+    require(decoded.image.height == 1, "ppm decoder preserves height");
+    require(decoded.image.pixel_format == render_image_pixel_format::rgba8_srgb, "ppm decoder emits srgb rgba");
+    require(decoded.image.pixels.size() == 8, "ppm decoder expands rgb bytes to rgba bytes");
+    require(has_valid_render_decoded_image_payload(decoded.image), "ppm decoded payload matches image contract");
+    require(decoded.image.pixels[0] == std::byte{0xff}, "ppm decoder copies first pixel red channel");
+    require(decoded.image.pixels[1] == std::byte{0x00}, "ppm decoder copies first pixel green channel");
+    require(decoded.image.pixels[2] == std::byte{0x00}, "ppm decoder copies first pixel blue channel");
+    require(decoded.image.pixels[3] == std::byte{0xff}, "ppm decoder adds opaque alpha");
+    require(decoded.image.pixels[4] == std::byte{0x00}, "ppm decoder copies second pixel red channel");
+    require(decoded.image.pixels[5] == std::byte{0xff}, "ppm decoder copies second pixel green channel");
+    require(decoded.image.pixels[6] == std::byte{0x00}, "ppm decoder copies second pixel blue channel");
+    require(decoded.image.pixels[7] == std::byte{0xff}, "ppm decoder adds second opaque alpha");
+    require(decoded.metadata.decoder_id == "ppm_image_decoder", "ppm decoder reports decoder id");
+    require(decoded.metadata.encoded_byte_count == request.encoded_bytes.size(), "ppm decoder reports encoded byte count");
+    require(decoded.metadata.width == 2, "ppm decoder metadata carries width");
+    require(decoded.metadata.height == 1, "ppm decoder metadata carries height");
+    require(decoded.metadata.decoded_byte_count == 8, "ppm decoder metadata carries decoded byte count");
+    require(decoded.metadata.has_image(), "ppm decoder metadata reports image");
+}
+
+void test_ppm_decoder_reports_invalid_payload_size()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source = resolver.resolve(
+        render_image_resolve_request{.uri = "asset://card.ppm"})
+                                                    .source;
+    const render_image_decode_request request{
+        .source = source,
+        .encoded_bytes = make_short_ppm_2x1_encoded_bytes(),
+    };
+
+    ppm_image_decoder decoder;
+    const render_image_decode_result decoded = decoder.decode(request);
+    require(!decoded.ok(), "short ppm payload does not decode");
+    require(decoded.status == render_image_decode_status::invalid_data, "short ppm payload reports invalid data");
+    require(!decoded.diagnostic.empty(), "short ppm payload includes diagnostic");
+    require(decoded.metadata.decoder_id == "ppm_image_decoder", "short ppm payload reports decoder id");
+    require(decoded.metadata.encoded_byte_count == request.encoded_bytes.size(), "short ppm reports encoded byte count");
+    require(!decoded.metadata.has_image(), "short ppm payload reports no decoded image metadata");
+
+    const render_image_decode_request unsupported_request{
+        .source = render_resolved_image_source{
+            .original_uri = "asset://card.png",
+            .normalized_uri = "asset://card.png",
+            .kind = render_image_source_kind::asset_uri,
+        },
+        .encoded_bytes = make_ppm_2x1_encoded_bytes(),
+    };
+    require(!decoder.supports(unsupported_request), "ppm decoder rejects non-ppm source");
+    const render_image_decode_result unsupported = decoder.decode(unsupported_request);
+    require(!unsupported.ok(), "non-ppm source does not decode through ppm decoder");
+    require(
+        unsupported.status == render_image_decode_status::unsupported_format,
+        "non-ppm source reports unsupported format");
+    require(unsupported.metadata.decoder_id == "ppm_image_decoder", "unsupported ppm reports decoder id");
+    require(unsupported.metadata.encoded_byte_count == unsupported_request.encoded_bytes.size(), "unsupported ppm reports encoded byte count");
+}
+
+void test_decoder_chain_routes_supported_formats()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source fake_source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/card.fake"})
+                                                     .source;
+    const render_resolved_image_source ppm_source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/card.ppm"})
+                                                    .source;
+
+    fake_image_decoder fake_decoder;
+    ppm_image_decoder ppm_decoder;
+    image_decoder_chain decoder_chain({std::cref(fake_decoder), std::cref(ppm_decoder)});
+    require(decoder_chain.decoder_count() == 2, "decoder chain stores both decoders");
+
+    const render_image_decode_request fake_request{
+        .source = fake_source,
+        .encoded_bytes = {std::byte{0x01}},
+    };
+    require(decoder_chain.supports(fake_request), "decoder chain supports fake decoder source");
+    const render_image_decode_result fake_decoded = decoder_chain.decode(fake_request);
+    require(fake_decoded.ok(), "decoder chain routes fake source to fake decoder");
+    require(fake_decoded.image.width == 2, "decoder chain returns fake decoded width");
+    require(fake_decoded.metadata.decoder_id == "fake_image_decoder", "decoder chain preserves fake decoder id");
+    require(fake_decoded.decoder_diagnostics.size() == 1, "decoder chain reports selected fake diagnostic");
+    require(fake_decoded.decoder_diagnostics[0].decoder_id == "decoder[0]", "decoder chain names first default decoder");
+    require(fake_decoded.decoder_diagnostics[0].supported, "decoder chain marks selected fake decoder supported");
+    require(
+        fake_decoded.decoder_diagnostics[0].status == render_image_decode_status::decoded,
+        "decoder chain records fake decode status");
+
+    const render_image_decode_request ppm_request{
+        .source = ppm_source,
+        .encoded_bytes = make_ppm_1x1_encoded_bytes(),
+    };
+    require(decoder_chain.supports(ppm_request), "decoder chain supports ppm decoder source");
+    const render_image_decode_result ppm_decoded = decoder_chain.decode(ppm_request);
+    require(ppm_decoded.ok(), "decoder chain routes ppm source to ppm decoder");
+    require(ppm_decoded.image.width == 1, "decoder chain returns ppm decoded width");
+    require(ppm_decoded.metadata.decoder_id == "ppm_image_decoder", "decoder chain preserves ppm decoder id");
+    require(ppm_decoded.decoder_diagnostics.size() == 2, "decoder chain reports skipped and selected decoders");
+    require(!ppm_decoded.decoder_diagnostics[0].supported, "decoder chain marks skipped fake decoder unsupported");
+    require(ppm_decoded.decoder_diagnostics[1].supported, "decoder chain marks selected ppm decoder supported");
+    require(ppm_decoded.decoder_diagnostics[1].decoder_id == "decoder[1]", "decoder chain names second default decoder");
+    require(fake_decoder.decode_requests.size() == 1, "decoder chain decodes fake source only once");
+}
+
+void test_decoder_chain_reports_unsupported_sources()
+{
+    using namespace quiz_vulkan::render;
+
+    ppm_image_decoder ppm_decoder;
+    image_decoder_chain decoder_chain;
+    decoder_chain.add_decoder("ppm-fixture", ppm_decoder);
+    const render_image_decode_request request{
+        .source = render_resolved_image_source{
+            .original_uri = "asset://card.png",
+            .normalized_uri = "asset://card.png",
+            .kind = render_image_source_kind::asset_uri,
+        },
+        .encoded_bytes = make_ppm_1x1_encoded_bytes(),
+    };
+
+    require(!decoder_chain.supports(request), "decoder chain rejects unsupported source");
+    const render_image_decode_result decoded = decoder_chain.decode(request);
+    require(!decoded.ok(), "decoder chain unsupported source does not decode");
+    require(
+        decoded.status == render_image_decode_status::unsupported_format,
+        "decoder chain unsupported source reports unsupported format");
+    require(!decoded.diagnostic.empty(), "decoder chain unsupported source includes diagnostic");
+    require(decoded.metadata.encoded_byte_count == request.encoded_bytes.size(), "decoder chain failure reports encoded byte count");
+    require(decoded.decoder_diagnostics.size() == 1, "decoder chain failure reports checked decoder");
+    require(decoded.decoder_diagnostics[0].decoder_id == "ppm-fixture", "decoder chain failure uses explicit decoder id");
+    require(!decoded.decoder_diagnostics[0].supported, "decoder chain failure marks decoder unsupported");
+    require(
+        decoded.decoder_diagnostics[0].status == render_image_decode_status::unsupported_format,
+        "decoder chain failure records unsupported status");
+    require(!decoded.decoder_diagnostics[0].diagnostic.empty(), "decoder chain failure records support diagnostic");
+}
+
+void test_sampler_policy_validation_rejects_unknown_enum_values()
+{
+    using namespace quiz_vulkan::render;
+
+    render_image_sampler_policy sampler;
+    require(is_valid_render_image_sampler_policy(sampler), "baseline sampler policy is valid");
+
+    sampler.min_filter = static_cast<render_image_filter>(99);
+    require(!is_valid_render_image_sampler_policy(sampler), "unknown min filter is invalid");
+    sampler.min_filter = render_image_filter::linear;
+
+    sampler.mag_filter = static_cast<render_image_filter>(99);
+    require(!is_valid_render_image_sampler_policy(sampler), "unknown mag filter is invalid");
+    sampler.mag_filter = render_image_filter::linear;
+
+    sampler.mipmap_mode = static_cast<render_image_mipmap_mode>(99);
+    require(!is_valid_render_image_sampler_policy(sampler), "unknown mipmap mode is invalid");
+    sampler.mipmap_mode = render_image_mipmap_mode::none;
+
+    sampler.wrap_u = static_cast<render_image_wrap_mode>(99);
+    require(!is_valid_render_image_sampler_policy(sampler), "unknown wrap_u mode is invalid");
+    sampler.wrap_u = render_image_wrap_mode::clamp_to_edge;
+
+    sampler.wrap_v = static_cast<render_image_wrap_mode>(99);
+    require(!is_valid_render_image_sampler_policy(sampler), "unknown wrap_v mode is invalid");
 }
 
 void test_texture_cache_reuses_matching_key_and_misses_on_sampler_change()
@@ -176,6 +493,54 @@ void test_texture_cache_reuses_matching_key_and_misses_on_sampler_change()
 
     cache.release_unused();
     require(cache.release_unused_count() == 1, "cache release hook is callable");
+}
+
+void test_texture_cache_keys_include_all_sampler_policy_fields()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/sampler-fields.fake"})
+                                                    .source;
+    fake_image_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+
+    const render_image_sampler_policy base_sampler;
+    const render_image_texture_result base = cache.acquire_texture(
+        render_image_texture_request{.source = source, .sampler = base_sampler});
+    require(base.ok(), "base sampler creates a texture");
+
+    auto require_sampler_miss = [&](render_image_sampler_policy sampler, const char* message) {
+        const render_image_texture_result result = cache.acquire_texture(
+            render_image_texture_request{.source = source, .sampler = sampler});
+        require(result.ok(), message);
+        require(!result.cache_hit, "sampler field variant is a cache miss");
+        require(result.texture.id != base.texture.id, "sampler field variant receives a distinct texture id");
+        require(result.key.source_key == base.key.source_key, "sampler field variant preserves source key");
+    };
+
+    render_image_sampler_policy mag_filter_sampler = base_sampler;
+    mag_filter_sampler.mag_filter = render_image_filter::nearest;
+    require_sampler_miss(mag_filter_sampler, "mag filter variant creates a texture");
+
+    render_image_sampler_policy mipmap_sampler = base_sampler;
+    mipmap_sampler.mipmap_mode = render_image_mipmap_mode::nearest;
+    require_sampler_miss(mipmap_sampler, "mipmap variant creates a texture");
+
+    render_image_sampler_policy wrap_u_sampler = base_sampler;
+    wrap_u_sampler.wrap_u = render_image_wrap_mode::repeat;
+    require_sampler_miss(wrap_u_sampler, "wrap_u variant creates a texture");
+
+    render_image_sampler_policy wrap_v_sampler = base_sampler;
+    wrap_v_sampler.wrap_v = render_image_wrap_mode::mirrored_repeat;
+    require_sampler_miss(wrap_v_sampler, "wrap_v variant creates a texture");
+
+    const render_image_texture_result base_again = cache.acquire_texture(
+        render_image_texture_request{.source = source, .sampler = base_sampler});
+    require(base_again.ok(), "base sampler can still be reacquired");
+    require(base_again.cache_hit, "base sampler remains cached after sampler variants");
+    require(base_again.texture.id == base.texture.id, "base sampler cache entry is unchanged");
 }
 
 void test_texture_cache_reuses_normalized_equivalent_cache_keys()
@@ -232,6 +597,30 @@ void test_texture_cache_reuses_normalized_equivalent_cache_keys()
     require(asset_second.cache_hit, "equivalent asset source is a cache hit");
     require(asset_second.texture.id == asset_first.texture.id, "equivalent asset source reuses texture id");
     require(asset_second.key.source_key == asset_first.key.source_key, "equivalent asset source reuses texture key");
+}
+
+void test_texture_cache_rejects_invalid_sampler_policy_before_decode()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/invalid-sampler.fake"})
+                                                    .source;
+    fake_image_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+
+    render_image_sampler_policy invalid_sampler;
+    invalid_sampler.wrap_v = static_cast<render_image_wrap_mode>(99);
+
+    const render_image_texture_result result = cache.acquire_texture(
+        render_image_texture_request{.source = source, .sampler = invalid_sampler});
+    require(!result.ok(), "invalid sampler policy does not create a texture");
+    require(result.status == render_image_texture_status::upload_failed, "invalid sampler reports upload failure");
+    require(!result.texture.valid(), "invalid sampler returns no texture handle");
+    require(!result.diagnostic.empty(), "invalid sampler includes diagnostic");
+    require(decoder.support_requests.empty(), "invalid sampler fails before decoder support check");
+    require(decoder.decode_requests.empty(), "invalid sampler fails before decode");
 }
 
 void test_texture_cache_release_unused_evicts_fake_entries()
@@ -329,8 +718,213 @@ void test_texture_cache_propagates_decoder_failures()
     require(!empty.ok(), "decoder empty input does not create a texture");
     require(empty.status == render_image_texture_status::decode_failed, "decoder empty input reports decode failure");
     require(!empty.diagnostic.empty(), "decoder empty input diagnostic is propagated");
+    require(empty.decode_metadata.decoder_id == "fake_image_decoder", "empty cache decode propagates decoder id");
+    require(empty.decode_metadata.encoded_byte_count == 0, "empty cache decode propagates encoded byte count");
+    require(!empty.decode_metadata.has_image(), "empty cache decode propagates no image metadata");
     require(decoder.support_requests.size() == 2, "empty input reached decoder support check");
     require(decoder.decode_requests.size() == 1, "empty input reached decoder decode");
+}
+
+void test_texture_cache_uses_ppm_decoder_placeholder_bytes()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/card.ppm"})
+                                                    .source;
+    ppm_image_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+    cache.set_placeholder_encoded_bytes(make_ppm_2x1_encoded_bytes());
+
+    const render_image_texture_request request{.source = source, .sampler = render_image_sampler_policy{}};
+    const render_image_texture_result first = cache.acquire_texture(request);
+    require(first.ok(), "ppm decoder creates a texture through the fake cache");
+    require(!first.cache_hit, "first ppm texture request is a cache miss");
+    require(first.texture.width == 2, "ppm texture preserves decoded width");
+    require(first.texture.height == 1, "ppm texture preserves decoded height");
+    require(first.decode_metadata.decoder_id == "ppm_image_decoder", "ppm texture reports decoder id");
+    require(first.decode_metadata.width == 2, "ppm texture reports decoded metadata width");
+    require(first.decode_metadata.height == 1, "ppm texture reports decoded metadata height");
+    require(first.decode_metadata.has_image(), "ppm texture reports decoded image metadata");
+
+    const render_image_texture_result second = cache.acquire_texture(request);
+    require(second.ok(), "ppm texture can be reacquired");
+    require(second.cache_hit, "second ppm texture request is a cache hit");
+    require(second.texture.id == first.texture.id, "ppm texture cache reuses the handle");
+    require(second.decode_metadata.decoder_id == "ppm_image_decoder", "cached ppm texture preserves decoder id");
+    require(second.decode_metadata.decoded_byte_count == first.decode_metadata.decoded_byte_count, "cached ppm texture preserves decoded byte count");
+}
+
+void test_texture_cache_propagates_ppm_decoder_payload_failure()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/card.ppm"})
+                                                    .source;
+    ppm_image_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+    cache.set_placeholder_encoded_bytes(make_short_ppm_2x1_encoded_bytes());
+
+    const render_image_texture_result result = cache.acquire_texture(
+        render_image_texture_request{.source = source, .sampler = render_image_sampler_policy{}});
+    require(!result.ok(), "short ppm payload does not create a texture");
+    require(result.status == render_image_texture_status::decode_failed, "short ppm payload reports decode failure");
+    require(!result.texture.valid(), "short ppm payload returns no texture handle");
+    require(!result.diagnostic.empty(), "short ppm payload propagates decoder diagnostic");
+    require(result.decode_metadata.decoder_id == "ppm_image_decoder", "short ppm texture failure reports decoder id");
+    require(
+        result.decode_metadata.encoded_byte_count == make_short_ppm_2x1_encoded_bytes().size(),
+        "short ppm texture failure reports encoded byte count");
+    require(!result.decode_metadata.has_image(), "short ppm texture failure reports no decoded image metadata");
+}
+
+void test_texture_cache_uses_source_specific_placeholder_bytes()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source one_pixel_source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/one.ppm"})
+                                                        .source;
+    const render_resolved_image_source two_pixel_source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/two.ppm"})
+                                                        .source;
+    ppm_image_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+    cache.set_placeholder_encoded_bytes({});
+    cache.set_placeholder_encoded_bytes_for_source(one_pixel_source.cache_key(), make_ppm_1x1_encoded_bytes());
+    cache.set_placeholder_encoded_bytes_for_source(two_pixel_source.cache_key(), make_ppm_2x1_encoded_bytes());
+
+    const render_image_texture_result one_pixel = cache.acquire_texture(
+        render_image_texture_request{.source = one_pixel_source, .sampler = render_image_sampler_policy{}});
+    require(one_pixel.ok(), "source-specific one-pixel ppm creates a texture");
+    require(one_pixel.texture.width == 1, "source-specific one-pixel ppm preserves width");
+    require(one_pixel.texture.height == 1, "source-specific one-pixel ppm preserves height");
+    require(one_pixel.decode_metadata.width == 1, "source-specific one-pixel ppm reports metadata width");
+    require(one_pixel.decode_metadata.decoder_id == "ppm_image_decoder", "source-specific one-pixel ppm reports decoder id");
+
+    const render_image_texture_result two_pixel = cache.acquire_texture(
+        render_image_texture_request{.source = two_pixel_source, .sampler = render_image_sampler_policy{}});
+    require(two_pixel.ok(), "source-specific two-pixel ppm creates a texture");
+    require(two_pixel.texture.width == 2, "source-specific two-pixel ppm preserves width");
+    require(two_pixel.texture.height == 1, "source-specific two-pixel ppm preserves height");
+    require(two_pixel.decode_metadata.width == 2, "source-specific two-pixel ppm reports metadata width");
+    require(two_pixel.decode_metadata.decoder_id == "ppm_image_decoder", "source-specific two-pixel ppm reports decoder id");
+    require(two_pixel.texture.id != one_pixel.texture.id, "source-specific byte fixtures keep cache entries separate");
+}
+
+void test_texture_cache_uses_decoder_chain_for_source_specific_formats()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source fake_source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/chain.fake"})
+                                                     .source;
+    const render_resolved_image_source ppm_source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/chain.ppm"})
+                                                    .source;
+
+    fake_image_decoder fake_decoder;
+    ppm_image_decoder ppm_decoder;
+    image_decoder_chain decoder_chain({std::cref(fake_decoder), std::cref(ppm_decoder)});
+    fake_image_texture_cache cache(decoder_chain);
+    cache.set_placeholder_encoded_bytes_for_source(fake_source.cache_key(), {std::byte{0x01}});
+    cache.set_placeholder_encoded_bytes_for_source(ppm_source.cache_key(), make_ppm_1x1_encoded_bytes());
+
+    const render_image_texture_result fake_texture = cache.acquire_texture(
+        render_image_texture_request{.source = fake_source, .sampler = render_image_sampler_policy{}});
+    require(fake_texture.ok(), "decoder chain fake source creates a texture");
+    require(fake_texture.texture.width == 2, "decoder chain fake source uses fake decoder dimensions");
+    require(fake_texture.decode_metadata.decoder_id == "fake_image_decoder", "decoder chain fake texture reports decoder id");
+    require(fake_texture.decoder_diagnostics.size() == 1, "decoder chain fake texture propagates chain diagnostic");
+    require(fake_texture.decoder_diagnostics[0].supported, "decoder chain fake texture records selected decoder");
+
+    const render_image_texture_result ppm_texture = cache.acquire_texture(
+        render_image_texture_request{.source = ppm_source, .sampler = render_image_sampler_policy{}});
+    require(ppm_texture.ok(), "decoder chain ppm source creates a texture");
+    require(ppm_texture.texture.width == 1, "decoder chain ppm source uses ppm decoder dimensions");
+    require(ppm_texture.decode_metadata.decoder_id == "ppm_image_decoder", "decoder chain ppm texture reports decoder id");
+    require(ppm_texture.decoder_diagnostics.size() == 2, "decoder chain ppm texture propagates chain diagnostics");
+    require(!ppm_texture.decoder_diagnostics[0].supported, "decoder chain ppm texture records skipped fake decoder");
+    require(ppm_texture.decoder_diagnostics[1].supported, "decoder chain ppm texture records selected ppm decoder");
+    require(ppm_texture.texture.id != fake_texture.texture.id, "decoder chain textures remain keyed by source");
+}
+
+void test_texture_cache_rejects_malformed_decoded_payload()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/malformed.fake"})
+                                                    .source;
+    malformed_payload_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+
+    const render_image_texture_request request{.source = source, .sampler = render_image_sampler_policy{}};
+    const render_image_texture_result first = cache.acquire_texture(request);
+    require(!first.ok(), "malformed decoded payload does not create a texture");
+    require(
+        first.status == render_image_texture_status::upload_failed,
+        "malformed decoded payload reports upload failure");
+    require(!first.texture.valid(), "malformed decoded payload returns no texture handle");
+    require(!first.diagnostic.empty(), "malformed decoded payload includes diagnostic");
+    require(decoder.support_request_count == 1, "malformed payload reached support check");
+    require(decoder.decode_request_count == 1, "malformed payload reached decode");
+
+    const render_decoded_image malformed_image{
+        .width = 2,
+        .height = 2,
+        .pixel_format = render_image_pixel_format::rgba8_srgb,
+        .pixels = {std::byte{0xff}, std::byte{0x00}, std::byte{0x00}, std::byte{0xff}},
+    };
+    require(expected_render_decoded_image_byte_count(malformed_image) == 16, "expected byte count includes all pixels");
+    require(!has_valid_render_decoded_image_payload(malformed_image), "malformed payload helper rejects short bytes");
+
+    const render_image_texture_result second = cache.acquire_texture(request);
+    require(!second.ok(), "malformed decoded payload remains uncached");
+    require(!second.cache_hit, "malformed decoded payload is not a cache hit");
+    require(decoder.support_request_count == 2, "malformed payload retry reaches support check");
+    require(decoder.decode_request_count == 2, "malformed payload retry decodes again");
+}
+
+void test_texture_cache_rejects_unknown_pixel_format()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/unknown-format.fake"})
+                                                    .source;
+    unknown_pixel_format_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+
+    const render_decoded_image unknown_format_image{
+        .width = 1,
+        .height = 1,
+        .pixel_format = static_cast<render_image_pixel_format>(99),
+        .pixels = {std::byte{0xff}, std::byte{0x00}, std::byte{0x00}, std::byte{0xff}},
+    };
+    require(
+        render_image_pixel_format_byte_count(unknown_format_image.pixel_format) == 0,
+        "unknown pixel format has no byte count");
+    require(
+        expected_render_decoded_image_byte_count(unknown_format_image) == 0,
+        "unknown pixel format has no expected payload size");
+    require(!has_valid_render_decoded_image_payload(unknown_format_image), "unknown pixel format is invalid");
+
+    const render_image_texture_result result = cache.acquire_texture(
+        render_image_texture_request{.source = source, .sampler = render_image_sampler_policy{}});
+    require(!result.ok(), "unknown pixel format does not create a texture");
+    require(result.status == render_image_texture_status::upload_failed, "unknown pixel format reports upload failure");
+    require(!result.texture.valid(), "unknown pixel format returns no texture handle");
+    require(!result.diagnostic.empty(), "unknown pixel format includes diagnostic");
+    require(decoder.support_request_count == 1, "unknown pixel format reached support check");
+    require(decoder.decode_request_count == 1, "unknown pixel format reached decode");
 }
 
 } // namespace
@@ -341,10 +935,23 @@ int main()
     test_resolver_normalizes_without_fetching();
     test_decoder_interface_shape();
     test_decoder_reports_explicit_failures();
+    test_ppm_decoder_decodes_binary_rgb_to_rgba();
+    test_ppm_decoder_reports_invalid_payload_size();
+    test_decoder_chain_routes_supported_formats();
+    test_decoder_chain_reports_unsupported_sources();
+    test_sampler_policy_validation_rejects_unknown_enum_values();
     test_texture_cache_reuses_matching_key_and_misses_on_sampler_change();
+    test_texture_cache_keys_include_all_sampler_policy_fields();
     test_texture_cache_reuses_normalized_equivalent_cache_keys();
+    test_texture_cache_rejects_invalid_sampler_policy_before_decode();
     test_texture_cache_release_unused_evicts_fake_entries();
     test_texture_cache_reports_explicit_failures();
     test_texture_cache_propagates_decoder_failures();
+    test_texture_cache_uses_ppm_decoder_placeholder_bytes();
+    test_texture_cache_propagates_ppm_decoder_payload_failure();
+    test_texture_cache_uses_source_specific_placeholder_bytes();
+    test_texture_cache_uses_decoder_chain_for_source_specific_formats();
+    test_texture_cache_rejects_malformed_decoded_payload();
+    test_texture_cache_rejects_unknown_pixel_format();
     return 0;
 }

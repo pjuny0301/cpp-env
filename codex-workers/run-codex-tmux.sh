@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-role="${1:?usage: run-codex-tmux.sh <text-engine|image-texture|audio-engine|input-ime|vulkan-backend|asset-system>}"
+role="${1:?usage: run-codex-tmux.sh <text-engine|image-texture|audio-engine|input-ime|vulkan-backend|asset-system|feedback-sync>}"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="${QUIZ_CODEX_WORKER_ROOT:-/mnt/c/aa-workers}"
 worktree="${root}/${role}"

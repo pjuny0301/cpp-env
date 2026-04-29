@@ -26,6 +26,10 @@ enum class gesture_kind {
     long_press,
     swipe_left,
     swipe_right,
+    drag_start,
+    drag_update,
+    drag_end,
+    drag_cancel,
 };
 
 struct gesture_event {
@@ -37,6 +41,32 @@ struct gesture_event {
     float start_y = 0.0f;
     float x = 0.0f;
     float y = 0.0f;
+    float delta_x = 0.0f;
+    float delta_y = 0.0f;
+};
+
+enum class scroll_delta_unit {
+    pixels,
+    lines,
+};
+
+struct raw_scroll_event {
+    std::int64_t timestamp_ms = 0;
+    float x = 0.0f;
+    float y = 0.0f;
+    float delta_x = 0.0f;
+    float delta_y = 0.0f;
+    scroll_delta_unit unit = scroll_delta_unit::pixels;
+};
+
+struct scroll_event {
+    std::int64_t timestamp_ms = 0;
+    float x = 0.0f;
+    float y = 0.0f;
+    float pixel_delta_x = 0.0f;
+    float pixel_delta_y = 0.0f;
+    float line_delta_x = 0.0f;
+    float line_delta_y = 0.0f;
 };
 
 enum class text_event_kind {
@@ -67,6 +97,6 @@ struct ime_event {
     std::string utf8_text;
 };
 
-using input_event = std::variant<gesture_event, text_event, ime_event>;
+using input_event = std::variant<gesture_event, text_event, ime_event, scroll_event>;
 
 } // namespace quiz_vulkan::input

@@ -1,5 +1,6 @@
 #include "core/input/text_input_model.h"
 
+#include <cstddef>
 #include <cstdlib>
 #include <iostream>
 #include <optional>
@@ -12,6 +13,11 @@ std::string utf8(const char8_t* text)
     return reinterpret_cast<const char*>(text);
 }
 
+std::string byte(unsigned char value)
+{
+    return std::string(1, static_cast<char>(value));
+}
+
 void require(bool condition, const char* message)
 {
     if (condition) {
@@ -20,6 +26,16 @@ void require(bool condition, const char* message)
 
     std::cerr << "text_input_model_tests failed: " << message << '\n';
     std::exit(1);
+}
+
+void require_range(
+    quiz_vulkan::input::text_range range,
+    std::size_t start_byte,
+    std::size_t end_byte,
+    const char* message)
+{
+    require(range.start_byte == start_byte, message);
+    require(range.end_byte == end_byte, message);
 }
 
 void test_focus_and_utf8_backspace()
@@ -68,6 +84,76 @@ void test_mixed_width_utf8_backspace_edges()
 
     require(model.backspace(), "backspace removes remaining ascii");
     require(model.text().empty(), "ascii is removed after preedit clear");
+}
+
+void test_malformed_utf8_backspace_preserves_valid_prefix()
+{
+    quiz_vulkan::input::text_input_model model;
+    model.focus("answer");
+
+    require(model.commit_utf8(std::string("A") + byte(0x80)), "orphan continuation commit succeeds");
+    require(model.backspace(), "backspace removes orphan continuation byte");
+    require(model.text() == "A", "orphan continuation backspace preserves valid ascii prefix");
+    require(model.backspace(), "backspace removes ascii after orphan continuation");
+    require(model.text().empty(), "ascii is removed after orphan continuation");
+
+    require(model.commit_utf8(std::string("B") + byte(0xe2) + byte(0x82)), "truncated utf8 commit succeeds");
+    require(model.backspace(), "backspace removes truncated continuation suffix byte");
+    require(model.text() == std::string("B") + byte(0xe2), "truncated suffix preserves lead byte initially");
+    require(model.backspace(), "backspace removes dangling utf8 lead byte");
+    require(model.text() == "B", "dangling lead backspace preserves valid ascii prefix");
+    require(model.backspace(), "backspace removes ascii after dangling lead");
+    require(model.text().empty(), "ascii is removed after dangling lead");
+}
+
+void test_caret_and_preedit_ranges()
+{
+    quiz_vulkan::input::text_input_model model;
+    require_range(model.caret_range(), 0, 0, "unfocused caret starts at zero");
+    require(!model.preedit_range().has_value(), "unfocused model has no preedit range");
+
+    model.focus("answer");
+    require_range(model.caret_range(), 0, 0, "focused empty caret starts at zero");
+    require(!model.preedit_range().has_value(), "focused empty model has no preedit range");
+
+    const std::string committed = std::string("A") + utf8(u8"한");
+    require(model.commit_utf8(committed), "commit before caret range succeeds");
+    require_range(model.caret_range(), committed.size(), committed.size(), "committed caret is at byte end");
+    require(!model.preedit_range().has_value(), "committed text alone has no preedit range");
+
+    const std::string preedit = utf8(u8"ㅎ");
+    require(model.set_preedit(preedit), "preedit before caret range succeeds");
+    require_range(model.caret_range(),
+        committed.size() + preedit.size(),
+        committed.size() + preedit.size(),
+        "caret includes preedit byte length");
+    std::optional<quiz_vulkan::input::text_range> active_preedit = model.preedit_range();
+    require(active_preedit.has_value(), "non-empty preedit exposes preedit range");
+    require_range(*active_preedit,
+        committed.size(),
+        committed.size() + preedit.size(),
+        "preedit range starts after committed text");
+
+    require(model.backspace(), "backspace clears preedit for range test");
+    require_range(model.caret_range(), committed.size(), committed.size(), "caret returns to committed end");
+    require(!model.preedit_range().has_value(), "backspace-cleared preedit has no range");
+
+    require(model.set_preedit(preedit), "preedit before ime commit range succeeds");
+    const std::string final_text = utf8(u8"한");
+    require(model.commit_ime(final_text), "ime commit for caret range succeeds");
+    require_range(model.caret_range(),
+        committed.size() + final_text.size(),
+        committed.size() + final_text.size(),
+        "ime commit caret moves to committed byte end");
+    require(!model.preedit_range().has_value(), "ime commit clears preedit range");
+
+    require(model.set_preedit(preedit), "preedit before focus clear range succeeds");
+    model.clear_focus();
+    require_range(model.caret_range(),
+        committed.size() + final_text.size(),
+        committed.size() + final_text.size(),
+        "focus clear preserves committed caret");
+    require(!model.preedit_range().has_value(), "focus clear removes preedit range");
 }
 
 void test_ime_preedit_and_commit()
@@ -161,17 +247,38 @@ void test_submit_consumes_buffer()
     require(!model.consume_submit_text().has_value(), "second consume is empty");
 }
 
+void test_submit_excludes_preedit()
+{
+    quiz_vulkan::input::text_input_model model;
+    model.focus("answer");
+
+    require(model.commit_utf8("base"), "commit before preedit submit succeeds");
+    require(model.set_preedit("draft"), "preedit before submit succeeds");
+    require(model.display_text() == "basedraft", "display includes preedit before submit");
+
+    require(model.submit(), "submit with preedit succeeds");
+    require(model.text().empty(), "submit with preedit clears committed buffer");
+    require(model.preedit_text().empty(), "submit with preedit clears preedit buffer");
+
+    std::optional<std::string> submitted = model.consume_submit_text();
+    require(submitted.has_value(), "submit with preedit produces submitted text");
+    require(*submitted == "base", "submit excludes uncommitted preedit text");
+}
+
 } // namespace
 
 int main()
 {
     test_focus_and_utf8_backspace();
     test_mixed_width_utf8_backspace_edges();
+    test_malformed_utf8_backspace_preserves_valid_prefix();
+    test_caret_and_preedit_ranges();
     test_ime_preedit_and_commit();
     test_ime_commit_edges();
     test_empty_preedit_edges();
     test_clear_focus_ignores_text();
     test_submit_consumes_buffer();
+    test_submit_excludes_preedit();
 
     std::cout << "text_input_model_tests passed\n";
     return 0;

@@ -4,6 +4,7 @@
 #include "render/image/image_types.h"
 
 #include <cctype>
+#include <limits>
 #include <map>
 #include <string>
 #include <string_view>
@@ -31,6 +32,8 @@ struct render_image_texture_result {
     render_image_texture_handle texture;
     bool cache_hit = false;
     std::string diagnostic;
+    render_image_decode_metadata decode_metadata;
+    std::vector<render_image_decoder_diagnostic> decoder_diagnostics;
 
     bool ok() const
     {
@@ -71,6 +74,85 @@ inline bool is_valid_render_image_cache_key(std::string_view cache_key)
 inline bool is_valid_render_image_texture_key(const render_image_texture_key& key)
 {
     return is_valid_render_image_cache_key(key.source_key);
+}
+
+inline bool is_valid_render_image_filter(render_image_filter filter)
+{
+    switch (filter) {
+    case render_image_filter::nearest:
+    case render_image_filter::linear:
+        return true;
+    }
+
+    return false;
+}
+
+inline bool is_valid_render_image_mipmap_mode(render_image_mipmap_mode mode)
+{
+    switch (mode) {
+    case render_image_mipmap_mode::none:
+    case render_image_mipmap_mode::nearest:
+    case render_image_mipmap_mode::linear:
+        return true;
+    }
+
+    return false;
+}
+
+inline bool is_valid_render_image_wrap_mode(render_image_wrap_mode mode)
+{
+    switch (mode) {
+    case render_image_wrap_mode::clamp_to_edge:
+    case render_image_wrap_mode::repeat:
+    case render_image_wrap_mode::mirrored_repeat:
+        return true;
+    }
+
+    return false;
+}
+
+inline bool is_valid_render_image_sampler_policy(const render_image_sampler_policy& sampler)
+{
+    return is_valid_render_image_filter(sampler.min_filter)
+        && is_valid_render_image_filter(sampler.mag_filter)
+        && is_valid_render_image_mipmap_mode(sampler.mipmap_mode)
+        && is_valid_render_image_wrap_mode(sampler.wrap_u)
+        && is_valid_render_image_wrap_mode(sampler.wrap_v);
+}
+
+inline std::size_t render_image_pixel_format_byte_count(render_image_pixel_format pixel_format)
+{
+    switch (pixel_format) {
+    case render_image_pixel_format::rgba8_unorm:
+    case render_image_pixel_format::rgba8_srgb:
+        return 4;
+    }
+
+    return 0;
+}
+
+inline std::size_t expected_render_decoded_image_byte_count(const render_decoded_image& image)
+{
+    const std::size_t bytes_per_pixel = render_image_pixel_format_byte_count(image.pixel_format);
+    if (bytes_per_pixel == 0 || image.width == 0 || image.height == 0) {
+        return 0;
+    }
+
+    constexpr std::size_t max_size = std::numeric_limits<std::size_t>::max();
+    if (image.width > max_size / image.height) {
+        return 0;
+    }
+    const std::size_t pixel_count = image.width * image.height;
+    if (pixel_count > max_size / bytes_per_pixel) {
+        return 0;
+    }
+    return pixel_count * bytes_per_pixel;
+}
+
+inline bool has_valid_render_decoded_image_payload(const render_decoded_image& image)
+{
+    const std::size_t expected_byte_count = expected_render_decoded_image_byte_count(image);
+    return expected_byte_count != 0 && image.pixels.size() == expected_byte_count;
 }
 
 struct render_image_texture_key_less {
@@ -140,20 +222,32 @@ public:
             };
         }
 
+        if (!is_valid_render_image_sampler_policy(request.sampler)) {
+            return render_image_texture_result{
+                .status = render_image_texture_status::upload_failed,
+                .key = key,
+                .texture = {},
+                .cache_hit = false,
+                .diagnostic = "image sampler policy contains unsupported enum value",
+            };
+        }
+
         const auto existing = textures_.find(key);
         if (existing != textures_.end()) {
             return render_image_texture_result{
                 .status = render_image_texture_status::ready,
                 .key = key,
-                .texture = existing->second,
+                .texture = existing->second.texture,
                 .cache_hit = true,
                 .diagnostic = {},
+                .decode_metadata = existing->second.decode_metadata,
+                .decoder_diagnostics = existing->second.decoder_diagnostics,
             };
         }
 
         const render_image_decode_request decode_request{
             .source = request.source,
-            .encoded_bytes = placeholder_encoded_bytes_,
+            .encoded_bytes = placeholder_encoded_bytes_for(key.source_key),
         };
         if (!decoder_.supports(decode_request)) {
             return render_image_texture_result{
@@ -173,6 +267,8 @@ public:
                 .texture = {},
                 .cache_hit = false,
                 .diagnostic = decoded.diagnostic,
+                .decode_metadata = decoded.metadata,
+                .decoder_diagnostics = decoded.decoder_diagnostics,
             };
         }
 
@@ -183,6 +279,20 @@ public:
                 .texture = {},
                 .cache_hit = false,
                 .diagnostic = "decoded image is empty",
+                .decode_metadata = decoded.metadata,
+                .decoder_diagnostics = decoded.decoder_diagnostics,
+            };
+        }
+
+        if (!has_valid_render_decoded_image_payload(decoded.image)) {
+            return render_image_texture_result{
+                .status = render_image_texture_status::upload_failed,
+                .key = key,
+                .texture = {},
+                .cache_hit = false,
+                .diagnostic = "decoded image pixel payload size does not match dimensions and format",
+                .decode_metadata = decoded.metadata,
+                .decoder_diagnostics = decoded.decoder_diagnostics,
             };
         }
 
@@ -192,13 +302,21 @@ public:
             .width = decoded.image.width,
             .height = decoded.image.height,
         };
-        textures_.emplace(key, handle);
+        textures_.emplace(
+            key,
+            fake_cached_image_texture{
+                .texture = handle,
+                .decode_metadata = decoded.metadata,
+                .decoder_diagnostics = decoded.decoder_diagnostics,
+            });
         return render_image_texture_result{
             .status = render_image_texture_status::ready,
             .key = key,
             .texture = handle,
             .cache_hit = false,
             .diagnostic = {},
+            .decode_metadata = decoded.metadata,
+            .decoder_diagnostics = decoded.decoder_diagnostics,
         };
     }
 
@@ -218,12 +336,35 @@ public:
         placeholder_encoded_bytes_ = std::move(encoded_bytes);
     }
 
+    void set_placeholder_encoded_bytes_for_source(
+        render_image_cache_key source_key,
+        std::vector<std::byte> encoded_bytes)
+    {
+        source_placeholder_encoded_bytes_.insert_or_assign(std::move(source_key), std::move(encoded_bytes));
+    }
+
 private:
+    struct fake_cached_image_texture {
+        render_image_texture_handle texture;
+        render_image_decode_metadata decode_metadata;
+        std::vector<render_image_decoder_diagnostic> decoder_diagnostics;
+    };
+
+    const std::vector<std::byte>& placeholder_encoded_bytes_for(const render_image_cache_key& source_key) const
+    {
+        const auto source_bytes = source_placeholder_encoded_bytes_.find(source_key);
+        if (source_bytes != source_placeholder_encoded_bytes_.end()) {
+            return source_bytes->second;
+        }
+        return placeholder_encoded_bytes_;
+    }
+
     const image_decoder_interface& decoder_;
     render_image_texture_id next_id_ = 1;
     int release_unused_count_ = 0;
     std::vector<std::byte> placeholder_encoded_bytes_ = {std::byte{0x01}};
-    std::map<render_image_texture_key, render_image_texture_handle, render_image_texture_key_less> textures_;
+    std::map<render_image_cache_key, std::vector<std::byte>> source_placeholder_encoded_bytes_;
+    std::map<render_image_texture_key, fake_cached_image_texture, render_image_texture_key_less> textures_;
 };
 
 } // namespace quiz_vulkan::render

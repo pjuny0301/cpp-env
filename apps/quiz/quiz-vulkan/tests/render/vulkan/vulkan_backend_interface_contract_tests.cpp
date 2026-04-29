@@ -2,6 +2,7 @@
 
 #include <concepts>
 #include <cstddef>
+#include <string_view>
 
 namespace {
 
@@ -13,6 +14,8 @@ concept VulkanBackendDeviceInterface = requires(
     T& device,
     const render::vulkan_backend::vulkan_frame_plan& plan,
     render::vulkan_backend::vulkan_surface_extent surface) {
+    { const_device.current_lifecycle_readiness() }
+        -> std::same_as<render::vulkan_backend::vulkan_backend_lifecycle_readiness>;
     { const_device.current_surface_extent() } -> std::same_as<render::vulkan_backend::vulkan_surface_extent>;
     { device.begin_frame(surface) } -> std::same_as<bool>;
     { device.record_frame_commands(plan) } -> std::same_as<bool>;
@@ -29,8 +32,30 @@ static_assert(requires(render::vulkan_backend::vulkan_surface_extent surface) {
     { surface.valid() } -> std::same_as<bool>;
 });
 
+static_assert(requires(render::vulkan_backend::vulkan_backend_lifecycle_readiness lifecycle) {
+    { lifecycle.instance_ready } -> std::same_as<bool&>;
+    { lifecycle.device_ready } -> std::same_as<bool&>;
+    { lifecycle.swapchain_ready } -> std::same_as<bool&>;
+    { lifecycle.pipeline_ready } -> std::same_as<bool&>;
+    { lifecycle.command_recorder_ready } -> std::same_as<bool&>;
+    { lifecycle.ready_for_frame() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_backend_command_recorder_state recorder) {
+    { recorder.ready } -> std::same_as<bool&>;
+    { recorder.frame_open } -> std::same_as<bool&>;
+    { recorder.command_buffer_recorded } -> std::same_as<bool&>;
+    { recorder.planned_batch_count } -> std::same_as<std::size_t&>;
+    { recorder.recorded_batch_count } -> std::same_as<std::size_t&>;
+    { recorder.empty() } -> std::same_as<bool>;
+});
+
 static_assert(requires(render::vulkan_backend::vulkan_backend_frame_result result) {
     { result.surface } -> std::same_as<render::vulkan_backend::vulkan_surface_extent&>;
+    { result.lifecycle } -> std::same_as<render::vulkan_backend::vulkan_backend_lifecycle_readiness&>;
+    { result.command_recorder } -> std::same_as<render::vulkan_backend::vulkan_backend_command_recorder_state&>;
+    { result.reached_stage } -> std::same_as<render::vulkan_backend::vulkan_backend_frame_stage&>;
+    { result.lifecycle_ready } -> std::same_as<bool&>;
     { result.surface_ready } -> std::same_as<bool&>;
     { result.frame_begun } -> std::same_as<bool&>;
     { result.commands_recorded } -> std::same_as<bool&>;
@@ -40,6 +65,7 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_frame_result resul
     { result.fallback_required } -> std::same_as<bool&>;
     { result.fallback_reason } -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
     { result.planned_batch_count } -> std::same_as<std::size_t&>;
+    { result.recorded_batch_count } -> std::same_as<std::size_t&>;
     { result.clipped_draw_call_count } -> std::same_as<std::size_t&>;
     { result.discarded_draw_call_count } -> std::same_as<std::size_t&>;
     { result.completed() } -> std::same_as<bool>;
@@ -60,7 +86,25 @@ static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_backend_fallback_reason::not_requested),
     render::vulkan_backend::vulkan_backend_fallback_reason>);
 static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_fallback_reason::instance_unavailable),
+    render::vulkan_backend::vulkan_backend_fallback_reason>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_fallback_reason::device_unavailable),
+    render::vulkan_backend::vulkan_backend_fallback_reason>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_fallback_reason::swapchain_unavailable),
+    render::vulkan_backend::vulkan_backend_fallback_reason>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_fallback_reason::pipeline_unavailable),
+    render::vulkan_backend::vulkan_backend_fallback_reason>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_fallback_reason::command_recorder_unavailable),
+    render::vulkan_backend::vulkan_backend_fallback_reason>);
+static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_backend_fallback_reason::surface_unavailable),
+    render::vulkan_backend::vulkan_backend_fallback_reason>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_fallback_reason::viewport_unavailable),
     render::vulkan_backend::vulkan_backend_fallback_reason>);
 static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_backend_fallback_reason::begin_frame_failed),
@@ -74,5 +118,41 @@ static_assert(std::same_as<
 static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_backend_fallback_reason::present_frame_failed),
     render::vulkan_backend::vulkan_backend_fallback_reason>);
+
+static_assert(requires(render::vulkan_backend::vulkan_backend_fallback_reason reason) {
+    { render::vulkan_backend::fallback_reason_name(reason) } -> std::same_as<std::string_view>;
+});
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_frame_stage::not_started),
+    render::vulkan_backend::vulkan_backend_frame_stage>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_frame_stage::backend_attempted),
+    render::vulkan_backend::vulkan_backend_frame_stage>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_frame_stage::lifecycle_ready),
+    render::vulkan_backend::vulkan_backend_frame_stage>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_frame_stage::surface_extent_ready),
+    render::vulkan_backend::vulkan_backend_frame_stage>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_frame_stage::frame_plan_ready),
+    render::vulkan_backend::vulkan_backend_frame_stage>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_frame_stage::frame_begun),
+    render::vulkan_backend::vulkan_backend_frame_stage>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_frame_stage::commands_recorded),
+    render::vulkan_backend::vulkan_backend_frame_stage>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_frame_stage::frame_submitted),
+    render::vulkan_backend::vulkan_backend_frame_stage>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_frame_stage::frame_presented),
+    render::vulkan_backend::vulkan_backend_frame_stage>);
+
+static_assert(requires(render::vulkan_backend::vulkan_backend_frame_stage stage) {
+    { render::vulkan_backend::frame_stage_name(stage) } -> std::same_as<std::string_view>;
+});
 
 } // namespace

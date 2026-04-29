@@ -4,13 +4,21 @@
 
 This plan covers verification for the current scaffold. Agent F owned additions live under `tests/`, `tools/`, and this document.
 
-The current scaffold has five CTest smoke tests:
+CTest targets are added by a mix of explicit registrations and auto-discovered test directories, so this document does not freeze a global test count. After configuring the Windows build, use this command to get the current authoritative inventory:
 
-- `tests/scene/scene_layout_data_tests.cpp`
-- `tests/layout/layout_placer_tests.cpp`
-- `tests/domain/domain_smoke_test.cpp`
-- `tests/ui/quiz_screens_tests.cpp`
-- `tests/render/vulkan_renderer_tests.cpp`
+```powershell
+& "C:\Program Files\CMake\bin\ctest.exe" --test-dir "C:\aa\build\out\quiz\quiz-vulkan\windows-mingw-ascii" -N
+```
+
+Representative smoke and contract targets include:
+
+- `quiz_vulkan_app_input_router_tests`
+- `quiz_vulkan_domain_smoke_test`
+- `quiz_vulkan_scene_layout_data_tests`
+- `quiz_vulkan_layout_placer_tests`
+- `quiz_vulkan_app_quiz_screens_tests`
+- `quiz_vulkan_renderer_tests`
+- `quiz_vulkan_interface_contract_compile_tests`
 
 The preferred local compiler is the ASCII-path GCC 13.1.0 toolchain at `C:\qtmingw1310_ascii`. The legacy `C:\MinGW\bin\g++.exe` is GCC 6.3.0 and is useful only for old scene/layout smoke checks.
 
@@ -21,11 +29,13 @@ The local Windows user has a `cmd.exe` AutoRun entry. Use `tools/run_windows_min
 | Area | Test | Current compiler path | Expected result |
 | --- | --- | --- | --- |
 | Full app scaffold | `quiz_vulkan.exe` | `C:\qtmingw1310_ascii\bin\g++.exe` | Configure and build |
+| App input routing | `quiz_vulkan_app_input_router_tests` | CTest via `windows-mingw-ascii` | Pass |
 | Domain behavior | `quiz_vulkan_domain_smoke_test` | CTest via `windows-mingw-ascii` | Pass |
 | Scene data and patching | `quiz_vulkan_scene_layout_data_tests` | CTest via `windows-mingw-ascii` | Pass |
 | Layout placement | `quiz_vulkan_layout_placer_tests` | CTest via `windows-mingw-ascii` | Pass |
-| Quiz screen patching | `quiz_vulkan_quiz_screens_tests` | CTest via `windows-mingw-ascii` | Pass |
+| Quiz screen patching | `quiz_vulkan_app_quiz_screens_tests` | CTest via `windows-mingw-ascii` | Pass |
 | UI to Vulkan command bridge | `quiz_vulkan_renderer_tests` | CTest via `windows-mingw-ascii` | Pass |
+| Aggregate interface lock | `quiz_vulkan_interface_contract_compile_tests` | CMake target via `windows-mingw-ascii` | Build succeeds |
 
 ## Preferred Windows Build
 
@@ -35,11 +45,7 @@ From Windows PowerShell:
 powershell -ExecutionPolicy Bypass -File .\tools\run_windows_mingw_ascii.ps1
 ```
 
-Current verified result:
-
-```text
-100% tests passed, 0 tests failed out of 5
-```
+Use `ctest -N` from the configured build directory whenever a handoff needs the current suite count. Record the run-specific count in that handoff rather than in this static plan.
 
 ## MinGW Scene/Layout Smoke Tests
 
@@ -100,6 +106,7 @@ Full app, preferred preset path on Windows with ASCII MinGW:
 ```powershell
 cmake --preset windows-mingw-ascii
 cmake --build --preset windows-mingw-ascii-debug
+ctest --test-dir C:\aa\build\out\quiz\quiz-vulkan\windows-mingw-ascii -N
 ctest --test-dir C:\aa\build\out\quiz\quiz-vulkan\windows-mingw-ascii --output-on-failure
 ```
 
@@ -115,4 +122,4 @@ cmake --build --preset windows-msvc-vcpkg-debug
 
 ## Metadata
 
-`tests/test_manifest.json` records the smoke-test inventory, supported compiler profile, and manual commands. Update that file when new tests are added or when a test moves from the MinGW-compatible scaffold tier to the modern compiler tier.
+`tests/test_manifest.json` records representative smoke commands, supported compiler profiles, and manual commands. It is not a full CTest inventory; use `ctest -N` from the configured build directory for the current target list.

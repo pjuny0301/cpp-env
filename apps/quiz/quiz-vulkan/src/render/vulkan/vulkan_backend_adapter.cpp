@@ -8,7 +8,94 @@ bool has_visible_area(const render_rect& rect)
     return rect.width > 0.0f && rect.height > 0.0f;
 }
 
+vulkan_backend_fallback_reason first_unready_reason(
+    const vulkan_backend_lifecycle_readiness& lifecycle)
+{
+    if (!lifecycle.instance_ready) {
+        return vulkan_backend_fallback_reason::instance_unavailable;
+    }
+    if (!lifecycle.device_ready) {
+        return vulkan_backend_fallback_reason::device_unavailable;
+    }
+    if (!lifecycle.swapchain_ready) {
+        return vulkan_backend_fallback_reason::swapchain_unavailable;
+    }
+    if (!lifecycle.pipeline_ready) {
+        return vulkan_backend_fallback_reason::pipeline_unavailable;
+    }
+    if (!lifecycle.command_recorder_ready) {
+        return vulkan_backend_fallback_reason::command_recorder_unavailable;
+    }
+
+    return vulkan_backend_fallback_reason::none;
+}
+
 } // namespace
+
+std::string_view fallback_reason_name(vulkan_backend_fallback_reason reason)
+{
+    switch (reason) {
+    case vulkan_backend_fallback_reason::none:
+        return "none";
+    case vulkan_backend_fallback_reason::not_requested:
+        return "not_requested";
+    case vulkan_backend_fallback_reason::instance_unavailable:
+        return "instance_unavailable";
+    case vulkan_backend_fallback_reason::device_unavailable:
+        return "device_unavailable";
+    case vulkan_backend_fallback_reason::swapchain_unavailable:
+        return "swapchain_unavailable";
+    case vulkan_backend_fallback_reason::pipeline_unavailable:
+        return "pipeline_unavailable";
+    case vulkan_backend_fallback_reason::command_recorder_unavailable:
+        return "command_recorder_unavailable";
+    case vulkan_backend_fallback_reason::surface_unavailable:
+        return "surface_unavailable";
+    case vulkan_backend_fallback_reason::viewport_unavailable:
+        return "viewport_unavailable";
+    case vulkan_backend_fallback_reason::begin_frame_failed:
+        return "begin_frame_failed";
+    case vulkan_backend_fallback_reason::record_commands_failed:
+        return "record_commands_failed";
+    case vulkan_backend_fallback_reason::submit_frame_failed:
+        return "submit_frame_failed";
+    case vulkan_backend_fallback_reason::present_frame_failed:
+        return "present_frame_failed";
+    }
+
+    return "unknown";
+}
+
+std::string_view frame_stage_name(vulkan_backend_frame_stage stage)
+{
+    switch (stage) {
+    case vulkan_backend_frame_stage::not_started:
+        return "not_started";
+    case vulkan_backend_frame_stage::backend_attempted:
+        return "backend_attempted";
+    case vulkan_backend_frame_stage::lifecycle_ready:
+        return "lifecycle_ready";
+    case vulkan_backend_frame_stage::surface_extent_ready:
+        return "surface_extent_ready";
+    case vulkan_backend_frame_stage::frame_plan_ready:
+        return "frame_plan_ready";
+    case vulkan_backend_frame_stage::frame_begun:
+        return "frame_begun";
+    case vulkan_backend_frame_stage::commands_recorded:
+        return "commands_recorded";
+    case vulkan_backend_frame_stage::frame_submitted:
+        return "frame_submitted";
+    case vulkan_backend_frame_stage::frame_presented:
+        return "frame_presented";
+    }
+
+    return "unknown";
+}
+
+vulkan_backend_lifecycle_readiness null_vulkan_backend_device::current_lifecycle_readiness() const
+{
+    return {};
+}
 
 vulkan_surface_extent null_vulkan_backend_device::current_surface_extent() const
 {
@@ -44,12 +131,27 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
 {
     vulkan_backend_frame_result result;
     result.attempted = true;
+    result.reached_stage = vulkan_backend_frame_stage::backend_attempted;
+    result.lifecycle = device.current_lifecycle_readiness();
+    result.command_recorder.ready = result.lifecycle.command_recorder_ready;
+    result.fallback_reason = first_unready_reason(result.lifecycle);
+    if (result.fallback_reason != vulkan_backend_fallback_reason::none) {
+        return result;
+    }
+    result.lifecycle_ready = true;
+    result.reached_stage = vulkan_backend_frame_stage::lifecycle_ready;
+
     result.surface = device.current_surface_extent();
-    result.surface_ready = result.surface.valid() && has_visible_area(viewport);
-    if (!result.surface_ready) {
+    if (!result.surface.valid()) {
         result.fallback_reason = vulkan_backend_fallback_reason::surface_unavailable;
         return result;
     }
+    result.reached_stage = vulkan_backend_frame_stage::surface_extent_ready;
+    if (!has_visible_area(viewport)) {
+        result.fallback_reason = vulkan_backend_fallback_reason::viewport_unavailable;
+        return result;
+    }
+    result.surface_ready = true;
 
     const vulkan_frame_plan plan = build_vulkan_frame_plan(
         draw_list,
@@ -59,32 +161,42 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
             .surface_height = result.surface.height,
         });
     result.planned_batch_count = plan.batches.size();
+    result.command_recorder.planned_batch_count = plan.batches.size();
     result.clipped_draw_call_count = plan.clipped_draw_call_count;
     result.discarded_draw_call_count = plan.discarded_draw_call_count;
+    result.reached_stage = vulkan_backend_frame_stage::frame_plan_ready;
 
     result.frame_begun = device.begin_frame(result.surface);
     if (!result.frame_begun) {
         result.fallback_reason = vulkan_backend_fallback_reason::begin_frame_failed;
         return result;
     }
+    result.command_recorder.frame_open = true;
+    result.reached_stage = vulkan_backend_frame_stage::frame_begun;
 
     result.commands_recorded = device.record_frame_commands(plan);
     if (!result.commands_recorded) {
         result.fallback_reason = vulkan_backend_fallback_reason::record_commands_failed;
         return result;
     }
+    result.recorded_batch_count = plan.batches.size();
+    result.command_recorder.recorded_batch_count = plan.batches.size();
+    result.command_recorder.command_buffer_recorded = true;
+    result.reached_stage = vulkan_backend_frame_stage::commands_recorded;
 
     result.frame_submitted = device.submit_frame();
     if (!result.frame_submitted) {
         result.fallback_reason = vulkan_backend_fallback_reason::submit_frame_failed;
         return result;
     }
+    result.reached_stage = vulkan_backend_frame_stage::frame_submitted;
 
     result.frame_presented = device.present_frame();
     if (!result.frame_presented) {
         result.fallback_reason = vulkan_backend_fallback_reason::present_frame_failed;
         return result;
     }
+    result.reached_stage = vulkan_backend_frame_stage::frame_presented;
 
     result.fallback_required = false;
     result.fallback_reason = vulkan_backend_fallback_reason::none;

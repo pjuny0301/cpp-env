@@ -252,22 +252,22 @@ target_compile_features(quiz_vulkan_ui_renderer PUBLIC cxx_std_23)
 target_include_directories(quiz_vulkan_ui_renderer PUBLIC src)
 target_link_libraries(quiz_vulkan_ui_renderer PUBLIC quiz_vulkan_scene quiz_vulkan_render_contract)
 
-add_library(quiz_vulkan_quiz_screens INTERFACE)
+add_library(quiz_vulkan_app_presentation INTERFACE)
 target_sources(
-    quiz_vulkan_quiz_screens
+    quiz_vulkan_app_presentation
     INTERFACE
         FILE_SET HEADERS
         BASE_DIRS src
         FILES
-            src/core/ui/quiz_screens.h
-            src/core/ui/quiz_screens.hpp
+            src/app/app_quiz_screens.h
+            src/app/app_quiz_screens.hpp
 )
-target_compile_features(quiz_vulkan_quiz_screens INTERFACE cxx_std_23)
-target_include_directories(quiz_vulkan_quiz_screens INTERFACE src)
-target_link_libraries(quiz_vulkan_quiz_screens INTERFACE quiz_vulkan_domain quiz_vulkan_scene)
+target_compile_features(quiz_vulkan_app_presentation INTERFACE cxx_std_23)
+target_include_directories(quiz_vulkan_app_presentation INTERFACE src)
+target_link_libraries(quiz_vulkan_app_presentation INTERFACE quiz_vulkan_domain quiz_vulkan_scene)
 
 add_library(quiz_vulkan_ui INTERFACE)
-target_link_libraries(quiz_vulkan_ui INTERFACE quiz_vulkan_ui_renderer quiz_vulkan_quiz_screens)
+target_link_libraries(quiz_vulkan_ui INTERFACE quiz_vulkan_ui_renderer)
 
 add_library(quiz_vulkan_renderer STATIC)
 target_sources(
@@ -319,6 +319,7 @@ target_link_libraries(
         quiz_vulkan_platform_shell
         quiz_vulkan_renderer
         quiz_vulkan_ui
+        quiz_vulkan_app_presentation
         quiz_vulkan_text_engine
         quiz_vulkan_text_scene_bridge
         quiz_vulkan_domain
@@ -433,12 +434,24 @@ if(BUILD_TESTING)
     quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_app_input_router_tests)
     add_test(NAME quiz_vulkan_app_input_router_tests COMMAND quiz_vulkan_app_input_router_tests)
 
+    add_executable(quiz_vulkan_app_quiz_screens_tests tests/app/app_quiz_screens_tests.cpp)
+    target_link_libraries(
+        quiz_vulkan_app_quiz_screens_tests
+        PRIVATE
+            quiz_vulkan_app_presentation
+            quiz_vulkan_scene
+            quiz_vulkan_domain
+    )
+    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_app_quiz_screens_tests)
+    add_test(NAME quiz_vulkan_app_quiz_screens_tests COMMAND quiz_vulkan_app_quiz_screens_tests)
+
     add_executable(quiz_vulkan_app_demo_tests tests/app/app_demo_tests.cpp src/app/app_demo.cpp src/app/app_state.cpp)
     target_link_libraries(
         quiz_vulkan_app_demo_tests
         PRIVATE
             quiz_vulkan_renderer
             quiz_vulkan_ui
+            quiz_vulkan_app_presentation
             quiz_vulkan_text_engine
             quiz_vulkan_text_scene_bridge
             quiz_vulkan_domain

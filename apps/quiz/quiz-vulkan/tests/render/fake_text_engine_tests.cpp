@@ -1,6 +1,7 @@
 #include "core/layout/layout_placer.h"
 #include "render/text/fake_text_engine.h"
 #include "render/text/font_glyph_atlas.h"
+#include "render/text/font_resolver.h"
 #include "render/text/scene_text_metrics_adapter.h"
 #include "render/text/text_engine.h"
 #include "render/text/utf8_line_break.h"
@@ -416,6 +417,41 @@ void test_font_face_catalog_reports_codepoint_fallback_diagnostics()
     require(!unsupported.glyph_supported, "font coverage reports unsupported glyph");
 }
 
+void test_deterministic_fake_font_resolver_reports_face_fallbacks()
+{
+    using namespace quiz_vulkan::render;
+
+    deterministic_fake_font_resolver resolver;
+
+    render_text_style style;
+    style.font_family = "Sans";
+    style.font_weight = 400;
+    style.italic = false;
+
+    const font_resolver_result exact = resolver.resolve(style);
+    require(exact.exact_face_id == 1, "font resolver reports exact fixture face id");
+    require(exact.resolved_face_id == 1, "font resolver resolves exact face id");
+    require(exact.resolved_family == "Sans", "font resolver preserves exact family");
+    require(!exact.used_fallback(), "font resolver does not report fallback for exact face");
+
+    style.font_weight = 900;
+    const font_resolver_result style_fallback = resolver.resolve(style);
+    require(style_fallback.exact_face_id == 0, "font resolver reports missing exact style");
+    require(style_fallback.resolved_face_id == 2, "font resolver chooses deterministic nearest family face");
+    require(style_fallback.resolved_weight == 700, "font resolver reports fallback weight");
+    require(!style_fallback.used_family_fallback, "font resolver keeps same family for style fallback");
+    require(style_fallback.used_style_fallback, "font resolver reports style fallback");
+
+    style.font_family = "Display";
+    style.font_weight = 400;
+    const font_resolver_result family_fallback = resolver.resolve(style);
+    require(family_fallback.exact_face_id == 0, "font resolver reports missing family exact face");
+    require(family_fallback.resolved_face_id == 1, "font resolver chooses deterministic fallback face");
+    require(family_fallback.resolved_family == "Sans", "font resolver reports fallback family");
+    require(family_fallback.used_family_fallback, "font resolver reports family fallback");
+    require(!family_fallback.used_style_fallback, "font resolver does not report style fallback for missing family");
+}
+
 void test_glyph_atlas_cache_allocates_rows_pages_and_cached_slots()
 {
     using namespace quiz_vulkan::render;
@@ -699,6 +735,74 @@ void test_fake_style_fallback_shapes_missing_tokens()
     require(near(layout.glyphs[0].bounds.width, 6.0f), "fallback glyph width uses fallback font size");
     require(near(layout.glyphs[0].bounds.height, 14.0f), "fallback glyph height uses fallback line height");
     require(near(layout.glyphs[1].bounds.x, 6.0f), "fallback glyph advances from prior fallback glyph");
+}
+
+void test_fake_font_resolver_records_family_and_style_fallbacks()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "a", .style_token = "heavy"},
+        render_text_run{.text = "b", .style_token = "display"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 200.0f, 0.0f};
+    request.style_catalog = make_style_catalog();
+    request.style_catalog.styles.push_back(render_text_style{
+        .id = "heavy",
+        .font_family = "Sans",
+        .font_size = 20.0f,
+        .line_height = 24.0f,
+        .letter_spacing = 0.0f,
+        .font_weight = 900,
+        .italic = false,
+    });
+    request.style_catalog.styles.push_back(render_text_style{
+        .id = "display",
+        .font_family = "Display",
+        .font_size = 20.0f,
+        .line_height = 24.0f,
+        .letter_spacing = 0.0f,
+        .font_weight = 400,
+        .italic = false,
+    });
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    const render_text_layout layout = engine.layout_text(request);
+    require(layout.glyphs.size() == 2, "font fallback diagnostics do not change fake glyph emission");
+    require(engine.last_diagnostics().used_font_fallback(), "font resolver records fallback diagnostics");
+    require(engine.last_diagnostics().font_fallbacks.size() == 2, "font resolver records both fallback runs");
+
+    const fake_text_engine_font_fallback& style_fallback = engine.last_diagnostics().font_fallbacks[0];
+    require(style_fallback.run_index == 0, "font style fallback records run index");
+    require(style_fallback.style_token == "heavy", "font style fallback records style token");
+    require(style_fallback.requested_family == "Sans", "font style fallback records requested family");
+    require(style_fallback.resolved_family == "Sans", "font style fallback keeps family");
+    require(style_fallback.requested_weight == 900, "font style fallback records requested weight");
+    require(style_fallback.resolved_weight == 700, "font style fallback records resolved weight");
+    require(style_fallback.resolved_face_id == 2, "font style fallback records resolved face id");
+    require(!style_fallback.used_family_fallback, "font style fallback does not report family fallback");
+    require(style_fallback.used_style_fallback, "font style fallback reports style fallback");
+
+    const fake_text_engine_font_fallback& family_fallback = engine.last_diagnostics().font_fallbacks[1];
+    require(family_fallback.run_index == 1, "font family fallback records run index");
+    require(family_fallback.style_token == "display", "font family fallback records style token");
+    require(family_fallback.requested_family == "Display", "font family fallback records requested family");
+    require(family_fallback.resolved_family == "Sans", "font family fallback records resolved family");
+    require(family_fallback.resolved_face_id == 1, "font family fallback records fallback face id");
+    require(family_fallback.used_family_fallback, "font family fallback reports family fallback");
+    require(!family_fallback.used_style_fallback, "font family fallback does not report style fallback");
+
+    request.text_runs = {
+        render_text_run{.text = "ok", .style_token = "body"},
+    };
+    (void)engine.measure_text(request);
+    require(!engine.last_diagnostics().used_font_fallback(), "clean font request clears font fallback diagnostics");
 }
 
 void test_fake_atlas_updates_are_revisioned_and_consumed()
@@ -1266,12 +1370,14 @@ int main()
     test_style_catalog_find_and_resolve();
     test_font_face_catalog_resolves_exact_faces_and_fallback();
     test_font_face_catalog_reports_codepoint_fallback_diagnostics();
+    test_deterministic_fake_font_resolver_reports_face_fallbacks();
     test_glyph_atlas_cache_allocates_rows_pages_and_cached_slots();
     test_glyph_atlas_cache_consumes_dirty_page_updates_by_revision();
     test_fake_measure_and_layout_emit_stable_glyphs();
     test_fake_multirun_layout_tracks_lines_offsets_and_alignment();
     test_fake_newline_edge_cases_preserve_empty_line_height();
     test_fake_style_fallback_shapes_missing_tokens();
+    test_fake_font_resolver_records_family_and_style_fallbacks();
     test_fake_atlas_updates_are_revisioned_and_consumed();
     test_fake_caret_positions_follow_utf8_runs_and_combining_marks();
     test_fake_selection_rects_cover_utf8_ranges_without_atlas_updates();

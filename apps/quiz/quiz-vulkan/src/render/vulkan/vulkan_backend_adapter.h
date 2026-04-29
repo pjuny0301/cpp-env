@@ -11,6 +11,11 @@ namespace quiz_vulkan::render::vulkan_backend {
 enum class vulkan_backend_fallback_reason {
     none,
     not_requested,
+    instance_unavailable,
+    device_unavailable,
+    swapchain_unavailable,
+    pipeline_unavailable,
+    command_recorder_unavailable,
     surface_unavailable,
     viewport_unavailable,
     begin_frame_failed,
@@ -31,8 +36,24 @@ struct vulkan_surface_extent {
     }
 };
 
+struct vulkan_backend_lifecycle_readiness {
+    bool instance_ready = false;
+    bool device_ready = false;
+    bool swapchain_ready = false;
+    bool pipeline_ready = false;
+    bool command_recorder_ready = false;
+
+    bool ready_for_frame() const
+    {
+        return instance_ready && device_ready && swapchain_ready
+            && pipeline_ready && command_recorder_ready;
+    }
+};
+
 struct vulkan_backend_frame_result {
     vulkan_surface_extent surface;
+    vulkan_backend_lifecycle_readiness lifecycle;
+    bool lifecycle_ready = false;
     bool surface_ready = false;
     bool frame_begun = false;
     bool commands_recorded = false;
@@ -48,7 +69,7 @@ struct vulkan_backend_frame_result {
 
     bool completed() const
     {
-        return surface_ready && frame_begun && commands_recorded
+        return lifecycle_ready && surface_ready && frame_begun && commands_recorded
             && frame_submitted && frame_presented && !fallback_required;
     }
 };
@@ -57,6 +78,7 @@ class vulkan_backend_device_interface {
 public:
     virtual ~vulkan_backend_device_interface() = default;
 
+    virtual vulkan_backend_lifecycle_readiness current_lifecycle_readiness() const = 0;
     virtual vulkan_surface_extent current_surface_extent() const = 0;
     virtual bool begin_frame(vulkan_surface_extent surface) = 0;
     virtual bool record_frame_commands(const vulkan_frame_plan& plan) = 0;
@@ -66,6 +88,7 @@ public:
 
 class null_vulkan_backend_device final : public vulkan_backend_device_interface {
 public:
+    vulkan_backend_lifecycle_readiness current_lifecycle_readiness() const override;
     vulkan_surface_extent current_surface_extent() const override;
     bool begin_frame(vulkan_surface_extent surface) override;
     bool record_frame_commands(const vulkan_frame_plan& plan) override;

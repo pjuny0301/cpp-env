@@ -8,6 +8,28 @@ bool has_visible_area(const render_rect& rect)
     return rect.width > 0.0f && rect.height > 0.0f;
 }
 
+vulkan_backend_fallback_reason first_unready_reason(
+    const vulkan_backend_lifecycle_readiness& lifecycle)
+{
+    if (!lifecycle.instance_ready) {
+        return vulkan_backend_fallback_reason::instance_unavailable;
+    }
+    if (!lifecycle.device_ready) {
+        return vulkan_backend_fallback_reason::device_unavailable;
+    }
+    if (!lifecycle.swapchain_ready) {
+        return vulkan_backend_fallback_reason::swapchain_unavailable;
+    }
+    if (!lifecycle.pipeline_ready) {
+        return vulkan_backend_fallback_reason::pipeline_unavailable;
+    }
+    if (!lifecycle.command_recorder_ready) {
+        return vulkan_backend_fallback_reason::command_recorder_unavailable;
+    }
+
+    return vulkan_backend_fallback_reason::none;
+}
+
 } // namespace
 
 std::string_view fallback_reason_name(vulkan_backend_fallback_reason reason)
@@ -17,6 +39,16 @@ std::string_view fallback_reason_name(vulkan_backend_fallback_reason reason)
         return "none";
     case vulkan_backend_fallback_reason::not_requested:
         return "not_requested";
+    case vulkan_backend_fallback_reason::instance_unavailable:
+        return "instance_unavailable";
+    case vulkan_backend_fallback_reason::device_unavailable:
+        return "device_unavailable";
+    case vulkan_backend_fallback_reason::swapchain_unavailable:
+        return "swapchain_unavailable";
+    case vulkan_backend_fallback_reason::pipeline_unavailable:
+        return "pipeline_unavailable";
+    case vulkan_backend_fallback_reason::command_recorder_unavailable:
+        return "command_recorder_unavailable";
     case vulkan_backend_fallback_reason::surface_unavailable:
         return "surface_unavailable";
     case vulkan_backend_fallback_reason::viewport_unavailable:
@@ -32,6 +64,11 @@ std::string_view fallback_reason_name(vulkan_backend_fallback_reason reason)
     }
 
     return "unknown";
+}
+
+vulkan_backend_lifecycle_readiness null_vulkan_backend_device::current_lifecycle_readiness() const
+{
+    return {};
 }
 
 vulkan_surface_extent null_vulkan_backend_device::current_surface_extent() const
@@ -68,6 +105,13 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
 {
     vulkan_backend_frame_result result;
     result.attempted = true;
+    result.lifecycle = device.current_lifecycle_readiness();
+    result.fallback_reason = first_unready_reason(result.lifecycle);
+    if (result.fallback_reason != vulkan_backend_fallback_reason::none) {
+        return result;
+    }
+    result.lifecycle_ready = true;
+
     result.surface = device.current_surface_extent();
     if (!result.surface.valid()) {
         result.fallback_reason = vulkan_backend_fallback_reason::surface_unavailable;

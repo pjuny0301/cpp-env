@@ -19,6 +19,11 @@ public:
     {
     }
 
+    quiz_vulkan::render::vulkan_backend::vulkan_backend_lifecycle_readiness current_lifecycle_readiness() const override
+    {
+        return lifecycle;
+    }
+
     quiz_vulkan::render::vulkan_backend::vulkan_surface_extent current_surface_extent() const override
     {
         return surface_;
@@ -54,6 +59,13 @@ public:
     bool record_succeeds = true;
     bool submit_succeeds = true;
     bool present_succeeds = true;
+    quiz_vulkan::render::vulkan_backend::vulkan_backend_lifecycle_readiness lifecycle{
+        .instance_ready = true,
+        .device_ready = true,
+        .swapchain_ready = true,
+        .pipeline_ready = true,
+        .command_recorder_ready = true,
+    };
     quiz_vulkan::render::vulkan_backend::vulkan_surface_extent begun_surface;
     quiz_vulkan::render::vulkan_backend::vulkan_frame_plan recorded_plan;
     std::vector<std::string> calls;
@@ -124,6 +136,27 @@ void test_vulkan_backend_fallback_reason_names_are_stable()
         vulkan_backend::fallback_reason_name(vulkan_backend::vulkan_backend_fallback_reason::not_requested)
             == std::string_view{"not_requested"},
         "fallback reason name for not requested is stable");
+    require(
+        vulkan_backend::fallback_reason_name(vulkan_backend::vulkan_backend_fallback_reason::instance_unavailable)
+            == std::string_view{"instance_unavailable"},
+        "fallback reason name for unavailable instance is stable");
+    require(
+        vulkan_backend::fallback_reason_name(vulkan_backend::vulkan_backend_fallback_reason::device_unavailable)
+            == std::string_view{"device_unavailable"},
+        "fallback reason name for unavailable device is stable");
+    require(
+        vulkan_backend::fallback_reason_name(vulkan_backend::vulkan_backend_fallback_reason::swapchain_unavailable)
+            == std::string_view{"swapchain_unavailable"},
+        "fallback reason name for unavailable swapchain is stable");
+    require(
+        vulkan_backend::fallback_reason_name(vulkan_backend::vulkan_backend_fallback_reason::pipeline_unavailable)
+            == std::string_view{"pipeline_unavailable"},
+        "fallback reason name for unavailable pipeline is stable");
+    require(
+        vulkan_backend::fallback_reason_name(
+            vulkan_backend::vulkan_backend_fallback_reason::command_recorder_unavailable)
+            == std::string_view{"command_recorder_unavailable"},
+        "fallback reason name for unavailable command recorder is stable");
     require(
         vulkan_backend::fallback_reason_name(vulkan_backend::vulkan_backend_fallback_reason::surface_unavailable)
             == std::string_view{"surface_unavailable"},
@@ -261,13 +294,21 @@ void test_draw_list_submission_counts_generic_work()
     require(summary.backend_recorded_batch_count == 0, "renderer summary exposes backend recorded batch count");
     require(summary.backend_surface_width == 0, "renderer summary exposes backend surface width");
     require(summary.backend_surface_height == 0, "renderer summary exposes backend surface height");
+    require(!summary.backend_instance_ready, "renderer summary exposes backend instance readiness");
+    require(!summary.backend_device_ready, "renderer summary exposes backend device readiness");
+    require(!summary.backend_swapchain_ready, "renderer summary exposes backend swapchain readiness");
+    require(!summary.backend_pipeline_ready, "renderer summary exposes backend pipeline readiness");
+    require(!summary.backend_command_recorder_ready, "renderer summary exposes backend command recorder readiness");
+    require(!summary.backend_lifecycle_ready, "renderer summary exposes aggregate lifecycle readiness");
     require(
-        summary.backend_fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::surface_unavailable,
+        summary.backend_fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::instance_unavailable,
         "renderer summary exposes backend fallback reason");
 
     const vulkan_backend::vulkan_backend_frame_result& backend_result = renderer.last_backend_frame_result();
     require(backend_result.fallback_required, "renderer retains backend fallback requirement");
     require(backend_result.attempted, "renderer retains backend attempt status");
+    require(!backend_result.lifecycle.ready_for_frame(), "renderer retains backend lifecycle readiness");
+    require(!backend_result.lifecycle_ready, "renderer retains aggregate lifecycle readiness");
     require(!backend_result.surface_ready, "renderer retains backend surface readiness");
     require(!backend_result.frame_begun, "renderer retains backend begin status");
     require(!backend_result.commands_recorded, "renderer retains backend record status");
@@ -276,7 +317,7 @@ void test_draw_list_submission_counts_generic_work()
     require(backend_result.planned_batch_count == 0, "renderer retains backend planned batch count");
     require(backend_result.recorded_batch_count == 0, "renderer retains backend recorded batch count");
     require(
-        backend_result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::surface_unavailable,
+        backend_result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::instance_unavailable,
         "renderer retains backend fallback reason");
     require(count_nonzero_framebuffer_pixels(renderer.last_framebuffer()) > 0, "fallback framebuffer receives pixels");
 
@@ -661,6 +702,8 @@ void test_vulkan_backend_adapter_completes_fake_device_lifecycle()
     require(
         result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::none,
         "completed fake backend frame has no fallback reason");
+    require(result.lifecycle.ready_for_frame(), "fake backend reports lifecycle resources ready");
+    require(result.lifecycle_ready, "fake backend lifecycle is frame-ready");
     require(result.surface_ready, "fake backend surface is ready");
     require(result.frame_begun, "fake backend begins a frame");
     require(result.commands_recorded, "fake backend records frame commands");
@@ -811,6 +854,47 @@ void test_vulkan_backend_adapter_completes_all_discarded_frame()
     require(device.recorded_plan.empty(), "all-discarded frame records empty plan");
     require(device.recorded_plan.discarded_draw_call_count == 1, "recorded all-discarded plan preserves discarded count");
     require(device.calls.size() == 4, "all-discarded frame still runs lifecycle");
+}
+
+void test_vulkan_backend_adapter_falls_back_when_command_recorder_is_unready()
+{
+    using namespace quiz_vulkan::render;
+
+    render_draw_list draw_list;
+    draw_list.commands.push_back(make_quad_command(
+        "quad",
+        render_rect{0.0f, 0.0f, 100.0f, 100.0f},
+        render_color{1.0f, 1.0f, 1.0f, 1.0f}));
+
+    fake_vulkan_backend_device device(vulkan_backend::vulkan_surface_extent{.width = 16, .height = 16});
+    device.lifecycle.command_recorder_ready = false;
+    const vulkan_backend::vulkan_backend_frame_result result = vulkan_backend::submit_vulkan_backend_frame(
+        device,
+        draw_list,
+        render_rect{0.0f, 0.0f, 100.0f, 100.0f});
+
+    require(!result.completed(), "backend cannot complete without a command recorder");
+    require(result.attempted, "backend records attempted frame with unavailable command recorder");
+    require(result.fallback_required, "backend requires fallback without command recorder readiness");
+    require(
+        result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::command_recorder_unavailable,
+        "backend reports command recorder readiness fallback reason");
+    require(result.lifecycle.instance_ready, "backend records ready instance");
+    require(result.lifecycle.device_ready, "backend records ready device");
+    require(result.lifecycle.swapchain_ready, "backend records ready swapchain");
+    require(result.lifecycle.pipeline_ready, "backend records ready pipeline");
+    require(!result.lifecycle.command_recorder_ready, "backend records unavailable command recorder");
+    require(!result.lifecycle.ready_for_frame(), "backend lifecycle is not frame-ready without command recorder");
+    require(!result.lifecycle_ready, "backend aggregate lifecycle readiness fails");
+    require(!result.surface.valid(), "backend does not query a surface before lifecycle readiness passes");
+    require(!result.surface_ready, "backend surface is not ready when lifecycle readiness fails");
+    require(!result.frame_begun, "backend does not begin frame without command recorder readiness");
+    require(!result.commands_recorded, "backend does not record without command recorder readiness");
+    require(!result.frame_submitted, "backend does not submit without command recorder readiness");
+    require(!result.frame_presented, "backend does not present without command recorder readiness");
+    require(result.planned_batch_count == 0, "backend does not plan batches without command recorder readiness");
+    require(result.recorded_batch_count == 0, "backend does not record batches without command recorder readiness");
+    require(device.calls.empty(), "backend does not call frame lifecycle without command recorder readiness");
 }
 
 void test_vulkan_backend_adapter_falls_back_without_surface()
@@ -1037,6 +1121,7 @@ int main()
     test_vulkan_backend_adapter_preserves_plan_diagnostics();
     test_vulkan_backend_adapter_completes_empty_frame();
     test_vulkan_backend_adapter_completes_all_discarded_frame();
+    test_vulkan_backend_adapter_falls_back_when_command_recorder_is_unready();
     test_vulkan_backend_adapter_falls_back_without_surface();
     test_vulkan_backend_adapter_falls_back_without_viewport();
     test_vulkan_backend_adapter_falls_back_when_begin_fails();

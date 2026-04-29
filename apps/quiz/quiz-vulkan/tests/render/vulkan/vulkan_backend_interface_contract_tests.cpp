@@ -14,6 +14,8 @@ concept VulkanBackendDeviceInterface = requires(
     T& device,
     const render::vulkan_backend::vulkan_frame_plan& plan,
     render::vulkan_backend::vulkan_surface_extent surface) {
+    { const_device.current_lifecycle_readiness() }
+        -> std::same_as<render::vulkan_backend::vulkan_backend_lifecycle_readiness>;
     { const_device.current_surface_extent() } -> std::same_as<render::vulkan_backend::vulkan_surface_extent>;
     { device.begin_frame(surface) } -> std::same_as<bool>;
     { device.record_frame_commands(plan) } -> std::same_as<bool>;
@@ -30,8 +32,19 @@ static_assert(requires(render::vulkan_backend::vulkan_surface_extent surface) {
     { surface.valid() } -> std::same_as<bool>;
 });
 
+static_assert(requires(render::vulkan_backend::vulkan_backend_lifecycle_readiness lifecycle) {
+    { lifecycle.instance_ready } -> std::same_as<bool&>;
+    { lifecycle.device_ready } -> std::same_as<bool&>;
+    { lifecycle.swapchain_ready } -> std::same_as<bool&>;
+    { lifecycle.pipeline_ready } -> std::same_as<bool&>;
+    { lifecycle.command_recorder_ready } -> std::same_as<bool&>;
+    { lifecycle.ready_for_frame() } -> std::same_as<bool>;
+});
+
 static_assert(requires(render::vulkan_backend::vulkan_backend_frame_result result) {
     { result.surface } -> std::same_as<render::vulkan_backend::vulkan_surface_extent&>;
+    { result.lifecycle } -> std::same_as<render::vulkan_backend::vulkan_backend_lifecycle_readiness&>;
+    { result.lifecycle_ready } -> std::same_as<bool&>;
     { result.surface_ready } -> std::same_as<bool&>;
     { result.frame_begun } -> std::same_as<bool&>;
     { result.commands_recorded } -> std::same_as<bool&>;
@@ -60,6 +73,21 @@ static_assert(std::same_as<
     render::vulkan_backend::vulkan_backend_fallback_reason>);
 static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_backend_fallback_reason::not_requested),
+    render::vulkan_backend::vulkan_backend_fallback_reason>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_fallback_reason::instance_unavailable),
+    render::vulkan_backend::vulkan_backend_fallback_reason>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_fallback_reason::device_unavailable),
+    render::vulkan_backend::vulkan_backend_fallback_reason>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_fallback_reason::swapchain_unavailable),
+    render::vulkan_backend::vulkan_backend_fallback_reason>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_fallback_reason::pipeline_unavailable),
+    render::vulkan_backend::vulkan_backend_fallback_reason>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_fallback_reason::command_recorder_unavailable),
     render::vulkan_backend::vulkan_backend_fallback_reason>);
 static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_backend_fallback_reason::surface_unavailable),

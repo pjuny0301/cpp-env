@@ -261,6 +261,12 @@ vulkan_renderer_frame_summary vulkan_renderer::summarize_cpu_fallback(
     summary.backend_surface_height = backend_result.surface.height;
     summary.backend_planned_batch_count = backend_result.planned_batch_count;
     summary.backend_recorded_batch_count = backend_result.recorded_batch_count;
+    summary.backend_instance_ready = backend_result.lifecycle.instance_ready;
+    summary.backend_device_ready = backend_result.lifecycle.device_ready;
+    summary.backend_swapchain_ready = backend_result.lifecycle.swapchain_ready;
+    summary.backend_pipeline_ready = backend_result.lifecycle.pipeline_ready;
+    summary.backend_command_recorder_ready = backend_result.lifecycle.command_recorder_ready;
+    summary.backend_lifecycle_ready = backend_result.lifecycle_ready;
     summary.backend_surface_ready = backend_result.surface_ready;
     summary.backend_frame_begun = backend_result.frame_begun;
     summary.backend_commands_recorded = backend_result.commands_recorded;

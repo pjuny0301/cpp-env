@@ -20,6 +20,9 @@ Last updated: 2026-04-28
 ## Contracts
 
 - Preserve `modifier_interface -> scene_layout_data_modifier -> scene_layout_patch / scene_layout_edit_data -> scene_layout_data -> layout_placer -> ui_renderer -> vulkan_renderer`.
+- `scene_layout_edit_data` is the only write surface for modifiers; modifiers must not mutate full scene/layout/renderer state directly.
+- `ui_renderer`, `layout_placer`, and `vulkan_renderer` must not include domain headers or infer quiz semantics.
+- `src/core/ui/quiz_screens.h` currently reads `domain::app_snapshot` as a temporary app screen presenter. Treat it as a refactor target, not as permission for UI renderer/domain coupling.
 - Scene/UI modifiers emit actions only; app/domain services own state changes.
 - Renderer layers must not own quiz, domain, UI, input, or audio state.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.

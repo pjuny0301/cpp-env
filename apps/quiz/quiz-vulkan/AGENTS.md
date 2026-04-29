@@ -1,8 +1,10 @@
 # quiz-vulkan Agent Rules
 
 - This project is the native Vulkan quiz app rewrite.
-- Treat the UI pipeline as a subsystem: `modifier_interface -> scene_layout_data_modifier -> scene_layout_patch / scene_layout_edit_data -> scene_layout_data -> layout_placer -> ui_renderer -> vulkan_renderer`.
-- Keep domain state outside UI. UI modifiers emit `app_action`; the app shell applies actions to domain services and feeds the next `app_snapshot` back into UI.
+- Treat the scene/rendering pipeline as: `modifier_interface -> scene_layout_data_modifier -> scene_layout_patch / scene_layout_edit_data -> scene_layout_data -> layout_placer -> ui_renderer -> vulkan_renderer`.
+- Keep domain state outside renderer/layout code. `ui_renderer`, `layout_placer`, and `vulkan_renderer` must not include domain headers or infer quiz semantics.
+- `src/core/ui/quiz_screens.h` is a temporary app screen presenter that converts `domain::app_snapshot` into scene edits. Do not expand that coupling; app/main owns domain mutation and long-term snapshot-to-scene presentation should sit at the app/presentation boundary.
+- Scene/UI modifiers emit `app_action`; the app shell applies actions to domain services and feeds the next snapshot into the presentation bridge.
 - Use snake_case for C++ type names, function names, file names, and enum values in new code.
 - Do not edit generated build output, dependency folders, or package artifacts.
 - If multiple agents are active, read `agent/command_brief.json` first and only edit your assigned write set.

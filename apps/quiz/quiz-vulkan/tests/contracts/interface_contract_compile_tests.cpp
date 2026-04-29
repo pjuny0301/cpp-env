@@ -8,6 +8,7 @@
 #include "../assets/asset_resolver_interface_contract_tests.cpp"
 #include "../domain/deck_source_interface_contract_tests.cpp"
 #include "../input/input_engine_interface_contract_tests.cpp"
+#include "../layout/layout_placer_interface_contract_tests.cpp"
 #include "../persistence/learning_state_store_interface_contract_tests.cpp"
 #include "../platform/platform_shell_interface_contract_tests.cpp"
 #include "../render/image/image_engine_interface_contract_tests.cpp"

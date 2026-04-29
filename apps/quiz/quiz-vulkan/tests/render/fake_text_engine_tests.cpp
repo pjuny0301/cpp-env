@@ -1,5 +1,6 @@
 #include "core/layout/layout_placer.h"
 #include "render/text/fake_text_engine.h"
+#include "render/text/font_glyph_atlas.h"
 #include "render/text/scene_text_metrics_adapter.h"
 #include "render/text/text_engine.h"
 
@@ -8,6 +9,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdio>
+#include <optional>
 #include <vector>
 
 namespace {
@@ -120,6 +122,116 @@ void test_style_catalog_find_and_resolve()
     require(catalog.find("missing") == nullptr, "style catalog reports missing style");
     require(catalog.resolve("caption").italic, "style catalog resolves registered style");
     require(catalog.resolve("missing").id == "fallback", "style catalog resolves missing style to fallback");
+}
+
+void test_font_face_catalog_resolves_exact_faces_and_fallback()
+{
+    using namespace quiz_vulkan::render;
+
+    font_face_catalog catalog;
+    const font_face_id regular_id = catalog.add_face(font_face_descriptor{
+        .family = "Fixture Sans",
+        .source_uri = "fixture://fonts/fixture-sans-regular",
+        .version = "fixture-1",
+        .license = "test-fixture",
+        .weight = 400,
+        .italic = false,
+        .fallback = false,
+    }).id;
+    const font_face_id bold_id = catalog.add_face(font_face_descriptor{
+        .family = "Fixture Sans",
+        .source_uri = "fixture://fonts/fixture-sans-bold",
+        .version = "fixture-1",
+        .license = "test-fixture",
+        .weight = 700,
+        .italic = false,
+        .fallback = false,
+    }).id;
+    const font_face_id fallback_id = catalog.add_face(font_face_descriptor{
+        .family = "Fixture Fallback",
+        .source_uri = "fixture://fonts/fixture-fallback",
+        .version = "fixture-1",
+        .license = "test-fixture",
+        .weight = 400,
+        .italic = false,
+        .fallback = true,
+    }).id;
+
+    render_text_style style;
+    style.font_family = "Fixture Sans";
+    style.font_weight = 400;
+    style.italic = false;
+    require(catalog.resolve(style)->id == regular_id, "font catalog resolves exact regular face");
+
+    style.font_weight = 700;
+    require(catalog.resolve(style)->id == bold_id, "font catalog resolves exact bold face");
+
+    style.font_family = "Missing Sans";
+    style.font_weight = 400;
+    const font_face_descriptor* resolved_fallback = catalog.resolve(style);
+    require(resolved_fallback != nullptr, "font catalog resolves missing family to fallback");
+    require(resolved_fallback->id == fallback_id, "font catalog chooses explicit fallback face");
+    require(resolved_fallback->source_uri == "fixture://fonts/fixture-fallback", "font catalog preserves source URI");
+    require(resolved_fallback->license == "test-fixture", "font catalog preserves license metadata");
+}
+
+void test_glyph_atlas_cache_allocates_rows_pages_and_cached_slots()
+{
+    using namespace quiz_vulkan::render;
+
+    glyph_atlas_cache cache(glyph_atlas_page_config{
+        .width = 16,
+        .height = 16,
+        .padding = 1,
+    });
+
+    const glyph_atlas_key glyph_a{.face_id = 1, .glyph_id = 65, .pixel_size = 20};
+    const glyph_atlas_key glyph_b{.face_id = 1, .glyph_id = 66, .pixel_size = 20};
+    const glyph_atlas_key glyph_c{.face_id = 1, .glyph_id = 67, .pixel_size = 20};
+    const glyph_atlas_key glyph_d{.face_id = 1, .glyph_id = 68, .pixel_size = 20};
+    const glyph_atlas_key glyph_e{.face_id = 1, .glyph_id = 69, .pixel_size = 20};
+
+    const std::optional<glyph_atlas_slot> slot_a = cache.cache_glyph(glyph_a, 5, 6);
+    require(slot_a.has_value(), "glyph atlas allocates first glyph");
+    require(slot_a->newly_allocated, "first glyph reports new allocation");
+    require(slot_a->page.id == 1, "first glyph lands on page one");
+    require(slot_a->page.revision == 1, "first glyph increments page revision");
+    require(near(slot_a->atlas_bounds.x, 1.0f), "first glyph x includes padding");
+    require(near(slot_a->atlas_bounds.y, 1.0f), "first glyph y includes padding");
+
+    const std::optional<glyph_atlas_slot> slot_b = cache.cache_glyph(glyph_b, 5, 6);
+    require(slot_b.has_value(), "glyph atlas allocates second glyph");
+    require(slot_b->page.id == 1, "second glyph stays on page one");
+    require(slot_b->page.revision == 2, "second glyph increments page revision");
+    require(near(slot_b->atlas_bounds.x, 8.0f), "second glyph packs on first row");
+    require(near(slot_b->atlas_bounds.y, 1.0f), "second glyph stays on first row");
+
+    const std::optional<glyph_atlas_slot> slot_c = cache.cache_glyph(glyph_c, 5, 6);
+    require(slot_c.has_value(), "glyph atlas allocates third glyph");
+    require(slot_c->page.id == 1, "third glyph stays on page one");
+    require(near(slot_c->atlas_bounds.x, 1.0f), "third glyph wraps to row start");
+    require(near(slot_c->atlas_bounds.y, 9.0f), "third glyph wraps to next row");
+
+    require(cache.cache_glyph(glyph_d, 5, 6).has_value(), "glyph atlas fills remaining row slot");
+    const std::optional<glyph_atlas_slot> slot_e = cache.cache_glyph(glyph_e, 5, 6);
+    require(slot_e.has_value(), "glyph atlas allocates new page when full");
+    require(slot_e->page.id == 2, "overflow glyph lands on page two");
+    require(slot_e->page.revision == 1, "new page starts at first revision");
+
+    const std::optional<glyph_atlas_slot> cached_a = cache.cache_glyph(glyph_a, 5, 6);
+    require(cached_a.has_value(), "glyph atlas returns cached glyph");
+    require(!cached_a->newly_allocated, "cached glyph does not report new allocation");
+    require(cached_a->page.id == 1, "cached glyph keeps original page");
+    require(cached_a->page.revision == 4, "cached glyph reports latest page revision");
+    require(near(cached_a->atlas_bounds.x, slot_a->atlas_bounds.x), "cached glyph keeps atlas x");
+    require(near(cached_a->atlas_bounds.y, slot_a->atlas_bounds.y), "cached glyph keeps atlas y");
+
+    const std::optional<glyph_atlas_slot> too_large = cache.cache_glyph(
+        glyph_atlas_key{.face_id = 1, .glyph_id = 999, .pixel_size = 20},
+        15,
+        15);
+    require(!too_large.has_value(), "glyph atlas rejects glyph larger than padded page");
+    require(cache.pages().size() == 2, "rejected glyph does not create another page");
 }
 
 void test_fake_measure_and_layout_emit_stable_glyphs()
@@ -794,6 +906,8 @@ void test_scene_text_metrics_adapter_feeds_layout_placer()
 int main()
 {
     test_style_catalog_find_and_resolve();
+    test_font_face_catalog_resolves_exact_faces_and_fallback();
+    test_glyph_atlas_cache_allocates_rows_pages_and_cached_slots();
     test_fake_measure_and_layout_emit_stable_glyphs();
     test_fake_multirun_layout_tracks_lines_offsets_and_alignment();
     test_fake_newline_edge_cases_preserve_empty_line_height();

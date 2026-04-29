@@ -1,0 +1,247 @@
+#pragma once
+
+#include "render/text/text_engine.h"
+
+#include <algorithm>
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <utility>
+#include <vector>
+
+namespace quiz_vulkan::render {
+
+using font_face_id = std::uint32_t;
+
+struct font_face_descriptor {
+    font_face_id id = 0;
+    std::string family;
+    std::string source_uri;
+    std::string version;
+    std::string license;
+    int weight = 400;
+    bool italic = false;
+    bool fallback = false;
+};
+
+class font_face_catalog {
+public:
+    const font_face_descriptor& add_face(font_face_descriptor descriptor)
+    {
+        if (descriptor.id == 0) {
+            descriptor.id = next_id_++;
+        } else {
+            next_id_ = std::max(next_id_, descriptor.id + 1);
+        }
+
+        faces_.push_back(std::move(descriptor));
+        return faces_.back();
+    }
+
+    const font_face_descriptor* find_exact(
+        const std::string& family,
+        int weight,
+        bool italic) const
+    {
+        const auto match = std::find_if(
+            faces_.begin(),
+            faces_.end(),
+            [&](const font_face_descriptor& face) {
+                return face.family == family && face.weight == weight && face.italic == italic;
+            });
+        return match == faces_.end() ? nullptr : &*match;
+    }
+
+    const font_face_descriptor* fallback_face() const
+    {
+        const auto explicit_fallback = std::find_if(
+            faces_.begin(),
+            faces_.end(),
+            [](const font_face_descriptor& face) { return face.fallback; });
+        if (explicit_fallback != faces_.end()) {
+            return &*explicit_fallback;
+        }
+        return faces_.empty() ? nullptr : &faces_.front();
+    }
+
+    const font_face_descriptor* resolve(const render_text_style& style) const
+    {
+        const font_face_descriptor* exact = find_exact(style.font_family, style.font_weight, style.italic);
+        return exact == nullptr ? fallback_face() : exact;
+    }
+
+    const std::vector<font_face_descriptor>& faces() const
+    {
+        return faces_;
+    }
+
+private:
+    std::vector<font_face_descriptor> faces_;
+    font_face_id next_id_ = 1;
+};
+
+struct glyph_atlas_key {
+    font_face_id face_id = 0;
+    std::uint32_t glyph_id = 0;
+    std::uint32_t pixel_size = 0;
+
+    friend bool operator==(const glyph_atlas_key&, const glyph_atlas_key&) = default;
+};
+
+struct glyph_atlas_page_config {
+    std::size_t width = 256;
+    std::size_t height = 256;
+    std::size_t padding = 1;
+};
+
+struct glyph_atlas_slot {
+    glyph_atlas_key key;
+    render_text_atlas_page page;
+    render_rect atlas_bounds;
+    bool newly_allocated = false;
+};
+
+class glyph_atlas_cache {
+public:
+    explicit glyph_atlas_cache(glyph_atlas_page_config config = {})
+        : config_(config)
+    {
+    }
+
+    std::optional<glyph_atlas_slot> find(const glyph_atlas_key& key) const
+    {
+        const allocation_record* allocation = find_allocation(key);
+        if (allocation == nullptr) {
+            return std::nullopt;
+        }
+
+        return glyph_atlas_slot{
+            .key = allocation->key,
+            .page = pages_[allocation->page_index].page,
+            .atlas_bounds = allocation->atlas_bounds,
+            .newly_allocated = false,
+        };
+    }
+
+    std::optional<glyph_atlas_slot> cache_glyph(
+        glyph_atlas_key key,
+        std::size_t width,
+        std::size_t height)
+    {
+        if (std::optional<glyph_atlas_slot> existing = find(key); existing.has_value()) {
+            return existing;
+        }
+        if (!fits_page(width, height)) {
+            return std::nullopt;
+        }
+
+        for (std::size_t page_index = 0; page_index < pages_.size(); ++page_index) {
+            if (std::optional<render_rect> bounds = allocate_on_page(pages_[page_index], width, height);
+                bounds.has_value()) {
+                return record_allocation(std::move(key), page_index, *bounds);
+            }
+        }
+
+        page_state page;
+        page.page = render_text_atlas_page{
+            .id = static_cast<render_text_atlas_page_id>(pages_.size() + 1),
+            .revision = 0,
+            .width = config_.width,
+            .height = config_.height,
+        };
+        pages_.push_back(page);
+
+        std::optional<render_rect> bounds = allocate_on_page(pages_.back(), width, height);
+        if (!bounds.has_value()) {
+            pages_.pop_back();
+            return std::nullopt;
+        }
+        return record_allocation(std::move(key), pages_.size() - 1, *bounds);
+    }
+
+    std::vector<render_text_atlas_page> pages() const
+    {
+        std::vector<render_text_atlas_page> output;
+        output.reserve(pages_.size());
+        for (const page_state& page : pages_) {
+            output.push_back(page.page);
+        }
+        return output;
+    }
+
+private:
+    struct page_state {
+        render_text_atlas_page page;
+        std::size_t cursor_x = 0;
+        std::size_t cursor_y = 0;
+        std::size_t row_height = 0;
+    };
+
+    struct allocation_record {
+        glyph_atlas_key key;
+        std::size_t page_index = 0;
+        render_rect atlas_bounds;
+    };
+
+    bool fits_page(std::size_t width, std::size_t height) const
+    {
+        return width + (config_.padding * 2) <= config_.width
+            && height + (config_.padding * 2) <= config_.height;
+    }
+
+    const allocation_record* find_allocation(const glyph_atlas_key& key) const
+    {
+        const auto match = std::find_if(
+            allocations_.begin(),
+            allocations_.end(),
+            [&](const allocation_record& allocation) { return allocation.key == key; });
+        return match == allocations_.end() ? nullptr : &*match;
+    }
+
+    std::optional<render_rect> allocate_on_page(page_state& page, std::size_t width, std::size_t height) const
+    {
+        const std::size_t padded_width = width + (config_.padding * 2);
+        const std::size_t padded_height = height + (config_.padding * 2);
+
+        if (page.cursor_x + padded_width > page.page.width) {
+            page.cursor_x = 0;
+            page.cursor_y += page.row_height;
+            page.row_height = 0;
+        }
+        if (page.cursor_y + padded_height > page.page.height) {
+            return std::nullopt;
+        }
+
+        const render_rect bounds{
+            static_cast<float>(page.cursor_x + config_.padding),
+            static_cast<float>(page.cursor_y + config_.padding),
+            static_cast<float>(width),
+            static_cast<float>(height),
+        };
+        page.cursor_x += padded_width;
+        page.row_height = std::max(page.row_height, padded_height);
+        ++page.page.revision;
+        return bounds;
+    }
+
+    glyph_atlas_slot record_allocation(glyph_atlas_key key, std::size_t page_index, render_rect bounds)
+    {
+        allocations_.push_back(allocation_record{
+            .key = key,
+            .page_index = page_index,
+            .atlas_bounds = bounds,
+        });
+        return glyph_atlas_slot{
+            .key = key,
+            .page = pages_[page_index].page,
+            .atlas_bounds = bounds,
+            .newly_allocated = true,
+        };
+    }
+
+    glyph_atlas_page_config config_;
+    std::vector<page_state> pages_;
+    std::vector<allocation_record> allocations_;
+};
+
+} // namespace quiz_vulkan::render

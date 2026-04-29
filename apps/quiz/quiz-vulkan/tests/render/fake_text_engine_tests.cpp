@@ -302,6 +302,64 @@ void test_glyph_atlas_cache_allocates_rows_pages_and_cached_slots()
     require(cache.pages().size() == 2, "rejected glyph does not create another page");
 }
 
+void test_glyph_atlas_cache_consumes_dirty_page_updates_by_revision()
+{
+    using namespace quiz_vulkan::render;
+
+    glyph_atlas_cache cache(glyph_atlas_page_config{
+        .width = 16,
+        .height = 16,
+        .padding = 1,
+    });
+
+    const glyph_atlas_key glyph_a{.face_id = 1, .glyph_id = 65, .pixel_size = 20};
+    const glyph_atlas_key glyph_b{.face_id = 1, .glyph_id = 66, .pixel_size = 20};
+    const glyph_atlas_key glyph_c{.face_id = 1, .glyph_id = 67, .pixel_size = 20};
+    const glyph_atlas_key glyph_d{.face_id = 1, .glyph_id = 68, .pixel_size = 20};
+    const glyph_atlas_key glyph_e{.face_id = 1, .glyph_id = 69, .pixel_size = 20};
+
+    require(cache.consume_dirty_page_updates().empty(), "glyph atlas starts with no dirty page updates");
+
+    require(cache.cache_glyph(glyph_a, 5, 6).has_value(), "glyph atlas queues first dirty page");
+    std::vector<render_text_atlas_update> first_updates = cache.consume_dirty_page_updates();
+    require(first_updates.size() == 1, "glyph atlas emits first dirty page update");
+    require(first_updates[0].page.id == 1, "first dirty update uses page one");
+    require(first_updates[0].page.revision == 1, "first dirty update reports page revision one");
+    require(near(first_updates[0].updated_bounds.x, 1.0f), "first dirty update tracks glyph x");
+    require(near(first_updates[0].updated_bounds.y, 1.0f), "first dirty update tracks glyph y");
+    require(near(first_updates[0].updated_bounds.width, 5.0f), "first dirty update tracks glyph width");
+    require(near(first_updates[0].updated_bounds.height, 6.0f), "first dirty update tracks glyph height");
+    require(first_updates[0].rgba.empty(), "atlas cache update is metadata-only before rasterization");
+    require(cache.consume_dirty_page_updates().empty(), "glyph atlas consumes dirty page updates once");
+
+    require(cache.cache_glyph(glyph_b, 5, 6).has_value(), "glyph atlas queues second glyph update");
+    require(cache.cache_glyph(glyph_c, 5, 6).has_value(), "glyph atlas merges row-wrapped glyph update");
+    std::vector<render_text_atlas_update> merged_updates = cache.consume_dirty_page_updates();
+    require(merged_updates.size() == 1, "glyph atlas merges dirty bounds per page");
+    require(merged_updates[0].page.id == 1, "merged dirty update stays on page one");
+    require(merged_updates[0].page.revision == 3, "merged dirty update reports latest page revision");
+    require(near(merged_updates[0].updated_bounds.x, 1.0f), "merged dirty bounds keep left edge");
+    require(near(merged_updates[0].updated_bounds.y, 1.0f), "merged dirty bounds keep top edge");
+    require(near(merged_updates[0].updated_bounds.width, 12.0f), "merged dirty bounds span packed columns");
+    require(near(merged_updates[0].updated_bounds.height, 14.0f), "merged dirty bounds span wrapped rows");
+
+    require(cache.cache_glyph(glyph_d, 5, 6).has_value(), "glyph atlas queues final page one glyph");
+    require(cache.cache_glyph(glyph_e, 5, 6).has_value(), "glyph atlas queues page two glyph");
+    std::vector<render_text_atlas_update> page_updates = cache.consume_dirty_page_updates();
+    require(page_updates.size() == 2, "glyph atlas emits dirty updates for both touched pages");
+    require(page_updates[0].page.id == 1, "first multi-page update keeps page order");
+    require(page_updates[0].page.revision == 4, "page one update reports latest revision");
+    require(page_updates[1].page.id == 2, "second multi-page update reports page two");
+    require(page_updates[1].page.revision == 1, "page two update starts at revision one");
+
+    require(cache.cache_glyph(glyph_a, 5, 6).has_value(), "glyph atlas returns cached glyph before dirty check");
+    require(cache.consume_dirty_page_updates().empty(), "cached glyph does not dirty atlas page");
+    require(
+        !cache.cache_glyph(glyph_atlas_key{.face_id = 1, .glyph_id = 999, .pixel_size = 20}, 15, 15).has_value(),
+        "glyph atlas rejects oversized glyph before dirtying page");
+    require(cache.consume_dirty_page_updates().empty(), "rejected glyph does not dirty atlas page");
+}
+
 void test_fake_measure_and_layout_emit_stable_glyphs()
 {
     using namespace quiz_vulkan::render;
@@ -977,6 +1035,7 @@ int main()
     test_font_face_catalog_resolves_exact_faces_and_fallback();
     test_font_face_catalog_reports_codepoint_fallback_diagnostics();
     test_glyph_atlas_cache_allocates_rows_pages_and_cached_slots();
+    test_glyph_atlas_cache_consumes_dirty_page_updates_by_revision();
     test_fake_measure_and_layout_emit_stable_glyphs();
     test_fake_multirun_layout_tracks_lines_offsets_and_alignment();
     test_fake_newline_edge_cases_preserve_empty_line_height();

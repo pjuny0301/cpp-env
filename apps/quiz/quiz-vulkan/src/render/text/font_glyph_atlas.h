@@ -262,12 +262,34 @@ public:
         return output;
     }
 
+    std::vector<render_text_atlas_update> consume_dirty_page_updates()
+    {
+        std::vector<render_text_atlas_update> updates;
+        updates.reserve(pages_.size());
+        for (page_state& page : pages_) {
+            if (!page.dirty) {
+                continue;
+            }
+
+            updates.push_back(render_text_atlas_update{
+                .page = page.page,
+                .updated_bounds = page.dirty_bounds,
+                .rgba = {},
+            });
+            page.dirty = false;
+            page.dirty_bounds = {};
+        }
+        return updates;
+    }
+
 private:
     struct page_state {
         render_text_atlas_page page;
         std::size_t cursor_x = 0;
         std::size_t cursor_y = 0;
         std::size_t row_height = 0;
+        bool dirty = false;
+        render_rect dirty_bounds;
     };
 
     struct allocation_record {
@@ -314,7 +336,28 @@ private:
         page.cursor_x += padded_width;
         page.row_height = std::max(page.row_height, padded_height);
         ++page.page.revision;
+        mark_dirty(page, bounds);
         return bounds;
+    }
+
+    static void mark_dirty(page_state& page, render_rect bounds)
+    {
+        if (!page.dirty) {
+            page.dirty = true;
+            page.dirty_bounds = bounds;
+            return;
+        }
+
+        const float left = std::min(page.dirty_bounds.x, bounds.x);
+        const float top = std::min(page.dirty_bounds.y, bounds.y);
+        const float right = std::max(page.dirty_bounds.x + page.dirty_bounds.width, bounds.x + bounds.width);
+        const float bottom = std::max(page.dirty_bounds.y + page.dirty_bounds.height, bounds.y + bounds.height);
+        page.dirty_bounds = render_rect{
+            left,
+            top,
+            right - left,
+            bottom - top,
+        };
     }
 
     glyph_atlas_slot record_allocation(glyph_atlas_key key, std::size_t page_index, render_rect bounds)

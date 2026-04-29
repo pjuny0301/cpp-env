@@ -30,6 +30,29 @@ vulkan_backend_fallback_reason first_unready_reason(
     return vulkan_backend_fallback_reason::none;
 }
 
+vulkan_recorded_draw_batch make_recorded_draw_batch(
+    const vulkan_draw_batch& batch,
+    std::size_t recording_index)
+{
+    return vulkan_recorded_draw_batch{
+        .kind = batch.kind,
+        .command_index = batch.command_index,
+        .recording_index = recording_index,
+        .bounds = batch.bounds,
+        .clipped_bounds = batch.clipped_bounds,
+        .scissor = batch.scissor,
+    };
+}
+
+void mark_recorder_failure(
+    vulkan_backend_command_recorder_state& state,
+    vulkan_command_recorder_failure_stage stage,
+    std::size_t recording_index)
+{
+    state.failure_stage = stage;
+    state.failure_recording_index = recording_index;
+}
+
 } // namespace
 
 std::string_view fallback_reason_name(vulkan_backend_fallback_reason reason)
@@ -92,6 +115,22 @@ std::string_view frame_stage_name(vulkan_backend_frame_stage stage)
     return "unknown";
 }
 
+std::string_view command_recorder_failure_stage_name(vulkan_command_recorder_failure_stage stage)
+{
+    switch (stage) {
+    case vulkan_command_recorder_failure_stage::none:
+        return "none";
+    case vulkan_command_recorder_failure_stage::begin_recording:
+        return "begin_recording";
+    case vulkan_command_recorder_failure_stage::record_draw_batch:
+        return "record_draw_batch";
+    case vulkan_command_recorder_failure_stage::finish_recording:
+        return "finish_recording";
+    }
+
+    return "unknown";
+}
+
 vulkan_backend_lifecycle_readiness null_vulkan_backend_device::current_lifecycle_readiness() const
 {
     return {};
@@ -124,8 +163,118 @@ bool null_vulkan_backend_device::present_frame()
     return false;
 }
 
+diagnostic_vulkan_command_recorder::diagnostic_vulkan_command_recorder(bool ready)
+    : diagnostic_vulkan_command_recorder(diagnostic_vulkan_command_recorder_options{.ready = ready})
+{
+}
+
+diagnostic_vulkan_command_recorder::diagnostic_vulkan_command_recorder(
+    diagnostic_vulkan_command_recorder_options options)
+    : options_(options)
+{
+    state_.ready = options_.ready;
+}
+
+bool diagnostic_vulkan_command_recorder::begin_recording(
+    vulkan_surface_extent surface,
+    std::size_t planned_batch_count)
+{
+    state_ = {};
+    state_.ready = options_.ready;
+    state_.planned_batch_count = planned_batch_count;
+    if (!options_.ready || !surface.valid()
+        || options_.fail_at == vulkan_command_recorder_failure_stage::begin_recording) {
+        mark_recorder_failure(state_, vulkan_command_recorder_failure_stage::begin_recording, 0);
+        return false;
+    }
+
+    state_.frame_open = true;
+    return true;
+}
+
+bool diagnostic_vulkan_command_recorder::record_draw_batch(const vulkan_draw_batch& batch)
+{
+    const std::size_t recording_index = state_.recorded_batch_count;
+    if (state_.failed()) {
+        return false;
+    }
+    if (!state_.ready || !state_.frame_open || state_.command_buffer_recorded) {
+        mark_recorder_failure(
+            state_,
+            vulkan_command_recorder_failure_stage::record_draw_batch,
+            recording_index);
+        return false;
+    }
+    if (options_.fail_at == vulkan_command_recorder_failure_stage::record_draw_batch
+        && recording_index == options_.fail_recording_index) {
+        mark_recorder_failure(
+            state_,
+            vulkan_command_recorder_failure_stage::record_draw_batch,
+            recording_index);
+        return false;
+    }
+
+    state_.recorded_batches.push_back(make_recorded_draw_batch(batch, recording_index));
+    state_.recorded_batch_count = state_.recorded_batches.size();
+    if (state_.recorded_batch_count > state_.planned_batch_count) {
+        mark_recorder_failure(
+            state_,
+            vulkan_command_recorder_failure_stage::record_draw_batch,
+            recording_index);
+        return false;
+    }
+
+    return state_.recorded_batch_count <= state_.planned_batch_count;
+}
+
+bool diagnostic_vulkan_command_recorder::finish_recording()
+{
+    if (state_.failed()) {
+        return false;
+    }
+    if (!state_.ready || !state_.frame_open || state_.command_buffer_recorded) {
+        mark_recorder_failure(
+            state_,
+            vulkan_command_recorder_failure_stage::finish_recording,
+            state_.recorded_batch_count);
+        return false;
+    }
+    if (options_.fail_at == vulkan_command_recorder_failure_stage::finish_recording) {
+        mark_recorder_failure(
+            state_,
+            vulkan_command_recorder_failure_stage::finish_recording,
+            state_.recorded_batch_count);
+        return false;
+    }
+    if (state_.recorded_batch_count != state_.planned_batch_count) {
+        mark_recorder_failure(
+            state_,
+            vulkan_command_recorder_failure_stage::finish_recording,
+            state_.recorded_batch_count);
+        return false;
+    }
+
+    state_.command_buffer_recorded = true;
+    return true;
+}
+
+const vulkan_backend_command_recorder_state& diagnostic_vulkan_command_recorder::recorder_state() const
+{
+    return state_;
+}
+
 vulkan_backend_frame_result submit_vulkan_backend_frame(
     vulkan_backend_device_interface& device,
+    const render_draw_list& draw_list,
+    render_rect viewport)
+{
+    diagnostic_vulkan_command_recorder command_recorder;
+    return submit_vulkan_backend_frame(device, command_recorder, draw_list, viewport);
+}
+
+vulkan_backend_frame_result submit_vulkan_backend_frame(
+    vulkan_backend_device_interface& device,
+    vulkan_command_recorder_interface& command_recorder,
     const render_draw_list& draw_list,
     render_rect viewport)
 {
@@ -171,8 +320,26 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
         result.fallback_reason = vulkan_backend_fallback_reason::begin_frame_failed;
         return result;
     }
-    result.command_recorder.frame_open = true;
     result.reached_stage = vulkan_backend_frame_stage::frame_begun;
+
+    if (!command_recorder.begin_recording(result.surface, plan.batches.size())) {
+        result.command_recorder = command_recorder.recorder_state();
+        result.fallback_reason = vulkan_backend_fallback_reason::record_commands_failed;
+        return result;
+    }
+    for (const vulkan_draw_batch& batch : plan.batches) {
+        if (!command_recorder.record_draw_batch(batch)) {
+            result.command_recorder = command_recorder.recorder_state();
+            result.fallback_reason = vulkan_backend_fallback_reason::record_commands_failed;
+            return result;
+        }
+    }
+    if (!command_recorder.finish_recording()) {
+        result.command_recorder = command_recorder.recorder_state();
+        result.fallback_reason = vulkan_backend_fallback_reason::record_commands_failed;
+        return result;
+    }
+    result.command_recorder = command_recorder.recorder_state();
 
     result.commands_recorded = device.record_frame_commands(plan);
     if (!result.commands_recorded) {
@@ -180,8 +347,6 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
         return result;
     }
     result.recorded_batch_count = plan.batches.size();
-    result.command_recorder.recorded_batch_count = plan.batches.size();
-    result.command_recorder.command_buffer_recorded = true;
     result.reached_stage = vulkan_backend_frame_stage::commands_recorded;
 
     result.frame_submitted = device.submit_frame();

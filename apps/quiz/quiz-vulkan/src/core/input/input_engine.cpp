@@ -29,6 +29,18 @@ pointer_phase to_pointer_phase(raw_platform_pointer_phase phase)
     return pointer_phase::cancel;
 }
 
+scroll_delta_unit to_scroll_delta_unit(raw_platform_scroll_delta_unit unit)
+{
+    switch (unit) {
+    case raw_platform_scroll_delta_unit::pixels:
+        return scroll_delta_unit::pixels;
+    case raw_platform_scroll_delta_unit::lines:
+        return scroll_delta_unit::lines;
+    }
+
+    return scroll_delta_unit::pixels;
+}
+
 void append_gestures(std::vector<input_event>& events, const std::vector<gesture_event>& gestures)
 {
     for (const gesture_event& gesture : gestures) {
@@ -96,6 +108,15 @@ std::vector<input_event> input_engine::process_raw_event(const raw_platform_inpu
                 return process_ime_event(raw_event);
             } else if constexpr (std::is_same_v<event_type, raw_platform_key_event>) {
                 return process_key_event(raw_event);
+            } else if constexpr (std::is_same_v<event_type, raw_platform_scroll_event>) {
+                return process_scroll_event(raw_scroll_event{
+                    .timestamp_ms = raw_event.timestamp_ms,
+                    .x = raw_event.x,
+                    .y = raw_event.y,
+                    .delta_x = raw_event.delta_x,
+                    .delta_y = raw_event.delta_y,
+                    .unit = to_scroll_delta_unit(raw_event.unit),
+                });
             } else {
                 return process_focus_event(raw_event);
             }

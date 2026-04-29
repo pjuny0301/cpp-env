@@ -38,6 +38,11 @@ enum class raw_platform_ime_phase {
     cancel,
 };
 
+enum class raw_platform_scroll_delta_unit {
+    pixels,
+    lines,
+};
+
 struct raw_platform_pointer_event {
     std::int64_t timestamp_ms = 0;
     std::int32_t pointer_id = 0;
@@ -75,11 +80,21 @@ struct raw_platform_focus_event {
     raw_platform_focus_phase phase = raw_platform_focus_phase::gained;
 };
 
+struct raw_platform_scroll_event {
+    std::int64_t timestamp_ms = 0;
+    float x = 0.0f;
+    float y = 0.0f;
+    float delta_x = 0.0f;
+    float delta_y = 0.0f;
+    raw_platform_scroll_delta_unit unit = raw_platform_scroll_delta_unit::pixels;
+};
+
 using raw_platform_input_event = std::variant<
     raw_platform_pointer_event,
     raw_platform_text_event,
     raw_platform_ime_event,
     raw_platform_key_event,
-    raw_platform_focus_event>;
+    raw_platform_focus_event,
+    raw_platform_scroll_event>;
 
 } // namespace quiz_vulkan

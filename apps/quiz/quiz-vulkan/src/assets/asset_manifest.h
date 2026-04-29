@@ -489,6 +489,58 @@ inline std::vector<std::string> split_manifest_aliases(std::string_view aliases)
     return result;
 }
 
+inline std::string escape_manifest_value(std::string_view value)
+{
+    std::string escaped;
+    for (const char character : value) {
+        switch (character) {
+            case '\\':
+                escaped.append("\\\\");
+                break;
+            case '"':
+                escaped.append("\\\"");
+                break;
+            case '\n':
+                escaped.append("\\n");
+                break;
+            case '\r':
+                escaped.append("\\r");
+                break;
+            case '\t':
+                escaped.append("\\t");
+                break;
+            default:
+                escaped.push_back(character);
+                break;
+        }
+    }
+    return escaped;
+}
+
+inline void append_manifest_field(
+    std::string& line,
+    std::string_view key,
+    std::string_view value)
+{
+    line.push_back(' ');
+    line.append(key);
+    line.append("=\"");
+    line.append(escape_manifest_value(value));
+    line.push_back('"');
+}
+
+inline std::string format_manifest_aliases(const std::vector<std::string>& aliases)
+{
+    std::string result;
+    for (const std::string& alias : aliases) {
+        if (!result.empty()) {
+            result.push_back(',');
+        }
+        result.append(alias);
+    }
+    return result;
+}
+
 inline void add_manifest_validation_issue(
     asset_manifest_validation_result& result,
     asset_manifest_validation_issue_kind kind,
@@ -562,6 +614,38 @@ inline bool rooted_paths_conflict(
 }
 
 } // namespace detail
+
+inline std::string format_asset_manifest(const asset_manifest& manifest)
+{
+    std::string formatted;
+    for (const asset_manifest_root& root : manifest.roots) {
+        std::string line = "root";
+        detail::append_manifest_field(line, "id", root.id);
+        detail::append_manifest_field(line, "path", root.root_path.generic_string());
+        if (!root.aliases.empty()) {
+            detail::append_manifest_field(line, "aliases", detail::format_manifest_aliases(root.aliases));
+        }
+        formatted.append(line);
+        formatted.push_back('\n');
+    }
+
+    for (const asset_manifest_entry& entry : manifest.entries) {
+        std::string line = "entry";
+        detail::append_manifest_field(line, "id", entry.id);
+        detail::append_manifest_field(line, "type", asset_type_token(entry.type));
+        detail::append_manifest_field(line, "uri", entry.uri);
+        if (!entry.root_id.empty()) {
+            detail::append_manifest_field(line, "root", entry.root_id);
+        }
+        if (!entry.cache_revision.empty()) {
+            detail::append_manifest_field(line, "rev", entry.cache_revision);
+        }
+        formatted.append(line);
+        formatted.push_back('\n');
+    }
+
+    return formatted;
+}
 
 inline asset_manifest_parse_result parse_asset_manifest(std::string_view text)
 {
@@ -1073,6 +1157,81 @@ inline asset_manifest_catalog_summary summarize_asset_manifest_catalog(
     const asset_resolver_interface& resolver)
 {
     return summarize_asset_manifest_catalog(normalize_asset_manifest(manifest, resolver));
+}
+
+struct asset_manifest_missing_root_report {
+    std::string entry_id;
+    std::string root_id;
+};
+
+struct asset_manifest_unsupported_scheme_report {
+    std::string entry_id;
+    std::string uri;
+    std::string diagnostic;
+};
+
+struct asset_manifest_cache_key_collision_report {
+    std::string entry_id;
+    std::string related_entry_id;
+    asset_cache_key cache_key;
+};
+
+struct asset_manifest_diagnostic_report {
+    std::vector<asset_manifest_missing_root_report> missing_roots;
+    std::vector<asset_manifest_unsupported_scheme_report> unsupported_schemes;
+    std::vector<asset_manifest_cache_key_collision_report> cache_key_collisions;
+    asset_manifest_validation_result validation;
+
+    [[nodiscard]] bool ok() const
+    {
+        return missing_roots.empty() && unsupported_schemes.empty() && cache_key_collisions.empty();
+    }
+};
+
+inline asset_manifest_diagnostic_report make_asset_manifest_diagnostic_report(
+    const asset_manifest& manifest,
+    const asset_resolver_interface& resolver)
+{
+    asset_manifest_diagnostic_report report{
+        .validation = validate_asset_manifest(manifest, resolver),
+    };
+
+    for (const asset_manifest_validation_issue& issue : report.validation.issues) {
+        if (issue.kind == asset_manifest_validation_issue_kind::missing_root) {
+            report.missing_roots.push_back(asset_manifest_missing_root_report{
+                .entry_id = issue.id,
+                .root_id = issue.related_id,
+            });
+            continue;
+        }
+        if (issue.kind == asset_manifest_validation_issue_kind::cache_key_collision) {
+            report.cache_key_collisions.push_back(asset_manifest_cache_key_collision_report{
+                .entry_id = issue.id,
+                .related_entry_id = issue.related_id,
+                .cache_key = issue.cache_key,
+            });
+        }
+    }
+
+    for (const asset_manifest_entry& entry : manifest.entries) {
+        if (!entry.valid()) {
+            continue;
+        }
+
+        const asset_resolve_result resolved = resolver.resolve(asset_resolve_request{
+            .type = entry.type,
+            .uri = entry.uri,
+        });
+        if (resolved.status == asset_resolve_status::unsupported_scheme) {
+            report.unsupported_schemes.push_back(asset_manifest_unsupported_scheme_report{
+                .entry_id = entry.id,
+                .uri = entry.uri,
+                .diagnostic = resolved.diagnostic,
+            });
+        }
+    }
+
+    return report;
 }
 
 } // namespace quiz_vulkan::assets

@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <string_view>
+#include <vector>
 
 namespace quiz_vulkan::render::vulkan_backend {
 
@@ -64,17 +65,82 @@ struct vulkan_backend_lifecycle_readiness {
     }
 };
 
+struct vulkan_recorded_draw_batch {
+    vulkan_batch_kind kind = vulkan_batch_kind::quad;
+    std::size_t command_index = 0;
+    std::size_t recording_index = 0;
+    render_rect bounds;
+    render_rect clipped_bounds;
+    vulkan_scissor_rect scissor;
+};
+
+enum class vulkan_command_recorder_failure_stage {
+    none,
+    begin_recording,
+    record_draw_batch,
+    finish_recording,
+};
+
+std::string_view command_recorder_failure_stage_name(vulkan_command_recorder_failure_stage stage);
+
 struct vulkan_backend_command_recorder_state {
     bool ready = false;
     bool frame_open = false;
     bool command_buffer_recorded = false;
+    vulkan_command_recorder_failure_stage failure_stage = vulkan_command_recorder_failure_stage::none;
+    std::size_t failure_recording_index = 0;
     std::size_t planned_batch_count = 0;
     std::size_t recorded_batch_count = 0;
+    std::vector<vulkan_recorded_draw_batch> recorded_batches;
 
     bool empty() const
     {
-        return planned_batch_count == 0 && recorded_batch_count == 0;
+        return planned_batch_count == 0 && recorded_batch_count == 0
+            && recorded_batches.empty();
     }
+
+    bool completed() const
+    {
+        return ready && frame_open && command_buffer_recorded
+            && recorded_batch_count == planned_batch_count
+            && recorded_batches.size() == recorded_batch_count;
+    }
+
+    bool failed() const
+    {
+        return failure_stage != vulkan_command_recorder_failure_stage::none;
+    }
+};
+
+struct diagnostic_vulkan_command_recorder_options {
+    bool ready = true;
+    vulkan_command_recorder_failure_stage fail_at = vulkan_command_recorder_failure_stage::none;
+    std::size_t fail_recording_index = 0;
+};
+
+class vulkan_command_recorder_interface {
+public:
+    virtual ~vulkan_command_recorder_interface() = default;
+
+    virtual bool begin_recording(vulkan_surface_extent surface, std::size_t planned_batch_count) = 0;
+    virtual bool record_draw_batch(const vulkan_draw_batch& batch) = 0;
+    virtual bool finish_recording() = 0;
+    virtual const vulkan_backend_command_recorder_state& recorder_state() const = 0;
+};
+
+class diagnostic_vulkan_command_recorder final : public vulkan_command_recorder_interface {
+public:
+    explicit diagnostic_vulkan_command_recorder(bool ready = true);
+    explicit diagnostic_vulkan_command_recorder(diagnostic_vulkan_command_recorder_options options);
+
+    bool begin_recording(vulkan_surface_extent surface, std::size_t planned_batch_count) override;
+    bool record_draw_batch(const vulkan_draw_batch& batch) override;
+    bool finish_recording() override;
+    const vulkan_backend_command_recorder_state& recorder_state() const override;
+
+private:
+    diagnostic_vulkan_command_recorder_options options_;
+    vulkan_backend_command_recorder_state state_;
 };
 
 struct vulkan_backend_frame_result {
@@ -128,6 +194,12 @@ public:
 
 vulkan_backend_frame_result submit_vulkan_backend_frame(
     vulkan_backend_device_interface& device,
+    const render_draw_list& draw_list,
+    render_rect viewport);
+
+vulkan_backend_frame_result submit_vulkan_backend_frame(
+    vulkan_backend_device_interface& device,
+    vulkan_command_recorder_interface& command_recorder,
     const render_draw_list& draw_list,
     render_rect viewport);
 

@@ -225,6 +225,32 @@ void test_vulkan_backend_frame_stage_names_are_stable()
         "frame stage name for frame presented is stable");
 }
 
+void test_vulkan_command_recorder_failure_stage_names_are_stable()
+{
+    using namespace quiz_vulkan::render;
+
+    require(
+        vulkan_backend::command_recorder_failure_stage_name(
+            vulkan_backend::vulkan_command_recorder_failure_stage::none)
+            == std::string_view{"none"},
+        "command recorder failure stage name for none is stable");
+    require(
+        vulkan_backend::command_recorder_failure_stage_name(
+            vulkan_backend::vulkan_command_recorder_failure_stage::begin_recording)
+            == std::string_view{"begin_recording"},
+        "command recorder failure stage name for begin is stable");
+    require(
+        vulkan_backend::command_recorder_failure_stage_name(
+            vulkan_backend::vulkan_command_recorder_failure_stage::record_draw_batch)
+            == std::string_view{"record_draw_batch"},
+        "command recorder failure stage name for record is stable");
+    require(
+        vulkan_backend::command_recorder_failure_stage_name(
+            vulkan_backend::vulkan_command_recorder_failure_stage::finish_recording)
+            == std::string_view{"finish_recording"},
+        "command recorder failure stage name for finish is stable");
+}
+
 quiz_vulkan::render::render_draw_command make_quad_command(
     std::string node_id,
     quiz_vulkan::render::render_rect bounds,
@@ -746,6 +772,198 @@ void test_vulkan_frame_plan_ignores_unmatched_pop_clip()
     require(batch.scissor.height == 4, "batch after unmatched pop scissor height");
 }
 
+void test_vulkan_diagnostic_command_recorder_records_planned_batches()
+{
+    using namespace quiz_vulkan::render;
+
+    render_draw_list draw_list;
+    draw_list.commands.push_back(make_quad_command(
+        "quad",
+        render_rect{10.0f, 20.0f, 30.0f, 40.0f},
+        render_color{0.8f, 0.7f, 0.6f, 1.0f}));
+    draw_list.commands.push_back(make_image_command(
+        "image",
+        render_rect{50.0f, 60.0f, 20.0f, 20.0f},
+        "fixture://renderer/image.png"));
+
+    const vulkan_backend::vulkan_frame_plan plan = vulkan_backend::build_vulkan_frame_plan(
+        draw_list,
+        vulkan_backend::vulkan_frame_plan_options{
+            .viewport = render_rect{0.0f, 0.0f, 100.0f, 100.0f},
+            .surface_width = 10,
+            .surface_height = 10,
+        });
+
+    vulkan_backend::diagnostic_vulkan_command_recorder recorder;
+    require(
+        recorder.begin_recording(
+            vulkan_backend::vulkan_surface_extent{.width = 10, .height = 10},
+            plan.batches.size()),
+        "diagnostic recorder begins command buffer recording");
+    for (const vulkan_backend::vulkan_draw_batch& batch : plan.batches) {
+        require(recorder.record_draw_batch(batch), "diagnostic recorder records each planned batch");
+    }
+    require(recorder.finish_recording(), "diagnostic recorder finishes command buffer recording");
+
+    const vulkan_backend::vulkan_backend_command_recorder_state& state = recorder.recorder_state();
+    require(state.completed(), "diagnostic recorder reports completed command buffer state");
+    require(!state.failed(), "diagnostic recorder reports no failure after successful recording");
+    require(
+        state.failure_stage == vulkan_backend::vulkan_command_recorder_failure_stage::none,
+        "diagnostic recorder keeps none failure stage after successful recording");
+    require(state.planned_batch_count == 2, "diagnostic recorder stores planned batch count");
+    require(state.recorded_batch_count == 2, "diagnostic recorder stores recorded batch count");
+    require(state.recorded_batches.size() == 2, "diagnostic recorder stores recorded batches");
+
+    const vulkan_backend::vulkan_recorded_draw_batch& first = state.recorded_batches[0];
+    require(first.kind == vulkan_backend::vulkan_batch_kind::quad, "diagnostic recorder stores first batch kind");
+    require(first.command_index == 0, "diagnostic recorder stores first source command index");
+    require(first.recording_index == 0, "diagnostic recorder stores first recording order");
+    require(first.clipped_bounds.x == 10.0f, "diagnostic recorder stores first clipped x");
+    require(first.scissor.x == 1, "diagnostic recorder stores first scissor x");
+    require(first.scissor.y == 2, "diagnostic recorder stores first scissor y");
+    require(first.scissor.width == 3, "diagnostic recorder stores first scissor width");
+    require(first.scissor.height == 4, "diagnostic recorder stores first scissor height");
+
+    const vulkan_backend::vulkan_recorded_draw_batch& second = state.recorded_batches[1];
+    require(second.kind == vulkan_backend::vulkan_batch_kind::image, "diagnostic recorder stores second batch kind");
+    require(second.command_index == 1, "diagnostic recorder stores second source command index");
+    require(second.recording_index == 1, "diagnostic recorder stores second recording order");
+    require(second.scissor.x == 5, "diagnostic recorder stores second scissor x");
+    require(second.scissor.y == 6, "diagnostic recorder stores second scissor y");
+    require(second.scissor.width == 2, "diagnostic recorder stores second scissor width");
+    require(second.scissor.height == 2, "diagnostic recorder stores second scissor height");
+}
+
+void test_vulkan_diagnostic_command_recorder_reports_begin_failure()
+{
+    using namespace quiz_vulkan::render;
+
+    vulkan_backend::diagnostic_vulkan_command_recorder recorder(
+        vulkan_backend::diagnostic_vulkan_command_recorder_options{
+            .ready = true,
+            .fail_at = vulkan_backend::vulkan_command_recorder_failure_stage::begin_recording,
+        });
+
+    require(
+        !recorder.begin_recording(
+            vulkan_backend::vulkan_surface_extent{.width = 10, .height = 10},
+            1),
+        "diagnostic recorder can deterministically fail begin");
+
+    const vulkan_backend::vulkan_backend_command_recorder_state& state = recorder.recorder_state();
+    require(state.ready, "begin failure recorder remains logically ready");
+    require(!state.frame_open, "begin failure does not open recorder frame");
+    require(!state.command_buffer_recorded, "begin failure does not record command buffer");
+    require(state.failed(), "begin failure marks recorder state failed");
+    require(
+        state.failure_stage == vulkan_backend::vulkan_command_recorder_failure_stage::begin_recording,
+        "begin failure records begin failure stage");
+    require(state.failure_recording_index == 0, "begin failure records deterministic failure index");
+    require(state.planned_batch_count == 1, "begin failure preserves planned batch count");
+    require(state.recorded_batch_count == 0, "begin failure records no batches");
+    require(state.recorded_batches.empty(), "begin failure stores no recorded batches");
+}
+
+void test_vulkan_diagnostic_command_recorder_reports_record_failure()
+{
+    using namespace quiz_vulkan::render;
+
+    render_draw_list draw_list;
+    draw_list.commands.push_back(make_quad_command(
+        "first",
+        render_rect{0.0f, 0.0f, 40.0f, 40.0f},
+        render_color{1.0f, 0.0f, 0.0f, 1.0f}));
+    draw_list.commands.push_back(make_quad_command(
+        "second",
+        render_rect{50.0f, 50.0f, 20.0f, 20.0f},
+        render_color{0.0f, 1.0f, 0.0f, 1.0f}));
+
+    const vulkan_backend::vulkan_frame_plan plan = vulkan_backend::build_vulkan_frame_plan(
+        draw_list,
+        vulkan_backend::vulkan_frame_plan_options{
+            .viewport = render_rect{0.0f, 0.0f, 100.0f, 100.0f},
+            .surface_width = 10,
+            .surface_height = 10,
+        });
+
+    vulkan_backend::diagnostic_vulkan_command_recorder recorder(
+        vulkan_backend::diagnostic_vulkan_command_recorder_options{
+            .ready = true,
+            .fail_at = vulkan_backend::vulkan_command_recorder_failure_stage::record_draw_batch,
+            .fail_recording_index = 1,
+        });
+
+    require(
+        recorder.begin_recording(
+            vulkan_backend::vulkan_surface_extent{.width = 10, .height = 10},
+            plan.batches.size()),
+        "record failure recorder begins successfully");
+    require(recorder.record_draw_batch(plan.batches[0]), "record failure recorder records first batch");
+    require(!recorder.record_draw_batch(plan.batches[1]), "record failure recorder fails second batch");
+    require(!recorder.finish_recording(), "record failure recorder does not finish after failed batch");
+
+    const vulkan_backend::vulkan_backend_command_recorder_state& state = recorder.recorder_state();
+    require(state.ready, "record failure recorder remains ready");
+    require(state.frame_open, "record failure keeps frame open");
+    require(!state.command_buffer_recorded, "record failure does not finish command buffer");
+    require(state.failed(), "record failure marks recorder state failed");
+    require(
+        state.failure_stage == vulkan_backend::vulkan_command_recorder_failure_stage::record_draw_batch,
+        "record failure records record failure stage");
+    require(state.failure_recording_index == 1, "record failure records failed batch index");
+    require(state.planned_batch_count == 2, "record failure preserves planned batch count");
+    require(state.recorded_batch_count == 1, "record failure preserves successfully recorded count");
+    require(state.recorded_batches.size() == 1, "record failure stores only successful batches");
+    require(state.recorded_batches.front().recording_index == 0, "record failure preserves first recording index");
+}
+
+void test_vulkan_diagnostic_command_recorder_reports_finish_failure()
+{
+    using namespace quiz_vulkan::render;
+
+    render_draw_list draw_list;
+    draw_list.commands.push_back(make_quad_command(
+        "quad",
+        render_rect{0.0f, 0.0f, 100.0f, 100.0f},
+        render_color{1.0f, 1.0f, 1.0f, 1.0f}));
+
+    const vulkan_backend::vulkan_frame_plan plan = vulkan_backend::build_vulkan_frame_plan(
+        draw_list,
+        vulkan_backend::vulkan_frame_plan_options{
+            .viewport = render_rect{0.0f, 0.0f, 100.0f, 100.0f},
+            .surface_width = 10,
+            .surface_height = 10,
+        });
+
+    vulkan_backend::diagnostic_vulkan_command_recorder recorder(
+        vulkan_backend::diagnostic_vulkan_command_recorder_options{
+            .ready = true,
+            .fail_at = vulkan_backend::vulkan_command_recorder_failure_stage::finish_recording,
+        });
+
+    require(
+        recorder.begin_recording(
+            vulkan_backend::vulkan_surface_extent{.width = 10, .height = 10},
+            plan.batches.size()),
+        "finish failure recorder begins successfully");
+    require(recorder.record_draw_batch(plan.batches.front()), "finish failure recorder records planned batch");
+    require(!recorder.finish_recording(), "finish failure recorder fails finish");
+
+    const vulkan_backend::vulkan_backend_command_recorder_state& state = recorder.recorder_state();
+    require(state.ready, "finish failure recorder remains ready");
+    require(state.frame_open, "finish failure keeps frame open");
+    require(!state.command_buffer_recorded, "finish failure does not record command buffer");
+    require(state.failed(), "finish failure marks recorder state failed");
+    require(
+        state.failure_stage == vulkan_backend::vulkan_command_recorder_failure_stage::finish_recording,
+        "finish failure records finish failure stage");
+    require(state.failure_recording_index == 1, "finish failure records failure after one recorded batch");
+    require(state.planned_batch_count == 1, "finish failure preserves planned batch count");
+    require(state.recorded_batch_count == 1, "finish failure preserves recorded batch count");
+    require(state.recorded_batches.size() == 1, "finish failure preserves recorded batches");
+}
+
 void test_vulkan_backend_adapter_completes_fake_device_lifecycle()
 {
     using namespace quiz_vulkan::render;
@@ -757,8 +975,10 @@ void test_vulkan_backend_adapter_completes_fake_device_lifecycle()
         render_color{0.25f, 0.5f, 0.75f, 1.0f}));
 
     fake_vulkan_backend_device device(vulkan_backend::vulkan_surface_extent{.width = 64, .height = 32});
+    vulkan_backend::diagnostic_vulkan_command_recorder recorder;
     const vulkan_backend::vulkan_backend_frame_result result = vulkan_backend::submit_vulkan_backend_frame(
         device,
+        recorder,
         draw_list,
         render_rect{0.0f, 0.0f, 64.0f, 64.0f});
 
@@ -787,6 +1007,16 @@ void test_vulkan_backend_adapter_completes_fake_device_lifecycle()
     require(result.command_recorder.command_buffer_recorded, "fake backend command buffer is recorded");
     require(result.command_recorder.planned_batch_count == 1, "fake backend command recorder sees planned batch count");
     require(result.command_recorder.recorded_batch_count == 1, "fake backend command recorder sees recorded batch count");
+    require(result.command_recorder.completed(), "fake backend command recorder reports completed state");
+    require(!result.command_recorder.failed(), "fake backend command recorder reports no failure");
+    require(recorder.recorder_state().completed(), "adapter drives injected command recorder to completion");
+    require(result.command_recorder.recorded_batches.size() == 1, "fake backend command recorder stores one batch");
+    require(
+        result.command_recorder.recorded_batches.front().command_index == 0,
+        "fake backend command recorder stores source command index");
+    require(
+        result.command_recorder.recorded_batches.front().recording_index == 0,
+        "fake backend command recorder stores recording order");
 
     require(device.calls.size() == 4, "fake backend lifecycle call count");
     require(device.calls[0] == "begin", "fake backend begins before recording");
@@ -973,6 +1203,7 @@ void test_vulkan_backend_adapter_falls_back_when_command_recorder_is_unready()
     require(!result.command_recorder.ready, "backend command recorder state is not ready");
     require(!result.command_recorder.frame_open, "backend command recorder does not open frame when unready");
     require(!result.command_recorder.command_buffer_recorded, "backend command recorder does not record when unready");
+    require(!result.command_recorder.failed(), "backend command recorder state does not fail before lifecycle readiness");
     require(result.command_recorder.empty(), "backend command recorder state remains empty when unready");
     require(!result.lifecycle_ready, "backend aggregate lifecycle readiness fails");
     require(!result.surface.valid(), "backend does not query a surface before lifecycle readiness passes");
@@ -984,6 +1215,149 @@ void test_vulkan_backend_adapter_falls_back_when_command_recorder_is_unready()
     require(result.planned_batch_count == 0, "backend does not plan batches without command recorder readiness");
     require(result.recorded_batch_count == 0, "backend does not record batches without command recorder readiness");
     require(device.calls.empty(), "backend does not call frame lifecycle without command recorder readiness");
+}
+
+void test_vulkan_backend_adapter_falls_back_when_injected_recorder_rejects_frame()
+{
+    using namespace quiz_vulkan::render;
+
+    render_draw_list draw_list;
+    draw_list.commands.push_back(make_quad_command(
+        "quad",
+        render_rect{0.0f, 0.0f, 100.0f, 100.0f},
+        render_color{1.0f, 1.0f, 1.0f, 1.0f}));
+
+    fake_vulkan_backend_device device(vulkan_backend::vulkan_surface_extent{.width = 16, .height = 16});
+    vulkan_backend::diagnostic_vulkan_command_recorder recorder(false);
+    const vulkan_backend::vulkan_backend_frame_result result = vulkan_backend::submit_vulkan_backend_frame(
+        device,
+        recorder,
+        draw_list,
+        render_rect{0.0f, 0.0f, 100.0f, 100.0f});
+
+    require(!result.completed(), "backend cannot complete when injected recorder rejects frame");
+    require(result.lifecycle_ready, "backend lifecycle is ready before injected recorder rejects frame");
+    require(result.surface_ready, "backend surface is ready before injected recorder rejects frame");
+    require(result.frame_begun, "backend begins frame before injected recorder rejects frame");
+    require(!result.commands_recorded, "backend does not mark commands recorded after recorder rejection");
+    require(
+        result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::record_commands_failed,
+        "backend reports record fallback when injected recorder rejects frame");
+    require(
+        result.reached_stage == vulkan_backend::vulkan_backend_frame_stage::frame_begun,
+        "backend stops at frame begun stage when injected recorder rejects frame");
+    require(!result.command_recorder.ready, "backend records rejected command recorder readiness");
+    require(!result.command_recorder.frame_open, "backend does not open rejected command recorder frame");
+    require(!result.command_recorder.command_buffer_recorded, "backend does not record rejected command buffer");
+    require(result.command_recorder.failed(), "backend records rejected recorder failure");
+    require(
+        result.command_recorder.failure_stage == vulkan_backend::vulkan_command_recorder_failure_stage::begin_recording,
+        "backend records begin failure stage from rejected recorder");
+    require(result.command_recorder.failure_recording_index == 0, "backend records begin failure index");
+    require(result.command_recorder.planned_batch_count == 1, "backend preserves planned count from rejected recorder");
+    require(result.command_recorder.recorded_batches.empty(), "backend has no recorded batches after recorder rejection");
+    require(device.calls.size() == 1, "backend stops device lifecycle after begin when recorder rejects frame");
+    require(device.calls[0] == "begin", "backend begins before injected recorder rejects frame");
+    require(!recorder.recorder_state().ready, "injected recorder exposes rejected state");
+}
+
+void test_vulkan_backend_adapter_falls_back_when_injected_recorder_fails_record_batch()
+{
+    using namespace quiz_vulkan::render;
+
+    render_draw_list draw_list;
+    draw_list.commands.push_back(make_quad_command(
+        "first",
+        render_rect{0.0f, 0.0f, 40.0f, 40.0f},
+        render_color{1.0f, 0.0f, 0.0f, 1.0f}));
+    draw_list.commands.push_back(make_quad_command(
+        "second",
+        render_rect{50.0f, 50.0f, 20.0f, 20.0f},
+        render_color{0.0f, 1.0f, 0.0f, 1.0f}));
+
+    fake_vulkan_backend_device device(vulkan_backend::vulkan_surface_extent{.width = 16, .height = 16});
+    vulkan_backend::diagnostic_vulkan_command_recorder recorder(
+        vulkan_backend::diagnostic_vulkan_command_recorder_options{
+            .ready = true,
+            .fail_at = vulkan_backend::vulkan_command_recorder_failure_stage::record_draw_batch,
+            .fail_recording_index = 1,
+        });
+    const vulkan_backend::vulkan_backend_frame_result result = vulkan_backend::submit_vulkan_backend_frame(
+        device,
+        recorder,
+        draw_list,
+        render_rect{0.0f, 0.0f, 100.0f, 100.0f});
+
+    require(!result.completed(), "backend cannot complete when injected recorder fails a batch");
+    require(result.frame_begun, "backend begins frame before injected record failure");
+    require(!result.commands_recorded, "backend does not call device recording after injected record failure");
+    require(
+        result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::record_commands_failed,
+        "backend reports record fallback when injected recorder fails a batch");
+    require(
+        result.reached_stage == vulkan_backend::vulkan_backend_frame_stage::frame_begun,
+        "backend stops at frame begun stage when injected recorder fails a batch");
+    require(result.command_recorder.ready, "backend records ready injected recorder on record failure");
+    require(result.command_recorder.frame_open, "backend records open frame on record failure");
+    require(!result.command_recorder.command_buffer_recorded, "backend records unfinished buffer on record failure");
+    require(result.command_recorder.failed(), "backend records injected recorder record failure");
+    require(
+        result.command_recorder.failure_stage
+            == vulkan_backend::vulkan_command_recorder_failure_stage::record_draw_batch,
+        "backend records record failure stage from injected recorder");
+    require(result.command_recorder.failure_recording_index == 1, "backend records failed batch index");
+    require(result.command_recorder.planned_batch_count == 2, "backend preserves planned count on record failure");
+    require(result.command_recorder.recorded_batch_count == 1, "backend preserves recorded count before failure");
+    require(result.command_recorder.recorded_batches.size() == 1, "backend preserves successful batches before failure");
+    require(device.calls.size() == 1, "backend stops device lifecycle after begin on injected record failure");
+    require(device.calls[0] == "begin", "backend begins before injected recorder fails a batch");
+}
+
+void test_vulkan_backend_adapter_falls_back_when_injected_recorder_fails_finish()
+{
+    using namespace quiz_vulkan::render;
+
+    render_draw_list draw_list;
+    draw_list.commands.push_back(make_quad_command(
+        "quad",
+        render_rect{0.0f, 0.0f, 100.0f, 100.0f},
+        render_color{1.0f, 1.0f, 1.0f, 1.0f}));
+
+    fake_vulkan_backend_device device(vulkan_backend::vulkan_surface_extent{.width = 16, .height = 16});
+    vulkan_backend::diagnostic_vulkan_command_recorder recorder(
+        vulkan_backend::diagnostic_vulkan_command_recorder_options{
+            .ready = true,
+            .fail_at = vulkan_backend::vulkan_command_recorder_failure_stage::finish_recording,
+        });
+    const vulkan_backend::vulkan_backend_frame_result result = vulkan_backend::submit_vulkan_backend_frame(
+        device,
+        recorder,
+        draw_list,
+        render_rect{0.0f, 0.0f, 100.0f, 100.0f});
+
+    require(!result.completed(), "backend cannot complete when injected recorder fails finish");
+    require(result.frame_begun, "backend begins frame before injected finish failure");
+    require(!result.commands_recorded, "backend does not call device recording after injected finish failure");
+    require(
+        result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::record_commands_failed,
+        "backend reports record fallback when injected recorder fails finish");
+    require(
+        result.reached_stage == vulkan_backend::vulkan_backend_frame_stage::frame_begun,
+        "backend stops at frame begun stage when injected recorder fails finish");
+    require(result.command_recorder.ready, "backend records ready injected recorder on finish failure");
+    require(result.command_recorder.frame_open, "backend records open frame on finish failure");
+    require(!result.command_recorder.command_buffer_recorded, "backend records unfinished buffer on finish failure");
+    require(result.command_recorder.failed(), "backend records injected recorder finish failure");
+    require(
+        result.command_recorder.failure_stage
+            == vulkan_backend::vulkan_command_recorder_failure_stage::finish_recording,
+        "backend records finish failure stage from injected recorder");
+    require(result.command_recorder.failure_recording_index == 1, "backend records finish failure index");
+    require(result.command_recorder.planned_batch_count == 1, "backend preserves planned count on finish failure");
+    require(result.command_recorder.recorded_batch_count == 1, "backend preserves recorded count before finish failure");
+    require(result.command_recorder.recorded_batches.size() == 1, "backend preserves batches before finish failure");
+    require(device.calls.size() == 1, "backend stops device lifecycle after begin on injected finish failure");
+    require(device.calls[0] == "begin", "backend begins before injected recorder fails finish");
 }
 
 void test_vulkan_backend_adapter_falls_back_without_surface()
@@ -1134,10 +1508,11 @@ void test_vulkan_backend_adapter_falls_back_when_recording_fails()
     require(result.planned_batch_count == 1, "backend still reports planned batch count before failure");
     require(result.recorded_batch_count == 0, "backend does not count batches after failed recording");
     require(result.command_recorder.ready, "command recorder was ready before recording failure");
-    require(result.command_recorder.frame_open, "command recorder frame was open before recording failure");
-    require(!result.command_recorder.command_buffer_recorded, "command recorder reports failed buffer recording");
-    require(result.command_recorder.planned_batch_count == 1, "command recorder tracks planned count before recording failure");
-    require(result.command_recorder.recorded_batch_count == 0, "command recorder has no recorded count after recording failure");
+    require(result.command_recorder.frame_open, "command recorder frame was open before device recording failure");
+    require(result.command_recorder.command_buffer_recorded, "command recorder records buffer before device recording failure");
+    require(result.command_recorder.planned_batch_count == 1, "command recorder tracks planned count before device failure");
+    require(result.command_recorder.recorded_batch_count == 1, "command recorder tracks recorded count before device failure");
+    require(result.command_recorder.recorded_batches.size() == 1, "command recorder stores batch before device failure");
     require(device.calls.size() == 2, "backend stops lifecycle after failed recording");
     require(device.calls[0] == "begin", "backend begins before failed recording");
     require(device.calls[1] == "record", "backend records before stopping");
@@ -1234,6 +1609,7 @@ int main()
 {
     test_vulkan_backend_fallback_reason_names_are_stable();
     test_vulkan_backend_frame_stage_names_are_stable();
+    test_vulkan_command_recorder_failure_stage_names_are_stable();
     test_draw_list_submission_counts_generic_work();
     test_renderer_backend_diagnostics_report_vulkan_not_requested();
     test_cpu_fallback_clips_and_discards();
@@ -1241,11 +1617,18 @@ int main()
     test_vulkan_frame_plan_builds_scissored_batches_from_render_contracts();
     test_vulkan_frame_plan_applies_nested_clips();
     test_vulkan_frame_plan_ignores_unmatched_pop_clip();
+    test_vulkan_diagnostic_command_recorder_records_planned_batches();
+    test_vulkan_diagnostic_command_recorder_reports_begin_failure();
+    test_vulkan_diagnostic_command_recorder_reports_record_failure();
+    test_vulkan_diagnostic_command_recorder_reports_finish_failure();
     test_vulkan_backend_adapter_completes_fake_device_lifecycle();
     test_vulkan_backend_adapter_preserves_plan_diagnostics();
     test_vulkan_backend_adapter_completes_empty_frame();
     test_vulkan_backend_adapter_completes_all_discarded_frame();
     test_vulkan_backend_adapter_falls_back_when_command_recorder_is_unready();
+    test_vulkan_backend_adapter_falls_back_when_injected_recorder_rejects_frame();
+    test_vulkan_backend_adapter_falls_back_when_injected_recorder_fails_record_batch();
+    test_vulkan_backend_adapter_falls_back_when_injected_recorder_fails_finish();
     test_vulkan_backend_adapter_falls_back_without_surface();
     test_vulkan_backend_adapter_falls_back_without_viewport();
     test_vulkan_backend_adapter_falls_back_when_begin_fails();

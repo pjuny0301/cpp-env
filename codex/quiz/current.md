@@ -1,21 +1,23 @@
 # Quiz Current Handoff
 
-Last updated: 2026-04-28
+Last updated: 2026-04-29
 
 ## Top priorities
 
 - Keep the native C++/Vulkan remake aligned with the Android quiz UX baseline while routing UX actions through app/domain actions.
 - Treat long press as the unknown-question path: UI button contract `mark_question_unknown`, app input route `mark_question_unknown`, domain payload `mark_question_unknown_action`.
 - Keep test status counts derived from the configured build with `ctest -N`; do not freeze global CTest totals in docs.
+- Build the engine stack in dependency order: Vulkan backend diagnostics, text layout/atlas, image texture cache, input/IME, then audio/backend wiring.
+- Worker branches should start from the current baseline with a fresh branch. Do not rebase stale worker branches that contain already-cherry-picked historical commits.
 
 ## Active requirement IDs
 
-- 06: swipe/known/unknown quiz flow.
-- 20: known/unknown learning state aging.
-- 24: FSM/app action routing.
-- 30: previous-question swipe routing.
-- 57: known bucket and long-press unknown behavior.
+- 02: quiz UI/design upgrade through native renderer contracts.
+- 24: FSM/app action routing and input normalization.
+- 31: keyboard-safe blank input and caret/IME handling.
+- 46: source/translation split-view scene support.
 - 79: verification discipline and interface locks.
+- 82: pure C++/Vulkan remake engine path.
 
 ## Contracts
 
@@ -25,6 +27,7 @@ Last updated: 2026-04-28
 - `src/app/app_quiz_screens.h` reads `domain::app_snapshot` as the app-owned presentation bridge. Do not move that coupling into `src/core/ui`.
 - Scene/UI modifiers emit actions only; app/domain services own state changes.
 - Renderer layers must not own quiz, domain, UI, input, or audio state.
+- Engine workers own only their engine folders. App/runtime, top-level CMake, and aggregate contract wiring stay with the integrator unless explicitly assigned.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
 
 ## Verification commands

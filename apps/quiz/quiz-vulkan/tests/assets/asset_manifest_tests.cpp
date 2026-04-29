@@ -69,6 +69,116 @@ bool contains_string(const std::vector<std::string>& values, std::string_view ex
     return false;
 }
 
+bool manifests_equal(
+    const quiz_vulkan::assets::asset_manifest& left,
+    const quiz_vulkan::assets::asset_manifest& right)
+{
+    if (left.roots.size() != right.roots.size() || left.entries.size() != right.entries.size()) {
+        return false;
+    }
+    for (std::size_t index = 0U; index < left.roots.size(); ++index) {
+        const quiz_vulkan::assets::asset_manifest_root& left_root = left.roots[index];
+        const quiz_vulkan::assets::asset_manifest_root& right_root = right.roots[index];
+        if (left_root.id != right_root.id || left_root.aliases != right_root.aliases
+            || left_root.root_path.generic_string() != right_root.root_path.generic_string()) {
+            return false;
+        }
+    }
+    for (std::size_t index = 0U; index < left.entries.size(); ++index) {
+        const quiz_vulkan::assets::asset_manifest_entry& left_entry = left.entries[index];
+        const quiz_vulkan::assets::asset_manifest_entry& right_entry = right.entries[index];
+        if (left_entry.id != right_entry.id || left_entry.type != right_entry.type || left_entry.uri != right_entry.uri
+            || left_entry.root_id != right_entry.root_id || left_entry.cache_revision != right_entry.cache_revision) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void test_format_asset_manifest_writes_deterministic_records()
+{
+    using namespace quiz_vulkan::assets;
+
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "packaged",
+        .aliases = {"images", "shared pack", "tab\talias"},
+        .root_path = std::filesystem::path("assets/root folder"),
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_front",
+        .type = asset_type::image,
+        .uri = "asset://images/card \"front\".png",
+        .root_id = "images",
+        .cache_revision = "rev\\one\tline\nnext",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "main_deck",
+        .type = asset_type::deck,
+        .uri = "decks/main deck.quiz",
+    });
+
+    const std::string expected =
+        "root id=\"packaged\" path=\"assets/root folder\" aliases=\"images,shared pack,tab\\talias\"\n"
+        "entry id=\"card_front\" type=\"image\" uri=\"asset://images/card \\\"front\\\".png\" root=\"images\" "
+        "rev=\"rev\\\\one\\tline\\nnext\"\n"
+        "entry id=\"main_deck\" type=\"deck\" uri=\"decks/main deck.quiz\"\n";
+
+    require(format_asset_manifest(manifest) == expected, "manifest formatter emits deterministic quoted records");
+}
+
+void test_format_asset_manifest_round_trips_through_parser()
+{
+    using namespace quiz_vulkan::assets;
+
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "packaged",
+        .aliases = {"images", "shared pack"},
+        .root_path = std::filesystem::path("assets/root folder"),
+    });
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "external",
+        .root_path = std::filesystem::path("external/assets"),
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "font_regular",
+        .type = asset_type::font,
+        .uri = "fonts/Inter Regular.ttf",
+        .root_id = "packaged",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_front",
+        .type = asset_type::image,
+        .uri = "asset://images/card \"front\".png",
+        .root_id = "images",
+        .cache_revision = "rev\\one\tline\nnext",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "answer_sound",
+        .type = asset_type::sound,
+        .uri = "asset://sounds/answer.wav",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "ui_shader",
+        .type = asset_type::shader,
+        .uri = "asset://shaders/ui.vert.spv",
+        .root_id = "external",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "main_deck",
+        .type = asset_type::deck,
+        .uri = "decks/main deck.quiz",
+    });
+
+    const std::string formatted = format_asset_manifest(manifest);
+    const asset_manifest_parse_result parsed = parse_asset_manifest(formatted);
+
+    require(parsed.ok(), "formatted manifest parses");
+    require(manifests_equal(parsed.manifest, manifest), "formatted manifest round-trips through parser");
+    require(format_asset_manifest(parsed.manifest) == formatted, "manifest formatter is idempotent after parse");
+}
+
 void test_parse_asset_manifest_text_loads_roots_entries_and_aliases()
 {
     using namespace quiz_vulkan::assets;
@@ -414,6 +524,156 @@ void test_summarize_asset_manifest_catalog_carries_validation_and_skips_invalid_
     require(
         has_issue(summary.validation, asset_manifest_validation_issue_kind::asset_resolve_failed, "bad"),
         "catalog summary carries resolver validation issue");
+}
+
+void test_asset_manifest_diagnostic_report_summarizes_targeted_issues()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "fixture_a",
+        .root_path = fixture_root / "a",
+    });
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "fixture_b",
+        .root_path = fixture_root / "b",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "missing_deck",
+        .type = asset_type::deck,
+        .uri = "asset://decks/main.quiz",
+        .root_id = "missing",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "ftp_sound",
+        .type = asset_type::sound,
+        .uri = "ftp://cdn.example.test/sounds/click.wav",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_a",
+        .type = asset_type::image,
+        .uri = "images/card.png",
+        .root_id = "fixture_a",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_b",
+        .type = asset_type::image,
+        .uri = "./images/./card.png",
+        .root_id = "fixture_b",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "traversal",
+        .type = asset_type::image,
+        .uri = "asset://images/%2e%2e/secret.png",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const asset_manifest_diagnostic_report report = make_asset_manifest_diagnostic_report(manifest, resolver);
+
+    require(!report.ok(), "diagnostic report fails when targeted issues are present");
+    require(report.missing_roots.size() == 1U, "diagnostic report summarizes missing roots");
+    require(report.missing_roots[0].entry_id == "missing_deck", "missing-root report keeps entry id");
+    require(report.missing_roots[0].root_id == "missing", "missing-root report keeps root id");
+
+    require(report.unsupported_schemes.size() == 1U, "diagnostic report summarizes unsupported schemes");
+    require(report.unsupported_schemes[0].entry_id == "ftp_sound", "unsupported-scheme report keeps entry id");
+    require(
+        report.unsupported_schemes[0].uri == "ftp://cdn.example.test/sounds/click.wav",
+        "unsupported-scheme report keeps original uri");
+    require(
+        report.unsupported_schemes[0].diagnostic == "asset uri scheme is not supported",
+        "unsupported-scheme report keeps resolver diagnostic");
+
+    require(report.cache_key_collisions.size() == 1U, "diagnostic report summarizes cache-key collisions");
+    require(report.cache_key_collisions[0].entry_id == "card_b", "collision report keeps later entry id");
+    require(report.cache_key_collisions[0].related_entry_id == "card_a", "collision report keeps related entry id");
+    require(report.cache_key_collisions[0].cache_key == "image|images/card.png", "collision report keeps cache key");
+
+    require(
+        has_issue(report.validation, asset_manifest_validation_issue_kind::asset_resolve_failed, "traversal"),
+        "diagnostic report preserves full validation context");
+    require(report.unsupported_schemes.size() == 1U, "diagnostic report does not classify traversal as unsupported");
+}
+
+void test_asset_manifest_diagnostic_report_preserves_stable_order()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "root_a",
+        .root_path = fixture_root / "a",
+    });
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "root_b",
+        .root_path = fixture_root / "b",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "missing_first",
+        .type = asset_type::image,
+        .uri = "asset://images/first.png",
+        .root_id = "missing_a",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "unsupported_first",
+        .type = asset_type::sound,
+        .uri = "ftp://cdn.example.test/first.wav",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "missing_second",
+        .type = asset_type::deck,
+        .uri = "asset://decks/second.quiz",
+        .root_id = "missing_b",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "unsupported_second",
+        .type = asset_type::shader,
+        .uri = "s3://bucket/shader.spv",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_a",
+        .type = asset_type::image,
+        .uri = "images/card.png",
+        .root_id = "root_a",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_b",
+        .type = asset_type::image,
+        .uri = "images/./card.png",
+        .root_id = "root_b",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "font_a",
+        .type = asset_type::font,
+        .uri = "fonts/Inter.ttf",
+        .root_id = "root_a",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "font_b",
+        .type = asset_type::font,
+        .uri = "./fonts/Inter.ttf",
+        .root_id = "root_b",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const asset_manifest_diagnostic_report report = make_asset_manifest_diagnostic_report(manifest, resolver);
+
+    require(report.missing_roots.size() == 2U, "diagnostic report keeps missing-root count");
+    require(report.missing_roots[0].entry_id == "missing_first", "diagnostic report keeps first missing-root order");
+    require(report.missing_roots[1].entry_id == "missing_second", "diagnostic report keeps second missing-root order");
+    require(report.unsupported_schemes.size() == 2U, "diagnostic report keeps unsupported-scheme count");
+    require(
+        report.unsupported_schemes[0].entry_id == "unsupported_first",
+        "diagnostic report keeps first unsupported-scheme order");
+    require(
+        report.unsupported_schemes[1].entry_id == "unsupported_second",
+        "diagnostic report keeps second unsupported-scheme order");
+    require(report.cache_key_collisions.size() == 2U, "diagnostic report keeps collision count");
+    require(report.cache_key_collisions[0].entry_id == "card_b", "diagnostic report keeps first collision order");
+    require(report.cache_key_collisions[1].entry_id == "font_b", "diagnostic report keeps second collision order");
 }
 
 void test_manifest_normalizes_asset_uri_and_roots_fixture_path()
@@ -947,6 +1207,8 @@ void test_manifest_validation_allows_equivalent_aliases_to_same_rooted_path()
 
 int main()
 {
+    test_format_asset_manifest_writes_deterministic_records();
+    test_format_asset_manifest_round_trips_through_parser();
     test_parse_asset_manifest_text_loads_roots_entries_and_aliases();
     test_parse_asset_manifest_text_supports_quoted_values_and_escapes();
     test_parse_asset_manifest_text_reports_errors_without_partial_records();
@@ -957,6 +1219,8 @@ int main()
     test_normalize_asset_manifest_skips_invalid_entries_but_reports_validation();
     test_summarize_asset_manifest_catalog_groups_all_asset_types();
     test_summarize_asset_manifest_catalog_carries_validation_and_skips_invalid_entries();
+    test_asset_manifest_diagnostic_report_summarizes_targeted_issues();
+    test_asset_manifest_diagnostic_report_preserves_stable_order();
     test_manifest_normalizes_asset_uri_and_roots_fixture_path();
     test_cache_key_is_stable_for_equivalent_normalized_uris();
     test_local_fixture_roots_use_normalized_relative_paths();

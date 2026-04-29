@@ -1,23 +1,15 @@
 #include "render/text/fake_text_engine.h"
+#include "render/text/utf8_text_run.h"
 
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <numeric>
-#include <string_view>
 #include <utility>
 #include <vector>
 
 namespace quiz_vulkan::render {
 namespace {
-
-constexpr std::uint32_t replacement_character = 0xfffd;
-
-struct utf8_scalar {
-    std::uint32_t code_point = replacement_character;
-    std::size_t byte_count = 1;
-    bool valid = false;
-};
 
 struct shaped_glyph {
     std::size_t run_index = 0;
@@ -38,66 +30,6 @@ struct laid_out_line {
     std::size_t caret_byte_offset = 0;
 };
 
-bool is_continuation_byte(const unsigned char byte)
-{
-    return (byte & 0xc0U) == 0x80U;
-}
-
-utf8_scalar decode_utf8_scalar(const std::string_view text, const std::size_t byte_offset)
-{
-    const auto byte = static_cast<unsigned char>(text[byte_offset]);
-    if (byte < 0x80U) {
-        return utf8_scalar{byte, 1, true};
-    }
-
-    const std::size_t remaining = text.size() - byte_offset;
-    if (byte >= 0xc2U && byte <= 0xdfU && remaining >= 2) {
-        const auto second = static_cast<unsigned char>(text[byte_offset + 1]);
-        if (is_continuation_byte(second)) {
-            return utf8_scalar{
-                static_cast<std::uint32_t>(((byte & 0x1fU) << 6U) | (second & 0x3fU)),
-                2,
-                true};
-        }
-    }
-
-    if (byte >= 0xe0U && byte <= 0xefU && remaining >= 3) {
-        const auto second = static_cast<unsigned char>(text[byte_offset + 1]);
-        const auto third = static_cast<unsigned char>(text[byte_offset + 2]);
-        const bool valid_second =
-            (byte != 0xe0U || second >= 0xa0U)
-            && (byte != 0xedU || second <= 0x9fU)
-            && is_continuation_byte(second);
-        if (valid_second && is_continuation_byte(third)) {
-            return utf8_scalar{
-                static_cast<std::uint32_t>(
-                    ((byte & 0x0fU) << 12U) | ((second & 0x3fU) << 6U) | (third & 0x3fU)),
-                3,
-                true};
-        }
-    }
-
-    if (byte >= 0xf0U && byte <= 0xf4U && remaining >= 4) {
-        const auto second = static_cast<unsigned char>(text[byte_offset + 1]);
-        const auto third = static_cast<unsigned char>(text[byte_offset + 2]);
-        const auto fourth = static_cast<unsigned char>(text[byte_offset + 3]);
-        const bool valid_second =
-            (byte != 0xf0U || second >= 0x90U)
-            && (byte != 0xf4U || second <= 0x8fU)
-            && is_continuation_byte(second);
-        if (valid_second && is_continuation_byte(third) && is_continuation_byte(fourth)) {
-            return utf8_scalar{
-                static_cast<std::uint32_t>(
-                    ((byte & 0x07U) << 18U) | ((second & 0x3fU) << 12U)
-                    | ((third & 0x3fU) << 6U) | (fourth & 0x3fU)),
-                4,
-                true};
-        }
-    }
-
-    return utf8_scalar{};
-}
-
 float line_height_for(const render_text_style& style)
 {
     return style.line_height > 0.0f ? style.line_height : style.font_size;
@@ -110,15 +42,6 @@ bool is_hangul_or_cjk(const std::uint32_t code_point)
         || (code_point >= 0x3400U && code_point <= 0x4dbfU)
         || (code_point >= 0x4e00U && code_point <= 0x9fffU)
         || (code_point >= 0xac00U && code_point <= 0xd7afU);
-}
-
-bool is_combining_mark(const std::uint32_t code_point)
-{
-    return (code_point >= 0x0300U && code_point <= 0x036fU)
-        || (code_point >= 0x1ab0U && code_point <= 0x1affU)
-        || (code_point >= 0x1dc0U && code_point <= 0x1dffU)
-        || (code_point >= 0x20d0U && code_point <= 0x20ffU)
-        || (code_point >= 0xfe20U && code_point <= 0xfe2fU);
 }
 
 bool is_wide_symbol(const std::uint32_t code_point)
@@ -163,7 +86,7 @@ bool same_position(
 
 float glyph_advance_for(const render_text_style& style, const std::uint32_t code_point)
 {
-    if (code_point == '\n' || code_point == '\r' || is_combining_mark(code_point)) {
+    if (code_point == '\n' || code_point == '\r' || is_utf8_combining_mark(code_point)) {
         return 0.0f;
     }
     if (code_point == '\t') {
@@ -194,15 +117,14 @@ std::vector<shaped_glyph> shape_request(
             });
         }
 
-        for (std::size_t byte_offset = 0; byte_offset < run.text.size();) {
-            const utf8_scalar scalar = decode_utf8_scalar(run.text, byte_offset);
+        for (const utf8_text_codepoint& scalar : iterate_utf8_text_run(run.text)) {
             const std::uint32_t code_point = scalar.code_point;
             if (!scalar.valid) {
                 ++diagnostics.invalid_utf8_sequence_count;
             }
             glyphs.push_back(shaped_glyph{
                 .run_index = run_index,
-                .byte_offset = byte_offset,
+                .byte_offset = scalar.byte_offset,
                 .byte_count = scalar.byte_count,
                 .code_point = code_point,
                 .advance = glyph_advance_for(style, code_point),
@@ -210,7 +132,6 @@ std::vector<shaped_glyph> shape_request(
                 .newline = code_point == '\n' || code_point == '\r',
                 .whitespace = is_wrapping_space(code_point),
             });
-            byte_offset += scalar.byte_count;
         }
     }
 

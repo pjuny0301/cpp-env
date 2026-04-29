@@ -3,6 +3,7 @@
 #include "render/text/font_glyph_atlas.h"
 #include "render/text/scene_text_metrics_adapter.h"
 #include "render/text/text_engine.h"
+#include "render/text/utf8_text_run.h"
 
 #include <algorithm>
 #include <cassert>
@@ -10,6 +11,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace {
@@ -35,6 +37,73 @@ float line_height_for(const quiz_vulkan::render::render_text_style& style)
 float glyph_advance_for(const quiz_vulkan::render::render_text_style& style)
 {
     return (style.font_size * 0.5f) + style.letter_spacing;
+}
+
+void test_utf8_text_run_iterates_codepoints_and_replacements()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::string text = std::string("A")
+        + std::string("\xed\x95\x9c", 3)
+        + std::string("\xc0\xaf", 2)
+        + std::string("\xe2\x82", 2)
+        + std::string("\xf0\x9f\x99\x82", 4);
+
+    const std::vector<utf8_text_codepoint> codepoints = iterate_utf8_text_run(text);
+    require(codepoints.size() == 7, "UTF-8 helper emits one entry per scalar or replacement");
+    require(codepoints[0].code_point == 'A', "UTF-8 helper decodes ASCII scalar");
+    require(codepoints[0].byte_offset == 0 && codepoints[0].byte_count == 1, "UTF-8 helper tracks ASCII bytes");
+    require(codepoints[0].valid, "UTF-8 helper marks ASCII scalar valid");
+
+    require(codepoints[1].code_point == 0xd55c, "UTF-8 helper decodes Hangul syllable");
+    require(codepoints[1].byte_offset == 1 && codepoints[1].byte_count == 3, "UTF-8 helper tracks Hangul bytes");
+    require(codepoints[1].valid, "UTF-8 helper marks Hangul scalar valid");
+    require(is_utf8_hangul_syllable(codepoints[1].code_point), "UTF-8 helper recognizes Hangul syllables");
+
+    for (std::size_t index = 2; index < 6; ++index) {
+        require(codepoints[index].code_point == utf8_replacement_codepoint, "malformed UTF-8 emits replacement");
+        require(codepoints[index].byte_count == 1, "malformed UTF-8 consumes one byte per replacement");
+        require(!codepoints[index].valid, "malformed UTF-8 replacement is marked invalid");
+        require(codepoints[index].cluster_start, "malformed UTF-8 replacement starts a diagnostic cluster");
+    }
+    require(codepoints[2].byte_offset == 4, "overlong leading byte offset is stable");
+    require(codepoints[3].byte_offset == 5, "overlong continuation byte offset is stable");
+    require(codepoints[4].byte_offset == 6, "truncated leading byte offset is stable");
+    require(codepoints[5].byte_offset == 7, "truncated continuation byte offset is stable");
+
+    require(codepoints[6].code_point == 0x1f642, "UTF-8 helper decodes four-byte scalar after malformed bytes");
+    require(codepoints[6].byte_offset == 8 && codepoints[6].byte_count == 4, "UTF-8 helper tracks four-byte scalar");
+    require(codepoints[6].valid, "UTF-8 helper marks four-byte scalar valid");
+}
+
+void test_utf8_text_run_clusters_ascii_combining_and_hangul()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::string text = std::string("A")
+        + std::string("e")
+        + std::string("\xcc\x81", 2)
+        + std::string("\xed\x95\x9c", 3)
+        + std::string("Z");
+
+    const std::vector<utf8_text_codepoint> codepoints = iterate_utf8_text_run(text);
+    require(codepoints.size() == 5, "UTF-8 cluster fixture decodes expected codepoints");
+    require(codepoints[0].cluster_start, "ASCII codepoint starts its cluster");
+    require(codepoints[1].cluster_start, "ASCII base starts combining cluster");
+    require(!codepoints[2].cluster_start, "combining mark joins previous base cluster");
+    require(codepoints[3].cluster_start, "Hangul syllable starts its own cluster");
+    require(codepoints[4].cluster_start, "ASCII after Hangul starts its own cluster");
+
+    const std::vector<utf8_text_cluster> clusters = cluster_utf8_text_run(codepoints);
+    require(clusters.size() == 4, "UTF-8 helper emits basic grapheme-ish clusters");
+    require(clusters[0].byte_offset == 0 && clusters[0].byte_count == 1, "first ASCII cluster tracks bytes");
+    require(clusters[0].codepoint_offset == 0 && clusters[0].codepoint_count == 1, "first ASCII cluster tracks scalar");
+    require(clusters[1].byte_offset == 1 && clusters[1].byte_count == 3, "combining cluster spans base and mark bytes");
+    require(clusters[1].codepoint_offset == 1 && clusters[1].codepoint_count == 2, "combining cluster spans two scalars");
+    require(clusters[1].valid, "combining cluster is valid when both scalars decode");
+    require(clusters[2].byte_offset == 4 && clusters[2].byte_count == 3, "Hangul cluster tracks syllable bytes");
+    require(clusters[2].codepoint_count == 1, "Hangul syllable remains a single cluster");
+    require(clusters[3].byte_offset == 7 && clusters[3].byte_count == 1, "ASCII after Hangul tracks bytes");
 }
 
 class recording_text_engine final : public quiz_vulkan::render::text_engine_interface {
@@ -1040,6 +1109,8 @@ void test_scene_text_metrics_adapter_feeds_layout_placer()
 
 int main()
 {
+    test_utf8_text_run_iterates_codepoints_and_replacements();
+    test_utf8_text_run_clusters_ascii_combining_and_hangul();
     test_style_catalog_find_and_resolve();
     test_font_face_catalog_resolves_exact_faces_and_fallback();
     test_font_face_catalog_reports_codepoint_fallback_diagnostics();

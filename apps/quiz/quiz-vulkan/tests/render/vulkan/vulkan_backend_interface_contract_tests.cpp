@@ -3,6 +3,7 @@
 #include <concepts>
 #include <cstddef>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -26,6 +27,23 @@ concept VulkanBackendDeviceInterface = requires(
 static_assert(VulkanBackendDeviceInterface<render::vulkan_backend::vulkan_backend_device_interface>);
 static_assert(VulkanBackendDeviceInterface<render::vulkan_backend::null_vulkan_backend_device>);
 
+template <typename T>
+concept VulkanCommandRecorderInterface = requires(
+    const T& const_recorder,
+    T& recorder,
+    const render::vulkan_backend::vulkan_draw_batch& batch,
+    render::vulkan_backend::vulkan_surface_extent surface,
+    std::size_t planned_batch_count) {
+    { recorder.begin_recording(surface, planned_batch_count) } -> std::same_as<bool>;
+    { recorder.record_draw_batch(batch) } -> std::same_as<bool>;
+    { recorder.finish_recording() } -> std::same_as<bool>;
+    { const_recorder.recorder_state() }
+        -> std::same_as<const render::vulkan_backend::vulkan_backend_command_recorder_state&>;
+};
+
+static_assert(VulkanCommandRecorderInterface<render::vulkan_backend::vulkan_command_recorder_interface>);
+static_assert(VulkanCommandRecorderInterface<render::vulkan_backend::diagnostic_vulkan_command_recorder>);
+
 static_assert(requires(render::vulkan_backend::vulkan_surface_extent surface) {
     { surface.width } -> std::same_as<std::size_t&>;
     { surface.height } -> std::same_as<std::size_t&>;
@@ -41,13 +59,24 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_lifecycle_readines
     { lifecycle.ready_for_frame() } -> std::same_as<bool>;
 });
 
+static_assert(requires(render::vulkan_backend::vulkan_recorded_draw_batch recorded_batch) {
+    { recorded_batch.kind } -> std::same_as<render::vulkan_backend::vulkan_batch_kind&>;
+    { recorded_batch.command_index } -> std::same_as<std::size_t&>;
+    { recorded_batch.recording_index } -> std::same_as<std::size_t&>;
+    { recorded_batch.bounds } -> std::same_as<render::render_rect&>;
+    { recorded_batch.clipped_bounds } -> std::same_as<render::render_rect&>;
+    { recorded_batch.scissor } -> std::same_as<render::vulkan_backend::vulkan_scissor_rect&>;
+});
+
 static_assert(requires(render::vulkan_backend::vulkan_backend_command_recorder_state recorder) {
     { recorder.ready } -> std::same_as<bool&>;
     { recorder.frame_open } -> std::same_as<bool&>;
     { recorder.command_buffer_recorded } -> std::same_as<bool&>;
     { recorder.planned_batch_count } -> std::same_as<std::size_t&>;
     { recorder.recorded_batch_count } -> std::same_as<std::size_t&>;
+    { recorder.recorded_batches } -> std::same_as<std::vector<render::vulkan_backend::vulkan_recorded_draw_batch>&>;
     { recorder.empty() } -> std::same_as<bool>;
+    { recorder.completed() } -> std::same_as<bool>;
 });
 
 static_assert(requires(render::vulkan_backend::vulkan_backend_frame_result result) {
@@ -73,9 +102,12 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_frame_result resul
 
 static_assert(requires(
     render::vulkan_backend::vulkan_backend_device_interface& device,
+    render::vulkan_backend::vulkan_command_recorder_interface& command_recorder,
     const render::render_draw_list& draw_list,
     render::render_rect viewport) {
     { render::vulkan_backend::submit_vulkan_backend_frame(device, draw_list, viewport) }
+        -> std::same_as<render::vulkan_backend::vulkan_backend_frame_result>;
+    { render::vulkan_backend::submit_vulkan_backend_frame(device, command_recorder, draw_list, viewport) }
         -> std::same_as<render::vulkan_backend::vulkan_backend_frame_result>;
 });
 

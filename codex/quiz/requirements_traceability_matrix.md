@@ -1,14 +1,18 @@
 # Quiz 요구사항 추적 매트릭스
 
-마지막 갱신: 2026-04-28
+마지막 갱신: 2026-04-29
 
 이 문서는 요구사항 번호를 실행 순서가 아니라 추적 ID로 관리한다. 실제 구현 순서는 `big_plan.md`의 의존관계 기반 단계가 기준이며, 각 행은 루트 구현 문서, 하위 프로젝트 문서, 현재 C++/문서 증거를 연결한다.
 
 최근 baseline 통합 증거:
 
-- `89ef31a`: Image/Texture fake decoder/cache, resolver normalization, focused image contract/test.
-- `3d56849`: Text fake engine atlas revision, UTF-8 edge coverage, focused text contract/test.
-- 기준 검증: `quiz_vulkan_interface_contract_compile_tests`, full build, full CTest 17/17.
+- `5db6e57`: raw platform scroll 계약을 aggregate interface lock에 반영.
+- `f28ba17`: raw platform scroll event를 input engine으로 정규화.
+- `51949f2`: UTF-8 line break helper 추가.
+- `b6bcf76`: Vulkan command recorder abstraction 추가.
+- `64ec658`: fake image texture cache budget/invalidation policy 추가.
+- `0b176f2`: asset manifest diagnostic report 추가.
+- 기준 검증은 고정 개수로 적지 않는다. 현재 전체 테스트 수는 `ctest -N`이 권위이며, handoff에는 실행한 focused target만 기록한다.
 
 상태 기준:
 

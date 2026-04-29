@@ -13,15 +13,45 @@ namespace quiz_vulkan::render {
 
 using font_face_id = std::uint32_t;
 
+struct font_codepoint_range {
+    std::uint32_t first = 0;
+    std::uint32_t last = 0;
+
+    bool contains(std::uint32_t codepoint) const
+    {
+        return first <= codepoint && codepoint <= last;
+    }
+};
+
 struct font_face_descriptor {
     font_face_id id = 0;
     std::string family;
     std::string source_uri;
     std::string version;
     std::string license;
+    std::vector<font_codepoint_range> coverage;
     int weight = 400;
     bool italic = false;
     bool fallback = false;
+
+    bool supports_codepoint(std::uint32_t codepoint) const
+    {
+        if (coverage.empty()) {
+            return true;
+        }
+
+        return std::any_of(
+            coverage.begin(),
+            coverage.end(),
+            [&](const font_codepoint_range& range) { return range.contains(codepoint); });
+    }
+};
+
+struct font_face_resolution {
+    const font_face_descriptor* requested_face = nullptr;
+    const font_face_descriptor* resolved_face = nullptr;
+    bool used_fallback = false;
+    bool glyph_supported = false;
 };
 
 class font_face_catalog {
@@ -64,10 +94,73 @@ public:
         return faces_.empty() ? nullptr : &faces_.front();
     }
 
+    const font_face_descriptor* find_covering_fallback(std::uint32_t codepoint) const
+    {
+        const auto match = std::find_if(
+            faces_.begin(),
+            faces_.end(),
+            [&](const font_face_descriptor& face) {
+                return face.fallback && face.supports_codepoint(codepoint);
+            });
+        return match == faces_.end() ? nullptr : &*match;
+    }
+
+    const font_face_descriptor* find_covering_face(std::uint32_t codepoint) const
+    {
+        const auto match = std::find_if(
+            faces_.begin(),
+            faces_.end(),
+            [&](const font_face_descriptor& face) { return face.supports_codepoint(codepoint); });
+        return match == faces_.end() ? nullptr : &*match;
+    }
+
     const font_face_descriptor* resolve(const render_text_style& style) const
     {
         const font_face_descriptor* exact = find_exact(style.font_family, style.font_weight, style.italic);
         return exact == nullptr ? fallback_face() : exact;
+    }
+
+    font_face_resolution resolve_for_codepoint(
+        const render_text_style& style,
+        std::uint32_t codepoint) const
+    {
+        const font_face_descriptor* requested = find_exact(style.font_family, style.font_weight, style.italic);
+        if (requested != nullptr && requested->supports_codepoint(codepoint)) {
+            return font_face_resolution{
+                .requested_face = requested,
+                .resolved_face = requested,
+                .used_fallback = false,
+                .glyph_supported = true,
+            };
+        }
+
+        if (const font_face_descriptor* fallback = find_covering_fallback(codepoint);
+            fallback != nullptr) {
+            return font_face_resolution{
+                .requested_face = requested,
+                .resolved_face = fallback,
+                .used_fallback = true,
+                .glyph_supported = true,
+            };
+        }
+
+        if (const font_face_descriptor* covering = find_covering_face(codepoint);
+            covering != nullptr) {
+            return font_face_resolution{
+                .requested_face = requested,
+                .resolved_face = covering,
+                .used_fallback = requested == nullptr || covering->id != requested->id,
+                .glyph_supported = true,
+            };
+        }
+
+        const font_face_descriptor* unresolved = requested == nullptr ? fallback_face() : requested;
+        return font_face_resolution{
+            .requested_face = requested,
+            .resolved_face = unresolved,
+            .used_fallback = requested == nullptr && unresolved != nullptr,
+            .glyph_supported = false,
+        };
     }
 
     const std::vector<font_face_descriptor>& faces() const

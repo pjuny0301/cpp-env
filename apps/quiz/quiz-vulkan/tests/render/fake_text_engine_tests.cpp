@@ -175,6 +175,74 @@ void test_font_face_catalog_resolves_exact_faces_and_fallback()
     require(resolved_fallback->license == "test-fixture", "font catalog preserves license metadata");
 }
 
+void test_font_face_catalog_reports_codepoint_fallback_diagnostics()
+{
+    using namespace quiz_vulkan::render;
+
+    font_face_catalog catalog;
+    const font_face_id latin_id = catalog.add_face(font_face_descriptor{
+        .family = "Fixture Sans",
+        .source_uri = "fixture://fonts/fixture-sans-regular",
+        .version = "fixture-1",
+        .license = "test-fixture",
+        .coverage = {font_codepoint_range{.first = 0x0020, .last = 0x007E}},
+        .weight = 400,
+        .italic = false,
+        .fallback = false,
+    }).id;
+    const font_face_id hangul_id = catalog.add_face(font_face_descriptor{
+        .family = "Fixture Hangul",
+        .source_uri = "fixture://fonts/fixture-hangul",
+        .version = "fixture-1",
+        .license = "test-fixture",
+        .coverage = {font_codepoint_range{.first = 0xAC00, .last = 0xD7A3}},
+        .weight = 400,
+        .italic = false,
+        .fallback = true,
+    }).id;
+    const font_face_id emoji_id = catalog.add_face(font_face_descriptor{
+        .family = "Fixture Emoji",
+        .source_uri = "fixture://fonts/fixture-emoji",
+        .version = "fixture-1",
+        .license = "test-fixture",
+        .coverage = {font_codepoint_range{.first = 0x1F600, .last = 0x1F64F}},
+        .weight = 400,
+        .italic = false,
+        .fallback = false,
+    }).id;
+
+    render_text_style style;
+    style.font_family = "Fixture Sans";
+    style.font_weight = 400;
+    style.italic = false;
+
+    const font_face_resolution latin = catalog.resolve_for_codepoint(style, 0x0041);
+    require(latin.requested_face != nullptr, "font coverage diagnostics report requested face");
+    require(latin.resolved_face != nullptr, "font coverage diagnostics resolve latin face");
+    require(latin.resolved_face->id == latin_id, "font coverage keeps latin glyph on requested face");
+    require(!latin.used_fallback, "font coverage does not report fallback for covered latin glyph");
+    require(latin.glyph_supported, "font coverage reports latin glyph support");
+
+    const font_face_resolution hangul = catalog.resolve_for_codepoint(style, 0xAC00);
+    require(hangul.requested_face != nullptr, "font coverage diagnostics keep original requested face");
+    require(hangul.resolved_face != nullptr, "font coverage resolves hangul fallback");
+    require(hangul.resolved_face->id == hangul_id, "font coverage prefers explicit hangul fallback");
+    require(hangul.used_fallback, "font coverage reports hangul fallback");
+    require(hangul.glyph_supported, "font coverage reports hangul glyph support");
+
+    const font_face_resolution emoji = catalog.resolve_for_codepoint(style, 0x1F600);
+    require(emoji.resolved_face != nullptr, "font coverage resolves non-explicit covering face");
+    require(emoji.resolved_face->id == emoji_id, "font coverage falls through to any covering face");
+    require(emoji.used_fallback, "font coverage reports non-requested covering face as fallback");
+    require(emoji.glyph_supported, "font coverage reports emoji glyph support");
+
+    const font_face_resolution unsupported = catalog.resolve_for_codepoint(style, 0x0378);
+    require(unsupported.resolved_face != nullptr, "font coverage keeps a diagnostic face for unsupported glyph");
+    require(unsupported.resolved_face->id == latin_id, "font coverage keeps requested face for missing glyph diagnostics");
+    require(!unsupported.used_fallback, "font coverage does not claim fallback when no face covers glyph");
+    require(!unsupported.glyph_supported, "font coverage reports unsupported glyph");
+}
+
 void test_glyph_atlas_cache_allocates_rows_pages_and_cached_slots()
 {
     using namespace quiz_vulkan::render;
@@ -907,6 +975,7 @@ int main()
 {
     test_style_catalog_find_and_resolve();
     test_font_face_catalog_resolves_exact_faces_and_fallback();
+    test_font_face_catalog_reports_codepoint_fallback_diagnostics();
     test_glyph_atlas_cache_allocates_rows_pages_and_cached_slots();
     test_fake_measure_and_layout_emit_stable_glyphs();
     test_fake_multirun_layout_tracks_lines_offsets_and_alignment();

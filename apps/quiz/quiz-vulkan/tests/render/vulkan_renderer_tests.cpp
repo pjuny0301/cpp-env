@@ -344,6 +344,8 @@ void test_draw_list_submission_counts_generic_work()
     require(!summary.backend_swapchain_ready, "renderer summary exposes backend swapchain readiness");
     require(!summary.backend_pipeline_ready, "renderer summary exposes backend pipeline readiness");
     require(!summary.backend_command_recorder_ready, "renderer summary exposes backend command recorder readiness");
+    require(!summary.backend_command_recorder_frame_open, "renderer summary exposes command recorder frame-open state");
+    require(!summary.backend_command_buffer_recorded, "renderer summary exposes command buffer recorded state");
     require(!summary.backend_lifecycle_ready, "renderer summary exposes aggregate lifecycle readiness");
     require(
         summary.backend_fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::instance_unavailable,
@@ -353,6 +355,8 @@ void test_draw_list_submission_counts_generic_work()
     require(backend_result.fallback_required, "renderer retains backend fallback requirement");
     require(backend_result.attempted, "renderer retains backend attempt status");
     require(!backend_result.lifecycle.ready_for_frame(), "renderer retains backend lifecycle readiness");
+    require(!backend_result.command_recorder.ready, "renderer retains command recorder readiness");
+    require(backend_result.command_recorder.empty(), "renderer retains empty command recorder state");
     require(!backend_result.lifecycle_ready, "renderer retains aggregate lifecycle readiness");
     require(!backend_result.surface_ready, "renderer retains backend surface readiness");
     require(!backend_result.frame_begun, "renderer retains backend begin status");
@@ -778,6 +782,11 @@ void test_vulkan_backend_adapter_completes_fake_device_lifecycle()
     require(result.recorded_batch_count == 1, "fake backend records one batch");
     require(result.clipped_draw_call_count == 0, "unclipped fake backend batch is not clipped");
     require(result.discarded_draw_call_count == 0, "visible fake backend batch is not discarded");
+    require(result.command_recorder.ready, "fake backend command recorder is ready");
+    require(result.command_recorder.frame_open, "fake backend command recorder opens a frame");
+    require(result.command_recorder.command_buffer_recorded, "fake backend command buffer is recorded");
+    require(result.command_recorder.planned_batch_count == 1, "fake backend command recorder sees planned batch count");
+    require(result.command_recorder.recorded_batch_count == 1, "fake backend command recorder sees recorded batch count");
 
     require(device.calls.size() == 4, "fake backend lifecycle call count");
     require(device.calls[0] == "begin", "fake backend begins before recording");
@@ -887,6 +896,10 @@ void test_vulkan_backend_adapter_completes_empty_frame()
     require(result.frame_presented, "backend presents empty frame");
     require(result.planned_batch_count == 0, "empty frame has no planned batches");
     require(result.recorded_batch_count == 0, "empty frame has no recorded batches");
+    require(result.command_recorder.ready, "empty frame has a ready command recorder");
+    require(result.command_recorder.frame_open, "empty frame opens command recorder state");
+    require(result.command_recorder.command_buffer_recorded, "empty frame records an empty command buffer");
+    require(result.command_recorder.empty(), "empty frame command recorder has no batches");
     require(result.clipped_draw_call_count == 0, "empty frame has no clipped draw calls");
     require(result.discarded_draw_call_count == 0, "empty frame has no discarded draw calls");
     require(device.recorded_plan.empty(), "empty frame records empty plan");
@@ -914,6 +927,10 @@ void test_vulkan_backend_adapter_completes_all_discarded_frame()
     require(result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::none, "all-discarded frame has no fallback reason");
     require(result.planned_batch_count == 0, "all-discarded frame has no planned batches");
     require(result.recorded_batch_count == 0, "all-discarded frame has no recorded batches");
+    require(result.command_recorder.ready, "all-discarded frame has a ready command recorder");
+    require(result.command_recorder.frame_open, "all-discarded frame opens command recorder state");
+    require(result.command_recorder.command_buffer_recorded, "all-discarded frame records an empty command buffer");
+    require(result.command_recorder.empty(), "all-discarded frame command recorder has no batches");
     require(result.clipped_draw_call_count == 0, "all-discarded frame has no clipped draw calls");
     require(result.discarded_draw_call_count == 1, "all-discarded frame reports discarded draw call");
     require(device.recorded_plan.empty(), "all-discarded frame records empty plan");
@@ -953,6 +970,10 @@ void test_vulkan_backend_adapter_falls_back_when_command_recorder_is_unready()
     require(result.lifecycle.pipeline_ready, "backend records ready pipeline");
     require(!result.lifecycle.command_recorder_ready, "backend records unavailable command recorder");
     require(!result.lifecycle.ready_for_frame(), "backend lifecycle is not frame-ready without command recorder");
+    require(!result.command_recorder.ready, "backend command recorder state is not ready");
+    require(!result.command_recorder.frame_open, "backend command recorder does not open frame when unready");
+    require(!result.command_recorder.command_buffer_recorded, "backend command recorder does not record when unready");
+    require(result.command_recorder.empty(), "backend command recorder state remains empty when unready");
     require(!result.lifecycle_ready, "backend aggregate lifecycle readiness fails");
     require(!result.surface.valid(), "backend does not query a surface before lifecycle readiness passes");
     require(!result.surface_ready, "backend surface is not ready when lifecycle readiness fails");
@@ -1070,6 +1091,11 @@ void test_vulkan_backend_adapter_falls_back_when_begin_fails()
     require(!result.frame_presented, "backend does not present after failed begin");
     require(result.planned_batch_count == 1, "backend reports planned batch count before begin failure");
     require(result.recorded_batch_count == 0, "backend does not record batches after begin failure");
+    require(result.command_recorder.ready, "command recorder was ready before begin failure");
+    require(!result.command_recorder.frame_open, "command recorder does not open frame after failed begin");
+    require(!result.command_recorder.command_buffer_recorded, "command recorder does not record after failed begin");
+    require(result.command_recorder.planned_batch_count == 1, "command recorder records planned count before begin failure");
+    require(result.command_recorder.recorded_batch_count == 0, "command recorder has no recorded count after begin failure");
     require(device.calls.size() == 1, "backend stops lifecycle after failed begin");
     require(device.calls[0] == "begin", "backend calls begin before stopping");
 }
@@ -1107,6 +1133,11 @@ void test_vulkan_backend_adapter_falls_back_when_recording_fails()
     require(!result.frame_presented, "backend does not present after failed recording");
     require(result.planned_batch_count == 1, "backend still reports planned batch count before failure");
     require(result.recorded_batch_count == 0, "backend does not count batches after failed recording");
+    require(result.command_recorder.ready, "command recorder was ready before recording failure");
+    require(result.command_recorder.frame_open, "command recorder frame was open before recording failure");
+    require(!result.command_recorder.command_buffer_recorded, "command recorder reports failed buffer recording");
+    require(result.command_recorder.planned_batch_count == 1, "command recorder tracks planned count before recording failure");
+    require(result.command_recorder.recorded_batch_count == 0, "command recorder has no recorded count after recording failure");
     require(device.calls.size() == 2, "backend stops lifecycle after failed recording");
     require(device.calls[0] == "begin", "backend begins before failed recording");
     require(device.calls[1] == "record", "backend records before stopping");
@@ -1145,6 +1176,9 @@ void test_vulkan_backend_adapter_falls_back_when_submit_fails()
     require(!result.frame_presented, "backend does not present after failed submit");
     require(result.planned_batch_count == 1, "backend reports planned batch count before submit failure");
     require(result.recorded_batch_count == 1, "backend reports recorded batch count before submit failure");
+    require(result.command_recorder.frame_open, "command recorder frame remains tracked before submit failure");
+    require(result.command_recorder.command_buffer_recorded, "command recorder reports recorded buffer before submit failure");
+    require(result.command_recorder.recorded_batch_count == 1, "command recorder tracks recorded count before submit failure");
     require(device.calls.size() == 3, "backend stops lifecycle after failed submit");
     require(device.calls[0] == "begin", "backend begins before failed submit");
     require(device.calls[1] == "record", "backend records before failed submit");
@@ -1184,6 +1218,9 @@ void test_vulkan_backend_adapter_falls_back_when_present_fails()
     require(!result.frame_presented, "backend reports failed presentation");
     require(result.planned_batch_count == 1, "backend reports planned batch count before presentation failure");
     require(result.recorded_batch_count == 1, "backend reports recorded batch count before presentation failure");
+    require(result.command_recorder.frame_open, "command recorder frame remains tracked before presentation failure");
+    require(result.command_recorder.command_buffer_recorded, "command recorder reports recorded buffer before presentation failure");
+    require(result.command_recorder.recorded_batch_count == 1, "command recorder tracks recorded count before presentation failure");
     require(device.calls.size() == 4, "backend reaches present call before failing");
     require(device.calls[0] == "begin", "backend begins before presentation failure");
     require(device.calls[1] == "record", "backend records before presentation failure");

@@ -41,9 +41,19 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_lifecycle_readines
     { lifecycle.ready_for_frame() } -> std::same_as<bool>;
 });
 
+static_assert(requires(render::vulkan_backend::vulkan_backend_command_recorder_state recorder) {
+    { recorder.ready } -> std::same_as<bool&>;
+    { recorder.frame_open } -> std::same_as<bool&>;
+    { recorder.command_buffer_recorded } -> std::same_as<bool&>;
+    { recorder.planned_batch_count } -> std::same_as<std::size_t&>;
+    { recorder.recorded_batch_count } -> std::same_as<std::size_t&>;
+    { recorder.empty() } -> std::same_as<bool>;
+});
+
 static_assert(requires(render::vulkan_backend::vulkan_backend_frame_result result) {
     { result.surface } -> std::same_as<render::vulkan_backend::vulkan_surface_extent&>;
     { result.lifecycle } -> std::same_as<render::vulkan_backend::vulkan_backend_lifecycle_readiness&>;
+    { result.command_recorder } -> std::same_as<render::vulkan_backend::vulkan_backend_command_recorder_state&>;
     { result.reached_stage } -> std::same_as<render::vulkan_backend::vulkan_backend_frame_stage&>;
     { result.lifecycle_ready } -> std::same_as<bool&>;
     { result.surface_ready } -> std::same_as<bool&>;

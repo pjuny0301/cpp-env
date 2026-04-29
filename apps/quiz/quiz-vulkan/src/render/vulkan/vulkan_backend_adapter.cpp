@@ -133,6 +133,7 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     result.attempted = true;
     result.reached_stage = vulkan_backend_frame_stage::backend_attempted;
     result.lifecycle = device.current_lifecycle_readiness();
+    result.command_recorder.ready = result.lifecycle.command_recorder_ready;
     result.fallback_reason = first_unready_reason(result.lifecycle);
     if (result.fallback_reason != vulkan_backend_fallback_reason::none) {
         return result;
@@ -160,6 +161,7 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
             .surface_height = result.surface.height,
         });
     result.planned_batch_count = plan.batches.size();
+    result.command_recorder.planned_batch_count = plan.batches.size();
     result.clipped_draw_call_count = plan.clipped_draw_call_count;
     result.discarded_draw_call_count = plan.discarded_draw_call_count;
     result.reached_stage = vulkan_backend_frame_stage::frame_plan_ready;
@@ -169,6 +171,7 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
         result.fallback_reason = vulkan_backend_fallback_reason::begin_frame_failed;
         return result;
     }
+    result.command_recorder.frame_open = true;
     result.reached_stage = vulkan_backend_frame_stage::frame_begun;
 
     result.commands_recorded = device.record_frame_commands(plan);
@@ -177,6 +180,8 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
         return result;
     }
     result.recorded_batch_count = plan.batches.size();
+    result.command_recorder.recorded_batch_count = plan.batches.size();
+    result.command_recorder.command_buffer_recorded = true;
     result.reached_stage = vulkan_backend_frame_stage::commands_recorded;
 
     result.frame_submitted = device.submit_frame();

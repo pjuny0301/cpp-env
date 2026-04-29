@@ -64,9 +64,23 @@ struct vulkan_backend_lifecycle_readiness {
     }
 };
 
+struct vulkan_backend_command_recorder_state {
+    bool ready = false;
+    bool frame_open = false;
+    bool command_buffer_recorded = false;
+    std::size_t planned_batch_count = 0;
+    std::size_t recorded_batch_count = 0;
+
+    bool empty() const
+    {
+        return planned_batch_count == 0 && recorded_batch_count == 0;
+    }
+};
+
 struct vulkan_backend_frame_result {
     vulkan_surface_extent surface;
     vulkan_backend_lifecycle_readiness lifecycle;
+    vulkan_backend_command_recorder_state command_recorder;
     vulkan_backend_frame_stage reached_stage = vulkan_backend_frame_stage::not_started;
     bool lifecycle_ready = false;
     bool surface_ready = false;

@@ -64,6 +64,8 @@ struct vulkan_renderer_frame_summary {
     bool backend_swapchain_ready = false;
     bool backend_pipeline_ready = false;
     bool backend_command_recorder_ready = false;
+    bool backend_command_recorder_frame_open = false;
+    bool backend_command_buffer_recorded = false;
     bool backend_lifecycle_ready = false;
     bool backend_surface_ready = false;
     bool backend_frame_begun = false;

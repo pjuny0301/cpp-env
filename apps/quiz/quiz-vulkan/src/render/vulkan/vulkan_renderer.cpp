@@ -267,6 +267,8 @@ vulkan_renderer_frame_summary vulkan_renderer::summarize_cpu_fallback(
     summary.backend_swapchain_ready = backend_result.lifecycle.swapchain_ready;
     summary.backend_pipeline_ready = backend_result.lifecycle.pipeline_ready;
     summary.backend_command_recorder_ready = backend_result.lifecycle.command_recorder_ready;
+    summary.backend_command_recorder_frame_open = backend_result.command_recorder.frame_open;
+    summary.backend_command_buffer_recorded = backend_result.command_recorder.command_buffer_recorded;
     summary.backend_lifecycle_ready = backend_result.lifecycle_ready;
     summary.backend_surface_ready = backend_result.surface_ready;
     summary.backend_frame_begun = backend_result.frame_begun;

@@ -3,6 +3,7 @@
 #include "render/text/font_glyph_atlas.h"
 #include "render/text/scene_text_metrics_adapter.h"
 #include "render/text/text_engine.h"
+#include "render/text/utf8_line_break.h"
 #include "render/text/utf8_text_run.h"
 
 #include <algorithm>
@@ -104,6 +105,109 @@ void test_utf8_text_run_clusters_ascii_combining_and_hangul()
     require(clusters[2].byte_offset == 4 && clusters[2].byte_count == 3, "Hangul cluster tracks syllable bytes");
     require(clusters[2].codepoint_count == 1, "Hangul syllable remains a single cluster");
     require(clusters[3].byte_offset == 7 && clusters[3].byte_count == 1, "ASCII after Hangul tracks bytes");
+}
+
+void test_utf8_line_breaks_ascii_whitespace_and_newlines()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::vector<utf8_line_fragment> fragments = break_utf8_text_run("ab cd\nef");
+    require(fragments.size() == 3, "UTF-8 line breaker splits on ASCII space and newline");
+
+    require(fragments[0].break_reason == utf8_line_break_reason::ascii_whitespace, "first break is ASCII whitespace");
+    require(fragments[0].byte_offset == 0 && fragments[0].byte_count == 2, "first fragment tracks byte range");
+    require(
+        fragments[0].codepoint_offset == 0 && fragments[0].codepoint_count == 2,
+        "first fragment tracks codepoint range");
+    require(
+        fragments[0].separator_byte_offset == 2 && fragments[0].separator_byte_count == 1,
+        "first fragment preserves whitespace separator byte range");
+    require(
+        fragments[0].separator_codepoint_offset == 2 && fragments[0].separator_codepoint_count == 1,
+        "first fragment preserves whitespace separator codepoint range");
+
+    require(fragments[1].break_reason == utf8_line_break_reason::explicit_newline, "second break is newline");
+    require(fragments[1].byte_offset == 3 && fragments[1].byte_count == 2, "second fragment tracks byte range");
+    require(
+        fragments[1].codepoint_offset == 3 && fragments[1].codepoint_count == 2,
+        "second fragment tracks codepoint range");
+    require(
+        fragments[1].separator_byte_offset == 5 && fragments[1].separator_byte_count == 1,
+        "second fragment preserves newline byte range");
+    require(
+        fragments[1].separator_codepoint_offset == 5 && fragments[1].separator_codepoint_count == 1,
+        "second fragment preserves newline codepoint range");
+
+    require(fragments[2].break_reason == utf8_line_break_reason::end_of_text, "final break is end of text");
+    require(fragments[2].byte_offset == 6 && fragments[2].byte_count == 2, "final fragment tracks byte range");
+    require(
+        fragments[2].codepoint_offset == 6 && fragments[2].codepoint_count == 2,
+        "final fragment tracks codepoint range");
+    require(fragments[2].separator_byte_count == 0, "final fragment has no separator bytes");
+}
+
+void test_utf8_line_breaks_crlf_as_single_explicit_newline()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::vector<utf8_line_fragment> fragments = break_utf8_text_run("a\r\nb");
+    require(fragments.size() == 2, "UTF-8 line breaker treats CRLF as one explicit newline separator");
+    require(fragments[0].break_reason == utf8_line_break_reason::explicit_newline, "CRLF break is explicit newline");
+    require(fragments[0].byte_offset == 0 && fragments[0].byte_count == 1, "CRLF first fragment tracks content");
+    require(
+        fragments[0].separator_byte_offset == 1 && fragments[0].separator_byte_count == 2,
+        "CRLF separator preserves both bytes");
+    require(
+        fragments[0].separator_codepoint_offset == 1 && fragments[0].separator_codepoint_count == 2,
+        "CRLF separator preserves both codepoints");
+    require(fragments[1].byte_offset == 3 && fragments[1].byte_count == 1, "CRLF final fragment starts after newline");
+}
+
+void test_utf8_line_breaks_hangul_only_under_width_pressure()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::string hangul = std::string("\xed\x95\x9c", 3)
+        + std::string("\xea\xb8\x80", 3)
+        + std::string("\xeb\x82\xa0", 3);
+
+    const std::vector<utf8_line_fragment> unwrapped = break_utf8_text_run(hangul);
+    require(unwrapped.size() == 1, "Hangul syllables do not split without width pressure");
+    require(unwrapped[0].break_reason == utf8_line_break_reason::end_of_text, "unwrapped Hangul ends normally");
+    require(unwrapped[0].byte_offset == 0 && unwrapped[0].byte_count == 9, "unwrapped Hangul preserves byte range");
+    require(
+        unwrapped[0].codepoint_offset == 0 && unwrapped[0].codepoint_count == 3,
+        "unwrapped Hangul preserves codepoint range");
+
+    const std::vector<utf8_line_fragment> wrapped = break_utf8_text_run(hangul, utf8_line_break_options{
+        .max_columns = 2,
+        .break_hangul_syllables_on_width = true,
+    });
+    require(wrapped.size() == 3, "Hangul syllables split under width pressure");
+    require(wrapped[0].break_reason == utf8_line_break_reason::width_pressure, "first Hangul break uses width pressure");
+    require(wrapped[0].byte_offset == 0 && wrapped[0].byte_count == 3, "first Hangul fragment tracks bytes");
+    require(wrapped[0].codepoint_offset == 0 && wrapped[0].codepoint_count == 1, "first Hangul fragment tracks scalar");
+    require(wrapped[0].separator_byte_offset == 3 && wrapped[0].separator_byte_count == 0, "first pressure break has no separator");
+    require(wrapped[1].break_reason == utf8_line_break_reason::width_pressure, "second Hangul break uses width pressure");
+    require(wrapped[1].byte_offset == 3 && wrapped[1].byte_count == 3, "second Hangul fragment tracks bytes");
+    require(wrapped[1].codepoint_offset == 1 && wrapped[1].codepoint_count == 1, "second Hangul fragment tracks scalar");
+    require(wrapped[2].break_reason == utf8_line_break_reason::end_of_text, "final Hangul fragment ends normally");
+    require(wrapped[2].byte_offset == 6 && wrapped[2].byte_count == 3, "final Hangul fragment tracks bytes");
+    require(wrapped[2].codepoint_offset == 2 && wrapped[2].codepoint_count == 1, "final Hangul fragment tracks scalar");
+}
+
+void test_utf8_line_break_keeps_unspaced_ascii_words_together_under_width_pressure()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::vector<utf8_line_fragment> fragments = break_utf8_text_run("abcd", utf8_line_break_options{
+        .max_columns = 2,
+        .break_hangul_syllables_on_width = true,
+    });
+    require(fragments.size() == 1, "ASCII words do not split without whitespace");
+    require(fragments[0].break_reason == utf8_line_break_reason::end_of_text, "ASCII word break remains end of text");
+    require(fragments[0].byte_offset == 0 && fragments[0].byte_count == 4, "ASCII word preserves byte range");
+    require(fragments[0].codepoint_offset == 0 && fragments[0].codepoint_count == 4, "ASCII word preserves scalar range");
 }
 
 class recording_text_engine final : public quiz_vulkan::render::text_engine_interface {
@@ -1111,6 +1215,10 @@ int main()
 {
     test_utf8_text_run_iterates_codepoints_and_replacements();
     test_utf8_text_run_clusters_ascii_combining_and_hangul();
+    test_utf8_line_breaks_ascii_whitespace_and_newlines();
+    test_utf8_line_breaks_crlf_as_single_explicit_newline();
+    test_utf8_line_breaks_hangul_only_under_width_pressure();
+    test_utf8_line_break_keeps_unspaced_ascii_words_together_under_width_pressure();
     test_style_catalog_find_and_resolve();
     test_font_face_catalog_resolves_exact_faces_and_fallback();
     test_font_face_catalog_reports_codepoint_fallback_diagnostics();

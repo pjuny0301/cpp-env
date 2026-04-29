@@ -109,6 +109,24 @@ quiz_vulkan::raw_platform_input_event focus(
     };
 }
 
+quiz_vulkan::input::raw_scroll_event scroll(
+    std::int64_t timestamp_ms,
+    float x,
+    float y,
+    float delta_x,
+    float delta_y,
+    quiz_vulkan::input::scroll_delta_unit unit)
+{
+    return quiz_vulkan::input::raw_scroll_event{
+        .timestamp_ms = timestamp_ms,
+        .x = x,
+        .y = y,
+        .delta_x = delta_x,
+        .delta_y = delta_y,
+        .unit = unit,
+    };
+}
+
 void test_primary_pointer_gestures_and_secondary_filter()
 {
     using namespace quiz_vulkan;
@@ -375,6 +393,38 @@ void test_multi_pointer_long_press_order_routes_stably()
     require(second.kind == gesture_kind::long_press, "engine second stable gesture is long press");
     require(first.pointer_id == 1, "engine stable long press order starts with lower pointer id");
     require(second.pointer_id == 9, "engine stable long press order ends with higher pointer id");
+}
+
+void test_scroll_events_normalize_line_and_pixel_deltas()
+{
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    std::vector<input_event> events =
+        engine.process_scroll_event(scroll(100, 10.0f, 20.0f, 0.0f, -120.0f, scroll_delta_unit::pixels));
+    require(events.size() == 1, "pixel scroll emits one input event");
+    const scroll_event& pixel = require_event<scroll_event>(events, 0);
+    require(pixel.timestamp_ms == 100, "pixel scroll preserves timestamp");
+    require(pixel.x == 10.0f, "pixel scroll preserves x");
+    require(pixel.y == 20.0f, "pixel scroll preserves y");
+    require(pixel.pixel_delta_x == 0.0f, "pixel scroll x delta is normalized");
+    require(pixel.pixel_delta_y == -120.0f, "pixel scroll y delta is normalized");
+    require(pixel.line_delta_x == 0.0f, "pixel scroll line x is zero");
+    require(pixel.line_delta_y == 0.0f, "pixel scroll line y is zero");
+
+    events = engine.process_scroll_event(scroll(110, 30.0f, 40.0f, 1.0f, -3.0f, scroll_delta_unit::lines));
+    require(events.size() == 1, "line scroll emits one input event");
+    const scroll_event& line = require_event<scroll_event>(events, 0);
+    require(line.timestamp_ms == 110, "line scroll preserves timestamp");
+    require(line.x == 30.0f, "line scroll preserves x");
+    require(line.y == 40.0f, "line scroll preserves y");
+    require(line.pixel_delta_x == 0.0f, "line scroll pixel x is zero");
+    require(line.pixel_delta_y == 0.0f, "line scroll pixel y is zero");
+    require(line.line_delta_x == 1.0f, "line scroll x delta is normalized");
+    require(line.line_delta_y == -3.0f, "line scroll y delta is normalized");
+
+    events = engine.process_scroll_event(scroll(120, 50.0f, 60.0f, 0.0f, 0.0f, scroll_delta_unit::pixels));
+    require(events.empty(), "zero scroll delta emits no input event");
 }
 
 void test_text_key_flow()
@@ -715,6 +765,7 @@ int main()
     test_drag_gestures_route_from_raw_pointer();
     test_drag_start_slop_routes_from_engine_thresholds();
     test_multi_pointer_long_press_order_routes_stably();
+    test_scroll_events_normalize_line_and_pixel_deltas();
     test_text_key_flow();
     test_key_code_fallback_edges();
     test_ime_composition_suppresses_text_and_key_events();

@@ -77,11 +77,35 @@ constexpr input::gesture_thresholds drag_threshold_contract{
 };
 static_assert(drag_threshold_contract.drag_start_slop == 12.0f);
 
+constexpr input::raw_scroll_event raw_scroll_contract{
+    .timestamp_ms = 10,
+    .x = 20.0f,
+    .y = 30.0f,
+    .delta_x = 1.0f,
+    .delta_y = -2.0f,
+    .unit = input::scroll_delta_unit::lines,
+};
+static_assert(raw_scroll_contract.unit == input::scroll_delta_unit::lines);
+
+constexpr input::scroll_event scroll_contract{
+    .timestamp_ms = 10,
+    .x = 20.0f,
+    .y = 30.0f,
+    .pixel_delta_x = 4.0f,
+    .pixel_delta_y = -8.0f,
+    .line_delta_x = 1.0f,
+    .line_delta_y = -2.0f,
+};
+static_assert(scroll_contract.pixel_delta_y == -8.0f);
+static_assert(scroll_contract.line_delta_y == -2.0f);
+static_assert(std::variant_size_v<input::input_event> == 4);
+
 template <typename T>
 concept InputEngineInterface = requires(
     T& engine,
     std::string target,
     const raw_platform_input_event& event,
+    const input::raw_scroll_event& scroll,
     std::int64_t timestamp_ms) {
     { engine.focus_text_target(target) } -> std::same_as<void>;
     { engine.clear_text_focus() } -> std::same_as<void>;
@@ -89,6 +113,7 @@ concept InputEngineInterface = requires(
     { engine.text_focus_id() } -> std::same_as<const std::string&>;
     { engine.text_model() } -> std::same_as<const input::text_input_model&>;
     { engine.process_raw_event(event) } -> std::same_as<std::vector<input::input_event>>;
+    { engine.process_scroll_event(scroll) } -> std::same_as<std::vector<input::input_event>>;
     { engine.update_time(timestamp_ms) } -> std::same_as<std::vector<input::input_event>>;
     { engine.reset() } -> std::same_as<void>;
 };

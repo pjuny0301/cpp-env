@@ -704,4 +704,87 @@ inline asset_manifest_validation_result validate_asset_manifest(
     return result;
 }
 
+struct asset_manifest_normalized_entry {
+    asset_manifest_entry entry;
+    resolved_asset_source source;
+    asset_cache_key cache_key;
+    std::optional<std::filesystem::path> rooted_path;
+};
+
+struct asset_manifest_normalization_result {
+    std::vector<asset_manifest_normalized_entry> entries;
+    asset_manifest_validation_result validation;
+
+    [[nodiscard]] bool ok() const
+    {
+        return validation.ok();
+    }
+
+    [[nodiscard]] const asset_manifest_normalized_entry* find_entry(std::string_view id) const
+    {
+        for (const asset_manifest_normalized_entry& entry : entries) {
+            if (entry.entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const asset_manifest_normalized_entry* find_cache_key(std::string_view cache_key) const
+    {
+        for (const asset_manifest_normalized_entry& entry : entries) {
+            if (entry.cache_key == cache_key) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+};
+
+inline asset_manifest_normalization_result normalize_asset_manifest(
+    const asset_manifest& manifest,
+    const asset_resolver_interface& resolver)
+{
+    asset_manifest_normalization_result result;
+    result.validation = validate_asset_manifest(manifest, resolver);
+
+    for (const asset_manifest_entry& entry : manifest.entries) {
+        if (!entry.valid()) {
+            continue;
+        }
+
+        const asset_resolve_result resolved = resolver.resolve(asset_resolve_request{
+            .type = entry.type,
+            .uri = entry.uri,
+        });
+        if (!resolved.ok()) {
+            continue;
+        }
+
+        asset_manifest_normalized_entry normalized{
+            .entry = entry,
+            .source = resolved.source,
+            .cache_key = make_manifest_asset_cache_key(entry, resolved.source),
+        };
+
+        if (!entry.root_id.empty()) {
+            const asset_manifest_root* root = manifest.find_root(entry.root_id);
+            if (root == nullptr || !root->valid()) {
+                continue;
+            }
+
+            normalized.rooted_path = make_manifest_rooted_path(
+                root->root_path,
+                asset_manifest_root_relative_path(normalized.source));
+            if (!normalized.rooted_path.has_value()) {
+                continue;
+            }
+        }
+
+        result.entries.push_back(std::move(normalized));
+    }
+
+    return result;
+}
+
 } // namespace quiz_vulkan::assets

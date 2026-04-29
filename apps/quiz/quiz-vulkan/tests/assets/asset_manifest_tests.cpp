@@ -123,6 +123,88 @@ void test_parse_asset_manifest_text_reports_errors_without_partial_records()
     require(parsed.manifest.entries[0].id == "click", "manifest parser preserves valid later entry");
 }
 
+void test_normalize_asset_manifest_projects_resolved_cache_entries()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    const asset_manifest_parse_result parsed = parse_asset_manifest(
+        "root id=packaged path="
+        + fixture_root.generic_string()
+        + " aliases=images\n"
+          "entry id=card_front type=image uri=ASSET:///cards\\front.png root=images rev=v2\n"
+          "entry id=main_deck type=deck uri=decks/main.quiz root=packaged\n");
+
+    const normalizing_asset_resolver resolver;
+    const asset_manifest_normalization_result normalized = normalize_asset_manifest(parsed.manifest, resolver);
+
+    require(parsed.ok(), "normalization fixture parses");
+    require(normalized.ok(), "normalization fixture validates");
+    require(normalized.entries.size() == 2U, "normalization projects all valid entries");
+
+    const asset_manifest_normalized_entry* card = normalized.find_entry("card_front");
+    require(card != nullptr, "normalization exposes entry lookup");
+    require(card->source.normalized_uri == "asset://cards/front.png", "normalization stores normalized asset uri");
+    require(card->cache_key == "image|asset://cards/front.png|rev=v2", "normalization stores manifest cache key");
+    require(
+        normalized.find_cache_key("image|asset://cards/front.png|rev=v2") == card,
+        "normalization exposes cache-key lookup");
+    require(card->rooted_path.has_value(), "normalization roots aliased entries");
+    require(
+        card->rooted_path->lexically_normal()
+            == (std::filesystem::absolute(fixture_root) / "cards" / "front.png").lexically_normal(),
+        "normalization rooted path uses canonical root");
+
+    const asset_manifest_normalized_entry* deck = normalized.find_entry("main_deck");
+    require(deck != nullptr, "normalization projects deck entries");
+    require(deck->cache_key == "deck|decks/main.quiz", "normalization stores local deck cache key");
+}
+
+void test_normalize_asset_manifest_skips_invalid_entries_but_reports_validation()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "fixture",
+        .root_path = fixture_root,
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "good",
+        .type = asset_type::image,
+        .uri = "asset://images/card.png",
+        .root_id = "fixture",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "traversal",
+        .type = asset_type::image,
+        .uri = "asset://images/%2e%2e/secret.png",
+        .root_id = "fixture",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "missing_root",
+        .type = asset_type::deck,
+        .uri = "decks/main.quiz",
+        .root_id = "missing",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const asset_manifest_normalization_result normalized = normalize_asset_manifest(manifest, resolver);
+
+    require(!normalized.ok(), "normalization carries validation failures");
+    require(normalized.entries.size() == 1U, "normalization skips entries without safe resolved paths");
+    require(normalized.find_entry("good") != nullptr, "normalization keeps valid entries");
+    require(normalized.find_entry("traversal") == nullptr, "normalization skips traversal entries");
+    require(normalized.find_entry("missing_root") == nullptr, "normalization skips missing-root entries");
+    require(
+        has_issue(normalized.validation, asset_manifest_validation_issue_kind::asset_resolve_failed, "traversal"),
+        "normalization reports resolver validation failures");
+    require(
+        has_issue(normalized.validation, asset_manifest_validation_issue_kind::missing_root, "missing_root"),
+        "normalization reports missing-root validation failures");
+}
+
 void test_manifest_normalizes_asset_uri_and_roots_fixture_path()
 {
     using namespace quiz_vulkan::assets;
@@ -656,6 +738,8 @@ int main()
 {
     test_parse_asset_manifest_text_loads_roots_entries_and_aliases();
     test_parse_asset_manifest_text_reports_errors_without_partial_records();
+    test_normalize_asset_manifest_projects_resolved_cache_entries();
+    test_normalize_asset_manifest_skips_invalid_entries_but_reports_validation();
     test_manifest_normalizes_asset_uri_and_roots_fixture_path();
     test_cache_key_is_stable_for_equivalent_normalized_uris();
     test_local_fixture_roots_use_normalized_relative_paths();

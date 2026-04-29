@@ -1,6 +1,6 @@
 #include "core/layout/layout_placer.h"
 #include "core/domain/app_snapshot.hpp"
-#include "core/ui/quiz_screens.h"
+#include "app/app_quiz_screens.h"
 
 #include <cassert>
 #include <cmath>
@@ -224,15 +224,15 @@ int main()
         nullptr,
         learning);
 
-    const ui::quiz_screen_descriptor deck_list_descriptor = ui::describe_quiz_screen(deck_list_snapshot);
-    require(deck_list_descriptor.kind == ui::quiz_screen_kind::deck_list, "deck list descriptor selected");
+    const presentation::quiz_screen_descriptor deck_list_descriptor = presentation::describe_quiz_screen(deck_list_snapshot);
+    require(deck_list_descriptor.kind == presentation::quiz_screen_kind::deck_list, "deck list descriptor selected");
     require(deck_list_descriptor.route.metadata.at("descriptor_version") == "quiz_screen_descriptor_v1", "descriptor version emitted");
     require(deck_list_descriptor.route.metadata.at("layout_contract") == "deck_grid", "deck list layout contract emitted");
     require(deck_list_descriptor.route.metadata.at("known_count") == "0", "deck list known count metadata emitted");
     require(deck_list_descriptor.route.metadata.at("wrong_note_count") == "0", "deck list wrong-note count metadata emitted");
 
     scene::scene_layout_data deck_list_data("test_deck_list");
-    apply_patch_to_scene(ui::make_quiz_screen_patch(deck_list_snapshot), deck_list_data);
+    apply_patch_to_scene(presentation::make_quiz_screen_patch(deck_list_snapshot), deck_list_data);
     require(deck_list_data.contains_node("quiz_screens_root"), "deck list root exists");
     require(deck_list_data.contains_node("deck_list_deck_deck1"), "deck button exists");
     require(deck_list_data.has_focus(), "deck list has focus");
@@ -247,7 +247,7 @@ int main()
 
     const domain::app_snapshot day_intro_snapshot = make_snapshot(decks);
     scene::scene_layout_data day_intro_data("test_day_intro");
-    apply_patch_to_scene(ui::make_quiz_screen_patch(day_intro_snapshot), day_intro_data);
+    apply_patch_to_scene(presentation::make_quiz_screen_patch(day_intro_snapshot), day_intro_data);
     require(day_intro_data.route_state().screen_id == "day_intro", "day intro route selected");
     require(day_intro_data.route_state().metadata.at("selected_day_id") == "day1", "day intro selected day metadata emitted");
     require(day_intro_data.route_state().metadata.at("selected_day_question_count") == "1", "day intro question count metadata emitted");
@@ -266,7 +266,7 @@ int main()
         std::nullopt,
         learning_groups);
     scene::scene_layout_data learning_day_intro_data("test_learning_day_intro");
-    apply_patch_to_scene(ui::make_quiz_screen_patch(learning_day_intro_snapshot), learning_day_intro_data);
+    apply_patch_to_scene(presentation::make_quiz_screen_patch(learning_day_intro_snapshot), learning_day_intro_data);
     require(learning_day_intro_data.route_state().screen_id == "day_intro", "learning day intro route selected");
     require(learning_day_intro_data.route_state().metadata.at("known_count") == "1", "known count metadata emitted");
     require(learning_day_intro_data.route_state().metadata.at("wrong_note_count") == "1", "wrong-note count metadata emitted");
@@ -280,7 +280,7 @@ int main()
     domain::quiz_session active_session = make_active_session(decks.front());
     const domain::app_snapshot active_snapshot = make_snapshot(decks, &active_session);
     scene::scene_layout_data active_data("test_active");
-    apply_patch_to_scene(ui::make_quiz_screen_patch(active_snapshot), active_data);
+    apply_patch_to_scene(presentation::make_quiz_screen_patch(active_snapshot), active_data);
     require(active_data.route_state().screen_id == "quiz_active", "active quiz route selected");
     require(active_data.route_state().metadata.at("session_phase") == "active", "active session phase metadata emitted");
     require(active_data.route_state().metadata.at("question_id") == "q1", "active question id metadata emitted");
@@ -299,7 +299,7 @@ int main()
     domain::quiz_session blank_session = make_active_session(blank_decks.front());
     const domain::app_snapshot blank_snapshot = make_snapshot(blank_decks, &blank_session);
     scene::scene_layout_data blank_data("test_blank_input");
-    apply_patch_to_scene(ui::make_quiz_screen_patch(blank_snapshot), blank_data);
+    apply_patch_to_scene(presentation::make_quiz_screen_patch(blank_snapshot), blank_data);
     require(blank_data.route_state().screen_id == "quiz_active", "blank input route selected");
     require(blank_data.route_state().metadata.at("keyboard_safe_layout") == "true", "blank input advertises keyboard-safe layout");
     require(blank_data.has_focus(), "blank input screen has focus");
@@ -353,7 +353,7 @@ int main()
     require(feedback_record.has_value(), "submitting option creates feedback");
     const domain::app_snapshot feedback_snapshot = make_snapshot(decks, &feedback_session);
     scene::scene_layout_data feedback_data("test_feedback");
-    apply_patch_to_scene(ui::make_quiz_screen_patch(feedback_snapshot), feedback_data);
+    apply_patch_to_scene(presentation::make_quiz_screen_patch(feedback_snapshot), feedback_data);
     require(feedback_data.route_state().screen_id == "quiz_feedback", "feedback route selected");
     require(feedback_data.route_state().metadata.at("feedback_outcome") == "incorrect", "feedback outcome metadata emitted");
     require(feedback_data.route_state().metadata.at("input_locked") == "true", "feedback input is locked");
@@ -367,7 +367,7 @@ int main()
     domain::continue_after_feedback(feedback_session);
     const domain::app_snapshot results_snapshot = make_snapshot(decks, &feedback_session);
     scene::scene_layout_data results_data("test_results");
-    apply_patch_to_scene(ui::make_quiz_screen_patch(results_snapshot), results_data);
+    apply_patch_to_scene(presentation::make_quiz_screen_patch(results_snapshot), results_data);
     require(results_data.route_state().screen_id == "quiz_results", "results route selected");
     require(results_data.route_state().metadata.at("completed") == "true", "results completed metadata emitted");
     require(results_data.contains_node("quiz_results_start_normal"), "results normal action exists");
@@ -382,7 +382,7 @@ int main()
         std::nullopt,
         learning_groups);
     scene::scene_layout_data learning_results_data("test_learning_results");
-    apply_patch_to_scene(ui::make_quiz_screen_patch(learning_results_snapshot), learning_results_data);
+    apply_patch_to_scene(presentation::make_quiz_screen_patch(learning_results_snapshot), learning_results_data);
     require(learning_results_data.route_state().screen_id == "quiz_results", "learning results route selected");
     require(learning_results_data.route_state().metadata.at("known_count") == "1", "results known count metadata emitted");
     require(learning_results_data.route_state().metadata.at("wrong_note_count") == "1", "results wrong-note count metadata emitted");
@@ -396,7 +396,7 @@ int main()
         nullptr,
         {{"ui_screen", "settings"}, {"source_uri", "fixture://deck"}});
     scene::scene_layout_data settings_data("test_settings");
-    apply_patch_to_scene(ui::make_quiz_screen_patch(settings_snapshot), settings_data);
+    apply_patch_to_scene(presentation::make_quiz_screen_patch(settings_snapshot), settings_data);
     require(settings_data.route_state().screen_id == "settings", "settings route selected");
     require(settings_data.route_state().metadata.at("layout_contract") == "settings_list", "settings layout contract emitted");
     require(settings_data.route_state().metadata.at("settings_count") == "2", "settings count metadata emitted");
@@ -409,7 +409,7 @@ int main()
         {},
         std::optional<std::string>{"Deck not found: missing"});
     scene::scene_layout_data error_data("test_error");
-    apply_patch_to_scene(ui::make_quiz_screen_patch(error_snapshot), error_data);
+    apply_patch_to_scene(presentation::make_quiz_screen_patch(error_snapshot), error_data);
     require(error_data.route_state().screen_id == "error", "error route selected");
     require(error_data.route_state().metadata.at("has_error") == "true", "error metadata emitted");
     require(error_data.route_state().metadata.at("layout_contract") == "error_recovery", "error layout contract emitted");

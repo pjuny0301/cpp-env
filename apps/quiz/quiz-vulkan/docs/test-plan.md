@@ -16,7 +16,7 @@ Representative smoke and contract targets include:
 - `quiz_vulkan_domain_smoke_test`
 - `quiz_vulkan_scene_layout_data_tests`
 - `quiz_vulkan_layout_placer_tests`
-- `quiz_vulkan_quiz_screens_tests`
+- `quiz_vulkan_app_quiz_screens_tests`
 - `quiz_vulkan_renderer_tests`
 - `quiz_vulkan_interface_contract_compile_tests`
 
@@ -33,7 +33,7 @@ The local Windows user has a `cmd.exe` AutoRun entry. Use `tools/run_windows_min
 | Domain behavior | `quiz_vulkan_domain_smoke_test` | CTest via `windows-mingw-ascii` | Pass |
 | Scene data and patching | `quiz_vulkan_scene_layout_data_tests` | CTest via `windows-mingw-ascii` | Pass |
 | Layout placement | `quiz_vulkan_layout_placer_tests` | CTest via `windows-mingw-ascii` | Pass |
-| Quiz screen patching | `quiz_vulkan_quiz_screens_tests` | CTest via `windows-mingw-ascii` | Pass |
+| Quiz screen patching | `quiz_vulkan_app_quiz_screens_tests` | CTest via `windows-mingw-ascii` | Pass |
 | UI to Vulkan command bridge | `quiz_vulkan_renderer_tests` | CTest via `windows-mingw-ascii` | Pass |
 | Aggregate interface lock | `quiz_vulkan_interface_contract_compile_tests` | CMake target via `windows-mingw-ascii` | Build succeeds |
 

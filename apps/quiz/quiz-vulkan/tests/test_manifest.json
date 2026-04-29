@@ -158,9 +158,9 @@
       ]
     },
     {
-      "id": "quiz_screens_smoke",
-      "area": "ui",
-      "path": "tests/ui/quiz_screens_tests.cpp",
+      "id": "app_quiz_screens_smoke",
+      "area": "app",
+      "path": "tests/app/app_quiz_screens_tests.cpp",
       "type": "ctest",
       "compiler_profile": "windows_mingw_ascii_gcc13",
       "supported_with_available_mingw": true

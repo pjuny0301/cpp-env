@@ -2,7 +2,7 @@
 
 #include "core/layout/layout_placer.h"
 #include "core/scene/modifier_interface.h"
-#include "core/ui/quiz_screens.h"
+#include "app/app_quiz_screens.h"
 #include "core/ui/ui_renderer.h"
 #include "render/text/fake_text_engine.h"
 #include "render/text/scene_text_metrics_adapter.h"
@@ -159,7 +159,7 @@ app_render_frame render_app_frame(
     }
 
     scene::scene_layout_data_modifier scene_modifiers;
-    scene_modifiers.add_modifier(ui::make_app_snapshot_screen_modifier(snapshot));
+    scene_modifiers.add_modifier(presentation::make_app_snapshot_screen_modifier(snapshot));
     scene_modifiers.add_modifier(std::make_shared<app_render_view_state_modifier>(view_state));
 
     const scene::scene_layout_apply_result apply_result = scene_modifiers.apply(

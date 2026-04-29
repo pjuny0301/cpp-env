@@ -7,11 +7,11 @@ quiz domain state.
 it consumes a placed scene and emits a `render_draw_list`. It must not include or
 inspect domain headers.
 
-`quiz_screens.h` is a temporary app screen presenter that still converts
+`app_quiz_screens.h` is an app screen presenter that converts
 `domain::app_snapshot` into a scene patch. Treat that as an app/presentation
-bridge, not as the final UI renderer boundary. Do not grow that coupling; the
-target split is domain snapshot -> app-owned presentation/modifier -> scene edit
-data -> layout -> UI renderer -> Vulkan renderer.
+bridge, not as the UI renderer boundary. Do not grow that coupling into
+`src/core/ui`; the split is domain snapshot -> app-owned presentation/modifier
+-> scene edit data -> layout -> UI renderer -> Vulkan renderer.
 
 ## Pipeline
 

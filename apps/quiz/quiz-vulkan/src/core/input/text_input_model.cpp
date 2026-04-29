@@ -90,6 +90,27 @@ std::string text_input_model::display_text() const
     return display;
 }
 
+text_range text_input_model::caret_range() const
+{
+    const std::size_t caret = text_.size() + preedit_text_.size();
+    return text_range{
+        .start_byte = caret,
+        .end_byte = caret,
+    };
+}
+
+std::optional<text_range> text_input_model::preedit_range() const
+{
+    if (preedit_text_.empty()) {
+        return std::nullopt;
+    }
+
+    return text_range{
+        .start_byte = text_.size(),
+        .end_byte = text_.size() + preedit_text_.size(),
+    };
+}
+
 bool text_input_model::commit_utf8(std::string_view utf8_text)
 {
     if (!focused_ || utf8_text.empty()) {

@@ -38,6 +38,8 @@ concept TextInputModelInterface = requires(
     { model.text() } -> std::same_as<const std::string&>;
     { model.preedit_text() } -> std::same_as<const std::string&>;
     { model.display_text() } -> std::same_as<std::string>;
+    { model.caret_range() } -> std::same_as<input::text_range>;
+    { model.preedit_range() } -> std::same_as<std::optional<input::text_range>>;
     { model.commit_utf8(text) } -> std::same_as<bool>;
     { model.backspace() } -> std::same_as<bool>;
     { model.set_preedit(text) } -> std::same_as<bool>;
@@ -50,6 +52,13 @@ concept TextInputModelInterface = requires(
 
 static_assert(GestureRecognizerInterface<input::gesture_recognizer>);
 static_assert(TextInputModelInterface<input::text_input_model>);
+
+constexpr input::text_range text_range_contract{
+    .start_byte = 3,
+    .end_byte = 7,
+};
+static_assert(text_range_contract.start_byte == 3);
+static_assert(text_range_contract.end_byte == 7);
 
 constexpr input::gesture_event drag_contract_event{
     .kind = input::gesture_kind::drag_update,

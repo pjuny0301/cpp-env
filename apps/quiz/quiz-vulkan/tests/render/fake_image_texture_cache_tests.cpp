@@ -132,6 +132,19 @@ public:
     mutable int decode_request_count = 0;
 };
 
+const quiz_vulkan::render::fake_image_texture_cache_entry_snapshot* find_snapshot_entry(
+    const quiz_vulkan::render::fake_image_texture_cache_snapshot& snapshot,
+    std::string_view source_key)
+{
+    for (const quiz_vulkan::render::fake_image_texture_cache_entry_snapshot& entry : snapshot.entries) {
+        if (entry.key.source_key == source_key) {
+            return &entry;
+        }
+    }
+
+    return nullptr;
+}
+
 void test_sampler_defaults_are_appended_to_render_image_ref()
 {
     using namespace quiz_vulkan::render;
@@ -643,12 +656,14 @@ void test_texture_cache_release_unused_evicts_fake_entries()
     require(cached.texture.id == first.texture.id, "matching texture request reuses id before release");
     require(cache.cached_texture_count() == 1, "cached texture count tracks releasable entry");
     require(cache.cached_pixel_count() == 2, "cached pixel count tracks releasable entry");
+    require(cache.cached_pixel_byte_count() == 8, "cached pixel byte count tracks releasable entry");
     require(cache.cached_decoded_byte_count() == 8, "cached decoded byte count tracks releasable entry");
 
     cache.release_unused();
     require(cache.release_unused_count() == 1, "release hook count increments during eviction");
     require(cache.cached_texture_count() == 0, "release clears cached texture count");
     require(cache.cached_pixel_count() == 0, "release clears cached pixel count");
+    require(cache.cached_pixel_byte_count() == 0, "release clears cached pixel byte count");
     require(cache.cached_decoded_byte_count() == 0, "release clears cached decoded byte count");
 
     const render_image_texture_result after_release = cache.acquire_texture(request);
@@ -700,6 +715,7 @@ void test_texture_cache_tracks_pixel_budget_and_evicts_lru_entries()
     require(cache.max_cached_pixel_count() == 3, "cache exposes configured pixel budget");
     require(cache.cached_texture_count() == 3, "cache stores textures up to pixel budget");
     require(cache.cached_pixel_count() == 3, "cache tracks cached pixel count");
+    require(cache.cached_pixel_byte_count() == 12, "cache tracks cached pixel byte count");
     require(cache.cached_decoded_byte_count() == 12, "cache tracks cached decoded byte count");
 
     const render_image_texture_result touched_a = acquire(source_a);
@@ -746,7 +762,95 @@ void test_texture_cache_skips_caching_entries_over_pixel_budget()
     require(first.texture.id != second.texture.id, "over-budget texture receives a new handle on retry");
     require(cache.cached_texture_count() == 0, "over-budget texture does not increase cache count");
     require(cache.cached_pixel_count() == 0, "over-budget texture does not increase cached pixels");
+    require(cache.cached_pixel_byte_count() == 0, "over-budget texture does not increase cached pixel bytes");
     require(cache.cached_decoded_byte_count() == 0, "over-budget texture does not increase cached bytes");
+}
+
+void test_texture_cache_diagnostic_snapshot_reports_entries_and_recency()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source one_pixel_source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/snapshot-one.ppm"})
+                                                        .source;
+    const render_resolved_image_source two_pixel_source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/snapshot-two.ppm"})
+                                                        .source;
+    ppm_image_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+    cache.set_max_cached_pixel_count(4);
+    cache.set_placeholder_encoded_bytes_for_source(one_pixel_source.cache_key(), make_ppm_1x1_encoded_bytes());
+    cache.set_placeholder_encoded_bytes_for_source(two_pixel_source.cache_key(), make_ppm_2x1_encoded_bytes());
+
+    const render_image_texture_request one_pixel_request{
+        .source = one_pixel_source,
+        .sampler = render_image_sampler_policy{},
+    };
+    const render_image_texture_request two_pixel_request{
+        .source = two_pixel_source,
+        .sampler = render_image_sampler_policy{},
+    };
+
+    const render_image_texture_result one_pixel_first = cache.acquire_texture(one_pixel_request);
+    const render_image_texture_result two_pixel_first = cache.acquire_texture(two_pixel_request);
+    const render_image_texture_result one_pixel_hit = cache.acquire_texture(one_pixel_request);
+    require(one_pixel_first.ok(), "snapshot one-pixel texture is created");
+    require(two_pixel_first.ok(), "snapshot two-pixel texture is created");
+    require(one_pixel_hit.cache_hit, "snapshot one-pixel texture can refresh recency");
+
+    const fake_image_texture_cache_snapshot snapshot = cache.diagnostic_snapshot();
+    require(snapshot.texture_count == 2, "snapshot reports cached texture count");
+    require(snapshot.entries.size() == 2, "snapshot carries one entry per cached texture");
+    require(snapshot.max_cached_pixel_count == 4, "snapshot reports configured pixel budget");
+    require(snapshot.cached_pixel_count == 3, "snapshot reports aggregate pixel count");
+    require(snapshot.cached_pixel_byte_count == 12, "snapshot reports aggregate pixel bytes");
+    require(snapshot.cached_decoded_byte_count == 12, "snapshot reports aggregate decoded bytes");
+
+    const fake_image_texture_cache_entry_snapshot* one_entry = find_snapshot_entry(
+        snapshot,
+        one_pixel_source.cache_key());
+    const fake_image_texture_cache_entry_snapshot* two_entry = find_snapshot_entry(
+        snapshot,
+        two_pixel_source.cache_key());
+    require(one_entry != nullptr, "snapshot includes one-pixel source entry");
+    require(two_entry != nullptr, "snapshot includes two-pixel source entry");
+
+    require(one_entry->key == one_pixel_first.key, "snapshot one-pixel entry reports texture key");
+    require(one_entry->texture.id == one_pixel_first.texture.id, "snapshot one-pixel entry reports handle id");
+    require(one_entry->texture.width == 1, "snapshot one-pixel entry reports handle width");
+    require(one_entry->texture.height == 1, "snapshot one-pixel entry reports handle height");
+    require(one_entry->pixel_count == 1, "snapshot one-pixel entry reports pixel count");
+    require(one_entry->pixel_byte_count == 4, "snapshot one-pixel entry reports pixel bytes");
+    require(one_entry->decoded_byte_count == 4, "snapshot one-pixel entry reports decoded bytes");
+
+    require(two_entry->key == two_pixel_first.key, "snapshot two-pixel entry reports texture key");
+    require(two_entry->texture.id == two_pixel_first.texture.id, "snapshot two-pixel entry reports handle id");
+    require(two_entry->texture.width == 2, "snapshot two-pixel entry reports handle width");
+    require(two_entry->texture.height == 1, "snapshot two-pixel entry reports handle height");
+    require(two_entry->pixel_count == 2, "snapshot two-pixel entry reports pixel count");
+    require(two_entry->pixel_byte_count == 8, "snapshot two-pixel entry reports pixel bytes");
+    require(two_entry->decoded_byte_count == 8, "snapshot two-pixel entry reports decoded bytes");
+    require(
+        one_entry->last_used_sequence > two_entry->last_used_sequence,
+        "snapshot last-used sequence reflects most recent cache hit");
+
+    cache.invalidate_source(one_pixel_source.cache_key());
+    const fake_image_texture_cache_snapshot after_invalidation = cache.diagnostic_snapshot();
+    require(after_invalidation.texture_count == 1, "snapshot updates texture count after source invalidation");
+    require(after_invalidation.cached_pixel_count == 2, "snapshot updates pixel count after source invalidation");
+    require(
+        after_invalidation.cached_pixel_byte_count == 8,
+        "snapshot updates pixel bytes after source invalidation");
+    require(
+        after_invalidation.cached_decoded_byte_count == 8,
+        "snapshot updates decoded bytes after source invalidation");
+    require(
+        find_snapshot_entry(after_invalidation, one_pixel_source.cache_key()) == nullptr,
+        "snapshot drops invalidated source entry");
+    require(
+        find_snapshot_entry(after_invalidation, two_pixel_source.cache_key()) != nullptr,
+        "snapshot preserves unrelated source entry");
 }
 
 void test_texture_cache_invalidates_by_texture_key_and_source()
@@ -1111,6 +1215,7 @@ int main()
     test_texture_cache_release_unused_evicts_fake_entries();
     test_texture_cache_tracks_pixel_budget_and_evicts_lru_entries();
     test_texture_cache_skips_caching_entries_over_pixel_budget();
+    test_texture_cache_diagnostic_snapshot_reports_entries_and_recency();
     test_texture_cache_invalidates_by_texture_key_and_source();
     test_texture_cache_reports_explicit_failures();
     test_texture_cache_propagates_decoder_failures();

@@ -80,6 +80,9 @@ static_assert(requires(
     render::render_image_decoder_diagnostic diagnostic,
     render::render_image_decode_result decode_result,
     render::render_image_texture_result texture_result,
+    render::fake_image_texture_cache_entry_snapshot cache_entry,
+    render::fake_image_texture_cache_snapshot cache_snapshot,
+    const render::fake_image_texture_cache& cache,
     const render::render_image_decode_request& request,
     const render::render_decoded_image& image) {
     { metadata.decoder_id } -> std::same_as<std::string&>;
@@ -100,6 +103,19 @@ static_assert(requires(
     { render::make_render_image_decode_metadata("decoder", request) } -> std::same_as<render::render_image_decode_metadata>;
     { render::make_render_image_decode_metadata("decoder", request, image) }
         -> std::same_as<render::render_image_decode_metadata>;
+    { cache_entry.key } -> std::same_as<render::render_image_texture_key&>;
+    { cache_entry.texture } -> std::same_as<render::render_image_texture_handle&>;
+    { cache_entry.pixel_count } -> std::same_as<std::size_t&>;
+    { cache_entry.pixel_byte_count } -> std::same_as<std::size_t&>;
+    { cache_entry.decoded_byte_count } -> std::same_as<std::size_t&>;
+    { cache_entry.last_used_sequence } -> std::same_as<std::size_t&>;
+    { cache_snapshot.texture_count } -> std::same_as<std::size_t&>;
+    { cache_snapshot.max_cached_pixel_count } -> std::same_as<std::size_t&>;
+    { cache_snapshot.cached_pixel_count } -> std::same_as<std::size_t&>;
+    { cache_snapshot.cached_pixel_byte_count } -> std::same_as<std::size_t&>;
+    { cache_snapshot.cached_decoded_byte_count } -> std::same_as<std::size_t&>;
+    { cache_snapshot.entries } -> std::same_as<std::vector<render::fake_image_texture_cache_entry_snapshot>&>;
+    { cache.diagnostic_snapshot() } -> std::same_as<render::fake_image_texture_cache_snapshot>;
 });
 
 } // namespace

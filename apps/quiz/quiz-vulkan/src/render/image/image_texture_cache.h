@@ -182,6 +182,24 @@ struct render_image_texture_key_less {
     }
 };
 
+struct fake_image_texture_cache_entry_snapshot {
+    render_image_texture_key key;
+    render_image_texture_handle texture;
+    std::size_t pixel_count = 0;
+    std::size_t pixel_byte_count = 0;
+    std::size_t decoded_byte_count = 0;
+    std::size_t last_used_sequence = 0;
+};
+
+struct fake_image_texture_cache_snapshot {
+    std::size_t texture_count = 0;
+    std::size_t max_cached_pixel_count = 0;
+    std::size_t cached_pixel_count = 0;
+    std::size_t cached_pixel_byte_count = 0;
+    std::size_t cached_decoded_byte_count = 0;
+    std::vector<fake_image_texture_cache_entry_snapshot> entries;
+};
+
 class fake_image_texture_cache final : public image_texture_cache_interface {
 public:
     explicit fake_image_texture_cache(const image_decoder_interface& decoder)
@@ -304,10 +322,12 @@ public:
             .height = decoded.image.height,
         };
         const std::size_t pixel_count = decoded.image.width * decoded.image.height;
+        const std::size_t pixel_byte_count = expected_render_decoded_image_byte_count(decoded.image);
         const std::size_t decoded_byte_count = decoded.image.pixels.size();
         if (pixel_count <= max_cached_pixel_count_) {
             evict_to_fit(pixel_count);
             cached_pixel_count_ += pixel_count;
+            cached_pixel_byte_count_ += pixel_byte_count;
             cached_decoded_byte_count_ += decoded_byte_count;
             textures_.emplace(
                 key,
@@ -316,6 +336,7 @@ public:
                     .decode_metadata = decoded.metadata,
                     .decoder_diagnostics = decoded.decoder_diagnostics,
                     .pixel_count = pixel_count,
+                    .pixel_byte_count = pixel_byte_count,
                     .decoded_byte_count = decoded_byte_count,
                     .last_used_sequence = next_access_sequence_++,
                 });
@@ -380,6 +401,37 @@ public:
         return cached_decoded_byte_count_;
     }
 
+    std::size_t cached_pixel_byte_count() const
+    {
+        return cached_pixel_byte_count_;
+    }
+
+    fake_image_texture_cache_snapshot diagnostic_snapshot() const
+    {
+        fake_image_texture_cache_snapshot snapshot{
+            .texture_count = textures_.size(),
+            .max_cached_pixel_count = max_cached_pixel_count_,
+            .cached_pixel_count = cached_pixel_count_,
+            .cached_pixel_byte_count = cached_pixel_byte_count_,
+            .cached_decoded_byte_count = cached_decoded_byte_count_,
+            .entries = {},
+        };
+        snapshot.entries.reserve(textures_.size());
+
+        for (const auto& [key, entry] : textures_) {
+            snapshot.entries.push_back(fake_image_texture_cache_entry_snapshot{
+                .key = key,
+                .texture = entry.texture,
+                .pixel_count = entry.pixel_count,
+                .pixel_byte_count = entry.pixel_byte_count,
+                .decoded_byte_count = entry.decoded_byte_count,
+                .last_used_sequence = entry.last_used_sequence,
+            });
+        }
+
+        return snapshot;
+    }
+
     void invalidate_source(render_image_cache_key source_key)
     {
         for (auto texture = textures_.begin(); texture != textures_.end();) {
@@ -409,6 +461,7 @@ private:
         render_image_decode_metadata decode_metadata;
         std::vector<render_image_decoder_diagnostic> decoder_diagnostics;
         std::size_t pixel_count = 0;
+        std::size_t pixel_byte_count = 0;
         std::size_t decoded_byte_count = 0;
         std::size_t last_used_sequence = 0;
     };
@@ -426,6 +479,7 @@ private:
     {
         textures_.clear();
         cached_pixel_count_ = 0;
+        cached_pixel_byte_count_ = 0;
         cached_decoded_byte_count_ = 0;
     }
 
@@ -433,6 +487,9 @@ private:
     {
         cached_pixel_count_ = entry.pixel_count <= cached_pixel_count_
             ? cached_pixel_count_ - entry.pixel_count
+            : 0;
+        cached_pixel_byte_count_ = entry.pixel_byte_count <= cached_pixel_byte_count_
+            ? cached_pixel_byte_count_ - entry.pixel_byte_count
             : 0;
         cached_decoded_byte_count_ = entry.decoded_byte_count <= cached_decoded_byte_count_
             ? cached_decoded_byte_count_ - entry.decoded_byte_count
@@ -465,6 +522,7 @@ private:
     int release_unused_count_ = 0;
     std::size_t max_cached_pixel_count_ = std::numeric_limits<std::size_t>::max();
     std::size_t cached_pixel_count_ = 0;
+    std::size_t cached_pixel_byte_count_ = 0;
     std::size_t cached_decoded_byte_count_ = 0;
     std::vector<std::byte> placeholder_encoded_bytes_ = {std::byte{0x01}};
     std::map<render_image_cache_key, std::vector<std::byte>> source_placeholder_encoded_bytes_;

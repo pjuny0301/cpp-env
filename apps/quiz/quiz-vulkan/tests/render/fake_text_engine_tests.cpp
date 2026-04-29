@@ -329,7 +329,11 @@ void test_glyph_atlas_cache_consumes_dirty_page_updates_by_revision()
     require(near(first_updates[0].updated_bounds.y, 1.0f), "first dirty update tracks glyph y");
     require(near(first_updates[0].updated_bounds.width, 5.0f), "first dirty update tracks glyph width");
     require(near(first_updates[0].updated_bounds.height, 6.0f), "first dirty update tracks glyph height");
-    require(first_updates[0].rgba.empty(), "atlas cache update is metadata-only before rasterization");
+    require(first_updates[0].rgba.size() == 5U * 6U * 4U, "first dirty update carries tight RGBA payload");
+    require(first_updates[0].rgba[0] == 52U, "first dirty payload red channel is deterministic");
+    require(first_updates[0].rgba[1] == 2U, "first dirty payload green channel includes atlas x and revision");
+    require(first_updates[0].rgba[2] == 2U, "first dirty payload blue channel includes page and atlas y");
+    require(first_updates[0].rgba[3] == 255U, "first dirty payload alpha is opaque");
     require(cache.consume_dirty_page_updates().empty(), "glyph atlas consumes dirty page updates once");
 
     require(cache.cache_glyph(glyph_b, 5, 6).has_value(), "glyph atlas queues second glyph update");
@@ -342,6 +346,8 @@ void test_glyph_atlas_cache_consumes_dirty_page_updates_by_revision()
     require(near(merged_updates[0].updated_bounds.y, 1.0f), "merged dirty bounds keep top edge");
     require(near(merged_updates[0].updated_bounds.width, 12.0f), "merged dirty bounds span packed columns");
     require(near(merged_updates[0].updated_bounds.height, 14.0f), "merged dirty bounds span wrapped rows");
+    require(merged_updates[0].rgba.size() == 12U * 14U * 4U, "merged dirty update carries RGBA for union bounds");
+    require(merged_updates[0].rgba[0] == 114U, "merged dirty payload includes latest page revision");
 
     require(cache.cache_glyph(glyph_d, 5, 6).has_value(), "glyph atlas queues final page one glyph");
     require(cache.cache_glyph(glyph_e, 5, 6).has_value(), "glyph atlas queues page two glyph");
@@ -351,6 +357,9 @@ void test_glyph_atlas_cache_consumes_dirty_page_updates_by_revision()
     require(page_updates[0].page.revision == 4, "page one update reports latest revision");
     require(page_updates[1].page.id == 2, "second multi-page update reports page two");
     require(page_updates[1].page.revision == 1, "page two update starts at revision one");
+    require(page_updates[0].rgba.size() == 5U * 6U * 4U, "page one dirty update carries glyph payload");
+    require(page_updates[1].rgba.size() == 5U * 6U * 4U, "page two dirty update carries glyph payload");
+    require(page_updates[1].rgba[0] == 69U, "page two dirty payload includes page id");
 
     require(cache.cache_glyph(glyph_a, 5, 6).has_value(), "glyph atlas returns cached glyph before dirty check");
     require(cache.consume_dirty_page_updates().empty(), "cached glyph does not dirty atlas page");

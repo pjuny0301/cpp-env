@@ -274,7 +274,7 @@ public:
             updates.push_back(render_text_atlas_update{
                 .page = page.page,
                 .updated_bounds = page.dirty_bounds,
-                .rgba = {},
+                .rgba = make_deterministic_update_rgba(page.page, page.dirty_bounds),
             });
             page.dirty = false;
             page.dirty_bounds = {};
@@ -358,6 +358,32 @@ private:
             right - left,
             bottom - top,
         };
+    }
+
+    static std::vector<unsigned char> make_deterministic_update_rgba(
+        const render_text_atlas_page& page,
+        const render_rect& bounds)
+    {
+        const std::size_t width = static_cast<std::size_t>(bounds.width);
+        const std::size_t height = static_cast<std::size_t>(bounds.height);
+        const std::uint32_t origin_x = static_cast<std::uint32_t>(bounds.x);
+        const std::uint32_t origin_y = static_cast<std::uint32_t>(bounds.y);
+        const std::uint32_t revision = static_cast<std::uint32_t>(page.revision & 0xffU);
+
+        std::vector<unsigned char> rgba(width * height * 4U);
+        for (std::size_t y = 0; y < height; ++y) {
+            for (std::size_t x = 0; x < width; ++x) {
+                const std::uint32_t atlas_x = origin_x + static_cast<std::uint32_t>(x);
+                const std::uint32_t atlas_y = origin_y + static_cast<std::uint32_t>(y);
+                const std::uint32_t seed = (page.id * 17U) + (revision * 31U);
+                const std::size_t offset = ((y * width) + x) * 4U;
+                rgba[offset] = static_cast<unsigned char>((seed + atlas_x + (atlas_y * 3U)) & 0xffU);
+                rgba[offset + 1U] = static_cast<unsigned char>((revision + atlas_x) & 0xffU);
+                rgba[offset + 2U] = static_cast<unsigned char>((page.id + atlas_y) & 0xffU);
+                rgba[offset + 3U] = 255U;
+            }
+        }
+        return rgba;
     }
 
     glyph_atlas_slot record_allocation(glyph_atlas_key key, std::size_t page_index, render_rect bounds)

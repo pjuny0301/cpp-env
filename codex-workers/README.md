@@ -82,6 +82,7 @@ Each worker should:
 - build `quiz_vulkan_interface_contract_compile_tests`,
 - run role-specific tests,
 - run `git diff --check`,
+- reserve full CTest for app/CMake/public-contract changes, large integration batches, or explicit integrator requests,
 - commit on its role branch,
 - treat `src/app/*`, `app.cpp`, `main.cpp`, top-level `CMakeLists.txt`, and aggregate contract registration as integrator-owned unless the prompt explicitly grants that write set,
 - propose app/runtime/CMake wiring instead of editing those files from an engine worker,

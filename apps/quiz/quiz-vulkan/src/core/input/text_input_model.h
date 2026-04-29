@@ -25,11 +25,15 @@ public:
     [[nodiscard]] std::size_t caret_byte_offset() const;
     [[nodiscard]] text_range caret_range() const;
     [[nodiscard]] std::optional<text_range> preedit_range() const;
+    [[nodiscard]] std::optional<text_range> selection_range() const;
 
     bool move_caret_to_start();
     bool move_caret_to_end();
     bool move_caret_left();
     bool move_caret_right();
+    bool select_all();
+    bool clear_selection();
+    bool set_selection(text_range range);
     bool commit_utf8(std::string_view utf8_text);
     bool backspace();
     bool set_preedit(std::string_view utf8_text);
@@ -46,7 +50,12 @@ private:
     std::string text_;
     std::string preedit_text_;
     std::size_t caret_byte_offset_ = 0;
+    std::optional<text_range> selection_range_;
     std::optional<std::string> submit_text_;
+
+    [[nodiscard]] std::size_t preedit_anchor_byte_offset() const;
+    void replace_selection_with(std::string_view utf8_text);
+    bool erase_selected_text();
 };
 
 } // namespace quiz_vulkan::input

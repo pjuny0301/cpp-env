@@ -30,7 +30,8 @@ template <typename T>
 concept TextInputModelInterface = requires(
     T& model,
     std::string target,
-    std::string_view text) {
+    std::string_view text,
+    input::text_range range) {
     { model.focus(target) } -> std::same_as<void>;
     { model.clear_focus() } -> std::same_as<void>;
     { model.has_focus() } -> std::same_as<bool>;
@@ -41,10 +42,14 @@ concept TextInputModelInterface = requires(
     { model.caret_byte_offset() } -> std::same_as<std::size_t>;
     { model.caret_range() } -> std::same_as<input::text_range>;
     { model.preedit_range() } -> std::same_as<std::optional<input::text_range>>;
+    { model.selection_range() } -> std::same_as<std::optional<input::text_range>>;
     { model.move_caret_to_start() } -> std::same_as<bool>;
     { model.move_caret_to_end() } -> std::same_as<bool>;
     { model.move_caret_left() } -> std::same_as<bool>;
     { model.move_caret_right() } -> std::same_as<bool>;
+    { model.select_all() } -> std::same_as<bool>;
+    { model.clear_selection() } -> std::same_as<bool>;
+    { model.set_selection(range) } -> std::same_as<bool>;
     { model.commit_utf8(text) } -> std::same_as<bool>;
     { model.backspace() } -> std::same_as<bool>;
     { model.set_preedit(text) } -> std::same_as<bool>;

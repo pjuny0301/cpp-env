@@ -15,6 +15,8 @@ Scope:
 - Own only `apps/quiz/quiz-vulkan/src/render/vulkan/*`, `apps/quiz/quiz-vulkan/tests/render/vulkan/*`, and renderer-owned tests explicitly named in the prompt.
 - Incrementally introduce real Vulkan backend pieces behind renderer boundaries.
 - Keep CPU fallback if useful for tests.
+- If real backend work needs external Vulkan material, you may download Vulkan SDK headers, Vulkan-Headers, volk, shader tooling, or small open-source helpers only under `/mnt/c/aa/build/external` or the worker worktree's `build/external` equivalent.
+- Report every downloaded dependency/tool with source URL, version or commit, license, and exact local path.
 - Add smoke/diagnostic tests that do not require renderer to know scene/domain/UI.
 
 Do not:

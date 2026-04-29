@@ -236,6 +236,9 @@ void test_pointer_filter_and_timing_edges()
     require(long_press.kind == gesture_kind::long_press, "engine long press update kind is emitted");
     require(long_press.pointer_id == 6, "engine long press preserves pointer id");
     require(engine.update_time(1700).empty(), "engine long press update emits no duplicate");
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::move, 1705, 80.0f, 30.0f, raw_platform_pointer_button::primary, 6))
+                .empty(),
+        "engine long press suppresses later drag start");
     require(engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 1710, 30.0f, 30.0f, raw_platform_pointer_button::primary, 6))
                 .empty(),
         "engine long press suppresses release after duplicate update check");
@@ -250,16 +253,17 @@ void test_pointer_id_reuse_routes_replacement_state()
     require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 100, 0.0f, 0.0f, raw_platform_pointer_button::primary, 8))
                 .empty(),
         "reused raw pointer first down emits no gesture");
-    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::move, 150, 100.0f, 0.0f, raw_platform_pointer_button::primary, 8))
-                .empty(),
-        "reused raw pointer first move emits no gesture");
+    std::vector<input_event> events =
+        engine.process_raw_event(pointer(raw_platform_pointer_phase::move, 150, 100.0f, 0.0f, raw_platform_pointer_button::primary, 8));
+    require(events.size() == 1, "reused raw pointer first move starts drag");
+    require(require_event<gesture_event>(events, 0).kind == gesture_kind::drag_start,
+        "reused raw pointer first move emits drag start");
     require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 200, 20.0f, 20.0f, raw_platform_pointer_button::primary, 8))
                 .empty(),
         "reused raw pointer second down replaces first state");
     require(engine.update_time(799).empty(), "reused raw pointer old long press state is discarded");
 
-    std::vector<input_event> events =
-        engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 740, 21.0f, 21.0f, raw_platform_pointer_button::primary, 8));
+    events = engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 740, 21.0f, 21.0f, raw_platform_pointer_button::primary, 8));
     require(events.size() == 1, "reused raw pointer emits one replacement tap");
     const gesture_event& tap = require_event<gesture_event>(events, 0);
     require(tap.kind == gesture_kind::tap, "reused raw pointer emits tap kind");
@@ -267,6 +271,56 @@ void test_pointer_id_reuse_routes_replacement_state()
     require(tap.duration_ms == 540, "reused raw pointer duration starts at replacement down");
     require(tap.start_x == 20.0f, "reused raw pointer start x is replacement down");
     require(tap.start_y == 20.0f, "reused raw pointer start y is replacement down");
+}
+
+void test_drag_gestures_route_from_raw_pointer()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 100, 0.0f, 0.0f, raw_platform_pointer_button::primary, 10))
+                .empty(),
+        "raw drag down emits no gesture");
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::move, 110, 8.0f, 8.0f, raw_platform_pointer_button::primary, 10))
+                .empty(),
+        "raw drag move at slop boundary emits no gesture");
+
+    std::vector<input_event> events =
+        engine.process_raw_event(pointer(raw_platform_pointer_phase::move, 120, 9.0f, 4.0f, raw_platform_pointer_button::primary, 10));
+    require(events.size() == 1, "raw drag start emits one event");
+    const gesture_event& start = require_event<gesture_event>(events, 0);
+    require(start.kind == gesture_kind::drag_start, "raw drag start kind is routed");
+    require(start.pointer_id == 10, "raw drag start preserves pointer id");
+    require(start.delta_x == 9.0f, "raw drag start delta x is from down");
+    require(start.delta_y == 4.0f, "raw drag start delta y is from down");
+
+    events = engine.process_raw_event(pointer(raw_platform_pointer_phase::move, 140, 15.0f, 7.0f, raw_platform_pointer_button::primary, 10));
+    require(events.size() == 1, "raw drag update emits one event");
+    const gesture_event& update = require_event<gesture_event>(events, 0);
+    require(update.kind == gesture_kind::drag_update, "raw drag update kind is routed");
+    require(update.delta_x == 6.0f, "raw drag update delta x is from previous pointer");
+    require(update.delta_y == 3.0f, "raw drag update delta y is from previous pointer");
+
+    events = engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 150, 20.0f, 10.0f, raw_platform_pointer_button::primary, 10));
+    require(events.size() == 1, "raw drag end emits one event");
+    const gesture_event& end = require_event<gesture_event>(events, 0);
+    require(end.kind == gesture_kind::drag_end, "raw drag end kind is routed");
+    require(end.delta_x == 5.0f, "raw drag end delta x is from previous pointer");
+    require(end.delta_y == 3.0f, "raw drag end delta y is from previous pointer");
+
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 200, 30.0f, 30.0f, raw_platform_pointer_button::none, 11))
+                .empty(),
+        "raw touch drag down emits no gesture");
+    events = engine.process_raw_event(pointer(raw_platform_pointer_phase::move, 210, 30.0f, 39.0f, raw_platform_pointer_button::none, 11));
+    require(events.size() == 1, "raw touch drag starts");
+    require(require_event<gesture_event>(events, 0).kind == gesture_kind::drag_start, "raw touch drag start kind is routed");
+
+    events = engine.process_raw_event(pointer(raw_platform_pointer_phase::cancel, 220, 30.0f, 42.0f, raw_platform_pointer_button::none, 11));
+    require(events.size() == 1, "raw touch drag cancel emits one event");
+    const gesture_event& cancel = require_event<gesture_event>(events, 0);
+    require(cancel.kind == gesture_kind::drag_cancel, "raw touch drag cancel kind is routed");
+    require(cancel.delta_y == 3.0f, "raw touch drag cancel delta y is from previous pointer");
 }
 
 void test_multi_pointer_long_press_order_routes_stably()
@@ -627,6 +681,7 @@ int main()
     test_touch_pointer_cancel_and_multi_pointer_edges();
     test_pointer_filter_and_timing_edges();
     test_pointer_id_reuse_routes_replacement_state();
+    test_drag_gestures_route_from_raw_pointer();
     test_multi_pointer_long_press_order_routes_stably();
     test_text_key_flow();
     test_key_code_fallback_edges();

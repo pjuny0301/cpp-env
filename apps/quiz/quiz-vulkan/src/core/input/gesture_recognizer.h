@@ -34,6 +34,7 @@ private:
         float last_x = 0.0f;
         float last_y = 0.0f;
         bool moved_outside_tap_slop = false;
+        bool dragging = false;
         bool long_press_emitted = false;
         bool suppress_release_gesture = false;
     };

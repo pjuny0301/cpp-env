@@ -26,6 +26,10 @@ enum class gesture_kind {
     long_press,
     swipe_left,
     swipe_right,
+    drag_start,
+    drag_update,
+    drag_end,
+    drag_cancel,
 };
 
 struct gesture_event {
@@ -37,6 +41,8 @@ struct gesture_event {
     float start_y = 0.0f;
     float x = 0.0f;
     float y = 0.0f;
+    float delta_x = 0.0f;
+    float delta_y = 0.0f;
 };
 
 enum class text_event_kind {

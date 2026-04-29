@@ -51,6 +51,22 @@ concept TextInputModelInterface = requires(
 static_assert(GestureRecognizerInterface<input::gesture_recognizer>);
 static_assert(TextInputModelInterface<input::text_input_model>);
 
+constexpr input::gesture_event drag_contract_event{
+    .kind = input::gesture_kind::drag_update,
+    .timestamp_ms = 20,
+    .duration_ms = 10,
+    .pointer_id = 4,
+    .start_x = 1.0f,
+    .start_y = 2.0f,
+    .x = 5.0f,
+    .y = 7.0f,
+    .delta_x = 3.0f,
+    .delta_y = 4.0f,
+};
+static_assert(drag_contract_event.kind == input::gesture_kind::drag_update);
+static_assert(drag_contract_event.delta_x == 3.0f);
+static_assert(drag_contract_event.delta_y == 4.0f);
+
 template <typename T>
 concept InputEngineInterface = requires(
     T& engine,

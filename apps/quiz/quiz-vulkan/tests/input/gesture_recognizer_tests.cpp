@@ -100,15 +100,21 @@ void test_tap_and_long_press_suppression()
     require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 2000, 0.0f, 0.0f)),
         "swipe suppression down emits no gesture");
     require(!recognizer.update_time(2600).empty(), "long press emits before suppressed swipe");
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::move, 2620, 100.0f, 0.0f)),
+        "long press suppresses later drag start");
     gestures = recognizer.process_pointer_event(pointer(pointer_phase::up, 2650, 100.0f, 0.0f));
     require(gestures.empty(), "long press suppresses following swipe");
 
     require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 3000, 0.0f, 0.0f)),
         "move test down emits no gesture");
-    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::move, 3100, 9.0f, 0.0f)),
-        "move beyond slop emits no immediate gesture");
+    gestures = recognizer.process_pointer_event(pointer(pointer_phase::move, 3100, 9.0f, 0.0f));
+    require(gestures.size() == 1, "move beyond slop starts drag");
+    require(gestures[0].kind == gesture_kind::drag_start, "move beyond slop emits drag start");
     gestures = recognizer.update_time(3600);
     require(gestures.empty(), "moving beyond tap slop prevents long press");
+    gestures = recognizer.process_pointer_event(pointer(pointer_phase::up, 3610, 9.0f, 0.0f));
+    require(gestures.size() == 1, "drag release emits drag end");
+    require(gestures[0].kind == gesture_kind::drag_end, "drag release emits drag end kind");
 }
 
 void test_touch_cancel_and_multi_pointer_edges()
@@ -197,20 +203,66 @@ void test_pointer_id_reuse_replaces_pending_state()
     gesture_recognizer recognizer;
     require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 100, 0.0f, 0.0f, 5)),
         "reused pointer first down emits no gesture");
-    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::move, 150, 100.0f, 0.0f, 5)),
-        "reused pointer first move emits no gesture");
+    std::vector<gesture_event> gestures =
+        recognizer.process_pointer_event(pointer(pointer_phase::move, 150, 100.0f, 0.0f, 5));
+    require(gestures.size() == 1, "reused pointer first move starts drag");
+    require(gestures[0].kind == gesture_kind::drag_start, "reused pointer first move emits drag start");
 
     require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 200, 10.0f, 10.0f, 5)),
         "reused pointer second down replaces first state");
     require_empty(recognizer.update_time(799), "reused pointer old long press state is discarded");
 
-    std::vector<gesture_event> gestures =
-        recognizer.process_pointer_event(pointer(pointer_phase::up, 740, 11.0f, 11.0f, 5));
+    gestures = recognizer.process_pointer_event(pointer(pointer_phase::up, 740, 11.0f, 11.0f, 5));
     require(gestures.size() == 1, "reused pointer emits tap from replacement state");
     require(gestures[0].kind == gesture_kind::tap, "reused pointer replacement emits tap kind");
     require(gestures[0].duration_ms == 540, "reused pointer duration starts at replacement down");
     require(gestures[0].start_x == 10.0f, "reused pointer start x is replacement down");
     require(gestures[0].start_y == 10.0f, "reused pointer start y is replacement down");
+}
+
+void test_drag_gesture_lifecycle_and_cancel()
+{
+    using namespace quiz_vulkan::input;
+
+    gesture_recognizer recognizer;
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 100, 0.0f, 0.0f, 4)),
+        "drag down emits no gesture");
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::move, 110, 8.0f, 8.0f, 4)),
+        "drag move at slop boundary emits no gesture");
+
+    std::vector<gesture_event> gestures =
+        recognizer.process_pointer_event(pointer(pointer_phase::move, 120, 9.0f, 4.0f, 4));
+    require(gestures.size() == 1, "drag start emits one gesture");
+    require(gestures[0].kind == gesture_kind::drag_start, "drag start kind is emitted");
+    require(gestures[0].duration_ms == 20, "drag start duration is measured from down");
+    require(gestures[0].delta_x == 9.0f, "drag start delta x is measured from down");
+    require(gestures[0].delta_y == 4.0f, "drag start delta y is measured from down");
+
+    gestures = recognizer.process_pointer_event(pointer(pointer_phase::move, 140, 15.0f, 7.0f, 4));
+    require(gestures.size() == 1, "drag update emits one gesture");
+    require(gestures[0].kind == gesture_kind::drag_update, "drag update kind is emitted");
+    require(gestures[0].delta_x == 6.0f, "drag update delta x is measured from previous pointer");
+    require(gestures[0].delta_y == 3.0f, "drag update delta y is measured from previous pointer");
+
+    gestures = recognizer.process_pointer_event(pointer(pointer_phase::up, 150, 20.0f, 10.0f, 4));
+    require(gestures.size() == 1, "drag end emits one gesture");
+    require(gestures[0].kind == gesture_kind::drag_end, "drag end kind is emitted");
+    require(gestures[0].delta_x == 5.0f, "drag end delta x is measured from previous pointer");
+    require(gestures[0].delta_y == 3.0f, "drag end delta y is measured from previous pointer");
+
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 200, 30.0f, 30.0f, 6)),
+        "drag cancel down emits no gesture");
+    gestures = recognizer.process_pointer_event(pointer(pointer_phase::move, 210, 30.0f, 39.0f, 6));
+    require(gestures.size() == 1, "drag cancel setup starts drag");
+    require(gestures[0].kind == gesture_kind::drag_start, "drag cancel setup emits drag start");
+
+    gestures = recognizer.process_pointer_event(pointer(pointer_phase::cancel, 220, 30.0f, 42.0f, 6));
+    require(gestures.size() == 1, "drag cancel emits one gesture");
+    require(gestures[0].kind == gesture_kind::drag_cancel, "drag cancel kind is emitted");
+    require(gestures[0].delta_x == 0.0f, "drag cancel delta x is measured from previous pointer");
+    require(gestures[0].delta_y == 3.0f, "drag cancel delta y is measured from previous pointer");
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::up, 230, 30.0f, 42.0f, 6)),
+        "up after drag cancel emits no stale gesture");
 }
 
 void test_multi_pointer_long_press_order_is_stable()
@@ -240,6 +292,7 @@ int main()
     test_touch_cancel_and_multi_pointer_edges();
     test_unknown_pointer_reset_and_timing_edges();
     test_pointer_id_reuse_replaces_pending_state();
+    test_drag_gesture_lifecycle_and_cancel();
     test_multi_pointer_long_press_order_is_stable();
 
     std::cout << "gesture_recognizer_tests passed\n";

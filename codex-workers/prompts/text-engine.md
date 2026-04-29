@@ -14,6 +14,8 @@ Scope:
 - Own only `apps/quiz/quiz-vulkan/src/render/text/*`, `apps/quiz/quiz-vulkan/tests/render/text/*`, and existing text-owned tests explicitly named in the prompt.
 - Add concrete text-engine implementation files only if they consume the existing interface.
 - Prefer a fake/stub concrete engine with measurable behavior before adding external dependencies.
+- If real font/glyph/shaping work needs open-source dependencies or test fonts, download them only under `/mnt/c/aa/build/external` or the worker worktree's `build/external` equivalent.
+- Report every downloaded dependency/test font with source URL, version or commit, license, and exact local path.
 - Improve UTF-8/Hangul measurement/line-breaking tests if needed.
 - Keep `text_engine.h` stable.
 

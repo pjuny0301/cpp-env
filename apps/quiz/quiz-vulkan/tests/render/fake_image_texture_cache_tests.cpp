@@ -1,5 +1,6 @@
 #include "render/image/image_decoder.h"
 #include "render/image/image_resolver.h"
+#include "render/image/image_source_bytes_loader.h"
 #include "render/image/image_texture_cache.h"
 #include "render/render_draw_list.h"
 
@@ -445,6 +446,109 @@ void test_decoder_chain_reports_unsupported_sources()
         decoded.decoder_diagnostics[0].status == render_image_decode_status::unsupported_format,
         "decoder chain failure records unsupported status");
     require(!decoded.decoder_diagnostics[0].diagnostic.empty(), "decoder chain failure records support diagnostic");
+}
+
+void test_source_bytes_loader_returns_registered_local_bytes()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/loader.ppm"})
+                                                .source;
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes(source, make_ppm_1x1_encoded_bytes());
+
+    const render_image_source_bytes_load_result loaded = loader.load(
+        render_image_source_bytes_load_request{.source = source});
+    require(loaded.ok(), "source bytes loader loads registered local bytes");
+    require(loaded.status == render_image_source_bytes_load_status::loaded, "source bytes loader reports loaded status");
+    require(loaded.source.cache_key() == source.cache_key(), "source bytes loader preserves source");
+    require(loaded.encoded_bytes == make_ppm_1x1_encoded_bytes(), "source bytes loader returns deterministic bytes");
+    require(loader.has_source_bytes(source), "source bytes loader reports registered source bytes");
+    require(loader.load_requests.size() == 1, "source bytes loader records load request");
+}
+
+void test_source_bytes_loader_reports_explicit_failures()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source missing_source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/missing.ppm"})
+                                                        .source;
+    const render_resolved_image_source empty_source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/empty.ppm"})
+                                                      .source;
+    const render_resolved_image_source remote_source = resolver.resolve(
+        render_image_resolve_request{.uri = "https://example.test/image.ppm"})
+                                                       .source;
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes(empty_source, {});
+
+    const render_image_source_bytes_load_result missing = loader.load(
+        render_image_source_bytes_load_request{.source = missing_source});
+    require(!missing.ok(), "missing source bytes do not load");
+    require(
+        missing.status == render_image_source_bytes_load_status::missing_bytes,
+        "missing source bytes report missing bytes");
+    require(!missing.diagnostic.empty(), "missing source bytes include diagnostic");
+
+    const render_image_source_bytes_load_result empty = loader.load(
+        render_image_source_bytes_load_request{.source = empty_source});
+    require(!empty.ok(), "empty source bytes do not load");
+    require(empty.status == render_image_source_bytes_load_status::empty_bytes, "empty source bytes report empty bytes");
+    require(!empty.diagnostic.empty(), "empty source bytes include diagnostic");
+
+    const render_image_source_bytes_load_result remote = loader.load(
+        render_image_source_bytes_load_request{.source = remote_source});
+    require(!remote.ok(), "remote source bytes do not load through fake loader");
+    require(
+        remote.status == render_image_source_bytes_load_status::unsupported_source,
+        "remote source bytes report unsupported source");
+    require(!remote.diagnostic.empty(), "remote source bytes include diagnostic");
+
+    const render_resolved_image_source invalid_source{
+        .original_uri = "bad\n.ppm",
+        .normalized_uri = std::string("bad\n.ppm"),
+        .kind = render_image_source_kind::local_path,
+    };
+    const render_image_source_bytes_load_result invalid = loader.load(
+        render_image_source_bytes_load_request{.source = invalid_source});
+    require(!invalid.ok(), "invalid source key does not load");
+    require(
+        invalid.status == render_image_source_bytes_load_status::missing_source,
+        "invalid source key reports missing source");
+    require(!invalid.diagnostic.empty(), "invalid source key includes diagnostic");
+    require(loader.load_requests.size() == 4, "source bytes loader records failure requests");
+}
+
+void test_texture_cache_can_use_loaded_source_bytes()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/cache-loader.ppm"})
+                                                .source;
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes(source, make_ppm_2x1_encoded_bytes());
+
+    const render_image_source_bytes_load_result loaded = loader.load(
+        render_image_source_bytes_load_request{.source = source});
+    require(loaded.ok(), "source bytes loader provides bytes for texture cache");
+
+    ppm_image_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+    cache.set_placeholder_encoded_bytes_for_source(source.cache_key(), loaded.encoded_bytes);
+    const render_image_texture_result texture = cache.acquire_texture(
+        render_image_texture_request{.source = source, .sampler = render_image_sampler_policy{}});
+    require(texture.ok(), "texture cache can consume source loader bytes");
+    require(!texture.cache_hit, "source loader bytes create first texture as cache miss");
+    require(texture.texture.width == 2, "texture cache preserves source loader decoded width");
+    require(texture.texture.height == 1, "texture cache preserves source loader decoded height");
+    require(cache.cached_texture_count() == 1, "texture cache stores texture created from source loader bytes");
+    require(cache.cached_decoded_byte_count() == 8, "source loader fixture decodes to rgba bytes");
 }
 
 void test_sampler_policy_validation_rejects_unknown_enum_values()
@@ -1207,6 +1311,9 @@ int main()
     test_ppm_decoder_reports_invalid_payload_size();
     test_decoder_chain_routes_supported_formats();
     test_decoder_chain_reports_unsupported_sources();
+    test_source_bytes_loader_returns_registered_local_bytes();
+    test_source_bytes_loader_reports_explicit_failures();
+    test_texture_cache_can_use_loaded_source_bytes();
     test_sampler_policy_validation_rejects_unknown_enum_values();
     test_texture_cache_reuses_matching_key_and_misses_on_sampler_change();
     test_texture_cache_keys_include_all_sampler_policy_fields();

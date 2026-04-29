@@ -1,5 +1,6 @@
 #include "render/image/image_decoder.h"
 #include "render/image/image_resolver.h"
+#include "render/image/image_source_bytes_loader.h"
 #include "render/image/image_texture_cache.h"
 #include "render/render_draw_list.h"
 
@@ -28,6 +29,13 @@ concept ImageDecoderInterface = requires(
 };
 
 template <typename T>
+concept ImageSourceBytesLoaderInterface = requires(
+    const T& loader,
+    const render::render_image_source_bytes_load_request& request) {
+    { loader.load(request) } -> std::same_as<render::render_image_source_bytes_load_result>;
+};
+
+template <typename T>
 concept ImageTextureCacheInterface = requires(
     T& cache,
     const render::render_image_texture_request& request) {
@@ -41,6 +49,8 @@ static_assert(ImageDecoderInterface<render::image_decoder_interface>);
 static_assert(ImageDecoderInterface<render::image_decoder_chain>);
 static_assert(ImageDecoderInterface<render::fake_image_decoder>);
 static_assert(ImageDecoderInterface<render::ppm_image_decoder>);
+static_assert(ImageSourceBytesLoaderInterface<render::image_source_bytes_loader_interface>);
+static_assert(ImageSourceBytesLoaderInterface<render::fake_image_source_bytes_loader>);
 static_assert(ImageTextureCacheInterface<render::image_texture_cache_interface>);
 static_assert(ImageTextureCacheInterface<render::fake_image_texture_cache>);
 
@@ -80,9 +90,14 @@ static_assert(requires(
     render::render_image_decoder_diagnostic diagnostic,
     render::render_image_decode_result decode_result,
     render::render_image_texture_result texture_result,
+    render::render_image_source_bytes_load_request bytes_request,
+    render::render_image_source_bytes_load_result bytes_result,
+    render::render_image_source_bytes_load_status bytes_status,
+    render::fake_image_source_bytes_loader source_bytes_loader,
     render::fake_image_texture_cache_entry_snapshot cache_entry,
     render::fake_image_texture_cache_snapshot cache_snapshot,
     const render::fake_image_texture_cache& cache,
+    const render::render_resolved_image_source& source,
     const render::render_image_decode_request& request,
     const render::render_decoded_image& image) {
     { metadata.decoder_id } -> std::same_as<std::string&>;
@@ -103,6 +118,19 @@ static_assert(requires(
     { render::make_render_image_decode_metadata("decoder", request) } -> std::same_as<render::render_image_decode_metadata>;
     { render::make_render_image_decode_metadata("decoder", request, image) }
         -> std::same_as<render::render_image_decode_metadata>;
+    { bytes_request.source } -> std::same_as<render::render_resolved_image_source&>;
+    { bytes_result.status } -> std::same_as<render::render_image_source_bytes_load_status&>;
+    { bytes_result.source } -> std::same_as<render::render_resolved_image_source&>;
+    { bytes_result.encoded_bytes } -> std::same_as<std::vector<std::byte>&>;
+    { bytes_result.diagnostic } -> std::same_as<std::string&>;
+    { bytes_result.ok() } -> std::same_as<bool>;
+    { source_bytes_loader.set_source_bytes(render::render_image_cache_key{}, std::vector<std::byte>{}) }
+        -> std::same_as<void>;
+    { source_bytes_loader.set_source_bytes(source, std::vector<std::byte>{}) } -> std::same_as<void>;
+    { source_bytes_loader.clear_source_bytes(render::render_image_cache_key{}) } -> std::same_as<void>;
+    { source_bytes_loader.has_source_bytes(source) } -> std::same_as<bool>;
+    { render::is_valid_image_source_bytes_cache_key("asset://card.ppm") } -> std::same_as<bool>;
+    bytes_status;
     { cache_entry.key } -> std::same_as<render::render_image_texture_key&>;
     { cache_entry.texture } -> std::same_as<render::render_image_texture_handle&>;
     { cache_entry.pixel_count } -> std::same_as<std::size_t&>;

@@ -46,7 +46,17 @@ static_assert(requires(platform_input_event event) {
     { event.text } -> std::same_as<std::string&>;
 });
 
-static_assert(std::variant_size_v<raw_platform_input_event> == 5);
+constexpr raw_platform_scroll_event platform_raw_scroll_contract{
+    .timestamp_ms = 12,
+    .x = 20.0f,
+    .y = 30.0f,
+    .delta_x = 4.0f,
+    .delta_y = -8.0f,
+    .unit = raw_platform_scroll_delta_unit::pixels,
+};
+static_assert(platform_raw_scroll_contract.unit == raw_platform_scroll_delta_unit::pixels);
+
+static_assert(std::variant_size_v<raw_platform_input_event> == 6);
 static_assert(std::is_same_v<
     std::variant_alternative_t<0, raw_platform_input_event>,
     raw_platform_pointer_event>);
@@ -62,6 +72,9 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     std::variant_alternative_t<4, raw_platform_input_event>,
     raw_platform_focus_event>);
+static_assert(std::is_same_v<
+    std::variant_alternative_t<5, raw_platform_input_event>,
+    raw_platform_scroll_event>);
 
 static_assert(requires {
     { create_platform_shell() } -> std::same_as<std::unique_ptr<platform_shell>>;

@@ -83,6 +83,8 @@ Each worker should:
 - run role-specific tests,
 - run `git diff --check`,
 - reserve full CTest for app/CMake/public-contract changes, large integration batches, or explicit integrator requests,
+- keep all downloaded dependencies, tools, fixtures, fonts, SDK/header drops, and datasets under `/mnt/c/aa/build/external` or the worker worktree's `build/external` equivalent,
+- report source URL, version/commit, license, exact local path, and reason for each external item used,
 - commit on its role branch,
 - treat `src/app/*`, `app.cpp`, `main.cpp`, top-level `CMakeLists.txt`, and aggregate contract registration as integrator-owned unless the prompt explicitly grants that write set,
 - propose app/runtime/CMake wiring instead of editing those files from an engine worker,

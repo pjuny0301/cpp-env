@@ -15,6 +15,8 @@ Hard rules:
 - Keep changes scoped and commit on your branch.
 - Engine workers must not edit `src/app/*`, `app.cpp`, `main.cpp`, top-level `CMakeLists.txt`, or aggregate contract registration unless the integrator explicitly assigns that write set in the current prompt.
 - If app/runtime/CMake wiring is needed, write a short proposal in the final report. The integrator applies wiring on the baseline branch.
+- If a useful open-source dependency, tool, fixture, font, SDK/header, or dataset would materially improve your owned task, you may download it. All external downloads/source/binaries/data must stay under `/mnt/c/aa/build/external` or your worktree's `build/external` equivalent, never under `apps/quiz`.
+- Report every external item you used with source URL, version or commit, license, exact local path, and why it was needed.
 - Use tiered verification to avoid wasting time:
   - every scoped commit: focused role test(s), `quiz_vulkan_interface_contract_compile_tests`, and `git diff --check`;
   - JSON/docs-only changes: relevant parser/format check plus `git diff --check`;

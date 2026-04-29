@@ -96,6 +96,16 @@ constexpr input::raw_scroll_event raw_scroll_contract{
 };
 static_assert(raw_scroll_contract.unit == input::scroll_delta_unit::lines);
 
+constexpr raw_platform_scroll_event raw_platform_scroll_contract{
+    .timestamp_ms = 12,
+    .x = 20.0f,
+    .y = 30.0f,
+    .delta_x = 4.0f,
+    .delta_y = -8.0f,
+    .unit = raw_platform_scroll_delta_unit::pixels,
+};
+static_assert(raw_platform_scroll_contract.unit == raw_platform_scroll_delta_unit::pixels);
+
 constexpr input::scroll_event scroll_contract{
     .timestamp_ms = 10,
     .x = 20.0f,
@@ -130,7 +140,7 @@ concept InputEngineInterface = requires(
 static_assert(std::is_constructible_v<input::input_engine>);
 static_assert(InputEngineInterface<input::input_engine>);
 
-static_assert(std::variant_size_v<raw_platform_input_event> == 5);
+static_assert(std::variant_size_v<raw_platform_input_event> == 6);
 static_assert(std::is_same_v<
     std::variant_alternative_t<0, raw_platform_input_event>,
     raw_platform_pointer_event>);
@@ -146,5 +156,8 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     std::variant_alternative_t<4, raw_platform_input_event>,
     raw_platform_focus_event>);
+static_assert(std::is_same_v<
+    std::variant_alternative_t<5, raw_platform_input_event>,
+    raw_platform_scroll_event>);
 
 } // namespace

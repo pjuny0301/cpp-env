@@ -36,6 +36,28 @@ gesture_event drag_event(
     };
 }
 
+gesture_event cancel_drag_event(
+    const pointer_event& event,
+    std::int64_t start_ms,
+    float start_x,
+    float start_y,
+    float last_x,
+    float last_y)
+{
+    return gesture_event{
+        .kind = gesture_kind::drag_cancel,
+        .timestamp_ms = event.timestamp_ms,
+        .duration_ms = event.timestamp_ms - start_ms,
+        .pointer_id = event.pointer_id,
+        .start_x = start_x,
+        .start_y = start_y,
+        .x = last_x,
+        .y = last_y,
+        .delta_x = 0.0f,
+        .delta_y = 0.0f,
+    };
+}
+
 } // namespace
 
 gesture_recognizer::gesture_recognizer(gesture_thresholds thresholds)
@@ -48,6 +70,18 @@ std::vector<gesture_event> gesture_recognizer::process_pointer_event(const point
     std::vector<gesture_event> gestures;
 
     if (event.phase == pointer_phase::down) {
+        if (auto old_pointer = pointers_.find(event.pointer_id);
+            old_pointer != pointers_.end() && old_pointer->second.dragging) {
+            const pointer_state& old_state = old_pointer->second;
+            gestures.push_back(cancel_drag_event(
+                event,
+                old_state.start_ms,
+                old_state.start_x,
+                old_state.start_y,
+                old_state.last_x,
+                old_state.last_y));
+        }
+
         pointers_[event.pointer_id] = pointer_state{
             .start_ms = event.timestamp_ms,
             .last_ms = event.timestamp_ms,

@@ -258,9 +258,13 @@ void test_pointer_id_reuse_routes_replacement_state()
     require(events.size() == 1, "reused raw pointer first move starts drag");
     require(require_event<gesture_event>(events, 0).kind == gesture_kind::drag_start,
         "reused raw pointer first move emits drag start");
-    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 200, 20.0f, 20.0f, raw_platform_pointer_button::primary, 8))
-                .empty(),
-        "reused raw pointer second down replaces first state");
+    events = engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 200, 20.0f, 20.0f, raw_platform_pointer_button::primary, 8));
+    require(events.size() == 1, "reused raw pointer second down cancels first drag");
+    const gesture_event& cancel = require_event<gesture_event>(events, 0);
+    require(cancel.kind == gesture_kind::drag_cancel, "reused raw pointer second down emits drag cancel");
+    require(cancel.duration_ms == 100, "reused raw pointer drag cancel duration uses old state");
+    require(cancel.x == 100.0f, "reused raw pointer drag cancel uses old last x");
+    require(cancel.y == 0.0f, "reused raw pointer drag cancel uses old last y");
     require(engine.update_time(799).empty(), "reused raw pointer old long press state is discarded");
 
     events = engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 740, 21.0f, 21.0f, raw_platform_pointer_button::primary, 8));

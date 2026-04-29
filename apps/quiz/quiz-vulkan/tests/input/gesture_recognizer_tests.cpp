@@ -208,8 +208,12 @@ void test_pointer_id_reuse_replaces_pending_state()
     require(gestures.size() == 1, "reused pointer first move starts drag");
     require(gestures[0].kind == gesture_kind::drag_start, "reused pointer first move emits drag start");
 
-    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 200, 10.0f, 10.0f, 5)),
-        "reused pointer second down replaces first state");
+    gestures = recognizer.process_pointer_event(pointer(pointer_phase::down, 200, 10.0f, 10.0f, 5));
+    require(gestures.size() == 1, "reused pointer second down cancels first drag");
+    require(gestures[0].kind == gesture_kind::drag_cancel, "reused pointer second down emits drag cancel");
+    require(gestures[0].duration_ms == 100, "reused pointer drag cancel duration uses old state");
+    require(gestures[0].x == 100.0f, "reused pointer drag cancel uses old last x");
+    require(gestures[0].y == 0.0f, "reused pointer drag cancel uses old last y");
     require_empty(recognizer.update_time(799), "reused pointer old long press state is discarded");
 
     gestures = recognizer.process_pointer_event(pointer(pointer_phase::up, 740, 11.0f, 11.0f, 5));

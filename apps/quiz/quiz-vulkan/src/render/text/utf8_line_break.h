@@ -21,6 +21,11 @@ struct utf8_line_break_options {
     bool break_hangul_syllables_on_width = true;
 };
 
+struct utf8_line_layout_options {
+    float max_width = 0.0f;
+    bool break_hangul_syllables_on_width = true;
+};
+
 struct utf8_line_fragment {
     std::size_t byte_offset = 0;
     std::size_t byte_count = 0;
@@ -185,6 +190,115 @@ inline std::vector<utf8_line_fragment> break_utf8_text_run(
     fragments.push_back(make_utf8_line_fragment(
         codepoints,
         text.size(),
+        line_start,
+        codepoints.size(),
+        utf8_line_break_reason::end_of_text,
+        codepoints.size(),
+        0));
+    return fragments;
+}
+
+inline float utf8_line_break_advance_at(
+    const std::vector<utf8_text_codepoint>& codepoints,
+    const std::vector<float>& advances,
+    const std::size_t index)
+{
+    if (index < advances.size()) {
+        return advances[index];
+    }
+    return static_cast<float>(utf8_line_break_column_width(codepoints[index].code_point));
+}
+
+inline std::vector<utf8_line_fragment> break_utf8_text_run(
+    const std::vector<utf8_text_codepoint>& codepoints,
+    const std::size_t text_size,
+    const std::vector<float>& advances,
+    const utf8_line_layout_options& options)
+{
+    std::vector<utf8_line_fragment> fragments;
+    std::size_t line_start = 0;
+    std::size_t last_space = 0;
+    bool has_last_space = false;
+    float line_width = 0.0f;
+
+    for (std::size_t index = 0; index < codepoints.size();) {
+        const utf8_text_codepoint& codepoint = codepoints[index];
+        if (is_utf8_explicit_newline(codepoint.code_point)) {
+            std::size_t separator_count = 1;
+            if (codepoint.code_point == '\r' && index + 1U < codepoints.size()
+                && codepoints[index + 1U].code_point == '\n') {
+                separator_count = 2;
+            }
+            fragments.push_back(make_utf8_line_fragment(
+                codepoints,
+                text_size,
+                line_start,
+                index,
+                utf8_line_break_reason::explicit_newline,
+                index,
+                separator_count));
+            index += separator_count;
+            line_start = index;
+            last_space = 0;
+            has_last_space = false;
+            line_width = 0.0f;
+            continue;
+        }
+
+        if (is_utf8_ascii_break_whitespace(codepoint.code_point)) {
+            last_space = index;
+            has_last_space = true;
+        }
+
+        const float advance = utf8_line_break_advance_at(codepoints, advances, index);
+        if (options.max_width > 0.0f && line_width > 0.0f && line_width + advance > options.max_width) {
+            if (has_last_space && last_space >= line_start) {
+                fragments.push_back(make_utf8_line_fragment(
+                    codepoints,
+                    text_size,
+                    line_start,
+                    last_space,
+                    utf8_line_break_reason::ascii_whitespace,
+                    last_space,
+                    1));
+                index = last_space + 1U;
+                line_start = index;
+                last_space = 0;
+                has_last_space = false;
+                line_width = 0.0f;
+                continue;
+            }
+
+            if (index > line_start && can_break_utf8_line_for_width(
+                    utf8_line_break_options{
+                        .max_columns = 0,
+                        .break_hangul_syllables_on_width = options.break_hangul_syllables_on_width,
+                    },
+                    codepoints[index - 1U],
+                    codepoint)) {
+                fragments.push_back(make_utf8_line_fragment(
+                    codepoints,
+                    text_size,
+                    line_start,
+                    index,
+                    utf8_line_break_reason::width_pressure,
+                    index,
+                    0));
+                line_start = index;
+                last_space = 0;
+                has_last_space = false;
+                line_width = 0.0f;
+                continue;
+            }
+        }
+
+        line_width += advance;
+        ++index;
+    }
+
+    fragments.push_back(make_utf8_line_fragment(
+        codepoints,
+        text_size,
         line_start,
         codepoints.size(),
         utf8_line_break_reason::end_of_text,

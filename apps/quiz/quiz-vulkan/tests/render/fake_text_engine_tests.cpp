@@ -1131,6 +1131,50 @@ void test_fake_word_wraps_hangul_and_clips_max_lines()
     require(clipped_layout.glyphs.size() == 1, "max lines clips glyph output");
 }
 
+void test_fake_line_break_layout_uses_utf8_helper_fragments()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "A B", .style_token = "body"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 200.0f, 0.0f};
+    request.style_catalog = make_style_catalog();
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    const render_text_layout no_wrap_layout = engine.layout_text(request);
+    require(near(no_wrap_layout.measure.width, 30.0f), "no-wrap helper layout keeps ASCII spaces in line width");
+    require(near(no_wrap_layout.measure.height, 24.0f), "no-wrap helper layout keeps one line");
+    require(no_wrap_layout.glyphs.size() == 3, "no-wrap helper layout emits visible space glyph");
+    require(no_wrap_layout.glyphs[1].glyph_id == ' ', "no-wrap helper layout preserves space glyph");
+    require(near(no_wrap_layout.glyphs[2].bounds.x, 20.0f), "no-wrap helper layout advances after space");
+
+    request.bounds.width = 25.0f;
+    request.options.wrap = render_text_wrap_mode::word;
+    const render_text_layout wrapped_layout = engine.layout_text(request);
+    require(near(wrapped_layout.measure.width, 10.0f), "word-wrap helper layout drops separator from measured lines");
+    require(near(wrapped_layout.measure.height, 48.0f), "word-wrap helper layout breaks at ASCII whitespace");
+    require(wrapped_layout.glyphs.size() == 2, "word-wrap helper layout omits wrapping separator glyph");
+    require(wrapped_layout.glyphs[0].glyph_id == 'A', "word-wrap helper layout keeps first word glyph");
+    require(wrapped_layout.glyphs[1].glyph_id == 'B', "word-wrap helper layout keeps second word glyph");
+    require(near(wrapped_layout.glyphs[1].bounds.y, 24.0f), "word-wrap helper layout moves second word to next line");
+
+    request.text_runs = {
+        render_text_run{.text = "ABC", .style_token = "body"},
+    };
+    request.bounds.width = 15.0f;
+    const render_text_layout unspaced_layout = engine.layout_text(request);
+    require(near(unspaced_layout.measure.width, 30.0f), "helper layout does not split unspaced ASCII by width");
+    require(near(unspaced_layout.measure.height, 24.0f), "unspaced ASCII remains on one helper line");
+    require(unspaced_layout.glyphs.size() == 3, "unspaced ASCII still emits all glyphs");
+}
+
 void test_fake_word_wraps_unspaced_hangul_syllables()
 {
     using namespace quiz_vulkan::render;
@@ -1238,6 +1282,7 @@ int main()
     test_fake_utf8_handles_wide_combining_and_invalid_sequences();
     test_fake_diagnostics_reset_after_clean_request();
     test_fake_word_wraps_hangul_and_clips_max_lines();
+    test_fake_line_break_layout_uses_utf8_helper_fragments();
     test_fake_word_wraps_unspaced_hangul_syllables();
     test_scene_text_metrics_adapter_feeds_layout_placer();
     return 0;

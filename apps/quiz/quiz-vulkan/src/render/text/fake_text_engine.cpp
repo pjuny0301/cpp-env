@@ -1,4 +1,5 @@
 #include "render/text/fake_text_engine.h"
+#include "render/text/utf8_line_break.h"
 #include "render/text/utf8_text_run.h"
 
 #include <algorithm>
@@ -19,7 +20,6 @@ struct shaped_glyph {
     float advance = 0.0f;
     float line_height = 0.0f;
     bool newline = false;
-    bool whitespace = false;
 };
 
 struct laid_out_line {
@@ -48,11 +48,6 @@ bool is_wide_symbol(const std::uint32_t code_point)
 {
     return (code_point >= 0x1f000U && code_point <= 0x1faffU)
         || (code_point >= 0xff01U && code_point <= 0xff60U);
-}
-
-bool is_wrapping_space(const std::uint32_t code_point)
-{
-    return code_point == 0x09U || code_point == 0x20U;
 }
 
 bool glyph_needs_atlas(const shaped_glyph& glyph)
@@ -130,7 +125,6 @@ std::vector<shaped_glyph> shape_request(
                 .advance = glyph_advance_for(style, code_point),
                 .line_height = line_height_for(style),
                 .newline = code_point == '\n' || code_point == '\r',
-                .whitespace = is_wrapping_space(code_point),
             });
         }
     }
@@ -173,78 +167,145 @@ void append_line(
     lines.push_back(make_line(glyphs, std::move(line)));
 }
 
+std::vector<utf8_text_codepoint> line_break_codepoints_for(const std::vector<shaped_glyph>& glyphs)
+{
+    std::vector<utf8_text_codepoint> codepoints;
+    codepoints.reserve(glyphs.size());
+    for (std::size_t index = 0; index < glyphs.size(); ++index) {
+        codepoints.push_back(utf8_text_codepoint{
+            .code_point = glyphs[index].code_point,
+            .byte_offset = index,
+            .byte_count = 1,
+            .valid = true,
+            .cluster_start = true,
+        });
+    }
+    return codepoints;
+}
+
+std::vector<float> line_break_advances_for(const std::vector<shaped_glyph>& glyphs)
+{
+    std::vector<float> advances;
+    advances.reserve(glyphs.size());
+    for (const shaped_glyph& glyph : glyphs) {
+        advances.push_back(glyph.advance);
+    }
+    return advances;
+}
+
+std::vector<std::size_t> glyph_indices_for_fragment(const utf8_line_fragment& fragment)
+{
+    std::vector<std::size_t> line;
+    line.reserve(fragment.codepoint_count);
+    for (std::size_t offset = 0; offset < fragment.codepoint_count; ++offset) {
+        line.push_back(fragment.codepoint_offset + offset);
+    }
+    return line;
+}
+
+float separator_line_height(
+    const std::vector<shaped_glyph>& glyphs,
+    const utf8_line_fragment& fragment)
+{
+    float height = 0.0f;
+    for (std::size_t offset = 0; offset < fragment.separator_codepoint_count; ++offset) {
+        const std::size_t index = fragment.separator_codepoint_offset + offset;
+        if (index < glyphs.size()) {
+            height = std::max(height, glyphs[index].line_height);
+        }
+    }
+    return height;
+}
+
+std::pair<std::size_t, std::size_t> separator_start_position(
+    const std::vector<shaped_glyph>& glyphs,
+    const utf8_line_fragment& fragment)
+{
+    if (fragment.separator_codepoint_offset < glyphs.size()) {
+        const shaped_glyph& glyph = glyphs[fragment.separator_codepoint_offset];
+        return {glyph.run_index, glyph.byte_offset};
+    }
+    return {0, 0};
+}
+
+std::pair<std::size_t, std::size_t> separator_end_position(
+    const std::vector<shaped_glyph>& glyphs,
+    const utf8_line_fragment& fragment)
+{
+    if (fragment.separator_codepoint_count == 0) {
+        return separator_start_position(glyphs, fragment);
+    }
+
+    const std::size_t last_separator_index =
+        fragment.separator_codepoint_offset + fragment.separator_codepoint_count - 1U;
+    if (last_separator_index < glyphs.size()) {
+        const shaped_glyph& glyph = glyphs[last_separator_index];
+        return {glyph.run_index, glyph.byte_offset + glyph.byte_count};
+    }
+    return {0, 0};
+}
+
 std::vector<laid_out_line> break_lines(const render_text_request& request, const std::vector<shaped_glyph>& glyphs)
 {
+    if (glyphs.empty()) {
+        return {make_line(glyphs, {})};
+    }
+
     std::vector<laid_out_line> lines;
-    std::vector<std::size_t> current_line;
-    float current_width = 0.0f;
     float pending_empty_line_height = 0.0f;
     std::size_t pending_empty_line_run_index = 0;
     std::size_t pending_empty_line_byte_offset = 0;
     const bool wrap_words =
         request.options.wrap == render_text_wrap_mode::word && request.bounds.width > 0.0f;
+    const std::vector<utf8_text_codepoint> codepoints = line_break_codepoints_for(glyphs);
+    const std::vector<float> advances = line_break_advances_for(glyphs);
+    const std::vector<utf8_line_fragment> fragments = break_utf8_text_run(
+        codepoints,
+        glyphs.size(),
+        advances,
+        utf8_line_layout_options{
+            .max_width = wrap_words ? request.bounds.width : 0.0f,
+            .break_hangul_syllables_on_width = true,
+        });
 
-    for (std::size_t glyph_index = 0; glyph_index < glyphs.size(); ++glyph_index) {
-        const shaped_glyph& glyph = glyphs[glyph_index];
-        if (glyph.newline) {
-            if (current_line.empty()) {
-                lines.push_back(laid_out_line{
-                    .height = glyph.line_height,
-                    .caret_run_index = glyph.run_index,
-                    .caret_byte_offset = glyph.byte_offset,
-                });
-            } else {
-                append_line(glyphs, lines, std::move(current_line));
-            }
-            current_line = {};
-            current_width = 0.0f;
-            pending_empty_line_height = glyph.line_height;
-            pending_empty_line_run_index = glyph.run_index;
-            pending_empty_line_byte_offset = glyph.byte_offset + glyph.byte_count;
-            continue;
+    for (const utf8_line_fragment& fragment : fragments) {
+        std::vector<std::size_t> line = glyph_indices_for_fragment(fragment);
+        if (!line.empty()) {
+            append_line(glyphs, lines, std::move(line));
+            pending_empty_line_height = 0.0f;
+            pending_empty_line_run_index = 0;
+            pending_empty_line_byte_offset = 0;
+        } else if (fragment.break_reason == utf8_line_break_reason::explicit_newline) {
+            const auto [run_index, byte_offset] = separator_start_position(glyphs, fragment);
+            lines.push_back(laid_out_line{
+                .height = separator_line_height(glyphs, fragment),
+                .caret_run_index = run_index,
+                .caret_byte_offset = byte_offset,
+            });
+        } else if (
+            fragment.break_reason == utf8_line_break_reason::end_of_text
+            && pending_empty_line_height > 0.0f) {
+            lines.push_back(laid_out_line{
+                .height = pending_empty_line_height,
+                .caret_run_index = pending_empty_line_run_index,
+                .caret_byte_offset = pending_empty_line_byte_offset,
+            });
         }
 
-        if (wrap_words && current_width + glyph.advance > request.bounds.width && !current_line.empty()) {
-            const auto last_space = std::find_if(
-                current_line.rbegin(),
-                current_line.rend(),
-                [&glyphs](const std::size_t index) { return glyphs[index].whitespace; });
-
-            if (last_space == current_line.rend()) {
-                append_line(glyphs, lines, std::move(current_line));
-                current_line = {};
-            } else {
-                const std::size_t break_position =
-                    static_cast<std::size_t>(std::distance(last_space, current_line.rend())) - 1U;
-                std::vector<std::size_t> next_line(
-                    current_line.begin() + static_cast<std::ptrdiff_t>(break_position + 1U),
-                    current_line.end());
-                current_line.erase(current_line.begin() + static_cast<std::ptrdiff_t>(break_position), current_line.end());
-                append_line(glyphs, lines, std::move(current_line));
-                current_line = std::move(next_line);
-            }
-            current_width = line_width(glyphs, current_line);
+        if (fragment.break_reason == utf8_line_break_reason::explicit_newline) {
+            const auto [run_index, byte_offset] = separator_end_position(glyphs, fragment);
+            pending_empty_line_height = separator_line_height(glyphs, fragment);
+            pending_empty_line_run_index = run_index;
+            pending_empty_line_byte_offset = byte_offset;
+        } else if (fragment.break_reason != utf8_line_break_reason::end_of_text) {
+            pending_empty_line_height = 0.0f;
+            pending_empty_line_run_index = 0;
+            pending_empty_line_byte_offset = 0;
         }
-
-        if (wrap_words && current_line.empty() && glyph.whitespace) {
-            continue;
-        }
-
-        pending_empty_line_height = 0.0f;
-        pending_empty_line_run_index = 0;
-        pending_empty_line_byte_offset = 0;
-        current_line.push_back(glyph_index);
-        current_width += glyph.advance;
     }
 
-    if (!current_line.empty() || glyphs.empty()) {
-        append_line(glyphs, lines, std::move(current_line));
-    } else if (pending_empty_line_height > 0.0f) {
-        lines.push_back(laid_out_line{
-            .height = pending_empty_line_height,
-            .caret_run_index = pending_empty_line_run_index,
-            .caret_byte_offset = pending_empty_line_byte_offset,
-        });
+    if (lines.empty()) {
+        lines.push_back(make_line(glyphs, {}));
     }
 
     if (request.options.max_lines > 0 && lines.size() > request.options.max_lines) {

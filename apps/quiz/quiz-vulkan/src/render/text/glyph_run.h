@@ -186,6 +186,27 @@ struct render_text_line_metrics_snapshot {
     bool overflowed = false;
     bool truncated = false;
     bool caret_safe = true;
+    float baseline = 0.0f;
+    float ascent = 0.0f;
+    float descent = 0.0f;
+};
+
+struct render_text_line_run_box_snapshot {
+    std::size_t line_index = 0;
+    std::size_t run_index = 0;
+    std::size_t cluster_count = 0;
+    render_rect bounds;
+    float baseline = 0.0f;
+    float ascent = 0.0f;
+    float descent = 0.0f;
+};
+
+struct render_text_line_layout_policy_snapshot {
+    std::size_t clipped_line_count = 0;
+    std::size_t clipped_glyph_count = 0;
+    std::size_t ellipsis_line_count = 0;
+    std::size_t ellipsis_glyph_count = 0;
+    bool ellipsis_applied = false;
 };
 
 struct render_text_line_layout_metrics_snapshot {

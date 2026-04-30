@@ -77,8 +77,11 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.font_resolution_policy } -> std::same_as<render::render_text_font_resolution_policy_snapshot&>;
     { diagnostics.line_breaks } -> std::same_as<std::vector<render::render_text_line_break_snapshot>&>;
     { diagnostics.line_metrics } -> std::same_as<std::vector<render::render_text_line_metrics_snapshot>&>;
+    { diagnostics.line_run_boxes } -> std::same_as<std::vector<render::render_text_line_run_box_snapshot>&>;
     { diagnostics.line_layout_metrics } -> std::same_as<render::render_text_line_layout_metrics_snapshot&>;
+    { diagnostics.line_layout_policy } -> std::same_as<render::render_text_line_layout_policy_snapshot&>;
     { diagnostics.line_break_policy } -> std::same_as<render::render_text_line_break_policy_snapshot&>;
+    { diagnostics.caret_hit_tests } -> std::same_as<std::vector<render::render_text_caret_rect_snapshot>&>;
     { diagnostics.glyph_cache_readiness }
         -> std::same_as<std::vector<render::render_text_glyph_cache_readiness_snapshot>&>;
     { diagnostics.glyph_cache_readiness_policy }
@@ -100,7 +103,10 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.has_glyph_cache_readiness() } -> std::same_as<bool>;
     { diagnostics.has_line_breaks() } -> std::same_as<bool>;
     { diagnostics.has_line_metrics() } -> std::same_as<bool>;
+    { diagnostics.has_line_run_boxes() } -> std::same_as<bool>;
+    { diagnostics.has_line_layout_policy() } -> std::same_as<bool>;
     { diagnostics.has_line_break_policy() } -> std::same_as<bool>;
+    { diagnostics.has_caret_hit_tests() } -> std::same_as<bool>;
     { diagnostics.has_glyph_cache_faces() } -> std::same_as<bool>;
     { diagnostics.has_glyph_cache_evictions() } -> std::same_as<bool>;
 });
@@ -285,6 +291,27 @@ static_assert(requires(render::render_text_line_metrics_snapshot line) {
     { line.overflowed } -> std::same_as<bool&>;
     { line.truncated } -> std::same_as<bool&>;
     { line.caret_safe } -> std::same_as<bool&>;
+    { line.baseline } -> std::same_as<float&>;
+    { line.ascent } -> std::same_as<float&>;
+    { line.descent } -> std::same_as<float&>;
+});
+
+static_assert(requires(render::render_text_line_run_box_snapshot box) {
+    { box.line_index } -> std::same_as<std::size_t&>;
+    { box.run_index } -> std::same_as<std::size_t&>;
+    { box.cluster_count } -> std::same_as<std::size_t&>;
+    { box.bounds } -> std::same_as<render::render_rect&>;
+    { box.baseline } -> std::same_as<float&>;
+    { box.ascent } -> std::same_as<float&>;
+    { box.descent } -> std::same_as<float&>;
+});
+
+static_assert(requires(render::render_text_line_layout_policy_snapshot policy) {
+    { policy.clipped_line_count } -> std::same_as<std::size_t&>;
+    { policy.clipped_glyph_count } -> std::same_as<std::size_t&>;
+    { policy.ellipsis_line_count } -> std::same_as<std::size_t&>;
+    { policy.ellipsis_glyph_count } -> std::same_as<std::size_t&>;
+    { policy.ellipsis_applied } -> std::same_as<bool&>;
 });
 
 static_assert(requires(render::render_text_line_layout_metrics_snapshot metrics) {

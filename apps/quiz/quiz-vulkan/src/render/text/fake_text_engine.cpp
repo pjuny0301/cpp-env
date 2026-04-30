@@ -374,6 +374,16 @@ float line_height(const std::vector<shaped_glyph>& glyphs, const std::vector<std
     return height;
 }
 
+float line_ascent(const float line_height)
+{
+    return line_height;
+}
+
+float line_descent(const float /*line_height*/)
+{
+    return 0.0f;
+}
+
 laid_out_line make_line(const std::vector<shaped_glyph>& glyphs, std::vector<std::size_t> line)
 {
     const float width = line_width(glyphs, line);
@@ -721,6 +731,7 @@ void record_line_metrics_diagnostics(
     };
     diagnostics.line_layout_metrics.truncated = diagnostics.line_layout_metrics.truncated_line_count > 0;
 
+    float y = request.bounds.y;
     for (std::size_t line_index = 0; line_index < lines.size(); ++line_index) {
         const laid_out_line& line = lines[line_index];
         const bool overflowed = request.bounds.width > 0.0f && line.width > request.bounds.width;
@@ -730,6 +741,8 @@ void record_line_metrics_diagnostics(
         const bool caret_safe =
             line_starts_at_utf8_cluster_boundary(glyphs, line)
             && line_ends_at_utf8_cluster_boundary(glyphs, line);
+        const float ascent = line_ascent(line.height);
+        const float descent = line_descent(line.height);
         diagnostics.line_metrics.push_back(render_text_line_metrics_snapshot{
             .line_index = line_index,
             .start_run_index = start_run_index,
@@ -744,14 +757,88 @@ void record_line_metrics_diagnostics(
             .overflowed = overflowed,
             .truncated = line_index >= diagnostics.line_layout_metrics.visible_line_count,
             .caret_safe = caret_safe,
+            .baseline = y + line.height,
+            .ascent = ascent,
+            .descent = descent,
         });
         if (overflowed) {
             ++diagnostics.line_layout_metrics.overflow_line_count;
         }
+        y += line.height;
     }
     diagnostics.line_layout_metrics.overflowed = diagnostics.line_layout_metrics.overflow_line_count > 0;
     diagnostics.line_break_policy.overflow_line_count = diagnostics.line_layout_metrics.overflow_line_count;
     diagnostics.line_break_policy.truncated_line_count = diagnostics.line_layout_metrics.truncated_line_count;
+}
+
+void record_line_layout_policy_diagnostics(
+    fake_text_engine_diagnostics& diagnostics,
+    const std::vector<laid_out_line>& lines)
+{
+    const std::size_t visible_line_count = diagnostics.line_layout_metrics.visible_line_count;
+    diagnostics.line_layout_policy = render_text_line_layout_policy_snapshot{};
+    diagnostics.line_layout_policy.clipped_line_count =
+        lines.size() > visible_line_count ? lines.size() - visible_line_count : 0U;
+    for (std::size_t line_index = visible_line_count; line_index < lines.size(); ++line_index) {
+        diagnostics.line_layout_policy.clipped_glyph_count += lines[line_index].glyph_indices.size();
+    }
+}
+
+void record_line_run_box_diagnostics(
+    fake_text_engine_diagnostics& diagnostics,
+    const std::vector<laid_out_glyph_cluster>& clusters)
+{
+    diagnostics.line_run_boxes.clear();
+    if (clusters.empty()) {
+        return;
+    }
+
+    bool has_active_box = false;
+    render_text_line_run_box_snapshot active_box;
+
+    auto flush_active_box = [&]() {
+        if (has_active_box) {
+            diagnostics.line_run_boxes.push_back(active_box);
+            has_active_box = false;
+        }
+    };
+
+    for (const laid_out_glyph_cluster& cluster : clusters) {
+        const render_text_line_run_box_snapshot next_box{
+            .line_index = cluster.snapshot.line_index,
+            .run_index = cluster.snapshot.run_index,
+            .cluster_count = cluster.snapshot.glyph_count,
+            .bounds = cluster.bounds,
+            .baseline = cluster.snapshot.baseline,
+            .ascent = cluster.bounds.height,
+            .descent = 0.0f,
+        };
+
+        const bool starts_new_box = !has_active_box
+            || active_box.line_index != next_box.line_index
+            || active_box.run_index != next_box.run_index;
+        if (starts_new_box) {
+            flush_active_box();
+            active_box = next_box;
+            has_active_box = true;
+            continue;
+        }
+
+        active_box.cluster_count += next_box.cluster_count;
+        const float left = std::min(active_box.bounds.x, next_box.bounds.x);
+        const float top = std::min(active_box.bounds.y, next_box.bounds.y);
+        const float right = std::max(active_box.bounds.x + active_box.bounds.width, next_box.bounds.x + next_box.bounds.width);
+        const float bottom = std::max(active_box.bounds.y + active_box.bounds.height, next_box.bounds.y + next_box.bounds.height);
+        active_box.bounds = render_rect{
+            left,
+            top,
+            right - left,
+            bottom - top,
+        };
+        active_box.baseline = std::max(active_box.baseline, next_box.baseline);
+    }
+
+    flush_active_box();
 }
 
 std::vector<laid_out_line> break_lines(
@@ -763,6 +850,7 @@ std::vector<laid_out_line> break_lines(
         std::vector<laid_out_line> empty_lines = {make_line(glyphs, {})};
         if (diagnostics != nullptr) {
             record_line_metrics_diagnostics(*diagnostics, request, glyphs, empty_lines);
+            record_line_layout_policy_diagnostics(*diagnostics, empty_lines);
         }
         return empty_lines;
     }
@@ -831,6 +919,7 @@ std::vector<laid_out_line> break_lines(
 
     if (diagnostics != nullptr) {
         record_line_metrics_diagnostics(*diagnostics, request, glyphs, lines);
+        record_line_layout_policy_diagnostics(*diagnostics, lines);
     }
 
     if (request.options.max_lines > 0 && lines.size() > request.options.max_lines) {
@@ -1572,6 +1661,7 @@ render_text_layout fake_text_engine::layout_text(const render_text_request& requ
     std::vector<laid_out_glyph_cluster> cluster_layouts =
         collect_glyph_cluster_layouts(request, shaped_glyphs, lines);
     record_glyph_cluster_diagnostics(diagnostics_, cluster_layouts);
+    record_line_run_box_diagnostics(diagnostics_, cluster_layouts);
     update_atlas_for_clusters(
         cluster_layouts,
         glyph_atlas_cache_,
@@ -1623,6 +1713,7 @@ std::vector<fake_text_engine_caret> fake_text_engine::caret_positions(const rend
         collect_glyph_cluster_layouts(request, shaped_glyphs, lines);
     record_glyph_cluster_diagnostics(diagnostics_, cluster_layouts);
     diagnostics_.caret_rects = caret_rect_snapshots_from_clusters(request, lines, cluster_layouts);
+    diagnostics_.caret_hit_tests = diagnostics_.caret_rects;
 
     std::vector<fake_text_engine_caret> carets;
     carets.reserve(diagnostics_.caret_rects.size());

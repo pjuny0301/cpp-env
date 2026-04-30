@@ -720,6 +720,22 @@ void test_fake_multirun_layout_tracks_lines_offsets_and_alignment()
     require(near(layout.glyphs[2].bounds.x, 54.0f), "caption glyph advances after body glyph");
     require(near(layout.glyphs[2].bounds.width, 6.0f), "caption glyph keeps run style width");
     require(near(layout.glyphs[2].bounds.height, 12.0f), "caption glyph keeps run style line height");
+
+    require(engine.last_diagnostics().has_line_run_boxes(), "multi-run layout records line run boxes");
+    require(engine.last_diagnostics().line_run_boxes.size() == 3, "multi-run layout records one box per line run");
+    require(engine.last_diagnostics().line_run_boxes[0].line_index == 0, "first run box records first line");
+    require(engine.last_diagnostics().line_run_boxes[0].run_index == 0, "first run box records first run");
+    require(near(engine.last_diagnostics().line_run_boxes[0].bounds.x, 50.0f), "first run box keeps centered x");
+    require(near(engine.last_diagnostics().line_run_boxes[0].baseline, 31.0f), "first run box records baseline");
+    require(near(engine.last_diagnostics().line_run_boxes[0].ascent, 24.0f), "first run box records ascent");
+    require(near(engine.last_diagnostics().line_run_boxes[0].descent, 0.0f), "first run box records descent");
+    require(engine.last_diagnostics().line_run_boxes[1].line_index == 1, "second run box records second line");
+    require(engine.last_diagnostics().line_run_boxes[1].run_index == 0, "second run box keeps first run segment");
+    require(engine.last_diagnostics().line_run_boxes[2].line_index == 1, "third run box records second line");
+    require(engine.last_diagnostics().line_run_boxes[2].run_index == 1, "third run box records second run segment");
+    require(
+        engine.last_diagnostics().line_run_boxes[2].cluster_count == 2,
+        "third run box records caption cluster count");
 }
 
 void test_fake_newline_edge_cases_preserve_empty_line_height()
@@ -1461,6 +1477,8 @@ void test_fake_caret_positions_follow_utf8_runs_and_combining_marks()
     require(engine.last_diagnostics().glyph_clusters.size() == 3, "caret diagnostics keep UTF-8 glyph clusters");
     require(engine.last_diagnostics().has_caret_rects(), "caret positions record caret rect diagnostics");
     require(engine.last_diagnostics().caret_rects.size() == carets.size(), "caret diagnostics mirror returned carets");
+    require(engine.last_diagnostics().has_caret_hit_tests(), "caret positions record hit-test diagnostics");
+    require(engine.last_diagnostics().caret_hit_tests.size() == carets.size(), "caret hit tests mirror returned carets");
 
     require(carets[0].run_index == 0 && carets[0].byte_offset == 0, "first caret starts first run");
     require(near(carets[0].bounds.x, 2.0f), "first caret uses request x origin");
@@ -1905,11 +1923,19 @@ void test_fake_line_metrics_track_overflow_and_truncation()
     require(first_line.overflowed, "first line metric records overflow");
     require(near(first_line.overflow_width, 15.0f), "first line metric records overflow amount");
     require(!first_line.truncated, "first visible line is not truncated");
+    require(near(first_line.baseline, 24.0f), "first line metric records baseline");
+    require(near(first_line.ascent, 24.0f), "first line metric records ascent");
+    require(near(first_line.descent, 0.0f), "first line metric records descent");
     require(near(second_line.width, 10.0f), "second line metric records width");
     require(!second_line.overflowed, "second line metric does not overflow");
     require(!second_line.truncated, "second visible line is not truncated");
+    require(near(second_line.baseline, 48.0f), "second line metric records second baseline");
     require(near(third_line.width, 10.0f), "third line metric records hidden line width");
     require(third_line.truncated, "third line metric records truncation");
+    require(engine.last_diagnostics().has_line_layout_policy(), "line metrics fixture records clipping policy");
+    require(engine.last_diagnostics().line_layout_policy.clipped_line_count == 1, "line metrics fixture counts clipped lines");
+    require(engine.last_diagnostics().line_layout_policy.clipped_glyph_count == 1, "line metrics fixture counts clipped glyphs");
+    require(!engine.last_diagnostics().line_layout_policy.ellipsis_applied, "line metrics fixture keeps ellipsis disabled");
 }
 
 void test_fake_line_break_policy_keeps_combining_clusters_caret_safe()
@@ -1994,6 +2020,14 @@ void test_fake_utf8_hangul_uses_codepoints()
     require(layout.glyphs[0].byte_offset == 0, "first Hangul byte offset is stable");
     require(layout.glyphs[1].byte_offset == 3, "second Hangul byte offset advances by UTF-8 width");
     require(near(layout.glyphs[1].bounds.x, 20.0f), "second Hangul glyph advances by full width");
+
+    const std::vector<fake_text_engine_caret> hit_tests = engine.caret_positions(request);
+    require(hit_tests.size() == 3, "Hangul caret hit tests include cluster boundaries");
+    require(engine.last_diagnostics().has_caret_hit_tests(), "Hangul caret request records hit tests");
+    require(engine.last_diagnostics().caret_hit_tests.size() == 3, "Hangul caret diagnostics keep all hit tests");
+    require(engine.last_diagnostics().caret_hit_tests[0].byte_offset == 0, "first Hangul hit test starts first cluster");
+    require(engine.last_diagnostics().caret_hit_tests[1].byte_offset == 3, "second Hangul hit test advances to second cluster");
+    require(engine.last_diagnostics().caret_hit_tests[2].byte_offset == 6, "third Hangul hit test advances to final boundary");
 }
 
 void test_fake_utf8_handles_wide_combining_and_invalid_sequences()

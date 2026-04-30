@@ -47,8 +47,11 @@ struct fake_text_engine_diagnostics {
     render_text_font_resolution_policy_snapshot font_resolution_policy;
     std::vector<render_text_line_break_snapshot> line_breaks;
     std::vector<render_text_line_metrics_snapshot> line_metrics;
+    std::vector<render_text_line_run_box_snapshot> line_run_boxes;
     render_text_line_layout_metrics_snapshot line_layout_metrics;
+    render_text_line_layout_policy_snapshot line_layout_policy;
     render_text_line_break_policy_snapshot line_break_policy;
+    std::vector<render_text_caret_rect_snapshot> caret_hit_tests;
     std::vector<render_text_glyph_cache_readiness_snapshot> glyph_cache_readiness;
     render_text_glyph_cache_readiness_policy_snapshot glyph_cache_readiness_policy;
     std::vector<render_text_glyph_cache_face_snapshot> glyph_cache_faces;
@@ -136,6 +139,16 @@ struct fake_text_engine_diagnostics {
         return !line_metrics.empty();
     }
 
+    bool has_line_run_boxes() const
+    {
+        return !line_run_boxes.empty();
+    }
+
+    bool has_line_layout_policy() const
+    {
+        return line_layout_policy.clipped_line_count > 0 || line_layout_policy.ellipsis_applied;
+    }
+
     bool has_line_break_policy() const
     {
         return line_break_policy.break_count > 0;
@@ -144,6 +157,11 @@ struct fake_text_engine_diagnostics {
     bool has_glyph_cache_faces() const
     {
         return !glyph_cache_faces.empty();
+    }
+
+    bool has_caret_hit_tests() const
+    {
+        return !caret_hit_tests.empty();
     }
 
     bool has_glyph_cache_evictions() const

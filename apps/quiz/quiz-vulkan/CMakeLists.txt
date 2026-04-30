@@ -464,6 +464,16 @@ if(BUILD_TESTING)
     quiz_vulkan_add_test_directory(tests/input LINK_LIBRARIES quiz_vulkan_input)
     quiz_vulkan_add_test_directory(tests/ui LINK_LIBRARIES quiz_vulkan_ui)
 
+    quiz_vulkan_add_test_executable(
+        quiz_vulkan_architecture_boundary_tests
+        tests/architecture/architecture_boundary_tests.cpp
+    )
+    target_compile_definitions(
+        quiz_vulkan_architecture_boundary_tests
+        PRIVATE
+            QUIZ_VULKAN_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}"
+    )
+
     add_executable(quiz_vulkan_renderer_tests tests/render/vulkan_renderer_tests.cpp)
     target_link_libraries(quiz_vulkan_renderer_tests PRIVATE quiz_vulkan_renderer)
     quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_renderer_tests)

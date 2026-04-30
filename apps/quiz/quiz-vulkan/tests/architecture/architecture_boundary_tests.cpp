@@ -1,0 +1,135 @@
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <string>
+#include <string_view>
+#include <vector>
+
+namespace {
+
+struct boundary_rule {
+    std::string_view area;
+    std::vector<std::filesystem::path> roots;
+    std::vector<std::string_view> forbidden_tokens;
+};
+
+struct violation {
+    std::filesystem::path file;
+    std::string_view area;
+    std::string_view token;
+    std::size_t line = 0;
+};
+
+bool source_extension(const std::filesystem::path& path)
+{
+    const std::string extension = path.extension().string();
+    return extension == ".h" || extension == ".hpp" || extension == ".cpp";
+}
+
+std::vector<std::filesystem::path> source_files_under(const std::filesystem::path& root)
+{
+    std::vector<std::filesystem::path> files;
+    if (!std::filesystem::exists(root)) {
+        return files;
+    }
+
+    for (const std::filesystem::directory_entry& entry :
+         std::filesystem::recursive_directory_iterator(root)) {
+        if (entry.is_regular_file() && source_extension(entry.path())) {
+            files.push_back(entry.path());
+        }
+    }
+    return files;
+}
+
+std::vector<violation> scan_rule(const std::filesystem::path& source_root, const boundary_rule& rule)
+{
+    std::vector<violation> violations;
+    for (const std::filesystem::path& relative_root : rule.roots) {
+        for (const std::filesystem::path& file : source_files_under(source_root / relative_root)) {
+            std::ifstream input(file);
+            std::string line;
+            std::size_t line_number = 0;
+            while (std::getline(input, line)) {
+                ++line_number;
+                for (std::string_view token : rule.forbidden_tokens) {
+                    if (line.find(token) != std::string::npos) {
+                        violations.push_back(violation{
+                            .file = std::filesystem::relative(file, source_root),
+                            .area = rule.area,
+                            .token = token,
+                            .line = line_number,
+                        });
+                    }
+                }
+            }
+        }
+    }
+    return violations;
+}
+
+void require_no_violations(const std::vector<violation>& violations)
+{
+    if (violations.empty()) {
+        return;
+    }
+
+    for (const violation& item : violations) {
+        std::cerr << item.area << " boundary violation in " << item.file.string()
+                  << ':' << item.line << " token `" << item.token << "`\n";
+    }
+    std::exit(1);
+}
+
+} // namespace
+
+int main()
+{
+    const std::filesystem::path source_root{QUIZ_VULKAN_SOURCE_ROOT};
+    const std::vector<boundary_rule> rules{
+        boundary_rule{
+            .area = "ui-layout-render",
+            .roots = {
+                "src/core/ui",
+                "src/core/layout",
+                "src/render",
+            },
+            .forbidden_tokens = {
+                "#include \"app/",
+                "#include <app/",
+                "#include \"audio/",
+                "#include <audio/",
+                "#include \"core/domain/",
+                "#include <core/domain/",
+                "#include \"core/input/",
+                "#include <core/input/",
+                "domain::",
+            },
+        },
+        boundary_rule{
+            .area = "domain-input-audio",
+            .roots = {
+                "src/core/domain",
+                "src/core/input",
+                "src/audio",
+            },
+            .forbidden_tokens = {
+                "#include \"core/ui/",
+                "#include <core/ui/",
+                "#include \"render/",
+                "#include <render/",
+                "render::",
+                "vulkan_backend::",
+            },
+        },
+    };
+
+    std::vector<violation> violations;
+    for (const boundary_rule& rule : rules) {
+        std::vector<violation> rule_violations = scan_rule(source_root, rule);
+        violations.insert(violations.end(), rule_violations.begin(), rule_violations.end());
+    }
+
+    require_no_violations(violations);
+    return 0;
+}

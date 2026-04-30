@@ -215,6 +215,11 @@ void test_vulkan_backend_fallback_reason_names_are_stable()
             == std::string_view{"acquire_image_failed"},
         "fallback reason name for acquire image failure is stable");
     require(
+        vulkan_backend::fallback_reason_name(
+            vulkan_backend::vulkan_backend_fallback_reason::resource_binding_unavailable)
+            == std::string_view{"resource_binding_unavailable"},
+        "fallback reason name for resource binding unavailable is stable");
+    require(
         vulkan_backend::fallback_reason_name(vulkan_backend::vulkan_backend_fallback_reason::record_commands_failed)
             == std::string_view{"record_commands_failed"},
         "fallback reason name for command recording failure is stable");
@@ -1365,6 +1370,85 @@ void require_completed_frame_sync(
         "frame sync present waits on the submit render-finished semaphore");
 }
 
+void test_vulkan_resource_binding_state_builds_batch_snapshots()
+{
+    using namespace quiz_vulkan::render;
+
+    render_draw_list draw_list;
+    draw_list.commands.push_back(make_quad_command(
+        "quad",
+        render_rect{0.0f, 0.0f, 20.0f, 20.0f},
+        render_color{1.0f, 0.0f, 0.0f, 1.0f}));
+    draw_list.commands.push_back(make_image_command(
+        "image",
+        render_rect{20.0f, 0.0f, 20.0f, 20.0f},
+        "fixture://renderer/card.png"));
+    draw_list.commands.push_back(make_text_command(
+        "text",
+        render_rect{40.0f, 0.0f, 40.0f, 20.0f},
+        "bindings"));
+
+    const vulkan_backend::vulkan_frame_plan plan = vulkan_backend::build_vulkan_frame_plan(
+        draw_list,
+        vulkan_backend::vulkan_frame_plan_options{
+            .viewport = render_rect{0.0f, 0.0f, 100.0f, 100.0f},
+            .surface_width = 100,
+            .surface_height = 100,
+        });
+    const vulkan_backend::vulkan_backend_resource_binding_state state =
+        vulkan_backend::build_vulkan_resource_binding_state(draw_list, plan);
+
+    require(state.checked, "resource binding state is checked");
+    require(!state.missing_resource, "resource binding state reports no missing resources");
+    require(state.completed(), "resource binding state completes for quad, image, and text resources");
+    require(state.planned_batch_count == 3, "resource binding state tracks planned batch count");
+    require(state.descriptor_set_count == 3, "resource binding state creates one descriptor set per batch");
+    require(state.binding_count == 8, "resource binding state has stable aggregate bind count");
+    require(state.batch_snapshots.size() == 3, "resource binding state stores one snapshot per batch");
+
+    const vulkan_backend::vulkan_batch_resource_binding_snapshot& quad = state.batch_snapshots[0];
+    require(quad.batch_kind == vulkan_backend::vulkan_batch_kind::quad, "first binding snapshot is quad");
+    require(quad.command_index == 0, "quad binding snapshot keeps command index");
+    require(quad.descriptor_set_count == 1, "quad binding snapshot has one descriptor set");
+    require(quad.binding_count == 2, "quad binding snapshot has stable bind count");
+    require(quad.completed(), "quad binding snapshot completes");
+    require(
+        quad.bindings[0].kind == vulkan_backend::vulkan_resource_binding_kind::batch_uniform,
+        "quad binding snapshot binds batch uniform first");
+    require(
+        quad.bindings[1].kind == vulkan_backend::vulkan_resource_binding_kind::quad_vertex_buffer,
+        "quad binding snapshot binds quad vertices second");
+    require(quad.bindings[0].resource_id == "batch_uniform:quad", "quad uniform resource id is stable");
+    require(quad.bindings[1].resource_id == "quad_vertices:quad", "quad vertex resource id is stable");
+
+    const vulkan_backend::vulkan_batch_resource_binding_snapshot& image = state.batch_snapshots[1];
+    require(image.batch_kind == vulkan_backend::vulkan_batch_kind::image, "second binding snapshot is image");
+    require(image.binding_count == 3, "image binding snapshot has stable bind count");
+    require(image.completed(), "image binding snapshot completes");
+    require(
+        image.bindings[1].kind == vulkan_backend::vulkan_resource_binding_kind::image_texture,
+        "image binding snapshot binds texture resource");
+    require(
+        image.bindings[2].kind == vulkan_backend::vulkan_resource_binding_kind::image_sampler,
+        "image binding snapshot binds sampler resource");
+    require(
+        image.bindings[1].resource_id == "fixture://renderer/card.png",
+        "image binding snapshot uses image URI as texture resource");
+
+    const vulkan_backend::vulkan_batch_resource_binding_snapshot& text = state.batch_snapshots[2];
+    require(text.batch_kind == vulkan_backend::vulkan_batch_kind::text, "third binding snapshot is text");
+    require(text.binding_count == 3, "text binding snapshot has stable bind count");
+    require(text.completed(), "text binding snapshot completes");
+    require(
+        text.bindings[1].kind == vulkan_backend::vulkan_resource_binding_kind::text_run_buffer,
+        "text binding snapshot binds text run buffer");
+    require(
+        text.bindings[2].kind == vulkan_backend::vulkan_resource_binding_kind::text_glyph_atlas,
+        "text binding snapshot binds glyph atlas");
+    require(text.bindings[1].resource_id == "text_runs:text", "text run resource id is stable");
+    require(text.bindings[2].resource_id == "glyph_atlas:title", "text glyph atlas resource id is stable");
+}
+
 void test_vulkan_backend_adapter_completes_fake_device_lifecycle()
 {
     using namespace quiz_vulkan::render;
@@ -1407,6 +1491,9 @@ void test_vulkan_backend_adapter_completes_fake_device_lifecycle()
     require(result.swapchain.present.image_id.value == 7, "fake backend presents the acquired image id");
     require(result.swapchain.completed(), "fake backend records completed swapchain lifecycle");
     require_completed_frame_sync(result.frame_sync);
+    require(result.resource_bindings.completed(), "fake backend records completed resource binding state");
+    require(result.resource_bindings.planned_batch_count == 1, "fake backend resource bindings track batch count");
+    require(result.resource_bindings.binding_count == 2, "fake backend quad resource bindings have stable bind count");
     require(result.frame_presented, "fake backend presents frame");
     require(result.planned_batch_count == 1, "fake backend receives one planned batch");
     require(result.recorded_batch_count == 1, "fake backend records one batch");
@@ -1550,6 +1637,8 @@ void test_vulkan_backend_adapter_completes_empty_frame()
     require(result.command_recorder.command_buffer_recorded, "empty frame records an empty command buffer");
     require(result.command_recorder.empty(), "empty frame command recorder has no batches");
     require(result.swapchain.completed(), "empty frame still completes swapchain lifecycle");
+    require(result.resource_bindings.completed(), "empty frame records completed empty resource binding state");
+    require(result.resource_bindings.binding_count == 0, "empty frame records no resource bindings");
     require(result.clipped_draw_call_count == 0, "empty frame has no clipped draw calls");
     require(result.discarded_draw_call_count == 0, "empty frame has no discarded draw calls");
     require(device.recorded_plan.empty(), "empty frame records empty plan");
@@ -1582,6 +1671,7 @@ void test_vulkan_backend_adapter_completes_all_discarded_frame()
     require(result.command_recorder.command_buffer_recorded, "all-discarded frame records an empty command buffer");
     require(result.command_recorder.empty(), "all-discarded frame command recorder has no batches");
     require(result.swapchain.completed(), "all-discarded frame still completes swapchain lifecycle");
+    require(result.resource_bindings.completed(), "all-discarded frame records completed empty resource binding state");
     require(result.clipped_draw_call_count == 0, "all-discarded frame has no clipped draw calls");
     require(result.discarded_draw_call_count == 1, "all-discarded frame reports discarded draw call");
     require(device.recorded_plan.empty(), "all-discarded frame records empty plan");
@@ -1745,6 +1835,103 @@ void test_vulkan_backend_adapter_falls_back_when_batch_pipeline_is_missing()
     require(result.command_recorder.planned_batch_count == 2, "backend preserves planned batch count before recorder");
     require(device.calls.empty(), "backend does not call device lifecycle when a batch pipeline is missing");
     require(!recorder.recorder_state().frame_open, "injected recorder is not opened when a batch pipeline is missing");
+}
+
+void test_vulkan_backend_adapter_falls_back_when_image_resource_is_missing()
+{
+    using namespace quiz_vulkan::render;
+
+    render_draw_list draw_list;
+    draw_list.commands.push_back(make_image_command(
+        "image",
+        render_rect{0.0f, 0.0f, 100.0f, 100.0f},
+        ""));
+
+    fake_vulkan_backend_device device(vulkan_backend::vulkan_surface_extent{.width = 16, .height = 16});
+    vulkan_backend::diagnostic_vulkan_command_recorder recorder;
+    const vulkan_backend::vulkan_backend_frame_result result = vulkan_backend::submit_vulkan_backend_frame(
+        device,
+        recorder,
+        draw_list,
+        render_rect{0.0f, 0.0f, 100.0f, 100.0f});
+
+    require(!result.completed(), "backend cannot complete when image texture resource is missing");
+    require(result.attempted, "backend records attempted frame with missing image resource");
+    require(result.fallback_required, "backend requires fallback when image resource is missing");
+    require(
+        result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::resource_binding_unavailable,
+        "backend reports resource binding fallback for missing image resource");
+    require(
+        result.reached_stage == vulkan_backend::vulkan_backend_frame_stage::frame_plan_ready,
+        "backend stops after frame plan when image resource binding is missing");
+    require(result.pipeline.completed(), "backend validates pipeline before resource binding failure");
+    require(result.resource_bindings.checked, "backend checks resource bindings before missing image fallback");
+    require(!result.resource_bindings.completed(), "backend records incomplete resource binding state");
+    require(result.resource_bindings.missing_resource, "backend records missing resource binding");
+    require(
+        result.resource_bindings.missing_batch_kind == vulkan_backend::vulkan_batch_kind::image,
+        "backend records missing image batch binding");
+    require(result.resource_bindings.missing_command_index == 0, "backend records missing image command index");
+    require(
+        result.resource_bindings.missing_binding_kind == vulkan_backend::vulkan_resource_binding_kind::image_texture,
+        "backend records missing image texture binding kind");
+    require(
+        result.resource_bindings.missing_resource_id == "missing_image_texture:image",
+        "backend records stable missing image resource id");
+    require(result.resource_bindings.planned_batch_count == 1, "backend records planned image batch count");
+    require(result.resource_bindings.binding_count == 3, "backend records attempted image binding count");
+    require(result.resource_bindings.batch_snapshots.size() == 1, "backend records image binding snapshot");
+    require(
+        result.resource_bindings.batch_snapshots.front().bindings[1].kind
+            == vulkan_backend::vulkan_resource_binding_kind::image_texture,
+        "backend records failed texture binding slot");
+    require(!result.frame_begun, "backend does not begin frame when image resource is missing");
+    require(!result.swapchain.acquire_requested, "backend does not acquire image when resource binding is missing");
+    require(!result.commands_recorded, "backend does not record commands when image resource is missing");
+    require(device.calls.empty(), "backend does not call device lifecycle when image resource is missing");
+    require(!recorder.recorder_state().frame_open, "backend does not open recorder when image resource is missing");
+}
+
+void test_vulkan_backend_adapter_falls_back_when_text_resource_is_missing()
+{
+    using namespace quiz_vulkan::render;
+
+    render_draw_list draw_list;
+    draw_list.commands.push_back(render_draw_command{
+        .type = render_draw_command_type::text,
+        .node_id = "text",
+        .parent_node_id = {},
+        .depth = 0,
+        .bounds = render_rect{0.0f, 0.0f, 100.0f, 24.0f},
+        .content_bounds = render_rect{0.0f, 0.0f, 100.0f, 24.0f},
+        .paint = render_paint{.source = "white", .color = render_color{1.0f, 1.0f, 1.0f, 1.0f}},
+        .border_radius = 0.0f,
+        .text_runs = {},
+        .image = {},
+    });
+
+    fake_vulkan_backend_device device(vulkan_backend::vulkan_surface_extent{.width = 16, .height = 16});
+    const vulkan_backend::vulkan_backend_frame_result result = vulkan_backend::submit_vulkan_backend_frame(
+        device,
+        draw_list,
+        render_rect{0.0f, 0.0f, 100.0f, 100.0f});
+
+    require(!result.completed(), "backend cannot complete when text resource is missing");
+    require(
+        result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::resource_binding_unavailable,
+        "backend reports resource binding fallback for missing text resource");
+    require(result.resource_bindings.missing_resource, "backend records missing text resource");
+    require(
+        result.resource_bindings.missing_batch_kind == vulkan_backend::vulkan_batch_kind::text,
+        "backend records missing text batch kind");
+    require(
+        result.resource_bindings.missing_binding_kind == vulkan_backend::vulkan_resource_binding_kind::text_run_buffer,
+        "backend records missing text run binding kind");
+    require(
+        result.resource_bindings.missing_resource_id == "missing_text_run_buffer:text",
+        "backend records stable missing text resource id");
+    require(result.resource_bindings.binding_count == 3, "backend records attempted text binding count");
+    require(device.calls.empty(), "backend does not call device lifecycle when text resource is missing");
 }
 
 void test_vulkan_backend_adapter_falls_back_when_injected_recorder_fails_record_batch()
@@ -2258,6 +2445,7 @@ int main()
     test_vulkan_diagnostic_pipeline_cache_identifies_missing_vertex_shader();
     test_vulkan_diagnostic_pipeline_cache_identifies_missing_fragment_shader();
     test_vulkan_diagnostic_pipeline_cache_identifies_missing_batch_descriptor();
+    test_vulkan_resource_binding_state_builds_batch_snapshots();
     test_vulkan_backend_adapter_completes_fake_device_lifecycle();
     test_vulkan_backend_adapter_preserves_plan_diagnostics();
     test_vulkan_backend_adapter_completes_empty_frame();
@@ -2265,6 +2453,8 @@ int main()
     test_vulkan_backend_adapter_falls_back_when_command_recorder_is_unready();
     test_vulkan_backend_adapter_falls_back_when_injected_recorder_rejects_frame();
     test_vulkan_backend_adapter_falls_back_when_batch_pipeline_is_missing();
+    test_vulkan_backend_adapter_falls_back_when_image_resource_is_missing();
+    test_vulkan_backend_adapter_falls_back_when_text_resource_is_missing();
     test_vulkan_backend_adapter_falls_back_when_injected_recorder_fails_record_batch();
     test_vulkan_backend_adapter_falls_back_when_injected_recorder_fails_finish();
     test_vulkan_backend_adapter_falls_back_without_surface();

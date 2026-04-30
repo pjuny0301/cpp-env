@@ -231,6 +231,63 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_frame_sync_state s
     { sync.completed() } -> std::same_as<bool>;
 });
 
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_resource_binding_kind::batch_uniform),
+    render::vulkan_backend::vulkan_resource_binding_kind>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_resource_binding_kind::quad_vertex_buffer),
+    render::vulkan_backend::vulkan_resource_binding_kind>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_resource_binding_kind::image_texture),
+    render::vulkan_backend::vulkan_resource_binding_kind>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_resource_binding_kind::image_sampler),
+    render::vulkan_backend::vulkan_resource_binding_kind>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_resource_binding_kind::text_run_buffer),
+    render::vulkan_backend::vulkan_resource_binding_kind>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_resource_binding_kind::text_glyph_atlas),
+    render::vulkan_backend::vulkan_resource_binding_kind>);
+
+static_assert(requires(render::vulkan_backend::vulkan_resource_binding_snapshot binding) {
+    { binding.set } -> std::same_as<std::size_t&>;
+    { binding.binding } -> std::same_as<std::size_t&>;
+    { binding.kind } -> std::same_as<render::vulkan_backend::vulkan_resource_binding_kind&>;
+    { binding.resource_id } -> std::same_as<std::string&>;
+    { binding.required } -> std::same_as<bool&>;
+    { binding.available } -> std::same_as<bool&>;
+    { binding.bound() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_batch_resource_binding_snapshot snapshot) {
+    { snapshot.batch_kind } -> std::same_as<render::vulkan_backend::vulkan_batch_kind&>;
+    { snapshot.command_index } -> std::same_as<std::size_t&>;
+    { snapshot.node_id } -> std::same_as<render::render_node_id&>;
+    { snapshot.descriptor_set_count } -> std::same_as<std::size_t&>;
+    { snapshot.binding_count } -> std::same_as<std::size_t&>;
+    { snapshot.missing_resource } -> std::same_as<bool&>;
+    { snapshot.missing_binding_kind } -> std::same_as<render::vulkan_backend::vulkan_resource_binding_kind&>;
+    { snapshot.missing_resource_id } -> std::same_as<std::string&>;
+    { snapshot.bindings } -> std::same_as<std::vector<render::vulkan_backend::vulkan_resource_binding_snapshot>&>;
+    { snapshot.completed() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_backend_resource_binding_state resources) {
+    { resources.checked } -> std::same_as<bool&>;
+    { resources.missing_resource } -> std::same_as<bool&>;
+    { resources.missing_batch_kind } -> std::same_as<render::vulkan_backend::vulkan_batch_kind&>;
+    { resources.missing_command_index } -> std::same_as<std::size_t&>;
+    { resources.missing_binding_kind } -> std::same_as<render::vulkan_backend::vulkan_resource_binding_kind&>;
+    { resources.missing_resource_id } -> std::same_as<std::string&>;
+    { resources.planned_batch_count } -> std::same_as<std::size_t&>;
+    { resources.descriptor_set_count } -> std::same_as<std::size_t&>;
+    { resources.binding_count } -> std::same_as<std::size_t&>;
+    { resources.batch_snapshots }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_batch_resource_binding_snapshot>&>;
+    { resources.completed() } -> std::same_as<bool>;
+});
+
 static_assert(requires(render::vulkan_backend::vulkan_recorded_draw_batch recorded_batch) {
     { recorded_batch.kind } -> std::same_as<render::vulkan_backend::vulkan_batch_kind&>;
     { recorded_batch.command_index } -> std::same_as<std::size_t&>;
@@ -384,6 +441,7 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_frame_result resul
     { result.lifecycle } -> std::same_as<render::vulkan_backend::vulkan_backend_lifecycle_readiness&>;
     { result.swapchain } -> std::same_as<render::vulkan_backend::vulkan_backend_swapchain_lifecycle_state&>;
     { result.frame_sync } -> std::same_as<render::vulkan_backend::vulkan_backend_frame_sync_state&>;
+    { result.resource_bindings } -> std::same_as<render::vulkan_backend::vulkan_backend_resource_binding_state&>;
     { result.pipeline } -> std::same_as<render::vulkan_backend::vulkan_backend_pipeline_state&>;
     { result.command_recorder } -> std::same_as<render::vulkan_backend::vulkan_backend_command_recorder_state&>;
     { result.reached_stage } -> std::same_as<render::vulkan_backend::vulkan_backend_frame_stage&>;
@@ -415,6 +473,10 @@ static_assert(requires(
         -> std::same_as<render::vulkan_backend::vulkan_backend_frame_result>;
     { render::vulkan_backend::submit_vulkan_backend_frame(device, pipeline_cache, command_recorder, draw_list, viewport) }
         -> std::same_as<render::vulkan_backend::vulkan_backend_frame_result>;
+    { render::vulkan_backend::build_vulkan_resource_binding_state(
+        draw_list,
+        render::vulkan_backend::vulkan_frame_plan{}) }
+        -> std::same_as<render::vulkan_backend::vulkan_backend_resource_binding_state>;
 });
 
 static_assert(std::same_as<
@@ -449,6 +511,9 @@ static_assert(std::same_as<
     render::vulkan_backend::vulkan_backend_fallback_reason>);
 static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_backend_fallback_reason::acquire_image_failed),
+    render::vulkan_backend::vulkan_backend_fallback_reason>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_fallback_reason::resource_binding_unavailable),
     render::vulkan_backend::vulkan_backend_fallback_reason>);
 static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_backend_fallback_reason::record_commands_failed),

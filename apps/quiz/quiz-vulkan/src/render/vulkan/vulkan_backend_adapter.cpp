@@ -1,5 +1,6 @@
 #include "render/vulkan/vulkan_backend_adapter.h"
 
+#include <string>
 #include <utility>
 
 namespace quiz_vulkan::render::vulkan_backend {
@@ -258,6 +259,183 @@ bool ensure_frame_plan_pipelines(
     return true;
 }
 
+std::string resource_id(std::string prefix, const vulkan_draw_batch& batch)
+{
+    prefix += ":";
+    prefix += batch.node_id.empty() ? std::to_string(batch.command_index) : batch.node_id;
+    return prefix;
+}
+
+const render_draw_command* source_command_for_batch(
+    const render_draw_list& draw_list,
+    const vulkan_draw_batch& batch)
+{
+    if (batch.command_index >= draw_list.commands.size()) {
+        return nullptr;
+    }
+    return &draw_list.commands[batch.command_index];
+}
+
+std::size_t text_payload_size(const render_draw_command& command)
+{
+    std::size_t byte_count = 0;
+    for (const render_text_run& run : command.text_runs) {
+        byte_count += run.text.size();
+    }
+    return byte_count;
+}
+
+std::string first_text_style_or_fallback(const render_draw_command& command)
+{
+    for (const render_text_run& run : command.text_runs) {
+        if (!run.text.empty()) {
+            return run.style_token.empty() ? std::string{"fallback"} : run.style_token;
+        }
+    }
+    return {};
+}
+
+vulkan_resource_binding_snapshot make_resource_binding(
+    std::size_t binding,
+    vulkan_resource_binding_kind kind,
+    std::string resource,
+    bool required = true)
+{
+    const bool available = !resource.empty();
+    return vulkan_resource_binding_snapshot{
+        .set = 0,
+        .binding = binding,
+        .kind = kind,
+        .resource_id = std::move(resource),
+        .required = required,
+        .available = available,
+    };
+}
+
+std::string missing_resource_id_for(
+    const vulkan_batch_resource_binding_snapshot& snapshot,
+    vulkan_resource_binding_kind kind)
+{
+    switch (kind) {
+    case vulkan_resource_binding_kind::image_texture:
+        return "missing_image_texture:"
+            + (snapshot.node_id.empty() ? std::to_string(snapshot.command_index) : snapshot.node_id);
+    case vulkan_resource_binding_kind::text_run_buffer:
+        return "missing_text_run_buffer:"
+            + (snapshot.node_id.empty() ? std::to_string(snapshot.command_index) : snapshot.node_id);
+    case vulkan_resource_binding_kind::text_glyph_atlas:
+        return "missing_text_glyph_atlas:"
+            + (snapshot.node_id.empty() ? std::to_string(snapshot.command_index) : snapshot.node_id);
+    case vulkan_resource_binding_kind::batch_uniform:
+        return "missing_batch_uniform:"
+            + (snapshot.node_id.empty() ? std::to_string(snapshot.command_index) : snapshot.node_id);
+    case vulkan_resource_binding_kind::quad_vertex_buffer:
+        return "missing_quad_vertex_buffer:"
+            + (snapshot.node_id.empty() ? std::to_string(snapshot.command_index) : snapshot.node_id);
+    case vulkan_resource_binding_kind::image_sampler:
+        return "missing_image_sampler:"
+            + (snapshot.node_id.empty() ? std::to_string(snapshot.command_index) : snapshot.node_id);
+    }
+
+    return "missing_resource:"
+        + (snapshot.node_id.empty() ? std::to_string(snapshot.command_index) : snapshot.node_id);
+}
+
+void append_binding(
+    vulkan_batch_resource_binding_snapshot& snapshot,
+    vulkan_resource_binding_snapshot binding)
+{
+    if (!binding.bound() && !snapshot.missing_resource) {
+        snapshot.missing_resource = true;
+        snapshot.missing_binding_kind = binding.kind;
+        snapshot.missing_resource_id = missing_resource_id_for(snapshot, binding.kind);
+    }
+    snapshot.bindings.push_back(std::move(binding));
+    snapshot.binding_count = snapshot.bindings.size();
+    snapshot.descriptor_set_count = snapshot.bindings.empty() ? 0 : 1;
+}
+
+std::string image_sampler_resource_id(const render_draw_command& command)
+{
+    return "image_sampler:"
+        + std::to_string(static_cast<int>(command.image.sampler.min_filter))
+        + ":" + std::to_string(static_cast<int>(command.image.sampler.mag_filter))
+        + ":" + std::to_string(static_cast<int>(command.image.sampler.mipmap_mode))
+        + ":" + std::to_string(static_cast<int>(command.image.sampler.wrap_u))
+        + ":" + std::to_string(static_cast<int>(command.image.sampler.wrap_v));
+}
+
+vulkan_batch_resource_binding_snapshot make_batch_resource_binding_snapshot(
+    const render_draw_list& draw_list,
+    const vulkan_draw_batch& batch)
+{
+    vulkan_batch_resource_binding_snapshot snapshot{
+        .batch_kind = batch.kind,
+        .command_index = batch.command_index,
+        .node_id = batch.node_id,
+        .descriptor_set_count = 0,
+        .binding_count = 0,
+        .missing_resource = false,
+        .missing_binding_kind = vulkan_resource_binding_kind::batch_uniform,
+        .missing_resource_id = {},
+        .bindings = {},
+    };
+
+    append_binding(
+        snapshot,
+        make_resource_binding(
+            0,
+            vulkan_resource_binding_kind::batch_uniform,
+            resource_id("batch_uniform", batch)));
+
+    const render_draw_command* command = source_command_for_batch(draw_list, batch);
+    switch (batch.kind) {
+    case vulkan_batch_kind::quad:
+    case vulkan_batch_kind::debug_bounds:
+        append_binding(
+            snapshot,
+            make_resource_binding(
+                1,
+                vulkan_resource_binding_kind::quad_vertex_buffer,
+                resource_id("quad_vertices", batch)));
+        break;
+    case vulkan_batch_kind::image:
+        append_binding(
+            snapshot,
+            make_resource_binding(
+                1,
+                vulkan_resource_binding_kind::image_texture,
+                command == nullptr ? std::string{} : command->image.uri));
+        append_binding(
+            snapshot,
+            make_resource_binding(
+                2,
+                vulkan_resource_binding_kind::image_sampler,
+                command == nullptr ? std::string{} : image_sampler_resource_id(*command)));
+        break;
+    case vulkan_batch_kind::text: {
+        const std::size_t payload_size = command == nullptr ? 0 : text_payload_size(*command);
+        append_binding(
+            snapshot,
+            make_resource_binding(
+                1,
+                vulkan_resource_binding_kind::text_run_buffer,
+                payload_size == 0 ? std::string{} : resource_id("text_runs", batch)));
+        append_binding(
+            snapshot,
+            make_resource_binding(
+                2,
+                vulkan_resource_binding_kind::text_glyph_atlas,
+                command == nullptr || payload_size == 0
+                    ? std::string{}
+                    : std::string{"glyph_atlas:"} + first_text_style_or_fallback(*command)));
+        break;
+    }
+    }
+
+    return snapshot;
+}
+
 vulkan_frame_sync_token_id make_frame_sync_token(
     const vulkan_frame_in_flight_id& frame,
     std::size_t slot,
@@ -370,6 +548,8 @@ std::string_view fallback_reason_name(vulkan_backend_fallback_reason reason)
         return "begin_frame_failed";
     case vulkan_backend_fallback_reason::acquire_image_failed:
         return "acquire_image_failed";
+    case vulkan_backend_fallback_reason::resource_binding_unavailable:
+        return "resource_binding_unavailable";
     case vulkan_backend_fallback_reason::record_commands_failed:
         return "record_commands_failed";
     case vulkan_backend_fallback_reason::submit_frame_failed:
@@ -759,6 +939,32 @@ const vulkan_backend_command_recorder_state& diagnostic_vulkan_command_recorder:
     return state_;
 }
 
+vulkan_backend_resource_binding_state build_vulkan_resource_binding_state(
+    const render_draw_list& draw_list,
+    const vulkan_frame_plan& plan)
+{
+    vulkan_backend_resource_binding_state state;
+    state.checked = true;
+    state.planned_batch_count = plan.batches.size();
+    state.batch_snapshots.reserve(plan.batches.size());
+
+    for (const vulkan_draw_batch& batch : plan.batches) {
+        vulkan_batch_resource_binding_snapshot snapshot = make_batch_resource_binding_snapshot(draw_list, batch);
+        state.descriptor_set_count += snapshot.descriptor_set_count;
+        state.binding_count += snapshot.binding_count;
+        if (snapshot.missing_resource && !state.missing_resource) {
+            state.missing_resource = true;
+            state.missing_batch_kind = snapshot.batch_kind;
+            state.missing_command_index = snapshot.command_index;
+            state.missing_binding_kind = snapshot.missing_binding_kind;
+            state.missing_resource_id = snapshot.missing_resource_id;
+        }
+        state.batch_snapshots.push_back(std::move(snapshot));
+    }
+
+    return state;
+}
+
 vulkan_backend_frame_result submit_vulkan_backend_frame(
     vulkan_backend_device_interface& device,
     const render_draw_list& draw_list,
@@ -824,6 +1030,12 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     result.reached_stage = vulkan_backend_frame_stage::frame_plan_ready;
 
     if (!ensure_frame_plan_pipelines(pipeline_cache, plan, result)) {
+        return result;
+    }
+
+    result.resource_bindings = build_vulkan_resource_binding_state(draw_list, plan);
+    if (!result.resource_bindings.completed()) {
+        result.fallback_reason = vulkan_backend_fallback_reason::resource_binding_unavailable;
         return result;
     }
 

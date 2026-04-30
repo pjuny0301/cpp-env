@@ -22,6 +22,7 @@ enum class vulkan_backend_fallback_reason {
     viewport_unavailable,
     begin_frame_failed,
     acquire_image_failed,
+    resource_binding_unavailable,
     record_commands_failed,
     submit_frame_failed,
     present_image_failed,
@@ -248,6 +249,64 @@ struct vulkan_backend_frame_sync_state {
     }
 };
 
+enum class vulkan_resource_binding_kind {
+    batch_uniform,
+    quad_vertex_buffer,
+    image_texture,
+    image_sampler,
+    text_run_buffer,
+    text_glyph_atlas,
+};
+
+struct vulkan_resource_binding_snapshot {
+    std::size_t set = 0;
+    std::size_t binding = 0;
+    vulkan_resource_binding_kind kind = vulkan_resource_binding_kind::batch_uniform;
+    std::string resource_id;
+    bool required = true;
+    bool available = false;
+
+    bool bound() const
+    {
+        return !required || (available && !resource_id.empty());
+    }
+};
+
+struct vulkan_batch_resource_binding_snapshot {
+    vulkan_batch_kind batch_kind = vulkan_batch_kind::quad;
+    std::size_t command_index = 0;
+    render_node_id node_id;
+    std::size_t descriptor_set_count = 0;
+    std::size_t binding_count = 0;
+    bool missing_resource = false;
+    vulkan_resource_binding_kind missing_binding_kind = vulkan_resource_binding_kind::batch_uniform;
+    std::string missing_resource_id;
+    std::vector<vulkan_resource_binding_snapshot> bindings;
+
+    bool completed() const
+    {
+        return !missing_resource && binding_count == bindings.size();
+    }
+};
+
+struct vulkan_backend_resource_binding_state {
+    bool checked = false;
+    bool missing_resource = false;
+    vulkan_batch_kind missing_batch_kind = vulkan_batch_kind::quad;
+    std::size_t missing_command_index = 0;
+    vulkan_resource_binding_kind missing_binding_kind = vulkan_resource_binding_kind::batch_uniform;
+    std::string missing_resource_id;
+    std::size_t planned_batch_count = 0;
+    std::size_t descriptor_set_count = 0;
+    std::size_t binding_count = 0;
+    std::vector<vulkan_batch_resource_binding_snapshot> batch_snapshots;
+
+    bool completed() const
+    {
+        return checked && !missing_resource && batch_snapshots.size() == planned_batch_count;
+    }
+};
+
 struct vulkan_recorded_draw_batch {
     vulkan_batch_kind kind = vulkan_batch_kind::quad;
     std::size_t command_index = 0;
@@ -466,6 +525,7 @@ struct vulkan_backend_frame_result {
     vulkan_backend_lifecycle_readiness lifecycle;
     vulkan_backend_swapchain_lifecycle_state swapchain;
     vulkan_backend_frame_sync_state frame_sync;
+    vulkan_backend_resource_binding_state resource_bindings;
     vulkan_backend_pipeline_state pipeline;
     vulkan_backend_command_recorder_state command_recorder;
     vulkan_backend_frame_stage reached_stage = vulkan_backend_frame_stage::not_started;
@@ -489,6 +549,7 @@ struct vulkan_backend_frame_result {
             && lifecycle_ready && surface_ready && frame_begun && commands_recorded
             && frame_submitted && frame_presented && swapchain.completed()
             && frame_sync.completed()
+            && resource_bindings.completed()
             && !fallback_required;
     }
 };
@@ -518,6 +579,10 @@ public:
     vulkan_swapchain_present_result present_image(vulkan_swapchain_image_id image_id) override;
     bool present_frame() override;
 };
+
+vulkan_backend_resource_binding_state build_vulkan_resource_binding_state(
+    const render_draw_list& draw_list,
+    const vulkan_frame_plan& plan);
 
 vulkan_backend_frame_result submit_vulkan_backend_frame(
     vulkan_backend_device_interface& device,

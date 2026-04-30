@@ -119,7 +119,7 @@ void text_input_model::focus(std::string target_id)
 {
     focused_ = true;
     focus_id_ = std::move(target_id);
-    preedit_text_.clear();
+    clear_preedit();
     reset_selection();
     caret_byte_offset_ = text_.size();
 }
@@ -128,7 +128,7 @@ void text_input_model::clear_focus()
 {
     focused_ = false;
     focus_id_.clear();
-    preedit_text_.clear();
+    clear_preedit();
     reset_selection();
 }
 
@@ -172,9 +172,9 @@ std::size_t text_input_model::caret_byte_offset() const
 
 text_range text_input_model::caret_range() const
 {
-    const std::size_t caret = preedit_text_.empty()
-        ? caret_byte_offset()
-        : preedit_anchor_byte_offset() + preedit_text_.size();
+    const std::size_t caret = ime_composition_active_
+        ? preedit_anchor_byte_offset() + preedit_text_.size()
+        : caret_byte_offset();
     return text_range{
         .start_byte = caret,
         .end_byte = caret,
@@ -183,7 +183,7 @@ text_range text_input_model::caret_range() const
 
 std::optional<text_range> text_input_model::preedit_range() const
 {
-    if (preedit_text_.empty()) {
+    if (!ime_composition_active_) {
         return std::nullopt;
     }
 
@@ -196,6 +196,26 @@ std::optional<text_range> text_input_model::preedit_range() const
 std::optional<text_range> text_input_model::selection_range() const
 {
     return selection_range_;
+}
+
+ime_composition_state text_input_model::ime_composition() const
+{
+    const text_range replacement = ime_replacement_range();
+    const text_range preedit{
+        .start_byte = replacement.start_byte,
+        .end_byte = replacement.start_byte + preedit_text_.size(),
+    };
+    const text_range caret{
+        .start_byte = preedit.end_byte,
+        .end_byte = preedit.end_byte,
+    };
+    return ime_composition_state{
+        .active = ime_composition_active_,
+        .preedit_text = preedit_text_,
+        .replacement_range = replacement,
+        .preedit_range = preedit,
+        .caret_range = caret,
+    };
 }
 
 bool text_input_model::move_caret_to_start()
@@ -308,11 +328,11 @@ bool text_input_model::select_all()
     const bool changed = !selection_range_.has_value()
         || !same_range(*selection_range_, all)
         || caret_byte_offset() != all.end_byte
-        || !preedit_text_.empty();
+        || ime_composition_active_;
     selection_range_ = all;
     selection_anchor_byte_offset_ = all.start_byte;
     caret_byte_offset_ = all.end_byte;
-    preedit_text_.clear();
+    clear_preedit();
     return changed;
 }
 
@@ -338,20 +358,20 @@ bool text_input_model::set_selection(text_range range)
         ? (!collapsed && !same_range(*selection_range_, normalized))
             || collapsed
             || caret_byte_offset() != normalized.end_byte
-            || !preedit_text_.empty()
-        : !collapsed || caret_byte_offset() != normalized.end_byte || !preedit_text_.empty();
+            || ime_composition_active_
+        : !collapsed || caret_byte_offset() != normalized.end_byte || ime_composition_active_;
 
     if (collapsed) {
         reset_selection();
         caret_byte_offset_ = normalized.end_byte;
-        preedit_text_.clear();
+        clear_preedit();
         return changed;
     }
 
     selection_range_ = normalized;
     selection_anchor_byte_offset_ = normalized.start_byte;
     caret_byte_offset_ = normalized.end_byte;
-    preedit_text_.clear();
+    clear_preedit();
     return changed;
 }
 
@@ -362,7 +382,7 @@ bool text_input_model::commit_utf8(std::string_view utf8_text)
     }
 
     replace_selection_with(utf8_text);
-    preedit_text_.clear();
+    clear_preedit();
     return true;
 }
 
@@ -373,12 +393,12 @@ bool text_input_model::backspace()
     }
 
     if (erase_selected_text()) {
-        preedit_text_.clear();
+        clear_preedit();
         return true;
     }
 
-    if (!preedit_text_.empty()) {
-        preedit_text_.clear();
+    if (ime_composition_active_) {
+        clear_preedit();
         return true;
     }
 
@@ -397,6 +417,7 @@ bool text_input_model::set_preedit(std::string_view utf8_text)
     }
 
     preedit_text_.assign(utf8_text);
+    ime_composition_active_ = true;
     return true;
 }
 
@@ -406,7 +427,7 @@ bool text_input_model::commit_ime(std::string_view utf8_text)
         return false;
     }
 
-    preedit_text_.clear();
+    clear_preedit();
     if (utf8_text.empty()) {
         return false;
     }
@@ -417,11 +438,11 @@ bool text_input_model::commit_ime(std::string_view utf8_text)
 
 bool text_input_model::cancel_ime()
 {
-    if (!focused_ || preedit_text_.empty()) {
+    if (!focused_ || !ime_composition_active_) {
         return false;
     }
 
-    preedit_text_.clear();
+    clear_preedit();
     return true;
 }
 
@@ -433,7 +454,7 @@ bool text_input_model::submit()
 
     submit_text_ = text_;
     text_.clear();
-    preedit_text_.clear();
+    clear_preedit();
     reset_selection();
     caret_byte_offset_ = 0;
     return true;
@@ -464,6 +485,19 @@ std::size_t text_input_model::preedit_anchor_byte_offset() const
     return caret_byte_offset();
 }
 
+text_range text_input_model::ime_replacement_range() const
+{
+    if (selection_range_.has_value()) {
+        return *selection_range_;
+    }
+
+    const std::size_t caret = caret_byte_offset();
+    return text_range{
+        .start_byte = caret,
+        .end_byte = caret,
+    };
+}
+
 void text_input_model::set_selection_from_anchor(std::size_t anchor_byte, std::size_t active_byte)
 {
     anchor_byte = std::min(anchor_byte, text_.size());
@@ -480,6 +514,12 @@ void text_input_model::set_selection_from_anchor(std::size_t anchor_byte, std::s
         .end_byte = std::max(anchor_byte, active_byte),
     };
     selection_anchor_byte_offset_ = anchor_byte;
+}
+
+void text_input_model::clear_preedit()
+{
+    preedit_text_.clear();
+    ime_composition_active_ = false;
 }
 
 void text_input_model::reset_selection()

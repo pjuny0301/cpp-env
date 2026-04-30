@@ -27,6 +27,15 @@ concept GestureRecognizerInterface = requires(
 };
 
 template <typename T>
+concept ImeCompositionStateInterface = requires(T state) {
+    { state.active } -> std::same_as<bool&>;
+    { state.preedit_text } -> std::same_as<std::string&>;
+    { state.replacement_range } -> std::same_as<input::text_range&>;
+    { state.preedit_range } -> std::same_as<input::text_range&>;
+    { state.caret_range } -> std::same_as<input::text_range&>;
+};
+
+template <typename T>
 concept TextInputModelInterface = requires(
     T& model,
     std::string target,
@@ -43,6 +52,7 @@ concept TextInputModelInterface = requires(
     { model.caret_range() } -> std::same_as<input::text_range>;
     { model.preedit_range() } -> std::same_as<std::optional<input::text_range>>;
     { model.selection_range() } -> std::same_as<std::optional<input::text_range>>;
+    { model.ime_composition() } -> std::same_as<input::ime_composition_state>;
     { model.move_caret_to_start() } -> std::same_as<bool>;
     { model.move_caret_to_end() } -> std::same_as<bool>;
     { model.move_caret_left() } -> std::same_as<bool>;
@@ -62,6 +72,8 @@ concept TextInputModelInterface = requires(
     { model.consume_submit_text() } -> std::same_as<std::optional<std::string>>;
 };
 
+static_assert(ImeCompositionStateInterface<input::ime_composition_state>);
+static_assert(std::is_default_constructible_v<input::ime_composition_state>);
 static_assert(GestureRecognizerInterface<input::gesture_recognizer>);
 static_assert(TextInputModelInterface<input::text_input_model>);
 

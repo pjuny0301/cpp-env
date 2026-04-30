@@ -57,6 +57,7 @@ struct action_route_policy_diagnostic {
     text_range selection_after;
     normalized_input_event_summary normalized_event;
     ime_composition_state composition;
+    gesture_policy_snapshot gesture_policy;
     pointer_capture_snapshot pointer_capture_before;
     pointer_capture_snapshot pointer_capture_after;
     pointer_arbitration_decision pointer_decision = pointer_arbitration_decision::none;
@@ -95,7 +96,10 @@ private:
     [[nodiscard]] std::vector<input_event> process_focus_event(const raw_platform_focus_event& event);
     void begin_route_diagnostics();
     void finish_route_diagnostics();
-    void append_gestures(std::vector<input_event>& events, const std::vector<gesture_event>& gestures);
+    void append_gestures(
+        std::vector<input_event>& events,
+        const std::vector<gesture_event>& gestures,
+        const std::vector<gesture_policy_snapshot>& gesture_policies);
     void append_scroll(std::vector<input_event>& events, const scroll_event& scroll);
     void append_policy(action_route_policy_diagnostic diagnostic);
 

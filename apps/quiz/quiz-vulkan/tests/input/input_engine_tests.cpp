@@ -692,6 +692,20 @@ void test_gesture_routing_diagnostics_summarize_gestures_and_wheel()
         "diagnostic swipe policy is gesture snapshot");
     require(swipe_policy.normalized_event.kind == input_event_summary_kind::swipe_right,
         "diagnostic swipe policy carries normalized swipe");
+    require(swipe_policy.gesture_policy.decision == gesture_policy_decision::swipe_accepted,
+        "diagnostic swipe policy records accepted decision");
+    require(swipe_policy.gesture_policy.direction == gesture_direction::right,
+        "diagnostic swipe policy records right direction");
+    require(swipe_policy.gesture_policy.distance == 70.0f,
+        "diagnostic swipe policy records distance");
+    require(swipe_policy.gesture_policy.duration_ms == 80,
+        "diagnostic swipe policy records duration");
+    require(swipe_policy.gesture_policy.swipe_min_dx == 60.0f,
+        "diagnostic swipe policy records dx threshold");
+    require(swipe_policy.gesture_policy.swipe_max_dy == 40.0f,
+        "diagnostic swipe policy records dy threshold");
+    require(swipe_policy.gesture_policy.swipe_max_duration_ms == 800,
+        "diagnostic swipe policy records duration threshold");
     require(swipe_policy.pointer_capture_before.lifecycle == pointer_capture_lifecycle::tracking,
         "diagnostic swipe policy records tracked pointer before release");
     require(swipe_policy.pointer_capture_after.lifecycle == pointer_capture_lifecycle::idle,
@@ -721,6 +735,10 @@ void test_gesture_routing_diagnostics_summarize_gestures_and_wheel()
         "diagnostic long press policy is gesture snapshot");
     require(long_press_policy.normalized_event.kind == input_event_summary_kind::long_press,
         "diagnostic long press policy carries normalized long press");
+    require(long_press_policy.gesture_policy.decision == gesture_policy_decision::long_press_accepted,
+        "diagnostic long press policy records accepted decision");
+    require(long_press_policy.gesture_policy.emitted_kind == gesture_kind::long_press,
+        "diagnostic long press policy records emitted kind");
     require(long_press_policy.pointer_capture_before.lifecycle == pointer_capture_lifecycle::tracking,
         "diagnostic long press policy records tracked pointer before update");
     require(long_press_policy.pointer_capture_after.lifecycle == pointer_capture_lifecycle::tracking,
@@ -734,6 +752,17 @@ void test_gesture_routing_diagnostics_summarize_gestures_and_wheel()
         "diagnostic long press keeps pointer tracked until release");
     require(engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 810, 10.0f, 10.0f)).empty(),
         "diagnostic long press release is suppressed");
+    require(engine.routing_diagnostics().action_routes.size() == 1,
+        "diagnostic long press suppressed release emits one policy");
+    const action_route_policy_diagnostic& suppressed_release_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "diagnostic long press suppressed release is gesture policy");
+    require(!suppressed_release_policy.emits_input_event,
+        "diagnostic long press suppressed release emits no input event");
+    require(suppressed_release_policy.gesture_policy.decision == gesture_policy_decision::release_suppressed,
+        "diagnostic long press release records suppression decision");
 
     require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 900, 0.0f, 0.0f)).empty(),
         "diagnostic drag down emits no gesture");
@@ -754,6 +783,12 @@ void test_gesture_routing_diagnostics_summarize_gestures_and_wheel()
         "diagnostic drag start policy records tracked pointer before capture");
     require(drag_start_policy.pointer_capture_after.lifecycle == pointer_capture_lifecycle::captured,
         "diagnostic drag start policy records captured pointer after capture");
+    require(drag_start_policy.gesture_policy.decision == gesture_policy_decision::drag_started,
+        "diagnostic drag start policy records drag started decision");
+    require(drag_start_policy.gesture_policy.direction == gesture_direction::right,
+        "diagnostic drag start policy records direction");
+    require(drag_start_policy.gesture_policy.drag_start_slop == 8.0f,
+        "diagnostic drag start policy records drag threshold");
     require_capture_snapshot(
         engine.routing_diagnostics().pointer_capture,
         pointer_capture_lifecycle::captured,
@@ -779,6 +814,10 @@ void test_gesture_routing_diagnostics_summarize_gestures_and_wheel()
         "diagnostic drag update policy records captured pointer before update");
     require(drag_update_policy.pointer_capture_after.lifecycle == pointer_capture_lifecycle::captured,
         "diagnostic drag update policy records captured pointer after update");
+    require(drag_update_policy.gesture_policy.decision == gesture_policy_decision::drag_updated,
+        "diagnostic drag update policy records update decision");
+    require(drag_update_policy.gesture_policy.delta_x == 12.0f,
+        "diagnostic drag update policy records start-relative dx");
 
     events = engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 960, 14.0f, 10.0f));
     require(events.size() == 1, "diagnostic drag end emits one event");
@@ -795,6 +834,8 @@ void test_gesture_routing_diagnostics_summarize_gestures_and_wheel()
         "diagnostic drag end policy records captured pointer before release");
     require(drag_end_policy.pointer_capture_after.lifecycle == pointer_capture_lifecycle::idle,
         "diagnostic drag end policy records idle pointer after release");
+    require(drag_end_policy.gesture_policy.decision == gesture_policy_decision::drag_released,
+        "diagnostic drag end policy records release decision");
     require_capture_snapshot(
         engine.routing_diagnostics().pointer_capture,
         pointer_capture_lifecycle::idle,
@@ -825,6 +866,72 @@ void test_gesture_routing_diagnostics_summarize_gestures_and_wheel()
         "diagnostic wheel policy includes normalized wheel summary");
     require(wheel_policy.normalized_event.line_delta_y == -3.0f,
         "diagnostic wheel policy preserves line delta");
+}
+
+void test_gesture_policy_diagnostics_record_rejected_swipes()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 100, 0.0f, 0.0f)).empty(),
+        "short swipe diagnostic down emits no gesture");
+    std::vector<input_event> events =
+        engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 180, 59.0f, 0.0f));
+    require(events.empty(), "short swipe diagnostic emits no gesture");
+    require(engine.routing_diagnostics().normalized_events.empty(),
+        "short swipe diagnostic emits no normalized summary");
+    require(engine.routing_diagnostics().action_routes.size() == 1,
+        "short swipe diagnostic emits one route policy");
+    const action_route_policy_diagnostic& short_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "short swipe diagnostic route is gesture snapshot");
+    require(!short_policy.emits_input_event, "short swipe policy emits no input event");
+    require(short_policy.gesture_policy.decision == gesture_policy_decision::swipe_rejected_distance,
+        "short swipe policy records distance rejection");
+    require(short_policy.gesture_policy.direction == gesture_direction::right,
+        "short swipe policy records deterministic direction");
+    require(short_policy.gesture_policy.delta_x == 59.0f, "short swipe policy records dx");
+    require(short_policy.gesture_policy.swipe_min_dx == 60.0f,
+        "short swipe policy records dx threshold");
+    require(short_policy.pointer_capture_before.lifecycle == pointer_capture_lifecycle::tracking,
+        "short swipe policy records tracked pointer before release");
+    require(short_policy.pointer_capture_after.lifecycle == pointer_capture_lifecycle::idle,
+        "short swipe policy records idle pointer after release");
+
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 200, 0.0f, 0.0f)).empty(),
+        "cross-axis swipe diagnostic down emits no gesture");
+    events = engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 260, 60.0f, 41.0f));
+    require(events.empty(), "cross-axis swipe diagnostic emits no gesture");
+    const action_route_policy_diagnostic& cross_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "cross-axis swipe diagnostic route is gesture snapshot");
+    require(cross_policy.gesture_policy.decision == gesture_policy_decision::swipe_rejected_cross_axis,
+        "cross-axis swipe policy records cross-axis rejection");
+    require(cross_policy.gesture_policy.direction == gesture_direction::right,
+        "cross-axis swipe policy records dominant direction");
+    require(cross_policy.gesture_policy.delta_y == 41.0f, "cross-axis swipe policy records dy");
+    require(cross_policy.gesture_policy.swipe_max_dy == 40.0f,
+        "cross-axis swipe policy records dy threshold");
+
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 300, 0.0f, 0.0f)).empty(),
+        "slow swipe diagnostic down emits no gesture");
+    events = engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 1101, 60.0f, 0.0f));
+    require(events.empty(), "slow swipe diagnostic emits no gesture");
+    const action_route_policy_diagnostic& slow_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "slow swipe diagnostic route is gesture snapshot");
+    require(slow_policy.gesture_policy.decision == gesture_policy_decision::swipe_rejected_duration,
+        "slow swipe policy records duration rejection");
+    require(slow_policy.gesture_policy.duration_ms == 801, "slow swipe policy records duration");
+    require(slow_policy.gesture_policy.swipe_max_duration_ms == 800,
+        "slow swipe policy records duration threshold");
 }
 
 void test_gesture_routing_diagnostics_cancel_and_focus_loss()
@@ -864,6 +971,10 @@ void test_gesture_routing_diagnostics_cancel_and_focus_loss()
         "diagnostic cancel policy records captured pointer before cancel");
     require(cancel_policy.pointer_capture_after.lifecycle == pointer_capture_lifecycle::idle,
         "diagnostic cancel policy records idle pointer after cancel");
+    require(cancel_policy.gesture_policy.decision == gesture_policy_decision::drag_canceled,
+        "diagnostic cancel policy records drag canceled decision");
+    require(cancel_policy.gesture_policy.emitted_kind == gesture_kind::drag_cancel,
+        "diagnostic cancel policy records emitted kind");
     require(engine.routing_diagnostics().action_routes.size() == 2,
         "diagnostic cancel emits gesture and pointer reset policies");
     const action_route_policy_diagnostic& cancel_reset_policy = require_policy(
@@ -876,6 +987,8 @@ void test_gesture_routing_diagnostics_cancel_and_focus_loss()
         "diagnostic cancel reset policy records captured pointer before cancel");
     require(cancel_reset_policy.pointer_capture_after.lifecycle == pointer_capture_lifecycle::idle,
         "diagnostic cancel reset policy records idle pointer after cancel");
+    require(cancel_reset_policy.gesture_policy.decision == gesture_policy_decision::drag_canceled,
+        "diagnostic cancel reset policy carries drag canceled decision");
     require_capture_snapshot(
         engine.routing_diagnostics().pointer_capture,
         pointer_capture_lifecycle::idle,
@@ -963,11 +1076,23 @@ void test_pointer_cancel_policy_records_non_emitting_stream_cleanup()
     require(events.empty(), "non-emitting cancel produces no gesture event");
     require(engine.routing_diagnostics().normalized_events.empty(),
         "non-emitting cancel produces no normalized gesture summary");
-    require(engine.routing_diagnostics().action_routes.size() == 1,
-        "non-emitting cancel emits one pointer reset policy");
-    const action_route_policy_diagnostic& cancel_policy = require_policy(
+    require(engine.routing_diagnostics().action_routes.size() == 2,
+        "non-emitting cancel emits gesture suppression and pointer reset policies");
+    const action_route_policy_diagnostic& cancel_route_policy = require_policy(
         engine.routing_diagnostics(),
         0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "non-emitting cancel route policy records suppression");
+    require(!cancel_route_policy.emits_input_event, "non-emitting cancel route emits no input event");
+    require(cancel_route_policy.gesture_policy.decision == gesture_policy_decision::release_suppressed,
+        "non-emitting cancel route records suppression decision");
+    require(cancel_route_policy.gesture_policy.direction == gesture_direction::right,
+        "non-emitting cancel route records deterministic direction");
+    require(cancel_route_policy.gesture_policy.distance == 70.0f,
+        "non-emitting cancel route records canceled distance");
+    const action_route_policy_diagnostic& cancel_policy = require_policy(
+        engine.routing_diagnostics(),
+        1,
         action_route_policy_kind::pointer_capture_reset,
         "non-emitting cancel policy records pointer reset");
     require(!cancel_policy.emits_input_event, "non-emitting cancel policy emits no input event");
@@ -1008,11 +1133,18 @@ void test_pointer_cancel_policy_records_non_emitting_stream_cleanup()
         raw_platform_pointer_button::none,
         3));
     require(events.empty(), "isolated cancel emits no gesture event");
-    require(engine.routing_diagnostics().action_routes.size() == 1,
-        "isolated cancel emits one pointer reset policy");
-    const action_route_policy_diagnostic& isolated_policy = require_policy(
+    require(engine.routing_diagnostics().action_routes.size() == 2,
+        "isolated cancel emits gesture suppression and pointer reset policies");
+    const action_route_policy_diagnostic& isolated_route_policy = require_policy(
         engine.routing_diagnostics(),
         0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "isolated cancel route policy records suppression");
+    require(isolated_route_policy.gesture_policy.decision == gesture_policy_decision::release_suppressed,
+        "isolated cancel route records suppression");
+    const action_route_policy_diagnostic& isolated_policy = require_policy(
+        engine.routing_diagnostics(),
+        1,
         action_route_policy_kind::pointer_capture_reset,
         "isolated cancel policy records pointer reset");
     require(isolated_policy.pointer_capture_before.lifecycle == pointer_capture_lifecycle::tracking,
@@ -1043,11 +1175,18 @@ void test_pointer_cancel_policy_records_non_emitting_stream_cleanup()
         raw_platform_pointer_button::none,
         9));
     require(events.empty(), "long-pressed pointer cancel emits no gesture event");
-    require(engine.routing_diagnostics().action_routes.size() == 1,
-        "long-pressed pointer cancel emits pointer reset policy");
-    const action_route_policy_diagnostic& long_press_cancel_policy = require_policy(
+    require(engine.routing_diagnostics().action_routes.size() == 2,
+        "long-pressed pointer cancel emits suppression and pointer reset policies");
+    const action_route_policy_diagnostic& long_press_cancel_route_policy = require_policy(
         engine.routing_diagnostics(),
         0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "long-pressed pointer cancel route records suppression");
+    require(long_press_cancel_route_policy.gesture_policy.decision == gesture_policy_decision::release_suppressed,
+        "long-pressed cancel route records release suppression");
+    const action_route_policy_diagnostic& long_press_cancel_policy = require_policy(
+        engine.routing_diagnostics(),
+        1,
         action_route_policy_kind::pointer_capture_reset,
         "long-pressed pointer cancel policy records pointer reset");
     require(long_press_cancel_policy.pointer_capture_before.lifecycle == pointer_capture_lifecycle::tracking,
@@ -2359,6 +2498,7 @@ int main()
     test_scroll_events_normalize_line_and_pixel_deltas();
     test_raw_platform_scroll_routes_through_input_engine();
     test_gesture_routing_diagnostics_summarize_gestures_and_wheel();
+    test_gesture_policy_diagnostics_record_rejected_swipes();
     test_gesture_routing_diagnostics_cancel_and_focus_loss();
     test_pointer_cancel_policy_records_non_emitting_stream_cleanup();
     test_pointer_capture_arbitration_diagnostics();

@@ -53,6 +53,17 @@ void require_capture_snapshot(
     require(snapshot.tracked_pointer_count == tracked_pointer_count, message);
 }
 
+const quiz_vulkan::input::gesture_policy_snapshot& require_single_policy(
+    const quiz_vulkan::input::gesture_recognizer& recognizer,
+    quiz_vulkan::input::gesture_policy_decision decision,
+    const char* message)
+{
+    const std::vector<quiz_vulkan::input::gesture_policy_snapshot>& snapshots = recognizer.policy_snapshots();
+    require(snapshots.size() == 1, message);
+    require(snapshots[0].decision == decision, message);
+    return snapshots[0];
+}
+
 void test_swipe_thresholds()
 {
     using namespace quiz_vulkan::input;
@@ -89,6 +100,85 @@ void test_swipe_thresholds()
     require(gestures.empty(), "swipe duration above threshold does not swipe");
 }
 
+void test_swipe_policy_snapshots()
+{
+    using namespace quiz_vulkan::input;
+
+    gesture_recognizer recognizer;
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 100, 0.0f, 0.0f)),
+        "policy swipe down emits no gesture");
+    const gesture_policy_snapshot& tracking = require_single_policy(
+        recognizer,
+        gesture_policy_decision::tracking_started,
+        "policy swipe down records tracking");
+    require(tracking.direction == gesture_direction::none, "policy tracking has no direction");
+    require(tracking.pointer_id == 1, "policy tracking preserves pointer id");
+    require(tracking.swipe_min_dx == 60.0f, "policy tracking records swipe dx threshold");
+    require(tracking.swipe_max_dy == 40.0f, "policy tracking records swipe dy threshold");
+    require(tracking.swipe_max_duration_ms == 800, "policy tracking records swipe duration threshold");
+
+    std::vector<gesture_event> gestures =
+        recognizer.process_pointer_event(pointer(pointer_phase::up, 180, 70.0f, 0.0f));
+    require(gestures.size() == 1, "policy swipe emits one gesture");
+    const gesture_policy_snapshot& accepted = require_single_policy(
+        recognizer,
+        gesture_policy_decision::swipe_accepted,
+        "policy swipe accepted snapshot is recorded");
+    require(accepted.direction == gesture_direction::right, "policy swipe direction is right");
+    require(accepted.duration_ms == 80, "policy swipe duration is recorded");
+    require(accepted.delta_x == 70.0f, "policy swipe delta x is recorded");
+    require(accepted.delta_y == 0.0f, "policy swipe delta y is recorded");
+    require(accepted.distance == 70.0f, "policy swipe distance is recorded");
+    require(accepted.emitted_input_event, "policy swipe marks emitted input");
+    require(accepted.emitted_kind == gesture_kind::swipe_right, "policy swipe emitted kind is recorded");
+
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 200, 0.0f, 0.0f)),
+        "policy short swipe down emits no gesture");
+    gestures = recognizer.process_pointer_event(pointer(pointer_phase::up, 280, 59.0f, 0.0f));
+    require(gestures.empty(), "policy short swipe emits no gesture");
+    const gesture_policy_snapshot& short_swipe = require_single_policy(
+        recognizer,
+        gesture_policy_decision::swipe_rejected_distance,
+        "policy short swipe records distance rejection");
+    require(short_swipe.direction == gesture_direction::right, "policy short swipe direction is right");
+    require(short_swipe.delta_x == 59.0f, "policy short swipe delta x is recorded");
+    require(!short_swipe.emitted_input_event, "policy short swipe emits no input");
+
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 300, 0.0f, 0.0f)),
+        "policy cross-axis swipe down emits no gesture");
+    gestures = recognizer.process_pointer_event(pointer(pointer_phase::up, 360, 60.0f, 41.0f));
+    require(gestures.empty(), "policy cross-axis swipe emits no gesture");
+    const gesture_policy_snapshot& cross_axis = require_single_policy(
+        recognizer,
+        gesture_policy_decision::swipe_rejected_cross_axis,
+        "policy cross-axis swipe records rejection");
+    require(cross_axis.direction == gesture_direction::right, "policy cross-axis direction is deterministic");
+    require(cross_axis.delta_y == 41.0f, "policy cross-axis delta y is recorded");
+
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 400, 0.0f, 0.0f)),
+        "policy slow swipe down emits no gesture");
+    gestures = recognizer.process_pointer_event(pointer(pointer_phase::up, 1201, 60.0f, 0.0f));
+    require(gestures.empty(), "policy slow swipe emits no gesture");
+    const gesture_policy_snapshot& slow_swipe = require_single_policy(
+        recognizer,
+        gesture_policy_decision::swipe_rejected_duration,
+        "policy slow swipe records duration rejection");
+    require(slow_swipe.duration_ms == 801, "policy slow swipe duration is recorded");
+    require(slow_swipe.direction == gesture_direction::right, "policy slow swipe direction is right");
+
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 1300, 10.0f, 10.0f)),
+        "policy tap down emits no gesture");
+    gestures = recognizer.process_pointer_event(pointer(pointer_phase::up, 1340, 12.0f, 13.0f));
+    require(gestures.size() == 1, "policy tap emits one gesture");
+    const gesture_policy_snapshot& tap = require_single_policy(
+        recognizer,
+        gesture_policy_decision::tap_accepted,
+        "policy tap records accepted tap");
+    require(tap.emitted_input_event, "policy tap marks emitted input");
+    require(tap.emitted_kind == gesture_kind::tap, "policy tap emitted kind is recorded");
+    require(tap.direction == gesture_direction::down, "policy tap direction uses dominant axis");
+}
+
 void test_tap_and_long_press_suppression()
 {
     using namespace quiz_vulkan::input;
@@ -109,9 +199,21 @@ void test_tap_and_long_press_suppression()
     gestures = recognizer.update_time(1600);
     require(gestures.size() == 1, "long press emits at threshold");
     require(gestures[0].kind == gesture_kind::long_press, "long press kind is emitted");
+    const gesture_policy_snapshot& long_press_policy = require_single_policy(
+        recognizer,
+        gesture_policy_decision::long_press_accepted,
+        "long press records accepted policy");
+    require(long_press_policy.emitted_input_event, "long press policy marks emitted input");
+    require(long_press_policy.emitted_kind == gesture_kind::long_press,
+        "long press policy records emitted kind");
 
     gestures = recognizer.process_pointer_event(pointer(pointer_phase::up, 1610, 20.0f, 20.0f));
     require(gestures.empty(), "long press suppresses following tap");
+    const gesture_policy_snapshot& suppressed_release = require_single_policy(
+        recognizer,
+        gesture_policy_decision::release_suppressed,
+        "long press release records suppression policy");
+    require(!suppressed_release.emitted_input_event, "suppressed release emits no input");
 
     require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 2000, 0.0f, 0.0f)),
         "swipe suppression down emits no gesture");
@@ -257,18 +359,38 @@ void test_drag_gesture_lifecycle_and_cancel()
     require(gestures[0].duration_ms == 20, "drag start duration is measured from down");
     require(gestures[0].delta_x == 9.0f, "drag start delta x is measured from down");
     require(gestures[0].delta_y == 4.0f, "drag start delta y is measured from down");
+    const gesture_policy_snapshot& drag_start_policy = require_single_policy(
+        recognizer,
+        gesture_policy_decision::drag_started,
+        "drag start records policy");
+    require(drag_start_policy.emitted_input_event, "drag start policy marks emitted input");
+    require(drag_start_policy.emitted_kind == gesture_kind::drag_start,
+        "drag start policy records emitted kind");
+    require(drag_start_policy.direction == gesture_direction::right, "drag start policy records direction");
+    require(drag_start_policy.distance > 9.0f, "drag start policy records distance from start");
 
     gestures = recognizer.process_pointer_event(pointer(pointer_phase::move, 140, 15.0f, 7.0f, 4));
     require(gestures.size() == 1, "drag update emits one gesture");
     require(gestures[0].kind == gesture_kind::drag_update, "drag update kind is emitted");
     require(gestures[0].delta_x == 6.0f, "drag update delta x is measured from previous pointer");
     require(gestures[0].delta_y == 3.0f, "drag update delta y is measured from previous pointer");
+    const gesture_policy_snapshot& drag_update_policy = require_single_policy(
+        recognizer,
+        gesture_policy_decision::drag_updated,
+        "drag update records policy");
+    require(drag_update_policy.delta_x == 15.0f, "drag update policy delta x is from drag start");
+    require(drag_update_policy.delta_y == 7.0f, "drag update policy delta y is from drag start");
 
     gestures = recognizer.process_pointer_event(pointer(pointer_phase::up, 150, 20.0f, 10.0f, 4));
     require(gestures.size() == 1, "drag end emits one gesture");
     require(gestures[0].kind == gesture_kind::drag_end, "drag end kind is emitted");
     require(gestures[0].delta_x == 5.0f, "drag end delta x is measured from previous pointer");
     require(gestures[0].delta_y == 3.0f, "drag end delta y is measured from previous pointer");
+    const gesture_policy_snapshot& drag_end_policy = require_single_policy(
+        recognizer,
+        gesture_policy_decision::drag_released,
+        "drag end records policy");
+    require(drag_end_policy.emitted_kind == gesture_kind::drag_end, "drag end policy records emitted kind");
     require_empty(recognizer.process_pointer_event(pointer(pointer_phase::cancel, 160, 20.0f, 10.0f, 4)),
         "cancel after drag end emits no stale gesture");
     require_empty(recognizer.process_pointer_event(pointer(pointer_phase::up, 170, 20.0f, 10.0f, 4)),
@@ -286,6 +408,13 @@ void test_drag_gesture_lifecycle_and_cancel()
     require(gestures[0].kind == gesture_kind::drag_cancel, "drag cancel kind is emitted");
     require(gestures[0].delta_x == 0.0f, "drag cancel delta x is measured from previous pointer");
     require(gestures[0].delta_y == 3.0f, "drag cancel delta y is measured from previous pointer");
+    const gesture_policy_snapshot& drag_cancel_policy = require_single_policy(
+        recognizer,
+        gesture_policy_decision::drag_canceled,
+        "drag cancel records policy");
+    require(drag_cancel_policy.emitted_kind == gesture_kind::drag_cancel,
+        "drag cancel policy records emitted kind");
+    require(drag_cancel_policy.phase == pointer_phase::cancel, "drag cancel policy records cancel phase");
     require_capture_snapshot(
         recognizer.capture_snapshot(),
         pointer_capture_lifecycle::idle,
@@ -513,6 +642,7 @@ void test_multi_pointer_long_press_order_is_stable()
 int main()
 {
     test_swipe_thresholds();
+    test_swipe_policy_snapshots();
     test_tap_and_long_press_suppression();
     test_touch_cancel_and_multi_pointer_edges();
     test_unknown_pointer_reset_and_timing_edges();

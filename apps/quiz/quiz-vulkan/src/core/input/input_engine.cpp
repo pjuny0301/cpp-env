@@ -237,6 +237,43 @@ bool has_gesture_kind(
     });
 }
 
+bool is_emitless_gesture_policy(const gesture_policy_snapshot& snapshot)
+{
+    switch (snapshot.decision) {
+    case gesture_policy_decision::swipe_rejected_distance:
+    case gesture_policy_decision::swipe_rejected_cross_axis:
+    case gesture_policy_decision::swipe_rejected_duration:
+    case gesture_policy_decision::release_suppressed:
+        return true;
+    case gesture_policy_decision::none:
+    case gesture_policy_decision::tracking_started:
+    case gesture_policy_decision::tap_accepted:
+    case gesture_policy_decision::long_press_accepted:
+    case gesture_policy_decision::swipe_accepted:
+    case gesture_policy_decision::drag_started:
+    case gesture_policy_decision::drag_updated:
+    case gesture_policy_decision::drag_released:
+    case gesture_policy_decision::drag_canceled:
+    case gesture_policy_decision::ignored_by_capture:
+        return false;
+    }
+
+    return false;
+}
+
+const gesture_policy_snapshot* find_policy_for_gesture(
+    const std::vector<gesture_policy_snapshot>& policies,
+    const gesture_event& gesture)
+{
+    const auto policy = std::ranges::find_if(policies, [&gesture](const gesture_policy_snapshot& snapshot) {
+        return snapshot.emitted_input_event
+            && snapshot.emitted_kind == gesture.kind
+            && snapshot.pointer_id == gesture.pointer_id
+            && snapshot.timestamp_ms == gesture.timestamp_ms;
+    });
+    return policy == policies.end() ? nullptr : &*policy;
+}
+
 pointer_arbitration_decision pointer_decision_for(
     const raw_platform_pointer_event& event,
     pointer_phase phase,
@@ -466,7 +503,8 @@ std::vector<input_event> input_engine::update_time(std::int64_t timestamp_ms)
 {
     std::vector<input_event> events;
     begin_route_diagnostics();
-    append_gestures(events, gestures_.update_time(timestamp_ms));
+    const std::vector<gesture_event> gestures = gestures_.update_time(timestamp_ms);
+    append_gestures(events, gestures, gestures_.policy_snapshots());
     finish_route_diagnostics();
     return events;
 }
@@ -534,6 +572,7 @@ std::vector<input_event> input_engine::process_pointer_event(const raw_platform_
         .x = event.x,
         .y = event.y,
     });
+    const std::vector<gesture_policy_snapshot> gesture_policies = gestures_.policy_snapshots();
     const pointer_capture_snapshot pointer_capture_after = gestures_.capture_snapshot();
     const pointer_arbitration_decision decision = pointer_decision_for(
         event,
@@ -543,7 +582,7 @@ std::vector<input_event> input_engine::process_pointer_event(const raw_platform_
         gestures);
 
     const std::size_t first_gesture_policy = diagnostics_.action_routes.size();
-    append_gestures(events, gestures);
+    append_gestures(events, gestures, gesture_policies);
     for (std::size_t index = first_gesture_policy; index < diagnostics_.action_routes.size(); ++index) {
         action_route_policy_diagnostic& policy = diagnostics_.action_routes[index];
         if (policy.kind == action_route_policy_kind::gesture_route_snapshot
@@ -552,16 +591,35 @@ std::vector<input_event> input_engine::process_pointer_event(const raw_platform_
         }
     }
 
+    for (const gesture_policy_snapshot& gesture_policy : gesture_policies) {
+        if (!is_emitless_gesture_policy(gesture_policy)) {
+            continue;
+        }
+
+        action_route_policy_diagnostic policy = make_policy(
+            action_route_policy_kind::gesture_route_snapshot,
+            gesture_policy.timestamp_ms,
+            pointer_capture_before,
+            pointer_capture_after);
+        policy.gesture_policy = gesture_policy;
+        apply_pointer_arbitration(policy, event.pointer_id, phase, decision);
+        append_policy(std::move(policy));
+    }
+
     if (gestures.empty()
         && (decision == pointer_arbitration_decision::tracked
             || decision == pointer_arbitration_decision::ignored_by_capture)) {
-        append_policy(make_pointer_arbitration_policy(
+        action_route_policy_diagnostic policy = make_pointer_arbitration_policy(
             event.timestamp_ms,
             event.pointer_id,
             phase,
             decision,
             pointer_capture_before,
-            pointer_capture_after));
+            pointer_capture_after);
+        if (!gesture_policies.empty()) {
+            policy.gesture_policy = gesture_policies.front();
+        }
+        append_policy(std::move(policy));
     }
 
     if (phase == pointer_phase::cancel
@@ -573,6 +631,9 @@ std::vector<input_event> input_engine::process_pointer_event(const raw_platform_
             diagnostics_.pointer_capture,
             pointer_capture_after);
         apply_pointer_arbitration(policy, event.pointer_id, phase, decision);
+        if (!gesture_policies.empty()) {
+            policy.gesture_policy = gesture_policies.front();
+        }
         append_policy(std::move(policy));
     }
     finish_route_diagnostics();
@@ -1023,7 +1084,10 @@ void input_engine::finish_route_diagnostics()
     diagnostics_.pointer_capture = gestures_.capture_snapshot();
 }
 
-void input_engine::append_gestures(std::vector<input_event>& events, const std::vector<gesture_event>& gestures)
+void input_engine::append_gestures(
+    std::vector<input_event>& events,
+    const std::vector<gesture_event>& gestures,
+    const std::vector<gesture_policy_snapshot>& gesture_policies)
 {
     for (const gesture_event& gesture : gestures) {
         const std::size_t event_index = events.size();
@@ -1036,6 +1100,9 @@ void input_engine::append_gestures(std::vector<input_event>& events, const std::
             diagnostics_.pointer_capture,
             gestures_.capture_snapshot());
         policy.normalized_event = summary;
+        if (const gesture_policy_snapshot* gesture_policy = find_policy_for_gesture(gesture_policies, gesture)) {
+            policy.gesture_policy = *gesture_policy;
+        }
         append_policy(std::move(policy));
         events.emplace_back(gesture);
     }

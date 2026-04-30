@@ -44,11 +44,15 @@ private:
         std::int32_t pointer_id,
         pointer_state& state,
         std::int64_t timestamp_ms);
+    [[nodiscard]] bool captured_by_other_pointer(std::int32_t pointer_id) const;
     [[nodiscard]] bool inside_drag_slop(const pointer_state& state, float x, float y) const;
     [[nodiscard]] bool inside_tap_slop(const pointer_state& state, float x, float y) const;
+    void capture_pointer(std::int32_t pointer_id);
+    void release_pointer_capture(std::int32_t pointer_id);
 
     gesture_thresholds thresholds_;
     std::unordered_map<std::int32_t, pointer_state> pointers_;
+    std::optional<std::int32_t> captured_pointer_id_;
 };
 
 } // namespace quiz_vulkan::input

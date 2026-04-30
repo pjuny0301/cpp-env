@@ -253,6 +253,11 @@ void test_drag_gesture_lifecycle_and_cancel()
     require(gestures[0].kind == gesture_kind::drag_end, "drag end kind is emitted");
     require(gestures[0].delta_x == 5.0f, "drag end delta x is measured from previous pointer");
     require(gestures[0].delta_y == 3.0f, "drag end delta y is measured from previous pointer");
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::cancel, 160, 20.0f, 10.0f, 4)),
+        "cancel after drag end emits no stale gesture");
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::up, 170, 20.0f, 10.0f, 4)),
+        "up after drag end emits no stale gesture");
+    require_empty(recognizer.update_time(800), "drag end clears pending long press state");
 
     require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 200, 30.0f, 30.0f, 6)),
         "drag cancel down emits no gesture");
@@ -267,6 +272,70 @@ void test_drag_gesture_lifecycle_and_cancel()
     require(gestures[0].delta_y == 3.0f, "drag cancel delta y is measured from previous pointer");
     require_empty(recognizer.process_pointer_event(pointer(pointer_phase::up, 230, 30.0f, 42.0f, 6)),
         "up after drag cancel emits no stale gesture");
+    require_empty(recognizer.update_time(900), "drag cancel clears pending long press state");
+}
+
+void test_drag_capture_ignores_other_pointers_until_release()
+{
+    using namespace quiz_vulkan::input;
+
+    gesture_recognizer recognizer;
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 100, 0.0f, 0.0f, 1)),
+        "captured drag first pointer down emits no gesture");
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 105, 40.0f, 0.0f, 2)),
+        "second pointer before capture emits no gesture");
+
+    std::vector<gesture_event> gestures =
+        recognizer.process_pointer_event(pointer(pointer_phase::move, 120, 9.0f, 0.0f, 1));
+    require(gestures.size() == 1, "first pointer starts captured drag");
+    require(gestures[0].kind == gesture_kind::drag_start, "captured drag start kind is emitted");
+    require(gestures[0].pointer_id == 1, "captured drag start preserves first pointer id");
+
+    require_empty(recognizer.update_time(705), "captured drag drops other pending long press state");
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::up, 710, 40.0f, 0.0f, 2)),
+        "second pointer up is ignored while first pointer is captured");
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 720, 50.0f, 0.0f, 2)),
+        "new second pointer down is ignored while first pointer is captured");
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::up, 730, 50.0f, 0.0f, 2)),
+        "new second pointer up is ignored while first pointer is captured");
+
+    gestures = recognizer.process_pointer_event(pointer(pointer_phase::move, 740, 15.0f, 2.0f, 1));
+    require(gestures.size() == 1, "captured first pointer continues drag updates");
+    require(gestures[0].kind == gesture_kind::drag_update, "captured first pointer emits drag update");
+    require(gestures[0].pointer_id == 1, "captured drag update preserves first pointer id");
+
+    gestures = recognizer.process_pointer_event(pointer(pointer_phase::up, 760, 18.0f, 3.0f, 1));
+    require(gestures.size() == 1, "captured first pointer releases with drag end");
+    require(gestures[0].kind == gesture_kind::drag_end, "captured drag releases with drag end kind");
+
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 800, 60.0f, 0.0f, 2)),
+        "second pointer down after capture release is accepted");
+    gestures = recognizer.process_pointer_event(pointer(pointer_phase::up, 820, 60.0f, 0.0f, 2));
+    require(gestures.size() == 1, "second pointer taps after capture release");
+    require(gestures[0].kind == gesture_kind::tap, "second pointer tap kind is emitted after release");
+    require(gestures[0].pointer_id == 2, "second pointer tap preserves pointer id after release");
+}
+
+void test_drag_suppresses_long_press_when_drag_slop_is_inside_tap_slop()
+{
+    using namespace quiz_vulkan::input;
+
+    gesture_thresholds thresholds;
+    thresholds.tap_slop = 10.0f;
+    thresholds.drag_start_slop = 4.0f;
+    gesture_recognizer recognizer(thresholds);
+
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 100, 0.0f, 0.0f)),
+        "inside-tap-slop drag down emits no gesture");
+    std::vector<gesture_event> gestures =
+        recognizer.process_pointer_event(pointer(pointer_phase::move, 120, 5.0f, 0.0f));
+    require(gestures.size() == 1, "move outside smaller drag slop starts drag");
+    require(gestures[0].kind == gesture_kind::drag_start, "inside-tap-slop drag start kind is emitted");
+
+    require_empty(recognizer.update_time(700), "active drag suppresses long press even inside tap slop");
+    gestures = recognizer.process_pointer_event(pointer(pointer_phase::up, 710, 5.0f, 0.0f));
+    require(gestures.size() == 1, "inside-tap-slop drag still releases as drag end");
+    require(gestures[0].kind == gesture_kind::drag_end, "inside-tap-slop drag end kind is emitted");
 }
 
 void test_drag_start_slop_is_configurable()
@@ -322,6 +391,8 @@ int main()
     test_unknown_pointer_reset_and_timing_edges();
     test_pointer_id_reuse_replaces_pending_state();
     test_drag_gesture_lifecycle_and_cancel();
+    test_drag_capture_ignores_other_pointers_until_release();
+    test_drag_suppresses_long_press_when_drag_slop_is_inside_tap_slop();
     test_drag_start_slop_is_configurable();
     test_multi_pointer_long_press_order_is_stable();
 

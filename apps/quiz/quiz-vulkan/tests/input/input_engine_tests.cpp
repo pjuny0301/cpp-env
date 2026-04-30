@@ -379,6 +379,115 @@ void test_drag_gestures_route_from_raw_pointer()
     require(cancel.delta_y == 3.0f, "raw touch drag cancel delta y is from previous pointer");
 }
 
+void test_pointer_capture_routes_drag_and_ignores_other_pointers()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    require(engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::down,
+                100,
+                0.0f,
+                0.0f,
+                raw_platform_pointer_button::primary,
+                1))
+                .empty(),
+        "capture route first pointer down emits no gesture");
+    require(engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::down,
+                105,
+                50.0f,
+                0.0f,
+                raw_platform_pointer_button::primary,
+                2))
+                .empty(),
+        "capture route second pointer before drag emits no gesture");
+
+    std::vector<input_event> events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::move,
+        120,
+        9.0f,
+        0.0f,
+        raw_platform_pointer_button::primary,
+        1));
+    require(events.size() == 1, "capture route first pointer starts drag");
+    const gesture_event& start = require_event<gesture_event>(events, 0);
+    require(start.kind == gesture_kind::drag_start, "capture route first pointer emits drag start");
+    require(start.pointer_id == 1, "capture route drag start preserves first pointer id");
+
+    require(engine.update_time(705).empty(), "capture route suppresses other pointer long press");
+    require(engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::up,
+                710,
+                50.0f,
+                0.0f,
+                raw_platform_pointer_button::primary,
+                2))
+                .empty(),
+        "capture route ignores other pointer up");
+    require(engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::down,
+                720,
+                60.0f,
+                0.0f,
+                raw_platform_pointer_button::primary,
+                2))
+                .empty(),
+        "capture route ignores new other pointer down");
+    require(engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::up,
+                730,
+                60.0f,
+                0.0f,
+                raw_platform_pointer_button::primary,
+                2))
+                .empty(),
+        "capture route ignores new other pointer up");
+
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::cancel,
+        740,
+        12.0f,
+        3.0f,
+        raw_platform_pointer_button::primary,
+        1));
+    require(events.size() == 1, "capture route first pointer cancel emits drag cancel");
+    const gesture_event& cancel = require_event<gesture_event>(events, 0);
+    require(cancel.kind == gesture_kind::drag_cancel, "capture route cancel kind is routed");
+    require(cancel.pointer_id == 1, "capture route cancel preserves first pointer id");
+    require(engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::up,
+                750,
+                12.0f,
+                3.0f,
+                raw_platform_pointer_button::primary,
+                1))
+                .empty(),
+        "capture route up after drag cancel emits no stale gesture");
+
+    require(engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::down,
+                800,
+                60.0f,
+                0.0f,
+                raw_platform_pointer_button::primary,
+                2))
+                .empty(),
+        "capture route second pointer is accepted after release");
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::up,
+        820,
+        60.0f,
+        0.0f,
+        raw_platform_pointer_button::primary,
+        2));
+    require(events.size() == 1, "capture route second pointer taps after release");
+    const gesture_event& tap = require_event<gesture_event>(events, 0);
+    require(tap.kind == gesture_kind::tap, "capture route second pointer tap kind is routed");
+    require(tap.pointer_id == 2, "capture route second pointer tap preserves id");
+}
+
 void test_drag_start_slop_routes_from_engine_thresholds()
 {
     using namespace quiz_vulkan;
@@ -950,6 +1059,7 @@ int main()
     test_pointer_filter_and_timing_edges();
     test_pointer_id_reuse_routes_replacement_state();
     test_drag_gestures_route_from_raw_pointer();
+    test_pointer_capture_routes_drag_and_ignores_other_pointers();
     test_drag_start_slop_routes_from_engine_thresholds();
     test_multi_pointer_long_press_order_routes_stably();
     test_scroll_events_normalize_line_and_pixel_deltas();

@@ -2,6 +2,7 @@
 #include "render/image/image_resolver.h"
 #include "render/image/image_source_bytes_loader.h"
 #include "render/image/image_texture_cache.h"
+#include "render/image/image_texture_pipeline.h"
 #include "render/render_draw_list.h"
 
 #include <cassert>
@@ -716,6 +717,128 @@ void test_texture_cache_uses_injected_texture_uploader()
     const fake_image_texture_upload_snapshot snapshot = uploader.diagnostic_snapshot();
     require(snapshot.upload_count == 1, "injected uploader snapshot records one upload");
     require(snapshot.entries[0].texture.id == first.texture.id, "injected uploader snapshot matches cache handle");
+}
+
+void test_texture_pipeline_resolves_loads_decodes_and_uploads_image_ref()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_image_resolve_result setup_source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/pipeline-success.ppm"});
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes(setup_source.source, make_ppm_2x1_encoded_bytes());
+
+    ppm_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache);
+
+    render_image_ref image;
+    image.uri = "  ./textures\\pipeline-success.ppm ";
+    image.sampler.mag_filter = render_image_filter::nearest;
+
+    const render_image_texture_pipeline_result result = pipeline.acquire_texture(image);
+    require(result.ok(), "texture pipeline creates a texture for an image ref");
+    require(result.status == render_image_texture_pipeline_status::ready, "texture pipeline reports ready");
+    require(result.resolve.ok(), "texture pipeline resolves image ref uri");
+    require(
+        result.resolve.source.cache_key() == setup_source.source.cache_key(),
+        "texture pipeline uses normalized resolver key");
+    require(result.source_bytes.ok(), "texture pipeline loads encoded source bytes");
+    require(result.texture.ok(), "texture pipeline returns cache texture result");
+    require(!result.texture.cache_hit, "first texture pipeline acquire is a cache miss");
+    require(result.texture.texture.width == 2, "texture pipeline preserves decoded width");
+    require(result.texture.texture.height == 1, "texture pipeline preserves decoded height");
+    require(result.texture.key.sampler == image.sampler, "texture pipeline preserves image sampler policy");
+    require(uploader.upload_requests.size() == 1, "texture pipeline reaches uploader once");
+    require(uploader.upload_requests[0].sampler == image.sampler, "texture pipeline sends sampler to uploader");
+    require(cache.cached_texture_count() == 1, "texture pipeline stores uploaded texture in cache");
+}
+
+void test_texture_pipeline_reports_source_load_failure()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    ppm_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache);
+
+    const render_image_texture_pipeline_result result = pipeline.acquire_texture(
+        render_image_texture_pipeline_request{.uri = "textures/pipeline-missing.ppm"});
+    require(!result.ok(), "texture pipeline does not create texture without source bytes");
+    require(
+        result.status == render_image_texture_pipeline_status::source_load_failed,
+        "texture pipeline reports source load failure");
+    require(result.resolve.ok(), "texture pipeline resolves source before load failure");
+    require(
+        result.source_bytes.status == render_image_source_bytes_load_status::missing_bytes,
+        "texture pipeline preserves source loader failure status");
+    require(!result.diagnostic.empty(), "texture pipeline source failure includes diagnostic");
+    require(cache.cached_texture_count() == 0, "texture pipeline source failure does not cache texture");
+    require(uploader.upload_requests.empty(), "texture pipeline source failure does not upload");
+}
+
+void test_texture_pipeline_reports_decode_failure()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_image_resolve_result source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/pipeline-decode.ppm"});
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes(source.source, make_short_ppm_2x1_encoded_bytes());
+
+    ppm_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache);
+
+    const render_image_texture_pipeline_result result = pipeline.acquire_texture(
+        render_image_texture_pipeline_request{.uri = "textures/pipeline-decode.ppm"});
+    require(!result.ok(), "texture pipeline does not create texture when decode fails");
+    require(
+        result.status == render_image_texture_pipeline_status::decode_failed,
+        "texture pipeline maps cache decode failure");
+    require(result.source_bytes.ok(), "texture pipeline loaded bytes before decode failure");
+    require(result.texture.status == render_image_texture_status::decode_failed, "texture result preserves decode failure");
+    require(!result.diagnostic.empty(), "texture pipeline decode failure includes diagnostic");
+    require(result.texture.decode_metadata.decoder_id == "ppm_image_decoder", "decode failure preserves decoder id");
+    require(uploader.upload_requests.empty(), "decode failure does not reach uploader");
+}
+
+void test_texture_pipeline_reuses_cache_hits()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_image_resolve_result source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/pipeline-cache.fake"});
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes(source.source, {std::byte{0x01}});
+
+    fake_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache);
+
+    const render_image_texture_pipeline_request request{
+        .uri = "textures/pipeline-cache.fake",
+        .sampler = render_image_sampler_policy{},
+    };
+    const render_image_texture_pipeline_result first = pipeline.acquire_texture(request);
+    const render_image_texture_pipeline_result second = pipeline.acquire_texture(request);
+    require(first.ok(), "first texture pipeline cache request succeeds");
+    require(second.ok(), "second texture pipeline cache request succeeds");
+    require(!first.texture.cache_hit, "first texture pipeline cache request is a miss");
+    require(second.texture.cache_hit, "second texture pipeline cache request is a cache hit");
+    require(second.texture.texture.id == first.texture.texture.id, "texture pipeline reuses cached handle");
+    require(loader.load_requests.size() == 2, "texture pipeline loads bytes deterministically before cache access");
+    require(decoder.decode_requests.size() == 1, "texture pipeline cache hit avoids second decode");
+    require(uploader.upload_requests.size() == 1, "texture pipeline cache hit avoids second upload");
 }
 
 void test_sampler_policy_validation_rejects_unknown_enum_values()
@@ -1484,6 +1607,10 @@ int main()
     test_texture_uploader_uploads_valid_decoded_image();
     test_texture_uploader_rejects_invalid_inputs();
     test_texture_cache_uses_injected_texture_uploader();
+    test_texture_pipeline_resolves_loads_decodes_and_uploads_image_ref();
+    test_texture_pipeline_reports_source_load_failure();
+    test_texture_pipeline_reports_decode_failure();
+    test_texture_pipeline_reuses_cache_hits();
     test_sampler_policy_validation_rejects_unknown_enum_values();
     test_texture_cache_reuses_matching_key_and_misses_on_sampler_change();
     test_texture_cache_keys_include_all_sampler_policy_fields();

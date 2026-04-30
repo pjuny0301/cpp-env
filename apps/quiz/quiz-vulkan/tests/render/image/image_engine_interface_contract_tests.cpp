@@ -2,6 +2,7 @@
 #include "render/image/image_resolver.h"
 #include "render/image/image_source_bytes_loader.h"
 #include "render/image/image_texture_cache.h"
+#include "render/image/image_texture_pipeline.h"
 #include "render/render_draw_list.h"
 
 #include <concepts>
@@ -50,6 +51,13 @@ concept ImageTextureUploaderInterface = requires(
     { uploader.upload(request) } -> std::same_as<render::render_image_texture_upload_result>;
 };
 
+template <typename T>
+concept ImageTexturePipelineInterface = requires(
+    T& pipeline,
+    const render::render_image_texture_pipeline_request& request) {
+    { pipeline.acquire_texture(request) } -> std::same_as<render::render_image_texture_pipeline_result>;
+};
+
 static_assert(ImageResolverInterface<render::image_resolver_interface>);
 static_assert(ImageResolverInterface<render::normalizing_image_resolver>);
 static_assert(ImageDecoderInterface<render::image_decoder_interface>);
@@ -62,6 +70,8 @@ static_assert(ImageTextureCacheInterface<render::image_texture_cache_interface>)
 static_assert(ImageTextureCacheInterface<render::fake_image_texture_cache>);
 static_assert(ImageTextureUploaderInterface<render::image_texture_uploader_interface>);
 static_assert(ImageTextureUploaderInterface<render::fake_image_texture_uploader>);
+static_assert(ImageTexturePipelineInterface<render::image_texture_pipeline_interface>);
+static_assert(ImageTexturePipelineInterface<render::fake_image_texture_pipeline>);
 
 static_assert(requires(render::render_image_ref image) {
     { image.sampler } -> std::same_as<render::render_image_sampler_policy&>;
@@ -109,6 +119,10 @@ static_assert(requires(
     render::fake_image_texture_upload_snapshot_entry upload_entry,
     render::fake_image_texture_upload_snapshot upload_snapshot,
     const render::fake_image_texture_uploader& uploader,
+    render::render_image_texture_pipeline_request pipeline_request,
+    render::render_image_texture_pipeline_result pipeline_result,
+    render::render_image_texture_pipeline_status pipeline_status,
+    render::render_image_ref image_ref,
     render::fake_image_texture_cache_entry_snapshot cache_entry,
     render::fake_image_texture_cache_snapshot cache_snapshot,
     const render::fake_image_texture_cache& cache,
@@ -172,6 +186,21 @@ static_assert(requires(
     { upload_snapshot.entries } -> std::same_as<std::vector<render::fake_image_texture_upload_snapshot_entry>&>;
     { uploader.diagnostic_snapshot() } -> std::same_as<render::fake_image_texture_upload_snapshot>;
     upload_status;
+    { pipeline_request.uri } -> std::same_as<std::string&>;
+    { pipeline_request.sampler } -> std::same_as<render::render_image_sampler_policy&>;
+    { pipeline_result.status } -> std::same_as<render::render_image_texture_pipeline_status&>;
+    { pipeline_result.resolve } -> std::same_as<render::render_image_resolve_result&>;
+    { pipeline_result.source_bytes } -> std::same_as<render::render_image_source_bytes_load_result&>;
+    { pipeline_result.texture } -> std::same_as<render::render_image_texture_result&>;
+    { pipeline_result.diagnostic } -> std::same_as<std::string&>;
+    { pipeline_result.ok() } -> std::same_as<bool>;
+    { render::make_render_image_texture_pipeline_request("asset://card.ppm") }
+        -> std::same_as<render::render_image_texture_pipeline_request>;
+    { render::make_render_image_texture_pipeline_request(image_ref) }
+        -> std::same_as<render::render_image_texture_pipeline_request>;
+    { render::pipeline_status_for_texture_result(render::render_image_texture_status::ready) }
+        -> std::same_as<render::render_image_texture_pipeline_status>;
+    pipeline_status;
     { cache_entry.key } -> std::same_as<render::render_image_texture_key&>;
     { cache_entry.texture } -> std::same_as<render::render_image_texture_handle&>;
     { cache_entry.pixel_count } -> std::same_as<std::size_t&>;

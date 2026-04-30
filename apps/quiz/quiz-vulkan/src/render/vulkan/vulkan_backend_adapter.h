@@ -658,6 +658,100 @@ enum class vulkan_command_recorder_failure_stage {
 
 std::string_view command_recorder_failure_stage_name(vulkan_command_recorder_failure_stage stage);
 
+struct vulkan_command_buffer_id {
+    std::size_t value = 0;
+
+    bool valid() const
+    {
+        return value > 0;
+    }
+};
+
+enum class vulkan_command_buffer_recording_status {
+    not_started,
+    recording,
+    recorded,
+    failed,
+};
+
+std::string_view command_buffer_recording_status_name(
+    vulkan_command_buffer_recording_status status);
+
+enum class vulkan_frame_submit_status {
+    not_requested,
+    pending,
+    submitted,
+    failed,
+};
+
+std::string_view frame_submit_status_name(vulkan_frame_submit_status status);
+
+struct vulkan_command_buffer_recording_diagnostics {
+    vulkan_command_buffer_id command_buffer;
+    vulkan_command_buffer_recording_status status =
+        vulkan_command_buffer_recording_status::not_started;
+    bool begin_requested = false;
+    bool finish_requested = false;
+    std::size_t planned_batch_count = 0;
+    std::size_t recorded_batch_count = 0;
+    vulkan_command_recorder_failure_stage failure_stage =
+        vulkan_command_recorder_failure_stage::none;
+    std::size_t failure_recording_index = 0;
+
+    bool completed() const
+    {
+        return command_buffer.valid() && begin_requested && finish_requested
+            && status == vulkan_command_buffer_recording_status::recorded
+            && failure_stage == vulkan_command_recorder_failure_stage::none
+            && recorded_batch_count == planned_batch_count;
+    }
+
+    bool failed() const
+    {
+        return status == vulkan_command_buffer_recording_status::failed
+            || failure_stage != vulkan_command_recorder_failure_stage::none;
+    }
+};
+
+struct vulkan_frame_submit_diagnostics {
+    vulkan_command_buffer_id command_buffer;
+    vulkan_frame_in_flight_id frame;
+    vulkan_frame_submit_status status = vulkan_frame_submit_status::not_requested;
+    bool submit_requested = false;
+    std::size_t submitted_batch_count = 0;
+    vulkan_frame_sync_wait_status wait_image_available_status =
+        vulkan_frame_sync_wait_status::not_requested;
+    vulkan_frame_sync_signal_status signal_render_finished_status =
+        vulkan_frame_sync_signal_status::not_requested;
+    vulkan_frame_sync_signal_status signal_frame_fence_status =
+        vulkan_frame_sync_signal_status::not_requested;
+
+    bool completed() const
+    {
+        return command_buffer.valid() && frame.valid() && submit_requested
+            && status == vulkan_frame_submit_status::submitted
+            && wait_image_available_status == vulkan_frame_sync_wait_status::waited
+            && signal_render_finished_status == vulkan_frame_sync_signal_status::signaled
+            && signal_frame_fence_status == vulkan_frame_sync_signal_status::signaled;
+    }
+
+    bool failed() const
+    {
+        return submit_requested && status == vulkan_frame_submit_status::failed;
+    }
+};
+
+struct vulkan_backend_command_buffer_submit_state {
+    bool checked = false;
+    vulkan_command_buffer_recording_diagnostics recording;
+    vulkan_frame_submit_diagnostics submit;
+
+    bool completed() const
+    {
+        return checked && recording.completed() && submit.completed();
+    }
+};
+
 struct vulkan_backend_command_recorder_state {
     bool ready = false;
     bool frame_open = false;
@@ -728,6 +822,7 @@ struct vulkan_backend_frame_result {
     vulkan_backend_resource_registry_state resource_registry;
     vulkan_backend_pipeline_state pipeline;
     vulkan_backend_command_recorder_state command_recorder;
+    vulkan_backend_command_buffer_submit_state command_buffer_submit;
     vulkan_backend_frame_stage reached_stage = vulkan_backend_frame_stage::not_started;
     bool lifecycle_ready = false;
     bool surface_ready = false;
@@ -750,6 +845,7 @@ struct vulkan_backend_frame_result {
             && frame_submitted && frame_presented && swapchain.completed()
             && frame_sync.completed()
             && lifecycle_policy.completed()
+            && command_buffer_submit.completed()
             && resource_bindings.completed()
             && resource_registry.completed()
             && !fallback_required;

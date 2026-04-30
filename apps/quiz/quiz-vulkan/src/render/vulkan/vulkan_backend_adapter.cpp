@@ -763,6 +763,89 @@ void complete_wait(vulkan_frame_sync_wait_state& state, bool success)
         : vulkan_frame_sync_wait_status::failed;
 }
 
+vulkan_command_buffer_id make_command_buffer_id(const vulkan_frame_in_flight_id& frame)
+{
+    return vulkan_command_buffer_id{
+        .value = (frame.sequence * 1000) + (frame.index * 10) + 1,
+    };
+}
+
+vulkan_backend_command_buffer_submit_state make_command_buffer_submit_state(
+    const vulkan_frame_in_flight_id& frame,
+    std::size_t planned_batch_count)
+{
+    const vulkan_command_buffer_id command_buffer = make_command_buffer_id(frame);
+    return vulkan_backend_command_buffer_submit_state{
+        .checked = true,
+        .recording = vulkan_command_buffer_recording_diagnostics{
+            .command_buffer = command_buffer,
+            .planned_batch_count = planned_batch_count,
+        },
+        .submit = vulkan_frame_submit_diagnostics{
+            .command_buffer = command_buffer,
+            .frame = frame,
+        },
+    };
+}
+
+void mark_command_buffer_recording_started(vulkan_backend_command_buffer_submit_state& state)
+{
+    state.recording.begin_requested = true;
+    state.recording.status = vulkan_command_buffer_recording_status::recording;
+}
+
+void mark_command_buffer_recording_failed(
+    vulkan_backend_command_buffer_submit_state& state,
+    const vulkan_backend_command_recorder_state& recorder)
+{
+    state.recording.status = vulkan_command_buffer_recording_status::failed;
+    state.recording.finish_requested =
+        recorder.failure_stage == vulkan_command_recorder_failure_stage::finish_recording;
+    state.recording.recorded_batch_count = recorder.recorded_batch_count;
+    state.recording.failure_stage = recorder.failure_stage;
+    state.recording.failure_recording_index = recorder.failure_recording_index;
+}
+
+void mark_command_buffer_recording_finished(
+    vulkan_backend_command_buffer_submit_state& state,
+    const vulkan_backend_command_recorder_state& recorder)
+{
+    state.recording.finish_requested = true;
+    state.recording.recorded_batch_count = recorder.recorded_batch_count;
+    state.recording.failure_stage = recorder.failure_stage;
+    state.recording.failure_recording_index = recorder.failure_recording_index;
+    state.recording.status = recorder.failed()
+        ? vulkan_command_buffer_recording_status::failed
+        : vulkan_command_buffer_recording_status::recorded;
+}
+
+void mark_frame_submit_requested(
+    vulkan_backend_command_buffer_submit_state& state,
+    std::size_t submitted_batch_count)
+{
+    state.submit.submit_requested = true;
+    state.submit.submitted_batch_count = submitted_batch_count;
+    state.submit.status = vulkan_frame_submit_status::pending;
+    state.submit.wait_image_available_status = vulkan_frame_sync_wait_status::pending;
+    state.submit.signal_render_finished_status = vulkan_frame_sync_signal_status::pending;
+    state.submit.signal_frame_fence_status = vulkan_frame_sync_signal_status::pending;
+}
+
+void mark_frame_submit_result(
+    vulkan_backend_command_buffer_submit_state& state,
+    const vulkan_backend_frame_sync_state& sync,
+    bool success)
+{
+    state.submit.status = success
+        ? vulkan_frame_submit_status::submitted
+        : vulkan_frame_submit_status::failed;
+    state.submit.wait_image_available_status =
+        sync.submit_wait_image_available_semaphore.status;
+    state.submit.signal_render_finished_status =
+        sync.submit_signal_render_finished_semaphore.status;
+    state.submit.signal_frame_fence_status = sync.submit_signal_frame_fence.status;
+}
+
 struct resource_registry_descriptor_key {
     std::size_t set = 0;
     std::size_t binding = 0;
@@ -965,6 +1048,39 @@ std::string_view command_recorder_failure_stage_name(vulkan_command_recorder_fai
         return "record_draw_batch";
     case vulkan_command_recorder_failure_stage::finish_recording:
         return "finish_recording";
+    }
+
+    return "unknown";
+}
+
+std::string_view command_buffer_recording_status_name(
+    vulkan_command_buffer_recording_status status)
+{
+    switch (status) {
+    case vulkan_command_buffer_recording_status::not_started:
+        return "not_started";
+    case vulkan_command_buffer_recording_status::recording:
+        return "recording";
+    case vulkan_command_buffer_recording_status::recorded:
+        return "recorded";
+    case vulkan_command_buffer_recording_status::failed:
+        return "failed";
+    }
+
+    return "unknown";
+}
+
+std::string_view frame_submit_status_name(vulkan_frame_submit_status status)
+{
+    switch (status) {
+    case vulkan_frame_submit_status::not_requested:
+        return "not_requested";
+    case vulkan_frame_submit_status::pending:
+        return "pending";
+    case vulkan_frame_submit_status::submitted:
+        return "submitted";
+    case vulkan_frame_submit_status::failed:
+        return "failed";
     }
 
     return "unknown";
@@ -1569,9 +1685,16 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     complete_lifecycle_step(result.lifecycle_policy, vulkan_frame_lifecycle_step::begin);
     result.reached_stage = vulkan_backend_frame_stage::frame_begun;
 
+    result.command_buffer_submit = make_command_buffer_submit_state(
+        result.frame_sync.frame,
+        plan.batches.size());
     start_lifecycle_step(result.lifecycle_policy, vulkan_frame_lifecycle_step::render);
+    mark_command_buffer_recording_started(result.command_buffer_submit);
     if (!command_recorder.begin_recording(result.surface, plan.batches.size())) {
         result.command_recorder = command_recorder.recorder_state();
+        mark_command_buffer_recording_failed(
+            result.command_buffer_submit,
+            result.command_recorder);
         fail_frame_lifecycle(
             vulkan_frame_lifecycle_step::render,
             vulkan_backend_fallback_reason::record_commands_failed);
@@ -1580,6 +1703,9 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     for (const vulkan_draw_batch& batch : plan.batches) {
         if (!command_recorder.record_draw_batch(batch)) {
             result.command_recorder = command_recorder.recorder_state();
+            mark_command_buffer_recording_failed(
+                result.command_buffer_submit,
+                result.command_recorder);
             fail_frame_lifecycle(
                 vulkan_frame_lifecycle_step::render,
                 vulkan_backend_fallback_reason::record_commands_failed);
@@ -1588,12 +1714,18 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     }
     if (!command_recorder.finish_recording()) {
         result.command_recorder = command_recorder.recorder_state();
+        mark_command_buffer_recording_failed(
+            result.command_buffer_submit,
+            result.command_recorder);
         fail_frame_lifecycle(
             vulkan_frame_lifecycle_step::render,
             vulkan_backend_fallback_reason::record_commands_failed);
         return result;
     }
     result.command_recorder = command_recorder.recorder_state();
+    mark_command_buffer_recording_finished(
+        result.command_buffer_submit,
+        result.command_recorder);
 
     result.commands_recorded = device.record_frame_commands(plan);
     if (!result.commands_recorded) {
@@ -1610,10 +1742,15 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     request_wait(result.frame_sync.submit_wait_image_available_semaphore);
     request_signal(result.frame_sync.submit_signal_render_finished_semaphore);
     request_signal(result.frame_sync.submit_signal_frame_fence);
+    mark_frame_submit_requested(result.command_buffer_submit, result.recorded_batch_count);
     result.frame_submitted = device.submit_frame();
     complete_wait(result.frame_sync.submit_wait_image_available_semaphore, result.frame_submitted);
     complete_signal(result.frame_sync.submit_signal_render_finished_semaphore, result.frame_submitted);
     complete_signal(result.frame_sync.submit_signal_frame_fence, result.frame_submitted);
+    mark_frame_submit_result(
+        result.command_buffer_submit,
+        result.frame_sync,
+        result.frame_submitted);
     if (!result.frame_submitted) {
         fail_frame_lifecycle(
             vulkan_frame_lifecycle_step::submit,

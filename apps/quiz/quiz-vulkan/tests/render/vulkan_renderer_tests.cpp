@@ -341,6 +341,49 @@ void test_vulkan_command_recorder_failure_stage_names_are_stable()
         "command recorder failure stage name for finish is stable");
 }
 
+void test_vulkan_command_buffer_submit_names_are_stable()
+{
+    using namespace quiz_vulkan::render;
+
+    require(
+        vulkan_backend::command_buffer_recording_status_name(
+            vulkan_backend::vulkan_command_buffer_recording_status::not_started)
+            == std::string_view{"not_started"},
+        "command buffer recording status name for not started is stable");
+    require(
+        vulkan_backend::command_buffer_recording_status_name(
+            vulkan_backend::vulkan_command_buffer_recording_status::recording)
+            == std::string_view{"recording"},
+        "command buffer recording status name for recording is stable");
+    require(
+        vulkan_backend::command_buffer_recording_status_name(
+            vulkan_backend::vulkan_command_buffer_recording_status::recorded)
+            == std::string_view{"recorded"},
+        "command buffer recording status name for recorded is stable");
+    require(
+        vulkan_backend::command_buffer_recording_status_name(
+            vulkan_backend::vulkan_command_buffer_recording_status::failed)
+            == std::string_view{"failed"},
+        "command buffer recording status name for failed is stable");
+    require(
+        vulkan_backend::frame_submit_status_name(
+            vulkan_backend::vulkan_frame_submit_status::not_requested)
+            == std::string_view{"not_requested"},
+        "frame submit status name for not requested is stable");
+    require(
+        vulkan_backend::frame_submit_status_name(vulkan_backend::vulkan_frame_submit_status::pending)
+            == std::string_view{"pending"},
+        "frame submit status name for pending is stable");
+    require(
+        vulkan_backend::frame_submit_status_name(vulkan_backend::vulkan_frame_submit_status::submitted)
+            == std::string_view{"submitted"},
+        "frame submit status name for submitted is stable");
+    require(
+        vulkan_backend::frame_submit_status_name(vulkan_backend::vulkan_frame_submit_status::failed)
+            == std::string_view{"failed"},
+        "frame submit status name for failed is stable");
+}
+
 void test_vulkan_frame_lifecycle_policy_names_are_stable()
 {
     using namespace quiz_vulkan::render;
@@ -1676,6 +1719,127 @@ void require_completed_frame_sync(
         "frame sync present waits on the submit render-finished semaphore");
 }
 
+void require_completed_command_buffer_submit_state(
+    const quiz_vulkan::render::vulkan_backend::vulkan_backend_command_buffer_submit_state& state,
+    std::size_t planned_batch_count)
+{
+    using namespace quiz_vulkan::render;
+
+    require(state.checked, "command buffer submit diagnostics are checked");
+    require(state.completed(), "command buffer submit diagnostics complete");
+    require(state.recording.command_buffer.valid(), "command buffer recording id is valid");
+    require(state.recording.command_buffer.value == 1001, "command buffer id is deterministic");
+    require(
+        state.submit.command_buffer.value == state.recording.command_buffer.value,
+        "submit diagnostics reference recorded command buffer");
+    require(state.submit.frame.valid(), "submit diagnostics reference valid frame-in-flight");
+    require(state.submit.frame.sequence == 1, "submit diagnostics frame sequence is deterministic");
+    require(state.recording.begin_requested, "command buffer recording begins");
+    require(state.recording.finish_requested, "command buffer recording finishes");
+    require(
+        state.recording.status == vulkan_backend::vulkan_command_buffer_recording_status::recorded,
+        "command buffer recording status is recorded");
+    require(
+        state.recording.failure_stage == vulkan_backend::vulkan_command_recorder_failure_stage::none,
+        "command buffer recording has no failure stage");
+    require(state.recording.planned_batch_count == planned_batch_count, "command buffer planned count is stable");
+    require(state.recording.recorded_batch_count == planned_batch_count, "command buffer recorded count is stable");
+    require(state.recording.completed(), "command buffer recording diagnostics complete");
+    require(!state.recording.failed(), "command buffer recording diagnostics do not fail");
+    require(state.submit.submit_requested, "frame submit is requested");
+    require(state.submit.submitted_batch_count == planned_batch_count, "frame submit batch count is stable");
+    require(
+        state.submit.status == vulkan_backend::vulkan_frame_submit_status::submitted,
+        "frame submit status is submitted");
+    require(
+        state.submit.wait_image_available_status == vulkan_backend::vulkan_frame_sync_wait_status::waited,
+        "frame submit waits for image available");
+    require(
+        state.submit.signal_render_finished_status == vulkan_backend::vulkan_frame_sync_signal_status::signaled,
+        "frame submit signals render finished");
+    require(
+        state.submit.signal_frame_fence_status == vulkan_backend::vulkan_frame_sync_signal_status::signaled,
+        "frame submit signals frame fence");
+    require(state.submit.completed(), "frame submit diagnostics complete");
+    require(!state.submit.failed(), "frame submit diagnostics do not fail");
+}
+
+void require_failed_command_buffer_recording_state(
+    const quiz_vulkan::render::vulkan_backend::vulkan_backend_command_buffer_submit_state& state,
+    quiz_vulkan::render::vulkan_backend::vulkan_command_recorder_failure_stage failure_stage,
+    std::size_t failure_recording_index,
+    std::size_t planned_batch_count,
+    std::size_t recorded_batch_count,
+    bool finish_requested)
+{
+    using namespace quiz_vulkan::render;
+
+    require(state.checked, "failed command buffer diagnostics are checked");
+    require(!state.completed(), "failed command buffer diagnostics do not complete");
+    require(state.recording.command_buffer.valid(), "failed command buffer id is valid");
+    require(state.recording.begin_requested, "failed command buffer recording was begun");
+    require(state.recording.finish_requested == finish_requested, "failed command buffer finish flag is stable");
+    require(
+        state.recording.status == vulkan_backend::vulkan_command_buffer_recording_status::failed,
+        "failed command buffer recording status is failed");
+    require(state.recording.failed(), "failed command buffer recording helper reports failure");
+    require(state.recording.failure_stage == failure_stage, "failed command buffer records failure stage");
+    require(
+        state.recording.failure_recording_index == failure_recording_index,
+        "failed command buffer records failure index");
+    require(state.recording.planned_batch_count == planned_batch_count, "failed command buffer planned count is stable");
+    require(state.recording.recorded_batch_count == recorded_batch_count, "failed command buffer recorded count is stable");
+    require(!state.submit.submit_requested, "failed command buffer is not submitted");
+    require(
+        state.submit.status == vulkan_backend::vulkan_frame_submit_status::not_requested,
+        "failed command buffer submit status is not requested");
+}
+
+void require_unsubmitted_recorded_command_buffer_state(
+    const quiz_vulkan::render::vulkan_backend::vulkan_backend_command_buffer_submit_state& state,
+    std::size_t planned_batch_count)
+{
+    using namespace quiz_vulkan::render;
+
+    require(state.checked, "unsubmitted command buffer diagnostics are checked");
+    require(!state.completed(), "unsubmitted command buffer diagnostics do not complete");
+    require(state.recording.completed(), "unsubmitted command buffer recording completed");
+    require(state.recording.planned_batch_count == planned_batch_count, "unsubmitted command buffer planned count is stable");
+    require(state.recording.recorded_batch_count == planned_batch_count, "unsubmitted command buffer recorded count is stable");
+    require(!state.submit.submit_requested, "unsubmitted command buffer has no submit request");
+    require(
+        state.submit.status == vulkan_backend::vulkan_frame_submit_status::not_requested,
+        "unsubmitted command buffer submit status is not requested");
+}
+
+void require_failed_frame_submit_state(
+    const quiz_vulkan::render::vulkan_backend::vulkan_backend_command_buffer_submit_state& state,
+    std::size_t planned_batch_count)
+{
+    using namespace quiz_vulkan::render;
+
+    require(state.checked, "failed frame submit diagnostics are checked");
+    require(!state.completed(), "failed frame submit diagnostics do not complete");
+    require(state.recording.completed(), "failed frame submit has completed command buffer recording");
+    require(state.recording.planned_batch_count == planned_batch_count, "failed frame submit planned count is stable");
+    require(state.recording.recorded_batch_count == planned_batch_count, "failed frame submit recorded count is stable");
+    require(state.submit.submit_requested, "failed frame submit was requested");
+    require(state.submit.submitted_batch_count == planned_batch_count, "failed frame submit batch count is stable");
+    require(
+        state.submit.status == vulkan_backend::vulkan_frame_submit_status::failed,
+        "failed frame submit status is failed");
+    require(state.submit.failed(), "failed frame submit helper reports failure");
+    require(
+        state.submit.wait_image_available_status == vulkan_backend::vulkan_frame_sync_wait_status::failed,
+        "failed frame submit records failed image wait");
+    require(
+        state.submit.signal_render_finished_status == vulkan_backend::vulkan_frame_sync_signal_status::failed,
+        "failed frame submit records failed render-finished signal");
+    require(
+        state.submit.signal_frame_fence_status == vulkan_backend::vulkan_frame_sync_signal_status::failed,
+        "failed frame submit records failed frame fence signal");
+}
+
 const quiz_vulkan::render::vulkan_backend::vulkan_frame_lifecycle_step_snapshot* find_lifecycle_snapshot(
     const quiz_vulkan::render::vulkan_backend::vulkan_backend_frame_lifecycle_policy_state& state,
     quiz_vulkan::render::vulkan_backend::vulkan_frame_lifecycle_step step)
@@ -2082,6 +2246,7 @@ void test_vulkan_backend_adapter_completes_fake_device_lifecycle()
     require(result.swapchain.completed(), "fake backend records completed swapchain lifecycle");
     require_completed_frame_sync(result.frame_sync);
     require_completed_frame_lifecycle_policy(result.lifecycle_policy);
+    require_completed_command_buffer_submit_state(result.command_buffer_submit, 1);
     require(result.resource_bindings.completed(), "fake backend records completed resource binding state");
     require(result.resource_bindings.planned_batch_count == 1, "fake backend resource bindings track batch count");
     require(result.resource_bindings.binding_count == 2, "fake backend quad resource bindings have stable bind count");
@@ -2236,6 +2401,7 @@ void test_vulkan_backend_adapter_completes_empty_frame()
     require(result.command_recorder.frame_open, "empty frame opens command recorder state");
     require(result.command_recorder.command_buffer_recorded, "empty frame records an empty command buffer");
     require(result.command_recorder.empty(), "empty frame command recorder has no batches");
+    require_completed_command_buffer_submit_state(result.command_buffer_submit, 0);
     require(result.swapchain.completed(), "empty frame still completes swapchain lifecycle");
     require_completed_frame_lifecycle_policy(result.lifecycle_policy);
     require(result.resource_bindings.completed(), "empty frame records completed empty resource binding state");
@@ -2273,6 +2439,7 @@ void test_vulkan_backend_adapter_completes_all_discarded_frame()
     require(result.command_recorder.frame_open, "all-discarded frame opens command recorder state");
     require(result.command_recorder.command_buffer_recorded, "all-discarded frame records an empty command buffer");
     require(result.command_recorder.empty(), "all-discarded frame command recorder has no batches");
+    require_completed_command_buffer_submit_state(result.command_buffer_submit, 0);
     require(result.swapchain.completed(), "all-discarded frame still completes swapchain lifecycle");
     require_completed_frame_lifecycle_policy(result.lifecycle_policy);
     require(result.resource_bindings.completed(), "all-discarded frame records completed empty resource binding state");
@@ -2379,6 +2546,13 @@ void test_vulkan_backend_adapter_falls_back_when_injected_recorder_rejects_frame
     require(result.command_recorder.failure_recording_index == 0, "backend records begin failure index");
     require(result.command_recorder.planned_batch_count == 1, "backend preserves planned count from rejected recorder");
     require(result.command_recorder.recorded_batches.empty(), "backend has no recorded batches after recorder rejection");
+    require_failed_command_buffer_recording_state(
+        result.command_buffer_submit,
+        vulkan_backend::vulkan_command_recorder_failure_stage::begin_recording,
+        0,
+        1,
+        0,
+        false);
     require(result.swapchain.acquired(), "backend acquires image before injected recorder rejects frame");
     require(!result.swapchain.present_requested, "backend does not present image after recorder rejection");
     require(device.calls.size() == 2, "backend stops device lifecycle after acquire when recorder rejects frame");
@@ -2620,6 +2794,13 @@ void test_vulkan_backend_adapter_falls_back_when_injected_recorder_fails_record_
     require(result.command_recorder.planned_batch_count == 2, "backend preserves planned count on record failure");
     require(result.command_recorder.recorded_batch_count == 1, "backend preserves recorded count before failure");
     require(result.command_recorder.recorded_batches.size() == 1, "backend preserves successful batches before failure");
+    require_failed_command_buffer_recording_state(
+        result.command_buffer_submit,
+        vulkan_backend::vulkan_command_recorder_failure_stage::record_draw_batch,
+        1,
+        2,
+        1,
+        false);
     require(result.swapchain.acquired(), "backend acquires image before injected record failure");
     require(!result.swapchain.present_requested, "backend does not present image after injected record failure");
     require(device.calls.size() == 2, "backend stops device lifecycle after acquire on injected record failure");
@@ -2677,6 +2858,13 @@ void test_vulkan_backend_adapter_falls_back_when_injected_recorder_fails_finish(
     require(result.command_recorder.planned_batch_count == 1, "backend preserves planned count on finish failure");
     require(result.command_recorder.recorded_batch_count == 1, "backend preserves recorded count before finish failure");
     require(result.command_recorder.recorded_batches.size() == 1, "backend preserves batches before finish failure");
+    require_failed_command_buffer_recording_state(
+        result.command_buffer_submit,
+        vulkan_backend::vulkan_command_recorder_failure_stage::finish_recording,
+        1,
+        1,
+        1,
+        true);
     require(result.swapchain.acquired(), "backend acquires image before injected finish failure");
     require(!result.swapchain.present_requested, "backend does not present image after injected finish failure");
     require(device.calls.size() == 2, "backend stops device lifecycle after acquire on injected finish failure");
@@ -2924,6 +3112,7 @@ void test_vulkan_backend_adapter_falls_back_when_recording_fails()
     require(result.command_recorder.planned_batch_count == 1, "command recorder tracks planned count before device failure");
     require(result.command_recorder.recorded_batch_count == 1, "command recorder tracks recorded count before device failure");
     require(result.command_recorder.recorded_batches.size() == 1, "command recorder stores batch before device failure");
+    require_unsubmitted_recorded_command_buffer_state(result.command_buffer_submit, 1);
     require(device.calls.size() == 3, "backend stops lifecycle after failed recording");
     require(device.calls[0] == "acquire", "backend acquires image before failed recording");
     require(device.calls[1] == "begin", "backend begins before failed recording");
@@ -2981,6 +3170,7 @@ void test_vulkan_backend_adapter_falls_back_when_submit_fails()
     require(result.command_recorder.frame_open, "command recorder frame remains tracked before submit failure");
     require(result.command_recorder.command_buffer_recorded, "command recorder reports recorded buffer before submit failure");
     require(result.command_recorder.recorded_batch_count == 1, "command recorder tracks recorded count before submit failure");
+    require_failed_frame_submit_state(result.command_buffer_submit, 1);
     require(device.calls.size() == 4, "backend stops lifecycle after failed submit");
     require(device.calls[0] == "acquire", "backend acquires image before failed submit");
     require(device.calls[1] == "begin", "backend begins before failed submit");
@@ -3046,6 +3236,7 @@ void test_vulkan_backend_adapter_falls_back_when_present_image_fails()
         result.command_recorder.command_buffer_recorded,
         "command recorder reports recorded buffer before image presentation failure");
     require(result.command_recorder.recorded_batch_count == 1, "command recorder tracks recorded count before image failure");
+    require_completed_command_buffer_submit_state(result.command_buffer_submit, 1);
     require(device.calls.size() == 5, "backend stops lifecycle after failed image presentation");
     require(device.calls[0] == "acquire", "backend acquires image before image presentation failure");
     require(device.calls[1] == "begin", "backend begins before image presentation failure");
@@ -3100,6 +3291,7 @@ void test_vulkan_backend_adapter_falls_back_when_present_fails()
     require(result.command_recorder.frame_open, "command recorder frame remains tracked before presentation failure");
     require(result.command_recorder.command_buffer_recorded, "command recorder reports recorded buffer before presentation failure");
     require(result.command_recorder.recorded_batch_count == 1, "command recorder tracks recorded count before presentation failure");
+    require_completed_command_buffer_submit_state(result.command_buffer_submit, 1);
     require(device.calls.size() == 6, "backend reaches present call before failing");
     require(device.calls[0] == "acquire", "backend acquires image before presentation failure");
     require(device.calls[1] == "begin", "backend begins before presentation failure");
@@ -3117,6 +3309,7 @@ int main()
     test_vulkan_swapchain_status_names_are_stable();
     test_vulkan_backend_frame_stage_names_are_stable();
     test_vulkan_command_recorder_failure_stage_names_are_stable();
+    test_vulkan_command_buffer_submit_names_are_stable();
     test_vulkan_frame_lifecycle_policy_names_are_stable();
     test_vulkan_shader_stage_names_are_stable();
     test_vulkan_pipeline_lifecycle_names_are_stable();

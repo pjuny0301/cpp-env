@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <numeric>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -36,6 +37,18 @@ struct laid_out_line {
 struct laid_out_glyph_cluster {
     render_text_glyph_cluster snapshot;
     render_rect bounds;
+    std::uint32_t glyph_id = 0;
+    float glyph_height = 0.0f;
+    std::optional<glyph_atlas_slot> atlas_slot;
+};
+
+struct atlas_cluster_cache_result {
+    std::size_t cluster_index = 0;
+    glyph_atlas_key key;
+    bool cache_hit = false;
+    bool newly_allocated = false;
+    bool created_page = false;
+    bool reused_existing_page = false;
 };
 
 float line_height_for(const render_text_style& style)
@@ -56,16 +69,6 @@ bool is_wide_symbol(const std::uint32_t code_point)
 {
     return (code_point >= 0x1f000U && code_point <= 0x1faffU)
         || (code_point >= 0xff01U && code_point <= 0xff60U);
-}
-
-bool glyph_needs_atlas(const shaped_glyph& glyph)
-{
-    return !glyph.newline && glyph.advance > 0.0f;
-}
-
-bool contains_glyph_id(const std::vector<std::uint32_t>& glyph_ids, const std::uint32_t glyph_id)
-{
-    return std::find(glyph_ids.begin(), glyph_ids.end(), glyph_id) != glyph_ids.end();
 }
 
 bool before_position(
@@ -395,6 +398,20 @@ float visible_line_height(const render_text_request& request, const float y, con
     return std::min(line_height, clip_bottom - y);
 }
 
+std::uint32_t combine_cluster_glyph_id(const std::uint32_t current, const std::uint32_t next)
+{
+    const std::uint32_t combined = (current << 5U) ^ (current >> 2U) ^ next;
+    return combined == 0U ? utf8_replacement_codepoint : combined;
+}
+
+std::size_t atlas_dimension_for(const float value)
+{
+    if (value <= 1.0f) {
+        return 1U;
+    }
+    return static_cast<std::size_t>(value);
+}
+
 std::vector<laid_out_glyph_cluster> collect_glyph_cluster_layouts(
     const render_text_request& request,
     const std::vector<shaped_glyph>& shaped_glyphs,
@@ -438,6 +455,8 @@ std::vector<laid_out_glyph_cluster> collect_glyph_cluster_layouts(
                         .resolved_face_id = glyph.resolved_face_id,
                     },
                     .bounds = render_rect{x, y, glyph.advance, line.height},
+                    .glyph_id = glyph.code_point,
+                    .glyph_height = glyph.line_height,
                 };
                 has_active_cluster = true;
             } else {
@@ -446,6 +465,8 @@ std::vector<laid_out_glyph_cluster> collect_glyph_cluster_layouts(
                 ++active_cluster.snapshot.glyph_count;
                 active_cluster.snapshot.advance += glyph.advance;
                 active_cluster.bounds.width += glyph.advance;
+                active_cluster.glyph_id = combine_cluster_glyph_id(active_cluster.glyph_id, glyph.code_point);
+                active_cluster.glyph_height = std::max(active_cluster.glyph_height, glyph.line_height);
             }
 
             x += glyph.advance;
@@ -606,45 +627,125 @@ std::vector<render_text_selection_rect_snapshot> selection_rect_snapshots_from_c
     return rects;
 }
 
-render_text_revision update_atlas_for_layout(
-    const std::vector<shaped_glyph>& shaped_glyphs,
-    const std::vector<laid_out_line>& lines,
-    std::vector<std::uint32_t>& cached_glyph_ids,
-    render_text_revision& atlas_revision,
+glyph_atlas_key atlas_key_for_cluster(const laid_out_glyph_cluster& cluster)
+{
+    return glyph_atlas_key{
+        .face_id = cluster.snapshot.resolved_face_id,
+        .glyph_id = cluster.glyph_id,
+        .pixel_size = static_cast<std::uint32_t>(atlas_dimension_for(cluster.glyph_height)),
+    };
+}
+
+render_text_revision latest_page_revision(const std::vector<render_text_atlas_page>& pages)
+{
+    render_text_revision latest = 0;
+    for (const render_text_atlas_page& page : pages) {
+        latest = std::max(latest, page.revision);
+    }
+    return latest;
+}
+
+void update_atlas_for_clusters(
+    std::vector<laid_out_glyph_cluster>& clusters,
+    glyph_atlas_cache& atlas_cache,
+    fake_text_engine_diagnostics& diagnostics,
     std::vector<render_text_atlas_update>& atlas_updates)
 {
-    bool added_glyph = false;
-    for (const laid_out_line& line : lines) {
-        for (const std::size_t glyph_index : line.glyph_indices) {
-            const shaped_glyph& glyph = shaped_glyphs[glyph_index];
-            if (glyph_needs_atlas(glyph) && !contains_glyph_id(cached_glyph_ids, glyph.code_point)) {
-                cached_glyph_ids.push_back(glyph.code_point);
-                added_glyph = true;
-            }
+    diagnostics.glyph_atlas_placements.clear();
+    diagnostics.glyph_atlas_metrics = {};
+
+    std::vector<atlas_cluster_cache_result> cache_results;
+    cache_results.reserve(clusters.size());
+
+    for (std::size_t cluster_index = 0; cluster_index < clusters.size(); ++cluster_index) {
+        laid_out_glyph_cluster& cluster = clusters[cluster_index];
+        if (cluster.snapshot.advance <= 0.0f || cluster.glyph_height <= 0.0f) {
+            continue;
+        }
+
+        ++diagnostics.glyph_atlas_metrics.requested_cluster_count;
+        const glyph_atlas_key key = atlas_key_for_cluster(cluster);
+        const std::size_t page_count_before = atlas_cache.pages().size();
+        std::optional<glyph_atlas_slot> slot = atlas_cache.cache_glyph(
+            key,
+            atlas_dimension_for(cluster.snapshot.advance),
+            atlas_dimension_for(cluster.glyph_height));
+        if (!slot.has_value()) {
+            continue;
+        }
+
+        const std::size_t page_count_after = atlas_cache.pages().size();
+        const bool cache_hit = !slot->newly_allocated;
+        const bool created_page = slot->newly_allocated && page_count_after > page_count_before;
+        cache_results.push_back(atlas_cluster_cache_result{
+            .cluster_index = cluster_index,
+            .key = key,
+            .cache_hit = cache_hit,
+            .newly_allocated = slot->newly_allocated,
+            .created_page = created_page,
+            .reused_existing_page = slot->newly_allocated && !created_page,
+        });
+
+        ++diagnostics.glyph_atlas_metrics.placed_cluster_count;
+        if (cache_hit) {
+            ++diagnostics.glyph_atlas_metrics.cache_hit_count;
+        } else {
+            ++diagnostics.glyph_atlas_metrics.new_slot_count;
+        }
+        if (created_page) {
+            ++diagnostics.glyph_atlas_metrics.new_page_count;
+        } else if (slot->newly_allocated) {
+            ++diagnostics.glyph_atlas_metrics.reused_page_slot_count;
         }
     }
 
-    if (!added_glyph) {
-        return atlas_revision;
+    for (const atlas_cluster_cache_result& result : cache_results) {
+        std::optional<glyph_atlas_slot> refreshed_slot = atlas_cache.find(result.key);
+        if (!refreshed_slot.has_value()) {
+            continue;
+        }
+
+        clusters[result.cluster_index].atlas_slot = refreshed_slot;
+        diagnostics.glyph_atlas_placements.push_back(render_text_glyph_atlas_placement_snapshot{
+            .cluster_index = result.cluster_index,
+            .key = result.key,
+            .page = refreshed_slot->page,
+            .atlas_bounds = refreshed_slot->atlas_bounds,
+            .cache_hit = result.cache_hit,
+            .newly_allocated = result.newly_allocated,
+            .created_page = result.created_page,
+            .reused_existing_page = result.reused_existing_page,
+        });
     }
 
-    ++atlas_revision;
-    atlas_updates.push_back(render_text_atlas_update{
-        .page = render_text_atlas_page{
-            .id = 1,
-            .revision = atlas_revision,
-            .width = 1,
-            .height = 1,
-        },
-        .updated_bounds = render_rect{0.0f, 0.0f, 1.0f, 1.0f},
-        .rgba = std::vector<unsigned char>{
-            255U,
-            255U,
-            255U,
-            static_cast<unsigned char>(atlas_revision & 0xffU),
-        },
-    });
-    return atlas_revision;
+    std::vector<render_text_atlas_update> dirty_updates = atlas_cache.consume_dirty_page_updates();
+    diagnostics.glyph_atlas_metrics.dirty_page_count = dirty_updates.size();
+    atlas_updates.insert(atlas_updates.end(), dirty_updates.begin(), dirty_updates.end());
+
+    const std::vector<render_text_atlas_page> pages = atlas_cache.pages();
+    diagnostics.glyph_atlas_metrics.page_count_after = pages.size();
+    diagnostics.glyph_atlas_metrics.latest_page_revision = latest_page_revision(pages);
+}
+
+const glyph_atlas_slot* atlas_slot_for_visible_glyph(
+    const std::vector<laid_out_glyph_cluster>& clusters,
+    const std::size_t visible_glyph_offset,
+    std::size_t& cluster_index)
+{
+    while (cluster_index < clusters.size()
+        && visible_glyph_offset >= clusters[cluster_index].snapshot.glyph_offset
+                + clusters[cluster_index].snapshot.glyph_count) {
+        ++cluster_index;
+    }
+
+    if (cluster_index >= clusters.size()
+        || visible_glyph_offset < clusters[cluster_index].snapshot.glyph_offset
+        || visible_glyph_offset >= clusters[cluster_index].snapshot.glyph_offset
+                + clusters[cluster_index].snapshot.glyph_count
+        || !clusters[cluster_index].atlas_slot.has_value()) {
+        return nullptr;
+    }
+    return &*clusters[cluster_index].atlas_slot;
 }
 
 } // namespace
@@ -661,16 +762,17 @@ render_text_layout fake_text_engine::layout_text(const render_text_request& requ
     diagnostics_ = {};
     const std::vector<shaped_glyph> shaped_glyphs = shape_request(request, font_resolver_, diagnostics_);
     const std::vector<laid_out_line> lines = break_lines(request, shaped_glyphs);
-    const std::vector<laid_out_glyph_cluster> cluster_layouts =
+    std::vector<laid_out_glyph_cluster> cluster_layouts =
         collect_glyph_cluster_layouts(request, shaped_glyphs, lines);
     record_glyph_cluster_diagnostics(diagnostics_, cluster_layouts);
-    const render_text_revision atlas_revision =
-        update_atlas_for_layout(shaped_glyphs, lines, cached_glyph_ids_, atlas_revision_, atlas_updates_);
+    update_atlas_for_clusters(cluster_layouts, glyph_atlas_cache_, diagnostics_, atlas_updates_);
 
     render_text_layout layout;
     layout.measure = measure_lines(lines);
 
     float y = request.bounds.y;
+    std::size_t visible_glyph_offset = 0;
+    std::size_t cluster_index = 0;
     for (const laid_out_line& line : lines) {
         float x = aligned_line_x(request, line.width);
         for (const std::size_t glyph_index : line.glyph_indices) {
@@ -678,16 +780,21 @@ render_text_layout fake_text_engine::layout_text(const render_text_request& requ
             if (glyph.newline) {
                 continue;
             }
+            const glyph_atlas_slot* atlas_slot =
+                atlas_slot_for_visible_glyph(cluster_layouts, visible_glyph_offset, cluster_index);
             layout.glyphs.push_back(render_text_glyph{
-                .atlas_page_id = 1,
-                .atlas_revision = atlas_revision,
+                .atlas_page_id = atlas_slot == nullptr ? 0 : atlas_slot->page.id,
+                .atlas_revision = atlas_slot == nullptr ? 0 : atlas_slot->page.revision,
                 .run_index = glyph.run_index,
                 .byte_offset = glyph.byte_offset,
                 .glyph_id = glyph.code_point,
                 .bounds = render_rect{x, y, glyph.advance, glyph.line_height},
-                .atlas_bounds = render_rect{0.0f, 0.0f, glyph.advance, glyph.line_height},
+                .atlas_bounds = atlas_slot == nullptr
+                    ? render_rect{0.0f, 0.0f, glyph.advance, glyph.line_height}
+                    : atlas_slot->atlas_bounds,
             });
             x += glyph.advance;
+            ++visible_glyph_offset;
         }
         y += line.height;
     }

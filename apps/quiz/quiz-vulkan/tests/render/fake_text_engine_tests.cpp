@@ -830,17 +830,67 @@ void test_fake_atlas_updates_are_revisioned_and_consumed()
     require(first_layout.glyphs.size() == 1, "first atlas layout emits one glyph");
     require(first_layout.glyphs[0].atlas_page_id == 1, "fake atlas page id is stable");
     require(first_layout.glyphs[0].atlas_revision == 1, "first new glyph uses atlas revision one");
+    require(near(first_layout.glyphs[0].atlas_bounds.x, 1.0f), "first fake glyph atlas x uses padding");
+    require(near(first_layout.glyphs[0].atlas_bounds.y, 1.0f), "first fake glyph atlas y uses padding");
+    require(near(first_layout.glyphs[0].atlas_bounds.width, 10.0f), "first fake glyph atlas width uses cluster advance");
+    require(near(first_layout.glyphs[0].atlas_bounds.height, 24.0f), "first fake glyph atlas height uses cluster height");
+    require(engine.last_diagnostics().has_glyph_atlas_placements(), "first layout records atlas placement diagnostics");
+    require(
+        engine.last_diagnostics().glyph_atlas_placements.size() == 1,
+        "first layout records one atlas placement");
+    require(
+        engine.last_diagnostics().glyph_atlas_placements[0].cluster_index == 0,
+        "first atlas placement records cluster index");
+    require(
+        engine.last_diagnostics().glyph_atlas_placements[0].key.face_id == 1,
+        "first atlas placement records resolved face id");
+    require(
+        engine.last_diagnostics().glyph_atlas_placements[0].key.glyph_id == 'A',
+        "first atlas placement records glyph key");
+    require(
+        engine.last_diagnostics().glyph_atlas_placements[0].key.pixel_size == 24,
+        "first atlas placement records pixel size");
+    require(
+        !engine.last_diagnostics().glyph_atlas_placements[0].cache_hit,
+        "first atlas placement is not a cache hit");
+    require(
+        engine.last_diagnostics().glyph_atlas_placements[0].newly_allocated,
+        "first atlas placement records new allocation");
+    require(
+        engine.last_diagnostics().glyph_atlas_placements[0].created_page,
+        "first atlas placement records new page creation");
+    require(
+        !engine.last_diagnostics().glyph_atlas_placements[0].reused_existing_page,
+        "first atlas placement does not claim page reuse");
+    require(engine.last_diagnostics().glyph_atlas_metrics.requested_cluster_count == 1, "first atlas requests one cluster");
+    require(engine.last_diagnostics().glyph_atlas_metrics.placed_cluster_count == 1, "first atlas places one cluster");
+    require(engine.last_diagnostics().glyph_atlas_metrics.cache_hit_count == 0, "first atlas has no cache hits");
+    require(engine.last_diagnostics().glyph_atlas_metrics.new_slot_count == 1, "first atlas allocates one slot");
+    require(engine.last_diagnostics().glyph_atlas_metrics.new_page_count == 1, "first atlas creates one page");
+    require(engine.last_diagnostics().glyph_atlas_metrics.dirty_page_count == 1, "first atlas dirties one page");
+    require(engine.last_diagnostics().glyph_atlas_metrics.page_count_after == 1, "first atlas tracks page count");
+    require(engine.last_diagnostics().glyph_atlas_metrics.latest_page_revision == 1, "first atlas tracks revision");
 
     std::vector<render_text_atlas_update> first_updates = engine.consume_atlas_updates();
     require(first_updates.size() == 1, "first new glyph enqueues one atlas update");
     require(first_updates[0].page.id == 1, "atlas update page id is stable");
     require(first_updates[0].page.revision == 1, "first atlas update uses revision one");
-    require(first_updates[0].rgba.size() == 4, "fake atlas update carries one RGBA pixel");
+    require(near(first_updates[0].updated_bounds.x, 1.0f), "first atlas update records glyph x");
+    require(near(first_updates[0].updated_bounds.y, 1.0f), "first atlas update records glyph y");
+    require(near(first_updates[0].updated_bounds.width, 10.0f), "first atlas update records glyph width");
+    require(near(first_updates[0].updated_bounds.height, 24.0f), "first atlas update records glyph height");
+    require(first_updates[0].rgba.size() == 10U * 24U * 4U, "fake atlas update carries cluster RGBA payload");
+    require(first_updates[0].rgba[0] == 52U, "fake atlas update red channel is deterministic");
+    require(first_updates[0].rgba[3] == 255U, "fake atlas update alpha is opaque");
     require(engine.consume_atlas_updates().empty(), "atlas updates are consumed once");
 
     const render_text_layout repeated_layout = engine.layout_text(request);
     require(repeated_layout.glyphs[0].atlas_revision == 1, "cached glyph keeps atlas revision");
     require(engine.consume_atlas_updates().empty(), "cached glyph does not enqueue atlas update");
+    require(engine.last_diagnostics().glyph_atlas_metrics.cache_hit_count == 1, "cached glyph records one cache hit");
+    require(engine.last_diagnostics().glyph_atlas_metrics.new_slot_count == 0, "cached glyph does not allocate");
+    require(engine.last_diagnostics().glyph_atlas_metrics.dirty_page_count == 0, "cached glyph dirties no page");
+    require(engine.last_diagnostics().glyph_atlas_placements[0].cache_hit, "cached placement records hit");
 
     request.text_runs = {
         render_text_run{.text = "AB", .style_token = "body"},
@@ -853,6 +903,92 @@ void test_fake_atlas_updates_are_revisioned_and_consumed()
     std::vector<render_text_atlas_update> second_updates = engine.consume_atlas_updates();
     require(second_updates.size() == 1, "new glyph enqueues one later atlas update");
     require(second_updates[0].page.revision == 2, "later atlas update increments revision");
+    require(near(second_updates[0].updated_bounds.x, 13.0f), "later atlas update records packed glyph x");
+    require(engine.last_diagnostics().glyph_atlas_placements.size() == 2, "second layout records two placements");
+    require(engine.last_diagnostics().glyph_atlas_placements[0].cache_hit, "second layout hits cached first glyph");
+    require(engine.last_diagnostics().glyph_atlas_placements[0].page.revision == 2, "cached placement refreshes page revision");
+    require(engine.last_diagnostics().glyph_atlas_placements[1].newly_allocated, "second layout allocates new glyph");
+    require(
+        engine.last_diagnostics().glyph_atlas_placements[1].reused_existing_page,
+        "second layout records page reuse for new glyph");
+    require(!engine.last_diagnostics().glyph_atlas_placements[1].created_page, "second glyph reuses page one");
+    require(engine.last_diagnostics().glyph_atlas_metrics.requested_cluster_count == 2, "second atlas requests two clusters");
+    require(engine.last_diagnostics().glyph_atlas_metrics.cache_hit_count == 1, "second atlas records one hit");
+    require(engine.last_diagnostics().glyph_atlas_metrics.new_slot_count == 1, "second atlas records one new slot");
+    require(engine.last_diagnostics().glyph_atlas_metrics.reused_page_slot_count == 1, "second atlas records page reuse");
+    require(engine.last_diagnostics().glyph_atlas_metrics.new_page_count == 0, "second atlas creates no page");
+    require(engine.last_diagnostics().glyph_atlas_metrics.latest_page_revision == 2, "second atlas tracks latest revision");
+}
+
+void test_fake_glyph_atlas_page_diagnostics_track_overflow()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "ABCDEFGHIJK", .style_token = "body"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 400.0f, 0.0f};
+    request.style_catalog = make_style_catalog();
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    const render_text_layout layout = engine.layout_text(request);
+    require(layout.glyphs.size() == 11, "atlas overflow fixture emits eleven glyphs");
+    require(engine.last_diagnostics().glyph_atlas_placements.size() == 11, "atlas overflow records all placements");
+    require(engine.last_diagnostics().glyph_atlas_metrics.requested_cluster_count == 11, "atlas overflow requests all clusters");
+    require(engine.last_diagnostics().glyph_atlas_metrics.placed_cluster_count == 11, "atlas overflow places all clusters");
+    require(engine.last_diagnostics().glyph_atlas_metrics.cache_hit_count == 0, "atlas overflow starts with no hits");
+    require(engine.last_diagnostics().glyph_atlas_metrics.new_slot_count == 11, "atlas overflow allocates all slots");
+    require(engine.last_diagnostics().glyph_atlas_metrics.reused_page_slot_count == 9, "atlas overflow reuses first page slots");
+    require(engine.last_diagnostics().glyph_atlas_metrics.new_page_count == 2, "atlas overflow creates two pages");
+    require(engine.last_diagnostics().glyph_atlas_metrics.dirty_page_count == 2, "atlas overflow dirties both pages");
+    require(engine.last_diagnostics().glyph_atlas_metrics.page_count_after == 2, "atlas overflow tracks page count");
+    require(engine.last_diagnostics().glyph_atlas_metrics.latest_page_revision == 10, "atlas overflow tracks max page revision");
+
+    const render_text_glyph_atlas_placement_snapshot& first =
+        engine.last_diagnostics().glyph_atlas_placements.front();
+    const render_text_glyph_atlas_placement_snapshot& tenth =
+        engine.last_diagnostics().glyph_atlas_placements[9];
+    const render_text_glyph_atlas_placement_snapshot& eleventh =
+        engine.last_diagnostics().glyph_atlas_placements[10];
+    require(first.page.id == 1, "first overflow glyph lands on first page");
+    require(first.created_page, "first overflow glyph creates first page");
+    require(near(first.atlas_bounds.x, 1.0f), "first overflow glyph records atlas x");
+    require(near(tenth.atlas_bounds.x, 49.0f), "tenth overflow glyph packs on second row");
+    require(near(tenth.atlas_bounds.y, 27.0f), "tenth overflow glyph records second row y");
+    require(tenth.reused_existing_page, "tenth overflow glyph reuses first page");
+    require(eleventh.page.id == 2, "eleventh overflow glyph lands on second page");
+    require(eleventh.page.revision == 1, "eleventh overflow glyph starts second page revision");
+    require(eleventh.created_page, "eleventh overflow glyph records second page creation");
+    require(near(eleventh.atlas_bounds.x, 1.0f), "eleventh overflow glyph starts page two row");
+    require(near(eleventh.atlas_bounds.y, 1.0f), "eleventh overflow glyph starts page two column");
+    require(layout.glyphs[0].atlas_page_id == 1, "first overflow layout glyph uses page one");
+    require(layout.glyphs[9].atlas_page_id == 1, "tenth overflow layout glyph stays on page one");
+    require(layout.glyphs[10].atlas_page_id == 2, "eleventh overflow layout glyph uses page two");
+
+    const std::vector<render_text_atlas_update> updates = engine.consume_atlas_updates();
+    require(updates.size() == 2, "atlas overflow emits dirty updates for both pages");
+    require(updates[0].page.id == 1, "first overflow update is page one");
+    require(updates[0].page.revision == 10, "first overflow update reports page one revision");
+    require(updates[1].page.id == 2, "second overflow update is page two");
+    require(updates[1].page.revision == 1, "second overflow update reports page two revision");
+    require(near(updates[0].updated_bounds.x, 1.0f), "page one overflow dirty bounds keep left edge");
+    require(near(updates[0].updated_bounds.y, 1.0f), "page one overflow dirty bounds keep top edge");
+    require(near(updates[0].updated_bounds.width, 58.0f), "page one overflow dirty bounds span columns");
+    require(near(updates[0].updated_bounds.height, 50.0f), "page one overflow dirty bounds span rows");
+    require(updates[1].rgba.size() == 10U * 24U * 4U, "page two overflow update carries one glyph payload");
+
+    const render_text_layout repeated_layout = engine.layout_text(request);
+    require(repeated_layout.glyphs[10].atlas_page_id == 2, "repeated overflow keeps page two glyph");
+    require(engine.last_diagnostics().glyph_atlas_metrics.cache_hit_count == 11, "repeated overflow records all hits");
+    require(engine.last_diagnostics().glyph_atlas_metrics.new_slot_count == 0, "repeated overflow allocates no slots");
+    require(engine.last_diagnostics().glyph_atlas_metrics.dirty_page_count == 0, "repeated overflow dirties no pages");
+    require(engine.consume_atlas_updates().empty(), "repeated overflow enqueues no atlas updates");
 }
 
 void test_fake_caret_positions_follow_utf8_runs_and_combining_marks()
@@ -1509,6 +1645,7 @@ int main()
     test_fake_style_fallback_shapes_missing_tokens();
     test_fake_font_resolver_records_family_and_style_fallbacks();
     test_fake_atlas_updates_are_revisioned_and_consumed();
+    test_fake_glyph_atlas_page_diagnostics_track_overflow();
     test_fake_caret_positions_follow_utf8_runs_and_combining_marks();
     test_fake_selection_rects_cover_utf8_ranges_without_atlas_updates();
     test_fake_caret_and_selection_clip_to_request_height();

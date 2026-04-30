@@ -36,6 +36,8 @@ struct fake_text_engine_diagnostics {
     std::vector<render_text_glyph_cluster> glyph_clusters;
     std::vector<render_text_caret_rect_snapshot> caret_rects;
     std::vector<render_text_selection_rect_snapshot> selection_rects;
+    std::vector<render_text_glyph_atlas_placement_snapshot> glyph_atlas_placements;
+    render_text_glyph_atlas_metrics_snapshot glyph_atlas_metrics;
     std::size_t invalid_utf8_sequence_count = 0;
 
     bool used_style_fallback() const
@@ -67,6 +69,11 @@ struct fake_text_engine_diagnostics {
     {
         return !selection_rects.empty();
     }
+
+    bool has_glyph_atlas_placements() const
+    {
+        return !glyph_atlas_placements.empty();
+    }
 };
 
 struct fake_text_engine_caret {
@@ -95,8 +102,11 @@ public:
         fake_text_engine_selection_range range) const;
 
 private:
-    mutable render_text_revision atlas_revision_ = 0;
-    mutable std::vector<std::uint32_t> cached_glyph_ids_;
+    mutable glyph_atlas_cache glyph_atlas_cache_{glyph_atlas_page_config{
+        .width = 64,
+        .height = 64,
+        .padding = 1,
+    }};
     mutable std::vector<render_text_atlas_update> atlas_updates_;
     mutable fake_text_engine_diagnostics diagnostics_;
     deterministic_fake_font_resolver font_resolver_;

@@ -50,10 +50,14 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.glyph_clusters } -> std::same_as<std::vector<render::render_text_glyph_cluster>&>;
     { diagnostics.caret_rects } -> std::same_as<std::vector<render::render_text_caret_rect_snapshot>&>;
     { diagnostics.selection_rects } -> std::same_as<std::vector<render::render_text_selection_rect_snapshot>&>;
+    { diagnostics.glyph_atlas_placements }
+        -> std::same_as<std::vector<render::render_text_glyph_atlas_placement_snapshot>&>;
+    { diagnostics.glyph_atlas_metrics } -> std::same_as<render::render_text_glyph_atlas_metrics_snapshot&>;
     { diagnostics.used_font_fallback() } -> std::same_as<bool>;
     { diagnostics.has_glyph_clusters() } -> std::same_as<bool>;
     { diagnostics.has_caret_rects() } -> std::same_as<bool>;
     { diagnostics.has_selection_rects() } -> std::same_as<bool>;
+    { diagnostics.has_glyph_atlas_placements() } -> std::same_as<bool>;
 });
 
 static_assert(requires(render::render_text_glyph_cluster cluster) {
@@ -86,6 +90,29 @@ static_assert(requires(render::render_text_selection_rect_snapshot selection) {
     { selection.line_index } -> std::same_as<std::size_t&>;
     { selection.cluster_offset } -> std::same_as<std::size_t&>;
     { selection.cluster_count } -> std::same_as<std::size_t&>;
+});
+
+static_assert(requires(render::render_text_glyph_atlas_placement_snapshot placement) {
+    { placement.cluster_index } -> std::same_as<std::size_t&>;
+    { placement.key } -> std::same_as<render::glyph_atlas_key&>;
+    { placement.page } -> std::same_as<render::render_text_atlas_page&>;
+    { placement.atlas_bounds } -> std::same_as<render::render_rect&>;
+    { placement.cache_hit } -> std::same_as<bool&>;
+    { placement.newly_allocated } -> std::same_as<bool&>;
+    { placement.created_page } -> std::same_as<bool&>;
+    { placement.reused_existing_page } -> std::same_as<bool&>;
+});
+
+static_assert(requires(render::render_text_glyph_atlas_metrics_snapshot metrics) {
+    { metrics.requested_cluster_count } -> std::same_as<std::size_t&>;
+    { metrics.placed_cluster_count } -> std::same_as<std::size_t&>;
+    { metrics.cache_hit_count } -> std::same_as<std::size_t&>;
+    { metrics.new_slot_count } -> std::same_as<std::size_t&>;
+    { metrics.reused_page_slot_count } -> std::same_as<std::size_t&>;
+    { metrics.new_page_count } -> std::same_as<std::size_t&>;
+    { metrics.dirty_page_count } -> std::same_as<std::size_t&>;
+    { metrics.page_count_after } -> std::same_as<std::size_t&>;
+    { metrics.latest_page_revision } -> std::same_as<render::render_text_revision&>;
 });
 
 static_assert(requires(render::render_draw_command command) {

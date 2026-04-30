@@ -61,6 +61,43 @@ bool is_submit_key(const raw_platform_key_event& event)
         || event.key_code == 13;
 }
 
+bool is_arrow_left_key(const raw_platform_key_event& event)
+{
+    return event.logical_key == "ArrowLeft"
+        || event.logical_key == "Left"
+        || event.key_code == 37;
+}
+
+bool is_arrow_right_key(const raw_platform_key_event& event)
+{
+    return event.logical_key == "ArrowRight"
+        || event.logical_key == "Right"
+        || event.key_code == 39;
+}
+
+bool is_home_key(const raw_platform_key_event& event)
+{
+    return event.logical_key == "Home" || event.key_code == 36;
+}
+
+bool is_end_key(const raw_platform_key_event& event)
+{
+    return event.logical_key == "End" || event.key_code == 35;
+}
+
+bool is_a_key(const raw_platform_key_event& event)
+{
+    return event.logical_key == "a"
+        || event.logical_key == "A"
+        || event.logical_key == "KeyA"
+        || event.key_code == 65;
+}
+
+bool is_select_all_key(const raw_platform_key_event& event)
+{
+    return !event.alt && (event.ctrl || event.meta) && is_a_key(event);
+}
+
 } // namespace
 
 input_engine::input_engine(gesture_thresholds thresholds)
@@ -273,7 +310,74 @@ std::vector<input_event> input_engine::process_ime_event(const raw_platform_ime_
 std::vector<input_event> input_engine::process_key_event(const raw_platform_key_event& event)
 {
     std::vector<input_event> events;
-    if (event.phase != raw_platform_key_phase::down || ime_composing_ || !text_.has_focus()) {
+    if (event.phase != raw_platform_key_phase::down
+        || ime_composing_
+        || !text_.preedit_text().empty()
+        || !text_.has_focus()) {
+        return events;
+    }
+
+    const std::string target_id = text_.focus_id();
+
+    if (is_select_all_key(event)) {
+        if (text_.select_all()) {
+            events.emplace_back(text_event{
+                .kind = text_event_kind::selection_changed,
+                .timestamp_ms = event.timestamp_ms,
+                .target_id = target_id,
+                .utf8_text = {},
+            });
+        }
+        return events;
+    }
+
+    if (is_arrow_left_key(event)) {
+        const bool changed = event.shift ? text_.extend_selection_left() : text_.move_caret_left();
+        if (changed) {
+            events.emplace_back(text_event{
+                .kind = event.shift ? text_event_kind::selection_changed : text_event_kind::caret_moved,
+                .timestamp_ms = event.timestamp_ms,
+                .target_id = target_id,
+                .utf8_text = {},
+            });
+        }
+        return events;
+    }
+
+    if (is_arrow_right_key(event)) {
+        const bool changed = event.shift ? text_.extend_selection_right() : text_.move_caret_right();
+        if (changed) {
+            events.emplace_back(text_event{
+                .kind = event.shift ? text_event_kind::selection_changed : text_event_kind::caret_moved,
+                .timestamp_ms = event.timestamp_ms,
+                .target_id = target_id,
+                .utf8_text = {},
+            });
+        }
+        return events;
+    }
+
+    if (is_home_key(event)) {
+        if (text_.move_caret_to_start()) {
+            events.emplace_back(text_event{
+                .kind = text_event_kind::caret_moved,
+                .timestamp_ms = event.timestamp_ms,
+                .target_id = target_id,
+                .utf8_text = {},
+            });
+        }
+        return events;
+    }
+
+    if (is_end_key(event)) {
+        if (text_.move_caret_to_end()) {
+            events.emplace_back(text_event{
+                .kind = text_event_kind::caret_moved,
+                .timestamp_ms = event.timestamp_ms,
+                .target_id = target_id,
+                .utf8_text = {},
+            });
+        }
         return events;
     }
 
@@ -282,7 +386,7 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
             events.emplace_back(text_event{
                 .kind = text_event_kind::backspace,
                 .timestamp_ms = event.timestamp_ms,
-                .target_id = text_.focus_id(),
+                .target_id = target_id,
                 .utf8_text = {},
             });
         }
@@ -299,7 +403,7 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
             events.emplace_back(text_event{
                 .kind = text_event_kind::submit,
                 .timestamp_ms = event.timestamp_ms,
-                .target_id = text_.focus_id(),
+                .target_id = target_id,
                 .utf8_text = submitted_text,
             });
         }

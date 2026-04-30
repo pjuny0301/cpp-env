@@ -75,6 +75,8 @@ enum class text_event_kind {
     submit,
     focus_gained,
     focus_lost,
+    caret_moved,
+    selection_changed,
 };
 
 struct text_event {

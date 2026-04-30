@@ -309,6 +309,53 @@ void test_selection_replacement_and_backspace()
     require(!model.selection_range().has_value(), "selected backspace with preedit clears selection");
 }
 
+void test_shift_selection_extension_by_utf8_codepoint()
+{
+    quiz_vulkan::input::text_input_model model;
+    require(!model.extend_selection_left(), "unfocused extend left is ignored");
+    require(!model.extend_selection_right(), "unfocused extend right is ignored");
+
+    model.focus("answer");
+    const std::string initial = std::string("A") + utf8(u8"한") + "B";
+    require(model.commit_utf8(initial), "initial commit before shift selection succeeds");
+    require(!model.extend_selection_right(), "extend right at text end is ignored");
+
+    require(model.extend_selection_left(), "extend left selects trailing ascii");
+    std::optional<quiz_vulkan::input::text_range> selection = model.selection_range();
+    require(selection.has_value(), "extend left exposes selection");
+    require_range(*selection, 4, 5, "extend left selects trailing ascii range");
+    require(model.caret_byte_offset() == 4, "extend left places caret at active edge");
+
+    require(model.extend_selection_left(), "second extend left selects utf8 codepoint");
+    selection = model.selection_range();
+    require(selection.has_value(), "second extend left preserves selection");
+    require_range(*selection, 1, 5, "second extend left spans whole utf8 codepoint");
+    require(model.caret_byte_offset() == 1, "second extend left moves active edge by utf8 codepoint");
+
+    require(model.extend_selection_right(), "extend right shrinks utf8 selection");
+    selection = model.selection_range();
+    require(selection.has_value(), "extend right keeps remaining selection");
+    require_range(*selection, 4, 5, "extend right shrinks to trailing ascii");
+    require(model.caret_byte_offset() == 4, "extend right moves active edge forward by utf8 codepoint");
+
+    require(model.extend_selection_right(), "extend right collapses selection at anchor");
+    require(!model.selection_range().has_value(), "extend right to anchor clears selection");
+    require(model.caret_byte_offset() == 5, "extend right to anchor restores caret at end");
+
+    require(model.move_caret_to_start(), "move to start before forward extension succeeds");
+    require(model.extend_selection_right(), "extend right from start selects ascii");
+    selection = model.selection_range();
+    require(selection.has_value(), "forward extension exposes selection");
+    require_range(*selection, 0, 1, "forward extension selects first ascii byte");
+    require(model.caret_byte_offset() == 1, "forward extension places active caret after ascii");
+
+    require(model.extend_selection_right(), "forward extension over utf8 succeeds");
+    selection = model.selection_range();
+    require(selection.has_value(), "forward utf8 extension preserves selection");
+    require_range(*selection, 0, 4, "forward extension spans utf8 codepoint boundary");
+    require(model.caret_byte_offset() == 4, "forward extension advances active edge over utf8");
+}
+
 void test_ime_preedit_and_commit()
 {
     quiz_vulkan::input::text_input_model model;
@@ -429,6 +476,7 @@ int main()
     test_caret_movement_insert_and_backspace();
     test_selection_range_and_preedit_coherence();
     test_selection_replacement_and_backspace();
+    test_shift_selection_extension_by_utf8_codepoint();
     test_ime_preedit_and_commit();
     test_ime_commit_edges();
     test_empty_preedit_edges();

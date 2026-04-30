@@ -47,6 +47,8 @@ concept TextInputModelInterface = requires(
     { model.move_caret_to_end() } -> std::same_as<bool>;
     { model.move_caret_left() } -> std::same_as<bool>;
     { model.move_caret_right() } -> std::same_as<bool>;
+    { model.extend_selection_left() } -> std::same_as<bool>;
+    { model.extend_selection_right() } -> std::same_as<bool>;
     { model.select_all() } -> std::same_as<bool>;
     { model.clear_selection() } -> std::same_as<bool>;
     { model.set_selection(range) } -> std::same_as<bool>;
@@ -69,6 +71,12 @@ constexpr input::text_range text_range_contract{
 };
 static_assert(text_range_contract.start_byte == 3);
 static_assert(text_range_contract.end_byte == 7);
+
+constexpr input::text_event_kind caret_moved_contract_kind = input::text_event_kind::caret_moved;
+static_assert(caret_moved_contract_kind == input::text_event_kind::caret_moved);
+
+constexpr input::text_event_kind selection_changed_contract_kind = input::text_event_kind::selection_changed;
+static_assert(selection_changed_contract_kind == input::text_event_kind::selection_changed);
 
 constexpr input::gesture_event drag_contract_event{
     .kind = input::gesture_kind::drag_update,

@@ -25,6 +25,16 @@ void require(bool condition, const char* message)
     std::exit(1);
 }
 
+void require_range(
+    quiz_vulkan::input::text_range range,
+    std::size_t start_byte,
+    std::size_t end_byte,
+    const char* message)
+{
+    require(range.start_byte == start_byte, message);
+    require(range.end_byte == end_byte, message);
+}
+
 template <typename T>
 const T& require_event(const std::vector<quiz_vulkan::input::input_event>& events, std::size_t index)
 {
@@ -75,13 +85,19 @@ quiz_vulkan::raw_platform_input_event key(
     std::int64_t timestamp_ms,
     std::string logical_key,
     bool repeat = false,
-    quiz_vulkan::raw_platform_key_phase phase = quiz_vulkan::raw_platform_key_phase::down)
+    quiz_vulkan::raw_platform_key_phase phase = quiz_vulkan::raw_platform_key_phase::down,
+    bool ctrl = false,
+    bool shift = false,
+    bool meta = false)
 {
     return quiz_vulkan::raw_platform_key_event{
         .timestamp_ms = timestamp_ms,
         .phase = phase,
         .key_code = 0,
         .logical_key = std::move(logical_key),
+        .ctrl = ctrl,
+        .shift = shift,
+        .meta = meta,
         .repeat = repeat,
     };
 }
@@ -558,6 +574,104 @@ void test_key_code_fallback_edges()
     require(submit.utf8_text == "ok", "key-code enter submits committed text");
 }
 
+void test_text_keyboard_navigation_and_selection()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    require(engine.process_raw_event(key(90, "ArrowLeft")).empty(), "unfocused arrow left is ignored");
+
+    engine.focus_text_target("answer");
+    const std::string initial = std::string("A") + utf8(u8"한") + "B";
+    require(engine.process_raw_event(text(100, initial)).size() == 1, "text before navigation commits");
+    require(engine.text_model().caret_byte_offset() == initial.size(), "caret starts at committed end");
+
+    require(engine.process_raw_event(key(110, "ArrowLeft", false, raw_platform_key_phase::up)).empty(),
+        "arrow keyup is ignored");
+    std::vector<input_event> events = engine.process_raw_event(key(120, "ArrowLeft"));
+    require(events.size() == 1, "arrow left emits one caret event");
+    const text_event& left = require_event<text_event>(events, 0);
+    require(left.kind == text_event_kind::caret_moved, "arrow left emits caret moved kind");
+    require(left.target_id == "answer", "arrow left preserves target id");
+    require(engine.text_model().caret_byte_offset() == 4, "arrow left moves over trailing ascii");
+    require(!engine.text_model().selection_range().has_value(), "plain arrow left leaves no selection");
+
+    events = engine.process_raw_event(key(130, "ArrowLeft"));
+    require(events.size() == 1, "second arrow left emits one caret event");
+    require(require_event<text_event>(events, 0).kind == text_event_kind::caret_moved,
+        "second arrow left emits caret moved kind");
+    require(engine.text_model().caret_byte_offset() == 1, "second arrow left moves over utf8 codepoint");
+
+    events = engine.process_raw_event(key(140, "ArrowRight"));
+    require(events.size() == 1, "arrow right emits one caret event");
+    require(require_event<text_event>(events, 0).kind == text_event_kind::caret_moved,
+        "arrow right emits caret moved kind");
+    require(engine.text_model().caret_byte_offset() == 4, "arrow right moves over utf8 codepoint");
+
+    events = engine.process_raw_event(key(150, "Home"));
+    require(events.size() == 1, "home emits one caret event");
+    require(require_event<text_event>(events, 0).kind == text_event_kind::caret_moved, "home emits caret moved kind");
+    require(engine.text_model().caret_byte_offset() == 0, "home moves caret to start");
+    require(engine.process_raw_event(key(151, "Home")).empty(), "home at start emits no event");
+
+    events = engine.process_raw_event(key(160, "End"));
+    require(events.size() == 1, "end emits one caret event");
+    require(require_event<text_event>(events, 0).kind == text_event_kind::caret_moved, "end emits caret moved kind");
+    require(engine.text_model().caret_byte_offset() == initial.size(), "end moves caret to committed end");
+
+    events = engine.process_raw_event(key(170, "ArrowLeft", false, raw_platform_key_phase::down, false, true));
+    require(events.size() == 1, "shift arrow left emits one selection event");
+    const text_event& shift_left = require_event<text_event>(events, 0);
+    require(shift_left.kind == text_event_kind::selection_changed, "shift arrow left emits selection changed kind");
+    auto selection = engine.text_model().selection_range();
+    require(selection.has_value(), "shift arrow left exposes selection");
+    require_range(*selection, 4, initial.size(), "shift arrow left selects trailing ascii");
+    require(engine.text_model().caret_byte_offset() == 4, "shift arrow left places active caret at selection start");
+
+    events = engine.process_raw_event(key(180, "ArrowLeft", false, raw_platform_key_phase::down, false, true));
+    require(events.size() == 1, "second shift arrow left emits one selection event");
+    selection = engine.text_model().selection_range();
+    require(selection.has_value(), "second shift arrow left keeps selection");
+    require_range(*selection, 1, initial.size(), "second shift arrow left extends over utf8 codepoint");
+    require(engine.text_model().caret_byte_offset() == 1, "second shift arrow left updates active caret");
+
+    events = engine.process_raw_event(key(190, "ArrowRight", false, raw_platform_key_phase::down, false, true));
+    require(events.size() == 1, "shift arrow right shrinks selection");
+    require(require_event<text_event>(events, 0).kind == text_event_kind::selection_changed,
+        "shift arrow right emits selection changed kind");
+    selection = engine.text_model().selection_range();
+    require(selection.has_value(), "shift arrow right keeps selection while not collapsed");
+    require_range(*selection, 4, initial.size(), "shift arrow right shrinks over utf8 codepoint");
+    require(engine.text_model().caret_byte_offset() == 4, "shift arrow right updates active caret");
+
+    events = engine.process_raw_event(key(200, "ArrowRight"));
+    require(events.size() == 1, "plain arrow right collapses selection");
+    require(require_event<text_event>(events, 0).kind == text_event_kind::caret_moved,
+        "plain arrow collapse emits caret moved kind");
+    require(!engine.text_model().selection_range().has_value(), "plain arrow right clears selection");
+    require(engine.text_model().caret_byte_offset() == initial.size(), "plain arrow right collapses to selection end");
+
+    events = engine.process_raw_event(key(210, "a", false, raw_platform_key_phase::down, true));
+    require(events.size() == 1, "ctrl+a emits one selection event");
+    const text_event& ctrl_a = require_event<text_event>(events, 0);
+    require(ctrl_a.kind == text_event_kind::selection_changed, "ctrl+a emits selection changed kind");
+    selection = engine.text_model().selection_range();
+    require(selection.has_value(), "ctrl+a exposes selection");
+    require_range(*selection, 0, initial.size(), "ctrl+a selects all committed text");
+    require(engine.process_raw_event(key(211, "a", false, raw_platform_key_phase::down, true)).empty(),
+        "repeat select all without state change emits no event");
+
+    require(engine.process_raw_event(key(220, "Home")).size() == 1, "home clears selection before meta+a");
+    events = engine.process_raw_event(key(230, "A", false, raw_platform_key_phase::down, false, false, true));
+    require(events.size() == 1, "meta+a emits one selection event");
+    require(require_event<text_event>(events, 0).kind == text_event_kind::selection_changed,
+        "meta+a emits selection changed kind");
+    selection = engine.text_model().selection_range();
+    require(selection.has_value(), "meta+a exposes selection");
+    require_range(*selection, 0, initial.size(), "meta+a selects all committed text");
+}
+
 void test_ime_composition_suppresses_text_and_key_events()
 {
     using namespace quiz_vulkan;
@@ -577,8 +691,15 @@ void test_ime_composition_suppresses_text_and_key_events()
     require(engine.text_model().display_text() == utf8(u8"ㅎ"), "display text includes preedit");
 
     require(engine.process_raw_event(key(120, "Enter")).empty(), "enter is suppressed during composition");
+    require(engine.process_raw_event(key(121, "ArrowLeft")).empty(), "arrow left is suppressed during composition");
+    require(engine.process_raw_event(key(122, "ArrowLeft", false, raw_platform_key_phase::down, false, true)).empty(),
+        "shift arrow left is suppressed during composition");
+    require(engine.process_raw_event(key(123, "a", false, raw_platform_key_phase::down, true)).empty(),
+        "ctrl+a is suppressed during composition");
     require(engine.process_raw_event(text(130, "duplicate")).empty(), "raw text is suppressed during composition");
     require(engine.text_model().text().empty(), "suppressed raw text does not commit");
+    require(!engine.text_model().selection_range().has_value(), "suppressed composition navigation leaves no selection");
+    require(engine.text_model().display_text() == utf8(u8"ㅎ"), "suppressed composition navigation preserves preedit");
 
     events = engine.process_raw_event(ime(raw_platform_ime_phase::composition_end, 140, utf8(u8"한")));
     require(events.size() == 1, "composition end with text commits ime text");
@@ -835,6 +956,7 @@ int main()
     test_raw_platform_scroll_routes_through_input_engine();
     test_text_key_flow();
     test_key_code_fallback_edges();
+    test_text_keyboard_navigation_and_selection();
     test_ime_composition_suppresses_text_and_key_events();
     test_ime_preedit_commit_edges();
     test_ime_composition_restart_cancels_visible_preedit();

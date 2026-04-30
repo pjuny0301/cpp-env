@@ -31,6 +31,8 @@ public:
     bool move_caret_to_end();
     bool move_caret_left();
     bool move_caret_right();
+    bool extend_selection_left();
+    bool extend_selection_right();
     bool select_all();
     bool clear_selection();
     bool set_selection(text_range range);
@@ -51,9 +53,12 @@ private:
     std::string preedit_text_;
     std::size_t caret_byte_offset_ = 0;
     std::optional<text_range> selection_range_;
+    std::optional<std::size_t> selection_anchor_byte_offset_;
     std::optional<std::string> submit_text_;
 
     [[nodiscard]] std::size_t preedit_anchor_byte_offset() const;
+    void set_selection_from_anchor(std::size_t anchor_byte, std::size_t active_byte);
+    void reset_selection();
     void replace_selection_with(std::string_view utf8_text);
     bool erase_selected_text();
 };

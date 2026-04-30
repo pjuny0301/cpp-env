@@ -41,6 +41,17 @@ public:
     {
         calls.push_back("acquire");
         acquired_surface = surface;
+        if (acquire_backpressured) {
+            return quiz_vulkan::render::vulkan_backend::vulkan_swapchain_acquire_result{
+                .status = quiz_vulkan::render::vulkan_backend::vulkan_swapchain_acquire_status::backpressured,
+                .image = quiz_vulkan::render::vulkan_backend::vulkan_swapchain_image_state{
+                    .id = next_image_id,
+                    .available = false,
+                    .acquired = false,
+                    .presented = false,
+                },
+            };
+        }
         if (!acquire_succeeds) {
             return quiz_vulkan::render::vulkan_backend::vulkan_swapchain_acquire_result{
                 .status = quiz_vulkan::render::vulkan_backend::vulkan_swapchain_acquire_status::failed,
@@ -93,6 +104,7 @@ public:
 
     bool begin_succeeds = true;
     bool acquire_succeeds = true;
+    bool acquire_backpressured = false;
     bool record_succeeds = true;
     bool submit_succeeds = true;
     bool present_image_succeeds = true;
@@ -253,6 +265,11 @@ void test_vulkan_swapchain_status_names_are_stable()
         "swapchain acquire status name for acquired is stable");
     require(
         vulkan_backend::swapchain_acquire_status_name(
+            vulkan_backend::vulkan_swapchain_acquire_status::backpressured)
+            == std::string_view{"backpressured"},
+        "swapchain acquire status name for backpressured is stable");
+    require(
+        vulkan_backend::swapchain_acquire_status_name(
             vulkan_backend::vulkan_swapchain_acquire_status::failed)
             == std::string_view{"failed"},
         "swapchain acquire status name for failed is stable");
@@ -271,6 +288,68 @@ void test_vulkan_swapchain_status_names_are_stable()
             vulkan_backend::vulkan_swapchain_present_status::failed)
             == std::string_view{"failed"},
         "swapchain present status name for failed is stable");
+}
+
+void test_vulkan_frame_present_policy_names_are_stable()
+{
+    using namespace quiz_vulkan::render;
+
+    require(
+        vulkan_backend::frame_acquire_policy_status_name(
+            vulkan_backend::vulkan_frame_acquire_policy_status::not_checked)
+            == std::string_view{"not_checked"},
+        "frame acquire policy status name for not checked is stable");
+    require(
+        vulkan_backend::frame_acquire_policy_status_name(
+            vulkan_backend::vulkan_frame_acquire_policy_status::not_requested)
+            == std::string_view{"not_requested"},
+        "frame acquire policy status name for not requested is stable");
+    require(
+        vulkan_backend::frame_acquire_policy_status_name(
+            vulkan_backend::vulkan_frame_acquire_policy_status::acquired)
+            == std::string_view{"acquired"},
+        "frame acquire policy status name for acquired is stable");
+    require(
+        vulkan_backend::frame_acquire_policy_status_name(
+            vulkan_backend::vulkan_frame_acquire_policy_status::backpressured)
+            == std::string_view{"backpressured"},
+        "frame acquire policy status name for backpressured is stable");
+    require(
+        vulkan_backend::frame_acquire_policy_status_name(
+            vulkan_backend::vulkan_frame_acquire_policy_status::failed)
+            == std::string_view{"failed"},
+        "frame acquire policy status name for failed is stable");
+
+    require(
+        vulkan_backend::frame_present_result_status_name(
+            vulkan_backend::vulkan_frame_present_result_status::not_checked)
+            == std::string_view{"not_checked"},
+        "frame present result status name for not checked is stable");
+    require(
+        vulkan_backend::frame_present_result_status_name(
+            vulkan_backend::vulkan_frame_present_result_status::not_requested)
+            == std::string_view{"not_requested"},
+        "frame present result status name for not requested is stable");
+    require(
+        vulkan_backend::frame_present_result_status_name(
+            vulkan_backend::vulkan_frame_present_result_status::image_presented)
+            == std::string_view{"image_presented"},
+        "frame present result status name for image presented is stable");
+    require(
+        vulkan_backend::frame_present_result_status_name(
+            vulkan_backend::vulkan_frame_present_result_status::frame_presented)
+            == std::string_view{"frame_presented"},
+        "frame present result status name for frame presented is stable");
+    require(
+        vulkan_backend::frame_present_result_status_name(
+            vulkan_backend::vulkan_frame_present_result_status::image_failed)
+            == std::string_view{"image_failed"},
+        "frame present result status name for image failed is stable");
+    require(
+        vulkan_backend::frame_present_result_status_name(
+            vulkan_backend::vulkan_frame_present_result_status::frame_failed)
+            == std::string_view{"frame_failed"},
+        "frame present result status name for frame failed is stable");
 }
 
 void test_vulkan_backend_frame_stage_names_are_stable()
@@ -611,6 +690,21 @@ void test_draw_list_submission_counts_generic_work()
     require(!summary.backend_commands_recorded, "renderer summary exposes command recording status");
     require(!summary.backend_frame_submitted, "renderer summary exposes frame submit status");
     require(!summary.backend_frame_presented, "renderer summary exposes frame present status");
+    require(!summary.backend_acquire_policy_checked, "renderer summary exposes unchecked acquire policy");
+    require(!summary.backend_acquire_requested, "renderer summary exposes acquire request status");
+    require(!summary.backend_acquire_backpressured, "renderer summary exposes acquire backpressure status");
+    require(
+        summary.backend_acquire_policy_status
+            == vulkan_backend::vulkan_frame_acquire_policy_status::not_checked,
+        "renderer summary exposes acquire policy status");
+    require(!summary.backend_present_policy_checked, "renderer summary exposes unchecked present policy");
+    require(!summary.backend_present_image_requested, "renderer summary exposes image present request status");
+    require(!summary.backend_present_frame_requested, "renderer summary exposes frame present request status");
+    require(!summary.backend_present_image_presented, "renderer summary exposes image present result");
+    require(
+        summary.backend_present_result_status
+            == vulkan_backend::vulkan_frame_present_result_status::not_checked,
+        "renderer summary exposes present result status");
     require(summary.backend_attempted, "renderer summary exposes backend attempt status");
     require(summary.backend_planned_batch_count == 0, "renderer summary exposes backend planned batch count");
     require(summary.backend_recorded_batch_count == 0, "renderer summary exposes backend recorded batch count");
@@ -1840,6 +1934,122 @@ void require_failed_frame_submit_state(
         "failed frame submit records failed frame fence signal");
 }
 
+void require_completed_frame_present_policy(
+    const quiz_vulkan::render::vulkan_backend::vulkan_backend_frame_present_policy_state& state,
+    std::size_t image_id)
+{
+    using namespace quiz_vulkan::render;
+
+    require(state.checked, "frame present policy is checked");
+    require(state.completed(), "frame present policy completes");
+    require(!state.failed(), "frame present policy does not fail");
+    require(state.acquire_request_count == 1, "frame present policy records one acquire request");
+    require(state.present_image_request_count == 1, "frame present policy records one image present request");
+    require(!state.backpressure_detected, "frame present policy records no backpressure");
+
+    require(state.acquire.checked, "frame acquire policy is checked");
+    require(state.acquire.completed(), "frame acquire policy completes");
+    require(!state.acquire.failed(), "frame acquire policy does not fail");
+    require(state.acquire.requested, "frame acquire policy records request");
+    require(
+        state.acquire.status == vulkan_backend::vulkan_frame_acquire_policy_status::acquired,
+        "frame acquire policy status is acquired");
+    require(
+        state.acquire.swapchain_status == vulkan_backend::vulkan_swapchain_acquire_status::acquired,
+        "frame acquire policy records swapchain acquired status");
+    require(state.acquire.image_id.value == image_id, "frame acquire policy records image id");
+    require(state.acquire.image_available, "frame acquire policy records available image");
+    require(state.acquire.image_acquired, "frame acquire policy records acquired image");
+    require(!state.acquire.backpressured, "frame acquire policy does not report backpressure");
+    require(
+        state.acquire.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::none,
+        "frame acquire policy has no fallback reason");
+
+    require(state.present.checked, "frame present result summary is checked");
+    require(state.present.completed(), "frame present result summary completes");
+    require(!state.present.failed(), "frame present result summary does not fail");
+    require(state.present.image_present_requested, "frame present result summary records image present request");
+    require(state.present.frame_present_requested, "frame present result summary records frame present request");
+    require(state.present.image_id.value == image_id, "frame present result summary records image id");
+    require(
+        state.present.swapchain_status == vulkan_backend::vulkan_swapchain_present_status::presented,
+        "frame present result summary records swapchain presented status");
+    require(state.present.image_presented, "frame present result summary records image presented");
+    require(state.present.frame_presented, "frame present result summary records frame presented");
+    require(
+        state.present.status == vulkan_backend::vulkan_frame_present_result_status::frame_presented,
+        "frame present result summary status is frame presented");
+    require(
+        state.present.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::none,
+        "frame present result summary has no fallback reason");
+}
+
+void require_failed_frame_acquire_policy(
+    const quiz_vulkan::render::vulkan_backend::vulkan_backend_frame_present_policy_state& state,
+    quiz_vulkan::render::vulkan_backend::vulkan_frame_acquire_policy_status acquire_status,
+    quiz_vulkan::render::vulkan_backend::vulkan_swapchain_acquire_status swapchain_status,
+    bool backpressured,
+    std::size_t image_id)
+{
+    using namespace quiz_vulkan::render;
+
+    require(state.checked, "failed frame acquire policy is checked");
+    require(!state.completed(), "failed frame acquire policy does not complete");
+    require(state.failed(), "failed frame acquire policy reports failure");
+    require(state.acquire_request_count == 1, "failed frame acquire policy records one acquire request");
+    require(state.present_image_request_count == 0, "failed frame acquire policy records no present request");
+    require(state.backpressure_detected == backpressured, "failed frame acquire policy records backpressure flag");
+    require(state.acquire.checked, "failed frame acquire policy checks acquire");
+    require(state.acquire.requested, "failed frame acquire policy records request");
+    require(state.acquire.failed(), "failed frame acquire policy helper reports failure");
+    require(state.acquire.status == acquire_status, "failed frame acquire policy records acquire status");
+    require(state.acquire.swapchain_status == swapchain_status, "failed frame acquire policy records swapchain status");
+    require(state.acquire.image_id.value == image_id, "failed frame acquire policy records image id");
+    require(!state.acquire.image_available, "failed frame acquire policy records unavailable image");
+    require(!state.acquire.image_acquired, "failed frame acquire policy records unacquired image");
+    require(state.acquire.backpressured == backpressured, "failed frame acquire policy records acquire backpressure");
+    require(
+        state.acquire.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::acquire_image_failed,
+        "failed frame acquire policy records acquire fallback reason");
+    require(state.present.checked, "failed frame acquire policy checks present summary");
+    require(!state.present.image_present_requested, "failed frame acquire policy does not request image present");
+    require(!state.present.frame_present_requested, "failed frame acquire policy does not request frame present");
+    require(
+        state.present.status == vulkan_backend::vulkan_frame_present_result_status::not_requested,
+        "failed frame acquire policy leaves present status not requested");
+}
+
+void require_failed_frame_present_policy(
+    const quiz_vulkan::render::vulkan_backend::vulkan_backend_frame_present_policy_state& state,
+    quiz_vulkan::render::vulkan_backend::vulkan_frame_present_result_status present_status,
+    quiz_vulkan::render::vulkan_backend::vulkan_backend_fallback_reason fallback_reason,
+    bool frame_present_requested,
+    bool image_presented,
+    bool frame_presented,
+    std::size_t image_id)
+{
+    using namespace quiz_vulkan::render;
+
+    require(state.checked, "failed frame present policy is checked");
+    require(!state.completed(), "failed frame present policy does not complete");
+    require(state.failed(), "failed frame present policy reports failure");
+    require(state.acquire_request_count == 1, "failed frame present policy records one acquire request");
+    require(state.present_image_request_count == 1, "failed frame present policy records one image present request");
+    require(!state.backpressure_detected, "failed frame present policy records no backpressure");
+    require(state.acquire.completed(), "failed frame present policy records completed acquire");
+    require(state.present.checked, "failed frame present policy checks present result");
+    require(state.present.failed(), "failed frame present result helper reports failure");
+    require(state.present.image_present_requested, "failed frame present policy records image present request");
+    require(
+        state.present.frame_present_requested == frame_present_requested,
+        "failed frame present policy records frame present request flag");
+    require(state.present.image_id.value == image_id, "failed frame present policy records image id");
+    require(state.present.image_presented == image_presented, "failed frame present policy records image result");
+    require(state.present.frame_presented == frame_presented, "failed frame present policy records frame result");
+    require(state.present.status == present_status, "failed frame present policy records result status");
+    require(state.present.fallback_reason == fallback_reason, "failed frame present policy records fallback reason");
+}
+
 const quiz_vulkan::render::vulkan_backend::vulkan_frame_lifecycle_step_snapshot* find_lifecycle_snapshot(
     const quiz_vulkan::render::vulkan_backend::vulkan_backend_frame_lifecycle_policy_state& state,
     quiz_vulkan::render::vulkan_backend::vulkan_frame_lifecycle_step step)
@@ -2246,6 +2456,7 @@ void test_vulkan_backend_adapter_completes_fake_device_lifecycle()
     require(result.swapchain.completed(), "fake backend records completed swapchain lifecycle");
     require_completed_frame_sync(result.frame_sync);
     require_completed_frame_lifecycle_policy(result.lifecycle_policy);
+    require_completed_frame_present_policy(result.present_policy, 7);
     require_completed_command_buffer_submit_state(result.command_buffer_submit, 1);
     require(result.resource_bindings.completed(), "fake backend records completed resource binding state");
     require(result.resource_bindings.planned_batch_count == 1, "fake backend resource bindings track batch count");
@@ -2404,6 +2615,7 @@ void test_vulkan_backend_adapter_completes_empty_frame()
     require_completed_command_buffer_submit_state(result.command_buffer_submit, 0);
     require(result.swapchain.completed(), "empty frame still completes swapchain lifecycle");
     require_completed_frame_lifecycle_policy(result.lifecycle_policy);
+    require_completed_frame_present_policy(result.present_policy, 7);
     require(result.resource_bindings.completed(), "empty frame records completed empty resource binding state");
     require(result.resource_bindings.binding_count == 0, "empty frame records no resource bindings");
     require(result.resource_registry.completed(), "empty frame records completed empty resource registry state");
@@ -2442,6 +2654,7 @@ void test_vulkan_backend_adapter_completes_all_discarded_frame()
     require_completed_command_buffer_submit_state(result.command_buffer_submit, 0);
     require(result.swapchain.completed(), "all-discarded frame still completes swapchain lifecycle");
     require_completed_frame_lifecycle_policy(result.lifecycle_policy);
+    require_completed_frame_present_policy(result.present_policy, 7);
     require(result.resource_bindings.completed(), "all-discarded frame records completed empty resource binding state");
     require(result.resource_registry.completed(), "all-discarded frame records completed empty resource registry state");
     require(result.clipped_draw_call_count == 0, "all-discarded frame has no clipped draw calls");
@@ -3048,6 +3261,12 @@ void test_vulkan_backend_adapter_falls_back_when_acquire_fails()
         vulkan_backend::vulkan_backend_fallback_reason::acquire_image_failed,
         1,
         0);
+    require_failed_frame_acquire_policy(
+        result.present_policy,
+        vulkan_backend::vulkan_frame_acquire_policy_status::failed,
+        vulkan_backend::vulkan_swapchain_acquire_status::failed,
+        false,
+        0);
     require(!result.commands_recorded, "backend does not record commands after acquire failure");
     require(!result.frame_submitted, "backend does not submit after acquire failure");
     require(!result.frame_presented, "backend does not present frame after acquire failure");
@@ -3059,6 +3278,61 @@ void test_vulkan_backend_adapter_falls_back_when_acquire_fails()
     require(result.command_recorder.planned_batch_count == 1, "command recorder records planned count before acquire failure");
     require(device.calls.size() == 1, "backend stops lifecycle after failed acquire");
     require(device.calls[0] == "acquire", "backend acquires before stopping");
+}
+
+void test_vulkan_backend_adapter_reports_acquire_backpressure()
+{
+    using namespace quiz_vulkan::render;
+
+    render_draw_list draw_list;
+    draw_list.commands.push_back(make_quad_command(
+        "quad",
+        render_rect{0.0f, 0.0f, 100.0f, 100.0f},
+        render_color{1.0f, 1.0f, 1.0f, 1.0f}));
+
+    fake_vulkan_backend_device device(vulkan_backend::vulkan_surface_extent{.width = 16, .height = 16});
+    device.acquire_backpressured = true;
+    const vulkan_backend::vulkan_backend_frame_result result = vulkan_backend::submit_vulkan_backend_frame(
+        device,
+        draw_list,
+        render_rect{0.0f, 0.0f, 100.0f, 100.0f});
+
+    require(!result.completed(), "backend cannot complete when image acquisition is backpressured");
+    require(result.attempted, "backend records attempted frame when image acquisition is backpressured");
+    require(result.fallback_required, "backend requires fallback when image acquisition is backpressured");
+    require(
+        result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::acquire_image_failed,
+        "backend reports acquire fallback reason for backpressure");
+    require(
+        result.reached_stage == vulkan_backend::vulkan_backend_frame_stage::frame_plan_ready,
+        "backend reaches frame plan stage before acquire backpressure");
+    require(result.swapchain.acquire_requested, "backend requests image acquisition before backpressure");
+    require(
+        result.swapchain.acquire.status == vulkan_backend::vulkan_swapchain_acquire_status::backpressured,
+        "backend records backpressured swapchain acquisition status");
+    require(!result.swapchain.acquire.completed(), "backend records incomplete backpressured acquisition");
+    require(!result.swapchain.present_requested, "backend does not present image after acquire backpressure");
+    require(result.frame_sync.acquire_signal_image_available_semaphore.failed(), "backend records failed acquire semaphore on backpressure");
+    require(result.frame_sync.acquire_signal_fence.failed(), "backend records failed acquire fence on backpressure");
+    require_failed_frame_lifecycle_policy(
+        result.lifecycle_policy,
+        vulkan_backend::vulkan_frame_lifecycle_step::acquire,
+        vulkan_backend::vulkan_frame_lifecycle_failure_classification::recoverable,
+        vulkan_backend::vulkan_backend_fallback_reason::acquire_image_failed,
+        1,
+        0);
+    require_failed_frame_acquire_policy(
+        result.present_policy,
+        vulkan_backend::vulkan_frame_acquire_policy_status::backpressured,
+        vulkan_backend::vulkan_swapchain_acquire_status::backpressured,
+        true,
+        7);
+    require(!result.frame_begun, "backend does not begin frame after acquire backpressure");
+    require(!result.commands_recorded, "backend does not record commands after acquire backpressure");
+    require(!result.frame_submitted, "backend does not submit after acquire backpressure");
+    require(!result.frame_presented, "backend does not present after acquire backpressure");
+    require(device.calls.size() == 1, "backend stops lifecycle after acquire backpressure");
+    require(device.calls[0] == "acquire", "backend acquires before reporting backpressure");
 }
 
 void test_vulkan_backend_adapter_falls_back_when_recording_fails()
@@ -3155,6 +3429,8 @@ void test_vulkan_backend_adapter_falls_back_when_submit_fails()
     require(result.frame_sync.submit_signal_render_finished_semaphore.failed(), "backend records failed submit semaphore signal");
     require(result.frame_sync.submit_signal_frame_fence.failed(), "backend records failed submit fence signal");
     require(!result.frame_sync.present_wait_render_finished_semaphore.requested, "backend does not present-wait after submit failure");
+    require(result.present_policy.acquire.completed(), "present policy records completed acquire before submit failure");
+    require(!result.present_policy.present.image_present_requested, "present policy records no present after submit failure");
     require_failed_frame_lifecycle_policy(
         result.lifecycle_policy,
         vulkan_backend::vulkan_frame_lifecycle_step::submit,
@@ -3228,6 +3504,14 @@ void test_vulkan_backend_adapter_falls_back_when_present_image_fails()
         vulkan_backend::vulkan_backend_fallback_reason::present_image_failed,
         5,
         4);
+    require_failed_frame_present_policy(
+        result.present_policy,
+        vulkan_backend::vulkan_frame_present_result_status::image_failed,
+        vulkan_backend::vulkan_backend_fallback_reason::present_image_failed,
+        false,
+        false,
+        false,
+        7);
     require(!result.frame_presented, "backend does not mark frame presented after image presentation failure");
     require(result.planned_batch_count == 1, "backend reports planned batch count before image presentation failure");
     require(result.recorded_batch_count == 1, "backend reports recorded batch count before image presentation failure");
@@ -3283,6 +3567,14 @@ void test_vulkan_backend_adapter_falls_back_when_present_fails()
         vulkan_backend::vulkan_backend_fallback_reason::present_frame_failed,
         5,
         4);
+    require_failed_frame_present_policy(
+        result.present_policy,
+        vulkan_backend::vulkan_frame_present_result_status::frame_failed,
+        vulkan_backend::vulkan_backend_fallback_reason::present_frame_failed,
+        true,
+        true,
+        false,
+        7);
     require(result.commands_recorded, "backend recorded commands before presentation failed");
     require(result.frame_submitted, "backend submitted frame before presentation failed");
     require(!result.frame_presented, "backend reports failed presentation");
@@ -3307,6 +3599,7 @@ int main()
 {
     test_vulkan_backend_fallback_reason_names_are_stable();
     test_vulkan_swapchain_status_names_are_stable();
+    test_vulkan_frame_present_policy_names_are_stable();
     test_vulkan_backend_frame_stage_names_are_stable();
     test_vulkan_command_recorder_failure_stage_names_are_stable();
     test_vulkan_command_buffer_submit_names_are_stable();
@@ -3348,6 +3641,7 @@ int main()
     test_vulkan_backend_adapter_falls_back_without_viewport();
     test_vulkan_backend_adapter_falls_back_when_begin_fails();
     test_vulkan_backend_adapter_falls_back_when_acquire_fails();
+    test_vulkan_backend_adapter_reports_acquire_backpressure();
     test_vulkan_backend_adapter_falls_back_when_recording_fails();
     test_vulkan_backend_adapter_falls_back_when_submit_fails();
     test_vulkan_backend_adapter_falls_back_when_present_image_fails();

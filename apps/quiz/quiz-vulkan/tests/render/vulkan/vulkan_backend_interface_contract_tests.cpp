@@ -109,6 +109,9 @@ static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_swapchain_acquire_status::acquired),
     render::vulkan_backend::vulkan_swapchain_acquire_status>);
 static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_acquire_status::backpressured),
+    render::vulkan_backend::vulkan_swapchain_acquire_status>);
+static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_swapchain_acquire_status::failed),
     render::vulkan_backend::vulkan_swapchain_acquire_status>);
 
@@ -149,6 +152,89 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_swapchain_lifecycl
     { swapchain.acquired() } -> std::same_as<bool>;
     { swapchain.presented() } -> std::same_as<bool>;
     { swapchain.completed() } -> std::same_as<bool>;
+});
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_acquire_policy_status::not_checked),
+    render::vulkan_backend::vulkan_frame_acquire_policy_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_acquire_policy_status::not_requested),
+    render::vulkan_backend::vulkan_frame_acquire_policy_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_acquire_policy_status::acquired),
+    render::vulkan_backend::vulkan_frame_acquire_policy_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_acquire_policy_status::backpressured),
+    render::vulkan_backend::vulkan_frame_acquire_policy_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_acquire_policy_status::failed),
+    render::vulkan_backend::vulkan_frame_acquire_policy_status>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_present_result_status::not_checked),
+    render::vulkan_backend::vulkan_frame_present_result_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_present_result_status::not_requested),
+    render::vulkan_backend::vulkan_frame_present_result_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_present_result_status::image_presented),
+    render::vulkan_backend::vulkan_frame_present_result_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_present_result_status::frame_presented),
+    render::vulkan_backend::vulkan_frame_present_result_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_present_result_status::image_failed),
+    render::vulkan_backend::vulkan_frame_present_result_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_present_result_status::frame_failed),
+    render::vulkan_backend::vulkan_frame_present_result_status>);
+
+static_assert(requires(
+    render::vulkan_backend::vulkan_frame_acquire_policy_status acquire_status,
+    render::vulkan_backend::vulkan_frame_present_result_status present_status) {
+    { render::vulkan_backend::frame_acquire_policy_status_name(acquire_status) }
+        -> std::same_as<std::string_view>;
+    { render::vulkan_backend::frame_present_result_status_name(present_status) }
+        -> std::same_as<std::string_view>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_frame_acquire_policy_diagnostics acquire) {
+    { acquire.checked } -> std::same_as<bool&>;
+    { acquire.requested } -> std::same_as<bool&>;
+    { acquire.swapchain_status } -> std::same_as<render::vulkan_backend::vulkan_swapchain_acquire_status&>;
+    { acquire.image_id } -> std::same_as<render::vulkan_backend::vulkan_swapchain_image_id&>;
+    { acquire.image_available } -> std::same_as<bool&>;
+    { acquire.image_acquired } -> std::same_as<bool&>;
+    { acquire.backpressured } -> std::same_as<bool&>;
+    { acquire.status } -> std::same_as<render::vulkan_backend::vulkan_frame_acquire_policy_status&>;
+    { acquire.fallback_reason } -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
+    { acquire.completed() } -> std::same_as<bool>;
+    { acquire.failed() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_frame_present_result_summary present) {
+    { present.checked } -> std::same_as<bool&>;
+    { present.image_present_requested } -> std::same_as<bool&>;
+    { present.frame_present_requested } -> std::same_as<bool&>;
+    { present.image_id } -> std::same_as<render::vulkan_backend::vulkan_swapchain_image_id&>;
+    { present.swapchain_status } -> std::same_as<render::vulkan_backend::vulkan_swapchain_present_status&>;
+    { present.image_presented } -> std::same_as<bool&>;
+    { present.frame_presented } -> std::same_as<bool&>;
+    { present.status } -> std::same_as<render::vulkan_backend::vulkan_frame_present_result_status&>;
+    { present.fallback_reason } -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
+    { present.completed() } -> std::same_as<bool>;
+    { present.failed() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_backend_frame_present_policy_state policy) {
+    { policy.checked } -> std::same_as<bool&>;
+    { policy.acquire_request_count } -> std::same_as<std::size_t&>;
+    { policy.present_image_request_count } -> std::same_as<std::size_t&>;
+    { policy.backpressure_detected } -> std::same_as<bool&>;
+    { policy.acquire } -> std::same_as<render::vulkan_backend::vulkan_frame_acquire_policy_diagnostics&>;
+    { policy.present } -> std::same_as<render::vulkan_backend::vulkan_frame_present_result_summary&>;
+    { policy.completed() } -> std::same_as<bool>;
+    { policy.failed() } -> std::same_as<bool>;
 });
 
 static_assert(requires(render::vulkan_backend::vulkan_frame_in_flight_id frame) {
@@ -711,6 +797,8 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_frame_result resul
     { result.frame_sync } -> std::same_as<render::vulkan_backend::vulkan_backend_frame_sync_state&>;
     { result.lifecycle_policy }
         -> std::same_as<render::vulkan_backend::vulkan_backend_frame_lifecycle_policy_state&>;
+    { result.present_policy }
+        -> std::same_as<render::vulkan_backend::vulkan_backend_frame_present_policy_state&>;
     { result.resource_bindings } -> std::same_as<render::vulkan_backend::vulkan_backend_resource_binding_state&>;
     { result.resource_registry } -> std::same_as<render::vulkan_backend::vulkan_backend_resource_registry_state&>;
     { result.pipeline } -> std::same_as<render::vulkan_backend::vulkan_backend_pipeline_state&>;

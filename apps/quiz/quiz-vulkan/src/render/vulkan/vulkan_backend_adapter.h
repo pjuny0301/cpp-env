@@ -155,6 +155,7 @@ struct vulkan_swapchain_image_state {
 enum class vulkan_swapchain_acquire_status {
     not_requested,
     acquired,
+    backpressured,
     failed,
 };
 
@@ -207,6 +208,101 @@ struct vulkan_backend_swapchain_lifecycle_state {
     bool completed() const
     {
         return acquired() && presented();
+    }
+};
+
+enum class vulkan_frame_acquire_policy_status {
+    not_checked,
+    not_requested,
+    acquired,
+    backpressured,
+    failed,
+};
+
+std::string_view frame_acquire_policy_status_name(vulkan_frame_acquire_policy_status status);
+
+enum class vulkan_frame_present_result_status {
+    not_checked,
+    not_requested,
+    image_presented,
+    frame_presented,
+    image_failed,
+    frame_failed,
+};
+
+std::string_view frame_present_result_status_name(vulkan_frame_present_result_status status);
+
+struct vulkan_frame_acquire_policy_diagnostics {
+    bool checked = false;
+    bool requested = false;
+    vulkan_swapchain_acquire_status swapchain_status = vulkan_swapchain_acquire_status::not_requested;
+    vulkan_swapchain_image_id image_id;
+    bool image_available = false;
+    bool image_acquired = false;
+    bool backpressured = false;
+    vulkan_frame_acquire_policy_status status = vulkan_frame_acquire_policy_status::not_checked;
+    vulkan_backend_fallback_reason fallback_reason = vulkan_backend_fallback_reason::not_requested;
+
+    bool completed() const
+    {
+        return checked && requested && image_available && image_acquired
+            && status == vulkan_frame_acquire_policy_status::acquired
+            && fallback_reason == vulkan_backend_fallback_reason::none;
+    }
+
+    bool failed() const
+    {
+        return checked && requested
+            && (status == vulkan_frame_acquire_policy_status::backpressured
+                || status == vulkan_frame_acquire_policy_status::failed);
+    }
+};
+
+struct vulkan_frame_present_result_summary {
+    bool checked = false;
+    bool image_present_requested = false;
+    bool frame_present_requested = false;
+    vulkan_swapchain_image_id image_id;
+    vulkan_swapchain_present_status swapchain_status = vulkan_swapchain_present_status::not_requested;
+    bool image_presented = false;
+    bool frame_presented = false;
+    vulkan_frame_present_result_status status = vulkan_frame_present_result_status::not_checked;
+    vulkan_backend_fallback_reason fallback_reason = vulkan_backend_fallback_reason::not_requested;
+
+    bool completed() const
+    {
+        return checked && image_present_requested && frame_present_requested
+            && image_presented && frame_presented
+            && status == vulkan_frame_present_result_status::frame_presented
+            && fallback_reason == vulkan_backend_fallback_reason::none;
+    }
+
+    bool failed() const
+    {
+        return checked
+            && (status == vulkan_frame_present_result_status::image_failed
+                || status == vulkan_frame_present_result_status::frame_failed);
+    }
+};
+
+struct vulkan_backend_frame_present_policy_state {
+    bool checked = false;
+    std::size_t acquire_request_count = 0;
+    std::size_t present_image_request_count = 0;
+    bool backpressure_detected = false;
+    vulkan_frame_acquire_policy_diagnostics acquire;
+    vulkan_frame_present_result_summary present;
+
+    bool completed() const
+    {
+        return checked && acquire.completed() && present.completed()
+            && acquire_request_count == 1 && present_image_request_count == 1
+            && !backpressure_detected;
+    }
+
+    bool failed() const
+    {
+        return checked && (acquire.failed() || present.failed());
     }
 };
 
@@ -818,6 +914,7 @@ struct vulkan_backend_frame_result {
     vulkan_backend_swapchain_lifecycle_state swapchain;
     vulkan_backend_frame_sync_state frame_sync;
     vulkan_backend_frame_lifecycle_policy_state lifecycle_policy;
+    vulkan_backend_frame_present_policy_state present_policy;
     vulkan_backend_resource_binding_state resource_bindings;
     vulkan_backend_resource_registry_state resource_registry;
     vulkan_backend_pipeline_state pipeline;
@@ -845,6 +942,7 @@ struct vulkan_backend_frame_result {
             && frame_submitted && frame_presented && swapchain.completed()
             && frame_sync.completed()
             && lifecycle_policy.completed()
+            && present_policy.completed()
             && command_buffer_submit.completed()
             && resource_bindings.completed()
             && resource_registry.completed()

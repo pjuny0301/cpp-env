@@ -218,6 +218,118 @@ void fail_lifecycle_step(
     skip_lifecycle_steps_after_failure(state, *snapshot);
 }
 
+vulkan_backend_frame_present_policy_state make_frame_present_policy_state()
+{
+    return vulkan_backend_frame_present_policy_state{
+        .checked = true,
+        .acquire = vulkan_frame_acquire_policy_diagnostics{
+            .checked = true,
+            .requested = false,
+            .swapchain_status = vulkan_swapchain_acquire_status::not_requested,
+            .image_id = {},
+            .image_available = false,
+            .image_acquired = false,
+            .backpressured = false,
+            .status = vulkan_frame_acquire_policy_status::not_requested,
+            .fallback_reason = vulkan_backend_fallback_reason::not_requested,
+        },
+        .present = vulkan_frame_present_result_summary{
+            .checked = true,
+            .image_present_requested = false,
+            .frame_present_requested = false,
+            .image_id = {},
+            .swapchain_status = vulkan_swapchain_present_status::not_requested,
+            .image_presented = false,
+            .frame_presented = false,
+            .status = vulkan_frame_present_result_status::not_requested,
+            .fallback_reason = vulkan_backend_fallback_reason::not_requested,
+        },
+    };
+}
+
+void mark_acquire_policy_requested(vulkan_backend_frame_present_policy_state& state)
+{
+    state.checked = true;
+    ++state.acquire_request_count;
+    state.acquire.checked = true;
+    state.acquire.requested = true;
+    state.acquire.status = vulkan_frame_acquire_policy_status::not_requested;
+    state.acquire.fallback_reason = vulkan_backend_fallback_reason::not_requested;
+}
+
+void mark_acquire_policy_result(
+    vulkan_backend_frame_present_policy_state& state,
+    const vulkan_swapchain_acquire_result& acquire)
+{
+    state.acquire.swapchain_status = acquire.status;
+    state.acquire.image_id = acquire.image.id;
+    state.acquire.image_available = acquire.image.available;
+    state.acquire.image_acquired = acquire.image.acquired;
+
+    if (acquire.completed()) {
+        state.acquire.status = vulkan_frame_acquire_policy_status::acquired;
+        state.acquire.fallback_reason = vulkan_backend_fallback_reason::none;
+        return;
+    }
+
+    const bool backpressured =
+        acquire.status == vulkan_swapchain_acquire_status::backpressured
+        || (acquire.status == vulkan_swapchain_acquire_status::acquired
+            && !acquire.image.ready_for_recording());
+    state.acquire.backpressured = backpressured;
+    state.backpressure_detected = backpressured;
+    state.acquire.status = backpressured
+        ? vulkan_frame_acquire_policy_status::backpressured
+        : vulkan_frame_acquire_policy_status::failed;
+    state.acquire.fallback_reason = vulkan_backend_fallback_reason::acquire_image_failed;
+}
+
+void mark_present_policy_image_requested(
+    vulkan_backend_frame_present_policy_state& state,
+    vulkan_swapchain_image_id image_id)
+{
+    state.checked = true;
+    ++state.present_image_request_count;
+    state.present.checked = true;
+    state.present.image_present_requested = true;
+    state.present.image_id = image_id;
+    state.present.status = vulkan_frame_present_result_status::not_requested;
+    state.present.fallback_reason = vulkan_backend_fallback_reason::not_requested;
+}
+
+void mark_present_policy_image_result(
+    vulkan_backend_frame_present_policy_state& state,
+    const vulkan_swapchain_present_result& present)
+{
+    state.present.swapchain_status = present.status;
+    state.present.image_id = present.image_id;
+    state.present.image_presented = present.completed();
+    state.present.status = present.completed()
+        ? vulkan_frame_present_result_status::image_presented
+        : vulkan_frame_present_result_status::image_failed;
+    state.present.fallback_reason = present.completed()
+        ? vulkan_backend_fallback_reason::none
+        : vulkan_backend_fallback_reason::present_image_failed;
+}
+
+void mark_present_policy_frame_requested(vulkan_backend_frame_present_policy_state& state)
+{
+    state.present.frame_present_requested = true;
+}
+
+void mark_present_policy_frame_result(
+    vulkan_backend_frame_present_policy_state& state,
+    bool frame_presented)
+{
+    state.present.frame_presented = frame_presented;
+    state.present.status = frame_presented
+        ? vulkan_frame_present_result_status::frame_presented
+        : vulkan_frame_present_result_status::frame_failed;
+    state.present.fallback_reason = frame_presented
+        ? vulkan_backend_fallback_reason::none
+        : vulkan_backend_fallback_reason::present_frame_failed;
+}
+
 vulkan_shader_module_id shader_id(std::string value)
 {
     return vulkan_shader_module_id{.value = std::move(value)};
@@ -1016,6 +1128,8 @@ std::string_view swapchain_acquire_status_name(vulkan_swapchain_acquire_status s
         return "not_requested";
     case vulkan_swapchain_acquire_status::acquired:
         return "acquired";
+    case vulkan_swapchain_acquire_status::backpressured:
+        return "backpressured";
     case vulkan_swapchain_acquire_status::failed:
         return "failed";
     }
@@ -1032,6 +1146,44 @@ std::string_view swapchain_present_status_name(vulkan_swapchain_present_status s
         return "presented";
     case vulkan_swapchain_present_status::failed:
         return "failed";
+    }
+
+    return "unknown";
+}
+
+std::string_view frame_acquire_policy_status_name(vulkan_frame_acquire_policy_status status)
+{
+    switch (status) {
+    case vulkan_frame_acquire_policy_status::not_checked:
+        return "not_checked";
+    case vulkan_frame_acquire_policy_status::not_requested:
+        return "not_requested";
+    case vulkan_frame_acquire_policy_status::acquired:
+        return "acquired";
+    case vulkan_frame_acquire_policy_status::backpressured:
+        return "backpressured";
+    case vulkan_frame_acquire_policy_status::failed:
+        return "failed";
+    }
+
+    return "unknown";
+}
+
+std::string_view frame_present_result_status_name(vulkan_frame_present_result_status status)
+{
+    switch (status) {
+    case vulkan_frame_present_result_status::not_checked:
+        return "not_checked";
+    case vulkan_frame_present_result_status::not_requested:
+        return "not_requested";
+    case vulkan_frame_present_result_status::image_presented:
+        return "image_presented";
+    case vulkan_frame_present_result_status::frame_presented:
+        return "frame_presented";
+    case vulkan_frame_present_result_status::image_failed:
+        return "image_failed";
+    case vulkan_frame_present_result_status::frame_failed:
+        return "frame_failed";
     }
 
     return "unknown";
@@ -1649,6 +1801,7 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     }
 
     result.lifecycle_policy = make_frame_lifecycle_policy_state();
+    result.present_policy = make_frame_present_policy_state();
     const auto fail_frame_lifecycle = [&result](
                                           vulkan_frame_lifecycle_step step,
                                           vulkan_backend_fallback_reason reason) {
@@ -1661,7 +1814,9 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     request_signal(result.frame_sync.acquire_signal_image_available_semaphore);
     request_signal(result.frame_sync.acquire_signal_fence);
     result.swapchain.acquire_requested = true;
+    mark_acquire_policy_requested(result.present_policy);
     result.swapchain.acquire = device.acquire_next_image(result.surface);
+    mark_acquire_policy_result(result.present_policy, result.swapchain.acquire);
     complete_signal(
         result.frame_sync.acquire_signal_image_available_semaphore,
         result.swapchain.acquire.completed());
@@ -1763,7 +1918,9 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     start_lifecycle_step(result.lifecycle_policy, vulkan_frame_lifecycle_step::present);
     request_wait(result.frame_sync.present_wait_render_finished_semaphore);
     result.swapchain.present_requested = true;
+    mark_present_policy_image_requested(result.present_policy, result.swapchain.acquire.image.id);
     result.swapchain.present = device.present_image(result.swapchain.acquire.image.id);
+    mark_present_policy_image_result(result.present_policy, result.swapchain.present);
     complete_wait(
         result.frame_sync.present_wait_render_finished_semaphore,
         result.swapchain.present.completed());
@@ -1775,7 +1932,9 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
         return result;
     }
 
+    mark_present_policy_frame_requested(result.present_policy);
     result.frame_presented = device.present_frame();
+    mark_present_policy_frame_result(result.present_policy, result.frame_presented);
     if (!result.frame_presented) {
         fail_frame_lifecycle(
             vulkan_frame_lifecycle_step::present,

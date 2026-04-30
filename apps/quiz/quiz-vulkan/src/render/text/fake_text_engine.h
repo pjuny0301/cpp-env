@@ -34,6 +34,8 @@ struct fake_text_engine_diagnostics {
     std::vector<fake_text_engine_style_fallback> style_fallbacks;
     std::vector<fake_text_engine_font_fallback> font_fallbacks;
     std::vector<render_text_glyph_cluster> glyph_clusters;
+    std::vector<render_text_caret_rect_snapshot> caret_rects;
+    std::vector<render_text_selection_rect_snapshot> selection_rects;
     std::size_t invalid_utf8_sequence_count = 0;
 
     bool used_style_fallback() const
@@ -54,6 +56,16 @@ struct fake_text_engine_diagnostics {
     bool has_glyph_clusters() const
     {
         return !glyph_clusters.empty();
+    }
+
+    bool has_caret_rects() const
+    {
+        return !caret_rects.empty();
+    }
+
+    bool has_selection_rects() const
+    {
+        return !selection_rects.empty();
     }
 };
 

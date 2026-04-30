@@ -874,8 +874,12 @@ void test_fake_caret_positions_follow_utf8_runs_and_combining_marks()
     };
 
     const std::vector<fake_text_engine_caret> carets = engine.caret_positions(request);
-    require(carets.size() == 6, "caret positions include run starts and scalar boundaries");
+    require(carets.size() == 5, "caret positions include run starts and cluster boundaries");
     require(engine.consume_atlas_updates().empty(), "caret positions do not enqueue atlas updates");
+    require(engine.last_diagnostics().has_glyph_clusters(), "caret positions record glyph cluster diagnostics");
+    require(engine.last_diagnostics().glyph_clusters.size() == 3, "caret diagnostics keep UTF-8 glyph clusters");
+    require(engine.last_diagnostics().has_caret_rects(), "caret positions record caret rect diagnostics");
+    require(engine.last_diagnostics().caret_rects.size() == carets.size(), "caret diagnostics mirror returned carets");
 
     require(carets[0].run_index == 0 && carets[0].byte_offset == 0, "first caret starts first run");
     require(near(carets[0].bounds.x, 2.0f), "first caret uses request x origin");
@@ -889,10 +893,15 @@ void test_fake_caret_positions_follow_utf8_runs_and_combining_marks()
 
     require(carets[3].run_index == 1 && carets[3].byte_offset == 0, "fourth caret starts second run");
     require(near(carets[3].bounds.x, 32.0f), "second run starts at prior run x");
-    require(carets[4].run_index == 1 && carets[4].byte_offset == 1, "fifth caret follows second run ASCII");
+    require(carets[4].run_index == 1 && carets[4].byte_offset == 3, "fifth caret follows combining cluster bytes");
     require(near(carets[4].bounds.x, 38.0f), "fifth caret advances by caption width");
-    require(carets[5].run_index == 1 && carets[5].byte_offset == 3, "sixth caret follows combining mark bytes");
-    require(near(carets[5].bounds.x, 38.0f), "combining mark caret keeps previous x");
+
+    const std::vector<render_text_caret_rect_snapshot>& snapshots = engine.last_diagnostics().caret_rects;
+    require(snapshots[3].cluster_index == 2, "combining cluster start caret points at third cluster");
+    require(!snapshots[3].at_cluster_end, "combining cluster start caret records boundary side");
+    require(snapshots[4].cluster_index == 2, "combining cluster end caret points at third cluster");
+    require(snapshots[4].at_cluster_end, "combining cluster end caret records boundary side");
+    require(snapshots[4].line_index == 0, "combining cluster caret stays on first line");
 }
 
 void test_fake_selection_rects_cover_utf8_ranges_without_atlas_updates()
@@ -927,6 +936,16 @@ void test_fake_selection_rects_cover_utf8_ranges_without_atlas_updates()
     require(near(rects[0].width, 26.0f), "selection covers Hangul and one caption glyph");
     require(near(rects[0].height, 24.0f), "selection rect uses line height");
     require(engine.consume_atlas_updates().empty(), "selection rects do not enqueue atlas updates");
+    require(engine.last_diagnostics().has_glyph_clusters(), "selection records glyph cluster diagnostics");
+    require(engine.last_diagnostics().has_selection_rects(), "selection records range rect diagnostics");
+    require(engine.last_diagnostics().selection_rects.size() == 1, "selection diagnostics mirror returned rects");
+    require(engine.last_diagnostics().selection_rects[0].cluster_offset == 1, "selection starts at Hangul cluster");
+    require(engine.last_diagnostics().selection_rects[0].cluster_count == 2, "selection spans two clusters");
+    require(engine.last_diagnostics().selection_rects[0].start_run_index == 0, "selection diagnostic records start run");
+    require(engine.last_diagnostics().selection_rects[0].start_byte_offset == 1, "selection diagnostic records start byte");
+    require(engine.last_diagnostics().selection_rects[0].end_run_index == 1, "selection diagnostic records end run");
+    require(engine.last_diagnostics().selection_rects[0].end_byte_offset == 1, "selection diagnostic records end byte");
+    require(engine.last_diagnostics().selection_rects[0].line_index == 0, "selection diagnostic records line index");
 
     const std::vector<render_rect> reversed_rects = engine.selection_rects(
         request,
@@ -1034,6 +1053,16 @@ void test_fake_selection_rects_follow_wrapped_hangul_lines()
     require(near(rects[0].height, 24.0f), "wrapped Hangul selection uses line height");
     require(near(rects[1].height, 24.0f), "wrapped Hangul selection keeps line height");
     require(near(rects[2].height, 24.0f), "wrapped Hangul selection keeps final line height");
+    require(engine.last_diagnostics().selection_rects.size() == 3, "wrapped selection diagnostics follow lines");
+    require(engine.last_diagnostics().selection_rects[0].line_index == 0, "first wrapped selection records first line");
+    require(engine.last_diagnostics().selection_rects[1].line_index == 1, "second wrapped selection records second line");
+    require(engine.last_diagnostics().selection_rects[2].line_index == 2, "third wrapped selection records third line");
+    require(engine.last_diagnostics().selection_rects[0].cluster_offset == 0, "first wrapped selection starts first cluster");
+    require(engine.last_diagnostics().selection_rects[1].cluster_offset == 1, "second wrapped selection starts second cluster");
+    require(engine.last_diagnostics().selection_rects[2].cluster_offset == 2, "third wrapped selection starts third cluster");
+    require(engine.last_diagnostics().selection_rects[0].cluster_count == 1, "first wrapped selection spans one cluster");
+    require(engine.last_diagnostics().selection_rects[1].cluster_count == 1, "second wrapped selection spans one cluster");
+    require(engine.last_diagnostics().selection_rects[2].cluster_count == 1, "third wrapped selection spans one cluster");
 }
 
 void test_fake_caret_positions_follow_wrapped_hangul_lines()
@@ -1055,6 +1084,7 @@ void test_fake_caret_positions_follow_wrapped_hangul_lines()
 
     const std::vector<fake_text_engine_caret> carets = engine.caret_positions(request);
     require(carets.size() == 6, "wrapped Hangul carets include start and end for each line");
+    require(engine.last_diagnostics().caret_rects.size() == 6, "wrapped Hangul caret diagnostics follow lines");
     require(carets[0].byte_offset == 0, "first wrapped Hangul caret starts first syllable");
     require(carets[1].byte_offset == 3, "second wrapped Hangul caret follows first syllable");
     require(carets[2].byte_offset == 3, "third wrapped Hangul caret starts second syllable");
@@ -1070,6 +1100,12 @@ void test_fake_caret_positions_follow_wrapped_hangul_lines()
     require(near(carets[0].bounds.y, 6.0f), "first wrapped Hangul caret y is request y");
     require(near(carets[2].bounds.y, 30.0f), "third wrapped Hangul caret y advances by line height");
     require(near(carets[4].bounds.y, 54.0f), "fifth wrapped Hangul caret y advances by two line heights");
+    require(engine.last_diagnostics().caret_rects[0].cluster_index == 0, "first wrapped caret records first cluster");
+    require(engine.last_diagnostics().caret_rects[2].cluster_index == 1, "third wrapped caret records second cluster");
+    require(engine.last_diagnostics().caret_rects[4].cluster_index == 2, "fifth wrapped caret records third cluster");
+    require(engine.last_diagnostics().caret_rects[0].line_index == 0, "first wrapped caret records first line");
+    require(engine.last_diagnostics().caret_rects[2].line_index == 1, "third wrapped caret records second line");
+    require(engine.last_diagnostics().caret_rects[4].line_index == 2, "fifth wrapped caret records third line");
 }
 
 void test_fake_glyph_clusters_track_utf8_runs_and_font_faces()

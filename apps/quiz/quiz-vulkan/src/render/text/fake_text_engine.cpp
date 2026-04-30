@@ -33,6 +33,11 @@ struct laid_out_line {
     std::size_t caret_byte_offset = 0;
 };
 
+struct laid_out_glyph_cluster {
+    render_text_glyph_cluster snapshot;
+    render_rect bounds;
+};
+
 float line_height_for(const render_text_style& style)
 {
     return style.line_height > 0.0f ? style.line_height : style.font_size;
@@ -390,57 +395,215 @@ float visible_line_height(const render_text_request& request, const float y, con
     return std::min(line_height, clip_bottom - y);
 }
 
-void append_glyph_clusters_for_line(
+std::vector<laid_out_glyph_cluster> collect_glyph_cluster_layouts(
+    const render_text_request& request,
     const std::vector<shaped_glyph>& shaped_glyphs,
-    const laid_out_line& line,
-    const std::size_t line_index,
-    const float baseline,
-    const std::size_t first_layout_glyph_offset,
-    std::vector<render_text_glyph_cluster>& clusters)
+    const std::vector<laid_out_line>& lines)
 {
-    bool has_active_cluster = false;
-    render_text_glyph_cluster active_cluster;
-    std::size_t layout_glyph_offset = first_layout_glyph_offset;
+    std::vector<laid_out_glyph_cluster> clusters;
+    float y = request.bounds.y;
+    std::size_t line_index = 0;
+    std::size_t layout_glyph_offset = 0;
 
-    for (const std::size_t glyph_index : line.glyph_indices) {
-        const shaped_glyph& glyph = shaped_glyphs[glyph_index];
-        if (glyph.newline) {
+    for (const laid_out_line& line : lines) {
+        float x = aligned_line_x(request, line.width);
+        bool has_active_cluster = false;
+        laid_out_glyph_cluster active_cluster;
+
+        for (const std::size_t glyph_index : line.glyph_indices) {
+            const shaped_glyph& glyph = shaped_glyphs[glyph_index];
+            if (glyph.newline) {
+                continue;
+            }
+
+            const bool starts_new_cluster =
+                !has_active_cluster
+                || glyph.cluster_start
+                || active_cluster.snapshot.run_index != glyph.run_index
+                || active_cluster.snapshot.resolved_face_id != glyph.resolved_face_id;
+            if (starts_new_cluster) {
+                if (has_active_cluster) {
+                    clusters.push_back(active_cluster);
+                }
+                active_cluster = laid_out_glyph_cluster{
+                    .snapshot = render_text_glyph_cluster{
+                        .run_index = glyph.run_index,
+                        .byte_offset = glyph.byte_offset,
+                        .byte_count = glyph.byte_count,
+                        .glyph_offset = layout_glyph_offset,
+                        .glyph_count = 1,
+                        .advance = glyph.advance,
+                        .baseline = y + line.height,
+                        .line_index = line_index,
+                        .resolved_face_id = glyph.resolved_face_id,
+                    },
+                    .bounds = render_rect{x, y, glyph.advance, line.height},
+                };
+                has_active_cluster = true;
+            } else {
+                active_cluster.snapshot.byte_count =
+                    (glyph.byte_offset + glyph.byte_count) - active_cluster.snapshot.byte_offset;
+                ++active_cluster.snapshot.glyph_count;
+                active_cluster.snapshot.advance += glyph.advance;
+                active_cluster.bounds.width += glyph.advance;
+            }
+
+            x += glyph.advance;
+            ++layout_glyph_offset;
+        }
+
+        if (has_active_cluster) {
+            clusters.push_back(active_cluster);
+        }
+
+        y += line.height;
+        ++line_index;
+    }
+
+    return clusters;
+}
+
+void record_glyph_cluster_diagnostics(
+    fake_text_engine_diagnostics& diagnostics,
+    const std::vector<laid_out_glyph_cluster>& clusters)
+{
+    diagnostics.glyph_clusters.clear();
+    diagnostics.glyph_clusters.reserve(clusters.size());
+    for (const laid_out_glyph_cluster& cluster : clusters) {
+        diagnostics.glyph_clusters.push_back(cluster.snapshot);
+    }
+}
+
+std::vector<render_text_caret_rect_snapshot> caret_rect_snapshots_from_clusters(
+    const render_text_request& request,
+    const std::vector<laid_out_line>& lines,
+    const std::vector<laid_out_glyph_cluster>& clusters)
+{
+    std::vector<render_text_caret_rect_snapshot> carets;
+    float y = request.bounds.y;
+    std::size_t cluster_index = 0;
+    std::size_t line_index = 0;
+
+    for (const laid_out_line& line : lines) {
+        const float caret_height = visible_line_height(request, y, line.height);
+        if (caret_height <= 0.0f) {
+            break;
+        }
+
+        if (line.glyph_indices.empty()) {
+            carets.push_back(render_text_caret_rect_snapshot{
+                .run_index = line.caret_run_index,
+                .byte_offset = line.caret_byte_offset,
+                .bounds = render_rect{aligned_line_x(request, line.width), y, 0.0f, caret_height},
+                .line_index = line_index,
+                .cluster_index = cluster_index,
+                .at_cluster_end = false,
+            });
+            y += line.height;
+            ++line_index;
             continue;
         }
 
-        const bool starts_new_cluster =
-            !has_active_cluster
-            || glyph.cluster_start
-            || active_cluster.run_index != glyph.run_index
-            || active_cluster.resolved_face_id != glyph.resolved_face_id;
-        if (starts_new_cluster) {
-            if (has_active_cluster) {
-                clusters.push_back(active_cluster);
+        std::size_t last_run_index = 0;
+        bool has_prior_cluster = false;
+        while (cluster_index < clusters.size() && clusters[cluster_index].snapshot.line_index == line_index) {
+            const laid_out_glyph_cluster& cluster = clusters[cluster_index];
+            if (!has_prior_cluster || cluster.snapshot.run_index != last_run_index) {
+                carets.push_back(render_text_caret_rect_snapshot{
+                    .run_index = cluster.snapshot.run_index,
+                    .byte_offset = cluster.snapshot.byte_offset,
+                    .bounds = render_rect{cluster.bounds.x, y, 0.0f, caret_height},
+                    .line_index = line_index,
+                    .cluster_index = cluster_index,
+                    .at_cluster_end = false,
+                });
             }
-            active_cluster = render_text_glyph_cluster{
-                .run_index = glyph.run_index,
-                .byte_offset = glyph.byte_offset,
-                .byte_count = glyph.byte_count,
-                .glyph_offset = layout_glyph_offset,
-                .glyph_count = 1,
-                .advance = glyph.advance,
-                .baseline = baseline,
+
+            carets.push_back(render_text_caret_rect_snapshot{
+                .run_index = cluster.snapshot.run_index,
+                .byte_offset = cluster.snapshot.byte_offset + cluster.snapshot.byte_count,
+                .bounds = render_rect{cluster.bounds.x + cluster.bounds.width, y, 0.0f, caret_height},
                 .line_index = line_index,
-                .resolved_face_id = glyph.resolved_face_id,
-            };
-            has_active_cluster = true;
-        } else {
-            active_cluster.byte_count = (glyph.byte_offset + glyph.byte_count) - active_cluster.byte_offset;
-            ++active_cluster.glyph_count;
-            active_cluster.advance += glyph.advance;
+                .cluster_index = cluster_index,
+                .at_cluster_end = true,
+            });
+            last_run_index = cluster.snapshot.run_index;
+            has_prior_cluster = true;
+            ++cluster_index;
         }
 
-        ++layout_glyph_offset;
+        y += line.height;
+        ++line_index;
     }
 
-    if (has_active_cluster) {
-        clusters.push_back(active_cluster);
+    return carets;
+}
+
+std::vector<render_text_selection_rect_snapshot> selection_rect_snapshots_from_clusters(
+    const render_text_request& request,
+    const std::vector<laid_out_glyph_cluster>& clusters,
+    const fake_text_engine_selection_range& range)
+{
+    std::vector<render_text_selection_rect_snapshot> rects;
+    bool has_active_rect = false;
+    render_text_selection_rect_snapshot active_rect;
+
+    for (std::size_t cluster_index = 0; cluster_index < clusters.size(); ++cluster_index) {
+        const laid_out_glyph_cluster& cluster = clusters[cluster_index];
+        const float selection_height = visible_line_height(request, cluster.bounds.y, cluster.bounds.height);
+        if (selection_height <= 0.0f) {
+            if (request.bounds.height > 0.0f && cluster.bounds.y >= request.bounds.y + request.bounds.height) {
+                break;
+            }
+            continue;
+        }
+
+        const bool selection_starts_before_cluster_end = before_position(
+            range.start_run_index,
+            range.start_byte_offset,
+            cluster.snapshot.run_index,
+            cluster.snapshot.byte_offset + cluster.snapshot.byte_count);
+        const bool cluster_starts_before_selection_end = before_position(
+            cluster.snapshot.run_index,
+            cluster.snapshot.byte_offset,
+            range.end_run_index,
+            range.end_byte_offset);
+        const bool overlaps_selection =
+            selection_starts_before_cluster_end && cluster_starts_before_selection_end && cluster.bounds.width > 0.0f;
+
+        if (overlaps_selection) {
+            if (!has_active_rect || active_rect.line_index != cluster.snapshot.line_index) {
+                if (has_active_rect) {
+                    rects.push_back(active_rect);
+                }
+                active_rect = render_text_selection_rect_snapshot{
+                    .start_run_index = cluster.snapshot.run_index,
+                    .start_byte_offset = cluster.snapshot.byte_offset,
+                    .end_run_index = cluster.snapshot.run_index,
+                    .end_byte_offset = cluster.snapshot.byte_offset + cluster.snapshot.byte_count,
+                    .bounds = render_rect{cluster.bounds.x, cluster.bounds.y, cluster.bounds.width, selection_height},
+                    .line_index = cluster.snapshot.line_index,
+                    .cluster_offset = cluster_index,
+                    .cluster_count = 1,
+                };
+                has_active_rect = true;
+            } else {
+                active_rect.end_run_index = cluster.snapshot.run_index;
+                active_rect.end_byte_offset = cluster.snapshot.byte_offset + cluster.snapshot.byte_count;
+                active_rect.bounds.width = (cluster.bounds.x + cluster.bounds.width) - active_rect.bounds.x;
+                ++active_rect.cluster_count;
+            }
+        } else if (has_active_rect) {
+            rects.push_back(active_rect);
+            has_active_rect = false;
+        }
     }
+
+    if (has_active_rect) {
+        rects.push_back(active_rect);
+    }
+
+    return rects;
 }
 
 render_text_revision update_atlas_for_layout(
@@ -498,6 +661,9 @@ render_text_layout fake_text_engine::layout_text(const render_text_request& requ
     diagnostics_ = {};
     const std::vector<shaped_glyph> shaped_glyphs = shape_request(request, font_resolver_, diagnostics_);
     const std::vector<laid_out_line> lines = break_lines(request, shaped_glyphs);
+    const std::vector<laid_out_glyph_cluster> cluster_layouts =
+        collect_glyph_cluster_layouts(request, shaped_glyphs, lines);
+    record_glyph_cluster_diagnostics(diagnostics_, cluster_layouts);
     const render_text_revision atlas_revision =
         update_atlas_for_layout(shaped_glyphs, lines, cached_glyph_ids_, atlas_revision_, atlas_updates_);
 
@@ -505,16 +671,7 @@ render_text_layout fake_text_engine::layout_text(const render_text_request& requ
     layout.measure = measure_lines(lines);
 
     float y = request.bounds.y;
-    std::size_t line_index = 0;
     for (const laid_out_line& line : lines) {
-        append_glyph_clusters_for_line(
-            shaped_glyphs,
-            line,
-            line_index,
-            y + line.height,
-            layout.glyphs.size(),
-            diagnostics_.glyph_clusters);
-
         float x = aligned_line_x(request, line.width);
         for (const std::size_t glyph_index : line.glyph_indices) {
             const shaped_glyph& glyph = shaped_glyphs[glyph_index];
@@ -533,7 +690,6 @@ render_text_layout fake_text_engine::layout_text(const render_text_request& requ
             x += glyph.advance;
         }
         y += line.height;
-        ++line_index;
     }
 
     return layout;
@@ -544,49 +700,19 @@ std::vector<fake_text_engine_caret> fake_text_engine::caret_positions(const rend
     diagnostics_ = {};
     const std::vector<shaped_glyph> shaped_glyphs = shape_request(request, font_resolver_, diagnostics_);
     const std::vector<laid_out_line> lines = break_lines(request, shaped_glyphs);
+    const std::vector<laid_out_glyph_cluster> cluster_layouts =
+        collect_glyph_cluster_layouts(request, shaped_glyphs, lines);
+    record_glyph_cluster_diagnostics(diagnostics_, cluster_layouts);
+    diagnostics_.caret_rects = caret_rect_snapshots_from_clusters(request, lines, cluster_layouts);
 
     std::vector<fake_text_engine_caret> carets;
-    float y = request.bounds.y;
-    for (const laid_out_line& line : lines) {
-        const float caret_height = visible_line_height(request, y, line.height);
-        if (caret_height <= 0.0f) {
-            break;
-        }
-
-        float x = aligned_line_x(request, line.width);
-        std::size_t last_run_index = 0;
-        bool has_prior_glyph = false;
-
-        if (line.glyph_indices.empty()) {
-            carets.push_back(fake_text_engine_caret{
-                .run_index = line.caret_run_index,
-                .byte_offset = line.caret_byte_offset,
-                .bounds = render_rect{x, y, 0.0f, caret_height},
-            });
-            y += line.height;
-            continue;
-        }
-
-        for (const std::size_t glyph_index : line.glyph_indices) {
-            const shaped_glyph& glyph = shaped_glyphs[glyph_index];
-            if (!has_prior_glyph || glyph.run_index != last_run_index) {
-                carets.push_back(fake_text_engine_caret{
-                    .run_index = glyph.run_index,
-                    .byte_offset = glyph.byte_offset,
-                    .bounds = render_rect{x, y, 0.0f, caret_height},
-                });
-            }
-
-            x += glyph.advance;
-            carets.push_back(fake_text_engine_caret{
-                .run_index = glyph.run_index,
-                .byte_offset = glyph.byte_offset + glyph.byte_count,
-                .bounds = render_rect{x, y, 0.0f, caret_height},
-            });
-            last_run_index = glyph.run_index;
-            has_prior_glyph = true;
-        }
-        y += line.height;
+    carets.reserve(diagnostics_.caret_rects.size());
+    for (const render_text_caret_rect_snapshot& snapshot : diagnostics_.caret_rects) {
+        carets.push_back(fake_text_engine_caret{
+            .run_index = snapshot.run_index,
+            .byte_offset = snapshot.byte_offset,
+            .bounds = snapshot.bounds,
+        });
     }
 
     return carets;
@@ -615,49 +741,15 @@ std::vector<render_rect> fake_text_engine::selection_rects(
 
     const std::vector<shaped_glyph> shaped_glyphs = shape_request(request, font_resolver_, diagnostics_);
     const std::vector<laid_out_line> lines = break_lines(request, shaped_glyphs);
+    const std::vector<laid_out_glyph_cluster> cluster_layouts =
+        collect_glyph_cluster_layouts(request, shaped_glyphs, lines);
+    record_glyph_cluster_diagnostics(diagnostics_, cluster_layouts);
+    diagnostics_.selection_rects = selection_rect_snapshots_from_clusters(request, cluster_layouts, range);
 
     std::vector<render_rect> rects;
-    float y = request.bounds.y;
-    for (const laid_out_line& line : lines) {
-        const float selection_height = visible_line_height(request, y, line.height);
-        if (selection_height <= 0.0f) {
-            break;
-        }
-
-        float x = aligned_line_x(request, line.width);
-        bool has_active_rect = false;
-        render_rect active_rect;
-
-        for (const std::size_t glyph_index : line.glyph_indices) {
-            const shaped_glyph& glyph = shaped_glyphs[glyph_index];
-            const bool selection_starts_before_glyph_end = before_position(
-                range.start_run_index,
-                range.start_byte_offset,
-                glyph.run_index,
-                glyph.byte_offset + glyph.byte_count);
-            const bool glyph_starts_before_selection_end = before_position(
-                glyph.run_index,
-                glyph.byte_offset,
-                range.end_run_index,
-                range.end_byte_offset);
-            if (selection_starts_before_glyph_end && glyph_starts_before_selection_end && glyph.advance > 0.0f) {
-                if (!has_active_rect) {
-                    active_rect = render_rect{x, y, glyph.advance, selection_height};
-                    has_active_rect = true;
-                } else {
-                    active_rect.width = (x + glyph.advance) - active_rect.x;
-                }
-            } else if (has_active_rect) {
-                rects.push_back(active_rect);
-                has_active_rect = false;
-            }
-            x += glyph.advance;
-        }
-
-        if (has_active_rect) {
-            rects.push_back(active_rect);
-        }
-        y += line.height;
+    rects.reserve(diagnostics_.selection_rects.size());
+    for (const render_text_selection_rect_snapshot& snapshot : diagnostics_.selection_rects) {
+        rects.push_back(snapshot.bounds);
     }
 
     return rects;

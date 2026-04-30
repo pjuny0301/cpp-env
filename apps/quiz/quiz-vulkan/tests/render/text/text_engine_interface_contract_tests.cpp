@@ -48,8 +48,12 @@ static_assert(requires(render::font_resolver_result result) {
 static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.font_fallbacks } -> std::same_as<std::vector<render::fake_text_engine_font_fallback>&>;
     { diagnostics.glyph_clusters } -> std::same_as<std::vector<render::render_text_glyph_cluster>&>;
+    { diagnostics.caret_rects } -> std::same_as<std::vector<render::render_text_caret_rect_snapshot>&>;
+    { diagnostics.selection_rects } -> std::same_as<std::vector<render::render_text_selection_rect_snapshot>&>;
     { diagnostics.used_font_fallback() } -> std::same_as<bool>;
     { diagnostics.has_glyph_clusters() } -> std::same_as<bool>;
+    { diagnostics.has_caret_rects() } -> std::same_as<bool>;
+    { diagnostics.has_selection_rects() } -> std::same_as<bool>;
 });
 
 static_assert(requires(render::render_text_glyph_cluster cluster) {
@@ -62,6 +66,26 @@ static_assert(requires(render::render_text_glyph_cluster cluster) {
     { cluster.baseline } -> std::same_as<float&>;
     { cluster.line_index } -> std::same_as<std::size_t&>;
     { cluster.resolved_face_id } -> std::same_as<render::font_face_id&>;
+});
+
+static_assert(requires(render::render_text_caret_rect_snapshot caret) {
+    { caret.run_index } -> std::same_as<std::size_t&>;
+    { caret.byte_offset } -> std::same_as<std::size_t&>;
+    { caret.bounds } -> std::same_as<render::render_rect&>;
+    { caret.line_index } -> std::same_as<std::size_t&>;
+    { caret.cluster_index } -> std::same_as<std::size_t&>;
+    { caret.at_cluster_end } -> std::same_as<bool&>;
+});
+
+static_assert(requires(render::render_text_selection_rect_snapshot selection) {
+    { selection.start_run_index } -> std::same_as<std::size_t&>;
+    { selection.start_byte_offset } -> std::same_as<std::size_t&>;
+    { selection.end_run_index } -> std::same_as<std::size_t&>;
+    { selection.end_byte_offset } -> std::same_as<std::size_t&>;
+    { selection.bounds } -> std::same_as<render::render_rect&>;
+    { selection.line_index } -> std::same_as<std::size_t&>;
+    { selection.cluster_offset } -> std::same_as<std::size_t&>;
+    { selection.cluster_count } -> std::same_as<std::size_t&>;
 });
 
 static_assert(requires(render::render_draw_command command) {

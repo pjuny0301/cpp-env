@@ -26,6 +26,13 @@ enum class asset_pack_index_lookup_status {
     type_mismatch,
 };
 
+enum class asset_pack_index_root_selection_status {
+    selected_direct_root,
+    selected_fallback_root,
+    missing_preferred_root,
+    no_root_requested,
+};
+
 struct asset_pack_index_request {
     std::string manifest_version;
     std::string expected_manifest_version;
@@ -132,6 +139,45 @@ struct asset_pack_index_lookup_report {
 struct asset_pack_index_catalog_snapshot_view {
     std::vector<asset_pack_index_entry> entries;
     std::vector<asset_pack_index_cache_key_group> cache_key_groups;
+};
+
+struct asset_pack_index_root_selection_entry {
+    std::size_t manifest_index = 0U;
+    asset_pack_index_root_selection_status status = asset_pack_index_root_selection_status::missing_preferred_root;
+    std::string id;
+    std::string requested_root_id;
+    std::string selected_root_id;
+    std::string diagnostic;
+
+    [[nodiscard]] bool ok() const
+    {
+        return status == asset_pack_index_root_selection_status::selected_direct_root
+            || status == asset_pack_index_root_selection_status::selected_fallback_root
+            || status == asset_pack_index_root_selection_status::no_root_requested;
+    }
+};
+
+struct asset_pack_index_root_selection_summary {
+    std::vector<asset_pack_index_root_selection_entry> entries;
+    std::size_t direct_root_count = 0U;
+    std::size_t fallback_root_count = 0U;
+    std::size_t missing_preferred_root_count = 0U;
+    std::size_t no_root_requested_count = 0U;
+
+    [[nodiscard]] bool ok() const
+    {
+        return missing_preferred_root_count == 0U;
+    }
+};
+
+struct asset_pack_index_lookup_policy_summary {
+    asset_pack_index_lookup_report lookup;
+    asset_pack_index_root_selection_summary root_selection;
+
+    [[nodiscard]] bool ok() const
+    {
+        return lookup.ok() && root_selection.ok();
+    }
 };
 
 struct asset_pack_index_catalog {
@@ -403,6 +449,74 @@ inline std::vector<asset_pack_index_cache_key_group> sorted_asset_pack_index_cac
     std::vector<asset_pack_index_cache_key_group> groups = catalog.cache_key_groups;
     detail::sort_pack_index_cache_key_groups(groups);
     return groups;
+}
+
+inline asset_pack_index_lookup_report summarize_asset_pack_index_lookup_requests(
+    const asset_pack_index_catalog& catalog,
+    const std::vector<asset_pack_index_lookup_request>& requests);
+
+inline asset_pack_index_root_selection_summary summarize_asset_pack_index_root_selection(const asset_manifest& manifest)
+{
+    asset_pack_index_root_selection_summary summary;
+
+    for (std::size_t index = 0U; index < manifest.entries.size(); ++index) {
+        const asset_manifest_entry& entry = manifest.entries[index];
+        if (entry.root_id.empty()) {
+            summary.entries.push_back(asset_pack_index_root_selection_entry{
+                .manifest_index = index,
+                .status = asset_pack_index_root_selection_status::no_root_requested,
+                .id = entry.id,
+                .diagnostic = "asset pack entry does not request a preferred root",
+            });
+            ++summary.no_root_requested_count;
+            continue;
+        }
+
+        const asset_manifest_root* root = manifest.find_root(entry.root_id);
+        if (root == nullptr) {
+            summary.entries.push_back(asset_pack_index_root_selection_entry{
+                .manifest_index = index,
+                .status = asset_pack_index_root_selection_status::missing_preferred_root,
+                .id = entry.id,
+                .requested_root_id = entry.root_id,
+                .diagnostic = "asset pack preferred root is not configured",
+            });
+            ++summary.missing_preferred_root_count;
+            continue;
+        }
+
+        const asset_pack_index_root_selection_status status =
+            root->id == entry.root_id ? asset_pack_index_root_selection_status::selected_direct_root
+                                      : asset_pack_index_root_selection_status::selected_fallback_root;
+        summary.entries.push_back(asset_pack_index_root_selection_entry{
+            .manifest_index = index,
+            .status = status,
+            .id = entry.id,
+            .requested_root_id = entry.root_id,
+            .selected_root_id = root->id,
+            .diagnostic = root->id == entry.root_id
+                ? "asset pack entry uses its preferred root"
+                : "asset pack entry selected a fallback root through an alias",
+        });
+        if (status == asset_pack_index_root_selection_status::selected_direct_root) {
+            ++summary.direct_root_count;
+        } else {
+            ++summary.fallback_root_count;
+        }
+    }
+
+    return summary;
+}
+
+inline asset_pack_index_lookup_policy_summary summarize_asset_pack_index_lookup_policy(
+    const asset_manifest& manifest,
+    const asset_pack_index_catalog& catalog,
+    const std::vector<asset_pack_index_lookup_request>& requests)
+{
+    return asset_pack_index_lookup_policy_summary{
+        .lookup = summarize_asset_pack_index_lookup_requests(catalog, requests),
+        .root_selection = summarize_asset_pack_index_root_selection(manifest),
+    };
 }
 
 inline asset_pack_index_catalog_snapshot_view make_asset_pack_index_catalog_snapshot_view(

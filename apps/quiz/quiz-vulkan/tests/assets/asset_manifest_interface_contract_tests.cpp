@@ -240,6 +240,30 @@ static_assert(requires(
         std::same_as<assets::asset_manifest_version_policy_summary>;
 });
 
+static_assert(requires(assets::asset_manifest_integrity_issue issue) {
+    { issue.kind } -> std::same_as<assets::asset_manifest_integrity_issue_kind&>;
+    { issue.id } -> std::same_as<std::string&>;
+    { issue.related_id } -> std::same_as<std::string&>;
+    { issue.type } -> std::same_as<assets::asset_type&>;
+    { issue.cache_key } -> std::same_as<assets::asset_cache_key&>;
+    { issue.diagnostic } -> std::same_as<std::string&>;
+});
+
+static_assert(requires(
+    assets::asset_manifest_integrity_report report,
+    const assets::asset_manifest_integrity_report& const_report) {
+    { report.validation } -> std::same_as<assets::asset_manifest_validation_result&>;
+    { report.issues } -> std::same_as<std::vector<assets::asset_manifest_integrity_issue>&>;
+    { const_report.ok() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    const assets::asset_manifest& manifest,
+    const assets::asset_resolver_interface& resolver) {
+    { assets::make_asset_manifest_integrity_report(manifest, resolver) } ->
+        std::same_as<assets::asset_manifest_integrity_report>;
+});
+
 static_assert(requires(assets::asset_manifest_missing_root_report report) {
     { report.entry_id } -> std::same_as<std::string&>;
     { report.root_id } -> std::same_as<std::string&>;

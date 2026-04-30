@@ -452,6 +452,128 @@ inline std::string fake_image_texture_eviction_reason_name(fake_image_texture_ev
     return "unknown";
 }
 
+enum class fake_image_texture_placeholder_reason {
+    none,
+    resolve_failed,
+    source_load_failed,
+    decode_failed,
+    upload_failed,
+};
+
+inline std::string fake_image_texture_placeholder_reason_name(
+    fake_image_texture_placeholder_reason reason)
+{
+    switch (reason) {
+    case fake_image_texture_placeholder_reason::none:
+        return "none";
+    case fake_image_texture_placeholder_reason::resolve_failed:
+        return "resolve_failed";
+    case fake_image_texture_placeholder_reason::source_load_failed:
+        return "source_load_failed";
+    case fake_image_texture_placeholder_reason::decode_failed:
+        return "decode_failed";
+    case fake_image_texture_placeholder_reason::upload_failed:
+        return "upload_failed";
+    }
+
+    return "unknown";
+}
+
+struct fake_image_texture_placeholder_policy {
+    bool enabled = false;
+    std::size_t width = 2;
+    std::size_t height = 2;
+    render_image_pixel_format pixel_format = render_image_pixel_format::rgba8_srgb;
+    std::string source_key_prefix = "placeholder://image/";
+};
+
+inline std::string fake_image_texture_placeholder_source_fragment(
+    std::string_view source_key)
+{
+    if (source_key.empty()) {
+        return "empty";
+    }
+
+    std::string fragment;
+    fragment.reserve(source_key.size());
+    for (const char value : source_key) {
+        fragment.push_back(
+            std::iscntrl(static_cast<unsigned char>(value)) != 0 ? '_' : value);
+    }
+    return fragment;
+}
+
+inline render_image_cache_key make_fake_image_texture_placeholder_source_key(
+    const fake_image_texture_placeholder_policy& policy,
+    fake_image_texture_placeholder_reason reason,
+    const render_image_cache_key& source_key)
+{
+    return policy.source_key_prefix + fake_image_texture_placeholder_reason_name(reason)
+        + "/" + fake_image_texture_placeholder_source_fragment(source_key);
+}
+
+inline render_image_texture_key make_fake_image_texture_placeholder_key(
+    const fake_image_texture_placeholder_policy& policy,
+    fake_image_texture_placeholder_reason reason,
+    const render_image_texture_key& requested_key)
+{
+    return render_image_texture_key{
+        .source_key = make_fake_image_texture_placeholder_source_key(
+            policy,
+            reason,
+            requested_key.source_key),
+        .sampler = requested_key.sampler,
+    };
+}
+
+inline bool is_fake_image_texture_placeholder_key(const render_image_texture_key& key)
+{
+    return key.source_key.starts_with("placeholder://image/");
+}
+
+inline render_decoded_image make_fake_image_texture_placeholder_decoded_image(
+    const fake_image_texture_placeholder_policy& policy)
+{
+    render_decoded_image image{
+        .width = policy.width,
+        .height = policy.height,
+        .pixel_format = policy.pixel_format,
+        .pixels = {},
+    };
+    const std::size_t byte_count = expected_render_decoded_image_byte_count(image);
+    if (byte_count == 0) {
+        return {};
+    }
+
+    image.pixels.resize(byte_count);
+    for (std::size_t pixel = 0; pixel < policy.width * policy.height; ++pixel) {
+        const std::size_t offset = pixel * 4;
+        const bool bright = pixel % 2 == 0;
+        image.pixels[offset] = bright ? std::byte{0xff} : std::byte{0x40};
+        image.pixels[offset + 1] = std::byte{0x00};
+        image.pixels[offset + 2] = bright ? std::byte{0xff} : std::byte{0x40};
+        image.pixels[offset + 3] = std::byte{0xff};
+    }
+    return image;
+}
+
+struct fake_image_texture_placeholder_snapshot {
+    std::size_t sequence = 0;
+    fake_image_texture_placeholder_reason reason = fake_image_texture_placeholder_reason::none;
+    render_image_texture_key requested_key;
+    render_image_texture_key placeholder_key;
+    render_image_sampler_policy sampler;
+    render_image_texture_handle texture;
+    std::uint64_t upload_generation_id = 0;
+    bool cache_hit = false;
+    std::size_t width = 0;
+    std::size_t height = 0;
+    std::size_t pixel_count = 0;
+    std::size_t pixel_byte_count = 0;
+    std::size_t decoded_byte_count = 0;
+    std::string diagnostic;
+};
+
 struct fake_image_texture_cache_entry_snapshot {
     render_image_texture_key key;
     render_image_texture_key_diagnostic key_diagnostic;
@@ -467,6 +589,10 @@ struct fake_image_texture_cache_entry_snapshot {
     std::size_t pixel_byte_count = 0;
     std::size_t decoded_byte_count = 0;
     fake_image_texture_residency residency = fake_image_texture_residency::evictable;
+    bool placeholder_texture = false;
+    fake_image_texture_placeholder_reason placeholder_reason = fake_image_texture_placeholder_reason::none;
+    render_image_texture_key requested_key;
+    std::string placeholder_diagnostic;
 };
 
 struct fake_image_texture_eviction_snapshot {
@@ -552,6 +678,13 @@ struct fake_image_texture_cache_snapshot {
     std::vector<fake_image_texture_eviction_snapshot> evictions;
     std::size_t residency_transition_count = 0;
     std::vector<fake_image_texture_residency_transition_snapshot> residency_transitions;
+    bool placeholder_policy_enabled = false;
+    fake_image_texture_placeholder_policy placeholder_policy;
+    std::size_t placeholder_policy_texture_count = 0;
+    std::size_t placeholder_policy_request_count = 0;
+    std::size_t placeholder_policy_cache_hit_count = 0;
+    std::size_t placeholder_policy_upload_count = 0;
+    std::vector<fake_image_texture_placeholder_snapshot> placeholder_snapshots;
 };
 
 struct render_image_texture_upload_request {
@@ -1090,6 +1223,12 @@ public:
         }
 
         if (request.source.kind == render_image_source_kind::unsupported) {
+            if (placeholder_texture_policy_.enabled) {
+                return acquire_placeholder_texture(
+                    request,
+                    fake_image_texture_placeholder_reason::resolve_failed,
+                    "image source kind is unsupported");
+            }
             return render_image_texture_result{
                 .status = render_image_texture_status::missing_source,
                 .key = key,
@@ -1100,6 +1239,12 @@ public:
         }
 
         if (request.source.is_remote()) {
+            if (placeholder_texture_policy_.enabled) {
+                return acquire_placeholder_texture(
+                    request,
+                    fake_image_texture_placeholder_reason::source_load_failed,
+                    "fake image texture cache does not fetch remote images");
+            }
             return render_image_texture_result{
                 .status = render_image_texture_status::missing_source,
                 .key = key,
@@ -1139,6 +1284,12 @@ public:
             .encoded_bytes = placeholder_encoded_bytes_for(key.source_key),
         };
         if (!decoder_.supports(decode_request)) {
+            if (placeholder_texture_policy_.enabled) {
+                return acquire_placeholder_texture(
+                    request,
+                    fake_image_texture_placeholder_reason::decode_failed,
+                    "image decoder does not support source");
+            }
             return render_image_texture_result{
                 .status = render_image_texture_status::decode_failed,
                 .key = key,
@@ -1150,6 +1301,12 @@ public:
 
         const render_image_decode_result decoded = decoder_.decode(decode_request);
         if (!decoded.ok()) {
+            if (placeholder_texture_policy_.enabled) {
+                return acquire_placeholder_texture(
+                    request,
+                    fake_image_texture_placeholder_reason::decode_failed,
+                    decoded.diagnostic);
+            }
             return render_image_texture_result{
                 .status = render_image_texture_status::decode_failed,
                 .key = key,
@@ -1162,6 +1319,12 @@ public:
         }
 
         if (decoded.image.empty()) {
+            if (placeholder_texture_policy_.enabled) {
+                return acquire_placeholder_texture(
+                    request,
+                    fake_image_texture_placeholder_reason::upload_failed,
+                    "decoded image is empty");
+            }
             return render_image_texture_result{
                 .status = render_image_texture_status::upload_failed,
                 .key = key,
@@ -1174,6 +1337,12 @@ public:
         }
 
         if (!has_valid_render_decoded_image_payload(decoded.image)) {
+            if (placeholder_texture_policy_.enabled) {
+                return acquire_placeholder_texture(
+                    request,
+                    fake_image_texture_placeholder_reason::upload_failed,
+                    "decoded image pixel payload size does not match dimensions and format");
+            }
             return render_image_texture_result{
                 .status = render_image_texture_status::upload_failed,
                 .key = key,
@@ -1193,6 +1362,12 @@ public:
             .image = decoded.image,
         });
         if (!uploaded.ok()) {
+            if (placeholder_texture_policy_.enabled) {
+                return acquire_placeholder_texture(
+                    request,
+                    fake_image_texture_placeholder_reason::upload_failed,
+                    uploaded.diagnostic);
+            }
             return render_image_texture_result{
                 .status = render_image_texture_status::upload_failed,
                 .key = key,
@@ -1257,6 +1432,16 @@ public:
         std::vector<std::byte> encoded_bytes)
     {
         source_placeholder_encoded_bytes_.insert_or_assign(std::move(source_key), std::move(encoded_bytes));
+    }
+
+    void set_placeholder_texture_policy(fake_image_texture_placeholder_policy policy)
+    {
+        placeholder_texture_policy_ = std::move(policy);
+    }
+
+    const fake_image_texture_placeholder_policy& placeholder_texture_policy() const
+    {
+        return placeholder_texture_policy_;
     }
 
     void set_max_cached_pixel_count(std::size_t max_cached_pixel_count)
@@ -1361,6 +1546,13 @@ public:
             .evictions = eviction_snapshots_,
             .residency_transition_count = residency_transition_snapshots_.size(),
             .residency_transitions = residency_transition_snapshots_,
+            .placeholder_policy_enabled = placeholder_texture_policy_.enabled,
+            .placeholder_policy = placeholder_texture_policy_,
+            .placeholder_policy_texture_count = 0,
+            .placeholder_policy_request_count = placeholder_policy_request_count_,
+            .placeholder_policy_cache_hit_count = placeholder_policy_cache_hit_count_,
+            .placeholder_policy_upload_count = placeholder_policy_upload_count_,
+            .placeholder_snapshots = placeholder_snapshots_,
         };
         snapshot.entries.reserve(textures_.size());
 
@@ -1371,6 +1563,9 @@ public:
             }
             if (entry.upload_readiness.placeholder_fallback) {
                 ++snapshot.placeholder_fallback_texture_count;
+            }
+            if (entry.placeholder_texture) {
+                ++snapshot.placeholder_policy_texture_count;
             }
             if (entry.residency == fake_image_texture_residency::pinned) {
                 ++snapshot.pinned_texture_count;
@@ -1394,6 +1589,10 @@ public:
                 .pixel_byte_count = entry.pixel_byte_count,
                 .decoded_byte_count = entry.decoded_byte_count,
                 .residency = entry.residency,
+                .placeholder_texture = entry.placeholder_texture,
+                .placeholder_reason = entry.placeholder_reason,
+                .requested_key = entry.requested_key,
+                .placeholder_diagnostic = entry.placeholder_diagnostic,
             });
         }
 
@@ -1404,6 +1603,13 @@ public:
     {
         for (auto texture = textures_.begin(); texture != textures_.end();) {
             if (texture->first.source_key == source_key) {
+                texture = erase_cached_texture(
+                    texture,
+                    fake_image_texture_eviction_reason::source_invalidation);
+                continue;
+            }
+            if (texture->second.placeholder_texture
+                && texture->second.requested_key.source_key == source_key) {
                 texture = erase_cached_texture(
                     texture,
                     fake_image_texture_eviction_reason::source_invalidation);
@@ -1437,6 +1643,10 @@ private:
         std::size_t last_used_sequence = 0;
         std::size_t access_count = 0;
         fake_image_texture_residency residency = fake_image_texture_residency::evictable;
+        bool placeholder_texture = false;
+        fake_image_texture_placeholder_reason placeholder_reason = fake_image_texture_placeholder_reason::none;
+        render_image_texture_key requested_key;
+        std::string placeholder_diagnostic;
     };
 
     const std::vector<std::byte>& placeholder_encoded_bytes_for(const render_image_cache_key& source_key) const
@@ -1446,6 +1656,231 @@ private:
             return source_bytes->second;
         }
         return placeholder_encoded_bytes_;
+    }
+
+    static std::string placeholder_texture_diagnostic(
+        fake_image_texture_placeholder_reason reason,
+        const std::string& cause)
+    {
+        std::string diagnostic = "using deterministic placeholder texture for "
+            + fake_image_texture_placeholder_reason_name(reason);
+        if (!cause.empty()) {
+            diagnostic += ": " + cause;
+        }
+        return diagnostic;
+    }
+
+    static render_image_decode_metadata make_placeholder_decode_metadata(
+        const render_image_texture_key& placeholder_key,
+        fake_image_texture_placeholder_reason reason,
+        const render_decoded_image& image)
+    {
+        render_image_decode_request request{
+            .source = render_resolved_image_source{
+                .original_uri = placeholder_key.source_key,
+                .normalized_uri = placeholder_key.source_key,
+                .kind = render_image_source_kind::asset_uri,
+            },
+            .encoded_bytes = {},
+        };
+        render_image_decode_metadata metadata = make_render_image_decode_metadata(
+            "fake_image_texture_placeholder_policy",
+            request,
+            image);
+        metadata.format_detection.placeholder_fallback = true;
+        metadata.format_detection.diagnostic = "placeholder texture policy synthesized "
+            + fake_image_texture_placeholder_reason_name(reason)
+            + " pixels";
+        return metadata;
+    }
+
+    void record_placeholder_snapshot(
+        fake_image_texture_placeholder_reason reason,
+        const render_image_texture_key& requested_key,
+        const render_image_texture_key& placeholder_key,
+        const render_image_sampler_policy& sampler,
+        render_image_texture_handle texture,
+        std::uint64_t upload_generation_id,
+        bool cache_hit,
+        std::size_t pixel_count,
+        std::size_t pixel_byte_count,
+        std::size_t decoded_byte_count,
+        std::string diagnostic)
+    {
+        placeholder_snapshots_.push_back(fake_image_texture_placeholder_snapshot{
+            .sequence = next_placeholder_sequence_++,
+            .reason = reason,
+            .requested_key = requested_key,
+            .placeholder_key = placeholder_key,
+            .sampler = sampler,
+            .texture = texture,
+            .upload_generation_id = upload_generation_id,
+            .cache_hit = cache_hit,
+            .width = texture.width,
+            .height = texture.height,
+            .pixel_count = pixel_count,
+            .pixel_byte_count = pixel_byte_count,
+            .decoded_byte_count = decoded_byte_count,
+            .diagnostic = std::move(diagnostic),
+        });
+    }
+
+    render_image_texture_result acquire_placeholder_texture(
+        const render_image_texture_request& request,
+        fake_image_texture_placeholder_reason reason,
+        std::string cause)
+    {
+        ++placeholder_policy_request_count_;
+
+        const render_image_texture_key requested_key = make_render_image_texture_key(request);
+        const render_image_texture_key placeholder_key = make_fake_image_texture_placeholder_key(
+            placeholder_texture_policy_,
+            reason,
+            requested_key);
+        const std::string diagnostic = placeholder_texture_diagnostic(reason, cause);
+
+        const auto existing = textures_.find(placeholder_key);
+        if (existing != textures_.end()) {
+            existing->second.last_used_sequence = next_access_sequence_++;
+            ++existing->second.access_count;
+            ++placeholder_policy_cache_hit_count_;
+            record_placeholder_snapshot(
+                reason,
+                requested_key,
+                placeholder_key,
+                request.sampler,
+                existing->second.texture,
+                existing->second.upload_generation_id,
+                true,
+                existing->second.pixel_count,
+                existing->second.pixel_byte_count,
+                existing->second.decoded_byte_count,
+                diagnostic);
+            return render_image_texture_result{
+                .status = render_image_texture_status::ready,
+                .key = placeholder_key,
+                .texture = existing->second.texture,
+                .cache_hit = true,
+                .diagnostic = diagnostic,
+                .decode_metadata = existing->second.decode_metadata,
+                .decoder_diagnostics = existing->second.decoder_diagnostics,
+            };
+        }
+
+        const render_decoded_image placeholder_image =
+            make_fake_image_texture_placeholder_decoded_image(placeholder_texture_policy_);
+        const render_image_decode_metadata metadata = make_placeholder_decode_metadata(
+            placeholder_key,
+            reason,
+            placeholder_image);
+        const std::vector<render_image_decoder_diagnostic> decoder_diagnostics{
+            render_image_decoder_diagnostic{
+                .decoder_id = metadata.decoder_id,
+                .supported = true,
+                .status = render_image_decode_status::decoded,
+                .diagnostic = diagnostic,
+            },
+        };
+
+        if (!has_valid_render_decoded_image_payload(placeholder_image)) {
+            record_placeholder_snapshot(
+                reason,
+                requested_key,
+                placeholder_key,
+                request.sampler,
+                {},
+                0,
+                false,
+                render_image_checked_pixel_count(placeholder_image),
+                expected_render_decoded_image_byte_count(placeholder_image),
+                placeholder_image.pixels.size(),
+                "placeholder texture policy produced an invalid placeholder image");
+            return render_image_texture_result{
+                .status = render_image_texture_status::upload_failed,
+                .key = placeholder_key,
+                .texture = {},
+                .cache_hit = false,
+                .diagnostic = "placeholder texture policy produced an invalid placeholder image",
+                .decode_metadata = metadata,
+                .decoder_diagnostics = decoder_diagnostics,
+            };
+        }
+
+        const render_image_upload_readiness_snapshot upload_readiness =
+            make_render_image_upload_readiness_snapshot(placeholder_key, metadata, placeholder_image);
+        const render_image_texture_upload_result uploaded = uploader_->upload(render_image_texture_upload_request{
+            .key = placeholder_key,
+            .sampler = request.sampler,
+            .image = placeholder_image,
+        });
+        if (!uploaded.ok()) {
+            record_placeholder_snapshot(
+                reason,
+                requested_key,
+                placeholder_key,
+                request.sampler,
+                uploaded.texture,
+                uploaded.generation_id,
+                false,
+                uploaded.pixel_count,
+                uploaded.pixel_byte_count,
+                uploaded.decoded_byte_count,
+                uploaded.diagnostic);
+            return render_image_texture_result{
+                .status = render_image_texture_status::upload_failed,
+                .key = placeholder_key,
+                .texture = {},
+                .cache_hit = false,
+                .diagnostic = uploaded.diagnostic,
+                .decode_metadata = metadata,
+                .decoder_diagnostics = decoder_diagnostics,
+            };
+        }
+
+        ++placeholder_policy_upload_count_;
+        const std::size_t access_sequence = next_access_sequence_++;
+        cache_uploaded_texture(
+            placeholder_key,
+            fake_cached_image_texture{
+                .texture = uploaded.texture,
+                .decode_metadata = metadata,
+                .decoder_diagnostics = decoder_diagnostics,
+                .upload_readiness = upload_readiness,
+                .upload_generation_id = uploaded.generation_id,
+                .pixel_count = uploaded.pixel_count,
+                .pixel_byte_count = uploaded.pixel_byte_count,
+                .decoded_byte_count = uploaded.decoded_byte_count,
+                .first_used_sequence = access_sequence,
+                .last_used_sequence = access_sequence,
+                .access_count = 1,
+                .residency = configured_residency_for(placeholder_key),
+                .placeholder_texture = true,
+                .placeholder_reason = reason,
+                .requested_key = requested_key,
+                .placeholder_diagnostic = diagnostic,
+            });
+        record_placeholder_snapshot(
+            reason,
+            requested_key,
+            placeholder_key,
+            request.sampler,
+            uploaded.texture,
+            uploaded.generation_id,
+            false,
+            uploaded.pixel_count,
+            uploaded.pixel_byte_count,
+            uploaded.decoded_byte_count,
+            diagnostic);
+
+        return render_image_texture_result{
+            .status = render_image_texture_status::ready,
+            .key = placeholder_key,
+            .texture = uploaded.texture,
+            .cache_hit = false,
+            .diagnostic = diagnostic,
+            .decode_metadata = metadata,
+            .decoder_diagnostics = decoder_diagnostics,
+        };
     }
 
     static std::size_t resident_lifetime_sequence_count(const fake_cached_image_texture& entry)
@@ -1652,12 +2087,18 @@ private:
     std::size_t over_capacity_texture_count_ = 0;
     std::size_t next_eviction_sequence_ = 1;
     std::size_t next_residency_transition_sequence_ = 1;
+    std::size_t next_placeholder_sequence_ = 1;
+    std::size_t placeholder_policy_request_count_ = 0;
+    std::size_t placeholder_policy_cache_hit_count_ = 0;
+    std::size_t placeholder_policy_upload_count_ = 0;
+    fake_image_texture_placeholder_policy placeholder_texture_policy_;
     std::vector<std::byte> placeholder_encoded_bytes_ = {std::byte{0x01}};
     std::map<render_image_cache_key, std::vector<std::byte>> source_placeholder_encoded_bytes_;
     std::map<render_image_texture_key, fake_image_texture_residency, render_image_texture_key_less> texture_residency_;
     std::map<render_image_texture_key, fake_cached_image_texture, render_image_texture_key_less> textures_;
     std::vector<fake_image_texture_eviction_snapshot> eviction_snapshots_;
     std::vector<fake_image_texture_residency_transition_snapshot> residency_transition_snapshots_;
+    std::vector<fake_image_texture_placeholder_snapshot> placeholder_snapshots_;
 };
 
 } // namespace quiz_vulkan::render

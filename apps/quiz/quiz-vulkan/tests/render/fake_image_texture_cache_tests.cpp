@@ -7,6 +7,7 @@
 
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <functional>
 #include <string>
@@ -217,6 +218,37 @@ public:
 
     mutable int support_request_count = 0;
     mutable int decode_request_count = 0;
+};
+
+class source_upload_failure_then_placeholder_uploader final
+    : public quiz_vulkan::render::image_texture_uploader_interface {
+public:
+    quiz_vulkan::render::render_image_texture_upload_result upload(
+        const quiz_vulkan::render::render_image_texture_upload_request& request) override
+    {
+        ++upload_request_count;
+        if (quiz_vulkan::render::is_fake_image_texture_placeholder_key(request.key)) {
+            return placeholder_uploader.upload(request);
+        }
+
+        ++rejected_source_upload_count;
+        return quiz_vulkan::render::render_image_texture_upload_result{
+            .status = quiz_vulkan::render::render_image_texture_upload_status::invalid_image,
+            .generation_id = 100 + static_cast<std::uint64_t>(rejected_source_upload_count),
+            .key = request.key,
+            .sampler = request.sampler,
+            .texture = {},
+            .pixel_count = quiz_vulkan::render::render_image_checked_pixel_count(request.image),
+            .pixel_byte_count = quiz_vulkan::render::expected_render_decoded_image_byte_count(request.image),
+            .decoded_byte_count = request.image.pixels.size(),
+            .staging_byte_count = 0,
+            .diagnostic = "forced source texture upload failure",
+        };
+    }
+
+    int upload_request_count = 0;
+    int rejected_source_upload_count = 0;
+    quiz_vulkan::render::fake_image_texture_uploader placeholder_uploader;
 };
 
 const quiz_vulkan::render::fake_image_texture_cache_entry_snapshot* find_snapshot_entry(
@@ -1145,6 +1177,209 @@ void test_texture_cache_uses_injected_texture_uploader()
     require(snapshot.entries[0].sampler == request.sampler, "injected uploader snapshot records sampler");
     require(snapshot.entries[0].staging_byte_count == 4, "injected uploader snapshot records staging bytes");
     require(snapshot.entries[0].texture.id == first.texture.id, "injected uploader snapshot matches cache handle");
+}
+
+void test_texture_cache_placeholder_policy_reuses_decode_failure_texture()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/placeholder-decode.png"})
+                                                    .source;
+    render_image_sampler_policy sampler;
+    sampler.min_filter = render_image_filter::nearest;
+    sampler.wrap_u = render_image_wrap_mode::repeat;
+
+    fake_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    fake_image_texture_placeholder_policy policy{
+        .enabled = true,
+        .width = 3,
+        .height = 2,
+    };
+    cache.set_placeholder_texture_policy(policy);
+
+    const render_image_texture_request request{.source = source, .sampler = sampler};
+    const render_image_texture_key requested_key = make_render_image_texture_key(request);
+    const render_image_texture_key placeholder_key = make_fake_image_texture_placeholder_key(
+        policy,
+        fake_image_texture_placeholder_reason::decode_failed,
+        requested_key);
+
+    const render_image_texture_result first = cache.acquire_texture(request);
+    const render_image_texture_result second = cache.acquire_texture(request);
+    require(first.ok(), "enabled placeholder policy creates texture for decode failure");
+    require(second.ok(), "enabled placeholder policy reacquires decode failure texture");
+    require(!first.cache_hit, "first placeholder decode failure is a cache miss");
+    require(second.cache_hit, "second placeholder decode failure is a cache hit");
+    require(first.key == placeholder_key, "placeholder decode failure uses deterministic placeholder key");
+    require(second.key == placeholder_key, "placeholder decode failure reuses deterministic placeholder key");
+    require(is_fake_image_texture_placeholder_key(first.key), "placeholder decode failure key is identifiable");
+    require(first.key.sampler == sampler, "placeholder decode failure preserves sampler policy");
+    require(first.texture.width == 3, "placeholder decode failure uses configured width");
+    require(first.texture.height == 2, "placeholder decode failure uses configured height");
+    require(second.texture.id == first.texture.id, "placeholder decode failure cache hit reuses handle");
+    require(!first.diagnostic.empty(), "placeholder decode failure includes diagnostic");
+    require(decoder.support_requests.size() == 2, "decode failure still checks source support on retries");
+    require(decoder.decode_requests.empty(), "unsupported decode failure does not call decode");
+    require(uploader.upload_requests.size() == 1, "placeholder decode failure uploads once");
+    require(uploader.upload_requests[0].key == placeholder_key, "placeholder upload uses placeholder key");
+    require(uploader.upload_requests[0].sampler == sampler, "placeholder upload preserves sampler");
+    require(uploader.upload_requests[0].image.width == 3, "placeholder upload uses configured image width");
+    require(uploader.upload_requests[0].image.height == 2, "placeholder upload uses configured image height");
+
+    const fake_image_texture_cache_snapshot snapshot = cache.diagnostic_snapshot();
+    require(snapshot.placeholder_policy_enabled, "placeholder snapshot reports enabled policy");
+    require(snapshot.placeholder_policy.width == 3, "placeholder snapshot records policy width");
+    require(snapshot.placeholder_policy.height == 2, "placeholder snapshot records policy height");
+    require(snapshot.placeholder_policy_request_count == 2, "placeholder snapshot counts fallback requests");
+    require(snapshot.placeholder_policy_cache_hit_count == 1, "placeholder snapshot counts fallback cache hit");
+    require(snapshot.placeholder_policy_upload_count == 1, "placeholder snapshot counts placeholder upload");
+    require(snapshot.placeholder_policy_texture_count == 1, "placeholder snapshot counts resident placeholder texture");
+    require(snapshot.placeholder_fallback_texture_count == 1, "placeholder upload readiness reports fallback texture");
+    require(snapshot.cached_pixel_count == 6, "placeholder snapshot tracks configured pixel count");
+    require(snapshot.cached_pixel_byte_count == 24, "placeholder snapshot tracks configured pixel bytes");
+    require(snapshot.placeholder_snapshots.size() == 2, "placeholder snapshot records fallback attempts");
+    require(snapshot.placeholder_snapshots[0].sequence == 1, "first placeholder attempt has deterministic sequence");
+    require(!snapshot.placeholder_snapshots[0].cache_hit, "first placeholder snapshot records cache miss");
+    require(snapshot.placeholder_snapshots[1].cache_hit, "second placeholder snapshot records cache hit");
+    require(
+        snapshot.placeholder_snapshots[1].texture.id == first.texture.id,
+        "placeholder cache-hit snapshot records reused handle");
+
+    const fake_image_texture_cache_entry_snapshot* entry = find_snapshot_entry(
+        snapshot,
+        placeholder_key.source_key);
+    require(entry != nullptr, "placeholder texture appears in cache entries");
+    require(entry->placeholder_texture, "placeholder cache entry is marked as placeholder");
+    require(
+        entry->placeholder_reason == fake_image_texture_placeholder_reason::decode_failed,
+        "placeholder cache entry records decode failure reason");
+    require(entry->requested_key == requested_key, "placeholder cache entry records requested key");
+    require(entry->upload_readiness.placeholder_fallback, "placeholder cache entry records fallback readiness");
+    require(!entry->placeholder_diagnostic.empty(), "placeholder cache entry records diagnostic");
+}
+
+void test_texture_cache_placeholder_policy_covers_failure_reasons()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_image_texture_placeholder_policy policy{
+        .enabled = true,
+        .width = 2,
+        .height = 2,
+    };
+    const render_image_sampler_policy sampler;
+
+    fake_image_decoder unsupported_decoder;
+    fake_image_texture_cache unsupported_cache(unsupported_decoder);
+    unsupported_cache.set_placeholder_texture_policy(policy);
+    const render_resolved_image_source unsupported_source{
+        .original_uri = "zip://deck/card.fake",
+        .normalized_uri = "zip://deck/card.fake",
+        .kind = render_image_source_kind::unsupported,
+    };
+    const render_image_texture_result unsupported = unsupported_cache.acquire_texture(
+        render_image_texture_request{.source = unsupported_source, .sampler = sampler});
+    require(unsupported.ok(), "placeholder policy handles unsupported source kind");
+    require(
+        unsupported.key.source_key
+            == "placeholder://image/resolve_failed/zip://deck/card.fake",
+        "unsupported source uses resolve-failed placeholder key");
+    require(unsupported.texture.width == 2, "unsupported source placeholder uses policy width");
+    require(unsupported.texture.height == 2, "unsupported source placeholder uses policy height");
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source remote_source = resolver.resolve(
+        render_image_resolve_request{.uri = "https://example.test/missing.fake"})
+                                                       .source;
+    fake_image_decoder remote_decoder;
+    fake_image_texture_cache remote_cache(remote_decoder);
+    remote_cache.set_placeholder_texture_policy(policy);
+    const render_image_texture_result remote = remote_cache.acquire_texture(
+        render_image_texture_request{.source = remote_source, .sampler = sampler});
+    require(remote.ok(), "placeholder policy handles remote source failure");
+    require(
+        remote.key.source_key.starts_with("placeholder://image/source_load_failed/"),
+        "remote source uses source-load placeholder key");
+    require(remote.texture.width == 2, "remote placeholder uses policy width");
+    require(remote_decoder.support_requests.empty(), "remote placeholder does not fetch or decode");
+
+    const render_resolved_image_source malformed_source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/placeholder-malformed.fake"})
+                                                          .source;
+    malformed_payload_decoder malformed_decoder;
+    fake_image_texture_cache malformed_cache(malformed_decoder);
+    malformed_cache.set_placeholder_texture_policy(policy);
+    const render_image_texture_result malformed = malformed_cache.acquire_texture(
+        render_image_texture_request{.source = malformed_source, .sampler = sampler});
+    require(malformed.ok(), "placeholder policy handles invalid decoded payload");
+    require(
+        malformed.key.source_key.starts_with("placeholder://image/upload_failed/"),
+        "malformed payload uses upload-failed placeholder key");
+    require(malformed.texture.width == 2, "malformed payload placeholder uses policy width");
+    require(malformed_decoder.decode_request_count == 1, "malformed payload still decodes once");
+
+    const render_resolved_image_source upload_source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/placeholder-upload.fake"})
+                                                       .source;
+    fake_image_decoder upload_decoder;
+    source_upload_failure_then_placeholder_uploader upload_failure;
+    fake_image_texture_cache upload_cache(upload_decoder, upload_failure);
+    upload_cache.set_placeholder_texture_policy(policy);
+    const render_image_texture_result uploaded = upload_cache.acquire_texture(
+        render_image_texture_request{.source = upload_source, .sampler = sampler});
+    require(uploaded.ok(), "placeholder policy handles uploader failure");
+    require(
+        uploaded.key.source_key.starts_with("placeholder://image/upload_failed/"),
+        "uploader failure uses upload-failed placeholder key");
+    require(upload_failure.rejected_source_upload_count == 1, "source uploader failure is exercised");
+    require(upload_failure.upload_request_count == 2, "placeholder upload retries through uploader boundary");
+    require(
+        upload_failure.placeholder_uploader.upload_requests.size() == 1,
+        "placeholder texture upload is delegated once");
+
+    const fake_image_texture_cache_snapshot upload_snapshot = upload_cache.diagnostic_snapshot();
+    require(upload_snapshot.placeholder_policy_request_count == 1, "upload failure snapshot counts placeholder request");
+    require(upload_snapshot.placeholder_policy_upload_count == 1, "upload failure snapshot counts placeholder upload");
+    require(
+        upload_snapshot.placeholder_snapshots[0].reason == fake_image_texture_placeholder_reason::upload_failed,
+        "upload failure snapshot records upload-failed reason");
+}
+
+void test_texture_cache_placeholder_policy_disabled_preserves_failures()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    fake_image_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+
+    const render_resolved_image_source remote_source = resolver.resolve(
+        render_image_resolve_request{.uri = "https://example.test/disabled.fake"})
+                                                       .source;
+    const render_image_texture_result remote = cache.acquire_texture(
+        render_image_texture_request{.source = remote_source, .sampler = render_image_sampler_policy{}});
+    require(!remote.ok(), "disabled placeholder policy preserves remote failure");
+    require(remote.status == render_image_texture_status::missing_source, "remote failure status is unchanged");
+    require(!remote.texture.valid(), "disabled placeholder policy returns no remote texture");
+
+    const render_resolved_image_source decode_source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/disabled.png"})
+                                                       .source;
+    const render_image_texture_result decode = cache.acquire_texture(
+        render_image_texture_request{.source = decode_source, .sampler = render_image_sampler_policy{}});
+    require(!decode.ok(), "disabled placeholder policy preserves decode failure");
+    require(decode.status == render_image_texture_status::decode_failed, "decode failure status is unchanged");
+    require(!decode.texture.valid(), "disabled placeholder policy returns no decode texture");
+
+    const fake_image_texture_cache_snapshot snapshot = cache.diagnostic_snapshot();
+    require(!snapshot.placeholder_policy_enabled, "disabled placeholder snapshot reports disabled policy");
+    require(snapshot.placeholder_policy_request_count == 0, "disabled placeholder policy records no fallback requests");
+    require(snapshot.placeholder_policy_upload_count == 0, "disabled placeholder policy records no fallback uploads");
+    require(snapshot.placeholder_snapshots.empty(), "disabled placeholder policy records no fallback snapshots");
 }
 
 void test_texture_pipeline_resolves_loads_decodes_and_uploads_image_ref()
@@ -2684,6 +2919,9 @@ int main()
     test_texture_uploader_reports_retry_eligibility_and_backoff();
     test_texture_uploader_rejects_invalid_inputs();
     test_texture_cache_uses_injected_texture_uploader();
+    test_texture_cache_placeholder_policy_reuses_decode_failure_texture();
+    test_texture_cache_placeholder_policy_covers_failure_reasons();
+    test_texture_cache_placeholder_policy_disabled_preserves_failures();
     test_texture_pipeline_resolves_loads_decodes_and_uploads_image_ref();
     test_texture_pipeline_reports_source_load_failure();
     test_texture_pipeline_reports_decode_failure();

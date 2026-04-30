@@ -164,6 +164,9 @@ static_assert(requires(
     render::render_image_ref image_ref,
     render::fake_image_texture_residency texture_residency,
     render::fake_image_texture_eviction_reason eviction_reason,
+    render::fake_image_texture_placeholder_reason placeholder_reason,
+    render::fake_image_texture_placeholder_policy placeholder_policy,
+    render::fake_image_texture_placeholder_snapshot placeholder_snapshot,
     render::fake_image_texture_eviction_snapshot eviction_snapshot,
     render::fake_image_texture_cache_entry_snapshot cache_entry,
     render::fake_image_texture_cache_snapshot cache_snapshot,
@@ -413,6 +416,37 @@ static_assert(requires(
     { mutable_pipeline.invalidate_source(render::render_image_cache_key{}) } -> std::same_as<void>;
     { mutable_pipeline.invalidate_texture(render::render_image_texture_key{}) } -> std::same_as<void>;
     { render::fake_image_texture_eviction_reason_name(eviction_reason) } -> std::same_as<std::string>;
+    { render::fake_image_texture_placeholder_reason_name(placeholder_reason) } -> std::same_as<std::string>;
+    { render::fake_image_texture_placeholder_source_fragment(render::render_image_cache_key{}) }
+        -> std::same_as<std::string>;
+    { render::make_fake_image_texture_placeholder_source_key(
+        placeholder_policy,
+        placeholder_reason,
+        render::render_image_cache_key{}) } -> std::same_as<render::render_image_cache_key>;
+    { render::make_fake_image_texture_placeholder_key(placeholder_policy, placeholder_reason, texture_key) }
+        -> std::same_as<render::render_image_texture_key>;
+    { render::is_fake_image_texture_placeholder_key(texture_key) } -> std::same_as<bool>;
+    { render::make_fake_image_texture_placeholder_decoded_image(placeholder_policy) }
+        -> std::same_as<render::render_decoded_image>;
+    { placeholder_policy.enabled } -> std::same_as<bool&>;
+    { placeholder_policy.width } -> std::same_as<std::size_t&>;
+    { placeholder_policy.height } -> std::same_as<std::size_t&>;
+    { placeholder_policy.pixel_format } -> std::same_as<render::render_image_pixel_format&>;
+    { placeholder_policy.source_key_prefix } -> std::same_as<std::string&>;
+    { placeholder_snapshot.sequence } -> std::same_as<std::size_t&>;
+    { placeholder_snapshot.reason } -> std::same_as<render::fake_image_texture_placeholder_reason&>;
+    { placeholder_snapshot.requested_key } -> std::same_as<render::render_image_texture_key&>;
+    { placeholder_snapshot.placeholder_key } -> std::same_as<render::render_image_texture_key&>;
+    { placeholder_snapshot.sampler } -> std::same_as<render::render_image_sampler_policy&>;
+    { placeholder_snapshot.texture } -> std::same_as<render::render_image_texture_handle&>;
+    { placeholder_snapshot.upload_generation_id } -> std::same_as<std::uint64_t&>;
+    { placeholder_snapshot.cache_hit } -> std::same_as<bool&>;
+    { placeholder_snapshot.width } -> std::same_as<std::size_t&>;
+    { placeholder_snapshot.height } -> std::same_as<std::size_t&>;
+    { placeholder_snapshot.pixel_count } -> std::same_as<std::size_t&>;
+    { placeholder_snapshot.pixel_byte_count } -> std::same_as<std::size_t&>;
+    { placeholder_snapshot.decoded_byte_count } -> std::same_as<std::size_t&>;
+    { placeholder_snapshot.diagnostic } -> std::same_as<std::string&>;
     { cache_entry.key } -> std::same_as<render::render_image_texture_key&>;
     { cache_entry.key_diagnostic } -> std::same_as<render::render_image_texture_key_diagnostic&>;
     { cache_entry.sampler_policy } -> std::same_as<render::render_image_sampler_policy_diagnostic&>;
@@ -427,6 +461,10 @@ static_assert(requires(
     { cache_entry.pixel_byte_count } -> std::same_as<std::size_t&>;
     { cache_entry.decoded_byte_count } -> std::same_as<std::size_t&>;
     { cache_entry.residency } -> std::same_as<render::fake_image_texture_residency&>;
+    { cache_entry.placeholder_texture } -> std::same_as<bool&>;
+    { cache_entry.placeholder_reason } -> std::same_as<render::fake_image_texture_placeholder_reason&>;
+    { cache_entry.requested_key } -> std::same_as<render::render_image_texture_key&>;
+    { cache_entry.placeholder_diagnostic } -> std::same_as<std::string&>;
     { eviction_snapshot.sequence } -> std::same_as<std::size_t&>;
     { eviction_snapshot.reason } -> std::same_as<render::fake_image_texture_eviction_reason&>;
     { eviction_snapshot.key } -> std::same_as<render::render_image_texture_key&>;
@@ -462,10 +500,20 @@ static_assert(requires(
     { cache_snapshot.capacity_exceeded } -> std::same_as<bool&>;
     { cache_snapshot.entries } -> std::same_as<std::vector<render::fake_image_texture_cache_entry_snapshot>&>;
     { cache_snapshot.evictions } -> std::same_as<std::vector<render::fake_image_texture_eviction_snapshot>&>;
+    { cache_snapshot.placeholder_policy_enabled } -> std::same_as<bool&>;
+    { cache_snapshot.placeholder_policy } -> std::same_as<render::fake_image_texture_placeholder_policy&>;
+    { cache_snapshot.placeholder_policy_texture_count } -> std::same_as<std::size_t&>;
+    { cache_snapshot.placeholder_policy_request_count } -> std::same_as<std::size_t&>;
+    { cache_snapshot.placeholder_policy_cache_hit_count } -> std::same_as<std::size_t&>;
+    { cache_snapshot.placeholder_policy_upload_count } -> std::same_as<std::size_t&>;
+    { cache_snapshot.placeholder_snapshots }
+        -> std::same_as<std::vector<render::fake_image_texture_placeholder_snapshot>&>;
     { cache.diagnostic_snapshot() } -> std::same_as<render::fake_image_texture_cache_snapshot>;
+    { cache.placeholder_texture_policy() } -> std::same_as<const render::fake_image_texture_placeholder_policy&>;
     { cache.eviction_count() } -> std::same_as<std::size_t>;
     { cache.over_capacity_texture_count() } -> std::same_as<std::size_t>;
     { cache.is_texture_pinned(render::render_image_texture_key{}) } -> std::same_as<bool>;
+    { mutable_cache.set_placeholder_texture_policy(placeholder_policy) } -> std::same_as<void>;
     { mutable_cache.set_texture_residency(render::render_image_texture_key{}, texture_residency) }
         -> std::same_as<void>;
     { mutable_cache.pin_texture(render::render_image_texture_key{}) } -> std::same_as<void>;

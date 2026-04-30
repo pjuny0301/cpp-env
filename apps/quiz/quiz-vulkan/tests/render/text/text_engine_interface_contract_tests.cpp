@@ -47,6 +47,16 @@ static_assert(requires(render::font_resolver_result result) {
     { result.used_fallback() } -> std::same_as<bool>;
 });
 
+static_assert(requires(
+    const render::font_face_catalog& catalog,
+    render::font_face_id face_id,
+    const render::render_text_style& style,
+    std::uint32_t code_point) {
+    { catalog.find_by_id(face_id) } -> std::same_as<const render::font_face_descriptor*>;
+    { catalog.resolve_for_codepoint(style, code_point) } -> std::same_as<render::font_face_resolution>;
+    { catalog.resolve_for_face_and_codepoint(face_id, code_point) } -> std::same_as<render::font_face_resolution>;
+});
+
 static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.font_fallbacks } -> std::same_as<std::vector<render::fake_text_engine_font_fallback>&>;
     { diagnostics.glyph_clusters } -> std::same_as<std::vector<render::render_text_glyph_cluster>&>;
@@ -58,10 +68,17 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.utf8_clusters } -> std::same_as<std::vector<render::render_text_utf8_cluster_snapshot>&>;
     { diagnostics.font_face_selections }
         -> std::same_as<std::vector<render::render_text_font_face_selection_snapshot>&>;
+    { diagnostics.glyph_font_resolutions }
+        -> std::same_as<std::vector<render::render_text_glyph_font_resolution_snapshot>&>;
+    { diagnostics.font_resolution_policy } -> std::same_as<render::render_text_font_resolution_policy_snapshot&>;
     { diagnostics.line_breaks } -> std::same_as<std::vector<render::render_text_line_break_snapshot>&>;
     { diagnostics.line_metrics } -> std::same_as<std::vector<render::render_text_line_metrics_snapshot>&>;
     { diagnostics.line_layout_metrics } -> std::same_as<render::render_text_line_layout_metrics_snapshot&>;
     { diagnostics.line_break_policy } -> std::same_as<render::render_text_line_break_policy_snapshot&>;
+    { diagnostics.glyph_cache_readiness }
+        -> std::same_as<std::vector<render::render_text_glyph_cache_readiness_snapshot>&>;
+    { diagnostics.glyph_cache_readiness_policy }
+        -> std::same_as<render::render_text_glyph_cache_readiness_policy_snapshot&>;
     { diagnostics.glyph_cache_faces } -> std::same_as<std::vector<render::render_text_glyph_cache_face_snapshot>&>;
     { diagnostics.glyph_cache_policy } -> std::same_as<render::render_text_glyph_cache_policy_snapshot&>;
     { diagnostics.used_font_fallback() } -> std::same_as<bool>;
@@ -71,10 +88,16 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.has_glyph_atlas_placements() } -> std::same_as<bool>;
     { diagnostics.has_utf8_clusters() } -> std::same_as<bool>;
     { diagnostics.has_font_face_selections() } -> std::same_as<bool>;
+    { diagnostics.has_glyph_font_resolutions() } -> std::same_as<bool>;
+    { diagnostics.has_glyph_cache_readiness() } -> std::same_as<bool>;
     { diagnostics.has_line_breaks() } -> std::same_as<bool>;
     { diagnostics.has_line_metrics() } -> std::same_as<bool>;
     { diagnostics.has_line_break_policy() } -> std::same_as<bool>;
     { diagnostics.has_glyph_cache_faces() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::fake_text_engine& engine, render::font_face_descriptor descriptor) {
+    { engine.add_font_face(descriptor) } -> std::same_as<const render::font_face_descriptor&>;
 });
 
 static_assert(requires(render::render_text_glyph_cluster cluster) {
@@ -153,6 +176,31 @@ static_assert(requires(render::render_text_font_face_selection_snapshot selectio
     { selection.resolved_face_id } -> std::same_as<render::font_face_id&>;
     { selection.used_family_fallback } -> std::same_as<bool&>;
     { selection.used_style_fallback } -> std::same_as<bool&>;
+});
+
+static_assert(requires(render::render_text_glyph_font_resolution_snapshot glyph) {
+    { glyph.run_index } -> std::same_as<std::size_t&>;
+    { glyph.byte_offset } -> std::same_as<std::size_t&>;
+    { glyph.byte_count } -> std::same_as<std::size_t&>;
+    { glyph.code_point } -> std::same_as<std::uint32_t&>;
+    { glyph.requested_face_id } -> std::same_as<render::font_face_id&>;
+    { glyph.resolved_face_id } -> std::same_as<render::font_face_id&>;
+    { glyph.used_codepoint_fallback } -> std::same_as<bool&>;
+    { glyph.glyph_supported } -> std::same_as<bool&>;
+    { glyph.cacheable } -> std::same_as<bool&>;
+});
+
+static_assert(requires(render::render_text_font_resolution_policy_snapshot policy) {
+    { policy.run_request_count } -> std::same_as<std::size_t&>;
+    { policy.exact_face_match_count } -> std::same_as<std::size_t&>;
+    { policy.family_fallback_count } -> std::same_as<std::size_t&>;
+    { policy.style_fallback_count } -> std::same_as<std::size_t&>;
+    { policy.glyph_request_count } -> std::same_as<std::size_t&>;
+    { policy.glyph_supported_count } -> std::same_as<std::size_t&>;
+    { policy.codepoint_fallback_count } -> std::same_as<std::size_t&>;
+    { policy.missing_glyph_count } -> std::same_as<std::size_t&>;
+    { policy.cacheable_glyph_count } -> std::same_as<std::size_t&>;
+    { policy.unique_resolved_face_count } -> std::same_as<std::size_t&>;
 });
 
 static_assert(requires(render::render_text_line_break_snapshot line_break) {
@@ -239,6 +287,36 @@ static_assert(requires(render::render_text_glyph_cache_policy_snapshot policy) {
     { policy.atlas_allocation_count } -> std::same_as<std::size_t&>;
     { policy.atlas_page_reuse_count } -> std::same_as<std::size_t&>;
     { policy.atlas_page_create_count } -> std::same_as<std::size_t&>;
+});
+
+static_assert(requires(render::render_text_glyph_cache_readiness_snapshot readiness) {
+    { readiness.cluster_index } -> std::same_as<std::size_t&>;
+    { readiness.run_index } -> std::same_as<std::size_t&>;
+    { readiness.byte_offset } -> std::same_as<std::size_t&>;
+    { readiness.byte_count } -> std::same_as<std::size_t&>;
+    { readiness.glyph_id } -> std::same_as<std::uint32_t&>;
+    { readiness.requested_face_id } -> std::same_as<render::font_face_id&>;
+    { readiness.resolved_face_id } -> std::same_as<render::font_face_id&>;
+    { readiness.cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { readiness.atlas_width } -> std::same_as<std::size_t&>;
+    { readiness.atlas_height } -> std::same_as<std::size_t&>;
+    { readiness.estimated_rgba_bytes } -> std::same_as<std::size_t&>;
+    { readiness.glyph_supported } -> std::same_as<bool&>;
+    { readiness.used_codepoint_fallback } -> std::same_as<bool&>;
+    { readiness.cacheable } -> std::same_as<bool&>;
+    { readiness.has_atlas_slot } -> std::same_as<bool&>;
+});
+
+static_assert(requires(render::render_text_glyph_cache_readiness_policy_snapshot policy) {
+    { policy.cluster_count } -> std::same_as<std::size_t&>;
+    { policy.cacheable_cluster_count } -> std::same_as<std::size_t&>;
+    { policy.uncacheable_cluster_count } -> std::same_as<std::size_t&>;
+    { policy.unsupported_cluster_count } -> std::same_as<std::size_t&>;
+    { policy.codepoint_fallback_cluster_count } -> std::same_as<std::size_t&>;
+    { policy.zero_advance_cluster_count } -> std::same_as<std::size_t&>;
+    { policy.unique_cache_key_count } -> std::same_as<std::size_t&>;
+    { policy.unique_face_count } -> std::same_as<std::size_t&>;
+    { policy.estimated_rgba_bytes } -> std::same_as<std::size_t&>;
 });
 
 static_assert(requires(render::render_draw_command command) {

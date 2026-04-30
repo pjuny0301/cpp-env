@@ -88,6 +88,31 @@ struct render_text_font_face_selection_snapshot {
     bool used_style_fallback = false;
 };
 
+struct render_text_glyph_font_resolution_snapshot {
+    std::size_t run_index = 0;
+    std::size_t byte_offset = 0;
+    std::size_t byte_count = 0;
+    std::uint32_t code_point = 0;
+    font_face_id requested_face_id = 0;
+    font_face_id resolved_face_id = 0;
+    bool used_codepoint_fallback = false;
+    bool glyph_supported = true;
+    bool cacheable = true;
+};
+
+struct render_text_font_resolution_policy_snapshot {
+    std::size_t run_request_count = 0;
+    std::size_t exact_face_match_count = 0;
+    std::size_t family_fallback_count = 0;
+    std::size_t style_fallback_count = 0;
+    std::size_t glyph_request_count = 0;
+    std::size_t glyph_supported_count = 0;
+    std::size_t codepoint_fallback_count = 0;
+    std::size_t missing_glyph_count = 0;
+    std::size_t cacheable_glyph_count = 0;
+    std::size_t unique_resolved_face_count = 0;
+};
+
 struct render_text_line_break_snapshot {
     std::size_t line_index = 0;
     std::size_t codepoint_offset = 0;
@@ -172,6 +197,36 @@ struct render_text_glyph_cache_policy_snapshot {
     std::size_t atlas_allocation_count = 0;
     std::size_t atlas_page_reuse_count = 0;
     std::size_t atlas_page_create_count = 0;
+};
+
+struct render_text_glyph_cache_readiness_snapshot {
+    std::size_t cluster_index = 0;
+    std::size_t run_index = 0;
+    std::size_t byte_offset = 0;
+    std::size_t byte_count = 0;
+    std::uint32_t glyph_id = 0;
+    font_face_id requested_face_id = 0;
+    font_face_id resolved_face_id = 0;
+    glyph_atlas_key cache_key;
+    std::size_t atlas_width = 0;
+    std::size_t atlas_height = 0;
+    std::size_t estimated_rgba_bytes = 0;
+    bool glyph_supported = true;
+    bool used_codepoint_fallback = false;
+    bool cacheable = true;
+    bool has_atlas_slot = false;
+};
+
+struct render_text_glyph_cache_readiness_policy_snapshot {
+    std::size_t cluster_count = 0;
+    std::size_t cacheable_cluster_count = 0;
+    std::size_t uncacheable_cluster_count = 0;
+    std::size_t unsupported_cluster_count = 0;
+    std::size_t codepoint_fallback_cluster_count = 0;
+    std::size_t zero_advance_cluster_count = 0;
+    std::size_t unique_cache_key_count = 0;
+    std::size_t unique_face_count = 0;
+    std::size_t estimated_rgba_bytes = 0;
 };
 
 } // namespace quiz_vulkan::render

@@ -40,10 +40,14 @@ struct fake_text_engine_diagnostics {
     render_text_glyph_atlas_metrics_snapshot glyph_atlas_metrics;
     std::vector<render_text_utf8_cluster_snapshot> utf8_clusters;
     std::vector<render_text_font_face_selection_snapshot> font_face_selections;
+    std::vector<render_text_glyph_font_resolution_snapshot> glyph_font_resolutions;
+    render_text_font_resolution_policy_snapshot font_resolution_policy;
     std::vector<render_text_line_break_snapshot> line_breaks;
     std::vector<render_text_line_metrics_snapshot> line_metrics;
     render_text_line_layout_metrics_snapshot line_layout_metrics;
     render_text_line_break_policy_snapshot line_break_policy;
+    std::vector<render_text_glyph_cache_readiness_snapshot> glyph_cache_readiness;
+    render_text_glyph_cache_readiness_policy_snapshot glyph_cache_readiness_policy;
     std::vector<render_text_glyph_cache_face_snapshot> glyph_cache_faces;
     render_text_glyph_cache_policy_snapshot glyph_cache_policy;
     std::size_t invalid_utf8_sequence_count = 0;
@@ -93,6 +97,16 @@ struct fake_text_engine_diagnostics {
         return !font_face_selections.empty();
     }
 
+    bool has_glyph_font_resolutions() const
+    {
+        return !glyph_font_resolutions.empty();
+    }
+
+    bool has_glyph_cache_readiness() const
+    {
+        return !glyph_cache_readiness.empty();
+    }
+
     bool has_line_breaks() const
     {
         return !line_breaks.empty();
@@ -134,6 +148,7 @@ public:
     std::vector<render_text_atlas_update> consume_atlas_updates() override;
 
     const fake_text_engine_diagnostics& last_diagnostics() const;
+    const font_face_descriptor& add_font_face(font_face_descriptor descriptor);
     std::vector<fake_text_engine_caret> caret_positions(const render_text_request& request) const;
     std::vector<render_rect> selection_rects(
         const render_text_request& request,

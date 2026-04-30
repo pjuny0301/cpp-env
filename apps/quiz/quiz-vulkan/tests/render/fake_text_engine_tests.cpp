@@ -437,6 +437,59 @@ void test_font_face_catalog_reports_codepoint_fallback_diagnostics()
     require(!unsupported.glyph_supported, "font coverage reports unsupported glyph");
 }
 
+void test_font_face_catalog_prefers_known_coverage_fallbacks()
+{
+    using namespace quiz_vulkan::render;
+
+    font_face_catalog catalog;
+    const font_face_id catchall_id = catalog.add_face(font_face_descriptor{
+        .family = "Fixture Catchall",
+        .source_uri = "fixture://fonts/catchall",
+        .version = "fixture-1",
+        .license = "test-fixture",
+        .weight = 400,
+        .italic = false,
+        .fallback = true,
+    }).id;
+    const font_face_id latin_id = catalog.add_face(font_face_descriptor{
+        .family = "Fixture Latin",
+        .source_uri = "fixture://fonts/latin",
+        .version = "fixture-1",
+        .license = "test-fixture",
+        .coverage = {font_codepoint_range{.first = 0x0020, .last = 0x007e}},
+        .weight = 400,
+        .italic = false,
+        .fallback = false,
+    }).id;
+    const font_face_id hangul_id = catalog.add_face(font_face_descriptor{
+        .family = "Fixture Hangul",
+        .source_uri = "fixture://fonts/hangul",
+        .version = "fixture-1",
+        .license = "test-fixture",
+        .coverage = {font_codepoint_range{.first = 0xac00, .last = 0xd7a3}},
+        .weight = 400,
+        .italic = false,
+        .fallback = true,
+    }).id;
+
+    const font_face_resolution latin = catalog.resolve_for_face_and_codepoint(latin_id, 'A');
+    require(latin.resolved_face != nullptr, "coverage fallback fixture resolves latin face");
+    require(latin.resolved_face->id == latin_id, "latin glyph stays on requested face");
+    require(!latin.used_fallback, "latin glyph does not use fallback");
+
+    const font_face_resolution hangul = catalog.resolve_for_face_and_codepoint(latin_id, 0xd55c);
+    require(hangul.resolved_face != nullptr, "coverage fallback fixture resolves Hangul face");
+    require(hangul.resolved_face->id == hangul_id, "known Hangul coverage beats catchall fallback");
+    require(hangul.used_fallback, "Hangul glyph reports fallback from Latin face");
+    require(hangul.glyph_supported, "Hangul glyph is supported by fallback face");
+
+    const font_face_resolution unknown = catalog.resolve_for_face_and_codepoint(latin_id, 0x0378);
+    require(unknown.resolved_face != nullptr, "unknown glyph falls through to catchall fallback");
+    require(unknown.resolved_face->id == catchall_id, "catchall fallback remains available after known coverage");
+    require(unknown.used_fallback, "unknown glyph reports fallback to catchall");
+    require(unknown.glyph_supported, "catchall fallback reports glyph support");
+}
+
 void test_deterministic_fake_font_resolver_reports_face_fallbacks()
 {
     using namespace quiz_vulkan::render;
@@ -833,6 +886,143 @@ void test_fake_font_resolver_records_family_and_style_fallbacks()
     };
     (void)engine.measure_text(request);
     require(!engine.last_diagnostics().used_font_fallback(), "clean font request clears font fallback diagnostics");
+}
+
+void test_fake_font_resolution_policy_tracks_codepoint_fallbacks_and_cache_readiness()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    const font_face_id latin_face_id = engine.add_font_face(font_face_descriptor{
+        .family = "Coverage Sans",
+        .source_uri = "fixture://fonts/coverage-sans-latin",
+        .version = "fixture-1",
+        .license = "test-fixture",
+        .coverage = {font_codepoint_range{.first = 0x0020, .last = 0x007e}},
+        .weight = 400,
+        .italic = false,
+        .fallback = false,
+    }).id;
+    const font_face_id hangul_face_id = engine.add_font_face(font_face_descriptor{
+        .family = "Coverage Hangul",
+        .source_uri = "fixture://fonts/coverage-hangul",
+        .version = "fixture-1",
+        .license = "test-fixture",
+        .coverage = {font_codepoint_range{.first = 0xac00, .last = 0xd7a3}},
+        .weight = 400,
+        .italic = false,
+        .fallback = true,
+    }).id;
+
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "A\xed\x95\x9c", .style_token = "coverage"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 200.0f, 0.0f};
+    request.style_catalog = make_style_catalog();
+    request.style_catalog.styles.push_back(render_text_style{
+        .id = "coverage",
+        .font_family = "Coverage Sans",
+        .font_size = 20.0f,
+        .line_height = 24.0f,
+        .letter_spacing = 0.0f,
+        .font_weight = 400,
+        .italic = false,
+    });
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    const render_text_layout layout = engine.layout_text(request);
+    require(layout.glyphs.size() == 2, "coverage fallback fixture emits two glyphs");
+    require(layout.glyphs[0].glyph_id == 'A', "coverage fallback keeps Latin glyph id");
+    require(layout.glyphs[1].glyph_id == 0xd55c, "coverage fallback keeps Hangul glyph id");
+
+    require(engine.last_diagnostics().has_font_face_selections(), "coverage fallback records run face selection");
+    require(engine.last_diagnostics().font_face_selections.size() == 1, "coverage fallback records one run selection");
+    require(
+        engine.last_diagnostics().font_face_selections[0].resolved_face_id == latin_face_id,
+        "coverage fallback resolves the run to the Latin face");
+    require(
+        !engine.last_diagnostics().font_face_selections[0].used_family_fallback,
+        "coverage fallback does not need family fallback at run level");
+    require(engine.last_diagnostics().has_glyph_font_resolutions(), "coverage fallback records glyph face resolutions");
+    require(engine.last_diagnostics().glyph_font_resolutions.size() == 2, "coverage fallback records each glyph resolution");
+
+    const render_text_glyph_font_resolution_snapshot& latin = engine.last_diagnostics().glyph_font_resolutions[0];
+    const render_text_glyph_font_resolution_snapshot& hangul = engine.last_diagnostics().glyph_font_resolutions[1];
+    require(latin.requested_face_id == latin_face_id, "Latin glyph requests Latin face");
+    require(latin.resolved_face_id == latin_face_id, "Latin glyph resolves to Latin face");
+    require(!latin.used_codepoint_fallback, "Latin glyph does not use codepoint fallback");
+    require(latin.glyph_supported, "Latin glyph reports support");
+    require(latin.cacheable, "Latin glyph is cache-ready");
+    require(hangul.requested_face_id == latin_face_id, "Hangul glyph starts from run Latin face");
+    require(hangul.resolved_face_id == hangul_face_id, "Hangul glyph resolves to coverage fallback face");
+    require(hangul.used_codepoint_fallback, "Hangul glyph records codepoint fallback");
+    require(hangul.glyph_supported, "Hangul glyph reports support through fallback");
+    require(hangul.cacheable, "Hangul glyph is cache-ready through fallback");
+
+    require(engine.last_diagnostics().font_resolution_policy.run_request_count == 1, "font policy counts run request");
+    require(engine.last_diagnostics().font_resolution_policy.exact_face_match_count == 1, "font policy counts exact run match");
+    require(engine.last_diagnostics().font_resolution_policy.glyph_request_count == 2, "font policy counts glyph requests");
+    require(engine.last_diagnostics().font_resolution_policy.glyph_supported_count == 2, "font policy counts supported glyphs");
+    require(
+        engine.last_diagnostics().font_resolution_policy.codepoint_fallback_count == 1,
+        "font policy counts glyph-level fallback");
+    require(engine.last_diagnostics().font_resolution_policy.cacheable_glyph_count == 2, "font policy counts cacheable glyphs");
+    require(
+        engine.last_diagnostics().font_resolution_policy.unique_resolved_face_count == 2,
+        "font policy counts unique resolved glyph faces");
+
+    const std::vector<render_text_glyph_cluster>& clusters = engine.last_diagnostics().glyph_clusters;
+    require(clusters.size() == 2, "coverage fallback records one cluster per scalar");
+    require(clusters[0].resolved_face_id == latin_face_id, "Latin cluster records Latin face");
+    require(clusters[1].resolved_face_id == hangul_face_id, "Hangul cluster records fallback face");
+
+    require(engine.last_diagnostics().has_glyph_cache_readiness(), "coverage fallback records cache readiness");
+    require(engine.last_diagnostics().glyph_cache_readiness.size() == 2, "coverage fallback records cluster cache readiness");
+    const render_text_glyph_cache_readiness_snapshot& latin_cache =
+        engine.last_diagnostics().glyph_cache_readiness[0];
+    const render_text_glyph_cache_readiness_snapshot& hangul_cache =
+        engine.last_diagnostics().glyph_cache_readiness[1];
+    require(latin_cache.requested_face_id == latin_face_id, "Latin cache readiness records requested face");
+    require(latin_cache.resolved_face_id == latin_face_id, "Latin cache readiness records resolved face");
+    require(latin_cache.cache_key.face_id == latin_face_id, "Latin cache key uses resolved face");
+    require(latin_cache.cache_key.glyph_id == 'A', "Latin cache key records glyph id");
+    require(latin_cache.atlas_width == 10 && latin_cache.atlas_height == 24, "Latin cache readiness records atlas size");
+    require(latin_cache.estimated_rgba_bytes == 10U * 24U * 4U, "Latin cache readiness estimates RGBA bytes");
+    require(latin_cache.cacheable, "Latin cluster is cacheable");
+    require(latin_cache.has_atlas_slot, "Latin cluster has atlas slot after layout");
+    require(hangul_cache.requested_face_id == latin_face_id, "Hangul cache readiness records requested face");
+    require(hangul_cache.resolved_face_id == hangul_face_id, "Hangul cache readiness records fallback face");
+    require(hangul_cache.cache_key.face_id == hangul_face_id, "Hangul cache key uses fallback face");
+    require(hangul_cache.cache_key.glyph_id == 0xd55c, "Hangul cache key records glyph id");
+    require(hangul_cache.atlas_width == 20 && hangul_cache.atlas_height == 24, "Hangul cache readiness records atlas size");
+    require(hangul_cache.estimated_rgba_bytes == 20U * 24U * 4U, "Hangul cache readiness estimates RGBA bytes");
+    require(hangul_cache.used_codepoint_fallback, "Hangul cache readiness records codepoint fallback");
+    require(hangul_cache.cacheable, "Hangul fallback cluster is cacheable");
+    require(hangul_cache.has_atlas_slot, "Hangul fallback cluster has atlas slot after layout");
+
+    require(
+        engine.last_diagnostics().glyph_cache_readiness_policy.cluster_count == 2,
+        "cache readiness policy counts clusters");
+    require(
+        engine.last_diagnostics().glyph_cache_readiness_policy.cacheable_cluster_count == 2,
+        "cache readiness policy counts cacheable clusters");
+    require(
+        engine.last_diagnostics().glyph_cache_readiness_policy.codepoint_fallback_cluster_count == 1,
+        "cache readiness policy counts fallback clusters");
+    require(
+        engine.last_diagnostics().glyph_cache_readiness_policy.unique_cache_key_count == 2,
+        "cache readiness policy counts unique cache keys");
+    require(
+        engine.last_diagnostics().glyph_cache_readiness_policy.unique_face_count == 2,
+        "cache readiness policy counts unique cache faces");
+    require(
+        engine.last_diagnostics().glyph_cache_readiness_policy.estimated_rgba_bytes == (10U * 24U * 4U) + (20U * 24U * 4U),
+        "cache readiness policy sums estimated RGBA bytes");
 }
 
 void test_fake_atlas_updates_are_revisioned_and_consumed()
@@ -1932,6 +2122,7 @@ int main()
     test_style_catalog_find_and_resolve();
     test_font_face_catalog_resolves_exact_faces_and_fallback();
     test_font_face_catalog_reports_codepoint_fallback_diagnostics();
+    test_font_face_catalog_prefers_known_coverage_fallbacks();
     test_deterministic_fake_font_resolver_reports_face_fallbacks();
     test_glyph_atlas_cache_allocates_rows_pages_and_cached_slots();
     test_glyph_atlas_cache_consumes_dirty_page_updates_by_revision();
@@ -1940,6 +2131,7 @@ int main()
     test_fake_newline_edge_cases_preserve_empty_line_height();
     test_fake_style_fallback_shapes_missing_tokens();
     test_fake_font_resolver_records_family_and_style_fallbacks();
+    test_fake_font_resolution_policy_tracks_codepoint_fallbacks_and_cache_readiness();
     test_fake_atlas_updates_are_revisioned_and_consumed();
     test_fake_glyph_atlas_page_diagnostics_track_overflow();
     test_fake_caret_positions_follow_utf8_runs_and_combining_marks();

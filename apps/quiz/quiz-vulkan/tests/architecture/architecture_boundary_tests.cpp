@@ -107,6 +107,69 @@ int main()
             },
         },
         boundary_rule{
+            .area = "ui-renderer-to-vulkan-renderer",
+            .roots = {
+                "src/core/ui",
+            },
+            .forbidden_tokens = {
+                "#include \"render/vulkan/",
+                "#include <render/vulkan/",
+                "vulkan_backend::",
+            },
+        },
+        boundary_rule{
+            .area = "layout-placer-to-ui-renderer",
+            .roots = {
+                "src/core/layout",
+            },
+            .forbidden_tokens = {
+                "#include \"core/ui/",
+                "#include <core/ui/",
+                "#include \"render/",
+                "#include <render/",
+                "ui::",
+                "vulkan_backend::",
+            },
+        },
+        boundary_rule{
+            .area = "scene-layout-data-to-renderer",
+            .roots = {
+                "src/core/scene",
+            },
+            .forbidden_tokens = {
+                "#include \"core/ui/",
+                "#include <core/ui/",
+                "#include \"render/",
+                "#include <render/",
+                "ui::",
+                "render::",
+                "vulkan_backend::",
+            },
+        },
+        boundary_rule{
+            .area = "vulkan-renderer-to-scene-ui-app",
+            .roots = {
+                "src/render/vulkan",
+            },
+            .forbidden_tokens = {
+                "#include \"app/",
+                "#include <app/",
+                "#include \"core/domain/",
+                "#include <core/domain/",
+                "#include \"core/input/",
+                "#include <core/input/",
+                "#include \"core/layout/",
+                "#include <core/layout/",
+                "#include \"core/scene/",
+                "#include <core/scene/",
+                "#include \"core/ui/",
+                "#include <core/ui/",
+                "domain::",
+                "scene::",
+                "ui::",
+            },
+        },
+        boundary_rule{
             .area = "domain-input-audio",
             .roots = {
                 "src/core/domain",

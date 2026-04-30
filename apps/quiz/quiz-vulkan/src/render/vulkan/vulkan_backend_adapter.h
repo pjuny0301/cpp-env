@@ -142,6 +142,112 @@ struct vulkan_backend_swapchain_lifecycle_state {
     }
 };
 
+struct vulkan_frame_in_flight_id {
+    std::size_t index = 0;
+    std::size_t frame_count = 0;
+    std::size_t sequence = 0;
+
+    bool valid() const
+    {
+        return frame_count > 0 && index < frame_count && sequence > 0;
+    }
+};
+
+enum class vulkan_frame_sync_token_kind {
+    semaphore,
+    fence,
+};
+
+struct vulkan_frame_sync_token_id {
+    std::size_t value = 0;
+    vulkan_frame_sync_token_kind kind = vulkan_frame_sync_token_kind::semaphore;
+
+    bool valid() const
+    {
+        return value > 0;
+    }
+};
+
+enum class vulkan_frame_sync_signal_status {
+    not_requested,
+    pending,
+    signaled,
+    failed,
+};
+
+enum class vulkan_frame_sync_wait_status {
+    not_requested,
+    pending,
+    waited,
+    failed,
+};
+
+struct vulkan_frame_sync_signal_state {
+    vulkan_frame_sync_token_id token;
+    bool requested = false;
+    vulkan_frame_sync_signal_status status = vulkan_frame_sync_signal_status::not_requested;
+
+    bool completed() const
+    {
+        return requested && token.valid() && status == vulkan_frame_sync_signal_status::signaled;
+    }
+
+    bool failed() const
+    {
+        return requested && status == vulkan_frame_sync_signal_status::failed;
+    }
+};
+
+struct vulkan_frame_sync_wait_state {
+    vulkan_frame_sync_token_id token;
+    bool requested = false;
+    vulkan_frame_sync_wait_status status = vulkan_frame_sync_wait_status::not_requested;
+
+    bool completed() const
+    {
+        return requested && token.valid() && status == vulkan_frame_sync_wait_status::waited;
+    }
+
+    bool failed() const
+    {
+        return requested && status == vulkan_frame_sync_wait_status::failed;
+    }
+};
+
+struct vulkan_backend_frame_sync_state {
+    vulkan_frame_in_flight_id frame;
+    vulkan_frame_sync_signal_state acquire_signal_image_available_semaphore;
+    vulkan_frame_sync_signal_state acquire_signal_fence;
+    vulkan_frame_sync_wait_state submit_wait_image_available_semaphore;
+    vulkan_frame_sync_signal_state submit_signal_render_finished_semaphore;
+    vulkan_frame_sync_signal_state submit_signal_frame_fence;
+    vulkan_frame_sync_wait_state present_wait_render_finished_semaphore;
+
+    bool acquire_completed() const
+    {
+        return frame.valid()
+            && acquire_signal_image_available_semaphore.completed()
+            && acquire_signal_fence.completed();
+    }
+
+    bool submit_completed() const
+    {
+        return submit_wait_image_available_semaphore.completed()
+            && submit_signal_render_finished_semaphore.completed()
+            && submit_signal_frame_fence.completed();
+    }
+
+    bool present_completed() const
+    {
+        return present_wait_render_finished_semaphore.completed();
+    }
+
+    bool completed() const
+    {
+        return acquire_completed() && submit_completed() && present_completed();
+    }
+};
+
 struct vulkan_recorded_draw_batch {
     vulkan_batch_kind kind = vulkan_batch_kind::quad;
     std::size_t command_index = 0;
@@ -359,6 +465,7 @@ struct vulkan_backend_frame_result {
     vulkan_surface_extent surface;
     vulkan_backend_lifecycle_readiness lifecycle;
     vulkan_backend_swapchain_lifecycle_state swapchain;
+    vulkan_backend_frame_sync_state frame_sync;
     vulkan_backend_pipeline_state pipeline;
     vulkan_backend_command_recorder_state command_recorder;
     vulkan_backend_frame_stage reached_stage = vulkan_backend_frame_stage::not_started;
@@ -381,6 +488,7 @@ struct vulkan_backend_frame_result {
         return reached_stage == vulkan_backend_frame_stage::frame_presented
             && lifecycle_ready && surface_ready && frame_begun && commands_recorded
             && frame_submitted && frame_presented && swapchain.completed()
+            && frame_sync.completed()
             && !fallback_required;
     }
 };

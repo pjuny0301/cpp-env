@@ -258,6 +258,91 @@ bool ensure_frame_plan_pipelines(
     return true;
 }
 
+vulkan_frame_sync_token_id make_frame_sync_token(
+    const vulkan_frame_in_flight_id& frame,
+    std::size_t slot,
+    vulkan_frame_sync_token_kind kind)
+{
+    return vulkan_frame_sync_token_id{
+        .value = (frame.sequence * 100) + (frame.index * 10) + slot,
+        .kind = kind,
+    };
+}
+
+vulkan_backend_frame_sync_state make_diagnostic_frame_sync_state()
+{
+    const vulkan_frame_in_flight_id frame{
+        .index = 0,
+        .frame_count = 2,
+        .sequence = 1,
+    };
+
+    const vulkan_frame_sync_token_id image_available = make_frame_sync_token(
+        frame,
+        1,
+        vulkan_frame_sync_token_kind::semaphore);
+    const vulkan_frame_sync_token_id acquire_fence = make_frame_sync_token(
+        frame,
+        2,
+        vulkan_frame_sync_token_kind::fence);
+    const vulkan_frame_sync_token_id render_finished = make_frame_sync_token(
+        frame,
+        3,
+        vulkan_frame_sync_token_kind::semaphore);
+    const vulkan_frame_sync_token_id frame_fence = make_frame_sync_token(
+        frame,
+        4,
+        vulkan_frame_sync_token_kind::fence);
+
+    return vulkan_backend_frame_sync_state{
+        .frame = frame,
+        .acquire_signal_image_available_semaphore = vulkan_frame_sync_signal_state{
+            .token = image_available,
+        },
+        .acquire_signal_fence = vulkan_frame_sync_signal_state{
+            .token = acquire_fence,
+        },
+        .submit_wait_image_available_semaphore = vulkan_frame_sync_wait_state{
+            .token = image_available,
+        },
+        .submit_signal_render_finished_semaphore = vulkan_frame_sync_signal_state{
+            .token = render_finished,
+        },
+        .submit_signal_frame_fence = vulkan_frame_sync_signal_state{
+            .token = frame_fence,
+        },
+        .present_wait_render_finished_semaphore = vulkan_frame_sync_wait_state{
+            .token = render_finished,
+        },
+    };
+}
+
+void request_signal(vulkan_frame_sync_signal_state& state)
+{
+    state.requested = true;
+    state.status = vulkan_frame_sync_signal_status::pending;
+}
+
+void complete_signal(vulkan_frame_sync_signal_state& state, bool success)
+{
+    state.status = success
+        ? vulkan_frame_sync_signal_status::signaled
+        : vulkan_frame_sync_signal_status::failed;
+}
+
+void request_wait(vulkan_frame_sync_wait_state& state)
+{
+    state.requested = true;
+    state.status = vulkan_frame_sync_wait_status::pending;
+}
+
+void complete_wait(vulkan_frame_sync_wait_state& state, bool success)
+{
+    state.status = success
+        ? vulkan_frame_sync_wait_status::waited
+        : vulkan_frame_sync_wait_status::failed;
+}
+
 } // namespace
 
 std::string_view fallback_reason_name(vulkan_backend_fallback_reason reason)
@@ -749,8 +834,15 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     }
     result.reached_stage = vulkan_backend_frame_stage::frame_begun;
 
+    result.frame_sync = make_diagnostic_frame_sync_state();
+    request_signal(result.frame_sync.acquire_signal_image_available_semaphore);
+    request_signal(result.frame_sync.acquire_signal_fence);
     result.swapchain.acquire_requested = true;
     result.swapchain.acquire = device.acquire_next_image(result.surface);
+    complete_signal(
+        result.frame_sync.acquire_signal_image_available_semaphore,
+        result.swapchain.acquire.completed());
+    complete_signal(result.frame_sync.acquire_signal_fence, result.swapchain.acquire.completed());
     if (!result.swapchain.acquire.completed()) {
         result.fallback_reason = vulkan_backend_fallback_reason::acquire_image_failed;
         return result;
@@ -783,15 +875,26 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     result.recorded_batch_count = plan.batches.size();
     result.reached_stage = vulkan_backend_frame_stage::commands_recorded;
 
+    request_wait(result.frame_sync.submit_wait_image_available_semaphore);
+    request_signal(result.frame_sync.submit_signal_render_finished_semaphore);
+    request_signal(result.frame_sync.submit_signal_frame_fence);
     result.frame_submitted = device.submit_frame();
+    complete_wait(result.frame_sync.submit_wait_image_available_semaphore, result.frame_submitted);
+    complete_signal(result.frame_sync.submit_signal_render_finished_semaphore, result.frame_submitted);
+    complete_signal(result.frame_sync.submit_signal_frame_fence, result.frame_submitted);
     if (!result.frame_submitted) {
         result.fallback_reason = vulkan_backend_fallback_reason::submit_frame_failed;
         return result;
     }
     result.reached_stage = vulkan_backend_frame_stage::frame_submitted;
 
+    request_wait(result.frame_sync.present_wait_render_finished_semaphore);
     result.swapchain.present_requested = true;
     result.swapchain.present = device.present_image(result.swapchain.acquire.image.id);
+    complete_wait(
+        result.frame_sync.present_wait_render_finished_semaphore,
+        result.swapchain.present.completed());
+    result.swapchain.acquire.image.presented = result.swapchain.present.completed();
     if (!result.swapchain.present.completed()) {
         result.fallback_reason = vulkan_backend_fallback_reason::present_image_failed;
         return result;

@@ -1319,6 +1319,52 @@ void test_vulkan_diagnostic_pipeline_cache_identifies_missing_batch_descriptor()
     require(!state.shader_registry.registry_checked, "missing descriptor stops before shader registry lookup");
 }
 
+void require_completed_frame_sync(
+    const quiz_vulkan::render::vulkan_backend::vulkan_backend_frame_sync_state& sync)
+{
+    using namespace quiz_vulkan::render;
+
+    require(sync.frame.valid(), "frame sync records a valid frame-in-flight id");
+    require(sync.frame.index == 0, "frame sync records deterministic frame index");
+    require(sync.frame.frame_count == 2, "frame sync records deterministic frames-in-flight count");
+    require(sync.frame.sequence == 1, "frame sync records deterministic frame sequence");
+
+    require(
+        sync.acquire_signal_image_available_semaphore.token.kind
+            == vulkan_backend::vulkan_frame_sync_token_kind::semaphore,
+        "frame sync acquire image-available token is a semaphore");
+    require(
+        sync.acquire_signal_fence.token.kind == vulkan_backend::vulkan_frame_sync_token_kind::fence,
+        "frame sync acquire token is a fence");
+    require(
+        sync.submit_signal_render_finished_semaphore.token.kind
+            == vulkan_backend::vulkan_frame_sync_token_kind::semaphore,
+        "frame sync submit render-finished token is a semaphore");
+    require(
+        sync.submit_signal_frame_fence.token.kind == vulkan_backend::vulkan_frame_sync_token_kind::fence,
+        "frame sync submit frame token is a fence");
+
+    require(sync.acquire_signal_image_available_semaphore.completed(), "frame sync acquire semaphore is signaled");
+    require(sync.acquire_signal_fence.completed(), "frame sync acquire fence is signaled");
+    require(sync.submit_wait_image_available_semaphore.completed(), "frame sync submit waits on image-available");
+    require(sync.submit_signal_render_finished_semaphore.completed(), "frame sync submit signals render-finished");
+    require(sync.submit_signal_frame_fence.completed(), "frame sync submit signals frame fence");
+    require(sync.present_wait_render_finished_semaphore.completed(), "frame sync present waits on render-finished");
+    require(sync.acquire_completed(), "frame sync records completed acquire synchronization");
+    require(sync.submit_completed(), "frame sync records completed submit synchronization");
+    require(sync.present_completed(), "frame sync records completed present synchronization");
+    require(sync.completed(), "frame sync records completed frame synchronization");
+
+    require(
+        sync.submit_wait_image_available_semaphore.token.value
+            == sync.acquire_signal_image_available_semaphore.token.value,
+        "frame sync submit waits on the acquired image-available semaphore");
+    require(
+        sync.present_wait_render_finished_semaphore.token.value
+            == sync.submit_signal_render_finished_semaphore.token.value,
+        "frame sync present waits on the submit render-finished semaphore");
+}
+
 void test_vulkan_backend_adapter_completes_fake_device_lifecycle()
 {
     using namespace quiz_vulkan::render;
@@ -1360,6 +1406,7 @@ void test_vulkan_backend_adapter_completes_fake_device_lifecycle()
     require(result.swapchain.present.completed(), "fake backend presents acquired swapchain image");
     require(result.swapchain.present.image_id.value == 7, "fake backend presents the acquired image id");
     require(result.swapchain.completed(), "fake backend records completed swapchain lifecycle");
+    require_completed_frame_sync(result.frame_sync);
     require(result.frame_presented, "fake backend presents frame");
     require(result.planned_batch_count == 1, "fake backend receives one planned batch");
     require(result.recorded_batch_count == 1, "fake backend records one batch");
@@ -1956,6 +2003,14 @@ void test_vulkan_backend_adapter_falls_back_when_acquire_fails()
     require(!result.swapchain.acquire.completed(), "backend records incomplete image acquisition");
     require(!result.swapchain.acquire.image.available, "backend records no acquired image on acquire failure");
     require(!result.swapchain.present_requested, "backend does not present image after acquire failure");
+    require(result.frame_sync.frame.valid(), "backend records frame sync identity before acquire failure");
+    require(
+        result.frame_sync.acquire_signal_image_available_semaphore.failed(),
+        "backend records failed acquire semaphore signal");
+    require(result.frame_sync.acquire_signal_fence.failed(), "backend records failed acquire fence signal");
+    require(!result.frame_sync.submit_wait_image_available_semaphore.requested, "backend does not submit-wait after acquire failure");
+    require(!result.frame_sync.submit_signal_render_finished_semaphore.requested, "backend does not submit-signal after acquire failure");
+    require(!result.frame_sync.present_wait_render_finished_semaphore.requested, "backend does not present-wait after acquire failure");
     require(!result.commands_recorded, "backend does not record commands after acquire failure");
     require(!result.frame_submitted, "backend does not submit after acquire failure");
     require(!result.frame_presented, "backend does not present frame after acquire failure");
@@ -2000,6 +2055,9 @@ void test_vulkan_backend_adapter_falls_back_when_recording_fails()
     require(result.frame_begun, "backend began frame before recording failed");
     require(result.swapchain.acquired(), "backend acquired image before device recording failed");
     require(!result.swapchain.present_requested, "backend does not present image after device recording failure");
+    require(result.frame_sync.acquire_completed(), "backend completes acquire sync before device recording failure");
+    require(!result.frame_sync.submit_wait_image_available_semaphore.requested, "backend does not submit-wait after recording failure");
+    require(!result.frame_sync.present_wait_render_finished_semaphore.requested, "backend does not present-wait after recording failure");
     require(!result.commands_recorded, "backend reports failed command recording");
     require(!result.frame_submitted, "backend does not submit after failed recording");
     require(!result.frame_presented, "backend does not present after failed recording");
@@ -2047,6 +2105,12 @@ void test_vulkan_backend_adapter_falls_back_when_submit_fails()
     require(result.frame_begun, "backend began frame before submit failed");
     require(result.swapchain.acquired(), "backend acquired image before submit failed");
     require(!result.swapchain.present_requested, "backend does not present image after failed submit");
+    require(result.frame_sync.acquire_completed(), "backend completes acquire sync before submit failure");
+    require(!result.frame_sync.submit_completed(), "backend does not complete submit sync after submit failure");
+    require(result.frame_sync.submit_wait_image_available_semaphore.failed(), "backend records failed submit wait");
+    require(result.frame_sync.submit_signal_render_finished_semaphore.failed(), "backend records failed submit semaphore signal");
+    require(result.frame_sync.submit_signal_frame_fence.failed(), "backend records failed submit fence signal");
+    require(!result.frame_sync.present_wait_render_finished_semaphore.requested, "backend does not present-wait after submit failure");
     require(result.commands_recorded, "backend recorded commands before submit failed");
     require(!result.frame_submitted, "backend reports failed frame submit");
     require(!result.frame_presented, "backend does not present after failed submit");
@@ -2099,6 +2163,12 @@ void test_vulkan_backend_adapter_falls_back_when_present_image_fails()
         "backend records failed image presentation status");
     require(!result.swapchain.present.completed(), "backend records incomplete image presentation");
     require(result.swapchain.present.image_id.value == 7, "backend records failed presentation image id");
+    require(result.frame_sync.acquire_completed(), "backend completes acquire sync before image presentation failure");
+    require(result.frame_sync.submit_completed(), "backend completes submit sync before image presentation failure");
+    require(
+        result.frame_sync.present_wait_render_finished_semaphore.failed(),
+        "backend records failed present wait after image presentation failure");
+    require(!result.frame_sync.present_completed(), "backend does not complete present sync after image failure");
     require(!result.frame_presented, "backend does not mark frame presented after image presentation failure");
     require(result.planned_batch_count == 1, "backend reports planned batch count before image presentation failure");
     require(result.recorded_batch_count == 1, "backend reports recorded batch count before image presentation failure");
@@ -2145,6 +2215,7 @@ void test_vulkan_backend_adapter_falls_back_when_present_fails()
     require(result.frame_begun, "backend began frame before presentation failed");
     require(result.swapchain.acquired(), "backend acquired image before presentation failed");
     require(result.swapchain.presented(), "backend presented swapchain image before frame presentation failed");
+    require(result.frame_sync.completed(), "backend completes frame sync before frame presentation failure");
     require(result.commands_recorded, "backend recorded commands before presentation failed");
     require(result.frame_submitted, "backend submitted frame before presentation failed");
     require(!result.frame_presented, "backend reports failed presentation");

@@ -1250,6 +1250,30 @@ void test_ime_composition_suppresses_text_and_key_events()
         std::string(utf8(u8"ㅎ")).size(),
         std::string(utf8(u8"ㅎ")).size(),
         "preedit event caret follows hangul jamo");
+    require(engine.routing_diagnostics().action_routes.size() == 1,
+        "preedit emits one action route policy");
+    const action_route_policy_diagnostic& preedit_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::ime_preedit,
+        "preedit action route policy is emitted");
+    require(preedit_policy.emits_input_event, "preedit policy marks emitted input event");
+    require(preedit_policy.event_index == 0, "preedit policy points at preedit event");
+    require(preedit_policy.target_id == "answer", "preedit policy preserves target id");
+    require(preedit_policy.text_byte_count == std::string(utf8(u8"ㅎ")).size(),
+        "preedit policy records preedit byte count");
+    require(preedit_policy.text_byte_count_before == 0, "preedit policy records committed bytes before");
+    require(preedit_policy.text_byte_count_after == 0, "preedit policy preserves committed bytes after");
+    require_range(preedit_policy.caret_before, 0, 0, "preedit policy records caret before preedit");
+    require_range(preedit_policy.caret_after,
+        std::string(utf8(u8"ㅎ")).size(),
+        std::string(utf8(u8"ㅎ")).size(),
+        "preedit policy records display caret after preedit");
+    require(preedit_policy.composition.active, "preedit policy carries active composition");
+    require(preedit_policy.composition.preedit_text == utf8(u8"ㅎ"),
+        "preedit policy carries composition preedit text");
+    require_range(preedit_policy.composition.preedit_range, 0, std::string(utf8(u8"ㅎ")).size(),
+        "preedit policy carries composition preedit range");
     require(engine.text_model().display_text() == utf8(u8"ㅎ"), "display text includes preedit");
 
     require(engine.process_raw_event(key(120, "Enter")).empty(), "enter is suppressed during composition");
@@ -1319,6 +1343,18 @@ void test_ime_preedit_commit_edges()
     require(first_preedit.utf8_text == utf8(u8"ㅎ"), "first preedit text is emitted");
     require(first_preedit.composition.active, "first preedit carries active composition");
     require_range(first_preedit.composition.replacement_range, 0, 0, "first preedit replacement is collapsed");
+    const action_route_policy_diagnostic& first_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::ime_preedit,
+        "first preedit emits preedit policy");
+    require(first_policy.text_byte_count == std::string(utf8(u8"ㅎ")).size(),
+        "first preedit policy records jamo byte count");
+    require_range(first_policy.caret_before, 0, 0, "first preedit policy records caret before");
+    require_range(first_policy.caret_after,
+        std::string(utf8(u8"ㅎ")).size(),
+        std::string(utf8(u8"ㅎ")).size(),
+        "first preedit policy records caret after");
     require(engine.text_model().display_text() == utf8(u8"ㅎ"), "first preedit is displayed");
 
     events = engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 110, utf8(u8"하")));
@@ -1329,6 +1365,23 @@ void test_ime_preedit_commit_edges()
     require(replacement_preedit.composition.preedit_text == utf8(u8"하"), "replacement preedit composition text is emitted");
     require_range(replacement_preedit.composition.preedit_range, 0, std::string(utf8(u8"하")).size(),
         "replacement preedit range covers hangul syllable bytes");
+    const action_route_policy_diagnostic& replacement_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::ime_preedit,
+        "replacement preedit emits preedit policy");
+    require(replacement_policy.text_byte_count == std::string(utf8(u8"하")).size(),
+        "replacement preedit policy records syllable byte count");
+    require_range(replacement_policy.caret_before,
+        std::string(utf8(u8"ㅎ")).size(),
+        std::string(utf8(u8"ㅎ")).size(),
+        "replacement preedit policy records previous display caret");
+    require_range(replacement_policy.caret_after,
+        std::string(utf8(u8"하")).size(),
+        std::string(utf8(u8"하")).size(),
+        "replacement preedit policy records replacement display caret");
+    require(replacement_policy.composition.preedit_text == utf8(u8"하"),
+        "replacement preedit policy carries replacement composition");
     require(engine.text_model().text().empty(), "replacement preedit does not commit text");
     require(engine.text_model().display_text() == utf8(u8"하"), "replacement preedit replaces displayed preedit");
 
@@ -1472,6 +1525,19 @@ void test_ime_empty_preedit_and_commit_only_edges()
     require(empty_preedit.composition.preedit_text.empty(), "empty preedit composition text is empty");
     require_range(empty_preedit.composition.replacement_range, 1, 1, "empty preedit replacement range is at caret");
     require_range(empty_preedit.composition.preedit_range, 1, 1, "empty preedit range is collapsed at caret");
+    const action_route_policy_diagnostic& empty_preedit_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::ime_preedit,
+        "empty preedit emits preedit policy");
+    require(empty_preedit_policy.text_byte_count == 0, "empty preedit policy records zero preedit bytes");
+    require(empty_preedit_policy.text_byte_count_before == 1, "empty preedit policy records committed bytes before");
+    require(empty_preedit_policy.text_byte_count_after == 1, "empty preedit policy preserves committed bytes after");
+    require_range(empty_preedit_policy.caret_before, 1, 1, "empty preedit policy records caret before");
+    require_range(empty_preedit_policy.caret_after, 1, 1, "empty preedit policy records collapsed display caret");
+    require(empty_preedit_policy.composition.active, "empty preedit policy carries active composition");
+    require_range(empty_preedit_policy.composition.replacement_range, 1, 1,
+        "empty preedit policy carries collapsed replacement range");
     require(engine.text_model().display_text() == "a", "empty preedit displays committed text only");
 
     events = engine.process_raw_event(ime(raw_platform_ime_phase::composition_end, 140));
@@ -1535,6 +1601,35 @@ void test_ime_hangul_replacement_composition_ranges()
         "hangul replacement preedit range covers new hangul");
     require(engine.text_model().display_text() == std::string("A") + utf8(u8"하") + "B",
         "hangul replacement preedit display replaces selected hangul");
+    const action_route_policy_diagnostic& preedit_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::ime_preedit,
+        "hangul replacement preedit emits preedit policy");
+    require(preedit_policy.text_byte_count == std::string(utf8(u8"하")).size(),
+        "hangul replacement preedit policy records preedit byte count");
+    require(preedit_policy.text_byte_count_before == base.size(),
+        "hangul replacement preedit policy records original committed bytes");
+    require(preedit_policy.text_byte_count_after == base.size(),
+        "hangul replacement preedit policy does not mutate committed bytes");
+    require(preedit_policy.had_selection_before, "hangul replacement preedit policy records prior selection");
+    require(preedit_policy.has_selection_after, "hangul replacement preedit policy keeps selection during composition");
+    require_range(preedit_policy.selection_before, 1, 1 + std::string(utf8(u8"한")).size(),
+        "hangul replacement preedit policy records selected hangul before");
+    require_range(preedit_policy.selection_after, 1, 1 + std::string(utf8(u8"한")).size(),
+        "hangul replacement preedit policy records replacement selection after");
+    require_range(preedit_policy.caret_before,
+        1 + std::string(utf8(u8"한")).size(),
+        1 + std::string(utf8(u8"한")).size(),
+        "hangul replacement preedit policy records active selection caret before");
+    require_range(preedit_policy.caret_after,
+        1 + std::string(utf8(u8"하")).size(),
+        1 + std::string(utf8(u8"하")).size(),
+        "hangul replacement preedit policy records display caret after");
+    require_range(preedit_policy.composition.replacement_range, 1, 1 + std::string(utf8(u8"한")).size(),
+        "hangul replacement preedit policy carries composition replacement range");
+    require_range(preedit_policy.composition.preedit_range, 1, 1 + std::string(utf8(u8"하")).size(),
+        "hangul replacement preedit policy carries composition preedit range");
 
     events = engine.process_raw_event(ime(raw_platform_ime_phase::commit, 150, utf8(u8"각")));
     require(events.size() == 1, "hangul replacement commit emits one event");

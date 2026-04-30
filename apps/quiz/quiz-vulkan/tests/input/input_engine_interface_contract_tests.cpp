@@ -203,6 +203,9 @@ static_assert(submit_policy_contract.caret_after.start_byte == 0);
 constexpr input::action_route_policy_kind text_commit_policy_kind =
     input::action_route_policy_kind::text_commit_boundary;
 static_assert(text_commit_policy_kind == input::action_route_policy_kind::text_commit_boundary);
+constexpr input::action_route_policy_kind ime_preedit_policy_kind =
+    input::action_route_policy_kind::ime_preedit;
+static_assert(ime_preedit_policy_kind == input::action_route_policy_kind::ime_preedit);
 constexpr input::action_route_policy_kind gesture_snapshot_policy_kind =
     input::action_route_policy_kind::gesture_route_snapshot;
 static_assert(gesture_snapshot_policy_kind == input::action_route_policy_kind::gesture_route_snapshot);

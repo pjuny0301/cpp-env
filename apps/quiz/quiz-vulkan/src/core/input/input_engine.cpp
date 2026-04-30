@@ -478,12 +478,26 @@ std::vector<input_event> input_engine::process_ime_event(const raw_platform_ime_
     if (event.phase == raw_platform_ime_phase::preedit_update) {
         ime_composing_ = true;
         text_.set_preedit(event.utf8_text);
+        const ime_composition_state preedit_composition = text_.ime_composition();
+        const std::size_t event_index = events.size();
         events.emplace_back(make_ime_event(
             ime_event_kind::preedit,
             event.timestamp_ms,
             target_id,
             event.utf8_text,
-            text_.ime_composition()));
+            preedit_composition));
+        action_route_policy_diagnostic policy = make_text_event_policy(
+            action_route_policy_kind::ime_preedit,
+            event.timestamp_ms,
+            event_index,
+            target_id,
+            edit_before,
+            capture_text_edit(text_),
+            diagnostics_.pointer_capture,
+            gestures_.capture_snapshot());
+        policy.text_byte_count = event.utf8_text.size();
+        policy.composition = preedit_composition;
+        append_policy(std::move(policy));
         finish_route_diagnostics();
         return events;
     }

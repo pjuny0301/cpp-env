@@ -22,6 +22,7 @@ enum class action_route_policy_kind {
     selection_changed,
     text_submit_boundary,
     focus_loss,
+    ime_preedit,
     ime_commit,
     ime_cancel,
 };

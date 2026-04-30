@@ -86,6 +86,11 @@ bool is_end_key(const raw_platform_key_event& event)
     return event.logical_key == "End" || event.key_code == 35;
 }
 
+bool is_tab_key(const raw_platform_key_event& event)
+{
+    return event.logical_key == "Tab" || event.key_code == 9;
+}
+
 bool is_a_key(const raw_platform_key_event& event)
 {
     return event.logical_key == "a"
@@ -97,6 +102,32 @@ bool is_a_key(const raw_platform_key_event& event)
 bool is_select_all_key(const raw_platform_key_event& event)
 {
     return !event.alt && (event.ctrl || event.meta) && is_a_key(event);
+}
+
+bool is_keyboard_navigation_key(const raw_platform_key_event& event)
+{
+    return is_arrow_left_key(event)
+        || is_arrow_right_key(event)
+        || is_home_key(event)
+        || is_end_key(event)
+        || is_tab_key(event)
+        || is_select_all_key(event);
+}
+
+action_route_policy_kind navigation_policy_kind(const raw_platform_key_event& event)
+{
+    if (is_tab_key(event)) {
+        return event.shift
+            ? action_route_policy_kind::focus_traversal_previous
+            : action_route_policy_kind::focus_traversal_next;
+    }
+
+    if (is_select_all_key(event)
+        || ((is_arrow_left_key(event) || is_arrow_right_key(event)) && event.shift)) {
+        return action_route_policy_kind::selection_changed;
+    }
+
+    return action_route_policy_kind::caret_moved;
 }
 
 ime_event make_ime_event(
@@ -256,6 +287,25 @@ action_route_policy_diagnostic make_text_event_policy(
         kind,
         timestamp_ms,
         event_index,
+        pointer_capture_before,
+        pointer_capture_after);
+    diagnostic.target_id = target_id;
+    apply_text_edit_boundary(diagnostic, before, after);
+    return diagnostic;
+}
+
+action_route_policy_diagnostic make_text_state_policy(
+    action_route_policy_kind kind,
+    std::int64_t timestamp_ms,
+    const std::string& target_id,
+    text_edit_snapshot before,
+    text_edit_snapshot after,
+    pointer_capture_snapshot pointer_capture_before,
+    pointer_capture_snapshot pointer_capture_after)
+{
+    action_route_policy_diagnostic diagnostic = make_policy(
+        kind,
+        timestamp_ms,
         pointer_capture_before,
         pointer_capture_after);
     diagnostic.target_id = target_id;
@@ -585,35 +635,75 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
 {
     std::vector<input_event> events;
     begin_route_diagnostics();
-    if (event.phase != raw_platform_key_phase::down
-        || ime_composing_
-        || text_.ime_composition().active
-        || !text_.has_focus()) {
+    if (event.phase != raw_platform_key_phase::down || !text_.has_focus()) {
         finish_route_diagnostics();
         return events;
     }
 
     const std::string target_id = text_.focus_id();
     const text_edit_snapshot edit_before = capture_text_edit(text_);
-
-    if (is_select_all_key(event)) {
-        if (text_.select_all()) {
+    const pointer_capture_snapshot pointer_capture = gestures_.capture_snapshot();
+    const auto append_state_policy =
+        [this, &event, &target_id, &edit_before, pointer_capture](action_route_policy_kind kind) {
+            append_policy(make_text_state_policy(
+                kind,
+                event.timestamp_ms,
+                target_id,
+                edit_before,
+                capture_text_edit(text_),
+                diagnostics_.pointer_capture,
+                pointer_capture));
+        };
+    const auto emit_text_policy =
+        [this, &events, &event, &target_id, &edit_before, pointer_capture](
+            text_event_kind event_kind,
+            action_route_policy_kind policy_kind) {
             const std::size_t event_index = events.size();
             events.emplace_back(text_event{
-                .kind = text_event_kind::selection_changed,
+                .kind = event_kind,
                 .timestamp_ms = event.timestamp_ms,
                 .target_id = target_id,
                 .utf8_text = {},
             });
             append_policy(make_text_event_policy(
-                action_route_policy_kind::selection_changed,
+                policy_kind,
                 event.timestamp_ms,
                 event_index,
                 target_id,
                 edit_before,
                 capture_text_edit(text_),
                 diagnostics_.pointer_capture,
-                gestures_.capture_snapshot()));
+                pointer_capture));
+        };
+
+    if (ime_composing_ || text_.ime_composition().active) {
+        if (is_keyboard_navigation_key(event)) {
+            action_route_policy_diagnostic policy = make_text_state_policy(
+                navigation_policy_kind(event),
+                event.timestamp_ms,
+                target_id,
+                edit_before,
+                capture_text_edit(text_),
+                diagnostics_.pointer_capture,
+                pointer_capture);
+            policy.composition = text_.ime_composition();
+            append_policy(std::move(policy));
+        }
+        finish_route_diagnostics();
+        return events;
+    }
+
+    if (is_tab_key(event)) {
+        append_state_policy(navigation_policy_kind(event));
+        finish_route_diagnostics();
+        return events;
+    }
+
+    if (is_select_all_key(event)) {
+        if (text_.select_all()) {
+            emit_text_policy(text_event_kind::selection_changed, action_route_policy_kind::selection_changed);
+        } else {
+            append_state_policy(action_route_policy_kind::selection_changed);
         }
         finish_route_diagnostics();
         return events;
@@ -622,22 +712,11 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
     if (is_arrow_left_key(event)) {
         const bool changed = event.shift ? text_.extend_selection_left() : text_.move_caret_left();
         if (changed) {
-            const std::size_t event_index = events.size();
-            events.emplace_back(text_event{
-                .kind = event.shift ? text_event_kind::selection_changed : text_event_kind::caret_moved,
-                .timestamp_ms = event.timestamp_ms,
-                .target_id = target_id,
-                .utf8_text = {},
-            });
-            append_policy(make_text_event_policy(
-                event.shift ? action_route_policy_kind::selection_changed : action_route_policy_kind::caret_moved,
-                event.timestamp_ms,
-                event_index,
-                target_id,
-                edit_before,
-                capture_text_edit(text_),
-                diagnostics_.pointer_capture,
-                gestures_.capture_snapshot()));
+            emit_text_policy(
+                event.shift ? text_event_kind::selection_changed : text_event_kind::caret_moved,
+                event.shift ? action_route_policy_kind::selection_changed : action_route_policy_kind::caret_moved);
+        } else {
+            append_state_policy(navigation_policy_kind(event));
         }
         finish_route_diagnostics();
         return events;
@@ -646,22 +725,11 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
     if (is_arrow_right_key(event)) {
         const bool changed = event.shift ? text_.extend_selection_right() : text_.move_caret_right();
         if (changed) {
-            const std::size_t event_index = events.size();
-            events.emplace_back(text_event{
-                .kind = event.shift ? text_event_kind::selection_changed : text_event_kind::caret_moved,
-                .timestamp_ms = event.timestamp_ms,
-                .target_id = target_id,
-                .utf8_text = {},
-            });
-            append_policy(make_text_event_policy(
-                event.shift ? action_route_policy_kind::selection_changed : action_route_policy_kind::caret_moved,
-                event.timestamp_ms,
-                event_index,
-                target_id,
-                edit_before,
-                capture_text_edit(text_),
-                diagnostics_.pointer_capture,
-                gestures_.capture_snapshot()));
+            emit_text_policy(
+                event.shift ? text_event_kind::selection_changed : text_event_kind::caret_moved,
+                event.shift ? action_route_policy_kind::selection_changed : action_route_policy_kind::caret_moved);
+        } else {
+            append_state_policy(navigation_policy_kind(event));
         }
         finish_route_diagnostics();
         return events;
@@ -669,22 +737,9 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
 
     if (is_home_key(event)) {
         if (text_.move_caret_to_start()) {
-            const std::size_t event_index = events.size();
-            events.emplace_back(text_event{
-                .kind = text_event_kind::caret_moved,
-                .timestamp_ms = event.timestamp_ms,
-                .target_id = target_id,
-                .utf8_text = {},
-            });
-            append_policy(make_text_event_policy(
-                action_route_policy_kind::caret_moved,
-                event.timestamp_ms,
-                event_index,
-                target_id,
-                edit_before,
-                capture_text_edit(text_),
-                diagnostics_.pointer_capture,
-                gestures_.capture_snapshot()));
+            emit_text_policy(text_event_kind::caret_moved, action_route_policy_kind::caret_moved);
+        } else {
+            append_state_policy(action_route_policy_kind::caret_moved);
         }
         finish_route_diagnostics();
         return events;
@@ -692,22 +747,9 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
 
     if (is_end_key(event)) {
         if (text_.move_caret_to_end()) {
-            const std::size_t event_index = events.size();
-            events.emplace_back(text_event{
-                .kind = text_event_kind::caret_moved,
-                .timestamp_ms = event.timestamp_ms,
-                .target_id = target_id,
-                .utf8_text = {},
-            });
-            append_policy(make_text_event_policy(
-                action_route_policy_kind::caret_moved,
-                event.timestamp_ms,
-                event_index,
-                target_id,
-                edit_before,
-                capture_text_edit(text_),
-                diagnostics_.pointer_capture,
-                gestures_.capture_snapshot()));
+            emit_text_policy(text_event_kind::caret_moved, action_route_policy_kind::caret_moved);
+        } else {
+            append_state_policy(action_route_policy_kind::caret_moved);
         }
         finish_route_diagnostics();
         return events;

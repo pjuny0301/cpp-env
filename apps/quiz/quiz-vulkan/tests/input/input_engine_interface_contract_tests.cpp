@@ -209,6 +209,12 @@ static_assert(ime_preedit_policy_kind == input::action_route_policy_kind::ime_pr
 constexpr input::action_route_policy_kind gesture_snapshot_policy_kind =
     input::action_route_policy_kind::gesture_route_snapshot;
 static_assert(gesture_snapshot_policy_kind == input::action_route_policy_kind::gesture_route_snapshot);
+constexpr input::action_route_policy_kind focus_traversal_next_policy_kind =
+    input::action_route_policy_kind::focus_traversal_next;
+static_assert(focus_traversal_next_policy_kind == input::action_route_policy_kind::focus_traversal_next);
+constexpr input::action_route_policy_kind focus_traversal_previous_policy_kind =
+    input::action_route_policy_kind::focus_traversal_previous;
+static_assert(focus_traversal_previous_policy_kind == input::action_route_policy_kind::focus_traversal_previous);
 
 constexpr input::gesture_event drag_contract_event{
     .kind = input::gesture_kind::drag_update,

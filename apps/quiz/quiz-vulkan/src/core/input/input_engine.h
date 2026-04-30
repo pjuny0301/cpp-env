@@ -20,6 +20,8 @@ enum class action_route_policy_kind {
     text_backspace_boundary,
     caret_moved,
     selection_changed,
+    focus_traversal_next,
+    focus_traversal_previous,
     text_submit_boundary,
     focus_loss,
     ime_preedit,

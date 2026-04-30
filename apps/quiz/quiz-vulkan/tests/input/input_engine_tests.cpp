@@ -1223,12 +1223,37 @@ void test_text_keyboard_navigation_and_selection()
     require(events.size() == 1, "home emits one caret event");
     require(require_event<text_event>(events, 0).kind == text_event_kind::caret_moved, "home emits caret moved kind");
     require(engine.text_model().caret_byte_offset() == 0, "home moves caret to start");
-    require(engine.process_raw_event(key(151, "Home")).empty(), "home at start emits no event");
+    events = engine.process_raw_event(key(151, "Home"));
+    require(events.empty(), "home at start emits no event");
+    const action_route_policy_diagnostic& home_edge_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::caret_moved,
+        "home at start emits caret edge policy");
+    require(!home_edge_policy.emits_input_event, "home at start policy emits no input event");
+    require_range(home_edge_policy.caret_before, 0, 0, "home at start policy records caret before");
+    require_range(home_edge_policy.caret_after, 0, 0, "home at start policy records caret after");
+    require(home_edge_policy.text_byte_count_before == initial.size(),
+        "home at start policy records before text byte count");
+    require(home_edge_policy.text_byte_count_after == initial.size(),
+        "home at start policy records after text byte count");
 
     events = engine.process_raw_event(key(160, "End"));
     require(events.size() == 1, "end emits one caret event");
     require(require_event<text_event>(events, 0).kind == text_event_kind::caret_moved, "end emits caret moved kind");
     require(engine.text_model().caret_byte_offset() == initial.size(), "end moves caret to committed end");
+    events = engine.process_raw_event(key(161, "End"));
+    require(events.empty(), "end at end emits no event");
+    const action_route_policy_diagnostic& end_edge_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::caret_moved,
+        "end at end emits caret edge policy");
+    require(!end_edge_policy.emits_input_event, "end at end policy emits no input event");
+    require_range(end_edge_policy.caret_before, initial.size(), initial.size(),
+        "end at end policy records caret before");
+    require_range(end_edge_policy.caret_after, initial.size(), initial.size(),
+        "end at end policy records caret after");
 
     events = engine.process_raw_event(key(170, "ArrowLeft", false, raw_platform_key_phase::down, false, true));
     require(events.size() == 1, "shift arrow left emits one selection event");
@@ -1299,8 +1324,20 @@ void test_text_keyboard_navigation_and_selection()
         "ctrl+a emits selection policy");
     require(select_all_policy.has_selection_after, "ctrl+a policy records resulting selection");
     require_range(select_all_policy.selection_after, 0, initial.size(), "ctrl+a policy records full selection");
-    require(engine.process_raw_event(key(211, "a", false, raw_platform_key_phase::down, true)).empty(),
-        "repeat select all without state change emits no event");
+    events = engine.process_raw_event(key(211, "a", false, raw_platform_key_phase::down, true));
+    require(events.empty(), "repeat select all without state change emits no event");
+    const action_route_policy_diagnostic& select_all_edge_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::selection_changed,
+        "repeat select all emits selection edge policy");
+    require(!select_all_edge_policy.emits_input_event, "repeat select all policy emits no input event");
+    require(select_all_edge_policy.had_selection_before, "repeat select all policy records prior selection");
+    require(select_all_edge_policy.has_selection_after, "repeat select all policy records retained selection");
+    require_range(select_all_edge_policy.selection_before, 0, initial.size(),
+        "repeat select all policy records before range");
+    require_range(select_all_edge_policy.selection_after, 0, initial.size(),
+        "repeat select all policy records after range");
 
     require(engine.process_raw_event(key(220, "Home")).size() == 1, "home clears selection before meta+a");
     events = engine.process_raw_event(key(230, "A", false, raw_platform_key_phase::down, false, false, true));
@@ -1310,6 +1347,142 @@ void test_text_keyboard_navigation_and_selection()
     selection = engine.text_model().selection_range();
     require(selection.has_value(), "meta+a exposes selection");
     require_range(*selection, 0, initial.size(), "meta+a selects all committed text");
+}
+
+void test_keyboard_focus_traversal_diagnostics()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    engine.focus_text_target("answer");
+    const std::string initial = std::string("A") + utf8(u8"한") + "B";
+    require(engine.process_raw_event(text(100, initial)).size() == 1,
+        "focus traversal initial text commits");
+
+    std::vector<input_event> events = engine.process_raw_event(key(110, "Tab"));
+    require(events.empty(), "tab emits no app input event from input engine");
+    require(engine.has_text_focus(), "tab diagnostics do not clear text focus");
+    require(engine.text_focus_id() == "answer", "tab diagnostics preserve focus id");
+    require(engine.text_model().text() == initial, "tab diagnostics preserve text");
+    require(engine.text_model().caret_byte_offset() == initial.size(), "tab diagnostics preserve caret");
+    require(engine.routing_diagnostics().action_routes.size() == 1,
+        "tab emits one focus traversal diagnostic policy");
+    const action_route_policy_diagnostic& next_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::focus_traversal_next,
+        "tab emits forward traversal policy");
+    require(!next_policy.emits_input_event, "tab traversal policy emits no input event");
+    require(next_policy.target_id == "answer", "tab traversal policy preserves target id");
+    require(next_policy.text_byte_count_before == initial.size(),
+        "tab traversal policy records before text byte count");
+    require(next_policy.text_byte_count_after == initial.size(),
+        "tab traversal policy records after text byte count");
+    require_range(next_policy.caret_before, initial.size(), initial.size(),
+        "tab traversal policy records caret before");
+    require_range(next_policy.caret_after, initial.size(), initial.size(),
+        "tab traversal policy records caret after");
+    require(!next_policy.had_selection_before, "tab traversal policy records no prior selection");
+    require(!next_policy.has_selection_after, "tab traversal policy records no resulting selection");
+
+    require(engine.process_raw_event(key(120, "ArrowLeft", false, raw_platform_key_phase::down, false, true)).size() == 1,
+        "focus traversal setup selects trailing character");
+    std::optional<text_range> selection = engine.text_model().selection_range();
+    require(selection.has_value(), "focus traversal setup exposes selection");
+    require_range(*selection, 4, initial.size(), "focus traversal setup selected trailing ascii");
+
+    events = engine.process_raw_event(key(130, "Tab", false, raw_platform_key_phase::down, false, true));
+    require(events.empty(), "shift tab emits no app input event from input engine");
+    require(engine.has_text_focus(), "shift tab diagnostics do not clear text focus");
+    require(engine.text_model().text() == initial, "shift tab diagnostics preserve text");
+    selection = engine.text_model().selection_range();
+    require(selection.has_value(), "shift tab diagnostics preserve selection");
+    require_range(*selection, 4, initial.size(), "shift tab diagnostics preserve selected range");
+    const action_route_policy_diagnostic& previous_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::focus_traversal_previous,
+        "shift tab emits reverse traversal policy");
+    require(!previous_policy.emits_input_event, "shift tab traversal policy emits no input event");
+    require(previous_policy.had_selection_before, "shift tab traversal policy records prior selection");
+    require(previous_policy.has_selection_after, "shift tab traversal policy records retained selection");
+    require_range(previous_policy.selection_before, 4, initial.size(),
+        "shift tab traversal policy records before selection");
+    require_range(previous_policy.selection_after, 4, initial.size(),
+        "shift tab traversal policy records after selection");
+    require_range(previous_policy.caret_before, 4, 4, "shift tab traversal policy records caret before");
+    require_range(previous_policy.caret_after, 4, 4, "shift tab traversal policy records caret after");
+}
+
+void test_keyboard_navigation_diagnostics_preserve_ime_composition()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    engine.focus_text_target("answer");
+    const std::string preedit_text = utf8(u8"ㅎ");
+    const std::string committed_text = utf8(u8"한");
+    require(engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 100, preedit_text)).size() == 1,
+        "navigation ime setup starts preedit");
+    require(engine.text_model().ime_composition().active, "navigation ime setup has active composition");
+
+    std::vector<input_event> events = engine.process_raw_event(key(110, "ArrowLeft"));
+    require(events.empty(), "arrow left during ime emits no text event");
+    require(engine.text_model().text().empty(), "arrow left during ime preserves committed text");
+    require(engine.text_model().display_text() == preedit_text, "arrow left during ime preserves display preedit");
+    require(!engine.text_model().selection_range().has_value(), "arrow left during ime creates no selection");
+    require(engine.routing_diagnostics().action_routes.size() == 1,
+        "arrow left during ime emits one navigation diagnostic policy");
+    const action_route_policy_diagnostic& caret_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::caret_moved,
+        "arrow left during ime emits caret diagnostic policy");
+    require(!caret_policy.emits_input_event, "arrow left during ime policy emits no input event");
+    require(caret_policy.composition.active, "arrow left during ime policy carries composition");
+    require(caret_policy.composition.preedit_text == preedit_text,
+        "arrow left during ime policy carries preedit text");
+    require_range(caret_policy.caret_before, preedit_text.size(), preedit_text.size(),
+        "arrow left during ime policy records display caret before");
+    require_range(caret_policy.caret_after, preedit_text.size(), preedit_text.size(),
+        "arrow left during ime policy records display caret after");
+
+    events = engine.process_raw_event(key(120, "ArrowRight", false, raw_platform_key_phase::down, false, true));
+    require(events.empty(), "shift arrow during ime emits no selection event");
+    require(engine.text_model().display_text() == preedit_text, "shift arrow during ime preserves display preedit");
+    require(!engine.text_model().selection_range().has_value(), "shift arrow during ime creates no selection");
+    const action_route_policy_diagnostic& selection_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::selection_changed,
+        "shift arrow during ime emits selection diagnostic policy");
+    require(!selection_policy.emits_input_event, "shift arrow during ime policy emits no input event");
+    require(selection_policy.composition.active, "shift arrow during ime policy carries composition");
+    require(selection_policy.composition.preedit_text == preedit_text,
+        "shift arrow during ime policy carries preedit text");
+
+    events = engine.process_raw_event(key(130, "Tab"));
+    require(events.empty(), "tab during ime emits no focus traversal event");
+    require(engine.has_text_focus(), "tab during ime preserves focus");
+    require(engine.text_model().display_text() == preedit_text, "tab during ime preserves display preedit");
+    const action_route_policy_diagnostic& traversal_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::focus_traversal_next,
+        "tab during ime emits traversal diagnostic policy");
+    require(!traversal_policy.emits_input_event, "tab during ime policy emits no input event");
+    require(traversal_policy.composition.active, "tab during ime policy carries composition");
+    require(traversal_policy.composition.preedit_text == preedit_text,
+        "tab during ime policy carries preedit text");
+
+    events = engine.process_raw_event(ime(raw_platform_ime_phase::composition_end, 140, committed_text));
+    require(events.size() == 1, "ime commit succeeds after suppressed navigation");
+    const ime_event& commit = require_event<ime_event>(events, 0);
+    require(commit.kind == ime_event_kind::commit, "ime commit after navigation emits commit kind");
+    require(engine.text_model().text() == committed_text, "ime commit after navigation updates text");
+    require(!engine.text_model().ime_composition().active, "ime commit after navigation clears composition");
 }
 
 void test_text_edit_boundary_diagnostics_replace_utf8_selection()
@@ -1935,6 +2108,8 @@ int main()
     test_text_key_flow();
     test_key_code_fallback_edges();
     test_text_keyboard_navigation_and_selection();
+    test_keyboard_focus_traversal_diagnostics();
+    test_keyboard_navigation_diagnostics_preserve_ime_composition();
     test_text_edit_boundary_diagnostics_replace_utf8_selection();
     test_ime_composition_suppresses_text_and_key_events();
     test_ime_preedit_commit_edges();

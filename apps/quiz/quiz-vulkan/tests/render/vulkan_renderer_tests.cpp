@@ -251,6 +251,20 @@ void test_vulkan_command_recorder_failure_stage_names_are_stable()
         "command recorder failure stage name for finish is stable");
 }
 
+void test_vulkan_shader_stage_names_are_stable()
+{
+    using namespace quiz_vulkan::render;
+
+    require(
+        vulkan_backend::shader_stage_name(vulkan_backend::vulkan_shader_stage::vertex)
+            == std::string_view{"vertex"},
+        "shader stage name for vertex is stable");
+    require(
+        vulkan_backend::shader_stage_name(vulkan_backend::vulkan_shader_stage::fragment)
+            == std::string_view{"fragment"},
+        "shader stage name for fragment is stable");
+}
+
 quiz_vulkan::render::render_draw_command make_quad_command(
     std::string node_id,
     quiz_vulkan::render::render_rect bounds,
@@ -998,6 +1012,16 @@ void test_vulkan_diagnostic_pipeline_cache_reports_batch_capabilities()
     require(state.requested_pipeline_count == 2, "pipeline cache records requested pipeline count");
     require(state.capabilities.size() == 4, "pipeline cache exposes one capability per batch kind");
     require(state.cache_entries.size() == 4, "pipeline cache exposes one cache entry per batch kind");
+    require(state.pipeline_descriptors.size() == 4, "pipeline cache exposes one descriptor per batch kind");
+    require(state.shader_registry.registered_shader_count == 8, "pipeline cache registers vertex and fragment shaders");
+    require(state.shader_registry.registry_checked, "pipeline cache verifies shaders while checking pipelines");
+    require(!state.shader_registry.missing_shader, "pipeline cache reports no missing shader on happy path");
+    require(
+        state.descriptor_for(vulkan_backend::vulkan_batch_kind::quad) != nullptr,
+        "pipeline cache exposes quad descriptor");
+    require(
+        state.descriptor_for(vulkan_backend::vulkan_batch_kind::image) != nullptr,
+        "pipeline cache exposes image descriptor");
     require(state.supports(vulkan_backend::vulkan_batch_kind::quad), "pipeline cache supports quad pipeline");
     require(state.supports(vulkan_backend::vulkan_batch_kind::text), "pipeline cache supports text pipeline");
     require(state.supports(vulkan_backend::vulkan_batch_kind::image), "pipeline cache supports image pipeline");
@@ -1069,6 +1093,145 @@ void test_vulkan_diagnostic_pipeline_cache_identifies_missing_batch_pipeline()
     require(state.cache_entries[2].requested, "missing pipeline cache records image request");
     require(!state.cache_entries[2].available, "missing pipeline cache entry records unavailable image pipeline");
     require(state.cache_entries[2].last_command_index == 1, "missing pipeline cache entry records failed command index");
+}
+
+void test_vulkan_diagnostic_pipeline_cache_identifies_missing_vertex_shader()
+{
+    using namespace quiz_vulkan::render;
+
+    render_draw_list draw_list;
+    draw_list.commands.push_back(make_quad_command(
+        "quad",
+        render_rect{10.0f, 10.0f, 20.0f, 20.0f},
+        render_color{1.0f, 0.0f, 0.0f, 1.0f}));
+
+    const vulkan_backend::vulkan_frame_plan plan = vulkan_backend::build_vulkan_frame_plan(
+        draw_list,
+        vulkan_backend::vulkan_frame_plan_options{
+            .viewport = render_rect{0.0f, 0.0f, 100.0f, 100.0f},
+            .surface_width = 10,
+            .surface_height = 10,
+        });
+
+    vulkan_backend::diagnostic_vulkan_pipeline_cache cache(
+        vulkan_backend::diagnostic_vulkan_pipeline_cache_options{
+            .use_default_shader_modules = false,
+            .shader_modules = {vulkan_backend::vulkan_shader_module_descriptor{
+                .id = vulkan_backend::vulkan_shader_module_id{.value = "quad.fragment"},
+                .stage = vulkan_backend::vulkan_shader_stage::fragment,
+            }},
+        });
+
+    require(!cache.ensure_pipeline(plan.batches.front()), "pipeline cache reports missing vertex shader");
+
+    const vulkan_backend::vulkan_backend_pipeline_state& state = cache.pipeline_state();
+    require(state.missing_pipeline, "missing vertex shader marks pipeline missing");
+    require(!state.missing_descriptor, "missing vertex shader keeps descriptor available");
+    require(state.missing_shader, "missing vertex shader marks shader missing");
+    require(
+        state.missing_shader_stage == vulkan_backend::vulkan_shader_stage::vertex,
+        "missing vertex shader records vertex stage");
+    require(state.missing_shader_id.value == "quad.vertex", "missing vertex shader records shader module id");
+    require(state.missing_batch_kind == vulkan_backend::vulkan_batch_kind::quad, "missing vertex shader records batch kind");
+    require(state.missing_command_index == 0, "missing vertex shader records command index");
+    require(state.shader_registry.registry_checked, "missing vertex shader checks shader registry");
+    require(state.shader_registry.missing_shader, "shader registry records missing vertex shader");
+    require(
+        state.shader_registry.missing_stage == vulkan_backend::vulkan_shader_stage::vertex,
+        "shader registry records missing vertex stage");
+    require(state.shader_registry.missing_shader_id.value == "quad.vertex", "shader registry records vertex id");
+}
+
+void test_vulkan_diagnostic_pipeline_cache_identifies_missing_fragment_shader()
+{
+    using namespace quiz_vulkan::render;
+
+    render_draw_list draw_list;
+    draw_list.commands.push_back(make_image_command(
+        "image",
+        render_rect{10.0f, 10.0f, 20.0f, 20.0f},
+        "fixture://renderer/image.png"));
+
+    const vulkan_backend::vulkan_frame_plan plan = vulkan_backend::build_vulkan_frame_plan(
+        draw_list,
+        vulkan_backend::vulkan_frame_plan_options{
+            .viewport = render_rect{0.0f, 0.0f, 100.0f, 100.0f},
+            .surface_width = 10,
+            .surface_height = 10,
+        });
+
+    vulkan_backend::diagnostic_vulkan_pipeline_cache cache(
+        vulkan_backend::diagnostic_vulkan_pipeline_cache_options{
+            .use_default_shader_modules = false,
+            .shader_modules = {vulkan_backend::vulkan_shader_module_descriptor{
+                .id = vulkan_backend::vulkan_shader_module_id{.value = "image.vertex"},
+                .stage = vulkan_backend::vulkan_shader_stage::vertex,
+            }},
+        });
+
+    require(!cache.ensure_pipeline(plan.batches.front()), "pipeline cache reports missing fragment shader");
+
+    const vulkan_backend::vulkan_backend_pipeline_state& state = cache.pipeline_state();
+    require(state.missing_pipeline, "missing fragment shader marks pipeline missing");
+    require(!state.missing_descriptor, "missing fragment shader keeps descriptor available");
+    require(state.missing_shader, "missing fragment shader marks shader missing");
+    require(
+        state.missing_shader_stage == vulkan_backend::vulkan_shader_stage::fragment,
+        "missing fragment shader records fragment stage");
+    require(state.missing_shader_id.value == "image.fragment", "missing fragment shader records shader module id");
+    require(state.missing_batch_kind == vulkan_backend::vulkan_batch_kind::image, "missing fragment shader records batch kind");
+    require(state.missing_command_index == 0, "missing fragment shader records command index");
+    require(state.shader_registry.registry_checked, "missing fragment shader checks shader registry");
+    require(state.shader_registry.missing_shader, "shader registry records missing fragment shader");
+    require(
+        state.shader_registry.missing_stage == vulkan_backend::vulkan_shader_stage::fragment,
+        "shader registry records missing fragment stage");
+    require(state.shader_registry.missing_shader_id.value == "image.fragment", "shader registry records fragment id");
+}
+
+void test_vulkan_diagnostic_pipeline_cache_identifies_missing_batch_descriptor()
+{
+    using namespace quiz_vulkan::render;
+
+    render_draw_list draw_list;
+    draw_list.commands.push_back(make_text_command(
+        "text",
+        render_rect{10.0f, 10.0f, 20.0f, 20.0f},
+        "missing descriptor"));
+
+    const vulkan_backend::vulkan_frame_plan plan = vulkan_backend::build_vulkan_frame_plan(
+        draw_list,
+        vulkan_backend::vulkan_frame_plan_options{
+            .viewport = render_rect{0.0f, 0.0f, 100.0f, 100.0f},
+            .surface_width = 10,
+            .surface_height = 10,
+        });
+
+    vulkan_backend::diagnostic_vulkan_pipeline_cache cache(
+        vulkan_backend::diagnostic_vulkan_pipeline_cache_options{
+            .use_default_pipeline_descriptors = false,
+            .pipeline_descriptors = {vulkan_backend::vulkan_pipeline_descriptor{
+                .kind = vulkan_backend::vulkan_batch_kind::quad,
+                .vertex_shader = vulkan_backend::vulkan_shader_module_id{.value = "quad.vertex"},
+                .fragment_shader = vulkan_backend::vulkan_shader_module_id{.value = "quad.fragment"},
+            }},
+        });
+
+    require(!cache.ensure_pipeline(plan.batches.front()), "pipeline cache reports missing text descriptor");
+
+    const vulkan_backend::vulkan_backend_pipeline_state& state = cache.pipeline_state();
+    require(state.missing_pipeline, "missing descriptor marks pipeline missing");
+    require(state.missing_descriptor, "missing descriptor flag is set");
+    require(!state.missing_shader, "missing descriptor does not report missing shader");
+    require(
+        state.missing_batch_kind == vulkan_backend::vulkan_batch_kind::text,
+        "missing descriptor records text batch kind");
+    require(state.missing_command_index == 0, "missing descriptor records command index");
+    require(state.pipeline_descriptors.size() == 1, "pipeline cache uses injected descriptor set");
+    require(
+        state.descriptor_for(vulkan_backend::vulkan_batch_kind::text) == nullptr,
+        "pipeline cache exposes no text descriptor");
+    require(!state.shader_registry.registry_checked, "missing descriptor stops before shader registry lookup");
 }
 
 void test_vulkan_backend_adapter_completes_fake_device_lifecycle()
@@ -1783,6 +1946,7 @@ int main()
     test_vulkan_backend_fallback_reason_names_are_stable();
     test_vulkan_backend_frame_stage_names_are_stable();
     test_vulkan_command_recorder_failure_stage_names_are_stable();
+    test_vulkan_shader_stage_names_are_stable();
     test_draw_list_submission_counts_generic_work();
     test_renderer_backend_diagnostics_report_vulkan_not_requested();
     test_cpu_fallback_clips_and_discards();
@@ -1796,6 +1960,9 @@ int main()
     test_vulkan_diagnostic_command_recorder_reports_finish_failure();
     test_vulkan_diagnostic_pipeline_cache_reports_batch_capabilities();
     test_vulkan_diagnostic_pipeline_cache_identifies_missing_batch_pipeline();
+    test_vulkan_diagnostic_pipeline_cache_identifies_missing_vertex_shader();
+    test_vulkan_diagnostic_pipeline_cache_identifies_missing_fragment_shader();
+    test_vulkan_diagnostic_pipeline_cache_identifies_missing_batch_descriptor();
     test_vulkan_backend_adapter_completes_fake_device_lifecycle();
     test_vulkan_backend_adapter_preserves_plan_diagnostics();
     test_vulkan_backend_adapter_completes_empty_frame();

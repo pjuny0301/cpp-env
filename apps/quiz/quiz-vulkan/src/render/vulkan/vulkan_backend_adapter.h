@@ -4,6 +4,7 @@
 #include "render/vulkan/vulkan_frame_plan.h"
 
 #include <cstddef>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -74,6 +75,76 @@ struct vulkan_recorded_draw_batch {
     vulkan_scissor_rect scissor;
 };
 
+struct vulkan_shader_module_id {
+    std::string value;
+
+    bool empty() const
+    {
+        return value.empty();
+    }
+};
+
+enum class vulkan_shader_stage {
+    vertex,
+    fragment,
+};
+
+std::string_view shader_stage_name(vulkan_shader_stage stage);
+
+struct vulkan_shader_module_descriptor {
+    vulkan_shader_module_id id;
+    vulkan_shader_stage stage = vulkan_shader_stage::vertex;
+    std::string entry_point = "main";
+
+    bool valid() const
+    {
+        return !id.empty() && !entry_point.empty();
+    }
+};
+
+struct vulkan_pipeline_descriptor {
+    vulkan_batch_kind kind = vulkan_batch_kind::quad;
+    vulkan_shader_module_id vertex_shader;
+    vulkan_shader_module_id fragment_shader;
+
+    bool matches(vulkan_batch_kind batch_kind) const
+    {
+        return kind == batch_kind;
+    }
+
+    bool complete() const
+    {
+        return !vertex_shader.empty() && !fragment_shader.empty();
+    }
+};
+
+struct vulkan_backend_shader_registry_state {
+    bool registry_checked = false;
+    bool missing_shader = false;
+    vulkan_batch_kind missing_batch_kind = vulkan_batch_kind::quad;
+    vulkan_shader_stage missing_stage = vulkan_shader_stage::vertex;
+    vulkan_shader_module_id missing_shader_id;
+    std::size_t registered_shader_count = 0;
+    std::vector<vulkan_shader_module_descriptor> modules;
+
+    bool contains(const vulkan_shader_module_id& id, vulkan_shader_stage stage) const;
+};
+
+class diagnostic_vulkan_shader_registry {
+public:
+    diagnostic_vulkan_shader_registry();
+    explicit diagnostic_vulkan_shader_registry(std::vector<vulkan_shader_module_descriptor> modules);
+
+    bool require_shader(
+        vulkan_batch_kind kind,
+        vulkan_shader_stage stage,
+        const vulkan_shader_module_id& id);
+    const vulkan_backend_shader_registry_state& registry_state() const;
+
+private:
+    vulkan_backend_shader_registry_state state_;
+};
+
 struct vulkan_pipeline_capability {
     vulkan_batch_kind kind = vulkan_batch_kind::quad;
     bool available = false;
@@ -91,19 +162,30 @@ struct vulkan_backend_pipeline_state {
     bool cache_checked = false;
     bool ready = false;
     bool missing_pipeline = false;
+    bool missing_descriptor = false;
+    bool missing_shader = false;
     vulkan_batch_kind missing_batch_kind = vulkan_batch_kind::quad;
     std::size_t missing_command_index = 0;
+    vulkan_shader_stage missing_shader_stage = vulkan_shader_stage::vertex;
+    vulkan_shader_module_id missing_shader_id;
     std::size_t requested_pipeline_count = 0;
     std::vector<vulkan_pipeline_capability> capabilities;
     std::vector<vulkan_pipeline_cache_entry> cache_entries;
+    std::vector<vulkan_pipeline_descriptor> pipeline_descriptors;
+    vulkan_backend_shader_registry_state shader_registry;
 
     bool supports(vulkan_batch_kind kind) const;
+    const vulkan_pipeline_descriptor* descriptor_for(vulkan_batch_kind kind) const;
     bool completed() const;
 };
 
 struct diagnostic_vulkan_pipeline_cache_options {
     bool default_available = true;
+    bool use_default_shader_modules = true;
+    bool use_default_pipeline_descriptors = true;
     std::vector<vulkan_pipeline_capability> overrides;
+    std::vector<vulkan_shader_module_descriptor> shader_modules;
+    std::vector<vulkan_pipeline_descriptor> pipeline_descriptors;
 };
 
 class vulkan_pipeline_cache_interface {
@@ -124,6 +206,7 @@ public:
 
 private:
     diagnostic_vulkan_pipeline_cache_options options_;
+    diagnostic_vulkan_shader_registry shader_registry_;
     vulkan_backend_pipeline_state state_;
 };
 

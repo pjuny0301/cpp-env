@@ -2,6 +2,7 @@
 
 #include <concepts>
 #include <cstddef>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -43,6 +44,11 @@ static_assert(std::default_initializable<render::vulkan_backend::diagnostic_vulk
 static_assert(std::constructible_from<
     render::vulkan_backend::diagnostic_vulkan_pipeline_cache,
     render::vulkan_backend::diagnostic_vulkan_pipeline_cache_options>);
+
+static_assert(std::default_initializable<render::vulkan_backend::diagnostic_vulkan_shader_registry>);
+static_assert(std::constructible_from<
+    render::vulkan_backend::diagnostic_vulkan_shader_registry,
+    std::vector<render::vulkan_backend::vulkan_shader_module_descriptor>>);
 
 template <typename T>
 concept VulkanCommandRecorderInterface = requires(
@@ -89,6 +95,65 @@ static_assert(requires(render::vulkan_backend::vulkan_recorded_draw_batch record
     { recorded_batch.scissor } -> std::same_as<render::vulkan_backend::vulkan_scissor_rect&>;
 });
 
+static_assert(requires(render::vulkan_backend::vulkan_shader_module_id id) {
+    { id.value } -> std::same_as<std::string&>;
+    { id.empty() } -> std::same_as<bool>;
+});
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_shader_stage::vertex),
+    render::vulkan_backend::vulkan_shader_stage>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_shader_stage::fragment),
+    render::vulkan_backend::vulkan_shader_stage>);
+
+static_assert(requires(render::vulkan_backend::vulkan_shader_stage stage) {
+    { render::vulkan_backend::shader_stage_name(stage) } -> std::same_as<std::string_view>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_shader_module_descriptor descriptor) {
+    { descriptor.id } -> std::same_as<render::vulkan_backend::vulkan_shader_module_id&>;
+    { descriptor.stage } -> std::same_as<render::vulkan_backend::vulkan_shader_stage&>;
+    { descriptor.entry_point } -> std::same_as<std::string&>;
+    { descriptor.valid() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_pipeline_descriptor descriptor) {
+    { descriptor.kind } -> std::same_as<render::vulkan_backend::vulkan_batch_kind&>;
+    { descriptor.vertex_shader } -> std::same_as<render::vulkan_backend::vulkan_shader_module_id&>;
+    { descriptor.fragment_shader } -> std::same_as<render::vulkan_backend::vulkan_shader_module_id&>;
+    { descriptor.matches(render::vulkan_backend::vulkan_batch_kind::quad) } -> std::same_as<bool>;
+    { descriptor.complete() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_backend_shader_registry_state registry) {
+    { registry.registry_checked } -> std::same_as<bool&>;
+    { registry.missing_shader } -> std::same_as<bool&>;
+    { registry.missing_batch_kind } -> std::same_as<render::vulkan_backend::vulkan_batch_kind&>;
+    { registry.missing_stage } -> std::same_as<render::vulkan_backend::vulkan_shader_stage&>;
+    { registry.missing_shader_id } -> std::same_as<render::vulkan_backend::vulkan_shader_module_id&>;
+    { registry.registered_shader_count } -> std::same_as<std::size_t&>;
+    { registry.modules } -> std::same_as<std::vector<render::vulkan_backend::vulkan_shader_module_descriptor>&>;
+    {
+        registry.contains(
+            render::vulkan_backend::vulkan_shader_module_id{.value = "shader"},
+            render::vulkan_backend::vulkan_shader_stage::vertex)
+    } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    render::vulkan_backend::diagnostic_vulkan_shader_registry registry,
+    render::vulkan_backend::vulkan_shader_module_id id) {
+    {
+        registry.require_shader(
+            render::vulkan_backend::vulkan_batch_kind::quad,
+            render::vulkan_backend::vulkan_shader_stage::vertex,
+            id)
+    } -> std::same_as<bool>;
+    { registry.registry_state() }
+        -> std::same_as<const render::vulkan_backend::vulkan_backend_shader_registry_state&>;
+});
+
 static_assert(requires(render::vulkan_backend::vulkan_pipeline_capability capability) {
     { capability.kind } -> std::same_as<render::vulkan_backend::vulkan_batch_kind&>;
     { capability.available } -> std::same_as<bool&>;
@@ -106,18 +171,30 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_pipeline_state pip
     { pipeline.cache_checked } -> std::same_as<bool&>;
     { pipeline.ready } -> std::same_as<bool&>;
     { pipeline.missing_pipeline } -> std::same_as<bool&>;
+    { pipeline.missing_descriptor } -> std::same_as<bool&>;
+    { pipeline.missing_shader } -> std::same_as<bool&>;
     { pipeline.missing_batch_kind } -> std::same_as<render::vulkan_backend::vulkan_batch_kind&>;
     { pipeline.missing_command_index } -> std::same_as<std::size_t&>;
+    { pipeline.missing_shader_stage } -> std::same_as<render::vulkan_backend::vulkan_shader_stage&>;
+    { pipeline.missing_shader_id } -> std::same_as<render::vulkan_backend::vulkan_shader_module_id&>;
     { pipeline.requested_pipeline_count } -> std::same_as<std::size_t&>;
     { pipeline.capabilities } -> std::same_as<std::vector<render::vulkan_backend::vulkan_pipeline_capability>&>;
     { pipeline.cache_entries } -> std::same_as<std::vector<render::vulkan_backend::vulkan_pipeline_cache_entry>&>;
+    { pipeline.pipeline_descriptors } -> std::same_as<std::vector<render::vulkan_backend::vulkan_pipeline_descriptor>&>;
+    { pipeline.shader_registry } -> std::same_as<render::vulkan_backend::vulkan_backend_shader_registry_state&>;
     { pipeline.supports(render::vulkan_backend::vulkan_batch_kind::quad) } -> std::same_as<bool>;
+    { pipeline.descriptor_for(render::vulkan_backend::vulkan_batch_kind::quad) }
+        -> std::same_as<const render::vulkan_backend::vulkan_pipeline_descriptor*>;
     { pipeline.completed() } -> std::same_as<bool>;
 });
 
 static_assert(requires(render::vulkan_backend::diagnostic_vulkan_pipeline_cache_options options) {
     { options.default_available } -> std::same_as<bool&>;
+    { options.use_default_shader_modules } -> std::same_as<bool&>;
+    { options.use_default_pipeline_descriptors } -> std::same_as<bool&>;
     { options.overrides } -> std::same_as<std::vector<render::vulkan_backend::vulkan_pipeline_capability>&>;
+    { options.shader_modules } -> std::same_as<std::vector<render::vulkan_backend::vulkan_shader_module_descriptor>&>;
+    { options.pipeline_descriptors } -> std::same_as<std::vector<render::vulkan_backend::vulkan_pipeline_descriptor>&>;
 });
 
 static_assert(std::same_as<

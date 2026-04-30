@@ -55,6 +55,104 @@ void mark_recorder_failure(
     state.failure_recording_index = recording_index;
 }
 
+vulkan_shader_module_id shader_id(std::string value)
+{
+    return vulkan_shader_module_id{.value = std::move(value)};
+}
+
+std::vector<vulkan_shader_module_descriptor> make_default_shader_modules()
+{
+    return {
+        vulkan_shader_module_descriptor{
+            .id = shader_id("quad.vertex"),
+            .stage = vulkan_shader_stage::vertex,
+        },
+        vulkan_shader_module_descriptor{
+            .id = shader_id("quad.fragment"),
+            .stage = vulkan_shader_stage::fragment,
+        },
+        vulkan_shader_module_descriptor{
+            .id = shader_id("text.vertex"),
+            .stage = vulkan_shader_stage::vertex,
+        },
+        vulkan_shader_module_descriptor{
+            .id = shader_id("text.fragment"),
+            .stage = vulkan_shader_stage::fragment,
+        },
+        vulkan_shader_module_descriptor{
+            .id = shader_id("image.vertex"),
+            .stage = vulkan_shader_stage::vertex,
+        },
+        vulkan_shader_module_descriptor{
+            .id = shader_id("image.fragment"),
+            .stage = vulkan_shader_stage::fragment,
+        },
+        vulkan_shader_module_descriptor{
+            .id = shader_id("debug_bounds.vertex"),
+            .stage = vulkan_shader_stage::vertex,
+        },
+        vulkan_shader_module_descriptor{
+            .id = shader_id("debug_bounds.fragment"),
+            .stage = vulkan_shader_stage::fragment,
+        },
+    };
+}
+
+std::vector<vulkan_pipeline_descriptor> make_default_pipeline_descriptors()
+{
+    return {
+        vulkan_pipeline_descriptor{
+            .kind = vulkan_batch_kind::quad,
+            .vertex_shader = shader_id("quad.vertex"),
+            .fragment_shader = shader_id("quad.fragment"),
+        },
+        vulkan_pipeline_descriptor{
+            .kind = vulkan_batch_kind::text,
+            .vertex_shader = shader_id("text.vertex"),
+            .fragment_shader = shader_id("text.fragment"),
+        },
+        vulkan_pipeline_descriptor{
+            .kind = vulkan_batch_kind::image,
+            .vertex_shader = shader_id("image.vertex"),
+            .fragment_shader = shader_id("image.fragment"),
+        },
+        vulkan_pipeline_descriptor{
+            .kind = vulkan_batch_kind::debug_bounds,
+            .vertex_shader = shader_id("debug_bounds.vertex"),
+            .fragment_shader = shader_id("debug_bounds.fragment"),
+        },
+    };
+}
+
+void append_shader_modules(
+    std::vector<vulkan_shader_module_descriptor>& modules,
+    std::vector<vulkan_shader_module_descriptor> extra_modules)
+{
+    modules.reserve(modules.size() + extra_modules.size());
+    for (vulkan_shader_module_descriptor& module : extra_modules) {
+        modules.push_back(std::move(module));
+    }
+}
+
+void apply_pipeline_descriptor_overrides(
+    std::vector<vulkan_pipeline_descriptor>& descriptors,
+    std::vector<vulkan_pipeline_descriptor> overrides)
+{
+    for (vulkan_pipeline_descriptor& override_descriptor : overrides) {
+        bool replaced = false;
+        for (vulkan_pipeline_descriptor& descriptor : descriptors) {
+            if (descriptor.kind == override_descriptor.kind) {
+                descriptor = std::move(override_descriptor);
+                replaced = true;
+                break;
+            }
+        }
+        if (!replaced) {
+            descriptors.push_back(std::move(override_descriptor));
+        }
+    }
+}
+
 std::vector<vulkan_pipeline_capability> make_pipeline_capabilities(bool available)
 {
     return {
@@ -103,6 +201,44 @@ vulkan_pipeline_cache_entry* find_pipeline_entry(
         }
     }
     return nullptr;
+}
+
+const vulkan_pipeline_descriptor* find_pipeline_descriptor(
+    const std::vector<vulkan_pipeline_descriptor>& descriptors,
+    vulkan_batch_kind kind)
+{
+    for (const vulkan_pipeline_descriptor& descriptor : descriptors) {
+        if (descriptor.matches(kind)) {
+            return &descriptor;
+        }
+    }
+    return nullptr;
+}
+
+void mark_missing_pipeline_descriptor(
+    vulkan_backend_pipeline_state& state,
+    const vulkan_draw_batch& batch)
+{
+    state.missing_pipeline = true;
+    state.missing_descriptor = true;
+    state.ready = false;
+    state.missing_batch_kind = batch.kind;
+    state.missing_command_index = batch.command_index;
+}
+
+void mark_missing_pipeline_shader(
+    vulkan_backend_pipeline_state& state,
+    const vulkan_draw_batch& batch,
+    const vulkan_backend_shader_registry_state& registry_state)
+{
+    state.shader_registry = registry_state;
+    state.missing_pipeline = true;
+    state.missing_shader = true;
+    state.ready = false;
+    state.missing_batch_kind = batch.kind;
+    state.missing_command_index = batch.command_index;
+    state.missing_shader_stage = state.shader_registry.missing_stage;
+    state.missing_shader_id = state.shader_registry.missing_shader_id;
 }
 
 bool ensure_frame_plan_pipelines(
@@ -200,6 +336,64 @@ std::string_view command_recorder_failure_stage_name(vulkan_command_recorder_fai
     return "unknown";
 }
 
+std::string_view shader_stage_name(vulkan_shader_stage stage)
+{
+    switch (stage) {
+    case vulkan_shader_stage::vertex:
+        return "vertex";
+    case vulkan_shader_stage::fragment:
+        return "fragment";
+    }
+
+    return "unknown";
+}
+
+bool vulkan_backend_shader_registry_state::contains(
+    const vulkan_shader_module_id& id,
+    vulkan_shader_stage stage) const
+{
+    for (const vulkan_shader_module_descriptor& module : modules) {
+        if (module.id.value == id.value && module.stage == stage && module.valid()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+diagnostic_vulkan_shader_registry::diagnostic_vulkan_shader_registry()
+    : diagnostic_vulkan_shader_registry(make_default_shader_modules())
+{
+}
+
+diagnostic_vulkan_shader_registry::diagnostic_vulkan_shader_registry(
+    std::vector<vulkan_shader_module_descriptor> modules)
+{
+    state_.modules = std::move(modules);
+    state_.registered_shader_count = state_.modules.size();
+}
+
+bool diagnostic_vulkan_shader_registry::require_shader(
+    vulkan_batch_kind kind,
+    vulkan_shader_stage stage,
+    const vulkan_shader_module_id& id)
+{
+    state_.registry_checked = true;
+    if (state_.contains(id, stage)) {
+        return true;
+    }
+
+    state_.missing_shader = true;
+    state_.missing_batch_kind = kind;
+    state_.missing_stage = stage;
+    state_.missing_shader_id = id;
+    return false;
+}
+
+const vulkan_backend_shader_registry_state& diagnostic_vulkan_shader_registry::registry_state() const
+{
+    return state_;
+}
+
 bool vulkan_backend_pipeline_state::supports(vulkan_batch_kind kind) const
 {
     for (const vulkan_pipeline_capability& capability : capabilities) {
@@ -208,6 +402,11 @@ bool vulkan_backend_pipeline_state::supports(vulkan_batch_kind kind) const
         }
     }
     return false;
+}
+
+const vulkan_pipeline_descriptor* vulkan_backend_pipeline_state::descriptor_for(vulkan_batch_kind kind) const
+{
+    return find_pipeline_descriptor(pipeline_descriptors, kind);
 }
 
 bool vulkan_backend_pipeline_state::completed() const
@@ -256,9 +455,23 @@ diagnostic_vulkan_pipeline_cache::diagnostic_vulkan_pipeline_cache(
     diagnostic_vulkan_pipeline_cache_options options)
     : options_(std::move(options))
 {
+    std::vector<vulkan_shader_module_descriptor> shader_modules;
+    if (options_.use_default_shader_modules) {
+        shader_modules = make_default_shader_modules();
+    }
+    append_shader_modules(shader_modules, std::move(options_.shader_modules));
+    shader_registry_ = diagnostic_vulkan_shader_registry(std::move(shader_modules));
+    state_.shader_registry = shader_registry_.registry_state();
+
     state_.capabilities = make_pipeline_capabilities(options_.default_available);
     apply_pipeline_overrides(state_.capabilities, options_.overrides);
     state_.cache_entries = make_pipeline_cache_entries(state_.capabilities);
+    if (options_.use_default_pipeline_descriptors) {
+        state_.pipeline_descriptors = make_default_pipeline_descriptors();
+    }
+    apply_pipeline_descriptor_overrides(
+        state_.pipeline_descriptors,
+        std::move(options_.pipeline_descriptors));
     state_.ready = true;
 }
 
@@ -287,6 +500,21 @@ bool diagnostic_vulkan_pipeline_cache::ensure_pipeline(const vulkan_draw_batch& 
         return false;
     }
 
+    const vulkan_pipeline_descriptor* descriptor = state_.descriptor_for(batch.kind);
+    if (descriptor == nullptr || !descriptor->complete()) {
+        mark_missing_pipeline_descriptor(state_, batch);
+        return false;
+    }
+    if (!shader_registry_.require_shader(batch.kind, vulkan_shader_stage::vertex, descriptor->vertex_shader)) {
+        mark_missing_pipeline_shader(state_, batch, shader_registry_.registry_state());
+        return false;
+    }
+    if (!shader_registry_.require_shader(batch.kind, vulkan_shader_stage::fragment, descriptor->fragment_shader)) {
+        mark_missing_pipeline_shader(state_, batch, shader_registry_.registry_state());
+        return false;
+    }
+
+    state_.shader_registry = shader_registry_.registry_state();
     state_.ready = !state_.missing_pipeline;
     return true;
 }

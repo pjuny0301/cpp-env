@@ -65,6 +65,9 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.glyph_atlas_placements }
         -> std::same_as<std::vector<render::render_text_glyph_atlas_placement_snapshot>&>;
     { diagnostics.glyph_atlas_metrics } -> std::same_as<render::render_text_glyph_atlas_metrics_snapshot&>;
+    { diagnostics.glyph_atlas_pages } -> std::same_as<std::vector<render::render_text_glyph_atlas_page_snapshot>&>;
+    { diagnostics.glyph_atlas_page_policy }
+        -> std::same_as<render::render_text_glyph_atlas_page_policy_snapshot&>;
     { diagnostics.utf8_clusters } -> std::same_as<std::vector<render::render_text_utf8_cluster_snapshot>&>;
     { diagnostics.font_face_selections }
         -> std::same_as<std::vector<render::render_text_font_face_selection_snapshot>&>;
@@ -86,6 +89,7 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.has_caret_rects() } -> std::same_as<bool>;
     { diagnostics.has_selection_rects() } -> std::same_as<bool>;
     { diagnostics.has_glyph_atlas_placements() } -> std::same_as<bool>;
+    { diagnostics.has_glyph_atlas_pages() } -> std::same_as<bool>;
     { diagnostics.has_utf8_clusters() } -> std::same_as<bool>;
     { diagnostics.has_font_face_selections() } -> std::same_as<bool>;
     { diagnostics.has_glyph_font_resolutions() } -> std::same_as<bool>;
@@ -153,6 +157,33 @@ static_assert(requires(render::render_text_glyph_atlas_metrics_snapshot metrics)
     { metrics.dirty_page_count } -> std::same_as<std::size_t&>;
     { metrics.page_count_after } -> std::same_as<std::size_t&>;
     { metrics.latest_page_revision } -> std::same_as<render::render_text_revision&>;
+});
+
+static_assert(requires(render::render_text_glyph_atlas_page_snapshot page) {
+    { page.page } -> std::same_as<render::render_text_atlas_page&>;
+    { page.cluster_count } -> std::same_as<std::size_t&>;
+    { page.cache_hit_count } -> std::same_as<std::size_t&>;
+    { page.new_slot_count } -> std::same_as<std::size_t&>;
+    { page.created_page_count } -> std::same_as<std::size_t&>;
+    { page.reused_page_count } -> std::same_as<std::size_t&>;
+    { page.dirty_update_count } -> std::same_as<std::size_t&>;
+    { page.dirty_cluster_count } -> std::same_as<std::size_t&>;
+    { page.dirty_bounds } -> std::same_as<render::render_rect&>;
+    { page.upload_ready } -> std::same_as<bool&>;
+});
+
+static_assert(requires(render::render_text_glyph_atlas_page_policy_snapshot policy) {
+    { policy.page_count } -> std::same_as<std::size_t&>;
+    { policy.allocated_page_count } -> std::same_as<std::size_t&>;
+    { policy.created_page_count } -> std::same_as<std::size_t&>;
+    { policy.dirty_page_count } -> std::same_as<std::size_t&>;
+    { policy.upload_ready_page_count } -> std::same_as<std::size_t&>;
+    { policy.cache_hit_page_count } -> std::same_as<std::size_t&>;
+    { policy.dirty_cluster_count } -> std::same_as<std::size_t&>;
+    { policy.total_cluster_count } -> std::same_as<std::size_t&>;
+    { policy.total_new_slot_count } -> std::same_as<std::size_t&>;
+    { policy.total_cache_hit_count } -> std::same_as<std::size_t&>;
+    { policy.repeated_layout_clean_page_count } -> std::same_as<std::size_t&>;
 });
 
 static_assert(requires(render::render_text_utf8_cluster_snapshot cluster) {

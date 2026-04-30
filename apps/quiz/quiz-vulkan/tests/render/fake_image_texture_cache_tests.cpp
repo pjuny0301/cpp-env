@@ -246,6 +246,21 @@ const quiz_vulkan::render::fake_image_texture_eviction_snapshot* find_eviction_s
     return nullptr;
 }
 
+const quiz_vulkan::render::fake_image_texture_residency_transition_snapshot* find_residency_transition(
+    const quiz_vulkan::render::fake_image_texture_cache_snapshot& snapshot,
+    std::string_view source_key,
+    quiz_vulkan::render::fake_image_texture_residency_transition_reason reason)
+{
+    for (const quiz_vulkan::render::fake_image_texture_residency_transition_snapshot& transition
+         : snapshot.residency_transitions) {
+        if (transition.key.source_key == source_key && transition.reason == reason) {
+            return &transition;
+        }
+    }
+
+    return nullptr;
+}
+
 void test_sampler_defaults_are_appended_to_render_image_ref()
 {
     using namespace quiz_vulkan::render;
@@ -780,9 +795,14 @@ void test_texture_uploader_uploads_valid_decoded_image()
     require(uploader.upload_request_snapshots[0].generation_id == 1, "request snapshot records generation id");
     require(uploader.upload_request_snapshots[0].sampler == render_image_sampler_policy{}, "request snapshot records sampler");
     require(uploader.upload_request_snapshots[0].staging_byte_count == 8, "request snapshot records staging bytes");
+    require(uploader.upload_request_snapshots[0].enqueue_sequence == 1, "request snapshot records enqueue sequence");
+    require(uploader.upload_request_snapshots[0].queue_depth_before_enqueue == 0, "request snapshot records queue depth before enqueue");
+    require(uploader.upload_request_snapshots[0].queue_depth_after_enqueue == 1, "request snapshot records queue depth after enqueue");
     require(uploader.upload_result_snapshots[0].generation_id == 1, "result snapshot records generation id");
     require(uploader.upload_result_snapshots[0].status == render_image_texture_upload_status::uploaded, "result snapshot records status");
     require(uploader.upload_result_snapshots[0].staging_byte_count == 8, "result snapshot records staging bytes");
+    require(uploader.upload_result_snapshots[0].completion_sequence == 2, "result snapshot records completion sequence");
+    require(uploader.upload_result_snapshots[0].queue_depth_after_completion == 0, "result snapshot records queue depth after completion");
 
     const fake_image_texture_upload_snapshot snapshot = uploader.diagnostic_snapshot();
     require(snapshot.upload_count == 1, "texture uploader snapshot reports upload count");
@@ -796,6 +816,17 @@ void test_texture_uploader_uploads_valid_decoded_image()
     require(snapshot.request_snapshots.size() == 1, "texture uploader snapshot carries request snapshot");
     require(snapshot.result_snapshots.size() == 1, "texture uploader snapshot carries result snapshot");
     require(snapshot.entries.size() == 1, "texture uploader snapshot records entry");
+    require(snapshot.enqueued_upload_count == 1, "texture uploader snapshot reports enqueued uploads");
+    require(snapshot.completed_upload_count == 1, "texture uploader snapshot reports completed uploads");
+    require(snapshot.pending_upload_count == 0, "texture uploader snapshot reports no pending uploads");
+    require(snapshot.next_queue_sequence == 3, "texture uploader snapshot reports next queue sequence");
+    require(snapshot.queue_entries.size() == 1, "texture uploader snapshot records queue entry");
+    require(snapshot.queue_entries[0].enqueue_sequence == 1, "texture uploader queue entry records enqueue sequence");
+    require(snapshot.queue_entries[0].completion_sequence == 2, "texture uploader queue entry records completion sequence");
+    require(snapshot.queue_entries[0].completed, "texture uploader queue entry records completion");
+    require(snapshot.queue_entries[0].status == render_image_texture_upload_status::uploaded, "texture uploader queue entry records status");
+    require(snapshot.queue_entries[0].queue_depth_after_enqueue == 1, "texture uploader queue entry records enqueue depth");
+    require(snapshot.queue_entries[0].queue_depth_after_completion == 0, "texture uploader queue entry records completion depth");
     require(snapshot.entries[0].generation_id == 1, "texture uploader snapshot records generation id");
     require(snapshot.entries[0].key == key, "texture uploader snapshot records key");
     require(snapshot.entries[0].sampler == render_image_sampler_policy{}, "texture uploader snapshot records sampler");
@@ -804,6 +835,179 @@ void test_texture_uploader_uploads_valid_decoded_image()
     require(snapshot.entries[0].staging_byte_count == 8, "texture uploader snapshot records staging bytes");
     require(snapshot.entries[0].request.generation_id == 1, "entry request snapshot records generation id");
     require(snapshot.entries[0].result.texture.id == uploaded.texture.id, "entry result snapshot records handle");
+}
+
+void test_texture_uploader_reports_deterministic_queue_lifecycle()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_image_texture_key key{
+        .source_key = "textures/upload-queue.ppm",
+        .sampler = render_image_sampler_policy{},
+    };
+    fake_image_texture_uploader uploader;
+
+    const render_image_texture_upload_result uploaded = uploader.upload(render_image_texture_upload_request{
+        .key = key,
+        .sampler = render_image_sampler_policy{},
+        .image = make_rgba_2x1_decoded_image(),
+    });
+    render_decoded_image invalid_payload = make_rgba_2x1_decoded_image();
+    invalid_payload.pixels.pop_back();
+    const render_image_texture_upload_result failed = uploader.upload(render_image_texture_upload_request{
+        .key = key,
+        .sampler = render_image_sampler_policy{},
+        .image = invalid_payload,
+    });
+    require(uploaded.ok(), "queued upload lifecycle starts with successful upload");
+    require(!failed.ok(), "queued upload lifecycle records failed upload");
+
+    const fake_image_texture_upload_snapshot snapshot = uploader.diagnostic_snapshot();
+    require(snapshot.upload_count == 2, "queued upload snapshot records all attempts");
+    require(snapshot.enqueued_upload_count == 2, "queued upload snapshot records enqueued count");
+    require(snapshot.completed_upload_count == 2, "queued upload snapshot records completed count");
+    require(snapshot.pending_upload_count == 0, "queued upload snapshot has no pending work");
+    require(snapshot.failed_upload_count == 1, "queued upload snapshot records one failure");
+    require(snapshot.next_queue_sequence == 5, "queued upload snapshot advances enqueue/completion sequence");
+    require(snapshot.request_snapshots.size() == 2, "queued upload snapshot records request snapshots");
+    require(snapshot.result_snapshots.size() == 2, "queued upload snapshot records result snapshots");
+    require(snapshot.queue_entries.size() == 2, "queued upload snapshot records queue entries");
+
+    require(snapshot.request_snapshots[0].enqueue_sequence == 1, "first queued request has enqueue sequence");
+    require(snapshot.result_snapshots[0].completion_sequence == 2, "first queued result has completion sequence");
+    require(snapshot.queue_entries[0].generation_id == 1, "first queue entry records generation");
+    require(snapshot.queue_entries[0].completed, "first queue entry is completed");
+    require(snapshot.queue_entries[0].status == render_image_texture_upload_status::uploaded, "first queue entry records uploaded status");
+    require(snapshot.queue_entries[0].texture.id == uploaded.texture.id, "first queue entry records texture");
+    require(snapshot.queue_entries[0].staging_byte_count == 8, "first queue entry records staged bytes");
+    require(snapshot.queue_entries[0].queue_depth_after_enqueue == 1, "first queue entry records enqueue depth");
+    require(snapshot.queue_entries[0].queue_depth_after_completion == 0, "first queue entry records completion depth");
+
+    require(snapshot.request_snapshots[1].enqueue_sequence == 3, "second queued request has enqueue sequence");
+    require(snapshot.result_snapshots[1].completion_sequence == 4, "second queued result has completion sequence");
+    require(snapshot.queue_entries[1].generation_id == 2, "second queue entry records generation");
+    require(snapshot.queue_entries[1].completed, "second queue entry is completed");
+    require(
+        snapshot.queue_entries[1].status == render_image_texture_upload_status::invalid_image,
+        "second queue entry records invalid image status");
+    require(!snapshot.queue_entries[1].texture.valid(), "failed queue entry records no texture handle");
+    require(snapshot.queue_entries[1].staging_byte_count == 0, "failed queue entry records no staged bytes");
+    require(snapshot.queue_entries[1].queue_depth_after_enqueue == 1, "failed queue entry records enqueue depth");
+    require(snapshot.queue_entries[1].queue_depth_after_completion == 0, "failed queue entry records completion depth");
+    require(!snapshot.queue_entries[1].diagnostic.empty(), "failed queue entry preserves diagnostic");
+}
+
+void test_texture_uploader_reports_retry_eligibility_and_backoff()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_image_texture_key key{
+        .source_key = "textures/upload-retry.ppm",
+        .sampler = render_image_sampler_policy{},
+    };
+    fake_image_texture_uploader uploader;
+
+    const render_image_texture_upload_result uploaded = uploader.upload(render_image_texture_upload_request{
+        .key = key,
+        .sampler = render_image_sampler_policy{},
+        .image = make_rgba_2x1_decoded_image(),
+    });
+
+    render_decoded_image invalid_payload = make_rgba_2x1_decoded_image();
+    invalid_payload.pixels.pop_back();
+    const render_image_texture_upload_result first_retryable_failure = uploader.upload(render_image_texture_upload_request{
+        .key = key,
+        .sampler = render_image_sampler_policy{},
+        .image = invalid_payload,
+    });
+    const render_image_texture_upload_result second_retryable_failure = uploader.upload(render_image_texture_upload_request{
+        .key = key,
+        .sampler = render_image_sampler_policy{},
+        .image = invalid_payload,
+    });
+    const render_image_texture_upload_result invalid_key_failure = uploader.upload(render_image_texture_upload_request{
+        .key = render_image_texture_key{.source_key = {}, .sampler = render_image_sampler_policy{}},
+        .sampler = render_image_sampler_policy{},
+        .image = make_rgba_2x1_decoded_image(),
+    });
+
+    require(uploaded.ok(), "retry policy starts from successful upload");
+    require(!first_retryable_failure.ok(), "retry policy records first retryable failure");
+    require(!second_retryable_failure.ok(), "retry policy records second retryable failure");
+    require(!invalid_key_failure.ok(), "retry policy records nonretryable failure");
+    require(is_retryable_render_image_texture_upload_status(render_image_texture_upload_status::invalid_image), "invalid image status is retryable");
+    require(
+        !is_retryable_render_image_texture_upload_status(render_image_texture_upload_status::invalid_key),
+        "invalid key status is not retryable");
+    require(fake_image_texture_upload_retry_backoff_sequence_delta(1) == 1, "first retry backoff is one sequence");
+    require(fake_image_texture_upload_retry_backoff_sequence_delta(2) == 2, "second retry backoff doubles");
+    require(fake_image_texture_upload_retry_backoff_sequence_delta(6) == 16, "retry backoff is capped");
+
+    const fake_image_texture_upload_snapshot snapshot = uploader.diagnostic_snapshot();
+    require(snapshot.upload_count == 4, "retry policy snapshot records all uploads");
+    require(snapshot.failed_upload_count == 3, "retry policy snapshot records failed uploads");
+    require(snapshot.retryable_upload_count == 2, "retry policy snapshot counts retryable failures");
+    require(snapshot.nonretryable_upload_count == 1, "retry policy snapshot counts nonretryable failures");
+    require(snapshot.completed_without_retry_count == 1, "retry policy snapshot counts completed upload");
+    require(snapshot.retry_snapshots.size() == 4, "retry policy snapshot records retry decisions");
+    require(snapshot.queue_entries.size() == 4, "retry policy snapshot records queue decisions");
+    require(snapshot.next_queue_sequence == 9, "retry policy snapshot advances deterministic queue sequence");
+
+    const fake_image_texture_upload_retry_snapshot& success_retry = snapshot.retry_snapshots[0];
+    require(success_retry.generation_id == 1, "successful retry snapshot records generation");
+    require(success_retry.status == render_image_texture_upload_status::uploaded, "successful retry snapshot records uploaded status");
+    require(
+        success_retry.eligibility == fake_image_texture_upload_retry_eligibility::not_needed,
+        "successful retry snapshot reports no retry needed");
+    require(success_retry.attempt_count_for_key == 1, "successful retry snapshot records attempt count");
+    require(success_retry.failed_attempt_count_for_key == 0, "successful retry snapshot records no failures");
+    require(success_retry.next_retry_sequence == 0, "successful retry snapshot records no retry sequence");
+    require(
+        fake_image_texture_upload_retry_eligibility_name(success_retry.eligibility) == "not_needed",
+        "successful retry snapshot reports eligibility name");
+
+    const fake_image_texture_upload_retry_snapshot& first_retry = snapshot.retry_snapshots[1];
+    require(first_retry.generation_id == 2, "first retryable snapshot records generation");
+    require(
+        first_retry.eligibility == fake_image_texture_upload_retry_eligibility::eligible,
+        "first retryable snapshot is eligible");
+    require(first_retry.attempt_count_for_key == 2, "first retryable snapshot records attempt count");
+    require(first_retry.failed_attempt_count_for_key == 1, "first retryable snapshot records failed count");
+    require(first_retry.retry_after_queue_sequence_delta == 1, "first retryable snapshot records backoff");
+    require(first_retry.next_retry_sequence == 5, "first retryable snapshot records next retry sequence");
+    require(!first_retry.diagnostic.empty(), "first retryable snapshot includes diagnostic");
+
+    const fake_image_texture_upload_retry_snapshot& second_retry = snapshot.retry_snapshots[2];
+    require(second_retry.generation_id == 3, "second retryable snapshot records generation");
+    require(
+        second_retry.eligibility == fake_image_texture_upload_retry_eligibility::eligible,
+        "second retryable snapshot is eligible");
+    require(second_retry.attempt_count_for_key == 3, "second retryable snapshot records attempt count");
+    require(second_retry.failed_attempt_count_for_key == 2, "second retryable snapshot records failed count");
+    require(second_retry.retry_after_queue_sequence_delta == 2, "second retryable snapshot records doubled backoff");
+    require(second_retry.next_retry_sequence == 8, "second retryable snapshot records next retry sequence");
+
+    const fake_image_texture_upload_retry_snapshot& nonretryable = snapshot.retry_snapshots[3];
+    require(nonretryable.generation_id == 4, "nonretryable snapshot records generation");
+    require(
+        nonretryable.eligibility == fake_image_texture_upload_retry_eligibility::ineligible,
+        "nonretryable snapshot is ineligible");
+    require(nonretryable.status == render_image_texture_upload_status::invalid_key, "nonretryable snapshot records invalid key");
+    require(nonretryable.attempt_count_for_key == 1, "nonretryable snapshot records separate key attempts");
+    require(nonretryable.failed_attempt_count_for_key == 1, "nonretryable snapshot records failed count");
+    require(nonretryable.retry_after_queue_sequence_delta == 0, "nonretryable snapshot records no backoff");
+    require(nonretryable.next_retry_sequence == 0, "nonretryable snapshot records no retry sequence");
+    require(
+        fake_image_texture_upload_retry_eligibility_name(nonretryable.eligibility) == "ineligible",
+        "nonretryable snapshot reports eligibility name");
+
+    require(
+        snapshot.queue_entries[1].retry.next_retry_sequence == first_retry.next_retry_sequence,
+        "queue entry carries retry summary");
+    require(
+        snapshot.entries[2].retry.retry_after_queue_sequence_delta
+            == second_retry.retry_after_queue_sequence_delta,
+        "upload entry carries retry summary");
 }
 
 void test_texture_uploader_rejects_invalid_inputs()
@@ -1761,6 +1965,99 @@ void test_texture_cache_pinned_residency_can_exceed_capacity_without_failures()
     require(final_snapshot.over_capacity_texture_count == 2, "final pinned snapshot counts uncached attempts");
 }
 
+void test_texture_cache_records_residency_transition_diagnostics()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source_a = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/transition-a.ppm"})
+                                                    .source;
+    const render_resolved_image_source source_b = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/transition-b.ppm"})
+                                                    .source;
+
+    ppm_image_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+    cache.set_max_cached_pixel_count(1);
+    cache.set_placeholder_encoded_bytes_for_source(source_a.cache_key(), make_ppm_1x1_encoded_bytes());
+    cache.set_placeholder_encoded_bytes_for_source(source_b.cache_key(), make_ppm_1x1_encoded_bytes());
+
+    const render_image_texture_request request_a{.source = source_a, .sampler = render_image_sampler_policy{}};
+    const render_image_texture_request request_b{.source = source_b, .sampler = render_image_sampler_policy{}};
+    const render_image_texture_key key_a = make_render_image_texture_key(request_a);
+    const render_image_texture_key key_b = make_render_image_texture_key(request_b);
+
+    cache.pin_texture(key_a);
+    cache.pin_texture(key_b);
+    const render_image_texture_result first_a = cache.acquire_texture(request_a);
+    const render_image_texture_result first_b = cache.acquire_texture(request_b);
+    require(first_a.ok(), "transition source A creates a pinned texture");
+    require(first_b.ok(), "transition source B creates a pinned texture");
+    require(cache.cached_texture_count() == 2, "transition setup keeps pinned textures over capacity");
+
+    const fake_image_texture_cache_snapshot pinned_snapshot = cache.diagnostic_snapshot();
+    require(pinned_snapshot.residency_transition_count == 4, "transition snapshot records pins and cache inserts");
+    require(pinned_snapshot.residency_transitions.size() == 4, "transition snapshot carries transition entries");
+    const fake_image_texture_residency_transition_snapshot* future_pin = find_residency_transition(
+        pinned_snapshot,
+        source_a.cache_key(),
+        fake_image_texture_residency_transition_reason::pinned);
+    const fake_image_texture_residency_transition_snapshot* cache_insert = find_residency_transition(
+        pinned_snapshot,
+        source_a.cache_key(),
+        fake_image_texture_residency_transition_reason::cache_inserted);
+    require(future_pin != nullptr, "future pin transition is recorded");
+    require(future_pin->sequence == 1, "future pin transition has deterministic sequence");
+    require(!future_pin->resident, "future pin transition records nonresident key");
+    require(future_pin->changed, "future pin transition records changed residency");
+    require(future_pin->previous_residency == fake_image_texture_residency::evictable, "future pin records previous evictable");
+    require(future_pin->new_residency == fake_image_texture_residency::pinned, "future pin records pinned target");
+    require(!future_pin->texture.valid(), "future pin has no texture handle yet");
+    require(!future_pin->diagnostic.empty(), "future pin transition includes diagnostic");
+
+    require(cache_insert != nullptr, "cache insert transition is recorded");
+    require(cache_insert->resident, "cache insert transition records resident texture");
+    require(!cache_insert->changed, "cache insert transition keeps configured residency");
+    require(cache_insert->texture.id == first_a.texture.id, "cache insert transition records texture handle");
+    require(cache_insert->upload_generation_id == 1, "cache insert transition records upload generation");
+    require(cache_insert->previous_residency == fake_image_texture_residency::pinned, "cache insert sees configured pinned");
+    require(cache_insert->new_residency == fake_image_texture_residency::pinned, "cache insert stores pinned");
+    require(cache_insert->last_used_sequence == 1, "cache insert transition records last use");
+    require(cache_insert->pixel_count == 1, "cache insert transition records pixel count");
+    require(
+        fake_image_texture_residency_transition_reason_name(cache_insert->reason) == "cache_inserted",
+        "cache insert transition reports reason name");
+
+    cache.unpin_texture(key_a);
+    const fake_image_texture_cache_snapshot after_unpin = cache.diagnostic_snapshot();
+    require(after_unpin.residency_transition_count == 5, "unpin appends transition");
+    require(after_unpin.capacity_eviction_count == 1, "unpinning over capacity evicts evictable texture");
+    require(after_unpin.texture_count == 1, "unpin eviction leaves one pinned texture");
+    require(find_snapshot_entry(after_unpin, source_a.cache_key()) == nullptr, "unpinned source A was evicted");
+    require(find_snapshot_entry(after_unpin, source_b.cache_key()) != nullptr, "source B remains resident");
+
+    const fake_image_texture_residency_transition_snapshot* unpin_transition = find_residency_transition(
+        after_unpin,
+        source_a.cache_key(),
+        fake_image_texture_residency_transition_reason::unpinned);
+    require(unpin_transition != nullptr, "unpin transition is recorded");
+    require(unpin_transition->resident, "unpin transition records resident texture before eviction");
+    require(unpin_transition->changed, "unpin transition records changed residency");
+    require(unpin_transition->texture.id == first_a.texture.id, "unpin transition records texture handle");
+    require(unpin_transition->upload_generation_id == 1, "unpin transition records upload generation");
+    require(unpin_transition->previous_residency == fake_image_texture_residency::pinned, "unpin records previous pinned");
+    require(unpin_transition->new_residency == fake_image_texture_residency::evictable, "unpin records new evictable");
+
+    const fake_image_texture_eviction_snapshot* unpin_eviction = find_eviction_snapshot(
+        after_unpin,
+        source_a.cache_key(),
+        fake_image_texture_eviction_reason::capacity);
+    require(unpin_eviction != nullptr, "unpin capacity eviction is recorded");
+    require(unpin_eviction->texture.id == first_a.texture.id, "unpin capacity eviction records texture handle");
+    require(unpin_eviction->residency == fake_image_texture_residency::evictable, "unpin capacity eviction records evictable residency");
+}
+
 void test_texture_cache_reports_upload_lifetime_and_invalidation_evictions()
 {
     using namespace quiz_vulkan::render;
@@ -2383,6 +2680,8 @@ int main()
     test_source_bytes_loader_reports_explicit_failures();
     test_texture_cache_can_use_loaded_source_bytes();
     test_texture_uploader_uploads_valid_decoded_image();
+    test_texture_uploader_reports_deterministic_queue_lifecycle();
+    test_texture_uploader_reports_retry_eligibility_and_backoff();
     test_texture_uploader_rejects_invalid_inputs();
     test_texture_cache_uses_injected_texture_uploader();
     test_texture_pipeline_resolves_loads_decodes_and_uploads_image_ref();
@@ -2401,6 +2700,7 @@ int main()
     test_texture_cache_skips_caching_entries_over_pixel_budget();
     test_texture_cache_pinned_residency_survives_capacity_eviction();
     test_texture_cache_pinned_residency_can_exceed_capacity_without_failures();
+    test_texture_cache_records_residency_transition_diagnostics();
     test_texture_cache_reports_upload_lifetime_and_invalidation_evictions();
     test_texture_cache_records_capacity_eviction_lifetime_diagnostics();
     test_texture_cache_diagnostic_snapshot_reports_entries_and_recency();

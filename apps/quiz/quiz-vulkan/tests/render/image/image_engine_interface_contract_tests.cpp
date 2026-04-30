@@ -146,9 +146,12 @@ static_assert(requires(
     render::render_image_texture_color_space texture_color_space,
     render::render_image_upload_readiness_snapshot upload_readiness,
     render::fake_image_texture_upload_generation_id upload_generation_id,
+    render::fake_image_texture_upload_retry_eligibility upload_retry_eligibility,
+    render::fake_image_texture_upload_retry_snapshot upload_retry_snapshot,
     render::fake_image_texture_upload_request_snapshot upload_request_snapshot,
     render::fake_image_texture_upload_result_snapshot upload_result_snapshot,
     render::fake_image_texture_upload_snapshot_entry upload_entry,
+    render::fake_image_texture_upload_queue_entry_snapshot upload_queue_entry,
     render::fake_image_texture_upload_snapshot upload_snapshot,
     const render::fake_image_texture_uploader& uploader,
     render::render_image_texture_pipeline_request pipeline_request,
@@ -221,6 +224,22 @@ static_assert(requires(
     { source_bytes_loader.has_source_bytes(source) } -> std::same_as<bool>;
     { render::is_valid_image_source_bytes_cache_key("asset://card.ppm") } -> std::same_as<bool>;
     bytes_status;
+    { render::fake_image_texture_upload_retry_eligibility_name(upload_retry_eligibility) }
+        -> std::same_as<std::string>;
+    { render::is_retryable_render_image_texture_upload_status(upload_status) } -> std::same_as<bool>;
+    { render::fake_image_texture_upload_retry_backoff_sequence_delta(std::size_t{}) }
+        -> std::same_as<std::size_t>;
+    { upload_retry_snapshot.generation_id }
+        -> std::same_as<render::fake_image_texture_upload_generation_id&>;
+    { upload_retry_snapshot.key } -> std::same_as<render::render_image_texture_key&>;
+    { upload_retry_snapshot.status } -> std::same_as<render::render_image_texture_upload_status&>;
+    { upload_retry_snapshot.eligibility }
+        -> std::same_as<render::fake_image_texture_upload_retry_eligibility&>;
+    { upload_retry_snapshot.attempt_count_for_key } -> std::same_as<std::size_t&>;
+    { upload_retry_snapshot.failed_attempt_count_for_key } -> std::same_as<std::size_t&>;
+    { upload_retry_snapshot.retry_after_queue_sequence_delta } -> std::same_as<std::size_t&>;
+    { upload_retry_snapshot.next_retry_sequence } -> std::same_as<std::size_t&>;
+    { upload_retry_snapshot.diagnostic } -> std::same_as<std::string&>;
     { upload_request.key } -> std::same_as<render::render_image_texture_key&>;
     { upload_request.sampler } -> std::same_as<render::render_image_sampler_policy&>;
     { upload_request.image } -> std::same_as<render::render_decoded_image&>;
@@ -283,6 +302,7 @@ static_assert(requires(
     { upload_request_snapshot.pixel_byte_count } -> std::same_as<std::size_t&>;
     { upload_request_snapshot.decoded_byte_count } -> std::same_as<std::size_t&>;
     { upload_request_snapshot.staging_byte_count } -> std::same_as<std::size_t&>;
+    { upload_request_snapshot.attempt_count_for_key } -> std::same_as<std::size_t&>;
     { upload_result_snapshot.generation_id } -> std::same_as<render::fake_image_texture_upload_generation_id&>;
     { upload_result_snapshot.status } -> std::same_as<render::render_image_texture_upload_status&>;
     { upload_result_snapshot.key } -> std::same_as<render::render_image_texture_key&>;
@@ -293,6 +313,7 @@ static_assert(requires(
     { upload_result_snapshot.decoded_byte_count } -> std::same_as<std::size_t&>;
     { upload_result_snapshot.staging_byte_count } -> std::same_as<std::size_t&>;
     { upload_result_snapshot.diagnostic } -> std::same_as<std::string&>;
+    { upload_result_snapshot.retry } -> std::same_as<render::fake_image_texture_upload_retry_snapshot&>;
     { upload_entry.generation_id } -> std::same_as<render::fake_image_texture_upload_generation_id&>;
     { upload_entry.request } -> std::same_as<render::fake_image_texture_upload_request_snapshot&>;
     { upload_entry.result } -> std::same_as<render::fake_image_texture_upload_result_snapshot&>;
@@ -305,6 +326,19 @@ static_assert(requires(
     { upload_entry.decoded_byte_count } -> std::same_as<std::size_t&>;
     { upload_entry.staging_byte_count } -> std::same_as<std::size_t&>;
     { upload_entry.diagnostic } -> std::same_as<std::string&>;
+    { upload_entry.retry } -> std::same_as<render::fake_image_texture_upload_retry_snapshot&>;
+    { upload_queue_entry.enqueue_sequence } -> std::same_as<std::size_t&>;
+    { upload_queue_entry.completion_sequence } -> std::same_as<std::size_t&>;
+    { upload_queue_entry.generation_id } -> std::same_as<render::fake_image_texture_upload_generation_id&>;
+    { upload_queue_entry.status } -> std::same_as<render::render_image_texture_upload_status&>;
+    { upload_queue_entry.key } -> std::same_as<render::render_image_texture_key&>;
+    { upload_queue_entry.texture } -> std::same_as<render::render_image_texture_handle&>;
+    { upload_queue_entry.staging_byte_count } -> std::same_as<std::size_t&>;
+    { upload_queue_entry.queue_depth_before_enqueue } -> std::same_as<std::size_t&>;
+    { upload_queue_entry.queue_depth_after_enqueue } -> std::same_as<std::size_t&>;
+    { upload_queue_entry.queue_depth_after_completion } -> std::same_as<std::size_t&>;
+    { upload_queue_entry.diagnostic } -> std::same_as<std::string&>;
+    { upload_queue_entry.retry } -> std::same_as<render::fake_image_texture_upload_retry_snapshot&>;
     { upload_snapshot.upload_count } -> std::same_as<std::size_t&>;
     { upload_snapshot.failed_upload_count } -> std::same_as<std::size_t&>;
     { upload_snapshot.uploaded_pixel_count } -> std::same_as<std::size_t&>;
@@ -318,6 +352,15 @@ static_assert(requires(
     { upload_snapshot.result_snapshots }
         -> std::same_as<std::vector<render::fake_image_texture_upload_result_snapshot>&>;
     { upload_snapshot.entries } -> std::same_as<std::vector<render::fake_image_texture_upload_snapshot_entry>&>;
+    { upload_snapshot.pending_upload_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot.next_queue_sequence } -> std::same_as<std::size_t&>;
+    { upload_snapshot.queue_entries }
+        -> std::same_as<std::vector<render::fake_image_texture_upload_queue_entry_snapshot>&>;
+    { upload_snapshot.retryable_upload_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot.nonretryable_upload_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot.completed_without_retry_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot.retry_snapshots }
+        -> std::same_as<std::vector<render::fake_image_texture_upload_retry_snapshot>&>;
     { uploader.diagnostic_snapshot() } -> std::same_as<render::fake_image_texture_upload_snapshot>;
     upload_generation_id;
     upload_status;

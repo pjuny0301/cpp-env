@@ -483,6 +483,84 @@ static_assert(requires(render::vulkan_backend::vulkan_pipeline_cache_entry entry
     { entry.last_command_index } -> std::same_as<std::size_t&>;
 });
 
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_pipeline_lifecycle_stage::render_pass),
+    render::vulkan_backend::vulkan_pipeline_lifecycle_stage>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_pipeline_lifecycle_stage::shader_stages),
+    render::vulkan_backend::vulkan_pipeline_lifecycle_stage>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_pipeline_lifecycle_stage::pipeline),
+    render::vulkan_backend::vulkan_pipeline_lifecycle_stage>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_pipeline_lifecycle_status::not_checked),
+    render::vulkan_backend::vulkan_pipeline_lifecycle_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_pipeline_lifecycle_status::ready),
+    render::vulkan_backend::vulkan_pipeline_lifecycle_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_pipeline_lifecycle_status::unavailable),
+    render::vulkan_backend::vulkan_pipeline_lifecycle_status>);
+
+static_assert(requires(
+    render::vulkan_backend::vulkan_pipeline_lifecycle_stage stage,
+    render::vulkan_backend::vulkan_pipeline_lifecycle_status status) {
+    { render::vulkan_backend::pipeline_lifecycle_stage_name(stage) } -> std::same_as<std::string_view>;
+    { render::vulkan_backend::pipeline_lifecycle_status_name(status) } -> std::same_as<std::string_view>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_render_pass_descriptor render_pass) {
+    { render_pass.color_attachment_count } -> std::same_as<std::size_t&>;
+    { render_pass.has_depth_attachment } -> std::same_as<bool&>;
+    { render_pass.surface_compatible } -> std::same_as<bool&>;
+    { render_pass.valid() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_pipeline_shader_stage_snapshot snapshot) {
+    { snapshot.batch_kind } -> std::same_as<render::vulkan_backend::vulkan_batch_kind&>;
+    { snapshot.command_index } -> std::same_as<std::size_t&>;
+    { snapshot.vertex_shader } -> std::same_as<render::vulkan_backend::vulkan_shader_module_id&>;
+    { snapshot.fragment_shader } -> std::same_as<render::vulkan_backend::vulkan_shader_module_id&>;
+    { snapshot.vertex_stage_ready } -> std::same_as<bool&>;
+    { snapshot.fragment_stage_ready } -> std::same_as<bool&>;
+    { snapshot.completed() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_pipeline_lifecycle_snapshot snapshot) {
+    { snapshot.batch_kind } -> std::same_as<render::vulkan_backend::vulkan_batch_kind&>;
+    { snapshot.command_index } -> std::same_as<std::size_t&>;
+    { snapshot.render_pass_status }
+        -> std::same_as<render::vulkan_backend::vulkan_pipeline_lifecycle_status&>;
+    { snapshot.shader_stage_status }
+        -> std::same_as<render::vulkan_backend::vulkan_pipeline_lifecycle_status&>;
+    { snapshot.pipeline_status } -> std::same_as<render::vulkan_backend::vulkan_pipeline_lifecycle_status&>;
+    { snapshot.failed_stage } -> std::same_as<render::vulkan_backend::vulkan_pipeline_lifecycle_stage&>;
+    { snapshot.missing_shader_stage } -> std::same_as<render::vulkan_backend::vulkan_shader_stage&>;
+    { snapshot.missing_shader_id } -> std::same_as<render::vulkan_backend::vulkan_shader_module_id&>;
+    { snapshot.completed() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_backend_pipeline_lifecycle_state lifecycle) {
+    { lifecycle.checked } -> std::same_as<bool&>;
+    { lifecycle.render_pass } -> std::same_as<render::vulkan_backend::vulkan_render_pass_descriptor&>;
+    { lifecycle.missing_render_pass } -> std::same_as<bool&>;
+    { lifecycle.missing_shader_stage } -> std::same_as<bool&>;
+    { lifecycle.missing_pipeline } -> std::same_as<bool&>;
+    { lifecycle.failed_stage } -> std::same_as<render::vulkan_backend::vulkan_pipeline_lifecycle_stage&>;
+    { lifecycle.missing_batch_kind } -> std::same_as<render::vulkan_backend::vulkan_batch_kind&>;
+    { lifecycle.missing_command_index } -> std::same_as<std::size_t&>;
+    { lifecycle.missing_shader_stage_kind } -> std::same_as<render::vulkan_backend::vulkan_shader_stage&>;
+    { lifecycle.missing_shader_id } -> std::same_as<render::vulkan_backend::vulkan_shader_module_id&>;
+    { lifecycle.requested_pipeline_count } -> std::same_as<std::size_t&>;
+    { lifecycle.shader_stage_snapshots }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_pipeline_shader_stage_snapshot>&>;
+    { lifecycle.pipeline_snapshots }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_pipeline_lifecycle_snapshot>&>;
+    { lifecycle.render_pass_ready() } -> std::same_as<bool>;
+    { lifecycle.completed() } -> std::same_as<bool>;
+});
+
 static_assert(requires(render::vulkan_backend::vulkan_backend_pipeline_state pipeline) {
     { pipeline.cache_checked } -> std::same_as<bool&>;
     { pipeline.ready } -> std::same_as<bool&>;
@@ -498,6 +576,7 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_pipeline_state pip
     { pipeline.cache_entries } -> std::same_as<std::vector<render::vulkan_backend::vulkan_pipeline_cache_entry>&>;
     { pipeline.pipeline_descriptors } -> std::same_as<std::vector<render::vulkan_backend::vulkan_pipeline_descriptor>&>;
     { pipeline.shader_registry } -> std::same_as<render::vulkan_backend::vulkan_backend_shader_registry_state&>;
+    { pipeline.lifecycle } -> std::same_as<render::vulkan_backend::vulkan_backend_pipeline_lifecycle_state&>;
     { pipeline.supports(render::vulkan_backend::vulkan_batch_kind::quad) } -> std::same_as<bool>;
     { pipeline.descriptor_for(render::vulkan_backend::vulkan_batch_kind::quad) }
         -> std::same_as<const render::vulkan_backend::vulkan_pipeline_descriptor*>;
@@ -508,6 +587,7 @@ static_assert(requires(render::vulkan_backend::diagnostic_vulkan_pipeline_cache_
     { options.default_available } -> std::same_as<bool&>;
     { options.use_default_shader_modules } -> std::same_as<bool&>;
     { options.use_default_pipeline_descriptors } -> std::same_as<bool&>;
+    { options.render_pass } -> std::same_as<render::vulkan_backend::vulkan_render_pass_descriptor&>;
     { options.overrides } -> std::same_as<std::vector<render::vulkan_backend::vulkan_pipeline_capability>&>;
     { options.shader_modules } -> std::same_as<std::vector<render::vulkan_backend::vulkan_shader_module_descriptor>&>;
     { options.pipeline_descriptors } -> std::same_as<std::vector<render::vulkan_backend::vulkan_pipeline_descriptor>&>;
@@ -528,6 +608,80 @@ static_assert(std::same_as<
 
 static_assert(requires(render::vulkan_backend::vulkan_command_recorder_failure_stage stage) {
     { render::vulkan_backend::command_recorder_failure_stage_name(stage) } -> std::same_as<std::string_view>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_command_buffer_id id) {
+    { id.value } -> std::same_as<std::size_t&>;
+    { id.valid() } -> std::same_as<bool>;
+});
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_command_buffer_recording_status::not_started),
+    render::vulkan_backend::vulkan_command_buffer_recording_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_command_buffer_recording_status::recording),
+    render::vulkan_backend::vulkan_command_buffer_recording_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_command_buffer_recording_status::recorded),
+    render::vulkan_backend::vulkan_command_buffer_recording_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_command_buffer_recording_status::failed),
+    render::vulkan_backend::vulkan_command_buffer_recording_status>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_submit_status::not_requested),
+    render::vulkan_backend::vulkan_frame_submit_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_submit_status::pending),
+    render::vulkan_backend::vulkan_frame_submit_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_submit_status::submitted),
+    render::vulkan_backend::vulkan_frame_submit_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_submit_status::failed),
+    render::vulkan_backend::vulkan_frame_submit_status>);
+
+static_assert(requires(
+    render::vulkan_backend::vulkan_command_buffer_recording_status recording_status,
+    render::vulkan_backend::vulkan_frame_submit_status submit_status) {
+    { render::vulkan_backend::command_buffer_recording_status_name(recording_status) }
+        -> std::same_as<std::string_view>;
+    { render::vulkan_backend::frame_submit_status_name(submit_status) } -> std::same_as<std::string_view>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_command_buffer_recording_diagnostics recording) {
+    { recording.command_buffer } -> std::same_as<render::vulkan_backend::vulkan_command_buffer_id&>;
+    { recording.status } -> std::same_as<render::vulkan_backend::vulkan_command_buffer_recording_status&>;
+    { recording.begin_requested } -> std::same_as<bool&>;
+    { recording.finish_requested } -> std::same_as<bool&>;
+    { recording.planned_batch_count } -> std::same_as<std::size_t&>;
+    { recording.recorded_batch_count } -> std::same_as<std::size_t&>;
+    { recording.failure_stage } -> std::same_as<render::vulkan_backend::vulkan_command_recorder_failure_stage&>;
+    { recording.failure_recording_index } -> std::same_as<std::size_t&>;
+    { recording.completed() } -> std::same_as<bool>;
+    { recording.failed() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_frame_submit_diagnostics submit) {
+    { submit.command_buffer } -> std::same_as<render::vulkan_backend::vulkan_command_buffer_id&>;
+    { submit.frame } -> std::same_as<render::vulkan_backend::vulkan_frame_in_flight_id&>;
+    { submit.status } -> std::same_as<render::vulkan_backend::vulkan_frame_submit_status&>;
+    { submit.submit_requested } -> std::same_as<bool&>;
+    { submit.submitted_batch_count } -> std::same_as<std::size_t&>;
+    { submit.wait_image_available_status } -> std::same_as<render::vulkan_backend::vulkan_frame_sync_wait_status&>;
+    { submit.signal_render_finished_status }
+        -> std::same_as<render::vulkan_backend::vulkan_frame_sync_signal_status&>;
+    { submit.signal_frame_fence_status } -> std::same_as<render::vulkan_backend::vulkan_frame_sync_signal_status&>;
+    { submit.completed() } -> std::same_as<bool>;
+    { submit.failed() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_backend_command_buffer_submit_state command_buffer_submit) {
+    { command_buffer_submit.checked } -> std::same_as<bool&>;
+    { command_buffer_submit.recording }
+        -> std::same_as<render::vulkan_backend::vulkan_command_buffer_recording_diagnostics&>;
+    { command_buffer_submit.submit } -> std::same_as<render::vulkan_backend::vulkan_frame_submit_diagnostics&>;
+    { command_buffer_submit.completed() } -> std::same_as<bool>;
 });
 
 static_assert(requires(render::vulkan_backend::vulkan_backend_command_recorder_state recorder) {
@@ -561,6 +715,8 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_frame_result resul
     { result.resource_registry } -> std::same_as<render::vulkan_backend::vulkan_backend_resource_registry_state&>;
     { result.pipeline } -> std::same_as<render::vulkan_backend::vulkan_backend_pipeline_state&>;
     { result.command_recorder } -> std::same_as<render::vulkan_backend::vulkan_backend_command_recorder_state&>;
+    { result.command_buffer_submit }
+        -> std::same_as<render::vulkan_backend::vulkan_backend_command_buffer_submit_state&>;
     { result.reached_stage } -> std::same_as<render::vulkan_backend::vulkan_backend_frame_stage&>;
     { result.lifecycle_ready } -> std::same_as<bool&>;
     { result.surface_ready } -> std::same_as<bool&>;

@@ -15,8 +15,14 @@ namespace quiz_vulkan::input {
 enum class action_route_policy_kind {
     pointer_capture_reset,
     wheel_summary,
+    gesture_route_snapshot,
+    text_commit_boundary,
+    text_backspace_boundary,
+    caret_moved,
+    selection_changed,
     text_submit_boundary,
     focus_loss,
+    ime_preedit,
     ime_commit,
     ime_cancel,
 };
@@ -28,6 +34,14 @@ struct action_route_policy_diagnostic {
     std::size_t event_index = 0;
     std::string target_id;
     std::size_t text_byte_count = 0;
+    std::size_t text_byte_count_before = 0;
+    std::size_t text_byte_count_after = 0;
+    text_range caret_before;
+    text_range caret_after;
+    bool had_selection_before = false;
+    bool has_selection_after = false;
+    text_range selection_before;
+    text_range selection_after;
     normalized_input_event_summary normalized_event;
     ime_composition_state composition;
     pointer_capture_snapshot pointer_capture_before;

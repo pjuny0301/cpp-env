@@ -14,6 +14,7 @@ namespace {
 
 static_assert(std::is_enum_v<asset_pack_manifest_version_status>);
 static_assert(std::is_enum_v<asset_pack_index_lookup_status>);
+static_assert(std::is_enum_v<asset_pack_index_root_selection_status>);
 
 static_assert(requires(asset_pack_index_request request) {
     { request.manifest_version } -> std::same_as<std::string&>;
@@ -69,6 +70,61 @@ static_assert(requires(asset_pack_index_lookup_result result) {
     { result.ok() } -> std::same_as<bool>;
 });
 
+static_assert(requires(asset_pack_index_lookup_request request) {
+    { request.id } -> std::same_as<std::string&>;
+    { request.expected_type } -> std::same_as<asset_type&>;
+});
+
+static_assert(requires(asset_pack_index_lookup_diagnostic diagnostic) {
+    { diagnostic.request_index } -> std::same_as<std::size_t&>;
+    { diagnostic.status } -> std::same_as<asset_pack_index_lookup_status&>;
+    { diagnostic.id } -> std::same_as<std::string&>;
+    { diagnostic.expected_type } -> std::same_as<asset_type&>;
+    { diagnostic.entry } -> std::same_as<asset_pack_index_entry&>;
+    { diagnostic.diagnostic } -> std::same_as<std::string&>;
+    { diagnostic.ok() } -> std::same_as<bool>;
+});
+
+static_assert(requires(asset_pack_index_lookup_report report) {
+    { report.requests } -> std::same_as<std::vector<asset_pack_index_lookup_request>&>;
+    { report.diagnostics } -> std::same_as<std::vector<asset_pack_index_lookup_diagnostic>&>;
+    { report.cache_key_groups } -> std::same_as<std::vector<asset_pack_index_cache_key_group>&>;
+    { report.found_count } -> std::same_as<std::size_t&>;
+    { report.missing_id_count } -> std::same_as<std::size_t&>;
+    { report.type_mismatch_count } -> std::same_as<std::size_t&>;
+    { report.ok() } -> std::same_as<bool>;
+});
+
+static_assert(requires(asset_pack_index_catalog_snapshot_view view) {
+    { view.entries } -> std::same_as<std::vector<asset_pack_index_entry>&>;
+    { view.cache_key_groups } -> std::same_as<std::vector<asset_pack_index_cache_key_group>&>;
+});
+
+static_assert(requires(asset_pack_index_root_selection_entry entry) {
+    { entry.manifest_index } -> std::same_as<std::size_t&>;
+    { entry.status } -> std::same_as<asset_pack_index_root_selection_status&>;
+    { entry.id } -> std::same_as<std::string&>;
+    { entry.requested_root_id } -> std::same_as<std::string&>;
+    { entry.selected_root_id } -> std::same_as<std::string&>;
+    { entry.diagnostic } -> std::same_as<std::string&>;
+    { entry.ok() } -> std::same_as<bool>;
+});
+
+static_assert(requires(asset_pack_index_root_selection_summary summary) {
+    { summary.entries } -> std::same_as<std::vector<asset_pack_index_root_selection_entry>&>;
+    { summary.direct_root_count } -> std::same_as<std::size_t&>;
+    { summary.fallback_root_count } -> std::same_as<std::size_t&>;
+    { summary.missing_preferred_root_count } -> std::same_as<std::size_t&>;
+    { summary.no_root_requested_count } -> std::same_as<std::size_t&>;
+    { summary.ok() } -> std::same_as<bool>;
+});
+
+static_assert(requires(asset_pack_index_lookup_policy_summary summary) {
+    { summary.lookup } -> std::same_as<asset_pack_index_lookup_report&>;
+    { summary.root_selection } -> std::same_as<asset_pack_index_root_selection_summary&>;
+    { summary.ok() } -> std::same_as<bool>;
+});
+
 static_assert(requires(
     asset_pack_index_catalog catalog,
     const asset_pack_index_catalog& const_catalog,
@@ -85,6 +141,11 @@ static_assert(requires(
     { const_catalog.find_cache_key_group(cache_key) } -> std::same_as<const asset_pack_index_cache_key_group*>;
     { const_catalog.entries_for_type(type) } -> std::same_as<std::vector<asset_pack_index_entry>>;
     { const_catalog.lookup(id, type) } -> std::same_as<asset_pack_index_lookup_result>;
+    { const_catalog.lookup_font(id) } -> std::same_as<asset_pack_index_lookup_result>;
+    { const_catalog.lookup_image(id) } -> std::same_as<asset_pack_index_lookup_result>;
+    { const_catalog.lookup_sound(id) } -> std::same_as<asset_pack_index_lookup_result>;
+    { const_catalog.lookup_shader(id) } -> std::same_as<asset_pack_index_lookup_result>;
+    { const_catalog.lookup_deck(id) } -> std::same_as<asset_pack_index_lookup_result>;
 });
 
 static_assert(requires(
@@ -96,6 +157,21 @@ static_assert(requires(
     { validate_asset_pack_manifest_version(version, expected, true) } ->
         std::same_as<asset_pack_manifest_version_diagnostic>;
     { build_asset_pack_index(manifest, resolver, request) } -> std::same_as<asset_pack_index_catalog>;
+    { sorted_asset_pack_index_entries(build_asset_pack_index(manifest, resolver, request)) } ->
+        std::same_as<std::vector<asset_pack_index_entry>>;
+    { sorted_asset_pack_index_cache_key_groups(build_asset_pack_index(manifest, resolver, request)) } ->
+        std::same_as<std::vector<asset_pack_index_cache_key_group>>;
+    { make_asset_pack_index_catalog_snapshot_view(build_asset_pack_index(manifest, resolver, request)) } ->
+        std::same_as<asset_pack_index_catalog_snapshot_view>;
+    { summarize_asset_pack_index_lookup_requests(
+        build_asset_pack_index(manifest, resolver, request),
+        std::vector<asset_pack_index_lookup_request>{}) } -> std::same_as<asset_pack_index_lookup_report>;
+    { summarize_asset_pack_index_root_selection(manifest) } -> std::same_as<asset_pack_index_root_selection_summary>;
+    { summarize_asset_pack_index_lookup_policy(
+        manifest,
+        build_asset_pack_index(manifest, resolver, request),
+        std::vector<asset_pack_index_lookup_request>{}) } ->
+        std::same_as<asset_pack_index_lookup_policy_summary>;
 });
 
 } // namespace

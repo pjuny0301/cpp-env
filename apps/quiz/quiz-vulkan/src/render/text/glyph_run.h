@@ -65,6 +65,33 @@ struct render_text_glyph_atlas_metrics_snapshot {
     render_text_revision latest_page_revision = 0;
 };
 
+struct render_text_glyph_atlas_page_snapshot {
+    render_text_atlas_page page;
+    std::size_t cluster_count = 0;
+    std::size_t cache_hit_count = 0;
+    std::size_t new_slot_count = 0;
+    std::size_t created_page_count = 0;
+    std::size_t reused_page_count = 0;
+    std::size_t dirty_update_count = 0;
+    std::size_t dirty_cluster_count = 0;
+    render_rect dirty_bounds;
+    bool upload_ready = false;
+};
+
+struct render_text_glyph_atlas_page_policy_snapshot {
+    std::size_t page_count = 0;
+    std::size_t allocated_page_count = 0;
+    std::size_t created_page_count = 0;
+    std::size_t dirty_page_count = 0;
+    std::size_t upload_ready_page_count = 0;
+    std::size_t cache_hit_page_count = 0;
+    std::size_t dirty_cluster_count = 0;
+    std::size_t total_cluster_count = 0;
+    std::size_t total_new_slot_count = 0;
+    std::size_t total_cache_hit_count = 0;
+    std::size_t repeated_layout_clean_page_count = 0;
+};
+
 struct render_text_utf8_cluster_snapshot {
     std::size_t run_index = 0;
     std::size_t byte_offset = 0;

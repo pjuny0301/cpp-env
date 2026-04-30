@@ -378,6 +378,86 @@ const vulkan_pipeline_descriptor* find_pipeline_descriptor(
     return nullptr;
 }
 
+vulkan_pipeline_lifecycle_snapshot make_pipeline_lifecycle_snapshot(
+    const vulkan_draw_batch& batch,
+    vulkan_pipeline_lifecycle_status render_pass_status)
+{
+    return vulkan_pipeline_lifecycle_snapshot{
+        .batch_kind = batch.kind,
+        .command_index = batch.command_index,
+        .render_pass_status = render_pass_status,
+        .failed_stage = vulkan_pipeline_lifecycle_stage::render_pass,
+        .missing_shader_stage = vulkan_shader_stage::vertex,
+        .missing_shader_id = {},
+    };
+}
+
+vulkan_pipeline_shader_stage_snapshot make_pipeline_shader_stage_snapshot(
+    const vulkan_draw_batch& batch,
+    const vulkan_pipeline_descriptor& descriptor)
+{
+    return vulkan_pipeline_shader_stage_snapshot{
+        .batch_kind = batch.kind,
+        .command_index = batch.command_index,
+        .vertex_shader = descriptor.vertex_shader,
+        .fragment_shader = descriptor.fragment_shader,
+    };
+}
+
+void mark_pipeline_lifecycle_failure(
+    vulkan_backend_pipeline_state& state,
+    vulkan_pipeline_lifecycle_snapshot snapshot,
+    vulkan_pipeline_lifecycle_stage stage)
+{
+    snapshot.failed_stage = stage;
+    if (stage == vulkan_pipeline_lifecycle_stage::render_pass) {
+        snapshot.render_pass_status = vulkan_pipeline_lifecycle_status::unavailable;
+    } else if (stage == vulkan_pipeline_lifecycle_stage::shader_stages) {
+        snapshot.shader_stage_status = vulkan_pipeline_lifecycle_status::unavailable;
+    } else {
+        snapshot.pipeline_status = vulkan_pipeline_lifecycle_status::unavailable;
+    }
+
+    state.lifecycle.missing_pipeline = stage == vulkan_pipeline_lifecycle_stage::pipeline;
+    state.lifecycle.missing_shader_stage = stage == vulkan_pipeline_lifecycle_stage::shader_stages;
+    state.lifecycle.missing_render_pass = stage == vulkan_pipeline_lifecycle_stage::render_pass;
+    state.lifecycle.failed_stage = stage;
+    state.lifecycle.missing_batch_kind = snapshot.batch_kind;
+    state.lifecycle.missing_command_index = snapshot.command_index;
+    state.lifecycle.pipeline_snapshots.push_back(std::move(snapshot));
+}
+
+void mark_pipeline_lifecycle_shader_failure(
+    vulkan_backend_pipeline_state& state,
+    vulkan_pipeline_lifecycle_snapshot snapshot,
+    vulkan_pipeline_shader_stage_snapshot shader_snapshot,
+    vulkan_shader_stage stage,
+    const vulkan_shader_module_id& shader_id)
+{
+    snapshot.missing_shader_stage = stage;
+    snapshot.missing_shader_id = shader_id;
+    state.lifecycle.missing_shader_stage_kind = stage;
+    state.lifecycle.missing_shader_id = shader_id;
+    state.lifecycle.shader_stage_snapshots.push_back(std::move(shader_snapshot));
+    mark_pipeline_lifecycle_failure(
+        state,
+        std::move(snapshot),
+        vulkan_pipeline_lifecycle_stage::shader_stages);
+}
+
+void mark_pipeline_lifecycle_success(
+    vulkan_backend_pipeline_state& state,
+    vulkan_pipeline_lifecycle_snapshot snapshot,
+    vulkan_pipeline_shader_stage_snapshot shader_snapshot)
+{
+    snapshot.shader_stage_status = vulkan_pipeline_lifecycle_status::ready;
+    snapshot.pipeline_status = vulkan_pipeline_lifecycle_status::ready;
+    shader_snapshot.vertex_stage_ready = true;
+    shader_snapshot.fragment_stage_ready = true;
+    state.lifecycle.shader_stage_snapshots.push_back(std::move(shader_snapshot));
+    state.lifecycle.pipeline_snapshots.push_back(std::move(snapshot));
+}
+
 void mark_missing_pipeline_descriptor(
     vulkan_backend_pipeline_state& state,
     const vulkan_draw_batch& batch)
@@ -683,6 +763,89 @@ void complete_wait(vulkan_frame_sync_wait_state& state, bool success)
         : vulkan_frame_sync_wait_status::failed;
 }
 
+vulkan_command_buffer_id make_command_buffer_id(const vulkan_frame_in_flight_id& frame)
+{
+    return vulkan_command_buffer_id{
+        .value = (frame.sequence * 1000) + (frame.index * 10) + 1,
+    };
+}
+
+vulkan_backend_command_buffer_submit_state make_command_buffer_submit_state(
+    const vulkan_frame_in_flight_id& frame,
+    std::size_t planned_batch_count)
+{
+    const vulkan_command_buffer_id command_buffer = make_command_buffer_id(frame);
+    return vulkan_backend_command_buffer_submit_state{
+        .checked = true,
+        .recording = vulkan_command_buffer_recording_diagnostics{
+            .command_buffer = command_buffer,
+            .planned_batch_count = planned_batch_count,
+        },
+        .submit = vulkan_frame_submit_diagnostics{
+            .command_buffer = command_buffer,
+            .frame = frame,
+        },
+    };
+}
+
+void mark_command_buffer_recording_started(vulkan_backend_command_buffer_submit_state& state)
+{
+    state.recording.begin_requested = true;
+    state.recording.status = vulkan_command_buffer_recording_status::recording;
+}
+
+void mark_command_buffer_recording_failed(
+    vulkan_backend_command_buffer_submit_state& state,
+    const vulkan_backend_command_recorder_state& recorder)
+{
+    state.recording.status = vulkan_command_buffer_recording_status::failed;
+    state.recording.finish_requested =
+        recorder.failure_stage == vulkan_command_recorder_failure_stage::finish_recording;
+    state.recording.recorded_batch_count = recorder.recorded_batch_count;
+    state.recording.failure_stage = recorder.failure_stage;
+    state.recording.failure_recording_index = recorder.failure_recording_index;
+}
+
+void mark_command_buffer_recording_finished(
+    vulkan_backend_command_buffer_submit_state& state,
+    const vulkan_backend_command_recorder_state& recorder)
+{
+    state.recording.finish_requested = true;
+    state.recording.recorded_batch_count = recorder.recorded_batch_count;
+    state.recording.failure_stage = recorder.failure_stage;
+    state.recording.failure_recording_index = recorder.failure_recording_index;
+    state.recording.status = recorder.failed()
+        ? vulkan_command_buffer_recording_status::failed
+        : vulkan_command_buffer_recording_status::recorded;
+}
+
+void mark_frame_submit_requested(
+    vulkan_backend_command_buffer_submit_state& state,
+    std::size_t submitted_batch_count)
+{
+    state.submit.submit_requested = true;
+    state.submit.submitted_batch_count = submitted_batch_count;
+    state.submit.status = vulkan_frame_submit_status::pending;
+    state.submit.wait_image_available_status = vulkan_frame_sync_wait_status::pending;
+    state.submit.signal_render_finished_status = vulkan_frame_sync_signal_status::pending;
+    state.submit.signal_frame_fence_status = vulkan_frame_sync_signal_status::pending;
+}
+
+void mark_frame_submit_result(
+    vulkan_backend_command_buffer_submit_state& state,
+    const vulkan_backend_frame_sync_state& sync,
+    bool success)
+{
+    state.submit.status = success
+        ? vulkan_frame_submit_status::submitted
+        : vulkan_frame_submit_status::failed;
+    state.submit.wait_image_available_status =
+        sync.submit_wait_image_available_semaphore.status;
+    state.submit.signal_render_finished_status =
+        sync.submit_signal_render_finished_semaphore.status;
+    state.submit.signal_frame_fence_status = sync.submit_signal_frame_fence.status;
+}
+
 struct resource_registry_descriptor_key {
     std::size_t set = 0;
     std::size_t binding = 0;
@@ -890,6 +1053,39 @@ std::string_view command_recorder_failure_stage_name(vulkan_command_recorder_fai
     return "unknown";
 }
 
+std::string_view command_buffer_recording_status_name(
+    vulkan_command_buffer_recording_status status)
+{
+    switch (status) {
+    case vulkan_command_buffer_recording_status::not_started:
+        return "not_started";
+    case vulkan_command_buffer_recording_status::recording:
+        return "recording";
+    case vulkan_command_buffer_recording_status::recorded:
+        return "recorded";
+    case vulkan_command_buffer_recording_status::failed:
+        return "failed";
+    }
+
+    return "unknown";
+}
+
+std::string_view frame_submit_status_name(vulkan_frame_submit_status status)
+{
+    switch (status) {
+    case vulkan_frame_submit_status::not_requested:
+        return "not_requested";
+    case vulkan_frame_submit_status::pending:
+        return "pending";
+    case vulkan_frame_submit_status::submitted:
+        return "submitted";
+    case vulkan_frame_submit_status::failed:
+        return "failed";
+    }
+
+    return "unknown";
+}
+
 std::string_view shader_stage_name(vulkan_shader_stage stage)
 {
     switch (stage) {
@@ -897,6 +1093,34 @@ std::string_view shader_stage_name(vulkan_shader_stage stage)
         return "vertex";
     case vulkan_shader_stage::fragment:
         return "fragment";
+    }
+
+    return "unknown";
+}
+
+std::string_view pipeline_lifecycle_stage_name(vulkan_pipeline_lifecycle_stage stage)
+{
+    switch (stage) {
+    case vulkan_pipeline_lifecycle_stage::render_pass:
+        return "render_pass";
+    case vulkan_pipeline_lifecycle_stage::shader_stages:
+        return "shader_stages";
+    case vulkan_pipeline_lifecycle_stage::pipeline:
+        return "pipeline";
+    }
+
+    return "unknown";
+}
+
+std::string_view pipeline_lifecycle_status_name(vulkan_pipeline_lifecycle_status status)
+{
+    switch (status) {
+    case vulkan_pipeline_lifecycle_status::not_checked:
+        return "not_checked";
+    case vulkan_pipeline_lifecycle_status::ready:
+        return "ready";
+    case vulkan_pipeline_lifecycle_status::unavailable:
+        return "unavailable";
     }
 
     return "unknown";
@@ -965,7 +1189,7 @@ const vulkan_pipeline_descriptor* vulkan_backend_pipeline_state::descriptor_for(
 
 bool vulkan_backend_pipeline_state::completed() const
 {
-    return ready && !missing_pipeline;
+    return ready && !missing_pipeline && lifecycle.completed();
 }
 
 vulkan_backend_lifecycle_readiness null_vulkan_backend_device::current_lifecycle_readiness() const
@@ -1044,13 +1268,34 @@ diagnostic_vulkan_pipeline_cache::diagnostic_vulkan_pipeline_cache(
     apply_pipeline_descriptor_overrides(
         state_.pipeline_descriptors,
         std::move(options_.pipeline_descriptors));
-    state_.ready = true;
+    state_.lifecycle.checked = true;
+    state_.lifecycle.render_pass = options_.render_pass;
+    state_.lifecycle.missing_render_pass = !state_.lifecycle.render_pass.valid();
+    state_.ready = state_.lifecycle.render_pass_ready();
 }
 
 bool diagnostic_vulkan_pipeline_cache::ensure_pipeline(const vulkan_draw_batch& batch)
 {
     state_.cache_checked = true;
     ++state_.requested_pipeline_count;
+    ++state_.lifecycle.requested_pipeline_count;
+
+    vulkan_pipeline_lifecycle_snapshot lifecycle_snapshot = make_pipeline_lifecycle_snapshot(
+        batch,
+        state_.lifecycle.render_pass_ready()
+            ? vulkan_pipeline_lifecycle_status::ready
+            : vulkan_pipeline_lifecycle_status::unavailable);
+    if (!state_.lifecycle.render_pass_ready()) {
+        state_.missing_pipeline = true;
+        state_.ready = false;
+        state_.missing_batch_kind = batch.kind;
+        state_.missing_command_index = batch.command_index;
+        mark_pipeline_lifecycle_failure(
+            state_,
+            std::move(lifecycle_snapshot),
+            vulkan_pipeline_lifecycle_stage::render_pass);
+        return false;
+    }
 
     vulkan_pipeline_cache_entry* entry = find_pipeline_entry(state_.cache_entries, batch.kind);
     if (entry == nullptr) {
@@ -1058,6 +1303,11 @@ bool diagnostic_vulkan_pipeline_cache::ensure_pipeline(const vulkan_draw_batch& 
         state_.ready = false;
         state_.missing_batch_kind = batch.kind;
         state_.missing_command_index = batch.command_index;
+        lifecycle_snapshot.shader_stage_status = vulkan_pipeline_lifecycle_status::not_checked;
+        mark_pipeline_lifecycle_failure(
+            state_,
+            std::move(lifecycle_snapshot),
+            vulkan_pipeline_lifecycle_stage::pipeline);
         return false;
     }
 
@@ -1069,25 +1319,55 @@ bool diagnostic_vulkan_pipeline_cache::ensure_pipeline(const vulkan_draw_batch& 
         state_.ready = false;
         state_.missing_batch_kind = batch.kind;
         state_.missing_command_index = batch.command_index;
+        lifecycle_snapshot.shader_stage_status = vulkan_pipeline_lifecycle_status::not_checked;
+        mark_pipeline_lifecycle_failure(
+            state_,
+            std::move(lifecycle_snapshot),
+            vulkan_pipeline_lifecycle_stage::pipeline);
         return false;
     }
 
     const vulkan_pipeline_descriptor* descriptor = state_.descriptor_for(batch.kind);
     if (descriptor == nullptr || !descriptor->complete()) {
         mark_missing_pipeline_descriptor(state_, batch);
+        lifecycle_snapshot.shader_stage_status = vulkan_pipeline_lifecycle_status::not_checked;
+        mark_pipeline_lifecycle_failure(
+            state_,
+            std::move(lifecycle_snapshot),
+            vulkan_pipeline_lifecycle_stage::pipeline);
         return false;
     }
+    vulkan_pipeline_shader_stage_snapshot shader_stage_snapshot =
+        make_pipeline_shader_stage_snapshot(batch, *descriptor);
     if (!shader_registry_.require_shader(batch.kind, vulkan_shader_stage::vertex, descriptor->vertex_shader)) {
         mark_missing_pipeline_shader(state_, batch, shader_registry_.registry_state());
+        mark_pipeline_lifecycle_shader_failure(
+            state_,
+            std::move(lifecycle_snapshot),
+            std::move(shader_stage_snapshot),
+            vulkan_shader_stage::vertex,
+            descriptor->vertex_shader);
         return false;
     }
+    shader_stage_snapshot.vertex_stage_ready = true;
     if (!shader_registry_.require_shader(batch.kind, vulkan_shader_stage::fragment, descriptor->fragment_shader)) {
         mark_missing_pipeline_shader(state_, batch, shader_registry_.registry_state());
+        mark_pipeline_lifecycle_shader_failure(
+            state_,
+            std::move(lifecycle_snapshot),
+            std::move(shader_stage_snapshot),
+            vulkan_shader_stage::fragment,
+            descriptor->fragment_shader);
         return false;
     }
+    shader_stage_snapshot.fragment_stage_ready = true;
 
     state_.shader_registry = shader_registry_.registry_state();
-    state_.ready = !state_.missing_pipeline;
+    mark_pipeline_lifecycle_success(
+        state_,
+        std::move(lifecycle_snapshot),
+        std::move(shader_stage_snapshot));
+    state_.ready = !state_.missing_pipeline && state_.lifecycle.render_pass_ready();
     return true;
 }
 
@@ -1405,9 +1685,16 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     complete_lifecycle_step(result.lifecycle_policy, vulkan_frame_lifecycle_step::begin);
     result.reached_stage = vulkan_backend_frame_stage::frame_begun;
 
+    result.command_buffer_submit = make_command_buffer_submit_state(
+        result.frame_sync.frame,
+        plan.batches.size());
     start_lifecycle_step(result.lifecycle_policy, vulkan_frame_lifecycle_step::render);
+    mark_command_buffer_recording_started(result.command_buffer_submit);
     if (!command_recorder.begin_recording(result.surface, plan.batches.size())) {
         result.command_recorder = command_recorder.recorder_state();
+        mark_command_buffer_recording_failed(
+            result.command_buffer_submit,
+            result.command_recorder);
         fail_frame_lifecycle(
             vulkan_frame_lifecycle_step::render,
             vulkan_backend_fallback_reason::record_commands_failed);
@@ -1416,6 +1703,9 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     for (const vulkan_draw_batch& batch : plan.batches) {
         if (!command_recorder.record_draw_batch(batch)) {
             result.command_recorder = command_recorder.recorder_state();
+            mark_command_buffer_recording_failed(
+                result.command_buffer_submit,
+                result.command_recorder);
             fail_frame_lifecycle(
                 vulkan_frame_lifecycle_step::render,
                 vulkan_backend_fallback_reason::record_commands_failed);
@@ -1424,12 +1714,18 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     }
     if (!command_recorder.finish_recording()) {
         result.command_recorder = command_recorder.recorder_state();
+        mark_command_buffer_recording_failed(
+            result.command_buffer_submit,
+            result.command_recorder);
         fail_frame_lifecycle(
             vulkan_frame_lifecycle_step::render,
             vulkan_backend_fallback_reason::record_commands_failed);
         return result;
     }
     result.command_recorder = command_recorder.recorder_state();
+    mark_command_buffer_recording_finished(
+        result.command_buffer_submit,
+        result.command_recorder);
 
     result.commands_recorded = device.record_frame_commands(plan);
     if (!result.commands_recorded) {
@@ -1446,10 +1742,15 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     request_wait(result.frame_sync.submit_wait_image_available_semaphore);
     request_signal(result.frame_sync.submit_signal_render_finished_semaphore);
     request_signal(result.frame_sync.submit_signal_frame_fence);
+    mark_frame_submit_requested(result.command_buffer_submit, result.recorded_batch_count);
     result.frame_submitted = device.submit_frame();
     complete_wait(result.frame_sync.submit_wait_image_available_semaphore, result.frame_submitted);
     complete_signal(result.frame_sync.submit_signal_render_finished_semaphore, result.frame_submitted);
     complete_signal(result.frame_sync.submit_signal_frame_fence, result.frame_submitted);
+    mark_frame_submit_result(
+        result.command_buffer_submit,
+        result.frame_sync,
+        result.frame_submitted);
     if (!result.frame_submitted) {
         fail_frame_lifecycle(
             vulkan_frame_lifecycle_step::submit,

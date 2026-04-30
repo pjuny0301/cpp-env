@@ -505,6 +505,96 @@ struct vulkan_pipeline_cache_entry {
     std::size_t last_command_index = 0;
 };
 
+enum class vulkan_pipeline_lifecycle_stage {
+    render_pass,
+    shader_stages,
+    pipeline,
+};
+
+std::string_view pipeline_lifecycle_stage_name(vulkan_pipeline_lifecycle_stage stage);
+
+enum class vulkan_pipeline_lifecycle_status {
+    not_checked,
+    ready,
+    unavailable,
+};
+
+std::string_view pipeline_lifecycle_status_name(vulkan_pipeline_lifecycle_status status);
+
+struct vulkan_render_pass_descriptor {
+    std::size_t color_attachment_count = 1;
+    bool has_depth_attachment = false;
+    bool surface_compatible = true;
+
+    bool valid() const
+    {
+        return color_attachment_count > 0 && surface_compatible;
+    }
+};
+
+struct vulkan_pipeline_shader_stage_snapshot {
+    vulkan_batch_kind batch_kind = vulkan_batch_kind::quad;
+    std::size_t command_index = 0;
+    vulkan_shader_module_id vertex_shader;
+    vulkan_shader_module_id fragment_shader;
+    bool vertex_stage_ready = false;
+    bool fragment_stage_ready = false;
+
+    bool completed() const
+    {
+        return vertex_stage_ready && fragment_stage_ready;
+    }
+};
+
+struct vulkan_pipeline_lifecycle_snapshot {
+    vulkan_batch_kind batch_kind = vulkan_batch_kind::quad;
+    std::size_t command_index = 0;
+    vulkan_pipeline_lifecycle_status render_pass_status =
+        vulkan_pipeline_lifecycle_status::not_checked;
+    vulkan_pipeline_lifecycle_status shader_stage_status =
+        vulkan_pipeline_lifecycle_status::not_checked;
+    vulkan_pipeline_lifecycle_status pipeline_status =
+        vulkan_pipeline_lifecycle_status::not_checked;
+    vulkan_pipeline_lifecycle_stage failed_stage = vulkan_pipeline_lifecycle_stage::render_pass;
+    vulkan_shader_stage missing_shader_stage = vulkan_shader_stage::vertex;
+    vulkan_shader_module_id missing_shader_id;
+
+    bool completed() const
+    {
+        return render_pass_status == vulkan_pipeline_lifecycle_status::ready
+            && shader_stage_status == vulkan_pipeline_lifecycle_status::ready
+            && pipeline_status == vulkan_pipeline_lifecycle_status::ready;
+    }
+};
+
+struct vulkan_backend_pipeline_lifecycle_state {
+    bool checked = false;
+    vulkan_render_pass_descriptor render_pass;
+    bool missing_render_pass = false;
+    bool missing_shader_stage = false;
+    bool missing_pipeline = false;
+    vulkan_pipeline_lifecycle_stage failed_stage = vulkan_pipeline_lifecycle_stage::render_pass;
+    vulkan_batch_kind missing_batch_kind = vulkan_batch_kind::quad;
+    std::size_t missing_command_index = 0;
+    vulkan_shader_stage missing_shader_stage_kind = vulkan_shader_stage::vertex;
+    vulkan_shader_module_id missing_shader_id;
+    std::size_t requested_pipeline_count = 0;
+    std::vector<vulkan_pipeline_shader_stage_snapshot> shader_stage_snapshots;
+    std::vector<vulkan_pipeline_lifecycle_snapshot> pipeline_snapshots;
+
+    bool render_pass_ready() const
+    {
+        return render_pass.valid() && !missing_render_pass;
+    }
+
+    bool completed() const
+    {
+        return checked && render_pass_ready() && !missing_shader_stage && !missing_pipeline
+            && pipeline_snapshots.size() == requested_pipeline_count
+            && shader_stage_snapshots.size() == requested_pipeline_count;
+    }
+};
+
 struct vulkan_backend_pipeline_state {
     bool cache_checked = false;
     bool ready = false;
@@ -520,6 +610,7 @@ struct vulkan_backend_pipeline_state {
     std::vector<vulkan_pipeline_cache_entry> cache_entries;
     std::vector<vulkan_pipeline_descriptor> pipeline_descriptors;
     vulkan_backend_shader_registry_state shader_registry;
+    vulkan_backend_pipeline_lifecycle_state lifecycle;
 
     bool supports(vulkan_batch_kind kind) const;
     const vulkan_pipeline_descriptor* descriptor_for(vulkan_batch_kind kind) const;
@@ -530,6 +621,7 @@ struct diagnostic_vulkan_pipeline_cache_options {
     bool default_available = true;
     bool use_default_shader_modules = true;
     bool use_default_pipeline_descriptors = true;
+    vulkan_render_pass_descriptor render_pass;
     std::vector<vulkan_pipeline_capability> overrides;
     std::vector<vulkan_shader_module_descriptor> shader_modules;
     std::vector<vulkan_pipeline_descriptor> pipeline_descriptors;
@@ -565,6 +657,100 @@ enum class vulkan_command_recorder_failure_stage {
 };
 
 std::string_view command_recorder_failure_stage_name(vulkan_command_recorder_failure_stage stage);
+
+struct vulkan_command_buffer_id {
+    std::size_t value = 0;
+
+    bool valid() const
+    {
+        return value > 0;
+    }
+};
+
+enum class vulkan_command_buffer_recording_status {
+    not_started,
+    recording,
+    recorded,
+    failed,
+};
+
+std::string_view command_buffer_recording_status_name(
+    vulkan_command_buffer_recording_status status);
+
+enum class vulkan_frame_submit_status {
+    not_requested,
+    pending,
+    submitted,
+    failed,
+};
+
+std::string_view frame_submit_status_name(vulkan_frame_submit_status status);
+
+struct vulkan_command_buffer_recording_diagnostics {
+    vulkan_command_buffer_id command_buffer;
+    vulkan_command_buffer_recording_status status =
+        vulkan_command_buffer_recording_status::not_started;
+    bool begin_requested = false;
+    bool finish_requested = false;
+    std::size_t planned_batch_count = 0;
+    std::size_t recorded_batch_count = 0;
+    vulkan_command_recorder_failure_stage failure_stage =
+        vulkan_command_recorder_failure_stage::none;
+    std::size_t failure_recording_index = 0;
+
+    bool completed() const
+    {
+        return command_buffer.valid() && begin_requested && finish_requested
+            && status == vulkan_command_buffer_recording_status::recorded
+            && failure_stage == vulkan_command_recorder_failure_stage::none
+            && recorded_batch_count == planned_batch_count;
+    }
+
+    bool failed() const
+    {
+        return status == vulkan_command_buffer_recording_status::failed
+            || failure_stage != vulkan_command_recorder_failure_stage::none;
+    }
+};
+
+struct vulkan_frame_submit_diagnostics {
+    vulkan_command_buffer_id command_buffer;
+    vulkan_frame_in_flight_id frame;
+    vulkan_frame_submit_status status = vulkan_frame_submit_status::not_requested;
+    bool submit_requested = false;
+    std::size_t submitted_batch_count = 0;
+    vulkan_frame_sync_wait_status wait_image_available_status =
+        vulkan_frame_sync_wait_status::not_requested;
+    vulkan_frame_sync_signal_status signal_render_finished_status =
+        vulkan_frame_sync_signal_status::not_requested;
+    vulkan_frame_sync_signal_status signal_frame_fence_status =
+        vulkan_frame_sync_signal_status::not_requested;
+
+    bool completed() const
+    {
+        return command_buffer.valid() && frame.valid() && submit_requested
+            && status == vulkan_frame_submit_status::submitted
+            && wait_image_available_status == vulkan_frame_sync_wait_status::waited
+            && signal_render_finished_status == vulkan_frame_sync_signal_status::signaled
+            && signal_frame_fence_status == vulkan_frame_sync_signal_status::signaled;
+    }
+
+    bool failed() const
+    {
+        return submit_requested && status == vulkan_frame_submit_status::failed;
+    }
+};
+
+struct vulkan_backend_command_buffer_submit_state {
+    bool checked = false;
+    vulkan_command_buffer_recording_diagnostics recording;
+    vulkan_frame_submit_diagnostics submit;
+
+    bool completed() const
+    {
+        return checked && recording.completed() && submit.completed();
+    }
+};
 
 struct vulkan_backend_command_recorder_state {
     bool ready = false;
@@ -636,6 +822,7 @@ struct vulkan_backend_frame_result {
     vulkan_backend_resource_registry_state resource_registry;
     vulkan_backend_pipeline_state pipeline;
     vulkan_backend_command_recorder_state command_recorder;
+    vulkan_backend_command_buffer_submit_state command_buffer_submit;
     vulkan_backend_frame_stage reached_stage = vulkan_backend_frame_stage::not_started;
     bool lifecycle_ready = false;
     bool surface_ready = false;
@@ -658,6 +845,7 @@ struct vulkan_backend_frame_result {
             && frame_submitted && frame_presented && swapchain.completed()
             && frame_sync.completed()
             && lifecycle_policy.completed()
+            && command_buffer_submit.completed()
             && resource_bindings.completed()
             && resource_registry.completed()
             && !fallback_required;

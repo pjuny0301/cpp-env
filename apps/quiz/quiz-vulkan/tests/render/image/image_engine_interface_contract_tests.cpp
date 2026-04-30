@@ -129,6 +129,7 @@ static_assert(requires(
 static_assert(requires(
     render::render_image_decode_metadata metadata,
     render::render_image_encoded_format encoded_format,
+    render::render_image_source_kind source_kind,
     render::render_image_format_detection_summary format_detection,
     render::render_image_decode_size_validation size_validation,
     render::render_image_decoder_diagnostic diagnostic,
@@ -196,16 +197,41 @@ static_assert(requires(
     { size_validation.valid } -> std::same_as<bool&>;
     { size_validation.diagnostic } -> std::same_as<std::string&>;
     { render::image_decode_extension_hint("asset://card.PNG") } -> std::same_as<std::string>;
+    { render::render_image_encoded_format_name(encoded_format) } -> std::same_as<std::string>;
+    { render::render_image_encoded_format_mime_type(encoded_format) } -> std::same_as<std::string>;
+    { render::render_image_source_kind_name(source_kind) } -> std::same_as<std::string>;
     { render::detect_render_image_format(request) } -> std::same_as<render::render_image_format_detection_summary>;
+    { render::render_image_source_kind_decode_order(source_kind) } -> std::same_as<std::size_t>;
+    { render::render_image_extension_decode_order("ppm") } -> std::same_as<std::size_t>;
+    { render::render_image_encoded_format_decode_order(encoded_format) } -> std::same_as<std::size_t>;
+    { render::render_image_decoder_candidate_priority(request, std::size_t{}) } -> std::same_as<std::size_t>;
+    { render::make_render_image_decoder_candidate_diagnostic(request, "decoder", std::size_t{}) }
+        -> std::same_as<render::render_image_decoder_diagnostic>;
     { render::render_image_decode_pixel_format_byte_count(render::render_image_pixel_format::rgba8_srgb) }
         -> std::same_as<std::size_t>;
     { render::validate_render_image_decode_size(image) } -> std::same_as<render::render_image_decode_size_validation>;
     { render::with_placeholder_fallback(format_detection, "fake") }
         -> std::same_as<render::render_image_format_detection_summary>;
     encoded_format;
+    source_kind;
     { diagnostic.decoder_id } -> std::same_as<std::string&>;
+    { diagnostic.candidate_index } -> std::same_as<std::size_t&>;
+    { diagnostic.candidate_order } -> std::same_as<std::size_t&>;
+    { diagnostic.candidate_priority } -> std::same_as<std::size_t&>;
+    { diagnostic.extension_hint } -> std::same_as<std::string&>;
+    { diagnostic.detected_format } -> std::same_as<render::render_image_encoded_format&>;
+    { diagnostic.detected_format_name } -> std::same_as<std::string&>;
+    { diagnostic.detected_mime_type } -> std::same_as<std::string&>;
+    { diagnostic.source_kind } -> std::same_as<render::render_image_source_kind&>;
+    { diagnostic.source_kind_name } -> std::same_as<std::string&>;
+    { diagnostic.recognized_signature } -> std::same_as<bool&>;
+    { diagnostic.support_checked } -> std::same_as<bool&>;
     { diagnostic.supported } -> std::same_as<bool&>;
+    { diagnostic.decode_attempted } -> std::same_as<bool&>;
+    { diagnostic.terminal_candidate } -> std::same_as<bool&>;
     { diagnostic.status } -> std::same_as<render::render_image_decode_status&>;
+    { diagnostic.support_diagnostic } -> std::same_as<std::string&>;
+    { diagnostic.decode_diagnostic } -> std::same_as<std::string&>;
     { diagnostic.diagnostic } -> std::same_as<std::string&>;
     { decode_result.metadata } -> std::same_as<render::render_image_decode_metadata&>;
     { decode_result.decoder_diagnostics } -> std::same_as<std::vector<render::render_image_decoder_diagnostic>&>;

@@ -637,10 +637,31 @@ void test_decoder_chain_routes_supported_formats()
     require(fake_decoded.metadata.decoder_id == "fake_image_decoder", "decoder chain preserves fake decoder id");
     require(fake_decoded.decoder_diagnostics.size() == 1, "decoder chain reports selected fake diagnostic");
     require(fake_decoded.decoder_diagnostics[0].decoder_id == "decoder[0]", "decoder chain names first default decoder");
+    require(fake_decoded.decoder_diagnostics[0].candidate_index == 0, "fake candidate records index");
+    require(fake_decoded.decoder_diagnostics[0].candidate_order == 1, "fake candidate records stable order");
+    require(fake_decoded.decoder_diagnostics[0].extension_hint == "fake", "fake candidate records extension hint");
+    require(
+        fake_decoded.decoder_diagnostics[0].detected_format == render_image_encoded_format::unknown,
+        "fake candidate records unknown detected format");
+    require(
+        fake_decoded.decoder_diagnostics[0].detected_format_name == "unknown",
+        "fake candidate records detected format name");
+    require(
+        fake_decoded.decoder_diagnostics[0].detected_mime_type == "application/octet-stream",
+        "fake candidate records fallback mime type");
+    require(
+        fake_decoded.decoder_diagnostics[0].source_kind == render_image_source_kind::local_path,
+        "fake candidate records source kind");
+    require(fake_decoded.decoder_diagnostics[0].source_kind_name == "local_path", "fake candidate records source kind name");
+    require(fake_decoded.decoder_diagnostics[0].support_checked, "fake candidate records support check");
     require(fake_decoded.decoder_diagnostics[0].supported, "decoder chain marks selected fake decoder supported");
+    require(fake_decoded.decoder_diagnostics[0].decode_attempted, "fake candidate records decode attempt");
+    require(fake_decoded.decoder_diagnostics[0].terminal_candidate, "fake candidate terminates chain");
     require(
         fake_decoded.decoder_diagnostics[0].status == render_image_decode_status::decoded,
         "decoder chain records fake decode status");
+    require(!fake_decoded.decoder_diagnostics[0].support_diagnostic.empty(), "fake candidate records support summary");
+    require(!fake_decoded.decoder_diagnostics[0].decode_diagnostic.empty(), "fake candidate records decode summary");
 
     const render_image_decode_request ppm_request{
         .source = ppm_source,
@@ -653,8 +674,24 @@ void test_decoder_chain_routes_supported_formats()
     require(ppm_decoded.metadata.decoder_id == "ppm_image_decoder", "decoder chain preserves ppm decoder id");
     require(ppm_decoded.decoder_diagnostics.size() == 2, "decoder chain reports skipped and selected decoders");
     require(!ppm_decoded.decoder_diagnostics[0].supported, "decoder chain marks skipped fake decoder unsupported");
+    require(!ppm_decoded.decoder_diagnostics[0].decode_attempted, "skipped fake decoder records no decode attempt");
+    require(!ppm_decoded.decoder_diagnostics[0].terminal_candidate, "skipped fake decoder does not terminate chain");
+    require(ppm_decoded.decoder_diagnostics[0].extension_hint == "ppm", "skipped fake decoder records ppm extension");
+    require(
+        ppm_decoded.decoder_diagnostics[0].detected_format == render_image_encoded_format::ppm,
+        "skipped fake decoder records detected ppm format");
+    require(
+        ppm_decoded.decoder_diagnostics[0].detected_mime_type == "image/x-portable-pixmap",
+        "skipped fake decoder records detected ppm mime");
+    require(ppm_decoded.decoder_diagnostics[0].recognized_signature, "skipped fake decoder records recognized signature");
+    require(ppm_decoded.decoder_diagnostics[0].candidate_priority == 0, "first ppm candidate records priority");
     require(ppm_decoded.decoder_diagnostics[1].supported, "decoder chain marks selected ppm decoder supported");
     require(ppm_decoded.decoder_diagnostics[1].decoder_id == "decoder[1]", "decoder chain names second default decoder");
+    require(ppm_decoded.decoder_diagnostics[1].candidate_index == 1, "selected ppm decoder records index");
+    require(ppm_decoded.decoder_diagnostics[1].candidate_order == 2, "selected ppm decoder records order");
+    require(ppm_decoded.decoder_diagnostics[1].candidate_priority == 1, "second ppm candidate records priority");
+    require(ppm_decoded.decoder_diagnostics[1].decode_attempted, "selected ppm decoder records decode attempt");
+    require(ppm_decoded.decoder_diagnostics[1].terminal_candidate, "selected ppm decoder terminates chain");
     require(fake_decoder.decode_requests.size() == 1, "decoder chain decodes fake source only once");
 }
 
@@ -681,14 +718,77 @@ void test_decoder_chain_reports_unsupported_sources()
         decoded.status == render_image_decode_status::unsupported_format,
         "decoder chain unsupported source reports unsupported format");
     require(!decoded.diagnostic.empty(), "decoder chain unsupported source includes diagnostic");
+    require(decoded.metadata.decoder_id == "image_decoder_chain", "decoder chain fallback reports decoder id");
     require(decoded.metadata.encoded_byte_count == request.encoded_bytes.size(), "decoder chain failure reports encoded byte count");
     require(decoded.decoder_diagnostics.size() == 1, "decoder chain failure reports checked decoder");
     require(decoded.decoder_diagnostics[0].decoder_id == "ppm-fixture", "decoder chain failure uses explicit decoder id");
+    require(decoded.decoder_diagnostics[0].candidate_index == 0, "unsupported candidate records index");
+    require(decoded.decoder_diagnostics[0].candidate_order == 1, "unsupported candidate records order");
+    require(decoded.decoder_diagnostics[0].extension_hint == "png", "unsupported candidate records extension");
+    require(
+        decoded.decoder_diagnostics[0].detected_format == render_image_encoded_format::ppm,
+        "unsupported candidate records detected bytes separately from extension");
+    require(
+        decoded.decoder_diagnostics[0].detected_mime_type == "image/x-portable-pixmap",
+        "unsupported candidate records detected mime");
+    require(
+        decoded.decoder_diagnostics[0].source_kind == render_image_source_kind::asset_uri,
+        "unsupported candidate records asset source kind");
+    require(decoded.decoder_diagnostics[0].source_kind_name == "asset_uri", "unsupported candidate records source kind name");
+    require(decoded.decoder_diagnostics[0].support_checked, "unsupported candidate records support check");
     require(!decoded.decoder_diagnostics[0].supported, "decoder chain failure marks decoder unsupported");
+    require(!decoded.decoder_diagnostics[0].decode_attempted, "unsupported candidate records no decode attempt");
+    require(decoded.decoder_diagnostics[0].terminal_candidate, "unsupported candidate terminates fallback chain");
     require(
         decoded.decoder_diagnostics[0].status == render_image_decode_status::unsupported_format,
         "decoder chain failure records unsupported status");
+    require(!decoded.decoder_diagnostics[0].support_diagnostic.empty(), "unsupported candidate records support summary");
     require(!decoded.decoder_diagnostics[0].diagnostic.empty(), "decoder chain failure records support diagnostic");
+}
+
+void test_decoder_chain_reports_candidate_decode_failures()
+{
+    using namespace quiz_vulkan::render;
+
+    ppm_image_decoder ppm_decoder;
+    image_decoder_chain decoder_chain;
+    decoder_chain.add_decoder("ppm-fixture", ppm_decoder);
+    const render_image_decode_request request{
+        .source = render_resolved_image_source{
+            .original_uri = "asset://broken.ppm",
+            .normalized_uri = "asset://broken.ppm",
+            .kind = render_image_source_kind::asset_uri,
+        },
+        .encoded_bytes = make_png_signature_fixture_bytes(),
+    };
+
+    require(decoder_chain.supports(request), "decoder chain supports ppm extension before decode failure");
+    const render_image_decode_result decoded = decoder_chain.decode(request);
+    require(!decoded.ok(), "decoder chain returns deterministic decode failure result");
+    require(
+        decoded.status == render_image_decode_status::unsupported_format,
+        "decoder chain preserves candidate decode failure status");
+    require(decoded.decoder_diagnostics.size() == 1, "decode failure records one candidate");
+
+    const render_image_decoder_diagnostic& candidate = decoded.decoder_diagnostics[0];
+    require(candidate.decoder_id == "ppm-fixture", "decode failure records candidate id");
+    require(candidate.candidate_index == 0, "decode failure records candidate index");
+    require(candidate.candidate_order == 1, "decode failure records candidate order");
+    require(candidate.candidate_priority == 100, "decode failure combines extension and mime ordering");
+    require(candidate.extension_hint == "ppm", "decode failure records extension hint");
+    require(candidate.detected_format == render_image_encoded_format::png, "decode failure records detected PNG bytes");
+    require(candidate.detected_format_name == "png", "decode failure records detected format name");
+    require(candidate.detected_mime_type == "image/png", "decode failure records detected mime");
+    require(candidate.source_kind == render_image_source_kind::asset_uri, "decode failure records source kind");
+    require(candidate.source_kind_name == "asset_uri", "decode failure records source kind name");
+    require(candidate.recognized_signature, "decode failure records recognized signature");
+    require(candidate.support_checked, "decode failure records support check");
+    require(candidate.supported, "decode failure records supported candidate");
+    require(candidate.decode_attempted, "decode failure records decode attempt");
+    require(candidate.terminal_candidate, "decode failure marks terminal candidate");
+    require(!candidate.support_diagnostic.empty(), "decode failure records support summary");
+    require(!candidate.decode_diagnostic.empty(), "decode failure records decode summary");
+    require(!candidate.diagnostic.empty(), "decode failure records candidate summary");
 }
 
 void test_source_bytes_loader_returns_registered_local_bytes()
@@ -2911,6 +3011,7 @@ int main()
     test_ppm_decoder_reports_invalid_payload_size();
     test_decoder_chain_routes_supported_formats();
     test_decoder_chain_reports_unsupported_sources();
+    test_decoder_chain_reports_candidate_decode_failures();
     test_source_bytes_loader_returns_registered_local_bytes();
     test_source_bytes_loader_reports_explicit_failures();
     test_texture_cache_can_use_loaded_source_bytes();

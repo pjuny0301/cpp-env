@@ -1189,11 +1189,20 @@ void test_texture_cache_tracks_pixel_budget_and_evicts_lru_entries()
     require(!first_d.cache_hit, "budget source D is a cache miss");
     require(cache.cached_texture_count() == 3, "budget insert evicts one texture");
     require(cache.cached_pixel_count() == 3, "budget insert preserves pixel budget");
+    require(cache.eviction_count() == 1, "budget insert increments capacity eviction count");
+
+    const fake_image_texture_cache_snapshot after_eviction = cache.diagnostic_snapshot();
+    require(after_eviction.eviction_count == 1, "budget snapshot reports capacity eviction count");
+    require(after_eviction.pinned_texture_count == 0, "budget snapshot starts with no pinned textures");
+    require(after_eviction.evictable_texture_count == 3, "budget snapshot reports evictable textures");
+    require(after_eviction.evictable_pixel_count == 3, "budget snapshot reports evictable pixels");
+    require(!after_eviction.capacity_exceeded, "budget snapshot stays within capacity");
 
     const render_image_texture_result second_b = acquire(source_b);
     require(second_b.ok(), "budget source B can be reacquired");
     require(!second_b.cache_hit, "least recently used source B was evicted");
     require(second_b.texture.id != first_b.texture.id, "evicted source B receives a new texture id");
+    require(cache.eviction_count() == 2, "reacquiring evicted source increments capacity eviction count again");
 
     const render_image_texture_result second_a = acquire(source_a);
     require(second_a.ok(), "recently touched source A remains available");
@@ -1226,6 +1235,136 @@ void test_texture_cache_skips_caching_entries_over_pixel_budget()
     require(cache.cached_pixel_count() == 0, "over-budget texture does not increase cached pixels");
     require(cache.cached_pixel_byte_count() == 0, "over-budget texture does not increase cached pixel bytes");
     require(cache.cached_decoded_byte_count() == 0, "over-budget texture does not increase cached bytes");
+    require(cache.over_capacity_texture_count() == 2, "over-budget texture attempts are counted");
+
+    const fake_image_texture_cache_snapshot snapshot = cache.diagnostic_snapshot();
+    require(snapshot.over_capacity_texture_count == 2, "over-budget snapshot counts uncached handles");
+    require(snapshot.eviction_count == 0, "over-budget snapshot does not evict existing entries");
+    require(!snapshot.capacity_exceeded, "over-budget evictable texture is not resident over capacity");
+}
+
+void test_texture_cache_pinned_residency_survives_capacity_eviction()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source_a = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/resident-a.ppm"})
+                                                     .source;
+    const render_resolved_image_source source_b = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/resident-b.ppm"})
+                                                     .source;
+    const render_resolved_image_source source_c = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/resident-c.ppm"})
+                                                     .source;
+
+    ppm_image_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+    cache.set_max_cached_pixel_count(2);
+    cache.set_placeholder_encoded_bytes_for_source(source_a.cache_key(), make_ppm_1x1_encoded_bytes());
+    cache.set_placeholder_encoded_bytes_for_source(source_b.cache_key(), make_ppm_1x1_encoded_bytes());
+    cache.set_placeholder_encoded_bytes_for_source(source_c.cache_key(), make_ppm_1x1_encoded_bytes());
+
+    const render_image_texture_request request_a{.source = source_a, .sampler = render_image_sampler_policy{}};
+    const render_image_texture_request request_b{.source = source_b, .sampler = render_image_sampler_policy{}};
+    const render_image_texture_request request_c{.source = source_c, .sampler = render_image_sampler_policy{}};
+    const render_image_texture_key key_a = make_render_image_texture_key(request_a);
+    const render_image_texture_key key_b = make_render_image_texture_key(request_b);
+    const render_image_texture_key key_c = make_render_image_texture_key(request_c);
+
+    cache.pin_texture(key_a);
+    require(cache.is_texture_pinned(key_a), "pinning a future texture is visible in residency policy");
+
+    const render_image_texture_result first_a = cache.acquire_texture(request_a);
+    const render_image_texture_result first_b = cache.acquire_texture(request_b);
+    require(first_a.ok(), "pinned source A creates a texture");
+    require(first_b.ok(), "evictable source B creates a texture");
+    require(cache.cached_texture_count() == 2, "residency test starts at capacity");
+
+    const fake_image_texture_cache_snapshot before_eviction = cache.diagnostic_snapshot();
+    require(before_eviction.pinned_texture_count == 1, "residency snapshot reports one pinned texture");
+    require(before_eviction.evictable_texture_count == 1, "residency snapshot reports one evictable texture");
+    require(before_eviction.pinned_pixel_count == 1, "residency snapshot reports pinned pixels");
+    require(find_snapshot_entry(before_eviction, source_a.cache_key())->residency == fake_image_texture_residency::pinned, "source A is pinned in snapshot");
+
+    const render_image_texture_result first_c = cache.acquire_texture(request_c);
+    require(first_c.ok(), "residency source C creates a texture");
+    require(!first_c.cache_hit, "residency source C is a cache miss");
+    require(cache.cached_texture_count() == 2, "residency insert preserves cache capacity");
+    require(cache.eviction_count() == 1, "residency insert evicts one evictable texture");
+
+    const fake_image_texture_cache_snapshot after_eviction = cache.diagnostic_snapshot();
+    require(find_snapshot_entry(after_eviction, source_a.cache_key()) != nullptr, "pinned source A survives eviction");
+    require(find_snapshot_entry(after_eviction, source_b.cache_key()) == nullptr, "evictable source B is evicted");
+    require(find_snapshot_entry(after_eviction, source_c.cache_key()) != nullptr, "source C is cached");
+    require(find_snapshot_entry(after_eviction, source_c.cache_key())->residency == fake_image_texture_residency::evictable, "source C remains evictable");
+
+    const render_image_texture_result second_a = cache.acquire_texture(request_a);
+    require(second_a.cache_hit, "pinned source A remains cache resident");
+    require(second_a.texture.id == first_a.texture.id, "pinned source A keeps its handle");
+
+    cache.unpin_texture(key_a);
+    require(!cache.is_texture_pinned(key_a), "unpinning makes source A evictable");
+    cache.set_texture_residency(key_c, fake_image_texture_residency::pinned);
+    require(cache.is_texture_pinned(key_c), "set_texture_residency can pin an existing texture");
+    require(!cache.is_texture_pinned(key_b), "evicted source B is not pinned");
+}
+
+void test_texture_cache_pinned_residency_can_exceed_capacity_without_failures()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source_a = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/pinned-over-a.ppm"})
+                                                     .source;
+    const render_resolved_image_source source_b = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/pinned-over-b.ppm"})
+                                                     .source;
+    const render_resolved_image_source source_c = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/pinned-over-c.ppm"})
+                                                     .source;
+
+    ppm_image_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+    cache.set_max_cached_pixel_count(1);
+    cache.set_placeholder_encoded_bytes_for_source(source_a.cache_key(), make_ppm_1x1_encoded_bytes());
+    cache.set_placeholder_encoded_bytes_for_source(source_b.cache_key(), make_ppm_1x1_encoded_bytes());
+    cache.set_placeholder_encoded_bytes_for_source(source_c.cache_key(), make_ppm_1x1_encoded_bytes());
+
+    const render_image_texture_request request_a{.source = source_a, .sampler = render_image_sampler_policy{}};
+    const render_image_texture_request request_b{.source = source_b, .sampler = render_image_sampler_policy{}};
+    const render_image_texture_request request_c{.source = source_c, .sampler = render_image_sampler_policy{}};
+    cache.pin_texture(make_render_image_texture_key(request_a));
+    cache.pin_texture(make_render_image_texture_key(request_b));
+
+    const render_image_texture_result first_a = cache.acquire_texture(request_a);
+    const render_image_texture_result first_b = cache.acquire_texture(request_b);
+    require(first_a.ok(), "first pinned over-capacity texture succeeds");
+    require(first_b.ok(), "second pinned over-capacity texture succeeds");
+    require(cache.cached_texture_count() == 2, "pinned textures can remain resident over capacity");
+    require(cache.cached_pixel_count() == 2, "pinned textures account for over-capacity pixels");
+
+    const fake_image_texture_cache_snapshot pinned_snapshot = cache.diagnostic_snapshot();
+    require(pinned_snapshot.capacity_exceeded, "pinned snapshot reports capacity exceeded");
+    require(pinned_snapshot.pinned_texture_count == 2, "pinned snapshot reports two pinned textures");
+    require(pinned_snapshot.evictable_texture_count == 0, "pinned snapshot reports no evictable textures");
+    require(pinned_snapshot.eviction_count == 0, "pinned over-capacity setup does not evict pinned textures");
+
+    const render_image_texture_result first_c = cache.acquire_texture(request_c);
+    const render_image_texture_result second_c = cache.acquire_texture(request_c);
+    require(first_c.ok(), "evictable texture still returns a handle when pinned entries exceed capacity");
+    require(second_c.ok(), "evictable over-capacity texture can be retried");
+    require(!first_c.cache_hit, "first evictable over-capacity texture is not cached");
+    require(!second_c.cache_hit, "second evictable over-capacity texture is not cached");
+    require(first_c.texture.id != second_c.texture.id, "uncached over-capacity texture receives new handles");
+    require(find_snapshot_entry(cache.diagnostic_snapshot(), source_c.cache_key()) == nullptr, "evictable over-capacity texture is not resident");
+    require(cache.over_capacity_texture_count() == 2, "over-capacity evictable attempts are counted");
+
+    const fake_image_texture_cache_snapshot final_snapshot = cache.diagnostic_snapshot();
+    require(final_snapshot.texture_count == 2, "final pinned snapshot keeps pinned entries");
+    require(final_snapshot.capacity_exceeded, "final pinned snapshot still reports capacity exceeded");
+    require(final_snapshot.over_capacity_texture_count == 2, "final pinned snapshot counts uncached attempts");
 }
 
 void test_texture_cache_diagnostic_snapshot_reports_entries_and_recency()
@@ -1687,6 +1826,8 @@ int main()
     test_texture_cache_release_unused_evicts_fake_entries();
     test_texture_cache_tracks_pixel_budget_and_evicts_lru_entries();
     test_texture_cache_skips_caching_entries_over_pixel_budget();
+    test_texture_cache_pinned_residency_survives_capacity_eviction();
+    test_texture_cache_pinned_residency_can_exceed_capacity_without_failures();
     test_texture_cache_diagnostic_snapshot_reports_entries_and_recency();
     test_texture_cache_invalidates_by_texture_key_and_source();
     test_texture_cache_reports_explicit_failures();

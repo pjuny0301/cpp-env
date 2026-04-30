@@ -182,6 +182,11 @@ struct render_image_texture_key_less {
     }
 };
 
+enum class fake_image_texture_residency {
+    evictable,
+    pinned,
+};
+
 struct fake_image_texture_cache_entry_snapshot {
     render_image_texture_key key;
     render_image_texture_handle texture;
@@ -189,6 +194,7 @@ struct fake_image_texture_cache_entry_snapshot {
     std::size_t pixel_byte_count = 0;
     std::size_t decoded_byte_count = 0;
     std::size_t last_used_sequence = 0;
+    fake_image_texture_residency residency = fake_image_texture_residency::evictable;
 };
 
 struct fake_image_texture_cache_snapshot {
@@ -197,6 +203,13 @@ struct fake_image_texture_cache_snapshot {
     std::size_t cached_pixel_count = 0;
     std::size_t cached_pixel_byte_count = 0;
     std::size_t cached_decoded_byte_count = 0;
+    std::size_t pinned_texture_count = 0;
+    std::size_t evictable_texture_count = 0;
+    std::size_t pinned_pixel_count = 0;
+    std::size_t evictable_pixel_count = 0;
+    std::size_t eviction_count = 0;
+    std::size_t over_capacity_texture_count = 0;
+    bool capacity_exceeded = false;
     std::vector<fake_image_texture_cache_entry_snapshot> entries;
 };
 
@@ -527,23 +540,18 @@ public:
         const std::size_t pixel_count = uploaded.pixel_count;
         const std::size_t pixel_byte_count = uploaded.pixel_byte_count;
         const std::size_t decoded_byte_count = uploaded.decoded_byte_count;
-        if (pixel_count <= max_cached_pixel_count_) {
-            evict_to_fit(pixel_count);
-            cached_pixel_count_ += pixel_count;
-            cached_pixel_byte_count_ += pixel_byte_count;
-            cached_decoded_byte_count_ += decoded_byte_count;
-            textures_.emplace(
-                key,
-                fake_cached_image_texture{
-                    .texture = handle,
-                    .decode_metadata = decoded.metadata,
-                    .decoder_diagnostics = decoded.decoder_diagnostics,
-                    .pixel_count = pixel_count,
-                    .pixel_byte_count = pixel_byte_count,
-                    .decoded_byte_count = decoded_byte_count,
-                    .last_used_sequence = next_access_sequence_++,
-                });
-        }
+        cache_uploaded_texture(
+            key,
+            fake_cached_image_texture{
+                .texture = handle,
+                .decode_metadata = decoded.metadata,
+                .decoder_diagnostics = decoded.decoder_diagnostics,
+                .pixel_count = pixel_count,
+                .pixel_byte_count = pixel_byte_count,
+                .decoded_byte_count = decoded_byte_count,
+                .last_used_sequence = next_access_sequence_++,
+                .residency = configured_residency_for(key),
+            });
         return render_image_texture_result{
             .status = render_image_texture_status::ready,
             .key = key,
@@ -609,6 +617,47 @@ public:
         return cached_pixel_byte_count_;
     }
 
+    std::size_t eviction_count() const
+    {
+        return eviction_count_;
+    }
+
+    std::size_t over_capacity_texture_count() const
+    {
+        return over_capacity_texture_count_;
+    }
+
+    void set_texture_residency(
+        const render_image_texture_key& key,
+        fake_image_texture_residency residency)
+    {
+        texture_residency_.insert_or_assign(key, residency);
+        const auto texture = textures_.find(key);
+        if (texture != textures_.end()) {
+            texture->second.residency = residency;
+        }
+        evict_to_fit(0);
+    }
+
+    void pin_texture(const render_image_texture_key& key)
+    {
+        set_texture_residency(key, fake_image_texture_residency::pinned);
+    }
+
+    void unpin_texture(const render_image_texture_key& key)
+    {
+        set_texture_residency(key, fake_image_texture_residency::evictable);
+    }
+
+    bool is_texture_pinned(const render_image_texture_key& key) const
+    {
+        const auto texture = textures_.find(key);
+        if (texture != textures_.end()) {
+            return texture->second.residency == fake_image_texture_residency::pinned;
+        }
+        return configured_residency_for(key) == fake_image_texture_residency::pinned;
+    }
+
     fake_image_texture_cache_snapshot diagnostic_snapshot() const
     {
         fake_image_texture_cache_snapshot snapshot{
@@ -617,11 +666,25 @@ public:
             .cached_pixel_count = cached_pixel_count_,
             .cached_pixel_byte_count = cached_pixel_byte_count_,
             .cached_decoded_byte_count = cached_decoded_byte_count_,
+            .pinned_texture_count = 0,
+            .evictable_texture_count = 0,
+            .pinned_pixel_count = 0,
+            .evictable_pixel_count = 0,
+            .eviction_count = eviction_count_,
+            .over_capacity_texture_count = over_capacity_texture_count_,
+            .capacity_exceeded = cached_pixel_count_ > max_cached_pixel_count_,
             .entries = {},
         };
         snapshot.entries.reserve(textures_.size());
 
         for (const auto& [key, entry] : textures_) {
+            if (entry.residency == fake_image_texture_residency::pinned) {
+                ++snapshot.pinned_texture_count;
+                snapshot.pinned_pixel_count += entry.pixel_count;
+            } else {
+                ++snapshot.evictable_texture_count;
+                snapshot.evictable_pixel_count += entry.pixel_count;
+            }
             snapshot.entries.push_back(fake_image_texture_cache_entry_snapshot{
                 .key = key,
                 .texture = entry.texture,
@@ -629,6 +692,7 @@ public:
                 .pixel_byte_count = entry.pixel_byte_count,
                 .decoded_byte_count = entry.decoded_byte_count,
                 .last_used_sequence = entry.last_used_sequence,
+                .residency = entry.residency,
             });
         }
 
@@ -667,6 +731,7 @@ private:
         std::size_t pixel_byte_count = 0;
         std::size_t decoded_byte_count = 0;
         std::size_t last_used_sequence = 0;
+        fake_image_texture_residency residency = fake_image_texture_residency::evictable;
     };
 
     const std::vector<std::byte>& placeholder_encoded_bytes_for(const render_image_cache_key& source_key) const
@@ -699,23 +764,68 @@ private:
             : 0;
     }
 
-    void evict_to_fit(std::size_t incoming_pixel_count)
+    bool has_capacity_for(std::size_t incoming_pixel_count) const
     {
-        if (incoming_pixel_count > max_cached_pixel_count_) {
-            clear_textures();
+        return incoming_pixel_count <= max_cached_pixel_count_
+            && cached_pixel_count_ <= max_cached_pixel_count_ - incoming_pixel_count;
+    }
+
+    fake_image_texture_residency configured_residency_for(const render_image_texture_key& key) const
+    {
+        const auto residency = texture_residency_.find(key);
+        return residency == texture_residency_.end() ? fake_image_texture_residency::evictable : residency->second;
+    }
+
+    void cache_uploaded_texture(render_image_texture_key key, fake_cached_image_texture texture)
+    {
+        if (texture.residency == fake_image_texture_residency::evictable
+            && texture.pixel_count > max_cached_pixel_count_) {
+            ++over_capacity_texture_count_;
             return;
         }
 
-        while (!textures_.empty() && cached_pixel_count_ > max_cached_pixel_count_ - incoming_pixel_count) {
-            auto least_recently_used = textures_.begin();
+        evict_to_fit(texture.pixel_count);
+        if (texture.residency == fake_image_texture_residency::evictable && !has_capacity_for(texture.pixel_count)) {
+            ++over_capacity_texture_count_;
+            return;
+        }
+
+        cached_pixel_count_ += texture.pixel_count;
+        cached_pixel_byte_count_ += texture.pixel_byte_count;
+        cached_decoded_byte_count_ += texture.decoded_byte_count;
+        textures_.emplace(std::move(key), std::move(texture));
+    }
+
+    void erase_cached_texture(
+        std::map<render_image_texture_key, fake_cached_image_texture, render_image_texture_key_less>::iterator texture,
+        bool count_eviction)
+    {
+        subtract_cached_entry(texture->second);
+        textures_.erase(texture);
+        if (count_eviction) {
+            ++eviction_count_;
+        }
+    }
+
+    void evict_to_fit(std::size_t incoming_pixel_count)
+    {
+        while (!textures_.empty() && !has_capacity_for(incoming_pixel_count)) {
+            auto least_recently_used = textures_.end();
             for (auto candidate = textures_.begin(); candidate != textures_.end(); ++candidate) {
-                if (candidate->second.last_used_sequence < least_recently_used->second.last_used_sequence) {
+                if (candidate->second.residency == fake_image_texture_residency::pinned) {
+                    continue;
+                }
+                if (least_recently_used == textures_.end()
+                    || candidate->second.last_used_sequence < least_recently_used->second.last_used_sequence) {
                     least_recently_used = candidate;
                 }
             }
 
-            subtract_cached_entry(least_recently_used->second);
-            textures_.erase(least_recently_used);
+            if (least_recently_used == textures_.end()) {
+                return;
+            }
+
+            erase_cached_texture(least_recently_used, true);
         }
     }
 
@@ -728,8 +838,11 @@ private:
     std::size_t cached_pixel_count_ = 0;
     std::size_t cached_pixel_byte_count_ = 0;
     std::size_t cached_decoded_byte_count_ = 0;
+    std::size_t eviction_count_ = 0;
+    std::size_t over_capacity_texture_count_ = 0;
     std::vector<std::byte> placeholder_encoded_bytes_ = {std::byte{0x01}};
     std::map<render_image_cache_key, std::vector<std::byte>> source_placeholder_encoded_bytes_;
+    std::map<render_image_texture_key, fake_image_texture_residency, render_image_texture_key_less> texture_residency_;
     std::map<render_image_texture_key, fake_cached_image_texture, render_image_texture_key_less> textures_;
 };
 

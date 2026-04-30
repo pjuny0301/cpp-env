@@ -127,9 +127,11 @@ static_assert(requires(
     const render::fake_image_texture_pipeline& pipeline,
     render::fake_image_texture_pipeline& mutable_pipeline,
     render::render_image_ref image_ref,
+    render::fake_image_texture_residency texture_residency,
     render::fake_image_texture_cache_entry_snapshot cache_entry,
     render::fake_image_texture_cache_snapshot cache_snapshot,
     const render::fake_image_texture_cache& cache,
+    render::fake_image_texture_cache& mutable_cache,
     const render::render_resolved_image_source& source,
     const render::render_image_decode_request& request,
     const render::render_decoded_image& image) {
@@ -244,13 +246,29 @@ static_assert(requires(
     { cache_entry.pixel_byte_count } -> std::same_as<std::size_t&>;
     { cache_entry.decoded_byte_count } -> std::same_as<std::size_t&>;
     { cache_entry.last_used_sequence } -> std::same_as<std::size_t&>;
+    { cache_entry.residency } -> std::same_as<render::fake_image_texture_residency&>;
     { cache_snapshot.texture_count } -> std::same_as<std::size_t&>;
     { cache_snapshot.max_cached_pixel_count } -> std::same_as<std::size_t&>;
     { cache_snapshot.cached_pixel_count } -> std::same_as<std::size_t&>;
     { cache_snapshot.cached_pixel_byte_count } -> std::same_as<std::size_t&>;
     { cache_snapshot.cached_decoded_byte_count } -> std::same_as<std::size_t&>;
+    { cache_snapshot.pinned_texture_count } -> std::same_as<std::size_t&>;
+    { cache_snapshot.evictable_texture_count } -> std::same_as<std::size_t&>;
+    { cache_snapshot.pinned_pixel_count } -> std::same_as<std::size_t&>;
+    { cache_snapshot.evictable_pixel_count } -> std::same_as<std::size_t&>;
+    { cache_snapshot.eviction_count } -> std::same_as<std::size_t&>;
+    { cache_snapshot.over_capacity_texture_count } -> std::same_as<std::size_t&>;
+    { cache_snapshot.capacity_exceeded } -> std::same_as<bool&>;
     { cache_snapshot.entries } -> std::same_as<std::vector<render::fake_image_texture_cache_entry_snapshot>&>;
     { cache.diagnostic_snapshot() } -> std::same_as<render::fake_image_texture_cache_snapshot>;
+    { cache.eviction_count() } -> std::same_as<std::size_t>;
+    { cache.over_capacity_texture_count() } -> std::same_as<std::size_t>;
+    { cache.is_texture_pinned(render::render_image_texture_key{}) } -> std::same_as<bool>;
+    { mutable_cache.set_texture_residency(render::render_image_texture_key{}, texture_residency) }
+        -> std::same_as<void>;
+    { mutable_cache.pin_texture(render::render_image_texture_key{}) } -> std::same_as<void>;
+    { mutable_cache.unpin_texture(render::render_image_texture_key{}) } -> std::same_as<void>;
+    texture_residency;
 });
 
 } // namespace

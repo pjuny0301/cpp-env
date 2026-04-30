@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <utility>
 #include <variant>
@@ -791,12 +792,24 @@ void test_ime_composition_suppresses_text_and_key_events()
 
     require(engine.process_raw_event(ime(raw_platform_ime_phase::composition_start, 100)).empty(),
         "composition start is state only");
+    require(engine.text_model().ime_composition().active, "composition start creates active empty composition");
+    require_range(engine.text_model().ime_composition().preedit_range, 0, 0,
+        "composition start preedit range is collapsed");
     std::vector<input_event> events =
         engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 110, utf8(u8"ㅎ")));
     require(events.size() == 1, "preedit emits one ime event");
     const ime_event& preedit = require_event<ime_event>(events, 0);
     require(preedit.kind == ime_event_kind::preedit, "preedit event is emitted");
     require(preedit.utf8_text == utf8(u8"ㅎ"), "preedit text is preserved");
+    require(preedit.composition.active, "preedit event carries active composition");
+    require(preedit.composition.preedit_text == utf8(u8"ㅎ"), "preedit event carries composition text");
+    require_range(preedit.composition.replacement_range, 0, 0, "preedit event replacement range is caret collapsed");
+    require_range(preedit.composition.preedit_range, 0, std::string(utf8(u8"ㅎ")).size(),
+        "preedit event range covers hangul jamo bytes");
+    require_range(preedit.composition.caret_range,
+        std::string(utf8(u8"ㅎ")).size(),
+        std::string(utf8(u8"ㅎ")).size(),
+        "preedit event caret follows hangul jamo");
     require(engine.text_model().display_text() == utf8(u8"ㅎ"), "display text includes preedit");
 
     require(engine.process_raw_event(key(120, "Enter")).empty(), "enter is suppressed during composition");
@@ -815,8 +828,14 @@ void test_ime_composition_suppresses_text_and_key_events()
     const ime_event& commit = require_event<ime_event>(events, 0);
     require(commit.kind == ime_event_kind::commit, "ime commit event is emitted");
     require(commit.utf8_text == utf8(u8"한"), "ime commit text is preserved");
+    require(commit.composition.active, "ime commit carries composition snapshot before commit");
+    require(commit.composition.preedit_text == utf8(u8"ㅎ"), "ime commit preserves previous preedit snapshot");
+    require_range(commit.composition.replacement_range, 0, 0, "ime commit replacement range is original caret");
+    require_range(commit.composition.preedit_range, 0, std::string(utf8(u8"ㅎ")).size(),
+        "ime commit preedit range is previous hangul jamo range");
     require(engine.text_model().text() == utf8(u8"한"), "ime commit updates text model");
     require(engine.text_model().preedit_text().empty(), "ime commit clears preedit");
+    require(!engine.text_model().ime_composition().active, "ime commit clears model composition state");
 }
 
 void test_ime_preedit_commit_edges()
@@ -830,12 +849,20 @@ void test_ime_preedit_commit_edges()
     std::vector<input_event> events =
         engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 100, utf8(u8"ㅎ")));
     require(events.size() == 1, "first preedit emits one event");
-    require(require_event<ime_event>(events, 0).utf8_text == utf8(u8"ㅎ"), "first preedit text is emitted");
+    const ime_event& first_preedit = require_event<ime_event>(events, 0);
+    require(first_preedit.utf8_text == utf8(u8"ㅎ"), "first preedit text is emitted");
+    require(first_preedit.composition.active, "first preedit carries active composition");
+    require_range(first_preedit.composition.replacement_range, 0, 0, "first preedit replacement is collapsed");
     require(engine.text_model().display_text() == utf8(u8"ㅎ"), "first preedit is displayed");
 
     events = engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 110, utf8(u8"하")));
     require(events.size() == 1, "replacement preedit emits one event");
-    require(require_event<ime_event>(events, 0).utf8_text == utf8(u8"하"), "replacement preedit text is emitted");
+    const ime_event& replacement_preedit = require_event<ime_event>(events, 0);
+    require(replacement_preedit.utf8_text == utf8(u8"하"), "replacement preedit text is emitted");
+    require(replacement_preedit.composition.active, "replacement preedit carries active composition");
+    require(replacement_preedit.composition.preedit_text == utf8(u8"하"), "replacement preedit composition text is emitted");
+    require_range(replacement_preedit.composition.preedit_range, 0, std::string(utf8(u8"하")).size(),
+        "replacement preedit range covers hangul syllable bytes");
     require(engine.text_model().text().empty(), "replacement preedit does not commit text");
     require(engine.text_model().display_text() == utf8(u8"하"), "replacement preedit replaces displayed preedit");
 
@@ -844,6 +871,8 @@ void test_ime_preedit_commit_edges()
     const ime_event& commit = require_event<ime_event>(events, 0);
     require(commit.kind == ime_event_kind::commit, "explicit ime commit emits commit kind");
     require(commit.utf8_text == utf8(u8"한"), "explicit ime commit preserves final text");
+    require(commit.composition.active, "explicit ime commit carries active composition snapshot");
+    require(commit.composition.preedit_text == utf8(u8"하"), "explicit ime commit carries previous preedit text");
     require(engine.text_model().text() == utf8(u8"한"), "explicit ime commit updates committed text");
     require(engine.text_model().preedit_text().empty(), "explicit ime commit clears preedit");
 
@@ -871,6 +900,9 @@ void test_ime_composition_restart_cancels_visible_preedit()
     require(cancel.kind == ime_event_kind::cancel, "composition restart emits cancel for stale preedit");
     require(cancel.target_id == "answer", "composition restart cancel preserves target id");
     require(cancel.utf8_text.empty(), "composition restart cancel carries no text");
+    require(cancel.composition.active, "composition restart cancel carries stale active composition");
+    require(cancel.composition.preedit_text == "draft", "composition restart cancel carries stale preedit text");
+    require_range(cancel.composition.preedit_range, 0, 5, "composition restart cancel carries stale preedit range");
     require(engine.text_model().preedit_text().empty(), "composition restart clears stale preedit");
 
     require(engine.process_raw_event(text(120, "duplicate")).empty(),
@@ -897,6 +929,8 @@ void test_empty_ime_commit_and_end_cancel_preedit()
     const ime_event& empty_commit = require_event<ime_event>(events, 0);
     require(empty_commit.kind == ime_event_kind::cancel, "empty ime commit emits cancel kind");
     require(empty_commit.utf8_text.empty(), "empty ime commit cancel carries no text");
+    require(empty_commit.composition.active, "empty ime commit cancel carries active composition snapshot");
+    require(empty_commit.composition.preedit_text == "draft", "empty ime commit cancel carries preedit text");
     require(engine.text_model().text().empty(), "empty ime commit does not append text");
     require(engine.text_model().preedit_text().empty(), "empty ime commit clears preedit");
 
@@ -909,6 +943,8 @@ void test_empty_ime_commit_and_end_cancel_preedit()
     require(events.size() == 1, "empty composition end emits cancellation");
     const ime_event& empty_end = require_event<ime_event>(events, 0);
     require(empty_end.kind == ime_event_kind::cancel, "empty composition end emits cancel kind");
+    require(empty_end.composition.active, "empty composition end cancel carries active composition snapshot");
+    require(empty_end.composition.preedit_text == "draft", "empty composition end cancel carries preedit text");
     require(engine.text_model().text() == "a", "empty composition end preserves committed text");
     require(engine.text_model().preedit_text().empty(), "empty composition end clears preedit");
 }
@@ -923,6 +959,9 @@ void test_ime_empty_preedit_and_commit_only_edges()
 
     require(engine.process_raw_event(ime(raw_platform_ime_phase::composition_start, 100)).empty(),
         "empty composition start emits no event");
+    require(engine.text_model().ime_composition().active, "empty composition start activates composition state");
+    require_range(engine.text_model().ime_composition().preedit_range, 0, 0,
+        "empty composition start has collapsed preedit range");
     require(engine.process_raw_event(key(105, "Backspace")).empty(),
         "backspace is suppressed during empty composition");
     require(engine.process_raw_event(text(106, "duplicate")).empty(),
@@ -934,6 +973,9 @@ void test_ime_empty_preedit_and_commit_only_edges()
     const ime_event& empty_commit = require_event<ime_event>(events, 0);
     require(empty_commit.kind == ime_event_kind::cancel, "empty commit after composition start is cancel kind");
     require(empty_commit.target_id == "answer", "empty commit cancel preserves target id");
+    require(empty_commit.composition.active, "empty commit cancel carries active empty composition snapshot");
+    require(empty_commit.composition.preedit_text.empty(), "empty commit cancel carries empty preedit text");
+    require_range(empty_commit.composition.preedit_range, 0, 0, "empty commit cancel carries collapsed preedit range");
 
     events = engine.process_raw_event(text(120, "a"));
     require(events.size() == 1, "raw text resumes after empty composition commit");
@@ -944,12 +986,19 @@ void test_ime_empty_preedit_and_commit_only_edges()
     const ime_event& empty_preedit = require_event<ime_event>(events, 0);
     require(empty_preedit.kind == ime_event_kind::preedit, "empty preedit event uses preedit kind");
     require(empty_preedit.utf8_text.empty(), "empty preedit event carries no text");
+    require(empty_preedit.composition.active, "empty preedit event carries active composition");
+    require(empty_preedit.composition.preedit_text.empty(), "empty preedit composition text is empty");
+    require_range(empty_preedit.composition.replacement_range, 1, 1, "empty preedit replacement range is at caret");
+    require_range(empty_preedit.composition.preedit_range, 1, 1, "empty preedit range is collapsed at caret");
     require(engine.text_model().display_text() == "a", "empty preedit displays committed text only");
 
     events = engine.process_raw_event(ime(raw_platform_ime_phase::composition_end, 140));
     require(events.size() == 1, "empty composition end after empty preedit emits cancel");
     const ime_event& empty_end = require_event<ime_event>(events, 0);
     require(empty_end.kind == ime_event_kind::cancel, "empty composition end after empty preedit is cancel kind");
+    require(empty_end.composition.active, "empty composition end carries active empty composition snapshot");
+    require_range(empty_end.composition.replacement_range, 1, 1,
+        "empty composition end replacement range is collapsed at caret");
     require(engine.text_model().text() == "a", "empty composition end after empty preedit preserves text");
 
     require(engine.process_raw_event(ime(raw_platform_ime_phase::cancel, 150)).empty(),
@@ -962,12 +1011,64 @@ void test_ime_empty_preedit_and_commit_only_edges()
     const ime_event& commit_only = require_event<ime_event>(events, 0);
     require(commit_only.kind == ime_event_kind::commit, "commit-only ime flow uses commit kind");
     require(commit_only.utf8_text == utf8(u8"한"), "commit-only ime flow preserves utf8 text");
+    require(!commit_only.composition.active, "commit-only ime flow carries inactive composition snapshot");
+    require_range(commit_only.composition.replacement_range, 0, 0, "commit-only ime flow replacement range is caret");
     require(commit_only_engine.text_model().text() == utf8(u8"한"), "commit-only ime flow updates text model");
 
     events = commit_only_engine.process_raw_event(text(210, "x"));
     require(events.size() == 1, "raw text resumes after commit-only ime flow");
     require(commit_only_engine.text_model().text() == std::string(utf8(u8"한")) + "x",
         "raw text appends after commit-only ime flow");
+}
+
+void test_ime_hangul_replacement_composition_ranges()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    engine.focus_text_target("answer");
+    const std::string base = std::string("A") + utf8(u8"한") + "B";
+    require(engine.process_raw_event(text(100, base)).size() == 1, "hangul replacement base text commits");
+
+    require(engine.process_raw_event(key(110, "Home")).size() == 1, "home before hangul selection moves caret");
+    require(engine.process_raw_event(key(120, "ArrowRight")).size() == 1,
+        "arrow right before hangul selection moves past ascii");
+    require(engine.process_raw_event(key(130, "ArrowRight", false, raw_platform_key_phase::down, false, true)).size() == 1,
+        "shift arrow right selects hangul codepoint");
+    const std::optional<text_range> selection = engine.text_model().selection_range();
+    require(selection.has_value(), "hangul replacement selection is active");
+    require_range(*selection, 1, 1 + std::string(utf8(u8"한")).size(),
+        "hangul replacement selection spans full utf8 codepoint");
+
+    std::vector<input_event> events = engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 140, utf8(u8"하")));
+    require(events.size() == 1, "hangul replacement preedit emits one event");
+    const ime_event& preedit = require_event<ime_event>(events, 0);
+    require(preedit.kind == ime_event_kind::preedit, "hangul replacement preedit kind is emitted");
+    require(preedit.composition.active, "hangul replacement preedit carries active composition");
+    require(preedit.composition.preedit_text == utf8(u8"하"), "hangul replacement preedit carries hangul text");
+    require_range(preedit.composition.replacement_range, 1, 1 + std::string(utf8(u8"한")).size(),
+        "hangul replacement preedit replacement range covers selected hangul");
+    require_range(preedit.composition.preedit_range, 1, 1 + std::string(utf8(u8"하")).size(),
+        "hangul replacement preedit range covers new hangul");
+    require(engine.text_model().display_text() == std::string("A") + utf8(u8"하") + "B",
+        "hangul replacement preedit display replaces selected hangul");
+
+    events = engine.process_raw_event(ime(raw_platform_ime_phase::commit, 150, utf8(u8"각")));
+    require(events.size() == 1, "hangul replacement commit emits one event");
+    const ime_event& commit = require_event<ime_event>(events, 0);
+    require(commit.kind == ime_event_kind::commit, "hangul replacement commit kind is emitted");
+    require(commit.utf8_text == utf8(u8"각"), "hangul replacement commit carries final hangul");
+    require(commit.composition.active, "hangul replacement commit carries previous composition snapshot");
+    require(commit.composition.preedit_text == utf8(u8"하"), "hangul replacement commit carries previous preedit");
+    require_range(commit.composition.replacement_range, 1, 1 + std::string(utf8(u8"한")).size(),
+        "hangul replacement commit replacement range covers selected hangul");
+    require(engine.text_model().text() == std::string("A") + utf8(u8"각") + "B",
+        "hangul replacement commit updates committed text");
+    require(engine.text_model().caret_byte_offset() == 1 + std::string(utf8(u8"각")).size(),
+        "hangul replacement commit places caret after final hangul");
+    require(!engine.text_model().selection_range().has_value(), "hangul replacement commit clears selection");
+    require(!engine.text_model().ime_composition().active, "hangul replacement commit clears model composition");
 }
 
 void test_reset_clears_text_ime_and_pointer_state()
@@ -1040,6 +1141,9 @@ void test_focus_loss_cancels_composition_and_pointer_state()
     require(events.size() == 2, "focus loss emits ime cancel and focus lost");
     const ime_event& cancel = require_event<ime_event>(events, 0);
     require(cancel.kind == ime_event_kind::cancel, "focus loss cancels composition");
+    require(cancel.composition.active, "focus loss cancel carries active composition snapshot");
+    require(cancel.composition.preedit_text == "draft", "focus loss cancel carries preedit text");
+    require_range(cancel.composition.preedit_range, 0, 5, "focus loss cancel carries preedit range");
     const text_event& lost = require_event<text_event>(events, 1);
     require(lost.kind == text_event_kind::focus_lost, "focus loss emits text focus lost");
     require(lost.target_id == "answer", "focus loss preserves target id");
@@ -1072,6 +1176,7 @@ int main()
     test_ime_composition_restart_cancels_visible_preedit();
     test_empty_ime_commit_and_end_cancel_preedit();
     test_ime_empty_preedit_and_commit_only_edges();
+    test_ime_hangul_replacement_composition_ranges();
     test_reset_clears_text_ime_and_pointer_state();
     test_unfocused_ime_and_focus_gained_edges();
     test_focus_loss_cancels_composition_and_pointer_state();

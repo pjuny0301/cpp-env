@@ -98,6 +98,22 @@ bool is_select_all_key(const raw_platform_key_event& event)
     return !event.alt && (event.ctrl || event.meta) && is_a_key(event);
 }
 
+ime_event make_ime_event(
+    ime_event_kind kind,
+    std::int64_t timestamp_ms,
+    const std::string& target_id,
+    std::string utf8_text,
+    ime_composition_state composition)
+{
+    return ime_event{
+        .kind = kind,
+        .timestamp_ms = timestamp_ms,
+        .target_id = target_id,
+        .utf8_text = std::move(utf8_text),
+        .composition = std::move(composition),
+    };
+}
+
 } // namespace
 
 input_engine::input_engine(gesture_thresholds thresholds)
@@ -222,7 +238,7 @@ std::vector<input_event> input_engine::process_pointer_event(const raw_platform_
 std::vector<input_event> input_engine::process_text_event(const raw_platform_text_event& event)
 {
     std::vector<input_event> events;
-    if (ime_composing_ || !text_.commit_utf8(event.utf8_text)) {
+    if (ime_composing_ || text_.ime_composition().active || !text_.commit_utf8(event.utf8_text)) {
         return events;
     }
 
@@ -244,19 +260,19 @@ std::vector<input_event> input_engine::process_ime_event(const raw_platform_ime_
     }
 
     const std::string target_id = text_.focus_id();
-    const bool had_composition = ime_composing_ || !text_.preedit_text().empty();
+    const ime_composition_state initial_composition = text_.ime_composition();
+    const bool had_composition = ime_composing_ || initial_composition.active;
 
     if (event.phase == raw_platform_ime_phase::composition_start) {
-        const bool had_preedit = !text_.preedit_text().empty();
         ime_composing_ = true;
-        if (had_preedit) {
+        if (had_composition) {
             text_.cancel_ime();
-            events.emplace_back(ime_event{
-                .kind = ime_event_kind::cancel,
-                .timestamp_ms = event.timestamp_ms,
-                .target_id = target_id,
-                .utf8_text = {},
-            });
+            events.emplace_back(make_ime_event(
+                ime_event_kind::cancel,
+                event.timestamp_ms,
+                target_id,
+                {},
+                initial_composition));
         } else {
             text_.set_preedit("");
         }
@@ -266,25 +282,26 @@ std::vector<input_event> input_engine::process_ime_event(const raw_platform_ime_
     if (event.phase == raw_platform_ime_phase::preedit_update) {
         ime_composing_ = true;
         text_.set_preedit(event.utf8_text);
-        events.emplace_back(ime_event{
-            .kind = ime_event_kind::preedit,
-            .timestamp_ms = event.timestamp_ms,
-            .target_id = target_id,
-            .utf8_text = event.utf8_text,
-        });
+        events.emplace_back(make_ime_event(
+            ime_event_kind::preedit,
+            event.timestamp_ms,
+            target_id,
+            event.utf8_text,
+            text_.ime_composition()));
         return events;
     }
 
-    if (event.phase == raw_platform_ime_phase::commit
+    if ((event.phase == raw_platform_ime_phase::commit && !event.utf8_text.empty())
         || (event.phase == raw_platform_ime_phase::composition_end && !event.utf8_text.empty())) {
+        const ime_composition_state committed_composition = text_.ime_composition();
         ime_composing_ = false;
         if (text_.commit_ime(event.utf8_text)) {
-            events.emplace_back(ime_event{
-                .kind = ime_event_kind::commit,
-                .timestamp_ms = event.timestamp_ms,
-                .target_id = target_id,
-                .utf8_text = event.utf8_text,
-            });
+            events.emplace_back(make_ime_event(
+                ime_event_kind::commit,
+                event.timestamp_ms,
+                target_id,
+                event.utf8_text,
+                committed_composition));
             return events;
         }
     }
@@ -292,15 +309,16 @@ std::vector<input_event> input_engine::process_ime_event(const raw_platform_ime_
     if (event.phase == raw_platform_ime_phase::cancel
         || event.phase == raw_platform_ime_phase::composition_end
         || (event.phase == raw_platform_ime_phase::commit && event.utf8_text.empty())) {
+        const ime_composition_state canceled_composition = text_.ime_composition();
         ime_composing_ = false;
         text_.cancel_ime();
         if (had_composition) {
-            events.emplace_back(ime_event{
-                .kind = ime_event_kind::cancel,
-                .timestamp_ms = event.timestamp_ms,
-                .target_id = target_id,
-                .utf8_text = {},
-            });
+            events.emplace_back(make_ime_event(
+                ime_event_kind::cancel,
+                event.timestamp_ms,
+                target_id,
+                {},
+                canceled_composition));
         }
     }
 
@@ -312,7 +330,7 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
     std::vector<input_event> events;
     if (event.phase != raw_platform_key_phase::down
         || ime_composing_
-        || !text_.preedit_text().empty()
+        || text_.ime_composition().active
         || !text_.has_focus()) {
         return events;
     }
@@ -428,7 +446,8 @@ std::vector<input_event> input_engine::process_focus_event(const raw_platform_fo
     }
 
     const bool had_focus = text_.has_focus();
-    const bool had_composition = ime_composing_ || !text_.preedit_text().empty();
+    const ime_composition_state canceled_composition = text_.ime_composition();
+    const bool had_composition = ime_composing_ || canceled_composition.active;
     const std::string target_id = text_.focus_id();
 
     gestures_.reset();
@@ -436,12 +455,12 @@ std::vector<input_event> input_engine::process_focus_event(const raw_platform_fo
     ime_composing_ = false;
 
     if (had_composition) {
-        events.emplace_back(ime_event{
-            .kind = ime_event_kind::cancel,
-            .timestamp_ms = event.timestamp_ms,
-            .target_id = target_id,
-            .utf8_text = {},
-        });
+        events.emplace_back(make_ime_event(
+            ime_event_kind::cancel,
+            event.timestamp_ms,
+            target_id,
+            {},
+            canceled_composition));
     }
 
     if (had_focus) {

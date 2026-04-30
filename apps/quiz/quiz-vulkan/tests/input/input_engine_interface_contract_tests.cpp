@@ -90,6 +90,9 @@ static_assert(caret_moved_contract_kind == input::text_event_kind::caret_moved);
 constexpr input::text_event_kind selection_changed_contract_kind = input::text_event_kind::selection_changed;
 static_assert(selection_changed_contract_kind == input::text_event_kind::selection_changed);
 
+static_assert(std::is_default_constructible_v<input::ime_event>);
+static_assert(std::is_same_v<decltype(input::ime_event{}.composition), input::ime_composition_state>);
+
 constexpr input::gesture_event drag_contract_event{
     .kind = input::gesture_kind::drag_update,
     .timestamp_ms = 20,

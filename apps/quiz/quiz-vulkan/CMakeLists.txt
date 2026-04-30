@@ -169,6 +169,7 @@ target_sources(
             src/core/input/input_engine.h
             src/core/input/input_event.h
             src/core/input/text_input_model.h
+            src/core/input/text_input_types.h
 )
 target_compile_features(quiz_vulkan_input PUBLIC cxx_std_23)
 target_include_directories(quiz_vulkan_input PUBLIC src)

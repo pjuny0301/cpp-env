@@ -1,6 +1,6 @@
 # Input/IME/Gesture Boundary
 
-- `input_event.h`, `gesture_recognizer.h`, and `text_input_model.h` are the stable Input Engine interfaces for this folder.
+- `input_event.h`, `gesture_recognizer.h`, `text_input_model.h`, and `text_input_types.h` are the stable Input Engine interfaces for this folder.
 - `src/platform/platform_input_event.h` is the raw platform input contract consumed by this layer.
 - Do not rename, move, or change public signatures in these files without explicit integrator approval.
 - Input code normalizes platform events and models text/gestures; it must not dispatch directly to domain state or depend on renderer internals.

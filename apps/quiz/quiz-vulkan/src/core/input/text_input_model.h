@@ -1,24 +1,12 @@
 #pragma once
 
-#include <cstddef>
+#include "core/input/text_input_types.h"
+
 #include <optional>
 #include <string>
 #include <string_view>
 
 namespace quiz_vulkan::input {
-
-struct text_range {
-    std::size_t start_byte = 0;
-    std::size_t end_byte = 0;
-};
-
-struct ime_composition_state {
-    bool active = false;
-    std::string preedit_text;
-    text_range replacement_range;
-    text_range preedit_range;
-    text_range caret_range;
-};
 
 class text_input_model {
 public:

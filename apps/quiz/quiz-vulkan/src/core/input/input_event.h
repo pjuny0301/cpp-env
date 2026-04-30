@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/input/text_input_types.h"
+
 #include <cstdint>
 #include <string>
 #include <variant>
@@ -97,6 +99,7 @@ struct ime_event {
     std::int64_t timestamp_ms = 0;
     std::string target_id;
     std::string utf8_text;
+    ime_composition_state composition;
 };
 
 using input_event = std::variant<gesture_event, text_event, ime_event, scroll_event>;

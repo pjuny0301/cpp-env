@@ -90,19 +90,40 @@ static_assert(requires(const render::render_image_texture_request& request, cons
 
 static_assert(requires(
     const render::render_image_sampler_policy& sampler,
+    const render::render_image_texture_key& key,
     render::render_image_filter filter,
     render::render_image_mipmap_mode mipmap_mode,
-    render::render_image_wrap_mode wrap_mode) {
+    render::render_image_wrap_mode wrap_mode,
+    render::render_image_pixel_format pixel_format,
+    render::render_image_texture_color_space color_space) {
     { render::is_valid_render_image_filter(filter) } -> std::same_as<bool>;
     { render::is_valid_render_image_mipmap_mode(mipmap_mode) } -> std::same_as<bool>;
     { render::is_valid_render_image_wrap_mode(wrap_mode) } -> std::same_as<bool>;
     { render::is_valid_render_image_sampler_policy(sampler) } -> std::same_as<bool>;
+    { render::render_image_filter_name(filter) } -> std::same_as<std::string>;
+    { render::render_image_mipmap_mode_name(mipmap_mode) } -> std::same_as<std::string>;
+    { render::render_image_wrap_mode_name(wrap_mode) } -> std::same_as<std::string>;
+    { render::render_image_sampler_policy_stable_fragment(sampler) } -> std::same_as<std::string>;
+    { render::make_render_image_sampler_policy_diagnostic(sampler) }
+        -> std::same_as<render::render_image_sampler_policy_diagnostic>;
+    { render::make_render_image_texture_key_diagnostic(key) }
+        -> std::same_as<render::render_image_texture_key_diagnostic>;
+    { render::render_image_texture_color_space_for(pixel_format) }
+        -> std::same_as<render::render_image_texture_color_space>;
+    { render::render_image_texture_color_space_name(color_space) } -> std::same_as<std::string>;
 });
 
-static_assert(requires(const render::render_decoded_image& image, render::render_image_pixel_format pixel_format) {
+static_assert(requires(
+    const render::render_decoded_image& image,
+    const render::render_image_texture_key& key,
+    const render::render_image_decode_metadata& metadata,
+    render::render_image_pixel_format pixel_format) {
     { render::render_image_pixel_format_byte_count(pixel_format) } -> std::same_as<std::size_t>;
     { render::expected_render_decoded_image_byte_count(image) } -> std::same_as<std::size_t>;
     { render::has_valid_render_decoded_image_payload(image) } -> std::same_as<bool>;
+    { render::render_image_checked_pixel_count(image) } -> std::same_as<std::size_t>;
+    { render::make_render_image_upload_readiness_snapshot(key, metadata, image) }
+        -> std::same_as<render::render_image_upload_readiness_snapshot>;
 });
 
 static_assert(requires(
@@ -120,6 +141,10 @@ static_assert(requires(
     render::render_image_texture_upload_request upload_request,
     render::render_image_texture_upload_result upload_result,
     render::render_image_texture_upload_status upload_status,
+    render::render_image_sampler_policy_diagnostic sampler_policy,
+    render::render_image_texture_key_diagnostic texture_key_diagnostic,
+    render::render_image_texture_color_space texture_color_space,
+    render::render_image_upload_readiness_snapshot upload_readiness,
     render::fake_image_texture_upload_generation_id upload_generation_id,
     render::fake_image_texture_upload_request_snapshot upload_request_snapshot,
     render::fake_image_texture_upload_result_snapshot upload_result_snapshot,
@@ -140,6 +165,7 @@ static_assert(requires(
     const render::fake_image_texture_cache& cache,
     render::fake_image_texture_cache& mutable_cache,
     const render::render_resolved_image_source& source,
+    const render::render_image_texture_key& texture_key,
     const render::render_image_decode_request& request,
     const render::render_decoded_image& image) {
     { metadata.decoder_id } -> std::same_as<std::string&>;
@@ -207,6 +233,44 @@ static_assert(requires(
     { upload_result.staging_byte_count } -> std::same_as<std::size_t&>;
     { upload_result.diagnostic } -> std::same_as<std::string&>;
     { upload_result.ok() } -> std::same_as<bool>;
+    { sampler_policy.sampler } -> std::same_as<render::render_image_sampler_policy&>;
+    { sampler_policy.min_filter } -> std::same_as<std::string&>;
+    { sampler_policy.mag_filter } -> std::same_as<std::string&>;
+    { sampler_policy.mipmap_mode } -> std::same_as<std::string&>;
+    { sampler_policy.wrap_u } -> std::same_as<std::string&>;
+    { sampler_policy.wrap_v } -> std::same_as<std::string&>;
+    { sampler_policy.stable_key_fragment } -> std::same_as<std::string&>;
+    { sampler_policy.valid } -> std::same_as<bool&>;
+    { sampler_policy.uses_nearest_filtering } -> std::same_as<bool&>;
+    { sampler_policy.uses_linear_filtering } -> std::same_as<bool&>;
+    { sampler_policy.uses_mipmaps } -> std::same_as<bool&>;
+    { sampler_policy.repeats_u } -> std::same_as<bool&>;
+    { sampler_policy.repeats_v } -> std::same_as<bool&>;
+    { sampler_policy.clamps_u } -> std::same_as<bool&>;
+    { sampler_policy.clamps_v } -> std::same_as<bool&>;
+    { sampler_policy.diagnostic } -> std::same_as<std::string&>;
+    { texture_key_diagnostic.key } -> std::same_as<render::render_image_texture_key&>;
+    { texture_key_diagnostic.sampler_policy } -> std::same_as<render::render_image_sampler_policy_diagnostic&>;
+    { texture_key_diagnostic.stable_cache_key } -> std::same_as<std::string&>;
+    { texture_key_diagnostic.valid } -> std::same_as<bool&>;
+    { texture_key_diagnostic.diagnostic } -> std::same_as<std::string&>;
+    texture_color_space;
+    { upload_readiness.key } -> std::same_as<render::render_image_texture_key&>;
+    { upload_readiness.key_diagnostic } -> std::same_as<render::render_image_texture_key_diagnostic&>;
+    { upload_readiness.sampler_policy } -> std::same_as<render::render_image_sampler_policy_diagnostic&>;
+    { upload_readiness.decode_metadata } -> std::same_as<render::render_image_decode_metadata&>;
+    { upload_readiness.color_space } -> std::same_as<render::render_image_texture_color_space&>;
+    { upload_readiness.color_space_name } -> std::same_as<std::string&>;
+    { upload_readiness.placeholder_fallback } -> std::same_as<bool&>;
+    { upload_readiness.payload_valid } -> std::same_as<bool&>;
+    { upload_readiness.upload_ready } -> std::same_as<bool&>;
+    { upload_readiness.pixel_count } -> std::same_as<std::size_t&>;
+    { upload_readiness.pixel_byte_count } -> std::same_as<std::size_t&>;
+    { upload_readiness.decoded_byte_count } -> std::same_as<std::size_t&>;
+    { upload_readiness.staging_byte_count } -> std::same_as<std::size_t&>;
+    { upload_readiness.diagnostic } -> std::same_as<std::string&>;
+    { render::make_render_image_upload_readiness_snapshot(texture_key, metadata, image) }
+        -> std::same_as<render::render_image_upload_readiness_snapshot>;
     { upload_request_snapshot.generation_id } -> std::same_as<render::fake_image_texture_upload_generation_id&>;
     { upload_request_snapshot.key } -> std::same_as<render::render_image_texture_key&>;
     { upload_request_snapshot.sampler } -> std::same_as<render::render_image_sampler_policy&>;
@@ -304,7 +368,10 @@ static_assert(requires(
     { mutable_pipeline.invalidate_source(render::render_image_cache_key{}) } -> std::same_as<void>;
     { mutable_pipeline.invalidate_texture(render::render_image_texture_key{}) } -> std::same_as<void>;
     { cache_entry.key } -> std::same_as<render::render_image_texture_key&>;
+    { cache_entry.key_diagnostic } -> std::same_as<render::render_image_texture_key_diagnostic&>;
+    { cache_entry.sampler_policy } -> std::same_as<render::render_image_sampler_policy_diagnostic&>;
     { cache_entry.texture } -> std::same_as<render::render_image_texture_handle&>;
+    { cache_entry.upload_readiness } -> std::same_as<render::render_image_upload_readiness_snapshot&>;
     { cache_entry.pixel_count } -> std::same_as<std::size_t&>;
     { cache_entry.pixel_byte_count } -> std::same_as<std::size_t&>;
     { cache_entry.decoded_byte_count } -> std::same_as<std::size_t&>;
@@ -321,6 +388,8 @@ static_assert(requires(
     { cache_snapshot.evictable_pixel_count } -> std::same_as<std::size_t&>;
     { cache_snapshot.eviction_count } -> std::same_as<std::size_t&>;
     { cache_snapshot.over_capacity_texture_count } -> std::same_as<std::size_t&>;
+    { cache_snapshot.upload_ready_texture_count } -> std::same_as<std::size_t&>;
+    { cache_snapshot.placeholder_fallback_texture_count } -> std::same_as<std::size_t&>;
     { cache_snapshot.capacity_exceeded } -> std::same_as<bool&>;
     { cache_snapshot.entries } -> std::same_as<std::vector<render::fake_image_texture_cache_entry_snapshot>&>;
     { cache.diagnostic_snapshot() } -> std::same_as<render::fake_image_texture_cache_snapshot>;

@@ -181,6 +181,44 @@ public:
     mutable int decode_request_count = 0;
 };
 
+class linear_pixel_format_decoder final : public quiz_vulkan::render::image_decoder_interface {
+public:
+    bool supports(const quiz_vulkan::render::render_image_decode_request&) const override
+    {
+        ++support_request_count;
+        return true;
+    }
+
+    quiz_vulkan::render::render_image_decode_result decode(
+        const quiz_vulkan::render::render_image_decode_request& request) const override
+    {
+        ++decode_request_count;
+        quiz_vulkan::render::render_decoded_image image{
+            .width = 1,
+            .height = 1,
+            .pixel_format = quiz_vulkan::render::render_image_pixel_format::rgba8_unorm,
+            .pixels = {
+                std::byte{0x10},
+                std::byte{0x20},
+                std::byte{0x30},
+                std::byte{0xff},
+            },
+        };
+        return quiz_vulkan::render::render_image_decode_result{
+            .status = quiz_vulkan::render::render_image_decode_status::decoded,
+            .image = image,
+            .diagnostic = {},
+            .metadata = quiz_vulkan::render::make_render_image_decode_metadata(
+                "linear_pixel_format_decoder",
+                request,
+                image),
+        };
+    }
+
+    mutable int support_request_count = 0;
+    mutable int decode_request_count = 0;
+};
+
 const quiz_vulkan::render::fake_image_texture_cache_entry_snapshot* find_snapshot_entry(
     const quiz_vulkan::render::fake_image_texture_cache_snapshot& snapshot,
     std::string_view source_key)
@@ -1190,6 +1228,176 @@ void test_texture_cache_keys_include_all_sampler_policy_fields()
     require(base_again.texture.id == base.texture.id, "base sampler cache entry is unchanged");
 }
 
+void test_sampler_cache_policy_diagnostics_report_choices_and_stable_keys()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_image_sampler_policy base_sampler;
+    const render_image_sampler_policy_diagnostic base_policy =
+        make_render_image_sampler_policy_diagnostic(base_sampler);
+    require(base_policy.valid, "default sampler diagnostic reports valid policy");
+    require(base_policy.min_filter == "linear", "default sampler diagnostic reports min filter");
+    require(base_policy.mag_filter == "linear", "default sampler diagnostic reports mag filter");
+    require(base_policy.mipmap_mode == "none", "default sampler diagnostic reports mipmap mode");
+    require(base_policy.wrap_u == "clamp_to_edge", "default sampler diagnostic reports wrap_u");
+    require(base_policy.wrap_v == "clamp_to_edge", "default sampler diagnostic reports wrap_v");
+    require(base_policy.uses_linear_filtering, "default sampler diagnostic reports linear filtering");
+    require(!base_policy.uses_nearest_filtering, "default sampler diagnostic reports no nearest filtering");
+    require(!base_policy.uses_mipmaps, "default sampler diagnostic reports no mipmaps");
+    require(base_policy.clamps_u && base_policy.clamps_v, "default sampler diagnostic reports clamp wraps");
+    require(!base_policy.repeats_u && !base_policy.repeats_v, "default sampler diagnostic reports no repeats");
+    require(
+        base_policy.stable_key_fragment
+            == "min=linear;mag=linear;mipmap=none;wrap_u=clamp_to_edge;wrap_v=clamp_to_edge",
+        "default sampler diagnostic reports stable key fragment");
+
+    render_image_sampler_policy variant_sampler;
+    variant_sampler.min_filter = render_image_filter::nearest;
+    variant_sampler.mipmap_mode = render_image_mipmap_mode::linear;
+    variant_sampler.wrap_u = render_image_wrap_mode::repeat;
+    variant_sampler.wrap_v = render_image_wrap_mode::mirrored_repeat;
+    const render_image_sampler_policy_diagnostic variant_policy =
+        make_render_image_sampler_policy_diagnostic(variant_sampler);
+    require(variant_policy.valid, "variant sampler diagnostic reports valid policy");
+    require(variant_policy.uses_nearest_filtering, "variant sampler diagnostic reports nearest filtering");
+    require(variant_policy.uses_linear_filtering, "variant sampler diagnostic reports linear filtering");
+    require(variant_policy.uses_mipmaps, "variant sampler diagnostic reports mipmaps");
+    require(variant_policy.repeats_u && variant_policy.repeats_v, "variant sampler diagnostic reports repeat wraps");
+    require(!variant_policy.clamps_u && !variant_policy.clamps_v, "variant sampler diagnostic reports no clamps");
+    require(
+        variant_policy.stable_key_fragment
+            == "min=nearest;mag=linear;mipmap=linear;wrap_u=repeat;wrap_v=mirrored_repeat",
+        "variant sampler diagnostic reports stable key fragment");
+
+    const render_image_texture_key base_key{
+        .source_key = "textures/policy.fake",
+        .sampler = base_sampler,
+    };
+    const render_image_texture_key variant_key{
+        .source_key = "textures/policy.fake",
+        .sampler = variant_sampler,
+    };
+    const render_image_texture_key_diagnostic base_key_diagnostic =
+        make_render_image_texture_key_diagnostic(base_key);
+    const render_image_texture_key_diagnostic variant_key_diagnostic =
+        make_render_image_texture_key_diagnostic(variant_key);
+    require(base_key_diagnostic.valid, "base texture key diagnostic reports valid key");
+    require(variant_key_diagnostic.valid, "variant texture key diagnostic reports valid key");
+    require(
+        base_key_diagnostic.stable_cache_key
+            == "source=textures/policy.fake|min=linear;mag=linear;mipmap=none;wrap_u=clamp_to_edge;wrap_v=clamp_to_edge",
+        "base texture key diagnostic reports stable cache key");
+    require(
+        variant_key_diagnostic.stable_cache_key
+            == "source=textures/policy.fake|min=nearest;mag=linear;mipmap=linear;wrap_u=repeat;wrap_v=mirrored_repeat",
+        "variant texture key diagnostic reports stable cache key");
+    require(
+        base_key_diagnostic.stable_cache_key != variant_key_diagnostic.stable_cache_key,
+        "stable texture key changes when sampler policy changes");
+
+    render_image_sampler_policy invalid_sampler;
+    invalid_sampler.wrap_u = static_cast<render_image_wrap_mode>(99);
+    const render_image_sampler_policy_diagnostic invalid_policy =
+        make_render_image_sampler_policy_diagnostic(invalid_sampler);
+    require(!invalid_policy.valid, "invalid sampler diagnostic reports invalid policy");
+    require(invalid_policy.wrap_u == "unknown", "invalid sampler diagnostic reports unknown wrap");
+    require(!invalid_policy.diagnostic.empty(), "invalid sampler diagnostic includes text");
+
+    require(
+        render_image_texture_color_space_for(render_image_pixel_format::rgba8_srgb)
+            == render_image_texture_color_space::srgb,
+        "srgb pixel format maps to srgb texture color space");
+    require(
+        render_image_texture_color_space_for(render_image_pixel_format::rgba8_unorm)
+            == render_image_texture_color_space::linear,
+        "unorm pixel format maps to linear texture color space");
+    require(
+        render_image_texture_color_space_name(render_image_texture_color_space::srgb) == "srgb",
+        "color-space diagnostic reports srgb name");
+}
+
+void test_texture_cache_snapshot_reports_policy_readiness_and_placeholder_fallback()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/readiness.fake"})
+                                                    .source;
+    fake_image_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+
+    render_image_sampler_policy sampler;
+    sampler.min_filter = render_image_filter::nearest;
+    sampler.mipmap_mode = render_image_mipmap_mode::linear;
+    sampler.wrap_u = render_image_wrap_mode::repeat;
+    sampler.wrap_v = render_image_wrap_mode::mirrored_repeat;
+
+    const render_image_texture_result result = cache.acquire_texture(
+        render_image_texture_request{.source = source, .sampler = sampler});
+    require(result.ok(), "readiness texture cache request succeeds");
+    require(result.decode_metadata.format_detection.placeholder_fallback, "fake decode reports placeholder fallback");
+
+    const fake_image_texture_cache_snapshot snapshot = cache.diagnostic_snapshot();
+    require(snapshot.texture_count == 1, "readiness snapshot reports one texture");
+    require(snapshot.upload_ready_texture_count == 1, "readiness snapshot reports upload-ready texture");
+    require(
+        snapshot.placeholder_fallback_texture_count == 1,
+        "readiness snapshot reports placeholder fallback texture");
+
+    const fake_image_texture_cache_entry_snapshot* entry = find_snapshot_entry(snapshot, source.cache_key());
+    require(entry != nullptr, "readiness snapshot includes texture entry");
+    require(entry->key == result.key, "readiness entry reports texture key");
+    require(entry->key_diagnostic.valid, "readiness entry reports valid texture key");
+    require(
+        entry->key_diagnostic.stable_cache_key
+            == make_render_image_texture_key_diagnostic(result.key).stable_cache_key,
+        "readiness entry reports deterministic stable cache key");
+    require(entry->sampler_policy.sampler == sampler, "readiness entry reports sampler association");
+    require(entry->sampler_policy.uses_nearest_filtering, "readiness entry reports nearest filtering");
+    require(entry->sampler_policy.uses_mipmaps, "readiness entry reports mipmap policy");
+    require(entry->sampler_policy.repeats_u && entry->sampler_policy.repeats_v, "readiness entry reports wrap repeats");
+
+    require(entry->upload_readiness.key == result.key, "upload readiness records texture key");
+    require(entry->upload_readiness.upload_ready, "upload readiness reports ready payload");
+    require(entry->upload_readiness.payload_valid, "upload readiness reports valid decoded payload");
+    require(entry->upload_readiness.placeholder_fallback, "upload readiness reports placeholder fallback");
+    require(
+        entry->upload_readiness.color_space == render_image_texture_color_space::srgb,
+        "upload readiness reports srgb color space");
+    require(entry->upload_readiness.color_space_name == "srgb", "upload readiness reports color space name");
+    require(entry->upload_readiness.pixel_count == 2, "upload readiness reports pixel count");
+    require(entry->upload_readiness.pixel_byte_count == 8, "upload readiness reports pixel bytes");
+    require(entry->upload_readiness.decoded_byte_count == 8, "upload readiness reports decoded bytes");
+    require(entry->upload_readiness.staging_byte_count == 8, "upload readiness reports staging bytes");
+    require(!entry->upload_readiness.diagnostic.empty(), "upload readiness includes diagnostic text");
+
+    const render_image_upload_readiness_snapshot invalid_key_readiness =
+        make_render_image_upload_readiness_snapshot(
+            render_image_texture_key{.source_key = {}, .sampler = render_image_sampler_policy{}},
+            result.decode_metadata,
+            make_rgba_2x1_decoded_image());
+    require(!invalid_key_readiness.upload_ready, "upload readiness rejects invalid cache key");
+    require(!invalid_key_readiness.key_diagnostic.valid, "upload readiness reports invalid key diagnostic");
+
+    linear_pixel_format_decoder linear_decoder;
+    fake_image_texture_cache linear_cache(linear_decoder);
+    const render_resolved_image_source linear_source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/readiness-linear.fake"})
+                                                           .source;
+    const render_image_texture_result linear_result = linear_cache.acquire_texture(
+        render_image_texture_request{.source = linear_source, .sampler = render_image_sampler_policy{}});
+    require(linear_result.ok(), "linear readiness texture cache request succeeds");
+    const fake_image_texture_cache_entry_snapshot* linear_entry = find_snapshot_entry(
+        linear_cache.diagnostic_snapshot(),
+        linear_source.cache_key());
+    require(linear_entry != nullptr, "linear readiness snapshot includes texture entry");
+    require(
+        linear_entry->upload_readiness.color_space == render_image_texture_color_space::linear,
+        "upload readiness reports linear color space");
+    require(!linear_entry->upload_readiness.placeholder_fallback, "linear decoder does not report placeholder fallback");
+}
+
 void test_texture_cache_reuses_normalized_equivalent_cache_keys()
 {
     using namespace quiz_vulkan::render;
@@ -1995,6 +2203,8 @@ int main()
     test_sampler_policy_validation_rejects_unknown_enum_values();
     test_texture_cache_reuses_matching_key_and_misses_on_sampler_change();
     test_texture_cache_keys_include_all_sampler_policy_fields();
+    test_sampler_cache_policy_diagnostics_report_choices_and_stable_keys();
+    test_texture_cache_snapshot_reports_policy_readiness_and_placeholder_fallback();
     test_texture_cache_reuses_normalized_equivalent_cache_keys();
     test_texture_cache_rejects_invalid_sampler_policy_before_decode();
     test_texture_cache_release_unused_evicts_fake_entries();

@@ -1,5 +1,7 @@
 #include "assets/asset_manifest.h"
 
+#include "asset_manifest_interface_contract_tests.cpp"
+
 #include <cassert>
 #include <cstddef>
 #include <filesystem>

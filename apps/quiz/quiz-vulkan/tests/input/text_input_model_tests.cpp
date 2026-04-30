@@ -214,6 +214,101 @@ void test_caret_movement_insert_and_backspace()
     require(!model.move_caret_right(), "move right at end is ignored");
 }
 
+void test_selection_range_and_preedit_coherence()
+{
+    quiz_vulkan::input::text_input_model model;
+    require(!model.select_all(), "unfocused select all is ignored");
+    require(!model.set_selection({.start_byte = 0, .end_byte = 1}), "unfocused set selection is ignored");
+    require(!model.clear_selection(), "unfocused clear selection is ignored");
+    require(!model.selection_range().has_value(), "unfocused model has no selection range");
+
+    model.focus("answer");
+    const std::string initial = std::string("A") + utf8(u8"한") + "B";
+    require(model.commit_utf8(initial), "initial commit before selection succeeds");
+    require(model.select_all(), "select all succeeds for committed text");
+    std::optional<quiz_vulkan::input::text_range> selection = model.selection_range();
+    require(selection.has_value(), "select all exposes selection range");
+    require_range(*selection, 0, initial.size(), "select all range spans committed text");
+    require(model.caret_byte_offset() == initial.size(), "select all places caret at selection end");
+    require_range(model.caret_range(), initial.size(), initial.size(), "select all keeps caret range collapsed");
+    require(!model.select_all(), "select all reports no mutation when already selected");
+
+    require(model.clear_selection(), "clear selection succeeds");
+    require(!model.selection_range().has_value(), "clear selection removes selection range");
+    require(model.caret_byte_offset() == initial.size(), "clear selection preserves caret at selection end");
+    require(!model.clear_selection(), "clear selection reports no mutation without selection");
+
+    require(model.set_selection({.start_byte = 4, .end_byte = 1}), "reversed selection is normalized");
+    selection = model.selection_range();
+    require(selection.has_value(), "normalized selection exposes range");
+    require_range(*selection, 1, 4, "normalized selection covers utf8 byte range");
+    require(model.caret_byte_offset() == 4, "set selection places caret at normalized end");
+    require(model.display_text() == initial, "selection alone does not alter display text");
+
+    const std::string preedit = utf8(u8"ㅎ");
+    require(model.set_preedit(preedit), "preedit with active selection succeeds");
+    require(model.display_text() == std::string("A") + preedit + "B", "preedit displays over selected range");
+    selection = model.selection_range();
+    require(selection.has_value(), "preedit preserves committed selection range");
+    require_range(*selection, 1, 4, "selection range remains committed byte range during preedit");
+    std::optional<quiz_vulkan::input::text_range> active_preedit = model.preedit_range();
+    require(active_preedit.has_value(), "preedit over selection exposes preedit range");
+    require_range(*active_preedit, 1, 1 + preedit.size(), "preedit range starts at selection start");
+    require_range(model.caret_range(), 1 + preedit.size(), 1 + preedit.size(), "caret follows replacement preedit");
+
+    require(model.set_selection({.start_byte = 4, .end_byte = 4}), "collapsed selection moves caret");
+    require(!model.selection_range().has_value(), "collapsed selection clears active selection");
+    require(model.preedit_text().empty(), "collapsed selection clears active preedit");
+    require(model.caret_byte_offset() == 4, "collapsed selection places caret at requested byte");
+    require(model.display_text() == initial, "collapsed selection restores committed display text");
+}
+
+void test_selection_replacement_and_backspace()
+{
+    quiz_vulkan::input::text_input_model model;
+    model.focus("answer");
+
+    const std::string initial = std::string("A") + utf8(u8"한") + "B";
+    require(model.commit_utf8(initial), "initial commit before replacement succeeds");
+    require(model.set_selection({.start_byte = 1, .end_byte = 4}), "selection before utf8 replacement succeeds");
+    require(model.commit_utf8("x"), "commit replaces selected utf8 range");
+    require(model.text() == "AxB", "commit replacement removes selected utf8 range");
+    require(model.caret_byte_offset() == 2, "commit replacement places caret after inserted text");
+    require(!model.selection_range().has_value(), "commit replacement clears selection");
+    require(!model.preedit_range().has_value(), "commit replacement clears preedit range");
+
+    require(model.set_selection({.start_byte = 1, .end_byte = 2}), "selection before backspace succeeds");
+    require(model.backspace(), "backspace removes selected range");
+    require(model.text() == "AB", "backspace selected range removes only selected text");
+    require(model.caret_byte_offset() == 1, "backspace selected range places caret at selection start");
+    require(!model.selection_range().has_value(), "backspace selected range clears selection");
+
+    require(model.select_all(), "select all before ime replacement succeeds");
+    require(model.commit_ime("Z"), "ime commit replaces selected text");
+    require(model.text() == "Z", "ime replacement stores committed text");
+    require(model.caret_byte_offset() == 1, "ime replacement moves caret after committed text");
+    require(!model.selection_range().has_value(), "ime replacement clears selection");
+
+    require(model.commit_utf8("12"), "commit after ime replacement succeeds");
+    require(model.set_selection({.start_byte = 1, .end_byte = 3}), "selection before preedit replacement succeeds");
+    require(model.set_preedit("draft"), "preedit before selected ime replacement succeeds");
+    require(model.display_text() == "Zdraft", "preedit display replaces selected suffix");
+    require(model.commit_ime("Q"), "ime commit replaces selected preedit range");
+    require(model.text() == "ZQ", "ime preedit replacement removes selected suffix");
+    require(model.caret_byte_offset() == 2, "ime preedit replacement moves caret after commit");
+    require(!model.selection_range().has_value(), "ime preedit replacement clears selection");
+    require(!model.preedit_range().has_value(), "ime preedit replacement clears preedit range");
+
+    require(model.commit_utf8("34"), "commit before selected backspace with preedit succeeds");
+    require(model.set_selection({.start_byte = 2, .end_byte = 4}), "selection before backspace with preedit succeeds");
+    require(model.set_preedit("draft"), "preedit before selected backspace succeeds");
+    require(model.backspace(), "backspace removes selected range before preedit");
+    require(model.text() == "ZQ", "selected backspace with preedit removes selected suffix");
+    require(model.preedit_text().empty(), "selected backspace clears active preedit");
+    require(model.caret_byte_offset() == 2, "selected backspace with preedit places caret at selection start");
+    require(!model.selection_range().has_value(), "selected backspace with preedit clears selection");
+}
+
 void test_ime_preedit_and_commit()
 {
     quiz_vulkan::input::text_input_model model;
@@ -332,6 +427,8 @@ int main()
     test_malformed_utf8_backspace_preserves_valid_prefix();
     test_caret_and_preedit_ranges();
     test_caret_movement_insert_and_backspace();
+    test_selection_range_and_preedit_coherence();
+    test_selection_replacement_and_backspace();
     test_ime_preedit_and_commit();
     test_ime_commit_edges();
     test_empty_preedit_edges();

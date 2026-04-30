@@ -93,8 +93,34 @@ float glyph_advance_for(const render_text_style& style, const std::uint32_t code
     return (style.font_size * 0.5f) + style.letter_spacing;
 }
 
+void record_font_fallback(
+    fake_text_engine_diagnostics& diagnostics,
+    const std::size_t run_index,
+    const render_style_id& style_token,
+    const font_resolver_result& resolution)
+{
+    if (!resolution.used_fallback()) {
+        return;
+    }
+
+    diagnostics.font_fallbacks.push_back(fake_text_engine_font_fallback{
+        .run_index = run_index,
+        .style_token = style_token,
+        .requested_family = resolution.requested.family,
+        .resolved_family = resolution.resolved_family,
+        .requested_weight = resolution.requested.weight,
+        .resolved_weight = resolution.resolved_weight,
+        .requested_italic = resolution.requested.italic,
+        .resolved_italic = resolution.resolved_italic,
+        .resolved_face_id = resolution.resolved_face_id,
+        .used_family_fallback = resolution.used_family_fallback,
+        .used_style_fallback = resolution.used_style_fallback,
+    });
+}
+
 std::vector<shaped_glyph> shape_request(
     const render_text_request& request,
+    const deterministic_fake_font_resolver& font_resolver,
     fake_text_engine_diagnostics& diagnostics)
 {
     std::vector<shaped_glyph> glyphs;
@@ -111,6 +137,7 @@ std::vector<shaped_glyph> shape_request(
                 .fallback_style_token = request.style_catalog.fallback_style.id,
             });
         }
+        record_font_fallback(diagnostics, run_index, run.style_token, font_resolver.resolve(style));
 
         for (const utf8_text_codepoint& scalar : iterate_utf8_text_run(run.text)) {
             const std::uint32_t code_point = scalar.code_point;
@@ -402,14 +429,14 @@ render_text_revision update_atlas_for_layout(
 render_text_measure fake_text_engine::measure_text(const render_text_request& request) const
 {
     diagnostics_ = {};
-    const std::vector<shaped_glyph> glyphs = shape_request(request, diagnostics_);
+    const std::vector<shaped_glyph> glyphs = shape_request(request, font_resolver_, diagnostics_);
     return measure_lines(break_lines(request, glyphs));
 }
 
 render_text_layout fake_text_engine::layout_text(const render_text_request& request) const
 {
     diagnostics_ = {};
-    const std::vector<shaped_glyph> shaped_glyphs = shape_request(request, diagnostics_);
+    const std::vector<shaped_glyph> shaped_glyphs = shape_request(request, font_resolver_, diagnostics_);
     const std::vector<laid_out_line> lines = break_lines(request, shaped_glyphs);
     const render_text_revision atlas_revision =
         update_atlas_for_layout(shaped_glyphs, lines, cached_glyph_ids_, atlas_revision_, atlas_updates_);
@@ -445,7 +472,7 @@ render_text_layout fake_text_engine::layout_text(const render_text_request& requ
 std::vector<fake_text_engine_caret> fake_text_engine::caret_positions(const render_text_request& request) const
 {
     diagnostics_ = {};
-    const std::vector<shaped_glyph> shaped_glyphs = shape_request(request, diagnostics_);
+    const std::vector<shaped_glyph> shaped_glyphs = shape_request(request, font_resolver_, diagnostics_);
     const std::vector<laid_out_line> lines = break_lines(request, shaped_glyphs);
 
     std::vector<fake_text_engine_caret> carets;
@@ -516,7 +543,7 @@ std::vector<render_rect> fake_text_engine::selection_rects(
         return {};
     }
 
-    const std::vector<shaped_glyph> shaped_glyphs = shape_request(request, diagnostics_);
+    const std::vector<shaped_glyph> shaped_glyphs = shape_request(request, font_resolver_, diagnostics_);
     const std::vector<laid_out_line> lines = break_lines(request, shaped_glyphs);
 
     std::vector<render_rect> rects;

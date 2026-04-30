@@ -1,8 +1,10 @@
 #pragma once
 
+#include "render/text/font_resolver.h"
 #include "render/text/text_engine.h"
 
 #include <cstddef>
+#include <string>
 #include <vector>
 
 namespace quiz_vulkan::render {
@@ -13,8 +15,23 @@ struct fake_text_engine_style_fallback {
     render_style_id fallback_style_token;
 };
 
+struct fake_text_engine_font_fallback {
+    std::size_t run_index = 0;
+    render_style_id style_token;
+    std::string requested_family;
+    std::string resolved_family;
+    int requested_weight = 400;
+    int resolved_weight = 400;
+    bool requested_italic = false;
+    bool resolved_italic = false;
+    font_face_id resolved_face_id = 0;
+    bool used_family_fallback = false;
+    bool used_style_fallback = false;
+};
+
 struct fake_text_engine_diagnostics {
     std::vector<fake_text_engine_style_fallback> style_fallbacks;
+    std::vector<fake_text_engine_font_fallback> font_fallbacks;
     std::size_t invalid_utf8_sequence_count = 0;
 
     bool used_style_fallback() const
@@ -25,6 +42,11 @@ struct fake_text_engine_diagnostics {
     bool saw_invalid_utf8() const
     {
         return invalid_utf8_sequence_count > 0;
+    }
+
+    bool used_font_fallback() const
+    {
+        return !font_fallbacks.empty();
     }
 };
 
@@ -58,6 +80,7 @@ private:
     mutable std::vector<std::uint32_t> cached_glyph_ids_;
     mutable std::vector<render_text_atlas_update> atlas_updates_;
     mutable fake_text_engine_diagnostics diagnostics_;
+    deterministic_fake_font_resolver font_resolver_;
 };
 
 } // namespace quiz_vulkan::render

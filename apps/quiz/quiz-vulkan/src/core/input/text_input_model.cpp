@@ -96,6 +96,23 @@ void erase_utf8_codepoint_before(std::string& value, std::size_t& offset)
     offset = start;
 }
 
+text_range normalized_range(text_range range, std::size_t text_size)
+{
+    text_range normalized{
+        .start_byte = std::min(range.start_byte, text_size),
+        .end_byte = std::min(range.end_byte, text_size),
+    };
+    if (normalized.end_byte < normalized.start_byte) {
+        std::swap(normalized.start_byte, normalized.end_byte);
+    }
+    return normalized;
+}
+
+bool same_range(text_range lhs, text_range rhs)
+{
+    return lhs.start_byte == rhs.start_byte && lhs.end_byte == rhs.end_byte;
+}
+
 } // namespace
 
 void text_input_model::focus(std::string target_id)
@@ -103,6 +120,7 @@ void text_input_model::focus(std::string target_id)
     focused_ = true;
     focus_id_ = std::move(target_id);
     preedit_text_.clear();
+    selection_range_.reset();
     caret_byte_offset_ = text_.size();
 }
 
@@ -111,6 +129,7 @@ void text_input_model::clear_focus()
     focused_ = false;
     focus_id_.clear();
     preedit_text_.clear();
+    selection_range_.reset();
 }
 
 bool text_input_model::has_focus() const
@@ -135,10 +154,14 @@ const std::string& text_input_model::preedit_text() const
 
 std::string text_input_model::display_text() const
 {
-    const std::size_t caret = std::min(caret_byte_offset_, text_.size());
-    std::string display = text_.substr(0, caret);
+    if (preedit_text_.empty()) {
+        return text_;
+    }
+
+    const std::size_t anchor = preedit_anchor_byte_offset();
+    std::string display = text_.substr(0, anchor);
     display.append(preedit_text_);
-    display.append(text_.substr(caret));
+    display.append(text_.substr(selection_range_.has_value() ? selection_range_->end_byte : anchor));
     return display;
 }
 
@@ -149,7 +172,9 @@ std::size_t text_input_model::caret_byte_offset() const
 
 text_range text_input_model::caret_range() const
 {
-    const std::size_t caret = caret_byte_offset() + preedit_text_.size();
+    const std::size_t caret = preedit_text_.empty()
+        ? caret_byte_offset()
+        : preedit_anchor_byte_offset() + preedit_text_.size();
     return text_range{
         .start_byte = caret,
         .end_byte = caret,
@@ -163,34 +188,61 @@ std::optional<text_range> text_input_model::preedit_range() const
     }
 
     return text_range{
-        .start_byte = caret_byte_offset(),
-        .end_byte = caret_byte_offset() + preedit_text_.size(),
+        .start_byte = preedit_anchor_byte_offset(),
+        .end_byte = preedit_anchor_byte_offset() + preedit_text_.size(),
     };
+}
+
+std::optional<text_range> text_input_model::selection_range() const
+{
+    return selection_range_;
 }
 
 bool text_input_model::move_caret_to_start()
 {
-    if (!focused_ || caret_byte_offset() == 0) {
+    if (!focused_) {
         return false;
     }
 
+    const bool had_selection = selection_range_.has_value();
+    if (!had_selection && caret_byte_offset() == 0) {
+        return false;
+    }
+
+    selection_range_.reset();
     caret_byte_offset_ = 0;
     return true;
 }
 
 bool text_input_model::move_caret_to_end()
 {
-    if (!focused_ || caret_byte_offset() == text_.size()) {
+    if (!focused_) {
         return false;
     }
 
+    const bool had_selection = selection_range_.has_value();
+    if (!had_selection && caret_byte_offset() == text_.size()) {
+        return false;
+    }
+
+    selection_range_.reset();
     caret_byte_offset_ = text_.size();
     return true;
 }
 
 bool text_input_model::move_caret_left()
 {
-    if (!focused_ || caret_byte_offset() == 0) {
+    if (!focused_) {
+        return false;
+    }
+
+    if (selection_range_.has_value()) {
+        caret_byte_offset_ = selection_range_->start_byte;
+        selection_range_.reset();
+        return true;
+    }
+
+    if (caret_byte_offset() == 0) {
         return false;
     }
 
@@ -200,12 +252,81 @@ bool text_input_model::move_caret_left()
 
 bool text_input_model::move_caret_right()
 {
-    if (!focused_ || caret_byte_offset() >= text_.size()) {
+    if (!focused_) {
+        return false;
+    }
+
+    if (selection_range_.has_value()) {
+        caret_byte_offset_ = selection_range_->end_byte;
+        selection_range_.reset();
+        return true;
+    }
+
+    if (caret_byte_offset() >= text_.size()) {
         return false;
     }
 
     caret_byte_offset_ = next_utf8_boundary(text_, caret_byte_offset());
     return true;
+}
+
+bool text_input_model::select_all()
+{
+    if (!focused_ || text_.empty()) {
+        return false;
+    }
+
+    constexpr std::size_t start = 0;
+    const text_range all{
+        .start_byte = start,
+        .end_byte = text_.size(),
+    };
+    const bool changed = !selection_range_.has_value()
+        || !same_range(*selection_range_, all)
+        || caret_byte_offset() != all.end_byte
+        || !preedit_text_.empty();
+    selection_range_ = all;
+    caret_byte_offset_ = all.end_byte;
+    preedit_text_.clear();
+    return changed;
+}
+
+bool text_input_model::clear_selection()
+{
+    if (!focused_ || !selection_range_.has_value()) {
+        return false;
+    }
+
+    selection_range_.reset();
+    return true;
+}
+
+bool text_input_model::set_selection(text_range range)
+{
+    if (!focused_) {
+        return false;
+    }
+
+    const text_range normalized = normalized_range(range, text_.size());
+    const bool collapsed = normalized.start_byte == normalized.end_byte;
+    const bool changed = selection_range_.has_value()
+        ? (!collapsed && !same_range(*selection_range_, normalized))
+            || collapsed
+            || caret_byte_offset() != normalized.end_byte
+            || !preedit_text_.empty()
+        : !collapsed || caret_byte_offset() != normalized.end_byte || !preedit_text_.empty();
+
+    if (collapsed) {
+        selection_range_.reset();
+        caret_byte_offset_ = normalized.end_byte;
+        preedit_text_.clear();
+        return changed;
+    }
+
+    selection_range_ = normalized;
+    caret_byte_offset_ = normalized.end_byte;
+    preedit_text_.clear();
+    return changed;
 }
 
 bool text_input_model::commit_utf8(std::string_view utf8_text)
@@ -214,9 +335,7 @@ bool text_input_model::commit_utf8(std::string_view utf8_text)
         return false;
     }
 
-    const std::size_t caret = caret_byte_offset();
-    text_.insert(caret, utf8_text);
-    caret_byte_offset_ = caret + utf8_text.size();
+    replace_selection_with(utf8_text);
     preedit_text_.clear();
     return true;
 }
@@ -225,6 +344,11 @@ bool text_input_model::backspace()
 {
     if (!focused_) {
         return false;
+    }
+
+    if (erase_selected_text()) {
+        preedit_text_.clear();
+        return true;
     }
 
     if (!preedit_text_.empty()) {
@@ -261,9 +385,7 @@ bool text_input_model::commit_ime(std::string_view utf8_text)
         return false;
     }
 
-    const std::size_t caret = caret_byte_offset();
-    text_.insert(caret, utf8_text);
-    caret_byte_offset_ = caret + utf8_text.size();
+    replace_selection_with(utf8_text);
     return true;
 }
 
@@ -286,6 +408,7 @@ bool text_input_model::submit()
     submit_text_ = text_;
     text_.clear();
     preedit_text_.clear();
+    selection_range_.reset();
     caret_byte_offset_ = 0;
     return true;
 }
@@ -304,6 +427,41 @@ std::optional<std::string> text_input_model::consume_submit_text()
     std::optional<std::string> consumed = std::move(submit_text_);
     submit_text_.reset();
     return consumed;
+}
+
+std::size_t text_input_model::preedit_anchor_byte_offset() const
+{
+    if (selection_range_.has_value()) {
+        return selection_range_->start_byte;
+    }
+
+    return caret_byte_offset();
+}
+
+void text_input_model::replace_selection_with(std::string_view utf8_text)
+{
+    const std::size_t insert_byte = preedit_anchor_byte_offset();
+    if (selection_range_.has_value()) {
+        const text_range selection = *selection_range_;
+        text_.erase(selection.start_byte, selection.end_byte - selection.start_byte);
+        selection_range_.reset();
+    }
+
+    text_.insert(insert_byte, utf8_text);
+    caret_byte_offset_ = insert_byte + utf8_text.size();
+}
+
+bool text_input_model::erase_selected_text()
+{
+    if (!selection_range_.has_value()) {
+        return false;
+    }
+
+    const text_range selection = *selection_range_;
+    text_.erase(selection.start_byte, selection.end_byte - selection.start_byte);
+    caret_byte_offset_ = selection.start_byte;
+    selection_range_.reset();
+    return true;
 }
 
 } // namespace quiz_vulkan::input

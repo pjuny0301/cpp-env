@@ -74,6 +74,59 @@ struct vulkan_recorded_draw_batch {
     vulkan_scissor_rect scissor;
 };
 
+struct vulkan_pipeline_capability {
+    vulkan_batch_kind kind = vulkan_batch_kind::quad;
+    bool available = false;
+};
+
+struct vulkan_pipeline_cache_entry {
+    vulkan_batch_kind kind = vulkan_batch_kind::quad;
+    bool available = false;
+    bool requested = false;
+    std::size_t request_count = 0;
+    std::size_t last_command_index = 0;
+};
+
+struct vulkan_backend_pipeline_state {
+    bool cache_checked = false;
+    bool ready = false;
+    bool missing_pipeline = false;
+    vulkan_batch_kind missing_batch_kind = vulkan_batch_kind::quad;
+    std::size_t missing_command_index = 0;
+    std::size_t requested_pipeline_count = 0;
+    std::vector<vulkan_pipeline_capability> capabilities;
+    std::vector<vulkan_pipeline_cache_entry> cache_entries;
+
+    bool supports(vulkan_batch_kind kind) const;
+    bool completed() const;
+};
+
+struct diagnostic_vulkan_pipeline_cache_options {
+    bool default_available = true;
+    std::vector<vulkan_pipeline_capability> overrides;
+};
+
+class vulkan_pipeline_cache_interface {
+public:
+    virtual ~vulkan_pipeline_cache_interface() = default;
+
+    virtual bool ensure_pipeline(const vulkan_draw_batch& batch) = 0;
+    virtual const vulkan_backend_pipeline_state& pipeline_state() const = 0;
+};
+
+class diagnostic_vulkan_pipeline_cache final : public vulkan_pipeline_cache_interface {
+public:
+    diagnostic_vulkan_pipeline_cache();
+    explicit diagnostic_vulkan_pipeline_cache(diagnostic_vulkan_pipeline_cache_options options);
+
+    bool ensure_pipeline(const vulkan_draw_batch& batch) override;
+    const vulkan_backend_pipeline_state& pipeline_state() const override;
+
+private:
+    diagnostic_vulkan_pipeline_cache_options options_;
+    vulkan_backend_pipeline_state state_;
+};
+
 enum class vulkan_command_recorder_failure_stage {
     none,
     begin_recording,
@@ -146,6 +199,7 @@ private:
 struct vulkan_backend_frame_result {
     vulkan_surface_extent surface;
     vulkan_backend_lifecycle_readiness lifecycle;
+    vulkan_backend_pipeline_state pipeline;
     vulkan_backend_command_recorder_state command_recorder;
     vulkan_backend_frame_stage reached_stage = vulkan_backend_frame_stage::not_started;
     bool lifecycle_ready = false;
@@ -199,6 +253,13 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
 
 vulkan_backend_frame_result submit_vulkan_backend_frame(
     vulkan_backend_device_interface& device,
+    vulkan_command_recorder_interface& command_recorder,
+    const render_draw_list& draw_list,
+    render_rect viewport);
+
+vulkan_backend_frame_result submit_vulkan_backend_frame(
+    vulkan_backend_device_interface& device,
+    vulkan_pipeline_cache_interface& pipeline_cache,
     vulkan_command_recorder_interface& command_recorder,
     const render_draw_list& draw_list,
     render_rect viewport);

@@ -1,5 +1,6 @@
 #include "render/vulkan/vulkan_backend_adapter.h"
 
+#include <algorithm>
 #include <string>
 #include <utility>
 
@@ -134,6 +135,38 @@ vulkan_frame_lifecycle_failure_classification classify_lifecycle_failure(
     }
 
     return vulkan_frame_lifecycle_failure_classification::fatal;
+}
+
+vulkan_backend_frame_fallback_summary make_frame_fallback_summary(
+    bool required,
+    vulkan_backend_fallback_reason reason,
+    vulkan_backend_frame_stage reached_stage)
+{
+    const vulkan_frame_lifecycle_failure_classification classification =
+        classify_lifecycle_failure(reason);
+    return vulkan_backend_frame_fallback_summary{
+        .checked = true,
+        .required = required,
+        .reason = reason,
+        .reached_stage = reached_stage,
+        .recoverable = required
+            && classification == vulkan_frame_lifecycle_failure_classification::recoverable,
+        .fatal = required
+            && classification == vulkan_frame_lifecycle_failure_classification::fatal,
+        .reason_count = required && reason != vulkan_backend_fallback_reason::not_requested ? 1U : 0U,
+    };
+}
+
+void mark_frame_fallback(
+    vulkan_backend_frame_result& result,
+    vulkan_backend_fallback_reason reason)
+{
+    result.fallback_required = reason != vulkan_backend_fallback_reason::none;
+    result.fallback_reason = reason;
+    result.fallback_summary = make_frame_fallback_summary(
+        result.fallback_required,
+        reason,
+        result.reached_stage);
 }
 
 void start_lifecycle_step(
@@ -328,6 +361,153 @@ void mark_present_policy_frame_result(
     state.present.fallback_reason = frame_presented
         ? vulkan_backend_fallback_reason::none
         : vulkan_backend_fallback_reason::present_frame_failed;
+}
+
+std::size_t clamp_extent_value(std::size_t value, std::size_t min_value, std::size_t max_value)
+{
+    return std::clamp(value, min_value, max_value);
+}
+
+vulkan_backend_swapchain_policy_state make_swapchain_policy_state(vulkan_surface_extent requested_extent)
+{
+    vulkan_swapchain_extent_policy_state extent;
+    extent.checked = true;
+    extent.requested_extent = requested_extent;
+    extent.extent_supported = requested_extent.valid();
+    extent.selected_extent = requested_extent.valid()
+        ? vulkan_surface_extent{
+            .width = clamp_extent_value(
+                requested_extent.width,
+                extent.min_extent.width,
+                extent.max_extent.width),
+            .height = clamp_extent_value(
+                requested_extent.height,
+                extent.min_extent.height,
+                extent.max_extent.height),
+        }
+        : vulkan_surface_extent{};
+    extent.extent_clamped =
+        extent.selected_extent.width != requested_extent.width
+        || extent.selected_extent.height != requested_extent.height;
+
+    return vulkan_backend_swapchain_policy_state{
+        .checked = true,
+        .extent = extent,
+        .present_mode = vulkan_swapchain_present_mode_policy_state{
+            .checked = true,
+            .requested_mode = vulkan_swapchain_present_mode::fifo,
+            .selected_mode = vulkan_swapchain_present_mode::fifo,
+            .requested_mode_supported = true,
+            .fallback_to_fifo = false,
+        },
+    };
+}
+
+bool same_shader_id(const vulkan_shader_module_id& left, const vulkan_shader_module_id& right)
+{
+    return left.value == right.value;
+}
+
+bool same_pipeline_compatibility_key(
+    const vulkan_pipeline_compatibility_key& left,
+    const vulkan_pipeline_compatibility_key& right)
+{
+    return left.batch_kind == right.batch_kind
+        && left.color_attachment_count == right.color_attachment_count
+        && left.has_depth_attachment == right.has_depth_attachment
+        && left.surface_compatible == right.surface_compatible
+        && same_shader_id(left.vertex_shader, right.vertex_shader)
+        && same_shader_id(left.fragment_shader, right.fragment_shader);
+}
+
+bool compatibility_key_seen(
+    const std::vector<vulkan_pipeline_compatibility_key>& keys,
+    const vulkan_pipeline_compatibility_key& candidate)
+{
+    for (const vulkan_pipeline_compatibility_key& key : keys) {
+        if (same_pipeline_compatibility_key(key, candidate)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+vulkan_pipeline_compatibility_key make_pipeline_compatibility_key(
+    const vulkan_draw_batch& batch,
+    const vulkan_render_pass_descriptor& render_pass,
+    const vulkan_pipeline_descriptor* descriptor)
+{
+    return vulkan_pipeline_compatibility_key{
+        .batch_kind = batch.kind,
+        .color_attachment_count = render_pass.color_attachment_count,
+        .has_depth_attachment = render_pass.has_depth_attachment,
+        .surface_compatible = render_pass.surface_compatible,
+        .vertex_shader = descriptor == nullptr ? vulkan_shader_module_id{} : descriptor->vertex_shader,
+        .fragment_shader = descriptor == nullptr ? vulkan_shader_module_id{} : descriptor->fragment_shader,
+    };
+}
+
+void append_pipeline_compatibility_key(
+    vulkan_backend_pipeline_state& state,
+    vulkan_pipeline_compatibility_key key)
+{
+    state.compatibility.checked = true;
+    ++state.compatibility.requested_key_count;
+    if (key.compatible()) {
+        ++state.compatibility.compatible_key_count;
+    } else {
+        ++state.compatibility.incompatible_key_count;
+    }
+    if (!compatibility_key_seen(state.compatibility.keys, key)) {
+        ++state.compatibility.unique_key_count;
+    }
+    state.compatibility.keys.push_back(std::move(key));
+}
+
+vulkan_shader_module_binding_readiness make_shader_module_binding_readiness(
+    const vulkan_draw_batch& batch,
+    vulkan_shader_stage stage,
+    const vulkan_shader_module_id& shader_id)
+{
+    return vulkan_shader_module_binding_readiness{
+        .batch_kind = batch.kind,
+        .command_index = batch.command_index,
+        .stage = stage,
+        .shader_id = shader_id,
+        .entry_point = "main",
+        .descriptor_declared = !shader_id.empty(),
+    };
+}
+
+void append_shader_binding_readiness(
+    vulkan_backend_pipeline_state& state,
+    vulkan_shader_module_binding_readiness readiness)
+{
+    state.shader_bindings.checked = true;
+    ++state.shader_bindings.requested_binding_count;
+    if (readiness.completed()) {
+        ++state.shader_bindings.ready_binding_count;
+    } else {
+        ++state.shader_bindings.missing_binding_count;
+    }
+    state.shader_bindings.bindings.push_back(std::move(readiness));
+}
+
+bool require_shader_binding(
+    vulkan_backend_pipeline_state& state,
+    diagnostic_vulkan_shader_registry& shader_registry,
+    const vulkan_draw_batch& batch,
+    vulkan_shader_stage stage,
+    const vulkan_shader_module_id& shader_id)
+{
+    vulkan_shader_module_binding_readiness readiness =
+        make_shader_module_binding_readiness(batch, stage, shader_id);
+    readiness.registry_checked = true;
+    readiness.module_registered = shader_registry.require_shader(batch.kind, stage, shader_id);
+    readiness.ready = readiness.descriptor_declared && readiness.module_registered;
+    const bool ready = readiness.ready;
+    append_shader_binding_readiness(state, std::move(readiness));
+    return ready;
 }
 
 vulkan_shader_module_id shader_id(std::string value)
@@ -604,7 +784,7 @@ bool ensure_frame_plan_pipelines(
     for (const vulkan_draw_batch& batch : plan.batches) {
         if (!pipeline_cache.ensure_pipeline(batch)) {
             result.pipeline = pipeline_cache.pipeline_state();
-            result.fallback_reason = vulkan_backend_fallback_reason::pipeline_unavailable;
+            mark_frame_fallback(result, vulkan_backend_fallback_reason::pipeline_unavailable);
             return false;
         }
     }
@@ -1151,6 +1331,22 @@ std::string_view swapchain_present_status_name(vulkan_swapchain_present_status s
     return "unknown";
 }
 
+std::string_view swapchain_present_mode_name(vulkan_swapchain_present_mode mode)
+{
+    switch (mode) {
+    case vulkan_swapchain_present_mode::immediate:
+        return "immediate";
+    case vulkan_swapchain_present_mode::mailbox:
+        return "mailbox";
+    case vulkan_swapchain_present_mode::fifo:
+        return "fifo";
+    case vulkan_swapchain_present_mode::fifo_relaxed:
+        return "fifo_relaxed";
+    }
+
+    return "unknown";
+}
+
 std::string_view frame_acquire_policy_status_name(vulkan_frame_acquire_policy_status status)
 {
     switch (status) {
@@ -1341,7 +1537,9 @@ const vulkan_pipeline_descriptor* vulkan_backend_pipeline_state::descriptor_for(
 
 bool vulkan_backend_pipeline_state::completed() const
 {
-    return ready && !missing_pipeline && lifecycle.completed();
+    return ready && !missing_pipeline && lifecycle.completed()
+        && compatibility.completed()
+        && shader_bindings.completed();
 }
 
 vulkan_backend_lifecycle_readiness null_vulkan_backend_device::current_lifecycle_readiness() const
@@ -1423,6 +1621,8 @@ diagnostic_vulkan_pipeline_cache::diagnostic_vulkan_pipeline_cache(
     state_.lifecycle.checked = true;
     state_.lifecycle.render_pass = options_.render_pass;
     state_.lifecycle.missing_render_pass = !state_.lifecycle.render_pass.valid();
+    state_.compatibility.checked = true;
+    state_.shader_bindings.checked = true;
     state_.ready = state_.lifecycle.render_pass_ready();
 }
 
@@ -1431,6 +1631,13 @@ bool diagnostic_vulkan_pipeline_cache::ensure_pipeline(const vulkan_draw_batch& 
     state_.cache_checked = true;
     ++state_.requested_pipeline_count;
     ++state_.lifecycle.requested_pipeline_count;
+    const vulkan_pipeline_descriptor* descriptor = state_.descriptor_for(batch.kind);
+    append_pipeline_compatibility_key(
+        state_,
+        make_pipeline_compatibility_key(
+            batch,
+            state_.lifecycle.render_pass,
+            descriptor));
 
     vulkan_pipeline_lifecycle_snapshot lifecycle_snapshot = make_pipeline_lifecycle_snapshot(
         batch,
@@ -1479,7 +1686,6 @@ bool diagnostic_vulkan_pipeline_cache::ensure_pipeline(const vulkan_draw_batch& 
         return false;
     }
 
-    const vulkan_pipeline_descriptor* descriptor = state_.descriptor_for(batch.kind);
     if (descriptor == nullptr || !descriptor->complete()) {
         mark_missing_pipeline_descriptor(state_, batch);
         lifecycle_snapshot.shader_stage_status = vulkan_pipeline_lifecycle_status::not_checked;
@@ -1491,7 +1697,12 @@ bool diagnostic_vulkan_pipeline_cache::ensure_pipeline(const vulkan_draw_batch& 
     }
     vulkan_pipeline_shader_stage_snapshot shader_stage_snapshot =
         make_pipeline_shader_stage_snapshot(batch, *descriptor);
-    if (!shader_registry_.require_shader(batch.kind, vulkan_shader_stage::vertex, descriptor->vertex_shader)) {
+    if (!require_shader_binding(
+            state_,
+            shader_registry_,
+            batch,
+            vulkan_shader_stage::vertex,
+            descriptor->vertex_shader)) {
         mark_missing_pipeline_shader(state_, batch, shader_registry_.registry_state());
         mark_pipeline_lifecycle_shader_failure(
             state_,
@@ -1502,7 +1713,12 @@ bool diagnostic_vulkan_pipeline_cache::ensure_pipeline(const vulkan_draw_batch& 
         return false;
     }
     shader_stage_snapshot.vertex_stage_ready = true;
-    if (!shader_registry_.require_shader(batch.kind, vulkan_shader_stage::fragment, descriptor->fragment_shader)) {
+    if (!require_shader_binding(
+            state_,
+            shader_registry_,
+            batch,
+            vulkan_shader_stage::fragment,
+            descriptor->fragment_shader)) {
         mark_missing_pipeline_shader(state_, batch, shader_registry_.registry_state());
         mark_pipeline_lifecycle_shader_failure(
             state_,
@@ -1754,21 +1970,23 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     result.reached_stage = vulkan_backend_frame_stage::backend_attempted;
     result.lifecycle = device.current_lifecycle_readiness();
     result.command_recorder.ready = result.lifecycle.command_recorder_ready;
-    result.fallback_reason = first_unready_reason(result.lifecycle);
-    if (result.fallback_reason != vulkan_backend_fallback_reason::none) {
+    const vulkan_backend_fallback_reason unready_reason = first_unready_reason(result.lifecycle);
+    if (unready_reason != vulkan_backend_fallback_reason::none) {
+        mark_frame_fallback(result, unready_reason);
         return result;
     }
     result.lifecycle_ready = true;
     result.reached_stage = vulkan_backend_frame_stage::lifecycle_ready;
 
     result.surface = device.current_surface_extent();
+    result.swapchain_policy = make_swapchain_policy_state(result.surface);
     if (!result.surface.valid()) {
-        result.fallback_reason = vulkan_backend_fallback_reason::surface_unavailable;
+        mark_frame_fallback(result, vulkan_backend_fallback_reason::surface_unavailable);
         return result;
     }
     result.reached_stage = vulkan_backend_frame_stage::surface_extent_ready;
     if (!has_visible_area(viewport)) {
-        result.fallback_reason = vulkan_backend_fallback_reason::viewport_unavailable;
+        mark_frame_fallback(result, vulkan_backend_fallback_reason::viewport_unavailable);
         return result;
     }
     result.surface_ready = true;
@@ -1796,7 +2014,7 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
         plan,
         result.resource_bindings);
     if (!result.resource_bindings.completed()) {
-        result.fallback_reason = vulkan_backend_fallback_reason::resource_binding_unavailable;
+        mark_frame_fallback(result, vulkan_backend_fallback_reason::resource_binding_unavailable);
         return result;
     }
 
@@ -1805,7 +2023,7 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     const auto fail_frame_lifecycle = [&result](
                                           vulkan_frame_lifecycle_step step,
                                           vulkan_backend_fallback_reason reason) {
-        result.fallback_reason = reason;
+        mark_frame_fallback(result, reason);
         fail_lifecycle_step(result.lifecycle_policy, step, reason);
     };
 
@@ -1944,8 +2162,7 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     complete_lifecycle_step(result.lifecycle_policy, vulkan_frame_lifecycle_step::present);
     result.reached_stage = vulkan_backend_frame_stage::frame_presented;
 
-    result.fallback_required = false;
-    result.fallback_reason = vulkan_backend_fallback_reason::none;
+    mark_frame_fallback(result, vulkan_backend_fallback_reason::none);
     return result;
 }
 

@@ -1354,6 +1354,7 @@ void record_glyph_cache_policy_diagnostics(
     const std::vector<atlas_cluster_cache_result>& cache_results)
 {
     diagnostics.glyph_cache_faces.clear();
+    diagnostics.glyph_cache_evictions.clear();
     diagnostics.glyph_cache_policy = render_text_glyph_cache_policy_snapshot{
         .capacity = fake_glyph_cache_policy_capacity,
         .cached_glyph_count = entries.size(),
@@ -1379,6 +1380,10 @@ void record_glyph_cache_policy_diagnostics(
         if (result.glyph_cache_evicted) {
             ++diagnostics.glyph_cache_policy.eviction_count;
             ++glyph_cache_face_snapshot_for(diagnostics.glyph_cache_faces, result.evicted_key.face_id).eviction_count;
+            diagnostics.glyph_cache_evictions.push_back(render_text_glyph_cache_eviction_snapshot{
+                .cache_key = result.evicted_key,
+                .atlas_reused_after_policy_miss = result.atlas_reused_after_policy_miss,
+            });
         }
         if (result.atlas_reused_after_policy_miss) {
             ++face.atlas_reuse_count;

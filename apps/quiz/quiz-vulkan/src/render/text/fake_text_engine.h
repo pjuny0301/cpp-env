@@ -51,6 +51,7 @@ struct fake_text_engine_diagnostics {
     std::vector<render_text_glyph_cache_readiness_snapshot> glyph_cache_readiness;
     render_text_glyph_cache_readiness_policy_snapshot glyph_cache_readiness_policy;
     std::vector<render_text_glyph_cache_face_snapshot> glyph_cache_faces;
+    std::vector<render_text_glyph_cache_eviction_snapshot> glyph_cache_evictions;
     render_text_glyph_cache_policy_snapshot glyph_cache_policy;
     std::size_t invalid_utf8_sequence_count = 0;
 
@@ -137,6 +138,11 @@ struct fake_text_engine_diagnostics {
     bool has_glyph_cache_faces() const
     {
         return !glyph_cache_faces.empty();
+    }
+
+    bool has_glyph_cache_evictions() const
+    {
+        return !glyph_cache_evictions.empty();
     }
 };
 

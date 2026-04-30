@@ -83,6 +83,8 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.glyph_cache_readiness_policy }
         -> std::same_as<render::render_text_glyph_cache_readiness_policy_snapshot&>;
     { diagnostics.glyph_cache_faces } -> std::same_as<std::vector<render::render_text_glyph_cache_face_snapshot>&>;
+    { diagnostics.glyph_cache_evictions }
+        -> std::same_as<std::vector<render::render_text_glyph_cache_eviction_snapshot>&>;
     { diagnostics.glyph_cache_policy } -> std::same_as<render::render_text_glyph_cache_policy_snapshot&>;
     { diagnostics.used_font_fallback() } -> std::same_as<bool>;
     { diagnostics.has_glyph_clusters() } -> std::same_as<bool>;
@@ -98,6 +100,7 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.has_line_metrics() } -> std::same_as<bool>;
     { diagnostics.has_line_break_policy() } -> std::same_as<bool>;
     { diagnostics.has_glyph_cache_faces() } -> std::same_as<bool>;
+    { diagnostics.has_glyph_cache_evictions() } -> std::same_as<bool>;
 });
 
 static_assert(requires(render::fake_text_engine& engine, render::font_face_descriptor descriptor) {
@@ -304,6 +307,11 @@ static_assert(requires(render::render_text_glyph_cache_face_snapshot face) {
     { face.miss_count } -> std::same_as<std::size_t&>;
     { face.eviction_count } -> std::same_as<std::size_t&>;
     { face.atlas_reuse_count } -> std::same_as<std::size_t&>;
+});
+
+static_assert(requires(render::render_text_glyph_cache_eviction_snapshot eviction) {
+    { eviction.cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { eviction.atlas_reused_after_policy_miss } -> std::same_as<bool&>;
 });
 
 static_assert(requires(render::render_text_glyph_cache_policy_snapshot policy) {

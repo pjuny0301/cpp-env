@@ -212,6 +212,11 @@ struct render_text_glyph_cache_face_snapshot {
     std::size_t atlas_reuse_count = 0;
 };
 
+struct render_text_glyph_cache_eviction_snapshot {
+    glyph_atlas_key cache_key;
+    bool atlas_reused_after_policy_miss = false;
+};
+
 struct render_text_glyph_cache_policy_snapshot {
     std::size_t capacity = 0;
     std::size_t cached_glyph_count = 0;

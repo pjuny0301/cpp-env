@@ -1294,6 +1294,11 @@ void test_fake_glyph_atlas_page_diagnostics_track_overflow()
     require(engine.last_diagnostics().glyph_cache_policy.atlas_page_reuse_count == 9, "atlas overflow reuses atlas page slots");
     require(engine.last_diagnostics().glyph_cache_policy.atlas_page_create_count == 2, "atlas overflow creates atlas pages");
     require(engine.last_diagnostics().glyph_cache_faces.size() == 1, "atlas overflow records one cache face");
+    require(engine.last_diagnostics().has_glyph_cache_evictions(), "atlas overflow records eviction history");
+    require(engine.last_diagnostics().glyph_cache_evictions.size() == 3, "atlas overflow records three evictions");
+    require(engine.last_diagnostics().glyph_cache_evictions[0].cache_key.glyph_id == 'A', "atlas overflow evicts A first");
+    require(engine.last_diagnostics().glyph_cache_evictions[1].cache_key.glyph_id == 'B', "atlas overflow evicts B second");
+    require(engine.last_diagnostics().glyph_cache_evictions[2].cache_key.glyph_id == 'C', "atlas overflow evicts C third");
     require(engine.last_diagnostics().glyph_cache_faces[0].cached_glyph_ids.size() == 8, "atlas overflow keeps capacity entries");
     require(engine.last_diagnostics().glyph_cache_faces[0].cached_glyph_ids[0] == 'D', "atlas overflow evicts oldest glyphs");
     require(engine.last_diagnostics().glyph_cache_faces[0].cached_glyph_ids[7] == 'K', "atlas overflow keeps newest glyph");
@@ -1358,6 +1363,30 @@ void test_fake_glyph_atlas_page_diagnostics_track_overflow()
     require(engine.last_diagnostics().glyph_cache_faces[0].cached_glyph_ids[0] == 'D', "repeated overflow cache returns to D");
     require(engine.last_diagnostics().glyph_cache_faces[0].cached_glyph_ids[7] == 'K', "repeated overflow cache returns to K");
     require(engine.consume_atlas_updates().empty(), "repeated overflow enqueues no atlas updates");
+
+    render_text_request reinsertion_request = request;
+    reinsertion_request.text_runs = {
+        render_text_run{.text = "A", .style_token = "body"},
+    };
+    const render_text_layout reinsertion_layout = engine.layout_text(reinsertion_request);
+    require(reinsertion_layout.glyphs.size() == 1, "reinsertion layout emits one glyph");
+    require(reinsertion_layout.glyphs[0].atlas_page_id == 1, "reinsertion layout reuses the first page");
+    require(engine.last_diagnostics().glyph_atlas_metrics.cache_hit_count == 1, "reinsertion layout records one atlas hit");
+    require(engine.last_diagnostics().glyph_atlas_metrics.new_slot_count == 0, "reinsertion layout allocates no atlas slots");
+    require(engine.last_diagnostics().glyph_atlas_metrics.dirty_page_count == 0, "reinsertion layout keeps atlas clean");
+    require(engine.last_diagnostics().has_glyph_cache_evictions(), "reinsertion layout records eviction history");
+    require(engine.last_diagnostics().glyph_cache_evictions.size() == 1, "reinsertion layout records one eviction");
+    require(engine.last_diagnostics().glyph_cache_evictions[0].cache_key.glyph_id == 'D', "reinsertion layout evicts D first");
+    require(
+        engine.last_diagnostics().glyph_cache_evictions[0].atlas_reused_after_policy_miss,
+        "reinsertion layout records atlas reuse after policy miss");
+    require(engine.last_diagnostics().glyph_cache_policy.hit_count == 0, "reinsertion layout records no cache-policy hits");
+    require(engine.last_diagnostics().glyph_cache_policy.miss_count == 1, "reinsertion layout records one cache-policy miss");
+    require(engine.last_diagnostics().glyph_cache_policy.eviction_count == 1, "reinsertion layout records one cache eviction");
+    require(engine.last_diagnostics().glyph_cache_policy.atlas_reuse_count == 1, "reinsertion layout records one atlas reuse");
+    require(engine.last_diagnostics().glyph_atlas_pages[0].dirty_update_count == 0, "reinsertion layout leaves page one clean");
+    require(engine.last_diagnostics().glyph_atlas_pages[1].dirty_update_count == 0, "reinsertion layout leaves page two clean");
+    require(engine.last_diagnostics().glyph_atlas_page_policy.repeated_layout_clean_page_count == 2, "reinsertion layout records both pages clean");
 }
 
 void test_fake_caret_positions_follow_utf8_runs_and_combining_marks()

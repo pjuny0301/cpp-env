@@ -78,6 +78,24 @@ struct asset_path_policy_catalog_snapshot_view {
     std::vector<asset_path_policy_kind_counts> kind_counts;
 };
 
+struct asset_path_policy_duplicate_source_report {
+    asset_type type = asset_type::generic;
+    std::string source_uri;
+    std::vector<std::string> entry_ids;
+};
+
+struct asset_path_policy_duplicate_catalog_path_report {
+    asset_type type = asset_type::generic;
+    std::string catalog_path;
+    std::vector<std::string> entry_ids;
+};
+
+struct asset_path_policy_duplicate_cache_key_report {
+    asset_type type = asset_type::generic;
+    asset_cache_key cache_key;
+    std::vector<std::string> entry_ids;
+};
+
 struct asset_path_policy_catalog {
     std::vector<asset_path_policy_snapshot> entries;
     std::vector<asset_path_policy_diagnostic> diagnostics;
@@ -115,6 +133,21 @@ struct asset_path_policy_catalog {
             }
         }
         return nullptr;
+    }
+};
+
+struct asset_manifest_path_policy_validation_summary {
+    asset_path_policy_catalog policy_catalog;
+    asset_path_policy_catalog_snapshot_view snapshot_view;
+    std::vector<asset_path_policy_kind_counts> manifest_kind_counts;
+    std::vector<asset_path_policy_duplicate_source_report> duplicate_sources;
+    std::vector<asset_path_policy_duplicate_catalog_path_report> duplicate_catalog_paths;
+    std::vector<asset_path_policy_duplicate_cache_key_report> duplicate_cache_keys;
+
+    [[nodiscard]] bool ok() const
+    {
+        return policy_catalog.ok() && duplicate_sources.empty() && duplicate_catalog_paths.empty()
+            && duplicate_cache_keys.empty();
     }
 };
 
@@ -349,6 +382,63 @@ inline asset_path_policy_kind_counts& find_or_add_policy_kind_counts(
     return counts.back();
 }
 
+inline asset_type manifest_policy_diagnostic_type(
+    const asset_manifest& manifest,
+    const asset_path_policy_diagnostic& diagnostic)
+{
+    if (diagnostic.type != asset_type::generic) {
+        return diagnostic.type;
+    }
+    if (const asset_manifest_entry* entry = manifest.find_entry(diagnostic.id); entry != nullptr) {
+        return entry->type;
+    }
+    return asset_type::generic;
+}
+
+inline void sort_policy_duplicate_entry_ids(std::vector<std::string>& entry_ids)
+{
+    std::ranges::sort(entry_ids);
+    entry_ids.erase(std::ranges::unique(entry_ids).begin(), entry_ids.end());
+}
+
+inline void filter_single_policy_duplicate_sources(std::vector<asset_path_policy_duplicate_source_report>& reports)
+{
+    for (asset_path_policy_duplicate_source_report& report : reports) {
+        sort_policy_duplicate_entry_ids(report.entry_ids);
+    }
+    reports.erase(
+        std::ranges::remove_if(reports, [](const asset_path_policy_duplicate_source_report& report) {
+            return report.entry_ids.size() < 2U;
+        }).begin(),
+        reports.end());
+}
+
+inline void filter_single_policy_duplicate_catalog_paths(
+    std::vector<asset_path_policy_duplicate_catalog_path_report>& reports)
+{
+    for (asset_path_policy_duplicate_catalog_path_report& report : reports) {
+        sort_policy_duplicate_entry_ids(report.entry_ids);
+    }
+    reports.erase(
+        std::ranges::remove_if(reports, [](const asset_path_policy_duplicate_catalog_path_report& report) {
+            return report.entry_ids.size() < 2U;
+        }).begin(),
+        reports.end());
+}
+
+inline void filter_single_policy_duplicate_cache_keys(
+    std::vector<asset_path_policy_duplicate_cache_key_report>& reports)
+{
+    for (asset_path_policy_duplicate_cache_key_report& report : reports) {
+        sort_policy_duplicate_entry_ids(report.entry_ids);
+    }
+    reports.erase(
+        std::ranges::remove_if(reports, [](const asset_path_policy_duplicate_cache_key_report& report) {
+            return report.entry_ids.size() < 2U;
+        }).begin(),
+        reports.end());
+}
+
 } // namespace detail
 
 inline asset_path_policy_result apply_asset_path_policy(const runtime_asset_catalog_snapshot& snapshot)
@@ -525,6 +615,127 @@ inline asset_path_policy_catalog_snapshot_view make_asset_path_policy_catalog_sn
         .diagnostics = sorted_asset_path_policy_diagnostics(catalog),
         .kind_counts = summarize_asset_path_policy_kind_counts(catalog),
     };
+}
+
+inline std::vector<asset_path_policy_kind_counts> summarize_asset_manifest_path_policy_kind_counts(
+    const asset_manifest& manifest,
+    const asset_path_policy_catalog& catalog)
+{
+    std::vector<asset_path_policy_kind_counts> counts;
+    for (const asset_manifest_entry& entry : manifest.entries) {
+        (void)detail::find_or_add_policy_kind_counts(counts, entry.type);
+    }
+    for (const asset_path_policy_snapshot& entry : catalog.entries) {
+        ++detail::find_or_add_policy_kind_counts(counts, entry.type).accepted_count;
+    }
+    for (const asset_path_policy_diagnostic& diagnostic : catalog.diagnostics) {
+        const asset_type type = detail::manifest_policy_diagnostic_type(manifest, diagnostic);
+        ++detail::find_or_add_policy_kind_counts(counts, type).rejected_count;
+    }
+
+    std::ranges::sort(counts, [](const asset_path_policy_kind_counts& left, const asset_path_policy_kind_counts& right) {
+        return detail::asset_path_policy_type_rank(left.type) < detail::asset_path_policy_type_rank(right.type);
+    });
+    return counts;
+}
+
+inline std::vector<asset_path_policy_duplicate_source_report> report_asset_path_policy_duplicate_sources(
+    const asset_path_policy_catalog& catalog)
+{
+    std::vector<asset_path_policy_duplicate_source_report> reports;
+    for (const asset_path_policy_snapshot& entry : catalog.entries) {
+        auto existing = std::ranges::find_if(reports, [&entry](const asset_path_policy_duplicate_source_report& report) {
+            return report.type == entry.type && report.source_uri == entry.source_uri;
+        });
+        if (existing == reports.end()) {
+            reports.push_back(asset_path_policy_duplicate_source_report{
+                .type = entry.type,
+                .source_uri = entry.source_uri,
+                .entry_ids = {entry.id},
+            });
+        } else {
+            existing->entry_ids.push_back(entry.id);
+        }
+    }
+
+    detail::filter_single_policy_duplicate_sources(reports);
+    std::ranges::sort(reports, [](const auto& left, const auto& right) {
+        return std::tuple(detail::asset_path_policy_type_rank(left.type), std::string_view(left.source_uri))
+            < std::tuple(detail::asset_path_policy_type_rank(right.type), std::string_view(right.source_uri));
+    });
+    return reports;
+}
+
+inline std::vector<asset_path_policy_duplicate_catalog_path_report> report_asset_path_policy_duplicate_catalog_paths(
+    const asset_path_policy_catalog& catalog)
+{
+    std::vector<asset_path_policy_duplicate_catalog_path_report> reports;
+    for (const asset_path_policy_snapshot& entry : catalog.entries) {
+        auto existing = std::ranges::find_if(
+            reports,
+            [&entry](const asset_path_policy_duplicate_catalog_path_report& report) {
+                return report.type == entry.type && report.catalog_path == entry.catalog_path;
+            });
+        if (existing == reports.end()) {
+            reports.push_back(asset_path_policy_duplicate_catalog_path_report{
+                .type = entry.type,
+                .catalog_path = entry.catalog_path,
+                .entry_ids = {entry.id},
+            });
+        } else {
+            existing->entry_ids.push_back(entry.id);
+        }
+    }
+
+    detail::filter_single_policy_duplicate_catalog_paths(reports);
+    std::ranges::sort(reports, [](const auto& left, const auto& right) {
+        return std::tuple(detail::asset_path_policy_type_rank(left.type), std::string_view(left.catalog_path))
+            < std::tuple(detail::asset_path_policy_type_rank(right.type), std::string_view(right.catalog_path));
+    });
+    return reports;
+}
+
+inline std::vector<asset_path_policy_duplicate_cache_key_report> report_asset_path_policy_duplicate_cache_keys(
+    const asset_path_policy_catalog& catalog)
+{
+    std::vector<asset_path_policy_duplicate_cache_key_report> reports;
+    for (const asset_path_policy_snapshot& entry : catalog.entries) {
+        auto existing = std::ranges::find_if(
+            reports,
+            [&entry](const asset_path_policy_duplicate_cache_key_report& report) {
+                return report.type == entry.type && report.cache_key == entry.cache_key;
+            });
+        if (existing == reports.end()) {
+            reports.push_back(asset_path_policy_duplicate_cache_key_report{
+                .type = entry.type,
+                .cache_key = entry.cache_key,
+                .entry_ids = {entry.id},
+            });
+        } else {
+            existing->entry_ids.push_back(entry.id);
+        }
+    }
+
+    detail::filter_single_policy_duplicate_cache_keys(reports);
+    std::ranges::sort(reports, [](const auto& left, const auto& right) {
+        return std::tuple(detail::asset_path_policy_type_rank(left.type), std::string_view(left.cache_key))
+            < std::tuple(detail::asset_path_policy_type_rank(right.type), std::string_view(right.cache_key));
+    });
+    return reports;
+}
+
+inline asset_manifest_path_policy_validation_summary validate_asset_manifest_path_policy(
+    const asset_manifest& manifest,
+    const asset_resolver_interface& resolver)
+{
+    asset_manifest_path_policy_validation_summary summary;
+    summary.policy_catalog = build_asset_path_policy_catalog(build_runtime_asset_catalog(manifest, resolver));
+    summary.snapshot_view = make_asset_path_policy_catalog_snapshot_view(summary.policy_catalog);
+    summary.manifest_kind_counts = summarize_asset_manifest_path_policy_kind_counts(manifest, summary.policy_catalog);
+    summary.duplicate_sources = report_asset_path_policy_duplicate_sources(summary.policy_catalog);
+    summary.duplicate_catalog_paths = report_asset_path_policy_duplicate_catalog_paths(summary.policy_catalog);
+    summary.duplicate_cache_keys = report_asset_path_policy_duplicate_cache_keys(summary.policy_catalog);
+    return summary;
 }
 
 } // namespace quiz_vulkan::assets

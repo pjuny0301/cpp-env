@@ -58,6 +58,35 @@ static_assert(requires(asset_path_policy_catalog_snapshot_view view) {
     { view.kind_counts } -> std::same_as<std::vector<asset_path_policy_kind_counts>&>;
 });
 
+static_assert(requires(asset_path_policy_duplicate_source_report report) {
+    { report.type } -> std::same_as<asset_type&>;
+    { report.source_uri } -> std::same_as<std::string&>;
+    { report.entry_ids } -> std::same_as<std::vector<std::string>&>;
+});
+
+static_assert(requires(asset_path_policy_duplicate_catalog_path_report report) {
+    { report.type } -> std::same_as<asset_type&>;
+    { report.catalog_path } -> std::same_as<std::string&>;
+    { report.entry_ids } -> std::same_as<std::vector<std::string>&>;
+});
+
+static_assert(requires(asset_path_policy_duplicate_cache_key_report report) {
+    { report.type } -> std::same_as<asset_type&>;
+    { report.cache_key } -> std::same_as<asset_cache_key&>;
+    { report.entry_ids } -> std::same_as<std::vector<std::string>&>;
+});
+
+static_assert(requires(asset_manifest_path_policy_validation_summary summary) {
+    { summary.policy_catalog } -> std::same_as<asset_path_policy_catalog&>;
+    { summary.snapshot_view } -> std::same_as<asset_path_policy_catalog_snapshot_view&>;
+    { summary.manifest_kind_counts } -> std::same_as<std::vector<asset_path_policy_kind_counts>&>;
+    { summary.duplicate_sources } -> std::same_as<std::vector<asset_path_policy_duplicate_source_report>&>;
+    { summary.duplicate_catalog_paths } ->
+        std::same_as<std::vector<asset_path_policy_duplicate_catalog_path_report>&>;
+    { summary.duplicate_cache_keys } -> std::same_as<std::vector<asset_path_policy_duplicate_cache_key_report>&>;
+    { summary.ok() } -> std::same_as<bool>;
+});
+
 static_assert(requires(
     const asset_path_policy_catalog& catalog,
     std::string_view id,
@@ -84,6 +113,19 @@ static_assert(requires(asset_type type, const runtime_asset_catalog_snapshot& sn
         std::same_as<std::vector<asset_path_policy_kind_counts>>;
     { make_asset_path_policy_catalog_snapshot_view(build_asset_path_policy_catalog(catalog)) } ->
         std::same_as<asset_path_policy_catalog_snapshot_view>;
+    { report_asset_path_policy_duplicate_sources(build_asset_path_policy_catalog(catalog)) } ->
+        std::same_as<std::vector<asset_path_policy_duplicate_source_report>>;
+    { report_asset_path_policy_duplicate_catalog_paths(build_asset_path_policy_catalog(catalog)) } ->
+        std::same_as<std::vector<asset_path_policy_duplicate_catalog_path_report>>;
+    { report_asset_path_policy_duplicate_cache_keys(build_asset_path_policy_catalog(catalog)) } ->
+        std::same_as<std::vector<asset_path_policy_duplicate_cache_key_report>>;
+});
+
+static_assert(requires(const asset_manifest& manifest, const asset_resolver_interface& resolver) {
+    { summarize_asset_manifest_path_policy_kind_counts(manifest, asset_path_policy_catalog{}) } ->
+        std::same_as<std::vector<asset_path_policy_kind_counts>>;
+    { validate_asset_manifest_path_policy(manifest, resolver) } ->
+        std::same_as<asset_manifest_path_policy_validation_summary>;
 });
 
 } // namespace

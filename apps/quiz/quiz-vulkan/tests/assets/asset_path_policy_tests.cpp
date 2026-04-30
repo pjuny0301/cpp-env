@@ -352,6 +352,104 @@ void test_path_policy_counts_duplicates_and_sorts_snapshot_view()
     require(policy_catalog.find_catalog_path("images/cards/front.png") != nullptr, "catalog path lookup is available");
 }
 
+void test_manifest_path_policy_validation_summary_reports_manifest_totals_and_duplicates()
+{
+    using namespace quiz_vulkan::assets;
+
+    asset_manifest manifest;
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "body_font",
+        .type = asset_type::font,
+        .uri = "fonts/body.ttf",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "image_a",
+        .type = asset_type::image,
+        .uri = "asset://cards/front.png",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "bad_shader",
+        .type = asset_type::shader,
+        .uri = "asset://shaders/ui.txt",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "answer_sound",
+        .type = asset_type::sound,
+        .uri = "asset://sounds/%2e%2e/answer.wav",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "image_b",
+        .type = asset_type::image,
+        .uri = "ASSET:///cards/./front.png",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "main_deck",
+        .type = asset_type::deck,
+        .uri = "decks/main.quiz",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const asset_manifest_path_policy_validation_summary summary =
+        validate_asset_manifest_path_policy(manifest, resolver);
+
+    require(!summary.ok(), "manifest path policy summary reports diagnostics and duplicates");
+    require(summary.policy_catalog.entries.size() == 4U, "manifest summary keeps accepted policy entries");
+    require(summary.policy_catalog.diagnostics.size() == 3U, "manifest summary keeps policy diagnostics");
+    require(summary.snapshot_view.entries.size() == 4U, "manifest summary includes sorted snapshot entries");
+    require(summary.snapshot_view.diagnostics.size() == 3U, "manifest summary includes sorted snapshot diagnostics");
+
+    const asset_path_policy_kind_counts* font_counts = find_kind_counts(summary.manifest_kind_counts, asset_type::font);
+    const asset_path_policy_kind_counts* image_counts =
+        find_kind_counts(summary.manifest_kind_counts, asset_type::image);
+    const asset_path_policy_kind_counts* sound_counts =
+        find_kind_counts(summary.manifest_kind_counts, asset_type::sound);
+    const asset_path_policy_kind_counts* shader_counts =
+        find_kind_counts(summary.manifest_kind_counts, asset_type::shader);
+    const asset_path_policy_kind_counts* deck_counts = find_kind_counts(summary.manifest_kind_counts, asset_type::deck);
+
+    require(font_counts != nullptr, "manifest summary includes font totals");
+    require(font_counts->accepted_count == 1U && font_counts->rejected_count == 0U, "manifest font totals are stable");
+    require(image_counts != nullptr, "manifest summary includes image totals");
+    require(
+        image_counts->accepted_count == 2U && image_counts->rejected_count == 1U,
+        "manifest image totals include duplicate catalog diagnostics");
+    require(sound_counts != nullptr, "manifest summary includes sound totals");
+    require(
+        sound_counts->accepted_count == 0U && sound_counts->rejected_count == 1U,
+        "manifest sound totals map unresolved source diagnostics back to manifest type");
+    require(shader_counts != nullptr, "manifest summary includes shader totals");
+    require(
+        shader_counts->accepted_count == 0U && shader_counts->rejected_count == 1U,
+        "manifest shader totals include path policy rejections");
+    require(deck_counts != nullptr, "manifest summary includes deck totals");
+    require(deck_counts->accepted_count == 1U && deck_counts->rejected_count == 0U, "manifest deck totals are stable");
+
+    require(summary.duplicate_sources.size() == 1U, "manifest summary reports duplicate sources");
+    require(summary.duplicate_sources[0].type == asset_type::image, "duplicate source report records kind");
+    require(
+        summary.duplicate_sources[0].source_uri == "asset://cards/front.png",
+        "duplicate source report records normalized source");
+    require(
+        summary.duplicate_sources[0].entry_ids == std::vector<std::string>{"image_a", "image_b"},
+        "duplicate source report sorts entry ids");
+
+    require(summary.duplicate_catalog_paths.size() == 1U, "manifest summary reports duplicate catalog paths");
+    require(
+        summary.duplicate_catalog_paths[0].catalog_path == "images/cards/front.png",
+        "duplicate catalog path report records catalog path");
+    require(
+        summary.duplicate_catalog_paths[0].entry_ids == std::vector<std::string>{"image_a", "image_b"},
+        "duplicate catalog path report sorts entry ids");
+
+    require(summary.duplicate_cache_keys.size() == 1U, "manifest summary reports duplicate cache keys");
+    require(
+        summary.duplicate_cache_keys[0].cache_key == "image|asset://cards/front.png",
+        "duplicate cache key report records normalized cache key");
+    require(
+        summary.duplicate_cache_keys[0].entry_ids == std::vector<std::string>{"image_a", "image_b"},
+        "duplicate cache key report sorts entry ids");
+}
+
 } // namespace
 
 int main()
@@ -361,5 +459,6 @@ int main()
     test_path_policy_rejects_traversal_and_unsupported_paths();
     test_path_policy_catalog_carries_runtime_diagnostics();
     test_path_policy_counts_duplicates_and_sorts_snapshot_view();
+    test_manifest_path_policy_validation_summary_reports_manifest_totals_and_duplicates();
     return 0;
 }

@@ -122,6 +122,10 @@ static_assert(requires(
     render::render_image_texture_pipeline_request pipeline_request,
     render::render_image_texture_pipeline_result pipeline_result,
     render::render_image_texture_pipeline_status pipeline_status,
+    render::fake_image_texture_pipeline_entry_snapshot pipeline_entry,
+    render::fake_image_texture_pipeline_snapshot pipeline_snapshot,
+    const render::fake_image_texture_pipeline& pipeline,
+    render::fake_image_texture_pipeline& mutable_pipeline,
     render::render_image_ref image_ref,
     render::fake_image_texture_cache_entry_snapshot cache_entry,
     render::fake_image_texture_cache_snapshot cache_snapshot,
@@ -201,6 +205,39 @@ static_assert(requires(
     { render::pipeline_status_for_texture_result(render::render_image_texture_status::ready) }
         -> std::same_as<render::render_image_texture_pipeline_status>;
     pipeline_status;
+    { pipeline_entry.sequence } -> std::same_as<std::size_t&>;
+    { pipeline_entry.request } -> std::same_as<render::render_image_texture_pipeline_request&>;
+    { pipeline_entry.status } -> std::same_as<render::render_image_texture_pipeline_status&>;
+    { pipeline_entry.resolve_status } -> std::same_as<render::render_image_resolve_status&>;
+    { pipeline_entry.source_bytes_status } -> std::same_as<render::render_image_source_bytes_load_status&>;
+    { pipeline_entry.texture_status } -> std::same_as<render::render_image_texture_status&>;
+    { pipeline_entry.source_key } -> std::same_as<render::render_image_cache_key&>;
+    { pipeline_entry.texture_key } -> std::same_as<render::render_image_texture_key&>;
+    { pipeline_entry.texture } -> std::same_as<render::render_image_texture_handle&>;
+    { pipeline_entry.cache_hit } -> std::same_as<bool&>;
+    { pipeline_entry.encoded_byte_count } -> std::same_as<std::size_t&>;
+    { pipeline_entry.decode_metadata } -> std::same_as<render::render_image_decode_metadata&>;
+    { pipeline_entry.decoder_diagnostics } -> std::same_as<std::vector<render::render_image_decoder_diagnostic>&>;
+    { pipeline_entry.upload_count_before } -> std::same_as<std::size_t&>;
+    { pipeline_entry.upload_count_after } -> std::same_as<std::size_t&>;
+    { pipeline_entry.failed_upload_count_before } -> std::same_as<std::size_t&>;
+    { pipeline_entry.failed_upload_count_after } -> std::same_as<std::size_t&>;
+    { pipeline_entry.diagnostic } -> std::same_as<std::string&>;
+    { pipeline_snapshot.acquire_count } -> std::same_as<std::size_t&>;
+    { pipeline_snapshot.ready_count } -> std::same_as<std::size_t&>;
+    { pipeline_snapshot.failure_count } -> std::same_as<std::size_t&>;
+    { pipeline_snapshot.cache_hit_count } -> std::same_as<std::size_t&>;
+    { pipeline_snapshot.source_load_failure_count } -> std::same_as<std::size_t&>;
+    { pipeline_snapshot.decode_failure_count } -> std::same_as<std::size_t&>;
+    { pipeline_snapshot.upload_failure_count } -> std::same_as<std::size_t&>;
+    { pipeline_snapshot.invalidation_count } -> std::same_as<std::size_t&>;
+    { pipeline_snapshot.upload_diagnostics_available } -> std::same_as<bool&>;
+    { pipeline_snapshot.cache_snapshot } -> std::same_as<render::fake_image_texture_cache_snapshot&>;
+    { pipeline_snapshot.upload_snapshot } -> std::same_as<render::fake_image_texture_upload_snapshot&>;
+    { pipeline_snapshot.entries } -> std::same_as<std::vector<render::fake_image_texture_pipeline_entry_snapshot>&>;
+    { pipeline.diagnostic_snapshot() } -> std::same_as<render::fake_image_texture_pipeline_snapshot>;
+    { mutable_pipeline.invalidate_source(render::render_image_cache_key{}) } -> std::same_as<void>;
+    { mutable_pipeline.invalidate_texture(render::render_image_texture_key{}) } -> std::same_as<void>;
     { cache_entry.key } -> std::same_as<render::render_image_texture_key&>;
     { cache_entry.texture } -> std::same_as<render::render_image_texture_handle&>;
     { cache_entry.pixel_count } -> std::same_as<std::size_t&>;

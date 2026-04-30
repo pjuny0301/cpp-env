@@ -732,7 +732,7 @@ void test_texture_pipeline_resolves_loads_decodes_and_uploads_image_ref()
     ppm_image_decoder decoder;
     fake_image_texture_uploader uploader;
     fake_image_texture_cache cache(decoder, uploader);
-    fake_image_texture_pipeline pipeline(resolver, loader, cache);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
 
     render_image_ref image;
     image.uri = "  ./textures\\pipeline-success.ppm ";
@@ -754,6 +754,21 @@ void test_texture_pipeline_resolves_loads_decodes_and_uploads_image_ref()
     require(uploader.upload_requests.size() == 1, "texture pipeline reaches uploader once");
     require(uploader.upload_requests[0].sampler == image.sampler, "texture pipeline sends sampler to uploader");
     require(cache.cached_texture_count() == 1, "texture pipeline stores uploaded texture in cache");
+
+    const fake_image_texture_pipeline_snapshot snapshot = pipeline.diagnostic_snapshot();
+    require(snapshot.acquire_count == 1, "texture pipeline snapshot records acquire count");
+    require(snapshot.ready_count == 1, "texture pipeline snapshot records ready count");
+    require(snapshot.failure_count == 0, "texture pipeline snapshot reports no failures");
+    require(!snapshot.entries[0].cache_hit, "texture pipeline snapshot records first miss");
+    require(snapshot.entries[0].encoded_byte_count == make_ppm_2x1_encoded_bytes().size(), "snapshot records encoded bytes");
+    require(snapshot.entries[0].decode_metadata.decoder_id == "ppm_image_decoder", "snapshot records decoder id");
+    require(snapshot.entries[0].decode_metadata.width == 2, "snapshot records decoded width");
+    require(snapshot.entries[0].decode_metadata.decoded_byte_count == 8, "snapshot records decoded byte count");
+    require(snapshot.entries[0].upload_count_before == 0, "snapshot records upload count before acquire");
+    require(snapshot.entries[0].upload_count_after == 1, "snapshot records upload count after acquire");
+    require(snapshot.cache_snapshot.texture_count == 1, "snapshot includes cache state");
+    require(snapshot.upload_diagnostics_available, "snapshot reports upload diagnostics are available");
+    require(snapshot.upload_snapshot.upload_count == 1, "snapshot includes upload queue state");
 }
 
 void test_texture_pipeline_reports_source_load_failure()
@@ -765,7 +780,7 @@ void test_texture_pipeline_reports_source_load_failure()
     ppm_image_decoder decoder;
     fake_image_texture_uploader uploader;
     fake_image_texture_cache cache(decoder, uploader);
-    fake_image_texture_pipeline pipeline(resolver, loader, cache);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
 
     const render_image_texture_pipeline_result result = pipeline.acquire_texture(
         render_image_texture_pipeline_request{.uri = "textures/pipeline-missing.ppm"});
@@ -780,6 +795,17 @@ void test_texture_pipeline_reports_source_load_failure()
     require(!result.diagnostic.empty(), "texture pipeline source failure includes diagnostic");
     require(cache.cached_texture_count() == 0, "texture pipeline source failure does not cache texture");
     require(uploader.upload_requests.empty(), "texture pipeline source failure does not upload");
+
+    const fake_image_texture_pipeline_snapshot snapshot = pipeline.diagnostic_snapshot();
+    require(snapshot.acquire_count == 1, "source failure snapshot records acquire count");
+    require(snapshot.failure_count == 1, "source failure snapshot records failure count");
+    require(snapshot.source_load_failure_count == 1, "source failure snapshot counts loader failures");
+    require(snapshot.entries[0].status == render_image_texture_pipeline_status::source_load_failed, "snapshot records source load status");
+    require(snapshot.entries[0].source_bytes_status == render_image_source_bytes_load_status::missing_bytes, "snapshot records loader status");
+    require(snapshot.entries[0].encoded_byte_count == 0, "source failure snapshot records no encoded bytes");
+    require(!snapshot.entries[0].decode_metadata.has_image(), "source failure snapshot records no decoded metadata");
+    require(snapshot.entries[0].upload_count_before == 0, "source failure snapshot records upload count before");
+    require(snapshot.entries[0].upload_count_after == 0, "source failure snapshot records unchanged upload count");
 }
 
 void test_texture_pipeline_reports_decode_failure()
@@ -795,7 +821,7 @@ void test_texture_pipeline_reports_decode_failure()
     ppm_image_decoder decoder;
     fake_image_texture_uploader uploader;
     fake_image_texture_cache cache(decoder, uploader);
-    fake_image_texture_pipeline pipeline(resolver, loader, cache);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
 
     const render_image_texture_pipeline_result result = pipeline.acquire_texture(
         render_image_texture_pipeline_request{.uri = "textures/pipeline-decode.ppm"});
@@ -808,6 +834,18 @@ void test_texture_pipeline_reports_decode_failure()
     require(!result.diagnostic.empty(), "texture pipeline decode failure includes diagnostic");
     require(result.texture.decode_metadata.decoder_id == "ppm_image_decoder", "decode failure preserves decoder id");
     require(uploader.upload_requests.empty(), "decode failure does not reach uploader");
+
+    const fake_image_texture_pipeline_snapshot snapshot = pipeline.diagnostic_snapshot();
+    require(snapshot.acquire_count == 1, "decode failure snapshot records acquire count");
+    require(snapshot.decode_failure_count == 1, "decode failure snapshot counts decode failures");
+    require(snapshot.upload_snapshot.upload_count == 0, "decode failure snapshot records no uploads");
+    require(snapshot.entries[0].texture_status == render_image_texture_status::decode_failed, "snapshot records texture decode status");
+    require(snapshot.entries[0].decode_metadata.decoder_id == "ppm_image_decoder", "snapshot records failed decoder id");
+    require(
+        snapshot.entries[0].decode_metadata.encoded_byte_count == make_short_ppm_2x1_encoded_bytes().size(),
+        "snapshot records failed decode encoded byte count");
+    require(snapshot.entries[0].upload_count_before == 0, "decode failure snapshot records upload count before");
+    require(snapshot.entries[0].upload_count_after == 0, "decode failure snapshot records upload count after");
 }
 
 void test_texture_pipeline_reuses_cache_hits()
@@ -823,7 +861,7 @@ void test_texture_pipeline_reuses_cache_hits()
     fake_image_decoder decoder;
     fake_image_texture_uploader uploader;
     fake_image_texture_cache cache(decoder, uploader);
-    fake_image_texture_pipeline pipeline(resolver, loader, cache);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
 
     const render_image_texture_pipeline_request request{
         .uri = "textures/pipeline-cache.fake",
@@ -839,6 +877,36 @@ void test_texture_pipeline_reuses_cache_hits()
     require(loader.load_requests.size() == 2, "texture pipeline loads bytes deterministically before cache access");
     require(decoder.decode_requests.size() == 1, "texture pipeline cache hit avoids second decode");
     require(uploader.upload_requests.size() == 1, "texture pipeline cache hit avoids second upload");
+
+    fake_image_texture_pipeline_snapshot after_hit = pipeline.diagnostic_snapshot();
+    require(after_hit.acquire_count == 2, "pipeline snapshot records cache-hit acquire count");
+    require(after_hit.ready_count == 2, "pipeline snapshot records cache-hit ready count");
+    require(after_hit.cache_hit_count == 1, "pipeline snapshot counts cache hits");
+    require(after_hit.entries[0].upload_count_before == 0, "first pipeline entry starts with no uploads");
+    require(after_hit.entries[0].upload_count_after == 1, "first pipeline entry uploads once");
+    require(after_hit.entries[1].cache_hit, "second pipeline entry records cache hit");
+    require(after_hit.entries[1].upload_count_before == 1, "cache-hit pipeline entry sees previous upload");
+    require(after_hit.entries[1].upload_count_after == 1, "cache-hit pipeline entry does not upload");
+    require(after_hit.upload_snapshot.upload_count == 1, "pipeline snapshot records one upload after cache hit");
+
+    pipeline.invalidate_source(source.source.cache_key());
+    const render_image_texture_pipeline_result third = pipeline.acquire_texture(request);
+    require(third.ok(), "texture pipeline reacquires after source invalidation");
+    require(!third.texture.cache_hit, "texture pipeline invalidation forces cache miss");
+    require(third.texture.texture.id != first.texture.texture.id, "texture pipeline invalidation creates new handle");
+    require(decoder.decode_requests.size() == 2, "texture pipeline invalidation forces second decode");
+    require(uploader.upload_requests.size() == 2, "texture pipeline invalidation forces second upload");
+
+    const fake_image_texture_pipeline_snapshot after_invalidation = pipeline.diagnostic_snapshot();
+    require(after_invalidation.acquire_count == 3, "pipeline snapshot records post-invalidation acquire");
+    require(after_invalidation.invalidation_count == 1, "pipeline snapshot records invalidation count");
+    require(after_invalidation.cache_hit_count == 1, "pipeline snapshot preserves cache-hit count after invalidation");
+    require(after_invalidation.entries[2].sequence == 3, "pipeline snapshot keeps deterministic entry sequence");
+    require(!after_invalidation.entries[2].cache_hit, "post-invalidation entry records cache miss");
+    require(after_invalidation.entries[2].upload_count_before == 1, "post-invalidation entry records upload count before");
+    require(after_invalidation.entries[2].upload_count_after == 2, "post-invalidation entry records upload count after");
+    require(after_invalidation.cache_snapshot.texture_count == 1, "post-invalidation snapshot includes current cache state");
+    require(after_invalidation.upload_snapshot.upload_count == 2, "post-invalidation snapshot includes upload state");
 }
 
 void test_sampler_policy_validation_rejects_unknown_enum_values()

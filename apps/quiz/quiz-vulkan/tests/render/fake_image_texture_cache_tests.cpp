@@ -7,6 +7,7 @@
 
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <functional>
 #include <string>
@@ -217,6 +218,37 @@ public:
 
     mutable int support_request_count = 0;
     mutable int decode_request_count = 0;
+};
+
+class source_upload_failure_then_placeholder_uploader final
+    : public quiz_vulkan::render::image_texture_uploader_interface {
+public:
+    quiz_vulkan::render::render_image_texture_upload_result upload(
+        const quiz_vulkan::render::render_image_texture_upload_request& request) override
+    {
+        ++upload_request_count;
+        if (quiz_vulkan::render::is_fake_image_texture_placeholder_key(request.key)) {
+            return placeholder_uploader.upload(request);
+        }
+
+        ++rejected_source_upload_count;
+        return quiz_vulkan::render::render_image_texture_upload_result{
+            .status = quiz_vulkan::render::render_image_texture_upload_status::invalid_image,
+            .generation_id = 100 + static_cast<std::uint64_t>(rejected_source_upload_count),
+            .key = request.key,
+            .sampler = request.sampler,
+            .texture = {},
+            .pixel_count = quiz_vulkan::render::render_image_checked_pixel_count(request.image),
+            .pixel_byte_count = quiz_vulkan::render::expected_render_decoded_image_byte_count(request.image),
+            .decoded_byte_count = request.image.pixels.size(),
+            .staging_byte_count = 0,
+            .diagnostic = "forced source texture upload failure",
+        };
+    }
+
+    int upload_request_count = 0;
+    int rejected_source_upload_count = 0;
+    quiz_vulkan::render::fake_image_texture_uploader placeholder_uploader;
 };
 
 const quiz_vulkan::render::fake_image_texture_cache_entry_snapshot* find_snapshot_entry(
@@ -605,10 +637,31 @@ void test_decoder_chain_routes_supported_formats()
     require(fake_decoded.metadata.decoder_id == "fake_image_decoder", "decoder chain preserves fake decoder id");
     require(fake_decoded.decoder_diagnostics.size() == 1, "decoder chain reports selected fake diagnostic");
     require(fake_decoded.decoder_diagnostics[0].decoder_id == "decoder[0]", "decoder chain names first default decoder");
+    require(fake_decoded.decoder_diagnostics[0].candidate_index == 0, "fake candidate records index");
+    require(fake_decoded.decoder_diagnostics[0].candidate_order == 1, "fake candidate records stable order");
+    require(fake_decoded.decoder_diagnostics[0].extension_hint == "fake", "fake candidate records extension hint");
+    require(
+        fake_decoded.decoder_diagnostics[0].detected_format == render_image_encoded_format::unknown,
+        "fake candidate records unknown detected format");
+    require(
+        fake_decoded.decoder_diagnostics[0].detected_format_name == "unknown",
+        "fake candidate records detected format name");
+    require(
+        fake_decoded.decoder_diagnostics[0].detected_mime_type == "application/octet-stream",
+        "fake candidate records fallback mime type");
+    require(
+        fake_decoded.decoder_diagnostics[0].source_kind == render_image_source_kind::local_path,
+        "fake candidate records source kind");
+    require(fake_decoded.decoder_diagnostics[0].source_kind_name == "local_path", "fake candidate records source kind name");
+    require(fake_decoded.decoder_diagnostics[0].support_checked, "fake candidate records support check");
     require(fake_decoded.decoder_diagnostics[0].supported, "decoder chain marks selected fake decoder supported");
+    require(fake_decoded.decoder_diagnostics[0].decode_attempted, "fake candidate records decode attempt");
+    require(fake_decoded.decoder_diagnostics[0].terminal_candidate, "fake candidate terminates chain");
     require(
         fake_decoded.decoder_diagnostics[0].status == render_image_decode_status::decoded,
         "decoder chain records fake decode status");
+    require(!fake_decoded.decoder_diagnostics[0].support_diagnostic.empty(), "fake candidate records support summary");
+    require(!fake_decoded.decoder_diagnostics[0].decode_diagnostic.empty(), "fake candidate records decode summary");
 
     const render_image_decode_request ppm_request{
         .source = ppm_source,
@@ -621,8 +674,24 @@ void test_decoder_chain_routes_supported_formats()
     require(ppm_decoded.metadata.decoder_id == "ppm_image_decoder", "decoder chain preserves ppm decoder id");
     require(ppm_decoded.decoder_diagnostics.size() == 2, "decoder chain reports skipped and selected decoders");
     require(!ppm_decoded.decoder_diagnostics[0].supported, "decoder chain marks skipped fake decoder unsupported");
+    require(!ppm_decoded.decoder_diagnostics[0].decode_attempted, "skipped fake decoder records no decode attempt");
+    require(!ppm_decoded.decoder_diagnostics[0].terminal_candidate, "skipped fake decoder does not terminate chain");
+    require(ppm_decoded.decoder_diagnostics[0].extension_hint == "ppm", "skipped fake decoder records ppm extension");
+    require(
+        ppm_decoded.decoder_diagnostics[0].detected_format == render_image_encoded_format::ppm,
+        "skipped fake decoder records detected ppm format");
+    require(
+        ppm_decoded.decoder_diagnostics[0].detected_mime_type == "image/x-portable-pixmap",
+        "skipped fake decoder records detected ppm mime");
+    require(ppm_decoded.decoder_diagnostics[0].recognized_signature, "skipped fake decoder records recognized signature");
+    require(ppm_decoded.decoder_diagnostics[0].candidate_priority == 0, "first ppm candidate records priority");
     require(ppm_decoded.decoder_diagnostics[1].supported, "decoder chain marks selected ppm decoder supported");
     require(ppm_decoded.decoder_diagnostics[1].decoder_id == "decoder[1]", "decoder chain names second default decoder");
+    require(ppm_decoded.decoder_diagnostics[1].candidate_index == 1, "selected ppm decoder records index");
+    require(ppm_decoded.decoder_diagnostics[1].candidate_order == 2, "selected ppm decoder records order");
+    require(ppm_decoded.decoder_diagnostics[1].candidate_priority == 1, "second ppm candidate records priority");
+    require(ppm_decoded.decoder_diagnostics[1].decode_attempted, "selected ppm decoder records decode attempt");
+    require(ppm_decoded.decoder_diagnostics[1].terminal_candidate, "selected ppm decoder terminates chain");
     require(fake_decoder.decode_requests.size() == 1, "decoder chain decodes fake source only once");
 }
 
@@ -649,14 +718,77 @@ void test_decoder_chain_reports_unsupported_sources()
         decoded.status == render_image_decode_status::unsupported_format,
         "decoder chain unsupported source reports unsupported format");
     require(!decoded.diagnostic.empty(), "decoder chain unsupported source includes diagnostic");
+    require(decoded.metadata.decoder_id == "image_decoder_chain", "decoder chain fallback reports decoder id");
     require(decoded.metadata.encoded_byte_count == request.encoded_bytes.size(), "decoder chain failure reports encoded byte count");
     require(decoded.decoder_diagnostics.size() == 1, "decoder chain failure reports checked decoder");
     require(decoded.decoder_diagnostics[0].decoder_id == "ppm-fixture", "decoder chain failure uses explicit decoder id");
+    require(decoded.decoder_diagnostics[0].candidate_index == 0, "unsupported candidate records index");
+    require(decoded.decoder_diagnostics[0].candidate_order == 1, "unsupported candidate records order");
+    require(decoded.decoder_diagnostics[0].extension_hint == "png", "unsupported candidate records extension");
+    require(
+        decoded.decoder_diagnostics[0].detected_format == render_image_encoded_format::ppm,
+        "unsupported candidate records detected bytes separately from extension");
+    require(
+        decoded.decoder_diagnostics[0].detected_mime_type == "image/x-portable-pixmap",
+        "unsupported candidate records detected mime");
+    require(
+        decoded.decoder_diagnostics[0].source_kind == render_image_source_kind::asset_uri,
+        "unsupported candidate records asset source kind");
+    require(decoded.decoder_diagnostics[0].source_kind_name == "asset_uri", "unsupported candidate records source kind name");
+    require(decoded.decoder_diagnostics[0].support_checked, "unsupported candidate records support check");
     require(!decoded.decoder_diagnostics[0].supported, "decoder chain failure marks decoder unsupported");
+    require(!decoded.decoder_diagnostics[0].decode_attempted, "unsupported candidate records no decode attempt");
+    require(decoded.decoder_diagnostics[0].terminal_candidate, "unsupported candidate terminates fallback chain");
     require(
         decoded.decoder_diagnostics[0].status == render_image_decode_status::unsupported_format,
         "decoder chain failure records unsupported status");
+    require(!decoded.decoder_diagnostics[0].support_diagnostic.empty(), "unsupported candidate records support summary");
     require(!decoded.decoder_diagnostics[0].diagnostic.empty(), "decoder chain failure records support diagnostic");
+}
+
+void test_decoder_chain_reports_candidate_decode_failures()
+{
+    using namespace quiz_vulkan::render;
+
+    ppm_image_decoder ppm_decoder;
+    image_decoder_chain decoder_chain;
+    decoder_chain.add_decoder("ppm-fixture", ppm_decoder);
+    const render_image_decode_request request{
+        .source = render_resolved_image_source{
+            .original_uri = "asset://broken.ppm",
+            .normalized_uri = "asset://broken.ppm",
+            .kind = render_image_source_kind::asset_uri,
+        },
+        .encoded_bytes = make_png_signature_fixture_bytes(),
+    };
+
+    require(decoder_chain.supports(request), "decoder chain supports ppm extension before decode failure");
+    const render_image_decode_result decoded = decoder_chain.decode(request);
+    require(!decoded.ok(), "decoder chain returns deterministic decode failure result");
+    require(
+        decoded.status == render_image_decode_status::unsupported_format,
+        "decoder chain preserves candidate decode failure status");
+    require(decoded.decoder_diagnostics.size() == 1, "decode failure records one candidate");
+
+    const render_image_decoder_diagnostic& candidate = decoded.decoder_diagnostics[0];
+    require(candidate.decoder_id == "ppm-fixture", "decode failure records candidate id");
+    require(candidate.candidate_index == 0, "decode failure records candidate index");
+    require(candidate.candidate_order == 1, "decode failure records candidate order");
+    require(candidate.candidate_priority == 100, "decode failure combines extension and mime ordering");
+    require(candidate.extension_hint == "ppm", "decode failure records extension hint");
+    require(candidate.detected_format == render_image_encoded_format::png, "decode failure records detected PNG bytes");
+    require(candidate.detected_format_name == "png", "decode failure records detected format name");
+    require(candidate.detected_mime_type == "image/png", "decode failure records detected mime");
+    require(candidate.source_kind == render_image_source_kind::asset_uri, "decode failure records source kind");
+    require(candidate.source_kind_name == "asset_uri", "decode failure records source kind name");
+    require(candidate.recognized_signature, "decode failure records recognized signature");
+    require(candidate.support_checked, "decode failure records support check");
+    require(candidate.supported, "decode failure records supported candidate");
+    require(candidate.decode_attempted, "decode failure records decode attempt");
+    require(candidate.terminal_candidate, "decode failure marks terminal candidate");
+    require(!candidate.support_diagnostic.empty(), "decode failure records support summary");
+    require(!candidate.decode_diagnostic.empty(), "decode failure records decode summary");
+    require(!candidate.diagnostic.empty(), "decode failure records candidate summary");
 }
 
 void test_source_bytes_loader_returns_registered_local_bytes()
@@ -732,6 +864,160 @@ void test_source_bytes_loader_reports_explicit_failures()
         "invalid source key reports missing source");
     require(!invalid.diagnostic.empty(), "invalid source key includes diagnostic");
     require(loader.load_requests.size() == 4, "source bytes loader records failure requests");
+}
+
+void test_source_bytes_loader_loads_data_uri_bytes()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+
+    const render_image_resolve_result base64_resolved = resolver.resolve(
+        render_image_resolve_request{.uri = "DATA:image/png;base64,iVBORw0KGgo="});
+    require(base64_resolved.ok(), "data URI source resolves");
+    require(base64_resolved.source.kind == render_image_source_kind::data_uri, "data URI source kind is preserved");
+    require(base64_resolved.source.normalized_uri.starts_with("data:"), "data URI scheme is normalized");
+    require(
+        base64_resolved.source.cache_key() == base64_resolved.source.normalized_uri,
+        "data URI cache key stays source normalized URI");
+    require(!loader.has_source_bytes(base64_resolved.source), "data URI bytes do not require registration");
+
+    const render_image_data_uri_decode_result base64_decoded = decode_render_image_data_uri(
+        base64_resolved.source.cache_key());
+    require(base64_decoded.ok(), "data URI decoder accepts base64 payload");
+    require(base64_decoded.status == render_image_data_uri_decode_status::decoded, "base64 data URI reports decoded");
+    require(base64_decoded.media_type == "image/png", "base64 data URI preserves media type");
+    require(base64_decoded.base64_encoded, "base64 data URI records base64 metadata");
+    require(render_image_data_uri_decode_status_name(base64_decoded.status) == "decoded", "data URI status is named");
+
+    const render_image_source_bytes_load_result base64_loaded = loader.load(
+        render_image_source_bytes_load_request{.source = base64_resolved.source});
+    require(base64_loaded.ok(), "source bytes loader loads base64 data URI bytes");
+    require(
+        base64_loaded.status == render_image_source_bytes_load_status::loaded,
+        "base64 data URI reports loaded source bytes");
+    require(
+        base64_loaded.source.cache_key() == base64_resolved.source.cache_key(),
+        "base64 data URI load preserves cache key");
+    require(base64_loaded.encoded_bytes.size() == 8, "base64 data URI decodes PNG signature byte count");
+    require(base64_loaded.encoded_bytes[0] == std::byte{0x89}, "base64 data URI decodes PNG signature byte 0");
+    require(base64_loaded.encoded_bytes[1] == std::byte{0x50}, "base64 data URI decodes PNG signature byte 1");
+    require(base64_loaded.encoded_bytes[2] == std::byte{0x4e}, "base64 data URI decodes PNG signature byte 2");
+    require(base64_loaded.encoded_bytes[3] == std::byte{0x47}, "base64 data URI decodes PNG signature byte 3");
+    require(base64_loaded.encoded_bytes[4] == std::byte{0x0d}, "base64 data URI decodes PNG signature byte 4");
+    require(base64_loaded.encoded_bytes[5] == std::byte{0x0a}, "base64 data URI decodes PNG signature byte 5");
+    require(base64_loaded.encoded_bytes[6] == std::byte{0x1a}, "base64 data URI decodes PNG signature byte 6");
+    require(base64_loaded.encoded_bytes[7] == std::byte{0x0a}, "base64 data URI decodes PNG signature byte 7");
+
+    const render_image_resolve_result percent_resolved = resolver.resolve(
+        render_image_resolve_request{.uri = "data:image/x-portable-pixmap,P6%0A1%201%0A255%0A%00%00%FF"});
+    require(percent_resolved.ok(), "percent encoded data URI source resolves");
+    const render_image_data_uri_decode_result percent_decoded = decode_render_image_data_uri(
+        percent_resolved.source.cache_key());
+    require(percent_decoded.ok(), "data URI decoder accepts percent encoded payload");
+    require(!percent_decoded.base64_encoded, "percent data URI records non-base64 payload");
+    require(
+        percent_decoded.media_type == "image/x-portable-pixmap",
+        "percent data URI preserves media type");
+
+    const render_image_source_bytes_load_result percent_loaded = loader.load(
+        render_image_source_bytes_load_request{.source = percent_resolved.source});
+    require(percent_loaded.ok(), "source bytes loader loads percent encoded data URI bytes");
+    require(
+        percent_loaded.encoded_bytes == make_ppm_1x1_encoded_bytes(),
+        "percent encoded data URI decodes deterministic PPM bytes");
+
+    const render_image_resolve_result raw_resolved = resolver.resolve(
+        render_image_resolve_request{.uri = "data:image/test,raw-image-bytes"});
+    require(raw_resolved.ok(), "raw data URI source resolves");
+    std::vector<std::byte> expected_raw;
+    append_ascii(expected_raw, "raw-image-bytes");
+    const render_image_source_bytes_load_result raw_loaded = loader.load(
+        render_image_source_bytes_load_request{.source = raw_resolved.source});
+    require(raw_loaded.ok(), "source bytes loader loads raw data URI bytes");
+    require(raw_loaded.encoded_bytes == expected_raw, "raw data URI payload is copied as bytes");
+    require(loader.load_requests.size() == 3, "data URI loads are recorded");
+}
+
+void test_source_bytes_loader_rejects_malformed_data_uris()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+
+    const render_image_resolve_result bad_metadata_resolved = resolver.resolve(
+        render_image_resolve_request{.uri = "data:image/png;badflag,AAAA"});
+    require(bad_metadata_resolved.ok(), "bad metadata data URI still resolves by source kind");
+    const render_image_data_uri_decode_result bad_metadata_decoded = decode_render_image_data_uri(
+        bad_metadata_resolved.source.cache_key());
+    require(!bad_metadata_decoded.ok(), "bad metadata data URI does not decode");
+    require(
+        bad_metadata_decoded.status == render_image_data_uri_decode_status::invalid_metadata,
+        "bad metadata data URI reports metadata failure");
+    require(!bad_metadata_decoded.diagnostic.empty(), "bad metadata data URI includes decode diagnostic");
+
+    const render_image_source_bytes_load_result bad_metadata_loaded = loader.load(
+        render_image_source_bytes_load_request{.source = bad_metadata_resolved.source});
+    require(!bad_metadata_loaded.ok(), "source bytes loader rejects bad metadata data URI");
+    require(
+        bad_metadata_loaded.status == render_image_source_bytes_load_status::malformed_data_uri,
+        "bad metadata data URI reports malformed load status");
+    require(!bad_metadata_loaded.diagnostic.empty(), "bad metadata load includes diagnostic");
+
+    const render_image_resolve_result bad_base64_resolved = resolver.resolve(
+        render_image_resolve_request{.uri = "data:image/png;base64,@@@@"});
+    require(bad_base64_resolved.ok(), "bad base64 data URI still resolves by source kind");
+    const render_image_data_uri_decode_result bad_base64_decoded = decode_render_image_data_uri(
+        bad_base64_resolved.source.cache_key());
+    require(!bad_base64_decoded.ok(), "bad base64 data URI does not decode");
+    require(
+        bad_base64_decoded.status == render_image_data_uri_decode_status::invalid_base64,
+        "bad base64 data URI reports base64 failure");
+
+    const render_image_source_bytes_load_result bad_base64_loaded = loader.load(
+        render_image_source_bytes_load_request{.source = bad_base64_resolved.source});
+    require(!bad_base64_loaded.ok(), "source bytes loader rejects bad base64 data URI");
+    require(
+        bad_base64_loaded.status == render_image_source_bytes_load_status::malformed_data_uri,
+        "bad base64 data URI reports malformed load status");
+    require(!bad_base64_loaded.diagnostic.empty(), "bad base64 load includes diagnostic");
+
+    const render_image_resolve_result bad_percent_resolved = resolver.resolve(
+        render_image_resolve_request{.uri = "data:image/png,%zz"});
+    require(bad_percent_resolved.ok(), "bad percent data URI still resolves by source kind");
+    const render_image_source_bytes_load_result bad_percent_loaded = loader.load(
+        render_image_source_bytes_load_request{.source = bad_percent_resolved.source});
+    require(!bad_percent_loaded.ok(), "source bytes loader rejects bad percent data URI");
+    require(
+        bad_percent_loaded.status == render_image_source_bytes_load_status::malformed_data_uri,
+        "bad percent data URI reports malformed load status");
+    require(!bad_percent_loaded.diagnostic.empty(), "bad percent load includes diagnostic");
+
+    const render_image_resolve_result empty_payload_resolved = resolver.resolve(
+        render_image_resolve_request{.uri = "data:image/png;base64,"});
+    require(empty_payload_resolved.ok(), "empty data URI still resolves by source kind");
+    const render_image_source_bytes_load_result empty_payload_loaded = loader.load(
+        render_image_source_bytes_load_request{.source = empty_payload_resolved.source});
+    require(!empty_payload_loaded.ok(), "source bytes loader rejects empty data URI payload");
+    require(
+        empty_payload_loaded.status == render_image_source_bytes_load_status::empty_bytes,
+        "empty data URI payload reports empty bytes");
+    require(!empty_payload_loaded.diagnostic.empty(), "empty data URI payload includes diagnostic");
+
+    const render_resolved_image_source missing_comma_source{
+        .original_uri = "data:image/png;base64AAAA",
+        .normalized_uri = "data:image/png;base64AAAA",
+        .kind = render_image_source_kind::data_uri,
+    };
+    const render_image_source_bytes_load_result missing_comma_loaded = loader.load(
+        render_image_source_bytes_load_request{.source = missing_comma_source});
+    require(!missing_comma_loaded.ok(), "source bytes loader rejects comma-less data URI");
+    require(
+        missing_comma_loaded.status == render_image_source_bytes_load_status::malformed_data_uri,
+        "comma-less data URI reports malformed load status");
+    require(loader.load_requests.size() == 5, "malformed data URI loads are recorded");
 }
 
 void test_texture_cache_can_use_loaded_source_bytes()
@@ -1145,6 +1431,209 @@ void test_texture_cache_uses_injected_texture_uploader()
     require(snapshot.entries[0].sampler == request.sampler, "injected uploader snapshot records sampler");
     require(snapshot.entries[0].staging_byte_count == 4, "injected uploader snapshot records staging bytes");
     require(snapshot.entries[0].texture.id == first.texture.id, "injected uploader snapshot matches cache handle");
+}
+
+void test_texture_cache_placeholder_policy_reuses_decode_failure_texture()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/placeholder-decode.png"})
+                                                    .source;
+    render_image_sampler_policy sampler;
+    sampler.min_filter = render_image_filter::nearest;
+    sampler.wrap_u = render_image_wrap_mode::repeat;
+
+    fake_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    fake_image_texture_placeholder_policy policy{
+        .enabled = true,
+        .width = 3,
+        .height = 2,
+    };
+    cache.set_placeholder_texture_policy(policy);
+
+    const render_image_texture_request request{.source = source, .sampler = sampler};
+    const render_image_texture_key requested_key = make_render_image_texture_key(request);
+    const render_image_texture_key placeholder_key = make_fake_image_texture_placeholder_key(
+        policy,
+        fake_image_texture_placeholder_reason::decode_failed,
+        requested_key);
+
+    const render_image_texture_result first = cache.acquire_texture(request);
+    const render_image_texture_result second = cache.acquire_texture(request);
+    require(first.ok(), "enabled placeholder policy creates texture for decode failure");
+    require(second.ok(), "enabled placeholder policy reacquires decode failure texture");
+    require(!first.cache_hit, "first placeholder decode failure is a cache miss");
+    require(second.cache_hit, "second placeholder decode failure is a cache hit");
+    require(first.key == placeholder_key, "placeholder decode failure uses deterministic placeholder key");
+    require(second.key == placeholder_key, "placeholder decode failure reuses deterministic placeholder key");
+    require(is_fake_image_texture_placeholder_key(first.key), "placeholder decode failure key is identifiable");
+    require(first.key.sampler == sampler, "placeholder decode failure preserves sampler policy");
+    require(first.texture.width == 3, "placeholder decode failure uses configured width");
+    require(first.texture.height == 2, "placeholder decode failure uses configured height");
+    require(second.texture.id == first.texture.id, "placeholder decode failure cache hit reuses handle");
+    require(!first.diagnostic.empty(), "placeholder decode failure includes diagnostic");
+    require(decoder.support_requests.size() == 2, "decode failure still checks source support on retries");
+    require(decoder.decode_requests.empty(), "unsupported decode failure does not call decode");
+    require(uploader.upload_requests.size() == 1, "placeholder decode failure uploads once");
+    require(uploader.upload_requests[0].key == placeholder_key, "placeholder upload uses placeholder key");
+    require(uploader.upload_requests[0].sampler == sampler, "placeholder upload preserves sampler");
+    require(uploader.upload_requests[0].image.width == 3, "placeholder upload uses configured image width");
+    require(uploader.upload_requests[0].image.height == 2, "placeholder upload uses configured image height");
+
+    const fake_image_texture_cache_snapshot snapshot = cache.diagnostic_snapshot();
+    require(snapshot.placeholder_policy_enabled, "placeholder snapshot reports enabled policy");
+    require(snapshot.placeholder_policy.width == 3, "placeholder snapshot records policy width");
+    require(snapshot.placeholder_policy.height == 2, "placeholder snapshot records policy height");
+    require(snapshot.placeholder_policy_request_count == 2, "placeholder snapshot counts fallback requests");
+    require(snapshot.placeholder_policy_cache_hit_count == 1, "placeholder snapshot counts fallback cache hit");
+    require(snapshot.placeholder_policy_upload_count == 1, "placeholder snapshot counts placeholder upload");
+    require(snapshot.placeholder_policy_texture_count == 1, "placeholder snapshot counts resident placeholder texture");
+    require(snapshot.placeholder_fallback_texture_count == 1, "placeholder upload readiness reports fallback texture");
+    require(snapshot.cached_pixel_count == 6, "placeholder snapshot tracks configured pixel count");
+    require(snapshot.cached_pixel_byte_count == 24, "placeholder snapshot tracks configured pixel bytes");
+    require(snapshot.placeholder_snapshots.size() == 2, "placeholder snapshot records fallback attempts");
+    require(snapshot.placeholder_snapshots[0].sequence == 1, "first placeholder attempt has deterministic sequence");
+    require(!snapshot.placeholder_snapshots[0].cache_hit, "first placeholder snapshot records cache miss");
+    require(snapshot.placeholder_snapshots[1].cache_hit, "second placeholder snapshot records cache hit");
+    require(
+        snapshot.placeholder_snapshots[1].texture.id == first.texture.id,
+        "placeholder cache-hit snapshot records reused handle");
+
+    const fake_image_texture_cache_entry_snapshot* entry = find_snapshot_entry(
+        snapshot,
+        placeholder_key.source_key);
+    require(entry != nullptr, "placeholder texture appears in cache entries");
+    require(entry->placeholder_texture, "placeholder cache entry is marked as placeholder");
+    require(
+        entry->placeholder_reason == fake_image_texture_placeholder_reason::decode_failed,
+        "placeholder cache entry records decode failure reason");
+    require(entry->requested_key == requested_key, "placeholder cache entry records requested key");
+    require(entry->upload_readiness.placeholder_fallback, "placeholder cache entry records fallback readiness");
+    require(!entry->placeholder_diagnostic.empty(), "placeholder cache entry records diagnostic");
+}
+
+void test_texture_cache_placeholder_policy_covers_failure_reasons()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_image_texture_placeholder_policy policy{
+        .enabled = true,
+        .width = 2,
+        .height = 2,
+    };
+    const render_image_sampler_policy sampler;
+
+    fake_image_decoder unsupported_decoder;
+    fake_image_texture_cache unsupported_cache(unsupported_decoder);
+    unsupported_cache.set_placeholder_texture_policy(policy);
+    const render_resolved_image_source unsupported_source{
+        .original_uri = "zip://deck/card.fake",
+        .normalized_uri = "zip://deck/card.fake",
+        .kind = render_image_source_kind::unsupported,
+    };
+    const render_image_texture_result unsupported = unsupported_cache.acquire_texture(
+        render_image_texture_request{.source = unsupported_source, .sampler = sampler});
+    require(unsupported.ok(), "placeholder policy handles unsupported source kind");
+    require(
+        unsupported.key.source_key
+            == "placeholder://image/resolve_failed/zip://deck/card.fake",
+        "unsupported source uses resolve-failed placeholder key");
+    require(unsupported.texture.width == 2, "unsupported source placeholder uses policy width");
+    require(unsupported.texture.height == 2, "unsupported source placeholder uses policy height");
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source remote_source = resolver.resolve(
+        render_image_resolve_request{.uri = "https://example.test/missing.fake"})
+                                                       .source;
+    fake_image_decoder remote_decoder;
+    fake_image_texture_cache remote_cache(remote_decoder);
+    remote_cache.set_placeholder_texture_policy(policy);
+    const render_image_texture_result remote = remote_cache.acquire_texture(
+        render_image_texture_request{.source = remote_source, .sampler = sampler});
+    require(remote.ok(), "placeholder policy handles remote source failure");
+    require(
+        remote.key.source_key.starts_with("placeholder://image/source_load_failed/"),
+        "remote source uses source-load placeholder key");
+    require(remote.texture.width == 2, "remote placeholder uses policy width");
+    require(remote_decoder.support_requests.empty(), "remote placeholder does not fetch or decode");
+
+    const render_resolved_image_source malformed_source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/placeholder-malformed.fake"})
+                                                          .source;
+    malformed_payload_decoder malformed_decoder;
+    fake_image_texture_cache malformed_cache(malformed_decoder);
+    malformed_cache.set_placeholder_texture_policy(policy);
+    const render_image_texture_result malformed = malformed_cache.acquire_texture(
+        render_image_texture_request{.source = malformed_source, .sampler = sampler});
+    require(malformed.ok(), "placeholder policy handles invalid decoded payload");
+    require(
+        malformed.key.source_key.starts_with("placeholder://image/upload_failed/"),
+        "malformed payload uses upload-failed placeholder key");
+    require(malformed.texture.width == 2, "malformed payload placeholder uses policy width");
+    require(malformed_decoder.decode_request_count == 1, "malformed payload still decodes once");
+
+    const render_resolved_image_source upload_source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/placeholder-upload.fake"})
+                                                       .source;
+    fake_image_decoder upload_decoder;
+    source_upload_failure_then_placeholder_uploader upload_failure;
+    fake_image_texture_cache upload_cache(upload_decoder, upload_failure);
+    upload_cache.set_placeholder_texture_policy(policy);
+    const render_image_texture_result uploaded = upload_cache.acquire_texture(
+        render_image_texture_request{.source = upload_source, .sampler = sampler});
+    require(uploaded.ok(), "placeholder policy handles uploader failure");
+    require(
+        uploaded.key.source_key.starts_with("placeholder://image/upload_failed/"),
+        "uploader failure uses upload-failed placeholder key");
+    require(upload_failure.rejected_source_upload_count == 1, "source uploader failure is exercised");
+    require(upload_failure.upload_request_count == 2, "placeholder upload retries through uploader boundary");
+    require(
+        upload_failure.placeholder_uploader.upload_requests.size() == 1,
+        "placeholder texture upload is delegated once");
+
+    const fake_image_texture_cache_snapshot upload_snapshot = upload_cache.diagnostic_snapshot();
+    require(upload_snapshot.placeholder_policy_request_count == 1, "upload failure snapshot counts placeholder request");
+    require(upload_snapshot.placeholder_policy_upload_count == 1, "upload failure snapshot counts placeholder upload");
+    require(
+        upload_snapshot.placeholder_snapshots[0].reason == fake_image_texture_placeholder_reason::upload_failed,
+        "upload failure snapshot records upload-failed reason");
+}
+
+void test_texture_cache_placeholder_policy_disabled_preserves_failures()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    fake_image_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+
+    const render_resolved_image_source remote_source = resolver.resolve(
+        render_image_resolve_request{.uri = "https://example.test/disabled.fake"})
+                                                       .source;
+    const render_image_texture_result remote = cache.acquire_texture(
+        render_image_texture_request{.source = remote_source, .sampler = render_image_sampler_policy{}});
+    require(!remote.ok(), "disabled placeholder policy preserves remote failure");
+    require(remote.status == render_image_texture_status::missing_source, "remote failure status is unchanged");
+    require(!remote.texture.valid(), "disabled placeholder policy returns no remote texture");
+
+    const render_resolved_image_source decode_source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/disabled.png"})
+                                                       .source;
+    const render_image_texture_result decode = cache.acquire_texture(
+        render_image_texture_request{.source = decode_source, .sampler = render_image_sampler_policy{}});
+    require(!decode.ok(), "disabled placeholder policy preserves decode failure");
+    require(decode.status == render_image_texture_status::decode_failed, "decode failure status is unchanged");
+    require(!decode.texture.valid(), "disabled placeholder policy returns no decode texture");
+
+    const fake_image_texture_cache_snapshot snapshot = cache.diagnostic_snapshot();
+    require(!snapshot.placeholder_policy_enabled, "disabled placeholder snapshot reports disabled policy");
+    require(snapshot.placeholder_policy_request_count == 0, "disabled placeholder policy records no fallback requests");
+    require(snapshot.placeholder_policy_upload_count == 0, "disabled placeholder policy records no fallback uploads");
+    require(snapshot.placeholder_snapshots.empty(), "disabled placeholder policy records no fallback snapshots");
 }
 
 void test_texture_pipeline_resolves_loads_decodes_and_uploads_image_ref()
@@ -2676,14 +3165,20 @@ int main()
     test_ppm_decoder_reports_invalid_payload_size();
     test_decoder_chain_routes_supported_formats();
     test_decoder_chain_reports_unsupported_sources();
+    test_decoder_chain_reports_candidate_decode_failures();
     test_source_bytes_loader_returns_registered_local_bytes();
     test_source_bytes_loader_reports_explicit_failures();
+    test_source_bytes_loader_loads_data_uri_bytes();
+    test_source_bytes_loader_rejects_malformed_data_uris();
     test_texture_cache_can_use_loaded_source_bytes();
     test_texture_uploader_uploads_valid_decoded_image();
     test_texture_uploader_reports_deterministic_queue_lifecycle();
     test_texture_uploader_reports_retry_eligibility_and_backoff();
     test_texture_uploader_rejects_invalid_inputs();
     test_texture_cache_uses_injected_texture_uploader();
+    test_texture_cache_placeholder_policy_reuses_decode_failure_texture();
+    test_texture_cache_placeholder_policy_covers_failure_reasons();
+    test_texture_cache_placeholder_policy_disabled_preserves_failures();
     test_texture_pipeline_resolves_loads_decodes_and_uploads_image_ref();
     test_texture_pipeline_reports_source_load_failure();
     test_texture_pipeline_reports_decode_failure();

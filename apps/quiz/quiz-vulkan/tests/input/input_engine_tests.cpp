@@ -692,6 +692,20 @@ void test_gesture_routing_diagnostics_summarize_gestures_and_wheel()
         "diagnostic swipe policy is gesture snapshot");
     require(swipe_policy.normalized_event.kind == input_event_summary_kind::swipe_right,
         "diagnostic swipe policy carries normalized swipe");
+    require(swipe_policy.gesture_policy.decision == gesture_policy_decision::swipe_accepted,
+        "diagnostic swipe policy records accepted decision");
+    require(swipe_policy.gesture_policy.direction == gesture_direction::right,
+        "diagnostic swipe policy records right direction");
+    require(swipe_policy.gesture_policy.distance == 70.0f,
+        "diagnostic swipe policy records distance");
+    require(swipe_policy.gesture_policy.duration_ms == 80,
+        "diagnostic swipe policy records duration");
+    require(swipe_policy.gesture_policy.swipe_min_dx == 60.0f,
+        "diagnostic swipe policy records dx threshold");
+    require(swipe_policy.gesture_policy.swipe_max_dy == 40.0f,
+        "diagnostic swipe policy records dy threshold");
+    require(swipe_policy.gesture_policy.swipe_max_duration_ms == 800,
+        "diagnostic swipe policy records duration threshold");
     require(swipe_policy.pointer_capture_before.lifecycle == pointer_capture_lifecycle::tracking,
         "diagnostic swipe policy records tracked pointer before release");
     require(swipe_policy.pointer_capture_after.lifecycle == pointer_capture_lifecycle::idle,
@@ -721,6 +735,10 @@ void test_gesture_routing_diagnostics_summarize_gestures_and_wheel()
         "diagnostic long press policy is gesture snapshot");
     require(long_press_policy.normalized_event.kind == input_event_summary_kind::long_press,
         "diagnostic long press policy carries normalized long press");
+    require(long_press_policy.gesture_policy.decision == gesture_policy_decision::long_press_accepted,
+        "diagnostic long press policy records accepted decision");
+    require(long_press_policy.gesture_policy.emitted_kind == gesture_kind::long_press,
+        "diagnostic long press policy records emitted kind");
     require(long_press_policy.pointer_capture_before.lifecycle == pointer_capture_lifecycle::tracking,
         "diagnostic long press policy records tracked pointer before update");
     require(long_press_policy.pointer_capture_after.lifecycle == pointer_capture_lifecycle::tracking,
@@ -734,6 +752,17 @@ void test_gesture_routing_diagnostics_summarize_gestures_and_wheel()
         "diagnostic long press keeps pointer tracked until release");
     require(engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 810, 10.0f, 10.0f)).empty(),
         "diagnostic long press release is suppressed");
+    require(engine.routing_diagnostics().action_routes.size() == 1,
+        "diagnostic long press suppressed release emits one policy");
+    const action_route_policy_diagnostic& suppressed_release_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "diagnostic long press suppressed release is gesture policy");
+    require(!suppressed_release_policy.emits_input_event,
+        "diagnostic long press suppressed release emits no input event");
+    require(suppressed_release_policy.gesture_policy.decision == gesture_policy_decision::release_suppressed,
+        "diagnostic long press release records suppression decision");
 
     require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 900, 0.0f, 0.0f)).empty(),
         "diagnostic drag down emits no gesture");
@@ -754,6 +783,12 @@ void test_gesture_routing_diagnostics_summarize_gestures_and_wheel()
         "diagnostic drag start policy records tracked pointer before capture");
     require(drag_start_policy.pointer_capture_after.lifecycle == pointer_capture_lifecycle::captured,
         "diagnostic drag start policy records captured pointer after capture");
+    require(drag_start_policy.gesture_policy.decision == gesture_policy_decision::drag_started,
+        "diagnostic drag start policy records drag started decision");
+    require(drag_start_policy.gesture_policy.direction == gesture_direction::right,
+        "diagnostic drag start policy records direction");
+    require(drag_start_policy.gesture_policy.drag_start_slop == 8.0f,
+        "diagnostic drag start policy records drag threshold");
     require_capture_snapshot(
         engine.routing_diagnostics().pointer_capture,
         pointer_capture_lifecycle::captured,
@@ -779,6 +814,10 @@ void test_gesture_routing_diagnostics_summarize_gestures_and_wheel()
         "diagnostic drag update policy records captured pointer before update");
     require(drag_update_policy.pointer_capture_after.lifecycle == pointer_capture_lifecycle::captured,
         "diagnostic drag update policy records captured pointer after update");
+    require(drag_update_policy.gesture_policy.decision == gesture_policy_decision::drag_updated,
+        "diagnostic drag update policy records update decision");
+    require(drag_update_policy.gesture_policy.delta_x == 12.0f,
+        "diagnostic drag update policy records start-relative dx");
 
     events = engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 960, 14.0f, 10.0f));
     require(events.size() == 1, "diagnostic drag end emits one event");
@@ -795,6 +834,8 @@ void test_gesture_routing_diagnostics_summarize_gestures_and_wheel()
         "diagnostic drag end policy records captured pointer before release");
     require(drag_end_policy.pointer_capture_after.lifecycle == pointer_capture_lifecycle::idle,
         "diagnostic drag end policy records idle pointer after release");
+    require(drag_end_policy.gesture_policy.decision == gesture_policy_decision::drag_released,
+        "diagnostic drag end policy records release decision");
     require_capture_snapshot(
         engine.routing_diagnostics().pointer_capture,
         pointer_capture_lifecycle::idle,
@@ -825,6 +866,72 @@ void test_gesture_routing_diagnostics_summarize_gestures_and_wheel()
         "diagnostic wheel policy includes normalized wheel summary");
     require(wheel_policy.normalized_event.line_delta_y == -3.0f,
         "diagnostic wheel policy preserves line delta");
+}
+
+void test_gesture_policy_diagnostics_record_rejected_swipes()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 100, 0.0f, 0.0f)).empty(),
+        "short swipe diagnostic down emits no gesture");
+    std::vector<input_event> events =
+        engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 180, 59.0f, 0.0f));
+    require(events.empty(), "short swipe diagnostic emits no gesture");
+    require(engine.routing_diagnostics().normalized_events.empty(),
+        "short swipe diagnostic emits no normalized summary");
+    require(engine.routing_diagnostics().action_routes.size() == 1,
+        "short swipe diagnostic emits one route policy");
+    const action_route_policy_diagnostic& short_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "short swipe diagnostic route is gesture snapshot");
+    require(!short_policy.emits_input_event, "short swipe policy emits no input event");
+    require(short_policy.gesture_policy.decision == gesture_policy_decision::swipe_rejected_distance,
+        "short swipe policy records distance rejection");
+    require(short_policy.gesture_policy.direction == gesture_direction::right,
+        "short swipe policy records deterministic direction");
+    require(short_policy.gesture_policy.delta_x == 59.0f, "short swipe policy records dx");
+    require(short_policy.gesture_policy.swipe_min_dx == 60.0f,
+        "short swipe policy records dx threshold");
+    require(short_policy.pointer_capture_before.lifecycle == pointer_capture_lifecycle::tracking,
+        "short swipe policy records tracked pointer before release");
+    require(short_policy.pointer_capture_after.lifecycle == pointer_capture_lifecycle::idle,
+        "short swipe policy records idle pointer after release");
+
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 200, 0.0f, 0.0f)).empty(),
+        "cross-axis swipe diagnostic down emits no gesture");
+    events = engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 260, 60.0f, 41.0f));
+    require(events.empty(), "cross-axis swipe diagnostic emits no gesture");
+    const action_route_policy_diagnostic& cross_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "cross-axis swipe diagnostic route is gesture snapshot");
+    require(cross_policy.gesture_policy.decision == gesture_policy_decision::swipe_rejected_cross_axis,
+        "cross-axis swipe policy records cross-axis rejection");
+    require(cross_policy.gesture_policy.direction == gesture_direction::right,
+        "cross-axis swipe policy records dominant direction");
+    require(cross_policy.gesture_policy.delta_y == 41.0f, "cross-axis swipe policy records dy");
+    require(cross_policy.gesture_policy.swipe_max_dy == 40.0f,
+        "cross-axis swipe policy records dy threshold");
+
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 300, 0.0f, 0.0f)).empty(),
+        "slow swipe diagnostic down emits no gesture");
+    events = engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 1101, 60.0f, 0.0f));
+    require(events.empty(), "slow swipe diagnostic emits no gesture");
+    const action_route_policy_diagnostic& slow_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "slow swipe diagnostic route is gesture snapshot");
+    require(slow_policy.gesture_policy.decision == gesture_policy_decision::swipe_rejected_duration,
+        "slow swipe policy records duration rejection");
+    require(slow_policy.gesture_policy.duration_ms == 801, "slow swipe policy records duration");
+    require(slow_policy.gesture_policy.swipe_max_duration_ms == 800,
+        "slow swipe policy records duration threshold");
 }
 
 void test_gesture_routing_diagnostics_cancel_and_focus_loss()
@@ -864,6 +971,10 @@ void test_gesture_routing_diagnostics_cancel_and_focus_loss()
         "diagnostic cancel policy records captured pointer before cancel");
     require(cancel_policy.pointer_capture_after.lifecycle == pointer_capture_lifecycle::idle,
         "diagnostic cancel policy records idle pointer after cancel");
+    require(cancel_policy.gesture_policy.decision == gesture_policy_decision::drag_canceled,
+        "diagnostic cancel policy records drag canceled decision");
+    require(cancel_policy.gesture_policy.emitted_kind == gesture_kind::drag_cancel,
+        "diagnostic cancel policy records emitted kind");
     require(engine.routing_diagnostics().action_routes.size() == 2,
         "diagnostic cancel emits gesture and pointer reset policies");
     const action_route_policy_diagnostic& cancel_reset_policy = require_policy(
@@ -876,6 +987,8 @@ void test_gesture_routing_diagnostics_cancel_and_focus_loss()
         "diagnostic cancel reset policy records captured pointer before cancel");
     require(cancel_reset_policy.pointer_capture_after.lifecycle == pointer_capture_lifecycle::idle,
         "diagnostic cancel reset policy records idle pointer after cancel");
+    require(cancel_reset_policy.gesture_policy.decision == gesture_policy_decision::drag_canceled,
+        "diagnostic cancel reset policy carries drag canceled decision");
     require_capture_snapshot(
         engine.routing_diagnostics().pointer_capture,
         pointer_capture_lifecycle::idle,
@@ -963,11 +1076,23 @@ void test_pointer_cancel_policy_records_non_emitting_stream_cleanup()
     require(events.empty(), "non-emitting cancel produces no gesture event");
     require(engine.routing_diagnostics().normalized_events.empty(),
         "non-emitting cancel produces no normalized gesture summary");
-    require(engine.routing_diagnostics().action_routes.size() == 1,
-        "non-emitting cancel emits one pointer reset policy");
-    const action_route_policy_diagnostic& cancel_policy = require_policy(
+    require(engine.routing_diagnostics().action_routes.size() == 2,
+        "non-emitting cancel emits gesture suppression and pointer reset policies");
+    const action_route_policy_diagnostic& cancel_route_policy = require_policy(
         engine.routing_diagnostics(),
         0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "non-emitting cancel route policy records suppression");
+    require(!cancel_route_policy.emits_input_event, "non-emitting cancel route emits no input event");
+    require(cancel_route_policy.gesture_policy.decision == gesture_policy_decision::release_suppressed,
+        "non-emitting cancel route records suppression decision");
+    require(cancel_route_policy.gesture_policy.direction == gesture_direction::right,
+        "non-emitting cancel route records deterministic direction");
+    require(cancel_route_policy.gesture_policy.distance == 70.0f,
+        "non-emitting cancel route records canceled distance");
+    const action_route_policy_diagnostic& cancel_policy = require_policy(
+        engine.routing_diagnostics(),
+        1,
         action_route_policy_kind::pointer_capture_reset,
         "non-emitting cancel policy records pointer reset");
     require(!cancel_policy.emits_input_event, "non-emitting cancel policy emits no input event");
@@ -1008,11 +1133,18 @@ void test_pointer_cancel_policy_records_non_emitting_stream_cleanup()
         raw_platform_pointer_button::none,
         3));
     require(events.empty(), "isolated cancel emits no gesture event");
-    require(engine.routing_diagnostics().action_routes.size() == 1,
-        "isolated cancel emits one pointer reset policy");
-    const action_route_policy_diagnostic& isolated_policy = require_policy(
+    require(engine.routing_diagnostics().action_routes.size() == 2,
+        "isolated cancel emits gesture suppression and pointer reset policies");
+    const action_route_policy_diagnostic& isolated_route_policy = require_policy(
         engine.routing_diagnostics(),
         0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "isolated cancel route policy records suppression");
+    require(isolated_route_policy.gesture_policy.decision == gesture_policy_decision::release_suppressed,
+        "isolated cancel route records suppression");
+    const action_route_policy_diagnostic& isolated_policy = require_policy(
+        engine.routing_diagnostics(),
+        1,
         action_route_policy_kind::pointer_capture_reset,
         "isolated cancel policy records pointer reset");
     require(isolated_policy.pointer_capture_before.lifecycle == pointer_capture_lifecycle::tracking,
@@ -1043,11 +1175,18 @@ void test_pointer_cancel_policy_records_non_emitting_stream_cleanup()
         raw_platform_pointer_button::none,
         9));
     require(events.empty(), "long-pressed pointer cancel emits no gesture event");
-    require(engine.routing_diagnostics().action_routes.size() == 1,
-        "long-pressed pointer cancel emits pointer reset policy");
-    const action_route_policy_diagnostic& long_press_cancel_policy = require_policy(
+    require(engine.routing_diagnostics().action_routes.size() == 2,
+        "long-pressed pointer cancel emits suppression and pointer reset policies");
+    const action_route_policy_diagnostic& long_press_cancel_route_policy = require_policy(
         engine.routing_diagnostics(),
         0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "long-pressed pointer cancel route records suppression");
+    require(long_press_cancel_route_policy.gesture_policy.decision == gesture_policy_decision::release_suppressed,
+        "long-pressed cancel route records release suppression");
+    const action_route_policy_diagnostic& long_press_cancel_policy = require_policy(
+        engine.routing_diagnostics(),
+        1,
         action_route_policy_kind::pointer_capture_reset,
         "long-pressed pointer cancel policy records pointer reset");
     require(long_press_cancel_policy.pointer_capture_before.lifecycle == pointer_capture_lifecycle::tracking,
@@ -1057,6 +1196,262 @@ void test_pointer_cancel_policy_records_non_emitting_stream_cleanup()
     require(engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 1630, 40.0f, 0.0f, raw_platform_pointer_button::none, 9))
                 .empty(),
         "long-pressed pointer cancel suppresses stale release");
+}
+
+void test_pointer_capture_arbitration_diagnostics()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 100, 0.0f, 0.0f, raw_platform_pointer_button::none, 10))
+                .empty(),
+        "arbitration first pointer down emits no input event");
+    require(engine.routing_diagnostics().action_routes.size() == 1,
+        "arbitration first pointer down emits tracking policy");
+    const action_route_policy_diagnostic& first_track_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::pointer_capture_arbitration,
+        "arbitration first pointer down policy is emitted");
+    require(first_track_policy.pointer_decision == pointer_arbitration_decision::tracked,
+        "arbitration first pointer down records tracked decision");
+    require(first_track_policy.pointer_event_phase == pointer_phase::down,
+        "arbitration first pointer down records down phase");
+    require(first_track_policy.pointer_id == 10, "arbitration first pointer down records pointer id");
+    require_capture_snapshot(
+        first_track_policy.pointer_capture_before,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "arbitration first pointer down records idle before");
+    require_capture_snapshot(
+        first_track_policy.pointer_capture_after,
+        pointer_capture_lifecycle::tracking,
+        false,
+        10,
+        1,
+        "arbitration first pointer down records tracked after");
+
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 110, 50.0f, 0.0f, raw_platform_pointer_button::none, 20))
+                .empty(),
+        "arbitration second pointer down emits no input event");
+    const action_route_policy_diagnostic& second_track_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::pointer_capture_arbitration,
+        "arbitration second pointer down policy is emitted");
+    require(second_track_policy.pointer_decision == pointer_arbitration_decision::tracked,
+        "arbitration second pointer down records tracked decision");
+    require(second_track_policy.pointer_id == 20, "arbitration second pointer down records pointer id");
+    require_capture_snapshot(
+        second_track_policy.pointer_capture_before,
+        pointer_capture_lifecycle::tracking,
+        false,
+        10,
+        1,
+        "arbitration second pointer down records first tracked pointer before");
+    require_capture_snapshot(
+        second_track_policy.pointer_capture_after,
+        pointer_capture_lifecycle::tracking,
+        false,
+        10,
+        2,
+        "arbitration second pointer down records deterministic lowest pointer id after");
+
+    std::vector<input_event> events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::move,
+        130,
+        59.0f,
+        0.0f,
+        raw_platform_pointer_button::none,
+        20));
+    require(events.size() == 1, "arbitration second pointer starts captured drag");
+    const gesture_event& start = require_event<gesture_event>(events, 0);
+    require(start.kind == gesture_kind::drag_start, "arbitration second pointer emits drag start");
+    const action_route_policy_diagnostic& capture_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "arbitration drag start policy is gesture snapshot");
+    require(capture_policy.pointer_decision == pointer_arbitration_decision::captured,
+        "arbitration drag start records captured decision");
+    require(capture_policy.pointer_event_phase == pointer_phase::move,
+        "arbitration drag start records move phase");
+    require(capture_policy.pointer_id == 20, "arbitration drag start records pointer id");
+    require_capture_snapshot(
+        capture_policy.pointer_capture_before,
+        pointer_capture_lifecycle::tracking,
+        false,
+        10,
+        2,
+        "arbitration drag start records both tracked pointers before capture");
+    require_capture_snapshot(
+        capture_policy.pointer_capture_after,
+        pointer_capture_lifecycle::captured,
+        true,
+        20,
+        1,
+        "arbitration drag start records captured pointer after");
+
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::cancel,
+        140,
+        0.0f,
+        0.0f,
+        raw_platform_pointer_button::none,
+        10));
+    require(events.empty(), "arbitration cancel for noncaptured pointer is ignored");
+    require(engine.routing_diagnostics().action_routes.size() == 1,
+        "arbitration ignored cancel emits one diagnostic policy");
+    const action_route_policy_diagnostic& ignored_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::pointer_capture_arbitration,
+        "arbitration ignored cancel policy is emitted");
+    require(ignored_policy.pointer_decision == pointer_arbitration_decision::ignored_by_capture,
+        "arbitration ignored cancel records ignored decision");
+    require(ignored_policy.pointer_event_phase == pointer_phase::cancel,
+        "arbitration ignored cancel records cancel phase");
+    require(ignored_policy.pointer_id == 10, "arbitration ignored cancel records ignored pointer id");
+    require_capture_snapshot(
+        ignored_policy.pointer_capture_before,
+        pointer_capture_lifecycle::captured,
+        true,
+        20,
+        1,
+        "arbitration ignored cancel records captured pointer before");
+    require_capture_snapshot(
+        ignored_policy.pointer_capture_after,
+        pointer_capture_lifecycle::captured,
+        true,
+        20,
+        1,
+        "arbitration ignored cancel keeps captured pointer after");
+
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::up,
+        160,
+        65.0f,
+        2.0f,
+        raw_platform_pointer_button::none,
+        20));
+    require(events.size() == 1, "arbitration captured pointer up emits drag end");
+    const action_route_policy_diagnostic& release_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "arbitration drag end policy is gesture snapshot");
+    require(release_policy.pointer_decision == pointer_arbitration_decision::released,
+        "arbitration drag end records released decision");
+    require(release_policy.pointer_event_phase == pointer_phase::up,
+        "arbitration drag end records up phase");
+    require(release_policy.pointer_id == 20, "arbitration drag end records pointer id");
+    require_capture_snapshot(
+        release_policy.pointer_capture_before,
+        pointer_capture_lifecycle::captured,
+        true,
+        20,
+        1,
+        "arbitration drag end records captured before release");
+    require_capture_snapshot(
+        release_policy.pointer_capture_after,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "arbitration drag end records idle after release");
+
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 200, 0.0f, 0.0f, raw_platform_pointer_button::none, 30))
+                .empty(),
+        "arbitration restart down emits no input event");
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::move, 220, 10.0f, 0.0f, raw_platform_pointer_button::none, 30))
+                .size() == 1,
+        "arbitration restart setup captures pointer");
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::down,
+        240,
+        2.0f,
+        2.0f,
+        raw_platform_pointer_button::none,
+        30));
+    require(events.size() == 1, "arbitration repeated down cancels captured drag");
+    const gesture_event& restart_cancel = require_event<gesture_event>(events, 0);
+    require(restart_cancel.kind == gesture_kind::drag_cancel,
+        "arbitration repeated down emits drag cancel");
+    const action_route_policy_diagnostic& restart_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "arbitration repeated down policy is gesture snapshot");
+    require(restart_policy.pointer_decision == pointer_arbitration_decision::restarted,
+        "arbitration repeated down records restarted decision");
+    require(restart_policy.pointer_event_phase == pointer_phase::down,
+        "arbitration repeated down records down phase");
+    require(restart_policy.pointer_id == 30, "arbitration repeated down records pointer id");
+    require_capture_snapshot(
+        restart_policy.pointer_capture_before,
+        pointer_capture_lifecycle::captured,
+        true,
+        30,
+        1,
+        "arbitration repeated down records captured before restart");
+    require_capture_snapshot(
+        restart_policy.pointer_capture_after,
+        pointer_capture_lifecycle::tracking,
+        false,
+        30,
+        1,
+        "arbitration repeated down records replacement tracking after restart");
+
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::move, 260, 11.0f, 2.0f, raw_platform_pointer_button::none, 30))
+                .size() == 1,
+        "arbitration restarted pointer captures again");
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::cancel,
+        270,
+        11.0f,
+        4.0f,
+        raw_platform_pointer_button::none,
+        30));
+    require(events.size() == 1, "arbitration captured pointer cancel emits drag cancel");
+    require(engine.routing_diagnostics().action_routes.size() == 2,
+        "arbitration captured pointer cancel emits gesture and reset policies");
+    const action_route_policy_diagnostic& cancel_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "arbitration captured cancel first policy is gesture snapshot");
+    require(cancel_policy.pointer_decision == pointer_arbitration_decision::canceled,
+        "arbitration captured cancel gesture records canceled decision");
+    require(cancel_policy.pointer_event_phase == pointer_phase::cancel,
+        "arbitration captured cancel gesture records cancel phase");
+    const action_route_policy_diagnostic& cancel_reset_policy = require_policy(
+        engine.routing_diagnostics(),
+        1,
+        action_route_policy_kind::pointer_capture_reset,
+        "arbitration captured cancel second policy is reset");
+    require(cancel_reset_policy.pointer_decision == pointer_arbitration_decision::canceled,
+        "arbitration captured cancel reset records canceled decision");
+    require(cancel_reset_policy.pointer_event_phase == pointer_phase::cancel,
+        "arbitration captured cancel reset records cancel phase");
+    require(cancel_reset_policy.pointer_id == 30,
+        "arbitration captured cancel reset records pointer id");
+    require_capture_snapshot(
+        cancel_reset_policy.pointer_capture_before,
+        pointer_capture_lifecycle::captured,
+        true,
+        30,
+        1,
+        "arbitration captured cancel reset records captured before");
+    require_capture_snapshot(
+        cancel_reset_policy.pointer_capture_after,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "arbitration captured cancel reset records idle after");
 }
 
 void test_text_key_flow()
@@ -1223,12 +1618,37 @@ void test_text_keyboard_navigation_and_selection()
     require(events.size() == 1, "home emits one caret event");
     require(require_event<text_event>(events, 0).kind == text_event_kind::caret_moved, "home emits caret moved kind");
     require(engine.text_model().caret_byte_offset() == 0, "home moves caret to start");
-    require(engine.process_raw_event(key(151, "Home")).empty(), "home at start emits no event");
+    events = engine.process_raw_event(key(151, "Home"));
+    require(events.empty(), "home at start emits no event");
+    const action_route_policy_diagnostic& home_edge_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::caret_moved,
+        "home at start emits caret edge policy");
+    require(!home_edge_policy.emits_input_event, "home at start policy emits no input event");
+    require_range(home_edge_policy.caret_before, 0, 0, "home at start policy records caret before");
+    require_range(home_edge_policy.caret_after, 0, 0, "home at start policy records caret after");
+    require(home_edge_policy.text_byte_count_before == initial.size(),
+        "home at start policy records before text byte count");
+    require(home_edge_policy.text_byte_count_after == initial.size(),
+        "home at start policy records after text byte count");
 
     events = engine.process_raw_event(key(160, "End"));
     require(events.size() == 1, "end emits one caret event");
     require(require_event<text_event>(events, 0).kind == text_event_kind::caret_moved, "end emits caret moved kind");
     require(engine.text_model().caret_byte_offset() == initial.size(), "end moves caret to committed end");
+    events = engine.process_raw_event(key(161, "End"));
+    require(events.empty(), "end at end emits no event");
+    const action_route_policy_diagnostic& end_edge_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::caret_moved,
+        "end at end emits caret edge policy");
+    require(!end_edge_policy.emits_input_event, "end at end policy emits no input event");
+    require_range(end_edge_policy.caret_before, initial.size(), initial.size(),
+        "end at end policy records caret before");
+    require_range(end_edge_policy.caret_after, initial.size(), initial.size(),
+        "end at end policy records caret after");
 
     events = engine.process_raw_event(key(170, "ArrowLeft", false, raw_platform_key_phase::down, false, true));
     require(events.size() == 1, "shift arrow left emits one selection event");
@@ -1299,8 +1719,20 @@ void test_text_keyboard_navigation_and_selection()
         "ctrl+a emits selection policy");
     require(select_all_policy.has_selection_after, "ctrl+a policy records resulting selection");
     require_range(select_all_policy.selection_after, 0, initial.size(), "ctrl+a policy records full selection");
-    require(engine.process_raw_event(key(211, "a", false, raw_platform_key_phase::down, true)).empty(),
-        "repeat select all without state change emits no event");
+    events = engine.process_raw_event(key(211, "a", false, raw_platform_key_phase::down, true));
+    require(events.empty(), "repeat select all without state change emits no event");
+    const action_route_policy_diagnostic& select_all_edge_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::selection_changed,
+        "repeat select all emits selection edge policy");
+    require(!select_all_edge_policy.emits_input_event, "repeat select all policy emits no input event");
+    require(select_all_edge_policy.had_selection_before, "repeat select all policy records prior selection");
+    require(select_all_edge_policy.has_selection_after, "repeat select all policy records retained selection");
+    require_range(select_all_edge_policy.selection_before, 0, initial.size(),
+        "repeat select all policy records before range");
+    require_range(select_all_edge_policy.selection_after, 0, initial.size(),
+        "repeat select all policy records after range");
 
     require(engine.process_raw_event(key(220, "Home")).size() == 1, "home clears selection before meta+a");
     events = engine.process_raw_event(key(230, "A", false, raw_platform_key_phase::down, false, false, true));
@@ -1310,6 +1742,142 @@ void test_text_keyboard_navigation_and_selection()
     selection = engine.text_model().selection_range();
     require(selection.has_value(), "meta+a exposes selection");
     require_range(*selection, 0, initial.size(), "meta+a selects all committed text");
+}
+
+void test_keyboard_focus_traversal_diagnostics()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    engine.focus_text_target("answer");
+    const std::string initial = std::string("A") + utf8(u8"한") + "B";
+    require(engine.process_raw_event(text(100, initial)).size() == 1,
+        "focus traversal initial text commits");
+
+    std::vector<input_event> events = engine.process_raw_event(key(110, "Tab"));
+    require(events.empty(), "tab emits no app input event from input engine");
+    require(engine.has_text_focus(), "tab diagnostics do not clear text focus");
+    require(engine.text_focus_id() == "answer", "tab diagnostics preserve focus id");
+    require(engine.text_model().text() == initial, "tab diagnostics preserve text");
+    require(engine.text_model().caret_byte_offset() == initial.size(), "tab diagnostics preserve caret");
+    require(engine.routing_diagnostics().action_routes.size() == 1,
+        "tab emits one focus traversal diagnostic policy");
+    const action_route_policy_diagnostic& next_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::focus_traversal_next,
+        "tab emits forward traversal policy");
+    require(!next_policy.emits_input_event, "tab traversal policy emits no input event");
+    require(next_policy.target_id == "answer", "tab traversal policy preserves target id");
+    require(next_policy.text_byte_count_before == initial.size(),
+        "tab traversal policy records before text byte count");
+    require(next_policy.text_byte_count_after == initial.size(),
+        "tab traversal policy records after text byte count");
+    require_range(next_policy.caret_before, initial.size(), initial.size(),
+        "tab traversal policy records caret before");
+    require_range(next_policy.caret_after, initial.size(), initial.size(),
+        "tab traversal policy records caret after");
+    require(!next_policy.had_selection_before, "tab traversal policy records no prior selection");
+    require(!next_policy.has_selection_after, "tab traversal policy records no resulting selection");
+
+    require(engine.process_raw_event(key(120, "ArrowLeft", false, raw_platform_key_phase::down, false, true)).size() == 1,
+        "focus traversal setup selects trailing character");
+    std::optional<text_range> selection = engine.text_model().selection_range();
+    require(selection.has_value(), "focus traversal setup exposes selection");
+    require_range(*selection, 4, initial.size(), "focus traversal setup selected trailing ascii");
+
+    events = engine.process_raw_event(key(130, "Tab", false, raw_platform_key_phase::down, false, true));
+    require(events.empty(), "shift tab emits no app input event from input engine");
+    require(engine.has_text_focus(), "shift tab diagnostics do not clear text focus");
+    require(engine.text_model().text() == initial, "shift tab diagnostics preserve text");
+    selection = engine.text_model().selection_range();
+    require(selection.has_value(), "shift tab diagnostics preserve selection");
+    require_range(*selection, 4, initial.size(), "shift tab diagnostics preserve selected range");
+    const action_route_policy_diagnostic& previous_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::focus_traversal_previous,
+        "shift tab emits reverse traversal policy");
+    require(!previous_policy.emits_input_event, "shift tab traversal policy emits no input event");
+    require(previous_policy.had_selection_before, "shift tab traversal policy records prior selection");
+    require(previous_policy.has_selection_after, "shift tab traversal policy records retained selection");
+    require_range(previous_policy.selection_before, 4, initial.size(),
+        "shift tab traversal policy records before selection");
+    require_range(previous_policy.selection_after, 4, initial.size(),
+        "shift tab traversal policy records after selection");
+    require_range(previous_policy.caret_before, 4, 4, "shift tab traversal policy records caret before");
+    require_range(previous_policy.caret_after, 4, 4, "shift tab traversal policy records caret after");
+}
+
+void test_keyboard_navigation_diagnostics_preserve_ime_composition()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    engine.focus_text_target("answer");
+    const std::string preedit_text = utf8(u8"ㅎ");
+    const std::string committed_text = utf8(u8"한");
+    require(engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 100, preedit_text)).size() == 1,
+        "navigation ime setup starts preedit");
+    require(engine.text_model().ime_composition().active, "navigation ime setup has active composition");
+
+    std::vector<input_event> events = engine.process_raw_event(key(110, "ArrowLeft"));
+    require(events.empty(), "arrow left during ime emits no text event");
+    require(engine.text_model().text().empty(), "arrow left during ime preserves committed text");
+    require(engine.text_model().display_text() == preedit_text, "arrow left during ime preserves display preedit");
+    require(!engine.text_model().selection_range().has_value(), "arrow left during ime creates no selection");
+    require(engine.routing_diagnostics().action_routes.size() == 1,
+        "arrow left during ime emits one navigation diagnostic policy");
+    const action_route_policy_diagnostic& caret_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::caret_moved,
+        "arrow left during ime emits caret diagnostic policy");
+    require(!caret_policy.emits_input_event, "arrow left during ime policy emits no input event");
+    require(caret_policy.composition.active, "arrow left during ime policy carries composition");
+    require(caret_policy.composition.preedit_text == preedit_text,
+        "arrow left during ime policy carries preedit text");
+    require_range(caret_policy.caret_before, preedit_text.size(), preedit_text.size(),
+        "arrow left during ime policy records display caret before");
+    require_range(caret_policy.caret_after, preedit_text.size(), preedit_text.size(),
+        "arrow left during ime policy records display caret after");
+
+    events = engine.process_raw_event(key(120, "ArrowRight", false, raw_platform_key_phase::down, false, true));
+    require(events.empty(), "shift arrow during ime emits no selection event");
+    require(engine.text_model().display_text() == preedit_text, "shift arrow during ime preserves display preedit");
+    require(!engine.text_model().selection_range().has_value(), "shift arrow during ime creates no selection");
+    const action_route_policy_diagnostic& selection_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::selection_changed,
+        "shift arrow during ime emits selection diagnostic policy");
+    require(!selection_policy.emits_input_event, "shift arrow during ime policy emits no input event");
+    require(selection_policy.composition.active, "shift arrow during ime policy carries composition");
+    require(selection_policy.composition.preedit_text == preedit_text,
+        "shift arrow during ime policy carries preedit text");
+
+    events = engine.process_raw_event(key(130, "Tab"));
+    require(events.empty(), "tab during ime emits no focus traversal event");
+    require(engine.has_text_focus(), "tab during ime preserves focus");
+    require(engine.text_model().display_text() == preedit_text, "tab during ime preserves display preedit");
+    const action_route_policy_diagnostic& traversal_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::focus_traversal_next,
+        "tab during ime emits traversal diagnostic policy");
+    require(!traversal_policy.emits_input_event, "tab during ime policy emits no input event");
+    require(traversal_policy.composition.active, "tab during ime policy carries composition");
+    require(traversal_policy.composition.preedit_text == preedit_text,
+        "tab during ime policy carries preedit text");
+
+    events = engine.process_raw_event(ime(raw_platform_ime_phase::composition_end, 140, committed_text));
+    require(events.size() == 1, "ime commit succeeds after suppressed navigation");
+    const ime_event& commit = require_event<ime_event>(events, 0);
+    require(commit.kind == ime_event_kind::commit, "ime commit after navigation emits commit kind");
+    require(engine.text_model().text() == committed_text, "ime commit after navigation updates text");
+    require(!engine.text_model().ime_composition().active, "ime commit after navigation clears composition");
 }
 
 void test_text_edit_boundary_diagnostics_replace_utf8_selection()
@@ -1930,11 +2498,15 @@ int main()
     test_scroll_events_normalize_line_and_pixel_deltas();
     test_raw_platform_scroll_routes_through_input_engine();
     test_gesture_routing_diagnostics_summarize_gestures_and_wheel();
+    test_gesture_policy_diagnostics_record_rejected_swipes();
     test_gesture_routing_diagnostics_cancel_and_focus_loss();
     test_pointer_cancel_policy_records_non_emitting_stream_cleanup();
+    test_pointer_capture_arbitration_diagnostics();
     test_text_key_flow();
     test_key_code_fallback_edges();
     test_text_keyboard_navigation_and_selection();
+    test_keyboard_focus_traversal_diagnostics();
+    test_keyboard_navigation_diagnostics_preserve_ime_composition();
     test_text_edit_boundary_diagnostics_replace_utf8_selection();
     test_ime_composition_suppresses_text_and_key_events();
     test_ime_preedit_commit_edges();

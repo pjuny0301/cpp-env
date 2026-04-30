@@ -72,6 +72,17 @@ struct vulkan_renderer_frame_summary {
     bool backend_commands_recorded = false;
     bool backend_frame_submitted = false;
     bool backend_frame_presented = false;
+    bool backend_acquire_policy_checked = false;
+    bool backend_acquire_requested = false;
+    bool backend_acquire_backpressured = false;
+    vulkan_backend::vulkan_frame_acquire_policy_status backend_acquire_policy_status =
+        vulkan_backend::vulkan_frame_acquire_policy_status::not_checked;
+    bool backend_present_policy_checked = false;
+    bool backend_present_image_requested = false;
+    bool backend_present_frame_requested = false;
+    bool backend_present_image_presented = false;
+    vulkan_backend::vulkan_frame_present_result_status backend_present_result_status =
+        vulkan_backend::vulkan_frame_present_result_status::not_checked;
     bool backend_attempted = false;
     bool backend_fallback_required = true;
     vulkan_backend::vulkan_backend_fallback_reason backend_fallback_reason =

@@ -12,14 +12,27 @@
 
 namespace quiz_vulkan::input {
 
+enum class pointer_arbitration_decision {
+    none,
+    tracked,
+    captured,
+    ignored_by_capture,
+    canceled,
+    released,
+    restarted,
+};
+
 enum class action_route_policy_kind {
     pointer_capture_reset,
+    pointer_capture_arbitration,
     wheel_summary,
     gesture_route_snapshot,
     text_commit_boundary,
     text_backspace_boundary,
     caret_moved,
     selection_changed,
+    focus_traversal_next,
+    focus_traversal_previous,
     text_submit_boundary,
     focus_loss,
     ime_preedit,
@@ -44,8 +57,12 @@ struct action_route_policy_diagnostic {
     text_range selection_after;
     normalized_input_event_summary normalized_event;
     ime_composition_state composition;
+    gesture_policy_snapshot gesture_policy;
     pointer_capture_snapshot pointer_capture_before;
     pointer_capture_snapshot pointer_capture_after;
+    pointer_arbitration_decision pointer_decision = pointer_arbitration_decision::none;
+    pointer_phase pointer_event_phase = pointer_phase::down;
+    std::int32_t pointer_id = 0;
 };
 
 struct input_routing_diagnostics {
@@ -79,7 +96,10 @@ private:
     [[nodiscard]] std::vector<input_event> process_focus_event(const raw_platform_focus_event& event);
     void begin_route_diagnostics();
     void finish_route_diagnostics();
-    void append_gestures(std::vector<input_event>& events, const std::vector<gesture_event>& gestures);
+    void append_gestures(
+        std::vector<input_event>& events,
+        const std::vector<gesture_event>& gestures,
+        const std::vector<gesture_policy_snapshot>& gesture_policies);
     void append_scroll(std::vector<input_event>& events, const scroll_event& scroll);
     void append_policy(action_route_policy_diagnostic diagnostic);
 

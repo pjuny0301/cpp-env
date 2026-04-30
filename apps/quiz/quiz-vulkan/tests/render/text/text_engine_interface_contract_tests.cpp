@@ -71,18 +71,24 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.utf8_clusters } -> std::same_as<std::vector<render::render_text_utf8_cluster_snapshot>&>;
     { diagnostics.font_face_selections }
         -> std::same_as<std::vector<render::render_text_font_face_selection_snapshot>&>;
+    { diagnostics.font_catalog_policy } -> std::same_as<render::render_text_font_catalog_policy_snapshot&>;
     { diagnostics.glyph_font_resolutions }
         -> std::same_as<std::vector<render::render_text_glyph_font_resolution_snapshot>&>;
     { diagnostics.font_resolution_policy } -> std::same_as<render::render_text_font_resolution_policy_snapshot&>;
     { diagnostics.line_breaks } -> std::same_as<std::vector<render::render_text_line_break_snapshot>&>;
     { diagnostics.line_metrics } -> std::same_as<std::vector<render::render_text_line_metrics_snapshot>&>;
+    { diagnostics.line_run_boxes } -> std::same_as<std::vector<render::render_text_line_run_box_snapshot>&>;
     { diagnostics.line_layout_metrics } -> std::same_as<render::render_text_line_layout_metrics_snapshot&>;
+    { diagnostics.line_layout_policy } -> std::same_as<render::render_text_line_layout_policy_snapshot&>;
     { diagnostics.line_break_policy } -> std::same_as<render::render_text_line_break_policy_snapshot&>;
+    { diagnostics.caret_hit_tests } -> std::same_as<std::vector<render::render_text_caret_rect_snapshot>&>;
     { diagnostics.glyph_cache_readiness }
         -> std::same_as<std::vector<render::render_text_glyph_cache_readiness_snapshot>&>;
     { diagnostics.glyph_cache_readiness_policy }
         -> std::same_as<render::render_text_glyph_cache_readiness_policy_snapshot&>;
     { diagnostics.glyph_cache_faces } -> std::same_as<std::vector<render::render_text_glyph_cache_face_snapshot>&>;
+    { diagnostics.glyph_cache_evictions }
+        -> std::same_as<std::vector<render::render_text_glyph_cache_eviction_snapshot>&>;
     { diagnostics.glyph_cache_policy } -> std::same_as<render::render_text_glyph_cache_policy_snapshot&>;
     { diagnostics.used_font_fallback() } -> std::same_as<bool>;
     { diagnostics.has_glyph_clusters() } -> std::same_as<bool>;
@@ -92,12 +98,17 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.has_glyph_atlas_pages() } -> std::same_as<bool>;
     { diagnostics.has_utf8_clusters() } -> std::same_as<bool>;
     { diagnostics.has_font_face_selections() } -> std::same_as<bool>;
+    { diagnostics.has_font_catalog_policy() } -> std::same_as<bool>;
     { diagnostics.has_glyph_font_resolutions() } -> std::same_as<bool>;
     { diagnostics.has_glyph_cache_readiness() } -> std::same_as<bool>;
     { diagnostics.has_line_breaks() } -> std::same_as<bool>;
     { diagnostics.has_line_metrics() } -> std::same_as<bool>;
+    { diagnostics.has_line_run_boxes() } -> std::same_as<bool>;
+    { diagnostics.has_line_layout_policy() } -> std::same_as<bool>;
     { diagnostics.has_line_break_policy() } -> std::same_as<bool>;
+    { diagnostics.has_caret_hit_tests() } -> std::same_as<bool>;
     { diagnostics.has_glyph_cache_faces() } -> std::same_as<bool>;
+    { diagnostics.has_glyph_cache_evictions() } -> std::same_as<bool>;
 });
 
 static_assert(requires(render::fake_text_engine& engine, render::font_face_descriptor descriptor) {
@@ -209,6 +220,14 @@ static_assert(requires(render::render_text_font_face_selection_snapshot selectio
     { selection.used_style_fallback } -> std::same_as<bool&>;
 });
 
+static_assert(requires(render::render_text_font_catalog_policy_snapshot policy) {
+    { policy.style_face_mappings } -> std::same_as<std::vector<render::render_text_font_face_selection_snapshot>&>;
+    { policy.missing_face_fallback_count } -> std::same_as<std::size_t&>;
+    { policy.supported_codepoint_count } -> std::same_as<std::size_t&>;
+    { policy.fallback_codepoint_count } -> std::same_as<std::size_t&>;
+    { policy.missing_glyph_count } -> std::same_as<std::size_t&>;
+});
+
 static_assert(requires(render::render_text_glyph_font_resolution_snapshot glyph) {
     { glyph.run_index } -> std::same_as<std::size_t&>;
     { glyph.byte_offset } -> std::same_as<std::size_t&>;
@@ -272,6 +291,27 @@ static_assert(requires(render::render_text_line_metrics_snapshot line) {
     { line.overflowed } -> std::same_as<bool&>;
     { line.truncated } -> std::same_as<bool&>;
     { line.caret_safe } -> std::same_as<bool&>;
+    { line.baseline } -> std::same_as<float&>;
+    { line.ascent } -> std::same_as<float&>;
+    { line.descent } -> std::same_as<float&>;
+});
+
+static_assert(requires(render::render_text_line_run_box_snapshot box) {
+    { box.line_index } -> std::same_as<std::size_t&>;
+    { box.run_index } -> std::same_as<std::size_t&>;
+    { box.cluster_count } -> std::same_as<std::size_t&>;
+    { box.bounds } -> std::same_as<render::render_rect&>;
+    { box.baseline } -> std::same_as<float&>;
+    { box.ascent } -> std::same_as<float&>;
+    { box.descent } -> std::same_as<float&>;
+});
+
+static_assert(requires(render::render_text_line_layout_policy_snapshot policy) {
+    { policy.clipped_line_count } -> std::same_as<std::size_t&>;
+    { policy.clipped_glyph_count } -> std::same_as<std::size_t&>;
+    { policy.ellipsis_line_count } -> std::same_as<std::size_t&>;
+    { policy.ellipsis_glyph_count } -> std::same_as<std::size_t&>;
+    { policy.ellipsis_applied } -> std::same_as<bool&>;
 });
 
 static_assert(requires(render::render_text_line_layout_metrics_snapshot metrics) {
@@ -304,6 +344,11 @@ static_assert(requires(render::render_text_glyph_cache_face_snapshot face) {
     { face.miss_count } -> std::same_as<std::size_t&>;
     { face.eviction_count } -> std::same_as<std::size_t&>;
     { face.atlas_reuse_count } -> std::same_as<std::size_t&>;
+});
+
+static_assert(requires(render::render_text_glyph_cache_eviction_snapshot eviction) {
+    { eviction.cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { eviction.atlas_reused_after_policy_miss } -> std::same_as<bool&>;
 });
 
 static_assert(requires(render::render_text_glyph_cache_policy_snapshot policy) {

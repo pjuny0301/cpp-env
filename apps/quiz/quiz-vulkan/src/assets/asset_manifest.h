@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include "assets/asset_resolver.h"
 
 #include <cstddef>
@@ -7,8 +8,10 @@
 #include <fstream>
 #include <iterator>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -65,6 +68,9 @@ struct asset_manifest_entry {
 };
 
 struct asset_manifest {
+    std::string schema_version;
+    std::vector<std::string> required_features;
+    std::vector<std::string> optional_features;
     std::vector<asset_manifest_root> roots;
     std::vector<asset_manifest_entry> entries;
 
@@ -442,6 +448,19 @@ inline std::optional<std::string_view> manifest_field_value(
     return std::nullopt;
 }
 
+inline std::vector<std::string_view> manifest_field_values(
+    const std::vector<asset_manifest_field>& fields,
+    std::string_view key)
+{
+    std::vector<std::string_view> values;
+    for (const asset_manifest_field& field : fields) {
+        if (field.has_value && field.key == key) {
+            values.push_back(field.value);
+        }
+    }
+    return values;
+}
+
 inline bool parse_manifest_asset_type(std::string_view value, asset_type& type)
 {
     if (value == "generic") {
@@ -618,6 +637,22 @@ inline bool rooted_paths_conflict(
 inline std::string format_asset_manifest(const asset_manifest& manifest)
 {
     std::string formatted;
+    if (!manifest.schema_version.empty() || !manifest.required_features.empty()
+        || !manifest.optional_features.empty()) {
+        std::string line = "manifest";
+        if (!manifest.schema_version.empty()) {
+            detail::append_manifest_field(line, "schema_version", manifest.schema_version);
+        }
+        for (const std::string& feature : manifest.required_features) {
+            detail::append_manifest_field(line, "required_feature", feature);
+        }
+        for (const std::string& feature : manifest.optional_features) {
+            detail::append_manifest_field(line, "optional_feature", feature);
+        }
+        formatted.append(line);
+        formatted.push_back('\n');
+    }
+
     for (const asset_manifest_root& root : manifest.roots) {
         std::string line = "root";
         detail::append_manifest_field(line, "id", root.id);
@@ -676,7 +711,29 @@ inline asset_manifest_parse_result parse_asset_manifest(std::string_view text)
             } else {
                 const std::vector<detail::asset_manifest_field>& fields = parsed_fields.fields;
                 const std::string_view record = fields.empty() ? std::string_view{} : std::string_view(fields.front().key);
-                if (record == "root") {
+                if (record == "manifest") {
+                    const std::optional<std::string_view> schema_version =
+                        detail::manifest_field_value(fields, "schema_version");
+                    if (!schema_version.has_value() || schema_version->empty()) {
+                        detail::add_manifest_parse_issue(
+                            result,
+                            asset_manifest_parse_issue_kind::missing_field,
+                            line_number,
+                            "asset manifest manifest records require schema_version fields");
+                    } else {
+                        result.manifest.schema_version = std::string(*schema_version);
+                        result.manifest.required_features.clear();
+                        result.manifest.optional_features.clear();
+                        for (const std::string_view feature :
+                             detail::manifest_field_values(fields, "required_feature")) {
+                            result.manifest.required_features.push_back(std::string(feature));
+                        }
+                        for (const std::string_view feature :
+                             detail::manifest_field_values(fields, "optional_feature")) {
+                            result.manifest.optional_features.push_back(std::string(feature));
+                        }
+                    }
+                } else if (record == "root") {
                     const std::optional<std::string_view> id = detail::manifest_field_value(fields, "id");
                     const std::optional<std::string_view> path = detail::manifest_field_value(fields, "path");
                     if (!id.has_value() || id->empty() || !path.has_value() || path->empty()) {
@@ -1060,6 +1117,48 @@ struct asset_manifest_catalog_summary {
     }
 };
 
+struct asset_manifest_catalog_duplicate_cache_key_report {
+    asset_type type = asset_type::generic;
+    asset_cache_key cache_key;
+    std::vector<std::string> entry_ids;
+
+    [[nodiscard]] bool duplicate() const
+    {
+        return entry_ids.size() > 1U;
+    }
+};
+
+struct asset_manifest_catalog_cache_policy_summary {
+    std::string manifest_version;
+    asset_manifest_catalog_summary catalog;
+    std::vector<asset_manifest_catalog_duplicate_cache_key_report> duplicate_cache_keys;
+
+    [[nodiscard]] bool ok() const
+    {
+        return duplicate_cache_keys.empty();
+    }
+};
+
+struct asset_manifest_version_unsupported_feature_report {
+    std::string feature;
+    bool required = false;
+};
+
+struct asset_manifest_version_policy_summary {
+    std::string schema_version;
+    std::string expected_schema_version;
+    std::vector<std::string> required_features;
+    std::vector<std::string> optional_features;
+    std::vector<asset_manifest_version_unsupported_feature_report> unsupported_features;
+    bool strict_accepted = false;
+    bool compatible_accepted = false;
+
+    [[nodiscard]] bool ok() const
+    {
+        return compatible_accepted;
+    }
+};
+
 namespace detail {
 
 inline bool manifest_catalog_contains_string(
@@ -1094,6 +1193,25 @@ inline asset_manifest_catalog_type_summary& find_or_add_manifest_catalog_type(
     }
     summary.types.push_back(asset_manifest_catalog_type_summary{.type = type});
     return summary.types.back();
+}
+
+inline int asset_manifest_catalog_type_rank(asset_type type)
+{
+    switch (type) {
+        case asset_type::font:
+            return 1;
+        case asset_type::image:
+            return 2;
+        case asset_type::sound:
+            return 3;
+        case asset_type::shader:
+            return 4;
+        case asset_type::deck:
+            return 5;
+        case asset_type::generic:
+            return 6;
+    }
+    return 6;
 }
 
 inline asset_manifest_catalog_root_summary& find_or_add_manifest_catalog_root(
@@ -1157,6 +1275,126 @@ inline asset_manifest_catalog_summary summarize_asset_manifest_catalog(
     const asset_resolver_interface& resolver)
 {
     return summarize_asset_manifest_catalog(normalize_asset_manifest(manifest, resolver));
+}
+
+inline std::vector<asset_manifest_catalog_duplicate_cache_key_report> summarize_asset_manifest_catalog_duplicate_cache_keys(
+    const asset_manifest_catalog_summary& summary)
+{
+    std::vector<asset_manifest_catalog_duplicate_cache_key_report> duplicate_cache_keys;
+    for (const asset_manifest_catalog_type_summary& type : summary.types) {
+        for (const asset_manifest_catalog_cache_key_summary& cache_key : type.cache_keys) {
+            if (cache_key.entry_ids.size() < 2U) {
+                continue;
+            }
+
+            duplicate_cache_keys.push_back(asset_manifest_catalog_duplicate_cache_key_report{
+                .type = type.type,
+                .cache_key = cache_key.cache_key,
+                .entry_ids = cache_key.entry_ids,
+            });
+        }
+    }
+
+    for (asset_manifest_catalog_duplicate_cache_key_report& report : duplicate_cache_keys) {
+        std::ranges::sort(report.entry_ids);
+        report.entry_ids.erase(std::ranges::unique(report.entry_ids).begin(), report.entry_ids.end());
+    }
+
+    duplicate_cache_keys.erase(
+        std::ranges::remove_if(duplicate_cache_keys, [](const asset_manifest_catalog_duplicate_cache_key_report& report) {
+            return report.entry_ids.size() < 2U;
+        }).begin(),
+        duplicate_cache_keys.end());
+
+    std::ranges::sort(duplicate_cache_keys, [](const auto& left, const auto& right) {
+        return std::tuple(
+                   detail::asset_manifest_catalog_type_rank(left.type),
+                   std::string_view(left.cache_key))
+            < std::tuple(
+                   detail::asset_manifest_catalog_type_rank(right.type),
+                   std::string_view(right.cache_key));
+    });
+    return duplicate_cache_keys;
+}
+
+inline asset_manifest_catalog_cache_policy_summary summarize_asset_manifest_catalog_cache_policy(
+    std::string_view manifest_version,
+    const asset_manifest& manifest,
+    const asset_resolver_interface& resolver)
+{
+    const asset_manifest_catalog_summary catalog = summarize_asset_manifest_catalog(manifest, resolver);
+    asset_manifest_catalog_cache_policy_summary summary{
+        .manifest_version = std::string(manifest_version),
+        .catalog = catalog,
+        .duplicate_cache_keys = summarize_asset_manifest_catalog_duplicate_cache_keys(catalog),
+    };
+    return summary;
+}
+
+inline asset_manifest_version_policy_summary summarize_asset_manifest_version_policy(
+    const asset_manifest& manifest,
+    std::string_view expected_schema_version,
+    std::span<const std::string_view> supported_features)
+{
+    asset_manifest_version_policy_summary summary{
+        .schema_version = manifest.schema_version,
+        .expected_schema_version = std::string(expected_schema_version),
+        .required_features = manifest.required_features,
+        .optional_features = manifest.optional_features,
+    };
+
+    auto feature_supported = [&](std::string_view feature) {
+        for (const std::string_view supported_feature : supported_features) {
+            if (supported_feature == feature) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    for (const std::string& feature : manifest.required_features) {
+        if (!feature_supported(feature)) {
+            summary.unsupported_features.push_back(asset_manifest_version_unsupported_feature_report{
+                .feature = feature,
+                .required = true,
+            });
+        }
+    }
+    for (const std::string& feature : manifest.optional_features) {
+        if (!feature_supported(feature)) {
+            summary.unsupported_features.push_back(asset_manifest_version_unsupported_feature_report{
+                .feature = feature,
+                .required = false,
+            });
+        }
+    }
+
+    std::ranges::sort(summary.unsupported_features, [](const auto& left, const auto& right) {
+        return std::tuple(
+                   left.required ? 0 : 1,
+                   std::string_view(left.feature))
+            < std::tuple(
+                   right.required ? 0 : 1,
+                   std::string_view(right.feature));
+    });
+    summary.unsupported_features.erase(
+        std::ranges::unique(summary.unsupported_features, [](const auto& left, const auto& right) {
+            return left.required == right.required && left.feature == right.feature;
+        }).begin(),
+        summary.unsupported_features.end());
+
+    const bool schema_matches = !summary.schema_version.empty() && summary.schema_version == expected_schema_version;
+    const bool required_features_supported =
+        std::ranges::none_of(summary.unsupported_features, [](const asset_manifest_version_unsupported_feature_report& report) {
+            return report.required;
+        });
+    const bool optional_features_supported =
+        std::ranges::none_of(summary.unsupported_features, [](const asset_manifest_version_unsupported_feature_report& report) {
+            return !report.required;
+        });
+    summary.compatible_accepted = schema_matches && required_features_supported;
+    summary.strict_accepted = summary.compatible_accepted && optional_features_supported;
+    return summary;
 }
 
 struct asset_manifest_missing_root_report {

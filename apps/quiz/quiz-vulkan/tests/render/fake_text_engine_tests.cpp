@@ -720,6 +720,22 @@ void test_fake_multirun_layout_tracks_lines_offsets_and_alignment()
     require(near(layout.glyphs[2].bounds.x, 54.0f), "caption glyph advances after body glyph");
     require(near(layout.glyphs[2].bounds.width, 6.0f), "caption glyph keeps run style width");
     require(near(layout.glyphs[2].bounds.height, 12.0f), "caption glyph keeps run style line height");
+
+    require(engine.last_diagnostics().has_line_run_boxes(), "multi-run layout records line run boxes");
+    require(engine.last_diagnostics().line_run_boxes.size() == 3, "multi-run layout records one box per line run");
+    require(engine.last_diagnostics().line_run_boxes[0].line_index == 0, "first run box records first line");
+    require(engine.last_diagnostics().line_run_boxes[0].run_index == 0, "first run box records first run");
+    require(near(engine.last_diagnostics().line_run_boxes[0].bounds.x, 50.0f), "first run box keeps centered x");
+    require(near(engine.last_diagnostics().line_run_boxes[0].baseline, 31.0f), "first run box records baseline");
+    require(near(engine.last_diagnostics().line_run_boxes[0].ascent, 24.0f), "first run box records ascent");
+    require(near(engine.last_diagnostics().line_run_boxes[0].descent, 0.0f), "first run box records descent");
+    require(engine.last_diagnostics().line_run_boxes[1].line_index == 1, "second run box records second line");
+    require(engine.last_diagnostics().line_run_boxes[1].run_index == 0, "second run box keeps first run segment");
+    require(engine.last_diagnostics().line_run_boxes[2].line_index == 1, "third run box records second line");
+    require(engine.last_diagnostics().line_run_boxes[2].run_index == 1, "third run box records second run segment");
+    require(
+        engine.last_diagnostics().line_run_boxes[2].cluster_count == 2,
+        "third run box records caption cluster count");
 }
 
 void test_fake_newline_edge_cases_preserve_empty_line_height()
@@ -858,6 +874,34 @@ void test_fake_font_resolver_records_family_and_style_fallbacks()
     require(
         engine.last_diagnostics().font_face_selections[1].used_family_fallback,
         "font selection records family fallback use");
+    require(engine.last_diagnostics().has_font_catalog_policy(), "font resolver records catalog policy");
+    require(
+        engine.last_diagnostics().font_catalog_policy.style_face_mappings.size() == 2,
+        "font resolver records two catalog mappings");
+    require(
+        engine.last_diagnostics().font_catalog_policy.style_face_mappings[0].style_token == "display",
+        "font resolver sorts catalog mappings by style token");
+    require(
+        engine.last_diagnostics().font_catalog_policy.style_face_mappings[0].resolved_face_id == 1,
+        "font resolver maps display to fallback face id");
+    require(
+        engine.last_diagnostics().font_catalog_policy.style_face_mappings[1].style_token == "heavy",
+        "font resolver keeps heavy mapping after sort");
+    require(
+        engine.last_diagnostics().font_catalog_policy.style_face_mappings[1].resolved_face_id == 2,
+        "font resolver maps heavy to style fallback face id");
+    require(
+        engine.last_diagnostics().font_catalog_policy.missing_face_fallback_count == 2,
+        "font resolver counts missing face fallbacks");
+    require(
+        engine.last_diagnostics().font_catalog_policy.supported_codepoint_count == 2,
+        "font resolver counts supported catalog glyphs");
+    require(
+        engine.last_diagnostics().font_catalog_policy.fallback_codepoint_count == 0,
+        "font resolver counts no fallback glyphs for ASCII catalog request");
+    require(
+        engine.last_diagnostics().font_catalog_policy.missing_glyph_count == 0,
+        "font resolver counts no missing glyphs for ASCII catalog request");
     require(engine.last_diagnostics().used_font_fallback(), "font resolver records fallback diagnostics");
     require(engine.last_diagnostics().font_fallbacks.size() == 2, "font resolver records both fallback runs");
 
@@ -975,6 +1019,25 @@ void test_fake_font_resolution_policy_tracks_codepoint_fallbacks_and_cache_readi
     require(
         engine.last_diagnostics().font_resolution_policy.unique_resolved_face_count == 2,
         "font policy counts unique resolved glyph faces");
+    require(engine.last_diagnostics().has_font_catalog_policy(), "coverage fallback records catalog policy");
+    require(
+        engine.last_diagnostics().font_catalog_policy.style_face_mappings.size() == 1,
+        "coverage fallback records one catalog mapping");
+    require(
+        engine.last_diagnostics().font_catalog_policy.style_face_mappings[0].resolved_face_id == latin_face_id,
+        "coverage fallback catalog keeps the run on the Latin face");
+    require(
+        engine.last_diagnostics().font_catalog_policy.missing_face_fallback_count == 0,
+        "coverage fallback does not report missing face fallback");
+    require(
+        engine.last_diagnostics().font_catalog_policy.supported_codepoint_count == 2,
+        "coverage fallback counts supported glyphs in catalog policy");
+    require(
+        engine.last_diagnostics().font_catalog_policy.fallback_codepoint_count == 1,
+        "coverage fallback counts codepoint fallback glyphs in catalog policy");
+    require(
+        engine.last_diagnostics().font_catalog_policy.missing_glyph_count == 0,
+        "coverage fallback counts no missing glyphs in catalog policy");
 
     const std::vector<render_text_glyph_cluster>& clusters = engine.last_diagnostics().glyph_clusters;
     require(clusters.size() == 2, "coverage fallback records one cluster per scalar");
@@ -1294,6 +1357,11 @@ void test_fake_glyph_atlas_page_diagnostics_track_overflow()
     require(engine.last_diagnostics().glyph_cache_policy.atlas_page_reuse_count == 9, "atlas overflow reuses atlas page slots");
     require(engine.last_diagnostics().glyph_cache_policy.atlas_page_create_count == 2, "atlas overflow creates atlas pages");
     require(engine.last_diagnostics().glyph_cache_faces.size() == 1, "atlas overflow records one cache face");
+    require(engine.last_diagnostics().has_glyph_cache_evictions(), "atlas overflow records eviction history");
+    require(engine.last_diagnostics().glyph_cache_evictions.size() == 3, "atlas overflow records three evictions");
+    require(engine.last_diagnostics().glyph_cache_evictions[0].cache_key.glyph_id == 'A', "atlas overflow evicts A first");
+    require(engine.last_diagnostics().glyph_cache_evictions[1].cache_key.glyph_id == 'B', "atlas overflow evicts B second");
+    require(engine.last_diagnostics().glyph_cache_evictions[2].cache_key.glyph_id == 'C', "atlas overflow evicts C third");
     require(engine.last_diagnostics().glyph_cache_faces[0].cached_glyph_ids.size() == 8, "atlas overflow keeps capacity entries");
     require(engine.last_diagnostics().glyph_cache_faces[0].cached_glyph_ids[0] == 'D', "atlas overflow evicts oldest glyphs");
     require(engine.last_diagnostics().glyph_cache_faces[0].cached_glyph_ids[7] == 'K', "atlas overflow keeps newest glyph");
@@ -1358,6 +1426,30 @@ void test_fake_glyph_atlas_page_diagnostics_track_overflow()
     require(engine.last_diagnostics().glyph_cache_faces[0].cached_glyph_ids[0] == 'D', "repeated overflow cache returns to D");
     require(engine.last_diagnostics().glyph_cache_faces[0].cached_glyph_ids[7] == 'K', "repeated overflow cache returns to K");
     require(engine.consume_atlas_updates().empty(), "repeated overflow enqueues no atlas updates");
+
+    render_text_request reinsertion_request = request;
+    reinsertion_request.text_runs = {
+        render_text_run{.text = "A", .style_token = "body"},
+    };
+    const render_text_layout reinsertion_layout = engine.layout_text(reinsertion_request);
+    require(reinsertion_layout.glyphs.size() == 1, "reinsertion layout emits one glyph");
+    require(reinsertion_layout.glyphs[0].atlas_page_id == 1, "reinsertion layout reuses the first page");
+    require(engine.last_diagnostics().glyph_atlas_metrics.cache_hit_count == 1, "reinsertion layout records one atlas hit");
+    require(engine.last_diagnostics().glyph_atlas_metrics.new_slot_count == 0, "reinsertion layout allocates no atlas slots");
+    require(engine.last_diagnostics().glyph_atlas_metrics.dirty_page_count == 0, "reinsertion layout keeps atlas clean");
+    require(engine.last_diagnostics().has_glyph_cache_evictions(), "reinsertion layout records eviction history");
+    require(engine.last_diagnostics().glyph_cache_evictions.size() == 1, "reinsertion layout records one eviction");
+    require(engine.last_diagnostics().glyph_cache_evictions[0].cache_key.glyph_id == 'D', "reinsertion layout evicts D first");
+    require(
+        engine.last_diagnostics().glyph_cache_evictions[0].atlas_reused_after_policy_miss,
+        "reinsertion layout records atlas reuse after policy miss");
+    require(engine.last_diagnostics().glyph_cache_policy.hit_count == 0, "reinsertion layout records no cache-policy hits");
+    require(engine.last_diagnostics().glyph_cache_policy.miss_count == 1, "reinsertion layout records one cache-policy miss");
+    require(engine.last_diagnostics().glyph_cache_policy.eviction_count == 1, "reinsertion layout records one cache eviction");
+    require(engine.last_diagnostics().glyph_cache_policy.atlas_reuse_count == 1, "reinsertion layout records one atlas reuse");
+    require(engine.last_diagnostics().glyph_atlas_pages[0].dirty_update_count == 0, "reinsertion layout leaves page one clean");
+    require(engine.last_diagnostics().glyph_atlas_pages[1].dirty_update_count == 0, "reinsertion layout leaves page two clean");
+    require(engine.last_diagnostics().glyph_atlas_page_policy.repeated_layout_clean_page_count == 2, "reinsertion layout records both pages clean");
 }
 
 void test_fake_caret_positions_follow_utf8_runs_and_combining_marks()
@@ -1385,6 +1477,8 @@ void test_fake_caret_positions_follow_utf8_runs_and_combining_marks()
     require(engine.last_diagnostics().glyph_clusters.size() == 3, "caret diagnostics keep UTF-8 glyph clusters");
     require(engine.last_diagnostics().has_caret_rects(), "caret positions record caret rect diagnostics");
     require(engine.last_diagnostics().caret_rects.size() == carets.size(), "caret diagnostics mirror returned carets");
+    require(engine.last_diagnostics().has_caret_hit_tests(), "caret positions record hit-test diagnostics");
+    require(engine.last_diagnostics().caret_hit_tests.size() == carets.size(), "caret hit tests mirror returned carets");
 
     require(carets[0].run_index == 0 && carets[0].byte_offset == 0, "first caret starts first run");
     require(near(carets[0].bounds.x, 2.0f), "first caret uses request x origin");
@@ -1829,11 +1923,19 @@ void test_fake_line_metrics_track_overflow_and_truncation()
     require(first_line.overflowed, "first line metric records overflow");
     require(near(first_line.overflow_width, 15.0f), "first line metric records overflow amount");
     require(!first_line.truncated, "first visible line is not truncated");
+    require(near(first_line.baseline, 24.0f), "first line metric records baseline");
+    require(near(first_line.ascent, 24.0f), "first line metric records ascent");
+    require(near(first_line.descent, 0.0f), "first line metric records descent");
     require(near(second_line.width, 10.0f), "second line metric records width");
     require(!second_line.overflowed, "second line metric does not overflow");
     require(!second_line.truncated, "second visible line is not truncated");
+    require(near(second_line.baseline, 48.0f), "second line metric records second baseline");
     require(near(third_line.width, 10.0f), "third line metric records hidden line width");
     require(third_line.truncated, "third line metric records truncation");
+    require(engine.last_diagnostics().has_line_layout_policy(), "line metrics fixture records clipping policy");
+    require(engine.last_diagnostics().line_layout_policy.clipped_line_count == 1, "line metrics fixture counts clipped lines");
+    require(engine.last_diagnostics().line_layout_policy.clipped_glyph_count == 1, "line metrics fixture counts clipped glyphs");
+    require(!engine.last_diagnostics().line_layout_policy.ellipsis_applied, "line metrics fixture keeps ellipsis disabled");
 }
 
 void test_fake_line_break_policy_keeps_combining_clusters_caret_safe()
@@ -1918,6 +2020,14 @@ void test_fake_utf8_hangul_uses_codepoints()
     require(layout.glyphs[0].byte_offset == 0, "first Hangul byte offset is stable");
     require(layout.glyphs[1].byte_offset == 3, "second Hangul byte offset advances by UTF-8 width");
     require(near(layout.glyphs[1].bounds.x, 20.0f), "second Hangul glyph advances by full width");
+
+    const std::vector<fake_text_engine_caret> hit_tests = engine.caret_positions(request);
+    require(hit_tests.size() == 3, "Hangul caret hit tests include cluster boundaries");
+    require(engine.last_diagnostics().has_caret_hit_tests(), "Hangul caret request records hit tests");
+    require(engine.last_diagnostics().caret_hit_tests.size() == 3, "Hangul caret diagnostics keep all hit tests");
+    require(engine.last_diagnostics().caret_hit_tests[0].byte_offset == 0, "first Hangul hit test starts first cluster");
+    require(engine.last_diagnostics().caret_hit_tests[1].byte_offset == 3, "second Hangul hit test advances to second cluster");
+    require(engine.last_diagnostics().caret_hit_tests[2].byte_offset == 6, "third Hangul hit test advances to final boundary");
 }
 
 void test_fake_utf8_handles_wide_combining_and_invalid_sequences()

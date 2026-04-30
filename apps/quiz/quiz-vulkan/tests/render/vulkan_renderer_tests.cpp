@@ -41,6 +41,17 @@ public:
     {
         calls.push_back("acquire");
         acquired_surface = surface;
+        if (acquire_backpressured) {
+            return quiz_vulkan::render::vulkan_backend::vulkan_swapchain_acquire_result{
+                .status = quiz_vulkan::render::vulkan_backend::vulkan_swapchain_acquire_status::backpressured,
+                .image = quiz_vulkan::render::vulkan_backend::vulkan_swapchain_image_state{
+                    .id = next_image_id,
+                    .available = false,
+                    .acquired = false,
+                    .presented = false,
+                },
+            };
+        }
         if (!acquire_succeeds) {
             return quiz_vulkan::render::vulkan_backend::vulkan_swapchain_acquire_result{
                 .status = quiz_vulkan::render::vulkan_backend::vulkan_swapchain_acquire_status::failed,
@@ -93,6 +104,7 @@ public:
 
     bool begin_succeeds = true;
     bool acquire_succeeds = true;
+    bool acquire_backpressured = false;
     bool record_succeeds = true;
     bool submit_succeeds = true;
     bool present_image_succeeds = true;
@@ -253,6 +265,11 @@ void test_vulkan_swapchain_status_names_are_stable()
         "swapchain acquire status name for acquired is stable");
     require(
         vulkan_backend::swapchain_acquire_status_name(
+            vulkan_backend::vulkan_swapchain_acquire_status::backpressured)
+            == std::string_view{"backpressured"},
+        "swapchain acquire status name for backpressured is stable");
+    require(
+        vulkan_backend::swapchain_acquire_status_name(
             vulkan_backend::vulkan_swapchain_acquire_status::failed)
             == std::string_view{"failed"},
         "swapchain acquire status name for failed is stable");
@@ -271,6 +288,88 @@ void test_vulkan_swapchain_status_names_are_stable()
             vulkan_backend::vulkan_swapchain_present_status::failed)
             == std::string_view{"failed"},
         "swapchain present status name for failed is stable");
+    require(
+        vulkan_backend::swapchain_present_mode_name(
+            vulkan_backend::vulkan_swapchain_present_mode::immediate)
+            == std::string_view{"immediate"},
+        "swapchain present mode name for immediate is stable");
+    require(
+        vulkan_backend::swapchain_present_mode_name(
+            vulkan_backend::vulkan_swapchain_present_mode::mailbox)
+            == std::string_view{"mailbox"},
+        "swapchain present mode name for mailbox is stable");
+    require(
+        vulkan_backend::swapchain_present_mode_name(
+            vulkan_backend::vulkan_swapchain_present_mode::fifo)
+            == std::string_view{"fifo"},
+        "swapchain present mode name for fifo is stable");
+    require(
+        vulkan_backend::swapchain_present_mode_name(
+            vulkan_backend::vulkan_swapchain_present_mode::fifo_relaxed)
+            == std::string_view{"fifo_relaxed"},
+        "swapchain present mode name for relaxed fifo is stable");
+}
+
+void test_vulkan_frame_present_policy_names_are_stable()
+{
+    using namespace quiz_vulkan::render;
+
+    require(
+        vulkan_backend::frame_acquire_policy_status_name(
+            vulkan_backend::vulkan_frame_acquire_policy_status::not_checked)
+            == std::string_view{"not_checked"},
+        "frame acquire policy status name for not checked is stable");
+    require(
+        vulkan_backend::frame_acquire_policy_status_name(
+            vulkan_backend::vulkan_frame_acquire_policy_status::not_requested)
+            == std::string_view{"not_requested"},
+        "frame acquire policy status name for not requested is stable");
+    require(
+        vulkan_backend::frame_acquire_policy_status_name(
+            vulkan_backend::vulkan_frame_acquire_policy_status::acquired)
+            == std::string_view{"acquired"},
+        "frame acquire policy status name for acquired is stable");
+    require(
+        vulkan_backend::frame_acquire_policy_status_name(
+            vulkan_backend::vulkan_frame_acquire_policy_status::backpressured)
+            == std::string_view{"backpressured"},
+        "frame acquire policy status name for backpressured is stable");
+    require(
+        vulkan_backend::frame_acquire_policy_status_name(
+            vulkan_backend::vulkan_frame_acquire_policy_status::failed)
+            == std::string_view{"failed"},
+        "frame acquire policy status name for failed is stable");
+
+    require(
+        vulkan_backend::frame_present_result_status_name(
+            vulkan_backend::vulkan_frame_present_result_status::not_checked)
+            == std::string_view{"not_checked"},
+        "frame present result status name for not checked is stable");
+    require(
+        vulkan_backend::frame_present_result_status_name(
+            vulkan_backend::vulkan_frame_present_result_status::not_requested)
+            == std::string_view{"not_requested"},
+        "frame present result status name for not requested is stable");
+    require(
+        vulkan_backend::frame_present_result_status_name(
+            vulkan_backend::vulkan_frame_present_result_status::image_presented)
+            == std::string_view{"image_presented"},
+        "frame present result status name for image presented is stable");
+    require(
+        vulkan_backend::frame_present_result_status_name(
+            vulkan_backend::vulkan_frame_present_result_status::frame_presented)
+            == std::string_view{"frame_presented"},
+        "frame present result status name for frame presented is stable");
+    require(
+        vulkan_backend::frame_present_result_status_name(
+            vulkan_backend::vulkan_frame_present_result_status::image_failed)
+            == std::string_view{"image_failed"},
+        "frame present result status name for image failed is stable");
+    require(
+        vulkan_backend::frame_present_result_status_name(
+            vulkan_backend::vulkan_frame_present_result_status::frame_failed)
+            == std::string_view{"frame_failed"},
+        "frame present result status name for frame failed is stable");
 }
 
 void test_vulkan_backend_frame_stage_names_are_stable()
@@ -611,6 +710,21 @@ void test_draw_list_submission_counts_generic_work()
     require(!summary.backend_commands_recorded, "renderer summary exposes command recording status");
     require(!summary.backend_frame_submitted, "renderer summary exposes frame submit status");
     require(!summary.backend_frame_presented, "renderer summary exposes frame present status");
+    require(!summary.backend_acquire_policy_checked, "renderer summary exposes unchecked acquire policy");
+    require(!summary.backend_acquire_requested, "renderer summary exposes acquire request status");
+    require(!summary.backend_acquire_backpressured, "renderer summary exposes acquire backpressure status");
+    require(
+        summary.backend_acquire_policy_status
+            == vulkan_backend::vulkan_frame_acquire_policy_status::not_checked,
+        "renderer summary exposes acquire policy status");
+    require(!summary.backend_present_policy_checked, "renderer summary exposes unchecked present policy");
+    require(!summary.backend_present_image_requested, "renderer summary exposes image present request status");
+    require(!summary.backend_present_frame_requested, "renderer summary exposes frame present request status");
+    require(!summary.backend_present_image_presented, "renderer summary exposes image present result");
+    require(
+        summary.backend_present_result_status
+            == vulkan_backend::vulkan_frame_present_result_status::not_checked,
+        "renderer summary exposes present result status");
     require(summary.backend_attempted, "renderer summary exposes backend attempt status");
     require(summary.backend_planned_batch_count == 0, "renderer summary exposes backend planned batch count");
     require(summary.backend_recorded_batch_count == 0, "renderer summary exposes backend recorded batch count");
@@ -1260,6 +1374,60 @@ void test_vulkan_diagnostic_pipeline_cache_reports_batch_capabilities()
     require(state.lifecycle.render_pass.valid(), "pipeline lifecycle has a valid render pass descriptor");
     require(state.lifecycle.render_pass_ready(), "pipeline lifecycle render pass is ready");
     require(state.lifecycle.completed(), "pipeline lifecycle completes when requested pipelines are ready");
+    require(state.compatibility.checked, "pipeline compatibility summary is checked");
+    require(state.compatibility.completed(), "pipeline compatibility summary completes");
+    require(state.compatibility.requested_key_count == 2, "pipeline compatibility records requested key count");
+    require(state.compatibility.compatible_key_count == 2, "pipeline compatibility records compatible key count");
+    require(state.compatibility.incompatible_key_count == 0, "pipeline compatibility records no incompatible keys");
+    require(state.compatibility.unique_key_count == 2, "pipeline compatibility records unique key count");
+    require(state.compatibility.keys.size() == 2, "pipeline compatibility stores one key per request");
+    require(
+        state.compatibility.keys[0].batch_kind == vulkan_backend::vulkan_batch_kind::quad,
+        "pipeline compatibility first key records quad batch");
+    require(
+        state.compatibility.keys[0].color_attachment_count == 1,
+        "pipeline compatibility first key records color attachment count");
+    require(!state.compatibility.keys[0].has_depth_attachment, "pipeline compatibility first key records no depth");
+    require(state.compatibility.keys[0].surface_compatible, "pipeline compatibility first key records surface compatibility");
+    require(state.compatibility.keys[0].vertex_shader.value == "quad.vertex", "pipeline compatibility first key records vertex shader");
+    require(
+        state.compatibility.keys[0].fragment_shader.value == "quad.fragment",
+        "pipeline compatibility first key records fragment shader");
+    require(state.compatibility.keys[0].compatible(), "pipeline compatibility first key is compatible");
+    require(
+        state.compatibility.keys[1].batch_kind == vulkan_backend::vulkan_batch_kind::image,
+        "pipeline compatibility second key records image batch");
+    require(state.compatibility.keys[1].vertex_shader.value == "image.vertex", "pipeline compatibility second key records vertex shader");
+    require(
+        state.compatibility.keys[1].fragment_shader.value == "image.fragment",
+        "pipeline compatibility second key records fragment shader");
+    require(state.compatibility.keys[1].compatible(), "pipeline compatibility second key is compatible");
+    require(state.shader_bindings.checked, "shader binding readiness is checked");
+    require(state.shader_bindings.completed(), "shader binding readiness completes");
+    require(state.shader_bindings.requested_binding_count == 4, "shader binding readiness records requested bindings");
+    require(state.shader_bindings.ready_binding_count == 4, "shader binding readiness records ready bindings");
+    require(state.shader_bindings.missing_binding_count == 0, "shader binding readiness records no missing bindings");
+    require(state.shader_bindings.bindings.size() == 4, "shader binding readiness stores stage bindings");
+    require(
+        state.shader_bindings.bindings[0].stage == vulkan_backend::vulkan_shader_stage::vertex,
+        "shader binding readiness first binding is vertex");
+    require(
+        state.shader_bindings.bindings[0].shader_id.value == "quad.vertex",
+        "shader binding readiness first binding records quad vertex shader");
+    require(state.shader_bindings.bindings[0].completed(), "shader binding readiness first binding completes");
+    require(
+        state.shader_bindings.bindings[1].stage == vulkan_backend::vulkan_shader_stage::fragment,
+        "shader binding readiness second binding is fragment");
+    require(
+        state.shader_bindings.bindings[1].shader_id.value == "quad.fragment",
+        "shader binding readiness second binding records quad fragment shader");
+    require(state.shader_bindings.bindings[1].completed(), "shader binding readiness second binding completes");
+    require(
+        state.shader_bindings.bindings[2].shader_id.value == "image.vertex",
+        "shader binding readiness third binding records image vertex shader");
+    require(
+        state.shader_bindings.bindings[3].shader_id.value == "image.fragment",
+        "shader binding readiness fourth binding records image fragment shader");
     require(!state.lifecycle.missing_render_pass, "pipeline lifecycle reports no missing render pass");
     require(!state.lifecycle.missing_shader_stage, "pipeline lifecycle reports no missing shader stage");
     require(!state.lifecycle.missing_pipeline, "pipeline lifecycle reports no missing pipeline");
@@ -1431,6 +1599,20 @@ void test_vulkan_diagnostic_pipeline_cache_identifies_unavailable_render_pass()
     require(!state.completed(), "render pass failure does not complete pipeline cache");
     require(state.missing_pipeline, "render pass failure marks pipeline unavailable");
     require(state.lifecycle.checked, "render pass lifecycle is checked");
+    require(state.compatibility.checked, "render pass failure checks pipeline compatibility");
+    require(!state.compatibility.completed(), "render pass failure compatibility does not complete");
+    require(state.compatibility.requested_key_count == 1, "render pass failure records one compatibility key");
+    require(state.compatibility.compatible_key_count == 0, "render pass failure records no compatible keys");
+    require(state.compatibility.incompatible_key_count == 1, "render pass failure records incompatible key");
+    require(state.compatibility.unique_key_count == 1, "render pass failure records one unique key");
+    require(state.compatibility.keys.size() == 1, "render pass failure stores compatibility key");
+    require(!state.compatibility.keys.front().compatible(), "render pass failure key is incompatible");
+    require(
+        state.compatibility.keys.front().color_attachment_count == 0,
+        "render pass failure compatibility key records missing color attachment");
+    require(state.shader_bindings.checked, "render pass failure initializes shader binding readiness");
+    require(state.shader_bindings.requested_binding_count == 0, "render pass failure performs no shader binding checks");
+    require(state.shader_bindings.bindings.empty(), "render pass failure stores no shader bindings");
     require(!state.lifecycle.render_pass.valid(), "render pass lifecycle records invalid descriptor");
     require(!state.lifecycle.render_pass_ready(), "render pass lifecycle is not ready");
     require(state.lifecycle.missing_render_pass, "render pass lifecycle records missing render pass");
@@ -1502,6 +1684,26 @@ void test_vulkan_diagnostic_pipeline_cache_identifies_missing_vertex_shader()
         state.shader_registry.missing_stage == vulkan_backend::vulkan_shader_stage::vertex,
         "shader registry records missing vertex stage");
     require(state.shader_registry.missing_shader_id.value == "quad.vertex", "shader registry records vertex id");
+    require(state.compatibility.checked, "missing vertex shader checks pipeline compatibility");
+    require(state.compatibility.completed(), "missing vertex shader keeps compatibility key complete");
+    require(state.compatibility.requested_key_count == 1, "missing vertex shader records one compatibility key");
+    require(state.compatibility.compatible_key_count == 1, "missing vertex shader compatibility key is structurally compatible");
+    require(state.compatibility.keys.front().vertex_shader.value == "quad.vertex", "missing vertex shader compatibility records vertex id");
+    require(state.shader_bindings.checked, "missing vertex shader checks shader binding readiness");
+    require(!state.shader_bindings.completed(), "missing vertex shader binding readiness does not complete");
+    require(state.shader_bindings.requested_binding_count == 1, "missing vertex shader checks one binding");
+    require(state.shader_bindings.ready_binding_count == 0, "missing vertex shader has no ready bindings");
+    require(state.shader_bindings.missing_binding_count == 1, "missing vertex shader records one missing binding");
+    require(state.shader_bindings.bindings.size() == 1, "missing vertex shader stores one binding");
+    require(
+        state.shader_bindings.bindings.front().stage == vulkan_backend::vulkan_shader_stage::vertex,
+        "missing vertex shader binding records vertex stage");
+    require(
+        state.shader_bindings.bindings.front().shader_id.value == "quad.vertex",
+        "missing vertex shader binding records shader id");
+    require(state.shader_bindings.bindings.front().registry_checked, "missing vertex shader binding checks registry");
+    require(!state.shader_bindings.bindings.front().module_registered, "missing vertex shader binding records missing module");
+    require(!state.shader_bindings.bindings.front().completed(), "missing vertex shader binding does not complete");
     require(!state.lifecycle.completed(), "missing vertex shader lifecycle does not complete");
     require(!state.lifecycle.missing_render_pass, "missing vertex shader lifecycle keeps render pass ready");
     require(state.lifecycle.missing_shader_stage, "missing vertex shader lifecycle records shader stage failure");
@@ -1576,6 +1778,29 @@ void test_vulkan_diagnostic_pipeline_cache_identifies_missing_fragment_shader()
         state.shader_registry.missing_stage == vulkan_backend::vulkan_shader_stage::fragment,
         "shader registry records missing fragment stage");
     require(state.shader_registry.missing_shader_id.value == "image.fragment", "shader registry records fragment id");
+    require(state.compatibility.checked, "missing fragment shader checks pipeline compatibility");
+    require(state.compatibility.completed(), "missing fragment shader keeps compatibility key complete");
+    require(state.compatibility.requested_key_count == 1, "missing fragment shader records one compatibility key");
+    require(state.compatibility.compatible_key_count == 1, "missing fragment shader compatibility key is structurally compatible");
+    require(
+        state.compatibility.keys.front().fragment_shader.value == "image.fragment",
+        "missing fragment shader compatibility records fragment id");
+    require(state.shader_bindings.checked, "missing fragment shader checks shader binding readiness");
+    require(!state.shader_bindings.completed(), "missing fragment shader binding readiness does not complete");
+    require(state.shader_bindings.requested_binding_count == 2, "missing fragment shader checks two bindings");
+    require(state.shader_bindings.ready_binding_count == 1, "missing fragment shader records ready vertex binding");
+    require(state.shader_bindings.missing_binding_count == 1, "missing fragment shader records one missing binding");
+    require(state.shader_bindings.bindings.size() == 2, "missing fragment shader stores two bindings");
+    require(state.shader_bindings.bindings.front().completed(), "missing fragment shader records completed vertex binding");
+    require(
+        state.shader_bindings.bindings.back().stage == vulkan_backend::vulkan_shader_stage::fragment,
+        "missing fragment shader binding records fragment stage");
+    require(
+        state.shader_bindings.bindings.back().shader_id.value == "image.fragment",
+        "missing fragment shader binding records shader id");
+    require(state.shader_bindings.bindings.back().registry_checked, "missing fragment shader binding checks registry");
+    require(!state.shader_bindings.bindings.back().module_registered, "missing fragment shader binding records missing module");
+    require(!state.shader_bindings.bindings.back().completed(), "missing fragment shader binding does not complete");
     require(!state.lifecycle.completed(), "missing fragment shader lifecycle does not complete");
     require(!state.lifecycle.missing_render_pass, "missing fragment shader lifecycle keeps render pass ready");
     require(state.lifecycle.missing_shader_stage, "missing fragment shader lifecycle records shader stage failure");
@@ -1838,6 +2063,197 @@ void require_failed_frame_submit_state(
     require(
         state.submit.signal_frame_fence_status == vulkan_backend::vulkan_frame_sync_signal_status::failed,
         "failed frame submit records failed frame fence signal");
+}
+
+void require_completed_frame_present_policy(
+    const quiz_vulkan::render::vulkan_backend::vulkan_backend_frame_present_policy_state& state,
+    std::size_t image_id)
+{
+    using namespace quiz_vulkan::render;
+
+    require(state.checked, "frame present policy is checked");
+    require(state.completed(), "frame present policy completes");
+    require(!state.failed(), "frame present policy does not fail");
+    require(state.acquire_request_count == 1, "frame present policy records one acquire request");
+    require(state.present_image_request_count == 1, "frame present policy records one image present request");
+    require(!state.backpressure_detected, "frame present policy records no backpressure");
+
+    require(state.acquire.checked, "frame acquire policy is checked");
+    require(state.acquire.completed(), "frame acquire policy completes");
+    require(!state.acquire.failed(), "frame acquire policy does not fail");
+    require(state.acquire.requested, "frame acquire policy records request");
+    require(
+        state.acquire.status == vulkan_backend::vulkan_frame_acquire_policy_status::acquired,
+        "frame acquire policy status is acquired");
+    require(
+        state.acquire.swapchain_status == vulkan_backend::vulkan_swapchain_acquire_status::acquired,
+        "frame acquire policy records swapchain acquired status");
+    require(state.acquire.image_id.value == image_id, "frame acquire policy records image id");
+    require(state.acquire.image_available, "frame acquire policy records available image");
+    require(state.acquire.image_acquired, "frame acquire policy records acquired image");
+    require(!state.acquire.backpressured, "frame acquire policy does not report backpressure");
+    require(
+        state.acquire.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::none,
+        "frame acquire policy has no fallback reason");
+
+    require(state.present.checked, "frame present result summary is checked");
+    require(state.present.completed(), "frame present result summary completes");
+    require(!state.present.failed(), "frame present result summary does not fail");
+    require(state.present.image_present_requested, "frame present result summary records image present request");
+    require(state.present.frame_present_requested, "frame present result summary records frame present request");
+    require(state.present.image_id.value == image_id, "frame present result summary records image id");
+    require(
+        state.present.swapchain_status == vulkan_backend::vulkan_swapchain_present_status::presented,
+        "frame present result summary records swapchain presented status");
+    require(state.present.image_presented, "frame present result summary records image presented");
+    require(state.present.frame_presented, "frame present result summary records frame presented");
+    require(
+        state.present.status == vulkan_backend::vulkan_frame_present_result_status::frame_presented,
+        "frame present result summary status is frame presented");
+    require(
+        state.present.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::none,
+        "frame present result summary has no fallback reason");
+}
+
+void require_failed_frame_acquire_policy(
+    const quiz_vulkan::render::vulkan_backend::vulkan_backend_frame_present_policy_state& state,
+    quiz_vulkan::render::vulkan_backend::vulkan_frame_acquire_policy_status acquire_status,
+    quiz_vulkan::render::vulkan_backend::vulkan_swapchain_acquire_status swapchain_status,
+    bool backpressured,
+    std::size_t image_id)
+{
+    using namespace quiz_vulkan::render;
+
+    require(state.checked, "failed frame acquire policy is checked");
+    require(!state.completed(), "failed frame acquire policy does not complete");
+    require(state.failed(), "failed frame acquire policy reports failure");
+    require(state.acquire_request_count == 1, "failed frame acquire policy records one acquire request");
+    require(state.present_image_request_count == 0, "failed frame acquire policy records no present request");
+    require(state.backpressure_detected == backpressured, "failed frame acquire policy records backpressure flag");
+    require(state.acquire.checked, "failed frame acquire policy checks acquire");
+    require(state.acquire.requested, "failed frame acquire policy records request");
+    require(state.acquire.failed(), "failed frame acquire policy helper reports failure");
+    require(state.acquire.status == acquire_status, "failed frame acquire policy records acquire status");
+    require(state.acquire.swapchain_status == swapchain_status, "failed frame acquire policy records swapchain status");
+    require(state.acquire.image_id.value == image_id, "failed frame acquire policy records image id");
+    require(!state.acquire.image_available, "failed frame acquire policy records unavailable image");
+    require(!state.acquire.image_acquired, "failed frame acquire policy records unacquired image");
+    require(state.acquire.backpressured == backpressured, "failed frame acquire policy records acquire backpressure");
+    require(
+        state.acquire.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::acquire_image_failed,
+        "failed frame acquire policy records acquire fallback reason");
+    require(state.present.checked, "failed frame acquire policy checks present summary");
+    require(!state.present.image_present_requested, "failed frame acquire policy does not request image present");
+    require(!state.present.frame_present_requested, "failed frame acquire policy does not request frame present");
+    require(
+        state.present.status == vulkan_backend::vulkan_frame_present_result_status::not_requested,
+        "failed frame acquire policy leaves present status not requested");
+}
+
+void require_failed_frame_present_policy(
+    const quiz_vulkan::render::vulkan_backend::vulkan_backend_frame_present_policy_state& state,
+    quiz_vulkan::render::vulkan_backend::vulkan_frame_present_result_status present_status,
+    quiz_vulkan::render::vulkan_backend::vulkan_backend_fallback_reason fallback_reason,
+    bool frame_present_requested,
+    bool image_presented,
+    bool frame_presented,
+    std::size_t image_id)
+{
+    using namespace quiz_vulkan::render;
+
+    require(state.checked, "failed frame present policy is checked");
+    require(!state.completed(), "failed frame present policy does not complete");
+    require(state.failed(), "failed frame present policy reports failure");
+    require(state.acquire_request_count == 1, "failed frame present policy records one acquire request");
+    require(state.present_image_request_count == 1, "failed frame present policy records one image present request");
+    require(!state.backpressure_detected, "failed frame present policy records no backpressure");
+    require(state.acquire.completed(), "failed frame present policy records completed acquire");
+    require(state.present.checked, "failed frame present policy checks present result");
+    require(state.present.failed(), "failed frame present result helper reports failure");
+    require(state.present.image_present_requested, "failed frame present policy records image present request");
+    require(
+        state.present.frame_present_requested == frame_present_requested,
+        "failed frame present policy records frame present request flag");
+    require(state.present.image_id.value == image_id, "failed frame present policy records image id");
+    require(state.present.image_presented == image_presented, "failed frame present policy records image result");
+    require(state.present.frame_presented == frame_presented, "failed frame present policy records frame result");
+    require(state.present.status == present_status, "failed frame present policy records result status");
+    require(state.present.fallback_reason == fallback_reason, "failed frame present policy records fallback reason");
+}
+
+void require_completed_swapchain_policy(
+    const quiz_vulkan::render::vulkan_backend::vulkan_backend_swapchain_policy_state& state,
+    std::size_t width,
+    std::size_t height)
+{
+    using namespace quiz_vulkan::render;
+
+    require(state.checked, "swapchain policy is checked");
+    require(state.completed(), "swapchain policy completes");
+    require(state.extent.checked, "swapchain extent policy is checked");
+    require(state.extent.completed(), "swapchain extent policy completes");
+    require(state.extent.requested_extent.width == width, "swapchain extent policy records requested width");
+    require(state.extent.requested_extent.height == height, "swapchain extent policy records requested height");
+    require(state.extent.selected_extent.width == width, "swapchain extent policy records selected width");
+    require(state.extent.selected_extent.height == height, "swapchain extent policy records selected height");
+    require(state.extent.min_extent.width == 1, "swapchain extent policy records minimum width");
+    require(state.extent.min_extent.height == 1, "swapchain extent policy records minimum height");
+    require(state.extent.max_extent.width == 4096, "swapchain extent policy records maximum width");
+    require(state.extent.max_extent.height == 4096, "swapchain extent policy records maximum height");
+    require(state.extent.extent_supported, "swapchain extent policy marks extent supported");
+    require(!state.extent.extent_clamped, "swapchain extent policy does not clamp supported fixture extent");
+    require(state.present_mode.checked, "swapchain present mode policy is checked");
+    require(state.present_mode.completed(), "swapchain present mode policy completes");
+    require(
+        state.present_mode.requested_mode == vulkan_backend::vulkan_swapchain_present_mode::fifo,
+        "swapchain present mode policy requests fifo");
+    require(
+        state.present_mode.selected_mode == vulkan_backend::vulkan_swapchain_present_mode::fifo,
+        "swapchain present mode policy selects fifo");
+    require(state.present_mode.requested_mode_supported, "swapchain present mode policy supports fifo");
+    require(!state.present_mode.fallback_to_fifo, "swapchain present mode policy does not fallback from fifo");
+}
+
+void require_frame_fallback_summary(
+    const quiz_vulkan::render::vulkan_backend::vulkan_backend_frame_fallback_summary& summary,
+    quiz_vulkan::render::vulkan_backend::vulkan_backend_fallback_reason reason,
+    quiz_vulkan::render::vulkan_backend::vulkan_frame_lifecycle_failure_classification classification,
+    quiz_vulkan::render::vulkan_backend::vulkan_backend_frame_stage reached_stage)
+{
+    using namespace quiz_vulkan::render;
+
+    require(summary.checked, "frame fallback summary is checked");
+    require(summary.required, "frame fallback summary marks fallback required");
+    require(summary.reason == reason, "frame fallback summary records fallback reason");
+    require(summary.reached_stage == reached_stage, "frame fallback summary records reached stage");
+    require(
+        summary.recoverable
+            == (classification == vulkan_backend::vulkan_frame_lifecycle_failure_classification::recoverable),
+        "frame fallback summary records recoverable classification");
+    require(
+        summary.fatal == (classification == vulkan_backend::vulkan_frame_lifecycle_failure_classification::fatal),
+        "frame fallback summary records fatal classification");
+    require(summary.reason_count == 1, "frame fallback summary records one fallback reason");
+    require(!summary.completed(), "frame fallback summary does not complete when fallback is required");
+}
+
+void require_completed_frame_fallback_summary(
+    const quiz_vulkan::render::vulkan_backend::vulkan_backend_frame_fallback_summary& summary)
+{
+    using namespace quiz_vulkan::render;
+
+    require(summary.checked, "completed frame fallback summary is checked");
+    require(!summary.required, "completed frame fallback summary does not require fallback");
+    require(
+        summary.reason == vulkan_backend::vulkan_backend_fallback_reason::none,
+        "completed frame fallback summary records no fallback reason");
+    require(
+        summary.reached_stage == vulkan_backend::vulkan_backend_frame_stage::frame_presented,
+        "completed frame fallback summary records presented frame stage");
+    require(!summary.recoverable, "completed frame fallback summary is not recoverable failure");
+    require(!summary.fatal, "completed frame fallback summary is not fatal failure");
+    require(summary.reason_count == 0, "completed frame fallback summary has no reasons");
+    require(summary.completed(), "completed frame fallback summary completes");
 }
 
 const quiz_vulkan::render::vulkan_backend::vulkan_frame_lifecycle_step_snapshot* find_lifecycle_snapshot(
@@ -2244,8 +2660,11 @@ void test_vulkan_backend_adapter_completes_fake_device_lifecycle()
     require(result.swapchain.present.completed(), "fake backend presents acquired swapchain image");
     require(result.swapchain.present.image_id.value == 7, "fake backend presents the acquired image id");
     require(result.swapchain.completed(), "fake backend records completed swapchain lifecycle");
+    require_completed_swapchain_policy(result.swapchain_policy, 64, 32);
     require_completed_frame_sync(result.frame_sync);
     require_completed_frame_lifecycle_policy(result.lifecycle_policy);
+    require_completed_frame_present_policy(result.present_policy, 7);
+    require_completed_frame_fallback_summary(result.fallback_summary);
     require_completed_command_buffer_submit_state(result.command_buffer_submit, 1);
     require(result.resource_bindings.completed(), "fake backend records completed resource binding state");
     require(result.resource_bindings.planned_batch_count == 1, "fake backend resource bindings track batch count");
@@ -2261,6 +2680,11 @@ void test_vulkan_backend_adapter_completes_fake_device_lifecycle()
     require(result.discarded_draw_call_count == 0, "visible fake backend batch is not discarded");
     require(result.pipeline.completed(), "fake backend pipeline cache reports completed state");
     require(result.pipeline.lifecycle.completed(), "fake backend pipeline lifecycle reports completed state");
+    require(result.pipeline.compatibility.completed(), "fake backend pipeline compatibility summary completes");
+    require(result.pipeline.compatibility.requested_key_count == 1, "fake backend pipeline compatibility records one request");
+    require(result.pipeline.compatibility.keys.front().batch_kind == vulkan_backend::vulkan_batch_kind::quad, "fake backend pipeline compatibility records quad key");
+    require(result.pipeline.shader_bindings.completed(), "fake backend shader binding readiness completes");
+    require(result.pipeline.shader_bindings.requested_binding_count == 2, "fake backend shader binding readiness records two stages");
     require(result.pipeline.lifecycle.pipeline_snapshots.size() == 1, "fake backend pipeline lifecycle stores one request");
     require(
         result.pipeline.lifecycle.pipeline_snapshots.front().completed(),
@@ -2404,6 +2828,7 @@ void test_vulkan_backend_adapter_completes_empty_frame()
     require_completed_command_buffer_submit_state(result.command_buffer_submit, 0);
     require(result.swapchain.completed(), "empty frame still completes swapchain lifecycle");
     require_completed_frame_lifecycle_policy(result.lifecycle_policy);
+    require_completed_frame_present_policy(result.present_policy, 7);
     require(result.resource_bindings.completed(), "empty frame records completed empty resource binding state");
     require(result.resource_bindings.binding_count == 0, "empty frame records no resource bindings");
     require(result.resource_registry.completed(), "empty frame records completed empty resource registry state");
@@ -2442,6 +2867,7 @@ void test_vulkan_backend_adapter_completes_all_discarded_frame()
     require_completed_command_buffer_submit_state(result.command_buffer_submit, 0);
     require(result.swapchain.completed(), "all-discarded frame still completes swapchain lifecycle");
     require_completed_frame_lifecycle_policy(result.lifecycle_policy);
+    require_completed_frame_present_policy(result.present_policy, 7);
     require(result.resource_bindings.completed(), "all-discarded frame records completed empty resource binding state");
     require(result.resource_registry.completed(), "all-discarded frame records completed empty resource registry state");
     require(result.clipped_draw_call_count == 0, "all-discarded frame has no clipped draw calls");
@@ -2477,6 +2903,12 @@ void test_vulkan_backend_adapter_falls_back_when_command_recorder_is_unready()
     require(
         result.reached_stage == vulkan_backend::vulkan_backend_frame_stage::backend_attempted,
         "backend stops at attempted stage without command recorder readiness");
+    require_frame_fallback_summary(
+        result.fallback_summary,
+        vulkan_backend::vulkan_backend_fallback_reason::command_recorder_unavailable,
+        vulkan_backend::vulkan_frame_lifecycle_failure_classification::fatal,
+        vulkan_backend::vulkan_backend_frame_stage::backend_attempted);
+    require(!result.swapchain_policy.checked, "backend does not check swapchain policy before lifecycle readiness");
     require(result.lifecycle.instance_ready, "backend records ready instance");
     require(result.lifecycle.device_ready, "backend records ready device");
     require(result.lifecycle.swapchain_ready, "backend records ready swapchain");
@@ -2603,6 +3035,12 @@ void test_vulkan_backend_adapter_falls_back_when_batch_pipeline_is_missing()
     require(
         result.reached_stage == vulkan_backend::vulkan_backend_frame_stage::frame_plan_ready,
         "backend stops after frame plan when a batch pipeline is missing");
+    require_completed_swapchain_policy(result.swapchain_policy, 16, 16);
+    require_frame_fallback_summary(
+        result.fallback_summary,
+        vulkan_backend::vulkan_backend_fallback_reason::pipeline_unavailable,
+        vulkan_backend::vulkan_frame_lifecycle_failure_classification::fatal,
+        vulkan_backend::vulkan_backend_frame_stage::frame_plan_ready);
     require(result.planned_batch_count == 2, "backend reports planned batches before missing pipeline fallback");
     require(result.recorded_batch_count == 0, "backend records no batches when a pipeline is missing");
     require(result.pipeline.cache_checked, "backend records pipeline cache check before missing pipeline fallback");
@@ -2650,6 +3088,12 @@ void test_vulkan_backend_adapter_falls_back_when_image_resource_is_missing()
     require(
         result.reached_stage == vulkan_backend::vulkan_backend_frame_stage::frame_plan_ready,
         "backend stops after frame plan when image resource binding is missing");
+    require_completed_swapchain_policy(result.swapchain_policy, 16, 16);
+    require_frame_fallback_summary(
+        result.fallback_summary,
+        vulkan_backend::vulkan_backend_fallback_reason::resource_binding_unavailable,
+        vulkan_backend::vulkan_frame_lifecycle_failure_classification::fatal,
+        vulkan_backend::vulkan_backend_frame_stage::frame_plan_ready);
     require(result.pipeline.completed(), "backend validates pipeline before resource binding failure");
     require(result.resource_bindings.checked, "backend checks resource bindings before missing image fallback");
     require(!result.resource_bindings.completed(), "backend records incomplete resource binding state");
@@ -2897,6 +3341,20 @@ void test_vulkan_backend_adapter_falls_back_without_surface()
     require(
         result.reached_stage == vulkan_backend::vulkan_backend_frame_stage::lifecycle_ready,
         "backend reaches lifecycle-ready stage before missing surface fallback");
+    require(result.swapchain_policy.checked, "backend checks swapchain policy before missing surface fallback");
+    require(result.swapchain_policy.extent.checked, "backend checks extent policy before missing surface fallback");
+    require(!result.swapchain_policy.completed(), "backend swapchain policy does not complete without surface");
+    require(!result.swapchain_policy.extent.completed(), "backend extent policy does not complete without surface");
+    require(!result.swapchain_policy.extent.extent_supported, "backend extent policy rejects zero surface");
+    require(!result.swapchain_policy.extent.selected_extent.valid(), "backend extent policy has no selected extent");
+    require(
+        result.swapchain_policy.present_mode.selected_mode == vulkan_backend::vulkan_swapchain_present_mode::fifo,
+        "backend present mode policy remains deterministic without surface");
+    require_frame_fallback_summary(
+        result.fallback_summary,
+        vulkan_backend::vulkan_backend_fallback_reason::surface_unavailable,
+        vulkan_backend::vulkan_frame_lifecycle_failure_classification::fatal,
+        vulkan_backend::vulkan_backend_frame_stage::lifecycle_ready);
     require(!result.surface_ready, "zero surface is not ready");
     require(!result.frame_begun, "backend does not begin frame without surface");
     require(!result.commands_recorded, "backend does not record without surface");
@@ -2934,6 +3392,12 @@ void test_vulkan_backend_adapter_falls_back_without_viewport()
         "backend reaches surface extent stage before missing viewport fallback");
     require(result.surface.width == 16, "backend records available surface width without viewport");
     require(result.surface.height == 16, "backend records available surface height without viewport");
+    require_completed_swapchain_policy(result.swapchain_policy, 16, 16);
+    require_frame_fallback_summary(
+        result.fallback_summary,
+        vulkan_backend::vulkan_backend_fallback_reason::viewport_unavailable,
+        vulkan_backend::vulkan_frame_lifecycle_failure_classification::fatal,
+        vulkan_backend::vulkan_backend_frame_stage::surface_extent_ready);
     require(!result.surface_ready, "backend surface is not frame-ready without viewport");
     require(!result.frame_begun, "backend does not begin frame without viewport");
     require(!result.commands_recorded, "backend does not record without viewport");
@@ -2970,6 +3434,12 @@ void test_vulkan_backend_adapter_falls_back_when_begin_fails()
     require(
         result.reached_stage == vulkan_backend::vulkan_backend_frame_stage::frame_plan_ready,
         "backend reaches frame plan stage before begin failure");
+    require_completed_swapchain_policy(result.swapchain_policy, 16, 16);
+    require_frame_fallback_summary(
+        result.fallback_summary,
+        vulkan_backend::vulkan_backend_fallback_reason::begin_frame_failed,
+        vulkan_backend::vulkan_frame_lifecycle_failure_classification::fatal,
+        vulkan_backend::vulkan_backend_frame_stage::frame_plan_ready);
     require(result.surface_ready, "backend had a surface before begin failed");
     require(!result.frame_begun, "backend reports failed frame begin");
     require(result.swapchain.acquire_requested, "backend acquires image before failed begin");
@@ -3024,6 +3494,12 @@ void test_vulkan_backend_adapter_falls_back_when_acquire_fails()
     require(
         result.reached_stage == vulkan_backend::vulkan_backend_frame_stage::frame_plan_ready,
         "backend reaches frame plan stage before acquire failure");
+    require_completed_swapchain_policy(result.swapchain_policy, 16, 16);
+    require_frame_fallback_summary(
+        result.fallback_summary,
+        vulkan_backend::vulkan_backend_fallback_reason::acquire_image_failed,
+        vulkan_backend::vulkan_frame_lifecycle_failure_classification::recoverable,
+        vulkan_backend::vulkan_backend_frame_stage::frame_plan_ready);
     require(result.surface_ready, "backend had a surface before acquire failed");
     require(!result.frame_begun, "backend does not begin frame after acquire failure");
     require(result.swapchain.acquire_requested, "backend requests image acquisition before acquire failure");
@@ -3048,6 +3524,12 @@ void test_vulkan_backend_adapter_falls_back_when_acquire_fails()
         vulkan_backend::vulkan_backend_fallback_reason::acquire_image_failed,
         1,
         0);
+    require_failed_frame_acquire_policy(
+        result.present_policy,
+        vulkan_backend::vulkan_frame_acquire_policy_status::failed,
+        vulkan_backend::vulkan_swapchain_acquire_status::failed,
+        false,
+        0);
     require(!result.commands_recorded, "backend does not record commands after acquire failure");
     require(!result.frame_submitted, "backend does not submit after acquire failure");
     require(!result.frame_presented, "backend does not present frame after acquire failure");
@@ -3059,6 +3541,67 @@ void test_vulkan_backend_adapter_falls_back_when_acquire_fails()
     require(result.command_recorder.planned_batch_count == 1, "command recorder records planned count before acquire failure");
     require(device.calls.size() == 1, "backend stops lifecycle after failed acquire");
     require(device.calls[0] == "acquire", "backend acquires before stopping");
+}
+
+void test_vulkan_backend_adapter_reports_acquire_backpressure()
+{
+    using namespace quiz_vulkan::render;
+
+    render_draw_list draw_list;
+    draw_list.commands.push_back(make_quad_command(
+        "quad",
+        render_rect{0.0f, 0.0f, 100.0f, 100.0f},
+        render_color{1.0f, 1.0f, 1.0f, 1.0f}));
+
+    fake_vulkan_backend_device device(vulkan_backend::vulkan_surface_extent{.width = 16, .height = 16});
+    device.acquire_backpressured = true;
+    const vulkan_backend::vulkan_backend_frame_result result = vulkan_backend::submit_vulkan_backend_frame(
+        device,
+        draw_list,
+        render_rect{0.0f, 0.0f, 100.0f, 100.0f});
+
+    require(!result.completed(), "backend cannot complete when image acquisition is backpressured");
+    require(result.attempted, "backend records attempted frame when image acquisition is backpressured");
+    require(result.fallback_required, "backend requires fallback when image acquisition is backpressured");
+    require(
+        result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::acquire_image_failed,
+        "backend reports acquire fallback reason for backpressure");
+    require(
+        result.reached_stage == vulkan_backend::vulkan_backend_frame_stage::frame_plan_ready,
+        "backend reaches frame plan stage before acquire backpressure");
+    require_completed_swapchain_policy(result.swapchain_policy, 16, 16);
+    require_frame_fallback_summary(
+        result.fallback_summary,
+        vulkan_backend::vulkan_backend_fallback_reason::acquire_image_failed,
+        vulkan_backend::vulkan_frame_lifecycle_failure_classification::recoverable,
+        vulkan_backend::vulkan_backend_frame_stage::frame_plan_ready);
+    require(result.swapchain.acquire_requested, "backend requests image acquisition before backpressure");
+    require(
+        result.swapchain.acquire.status == vulkan_backend::vulkan_swapchain_acquire_status::backpressured,
+        "backend records backpressured swapchain acquisition status");
+    require(!result.swapchain.acquire.completed(), "backend records incomplete backpressured acquisition");
+    require(!result.swapchain.present_requested, "backend does not present image after acquire backpressure");
+    require(result.frame_sync.acquire_signal_image_available_semaphore.failed(), "backend records failed acquire semaphore on backpressure");
+    require(result.frame_sync.acquire_signal_fence.failed(), "backend records failed acquire fence on backpressure");
+    require_failed_frame_lifecycle_policy(
+        result.lifecycle_policy,
+        vulkan_backend::vulkan_frame_lifecycle_step::acquire,
+        vulkan_backend::vulkan_frame_lifecycle_failure_classification::recoverable,
+        vulkan_backend::vulkan_backend_fallback_reason::acquire_image_failed,
+        1,
+        0);
+    require_failed_frame_acquire_policy(
+        result.present_policy,
+        vulkan_backend::vulkan_frame_acquire_policy_status::backpressured,
+        vulkan_backend::vulkan_swapchain_acquire_status::backpressured,
+        true,
+        7);
+    require(!result.frame_begun, "backend does not begin frame after acquire backpressure");
+    require(!result.commands_recorded, "backend does not record commands after acquire backpressure");
+    require(!result.frame_submitted, "backend does not submit after acquire backpressure");
+    require(!result.frame_presented, "backend does not present after acquire backpressure");
+    require(device.calls.size() == 1, "backend stops lifecycle after acquire backpressure");
+    require(device.calls[0] == "acquire", "backend acquires before reporting backpressure");
 }
 
 void test_vulkan_backend_adapter_falls_back_when_recording_fails()
@@ -3145,6 +3688,12 @@ void test_vulkan_backend_adapter_falls_back_when_submit_fails()
     require(
         result.reached_stage == vulkan_backend::vulkan_backend_frame_stage::commands_recorded,
         "backend reaches commands recorded stage before submit failure");
+    require_completed_swapchain_policy(result.swapchain_policy, 16, 16);
+    require_frame_fallback_summary(
+        result.fallback_summary,
+        vulkan_backend::vulkan_backend_fallback_reason::submit_frame_failed,
+        vulkan_backend::vulkan_frame_lifecycle_failure_classification::recoverable,
+        vulkan_backend::vulkan_backend_frame_stage::commands_recorded);
     require(result.surface_ready, "backend had a surface before submit failed");
     require(result.frame_begun, "backend began frame before submit failed");
     require(result.swapchain.acquired(), "backend acquired image before submit failed");
@@ -3155,6 +3704,8 @@ void test_vulkan_backend_adapter_falls_back_when_submit_fails()
     require(result.frame_sync.submit_signal_render_finished_semaphore.failed(), "backend records failed submit semaphore signal");
     require(result.frame_sync.submit_signal_frame_fence.failed(), "backend records failed submit fence signal");
     require(!result.frame_sync.present_wait_render_finished_semaphore.requested, "backend does not present-wait after submit failure");
+    require(result.present_policy.acquire.completed(), "present policy records completed acquire before submit failure");
+    require(!result.present_policy.present.image_present_requested, "present policy records no present after submit failure");
     require_failed_frame_lifecycle_policy(
         result.lifecycle_policy,
         vulkan_backend::vulkan_frame_lifecycle_step::submit,
@@ -3204,6 +3755,12 @@ void test_vulkan_backend_adapter_falls_back_when_present_image_fails()
     require(
         result.reached_stage == vulkan_backend::vulkan_backend_frame_stage::frame_submitted,
         "backend reaches frame submitted stage before image presentation failure");
+    require_completed_swapchain_policy(result.swapchain_policy, 16, 16);
+    require_frame_fallback_summary(
+        result.fallback_summary,
+        vulkan_backend::vulkan_backend_fallback_reason::present_image_failed,
+        vulkan_backend::vulkan_frame_lifecycle_failure_classification::recoverable,
+        vulkan_backend::vulkan_backend_frame_stage::frame_submitted);
     require(result.surface_ready, "backend had a surface before image presentation failed");
     require(result.frame_begun, "backend began frame before image presentation failed");
     require(result.swapchain.acquired(), "backend acquired image before image presentation failed");
@@ -3228,6 +3785,14 @@ void test_vulkan_backend_adapter_falls_back_when_present_image_fails()
         vulkan_backend::vulkan_backend_fallback_reason::present_image_failed,
         5,
         4);
+    require_failed_frame_present_policy(
+        result.present_policy,
+        vulkan_backend::vulkan_frame_present_result_status::image_failed,
+        vulkan_backend::vulkan_backend_fallback_reason::present_image_failed,
+        false,
+        false,
+        false,
+        7);
     require(!result.frame_presented, "backend does not mark frame presented after image presentation failure");
     require(result.planned_batch_count == 1, "backend reports planned batch count before image presentation failure");
     require(result.recorded_batch_count == 1, "backend reports recorded batch count before image presentation failure");
@@ -3271,6 +3836,12 @@ void test_vulkan_backend_adapter_falls_back_when_present_fails()
     require(
         result.reached_stage == vulkan_backend::vulkan_backend_frame_stage::frame_submitted,
         "backend reaches frame submitted stage before presentation failure");
+    require_completed_swapchain_policy(result.swapchain_policy, 16, 16);
+    require_frame_fallback_summary(
+        result.fallback_summary,
+        vulkan_backend::vulkan_backend_fallback_reason::present_frame_failed,
+        vulkan_backend::vulkan_frame_lifecycle_failure_classification::recoverable,
+        vulkan_backend::vulkan_backend_frame_stage::frame_submitted);
     require(result.surface_ready, "backend had a surface before presentation failed");
     require(result.frame_begun, "backend began frame before presentation failed");
     require(result.swapchain.acquired(), "backend acquired image before presentation failed");
@@ -3283,6 +3854,14 @@ void test_vulkan_backend_adapter_falls_back_when_present_fails()
         vulkan_backend::vulkan_backend_fallback_reason::present_frame_failed,
         5,
         4);
+    require_failed_frame_present_policy(
+        result.present_policy,
+        vulkan_backend::vulkan_frame_present_result_status::frame_failed,
+        vulkan_backend::vulkan_backend_fallback_reason::present_frame_failed,
+        true,
+        true,
+        false,
+        7);
     require(result.commands_recorded, "backend recorded commands before presentation failed");
     require(result.frame_submitted, "backend submitted frame before presentation failed");
     require(!result.frame_presented, "backend reports failed presentation");
@@ -3307,6 +3886,7 @@ int main()
 {
     test_vulkan_backend_fallback_reason_names_are_stable();
     test_vulkan_swapchain_status_names_are_stable();
+    test_vulkan_frame_present_policy_names_are_stable();
     test_vulkan_backend_frame_stage_names_are_stable();
     test_vulkan_command_recorder_failure_stage_names_are_stable();
     test_vulkan_command_buffer_submit_names_are_stable();
@@ -3348,6 +3928,7 @@ int main()
     test_vulkan_backend_adapter_falls_back_without_viewport();
     test_vulkan_backend_adapter_falls_back_when_begin_fails();
     test_vulkan_backend_adapter_falls_back_when_acquire_fails();
+    test_vulkan_backend_adapter_reports_acquire_backpressure();
     test_vulkan_backend_adapter_falls_back_when_recording_fails();
     test_vulkan_backend_adapter_falls_back_when_submit_fails();
     test_vulkan_backend_adapter_falls_back_when_present_image_fails();

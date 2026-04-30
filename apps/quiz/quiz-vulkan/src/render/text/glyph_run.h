@@ -115,6 +115,14 @@ struct render_text_font_face_selection_snapshot {
     bool used_style_fallback = false;
 };
 
+struct render_text_font_catalog_policy_snapshot {
+    std::vector<render_text_font_face_selection_snapshot> style_face_mappings;
+    std::size_t missing_face_fallback_count = 0;
+    std::size_t supported_codepoint_count = 0;
+    std::size_t fallback_codepoint_count = 0;
+    std::size_t missing_glyph_count = 0;
+};
+
 struct render_text_glyph_font_resolution_snapshot {
     std::size_t run_index = 0;
     std::size_t byte_offset = 0;
@@ -178,6 +186,27 @@ struct render_text_line_metrics_snapshot {
     bool overflowed = false;
     bool truncated = false;
     bool caret_safe = true;
+    float baseline = 0.0f;
+    float ascent = 0.0f;
+    float descent = 0.0f;
+};
+
+struct render_text_line_run_box_snapshot {
+    std::size_t line_index = 0;
+    std::size_t run_index = 0;
+    std::size_t cluster_count = 0;
+    render_rect bounds;
+    float baseline = 0.0f;
+    float ascent = 0.0f;
+    float descent = 0.0f;
+};
+
+struct render_text_line_layout_policy_snapshot {
+    std::size_t clipped_line_count = 0;
+    std::size_t clipped_glyph_count = 0;
+    std::size_t ellipsis_line_count = 0;
+    std::size_t ellipsis_glyph_count = 0;
+    bool ellipsis_applied = false;
 };
 
 struct render_text_line_layout_metrics_snapshot {
@@ -210,6 +239,11 @@ struct render_text_glyph_cache_face_snapshot {
     std::size_t miss_count = 0;
     std::size_t eviction_count = 0;
     std::size_t atlas_reuse_count = 0;
+};
+
+struct render_text_glyph_cache_eviction_snapshot {
+    glyph_atlas_key cache_key;
+    bool atlas_reused_after_policy_miss = false;
 };
 
 struct render_text_glyph_cache_policy_snapshot {

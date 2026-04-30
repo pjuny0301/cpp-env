@@ -275,6 +275,18 @@ vulkan_renderer_frame_summary vulkan_renderer::summarize_cpu_fallback(
     summary.backend_commands_recorded = backend_result.commands_recorded;
     summary.backend_frame_submitted = backend_result.frame_submitted;
     summary.backend_frame_presented = backend_result.frame_presented;
+    summary.backend_acquire_policy_checked = backend_result.present_policy.acquire.checked;
+    summary.backend_acquire_requested = backend_result.present_policy.acquire.requested;
+    summary.backend_acquire_backpressured = backend_result.present_policy.acquire.backpressured;
+    summary.backend_acquire_policy_status = backend_result.present_policy.acquire.status;
+    summary.backend_present_policy_checked = backend_result.present_policy.present.checked;
+    summary.backend_present_image_requested =
+        backend_result.present_policy.present.image_present_requested;
+    summary.backend_present_frame_requested =
+        backend_result.present_policy.present.frame_present_requested;
+    summary.backend_present_image_presented =
+        backend_result.present_policy.present.image_presented;
+    summary.backend_present_result_status = backend_result.present_policy.present.status;
     summary.backend_attempted = backend_result.attempted;
     summary.backend_fallback_required = backend_result.fallback_required;
     summary.backend_fallback_reason = backend_result.fallback_reason;

@@ -25,6 +25,7 @@ concept GestureRecognizerInterface = requires(
     { recognizer.process_pointer_event(pointer) } -> std::same_as<std::vector<input::gesture_event>>;
     { recognizer.update_time(timestamp_ms) } -> std::same_as<std::vector<input::gesture_event>>;
     { recognizer.capture_snapshot() } -> std::same_as<input::pointer_capture_snapshot>;
+    { recognizer.policy_snapshots() } -> std::same_as<const std::vector<input::gesture_policy_snapshot>&>;
     { recognizer.reset() } -> std::same_as<void>;
 };
 
@@ -34,6 +35,30 @@ concept PointerCaptureSnapshotInterface = requires(T snapshot) {
     { snapshot.active } -> std::same_as<bool&>;
     { snapshot.pointer_id } -> std::same_as<std::int32_t&>;
     { snapshot.tracked_pointer_count } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
+concept GesturePolicySnapshotInterface = requires(T snapshot) {
+    { snapshot.decision } -> std::same_as<input::gesture_policy_decision&>;
+    { snapshot.direction } -> std::same_as<input::gesture_direction&>;
+    { snapshot.phase } -> std::same_as<input::pointer_phase&>;
+    { snapshot.timestamp_ms } -> std::same_as<std::int64_t&>;
+    { snapshot.duration_ms } -> std::same_as<std::int64_t&>;
+    { snapshot.pointer_id } -> std::same_as<std::int32_t&>;
+    { snapshot.start_x } -> std::same_as<float&>;
+    { snapshot.start_y } -> std::same_as<float&>;
+    { snapshot.x } -> std::same_as<float&>;
+    { snapshot.y } -> std::same_as<float&>;
+    { snapshot.delta_x } -> std::same_as<float&>;
+    { snapshot.delta_y } -> std::same_as<float&>;
+    { snapshot.distance } -> std::same_as<float&>;
+    { snapshot.swipe_min_dx } -> std::same_as<float&>;
+    { snapshot.swipe_max_dy } -> std::same_as<float&>;
+    { snapshot.swipe_max_duration_ms } -> std::same_as<std::int64_t&>;
+    { snapshot.tap_slop } -> std::same_as<float&>;
+    { snapshot.drag_start_slop } -> std::same_as<float&>;
+    { snapshot.emitted_input_event } -> std::same_as<bool&>;
+    { snapshot.emitted_kind } -> std::same_as<input::gesture_kind&>;
 };
 
 template <typename T>
@@ -79,8 +104,12 @@ concept ActionRoutePolicyDiagnosticInterface = requires(T diagnostic) {
     { diagnostic.selection_after } -> std::same_as<input::text_range&>;
     { diagnostic.normalized_event } -> std::same_as<input::normalized_input_event_summary&>;
     { diagnostic.composition } -> std::same_as<input::ime_composition_state&>;
+    { diagnostic.gesture_policy } -> std::same_as<input::gesture_policy_snapshot&>;
     { diagnostic.pointer_capture_before } -> std::same_as<input::pointer_capture_snapshot&>;
     { diagnostic.pointer_capture_after } -> std::same_as<input::pointer_capture_snapshot&>;
+    { diagnostic.pointer_decision } -> std::same_as<input::pointer_arbitration_decision&>;
+    { diagnostic.pointer_event_phase } -> std::same_as<input::pointer_phase&>;
+    { diagnostic.pointer_id } -> std::same_as<std::int32_t&>;
 };
 
 template <typename T>
@@ -132,6 +161,7 @@ concept TextInputModelInterface = requires(
 static_assert(ImeCompositionStateInterface<input::ime_composition_state>);
 static_assert(std::is_default_constructible_v<input::ime_composition_state>);
 static_assert(PointerCaptureSnapshotInterface<input::pointer_capture_snapshot>);
+static_assert(GesturePolicySnapshotInterface<input::gesture_policy_snapshot>);
 static_assert(NormalizedInputEventSummaryInterface<input::normalized_input_event_summary>);
 static_assert(ActionRoutePolicyDiagnosticInterface<input::action_route_policy_diagnostic>);
 static_assert(InputRoutingDiagnosticsInterface<input::input_routing_diagnostics>);
@@ -174,6 +204,31 @@ constexpr input::normalized_input_event_summary wheel_summary_contract{
 static_assert(wheel_summary_contract.kind == input::input_event_summary_kind::wheel);
 static_assert(wheel_summary_contract.pixel_delta_y == -120.0f);
 
+constexpr input::gesture_policy_snapshot swipe_policy_contract{
+    .decision = input::gesture_policy_decision::swipe_accepted,
+    .direction = input::gesture_direction::right,
+    .phase = input::pointer_phase::up,
+    .timestamp_ms = 50,
+    .duration_ms = 40,
+    .pointer_id = 2,
+    .start_x = 0.0f,
+    .start_y = 0.0f,
+    .x = 70.0f,
+    .y = 0.0f,
+    .delta_x = 70.0f,
+    .distance = 70.0f,
+    .swipe_min_dx = 60.0f,
+    .swipe_max_dy = 40.0f,
+    .swipe_max_duration_ms = 800,
+    .tap_slop = 8.0f,
+    .drag_start_slop = 8.0f,
+    .emitted_input_event = true,
+    .emitted_kind = input::gesture_kind::swipe_right,
+};
+static_assert(swipe_policy_contract.decision == input::gesture_policy_decision::swipe_accepted);
+static_assert(swipe_policy_contract.direction == input::gesture_direction::right);
+static_assert(swipe_policy_contract.emitted_kind == input::gesture_kind::swipe_right);
+
 constexpr input::action_route_policy_diagnostic submit_policy_contract{
     .kind = input::action_route_policy_kind::text_submit_boundary,
     .timestamp_ms = 40,
@@ -191,24 +246,42 @@ constexpr input::action_route_policy_diagnostic submit_policy_contract{
     .selection_after = input::text_range{},
     .normalized_event = input::normalized_input_event_summary{},
     .composition = input::ime_composition_state{},
+    .gesture_policy = input::gesture_policy_snapshot{},
     .pointer_capture_before = input::pointer_capture_snapshot{},
     .pointer_capture_after = input::pointer_capture_snapshot{},
+    .pointer_decision = input::pointer_arbitration_decision::none,
+    .pointer_event_phase = input::pointer_phase::down,
+    .pointer_id = 0,
 };
 static_assert(submit_policy_contract.kind == input::action_route_policy_kind::text_submit_boundary);
 static_assert(submit_policy_contract.emits_input_event);
 static_assert(submit_policy_contract.event_index == 2);
 static_assert(submit_policy_contract.text_byte_count_before == 6);
 static_assert(submit_policy_contract.caret_after.start_byte == 0);
+static_assert(submit_policy_contract.pointer_decision == input::pointer_arbitration_decision::none);
+
+constexpr input::pointer_arbitration_decision ignored_pointer_contract =
+    input::pointer_arbitration_decision::ignored_by_capture;
+static_assert(ignored_pointer_contract == input::pointer_arbitration_decision::ignored_by_capture);
 
 constexpr input::action_route_policy_kind text_commit_policy_kind =
     input::action_route_policy_kind::text_commit_boundary;
 static_assert(text_commit_policy_kind == input::action_route_policy_kind::text_commit_boundary);
+constexpr input::action_route_policy_kind pointer_arbitration_policy_kind =
+    input::action_route_policy_kind::pointer_capture_arbitration;
+static_assert(pointer_arbitration_policy_kind == input::action_route_policy_kind::pointer_capture_arbitration);
 constexpr input::action_route_policy_kind ime_preedit_policy_kind =
     input::action_route_policy_kind::ime_preedit;
 static_assert(ime_preedit_policy_kind == input::action_route_policy_kind::ime_preedit);
 constexpr input::action_route_policy_kind gesture_snapshot_policy_kind =
     input::action_route_policy_kind::gesture_route_snapshot;
 static_assert(gesture_snapshot_policy_kind == input::action_route_policy_kind::gesture_route_snapshot);
+constexpr input::action_route_policy_kind focus_traversal_next_policy_kind =
+    input::action_route_policy_kind::focus_traversal_next;
+static_assert(focus_traversal_next_policy_kind == input::action_route_policy_kind::focus_traversal_next);
+constexpr input::action_route_policy_kind focus_traversal_previous_policy_kind =
+    input::action_route_policy_kind::focus_traversal_previous;
+static_assert(focus_traversal_previous_policy_kind == input::action_route_policy_kind::focus_traversal_previous);
 
 constexpr input::gesture_event drag_contract_event{
     .kind = input::gesture_kind::drag_update,

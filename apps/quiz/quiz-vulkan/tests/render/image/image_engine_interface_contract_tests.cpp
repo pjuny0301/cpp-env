@@ -129,6 +129,7 @@ static_assert(requires(
 static_assert(requires(
     render::render_image_decode_metadata metadata,
     render::render_image_encoded_format encoded_format,
+    render::render_image_source_kind source_kind,
     render::render_image_format_detection_summary format_detection,
     render::render_image_decode_size_validation size_validation,
     render::render_image_decoder_diagnostic diagnostic,
@@ -137,6 +138,8 @@ static_assert(requires(
     render::render_image_source_bytes_load_request bytes_request,
     render::render_image_source_bytes_load_result bytes_result,
     render::render_image_source_bytes_load_status bytes_status,
+    render::render_image_data_uri_decode_result data_uri_decode_result,
+    render::render_image_data_uri_decode_status data_uri_decode_status,
     render::fake_image_source_bytes_loader source_bytes_loader,
     render::render_image_texture_upload_request upload_request,
     render::render_image_texture_upload_result upload_result,
@@ -164,6 +167,9 @@ static_assert(requires(
     render::render_image_ref image_ref,
     render::fake_image_texture_residency texture_residency,
     render::fake_image_texture_eviction_reason eviction_reason,
+    render::fake_image_texture_placeholder_reason placeholder_reason,
+    render::fake_image_texture_placeholder_policy placeholder_policy,
+    render::fake_image_texture_placeholder_snapshot placeholder_snapshot,
     render::fake_image_texture_eviction_snapshot eviction_snapshot,
     render::fake_image_texture_cache_entry_snapshot cache_entry,
     render::fake_image_texture_cache_snapshot cache_snapshot,
@@ -193,16 +199,41 @@ static_assert(requires(
     { size_validation.valid } -> std::same_as<bool&>;
     { size_validation.diagnostic } -> std::same_as<std::string&>;
     { render::image_decode_extension_hint("asset://card.PNG") } -> std::same_as<std::string>;
+    { render::render_image_encoded_format_name(encoded_format) } -> std::same_as<std::string>;
+    { render::render_image_encoded_format_mime_type(encoded_format) } -> std::same_as<std::string>;
+    { render::render_image_source_kind_name(source_kind) } -> std::same_as<std::string>;
     { render::detect_render_image_format(request) } -> std::same_as<render::render_image_format_detection_summary>;
+    { render::render_image_source_kind_decode_order(source_kind) } -> std::same_as<std::size_t>;
+    { render::render_image_extension_decode_order("ppm") } -> std::same_as<std::size_t>;
+    { render::render_image_encoded_format_decode_order(encoded_format) } -> std::same_as<std::size_t>;
+    { render::render_image_decoder_candidate_priority(request, std::size_t{}) } -> std::same_as<std::size_t>;
+    { render::make_render_image_decoder_candidate_diagnostic(request, "decoder", std::size_t{}) }
+        -> std::same_as<render::render_image_decoder_diagnostic>;
     { render::render_image_decode_pixel_format_byte_count(render::render_image_pixel_format::rgba8_srgb) }
         -> std::same_as<std::size_t>;
     { render::validate_render_image_decode_size(image) } -> std::same_as<render::render_image_decode_size_validation>;
     { render::with_placeholder_fallback(format_detection, "fake") }
         -> std::same_as<render::render_image_format_detection_summary>;
     encoded_format;
+    source_kind;
     { diagnostic.decoder_id } -> std::same_as<std::string&>;
+    { diagnostic.candidate_index } -> std::same_as<std::size_t&>;
+    { diagnostic.candidate_order } -> std::same_as<std::size_t&>;
+    { diagnostic.candidate_priority } -> std::same_as<std::size_t&>;
+    { diagnostic.extension_hint } -> std::same_as<std::string&>;
+    { diagnostic.detected_format } -> std::same_as<render::render_image_encoded_format&>;
+    { diagnostic.detected_format_name } -> std::same_as<std::string&>;
+    { diagnostic.detected_mime_type } -> std::same_as<std::string&>;
+    { diagnostic.source_kind } -> std::same_as<render::render_image_source_kind&>;
+    { diagnostic.source_kind_name } -> std::same_as<std::string&>;
+    { diagnostic.recognized_signature } -> std::same_as<bool&>;
+    { diagnostic.support_checked } -> std::same_as<bool&>;
     { diagnostic.supported } -> std::same_as<bool&>;
+    { diagnostic.decode_attempted } -> std::same_as<bool&>;
+    { diagnostic.terminal_candidate } -> std::same_as<bool&>;
     { diagnostic.status } -> std::same_as<render::render_image_decode_status&>;
+    { diagnostic.support_diagnostic } -> std::same_as<std::string&>;
+    { diagnostic.decode_diagnostic } -> std::same_as<std::string&>;
     { diagnostic.diagnostic } -> std::same_as<std::string&>;
     { decode_result.metadata } -> std::same_as<render::render_image_decode_metadata&>;
     { decode_result.decoder_diagnostics } -> std::same_as<std::vector<render::render_image_decoder_diagnostic>&>;
@@ -217,6 +248,15 @@ static_assert(requires(
     { bytes_result.encoded_bytes } -> std::same_as<std::vector<std::byte>&>;
     { bytes_result.diagnostic } -> std::same_as<std::string&>;
     { bytes_result.ok() } -> std::same_as<bool>;
+    { data_uri_decode_result.status } -> std::same_as<render::render_image_data_uri_decode_status&>;
+    { data_uri_decode_result.media_type } -> std::same_as<std::string&>;
+    { data_uri_decode_result.base64_encoded } -> std::same_as<bool&>;
+    { data_uri_decode_result.encoded_bytes } -> std::same_as<std::vector<std::byte>&>;
+    { data_uri_decode_result.diagnostic } -> std::same_as<std::string&>;
+    { data_uri_decode_result.ok() } -> std::same_as<bool>;
+    { render::render_image_data_uri_decode_status_name(data_uri_decode_status) } -> std::same_as<std::string>;
+    { render::decode_render_image_data_uri("data:image/test,bytes") }
+        -> std::same_as<render::render_image_data_uri_decode_result>;
     { source_bytes_loader.set_source_bytes(render::render_image_cache_key{}, std::vector<std::byte>{}) }
         -> std::same_as<void>;
     { source_bytes_loader.set_source_bytes(source, std::vector<std::byte>{}) } -> std::same_as<void>;
@@ -224,6 +264,9 @@ static_assert(requires(
     { source_bytes_loader.has_source_bytes(source) } -> std::same_as<bool>;
     { render::is_valid_image_source_bytes_cache_key("asset://card.ppm") } -> std::same_as<bool>;
     bytes_status;
+    data_uri_decode_status;
+    render::render_image_source_bytes_load_status::malformed_data_uri;
+    render::render_image_data_uri_decode_status::invalid_base64;
     { render::fake_image_texture_upload_retry_eligibility_name(upload_retry_eligibility) }
         -> std::same_as<std::string>;
     { render::is_retryable_render_image_texture_upload_status(upload_status) } -> std::same_as<bool>;
@@ -413,6 +456,37 @@ static_assert(requires(
     { mutable_pipeline.invalidate_source(render::render_image_cache_key{}) } -> std::same_as<void>;
     { mutable_pipeline.invalidate_texture(render::render_image_texture_key{}) } -> std::same_as<void>;
     { render::fake_image_texture_eviction_reason_name(eviction_reason) } -> std::same_as<std::string>;
+    { render::fake_image_texture_placeholder_reason_name(placeholder_reason) } -> std::same_as<std::string>;
+    { render::fake_image_texture_placeholder_source_fragment(render::render_image_cache_key{}) }
+        -> std::same_as<std::string>;
+    { render::make_fake_image_texture_placeholder_source_key(
+        placeholder_policy,
+        placeholder_reason,
+        render::render_image_cache_key{}) } -> std::same_as<render::render_image_cache_key>;
+    { render::make_fake_image_texture_placeholder_key(placeholder_policy, placeholder_reason, texture_key) }
+        -> std::same_as<render::render_image_texture_key>;
+    { render::is_fake_image_texture_placeholder_key(texture_key) } -> std::same_as<bool>;
+    { render::make_fake_image_texture_placeholder_decoded_image(placeholder_policy) }
+        -> std::same_as<render::render_decoded_image>;
+    { placeholder_policy.enabled } -> std::same_as<bool&>;
+    { placeholder_policy.width } -> std::same_as<std::size_t&>;
+    { placeholder_policy.height } -> std::same_as<std::size_t&>;
+    { placeholder_policy.pixel_format } -> std::same_as<render::render_image_pixel_format&>;
+    { placeholder_policy.source_key_prefix } -> std::same_as<std::string&>;
+    { placeholder_snapshot.sequence } -> std::same_as<std::size_t&>;
+    { placeholder_snapshot.reason } -> std::same_as<render::fake_image_texture_placeholder_reason&>;
+    { placeholder_snapshot.requested_key } -> std::same_as<render::render_image_texture_key&>;
+    { placeholder_snapshot.placeholder_key } -> std::same_as<render::render_image_texture_key&>;
+    { placeholder_snapshot.sampler } -> std::same_as<render::render_image_sampler_policy&>;
+    { placeholder_snapshot.texture } -> std::same_as<render::render_image_texture_handle&>;
+    { placeholder_snapshot.upload_generation_id } -> std::same_as<std::uint64_t&>;
+    { placeholder_snapshot.cache_hit } -> std::same_as<bool&>;
+    { placeholder_snapshot.width } -> std::same_as<std::size_t&>;
+    { placeholder_snapshot.height } -> std::same_as<std::size_t&>;
+    { placeholder_snapshot.pixel_count } -> std::same_as<std::size_t&>;
+    { placeholder_snapshot.pixel_byte_count } -> std::same_as<std::size_t&>;
+    { placeholder_snapshot.decoded_byte_count } -> std::same_as<std::size_t&>;
+    { placeholder_snapshot.diagnostic } -> std::same_as<std::string&>;
     { cache_entry.key } -> std::same_as<render::render_image_texture_key&>;
     { cache_entry.key_diagnostic } -> std::same_as<render::render_image_texture_key_diagnostic&>;
     { cache_entry.sampler_policy } -> std::same_as<render::render_image_sampler_policy_diagnostic&>;
@@ -427,6 +501,10 @@ static_assert(requires(
     { cache_entry.pixel_byte_count } -> std::same_as<std::size_t&>;
     { cache_entry.decoded_byte_count } -> std::same_as<std::size_t&>;
     { cache_entry.residency } -> std::same_as<render::fake_image_texture_residency&>;
+    { cache_entry.placeholder_texture } -> std::same_as<bool&>;
+    { cache_entry.placeholder_reason } -> std::same_as<render::fake_image_texture_placeholder_reason&>;
+    { cache_entry.requested_key } -> std::same_as<render::render_image_texture_key&>;
+    { cache_entry.placeholder_diagnostic } -> std::same_as<std::string&>;
     { eviction_snapshot.sequence } -> std::same_as<std::size_t&>;
     { eviction_snapshot.reason } -> std::same_as<render::fake_image_texture_eviction_reason&>;
     { eviction_snapshot.key } -> std::same_as<render::render_image_texture_key&>;
@@ -462,10 +540,20 @@ static_assert(requires(
     { cache_snapshot.capacity_exceeded } -> std::same_as<bool&>;
     { cache_snapshot.entries } -> std::same_as<std::vector<render::fake_image_texture_cache_entry_snapshot>&>;
     { cache_snapshot.evictions } -> std::same_as<std::vector<render::fake_image_texture_eviction_snapshot>&>;
+    { cache_snapshot.placeholder_policy_enabled } -> std::same_as<bool&>;
+    { cache_snapshot.placeholder_policy } -> std::same_as<render::fake_image_texture_placeholder_policy&>;
+    { cache_snapshot.placeholder_policy_texture_count } -> std::same_as<std::size_t&>;
+    { cache_snapshot.placeholder_policy_request_count } -> std::same_as<std::size_t&>;
+    { cache_snapshot.placeholder_policy_cache_hit_count } -> std::same_as<std::size_t&>;
+    { cache_snapshot.placeholder_policy_upload_count } -> std::same_as<std::size_t&>;
+    { cache_snapshot.placeholder_snapshots }
+        -> std::same_as<std::vector<render::fake_image_texture_placeholder_snapshot>&>;
     { cache.diagnostic_snapshot() } -> std::same_as<render::fake_image_texture_cache_snapshot>;
+    { cache.placeholder_texture_policy() } -> std::same_as<const render::fake_image_texture_placeholder_policy&>;
     { cache.eviction_count() } -> std::same_as<std::size_t>;
     { cache.over_capacity_texture_count() } -> std::same_as<std::size_t>;
     { cache.is_texture_pinned(render::render_image_texture_key{}) } -> std::same_as<bool>;
+    { mutable_cache.set_placeholder_texture_policy(placeholder_policy) } -> std::same_as<void>;
     { mutable_cache.set_texture_residency(render::render_image_texture_key{}, texture_residency) }
         -> std::same_as<void>;
     { mutable_cache.pin_texture(render::render_image_texture_key{}) } -> std::same_as<void>;

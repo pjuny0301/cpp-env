@@ -25,6 +25,60 @@ enum class render_image_encoded_format {
     ppm,
 };
 
+inline std::string render_image_encoded_format_name(render_image_encoded_format format)
+{
+    switch (format) {
+    case render_image_encoded_format::unknown:
+        return "unknown";
+    case render_image_encoded_format::png:
+        return "png";
+    case render_image_encoded_format::jpeg:
+        return "jpeg";
+    case render_image_encoded_format::ppm:
+        return "ppm";
+    }
+
+    return "unknown";
+}
+
+inline std::string render_image_encoded_format_mime_type(render_image_encoded_format format)
+{
+    switch (format) {
+    case render_image_encoded_format::png:
+        return "image/png";
+    case render_image_encoded_format::jpeg:
+        return "image/jpeg";
+    case render_image_encoded_format::ppm:
+        return "image/x-portable-pixmap";
+    case render_image_encoded_format::unknown:
+        return "application/octet-stream";
+    }
+
+    return "application/octet-stream";
+}
+
+inline std::string render_image_source_kind_name(render_image_source_kind kind)
+{
+    switch (kind) {
+    case render_image_source_kind::local_path:
+        return "local_path";
+    case render_image_source_kind::file_uri:
+        return "file_uri";
+    case render_image_source_kind::asset_uri:
+        return "asset_uri";
+    case render_image_source_kind::http_uri:
+        return "http_uri";
+    case render_image_source_kind::https_uri:
+        return "https_uri";
+    case render_image_source_kind::data_uri:
+        return "data_uri";
+    case render_image_source_kind::unsupported:
+        return "unsupported";
+    }
+
+    return "unknown";
+}
+
 struct render_image_format_detection_summary {
     render_image_encoded_format detected_format = render_image_encoded_format::unknown;
     std::string extension_hint;
@@ -66,8 +120,23 @@ struct render_image_decode_metadata {
 
 struct render_image_decoder_diagnostic {
     std::string decoder_id;
+    std::size_t candidate_index = 0;
+    std::size_t candidate_order = 0;
+    std::size_t candidate_priority = 0;
+    std::string extension_hint;
+    render_image_encoded_format detected_format = render_image_encoded_format::unknown;
+    std::string detected_format_name;
+    std::string detected_mime_type;
+    render_image_source_kind source_kind = render_image_source_kind::unsupported;
+    std::string source_kind_name;
+    bool recognized_signature = false;
+    bool support_checked = false;
     bool supported = false;
+    bool decode_attempted = false;
+    bool terminal_candidate = false;
     render_image_decode_status status = render_image_decode_status::unsupported_format;
+    std::string support_diagnostic;
+    std::string decode_diagnostic;
     std::string diagnostic;
 };
 
@@ -167,6 +236,101 @@ inline render_image_format_detection_summary detect_render_image_format(
 
     summary.diagnostic = "image format detection did not recognize encoded bytes";
     return summary;
+}
+
+inline std::size_t render_image_source_kind_decode_order(render_image_source_kind kind)
+{
+    switch (kind) {
+    case render_image_source_kind::local_path:
+    case render_image_source_kind::asset_uri:
+    case render_image_source_kind::file_uri:
+        return 0;
+    case render_image_source_kind::data_uri:
+        return 1;
+    case render_image_source_kind::http_uri:
+    case render_image_source_kind::https_uri:
+        return 2;
+    case render_image_source_kind::unsupported:
+        return 3;
+    }
+
+    return 4;
+}
+
+inline std::size_t render_image_extension_decode_order(std::string_view extension_hint)
+{
+    if (extension_hint == "ppm" || extension_hint == "pnm") {
+        return 0;
+    }
+    if (extension_hint == "fake") {
+        return 1;
+    }
+    if (extension_hint == "png") {
+        return 2;
+    }
+    if (extension_hint == "jpg" || extension_hint == "jpeg") {
+        return 3;
+    }
+    if (extension_hint.empty()) {
+        return 8;
+    }
+    return 9;
+}
+
+inline std::size_t render_image_encoded_format_decode_order(render_image_encoded_format format)
+{
+    switch (format) {
+    case render_image_encoded_format::ppm:
+        return 0;
+    case render_image_encoded_format::png:
+        return 1;
+    case render_image_encoded_format::jpeg:
+        return 2;
+    case render_image_encoded_format::unknown:
+        return 3;
+    }
+
+    return 4;
+}
+
+inline std::size_t render_image_decoder_candidate_priority(
+    const render_image_decode_request& request,
+    std::size_t candidate_index)
+{
+    const render_image_format_detection_summary format_detection = detect_render_image_format(request);
+    return render_image_source_kind_decode_order(request.source.kind) * 10000
+        + render_image_extension_decode_order(format_detection.extension_hint) * 1000
+        + render_image_encoded_format_decode_order(format_detection.detected_format) * 100
+        + candidate_index;
+}
+
+inline render_image_decoder_diagnostic make_render_image_decoder_candidate_diagnostic(
+    const render_image_decode_request& request,
+    std::string decoder_id,
+    std::size_t candidate_index)
+{
+    const render_image_format_detection_summary format_detection = detect_render_image_format(request);
+    return render_image_decoder_diagnostic{
+        .decoder_id = std::move(decoder_id),
+        .candidate_index = candidate_index,
+        .candidate_order = candidate_index + 1,
+        .candidate_priority = render_image_decoder_candidate_priority(request, candidate_index),
+        .extension_hint = format_detection.extension_hint,
+        .detected_format = format_detection.detected_format,
+        .detected_format_name = render_image_encoded_format_name(format_detection.detected_format),
+        .detected_mime_type = render_image_encoded_format_mime_type(format_detection.detected_format),
+        .source_kind = request.source.kind,
+        .source_kind_name = render_image_source_kind_name(request.source.kind),
+        .recognized_signature = format_detection.recognized_signature,
+        .support_checked = false,
+        .supported = false,
+        .decode_attempted = false,
+        .terminal_candidate = false,
+        .status = render_image_decode_status::unsupported_format,
+        .support_diagnostic = {},
+        .decode_diagnostic = {},
+        .diagnostic = "decoder candidate has not been checked",
+    };
 }
 
 inline std::size_t render_image_decode_pixel_format_byte_count(render_image_pixel_format pixel_format)
@@ -333,14 +497,19 @@ public:
     {
         std::vector<render_image_decoder_diagnostic> diagnostics;
         diagnostics.reserve(decoders_.size());
-        for (const image_decoder_chain_entry& entry : decoders_) {
-            if (!entry.decoder.get().supports(request)) {
-                diagnostics.push_back(render_image_decoder_diagnostic{
-                    .decoder_id = entry.decoder_id,
-                    .supported = false,
-                    .status = render_image_decode_status::unsupported_format,
-                    .diagnostic = "decoder did not support source",
-                });
+        for (std::size_t index = 0; index < decoders_.size(); ++index) {
+            const image_decoder_chain_entry& entry = decoders_[index];
+            render_image_decoder_diagnostic candidate =
+                make_render_image_decoder_candidate_diagnostic(request, entry.decoder_id, index);
+            candidate.support_checked = true;
+            candidate.supported = entry.decoder.get().supports(request);
+            candidate.support_diagnostic = candidate.supported
+                ? "decoder candidate supports source"
+                : "decoder candidate did not support source";
+            if (!candidate.supported) {
+                candidate.status = render_image_decode_status::unsupported_format;
+                candidate.diagnostic = candidate.support_diagnostic;
+                diagnostics.push_back(std::move(candidate));
                 continue;
             }
 
@@ -348,12 +517,16 @@ public:
             if (result.metadata.decoder_id.empty()) {
                 result.metadata.decoder_id = entry.decoder_id;
             }
-            diagnostics.push_back(render_image_decoder_diagnostic{
-                .decoder_id = entry.decoder_id,
-                .supported = true,
-                .status = result.status,
-                .diagnostic = result.diagnostic,
-            });
+            candidate.decode_attempted = true;
+            candidate.terminal_candidate = true;
+            candidate.status = result.status;
+            candidate.decode_diagnostic = result.diagnostic.empty()
+                ? "decoder candidate decoded source"
+                : result.diagnostic;
+            candidate.diagnostic = result.ok()
+                ? "decoder candidate decoded source"
+                : "decoder candidate decode failed: " + candidate.decode_diagnostic;
+            diagnostics.push_back(std::move(candidate));
             result.decoder_diagnostics.insert(
                 result.decoder_diagnostics.begin(),
                 diagnostics.begin(),
@@ -361,11 +534,16 @@ public:
             return result;
         }
 
+        if (!diagnostics.empty()) {
+            diagnostics.back().terminal_candidate = true;
+            diagnostics.back().diagnostic = "decoder chain exhausted all candidates";
+        }
+
         return render_image_decode_result{
             .status = render_image_decode_status::unsupported_format,
             .image = {},
             .diagnostic = "no image decoder in the chain supports the source",
-            .metadata = make_render_image_decode_metadata({}, request),
+            .metadata = make_render_image_decode_metadata("image_decoder_chain", request),
             .decoder_diagnostics = std::move(diagnostics),
         };
     }

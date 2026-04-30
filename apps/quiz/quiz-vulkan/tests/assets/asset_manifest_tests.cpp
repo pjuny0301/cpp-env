@@ -71,11 +71,25 @@ bool contains_string(const std::vector<std::string>& values, std::string_view ex
     return false;
 }
 
+const quiz_vulkan::assets::asset_manifest_catalog_duplicate_cache_key_report* find_duplicate_cache_key(
+    const std::vector<quiz_vulkan::assets::asset_manifest_catalog_duplicate_cache_key_report>& reports,
+    std::string_view cache_key)
+{
+    for (const quiz_vulkan::assets::asset_manifest_catalog_duplicate_cache_key_report& report : reports) {
+        if (report.cache_key == cache_key) {
+            return &report;
+        }
+    }
+    return nullptr;
+}
+
 bool manifests_equal(
     const quiz_vulkan::assets::asset_manifest& left,
     const quiz_vulkan::assets::asset_manifest& right)
 {
-    if (left.roots.size() != right.roots.size() || left.entries.size() != right.entries.size()) {
+    if (left.schema_version != right.schema_version || left.required_features != right.required_features
+        || left.optional_features != right.optional_features || left.roots.size() != right.roots.size()
+        || left.entries.size() != right.entries.size()) {
         return false;
     }
     for (std::size_t index = 0U; index < left.roots.size(); ++index) {
@@ -134,6 +148,9 @@ void test_format_asset_manifest_round_trips_through_parser()
     using namespace quiz_vulkan::assets;
 
     asset_manifest manifest;
+    manifest.schema_version = "manifest.v2";
+    manifest.required_features = {"feature alpha", "feature\\beta"};
+    manifest.optional_features = {"optional feature", "feature\ttab"};
     manifest.roots.push_back(asset_manifest_root{
         .id = "packaged",
         .aliases = {"images", "shared pack"},
@@ -179,6 +196,70 @@ void test_format_asset_manifest_round_trips_through_parser()
     require(parsed.ok(), "formatted manifest parses");
     require(manifests_equal(parsed.manifest, manifest), "formatted manifest round-trips through parser");
     require(format_asset_manifest(parsed.manifest) == formatted, "manifest formatter is idempotent after parse");
+}
+
+void test_summarize_asset_manifest_version_policy_tracks_schema_version_and_feature_acceptance()
+{
+    using namespace quiz_vulkan::assets;
+
+    asset_manifest compatible_manifest;
+    compatible_manifest.schema_version = "manifest.v2";
+    compatible_manifest.required_features = {"feature.alpha"};
+    compatible_manifest.optional_features = {"feature.beta"};
+
+    const std::vector<std::string_view> supported_features = {"feature.alpha"};
+    const asset_manifest_version_policy_summary compatible_summary = summarize_asset_manifest_version_policy(
+        compatible_manifest,
+        "manifest.v2",
+        supported_features);
+
+    require(
+        compatible_summary.schema_version == "manifest.v2",
+        "version policy summary preserves manifest schema version");
+    require(
+        compatible_summary.expected_schema_version == "manifest.v2",
+        "version policy summary preserves expected schema version");
+    require(
+        compatible_summary.required_features == compatible_manifest.required_features,
+        "version policy summary preserves required feature order");
+    require(
+        compatible_summary.optional_features == compatible_manifest.optional_features,
+        "version policy summary preserves optional feature order");
+    require(
+        compatible_summary.unsupported_features.size() == 1U,
+        "version policy summary reports unsupported optional features deterministically");
+    require(
+        compatible_summary.unsupported_features[0].feature == "feature.beta"
+            && !compatible_summary.unsupported_features[0].required,
+        "version policy summary marks optional unsupported features");
+    require(compatible_summary.compatible_accepted, "version policy summary accepts compatible manifests");
+    require(!compatible_summary.strict_accepted, "version policy summary rejects strict mode when optional features are unsupported");
+    require(compatible_summary.ok(), "version policy summary ok() follows compatible acceptance");
+
+    asset_manifest strict_manifest;
+    strict_manifest.schema_version = "manifest.v2";
+    strict_manifest.required_features = {"feature.gamma", "feature.alpha"};
+    strict_manifest.optional_features = {"feature.delta"};
+
+    const asset_manifest_version_policy_summary strict_summary = summarize_asset_manifest_version_policy(
+        strict_manifest,
+        "manifest.v2",
+        supported_features);
+
+    require(
+        strict_summary.unsupported_features.size() == 2U,
+        "version policy summary reports required and optional unsupported features");
+    require(
+        strict_summary.unsupported_features[0].feature == "feature.gamma"
+            && strict_summary.unsupported_features[0].required,
+        "version policy summary sorts required unsupported features first");
+    require(
+        strict_summary.unsupported_features[1].feature == "feature.delta"
+            && !strict_summary.unsupported_features[1].required,
+        "version policy summary sorts optional unsupported features after required features");
+    require(!strict_summary.compatible_accepted, "version policy summary rejects incompatible manifests");
+    require(!strict_summary.strict_accepted, "version policy summary rejects strict mode for incompatible manifests");
+    require(!strict_summary.ok(), "version policy summary ok() fails for incompatible manifests");
 }
 
 void test_parse_asset_manifest_text_loads_roots_entries_and_aliases()
@@ -526,6 +607,184 @@ void test_summarize_asset_manifest_catalog_carries_validation_and_skips_invalid_
     require(
         has_issue(summary.validation, asset_manifest_validation_issue_kind::asset_resolve_failed, "bad"),
         "catalog summary carries resolver validation issue");
+}
+
+void test_summarize_asset_manifest_catalog_cache_policy_tracks_version_and_duplicate_cache_keys()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "fixture_a",
+        .root_path = fixture_root / "a",
+    });
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "fixture_b",
+        .root_path = fixture_root / "b",
+    });
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "external_shader_pack",
+        .root_path = fixture_root / "build" / "external" / "shader_pack",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "font_regular",
+        .type = asset_type::font,
+        .uri = "fonts/Inter Regular.ttf",
+        .root_id = "fixture_a",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_front",
+        .type = asset_type::image,
+        .uri = "asset://images/card front.png",
+        .root_id = "fixture_a",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_front_copy",
+        .type = asset_type::image,
+        .uri = "ASSET:///images/./card front.png",
+        .root_id = "fixture_b",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_front_repeat",
+        .type = asset_type::image,
+        .uri = "ASSET:///images/./card front.png",
+        .root_id = "fixture_b",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "answer_sound",
+        .type = asset_type::sound,
+        .uri = "sounds/answer.wav",
+        .root_id = "fixture_a",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "traversal",
+        .type = asset_type::sound,
+        .uri = "asset://sounds/%2e%2e/secret.wav",
+        .root_id = "fixture_a",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "ui_shader",
+        .type = asset_type::shader,
+        .uri = "shaders/ui.vert.spv",
+        .root_id = "external_shader_pack",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "main_deck",
+        .type = asset_type::deck,
+        .uri = "decks/main deck.quiz",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const asset_manifest_catalog_cache_policy_summary summary =
+        summarize_asset_manifest_catalog_cache_policy("catalog.v1", manifest, resolver);
+
+    require(summary.manifest_version == "catalog.v1", "cache policy summary preserves manifest version");
+    require(!summary.ok(), "cache policy summary fails only for real duplicate cache keys and invalid entries");
+    require(summary.catalog.types.size() == 5U, "cache policy summary groups all typed asset entries");
+
+    const asset_manifest_catalog_type_summary* images = summary.catalog.find_type(asset_type::image);
+    require(images != nullptr, "cache policy summary keeps image group");
+    require(contains_string(images->entry_ids, "card_front"), "cache policy summary keeps first image entry");
+    require(
+        contains_string(images->entry_ids, "card_front_copy"),
+        "cache policy summary keeps duplicate image entry");
+    require(
+        contains_string(images->entry_ids, "card_front_repeat"),
+        "cache policy summary keeps repeated image entry");
+    require(
+        !contains_string(images->entry_ids, "traversal"),
+        "cache policy summary skips traversal entries");
+
+    const asset_manifest_catalog_type_summary* sounds = summary.catalog.find_type(asset_type::sound);
+    require(sounds != nullptr, "cache policy summary keeps sound group");
+    require(sounds->find_cache_key("sound|sounds/answer.wav") != nullptr, "valid sound cache key is preserved");
+    require(sounds->find_cache_key("sound|asset://sounds/secret.wav") == nullptr, "invalid traversal sound is omitted");
+
+    const asset_manifest_catalog_duplicate_cache_key_report* duplicate =
+        find_duplicate_cache_key(summary.duplicate_cache_keys, "image|asset://images/card front.png");
+    require(duplicate != nullptr, "cache policy summary reports duplicate cache keys");
+    require(duplicate->type == asset_type::image, "duplicate cache key keeps asset type");
+    require(
+        duplicate->entry_ids == std::vector<std::string>{"card_front", "card_front_copy", "card_front_repeat"},
+        "duplicate cache key keeps deterministic entry ids");
+
+    const asset_manifest_catalog_duplicate_cache_key_report* font_duplicate =
+        find_duplicate_cache_key(summary.duplicate_cache_keys, "font|fonts/Inter Regular.ttf");
+    require(font_duplicate == nullptr, "identical repeated ids are not reported as duplicate cache keys");
+
+    require(
+        find_duplicate_cache_key(summary.duplicate_cache_keys, "sound|asset://sounds/secret.wav") == nullptr,
+        "invalid traversal entries do not leak into duplicate cache keys");
+    require(
+        summary.catalog.find_type(asset_type::shader)->find_root("external_shader_pack") != nullptr,
+        "catalog summary keeps canonical external root ids without path leakage");
+    require(
+        summary.catalog.find_type(asset_type::deck)->find_cache_key("deck|decks/main deck.quiz") != nullptr,
+        "catalog summary keeps rootless deck cache keys");
+}
+
+void test_summarize_asset_manifest_catalog_cache_policy_reports_only_real_duplicate_cache_keys()
+{
+    using namespace quiz_vulkan::assets;
+
+    asset_manifest_catalog_summary summary;
+    summary.types.push_back(asset_manifest_catalog_type_summary{
+        .type = asset_type::image,
+        .entry_ids = {"card_a", "card_b"},
+        .roots = {},
+        .cache_keys = {
+            asset_manifest_catalog_cache_key_summary{
+                .cache_key = "image|asset://cards/front.png",
+                .entry_ids = {"card_a", "card_a"},
+                .root_ids = {"fixture"},
+            },
+            asset_manifest_catalog_cache_key_summary{
+                .cache_key = "image|asset://cards/back.png",
+                .entry_ids = {"card_b", "card_c", "card_b"},
+                .root_ids = {"fixture", "fixture_b"},
+            },
+        },
+    });
+
+    const std::vector<asset_manifest_catalog_duplicate_cache_key_report> duplicate_cache_keys =
+        summarize_asset_manifest_catalog_duplicate_cache_keys(summary);
+
+    require(
+        duplicate_cache_keys.size() == 1U,
+        "duplicate cache-key summaries ignore repeated identical ids and keep real duplicates");
+    require(
+        duplicate_cache_keys[0].cache_key == "image|asset://cards/back.png",
+        "duplicate cache-key summaries keep deterministic cache-key order");
+    require(
+        duplicate_cache_keys[0].entry_ids == std::vector<std::string>{"card_b", "card_c"},
+        "duplicate cache-key summaries de-duplicate repeated ids before reporting");
+}
+
+void test_summarize_asset_manifest_catalog_cache_policy_ok_ignores_validation_without_duplicates()
+{
+    using namespace quiz_vulkan::assets;
+
+    asset_manifest manifest;
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "body_font",
+        .type = asset_type::font,
+        .uri = "fonts/Inter.ttf",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "traversal",
+        .type = asset_type::image,
+        .uri = "asset://images/%2e%2e/secret.png",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const asset_manifest_catalog_cache_policy_summary summary =
+        summarize_asset_manifest_catalog_cache_policy("catalog.v1", manifest, resolver);
+
+    require(summary.manifest_version == "catalog.v1", "cache policy summary keeps manifest version");
+    require(summary.duplicate_cache_keys.empty(), "cache policy summary has no real duplicate cache keys");
+    require(summary.ok(), "cache policy summary stays ok when traversal entries are only validation failures");
+    require(!summary.catalog.ok(), "catalog validation still records traversal failures independently");
 }
 
 void test_asset_manifest_diagnostic_report_summarizes_targeted_issues()
@@ -1221,6 +1480,9 @@ int main()
     test_normalize_asset_manifest_skips_invalid_entries_but_reports_validation();
     test_summarize_asset_manifest_catalog_groups_all_asset_types();
     test_summarize_asset_manifest_catalog_carries_validation_and_skips_invalid_entries();
+    test_summarize_asset_manifest_catalog_cache_policy_tracks_version_and_duplicate_cache_keys();
+    test_summarize_asset_manifest_catalog_cache_policy_reports_only_real_duplicate_cache_keys();
+    test_summarize_asset_manifest_catalog_cache_policy_ok_ignores_validation_without_duplicates();
     test_asset_manifest_diagnostic_report_summarizes_targeted_issues();
     test_asset_manifest_diagnostic_report_preserves_stable_order();
     test_manifest_normalizes_asset_uri_and_roots_fixture_path();

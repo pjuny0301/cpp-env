@@ -596,6 +596,62 @@ public:
 
 using fake_image_texture_upload_generation_id = std::uint64_t;
 
+enum class fake_image_texture_upload_retry_eligibility {
+    not_needed,
+    eligible,
+    ineligible,
+};
+
+inline std::string fake_image_texture_upload_retry_eligibility_name(
+    fake_image_texture_upload_retry_eligibility eligibility)
+{
+    switch (eligibility) {
+    case fake_image_texture_upload_retry_eligibility::not_needed:
+        return "not_needed";
+    case fake_image_texture_upload_retry_eligibility::eligible:
+        return "eligible";
+    case fake_image_texture_upload_retry_eligibility::ineligible:
+        return "ineligible";
+    }
+
+    return "unknown";
+}
+
+inline bool is_retryable_render_image_texture_upload_status(
+    render_image_texture_upload_status status)
+{
+    return status == render_image_texture_upload_status::invalid_image;
+}
+
+inline std::size_t fake_image_texture_upload_retry_backoff_sequence_delta(
+    std::size_t failed_attempt_count_for_key)
+{
+    if (failed_attempt_count_for_key == 0) {
+        return 0;
+    }
+
+    constexpr std::size_t max_backoff = 16;
+    if (failed_attempt_count_for_key > 5) {
+        return max_backoff;
+    }
+
+    const std::size_t backoff = std::size_t{1} << (failed_attempt_count_for_key - 1);
+    return backoff < max_backoff ? backoff : max_backoff;
+}
+
+struct fake_image_texture_upload_retry_snapshot {
+    fake_image_texture_upload_generation_id generation_id = 0;
+    render_image_texture_key key;
+    render_image_texture_upload_status status = render_image_texture_upload_status::invalid_image;
+    fake_image_texture_upload_retry_eligibility eligibility =
+        fake_image_texture_upload_retry_eligibility::ineligible;
+    std::size_t attempt_count_for_key = 0;
+    std::size_t failed_attempt_count_for_key = 0;
+    std::size_t retry_after_queue_sequence_delta = 0;
+    std::size_t next_retry_sequence = 0;
+    std::string diagnostic;
+};
+
 struct fake_image_texture_upload_request_snapshot {
     fake_image_texture_upload_generation_id generation_id = 0;
     render_image_texture_key key;
@@ -610,6 +666,7 @@ struct fake_image_texture_upload_request_snapshot {
     std::size_t enqueue_sequence = 0;
     std::size_t queue_depth_before_enqueue = 0;
     std::size_t queue_depth_after_enqueue = 0;
+    std::size_t attempt_count_for_key = 0;
 };
 
 struct fake_image_texture_upload_result_snapshot {
@@ -625,6 +682,7 @@ struct fake_image_texture_upload_result_snapshot {
     std::string diagnostic;
     std::size_t completion_sequence = 0;
     std::size_t queue_depth_after_completion = 0;
+    fake_image_texture_upload_retry_snapshot retry;
 };
 
 struct fake_image_texture_upload_snapshot_entry {
@@ -640,6 +698,7 @@ struct fake_image_texture_upload_snapshot_entry {
     std::size_t decoded_byte_count = 0;
     std::size_t staging_byte_count = 0;
     std::string diagnostic;
+    fake_image_texture_upload_retry_snapshot retry;
 };
 
 struct fake_image_texture_upload_queue_entry_snapshot {
@@ -651,9 +710,11 @@ struct fake_image_texture_upload_queue_entry_snapshot {
     render_image_texture_handle texture;
     bool completed = false;
     std::size_t staging_byte_count = 0;
+    std::size_t queue_depth_before_enqueue = 0;
     std::size_t queue_depth_after_enqueue = 0;
     std::size_t queue_depth_after_completion = 0;
     std::string diagnostic;
+    fake_image_texture_upload_retry_snapshot retry;
 };
 
 struct fake_image_texture_upload_snapshot {
@@ -673,6 +734,10 @@ struct fake_image_texture_upload_snapshot {
     std::size_t pending_upload_count = 0;
     std::size_t next_queue_sequence = 1;
     std::vector<fake_image_texture_upload_queue_entry_snapshot> queue_entries;
+    std::size_t retryable_upload_count = 0;
+    std::size_t nonretryable_upload_count = 0;
+    std::size_t completed_without_retry_count = 0;
+    std::vector<fake_image_texture_upload_retry_snapshot> retry_snapshots;
 };
 
 class fake_image_texture_uploader final : public image_texture_uploader_interface {
@@ -686,6 +751,7 @@ public:
         const std::size_t queue_depth_before_enqueue = pending_upload_count_;
         ++pending_upload_count_;
         const std::size_t queue_depth_after_enqueue = pending_upload_count_;
+        const std::size_t attempt_count_for_key = ++upload_attempt_count_by_key_[request.key];
         const std::size_t pixel_byte_count = expected_render_decoded_image_byte_count(request.image);
         const std::size_t decoded_byte_count = request.image.pixels.size();
         std::size_t pixel_count = 0;
@@ -711,6 +777,7 @@ public:
             .enqueue_sequence = enqueue_sequence,
             .queue_depth_before_enqueue = queue_depth_before_enqueue,
             .queue_depth_after_enqueue = queue_depth_after_enqueue,
+            .attempt_count_for_key = attempt_count_for_key,
         });
 
         if (!is_valid_render_image_texture_key(request.key)) {
@@ -727,7 +794,8 @@ public:
                 .diagnostic = "image texture upload key is empty or contains control characters",
             },
                 enqueue_sequence,
-                queue_depth_after_enqueue);
+                queue_depth_after_enqueue,
+                attempt_count_for_key);
         }
 
         if (request.key.sampler != request.sampler || !is_valid_render_image_sampler_policy(request.sampler)) {
@@ -744,7 +812,8 @@ public:
                 .diagnostic = "image texture upload sampler policy is invalid or does not match the texture key",
             },
                 enqueue_sequence,
-                queue_depth_after_enqueue);
+                queue_depth_after_enqueue,
+                attempt_count_for_key);
         }
 
         if (render_image_pixel_format_byte_count(request.image.pixel_format) == 0) {
@@ -761,7 +830,8 @@ public:
                 .diagnostic = "image texture upload pixel format is unsupported",
             },
                 enqueue_sequence,
-                queue_depth_after_enqueue);
+                queue_depth_after_enqueue,
+                attempt_count_for_key);
         }
 
         if (!has_valid_render_decoded_image_payload(request.image)) {
@@ -778,7 +848,8 @@ public:
                 .diagnostic = "image texture upload payload size does not match dimensions and format",
             },
                 enqueue_sequence,
-                queue_depth_after_enqueue);
+                queue_depth_after_enqueue,
+                attempt_count_for_key);
         }
 
         return record_result(render_image_texture_upload_result{
@@ -799,7 +870,8 @@ public:
             .diagnostic = {},
         },
             enqueue_sequence,
-            queue_depth_after_enqueue);
+            queue_depth_after_enqueue,
+            attempt_count_for_key);
     }
 
     fake_image_texture_upload_snapshot diagnostic_snapshot() const
@@ -821,6 +893,10 @@ public:
             .pending_upload_count = pending_upload_count_,
             .next_queue_sequence = next_upload_queue_sequence_,
             .queue_entries = upload_queue_entries_,
+            .retryable_upload_count = retryable_upload_count_,
+            .nonretryable_upload_count = nonretryable_upload_count_,
+            .completed_without_retry_count = completed_without_retry_count_,
+            .retry_snapshots = upload_retry_snapshots_,
         };
         snapshot.entries.reserve(upload_results.size());
         for (std::size_t index = 0; index < upload_results.size(); ++index) {
@@ -838,6 +914,7 @@ public:
                 .decoded_byte_count = result.decoded_byte_count,
                 .staging_byte_count = result.staging_byte_count,
                 .diagnostic = result.diagnostic,
+                .retry = upload_result_snapshots[index].retry,
             });
         }
         return snapshot;
@@ -852,7 +929,8 @@ private:
     render_image_texture_upload_result record_result(
         render_image_texture_upload_result result,
         std::size_t enqueue_sequence,
-        std::size_t queue_depth_after_enqueue)
+        std::size_t queue_depth_after_enqueue,
+        std::size_t attempt_count_for_key)
     {
         attempted_staging_byte_count_ += result.staging_byte_count;
         if (result.ok()) {
@@ -869,6 +947,10 @@ private:
             --pending_upload_count_;
         }
         const std::size_t queue_depth_after_completion = pending_upload_count_;
+        const fake_image_texture_upload_retry_snapshot retry = make_retry_snapshot(
+            result,
+            attempt_count_for_key,
+            completion_sequence);
 
         upload_result_snapshots.push_back(fake_image_texture_upload_result_snapshot{
             .generation_id = result.generation_id,
@@ -883,6 +965,7 @@ private:
             .diagnostic = result.diagnostic,
             .completion_sequence = completion_sequence,
             .queue_depth_after_completion = queue_depth_after_completion,
+            .retry = retry,
         });
         upload_queue_entries_.push_back(fake_image_texture_upload_queue_entry_snapshot{
             .enqueue_sequence = enqueue_sequence,
@@ -893,12 +976,71 @@ private:
             .texture = result.texture,
             .completed = true,
             .staging_byte_count = result.staging_byte_count,
+            .queue_depth_before_enqueue = queue_depth_after_enqueue == 0 ? 0 : queue_depth_after_enqueue - 1,
             .queue_depth_after_enqueue = queue_depth_after_enqueue,
             .queue_depth_after_completion = queue_depth_after_completion,
             .diagnostic = result.diagnostic,
+            .retry = retry,
         });
+        upload_retry_snapshots_.push_back(retry);
         upload_results.push_back(result);
         return result;
+    }
+
+    fake_image_texture_upload_retry_snapshot make_retry_snapshot(
+        const render_image_texture_upload_result& result,
+        std::size_t attempt_count_for_key,
+        std::size_t completion_sequence)
+    {
+        std::size_t failed_attempt_count_for_key = failed_upload_attempt_count_by_key_[result.key];
+        if (!result.ok()) {
+            failed_attempt_count_for_key = ++failed_upload_attempt_count_by_key_[result.key];
+        }
+
+        if (result.ok()) {
+            ++completed_without_retry_count_;
+            return fake_image_texture_upload_retry_snapshot{
+                .generation_id = result.generation_id,
+                .key = result.key,
+                .status = result.status,
+                .eligibility = fake_image_texture_upload_retry_eligibility::not_needed,
+                .attempt_count_for_key = attempt_count_for_key,
+                .failed_attempt_count_for_key = failed_attempt_count_for_key,
+                .retry_after_queue_sequence_delta = 0,
+                .next_retry_sequence = 0,
+                .diagnostic = "image texture upload succeeded; retry is not needed",
+            };
+        }
+
+        if (is_retryable_render_image_texture_upload_status(result.status)) {
+            ++retryable_upload_count_;
+            const std::size_t backoff = fake_image_texture_upload_retry_backoff_sequence_delta(
+                failed_attempt_count_for_key);
+            return fake_image_texture_upload_retry_snapshot{
+                .generation_id = result.generation_id,
+                .key = result.key,
+                .status = result.status,
+                .eligibility = fake_image_texture_upload_retry_eligibility::eligible,
+                .attempt_count_for_key = attempt_count_for_key,
+                .failed_attempt_count_for_key = failed_attempt_count_for_key,
+                .retry_after_queue_sequence_delta = backoff,
+                .next_retry_sequence = completion_sequence + backoff,
+                .diagnostic = "image texture upload can retry after decoded payload changes",
+            };
+        }
+
+        ++nonretryable_upload_count_;
+        return fake_image_texture_upload_retry_snapshot{
+            .generation_id = result.generation_id,
+            .key = result.key,
+            .status = result.status,
+            .eligibility = fake_image_texture_upload_retry_eligibility::ineligible,
+            .attempt_count_for_key = attempt_count_for_key,
+            .failed_attempt_count_for_key = failed_attempt_count_for_key,
+            .retry_after_queue_sequence_delta = 0,
+            .next_retry_sequence = 0,
+            .diagnostic = "image texture upload failure is structural and is not retryable",
+        };
     }
 
     render_image_texture_id next_id_ = 1;
@@ -906,12 +1048,18 @@ private:
     std::size_t next_upload_queue_sequence_ = 1;
     std::size_t pending_upload_count_ = 0;
     std::size_t failed_upload_count_ = 0;
+    std::size_t retryable_upload_count_ = 0;
+    std::size_t nonretryable_upload_count_ = 0;
+    std::size_t completed_without_retry_count_ = 0;
     std::size_t uploaded_pixel_count_ = 0;
     std::size_t uploaded_pixel_byte_count_ = 0;
     std::size_t uploaded_decoded_byte_count_ = 0;
     std::size_t staged_byte_count_ = 0;
     std::size_t attempted_staging_byte_count_ = 0;
+    std::map<render_image_texture_key, std::size_t, render_image_texture_key_less> upload_attempt_count_by_key_;
+    std::map<render_image_texture_key, std::size_t, render_image_texture_key_less> failed_upload_attempt_count_by_key_;
     std::vector<fake_image_texture_upload_queue_entry_snapshot> upload_queue_entries_;
+    std::vector<fake_image_texture_upload_retry_snapshot> upload_retry_snapshots_;
 };
 
 class fake_image_texture_cache final : public image_texture_cache_interface {

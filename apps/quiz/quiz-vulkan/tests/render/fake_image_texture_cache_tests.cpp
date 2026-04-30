@@ -897,6 +897,119 @@ void test_texture_uploader_reports_deterministic_queue_lifecycle()
     require(!snapshot.queue_entries[1].diagnostic.empty(), "failed queue entry preserves diagnostic");
 }
 
+void test_texture_uploader_reports_retry_eligibility_and_backoff()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_image_texture_key key{
+        .source_key = "textures/upload-retry.ppm",
+        .sampler = render_image_sampler_policy{},
+    };
+    fake_image_texture_uploader uploader;
+
+    const render_image_texture_upload_result uploaded = uploader.upload(render_image_texture_upload_request{
+        .key = key,
+        .sampler = render_image_sampler_policy{},
+        .image = make_rgba_2x1_decoded_image(),
+    });
+
+    render_decoded_image invalid_payload = make_rgba_2x1_decoded_image();
+    invalid_payload.pixels.pop_back();
+    const render_image_texture_upload_result first_retryable_failure = uploader.upload(render_image_texture_upload_request{
+        .key = key,
+        .sampler = render_image_sampler_policy{},
+        .image = invalid_payload,
+    });
+    const render_image_texture_upload_result second_retryable_failure = uploader.upload(render_image_texture_upload_request{
+        .key = key,
+        .sampler = render_image_sampler_policy{},
+        .image = invalid_payload,
+    });
+    const render_image_texture_upload_result invalid_key_failure = uploader.upload(render_image_texture_upload_request{
+        .key = render_image_texture_key{.source_key = {}, .sampler = render_image_sampler_policy{}},
+        .sampler = render_image_sampler_policy{},
+        .image = make_rgba_2x1_decoded_image(),
+    });
+
+    require(uploaded.ok(), "retry policy starts from successful upload");
+    require(!first_retryable_failure.ok(), "retry policy records first retryable failure");
+    require(!second_retryable_failure.ok(), "retry policy records second retryable failure");
+    require(!invalid_key_failure.ok(), "retry policy records nonretryable failure");
+    require(is_retryable_render_image_texture_upload_status(render_image_texture_upload_status::invalid_image), "invalid image status is retryable");
+    require(
+        !is_retryable_render_image_texture_upload_status(render_image_texture_upload_status::invalid_key),
+        "invalid key status is not retryable");
+    require(fake_image_texture_upload_retry_backoff_sequence_delta(1) == 1, "first retry backoff is one sequence");
+    require(fake_image_texture_upload_retry_backoff_sequence_delta(2) == 2, "second retry backoff doubles");
+    require(fake_image_texture_upload_retry_backoff_sequence_delta(6) == 16, "retry backoff is capped");
+
+    const fake_image_texture_upload_snapshot snapshot = uploader.diagnostic_snapshot();
+    require(snapshot.upload_count == 4, "retry policy snapshot records all uploads");
+    require(snapshot.failed_upload_count == 3, "retry policy snapshot records failed uploads");
+    require(snapshot.retryable_upload_count == 2, "retry policy snapshot counts retryable failures");
+    require(snapshot.nonretryable_upload_count == 1, "retry policy snapshot counts nonretryable failures");
+    require(snapshot.completed_without_retry_count == 1, "retry policy snapshot counts completed upload");
+    require(snapshot.retry_snapshots.size() == 4, "retry policy snapshot records retry decisions");
+    require(snapshot.queue_entries.size() == 4, "retry policy snapshot records queue decisions");
+    require(snapshot.next_queue_sequence == 9, "retry policy snapshot advances deterministic queue sequence");
+
+    const fake_image_texture_upload_retry_snapshot& success_retry = snapshot.retry_snapshots[0];
+    require(success_retry.generation_id == 1, "successful retry snapshot records generation");
+    require(success_retry.status == render_image_texture_upload_status::uploaded, "successful retry snapshot records uploaded status");
+    require(
+        success_retry.eligibility == fake_image_texture_upload_retry_eligibility::not_needed,
+        "successful retry snapshot reports no retry needed");
+    require(success_retry.attempt_count_for_key == 1, "successful retry snapshot records attempt count");
+    require(success_retry.failed_attempt_count_for_key == 0, "successful retry snapshot records no failures");
+    require(success_retry.next_retry_sequence == 0, "successful retry snapshot records no retry sequence");
+    require(
+        fake_image_texture_upload_retry_eligibility_name(success_retry.eligibility) == "not_needed",
+        "successful retry snapshot reports eligibility name");
+
+    const fake_image_texture_upload_retry_snapshot& first_retry = snapshot.retry_snapshots[1];
+    require(first_retry.generation_id == 2, "first retryable snapshot records generation");
+    require(
+        first_retry.eligibility == fake_image_texture_upload_retry_eligibility::eligible,
+        "first retryable snapshot is eligible");
+    require(first_retry.attempt_count_for_key == 2, "first retryable snapshot records attempt count");
+    require(first_retry.failed_attempt_count_for_key == 1, "first retryable snapshot records failed count");
+    require(first_retry.retry_after_queue_sequence_delta == 1, "first retryable snapshot records backoff");
+    require(first_retry.next_retry_sequence == 5, "first retryable snapshot records next retry sequence");
+    require(!first_retry.diagnostic.empty(), "first retryable snapshot includes diagnostic");
+
+    const fake_image_texture_upload_retry_snapshot& second_retry = snapshot.retry_snapshots[2];
+    require(second_retry.generation_id == 3, "second retryable snapshot records generation");
+    require(
+        second_retry.eligibility == fake_image_texture_upload_retry_eligibility::eligible,
+        "second retryable snapshot is eligible");
+    require(second_retry.attempt_count_for_key == 3, "second retryable snapshot records attempt count");
+    require(second_retry.failed_attempt_count_for_key == 2, "second retryable snapshot records failed count");
+    require(second_retry.retry_after_queue_sequence_delta == 2, "second retryable snapshot records doubled backoff");
+    require(second_retry.next_retry_sequence == 8, "second retryable snapshot records next retry sequence");
+
+    const fake_image_texture_upload_retry_snapshot& nonretryable = snapshot.retry_snapshots[3];
+    require(nonretryable.generation_id == 4, "nonretryable snapshot records generation");
+    require(
+        nonretryable.eligibility == fake_image_texture_upload_retry_eligibility::ineligible,
+        "nonretryable snapshot is ineligible");
+    require(nonretryable.status == render_image_texture_upload_status::invalid_key, "nonretryable snapshot records invalid key");
+    require(nonretryable.attempt_count_for_key == 1, "nonretryable snapshot records separate key attempts");
+    require(nonretryable.failed_attempt_count_for_key == 1, "nonretryable snapshot records failed count");
+    require(nonretryable.retry_after_queue_sequence_delta == 0, "nonretryable snapshot records no backoff");
+    require(nonretryable.next_retry_sequence == 0, "nonretryable snapshot records no retry sequence");
+    require(
+        fake_image_texture_upload_retry_eligibility_name(nonretryable.eligibility) == "ineligible",
+        "nonretryable snapshot reports eligibility name");
+
+    require(
+        snapshot.queue_entries[1].retry.next_retry_sequence == first_retry.next_retry_sequence,
+        "queue entry carries retry summary");
+    require(
+        snapshot.entries[2].retry.retry_after_queue_sequence_delta
+            == second_retry.retry_after_queue_sequence_delta,
+        "upload entry carries retry summary");
+}
+
 void test_texture_uploader_rejects_invalid_inputs()
 {
     using namespace quiz_vulkan::render;
@@ -2568,6 +2681,7 @@ int main()
     test_texture_cache_can_use_loaded_source_bytes();
     test_texture_uploader_uploads_valid_decoded_image();
     test_texture_uploader_reports_deterministic_queue_lifecycle();
+    test_texture_uploader_reports_retry_eligibility_and_backoff();
     test_texture_uploader_rejects_invalid_inputs();
     test_texture_cache_uses_injected_texture_uploader();
     test_texture_pipeline_resolves_loads_decodes_and_uploads_image_ref();

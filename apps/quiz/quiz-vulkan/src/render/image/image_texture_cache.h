@@ -4,6 +4,7 @@
 #include "render/image/image_types.h"
 
 #include <cctype>
+#include <cstdint>
 #include <limits>
 #include <map>
 #include <string>
@@ -229,11 +230,14 @@ enum class render_image_texture_upload_status {
 
 struct render_image_texture_upload_result {
     render_image_texture_upload_status status = render_image_texture_upload_status::invalid_image;
+    std::uint64_t generation_id = 0;
     render_image_texture_key key;
+    render_image_sampler_policy sampler;
     render_image_texture_handle texture;
     std::size_t pixel_count = 0;
     std::size_t pixel_byte_count = 0;
     std::size_t decoded_byte_count = 0;
+    std::size_t staging_byte_count = 0;
     std::string diagnostic;
 
     bool ok() const
@@ -250,13 +254,46 @@ public:
         const render_image_texture_upload_request& request) = 0;
 };
 
-struct fake_image_texture_upload_snapshot_entry {
+using fake_image_texture_upload_generation_id = std::uint64_t;
+
+struct fake_image_texture_upload_request_snapshot {
+    fake_image_texture_upload_generation_id generation_id = 0;
     render_image_texture_key key;
+    render_image_sampler_policy sampler;
+    std::size_t width = 0;
+    std::size_t height = 0;
+    render_image_pixel_format pixel_format = render_image_pixel_format::rgba8_srgb;
+    std::size_t pixel_count = 0;
+    std::size_t pixel_byte_count = 0;
+    std::size_t decoded_byte_count = 0;
+    std::size_t staging_byte_count = 0;
+};
+
+struct fake_image_texture_upload_result_snapshot {
+    fake_image_texture_upload_generation_id generation_id = 0;
+    render_image_texture_upload_status status = render_image_texture_upload_status::invalid_image;
+    render_image_texture_key key;
+    render_image_sampler_policy sampler;
+    render_image_texture_handle texture;
+    std::size_t pixel_count = 0;
+    std::size_t pixel_byte_count = 0;
+    std::size_t decoded_byte_count = 0;
+    std::size_t staging_byte_count = 0;
+    std::string diagnostic;
+};
+
+struct fake_image_texture_upload_snapshot_entry {
+    fake_image_texture_upload_generation_id generation_id = 0;
+    fake_image_texture_upload_request_snapshot request;
+    fake_image_texture_upload_result_snapshot result;
+    render_image_texture_key key;
+    render_image_sampler_policy sampler;
     render_image_texture_handle texture;
     render_image_texture_upload_status status = render_image_texture_upload_status::invalid_image;
     std::size_t pixel_count = 0;
     std::size_t pixel_byte_count = 0;
     std::size_t decoded_byte_count = 0;
+    std::size_t staging_byte_count = 0;
     std::string diagnostic;
 };
 
@@ -266,6 +303,11 @@ struct fake_image_texture_upload_snapshot {
     std::size_t uploaded_pixel_count = 0;
     std::size_t uploaded_pixel_byte_count = 0;
     std::size_t uploaded_decoded_byte_count = 0;
+    std::size_t staged_byte_count = 0;
+    std::size_t attempted_staging_byte_count = 0;
+    fake_image_texture_upload_generation_id next_generation_id = 1;
+    std::vector<fake_image_texture_upload_request_snapshot> request_snapshots;
+    std::vector<fake_image_texture_upload_result_snapshot> result_snapshots;
     std::vector<fake_image_texture_upload_snapshot_entry> entries;
 };
 
@@ -275,6 +317,7 @@ public:
     {
         upload_requests.push_back(request);
 
+        const fake_image_texture_upload_generation_id generation_id = next_generation_id_++;
         const std::size_t pixel_byte_count = expected_render_decoded_image_byte_count(request.image);
         const std::size_t decoded_byte_count = request.image.pixels.size();
         std::size_t pixel_count = 0;
@@ -282,15 +325,34 @@ public:
             && request.image.width <= std::numeric_limits<std::size_t>::max() / request.image.height) {
             pixel_count = request.image.width * request.image.height;
         }
+        const std::size_t staging_byte_count = has_valid_render_decoded_image_payload(request.image)
+            ? decoded_byte_count
+            : 0;
+
+        upload_request_snapshots.push_back(fake_image_texture_upload_request_snapshot{
+            .generation_id = generation_id,
+            .key = request.key,
+            .sampler = request.sampler,
+            .width = request.image.width,
+            .height = request.image.height,
+            .pixel_format = request.image.pixel_format,
+            .pixel_count = pixel_count,
+            .pixel_byte_count = pixel_byte_count,
+            .decoded_byte_count = decoded_byte_count,
+            .staging_byte_count = staging_byte_count,
+        });
 
         if (!is_valid_render_image_texture_key(request.key)) {
             return record_result(render_image_texture_upload_result{
                 .status = render_image_texture_upload_status::invalid_key,
+                .generation_id = generation_id,
                 .key = request.key,
+                .sampler = request.sampler,
                 .texture = {},
                 .pixel_count = pixel_count,
                 .pixel_byte_count = pixel_byte_count,
                 .decoded_byte_count = decoded_byte_count,
+                .staging_byte_count = staging_byte_count,
                 .diagnostic = "image texture upload key is empty or contains control characters",
             });
         }
@@ -298,11 +360,14 @@ public:
         if (request.key.sampler != request.sampler || !is_valid_render_image_sampler_policy(request.sampler)) {
             return record_result(render_image_texture_upload_result{
                 .status = render_image_texture_upload_status::invalid_sampler,
+                .generation_id = generation_id,
                 .key = request.key,
+                .sampler = request.sampler,
                 .texture = {},
                 .pixel_count = pixel_count,
                 .pixel_byte_count = pixel_byte_count,
                 .decoded_byte_count = decoded_byte_count,
+                .staging_byte_count = staging_byte_count,
                 .diagnostic = "image texture upload sampler policy is invalid or does not match the texture key",
             });
         }
@@ -310,11 +375,14 @@ public:
         if (render_image_pixel_format_byte_count(request.image.pixel_format) == 0) {
             return record_result(render_image_texture_upload_result{
                 .status = render_image_texture_upload_status::unsupported_format,
+                .generation_id = generation_id,
                 .key = request.key,
+                .sampler = request.sampler,
                 .texture = {},
                 .pixel_count = pixel_count,
                 .pixel_byte_count = pixel_byte_count,
                 .decoded_byte_count = decoded_byte_count,
+                .staging_byte_count = staging_byte_count,
                 .diagnostic = "image texture upload pixel format is unsupported",
             });
         }
@@ -322,18 +390,23 @@ public:
         if (!has_valid_render_decoded_image_payload(request.image)) {
             return record_result(render_image_texture_upload_result{
                 .status = render_image_texture_upload_status::invalid_image,
+                .generation_id = generation_id,
                 .key = request.key,
+                .sampler = request.sampler,
                 .texture = {},
                 .pixel_count = pixel_count,
                 .pixel_byte_count = pixel_byte_count,
                 .decoded_byte_count = decoded_byte_count,
+                .staging_byte_count = staging_byte_count,
                 .diagnostic = "image texture upload payload size does not match dimensions and format",
             });
         }
 
         return record_result(render_image_texture_upload_result{
             .status = render_image_texture_upload_status::uploaded,
+            .generation_id = generation_id,
             .key = request.key,
+            .sampler = request.sampler,
             .texture = render_image_texture_handle{
                 .id = next_id_++,
                 .revision = 1,
@@ -343,6 +416,7 @@ public:
             .pixel_count = pixel_count,
             .pixel_byte_count = pixel_byte_count,
             .decoded_byte_count = decoded_byte_count,
+            .staging_byte_count = staging_byte_count,
             .diagnostic = {},
         });
     }
@@ -355,17 +429,28 @@ public:
             .uploaded_pixel_count = uploaded_pixel_count_,
             .uploaded_pixel_byte_count = uploaded_pixel_byte_count_,
             .uploaded_decoded_byte_count = uploaded_decoded_byte_count_,
+            .staged_byte_count = staged_byte_count_,
+            .attempted_staging_byte_count = attempted_staging_byte_count_,
+            .next_generation_id = next_generation_id_,
+            .request_snapshots = upload_request_snapshots,
+            .result_snapshots = upload_result_snapshots,
             .entries = {},
         };
         snapshot.entries.reserve(upload_results.size());
-        for (const render_image_texture_upload_result& result : upload_results) {
+        for (std::size_t index = 0; index < upload_results.size(); ++index) {
+            const render_image_texture_upload_result& result = upload_results[index];
             snapshot.entries.push_back(fake_image_texture_upload_snapshot_entry{
+                .generation_id = result.generation_id,
+                .request = upload_request_snapshots[index],
+                .result = upload_result_snapshots[index],
                 .key = result.key,
+                .sampler = result.sampler,
                 .texture = result.texture,
                 .status = result.status,
                 .pixel_count = result.pixel_count,
                 .pixel_byte_count = result.pixel_byte_count,
                 .decoded_byte_count = result.decoded_byte_count,
+                .staging_byte_count = result.staging_byte_count,
                 .diagnostic = result.diagnostic,
             });
         }
@@ -373,28 +458,47 @@ public:
     }
 
     std::vector<render_image_texture_upload_request> upload_requests;
+    std::vector<fake_image_texture_upload_request_snapshot> upload_request_snapshots;
+    std::vector<fake_image_texture_upload_result_snapshot> upload_result_snapshots;
     std::vector<render_image_texture_upload_result> upload_results;
 
 private:
     render_image_texture_upload_result record_result(render_image_texture_upload_result result)
     {
+        attempted_staging_byte_count_ += result.staging_byte_count;
         if (result.ok()) {
             uploaded_pixel_count_ += result.pixel_count;
             uploaded_pixel_byte_count_ += result.pixel_byte_count;
             uploaded_decoded_byte_count_ += result.decoded_byte_count;
+            staged_byte_count_ += result.staging_byte_count;
         } else {
             ++failed_upload_count_;
         }
 
+        upload_result_snapshots.push_back(fake_image_texture_upload_result_snapshot{
+            .generation_id = result.generation_id,
+            .status = result.status,
+            .key = result.key,
+            .sampler = result.sampler,
+            .texture = result.texture,
+            .pixel_count = result.pixel_count,
+            .pixel_byte_count = result.pixel_byte_count,
+            .decoded_byte_count = result.decoded_byte_count,
+            .staging_byte_count = result.staging_byte_count,
+            .diagnostic = result.diagnostic,
+        });
         upload_results.push_back(result);
         return result;
     }
 
     render_image_texture_id next_id_ = 1;
+    fake_image_texture_upload_generation_id next_generation_id_ = 1;
     std::size_t failed_upload_count_ = 0;
     std::size_t uploaded_pixel_count_ = 0;
     std::size_t uploaded_pixel_byte_count_ = 0;
     std::size_t uploaded_decoded_byte_count_ = 0;
+    std::size_t staged_byte_count_ = 0;
+    std::size_t attempted_staging_byte_count_ = 0;
 };
 
 class fake_image_texture_cache final : public image_texture_cache_interface {

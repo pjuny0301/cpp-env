@@ -7,6 +7,7 @@
 
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -116,6 +117,9 @@ static_assert(requires(
     render::render_image_texture_upload_request upload_request,
     render::render_image_texture_upload_result upload_result,
     render::render_image_texture_upload_status upload_status,
+    render::fake_image_texture_upload_generation_id upload_generation_id,
+    render::fake_image_texture_upload_request_snapshot upload_request_snapshot,
+    render::fake_image_texture_upload_result_snapshot upload_result_snapshot,
     render::fake_image_texture_upload_snapshot_entry upload_entry,
     render::fake_image_texture_upload_snapshot upload_snapshot,
     const render::fake_image_texture_uploader& uploader,
@@ -170,27 +174,63 @@ static_assert(requires(
     { upload_request.sampler } -> std::same_as<render::render_image_sampler_policy&>;
     { upload_request.image } -> std::same_as<render::render_decoded_image&>;
     { upload_result.status } -> std::same_as<render::render_image_texture_upload_status&>;
+    { upload_result.generation_id } -> std::same_as<std::uint64_t&>;
     { upload_result.key } -> std::same_as<render::render_image_texture_key&>;
+    { upload_result.sampler } -> std::same_as<render::render_image_sampler_policy&>;
     { upload_result.texture } -> std::same_as<render::render_image_texture_handle&>;
     { upload_result.pixel_count } -> std::same_as<std::size_t&>;
     { upload_result.pixel_byte_count } -> std::same_as<std::size_t&>;
     { upload_result.decoded_byte_count } -> std::same_as<std::size_t&>;
+    { upload_result.staging_byte_count } -> std::same_as<std::size_t&>;
     { upload_result.diagnostic } -> std::same_as<std::string&>;
     { upload_result.ok() } -> std::same_as<bool>;
+    { upload_request_snapshot.generation_id } -> std::same_as<render::fake_image_texture_upload_generation_id&>;
+    { upload_request_snapshot.key } -> std::same_as<render::render_image_texture_key&>;
+    { upload_request_snapshot.sampler } -> std::same_as<render::render_image_sampler_policy&>;
+    { upload_request_snapshot.width } -> std::same_as<std::size_t&>;
+    { upload_request_snapshot.height } -> std::same_as<std::size_t&>;
+    { upload_request_snapshot.pixel_format } -> std::same_as<render::render_image_pixel_format&>;
+    { upload_request_snapshot.pixel_count } -> std::same_as<std::size_t&>;
+    { upload_request_snapshot.pixel_byte_count } -> std::same_as<std::size_t&>;
+    { upload_request_snapshot.decoded_byte_count } -> std::same_as<std::size_t&>;
+    { upload_request_snapshot.staging_byte_count } -> std::same_as<std::size_t&>;
+    { upload_result_snapshot.generation_id } -> std::same_as<render::fake_image_texture_upload_generation_id&>;
+    { upload_result_snapshot.status } -> std::same_as<render::render_image_texture_upload_status&>;
+    { upload_result_snapshot.key } -> std::same_as<render::render_image_texture_key&>;
+    { upload_result_snapshot.sampler } -> std::same_as<render::render_image_sampler_policy&>;
+    { upload_result_snapshot.texture } -> std::same_as<render::render_image_texture_handle&>;
+    { upload_result_snapshot.pixel_count } -> std::same_as<std::size_t&>;
+    { upload_result_snapshot.pixel_byte_count } -> std::same_as<std::size_t&>;
+    { upload_result_snapshot.decoded_byte_count } -> std::same_as<std::size_t&>;
+    { upload_result_snapshot.staging_byte_count } -> std::same_as<std::size_t&>;
+    { upload_result_snapshot.diagnostic } -> std::same_as<std::string&>;
+    { upload_entry.generation_id } -> std::same_as<render::fake_image_texture_upload_generation_id&>;
+    { upload_entry.request } -> std::same_as<render::fake_image_texture_upload_request_snapshot&>;
+    { upload_entry.result } -> std::same_as<render::fake_image_texture_upload_result_snapshot&>;
     { upload_entry.key } -> std::same_as<render::render_image_texture_key&>;
+    { upload_entry.sampler } -> std::same_as<render::render_image_sampler_policy&>;
     { upload_entry.texture } -> std::same_as<render::render_image_texture_handle&>;
     { upload_entry.status } -> std::same_as<render::render_image_texture_upload_status&>;
     { upload_entry.pixel_count } -> std::same_as<std::size_t&>;
     { upload_entry.pixel_byte_count } -> std::same_as<std::size_t&>;
     { upload_entry.decoded_byte_count } -> std::same_as<std::size_t&>;
+    { upload_entry.staging_byte_count } -> std::same_as<std::size_t&>;
     { upload_entry.diagnostic } -> std::same_as<std::string&>;
     { upload_snapshot.upload_count } -> std::same_as<std::size_t&>;
     { upload_snapshot.failed_upload_count } -> std::same_as<std::size_t&>;
     { upload_snapshot.uploaded_pixel_count } -> std::same_as<std::size_t&>;
     { upload_snapshot.uploaded_pixel_byte_count } -> std::same_as<std::size_t&>;
     { upload_snapshot.uploaded_decoded_byte_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot.staged_byte_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot.attempted_staging_byte_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot.next_generation_id } -> std::same_as<render::fake_image_texture_upload_generation_id&>;
+    { upload_snapshot.request_snapshots }
+        -> std::same_as<std::vector<render::fake_image_texture_upload_request_snapshot>&>;
+    { upload_snapshot.result_snapshots }
+        -> std::same_as<std::vector<render::fake_image_texture_upload_result_snapshot>&>;
     { upload_snapshot.entries } -> std::same_as<std::vector<render::fake_image_texture_upload_snapshot_entry>&>;
     { uploader.diagnostic_snapshot() } -> std::same_as<render::fake_image_texture_upload_snapshot>;
+    upload_generation_id;
     upload_status;
     { pipeline_request.uri } -> std::same_as<std::string&>;
     { pipeline_request.sampler } -> std::same_as<render::render_image_sampler_policy&>;

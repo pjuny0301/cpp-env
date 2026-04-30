@@ -588,6 +588,8 @@ void test_texture_uploader_uploads_valid_decoded_image()
 
     require(uploaded.ok(), "texture uploader uploads valid decoded image");
     require(uploaded.status == render_image_texture_upload_status::uploaded, "texture uploader reports uploaded");
+    require(uploaded.generation_id == 1, "texture uploader reports deterministic generation id");
+    require(uploaded.sampler == render_image_sampler_policy{}, "texture uploader result preserves sampler policy");
     require(uploaded.texture.valid(), "texture uploader returns valid handle");
     require(uploaded.texture.id == 1, "texture uploader handle id is deterministic");
     require(uploaded.texture.width == 2, "texture uploader handle carries width");
@@ -595,7 +597,16 @@ void test_texture_uploader_uploads_valid_decoded_image()
     require(uploaded.pixel_count == 2, "texture uploader reports pixel count");
     require(uploaded.pixel_byte_count == 8, "texture uploader reports expected pixel bytes");
     require(uploaded.decoded_byte_count == 8, "texture uploader reports decoded byte count");
+    require(uploaded.staging_byte_count == 8, "texture uploader reports staging byte count");
     require(uploader.upload_requests.size() == 1, "texture uploader records upload request");
+    require(uploader.upload_request_snapshots.size() == 1, "texture uploader records request snapshot");
+    require(uploader.upload_result_snapshots.size() == 1, "texture uploader records result snapshot");
+    require(uploader.upload_request_snapshots[0].generation_id == 1, "request snapshot records generation id");
+    require(uploader.upload_request_snapshots[0].sampler == render_image_sampler_policy{}, "request snapshot records sampler");
+    require(uploader.upload_request_snapshots[0].staging_byte_count == 8, "request snapshot records staging bytes");
+    require(uploader.upload_result_snapshots[0].generation_id == 1, "result snapshot records generation id");
+    require(uploader.upload_result_snapshots[0].status == render_image_texture_upload_status::uploaded, "result snapshot records status");
+    require(uploader.upload_result_snapshots[0].staging_byte_count == 8, "result snapshot records staging bytes");
 
     const fake_image_texture_upload_snapshot snapshot = uploader.diagnostic_snapshot();
     require(snapshot.upload_count == 1, "texture uploader snapshot reports upload count");
@@ -603,10 +614,20 @@ void test_texture_uploader_uploads_valid_decoded_image()
     require(snapshot.uploaded_pixel_count == 2, "texture uploader snapshot reports uploaded pixels");
     require(snapshot.uploaded_pixel_byte_count == 8, "texture uploader snapshot reports uploaded pixel bytes");
     require(snapshot.uploaded_decoded_byte_count == 8, "texture uploader snapshot reports uploaded decoded bytes");
+    require(snapshot.staged_byte_count == 8, "texture uploader snapshot reports successful staging bytes");
+    require(snapshot.attempted_staging_byte_count == 8, "texture uploader snapshot reports attempted staging bytes");
+    require(snapshot.next_generation_id == 2, "texture uploader snapshot reports next generation id");
+    require(snapshot.request_snapshots.size() == 1, "texture uploader snapshot carries request snapshot");
+    require(snapshot.result_snapshots.size() == 1, "texture uploader snapshot carries result snapshot");
     require(snapshot.entries.size() == 1, "texture uploader snapshot records entry");
+    require(snapshot.entries[0].generation_id == 1, "texture uploader snapshot records generation id");
     require(snapshot.entries[0].key == key, "texture uploader snapshot records key");
+    require(snapshot.entries[0].sampler == render_image_sampler_policy{}, "texture uploader snapshot records sampler");
     require(snapshot.entries[0].texture.id == uploaded.texture.id, "texture uploader snapshot records handle");
     require(snapshot.entries[0].status == render_image_texture_upload_status::uploaded, "snapshot records status");
+    require(snapshot.entries[0].staging_byte_count == 8, "texture uploader snapshot records staging bytes");
+    require(snapshot.entries[0].request.generation_id == 1, "entry request snapshot records generation id");
+    require(snapshot.entries[0].result.texture.id == uploaded.texture.id, "entry result snapshot records handle");
 }
 
 void test_texture_uploader_rejects_invalid_inputs()
@@ -626,6 +647,8 @@ void test_texture_uploader_rejects_invalid_inputs()
     });
     require(!invalid_key.ok(), "texture uploader rejects invalid key");
     require(invalid_key.status == render_image_texture_upload_status::invalid_key, "invalid key status is reported");
+    require(invalid_key.generation_id == 1, "invalid key reports generation id");
+    require(invalid_key.staging_byte_count == 8, "invalid key preserves staging diagnostics for valid payload");
     require(!invalid_key.diagnostic.empty(), "invalid key includes diagnostic");
 
     render_image_sampler_policy invalid_sampler;
@@ -640,6 +663,9 @@ void test_texture_uploader_rejects_invalid_inputs()
     require(
         invalid_sampler_result.status == render_image_texture_upload_status::invalid_sampler,
         "invalid sampler status is reported");
+    require(invalid_sampler_result.generation_id == 2, "invalid sampler reports generation id");
+    require(invalid_sampler_result.sampler == invalid_sampler, "invalid sampler result records attempted sampler");
+    require(invalid_sampler_result.staging_byte_count == 8, "invalid sampler preserves staging diagnostics");
     require(!invalid_sampler_result.diagnostic.empty(), "invalid sampler includes diagnostic");
 
     render_decoded_image unsupported_format = make_rgba_2x1_decoded_image();
@@ -653,6 +679,8 @@ void test_texture_uploader_rejects_invalid_inputs()
     require(
         unsupported.status == render_image_texture_upload_status::unsupported_format,
         "unsupported format status is reported");
+    require(unsupported.generation_id == 3, "unsupported format reports generation id");
+    require(unsupported.staging_byte_count == 0, "unsupported format reports no staged bytes");
     require(!unsupported.diagnostic.empty(), "unsupported format includes diagnostic");
 
     render_decoded_image invalid_payload = make_rgba_2x1_decoded_image();
@@ -666,23 +694,40 @@ void test_texture_uploader_rejects_invalid_inputs()
     require(
         invalid_image.status == render_image_texture_upload_status::invalid_image,
         "invalid payload status is reported");
+    require(invalid_image.generation_id == 4, "invalid payload reports generation id");
+    require(invalid_image.staging_byte_count == 0, "invalid payload reports no staged bytes");
     require(!invalid_image.diagnostic.empty(), "invalid payload includes diagnostic");
 
     const fake_image_texture_upload_snapshot snapshot = uploader.diagnostic_snapshot();
     require(snapshot.upload_count == 4, "texture uploader snapshot records failed attempts");
     require(snapshot.failed_upload_count == 4, "texture uploader snapshot counts failures");
+    require(snapshot.next_generation_id == 5, "texture uploader failure snapshot reports next generation id");
+    require(snapshot.request_snapshots.size() == 4, "texture uploader failure snapshot records request snapshots");
+    require(snapshot.result_snapshots.size() == 4, "texture uploader failure snapshot records result snapshots");
     require(snapshot.entries.size() == 4, "texture uploader snapshot records failure entries");
     require(snapshot.uploaded_pixel_count == 0, "texture uploader snapshot excludes failed pixels");
+    require(snapshot.staged_byte_count == 0, "texture uploader failure snapshot reports no successful staging");
+    require(
+        snapshot.attempted_staging_byte_count == 16,
+        "texture uploader failure snapshot reports attempted staging bytes");
+    require(snapshot.entries[0].generation_id == 1, "snapshot records invalid key generation");
     require(snapshot.entries[0].status == render_image_texture_upload_status::invalid_key, "snapshot records invalid key");
+    require(snapshot.entries[0].staging_byte_count == 8, "snapshot records invalid key staging bytes");
     require(
         snapshot.entries[1].status == render_image_texture_upload_status::invalid_sampler,
         "snapshot records invalid sampler");
+    require(snapshot.entries[1].generation_id == 2, "snapshot records invalid sampler generation");
+    require(snapshot.entries[1].sampler == invalid_sampler, "snapshot records invalid sampler policy");
     require(
         snapshot.entries[2].status == render_image_texture_upload_status::unsupported_format,
         "snapshot records unsupported format");
+    require(snapshot.entries[2].generation_id == 3, "snapshot records unsupported format generation");
     require(
         snapshot.entries[3].status == render_image_texture_upload_status::invalid_image,
         "snapshot records invalid image");
+    require(snapshot.entries[3].generation_id == 4, "snapshot records invalid image generation");
+    require(!snapshot.entries[3].texture.valid(), "failed upload snapshot records no handle");
+    require(!snapshot.entries[3].result.diagnostic.empty(), "failed upload result snapshot keeps diagnostic");
 }
 
 void test_texture_cache_uses_injected_texture_uploader()
@@ -716,6 +761,9 @@ void test_texture_cache_uses_injected_texture_uploader()
 
     const fake_image_texture_upload_snapshot snapshot = uploader.diagnostic_snapshot();
     require(snapshot.upload_count == 1, "injected uploader snapshot records one upload");
+    require(snapshot.entries[0].generation_id == 1, "injected uploader snapshot records generation id");
+    require(snapshot.entries[0].sampler == request.sampler, "injected uploader snapshot records sampler");
+    require(snapshot.entries[0].staging_byte_count == 4, "injected uploader snapshot records staging bytes");
     require(snapshot.entries[0].texture.id == first.texture.id, "injected uploader snapshot matches cache handle");
 }
 

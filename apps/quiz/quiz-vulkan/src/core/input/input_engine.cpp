@@ -1,11 +1,19 @@
 #include "core/input/input_engine.h"
 
+#include <optional>
 #include <type_traits>
 #include <utility>
 #include <variant>
 
 namespace quiz_vulkan::input {
 namespace {
+
+struct text_edit_snapshot {
+    std::size_t text_byte_count = 0;
+    text_range caret;
+    bool has_selection = false;
+    text_range selection;
+};
 
 bool is_primary_pointer(const raw_platform_pointer_event& event)
 {
@@ -199,6 +207,54 @@ action_route_policy_diagnostic make_event_policy(
     return diagnostic;
 }
 
+text_edit_snapshot capture_text_edit(const text_input_model& model)
+{
+    text_edit_snapshot snapshot{};
+    snapshot.text_byte_count = model.text().size();
+    snapshot.caret = model.caret_range();
+    if (const std::optional<text_range> selection = model.selection_range()) {
+        snapshot.has_selection = true;
+        snapshot.selection = *selection;
+    }
+    return snapshot;
+}
+
+void apply_text_edit_boundary(
+    action_route_policy_diagnostic& diagnostic,
+    text_edit_snapshot before,
+    text_edit_snapshot after)
+{
+    diagnostic.text_byte_count_before = before.text_byte_count;
+    diagnostic.text_byte_count_after = after.text_byte_count;
+    diagnostic.caret_before = before.caret;
+    diagnostic.caret_after = after.caret;
+    diagnostic.had_selection_before = before.has_selection;
+    diagnostic.has_selection_after = after.has_selection;
+    diagnostic.selection_before = before.selection;
+    diagnostic.selection_after = after.selection;
+}
+
+action_route_policy_diagnostic make_text_event_policy(
+    action_route_policy_kind kind,
+    std::int64_t timestamp_ms,
+    std::size_t event_index,
+    const std::string& target_id,
+    text_edit_snapshot before,
+    text_edit_snapshot after,
+    pointer_capture_snapshot pointer_capture_before,
+    pointer_capture_snapshot pointer_capture_after)
+{
+    action_route_policy_diagnostic diagnostic = make_event_policy(
+        kind,
+        timestamp_ms,
+        event_index,
+        pointer_capture_before,
+        pointer_capture_after);
+    diagnostic.target_id = target_id;
+    apply_text_edit_boundary(diagnostic, before, after);
+    return diagnostic;
+}
+
 } // namespace
 
 input_engine::input_engine(gesture_thresholds thresholds)
@@ -347,17 +403,30 @@ std::vector<input_event> input_engine::process_text_event(const raw_platform_tex
 {
     std::vector<input_event> events;
     begin_route_diagnostics();
+    const text_edit_snapshot edit_before = capture_text_edit(text_);
     if (ime_composing_ || text_.ime_composition().active || !text_.commit_utf8(event.utf8_text)) {
         finish_route_diagnostics();
         return events;
     }
 
+    const std::size_t event_index = events.size();
     events.emplace_back(text_event{
         .kind = text_event_kind::commit,
         .timestamp_ms = event.timestamp_ms,
         .target_id = text_.focus_id(),
         .utf8_text = event.utf8_text,
     });
+    action_route_policy_diagnostic policy = make_text_event_policy(
+        action_route_policy_kind::text_commit_boundary,
+        event.timestamp_ms,
+        event_index,
+        text_.focus_id(),
+        edit_before,
+        capture_text_edit(text_),
+        diagnostics_.pointer_capture,
+        gestures_.capture_snapshot());
+    policy.text_byte_count = event.utf8_text.size();
+    append_policy(std::move(policy));
     finish_route_diagnostics();
     return events;
 }
@@ -375,6 +444,7 @@ std::vector<input_event> input_engine::process_ime_event(const raw_platform_ime_
     const std::string target_id = text_.focus_id();
     const ime_composition_state initial_composition = text_.ime_composition();
     const bool had_composition = ime_composing_ || initial_composition.active;
+    const text_edit_snapshot edit_before = capture_text_edit(text_);
 
     if (event.phase == raw_platform_ime_phase::composition_start) {
         ime_composing_ = true;
@@ -387,13 +457,15 @@ std::vector<input_event> input_engine::process_ime_event(const raw_platform_ime_
                 target_id,
                 {},
                 initial_composition));
-            action_route_policy_diagnostic policy = make_event_policy(
+            action_route_policy_diagnostic policy = make_text_event_policy(
                 action_route_policy_kind::ime_cancel,
                 event.timestamp_ms,
                 event_index,
+                target_id,
+                edit_before,
+                capture_text_edit(text_),
                 diagnostics_.pointer_capture,
                 gestures_.capture_snapshot());
-            policy.target_id = target_id;
             policy.composition = initial_composition;
             append_policy(std::move(policy));
         } else {
@@ -428,13 +500,15 @@ std::vector<input_event> input_engine::process_ime_event(const raw_platform_ime_
                 target_id,
                 event.utf8_text,
                 committed_composition));
-            action_route_policy_diagnostic policy = make_event_policy(
+            action_route_policy_diagnostic policy = make_text_event_policy(
                 action_route_policy_kind::ime_commit,
                 event.timestamp_ms,
                 event_index,
+                target_id,
+                edit_before,
+                capture_text_edit(text_),
                 diagnostics_.pointer_capture,
                 gestures_.capture_snapshot());
-            policy.target_id = target_id;
             policy.text_byte_count = event.utf8_text.size();
             policy.composition = committed_composition;
             append_policy(std::move(policy));
@@ -457,13 +531,15 @@ std::vector<input_event> input_engine::process_ime_event(const raw_platform_ime_
                 target_id,
                 {},
                 canceled_composition));
-            action_route_policy_diagnostic policy = make_event_policy(
+            action_route_policy_diagnostic policy = make_text_event_policy(
                 action_route_policy_kind::ime_cancel,
                 event.timestamp_ms,
                 event_index,
+                target_id,
+                edit_before,
+                capture_text_edit(text_),
                 diagnostics_.pointer_capture,
                 gestures_.capture_snapshot());
-            policy.target_id = target_id;
             policy.composition = canceled_composition;
             append_policy(std::move(policy));
         }
@@ -486,15 +562,26 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
     }
 
     const std::string target_id = text_.focus_id();
+    const text_edit_snapshot edit_before = capture_text_edit(text_);
 
     if (is_select_all_key(event)) {
         if (text_.select_all()) {
+            const std::size_t event_index = events.size();
             events.emplace_back(text_event{
                 .kind = text_event_kind::selection_changed,
                 .timestamp_ms = event.timestamp_ms,
                 .target_id = target_id,
                 .utf8_text = {},
             });
+            append_policy(make_text_event_policy(
+                action_route_policy_kind::selection_changed,
+                event.timestamp_ms,
+                event_index,
+                target_id,
+                edit_before,
+                capture_text_edit(text_),
+                diagnostics_.pointer_capture,
+                gestures_.capture_snapshot()));
         }
         finish_route_diagnostics();
         return events;
@@ -503,12 +590,22 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
     if (is_arrow_left_key(event)) {
         const bool changed = event.shift ? text_.extend_selection_left() : text_.move_caret_left();
         if (changed) {
+            const std::size_t event_index = events.size();
             events.emplace_back(text_event{
                 .kind = event.shift ? text_event_kind::selection_changed : text_event_kind::caret_moved,
                 .timestamp_ms = event.timestamp_ms,
                 .target_id = target_id,
                 .utf8_text = {},
             });
+            append_policy(make_text_event_policy(
+                event.shift ? action_route_policy_kind::selection_changed : action_route_policy_kind::caret_moved,
+                event.timestamp_ms,
+                event_index,
+                target_id,
+                edit_before,
+                capture_text_edit(text_),
+                diagnostics_.pointer_capture,
+                gestures_.capture_snapshot()));
         }
         finish_route_diagnostics();
         return events;
@@ -517,12 +614,22 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
     if (is_arrow_right_key(event)) {
         const bool changed = event.shift ? text_.extend_selection_right() : text_.move_caret_right();
         if (changed) {
+            const std::size_t event_index = events.size();
             events.emplace_back(text_event{
                 .kind = event.shift ? text_event_kind::selection_changed : text_event_kind::caret_moved,
                 .timestamp_ms = event.timestamp_ms,
                 .target_id = target_id,
                 .utf8_text = {},
             });
+            append_policy(make_text_event_policy(
+                event.shift ? action_route_policy_kind::selection_changed : action_route_policy_kind::caret_moved,
+                event.timestamp_ms,
+                event_index,
+                target_id,
+                edit_before,
+                capture_text_edit(text_),
+                diagnostics_.pointer_capture,
+                gestures_.capture_snapshot()));
         }
         finish_route_diagnostics();
         return events;
@@ -530,12 +637,22 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
 
     if (is_home_key(event)) {
         if (text_.move_caret_to_start()) {
+            const std::size_t event_index = events.size();
             events.emplace_back(text_event{
                 .kind = text_event_kind::caret_moved,
                 .timestamp_ms = event.timestamp_ms,
                 .target_id = target_id,
                 .utf8_text = {},
             });
+            append_policy(make_text_event_policy(
+                action_route_policy_kind::caret_moved,
+                event.timestamp_ms,
+                event_index,
+                target_id,
+                edit_before,
+                capture_text_edit(text_),
+                diagnostics_.pointer_capture,
+                gestures_.capture_snapshot()));
         }
         finish_route_diagnostics();
         return events;
@@ -543,12 +660,22 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
 
     if (is_end_key(event)) {
         if (text_.move_caret_to_end()) {
+            const std::size_t event_index = events.size();
             events.emplace_back(text_event{
                 .kind = text_event_kind::caret_moved,
                 .timestamp_ms = event.timestamp_ms,
                 .target_id = target_id,
                 .utf8_text = {},
             });
+            append_policy(make_text_event_policy(
+                action_route_policy_kind::caret_moved,
+                event.timestamp_ms,
+                event_index,
+                target_id,
+                edit_before,
+                capture_text_edit(text_),
+                diagnostics_.pointer_capture,
+                gestures_.capture_snapshot()));
         }
         finish_route_diagnostics();
         return events;
@@ -556,12 +683,27 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
 
     if (is_backspace_key(event)) {
         if (text_.backspace()) {
+            const std::size_t event_index = events.size();
             events.emplace_back(text_event{
                 .kind = text_event_kind::backspace,
                 .timestamp_ms = event.timestamp_ms,
                 .target_id = target_id,
                 .utf8_text = {},
             });
+            const text_edit_snapshot edit_after = capture_text_edit(text_);
+            action_route_policy_diagnostic policy = make_text_event_policy(
+                action_route_policy_kind::text_backspace_boundary,
+                event.timestamp_ms,
+                event_index,
+                target_id,
+                edit_before,
+                edit_after,
+                diagnostics_.pointer_capture,
+                gestures_.capture_snapshot());
+            policy.text_byte_count = edit_before.text_byte_count >= edit_after.text_byte_count
+                ? edit_before.text_byte_count - edit_after.text_byte_count
+                : 0;
+            append_policy(std::move(policy));
         }
         finish_route_diagnostics();
         return events;
@@ -582,13 +724,15 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
                 .target_id = target_id,
                 .utf8_text = submitted_text,
             });
-            action_route_policy_diagnostic policy = make_event_policy(
+            action_route_policy_diagnostic policy = make_text_event_policy(
                 action_route_policy_kind::text_submit_boundary,
                 event.timestamp_ms,
                 event_index,
+                target_id,
+                edit_before,
+                capture_text_edit(text_),
                 diagnostics_.pointer_capture,
                 gestures_.capture_snapshot());
-            policy.target_id = target_id;
             policy.text_byte_count = submitted_text.size();
             append_policy(std::move(policy));
         }
@@ -620,11 +764,13 @@ std::vector<input_event> input_engine::process_focus_event(const raw_platform_fo
     const bool had_composition = ime_composing_ || canceled_composition.active;
     const std::string target_id = text_.focus_id();
     const pointer_capture_snapshot pointer_capture_before = gestures_.capture_snapshot();
+    const text_edit_snapshot edit_before = capture_text_edit(text_);
 
     gestures_.reset();
     text_.clear_focus();
     ime_composing_ = false;
     const pointer_capture_snapshot pointer_capture_after = gestures_.capture_snapshot();
+    const text_edit_snapshot edit_after = capture_text_edit(text_);
 
     if (has_pointer_capture_state(pointer_capture_before)) {
         append_policy(make_policy(
@@ -642,13 +788,15 @@ std::vector<input_event> input_engine::process_focus_event(const raw_platform_fo
             target_id,
             {},
             canceled_composition));
-        action_route_policy_diagnostic policy = make_event_policy(
+        action_route_policy_diagnostic policy = make_text_event_policy(
             action_route_policy_kind::ime_cancel,
             event.timestamp_ms,
             event_index,
+            target_id,
+            edit_before,
+            edit_after,
             pointer_capture_before,
             pointer_capture_after);
-        policy.target_id = target_id;
         policy.composition = canceled_composition;
         append_policy(std::move(policy));
     }
@@ -670,6 +818,7 @@ std::vector<input_event> input_engine::process_focus_event(const raw_platform_fo
     policy.emits_input_event = had_focus;
     policy.event_index = focus_loss_event_index;
     policy.target_id = target_id;
+    apply_text_edit_boundary(policy, edit_before, edit_after);
     append_policy(std::move(policy));
 
     finish_route_diagnostics();
@@ -691,7 +840,17 @@ void input_engine::finish_route_diagnostics()
 void input_engine::append_gestures(std::vector<input_event>& events, const std::vector<gesture_event>& gestures)
 {
     for (const gesture_event& gesture : gestures) {
-        diagnostics_.normalized_events.push_back(summarize_gesture(gesture));
+        const std::size_t event_index = events.size();
+        const normalized_input_event_summary summary = summarize_gesture(gesture);
+        diagnostics_.normalized_events.push_back(summary);
+        action_route_policy_diagnostic policy = make_event_policy(
+            action_route_policy_kind::gesture_route_snapshot,
+            gesture.timestamp_ms,
+            event_index,
+            diagnostics_.pointer_capture,
+            gestures_.capture_snapshot());
+        policy.normalized_event = summary;
+        append_policy(std::move(policy));
         events.emplace_back(gesture);
     }
 }

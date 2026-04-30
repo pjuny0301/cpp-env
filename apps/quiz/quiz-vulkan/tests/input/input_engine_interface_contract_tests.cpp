@@ -69,6 +69,14 @@ concept ActionRoutePolicyDiagnosticInterface = requires(T diagnostic) {
     { diagnostic.event_index } -> std::same_as<std::size_t&>;
     { diagnostic.target_id } -> std::same_as<std::string&>;
     { diagnostic.text_byte_count } -> std::same_as<std::size_t&>;
+    { diagnostic.text_byte_count_before } -> std::same_as<std::size_t&>;
+    { diagnostic.text_byte_count_after } -> std::same_as<std::size_t&>;
+    { diagnostic.caret_before } -> std::same_as<input::text_range&>;
+    { diagnostic.caret_after } -> std::same_as<input::text_range&>;
+    { diagnostic.had_selection_before } -> std::same_as<bool&>;
+    { diagnostic.has_selection_after } -> std::same_as<bool&>;
+    { diagnostic.selection_before } -> std::same_as<input::text_range&>;
+    { diagnostic.selection_after } -> std::same_as<input::text_range&>;
     { diagnostic.normalized_event } -> std::same_as<input::normalized_input_event_summary&>;
     { diagnostic.composition } -> std::same_as<input::ime_composition_state&>;
     { diagnostic.pointer_capture_before } -> std::same_as<input::pointer_capture_snapshot&>;
@@ -173,10 +181,31 @@ constexpr input::action_route_policy_diagnostic submit_policy_contract{
     .event_index = 2,
     .target_id = "answer",
     .text_byte_count = 6,
+    .text_byte_count_before = 6,
+    .text_byte_count_after = 0,
+    .caret_before = input::text_range{.start_byte = 6, .end_byte = 6},
+    .caret_after = input::text_range{.start_byte = 0, .end_byte = 0},
+    .had_selection_before = false,
+    .has_selection_after = false,
+    .selection_before = input::text_range{},
+    .selection_after = input::text_range{},
+    .normalized_event = input::normalized_input_event_summary{},
+    .composition = input::ime_composition_state{},
+    .pointer_capture_before = input::pointer_capture_snapshot{},
+    .pointer_capture_after = input::pointer_capture_snapshot{},
 };
 static_assert(submit_policy_contract.kind == input::action_route_policy_kind::text_submit_boundary);
 static_assert(submit_policy_contract.emits_input_event);
 static_assert(submit_policy_contract.event_index == 2);
+static_assert(submit_policy_contract.text_byte_count_before == 6);
+static_assert(submit_policy_contract.caret_after.start_byte == 0);
+
+constexpr input::action_route_policy_kind text_commit_policy_kind =
+    input::action_route_policy_kind::text_commit_boundary;
+static_assert(text_commit_policy_kind == input::action_route_policy_kind::text_commit_boundary);
+constexpr input::action_route_policy_kind gesture_snapshot_policy_kind =
+    input::action_route_policy_kind::gesture_route_snapshot;
+static_assert(gesture_snapshot_policy_kind == input::action_route_policy_kind::gesture_route_snapshot);
 
 constexpr input::gesture_event drag_contract_event{
     .kind = input::gesture_kind::drag_update,

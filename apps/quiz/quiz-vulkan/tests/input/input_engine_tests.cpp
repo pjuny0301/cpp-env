@@ -683,6 +683,19 @@ void test_gesture_routing_diagnostics_summarize_gestures_and_wheel()
     require(swipe_summaries[0].pointer_id == 1, "diagnostic swipe summary pointer id is preserved");
     require(swipe_summaries[0].start_x == 0.0f, "diagnostic swipe summary start x is preserved");
     require(swipe_summaries[0].x == 70.0f, "diagnostic swipe summary end x is preserved");
+    require(engine.routing_diagnostics().action_routes.size() == 1,
+        "diagnostic swipe emits one gesture policy");
+    const action_route_policy_diagnostic& swipe_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "diagnostic swipe policy is gesture snapshot");
+    require(swipe_policy.normalized_event.kind == input_event_summary_kind::swipe_right,
+        "diagnostic swipe policy carries normalized swipe");
+    require(swipe_policy.pointer_capture_before.lifecycle == pointer_capture_lifecycle::tracking,
+        "diagnostic swipe policy records tracked pointer before release");
+    require(swipe_policy.pointer_capture_after.lifecycle == pointer_capture_lifecycle::idle,
+        "diagnostic swipe policy records idle pointer after release");
     require_capture_snapshot(
         engine.routing_diagnostics().pointer_capture,
         pointer_capture_lifecycle::idle,
@@ -701,6 +714,17 @@ void test_gesture_routing_diagnostics_summarize_gestures_and_wheel()
         "diagnostic long press summary kind is long press");
     require(long_press_summaries[0].duration_ms == 600, "diagnostic long press duration is preserved");
     require(long_press_summaries[0].x == 10.0f, "diagnostic long press x is preserved");
+    const action_route_policy_diagnostic& long_press_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "diagnostic long press policy is gesture snapshot");
+    require(long_press_policy.normalized_event.kind == input_event_summary_kind::long_press,
+        "diagnostic long press policy carries normalized long press");
+    require(long_press_policy.pointer_capture_before.lifecycle == pointer_capture_lifecycle::tracking,
+        "diagnostic long press policy records tracked pointer before update");
+    require(long_press_policy.pointer_capture_after.lifecycle == pointer_capture_lifecycle::tracking,
+        "diagnostic long press policy records tracked pointer after update");
     require_capture_snapshot(
         engine.routing_diagnostics().pointer_capture,
         pointer_capture_lifecycle::tracking,
@@ -721,6 +745,15 @@ void test_gesture_routing_diagnostics_summarize_gestures_and_wheel()
         "diagnostic drag start summary kind is drag start");
     require(drag_start_summaries[0].delta_x == 9.0f, "diagnostic drag start delta x is preserved");
     require(drag_start_summaries[0].delta_y == 4.0f, "diagnostic drag start delta y is preserved");
+    const action_route_policy_diagnostic& drag_start_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "diagnostic drag start policy is gesture snapshot");
+    require(drag_start_policy.pointer_capture_before.lifecycle == pointer_capture_lifecycle::tracking,
+        "diagnostic drag start policy records tracked pointer before capture");
+    require(drag_start_policy.pointer_capture_after.lifecycle == pointer_capture_lifecycle::captured,
+        "diagnostic drag start policy records captured pointer after capture");
     require_capture_snapshot(
         engine.routing_diagnostics().pointer_capture,
         pointer_capture_lifecycle::captured,
@@ -737,6 +770,15 @@ void test_gesture_routing_diagnostics_summarize_gestures_and_wheel()
         "diagnostic drag update summary kind is drag update");
     require(drag_update_summaries[0].delta_x == 3.0f, "diagnostic drag update delta x is previous-relative");
     require(drag_update_summaries[0].delta_y == 4.0f, "diagnostic drag update delta y is previous-relative");
+    const action_route_policy_diagnostic& drag_update_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "diagnostic drag update policy is gesture snapshot");
+    require(drag_update_policy.pointer_capture_before.lifecycle == pointer_capture_lifecycle::captured,
+        "diagnostic drag update policy records captured pointer before update");
+    require(drag_update_policy.pointer_capture_after.lifecycle == pointer_capture_lifecycle::captured,
+        "diagnostic drag update policy records captured pointer after update");
 
     events = engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 960, 14.0f, 10.0f));
     require(events.size() == 1, "diagnostic drag end emits one event");
@@ -744,6 +786,15 @@ void test_gesture_routing_diagnostics_summarize_gestures_and_wheel()
     require(drag_end_summaries.size() == 1, "diagnostic drag end emits one summary");
     require(drag_end_summaries[0].kind == input_event_summary_kind::drag_end,
         "diagnostic drag end summary kind is drag end");
+    const action_route_policy_diagnostic& drag_end_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "diagnostic drag end policy is gesture snapshot");
+    require(drag_end_policy.pointer_capture_before.lifecycle == pointer_capture_lifecycle::captured,
+        "diagnostic drag end policy records captured pointer before release");
+    require(drag_end_policy.pointer_capture_after.lifecycle == pointer_capture_lifecycle::idle,
+        "diagnostic drag end policy records idle pointer after release");
     require_capture_snapshot(
         engine.routing_diagnostics().pointer_capture,
         pointer_capture_lifecycle::idle,
@@ -802,6 +853,17 @@ void test_gesture_routing_diagnostics_cancel_and_focus_loss()
     require(cancel_summaries[0].kind == input_event_summary_kind::drag_cancel,
         "diagnostic cancel summary kind is drag cancel");
     require(cancel_summaries[0].delta_x == 3.0f, "diagnostic cancel delta x is previous-relative");
+    const action_route_policy_diagnostic& cancel_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "diagnostic cancel policy is gesture snapshot");
+    require(cancel_policy.normalized_event.kind == input_event_summary_kind::drag_cancel,
+        "diagnostic cancel policy carries normalized drag cancel");
+    require(cancel_policy.pointer_capture_before.lifecycle == pointer_capture_lifecycle::captured,
+        "diagnostic cancel policy records captured pointer before cancel");
+    require(cancel_policy.pointer_capture_after.lifecycle == pointer_capture_lifecycle::idle,
+        "diagnostic cancel policy records idle pointer after cancel");
     require_capture_snapshot(
         engine.routing_diagnostics().pointer_capture,
         pointer_capture_lifecycle::idle,
@@ -876,6 +938,23 @@ void test_text_key_flow()
     require(commit.target_id == "answer", "text target is preserved");
     require(commit.utf8_text == utf8(u8"한"), "utf8 commit text is preserved");
     require(engine.text_model().text() == utf8(u8"한"), "text model stores committed utf8");
+    require(engine.routing_diagnostics().action_routes.size() == 1,
+        "utf8 text commit emits one edit boundary policy");
+    const action_route_policy_diagnostic& text_commit_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::text_commit_boundary,
+        "utf8 text commit policy is emitted");
+    require(text_commit_policy.text_byte_count == std::string(utf8(u8"한")).size(),
+        "utf8 text commit policy records committed byte count");
+    require(text_commit_policy.text_byte_count_before == 0, "utf8 text commit policy records empty before text");
+    require(text_commit_policy.text_byte_count_after == std::string(utf8(u8"한")).size(),
+        "utf8 text commit policy records after text byte count");
+    require_range(text_commit_policy.caret_before, 0, 0, "utf8 text commit policy records caret before commit");
+    require_range(text_commit_policy.caret_after,
+        std::string(utf8(u8"한")).size(),
+        std::string(utf8(u8"한")).size(),
+        "utf8 text commit policy records caret after commit");
 
     require(engine.process_raw_event(key(120, "Backspace", false, raw_platform_key_phase::up)).empty(),
         "backspace keyup is ignored");
@@ -884,6 +963,23 @@ void test_text_key_flow()
     const text_event& backspace = require_event<text_event>(events, 0);
     require(backspace.kind == text_event_kind::backspace, "backspace event is emitted");
     require(engine.text_model().text().empty(), "backspace removes utf8 codepoint");
+    require(engine.routing_diagnostics().action_routes.size() == 1,
+        "utf8 backspace emits one edit boundary policy");
+    const action_route_policy_diagnostic& backspace_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::text_backspace_boundary,
+        "utf8 backspace policy is emitted");
+    require(backspace_policy.text_byte_count == std::string(utf8(u8"한")).size(),
+        "utf8 backspace policy records deleted codepoint byte count");
+    require(backspace_policy.text_byte_count_before == std::string(utf8(u8"한")).size(),
+        "utf8 backspace policy records before byte count");
+    require(backspace_policy.text_byte_count_after == 0, "utf8 backspace policy records after byte count");
+    require_range(backspace_policy.caret_before,
+        std::string(utf8(u8"한")).size(),
+        std::string(utf8(u8"한")).size(),
+        "utf8 backspace policy records caret before delete");
+    require_range(backspace_policy.caret_after, 0, 0, "utf8 backspace policy records caret after delete");
 
     require(engine.process_raw_event(text(140, "ok")).size() == 1, "second text commit succeeds");
     events = engine.process_raw_event(key(150, "Enter"));
@@ -904,6 +1000,10 @@ void test_text_key_flow()
     require(submit_policy.event_index == 0, "submit policy points at submit event index");
     require(submit_policy.target_id == "answer", "submit policy preserves target id");
     require(submit_policy.text_byte_count == 2, "submit policy records submitted byte count before clear");
+    require(submit_policy.text_byte_count_before == 2, "submit policy records before byte count");
+    require(submit_policy.text_byte_count_after == 0, "submit policy records cleared after byte count");
+    require_range(submit_policy.caret_before, 2, 2, "submit policy records caret before submit");
+    require_range(submit_policy.caret_after, 0, 0, "submit policy records caret after submit");
 
     require(engine.process_raw_event(key(151, "Enter", true)).empty(), "repeat enter is ignored");
     require(engine.routing_diagnostics().action_routes.empty(), "repeat enter emits no submit policy");
@@ -959,6 +1059,16 @@ void test_text_keyboard_navigation_and_selection()
     require(left.target_id == "answer", "arrow left preserves target id");
     require(engine.text_model().caret_byte_offset() == 4, "arrow left moves over trailing ascii");
     require(!engine.text_model().selection_range().has_value(), "plain arrow left leaves no selection");
+    const action_route_policy_diagnostic& left_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::caret_moved,
+        "arrow left emits caret policy");
+    require_range(left_policy.caret_before, initial.size(), initial.size(),
+        "arrow left policy records caret before");
+    require_range(left_policy.caret_after, 4, 4, "arrow left policy records caret after");
+    require(!left_policy.had_selection_before, "arrow left policy records no prior selection");
+    require(!left_policy.has_selection_after, "arrow left policy records no resulting selection");
 
     events = engine.process_raw_event(key(130, "ArrowLeft"));
     require(events.size() == 1, "second arrow left emits one caret event");
@@ -991,6 +1101,18 @@ void test_text_keyboard_navigation_and_selection()
     require(selection.has_value(), "shift arrow left exposes selection");
     require_range(*selection, 4, initial.size(), "shift arrow left selects trailing ascii");
     require(engine.text_model().caret_byte_offset() == 4, "shift arrow left places active caret at selection start");
+    const action_route_policy_diagnostic& shift_left_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::selection_changed,
+        "shift arrow left emits selection policy");
+    require_range(shift_left_policy.caret_before, initial.size(), initial.size(),
+        "shift arrow left policy records caret before");
+    require_range(shift_left_policy.caret_after, 4, 4, "shift arrow left policy records caret after");
+    require(!shift_left_policy.had_selection_before, "shift arrow left policy records no prior selection");
+    require(shift_left_policy.has_selection_after, "shift arrow left policy records resulting selection");
+    require_range(shift_left_policy.selection_after, 4, initial.size(),
+        "shift arrow left policy records selected range");
 
     events = engine.process_raw_event(key(180, "ArrowLeft", false, raw_platform_key_phase::down, false, true));
     require(events.size() == 1, "second shift arrow left emits one selection event");
@@ -1014,6 +1136,17 @@ void test_text_keyboard_navigation_and_selection()
         "plain arrow collapse emits caret moved kind");
     require(!engine.text_model().selection_range().has_value(), "plain arrow right clears selection");
     require(engine.text_model().caret_byte_offset() == initial.size(), "plain arrow right collapses to selection end");
+    const action_route_policy_diagnostic& collapse_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::caret_moved,
+        "plain arrow collapse emits caret policy");
+    require(collapse_policy.had_selection_before, "plain arrow collapse policy records prior selection");
+    require(!collapse_policy.has_selection_after, "plain arrow collapse policy clears selection");
+    require_range(collapse_policy.selection_before, 4, initial.size(),
+        "plain arrow collapse policy records prior selection range");
+    require_range(collapse_policy.caret_after, initial.size(), initial.size(),
+        "plain arrow collapse policy records collapsed caret");
 
     events = engine.process_raw_event(key(210, "a", false, raw_platform_key_phase::down, true));
     require(events.size() == 1, "ctrl+a emits one selection event");
@@ -1022,6 +1155,13 @@ void test_text_keyboard_navigation_and_selection()
     selection = engine.text_model().selection_range();
     require(selection.has_value(), "ctrl+a exposes selection");
     require_range(*selection, 0, initial.size(), "ctrl+a selects all committed text");
+    const action_route_policy_diagnostic& select_all_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::selection_changed,
+        "ctrl+a emits selection policy");
+    require(select_all_policy.has_selection_after, "ctrl+a policy records resulting selection");
+    require_range(select_all_policy.selection_after, 0, initial.size(), "ctrl+a policy records full selection");
     require(engine.process_raw_event(key(211, "a", false, raw_platform_key_phase::down, true)).empty(),
         "repeat select all without state change emits no event");
 
@@ -1033,6 +1173,53 @@ void test_text_keyboard_navigation_and_selection()
     selection = engine.text_model().selection_range();
     require(selection.has_value(), "meta+a exposes selection");
     require_range(*selection, 0, initial.size(), "meta+a selects all committed text");
+}
+
+void test_text_edit_boundary_diagnostics_replace_utf8_selection()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    engine.focus_text_target("answer");
+    const std::string initial = std::string("A") + utf8(u8"한") + "B";
+    require(engine.process_raw_event(text(100, initial)).size() == 1,
+        "selection replacement initial text commits");
+
+    require(engine.process_raw_event(key(110, "Home")).size() == 1,
+        "selection replacement home moves caret");
+    require(engine.process_raw_event(key(120, "ArrowRight")).size() == 1,
+        "selection replacement arrow right moves after ascii");
+    require(engine.process_raw_event(key(130, "ArrowRight", false, raw_platform_key_phase::down, false, true)).size() == 1,
+        "selection replacement shift arrow selects utf8 codepoint");
+    std::optional<text_range> selection = engine.text_model().selection_range();
+    require(selection.has_value(), "selection replacement has selected utf8 codepoint");
+    require_range(*selection, 1, 1 + std::string(utf8(u8"한")).size(),
+        "selection replacement selected range covers full utf8 codepoint");
+
+    std::vector<input_event> events = engine.process_raw_event(text(140, "Z"));
+    require(events.size() == 1, "selection replacement text commit emits one event");
+    const text_event& commit = require_event<text_event>(events, 0);
+    require(commit.kind == text_event_kind::commit, "selection replacement emits commit kind");
+    require(engine.text_model().text() == "AZB", "selection replacement updates text");
+    require(engine.text_model().caret_byte_offset() == 2, "selection replacement caret follows inserted text");
+    const action_route_policy_diagnostic& policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::text_commit_boundary,
+        "selection replacement emits commit boundary policy");
+    require(policy.text_byte_count == 1, "selection replacement policy records inserted byte count");
+    require(policy.text_byte_count_before == initial.size(), "selection replacement policy records before byte count");
+    require(policy.text_byte_count_after == 3, "selection replacement policy records after byte count");
+    require(policy.had_selection_before, "selection replacement policy records prior selection");
+    require(!policy.has_selection_after, "selection replacement policy clears selection after commit");
+    require_range(policy.selection_before, 1, 1 + std::string(utf8(u8"한")).size(),
+        "selection replacement policy records selected utf8 byte range");
+    require_range(policy.caret_before,
+        1 + std::string(utf8(u8"한")).size(),
+        1 + std::string(utf8(u8"한")).size(),
+        "selection replacement policy records active caret before commit");
+    require_range(policy.caret_after, 2, 2, "selection replacement policy records caret after commit");
 }
 
 void test_ime_composition_suppresses_text_and_key_events()
@@ -1104,6 +1291,17 @@ void test_ime_composition_suppresses_text_and_key_events()
     require(commit_policy.composition.active, "ime commit policy carries pre-commit composition");
     require(commit_policy.composition.preedit_text == utf8(u8"ㅎ"),
         "ime commit policy carries pre-commit preedit text");
+    require(commit_policy.text_byte_count_before == 0, "ime commit policy records empty committed text before");
+    require(commit_policy.text_byte_count_after == std::string(utf8(u8"한")).size(),
+        "ime commit policy records committed text after");
+    require_range(commit_policy.caret_before,
+        std::string(utf8(u8"ㅎ")).size(),
+        std::string(utf8(u8"ㅎ")).size(),
+        "ime commit policy records display caret before commit");
+    require_range(commit_policy.caret_after,
+        std::string(utf8(u8"한")).size(),
+        std::string(utf8(u8"한")).size(),
+        "ime commit policy records committed caret after commit");
 }
 
 void test_ime_preedit_commit_edges()
@@ -1183,6 +1381,10 @@ void test_ime_composition_restart_cancels_visible_preedit()
     require(cancel_policy.composition.active, "composition restart cancel policy carries stale composition");
     require(cancel_policy.composition.preedit_text == "draft",
         "composition restart cancel policy carries stale preedit text");
+    require(cancel_policy.text_byte_count_before == 0, "composition restart cancel policy has no committed text before");
+    require(cancel_policy.text_byte_count_after == 0, "composition restart cancel policy has no committed text after");
+    require_range(cancel_policy.caret_before, 5, 5, "composition restart cancel policy records preedit caret");
+    require_range(cancel_policy.caret_after, 0, 0, "composition restart cancel policy records cleared caret");
     require(engine.text_model().preedit_text().empty(), "composition restart clears stale preedit");
 
     require(engine.process_raw_event(text(120, "duplicate")).empty(),
@@ -1462,6 +1664,10 @@ void test_focus_loss_cancels_composition_and_pointer_state()
     require(ime_cancel_policy.event_index == 0, "focus loss ime cancel policy points at first event");
     require(ime_cancel_policy.composition.preedit_text == "draft",
         "focus loss ime cancel policy carries composition snapshot");
+    require_range(ime_cancel_policy.caret_before, 5, 5,
+        "focus loss ime cancel policy records preedit caret before clear");
+    require_range(ime_cancel_policy.caret_after, 0, 0,
+        "focus loss ime cancel policy records caret after clear");
     const action_route_policy_diagnostic& focus_policy = require_policy(
         engine.routing_diagnostics(),
         2,
@@ -1470,6 +1676,8 @@ void test_focus_loss_cancels_composition_and_pointer_state()
     require(focus_policy.emits_input_event, "focus loss policy marks emitted text event");
     require(focus_policy.event_index == 1, "focus loss policy points after ime cancel event");
     require(focus_policy.target_id == "answer", "focus loss policy preserves target id");
+    require(focus_policy.text_byte_count_before == 0, "focus loss policy records before text byte count");
+    require(focus_policy.text_byte_count_after == 0, "focus loss policy records after text byte count");
 
     events = engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 130, 0.0f, 0.0f));
     require(events.empty(), "focus loss resets pending pointer state");
@@ -1494,6 +1702,7 @@ int main()
     test_text_key_flow();
     test_key_code_fallback_edges();
     test_text_keyboard_navigation_and_selection();
+    test_text_edit_boundary_diagnostics_replace_utf8_selection();
     test_ime_composition_suppresses_text_and_key_events();
     test_ime_preedit_commit_edges();
     test_ime_composition_restart_cancels_visible_preedit();

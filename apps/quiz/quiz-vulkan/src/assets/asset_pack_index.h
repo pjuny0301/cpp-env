@@ -96,6 +96,44 @@ struct asset_pack_index_lookup_result {
     }
 };
 
+struct asset_pack_index_lookup_request {
+    std::string id;
+    asset_type expected_type = asset_type::generic;
+};
+
+struct asset_pack_index_lookup_diagnostic {
+    std::size_t request_index = 0U;
+    asset_pack_index_lookup_status status = asset_pack_index_lookup_status::missing_id;
+    std::string id;
+    asset_type expected_type = asset_type::generic;
+    asset_pack_index_entry entry;
+    std::string diagnostic;
+
+    [[nodiscard]] bool ok() const
+    {
+        return status == asset_pack_index_lookup_status::found;
+    }
+};
+
+struct asset_pack_index_lookup_report {
+    std::vector<asset_pack_index_lookup_request> requests;
+    std::vector<asset_pack_index_lookup_diagnostic> diagnostics;
+    std::vector<asset_pack_index_cache_key_group> cache_key_groups;
+    std::size_t found_count = 0U;
+    std::size_t missing_id_count = 0U;
+    std::size_t type_mismatch_count = 0U;
+
+    [[nodiscard]] bool ok() const
+    {
+        return missing_id_count == 0U && type_mismatch_count == 0U;
+    }
+};
+
+struct asset_pack_index_catalog_snapshot_view {
+    std::vector<asset_pack_index_entry> entries;
+    std::vector<asset_pack_index_cache_key_group> cache_key_groups;
+};
+
 struct asset_pack_index_catalog {
     asset_pack_validation_report validation;
     asset_pack_manifest_version_diagnostic manifest_version;
@@ -159,6 +197,31 @@ struct asset_pack_index_catalog {
         result.status = asset_pack_index_lookup_status::found;
         return result;
     }
+
+    [[nodiscard]] asset_pack_index_lookup_result lookup_font(std::string_view id) const
+    {
+        return lookup(id, asset_type::font);
+    }
+
+    [[nodiscard]] asset_pack_index_lookup_result lookup_image(std::string_view id) const
+    {
+        return lookup(id, asset_type::image);
+    }
+
+    [[nodiscard]] asset_pack_index_lookup_result lookup_sound(std::string_view id) const
+    {
+        return lookup(id, asset_type::sound);
+    }
+
+    [[nodiscard]] asset_pack_index_lookup_result lookup_shader(std::string_view id) const
+    {
+        return lookup(id, asset_type::shader);
+    }
+
+    [[nodiscard]] asset_pack_index_lookup_result lookup_deck(std::string_view id) const
+    {
+        return lookup(id, asset_type::deck);
+    }
 };
 
 namespace detail {
@@ -207,6 +270,24 @@ inline void sort_pack_index_cache_key_groups(std::vector<asset_pack_index_cache_
     std::ranges::sort(groups, [](const auto& left, const auto& right) {
         return std::tuple(asset_pack_index_type_rank(left.type), std::string_view(left.cache_key))
             < std::tuple(asset_pack_index_type_rank(right.type), std::string_view(right.cache_key));
+    });
+}
+
+inline void sort_pack_index_entries(std::vector<asset_pack_index_entry>& entries)
+{
+    std::ranges::sort(entries, [](const auto& left, const auto& right) {
+        return std::tuple(
+                   asset_pack_index_type_rank(left.type),
+                   std::string_view(left.source_uri),
+                   std::string_view(left.id),
+                   std::string_view(left.cache_key),
+                   std::string_view(left.resolved_root_id))
+            < std::tuple(
+                   asset_pack_index_type_rank(right.type),
+                   std::string_view(right.source_uri),
+                   std::string_view(right.id),
+                   std::string_view(right.cache_key),
+                   std::string_view(right.resolved_root_id));
     });
 }
 
@@ -307,6 +388,64 @@ inline asset_pack_index_catalog build_asset_pack_index(
     detail::sort_pack_index_cache_key_groups(catalog.cache_key_groups);
     catalog.invalid_summary = detail::summarize_pack_index_invalid_state(catalog.validation, catalog.manifest_version);
     return catalog;
+}
+
+inline std::vector<asset_pack_index_entry> sorted_asset_pack_index_entries(const asset_pack_index_catalog& catalog)
+{
+    std::vector<asset_pack_index_entry> entries = catalog.entries;
+    detail::sort_pack_index_entries(entries);
+    return entries;
+}
+
+inline std::vector<asset_pack_index_cache_key_group> sorted_asset_pack_index_cache_key_groups(
+    const asset_pack_index_catalog& catalog)
+{
+    std::vector<asset_pack_index_cache_key_group> groups = catalog.cache_key_groups;
+    detail::sort_pack_index_cache_key_groups(groups);
+    return groups;
+}
+
+inline asset_pack_index_catalog_snapshot_view make_asset_pack_index_catalog_snapshot_view(
+    const asset_pack_index_catalog& catalog)
+{
+    return asset_pack_index_catalog_snapshot_view{
+        .entries = sorted_asset_pack_index_entries(catalog),
+        .cache_key_groups = sorted_asset_pack_index_cache_key_groups(catalog),
+    };
+}
+
+inline asset_pack_index_lookup_report summarize_asset_pack_index_lookup_requests(
+    const asset_pack_index_catalog& catalog,
+    const std::vector<asset_pack_index_lookup_request>& requests)
+{
+    asset_pack_index_lookup_report report{
+        .requests = requests,
+        .cache_key_groups = sorted_asset_pack_index_cache_key_groups(catalog),
+    };
+
+    report.diagnostics.reserve(requests.size());
+    for (std::size_t index = 0U; index < requests.size(); ++index) {
+        const asset_pack_index_lookup_request& request = requests[index];
+        const asset_pack_index_lookup_result lookup = catalog.lookup(request.id, request.expected_type);
+        report.diagnostics.push_back(asset_pack_index_lookup_diagnostic{
+            .request_index = index,
+            .status = lookup.status,
+            .id = request.id,
+            .expected_type = request.expected_type,
+            .entry = lookup.entry,
+            .diagnostic = lookup.diagnostic,
+        });
+
+        if (lookup.status == asset_pack_index_lookup_status::found) {
+            ++report.found_count;
+        } else if (lookup.status == asset_pack_index_lookup_status::missing_id) {
+            ++report.missing_id_count;
+        } else if (lookup.status == asset_pack_index_lookup_status::type_mismatch) {
+            ++report.type_mismatch_count;
+        }
+    }
+
+    return report;
 }
 
 } // namespace quiz_vulkan::assets

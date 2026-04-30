@@ -138,6 +138,8 @@ static_assert(requires(
     render::render_image_source_bytes_load_request bytes_request,
     render::render_image_source_bytes_load_result bytes_result,
     render::render_image_source_bytes_load_status bytes_status,
+    render::render_image_data_uri_decode_result data_uri_decode_result,
+    render::render_image_data_uri_decode_status data_uri_decode_status,
     render::fake_image_source_bytes_loader source_bytes_loader,
     render::render_image_texture_upload_request upload_request,
     render::render_image_texture_upload_result upload_result,
@@ -246,6 +248,15 @@ static_assert(requires(
     { bytes_result.encoded_bytes } -> std::same_as<std::vector<std::byte>&>;
     { bytes_result.diagnostic } -> std::same_as<std::string&>;
     { bytes_result.ok() } -> std::same_as<bool>;
+    { data_uri_decode_result.status } -> std::same_as<render::render_image_data_uri_decode_status&>;
+    { data_uri_decode_result.media_type } -> std::same_as<std::string&>;
+    { data_uri_decode_result.base64_encoded } -> std::same_as<bool&>;
+    { data_uri_decode_result.encoded_bytes } -> std::same_as<std::vector<std::byte>&>;
+    { data_uri_decode_result.diagnostic } -> std::same_as<std::string&>;
+    { data_uri_decode_result.ok() } -> std::same_as<bool>;
+    { render::render_image_data_uri_decode_status_name(data_uri_decode_status) } -> std::same_as<std::string>;
+    { render::decode_render_image_data_uri("data:image/test,bytes") }
+        -> std::same_as<render::render_image_data_uri_decode_result>;
     { source_bytes_loader.set_source_bytes(render::render_image_cache_key{}, std::vector<std::byte>{}) }
         -> std::same_as<void>;
     { source_bytes_loader.set_source_bytes(source, std::vector<std::byte>{}) } -> std::same_as<void>;
@@ -253,6 +264,9 @@ static_assert(requires(
     { source_bytes_loader.has_source_bytes(source) } -> std::same_as<bool>;
     { render::is_valid_image_source_bytes_cache_key("asset://card.ppm") } -> std::same_as<bool>;
     bytes_status;
+    data_uri_decode_status;
+    render::render_image_source_bytes_load_status::malformed_data_uri;
+    render::render_image_data_uri_decode_status::invalid_base64;
     { render::fake_image_texture_upload_retry_eligibility_name(upload_retry_eligibility) }
         -> std::same_as<std::string>;
     { render::is_retryable_render_image_texture_upload_status(upload_status) } -> std::same_as<bool>;

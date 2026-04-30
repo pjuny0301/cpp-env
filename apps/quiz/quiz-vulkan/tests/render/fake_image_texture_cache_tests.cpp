@@ -866,6 +866,160 @@ void test_source_bytes_loader_reports_explicit_failures()
     require(loader.load_requests.size() == 4, "source bytes loader records failure requests");
 }
 
+void test_source_bytes_loader_loads_data_uri_bytes()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+
+    const render_image_resolve_result base64_resolved = resolver.resolve(
+        render_image_resolve_request{.uri = "DATA:image/png;base64,iVBORw0KGgo="});
+    require(base64_resolved.ok(), "data URI source resolves");
+    require(base64_resolved.source.kind == render_image_source_kind::data_uri, "data URI source kind is preserved");
+    require(base64_resolved.source.normalized_uri.starts_with("data:"), "data URI scheme is normalized");
+    require(
+        base64_resolved.source.cache_key() == base64_resolved.source.normalized_uri,
+        "data URI cache key stays source normalized URI");
+    require(!loader.has_source_bytes(base64_resolved.source), "data URI bytes do not require registration");
+
+    const render_image_data_uri_decode_result base64_decoded = decode_render_image_data_uri(
+        base64_resolved.source.cache_key());
+    require(base64_decoded.ok(), "data URI decoder accepts base64 payload");
+    require(base64_decoded.status == render_image_data_uri_decode_status::decoded, "base64 data URI reports decoded");
+    require(base64_decoded.media_type == "image/png", "base64 data URI preserves media type");
+    require(base64_decoded.base64_encoded, "base64 data URI records base64 metadata");
+    require(render_image_data_uri_decode_status_name(base64_decoded.status) == "decoded", "data URI status is named");
+
+    const render_image_source_bytes_load_result base64_loaded = loader.load(
+        render_image_source_bytes_load_request{.source = base64_resolved.source});
+    require(base64_loaded.ok(), "source bytes loader loads base64 data URI bytes");
+    require(
+        base64_loaded.status == render_image_source_bytes_load_status::loaded,
+        "base64 data URI reports loaded source bytes");
+    require(
+        base64_loaded.source.cache_key() == base64_resolved.source.cache_key(),
+        "base64 data URI load preserves cache key");
+    require(base64_loaded.encoded_bytes.size() == 8, "base64 data URI decodes PNG signature byte count");
+    require(base64_loaded.encoded_bytes[0] == std::byte{0x89}, "base64 data URI decodes PNG signature byte 0");
+    require(base64_loaded.encoded_bytes[1] == std::byte{0x50}, "base64 data URI decodes PNG signature byte 1");
+    require(base64_loaded.encoded_bytes[2] == std::byte{0x4e}, "base64 data URI decodes PNG signature byte 2");
+    require(base64_loaded.encoded_bytes[3] == std::byte{0x47}, "base64 data URI decodes PNG signature byte 3");
+    require(base64_loaded.encoded_bytes[4] == std::byte{0x0d}, "base64 data URI decodes PNG signature byte 4");
+    require(base64_loaded.encoded_bytes[5] == std::byte{0x0a}, "base64 data URI decodes PNG signature byte 5");
+    require(base64_loaded.encoded_bytes[6] == std::byte{0x1a}, "base64 data URI decodes PNG signature byte 6");
+    require(base64_loaded.encoded_bytes[7] == std::byte{0x0a}, "base64 data URI decodes PNG signature byte 7");
+
+    const render_image_resolve_result percent_resolved = resolver.resolve(
+        render_image_resolve_request{.uri = "data:image/x-portable-pixmap,P6%0A1%201%0A255%0A%00%00%FF"});
+    require(percent_resolved.ok(), "percent encoded data URI source resolves");
+    const render_image_data_uri_decode_result percent_decoded = decode_render_image_data_uri(
+        percent_resolved.source.cache_key());
+    require(percent_decoded.ok(), "data URI decoder accepts percent encoded payload");
+    require(!percent_decoded.base64_encoded, "percent data URI records non-base64 payload");
+    require(
+        percent_decoded.media_type == "image/x-portable-pixmap",
+        "percent data URI preserves media type");
+
+    const render_image_source_bytes_load_result percent_loaded = loader.load(
+        render_image_source_bytes_load_request{.source = percent_resolved.source});
+    require(percent_loaded.ok(), "source bytes loader loads percent encoded data URI bytes");
+    require(
+        percent_loaded.encoded_bytes == make_ppm_1x1_encoded_bytes(),
+        "percent encoded data URI decodes deterministic PPM bytes");
+
+    const render_image_resolve_result raw_resolved = resolver.resolve(
+        render_image_resolve_request{.uri = "data:image/test,raw-image-bytes"});
+    require(raw_resolved.ok(), "raw data URI source resolves");
+    std::vector<std::byte> expected_raw;
+    append_ascii(expected_raw, "raw-image-bytes");
+    const render_image_source_bytes_load_result raw_loaded = loader.load(
+        render_image_source_bytes_load_request{.source = raw_resolved.source});
+    require(raw_loaded.ok(), "source bytes loader loads raw data URI bytes");
+    require(raw_loaded.encoded_bytes == expected_raw, "raw data URI payload is copied as bytes");
+    require(loader.load_requests.size() == 3, "data URI loads are recorded");
+}
+
+void test_source_bytes_loader_rejects_malformed_data_uris()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+
+    const render_image_resolve_result bad_metadata_resolved = resolver.resolve(
+        render_image_resolve_request{.uri = "data:image/png;badflag,AAAA"});
+    require(bad_metadata_resolved.ok(), "bad metadata data URI still resolves by source kind");
+    const render_image_data_uri_decode_result bad_metadata_decoded = decode_render_image_data_uri(
+        bad_metadata_resolved.source.cache_key());
+    require(!bad_metadata_decoded.ok(), "bad metadata data URI does not decode");
+    require(
+        bad_metadata_decoded.status == render_image_data_uri_decode_status::invalid_metadata,
+        "bad metadata data URI reports metadata failure");
+    require(!bad_metadata_decoded.diagnostic.empty(), "bad metadata data URI includes decode diagnostic");
+
+    const render_image_source_bytes_load_result bad_metadata_loaded = loader.load(
+        render_image_source_bytes_load_request{.source = bad_metadata_resolved.source});
+    require(!bad_metadata_loaded.ok(), "source bytes loader rejects bad metadata data URI");
+    require(
+        bad_metadata_loaded.status == render_image_source_bytes_load_status::malformed_data_uri,
+        "bad metadata data URI reports malformed load status");
+    require(!bad_metadata_loaded.diagnostic.empty(), "bad metadata load includes diagnostic");
+
+    const render_image_resolve_result bad_base64_resolved = resolver.resolve(
+        render_image_resolve_request{.uri = "data:image/png;base64,@@@@"});
+    require(bad_base64_resolved.ok(), "bad base64 data URI still resolves by source kind");
+    const render_image_data_uri_decode_result bad_base64_decoded = decode_render_image_data_uri(
+        bad_base64_resolved.source.cache_key());
+    require(!bad_base64_decoded.ok(), "bad base64 data URI does not decode");
+    require(
+        bad_base64_decoded.status == render_image_data_uri_decode_status::invalid_base64,
+        "bad base64 data URI reports base64 failure");
+
+    const render_image_source_bytes_load_result bad_base64_loaded = loader.load(
+        render_image_source_bytes_load_request{.source = bad_base64_resolved.source});
+    require(!bad_base64_loaded.ok(), "source bytes loader rejects bad base64 data URI");
+    require(
+        bad_base64_loaded.status == render_image_source_bytes_load_status::malformed_data_uri,
+        "bad base64 data URI reports malformed load status");
+    require(!bad_base64_loaded.diagnostic.empty(), "bad base64 load includes diagnostic");
+
+    const render_image_resolve_result bad_percent_resolved = resolver.resolve(
+        render_image_resolve_request{.uri = "data:image/png,%zz"});
+    require(bad_percent_resolved.ok(), "bad percent data URI still resolves by source kind");
+    const render_image_source_bytes_load_result bad_percent_loaded = loader.load(
+        render_image_source_bytes_load_request{.source = bad_percent_resolved.source});
+    require(!bad_percent_loaded.ok(), "source bytes loader rejects bad percent data URI");
+    require(
+        bad_percent_loaded.status == render_image_source_bytes_load_status::malformed_data_uri,
+        "bad percent data URI reports malformed load status");
+    require(!bad_percent_loaded.diagnostic.empty(), "bad percent load includes diagnostic");
+
+    const render_image_resolve_result empty_payload_resolved = resolver.resolve(
+        render_image_resolve_request{.uri = "data:image/png;base64,"});
+    require(empty_payload_resolved.ok(), "empty data URI still resolves by source kind");
+    const render_image_source_bytes_load_result empty_payload_loaded = loader.load(
+        render_image_source_bytes_load_request{.source = empty_payload_resolved.source});
+    require(!empty_payload_loaded.ok(), "source bytes loader rejects empty data URI payload");
+    require(
+        empty_payload_loaded.status == render_image_source_bytes_load_status::empty_bytes,
+        "empty data URI payload reports empty bytes");
+    require(!empty_payload_loaded.diagnostic.empty(), "empty data URI payload includes diagnostic");
+
+    const render_resolved_image_source missing_comma_source{
+        .original_uri = "data:image/png;base64AAAA",
+        .normalized_uri = "data:image/png;base64AAAA",
+        .kind = render_image_source_kind::data_uri,
+    };
+    const render_image_source_bytes_load_result missing_comma_loaded = loader.load(
+        render_image_source_bytes_load_request{.source = missing_comma_source});
+    require(!missing_comma_loaded.ok(), "source bytes loader rejects comma-less data URI");
+    require(
+        missing_comma_loaded.status == render_image_source_bytes_load_status::malformed_data_uri,
+        "comma-less data URI reports malformed load status");
+    require(loader.load_requests.size() == 5, "malformed data URI loads are recorded");
+}
+
 void test_texture_cache_can_use_loaded_source_bytes()
 {
     using namespace quiz_vulkan::render;
@@ -3014,6 +3168,8 @@ int main()
     test_decoder_chain_reports_candidate_decode_failures();
     test_source_bytes_loader_returns_registered_local_bytes();
     test_source_bytes_loader_reports_explicit_failures();
+    test_source_bytes_loader_loads_data_uri_bytes();
+    test_source_bytes_loader_rejects_malformed_data_uris();
     test_texture_cache_can_use_loaded_source_bytes();
     test_texture_uploader_uploads_valid_decoded_image();
     test_texture_uploader_reports_deterministic_queue_lifecycle();

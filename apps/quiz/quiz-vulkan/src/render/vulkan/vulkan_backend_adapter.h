@@ -45,6 +45,73 @@ enum class vulkan_backend_frame_stage {
 
 std::string_view frame_stage_name(vulkan_backend_frame_stage stage);
 
+enum class vulkan_frame_lifecycle_step {
+    acquire,
+    begin,
+    render,
+    submit,
+    present,
+};
+
+std::string_view frame_lifecycle_step_name(vulkan_frame_lifecycle_step step);
+
+enum class vulkan_frame_lifecycle_order_status {
+    not_started,
+    started,
+    completed,
+    skipped,
+    failed,
+    out_of_order,
+};
+
+std::string_view frame_lifecycle_order_status_name(vulkan_frame_lifecycle_order_status status);
+
+enum class vulkan_frame_lifecycle_failure_classification {
+    none,
+    recoverable,
+    fatal,
+};
+
+std::string_view frame_lifecycle_failure_classification_name(
+    vulkan_frame_lifecycle_failure_classification classification);
+
+struct vulkan_frame_lifecycle_step_snapshot {
+    vulkan_frame_lifecycle_step step = vulkan_frame_lifecycle_step::acquire;
+    std::size_t expected_order = 0;
+    std::size_t observed_order = 0;
+    bool attempted = false;
+    bool completed = false;
+    vulkan_frame_lifecycle_order_status status = vulkan_frame_lifecycle_order_status::not_started;
+    vulkan_frame_lifecycle_failure_classification failure_classification =
+        vulkan_frame_lifecycle_failure_classification::none;
+    vulkan_backend_fallback_reason fallback_reason = vulkan_backend_fallback_reason::none;
+
+    bool failed() const
+    {
+        return status == vulkan_frame_lifecycle_order_status::failed
+            || status == vulkan_frame_lifecycle_order_status::out_of_order;
+    }
+};
+
+struct vulkan_backend_frame_lifecycle_policy_state {
+    bool checked = false;
+    bool ordering_valid = true;
+    bool recoverable_failure = false;
+    bool fatal_failure = false;
+    vulkan_frame_lifecycle_step failed_step = vulkan_frame_lifecycle_step::acquire;
+    vulkan_backend_fallback_reason fallback_reason = vulkan_backend_fallback_reason::none;
+    std::size_t attempted_step_count = 0;
+    std::size_t completed_step_count = 0;
+    std::vector<vulkan_frame_lifecycle_step_snapshot> snapshots;
+
+    bool completed() const
+    {
+        return checked && ordering_valid && !recoverable_failure && !fatal_failure
+            && attempted_step_count == snapshots.size()
+            && completed_step_count == snapshots.size();
+    }
+};
+
 struct vulkan_surface_extent {
     std::size_t width = 0;
     std::size_t height = 0;
@@ -564,6 +631,7 @@ struct vulkan_backend_frame_result {
     vulkan_backend_lifecycle_readiness lifecycle;
     vulkan_backend_swapchain_lifecycle_state swapchain;
     vulkan_backend_frame_sync_state frame_sync;
+    vulkan_backend_frame_lifecycle_policy_state lifecycle_policy;
     vulkan_backend_resource_binding_state resource_bindings;
     vulkan_backend_resource_registry_state resource_registry;
     vulkan_backend_pipeline_state pipeline;
@@ -589,6 +657,7 @@ struct vulkan_backend_frame_result {
             && lifecycle_ready && surface_ready && frame_begun && commands_recorded
             && frame_submitted && frame_presented && swapchain.completed()
             && frame_sync.completed()
+            && lifecycle_policy.completed()
             && resource_bindings.completed()
             && resource_registry.completed()
             && !fallback_required;

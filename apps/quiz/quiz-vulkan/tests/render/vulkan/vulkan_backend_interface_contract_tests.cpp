@@ -232,6 +232,88 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_frame_sync_state s
 });
 
 static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_lifecycle_step::acquire),
+    render::vulkan_backend::vulkan_frame_lifecycle_step>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_lifecycle_step::begin),
+    render::vulkan_backend::vulkan_frame_lifecycle_step>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_lifecycle_step::render),
+    render::vulkan_backend::vulkan_frame_lifecycle_step>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_lifecycle_step::submit),
+    render::vulkan_backend::vulkan_frame_lifecycle_step>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_lifecycle_step::present),
+    render::vulkan_backend::vulkan_frame_lifecycle_step>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_lifecycle_order_status::not_started),
+    render::vulkan_backend::vulkan_frame_lifecycle_order_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_lifecycle_order_status::started),
+    render::vulkan_backend::vulkan_frame_lifecycle_order_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_lifecycle_order_status::completed),
+    render::vulkan_backend::vulkan_frame_lifecycle_order_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_lifecycle_order_status::skipped),
+    render::vulkan_backend::vulkan_frame_lifecycle_order_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_lifecycle_order_status::failed),
+    render::vulkan_backend::vulkan_frame_lifecycle_order_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_lifecycle_order_status::out_of_order),
+    render::vulkan_backend::vulkan_frame_lifecycle_order_status>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_lifecycle_failure_classification::none),
+    render::vulkan_backend::vulkan_frame_lifecycle_failure_classification>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_lifecycle_failure_classification::recoverable),
+    render::vulkan_backend::vulkan_frame_lifecycle_failure_classification>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_lifecycle_failure_classification::fatal),
+    render::vulkan_backend::vulkan_frame_lifecycle_failure_classification>);
+
+static_assert(requires(
+    render::vulkan_backend::vulkan_frame_lifecycle_step step,
+    render::vulkan_backend::vulkan_frame_lifecycle_order_status status,
+    render::vulkan_backend::vulkan_frame_lifecycle_failure_classification classification) {
+    { render::vulkan_backend::frame_lifecycle_step_name(step) } -> std::same_as<std::string_view>;
+    { render::vulkan_backend::frame_lifecycle_order_status_name(status) } -> std::same_as<std::string_view>;
+    { render::vulkan_backend::frame_lifecycle_failure_classification_name(classification) }
+        -> std::same_as<std::string_view>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_frame_lifecycle_step_snapshot snapshot) {
+    { snapshot.step } -> std::same_as<render::vulkan_backend::vulkan_frame_lifecycle_step&>;
+    { snapshot.expected_order } -> std::same_as<std::size_t&>;
+    { snapshot.observed_order } -> std::same_as<std::size_t&>;
+    { snapshot.attempted } -> std::same_as<bool&>;
+    { snapshot.completed } -> std::same_as<bool&>;
+    { snapshot.status } -> std::same_as<render::vulkan_backend::vulkan_frame_lifecycle_order_status&>;
+    { snapshot.failure_classification }
+        -> std::same_as<render::vulkan_backend::vulkan_frame_lifecycle_failure_classification&>;
+    { snapshot.fallback_reason } -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
+    { snapshot.failed() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_backend_frame_lifecycle_policy_state policy) {
+    { policy.checked } -> std::same_as<bool&>;
+    { policy.ordering_valid } -> std::same_as<bool&>;
+    { policy.recoverable_failure } -> std::same_as<bool&>;
+    { policy.fatal_failure } -> std::same_as<bool&>;
+    { policy.failed_step } -> std::same_as<render::vulkan_backend::vulkan_frame_lifecycle_step&>;
+    { policy.fallback_reason } -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
+    { policy.attempted_step_count } -> std::same_as<std::size_t&>;
+    { policy.completed_step_count } -> std::same_as<std::size_t&>;
+    { policy.snapshots }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_frame_lifecycle_step_snapshot>&>;
+    { policy.completed() } -> std::same_as<bool>;
+});
+
+static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_resource_binding_kind::batch_uniform),
     render::vulkan_backend::vulkan_resource_binding_kind>);
 static_assert(std::same_as<
@@ -473,6 +555,8 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_frame_result resul
     { result.lifecycle } -> std::same_as<render::vulkan_backend::vulkan_backend_lifecycle_readiness&>;
     { result.swapchain } -> std::same_as<render::vulkan_backend::vulkan_backend_swapchain_lifecycle_state&>;
     { result.frame_sync } -> std::same_as<render::vulkan_backend::vulkan_backend_frame_sync_state&>;
+    { result.lifecycle_policy }
+        -> std::same_as<render::vulkan_backend::vulkan_backend_frame_lifecycle_policy_state&>;
     { result.resource_bindings } -> std::same_as<render::vulkan_backend::vulkan_backend_resource_binding_state&>;
     { result.resource_registry } -> std::same_as<render::vulkan_backend::vulkan_backend_resource_registry_state&>;
     { result.pipeline } -> std::same_as<render::vulkan_backend::vulkan_backend_pipeline_state&>;

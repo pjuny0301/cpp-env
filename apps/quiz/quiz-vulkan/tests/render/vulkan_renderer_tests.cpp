@@ -341,6 +341,77 @@ void test_vulkan_command_recorder_failure_stage_names_are_stable()
         "command recorder failure stage name for finish is stable");
 }
 
+void test_vulkan_frame_lifecycle_policy_names_are_stable()
+{
+    using namespace quiz_vulkan::render;
+
+    require(
+        vulkan_backend::frame_lifecycle_step_name(vulkan_backend::vulkan_frame_lifecycle_step::acquire)
+            == std::string_view{"acquire"},
+        "frame lifecycle step name for acquire is stable");
+    require(
+        vulkan_backend::frame_lifecycle_step_name(vulkan_backend::vulkan_frame_lifecycle_step::begin)
+            == std::string_view{"begin"},
+        "frame lifecycle step name for begin is stable");
+    require(
+        vulkan_backend::frame_lifecycle_step_name(vulkan_backend::vulkan_frame_lifecycle_step::render)
+            == std::string_view{"render"},
+        "frame lifecycle step name for render is stable");
+    require(
+        vulkan_backend::frame_lifecycle_step_name(vulkan_backend::vulkan_frame_lifecycle_step::submit)
+            == std::string_view{"submit"},
+        "frame lifecycle step name for submit is stable");
+    require(
+        vulkan_backend::frame_lifecycle_step_name(vulkan_backend::vulkan_frame_lifecycle_step::present)
+            == std::string_view{"present"},
+        "frame lifecycle step name for present is stable");
+    require(
+        vulkan_backend::frame_lifecycle_order_status_name(
+            vulkan_backend::vulkan_frame_lifecycle_order_status::not_started)
+            == std::string_view{"not_started"},
+        "frame lifecycle status name for not started is stable");
+    require(
+        vulkan_backend::frame_lifecycle_order_status_name(
+            vulkan_backend::vulkan_frame_lifecycle_order_status::started)
+            == std::string_view{"started"},
+        "frame lifecycle status name for started is stable");
+    require(
+        vulkan_backend::frame_lifecycle_order_status_name(
+            vulkan_backend::vulkan_frame_lifecycle_order_status::completed)
+            == std::string_view{"completed"},
+        "frame lifecycle status name for completed is stable");
+    require(
+        vulkan_backend::frame_lifecycle_order_status_name(
+            vulkan_backend::vulkan_frame_lifecycle_order_status::skipped)
+            == std::string_view{"skipped"},
+        "frame lifecycle status name for skipped is stable");
+    require(
+        vulkan_backend::frame_lifecycle_order_status_name(
+            vulkan_backend::vulkan_frame_lifecycle_order_status::failed)
+            == std::string_view{"failed"},
+        "frame lifecycle status name for failed is stable");
+    require(
+        vulkan_backend::frame_lifecycle_order_status_name(
+            vulkan_backend::vulkan_frame_lifecycle_order_status::out_of_order)
+            == std::string_view{"out_of_order"},
+        "frame lifecycle status name for out of order is stable");
+    require(
+        vulkan_backend::frame_lifecycle_failure_classification_name(
+            vulkan_backend::vulkan_frame_lifecycle_failure_classification::none)
+            == std::string_view{"none"},
+        "frame lifecycle classification name for none is stable");
+    require(
+        vulkan_backend::frame_lifecycle_failure_classification_name(
+            vulkan_backend::vulkan_frame_lifecycle_failure_classification::recoverable)
+            == std::string_view{"recoverable"},
+        "frame lifecycle classification name for recoverable is stable");
+    require(
+        vulkan_backend::frame_lifecycle_failure_classification_name(
+            vulkan_backend::vulkan_frame_lifecycle_failure_classification::fatal)
+            == std::string_view{"fatal"},
+        "frame lifecycle classification name for fatal is stable");
+}
+
 void test_vulkan_shader_stage_names_are_stable()
 {
     using namespace quiz_vulkan::render;
@@ -1370,6 +1441,142 @@ void require_completed_frame_sync(
         "frame sync present waits on the submit render-finished semaphore");
 }
 
+const quiz_vulkan::render::vulkan_backend::vulkan_frame_lifecycle_step_snapshot* find_lifecycle_snapshot(
+    const quiz_vulkan::render::vulkan_backend::vulkan_backend_frame_lifecycle_policy_state& state,
+    quiz_vulkan::render::vulkan_backend::vulkan_frame_lifecycle_step step)
+{
+    for (const quiz_vulkan::render::vulkan_backend::vulkan_frame_lifecycle_step_snapshot& snapshot :
+         state.snapshots) {
+        if (snapshot.step == step) {
+            return &snapshot;
+        }
+    }
+    return nullptr;
+}
+
+void require_stable_frame_lifecycle_snapshot_order(
+    const quiz_vulkan::render::vulkan_backend::vulkan_backend_frame_lifecycle_policy_state& state)
+{
+    using namespace quiz_vulkan::render;
+
+    require(state.snapshots.size() == 5, "frame lifecycle policy stores five stable snapshots");
+    require(
+        state.snapshots[0].step == vulkan_backend::vulkan_frame_lifecycle_step::acquire,
+        "frame lifecycle first snapshot is acquire");
+    require(state.snapshots[0].expected_order == 0, "frame lifecycle acquire expected order is stable");
+    require(
+        state.snapshots[1].step == vulkan_backend::vulkan_frame_lifecycle_step::begin,
+        "frame lifecycle second snapshot is begin");
+    require(state.snapshots[1].expected_order == 1, "frame lifecycle begin expected order is stable");
+    require(
+        state.snapshots[2].step == vulkan_backend::vulkan_frame_lifecycle_step::render,
+        "frame lifecycle third snapshot is render");
+    require(state.snapshots[2].expected_order == 2, "frame lifecycle render expected order is stable");
+    require(
+        state.snapshots[3].step == vulkan_backend::vulkan_frame_lifecycle_step::submit,
+        "frame lifecycle fourth snapshot is submit");
+    require(state.snapshots[3].expected_order == 3, "frame lifecycle submit expected order is stable");
+    require(
+        state.snapshots[4].step == vulkan_backend::vulkan_frame_lifecycle_step::present,
+        "frame lifecycle fifth snapshot is present");
+    require(state.snapshots[4].expected_order == 4, "frame lifecycle present expected order is stable");
+}
+
+void require_completed_frame_lifecycle_policy(
+    const quiz_vulkan::render::vulkan_backend::vulkan_backend_frame_lifecycle_policy_state& state)
+{
+    using namespace quiz_vulkan::render;
+
+    require(state.checked, "frame lifecycle policy is checked");
+    require(state.completed(), "frame lifecycle policy completes");
+    require(state.ordering_valid, "frame lifecycle policy ordering is valid");
+    require(!state.recoverable_failure, "frame lifecycle policy has no recoverable failure");
+    require(!state.fatal_failure, "frame lifecycle policy has no fatal failure");
+    require(
+        state.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::none,
+        "frame lifecycle policy has no fallback reason");
+    require(state.attempted_step_count == 5, "frame lifecycle policy attempts every step");
+    require(state.completed_step_count == 5, "frame lifecycle policy completes every step");
+    require_stable_frame_lifecycle_snapshot_order(state);
+
+    for (const vulkan_backend::vulkan_frame_lifecycle_step_snapshot& snapshot : state.snapshots) {
+        require(snapshot.attempted, "completed frame lifecycle snapshot is attempted");
+        require(snapshot.completed, "completed frame lifecycle snapshot is completed");
+        require(
+            snapshot.status == vulkan_backend::vulkan_frame_lifecycle_order_status::completed,
+            "completed frame lifecycle snapshot reports completed status");
+        require(
+            snapshot.failure_classification
+                == vulkan_backend::vulkan_frame_lifecycle_failure_classification::none,
+            "completed frame lifecycle snapshot has no failure classification");
+        require(
+            snapshot.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::none,
+            "completed frame lifecycle snapshot has no fallback reason");
+        require(!snapshot.failed(), "completed frame lifecycle snapshot does not fail");
+        require(snapshot.observed_order == snapshot.expected_order, "completed frame lifecycle order is deterministic");
+    }
+}
+
+void require_failed_frame_lifecycle_policy(
+    const quiz_vulkan::render::vulkan_backend::vulkan_backend_frame_lifecycle_policy_state& state,
+    quiz_vulkan::render::vulkan_backend::vulkan_frame_lifecycle_step failed_step,
+    quiz_vulkan::render::vulkan_backend::vulkan_frame_lifecycle_failure_classification classification,
+    quiz_vulkan::render::vulkan_backend::vulkan_backend_fallback_reason reason,
+    std::size_t attempted_step_count,
+    std::size_t completed_step_count)
+{
+    using namespace quiz_vulkan::render;
+
+    require(state.checked, "failed frame lifecycle policy is checked");
+    require(!state.completed(), "failed frame lifecycle policy does not complete");
+    require(state.ordering_valid, "failed frame lifecycle policy keeps ordering valid");
+    require(
+        state.recoverable_failure
+            == (classification == vulkan_backend::vulkan_frame_lifecycle_failure_classification::recoverable),
+        "failed frame lifecycle policy records recoverable classification");
+    require(
+        state.fatal_failure
+            == (classification == vulkan_backend::vulkan_frame_lifecycle_failure_classification::fatal),
+        "failed frame lifecycle policy records fatal classification");
+    require(state.failed_step == failed_step, "failed frame lifecycle policy records failed step");
+    require(state.fallback_reason == reason, "failed frame lifecycle policy records fallback reason");
+    require(state.attempted_step_count == attempted_step_count, "failed frame lifecycle attempted count is stable");
+    require(state.completed_step_count == completed_step_count, "failed frame lifecycle completed count is stable");
+    require_stable_frame_lifecycle_snapshot_order(state);
+
+    const vulkan_backend::vulkan_frame_lifecycle_step_snapshot* failed_snapshot =
+        find_lifecycle_snapshot(state, failed_step);
+    require(failed_snapshot != nullptr, "failed frame lifecycle snapshot exists");
+    require(failed_snapshot->attempted, "failed frame lifecycle snapshot is attempted");
+    require(!failed_snapshot->completed, "failed frame lifecycle snapshot is not completed");
+    require(
+        failed_snapshot->status == vulkan_backend::vulkan_frame_lifecycle_order_status::failed,
+        "failed frame lifecycle snapshot reports failed status");
+    require(failed_snapshot->failure_classification == classification, "failed snapshot records classification");
+    require(failed_snapshot->fallback_reason == reason, "failed snapshot records fallback reason");
+    require(failed_snapshot->failed(), "failed snapshot exposes failure helper");
+    require(
+        failed_snapshot->observed_order == failed_snapshot->expected_order,
+        "failed snapshot keeps deterministic observed order");
+
+    for (const vulkan_backend::vulkan_frame_lifecycle_step_snapshot& snapshot : state.snapshots) {
+        if (snapshot.expected_order < failed_snapshot->expected_order) {
+            require(snapshot.attempted, "pre-failure lifecycle snapshot is attempted");
+            require(snapshot.completed, "pre-failure lifecycle snapshot is completed");
+            require(
+                snapshot.status == vulkan_backend::vulkan_frame_lifecycle_order_status::completed,
+                "pre-failure lifecycle snapshot completed before failure");
+        }
+        if (snapshot.expected_order > failed_snapshot->expected_order) {
+            require(!snapshot.attempted, "post-failure lifecycle snapshot is not attempted");
+            require(!snapshot.completed, "post-failure lifecycle snapshot is not completed");
+            require(
+                snapshot.status == vulkan_backend::vulkan_frame_lifecycle_order_status::skipped,
+                "post-failure lifecycle snapshot is skipped");
+        }
+    }
+}
+
 void test_vulkan_resource_binding_state_builds_batch_snapshots()
 {
     using namespace quiz_vulkan::render;
@@ -1639,6 +1846,7 @@ void test_vulkan_backend_adapter_completes_fake_device_lifecycle()
     require(result.swapchain.present.image_id.value == 7, "fake backend presents the acquired image id");
     require(result.swapchain.completed(), "fake backend records completed swapchain lifecycle");
     require_completed_frame_sync(result.frame_sync);
+    require_completed_frame_lifecycle_policy(result.lifecycle_policy);
     require(result.resource_bindings.completed(), "fake backend records completed resource binding state");
     require(result.resource_bindings.planned_batch_count == 1, "fake backend resource bindings track batch count");
     require(result.resource_bindings.binding_count == 2, "fake backend quad resource bindings have stable bind count");
@@ -1672,8 +1880,8 @@ void test_vulkan_backend_adapter_completes_fake_device_lifecycle()
         "fake backend command recorder stores recording order");
 
     require(device.calls.size() == 6, "fake backend lifecycle call count");
-    require(device.calls[0] == "begin", "fake backend begins before recording");
-    require(device.calls[1] == "acquire", "fake backend acquires image before recording");
+    require(device.calls[0] == "acquire", "fake backend acquires image before beginning");
+    require(device.calls[1] == "begin", "fake backend begins before recording");
     require(device.calls[2] == "record", "fake backend records before submit");
     require(device.calls[3] == "submit", "fake backend submits before present");
     require(device.calls[4] == "present_image", "fake backend presents image after submit");
@@ -1789,6 +1997,7 @@ void test_vulkan_backend_adapter_completes_empty_frame()
     require(result.command_recorder.command_buffer_recorded, "empty frame records an empty command buffer");
     require(result.command_recorder.empty(), "empty frame command recorder has no batches");
     require(result.swapchain.completed(), "empty frame still completes swapchain lifecycle");
+    require_completed_frame_lifecycle_policy(result.lifecycle_policy);
     require(result.resource_bindings.completed(), "empty frame records completed empty resource binding state");
     require(result.resource_bindings.binding_count == 0, "empty frame records no resource bindings");
     require(result.resource_registry.completed(), "empty frame records completed empty resource registry state");
@@ -1825,6 +2034,7 @@ void test_vulkan_backend_adapter_completes_all_discarded_frame()
     require(result.command_recorder.command_buffer_recorded, "all-discarded frame records an empty command buffer");
     require(result.command_recorder.empty(), "all-discarded frame command recorder has no batches");
     require(result.swapchain.completed(), "all-discarded frame still completes swapchain lifecycle");
+    require_completed_frame_lifecycle_policy(result.lifecycle_policy);
     require(result.resource_bindings.completed(), "all-discarded frame records completed empty resource binding state");
     require(result.resource_registry.completed(), "all-discarded frame records completed empty resource registry state");
     require(result.clipped_draw_call_count == 0, "all-discarded frame has no clipped draw calls");
@@ -1912,6 +2122,13 @@ void test_vulkan_backend_adapter_falls_back_when_injected_recorder_rejects_frame
     require(
         result.reached_stage == vulkan_backend::vulkan_backend_frame_stage::frame_begun,
         "backend stops at frame begun stage when injected recorder rejects frame");
+    require_failed_frame_lifecycle_policy(
+        result.lifecycle_policy,
+        vulkan_backend::vulkan_frame_lifecycle_step::render,
+        vulkan_backend::vulkan_frame_lifecycle_failure_classification::fatal,
+        vulkan_backend::vulkan_backend_fallback_reason::record_commands_failed,
+        3,
+        2);
     require(!result.command_recorder.ready, "backend records rejected command recorder readiness");
     require(!result.command_recorder.frame_open, "backend does not open rejected command recorder frame");
     require(!result.command_recorder.command_buffer_recorded, "backend does not record rejected command buffer");
@@ -1925,8 +2142,8 @@ void test_vulkan_backend_adapter_falls_back_when_injected_recorder_rejects_frame
     require(result.swapchain.acquired(), "backend acquires image before injected recorder rejects frame");
     require(!result.swapchain.present_requested, "backend does not present image after recorder rejection");
     require(device.calls.size() == 2, "backend stops device lifecycle after acquire when recorder rejects frame");
-    require(device.calls[0] == "begin", "backend begins before injected recorder rejects frame");
-    require(device.calls[1] == "acquire", "backend acquires image before injected recorder rejects frame");
+    require(device.calls[0] == "acquire", "backend acquires image before injected recorder rejects frame");
+    require(device.calls[1] == "begin", "backend begins before injected recorder rejects frame");
     require(!recorder.recorder_state().ready, "injected recorder exposes rejected state");
 }
 
@@ -2144,6 +2361,13 @@ void test_vulkan_backend_adapter_falls_back_when_injected_recorder_fails_record_
     require(
         result.reached_stage == vulkan_backend::vulkan_backend_frame_stage::frame_begun,
         "backend stops at frame begun stage when injected recorder fails a batch");
+    require_failed_frame_lifecycle_policy(
+        result.lifecycle_policy,
+        vulkan_backend::vulkan_frame_lifecycle_step::render,
+        vulkan_backend::vulkan_frame_lifecycle_failure_classification::fatal,
+        vulkan_backend::vulkan_backend_fallback_reason::record_commands_failed,
+        3,
+        2);
     require(result.command_recorder.ready, "backend records ready injected recorder on record failure");
     require(result.command_recorder.frame_open, "backend records open frame on record failure");
     require(!result.command_recorder.command_buffer_recorded, "backend records unfinished buffer on record failure");
@@ -2159,8 +2383,8 @@ void test_vulkan_backend_adapter_falls_back_when_injected_recorder_fails_record_
     require(result.swapchain.acquired(), "backend acquires image before injected record failure");
     require(!result.swapchain.present_requested, "backend does not present image after injected record failure");
     require(device.calls.size() == 2, "backend stops device lifecycle after acquire on injected record failure");
-    require(device.calls[0] == "begin", "backend begins before injected recorder fails a batch");
-    require(device.calls[1] == "acquire", "backend acquires image before injected recorder fails a batch");
+    require(device.calls[0] == "acquire", "backend acquires image before injected recorder fails a batch");
+    require(device.calls[1] == "begin", "backend begins before injected recorder fails a batch");
 }
 
 void test_vulkan_backend_adapter_falls_back_when_injected_recorder_fails_finish()
@@ -2194,6 +2418,13 @@ void test_vulkan_backend_adapter_falls_back_when_injected_recorder_fails_finish(
     require(
         result.reached_stage == vulkan_backend::vulkan_backend_frame_stage::frame_begun,
         "backend stops at frame begun stage when injected recorder fails finish");
+    require_failed_frame_lifecycle_policy(
+        result.lifecycle_policy,
+        vulkan_backend::vulkan_frame_lifecycle_step::render,
+        vulkan_backend::vulkan_frame_lifecycle_failure_classification::fatal,
+        vulkan_backend::vulkan_backend_fallback_reason::record_commands_failed,
+        3,
+        2);
     require(result.command_recorder.ready, "backend records ready injected recorder on finish failure");
     require(result.command_recorder.frame_open, "backend records open frame on finish failure");
     require(!result.command_recorder.command_buffer_recorded, "backend records unfinished buffer on finish failure");
@@ -2209,8 +2440,8 @@ void test_vulkan_backend_adapter_falls_back_when_injected_recorder_fails_finish(
     require(result.swapchain.acquired(), "backend acquires image before injected finish failure");
     require(!result.swapchain.present_requested, "backend does not present image after injected finish failure");
     require(device.calls.size() == 2, "backend stops device lifecycle after acquire on injected finish failure");
-    require(device.calls[0] == "begin", "backend begins before injected recorder fails finish");
-    require(device.calls[1] == "acquire", "backend acquires image before injected recorder fails finish");
+    require(device.calls[0] == "acquire", "backend acquires image before injected recorder fails finish");
+    require(device.calls[1] == "begin", "backend begins before injected recorder fails finish");
 }
 
 void test_vulkan_backend_adapter_falls_back_without_surface()
@@ -2313,8 +2544,17 @@ void test_vulkan_backend_adapter_falls_back_when_begin_fails()
         "backend reaches frame plan stage before begin failure");
     require(result.surface_ready, "backend had a surface before begin failed");
     require(!result.frame_begun, "backend reports failed frame begin");
-    require(!result.swapchain.acquire_requested, "backend does not acquire image after failed begin");
+    require(result.swapchain.acquire_requested, "backend acquires image before failed begin");
+    require(result.swapchain.acquired(), "backend records acquired image before failed begin");
+    require(result.frame_sync.acquire_completed(), "backend completes acquire sync before failed begin");
     require(!result.swapchain.present_requested, "backend does not present image after failed begin");
+    require_failed_frame_lifecycle_policy(
+        result.lifecycle_policy,
+        vulkan_backend::vulkan_frame_lifecycle_step::begin,
+        vulkan_backend::vulkan_frame_lifecycle_failure_classification::fatal,
+        vulkan_backend::vulkan_backend_fallback_reason::begin_frame_failed,
+        2,
+        1);
     require(!result.commands_recorded, "backend does not record commands after failed begin");
     require(!result.frame_submitted, "backend does not submit after failed begin");
     require(!result.frame_presented, "backend does not present after failed begin");
@@ -2325,8 +2565,9 @@ void test_vulkan_backend_adapter_falls_back_when_begin_fails()
     require(!result.command_recorder.command_buffer_recorded, "command recorder does not record after failed begin");
     require(result.command_recorder.planned_batch_count == 1, "command recorder records planned count before begin failure");
     require(result.command_recorder.recorded_batch_count == 0, "command recorder has no recorded count after begin failure");
-    require(device.calls.size() == 1, "backend stops lifecycle after failed begin");
-    require(device.calls[0] == "begin", "backend calls begin before stopping");
+    require(device.calls.size() == 2, "backend stops lifecycle after failed begin");
+    require(device.calls[0] == "acquire", "backend acquires image before failed begin");
+    require(device.calls[1] == "begin", "backend calls begin before stopping");
 }
 
 void test_vulkan_backend_adapter_falls_back_when_acquire_fails()
@@ -2353,10 +2594,10 @@ void test_vulkan_backend_adapter_falls_back_when_acquire_fails()
         result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::acquire_image_failed,
         "backend reports acquire image fallback reason");
     require(
-        result.reached_stage == vulkan_backend::vulkan_backend_frame_stage::frame_begun,
-        "backend reaches frame begun stage before acquire failure");
+        result.reached_stage == vulkan_backend::vulkan_backend_frame_stage::frame_plan_ready,
+        "backend reaches frame plan stage before acquire failure");
     require(result.surface_ready, "backend had a surface before acquire failed");
-    require(result.frame_begun, "backend began frame before acquire failed");
+    require(!result.frame_begun, "backend does not begin frame after acquire failure");
     require(result.swapchain.acquire_requested, "backend requests image acquisition before acquire failure");
     require(
         result.swapchain.acquire.status == vulkan_backend::vulkan_swapchain_acquire_status::failed,
@@ -2372,6 +2613,13 @@ void test_vulkan_backend_adapter_falls_back_when_acquire_fails()
     require(!result.frame_sync.submit_wait_image_available_semaphore.requested, "backend does not submit-wait after acquire failure");
     require(!result.frame_sync.submit_signal_render_finished_semaphore.requested, "backend does not submit-signal after acquire failure");
     require(!result.frame_sync.present_wait_render_finished_semaphore.requested, "backend does not present-wait after acquire failure");
+    require_failed_frame_lifecycle_policy(
+        result.lifecycle_policy,
+        vulkan_backend::vulkan_frame_lifecycle_step::acquire,
+        vulkan_backend::vulkan_frame_lifecycle_failure_classification::recoverable,
+        vulkan_backend::vulkan_backend_fallback_reason::acquire_image_failed,
+        1,
+        0);
     require(!result.commands_recorded, "backend does not record commands after acquire failure");
     require(!result.frame_submitted, "backend does not submit after acquire failure");
     require(!result.frame_presented, "backend does not present frame after acquire failure");
@@ -2381,9 +2629,8 @@ void test_vulkan_backend_adapter_falls_back_when_acquire_fails()
     require(!result.command_recorder.frame_open, "command recorder does not open frame after acquire failure");
     require(!result.command_recorder.command_buffer_recorded, "command recorder does not record after acquire failure");
     require(result.command_recorder.planned_batch_count == 1, "command recorder records planned count before acquire failure");
-    require(device.calls.size() == 2, "backend stops lifecycle after failed acquire");
-    require(device.calls[0] == "begin", "backend begins before failed acquire");
-    require(device.calls[1] == "acquire", "backend acquires before stopping");
+    require(device.calls.size() == 1, "backend stops lifecycle after failed acquire");
+    require(device.calls[0] == "acquire", "backend acquires before stopping");
 }
 
 void test_vulkan_backend_adapter_falls_back_when_recording_fails()
@@ -2419,6 +2666,13 @@ void test_vulkan_backend_adapter_falls_back_when_recording_fails()
     require(result.frame_sync.acquire_completed(), "backend completes acquire sync before device recording failure");
     require(!result.frame_sync.submit_wait_image_available_semaphore.requested, "backend does not submit-wait after recording failure");
     require(!result.frame_sync.present_wait_render_finished_semaphore.requested, "backend does not present-wait after recording failure");
+    require_failed_frame_lifecycle_policy(
+        result.lifecycle_policy,
+        vulkan_backend::vulkan_frame_lifecycle_step::render,
+        vulkan_backend::vulkan_frame_lifecycle_failure_classification::fatal,
+        vulkan_backend::vulkan_backend_fallback_reason::record_commands_failed,
+        3,
+        2);
     require(!result.commands_recorded, "backend reports failed command recording");
     require(!result.frame_submitted, "backend does not submit after failed recording");
     require(!result.frame_presented, "backend does not present after failed recording");
@@ -2431,8 +2685,8 @@ void test_vulkan_backend_adapter_falls_back_when_recording_fails()
     require(result.command_recorder.recorded_batch_count == 1, "command recorder tracks recorded count before device failure");
     require(result.command_recorder.recorded_batches.size() == 1, "command recorder stores batch before device failure");
     require(device.calls.size() == 3, "backend stops lifecycle after failed recording");
-    require(device.calls[0] == "begin", "backend begins before failed recording");
-    require(device.calls[1] == "acquire", "backend acquires image before failed recording");
+    require(device.calls[0] == "acquire", "backend acquires image before failed recording");
+    require(device.calls[1] == "begin", "backend begins before failed recording");
     require(device.calls[2] == "record", "backend records before stopping");
 }
 
@@ -2472,6 +2726,13 @@ void test_vulkan_backend_adapter_falls_back_when_submit_fails()
     require(result.frame_sync.submit_signal_render_finished_semaphore.failed(), "backend records failed submit semaphore signal");
     require(result.frame_sync.submit_signal_frame_fence.failed(), "backend records failed submit fence signal");
     require(!result.frame_sync.present_wait_render_finished_semaphore.requested, "backend does not present-wait after submit failure");
+    require_failed_frame_lifecycle_policy(
+        result.lifecycle_policy,
+        vulkan_backend::vulkan_frame_lifecycle_step::submit,
+        vulkan_backend::vulkan_frame_lifecycle_failure_classification::recoverable,
+        vulkan_backend::vulkan_backend_fallback_reason::submit_frame_failed,
+        4,
+        3);
     require(result.commands_recorded, "backend recorded commands before submit failed");
     require(!result.frame_submitted, "backend reports failed frame submit");
     require(!result.frame_presented, "backend does not present after failed submit");
@@ -2481,8 +2742,8 @@ void test_vulkan_backend_adapter_falls_back_when_submit_fails()
     require(result.command_recorder.command_buffer_recorded, "command recorder reports recorded buffer before submit failure");
     require(result.command_recorder.recorded_batch_count == 1, "command recorder tracks recorded count before submit failure");
     require(device.calls.size() == 4, "backend stops lifecycle after failed submit");
-    require(device.calls[0] == "begin", "backend begins before failed submit");
-    require(device.calls[1] == "acquire", "backend acquires image before failed submit");
+    require(device.calls[0] == "acquire", "backend acquires image before failed submit");
+    require(device.calls[1] == "begin", "backend begins before failed submit");
     require(device.calls[2] == "record", "backend records before failed submit");
     require(device.calls[3] == "submit", "backend submits before stopping");
 }
@@ -2530,6 +2791,13 @@ void test_vulkan_backend_adapter_falls_back_when_present_image_fails()
         result.frame_sync.present_wait_render_finished_semaphore.failed(),
         "backend records failed present wait after image presentation failure");
     require(!result.frame_sync.present_completed(), "backend does not complete present sync after image failure");
+    require_failed_frame_lifecycle_policy(
+        result.lifecycle_policy,
+        vulkan_backend::vulkan_frame_lifecycle_step::present,
+        vulkan_backend::vulkan_frame_lifecycle_failure_classification::recoverable,
+        vulkan_backend::vulkan_backend_fallback_reason::present_image_failed,
+        5,
+        4);
     require(!result.frame_presented, "backend does not mark frame presented after image presentation failure");
     require(result.planned_batch_count == 1, "backend reports planned batch count before image presentation failure");
     require(result.recorded_batch_count == 1, "backend reports recorded batch count before image presentation failure");
@@ -2539,8 +2807,8 @@ void test_vulkan_backend_adapter_falls_back_when_present_image_fails()
         "command recorder reports recorded buffer before image presentation failure");
     require(result.command_recorder.recorded_batch_count == 1, "command recorder tracks recorded count before image failure");
     require(device.calls.size() == 5, "backend stops lifecycle after failed image presentation");
-    require(device.calls[0] == "begin", "backend begins before image presentation failure");
-    require(device.calls[1] == "acquire", "backend acquires image before image presentation failure");
+    require(device.calls[0] == "acquire", "backend acquires image before image presentation failure");
+    require(device.calls[1] == "begin", "backend begins before image presentation failure");
     require(device.calls[2] == "record", "backend records before image presentation failure");
     require(device.calls[3] == "submit", "backend submits before image presentation failure");
     require(device.calls[4] == "present_image", "backend presents image before stopping");
@@ -2577,6 +2845,13 @@ void test_vulkan_backend_adapter_falls_back_when_present_fails()
     require(result.swapchain.acquired(), "backend acquired image before presentation failed");
     require(result.swapchain.presented(), "backend presented swapchain image before frame presentation failed");
     require(result.frame_sync.completed(), "backend completes frame sync before frame presentation failure");
+    require_failed_frame_lifecycle_policy(
+        result.lifecycle_policy,
+        vulkan_backend::vulkan_frame_lifecycle_step::present,
+        vulkan_backend::vulkan_frame_lifecycle_failure_classification::recoverable,
+        vulkan_backend::vulkan_backend_fallback_reason::present_frame_failed,
+        5,
+        4);
     require(result.commands_recorded, "backend recorded commands before presentation failed");
     require(result.frame_submitted, "backend submitted frame before presentation failed");
     require(!result.frame_presented, "backend reports failed presentation");
@@ -2586,8 +2861,8 @@ void test_vulkan_backend_adapter_falls_back_when_present_fails()
     require(result.command_recorder.command_buffer_recorded, "command recorder reports recorded buffer before presentation failure");
     require(result.command_recorder.recorded_batch_count == 1, "command recorder tracks recorded count before presentation failure");
     require(device.calls.size() == 6, "backend reaches present call before failing");
-    require(device.calls[0] == "begin", "backend begins before presentation failure");
-    require(device.calls[1] == "acquire", "backend acquires image before presentation failure");
+    require(device.calls[0] == "acquire", "backend acquires image before presentation failure");
+    require(device.calls[1] == "begin", "backend begins before presentation failure");
     require(device.calls[2] == "record", "backend records before presentation failure");
     require(device.calls[3] == "submit", "backend submits before presentation failure");
     require(device.calls[4] == "present_image", "backend presents image before frame presentation failure");
@@ -2602,6 +2877,7 @@ int main()
     test_vulkan_swapchain_status_names_are_stable();
     test_vulkan_backend_frame_stage_names_are_stable();
     test_vulkan_command_recorder_failure_stage_names_are_stable();
+    test_vulkan_frame_lifecycle_policy_names_are_stable();
     test_vulkan_shader_stage_names_are_stable();
     test_draw_list_submission_counts_generic_work();
     test_renderer_backend_diagnostics_report_vulkan_not_requested();

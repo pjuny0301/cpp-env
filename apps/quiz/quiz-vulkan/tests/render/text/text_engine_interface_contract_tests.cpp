@@ -61,6 +61,7 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.line_breaks } -> std::same_as<std::vector<render::render_text_line_break_snapshot>&>;
     { diagnostics.line_metrics } -> std::same_as<std::vector<render::render_text_line_metrics_snapshot>&>;
     { diagnostics.line_layout_metrics } -> std::same_as<render::render_text_line_layout_metrics_snapshot&>;
+    { diagnostics.line_break_policy } -> std::same_as<render::render_text_line_break_policy_snapshot&>;
     { diagnostics.glyph_cache_faces } -> std::same_as<std::vector<render::render_text_glyph_cache_face_snapshot>&>;
     { diagnostics.glyph_cache_policy } -> std::same_as<render::render_text_glyph_cache_policy_snapshot&>;
     { diagnostics.used_font_fallback() } -> std::same_as<bool>;
@@ -72,6 +73,7 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.has_font_face_selections() } -> std::same_as<bool>;
     { diagnostics.has_line_breaks() } -> std::same_as<bool>;
     { diagnostics.has_line_metrics() } -> std::same_as<bool>;
+    { diagnostics.has_line_break_policy() } -> std::same_as<bool>;
     { diagnostics.has_glyph_cache_faces() } -> std::same_as<bool>;
 });
 
@@ -157,6 +159,8 @@ static_assert(requires(render::render_text_line_break_snapshot line_break) {
     { line_break.line_index } -> std::same_as<std::size_t&>;
     { line_break.codepoint_offset } -> std::same_as<std::size_t&>;
     { line_break.codepoint_count } -> std::same_as<std::size_t&>;
+    { line_break.utf8_cluster_offset } -> std::same_as<std::size_t&>;
+    { line_break.utf8_cluster_count } -> std::same_as<std::size_t&>;
     { line_break.start_run_index } -> std::same_as<std::size_t&>;
     { line_break.start_byte_offset } -> std::same_as<std::size_t&>;
     { line_break.end_run_index } -> std::same_as<std::size_t&>;
@@ -168,16 +172,27 @@ static_assert(requires(render::render_text_line_break_snapshot line_break) {
     { line_break.line_width } -> std::same_as<float&>;
     { line_break.max_width } -> std::same_as<float&>;
     { line_break.wrapped } -> std::same_as<bool&>;
+    { line_break.starts_at_utf8_cluster_boundary } -> std::same_as<bool&>;
+    { line_break.ends_at_utf8_cluster_boundary } -> std::same_as<bool&>;
+    { line_break.caret_safe } -> std::same_as<bool&>;
+    { line_break.used_hangul_width_break } -> std::same_as<bool&>;
+    { line_break.used_long_token_fallback } -> std::same_as<bool&>;
 });
 
 static_assert(requires(render::render_text_line_metrics_snapshot line) {
     { line.line_index } -> std::same_as<std::size_t&>;
+    { line.start_run_index } -> std::same_as<std::size_t&>;
+    { line.start_byte_offset } -> std::same_as<std::size_t&>;
+    { line.end_run_index } -> std::same_as<std::size_t&>;
+    { line.end_byte_offset } -> std::same_as<std::size_t&>;
+    { line.caret_stop_count } -> std::same_as<std::size_t&>;
     { line.width } -> std::same_as<float&>;
     { line.height } -> std::same_as<float&>;
     { line.max_width } -> std::same_as<float&>;
     { line.overflow_width } -> std::same_as<float&>;
     { line.overflowed } -> std::same_as<bool&>;
     { line.truncated } -> std::same_as<bool&>;
+    { line.caret_safe } -> std::same_as<bool&>;
 });
 
 static_assert(requires(render::render_text_line_layout_metrics_snapshot metrics) {
@@ -187,6 +202,19 @@ static_assert(requires(render::render_text_line_layout_metrics_snapshot metrics)
     { metrics.overflow_line_count } -> std::same_as<std::size_t&>;
     { metrics.truncated } -> std::same_as<bool&>;
     { metrics.overflowed } -> std::same_as<bool&>;
+});
+
+static_assert(requires(render::render_text_line_break_policy_snapshot policy) {
+    { policy.break_count } -> std::same_as<std::size_t&>;
+    { policy.ascii_whitespace_break_count } -> std::same_as<std::size_t&>;
+    { policy.explicit_newline_break_count } -> std::same_as<std::size_t&>;
+    { policy.width_pressure_break_count } -> std::same_as<std::size_t&>;
+    { policy.hangul_width_break_count } -> std::same_as<std::size_t&>;
+    { policy.long_token_fallback_break_count } -> std::same_as<std::size_t&>;
+    { policy.caret_safe_break_count } -> std::same_as<std::size_t&>;
+    { policy.unsafe_break_count } -> std::same_as<std::size_t&>;
+    { policy.overflow_line_count } -> std::same_as<std::size_t&>;
+    { policy.truncated_line_count } -> std::same_as<std::size_t&>;
 });
 
 static_assert(requires(render::render_text_glyph_cache_face_snapshot face) {

@@ -43,6 +43,7 @@ struct fake_text_engine_diagnostics {
     std::vector<render_text_line_break_snapshot> line_breaks;
     std::vector<render_text_line_metrics_snapshot> line_metrics;
     render_text_line_layout_metrics_snapshot line_layout_metrics;
+    render_text_line_break_policy_snapshot line_break_policy;
     std::vector<render_text_glyph_cache_face_snapshot> glyph_cache_faces;
     render_text_glyph_cache_policy_snapshot glyph_cache_policy;
     std::size_t invalid_utf8_sequence_count = 0;
@@ -100,6 +101,11 @@ struct fake_text_engine_diagnostics {
     bool has_line_metrics() const
     {
         return !line_metrics.empty();
+    }
+
+    bool has_line_break_policy() const
+    {
+        return line_break_policy.break_count > 0;
     }
 
     bool has_glyph_cache_faces() const

@@ -92,6 +92,8 @@ struct render_text_line_break_snapshot {
     std::size_t line_index = 0;
     std::size_t codepoint_offset = 0;
     std::size_t codepoint_count = 0;
+    std::size_t utf8_cluster_offset = 0;
+    std::size_t utf8_cluster_count = 0;
     std::size_t start_run_index = 0;
     std::size_t start_byte_offset = 0;
     std::size_t end_run_index = 0;
@@ -103,16 +105,27 @@ struct render_text_line_break_snapshot {
     float line_width = 0.0f;
     float max_width = 0.0f;
     bool wrapped = false;
+    bool starts_at_utf8_cluster_boundary = true;
+    bool ends_at_utf8_cluster_boundary = true;
+    bool caret_safe = true;
+    bool used_hangul_width_break = false;
+    bool used_long_token_fallback = false;
 };
 
 struct render_text_line_metrics_snapshot {
     std::size_t line_index = 0;
+    std::size_t start_run_index = 0;
+    std::size_t start_byte_offset = 0;
+    std::size_t end_run_index = 0;
+    std::size_t end_byte_offset = 0;
+    std::size_t caret_stop_count = 0;
     float width = 0.0f;
     float height = 0.0f;
     float max_width = 0.0f;
     float overflow_width = 0.0f;
     bool overflowed = false;
     bool truncated = false;
+    bool caret_safe = true;
 };
 
 struct render_text_line_layout_metrics_snapshot {
@@ -122,6 +135,19 @@ struct render_text_line_layout_metrics_snapshot {
     std::size_t overflow_line_count = 0;
     bool truncated = false;
     bool overflowed = false;
+};
+
+struct render_text_line_break_policy_snapshot {
+    std::size_t break_count = 0;
+    std::size_t ascii_whitespace_break_count = 0;
+    std::size_t explicit_newline_break_count = 0;
+    std::size_t width_pressure_break_count = 0;
+    std::size_t hangul_width_break_count = 0;
+    std::size_t long_token_fallback_break_count = 0;
+    std::size_t caret_safe_break_count = 0;
+    std::size_t unsafe_break_count = 0;
+    std::size_t overflow_line_count = 0;
+    std::size_t truncated_line_count = 0;
 };
 
 struct render_text_glyph_cache_face_snapshot {

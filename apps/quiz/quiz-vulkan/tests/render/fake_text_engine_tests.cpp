@@ -211,6 +211,26 @@ void test_utf8_line_break_keeps_unspaced_ascii_words_together_under_width_pressu
     require(fragments[0].codepoint_offset == 0 && fragments[0].codepoint_count == 4, "ASCII word preserves scalar range");
 }
 
+void test_utf8_line_break_can_fallback_split_long_tokens_on_width()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::vector<utf8_line_fragment> fragments = break_utf8_text_run("abcd", utf8_line_break_options{
+        .max_columns = 2,
+        .break_hangul_syllables_on_width = true,
+        .break_long_tokens_on_width = true,
+    });
+    require(fragments.size() == 2, "long-token fallback splits unspaced ASCII under width pressure");
+    require(fragments[0].break_reason == utf8_line_break_reason::width_pressure, "long-token fallback uses width pressure");
+    require(fragments[0].byte_offset == 0 && fragments[0].byte_count == 2, "long-token fallback tracks first byte range");
+    require(
+        fragments[0].codepoint_offset == 0 && fragments[0].codepoint_count == 2,
+        "long-token fallback tracks first scalar range");
+    require(fragments[0].separator_byte_count == 0, "long-token fallback has no separator bytes");
+    require(fragments[1].break_reason == utf8_line_break_reason::end_of_text, "long-token fallback ends final fragment");
+    require(fragments[1].byte_offset == 2 && fragments[1].byte_count == 2, "long-token fallback tracks final byte range");
+}
+
 class recording_text_engine final : public quiz_vulkan::render::text_engine_interface {
 public:
     quiz_vulkan::render::render_text_measure measure_text(
@@ -1447,6 +1467,8 @@ void test_fake_shaping_diagnostics_track_utf8_clusters_and_wrap_decisions()
     require(first_break.break_reason == utf8_line_break_reason::ascii_whitespace, "first break records whitespace wrap");
     require(first_break.wrapped, "first break records wrapped decision");
     require(first_break.line_index == 0, "first break records first line");
+    require(first_break.utf8_cluster_offset == 0, "first break records starting UTF-8 cluster");
+    require(first_break.utf8_cluster_count == 1, "first break records line UTF-8 cluster count");
     require(first_break.start_run_index == 0 && first_break.start_byte_offset == 0, "first break records start byte");
     require(first_break.end_run_index == 0 && first_break.end_byte_offset == 3, "first break records content end");
     require(
@@ -1455,13 +1477,21 @@ void test_fake_shaping_diagnostics_track_utf8_clusters_and_wrap_decisions()
     require(first_break.separator_byte_count == 1, "first break records separator length");
     require(near(first_break.line_width, 20.0f), "first break records line width");
     require(near(first_break.max_width, 25.0f), "first break records max width");
+    require(first_break.caret_safe, "first whitespace break stays caret safe");
+    require(first_break.starts_at_utf8_cluster_boundary, "first break starts at a UTF-8 cluster boundary");
+    require(first_break.ends_at_utf8_cluster_boundary, "first break ends at a UTF-8 cluster boundary");
+    require(!first_break.used_hangul_width_break, "first whitespace break is not a Hangul width break");
+    require(!first_break.used_long_token_fallback, "first whitespace break is not a long-token fallback");
 
     require(second_break.break_reason == utf8_line_break_reason::end_of_text, "second break records end of text");
     require(!second_break.wrapped, "second break is not a wrap decision");
     require(second_break.line_index == 1, "second break records second line");
+    require(second_break.utf8_cluster_offset == 2, "second break records second visible UTF-8 cluster offset");
+    require(second_break.utf8_cluster_count == 1, "second break records one UTF-8 cluster");
     require(second_break.start_run_index == 0 && second_break.start_byte_offset == 4, "second break records start byte");
     require(second_break.end_run_index == 0 && second_break.end_byte_offset == 7, "second break records end byte");
     require(near(second_break.line_width, 20.0f), "second break records line width");
+    require(second_break.caret_safe, "second break stays caret safe");
 
     require(engine.last_diagnostics().has_line_metrics(), "shaping diagnostics record line metrics");
     require(engine.last_diagnostics().line_metrics.size() == 2, "wrapped fixture records two line metrics");
@@ -1471,6 +1501,15 @@ void test_fake_shaping_diagnostics_track_utf8_clusters_and_wrap_decisions()
     require(!engine.last_diagnostics().line_layout_metrics.overflowed, "wrapped fixture does not overflow");
     require(near(engine.last_diagnostics().line_metrics[0].width, 20.0f), "first line metric records width");
     require(near(engine.last_diagnostics().line_metrics[1].width, 20.0f), "second line metric records width");
+    require(engine.last_diagnostics().line_metrics[0].caret_safe, "first line metric records caret safety");
+    require(engine.last_diagnostics().line_metrics[0].caret_stop_count == 2, "first line metric records caret stops");
+    require(engine.last_diagnostics().has_line_break_policy(), "shaping diagnostics record line-break policy summary");
+    require(engine.last_diagnostics().line_break_policy.break_count == 2, "line-break policy counts all fragments");
+    require(
+        engine.last_diagnostics().line_break_policy.ascii_whitespace_break_count == 1,
+        "line-break policy counts whitespace breaks");
+    require(engine.last_diagnostics().line_break_policy.caret_safe_break_count == 2, "line-break policy counts safe breaks");
+    require(engine.last_diagnostics().line_break_policy.unsafe_break_count == 0, "line-break policy records no unsafe breaks");
 }
 
 void test_fake_line_metrics_track_overflow_and_truncation()
@@ -1516,6 +1555,60 @@ void test_fake_line_metrics_track_overflow_and_truncation()
     require(!second_line.truncated, "second visible line is not truncated");
     require(near(third_line.width, 10.0f), "third line metric records hidden line width");
     require(third_line.truncated, "third line metric records truncation");
+}
+
+void test_fake_line_break_policy_keeps_combining_clusters_caret_safe()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "Ae\xcc\x81" "B", .style_token = "body"},
+    };
+    request.bounds = render_rect{2.0f, 4.0f, 15.0f, 0.0f};
+    request.style_catalog = make_style_catalog();
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::word,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    const render_text_layout layout = engine.layout_text(request);
+    require(near(layout.measure.width, 10.0f), "long-token fallback measures one caret-safe cluster per line");
+    require(near(layout.measure.height, 72.0f), "long-token fallback wraps into three lines");
+    require(layout.glyphs.size() == 4, "long-token fallback keeps combining glyph in layout stream");
+    require(layout.glyphs[2].glyph_id == 0x0301, "combining mark glyph remains attached to second line");
+    require(near(layout.glyphs[2].bounds.width, 0.0f), "combining mark keeps zero advance");
+    require(near(layout.glyphs[3].bounds.y, 52.0f), "final glyph moves after combining-cluster line");
+
+    const std::vector<render_text_line_break_snapshot>& breaks = engine.last_diagnostics().line_breaks;
+    require(breaks.size() == 3, "long-token fallback records three line fragments");
+    require(breaks[0].used_long_token_fallback, "first narrow ASCII break records long-token fallback");
+    require(breaks[0].utf8_cluster_offset == 0, "first narrow ASCII break records first cluster offset");
+    require(breaks[0].utf8_cluster_count == 1, "first narrow ASCII break records one cluster");
+    require(breaks[0].caret_safe, "first narrow ASCII break stays caret safe");
+    require(breaks[1].used_long_token_fallback, "second narrow ASCII break records long-token fallback");
+    require(breaks[1].codepoint_count == 2, "combining-cluster line spans base and combining scalars");
+    require(breaks[1].utf8_cluster_offset == 1, "combining-cluster line records second cluster offset");
+    require(breaks[1].utf8_cluster_count == 1, "combining-cluster line counts one UTF-8 cluster");
+    require(breaks[1].caret_safe, "combining-cluster line does not split inside the cluster");
+    require(breaks[2].break_reason == utf8_line_break_reason::end_of_text, "final narrow ASCII fragment ends text");
+    require(breaks[2].utf8_cluster_offset == 2, "final narrow ASCII fragment records final cluster offset");
+
+    require(engine.last_diagnostics().line_break_policy.width_pressure_break_count == 2, "policy counts width breaks");
+    require(
+        engine.last_diagnostics().line_break_policy.long_token_fallback_break_count == 2,
+        "policy counts long-token fallback breaks");
+    require(engine.last_diagnostics().line_break_policy.hangul_width_break_count == 0, "policy keeps Hangul count separate");
+    require(engine.last_diagnostics().line_break_policy.unsafe_break_count == 0, "policy records no unsafe breaks");
+
+    const std::vector<render_text_line_metrics_snapshot>& metrics = engine.last_diagnostics().line_metrics;
+    require(metrics.size() == 3, "long-token fallback records three line metrics");
+    require(metrics[1].start_byte_offset == 1, "combining line metric starts at base byte");
+    require(metrics[1].end_byte_offset == 4, "combining line metric ends after combining bytes");
+    require(metrics[1].caret_stop_count == 2, "combining line metric records start and end caret stops");
+    require(metrics[1].caret_safe, "combining line metric records caret-safe cluster boundaries");
 }
 
 void test_fake_utf8_hangul_uses_codepoints()
@@ -1720,9 +1813,14 @@ void test_fake_line_break_layout_uses_utf8_helper_fragments()
     };
     request.bounds.width = 15.0f;
     const render_text_layout unspaced_layout = engine.layout_text(request);
-    require(near(unspaced_layout.measure.width, 30.0f), "helper layout does not split unspaced ASCII by width");
-    require(near(unspaced_layout.measure.height, 24.0f), "unspaced ASCII remains on one helper line");
-    require(unspaced_layout.glyphs.size() == 3, "unspaced ASCII still emits all glyphs");
+    require(near(unspaced_layout.measure.width, 10.0f), "helper layout falls back to cluster breaks for long ASCII");
+    require(near(unspaced_layout.measure.height, 72.0f), "long ASCII fallback emits one glyph per line");
+    require(unspaced_layout.glyphs.size() == 3, "long ASCII fallback still emits all glyphs");
+    require(near(unspaced_layout.glyphs[0].bounds.y, 0.0f), "first long ASCII glyph uses first line");
+    require(near(unspaced_layout.glyphs[1].bounds.y, 24.0f), "second long ASCII glyph wraps to second line");
+    require(near(unspaced_layout.glyphs[2].bounds.y, 48.0f), "third long ASCII glyph wraps to third line");
+    require(engine.last_diagnostics().line_break_policy.long_token_fallback_break_count == 2, "long ASCII fallback counts two breaks");
+    require(engine.last_diagnostics().line_break_policy.unsafe_break_count == 0, "long ASCII fallback stays caret safe");
 }
 
 void test_fake_word_wraps_unspaced_hangul_syllables()
@@ -1760,6 +1858,23 @@ void test_fake_word_wraps_unspaced_hangul_syllables()
     require(near(layout.glyphs[0].bounds.y, 5.0f), "first unspaced Hangul line uses request y origin");
     require(near(layout.glyphs[1].bounds.y, 29.0f), "second unspaced Hangul line advances by line height");
     require(near(layout.glyphs[2].bounds.y, 53.0f), "third unspaced Hangul line advances by two line heights");
+
+    const std::vector<render_text_line_break_snapshot>& breaks = engine.last_diagnostics().line_breaks;
+    require(breaks.size() == 3, "unspaced Hangul diagnostics record each line fragment");
+    require(breaks[0].used_hangul_width_break, "first unspaced Hangul break records Hangul width policy");
+    require(breaks[1].used_hangul_width_break, "second unspaced Hangul break records Hangul width policy");
+    require(!breaks[0].used_long_token_fallback, "Hangul width break does not claim long-token fallback");
+    require(breaks[0].utf8_cluster_offset == 0 && breaks[0].utf8_cluster_count == 1, "first Hangul break records cluster range");
+    require(breaks[1].utf8_cluster_offset == 1 && breaks[1].utf8_cluster_count == 1, "second Hangul break records cluster range");
+    require(breaks[2].utf8_cluster_offset == 2 && breaks[2].utf8_cluster_count == 1, "final Hangul break records cluster range");
+    require(breaks[0].caret_safe && breaks[1].caret_safe && breaks[2].caret_safe, "Hangul breaks stay caret safe");
+    require(
+        engine.last_diagnostics().line_break_policy.hangul_width_break_count == 2,
+        "line-break policy counts Hangul width breaks");
+    require(
+        engine.last_diagnostics().line_break_policy.long_token_fallback_break_count == 0,
+        "line-break policy keeps long-token count clear for Hangul");
+    require(engine.last_diagnostics().line_break_policy.caret_safe_break_count == 3, "line-break policy counts safe Hangul fragments");
 }
 
 void test_scene_text_metrics_adapter_feeds_layout_placer()
@@ -1813,6 +1928,7 @@ int main()
     test_utf8_line_breaks_crlf_as_single_explicit_newline();
     test_utf8_line_breaks_hangul_only_under_width_pressure();
     test_utf8_line_break_keeps_unspaced_ascii_words_together_under_width_pressure();
+    test_utf8_line_break_can_fallback_split_long_tokens_on_width();
     test_style_catalog_find_and_resolve();
     test_font_face_catalog_resolves_exact_faces_and_fallback();
     test_font_face_catalog_reports_codepoint_fallback_diagnostics();
@@ -1835,6 +1951,7 @@ int main()
     test_fake_glyph_clusters_track_wrapped_hangul_lines();
     test_fake_shaping_diagnostics_track_utf8_clusters_and_wrap_decisions();
     test_fake_line_metrics_track_overflow_and_truncation();
+    test_fake_line_break_policy_keeps_combining_clusters_caret_safe();
     test_fake_utf8_hangul_uses_codepoints();
     test_fake_utf8_handles_wide_combining_and_invalid_sequences();
     test_fake_diagnostics_reset_after_clean_request();

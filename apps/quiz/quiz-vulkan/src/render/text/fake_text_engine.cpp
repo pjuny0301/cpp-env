@@ -374,6 +374,73 @@ std::pair<std::size_t, std::size_t> content_end_position(
     return content_start_position(glyphs, fragment);
 }
 
+std::size_t utf8_cluster_offset_for(
+    const std::vector<shaped_glyph>& glyphs,
+    const std::size_t codepoint_offset)
+{
+    std::size_t cluster_offset = 0;
+    for (std::size_t index = 0; index < std::min(codepoint_offset, glyphs.size()); ++index) {
+        if (glyphs[index].cluster_start) {
+            ++cluster_offset;
+        }
+    }
+    return cluster_offset;
+}
+
+std::size_t utf8_cluster_count_for(
+    const std::vector<shaped_glyph>& glyphs,
+    const utf8_line_fragment& fragment)
+{
+    std::size_t cluster_count = 0;
+    const std::size_t codepoint_end = std::min(
+        fragment.codepoint_offset + fragment.codepoint_count,
+        glyphs.size());
+    for (std::size_t index = fragment.codepoint_offset; index < codepoint_end; ++index) {
+        if (glyphs[index].cluster_start) {
+            ++cluster_count;
+        }
+    }
+    return cluster_count;
+}
+
+bool starts_at_utf8_cluster_boundary(
+    const std::vector<shaped_glyph>& glyphs,
+    const utf8_line_fragment& fragment)
+{
+    return fragment.codepoint_offset >= glyphs.size() || glyphs[fragment.codepoint_offset].cluster_start;
+}
+
+bool ends_at_utf8_cluster_boundary(
+    const std::vector<shaped_glyph>& glyphs,
+    const utf8_line_fragment& fragment)
+{
+    const std::size_t codepoint_end = fragment.codepoint_offset + fragment.codepoint_count;
+    return codepoint_end >= glyphs.size() || glyphs[codepoint_end].cluster_start;
+}
+
+bool uses_hangul_width_break(
+    const std::vector<shaped_glyph>& glyphs,
+    const utf8_line_fragment& fragment)
+{
+    if (fragment.break_reason != utf8_line_break_reason::width_pressure || fragment.codepoint_count == 0) {
+        return false;
+    }
+
+    const std::size_t next_index = fragment.codepoint_offset + fragment.codepoint_count;
+    const std::size_t previous_index = next_index - 1U;
+    return next_index < glyphs.size()
+        && is_utf8_hangul_syllable(glyphs[previous_index].code_point)
+        && is_utf8_hangul_syllable(glyphs[next_index].code_point);
+}
+
+bool uses_long_token_fallback(
+    const std::vector<shaped_glyph>& glyphs,
+    const utf8_line_fragment& fragment)
+{
+    return fragment.break_reason == utf8_line_break_reason::width_pressure
+        && !uses_hangul_width_break(glyphs, fragment);
+}
+
 void record_line_break_diagnostic(
     fake_text_engine_diagnostics& diagnostics,
     const render_text_request& request,
@@ -385,10 +452,16 @@ void record_line_break_diagnostic(
     const auto [start_run_index, start_byte_offset] = content_start_position(glyphs, fragment);
     const auto [end_run_index, end_byte_offset] = content_end_position(glyphs, fragment);
     const auto [separator_run_index, separator_byte_offset] = separator_start_position(glyphs, fragment);
-    diagnostics.line_breaks.push_back(render_text_line_break_snapshot{
+    const bool starts_at_cluster_boundary = starts_at_utf8_cluster_boundary(glyphs, fragment);
+    const bool ends_at_cluster_boundary = ends_at_utf8_cluster_boundary(glyphs, fragment);
+    const bool hangul_width_break = uses_hangul_width_break(glyphs, fragment);
+    const bool long_token_fallback = uses_long_token_fallback(glyphs, fragment);
+    const render_text_line_break_snapshot snapshot{
         .line_index = line_index,
         .codepoint_offset = fragment.codepoint_offset,
         .codepoint_count = fragment.codepoint_count,
+        .utf8_cluster_offset = utf8_cluster_offset_for(glyphs, fragment.codepoint_offset),
+        .utf8_cluster_count = utf8_cluster_count_for(glyphs, fragment),
         .start_run_index = start_run_index,
         .start_byte_offset = start_byte_offset,
         .end_run_index = end_run_index,
@@ -401,12 +474,111 @@ void record_line_break_diagnostic(
         .max_width = request.bounds.width,
         .wrapped = fragment.break_reason == utf8_line_break_reason::ascii_whitespace
             || fragment.break_reason == utf8_line_break_reason::width_pressure,
-    });
+        .starts_at_utf8_cluster_boundary = starts_at_cluster_boundary,
+        .ends_at_utf8_cluster_boundary = ends_at_cluster_boundary,
+        .caret_safe = starts_at_cluster_boundary && ends_at_cluster_boundary,
+        .used_hangul_width_break = hangul_width_break,
+        .used_long_token_fallback = long_token_fallback,
+    };
+
+    diagnostics.line_breaks.push_back(snapshot);
+    ++diagnostics.line_break_policy.break_count;
+    if (snapshot.break_reason == utf8_line_break_reason::ascii_whitespace) {
+        ++diagnostics.line_break_policy.ascii_whitespace_break_count;
+    } else if (snapshot.break_reason == utf8_line_break_reason::explicit_newline) {
+        ++diagnostics.line_break_policy.explicit_newline_break_count;
+    } else if (snapshot.break_reason == utf8_line_break_reason::width_pressure) {
+        ++diagnostics.line_break_policy.width_pressure_break_count;
+    }
+    if (snapshot.used_hangul_width_break) {
+        ++diagnostics.line_break_policy.hangul_width_break_count;
+    }
+    if (snapshot.used_long_token_fallback) {
+        ++diagnostics.line_break_policy.long_token_fallback_break_count;
+    }
+    if (snapshot.caret_safe) {
+        ++diagnostics.line_break_policy.caret_safe_break_count;
+    } else {
+        ++diagnostics.line_break_policy.unsafe_break_count;
+    }
+}
+
+std::pair<std::size_t, std::size_t> line_start_position(
+    const std::vector<shaped_glyph>& glyphs,
+    const laid_out_line& line)
+{
+    if (!line.glyph_indices.empty()) {
+        const shaped_glyph& glyph = glyphs[line.glyph_indices.front()];
+        return {glyph.run_index, glyph.byte_offset};
+    }
+    return {line.caret_run_index, line.caret_byte_offset};
+}
+
+std::pair<std::size_t, std::size_t> line_end_position(
+    const std::vector<shaped_glyph>& glyphs,
+    const laid_out_line& line)
+{
+    if (!line.glyph_indices.empty()) {
+        const shaped_glyph& glyph = glyphs[line.glyph_indices.back()];
+        return {glyph.run_index, glyph.byte_offset + glyph.byte_count};
+    }
+    return {line.caret_run_index, line.caret_byte_offset};
+}
+
+bool line_starts_at_utf8_cluster_boundary(
+    const std::vector<shaped_glyph>& glyphs,
+    const laid_out_line& line)
+{
+    return line.glyph_indices.empty() || glyphs[line.glyph_indices.front()].cluster_start;
+}
+
+bool line_ends_at_utf8_cluster_boundary(
+    const std::vector<shaped_glyph>& glyphs,
+    const laid_out_line& line)
+{
+    if (line.glyph_indices.empty()) {
+        return true;
+    }
+
+    const std::size_t last_index = line.glyph_indices.back();
+    const std::size_t next_index = last_index + 1U;
+    return next_index >= glyphs.size() || glyphs[next_index].cluster_start;
+}
+
+std::size_t caret_stop_count_for_line(
+    const std::vector<shaped_glyph>& glyphs,
+    const laid_out_line& line)
+{
+    if (line.glyph_indices.empty()) {
+        return 1;
+    }
+
+    std::size_t cluster_count = 0;
+    std::size_t run_segment_count = 0;
+    std::size_t previous_run_index = 0;
+    bool has_previous_cluster = false;
+
+    for (const std::size_t glyph_index : line.glyph_indices) {
+        const shaped_glyph& glyph = glyphs[glyph_index];
+        if (!glyph.cluster_start) {
+            continue;
+        }
+
+        ++cluster_count;
+        if (!has_previous_cluster || glyph.run_index != previous_run_index) {
+            ++run_segment_count;
+        }
+        previous_run_index = glyph.run_index;
+        has_previous_cluster = true;
+    }
+
+    return cluster_count + run_segment_count;
 }
 
 void record_line_metrics_diagnostics(
     fake_text_engine_diagnostics& diagnostics,
     const render_text_request& request,
+    const std::vector<shaped_glyph>& glyphs,
     const std::vector<laid_out_line>& lines)
 {
     diagnostics.line_metrics.clear();
@@ -425,20 +597,33 @@ void record_line_metrics_diagnostics(
         const laid_out_line& line = lines[line_index];
         const bool overflowed = request.bounds.width > 0.0f && line.width > request.bounds.width;
         const float overflow_width = overflowed ? line.width - request.bounds.width : 0.0f;
+        const auto [start_run_index, start_byte_offset] = line_start_position(glyphs, line);
+        const auto [end_run_index, end_byte_offset] = line_end_position(glyphs, line);
+        const bool caret_safe =
+            line_starts_at_utf8_cluster_boundary(glyphs, line)
+            && line_ends_at_utf8_cluster_boundary(glyphs, line);
         diagnostics.line_metrics.push_back(render_text_line_metrics_snapshot{
             .line_index = line_index,
+            .start_run_index = start_run_index,
+            .start_byte_offset = start_byte_offset,
+            .end_run_index = end_run_index,
+            .end_byte_offset = end_byte_offset,
+            .caret_stop_count = caret_stop_count_for_line(glyphs, line),
             .width = line.width,
             .height = line.height,
             .max_width = request.bounds.width,
             .overflow_width = overflow_width,
             .overflowed = overflowed,
             .truncated = line_index >= diagnostics.line_layout_metrics.visible_line_count,
+            .caret_safe = caret_safe,
         });
         if (overflowed) {
             ++diagnostics.line_layout_metrics.overflow_line_count;
         }
     }
     diagnostics.line_layout_metrics.overflowed = diagnostics.line_layout_metrics.overflow_line_count > 0;
+    diagnostics.line_break_policy.overflow_line_count = diagnostics.line_layout_metrics.overflow_line_count;
+    diagnostics.line_break_policy.truncated_line_count = diagnostics.line_layout_metrics.truncated_line_count;
 }
 
 std::vector<laid_out_line> break_lines(
@@ -449,7 +634,7 @@ std::vector<laid_out_line> break_lines(
     if (glyphs.empty()) {
         std::vector<laid_out_line> empty_lines = {make_line(glyphs, {})};
         if (diagnostics != nullptr) {
-            record_line_metrics_diagnostics(*diagnostics, request, empty_lines);
+            record_line_metrics_diagnostics(*diagnostics, request, glyphs, empty_lines);
         }
         return empty_lines;
     }
@@ -469,6 +654,7 @@ std::vector<laid_out_line> break_lines(
         utf8_line_layout_options{
             .max_width = wrap_words ? request.bounds.width : 0.0f,
             .break_hangul_syllables_on_width = true,
+            .break_long_tokens_on_width = true,
         });
 
     for (const utf8_line_fragment& fragment : fragments) {
@@ -516,7 +702,7 @@ std::vector<laid_out_line> break_lines(
     }
 
     if (diagnostics != nullptr) {
-        record_line_metrics_diagnostics(*diagnostics, request, lines);
+        record_line_metrics_diagnostics(*diagnostics, request, glyphs, lines);
     }
 
     if (request.options.max_lines > 0 && lines.size() > request.options.max_lines) {

@@ -176,6 +176,14 @@ bool has_pointer_capture_state(const pointer_capture_snapshot& snapshot)
         || snapshot.tracked_pointer_count > 0;
 }
 
+bool pointer_capture_changed(const pointer_capture_snapshot& before, const pointer_capture_snapshot& after)
+{
+    return before.lifecycle != after.lifecycle
+        || before.active != after.active
+        || before.pointer_id != after.pointer_id
+        || before.tracked_pointer_count != after.tracked_pointer_count;
+}
+
 action_route_policy_diagnostic make_policy(
     action_route_policy_kind kind,
     std::int64_t timestamp_ms,
@@ -395,6 +403,16 @@ std::vector<input_event> input_engine::process_pointer_event(const raw_platform_
             .x = event.x,
             .y = event.y,
         }));
+    const pointer_capture_snapshot pointer_capture_after = gestures_.capture_snapshot();
+    if (event.phase == raw_platform_pointer_phase::cancel
+        && has_pointer_capture_state(diagnostics_.pointer_capture)
+        && pointer_capture_changed(diagnostics_.pointer_capture, pointer_capture_after)) {
+        append_policy(make_policy(
+            action_route_policy_kind::pointer_capture_reset,
+            event.timestamp_ms,
+            diagnostics_.pointer_capture,
+            pointer_capture_after));
+    }
     finish_route_diagnostics();
     return events;
 }

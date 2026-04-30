@@ -864,6 +864,18 @@ void test_gesture_routing_diagnostics_cancel_and_focus_loss()
         "diagnostic cancel policy records captured pointer before cancel");
     require(cancel_policy.pointer_capture_after.lifecycle == pointer_capture_lifecycle::idle,
         "diagnostic cancel policy records idle pointer after cancel");
+    require(engine.routing_diagnostics().action_routes.size() == 2,
+        "diagnostic cancel emits gesture and pointer reset policies");
+    const action_route_policy_diagnostic& cancel_reset_policy = require_policy(
+        engine.routing_diagnostics(),
+        1,
+        action_route_policy_kind::pointer_capture_reset,
+        "diagnostic cancel pointer reset policy is emitted");
+    require(!cancel_reset_policy.emits_input_event, "diagnostic cancel reset policy emits no input event");
+    require(cancel_reset_policy.pointer_capture_before.lifecycle == pointer_capture_lifecycle::captured,
+        "diagnostic cancel reset policy records captured pointer before cancel");
+    require(cancel_reset_policy.pointer_capture_after.lifecycle == pointer_capture_lifecycle::idle,
+        "diagnostic cancel reset policy records idle pointer after cancel");
     require_capture_snapshot(
         engine.routing_diagnostics().pointer_capture,
         pointer_capture_lifecycle::idle,
@@ -875,6 +887,8 @@ void test_gesture_routing_diagnostics_cancel_and_focus_loss()
         "diagnostic up after cancel emits no stale event");
     require(engine.routing_diagnostics().normalized_events.empty(),
         "diagnostic up after cancel clears stale summaries");
+    require(engine.routing_diagnostics().action_routes.empty(),
+        "diagnostic up after cancel emits no stale policies");
 
     require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 200, 0.0f, 0.0f)).empty(),
         "diagnostic focus loss down emits no gesture");
@@ -920,6 +934,129 @@ void test_gesture_routing_diagnostics_cancel_and_focus_loss()
     require(focus_policy.event_index == 0, "diagnostic focus loss without text focus points at zero event index");
     require(engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 240, 9.0f, 0.0f)).empty(),
         "diagnostic up after focus loss emits no stale event");
+}
+
+void test_pointer_cancel_policy_records_non_emitting_stream_cleanup()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 100, 0.0f, 0.0f, raw_platform_pointer_button::none, 41))
+                .empty(),
+        "non-emitting cancel down starts tracking");
+    require_capture_snapshot(
+        engine.routing_diagnostics().pointer_capture,
+        pointer_capture_lifecycle::tracking,
+        false,
+        41,
+        1,
+        "non-emitting cancel down records tracked pointer");
+
+    std::vector<input_event> events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::cancel,
+        120,
+        70.0f,
+        0.0f,
+        raw_platform_pointer_button::none,
+        41));
+    require(events.empty(), "non-emitting cancel produces no gesture event");
+    require(engine.routing_diagnostics().normalized_events.empty(),
+        "non-emitting cancel produces no normalized gesture summary");
+    require(engine.routing_diagnostics().action_routes.size() == 1,
+        "non-emitting cancel emits one pointer reset policy");
+    const action_route_policy_diagnostic& cancel_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::pointer_capture_reset,
+        "non-emitting cancel policy records pointer reset");
+    require(!cancel_policy.emits_input_event, "non-emitting cancel policy emits no input event");
+    require(cancel_policy.timestamp_ms == 120, "non-emitting cancel policy preserves timestamp");
+    require(cancel_policy.pointer_capture_before.lifecycle == pointer_capture_lifecycle::tracking,
+        "non-emitting cancel policy records tracked pointer before cancel");
+    require(cancel_policy.pointer_capture_before.pointer_id == 41,
+        "non-emitting cancel policy records canceled pointer id before cancel");
+    require(cancel_policy.pointer_capture_before.tracked_pointer_count == 1,
+        "non-emitting cancel policy records one tracked pointer before cancel");
+    require(cancel_policy.pointer_capture_after.lifecycle == pointer_capture_lifecycle::idle,
+        "non-emitting cancel policy records idle pointer after cancel");
+    require_capture_snapshot(
+        engine.routing_diagnostics().pointer_capture,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "non-emitting cancel clears pointer tracking");
+    require(engine.update_time(800).empty(), "non-emitting cancel clears pending long press");
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 810, 70.0f, 0.0f, raw_platform_pointer_button::none, 41))
+                .empty(),
+        "non-emitting cancel suppresses stale release");
+    require(engine.routing_diagnostics().action_routes.empty(),
+        "stale release after non-emitting cancel emits no policies");
+
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 1000, 0.0f, 0.0f, raw_platform_pointer_button::none, 3))
+                .empty(),
+        "isolated cancel first pointer down starts tracking");
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 1010, 40.0f, 0.0f, raw_platform_pointer_button::none, 9))
+                .empty(),
+        "isolated cancel second pointer down starts tracking");
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::cancel,
+        1020,
+        0.0f,
+        0.0f,
+        raw_platform_pointer_button::none,
+        3));
+    require(events.empty(), "isolated cancel emits no gesture event");
+    require(engine.routing_diagnostics().action_routes.size() == 1,
+        "isolated cancel emits one pointer reset policy");
+    const action_route_policy_diagnostic& isolated_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::pointer_capture_reset,
+        "isolated cancel policy records pointer reset");
+    require(isolated_policy.pointer_capture_before.lifecycle == pointer_capture_lifecycle::tracking,
+        "isolated cancel policy records tracking before cancel");
+    require(isolated_policy.pointer_capture_before.pointer_id == 3,
+        "isolated cancel policy records lowest tracked pointer before cancel");
+    require(isolated_policy.pointer_capture_before.tracked_pointer_count == 2,
+        "isolated cancel policy records both tracked pointers before cancel");
+    require(isolated_policy.pointer_capture_after.lifecycle == pointer_capture_lifecycle::tracking,
+        "isolated cancel policy records remaining tracked pointer after cancel");
+    require(isolated_policy.pointer_capture_after.pointer_id == 9,
+        "isolated cancel policy records remaining pointer id after cancel");
+    require(isolated_policy.pointer_capture_after.tracked_pointer_count == 1,
+        "isolated cancel policy records one remaining pointer after cancel");
+
+    events = engine.update_time(1610);
+    require(events.size() == 1, "isolated cancel keeps uncanceled pointer eligible for long press");
+    const gesture_event& long_press = require_event<gesture_event>(events, 0);
+    require(long_press.kind == gesture_kind::long_press,
+        "isolated cancel long press emits for remaining pointer");
+    require(long_press.pointer_id == 9, "isolated cancel long press preserves remaining pointer id");
+
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::cancel,
+        1620,
+        40.0f,
+        0.0f,
+        raw_platform_pointer_button::none,
+        9));
+    require(events.empty(), "long-pressed pointer cancel emits no gesture event");
+    require(engine.routing_diagnostics().action_routes.size() == 1,
+        "long-pressed pointer cancel emits pointer reset policy");
+    const action_route_policy_diagnostic& long_press_cancel_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::pointer_capture_reset,
+        "long-pressed pointer cancel policy records pointer reset");
+    require(long_press_cancel_policy.pointer_capture_before.lifecycle == pointer_capture_lifecycle::tracking,
+        "long-pressed cancel policy records tracked state before cancel");
+    require(long_press_cancel_policy.pointer_capture_after.lifecycle == pointer_capture_lifecycle::idle,
+        "long-pressed cancel policy records idle state after cancel");
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 1630, 40.0f, 0.0f, raw_platform_pointer_button::none, 9))
+                .empty(),
+        "long-pressed pointer cancel suppresses stale release");
 }
 
 void test_text_key_flow()
@@ -1794,6 +1931,7 @@ int main()
     test_raw_platform_scroll_routes_through_input_engine();
     test_gesture_routing_diagnostics_summarize_gestures_and_wheel();
     test_gesture_routing_diagnostics_cancel_and_focus_loss();
+    test_pointer_cancel_policy_records_non_emitting_stream_cleanup();
     test_text_key_flow();
     test_key_code_fallback_edges();
     test_text_keyboard_navigation_and_selection();

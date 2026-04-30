@@ -43,6 +43,8 @@ struct fake_text_engine_diagnostics {
     std::vector<render_text_line_break_snapshot> line_breaks;
     std::vector<render_text_line_metrics_snapshot> line_metrics;
     render_text_line_layout_metrics_snapshot line_layout_metrics;
+    std::vector<render_text_glyph_cache_face_snapshot> glyph_cache_faces;
+    render_text_glyph_cache_policy_snapshot glyph_cache_policy;
     std::size_t invalid_utf8_sequence_count = 0;
 
     bool used_style_fallback() const
@@ -99,6 +101,11 @@ struct fake_text_engine_diagnostics {
     {
         return !line_metrics.empty();
     }
+
+    bool has_glyph_cache_faces() const
+    {
+        return !glyph_cache_faces.empty();
+    }
 };
 
 struct fake_text_engine_caret {
@@ -132,6 +139,7 @@ private:
         .height = 64,
         .padding = 1,
     }};
+    mutable std::vector<glyph_atlas_key> glyph_cache_policy_entries_;
     mutable std::vector<render_text_atlas_update> atlas_updates_;
     mutable fake_text_engine_diagnostics diagnostics_;
     deterministic_fake_font_resolver font_resolver_;

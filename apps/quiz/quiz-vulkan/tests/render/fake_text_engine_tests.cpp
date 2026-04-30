@@ -880,6 +880,26 @@ void test_fake_atlas_updates_are_revisioned_and_consumed()
     require(engine.last_diagnostics().glyph_atlas_metrics.dirty_page_count == 1, "first atlas dirties one page");
     require(engine.last_diagnostics().glyph_atlas_metrics.page_count_after == 1, "first atlas tracks page count");
     require(engine.last_diagnostics().glyph_atlas_metrics.latest_page_revision == 1, "first atlas tracks revision");
+    require(engine.last_diagnostics().has_glyph_cache_faces(), "first atlas records glyph cache face snapshot");
+    require(engine.last_diagnostics().glyph_cache_policy.capacity == 8, "first glyph cache records fake capacity");
+    require(engine.last_diagnostics().glyph_cache_policy.cached_glyph_count == 1, "first glyph cache stores one glyph");
+    require(engine.last_diagnostics().glyph_cache_policy.request_count == 1, "first glyph cache records one lookup");
+    require(engine.last_diagnostics().glyph_cache_policy.hit_count == 0, "first glyph cache records no hits");
+    require(engine.last_diagnostics().glyph_cache_policy.miss_count == 1, "first glyph cache records one miss");
+    require(engine.last_diagnostics().glyph_cache_policy.insert_count == 1, "first glyph cache records one insert");
+    require(engine.last_diagnostics().glyph_cache_policy.eviction_count == 0, "first glyph cache records no evictions");
+    require(engine.last_diagnostics().glyph_cache_policy.atlas_reuse_count == 0, "first glyph cache records no atlas reuse");
+    require(engine.last_diagnostics().glyph_cache_policy.atlas_allocation_count == 1, "first glyph cache records atlas allocation");
+    require(
+        engine.last_diagnostics().glyph_cache_policy.atlas_page_create_count == 1,
+        "first glyph cache records atlas page creation");
+    require(engine.last_diagnostics().glyph_cache_faces.size() == 1, "first glyph cache records one face");
+    require(engine.last_diagnostics().glyph_cache_faces[0].face_id == 1, "first glyph cache records body face");
+    require(
+        engine.last_diagnostics().glyph_cache_faces[0].cached_glyph_ids.size() == 1,
+        "first glyph cache face records one cached glyph");
+    require(engine.last_diagnostics().glyph_cache_faces[0].cached_glyph_ids[0] == 'A', "first glyph cache stores A");
+    require(engine.last_diagnostics().glyph_cache_faces[0].miss_count == 1, "first glyph cache face records miss");
 
     std::vector<render_text_atlas_update> first_updates = engine.consume_atlas_updates();
     require(first_updates.size() == 1, "first new glyph enqueues one atlas update");
@@ -901,6 +921,12 @@ void test_fake_atlas_updates_are_revisioned_and_consumed()
     require(engine.last_diagnostics().glyph_atlas_metrics.new_slot_count == 0, "cached glyph does not allocate");
     require(engine.last_diagnostics().glyph_atlas_metrics.dirty_page_count == 0, "cached glyph dirties no page");
     require(engine.last_diagnostics().glyph_atlas_placements[0].cache_hit, "cached placement records hit");
+    require(engine.last_diagnostics().glyph_cache_policy.hit_count == 1, "cached glyph policy records one hit");
+    require(engine.last_diagnostics().glyph_cache_policy.miss_count == 0, "cached glyph policy records no misses");
+    require(engine.last_diagnostics().glyph_cache_policy.insert_count == 0, "cached glyph policy records no inserts");
+    require(
+        engine.last_diagnostics().glyph_cache_faces[0].hit_count == 1,
+        "cached glyph policy face records one hit");
 
     request.text_runs = {
         render_text_run{.text = "AB", .style_token = "body"},
@@ -928,6 +954,17 @@ void test_fake_atlas_updates_are_revisioned_and_consumed()
     require(engine.last_diagnostics().glyph_atlas_metrics.reused_page_slot_count == 1, "second atlas records page reuse");
     require(engine.last_diagnostics().glyph_atlas_metrics.new_page_count == 0, "second atlas creates no page");
     require(engine.last_diagnostics().glyph_atlas_metrics.latest_page_revision == 2, "second atlas tracks latest revision");
+    require(engine.last_diagnostics().glyph_cache_policy.request_count == 2, "second glyph cache records two lookups");
+    require(engine.last_diagnostics().glyph_cache_policy.hit_count == 1, "second glyph cache records cached A");
+    require(engine.last_diagnostics().glyph_cache_policy.miss_count == 1, "second glyph cache records missing B");
+    require(engine.last_diagnostics().glyph_cache_policy.insert_count == 1, "second glyph cache records B insert");
+    require(engine.last_diagnostics().glyph_cache_policy.eviction_count == 0, "second glyph cache does not evict");
+    require(
+        engine.last_diagnostics().glyph_cache_policy.atlas_page_reuse_count == 1,
+        "second glyph cache records atlas page reuse");
+    require(engine.last_diagnostics().glyph_cache_faces[0].cached_glyph_ids.size() == 2, "second glyph cache stores two glyphs");
+    require(engine.last_diagnostics().glyph_cache_faces[0].cached_glyph_ids[0] == 'A', "second glyph cache keeps A");
+    require(engine.last_diagnostics().glyph_cache_faces[0].cached_glyph_ids[1] == 'B', "second glyph cache inserts B");
 }
 
 void test_fake_glyph_atlas_page_diagnostics_track_overflow()
@@ -959,6 +996,21 @@ void test_fake_glyph_atlas_page_diagnostics_track_overflow()
     require(engine.last_diagnostics().glyph_atlas_metrics.dirty_page_count == 2, "atlas overflow dirties both pages");
     require(engine.last_diagnostics().glyph_atlas_metrics.page_count_after == 2, "atlas overflow tracks page count");
     require(engine.last_diagnostics().glyph_atlas_metrics.latest_page_revision == 10, "atlas overflow tracks max page revision");
+    require(engine.last_diagnostics().glyph_cache_policy.capacity == 8, "atlas overflow records glyph cache capacity");
+    require(engine.last_diagnostics().glyph_cache_policy.cached_glyph_count == 8, "atlas overflow caps glyph cache size");
+    require(engine.last_diagnostics().glyph_cache_policy.request_count == 11, "atlas overflow records cache lookups");
+    require(engine.last_diagnostics().glyph_cache_policy.hit_count == 0, "atlas overflow starts with no policy hits");
+    require(engine.last_diagnostics().glyph_cache_policy.miss_count == 11, "atlas overflow records all policy misses");
+    require(engine.last_diagnostics().glyph_cache_policy.insert_count == 11, "atlas overflow inserts all misses");
+    require(engine.last_diagnostics().glyph_cache_policy.eviction_count == 3, "atlas overflow evicts over capacity");
+    require(engine.last_diagnostics().glyph_cache_policy.atlas_allocation_count == 11, "atlas overflow allocates atlas slots");
+    require(engine.last_diagnostics().glyph_cache_policy.atlas_page_reuse_count == 9, "atlas overflow reuses atlas page slots");
+    require(engine.last_diagnostics().glyph_cache_policy.atlas_page_create_count == 2, "atlas overflow creates atlas pages");
+    require(engine.last_diagnostics().glyph_cache_faces.size() == 1, "atlas overflow records one cache face");
+    require(engine.last_diagnostics().glyph_cache_faces[0].cached_glyph_ids.size() == 8, "atlas overflow keeps capacity entries");
+    require(engine.last_diagnostics().glyph_cache_faces[0].cached_glyph_ids[0] == 'D', "atlas overflow evicts oldest glyphs");
+    require(engine.last_diagnostics().glyph_cache_faces[0].cached_glyph_ids[7] == 'K', "atlas overflow keeps newest glyph");
+    require(engine.last_diagnostics().glyph_cache_faces[0].eviction_count == 3, "atlas overflow records face evictions");
 
     const render_text_glyph_atlas_placement_snapshot& first =
         engine.last_diagnostics().glyph_atlas_placements.front();
@@ -998,6 +1050,14 @@ void test_fake_glyph_atlas_page_diagnostics_track_overflow()
     require(engine.last_diagnostics().glyph_atlas_metrics.cache_hit_count == 11, "repeated overflow records all hits");
     require(engine.last_diagnostics().glyph_atlas_metrics.new_slot_count == 0, "repeated overflow allocates no slots");
     require(engine.last_diagnostics().glyph_atlas_metrics.dirty_page_count == 0, "repeated overflow dirties no pages");
+    require(engine.last_diagnostics().glyph_cache_policy.hit_count == 0, "repeated overflow policy thrashes with no hits");
+    require(engine.last_diagnostics().glyph_cache_policy.miss_count == 11, "repeated overflow policy records misses");
+    require(engine.last_diagnostics().glyph_cache_policy.eviction_count == 11, "repeated overflow policy records evictions");
+    require(engine.last_diagnostics().glyph_cache_policy.atlas_reuse_count == 11, "repeated overflow reuses atlas after policy miss");
+    require(engine.last_diagnostics().glyph_cache_policy.atlas_allocation_count == 0, "repeated overflow allocates no atlas slots");
+    require(engine.last_diagnostics().glyph_cache_faces[0].atlas_reuse_count == 11, "repeated overflow face records atlas reuse");
+    require(engine.last_diagnostics().glyph_cache_faces[0].cached_glyph_ids[0] == 'D', "repeated overflow cache returns to D");
+    require(engine.last_diagnostics().glyph_cache_faces[0].cached_glyph_ids[7] == 'K', "repeated overflow cache returns to K");
     require(engine.consume_atlas_updates().empty(), "repeated overflow enqueues no atlas updates");
 }
 

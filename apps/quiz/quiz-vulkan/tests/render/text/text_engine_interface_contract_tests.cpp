@@ -7,6 +7,7 @@
 
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -60,6 +61,8 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.line_breaks } -> std::same_as<std::vector<render::render_text_line_break_snapshot>&>;
     { diagnostics.line_metrics } -> std::same_as<std::vector<render::render_text_line_metrics_snapshot>&>;
     { diagnostics.line_layout_metrics } -> std::same_as<render::render_text_line_layout_metrics_snapshot&>;
+    { diagnostics.glyph_cache_faces } -> std::same_as<std::vector<render::render_text_glyph_cache_face_snapshot>&>;
+    { diagnostics.glyph_cache_policy } -> std::same_as<render::render_text_glyph_cache_policy_snapshot&>;
     { diagnostics.used_font_fallback() } -> std::same_as<bool>;
     { diagnostics.has_glyph_clusters() } -> std::same_as<bool>;
     { diagnostics.has_caret_rects() } -> std::same_as<bool>;
@@ -69,6 +72,7 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.has_font_face_selections() } -> std::same_as<bool>;
     { diagnostics.has_line_breaks() } -> std::same_as<bool>;
     { diagnostics.has_line_metrics() } -> std::same_as<bool>;
+    { diagnostics.has_glyph_cache_faces() } -> std::same_as<bool>;
 });
 
 static_assert(requires(render::render_text_glyph_cluster cluster) {
@@ -183,6 +187,30 @@ static_assert(requires(render::render_text_line_layout_metrics_snapshot metrics)
     { metrics.overflow_line_count } -> std::same_as<std::size_t&>;
     { metrics.truncated } -> std::same_as<bool&>;
     { metrics.overflowed } -> std::same_as<bool&>;
+});
+
+static_assert(requires(render::render_text_glyph_cache_face_snapshot face) {
+    { face.face_id } -> std::same_as<render::font_face_id&>;
+    { face.cached_glyph_ids } -> std::same_as<std::vector<std::uint32_t>&>;
+    { face.request_count } -> std::same_as<std::size_t&>;
+    { face.hit_count } -> std::same_as<std::size_t&>;
+    { face.miss_count } -> std::same_as<std::size_t&>;
+    { face.eviction_count } -> std::same_as<std::size_t&>;
+    { face.atlas_reuse_count } -> std::same_as<std::size_t&>;
+});
+
+static_assert(requires(render::render_text_glyph_cache_policy_snapshot policy) {
+    { policy.capacity } -> std::same_as<std::size_t&>;
+    { policy.cached_glyph_count } -> std::same_as<std::size_t&>;
+    { policy.request_count } -> std::same_as<std::size_t&>;
+    { policy.hit_count } -> std::same_as<std::size_t&>;
+    { policy.miss_count } -> std::same_as<std::size_t&>;
+    { policy.insert_count } -> std::same_as<std::size_t&>;
+    { policy.eviction_count } -> std::same_as<std::size_t&>;
+    { policy.atlas_reuse_count } -> std::same_as<std::size_t&>;
+    { policy.atlas_allocation_count } -> std::same_as<std::size_t&>;
+    { policy.atlas_page_reuse_count } -> std::same_as<std::size_t&>;
+    { policy.atlas_page_create_count } -> std::same_as<std::size_t&>;
 });
 
 static_assert(requires(render::render_draw_command command) {

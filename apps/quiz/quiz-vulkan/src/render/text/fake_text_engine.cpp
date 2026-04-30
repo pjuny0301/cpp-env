@@ -13,6 +13,8 @@
 namespace quiz_vulkan::render {
 namespace {
 
+constexpr std::size_t fake_glyph_cache_policy_capacity = 8;
+
 struct shaped_glyph {
     std::size_t run_index = 0;
     std::size_t byte_offset = 0;
@@ -45,10 +47,23 @@ struct laid_out_glyph_cluster {
 struct atlas_cluster_cache_result {
     std::size_t cluster_index = 0;
     glyph_atlas_key key;
+    bool glyph_cache_hit = false;
+    bool glyph_cache_miss = false;
+    bool glyph_cache_inserted = false;
+    bool glyph_cache_evicted = false;
+    glyph_atlas_key evicted_key;
+    bool atlas_reused_after_policy_miss = false;
     bool cache_hit = false;
     bool newly_allocated = false;
     bool created_page = false;
     bool reused_existing_page = false;
+};
+
+struct glyph_cache_policy_access_result {
+    bool hit = false;
+    bool inserted = false;
+    bool evicted = false;
+    glyph_atlas_key evicted_key;
 };
 
 float line_height_for(const render_text_style& style)
@@ -799,9 +814,116 @@ render_text_revision latest_page_revision(const std::vector<render_text_atlas_pa
     return latest;
 }
 
+std::vector<glyph_atlas_key>::iterator find_glyph_cache_policy_entry(
+    std::vector<glyph_atlas_key>& entries,
+    const glyph_atlas_key& key)
+{
+    return std::find(entries.begin(), entries.end(), key);
+}
+
+glyph_cache_policy_access_result access_glyph_cache_policy(
+    std::vector<glyph_atlas_key>& entries,
+    const glyph_atlas_key& key)
+{
+    const auto match = find_glyph_cache_policy_entry(entries, key);
+    if (match != entries.end()) {
+        const glyph_atlas_key cached_key = *match;
+        entries.erase(match);
+        entries.push_back(cached_key);
+        return glyph_cache_policy_access_result{
+            .hit = true,
+        };
+    }
+
+    glyph_cache_policy_access_result result{
+        .inserted = true,
+    };
+    if (entries.size() >= fake_glyph_cache_policy_capacity) {
+        result.evicted = true;
+        result.evicted_key = entries.front();
+        entries.erase(entries.begin());
+    }
+
+    entries.push_back(key);
+    return result;
+}
+
+render_text_glyph_cache_face_snapshot& glyph_cache_face_snapshot_for(
+    std::vector<render_text_glyph_cache_face_snapshot>& faces,
+    const font_face_id face_id)
+{
+    const auto match = std::find_if(
+        faces.begin(),
+        faces.end(),
+        [&](const render_text_glyph_cache_face_snapshot& face) {
+            return face.face_id == face_id;
+        });
+    if (match != faces.end()) {
+        return *match;
+    }
+
+    faces.push_back(render_text_glyph_cache_face_snapshot{
+        .face_id = face_id,
+    });
+    return faces.back();
+}
+
+void record_glyph_cache_policy_diagnostics(
+    fake_text_engine_diagnostics& diagnostics,
+    const std::vector<glyph_atlas_key>& entries,
+    const std::vector<atlas_cluster_cache_result>& cache_results)
+{
+    diagnostics.glyph_cache_faces.clear();
+    diagnostics.glyph_cache_policy = render_text_glyph_cache_policy_snapshot{
+        .capacity = fake_glyph_cache_policy_capacity,
+        .cached_glyph_count = entries.size(),
+    };
+
+    for (const atlas_cluster_cache_result& result : cache_results) {
+        render_text_glyph_cache_face_snapshot& face =
+            glyph_cache_face_snapshot_for(diagnostics.glyph_cache_faces, result.key.face_id);
+        ++face.request_count;
+        ++diagnostics.glyph_cache_policy.request_count;
+
+        if (result.glyph_cache_hit) {
+            ++face.hit_count;
+            ++diagnostics.glyph_cache_policy.hit_count;
+        }
+        if (result.glyph_cache_miss) {
+            ++face.miss_count;
+            ++diagnostics.glyph_cache_policy.miss_count;
+        }
+        if (result.glyph_cache_inserted) {
+            ++diagnostics.glyph_cache_policy.insert_count;
+        }
+        if (result.glyph_cache_evicted) {
+            ++diagnostics.glyph_cache_policy.eviction_count;
+            ++glyph_cache_face_snapshot_for(diagnostics.glyph_cache_faces, result.evicted_key.face_id).eviction_count;
+        }
+        if (result.atlas_reused_after_policy_miss) {
+            ++face.atlas_reuse_count;
+            ++diagnostics.glyph_cache_policy.atlas_reuse_count;
+        }
+        if (result.newly_allocated) {
+            ++diagnostics.glyph_cache_policy.atlas_allocation_count;
+        }
+        if (result.created_page) {
+            ++diagnostics.glyph_cache_policy.atlas_page_create_count;
+        } else if (result.reused_existing_page) {
+            ++diagnostics.glyph_cache_policy.atlas_page_reuse_count;
+        }
+    }
+
+    for (const glyph_atlas_key& key : entries) {
+        glyph_cache_face_snapshot_for(diagnostics.glyph_cache_faces, key.face_id).cached_glyph_ids.push_back(
+            key.glyph_id);
+    }
+}
+
 void update_atlas_for_clusters(
     std::vector<laid_out_glyph_cluster>& clusters,
     glyph_atlas_cache& atlas_cache,
+    std::vector<glyph_atlas_key>& glyph_cache_policy_entries,
     fake_text_engine_diagnostics& diagnostics,
     std::vector<render_text_atlas_update>& atlas_updates)
 {
@@ -819,6 +941,9 @@ void update_atlas_for_clusters(
 
         ++diagnostics.glyph_atlas_metrics.requested_cluster_count;
         const glyph_atlas_key key = atlas_key_for_cluster(cluster);
+        const bool atlas_slot_existed_before = atlas_cache.find(key).has_value();
+        const glyph_cache_policy_access_result policy_result =
+            access_glyph_cache_policy(glyph_cache_policy_entries, key);
         const std::size_t page_count_before = atlas_cache.pages().size();
         std::optional<glyph_atlas_slot> slot = atlas_cache.cache_glyph(
             key,
@@ -834,6 +959,12 @@ void update_atlas_for_clusters(
         cache_results.push_back(atlas_cluster_cache_result{
             .cluster_index = cluster_index,
             .key = key,
+            .glyph_cache_hit = policy_result.hit,
+            .glyph_cache_miss = !policy_result.hit,
+            .glyph_cache_inserted = policy_result.inserted,
+            .glyph_cache_evicted = policy_result.evicted,
+            .evicted_key = policy_result.evicted_key,
+            .atlas_reused_after_policy_miss = !policy_result.hit && atlas_slot_existed_before,
             .cache_hit = cache_hit,
             .newly_allocated = slot->newly_allocated,
             .created_page = created_page,
@@ -852,6 +983,8 @@ void update_atlas_for_clusters(
             ++diagnostics.glyph_atlas_metrics.reused_page_slot_count;
         }
     }
+
+    record_glyph_cache_policy_diagnostics(diagnostics, glyph_cache_policy_entries, cache_results);
 
     for (const atlas_cluster_cache_result& result : cache_results) {
         std::optional<glyph_atlas_slot> refreshed_slot = atlas_cache.find(result.key);
@@ -919,7 +1052,12 @@ render_text_layout fake_text_engine::layout_text(const render_text_request& requ
     std::vector<laid_out_glyph_cluster> cluster_layouts =
         collect_glyph_cluster_layouts(request, shaped_glyphs, lines);
     record_glyph_cluster_diagnostics(diagnostics_, cluster_layouts);
-    update_atlas_for_clusters(cluster_layouts, glyph_atlas_cache_, diagnostics_, atlas_updates_);
+    update_atlas_for_clusters(
+        cluster_layouts,
+        glyph_atlas_cache_,
+        glyph_cache_policy_entries_,
+        diagnostics_,
+        atlas_updates_);
 
     render_text_layout layout;
     layout.measure = measure_lines(lines);

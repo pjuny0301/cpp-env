@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <string>
+#include <vector>
 
 namespace quiz_vulkan::render {
 
@@ -121,6 +122,30 @@ struct render_text_line_layout_metrics_snapshot {
     std::size_t overflow_line_count = 0;
     bool truncated = false;
     bool overflowed = false;
+};
+
+struct render_text_glyph_cache_face_snapshot {
+    font_face_id face_id = 0;
+    std::vector<std::uint32_t> cached_glyph_ids;
+    std::size_t request_count = 0;
+    std::size_t hit_count = 0;
+    std::size_t miss_count = 0;
+    std::size_t eviction_count = 0;
+    std::size_t atlas_reuse_count = 0;
+};
+
+struct render_text_glyph_cache_policy_snapshot {
+    std::size_t capacity = 0;
+    std::size_t cached_glyph_count = 0;
+    std::size_t request_count = 0;
+    std::size_t hit_count = 0;
+    std::size_t miss_count = 0;
+    std::size_t insert_count = 0;
+    std::size_t eviction_count = 0;
+    std::size_t atlas_reuse_count = 0;
+    std::size_t atlas_allocation_count = 0;
+    std::size_t atlas_page_reuse_count = 0;
+    std::size_t atlas_page_create_count = 0;
 };
 
 } // namespace quiz_vulkan::render

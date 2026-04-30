@@ -474,10 +474,27 @@ void test_drag_capture_ignores_other_pointers_until_release()
     require_empty(recognizer.update_time(705), "captured drag drops other pending long press state");
     require_empty(recognizer.process_pointer_event(pointer(pointer_phase::up, 710, 40.0f, 0.0f, 2)),
         "second pointer up is ignored while first pointer is captured");
+    const gesture_policy_snapshot& ignored_up_policy = require_single_policy(
+        recognizer,
+        gesture_policy_decision::ignored_by_capture,
+        "captured drag records ignored second pointer up");
+    require(ignored_up_policy.pointer_id == 2, "ignored second pointer up records pointer id");
+    require(ignored_up_policy.phase == pointer_phase::up, "ignored second pointer up records phase");
+    require(!ignored_up_policy.emitted_input_event, "ignored second pointer up emits no input");
     require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 720, 50.0f, 0.0f, 2)),
         "new second pointer down is ignored while first pointer is captured");
+    const gesture_policy_snapshot& ignored_down_policy = require_single_policy(
+        recognizer,
+        gesture_policy_decision::ignored_by_capture,
+        "captured drag records ignored second pointer down");
+    require(ignored_down_policy.pointer_id == 2, "ignored second pointer down records pointer id");
+    require(ignored_down_policy.phase == pointer_phase::down, "ignored second pointer down records phase");
     require_empty(recognizer.process_pointer_event(pointer(pointer_phase::up, 730, 50.0f, 0.0f, 2)),
         "new second pointer up is ignored while first pointer is captured");
+    require_single_policy(
+        recognizer,
+        gesture_policy_decision::ignored_by_capture,
+        "captured drag records ignored second pointer release");
 
     gestures = recognizer.process_pointer_event(pointer(pointer_phase::move, 740, 15.0f, 2.0f, 1));
     require(gestures.size() == 1, "captured first pointer continues drag updates");
@@ -534,6 +551,12 @@ void test_capture_arbitration_restart_and_ignored_cancel()
 
     require_empty(recognizer.process_pointer_event(pointer(pointer_phase::cancel, 130, 0.0f, 0.0f, 4)),
         "arbitration noncaptured cancel is ignored while another pointer is captured");
+    const gesture_policy_snapshot& ignored_cancel_policy = require_single_policy(
+        recognizer,
+        gesture_policy_decision::ignored_by_capture,
+        "arbitration ignored cancel records gesture policy");
+    require(ignored_cancel_policy.pointer_id == 4, "arbitration ignored cancel records pointer id");
+    require(ignored_cancel_policy.phase == pointer_phase::cancel, "arbitration ignored cancel records cancel phase");
     require_capture_snapshot(
         recognizer.capture_snapshot(),
         pointer_capture_lifecycle::captured,

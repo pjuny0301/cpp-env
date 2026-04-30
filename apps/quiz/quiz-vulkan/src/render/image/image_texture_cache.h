@@ -429,17 +429,61 @@ enum class fake_image_texture_residency {
     pinned,
 };
 
+enum class fake_image_texture_eviction_reason {
+    capacity,
+    release_unused,
+    source_invalidation,
+    texture_invalidation,
+};
+
+inline std::string fake_image_texture_eviction_reason_name(fake_image_texture_eviction_reason reason)
+{
+    switch (reason) {
+    case fake_image_texture_eviction_reason::capacity:
+        return "capacity";
+    case fake_image_texture_eviction_reason::release_unused:
+        return "release_unused";
+    case fake_image_texture_eviction_reason::source_invalidation:
+        return "source_invalidation";
+    case fake_image_texture_eviction_reason::texture_invalidation:
+        return "texture_invalidation";
+    }
+
+    return "unknown";
+}
+
 struct fake_image_texture_cache_entry_snapshot {
     render_image_texture_key key;
     render_image_texture_key_diagnostic key_diagnostic;
     render_image_sampler_policy_diagnostic sampler_policy;
     render_image_texture_handle texture;
     render_image_upload_readiness_snapshot upload_readiness;
+    std::uint64_t upload_generation_id = 0;
+    std::size_t first_used_sequence = 0;
+    std::size_t last_used_sequence = 0;
+    std::size_t access_count = 0;
+    std::size_t resident_lifetime_sequence_count = 0;
     std::size_t pixel_count = 0;
     std::size_t pixel_byte_count = 0;
     std::size_t decoded_byte_count = 0;
-    std::size_t last_used_sequence = 0;
     fake_image_texture_residency residency = fake_image_texture_residency::evictable;
+};
+
+struct fake_image_texture_eviction_snapshot {
+    std::size_t sequence = 0;
+    fake_image_texture_eviction_reason reason = fake_image_texture_eviction_reason::capacity;
+    render_image_texture_key key;
+    render_image_texture_handle texture;
+    std::uint64_t upload_generation_id = 0;
+    std::size_t first_used_sequence = 0;
+    std::size_t last_used_sequence = 0;
+    std::size_t access_count = 0;
+    std::size_t resident_lifetime_sequence_count = 0;
+    std::size_t pixel_count = 0;
+    std::size_t pixel_byte_count = 0;
+    std::size_t decoded_byte_count = 0;
+    fake_image_texture_residency residency = fake_image_texture_residency::evictable;
+    std::string diagnostic;
 };
 
 struct fake_image_texture_cache_snapshot {
@@ -456,8 +500,14 @@ struct fake_image_texture_cache_snapshot {
     std::size_t over_capacity_texture_count = 0;
     std::size_t upload_ready_texture_count = 0;
     std::size_t placeholder_fallback_texture_count = 0;
+    std::size_t next_access_sequence = 1;
+    std::size_t resident_access_count = 0;
+    std::size_t capacity_eviction_count = 0;
+    std::size_t release_eviction_count = 0;
+    std::size_t invalidation_eviction_count = 0;
     bool capacity_exceeded = false;
     std::vector<fake_image_texture_cache_entry_snapshot> entries;
+    std::vector<fake_image_texture_eviction_snapshot> evictions;
 };
 
 struct render_image_texture_upload_request {
@@ -807,6 +857,7 @@ public:
         const auto existing = textures_.find(key);
         if (existing != textures_.end()) {
             existing->second.last_used_sequence = next_access_sequence_++;
+            ++existing->second.access_count;
             return render_image_texture_result{
                 .status = render_image_texture_status::ready,
                 .key = key,
@@ -892,6 +943,7 @@ public:
         const std::size_t pixel_count = uploaded.pixel_count;
         const std::size_t pixel_byte_count = uploaded.pixel_byte_count;
         const std::size_t decoded_byte_count = uploaded.decoded_byte_count;
+        const std::size_t access_sequence = next_access_sequence_++;
         cache_uploaded_texture(
             key,
             fake_cached_image_texture{
@@ -899,10 +951,13 @@ public:
                 .decode_metadata = decoded.metadata,
                 .decoder_diagnostics = decoded.decoder_diagnostics,
                 .upload_readiness = upload_readiness,
+                .upload_generation_id = uploaded.generation_id,
                 .pixel_count = pixel_count,
                 .pixel_byte_count = pixel_byte_count,
                 .decoded_byte_count = decoded_byte_count,
-                .last_used_sequence = next_access_sequence_++,
+                .first_used_sequence = access_sequence,
+                .last_used_sequence = access_sequence,
+                .access_count = 1,
                 .residency = configured_residency_for(key),
             });
         return render_image_texture_result{
@@ -919,7 +974,7 @@ public:
     void release_unused() override
     {
         ++release_unused_count_;
-        clear_textures();
+        clear_textures(fake_image_texture_eviction_reason::release_unused);
     }
 
     int release_unused_count() const
@@ -1027,12 +1082,19 @@ public:
             .over_capacity_texture_count = over_capacity_texture_count_,
             .upload_ready_texture_count = 0,
             .placeholder_fallback_texture_count = 0,
+            .next_access_sequence = next_access_sequence_,
+            .resident_access_count = 0,
+            .capacity_eviction_count = eviction_count_,
+            .release_eviction_count = release_eviction_count_,
+            .invalidation_eviction_count = invalidation_eviction_count_,
             .capacity_exceeded = cached_pixel_count_ > max_cached_pixel_count_,
             .entries = {},
+            .evictions = eviction_snapshots_,
         };
         snapshot.entries.reserve(textures_.size());
 
         for (const auto& [key, entry] : textures_) {
+            snapshot.resident_access_count += entry.access_count;
             if (entry.upload_readiness.upload_ready) {
                 ++snapshot.upload_ready_texture_count;
             }
@@ -1052,10 +1114,14 @@ public:
                 .sampler_policy = entry.upload_readiness.sampler_policy,
                 .texture = entry.texture,
                 .upload_readiness = entry.upload_readiness,
+                .upload_generation_id = entry.upload_generation_id,
+                .first_used_sequence = entry.first_used_sequence,
+                .last_used_sequence = entry.last_used_sequence,
+                .access_count = entry.access_count,
+                .resident_lifetime_sequence_count = resident_lifetime_sequence_count(entry),
                 .pixel_count = entry.pixel_count,
                 .pixel_byte_count = entry.pixel_byte_count,
                 .decoded_byte_count = entry.decoded_byte_count,
-                .last_used_sequence = entry.last_used_sequence,
                 .residency = entry.residency,
             });
         }
@@ -1067,8 +1133,9 @@ public:
     {
         for (auto texture = textures_.begin(); texture != textures_.end();) {
             if (texture->first.source_key == source_key) {
-                subtract_cached_entry(texture->second);
-                texture = textures_.erase(texture);
+                texture = erase_cached_texture(
+                    texture,
+                    fake_image_texture_eviction_reason::source_invalidation);
                 continue;
             }
             ++texture;
@@ -1082,8 +1149,7 @@ public:
             return;
         }
 
-        subtract_cached_entry(texture->second);
-        textures_.erase(texture);
+        erase_cached_texture(texture, fake_image_texture_eviction_reason::texture_invalidation);
     }
 
 private:
@@ -1092,10 +1158,13 @@ private:
         render_image_decode_metadata decode_metadata;
         std::vector<render_image_decoder_diagnostic> decoder_diagnostics;
         render_image_upload_readiness_snapshot upload_readiness;
+        std::uint64_t upload_generation_id = 0;
         std::size_t pixel_count = 0;
         std::size_t pixel_byte_count = 0;
         std::size_t decoded_byte_count = 0;
+        std::size_t first_used_sequence = 0;
         std::size_t last_used_sequence = 0;
+        std::size_t access_count = 0;
         fake_image_texture_residency residency = fake_image_texture_residency::evictable;
     };
 
@@ -1108,9 +1177,19 @@ private:
         return placeholder_encoded_bytes_;
     }
 
-    void clear_textures()
+    static std::size_t resident_lifetime_sequence_count(const fake_cached_image_texture& entry)
     {
-        textures_.clear();
+        if (entry.first_used_sequence == 0 || entry.last_used_sequence < entry.first_used_sequence) {
+            return 0;
+        }
+        return entry.last_used_sequence - entry.first_used_sequence + 1;
+    }
+
+    void clear_textures(fake_image_texture_eviction_reason reason)
+    {
+        for (auto texture = textures_.begin(); texture != textures_.end();) {
+            texture = erase_cached_texture(texture, reason);
+        }
         cached_pixel_count_ = 0;
         cached_pixel_byte_count_ = 0;
         cached_decoded_byte_count_ = 0;
@@ -1161,15 +1240,50 @@ private:
         textures_.emplace(std::move(key), std::move(texture));
     }
 
-    void erase_cached_texture(
+    std::map<render_image_texture_key, fake_cached_image_texture, render_image_texture_key_less>::iterator
+    erase_cached_texture(
         std::map<render_image_texture_key, fake_cached_image_texture, render_image_texture_key_less>::iterator texture,
-        bool count_eviction)
+        fake_image_texture_eviction_reason reason)
     {
+        const render_image_texture_key key = texture->first;
+        const fake_cached_image_texture entry = texture->second;
         subtract_cached_entry(texture->second);
+        auto next = texture;
+        ++next;
         textures_.erase(texture);
-        if (count_eviction) {
+
+        record_eviction_snapshot(key, entry, reason);
+        if (reason == fake_image_texture_eviction_reason::capacity) {
             ++eviction_count_;
+        } else if (reason == fake_image_texture_eviction_reason::release_unused) {
+            ++release_eviction_count_;
+        } else {
+            ++invalidation_eviction_count_;
         }
+        return next;
+    }
+
+    void record_eviction_snapshot(
+        const render_image_texture_key& key,
+        const fake_cached_image_texture& entry,
+        fake_image_texture_eviction_reason reason)
+    {
+        eviction_snapshots_.push_back(fake_image_texture_eviction_snapshot{
+            .sequence = next_eviction_sequence_++,
+            .reason = reason,
+            .key = key,
+            .texture = entry.texture,
+            .upload_generation_id = entry.upload_generation_id,
+            .first_used_sequence = entry.first_used_sequence,
+            .last_used_sequence = entry.last_used_sequence,
+            .access_count = entry.access_count,
+            .resident_lifetime_sequence_count = resident_lifetime_sequence_count(entry),
+            .pixel_count = entry.pixel_count,
+            .pixel_byte_count = entry.pixel_byte_count,
+            .decoded_byte_count = entry.decoded_byte_count,
+            .residency = entry.residency,
+            .diagnostic = "image texture evicted by " + fake_image_texture_eviction_reason_name(reason),
+        });
     }
 
     void evict_to_fit(std::size_t incoming_pixel_count)
@@ -1190,7 +1304,7 @@ private:
                 return;
             }
 
-            erase_cached_texture(least_recently_used, true);
+            erase_cached_texture(least_recently_used, fake_image_texture_eviction_reason::capacity);
         }
     }
 
@@ -1204,11 +1318,15 @@ private:
     std::size_t cached_pixel_byte_count_ = 0;
     std::size_t cached_decoded_byte_count_ = 0;
     std::size_t eviction_count_ = 0;
+    std::size_t release_eviction_count_ = 0;
+    std::size_t invalidation_eviction_count_ = 0;
     std::size_t over_capacity_texture_count_ = 0;
+    std::size_t next_eviction_sequence_ = 1;
     std::vector<std::byte> placeholder_encoded_bytes_ = {std::byte{0x01}};
     std::map<render_image_cache_key, std::vector<std::byte>> source_placeholder_encoded_bytes_;
     std::map<render_image_texture_key, fake_image_texture_residency, render_image_texture_key_less> texture_residency_;
     std::map<render_image_texture_key, fake_cached_image_texture, render_image_texture_key_less> textures_;
+    std::vector<fake_image_texture_eviction_snapshot> eviction_snapshots_;
 };
 
 } // namespace quiz_vulkan::render

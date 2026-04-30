@@ -160,6 +160,8 @@ static_assert(requires(
     render::fake_image_texture_pipeline& mutable_pipeline,
     render::render_image_ref image_ref,
     render::fake_image_texture_residency texture_residency,
+    render::fake_image_texture_eviction_reason eviction_reason,
+    render::fake_image_texture_eviction_snapshot eviction_snapshot,
     render::fake_image_texture_cache_entry_snapshot cache_entry,
     render::fake_image_texture_cache_snapshot cache_snapshot,
     const render::fake_image_texture_cache& cache,
@@ -367,16 +369,35 @@ static_assert(requires(
     { pipeline.diagnostic_snapshot() } -> std::same_as<render::fake_image_texture_pipeline_snapshot>;
     { mutable_pipeline.invalidate_source(render::render_image_cache_key{}) } -> std::same_as<void>;
     { mutable_pipeline.invalidate_texture(render::render_image_texture_key{}) } -> std::same_as<void>;
+    { render::fake_image_texture_eviction_reason_name(eviction_reason) } -> std::same_as<std::string>;
     { cache_entry.key } -> std::same_as<render::render_image_texture_key&>;
     { cache_entry.key_diagnostic } -> std::same_as<render::render_image_texture_key_diagnostic&>;
     { cache_entry.sampler_policy } -> std::same_as<render::render_image_sampler_policy_diagnostic&>;
     { cache_entry.texture } -> std::same_as<render::render_image_texture_handle&>;
     { cache_entry.upload_readiness } -> std::same_as<render::render_image_upload_readiness_snapshot&>;
+    { cache_entry.upload_generation_id } -> std::same_as<std::uint64_t&>;
+    { cache_entry.first_used_sequence } -> std::same_as<std::size_t&>;
+    { cache_entry.last_used_sequence } -> std::same_as<std::size_t&>;
+    { cache_entry.access_count } -> std::same_as<std::size_t&>;
+    { cache_entry.resident_lifetime_sequence_count } -> std::same_as<std::size_t&>;
     { cache_entry.pixel_count } -> std::same_as<std::size_t&>;
     { cache_entry.pixel_byte_count } -> std::same_as<std::size_t&>;
     { cache_entry.decoded_byte_count } -> std::same_as<std::size_t&>;
-    { cache_entry.last_used_sequence } -> std::same_as<std::size_t&>;
     { cache_entry.residency } -> std::same_as<render::fake_image_texture_residency&>;
+    { eviction_snapshot.sequence } -> std::same_as<std::size_t&>;
+    { eviction_snapshot.reason } -> std::same_as<render::fake_image_texture_eviction_reason&>;
+    { eviction_snapshot.key } -> std::same_as<render::render_image_texture_key&>;
+    { eviction_snapshot.texture } -> std::same_as<render::render_image_texture_handle&>;
+    { eviction_snapshot.upload_generation_id } -> std::same_as<std::uint64_t&>;
+    { eviction_snapshot.first_used_sequence } -> std::same_as<std::size_t&>;
+    { eviction_snapshot.last_used_sequence } -> std::same_as<std::size_t&>;
+    { eviction_snapshot.access_count } -> std::same_as<std::size_t&>;
+    { eviction_snapshot.resident_lifetime_sequence_count } -> std::same_as<std::size_t&>;
+    { eviction_snapshot.pixel_count } -> std::same_as<std::size_t&>;
+    { eviction_snapshot.pixel_byte_count } -> std::same_as<std::size_t&>;
+    { eviction_snapshot.decoded_byte_count } -> std::same_as<std::size_t&>;
+    { eviction_snapshot.residency } -> std::same_as<render::fake_image_texture_residency&>;
+    { eviction_snapshot.diagnostic } -> std::same_as<std::string&>;
     { cache_snapshot.texture_count } -> std::same_as<std::size_t&>;
     { cache_snapshot.max_cached_pixel_count } -> std::same_as<std::size_t&>;
     { cache_snapshot.cached_pixel_count } -> std::same_as<std::size_t&>;
@@ -390,8 +411,14 @@ static_assert(requires(
     { cache_snapshot.over_capacity_texture_count } -> std::same_as<std::size_t&>;
     { cache_snapshot.upload_ready_texture_count } -> std::same_as<std::size_t&>;
     { cache_snapshot.placeholder_fallback_texture_count } -> std::same_as<std::size_t&>;
+    { cache_snapshot.next_access_sequence } -> std::same_as<std::size_t&>;
+    { cache_snapshot.resident_access_count } -> std::same_as<std::size_t&>;
+    { cache_snapshot.capacity_eviction_count } -> std::same_as<std::size_t&>;
+    { cache_snapshot.release_eviction_count } -> std::same_as<std::size_t&>;
+    { cache_snapshot.invalidation_eviction_count } -> std::same_as<std::size_t&>;
     { cache_snapshot.capacity_exceeded } -> std::same_as<bool&>;
     { cache_snapshot.entries } -> std::same_as<std::vector<render::fake_image_texture_cache_entry_snapshot>&>;
+    { cache_snapshot.evictions } -> std::same_as<std::vector<render::fake_image_texture_eviction_snapshot>&>;
     { cache.diagnostic_snapshot() } -> std::same_as<render::fake_image_texture_cache_snapshot>;
     { cache.eviction_count() } -> std::same_as<std::size_t>;
     { cache.over_capacity_texture_count() } -> std::same_as<std::size_t>;
@@ -401,6 +428,7 @@ static_assert(requires(
     { mutable_cache.pin_texture(render::render_image_texture_key{}) } -> std::same_as<void>;
     { mutable_cache.unpin_texture(render::render_image_texture_key{}) } -> std::same_as<void>;
     texture_residency;
+    eviction_reason;
 });
 
 } // namespace

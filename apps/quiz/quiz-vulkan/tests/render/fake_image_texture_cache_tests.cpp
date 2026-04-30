@@ -232,6 +232,20 @@ const quiz_vulkan::render::fake_image_texture_cache_entry_snapshot* find_snapsho
     return nullptr;
 }
 
+const quiz_vulkan::render::fake_image_texture_eviction_snapshot* find_eviction_snapshot(
+    const quiz_vulkan::render::fake_image_texture_cache_snapshot& snapshot,
+    std::string_view source_key,
+    quiz_vulkan::render::fake_image_texture_eviction_reason reason)
+{
+    for (const quiz_vulkan::render::fake_image_texture_eviction_snapshot& eviction : snapshot.evictions) {
+        if (eviction.key.source_key == source_key && eviction.reason == reason) {
+            return &eviction;
+        }
+    }
+
+    return nullptr;
+}
+
 void test_sampler_defaults_are_appended_to_render_image_ref()
 {
     using namespace quiz_vulkan::render;
@@ -1747,6 +1761,181 @@ void test_texture_cache_pinned_residency_can_exceed_capacity_without_failures()
     require(final_snapshot.over_capacity_texture_count == 2, "final pinned snapshot counts uncached attempts");
 }
 
+void test_texture_cache_reports_upload_lifetime_and_invalidation_evictions()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source_a = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/lifetime-a.ppm"})
+                                                    .source;
+    const render_resolved_image_source source_b = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/lifetime-b.ppm"})
+                                                    .source;
+
+    ppm_image_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+    cache.set_placeholder_encoded_bytes_for_source(source_a.cache_key(), make_ppm_1x1_encoded_bytes());
+    cache.set_placeholder_encoded_bytes_for_source(source_b.cache_key(), make_ppm_1x1_encoded_bytes());
+
+    const render_image_texture_request request_a{.source = source_a, .sampler = render_image_sampler_policy{}};
+    const render_image_texture_request request_b{.source = source_b, .sampler = render_image_sampler_policy{}};
+    const render_image_texture_key key_a = make_render_image_texture_key(request_a);
+    const render_image_texture_key key_b = make_render_image_texture_key(request_b);
+
+    const render_image_texture_result first_a = cache.acquire_texture(request_a);
+    const render_image_texture_result hit_a = cache.acquire_texture(request_a);
+    const render_image_texture_result first_b = cache.acquire_texture(request_b);
+    require(first_a.ok(), "lifetime source A creates a texture");
+    require(hit_a.cache_hit, "lifetime source A hit refreshes lifetime");
+    require(first_b.ok(), "lifetime source B creates a texture");
+
+    const fake_image_texture_cache_snapshot resident = cache.diagnostic_snapshot();
+    require(resident.texture_count == 2, "lifetime snapshot reports resident textures");
+    require(resident.next_access_sequence == 4, "lifetime snapshot reports next access sequence");
+    require(resident.resident_access_count == 3, "lifetime snapshot sums resident access counts");
+    require(resident.evictions.empty(), "lifetime snapshot starts with no evictions");
+
+    const fake_image_texture_cache_entry_snapshot* entry_a = find_snapshot_entry(resident, source_a.cache_key());
+    const fake_image_texture_cache_entry_snapshot* entry_b = find_snapshot_entry(resident, source_b.cache_key());
+    require(entry_a != nullptr, "lifetime snapshot includes source A");
+    require(entry_b != nullptr, "lifetime snapshot includes source B");
+    require(entry_a->upload_generation_id == 1, "source A records upload generation");
+    require(entry_a->first_used_sequence == 1, "source A records first use");
+    require(entry_a->last_used_sequence == 2, "source A records refreshed last use");
+    require(entry_a->access_count == 2, "source A records access count");
+    require(entry_a->resident_lifetime_sequence_count == 2, "source A records lifetime sequence span");
+    require(entry_b->upload_generation_id == 2, "source B records upload generation");
+    require(entry_b->first_used_sequence == 3, "source B records first use");
+    require(entry_b->last_used_sequence == 3, "source B records last use");
+    require(entry_b->access_count == 1, "source B records access count");
+    require(entry_b->resident_lifetime_sequence_count == 1, "source B records lifetime sequence span");
+
+    cache.invalidate_texture(key_a);
+    const fake_image_texture_cache_snapshot after_texture_invalidation = cache.diagnostic_snapshot();
+    require(after_texture_invalidation.texture_count == 1, "texture invalidation removes one resident texture");
+    require(after_texture_invalidation.invalidation_eviction_count == 1, "texture invalidation counts eviction");
+    require(after_texture_invalidation.release_eviction_count == 0, "texture invalidation does not count release");
+    require(after_texture_invalidation.capacity_eviction_count == 0, "texture invalidation does not count capacity");
+    require(after_texture_invalidation.evictions.size() == 1, "texture invalidation records eviction snapshot");
+    const fake_image_texture_eviction_snapshot* key_eviction = find_eviction_snapshot(
+        after_texture_invalidation,
+        source_a.cache_key(),
+        fake_image_texture_eviction_reason::texture_invalidation);
+    require(key_eviction != nullptr, "texture invalidation eviction is findable");
+    require(key_eviction->key == key_a, "texture invalidation records texture key");
+    require(key_eviction->texture.id == first_a.texture.id, "texture invalidation records handle");
+    require(key_eviction->upload_generation_id == 1, "texture invalidation records upload generation");
+    require(key_eviction->first_used_sequence == 1, "texture invalidation records first use");
+    require(key_eviction->last_used_sequence == 2, "texture invalidation records last use");
+    require(key_eviction->access_count == 2, "texture invalidation records access count");
+    require(key_eviction->resident_lifetime_sequence_count == 2, "texture invalidation records lifetime span");
+    require(!key_eviction->diagnostic.empty(), "texture invalidation eviction includes diagnostic");
+    require(
+        fake_image_texture_eviction_reason_name(key_eviction->reason) == "texture_invalidation",
+        "texture invalidation reports reason name");
+    require(find_snapshot_entry(after_texture_invalidation, source_a.cache_key()) == nullptr, "source A is no longer resident");
+
+    cache.release_unused();
+    const fake_image_texture_cache_snapshot after_release = cache.diagnostic_snapshot();
+    require(after_release.texture_count == 0, "release eviction clears remaining texture");
+    require(after_release.release_eviction_count == 1, "release eviction count increments");
+    require(after_release.invalidation_eviction_count == 1, "release preserves invalidation count");
+    require(after_release.evictions.size() == 2, "release appends eviction snapshot");
+    const fake_image_texture_eviction_snapshot* release_eviction = find_eviction_snapshot(
+        after_release,
+        source_b.cache_key(),
+        fake_image_texture_eviction_reason::release_unused);
+    require(release_eviction != nullptr, "release eviction is findable");
+    require(release_eviction->key == key_b, "release eviction records texture key");
+    require(release_eviction->texture.id == first_b.texture.id, "release eviction records handle");
+    require(release_eviction->upload_generation_id == 2, "release eviction records upload generation");
+    require(release_eviction->access_count == 1, "release eviction records access count");
+    require(release_eviction->resident_lifetime_sequence_count == 1, "release eviction records lifetime span");
+}
+
+void test_texture_cache_records_capacity_eviction_lifetime_diagnostics()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source_a = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/lifetime-capacity-a.ppm"})
+                                                    .source;
+    const render_resolved_image_source source_b = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/lifetime-capacity-b.ppm"})
+                                                    .source;
+    const render_resolved_image_source source_c = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/lifetime-capacity-c.ppm"})
+                                                    .source;
+
+    ppm_image_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+    cache.set_max_cached_pixel_count(2);
+    cache.set_placeholder_encoded_bytes_for_source(source_a.cache_key(), make_ppm_1x1_encoded_bytes());
+    cache.set_placeholder_encoded_bytes_for_source(source_b.cache_key(), make_ppm_1x1_encoded_bytes());
+    cache.set_placeholder_encoded_bytes_for_source(source_c.cache_key(), make_ppm_1x1_encoded_bytes());
+
+    const render_image_texture_request request_a{.source = source_a, .sampler = render_image_sampler_policy{}};
+    const render_image_texture_request request_b{.source = source_b, .sampler = render_image_sampler_policy{}};
+    const render_image_texture_request request_c{.source = source_c, .sampler = render_image_sampler_policy{}};
+
+    const render_image_texture_result first_a = cache.acquire_texture(request_a);
+    const render_image_texture_result first_b = cache.acquire_texture(request_b);
+    const render_image_texture_result hit_a = cache.acquire_texture(request_a);
+    const render_image_texture_result first_c = cache.acquire_texture(request_c);
+    require(first_a.ok(), "capacity lifetime source A creates a texture");
+    require(first_b.ok(), "capacity lifetime source B creates a texture");
+    require(hit_a.cache_hit, "capacity lifetime source A hit refreshes recency");
+    require(first_c.ok(), "capacity lifetime source C creates a texture");
+    require(!first_c.cache_hit, "capacity lifetime source C is a cache miss");
+
+    const fake_image_texture_cache_snapshot snapshot = cache.diagnostic_snapshot();
+    require(snapshot.texture_count == 2, "capacity lifetime snapshot keeps two textures");
+    require(snapshot.eviction_count == 1, "capacity lifetime snapshot reports capacity eviction");
+    require(snapshot.capacity_eviction_count == 1, "capacity lifetime snapshot reports capacity eviction count");
+    require(snapshot.release_eviction_count == 0, "capacity lifetime snapshot reports no release evictions");
+    require(snapshot.invalidation_eviction_count == 0, "capacity lifetime snapshot reports no invalidation evictions");
+    require(snapshot.evictions.size() == 1, "capacity lifetime snapshot records eviction");
+    require(snapshot.next_access_sequence == 5, "capacity lifetime snapshot reports next access sequence");
+    require(snapshot.resident_access_count == 3, "capacity lifetime snapshot sums resident access counts");
+
+    const fake_image_texture_eviction_snapshot* capacity_eviction = find_eviction_snapshot(
+        snapshot,
+        source_b.cache_key(),
+        fake_image_texture_eviction_reason::capacity);
+    require(capacity_eviction != nullptr, "capacity eviction is findable");
+    require(capacity_eviction->key.source_key == source_b.cache_key(), "capacity eviction records source B key");
+    require(capacity_eviction->texture.id == first_b.texture.id, "capacity eviction records evicted handle");
+    require(capacity_eviction->upload_generation_id == 2, "capacity eviction records upload generation");
+    require(capacity_eviction->first_used_sequence == 2, "capacity eviction records first use");
+    require(capacity_eviction->last_used_sequence == 2, "capacity eviction records last use");
+    require(capacity_eviction->access_count == 1, "capacity eviction records access count");
+    require(capacity_eviction->resident_lifetime_sequence_count == 1, "capacity eviction records lifetime span");
+    require(capacity_eviction->pixel_count == 1, "capacity eviction records pixel count");
+    require(capacity_eviction->pixel_byte_count == 4, "capacity eviction records pixel bytes");
+    require(capacity_eviction->decoded_byte_count == 4, "capacity eviction records decoded bytes");
+    require(
+        fake_image_texture_eviction_reason_name(capacity_eviction->reason) == "capacity",
+        "capacity eviction reports reason name");
+
+    const fake_image_texture_cache_entry_snapshot* entry_a = find_snapshot_entry(snapshot, source_a.cache_key());
+    const fake_image_texture_cache_entry_snapshot* entry_c = find_snapshot_entry(snapshot, source_c.cache_key());
+    require(entry_a != nullptr, "capacity lifetime snapshot keeps refreshed source A");
+    require(entry_c != nullptr, "capacity lifetime snapshot stores source C");
+    require(entry_a->texture.id == first_a.texture.id, "source A keeps original handle");
+    require(entry_a->upload_generation_id == 1, "source A keeps upload generation");
+    require(entry_a->first_used_sequence == 1, "source A records first use");
+    require(entry_a->last_used_sequence == 3, "source A records last use");
+    require(entry_a->access_count == 2, "source A records two accesses");
+    require(entry_a->resident_lifetime_sequence_count == 3, "source A records resident sequence span");
+    require(entry_c->texture.id == first_c.texture.id, "source C records new handle");
+    require(entry_c->upload_generation_id == 3, "source C records upload generation");
+    require(entry_c->first_used_sequence == 4, "source C records first use");
+    require(entry_c->last_used_sequence == 4, "source C records last use");
+    require(entry_c->access_count == 1, "source C records one access");
+}
+
 void test_texture_cache_diagnostic_snapshot_reports_entries_and_recency()
 {
     using namespace quiz_vulkan::render;
@@ -2212,6 +2401,8 @@ int main()
     test_texture_cache_skips_caching_entries_over_pixel_budget();
     test_texture_cache_pinned_residency_survives_capacity_eviction();
     test_texture_cache_pinned_residency_can_exceed_capacity_without_failures();
+    test_texture_cache_reports_upload_lifetime_and_invalidation_evictions();
+    test_texture_cache_records_capacity_eviction_lifetime_diagnostics();
     test_texture_cache_diagnostic_snapshot_reports_entries_and_recency();
     test_texture_cache_invalidates_by_texture_key_and_source();
     test_texture_cache_reports_explicit_failures();

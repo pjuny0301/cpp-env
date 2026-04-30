@@ -307,6 +307,45 @@ struct vulkan_backend_resource_binding_state {
     }
 };
 
+struct vulkan_resource_registry_entry {
+    vulkan_resource_binding_kind kind = vulkan_resource_binding_kind::batch_uniform;
+    std::string resource_id;
+    std::size_t first_command_index = 0;
+    std::size_t last_command_index = 0;
+    std::size_t use_count = 0;
+
+    bool reused() const
+    {
+        return use_count > 1;
+    }
+};
+
+struct vulkan_resource_registry_missing_resource {
+    vulkan_resource_binding_kind kind = vulkan_resource_binding_kind::batch_uniform;
+    vulkan_batch_kind batch_kind = vulkan_batch_kind::quad;
+    std::size_t command_index = 0;
+    std::size_t set = 0;
+    std::size_t binding = 0;
+    std::string resource_id;
+};
+
+struct vulkan_backend_resource_registry_state {
+    bool checked = false;
+    std::size_t planned_batch_count = 0;
+    std::size_t descriptor_binding_count = 0;
+    std::size_t registered_resource_count = 0;
+    std::size_t descriptor_reuse_count = 0;
+    std::size_t resource_reuse_count = 0;
+    std::size_t missing_resource_count = 0;
+    std::vector<vulkan_resource_registry_entry> resources;
+    std::vector<vulkan_resource_registry_missing_resource> missing_resources;
+
+    bool completed() const
+    {
+        return checked && missing_resource_count == 0;
+    }
+};
+
 struct vulkan_recorded_draw_batch {
     vulkan_batch_kind kind = vulkan_batch_kind::quad;
     std::size_t command_index = 0;
@@ -526,6 +565,7 @@ struct vulkan_backend_frame_result {
     vulkan_backend_swapchain_lifecycle_state swapchain;
     vulkan_backend_frame_sync_state frame_sync;
     vulkan_backend_resource_binding_state resource_bindings;
+    vulkan_backend_resource_registry_state resource_registry;
     vulkan_backend_pipeline_state pipeline;
     vulkan_backend_command_recorder_state command_recorder;
     vulkan_backend_frame_stage reached_stage = vulkan_backend_frame_stage::not_started;
@@ -550,6 +590,7 @@ struct vulkan_backend_frame_result {
             && frame_submitted && frame_presented && swapchain.completed()
             && frame_sync.completed()
             && resource_bindings.completed()
+            && resource_registry.completed()
             && !fallback_required;
     }
 };
@@ -583,6 +624,11 @@ public:
 vulkan_backend_resource_binding_state build_vulkan_resource_binding_state(
     const render_draw_list& draw_list,
     const vulkan_frame_plan& plan);
+
+vulkan_backend_resource_registry_state build_vulkan_resource_registry_state(
+    const render_draw_list& draw_list,
+    const vulkan_frame_plan& plan,
+    const vulkan_backend_resource_binding_state& resource_bindings);
 
 vulkan_backend_frame_result submit_vulkan_backend_frame(
     vulkan_backend_device_interface& device,

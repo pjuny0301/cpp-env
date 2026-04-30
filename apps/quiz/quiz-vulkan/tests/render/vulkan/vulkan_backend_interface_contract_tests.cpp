@@ -288,6 +288,38 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_resource_binding_s
     { resources.completed() } -> std::same_as<bool>;
 });
 
+static_assert(requires(render::vulkan_backend::vulkan_resource_registry_entry entry) {
+    { entry.kind } -> std::same_as<render::vulkan_backend::vulkan_resource_binding_kind&>;
+    { entry.resource_id } -> std::same_as<std::string&>;
+    { entry.first_command_index } -> std::same_as<std::size_t&>;
+    { entry.last_command_index } -> std::same_as<std::size_t&>;
+    { entry.use_count } -> std::same_as<std::size_t&>;
+    { entry.reused() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_resource_registry_missing_resource missing) {
+    { missing.kind } -> std::same_as<render::vulkan_backend::vulkan_resource_binding_kind&>;
+    { missing.batch_kind } -> std::same_as<render::vulkan_backend::vulkan_batch_kind&>;
+    { missing.command_index } -> std::same_as<std::size_t&>;
+    { missing.set } -> std::same_as<std::size_t&>;
+    { missing.binding } -> std::same_as<std::size_t&>;
+    { missing.resource_id } -> std::same_as<std::string&>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_backend_resource_registry_state registry) {
+    { registry.checked } -> std::same_as<bool&>;
+    { registry.planned_batch_count } -> std::same_as<std::size_t&>;
+    { registry.descriptor_binding_count } -> std::same_as<std::size_t&>;
+    { registry.registered_resource_count } -> std::same_as<std::size_t&>;
+    { registry.descriptor_reuse_count } -> std::same_as<std::size_t&>;
+    { registry.resource_reuse_count } -> std::same_as<std::size_t&>;
+    { registry.missing_resource_count } -> std::same_as<std::size_t&>;
+    { registry.resources } -> std::same_as<std::vector<render::vulkan_backend::vulkan_resource_registry_entry>&>;
+    { registry.missing_resources }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_resource_registry_missing_resource>&>;
+    { registry.completed() } -> std::same_as<bool>;
+});
+
 static_assert(requires(render::vulkan_backend::vulkan_recorded_draw_batch recorded_batch) {
     { recorded_batch.kind } -> std::same_as<render::vulkan_backend::vulkan_batch_kind&>;
     { recorded_batch.command_index } -> std::same_as<std::size_t&>;
@@ -442,6 +474,7 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_frame_result resul
     { result.swapchain } -> std::same_as<render::vulkan_backend::vulkan_backend_swapchain_lifecycle_state&>;
     { result.frame_sync } -> std::same_as<render::vulkan_backend::vulkan_backend_frame_sync_state&>;
     { result.resource_bindings } -> std::same_as<render::vulkan_backend::vulkan_backend_resource_binding_state&>;
+    { result.resource_registry } -> std::same_as<render::vulkan_backend::vulkan_backend_resource_registry_state&>;
     { result.pipeline } -> std::same_as<render::vulkan_backend::vulkan_backend_pipeline_state&>;
     { result.command_recorder } -> std::same_as<render::vulkan_backend::vulkan_backend_command_recorder_state&>;
     { result.reached_stage } -> std::same_as<render::vulkan_backend::vulkan_backend_frame_stage&>;
@@ -477,6 +510,11 @@ static_assert(requires(
         draw_list,
         render::vulkan_backend::vulkan_frame_plan{}) }
         -> std::same_as<render::vulkan_backend::vulkan_backend_resource_binding_state>;
+    { render::vulkan_backend::build_vulkan_resource_registry_state(
+        draw_list,
+        render::vulkan_backend::vulkan_frame_plan{},
+        render::vulkan_backend::vulkan_backend_resource_binding_state{}) }
+        -> std::same_as<render::vulkan_backend::vulkan_backend_resource_registry_state>;
 });
 
 static_assert(std::same_as<

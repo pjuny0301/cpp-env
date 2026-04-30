@@ -521,6 +521,48 @@ void complete_wait(vulkan_frame_sync_wait_state& state, bool success)
         : vulkan_frame_sync_wait_status::failed;
 }
 
+struct resource_registry_descriptor_key {
+    std::size_t set = 0;
+    std::size_t binding = 0;
+    vulkan_resource_binding_kind kind = vulkan_resource_binding_kind::batch_uniform;
+    std::string resource_id;
+};
+
+bool same_descriptor_key(
+    const resource_registry_descriptor_key& left,
+    const resource_registry_descriptor_key& right)
+{
+    return left.set == right.set
+        && left.binding == right.binding
+        && left.kind == right.kind
+        && left.resource_id == right.resource_id;
+}
+
+bool descriptor_key_was_seen(
+    const std::vector<resource_registry_descriptor_key>& keys,
+    const resource_registry_descriptor_key& candidate)
+{
+    for (const resource_registry_descriptor_key& key : keys) {
+        if (same_descriptor_key(key, candidate)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+vulkan_resource_registry_entry* find_registry_entry(
+    std::vector<vulkan_resource_registry_entry>& resources,
+    vulkan_resource_binding_kind kind,
+    const std::string& resource_id)
+{
+    for (vulkan_resource_registry_entry& entry : resources) {
+        if (entry.kind == kind && entry.resource_id == resource_id) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
 } // namespace
 
 std::string_view fallback_reason_name(vulkan_backend_fallback_reason reason)
@@ -965,6 +1007,74 @@ vulkan_backend_resource_binding_state build_vulkan_resource_binding_state(
     return state;
 }
 
+vulkan_backend_resource_registry_state build_vulkan_resource_registry_state(
+    const render_draw_list& draw_list,
+    const vulkan_frame_plan& plan,
+    const vulkan_backend_resource_binding_state& resource_bindings)
+{
+    static_cast<void>(draw_list);
+    static_cast<void>(plan);
+
+    vulkan_backend_resource_registry_state state;
+    state.checked = true;
+    state.planned_batch_count = resource_bindings.planned_batch_count;
+
+    std::vector<resource_registry_descriptor_key> descriptor_keys;
+    descriptor_keys.reserve(resource_bindings.binding_count);
+
+    for (const vulkan_batch_resource_binding_snapshot& batch : resource_bindings.batch_snapshots) {
+        for (const vulkan_resource_binding_snapshot& binding : batch.bindings) {
+            ++state.descriptor_binding_count;
+            if (!binding.bound()) {
+                state.missing_resources.push_back(vulkan_resource_registry_missing_resource{
+                    .kind = binding.kind,
+                    .batch_kind = batch.batch_kind,
+                    .command_index = batch.command_index,
+                    .set = binding.set,
+                    .binding = binding.binding,
+                    .resource_id = missing_resource_id_for(batch, binding.kind),
+                });
+                continue;
+            }
+
+            const resource_registry_descriptor_key descriptor_key{
+                .set = binding.set,
+                .binding = binding.binding,
+                .kind = binding.kind,
+                .resource_id = binding.resource_id,
+            };
+            if (descriptor_key_was_seen(descriptor_keys, descriptor_key)) {
+                ++state.descriptor_reuse_count;
+            } else {
+                descriptor_keys.push_back(descriptor_key);
+            }
+
+            vulkan_resource_registry_entry* entry = find_registry_entry(
+                state.resources,
+                binding.kind,
+                binding.resource_id);
+            if (entry != nullptr) {
+                ++state.resource_reuse_count;
+                ++entry->use_count;
+                entry->last_command_index = batch.command_index;
+                continue;
+            }
+
+            state.resources.push_back(vulkan_resource_registry_entry{
+                .kind = binding.kind,
+                .resource_id = binding.resource_id,
+                .first_command_index = batch.command_index,
+                .last_command_index = batch.command_index,
+                .use_count = 1,
+            });
+        }
+    }
+
+    state.registered_resource_count = state.resources.size();
+    state.missing_resource_count = state.missing_resources.size();
+    return state;
+}
+
 vulkan_backend_frame_result submit_vulkan_backend_frame(
     vulkan_backend_device_interface& device,
     const render_draw_list& draw_list,
@@ -1034,6 +1144,10 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     }
 
     result.resource_bindings = build_vulkan_resource_binding_state(draw_list, plan);
+    result.resource_registry = build_vulkan_resource_registry_state(
+        draw_list,
+        plan,
+        result.resource_bindings);
     if (!result.resource_bindings.completed()) {
         result.fallback_reason = vulkan_backend_fallback_reason::resource_binding_unavailable;
         return result;

@@ -6,6 +6,7 @@
 #include "../app/app_sound_router_interface_contract_tests.cpp"
 #include "../assets/asset_bytes_provider_interface_contract_tests.cpp"
 #include "../assets/asset_manifest_interface_contract_tests.cpp"
+#include "../assets/asset_path_policy_interface_contract_tests.cpp"
 #include "../assets/asset_runtime_catalog_interface_contract_tests.cpp"
 #include "../assets/deck_source_asset_adapter_interface_contract_tests.cpp"
 #include "../assets/asset_resolver_interface_contract_tests.cpp"

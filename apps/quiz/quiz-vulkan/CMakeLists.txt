@@ -79,6 +79,7 @@ target_sources(
         FILE_SET HEADERS
         BASE_DIRS src
         FILES
+            src/assets/asset_path_policy.h
             src/assets/asset_resolver.h
 )
 target_compile_features(quiz_vulkan_asset_contract INTERFACE cxx_std_23)

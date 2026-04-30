@@ -200,10 +200,201 @@ struct fake_image_texture_cache_snapshot {
     std::vector<fake_image_texture_cache_entry_snapshot> entries;
 };
 
+struct render_image_texture_upload_request {
+    render_image_texture_key key;
+    render_image_sampler_policy sampler;
+    render_decoded_image image;
+};
+
+enum class render_image_texture_upload_status {
+    uploaded,
+    invalid_key,
+    invalid_sampler,
+    unsupported_format,
+    invalid_image,
+};
+
+struct render_image_texture_upload_result {
+    render_image_texture_upload_status status = render_image_texture_upload_status::invalid_image;
+    render_image_texture_key key;
+    render_image_texture_handle texture;
+    std::size_t pixel_count = 0;
+    std::size_t pixel_byte_count = 0;
+    std::size_t decoded_byte_count = 0;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return status == render_image_texture_upload_status::uploaded && texture.valid();
+    }
+};
+
+class image_texture_uploader_interface {
+public:
+    virtual ~image_texture_uploader_interface() = default;
+
+    virtual render_image_texture_upload_result upload(
+        const render_image_texture_upload_request& request) = 0;
+};
+
+struct fake_image_texture_upload_snapshot_entry {
+    render_image_texture_key key;
+    render_image_texture_handle texture;
+    render_image_texture_upload_status status = render_image_texture_upload_status::invalid_image;
+    std::size_t pixel_count = 0;
+    std::size_t pixel_byte_count = 0;
+    std::size_t decoded_byte_count = 0;
+    std::string diagnostic;
+};
+
+struct fake_image_texture_upload_snapshot {
+    std::size_t upload_count = 0;
+    std::size_t failed_upload_count = 0;
+    std::size_t uploaded_pixel_count = 0;
+    std::size_t uploaded_pixel_byte_count = 0;
+    std::size_t uploaded_decoded_byte_count = 0;
+    std::vector<fake_image_texture_upload_snapshot_entry> entries;
+};
+
+class fake_image_texture_uploader final : public image_texture_uploader_interface {
+public:
+    render_image_texture_upload_result upload(const render_image_texture_upload_request& request) override
+    {
+        upload_requests.push_back(request);
+
+        const std::size_t pixel_byte_count = expected_render_decoded_image_byte_count(request.image);
+        const std::size_t decoded_byte_count = request.image.pixels.size();
+        std::size_t pixel_count = 0;
+        if (request.image.width != 0 && request.image.height != 0
+            && request.image.width <= std::numeric_limits<std::size_t>::max() / request.image.height) {
+            pixel_count = request.image.width * request.image.height;
+        }
+
+        if (!is_valid_render_image_texture_key(request.key)) {
+            return record_result(render_image_texture_upload_result{
+                .status = render_image_texture_upload_status::invalid_key,
+                .key = request.key,
+                .texture = {},
+                .pixel_count = pixel_count,
+                .pixel_byte_count = pixel_byte_count,
+                .decoded_byte_count = decoded_byte_count,
+                .diagnostic = "image texture upload key is empty or contains control characters",
+            });
+        }
+
+        if (request.key.sampler != request.sampler || !is_valid_render_image_sampler_policy(request.sampler)) {
+            return record_result(render_image_texture_upload_result{
+                .status = render_image_texture_upload_status::invalid_sampler,
+                .key = request.key,
+                .texture = {},
+                .pixel_count = pixel_count,
+                .pixel_byte_count = pixel_byte_count,
+                .decoded_byte_count = decoded_byte_count,
+                .diagnostic = "image texture upload sampler policy is invalid or does not match the texture key",
+            });
+        }
+
+        if (render_image_pixel_format_byte_count(request.image.pixel_format) == 0) {
+            return record_result(render_image_texture_upload_result{
+                .status = render_image_texture_upload_status::unsupported_format,
+                .key = request.key,
+                .texture = {},
+                .pixel_count = pixel_count,
+                .pixel_byte_count = pixel_byte_count,
+                .decoded_byte_count = decoded_byte_count,
+                .diagnostic = "image texture upload pixel format is unsupported",
+            });
+        }
+
+        if (!has_valid_render_decoded_image_payload(request.image)) {
+            return record_result(render_image_texture_upload_result{
+                .status = render_image_texture_upload_status::invalid_image,
+                .key = request.key,
+                .texture = {},
+                .pixel_count = pixel_count,
+                .pixel_byte_count = pixel_byte_count,
+                .decoded_byte_count = decoded_byte_count,
+                .diagnostic = "image texture upload payload size does not match dimensions and format",
+            });
+        }
+
+        return record_result(render_image_texture_upload_result{
+            .status = render_image_texture_upload_status::uploaded,
+            .key = request.key,
+            .texture = render_image_texture_handle{
+                .id = next_id_++,
+                .revision = 1,
+                .width = request.image.width,
+                .height = request.image.height,
+            },
+            .pixel_count = pixel_count,
+            .pixel_byte_count = pixel_byte_count,
+            .decoded_byte_count = decoded_byte_count,
+            .diagnostic = {},
+        });
+    }
+
+    fake_image_texture_upload_snapshot diagnostic_snapshot() const
+    {
+        fake_image_texture_upload_snapshot snapshot{
+            .upload_count = upload_results.size(),
+            .failed_upload_count = failed_upload_count_,
+            .uploaded_pixel_count = uploaded_pixel_count_,
+            .uploaded_pixel_byte_count = uploaded_pixel_byte_count_,
+            .uploaded_decoded_byte_count = uploaded_decoded_byte_count_,
+            .entries = {},
+        };
+        snapshot.entries.reserve(upload_results.size());
+        for (const render_image_texture_upload_result& result : upload_results) {
+            snapshot.entries.push_back(fake_image_texture_upload_snapshot_entry{
+                .key = result.key,
+                .texture = result.texture,
+                .status = result.status,
+                .pixel_count = result.pixel_count,
+                .pixel_byte_count = result.pixel_byte_count,
+                .decoded_byte_count = result.decoded_byte_count,
+                .diagnostic = result.diagnostic,
+            });
+        }
+        return snapshot;
+    }
+
+    std::vector<render_image_texture_upload_request> upload_requests;
+    std::vector<render_image_texture_upload_result> upload_results;
+
+private:
+    render_image_texture_upload_result record_result(render_image_texture_upload_result result)
+    {
+        if (result.ok()) {
+            uploaded_pixel_count_ += result.pixel_count;
+            uploaded_pixel_byte_count_ += result.pixel_byte_count;
+            uploaded_decoded_byte_count_ += result.decoded_byte_count;
+        } else {
+            ++failed_upload_count_;
+        }
+
+        upload_results.push_back(result);
+        return result;
+    }
+
+    render_image_texture_id next_id_ = 1;
+    std::size_t failed_upload_count_ = 0;
+    std::size_t uploaded_pixel_count_ = 0;
+    std::size_t uploaded_pixel_byte_count_ = 0;
+    std::size_t uploaded_decoded_byte_count_ = 0;
+};
+
 class fake_image_texture_cache final : public image_texture_cache_interface {
 public:
     explicit fake_image_texture_cache(const image_decoder_interface& decoder)
         : decoder_(decoder)
+        , uploader_(&internal_uploader_)
+    {
+    }
+
+    fake_image_texture_cache(const image_decoder_interface& decoder, image_texture_uploader_interface& uploader)
+        : decoder_(decoder)
+        , uploader_(&uploader)
     {
     }
 
@@ -315,15 +506,27 @@ public:
             };
         }
 
-        const render_image_texture_handle handle{
-            .id = next_id_++,
-            .revision = 1,
-            .width = decoded.image.width,
-            .height = decoded.image.height,
-        };
-        const std::size_t pixel_count = decoded.image.width * decoded.image.height;
-        const std::size_t pixel_byte_count = expected_render_decoded_image_byte_count(decoded.image);
-        const std::size_t decoded_byte_count = decoded.image.pixels.size();
+        const render_image_texture_upload_result uploaded = uploader_->upload(render_image_texture_upload_request{
+            .key = key,
+            .sampler = request.sampler,
+            .image = decoded.image,
+        });
+        if (!uploaded.ok()) {
+            return render_image_texture_result{
+                .status = render_image_texture_status::upload_failed,
+                .key = key,
+                .texture = {},
+                .cache_hit = false,
+                .diagnostic = uploaded.diagnostic,
+                .decode_metadata = decoded.metadata,
+                .decoder_diagnostics = decoded.decoder_diagnostics,
+            };
+        }
+
+        const render_image_texture_handle handle = uploaded.texture;
+        const std::size_t pixel_count = uploaded.pixel_count;
+        const std::size_t pixel_byte_count = uploaded.pixel_byte_count;
+        const std::size_t decoded_byte_count = uploaded.decoded_byte_count;
         if (pixel_count <= max_cached_pixel_count_) {
             evict_to_fit(pixel_count);
             cached_pixel_count_ += pixel_count;
@@ -517,7 +720,8 @@ private:
     }
 
     const image_decoder_interface& decoder_;
-    render_image_texture_id next_id_ = 1;
+    fake_image_texture_uploader internal_uploader_;
+    image_texture_uploader_interface* uploader_ = nullptr;
     std::size_t next_access_sequence_ = 1;
     int release_unused_count_ = 0;
     std::size_t max_cached_pixel_count_ = std::numeric_limits<std::size_t>::max();

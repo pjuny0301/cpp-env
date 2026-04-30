@@ -67,6 +67,25 @@ std::vector<std::byte> make_ppm_1x1_encoded_bytes()
     return bytes;
 }
 
+quiz_vulkan::render::render_decoded_image make_rgba_2x1_decoded_image()
+{
+    return quiz_vulkan::render::render_decoded_image{
+        .width = 2,
+        .height = 1,
+        .pixel_format = quiz_vulkan::render::render_image_pixel_format::rgba8_srgb,
+        .pixels = {
+            std::byte{0xff},
+            std::byte{0x00},
+            std::byte{0x00},
+            std::byte{0xff},
+            std::byte{0x00},
+            std::byte{0xff},
+            std::byte{0x00},
+            std::byte{0xff},
+        },
+    };
+}
+
 class malformed_payload_decoder final : public quiz_vulkan::render::image_decoder_interface {
 public:
     bool supports(const quiz_vulkan::render::render_image_decode_request&) const override
@@ -549,6 +568,154 @@ void test_texture_cache_can_use_loaded_source_bytes()
     require(texture.texture.height == 1, "texture cache preserves source loader decoded height");
     require(cache.cached_texture_count() == 1, "texture cache stores texture created from source loader bytes");
     require(cache.cached_decoded_byte_count() == 8, "source loader fixture decodes to rgba bytes");
+}
+
+void test_texture_uploader_uploads_valid_decoded_image()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_image_texture_key key{
+        .source_key = "textures/upload.ppm",
+        .sampler = render_image_sampler_policy{},
+    };
+    fake_image_texture_uploader uploader;
+    const render_image_texture_upload_result uploaded = uploader.upload(render_image_texture_upload_request{
+        .key = key,
+        .sampler = render_image_sampler_policy{},
+        .image = make_rgba_2x1_decoded_image(),
+    });
+
+    require(uploaded.ok(), "texture uploader uploads valid decoded image");
+    require(uploaded.status == render_image_texture_upload_status::uploaded, "texture uploader reports uploaded");
+    require(uploaded.texture.valid(), "texture uploader returns valid handle");
+    require(uploaded.texture.id == 1, "texture uploader handle id is deterministic");
+    require(uploaded.texture.width == 2, "texture uploader handle carries width");
+    require(uploaded.texture.height == 1, "texture uploader handle carries height");
+    require(uploaded.pixel_count == 2, "texture uploader reports pixel count");
+    require(uploaded.pixel_byte_count == 8, "texture uploader reports expected pixel bytes");
+    require(uploaded.decoded_byte_count == 8, "texture uploader reports decoded byte count");
+    require(uploader.upload_requests.size() == 1, "texture uploader records upload request");
+
+    const fake_image_texture_upload_snapshot snapshot = uploader.diagnostic_snapshot();
+    require(snapshot.upload_count == 1, "texture uploader snapshot reports upload count");
+    require(snapshot.failed_upload_count == 0, "texture uploader snapshot reports no failures");
+    require(snapshot.uploaded_pixel_count == 2, "texture uploader snapshot reports uploaded pixels");
+    require(snapshot.uploaded_pixel_byte_count == 8, "texture uploader snapshot reports uploaded pixel bytes");
+    require(snapshot.uploaded_decoded_byte_count == 8, "texture uploader snapshot reports uploaded decoded bytes");
+    require(snapshot.entries.size() == 1, "texture uploader snapshot records entry");
+    require(snapshot.entries[0].key == key, "texture uploader snapshot records key");
+    require(snapshot.entries[0].texture.id == uploaded.texture.id, "texture uploader snapshot records handle");
+    require(snapshot.entries[0].status == render_image_texture_upload_status::uploaded, "snapshot records status");
+}
+
+void test_texture_uploader_rejects_invalid_inputs()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_image_texture_key valid_key{
+        .source_key = "textures/upload-invalid.ppm",
+        .sampler = render_image_sampler_policy{},
+    };
+    fake_image_texture_uploader uploader;
+
+    const render_image_texture_upload_result invalid_key = uploader.upload(render_image_texture_upload_request{
+        .key = render_image_texture_key{.source_key = {}, .sampler = render_image_sampler_policy{}},
+        .sampler = render_image_sampler_policy{},
+        .image = make_rgba_2x1_decoded_image(),
+    });
+    require(!invalid_key.ok(), "texture uploader rejects invalid key");
+    require(invalid_key.status == render_image_texture_upload_status::invalid_key, "invalid key status is reported");
+    require(!invalid_key.diagnostic.empty(), "invalid key includes diagnostic");
+
+    render_image_sampler_policy invalid_sampler;
+    invalid_sampler.wrap_u = static_cast<render_image_wrap_mode>(99);
+    const render_image_texture_upload_result invalid_sampler_result = uploader.upload(
+        render_image_texture_upload_request{
+            .key = valid_key,
+            .sampler = invalid_sampler,
+            .image = make_rgba_2x1_decoded_image(),
+        });
+    require(!invalid_sampler_result.ok(), "texture uploader rejects invalid sampler");
+    require(
+        invalid_sampler_result.status == render_image_texture_upload_status::invalid_sampler,
+        "invalid sampler status is reported");
+    require(!invalid_sampler_result.diagnostic.empty(), "invalid sampler includes diagnostic");
+
+    render_decoded_image unsupported_format = make_rgba_2x1_decoded_image();
+    unsupported_format.pixel_format = static_cast<render_image_pixel_format>(99);
+    const render_image_texture_upload_result unsupported = uploader.upload(render_image_texture_upload_request{
+        .key = valid_key,
+        .sampler = render_image_sampler_policy{},
+        .image = unsupported_format,
+    });
+    require(!unsupported.ok(), "texture uploader rejects unsupported format");
+    require(
+        unsupported.status == render_image_texture_upload_status::unsupported_format,
+        "unsupported format status is reported");
+    require(!unsupported.diagnostic.empty(), "unsupported format includes diagnostic");
+
+    render_decoded_image invalid_payload = make_rgba_2x1_decoded_image();
+    invalid_payload.pixels.pop_back();
+    const render_image_texture_upload_result invalid_image = uploader.upload(render_image_texture_upload_request{
+        .key = valid_key,
+        .sampler = render_image_sampler_policy{},
+        .image = invalid_payload,
+    });
+    require(!invalid_image.ok(), "texture uploader rejects invalid payload");
+    require(
+        invalid_image.status == render_image_texture_upload_status::invalid_image,
+        "invalid payload status is reported");
+    require(!invalid_image.diagnostic.empty(), "invalid payload includes diagnostic");
+
+    const fake_image_texture_upload_snapshot snapshot = uploader.diagnostic_snapshot();
+    require(snapshot.upload_count == 4, "texture uploader snapshot records failed attempts");
+    require(snapshot.failed_upload_count == 4, "texture uploader snapshot counts failures");
+    require(snapshot.entries.size() == 4, "texture uploader snapshot records failure entries");
+    require(snapshot.uploaded_pixel_count == 0, "texture uploader snapshot excludes failed pixels");
+    require(snapshot.entries[0].status == render_image_texture_upload_status::invalid_key, "snapshot records invalid key");
+    require(
+        snapshot.entries[1].status == render_image_texture_upload_status::invalid_sampler,
+        "snapshot records invalid sampler");
+    require(
+        snapshot.entries[2].status == render_image_texture_upload_status::unsupported_format,
+        "snapshot records unsupported format");
+    require(
+        snapshot.entries[3].status == render_image_texture_upload_status::invalid_image,
+        "snapshot records invalid image");
+}
+
+void test_texture_cache_uses_injected_texture_uploader()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/cache-uploader.ppm"})
+                                                .source;
+    ppm_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    cache.set_placeholder_encoded_bytes_for_source(source.cache_key(), make_ppm_1x1_encoded_bytes());
+
+    const render_image_texture_request request{.source = source, .sampler = render_image_sampler_policy{}};
+    const render_image_texture_result first = cache.acquire_texture(request);
+    require(first.ok(), "texture cache uses injected uploader to create texture");
+    require(!first.cache_hit, "first uploader-backed cache request is a miss");
+    require(first.texture.id == 1, "injected uploader returns deterministic texture id");
+    require(uploader.upload_requests.size() == 1, "injected uploader records first upload");
+    require(uploader.upload_requests[0].key == first.key, "injected uploader receives texture key");
+    require(uploader.upload_requests[0].sampler == request.sampler, "injected uploader receives sampler");
+    require(uploader.upload_requests[0].image.width == 1, "injected uploader receives decoded image");
+
+    const render_image_texture_result second = cache.acquire_texture(request);
+    require(second.ok(), "uploader-backed cache request can be reacquired");
+    require(second.cache_hit, "uploader-backed cache hit avoids upload");
+    require(second.texture.id == first.texture.id, "uploader-backed cache hit reuses handle");
+    require(uploader.upload_requests.size() == 1, "cache hit does not call uploader again");
+
+    const fake_image_texture_upload_snapshot snapshot = uploader.diagnostic_snapshot();
+    require(snapshot.upload_count == 1, "injected uploader snapshot records one upload");
+    require(snapshot.entries[0].texture.id == first.texture.id, "injected uploader snapshot matches cache handle");
 }
 
 void test_sampler_policy_validation_rejects_unknown_enum_values()
@@ -1314,6 +1481,9 @@ int main()
     test_source_bytes_loader_returns_registered_local_bytes();
     test_source_bytes_loader_reports_explicit_failures();
     test_texture_cache_can_use_loaded_source_bytes();
+    test_texture_uploader_uploads_valid_decoded_image();
+    test_texture_uploader_rejects_invalid_inputs();
+    test_texture_cache_uses_injected_texture_uploader();
     test_sampler_policy_validation_rejects_unknown_enum_values();
     test_texture_cache_reuses_matching_key_and_misses_on_sampler_change();
     test_texture_cache_keys_include_all_sampler_policy_fields();

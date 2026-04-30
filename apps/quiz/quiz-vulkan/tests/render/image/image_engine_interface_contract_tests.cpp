@@ -107,6 +107,9 @@ static_assert(requires(const render::render_decoded_image& image, render::render
 
 static_assert(requires(
     render::render_image_decode_metadata metadata,
+    render::render_image_encoded_format encoded_format,
+    render::render_image_format_detection_summary format_detection,
+    render::render_image_decode_size_validation size_validation,
     render::render_image_decoder_diagnostic diagnostic,
     render::render_image_decode_result decode_result,
     render::render_image_texture_result texture_result,
@@ -145,7 +148,27 @@ static_assert(requires(
     { metadata.height } -> std::same_as<std::size_t&>;
     { metadata.pixel_format } -> std::same_as<render::render_image_pixel_format&>;
     { metadata.decoded_byte_count } -> std::same_as<std::size_t&>;
+    { metadata.format_detection } -> std::same_as<render::render_image_format_detection_summary&>;
+    { metadata.size_validation } -> std::same_as<render::render_image_decode_size_validation&>;
     { metadata.has_image() } -> std::same_as<bool>;
+    { format_detection.detected_format } -> std::same_as<render::render_image_encoded_format&>;
+    { format_detection.extension_hint } -> std::same_as<std::string&>;
+    { format_detection.recognized_signature } -> std::same_as<bool&>;
+    { format_detection.placeholder_fallback } -> std::same_as<bool&>;
+    { format_detection.diagnostic } -> std::same_as<std::string&>;
+    { size_validation.row_stride_byte_count } -> std::same_as<std::size_t&>;
+    { size_validation.expected_decoded_byte_count } -> std::same_as<std::size_t&>;
+    { size_validation.actual_decoded_byte_count } -> std::same_as<std::size_t&>;
+    { size_validation.valid } -> std::same_as<bool&>;
+    { size_validation.diagnostic } -> std::same_as<std::string&>;
+    { render::image_decode_extension_hint("asset://card.PNG") } -> std::same_as<std::string>;
+    { render::detect_render_image_format(request) } -> std::same_as<render::render_image_format_detection_summary>;
+    { render::render_image_decode_pixel_format_byte_count(render::render_image_pixel_format::rgba8_srgb) }
+        -> std::same_as<std::size_t>;
+    { render::validate_render_image_decode_size(image) } -> std::same_as<render::render_image_decode_size_validation>;
+    { render::with_placeholder_fallback(format_detection, "fake") }
+        -> std::same_as<render::render_image_format_detection_summary>;
+    encoded_format;
     { diagnostic.decoder_id } -> std::same_as<std::string&>;
     { diagnostic.supported } -> std::same_as<bool&>;
     { diagnostic.status } -> std::same_as<render::render_image_decode_status&>;

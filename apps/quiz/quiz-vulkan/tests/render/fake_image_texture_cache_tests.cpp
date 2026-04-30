@@ -68,6 +68,34 @@ std::vector<std::byte> make_ppm_1x1_encoded_bytes()
     return bytes;
 }
 
+std::vector<std::byte> make_png_signature_fixture_bytes()
+{
+    std::vector<std::byte> bytes;
+    append_byte(bytes, 0x89);
+    append_ascii(bytes, "PNG\r\n");
+    append_byte(bytes, 0x1a);
+    append_byte(bytes, '\n');
+    append_ascii(bytes, "fake-png-payload");
+    return bytes;
+}
+
+std::vector<std::byte> make_jpeg_signature_fixture_bytes()
+{
+    std::vector<std::byte> bytes;
+    append_byte(bytes, 0xff);
+    append_byte(bytes, 0xd8);
+    append_byte(bytes, 0xff);
+    append_ascii(bytes, "fake-jpeg-payload");
+    return bytes;
+}
+
+std::vector<std::byte> make_unknown_image_fixture_bytes()
+{
+    std::vector<std::byte> bytes;
+    append_ascii(bytes, "not-a-known-image-format");
+    return bytes;
+}
+
 quiz_vulkan::render::render_decoded_image make_rgba_2x1_decoded_image()
 {
     return quiz_vulkan::render::render_decoded_image{
@@ -256,9 +284,98 @@ void test_decoder_interface_shape()
     require(decoded.metadata.height == 1, "fake decoder reports metadata height");
     require(decoded.metadata.decoded_byte_count == 8, "fake decoder reports decoded byte count");
     require(decoded.metadata.has_image(), "fake decoder metadata reports image");
+    require(
+        decoded.metadata.format_detection.detected_format == render_image_encoded_format::unknown,
+        "fake decoder reports unknown fixture format by default");
+    require(decoded.metadata.format_detection.placeholder_fallback, "fake decoder reports placeholder fallback");
+    require(decoded.metadata.size_validation.valid, "fake decoder validates decoded size");
+    require(decoded.metadata.size_validation.row_stride_byte_count == 8, "fake decoder reports row stride");
+    require(decoded.metadata.size_validation.expected_decoded_byte_count == 8, "fake decoder reports expected byte count");
     require(decoded.decoder_diagnostics.empty(), "direct fake decoder has no chain diagnostics");
     require(decoder.support_requests.size() == 1, "support request was recorded");
     require(decoder.decode_requests.size() == 1, "decode request was recorded");
+}
+
+void test_fake_decoder_reports_format_detection_and_placeholder_fallbacks()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_resolved_image_source source{
+        .original_uri = "asset://card.fake",
+        .normalized_uri = "asset://card.fake",
+        .kind = render_image_source_kind::asset_uri,
+    };
+    fake_image_decoder decoder;
+
+    const render_image_decode_result png = decoder.decode(render_image_decode_request{
+        .source = source,
+        .encoded_bytes = make_png_signature_fixture_bytes(),
+    });
+    require(png.ok(), "fake decoder decodes PNG fixture through placeholder fallback");
+    require(
+        png.metadata.format_detection.detected_format == render_image_encoded_format::png,
+        "fake decoder detects PNG signature");
+    require(png.metadata.format_detection.extension_hint == "fake", "fake decoder reports extension hint");
+    require(png.metadata.format_detection.recognized_signature, "PNG fixture has recognized signature");
+    require(png.metadata.format_detection.placeholder_fallback, "PNG fixture reports placeholder fallback");
+    require(!png.metadata.format_detection.diagnostic.empty(), "PNG fallback includes diagnostic");
+    require(png.metadata.size_validation.valid, "PNG placeholder validates decoded payload");
+    require(png.metadata.size_validation.row_stride_byte_count == 8, "PNG placeholder reports row stride");
+
+    const render_image_decode_result jpeg = decoder.decode(render_image_decode_request{
+        .source = source,
+        .encoded_bytes = make_jpeg_signature_fixture_bytes(),
+    });
+    require(jpeg.ok(), "fake decoder decodes JPEG fixture through placeholder fallback");
+    require(
+        jpeg.metadata.format_detection.detected_format == render_image_encoded_format::jpeg,
+        "fake decoder detects JPEG signature");
+    require(jpeg.metadata.format_detection.recognized_signature, "JPEG fixture has recognized signature");
+    require(jpeg.metadata.format_detection.placeholder_fallback, "JPEG fixture reports placeholder fallback");
+    require(jpeg.metadata.size_validation.expected_decoded_byte_count == 8, "JPEG placeholder reports byte size");
+    require(jpeg.metadata.size_validation.actual_decoded_byte_count == 8, "JPEG placeholder reports actual bytes");
+
+    const render_image_decode_result unknown = decoder.decode(render_image_decode_request{
+        .source = source,
+        .encoded_bytes = make_unknown_image_fixture_bytes(),
+    });
+    require(unknown.ok(), "fake decoder decodes unknown fixture through placeholder fallback");
+    require(
+        unknown.metadata.format_detection.detected_format == render_image_encoded_format::unknown,
+        "fake decoder reports unknown format");
+    require(!unknown.metadata.format_detection.recognized_signature, "unknown fixture has no recognized signature");
+    require(unknown.metadata.format_detection.placeholder_fallback, "unknown fixture reports placeholder fallback");
+    require(!unknown.metadata.format_detection.diagnostic.empty(), "unknown fallback includes diagnostic");
+    require(unknown.metadata.size_validation.valid, "unknown placeholder validates decoded payload");
+    require(decoder.decode_requests.size() == 3, "fake decoder records format diagnostic decode requests");
+}
+
+void test_decoder_size_validation_reports_stride_and_invalid_payloads()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_decoded_image valid = make_rgba_2x1_decoded_image();
+    const render_image_decode_size_validation valid_size = validate_render_image_decode_size(valid);
+    require(valid_size.valid, "decoded size validation accepts valid RGBA payload");
+    require(valid_size.row_stride_byte_count == 8, "decoded size validation reports row stride");
+    require(valid_size.expected_decoded_byte_count == 8, "decoded size validation reports expected bytes");
+    require(valid_size.actual_decoded_byte_count == 8, "decoded size validation reports actual bytes");
+
+    render_decoded_image short_payload = make_rgba_2x1_decoded_image();
+    short_payload.pixels.pop_back();
+    const render_image_decode_size_validation invalid_size = validate_render_image_decode_size(short_payload);
+    require(!invalid_size.valid, "decoded size validation rejects short payload");
+    require(invalid_size.row_stride_byte_count == 8, "invalid payload still reports row stride");
+    require(invalid_size.expected_decoded_byte_count == 8, "invalid payload reports expected bytes");
+    require(invalid_size.actual_decoded_byte_count == 7, "invalid payload reports actual bytes");
+    require(!invalid_size.diagnostic.empty(), "invalid payload includes size diagnostic");
+
+    render_decoded_image unknown_format = make_rgba_2x1_decoded_image();
+    unknown_format.pixel_format = static_cast<render_image_pixel_format>(99);
+    const render_image_decode_size_validation invalid_format = validate_render_image_decode_size(unknown_format);
+    require(!invalid_format.valid, "decoded size validation rejects unknown pixel format");
+    require(invalid_format.expected_decoded_byte_count == 0, "unknown pixel format has no expected byte count");
+    require(!invalid_format.diagnostic.empty(), "unknown pixel format includes size diagnostic");
 }
 
 void test_decoder_reports_explicit_failures()
@@ -344,6 +461,13 @@ void test_ppm_decoder_decodes_binary_rgb_to_rgba()
     require(decoded.metadata.height == 1, "ppm decoder metadata carries height");
     require(decoded.metadata.decoded_byte_count == 8, "ppm decoder metadata carries decoded byte count");
     require(decoded.metadata.has_image(), "ppm decoder metadata reports image");
+    require(
+        decoded.metadata.format_detection.detected_format == render_image_encoded_format::ppm,
+        "ppm decoder reports detected PPM format");
+    require(decoded.metadata.format_detection.recognized_signature, "ppm decoder reports recognized signature");
+    require(!decoded.metadata.format_detection.placeholder_fallback, "ppm decoder does not use placeholder fallback");
+    require(decoded.metadata.size_validation.valid, "ppm decoder validates decoded size");
+    require(decoded.metadata.size_validation.row_stride_byte_count == 8, "ppm decoder reports row stride");
 }
 
 void test_ppm_decoder_reports_invalid_payload_size()
@@ -1851,6 +1975,8 @@ int main()
     test_sampler_defaults_are_appended_to_render_image_ref();
     test_resolver_normalizes_without_fetching();
     test_decoder_interface_shape();
+    test_fake_decoder_reports_format_detection_and_placeholder_fallbacks();
+    test_decoder_size_validation_reports_stride_and_invalid_payloads();
     test_decoder_reports_explicit_failures();
     test_ppm_decoder_decodes_binary_rgb_to_rgba();
     test_ppm_decoder_reports_invalid_payload_size();

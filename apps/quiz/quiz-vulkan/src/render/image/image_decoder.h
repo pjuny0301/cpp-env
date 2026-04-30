@@ -2,10 +2,12 @@
 
 #include "render/image/image_types.h"
 
+#include <cctype>
 #include <cstddef>
 #include <functional>
 #include <limits>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -14,6 +16,29 @@ namespace quiz_vulkan::render {
 struct render_image_decode_request {
     render_resolved_image_source source;
     std::vector<std::byte> encoded_bytes;
+};
+
+enum class render_image_encoded_format {
+    unknown,
+    png,
+    jpeg,
+    ppm,
+};
+
+struct render_image_format_detection_summary {
+    render_image_encoded_format detected_format = render_image_encoded_format::unknown;
+    std::string extension_hint;
+    bool recognized_signature = false;
+    bool placeholder_fallback = false;
+    std::string diagnostic;
+};
+
+struct render_image_decode_size_validation {
+    std::size_t row_stride_byte_count = 0;
+    std::size_t expected_decoded_byte_count = 0;
+    std::size_t actual_decoded_byte_count = 0;
+    bool valid = false;
+    std::string diagnostic;
 };
 
 enum class render_image_decode_status {
@@ -30,6 +55,8 @@ struct render_image_decode_metadata {
     std::size_t height = 0;
     render_image_pixel_format pixel_format = render_image_pixel_format::rgba8_srgb;
     std::size_t decoded_byte_count = 0;
+    render_image_format_detection_summary format_detection;
+    render_image_decode_size_validation size_validation;
 
     bool has_image() const
     {
@@ -57,6 +84,169 @@ struct render_image_decode_result {
     }
 };
 
+inline std::string image_decode_extension_hint(std::string_view normalized_uri)
+{
+    const std::string::size_type last_dot = normalized_uri.find_last_of('.');
+    if (last_dot == std::string_view::npos || last_dot + 1 >= normalized_uri.size()) {
+        return {};
+    }
+
+    std::string extension(normalized_uri.substr(last_dot + 1));
+    for (char& value : extension) {
+        value = static_cast<char>(std::tolower(static_cast<unsigned char>(value)));
+    }
+    return extension;
+}
+
+inline bool starts_with_png_signature(const std::vector<std::byte>& bytes)
+{
+    constexpr unsigned char signature[] = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
+    constexpr std::size_t signature_size = sizeof(signature) / sizeof(signature[0]);
+    if (bytes.size() < signature_size) {
+        return false;
+    }
+    for (std::size_t index = 0; index < signature_size; ++index) {
+        if (std::to_integer<unsigned char>(bytes[index]) != signature[index]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+inline bool starts_with_jpeg_signature(const std::vector<std::byte>& bytes)
+{
+    return bytes.size() >= 3
+        && std::to_integer<unsigned char>(bytes[0]) == 0xff
+        && std::to_integer<unsigned char>(bytes[1]) == 0xd8
+        && std::to_integer<unsigned char>(bytes[2]) == 0xff;
+}
+
+inline bool starts_with_ppm_signature(const std::vector<std::byte>& bytes)
+{
+    return bytes.size() >= 2
+        && std::to_integer<unsigned char>(bytes[0]) == 'P'
+        && std::to_integer<unsigned char>(bytes[1]) == '6';
+}
+
+inline render_image_format_detection_summary detect_render_image_format(
+    const render_image_decode_request& request)
+{
+    render_image_format_detection_summary summary{
+        .detected_format = render_image_encoded_format::unknown,
+        .extension_hint = image_decode_extension_hint(request.source.normalized_uri),
+        .recognized_signature = false,
+        .placeholder_fallback = false,
+        .diagnostic = {},
+    };
+
+    if (request.encoded_bytes.empty()) {
+        summary.diagnostic = "image format detection requires encoded bytes";
+        return summary;
+    }
+
+    if (starts_with_png_signature(request.encoded_bytes)) {
+        summary.detected_format = render_image_encoded_format::png;
+        summary.recognized_signature = true;
+        summary.diagnostic = "image format detection found PNG signature";
+        return summary;
+    }
+
+    if (starts_with_jpeg_signature(request.encoded_bytes)) {
+        summary.detected_format = render_image_encoded_format::jpeg;
+        summary.recognized_signature = true;
+        summary.diagnostic = "image format detection found JPEG signature";
+        return summary;
+    }
+
+    if (starts_with_ppm_signature(request.encoded_bytes)) {
+        summary.detected_format = render_image_encoded_format::ppm;
+        summary.recognized_signature = true;
+        summary.diagnostic = "image format detection found binary PPM signature";
+        return summary;
+    }
+
+    summary.diagnostic = "image format detection did not recognize encoded bytes";
+    return summary;
+}
+
+inline std::size_t render_image_decode_pixel_format_byte_count(render_image_pixel_format pixel_format)
+{
+    switch (pixel_format) {
+    case render_image_pixel_format::rgba8_unorm:
+    case render_image_pixel_format::rgba8_srgb:
+        return 4;
+    }
+
+    return 0;
+}
+
+inline render_image_decode_size_validation validate_render_image_decode_size(
+    const render_decoded_image& image)
+{
+    render_image_decode_size_validation validation{
+        .row_stride_byte_count = 0,
+        .expected_decoded_byte_count = 0,
+        .actual_decoded_byte_count = image.pixels.size(),
+        .valid = false,
+        .diagnostic = {},
+    };
+
+    const std::size_t bytes_per_pixel = render_image_decode_pixel_format_byte_count(image.pixel_format);
+    if (bytes_per_pixel == 0) {
+        validation.diagnostic = "decoded image pixel format is unsupported";
+        return validation;
+    }
+    if (image.width == 0 || image.height == 0) {
+        validation.diagnostic = "decoded image dimensions are empty";
+        return validation;
+    }
+
+    constexpr std::size_t max_size = std::numeric_limits<std::size_t>::max();
+    if (image.width > max_size / bytes_per_pixel) {
+        validation.diagnostic = "decoded image row stride overflows";
+        return validation;
+    }
+    validation.row_stride_byte_count = image.width * bytes_per_pixel;
+    if (validation.row_stride_byte_count > max_size / image.height) {
+        validation.diagnostic = "decoded image byte size overflows";
+        return validation;
+    }
+    validation.expected_decoded_byte_count = validation.row_stride_byte_count * image.height;
+    if (validation.actual_decoded_byte_count != validation.expected_decoded_byte_count) {
+        validation.diagnostic = "decoded image byte size does not match dimensions and pixel format";
+        return validation;
+    }
+
+    validation.valid = true;
+    return validation;
+}
+
+inline render_image_format_detection_summary with_placeholder_fallback(
+    render_image_format_detection_summary summary,
+    std::string_view decoder_id)
+{
+    summary.placeholder_fallback = true;
+    switch (summary.detected_format) {
+    case render_image_encoded_format::png:
+        summary.diagnostic = std::string(decoder_id)
+            + " detected PNG bytes and used deterministic placeholder pixels";
+        break;
+    case render_image_encoded_format::jpeg:
+        summary.diagnostic = std::string(decoder_id)
+            + " detected JPEG bytes and used deterministic placeholder pixels";
+        break;
+    case render_image_encoded_format::ppm:
+        summary.diagnostic = std::string(decoder_id)
+            + " detected PPM bytes and used deterministic placeholder pixels";
+        break;
+    case render_image_encoded_format::unknown:
+        summary.diagnostic = std::string(decoder_id)
+            + " used deterministic placeholder pixels for unknown encoded bytes";
+        break;
+    }
+    return summary;
+}
+
 inline render_image_decode_metadata make_render_image_decode_metadata(
     std::string decoder_id,
     const render_image_decode_request& request,
@@ -69,6 +259,8 @@ inline render_image_decode_metadata make_render_image_decode_metadata(
         .height = image.height,
         .pixel_format = image.pixel_format,
         .decoded_byte_count = image.pixels.size(),
+        .format_detection = detect_render_image_format(request),
+        .size_validation = validate_render_image_decode_size(image),
     };
 }
 
@@ -492,6 +684,9 @@ public:
             "fake_image_decoder",
             request,
             image);
+        metadata.format_detection = with_placeholder_fallback(
+            std::move(metadata.format_detection),
+            "fake_image_decoder");
 
         return render_image_decode_result{
             .status = render_image_decode_status::decoded,

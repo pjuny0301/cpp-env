@@ -57,7 +57,22 @@ concept NormalizedInputEventSummaryInterface = requires(T summary) {
 template <typename T>
 concept InputRoutingDiagnosticsInterface = requires(T diagnostics) {
     { diagnostics.normalized_events } -> std::same_as<std::vector<input::normalized_input_event_summary>&>;
+    { diagnostics.action_routes } -> std::same_as<std::vector<input::action_route_policy_diagnostic>&>;
     { diagnostics.pointer_capture } -> std::same_as<input::pointer_capture_snapshot&>;
+};
+
+template <typename T>
+concept ActionRoutePolicyDiagnosticInterface = requires(T diagnostic) {
+    { diagnostic.kind } -> std::same_as<input::action_route_policy_kind&>;
+    { diagnostic.timestamp_ms } -> std::same_as<std::int64_t&>;
+    { diagnostic.emits_input_event } -> std::same_as<bool&>;
+    { diagnostic.event_index } -> std::same_as<std::size_t&>;
+    { diagnostic.target_id } -> std::same_as<std::string&>;
+    { diagnostic.text_byte_count } -> std::same_as<std::size_t&>;
+    { diagnostic.normalized_event } -> std::same_as<input::normalized_input_event_summary&>;
+    { diagnostic.composition } -> std::same_as<input::ime_composition_state&>;
+    { diagnostic.pointer_capture_before } -> std::same_as<input::pointer_capture_snapshot&>;
+    { diagnostic.pointer_capture_after } -> std::same_as<input::pointer_capture_snapshot&>;
 };
 
 template <typename T>
@@ -110,6 +125,7 @@ static_assert(ImeCompositionStateInterface<input::ime_composition_state>);
 static_assert(std::is_default_constructible_v<input::ime_composition_state>);
 static_assert(PointerCaptureSnapshotInterface<input::pointer_capture_snapshot>);
 static_assert(NormalizedInputEventSummaryInterface<input::normalized_input_event_summary>);
+static_assert(ActionRoutePolicyDiagnosticInterface<input::action_route_policy_diagnostic>);
 static_assert(InputRoutingDiagnosticsInterface<input::input_routing_diagnostics>);
 static_assert(GestureRecognizerInterface<input::gesture_recognizer>);
 static_assert(TextInputModelInterface<input::text_input_model>);
@@ -149,6 +165,18 @@ constexpr input::normalized_input_event_summary wheel_summary_contract{
 };
 static_assert(wheel_summary_contract.kind == input::input_event_summary_kind::wheel);
 static_assert(wheel_summary_contract.pixel_delta_y == -120.0f);
+
+constexpr input::action_route_policy_diagnostic submit_policy_contract{
+    .kind = input::action_route_policy_kind::text_submit_boundary,
+    .timestamp_ms = 40,
+    .emits_input_event = true,
+    .event_index = 2,
+    .target_id = "answer",
+    .text_byte_count = 6,
+};
+static_assert(submit_policy_contract.kind == input::action_route_policy_kind::text_submit_boundary);
+static_assert(submit_policy_contract.emits_input_event);
+static_assert(submit_policy_contract.event_index == 2);
 
 constexpr input::gesture_event drag_contract_event{
     .kind = input::gesture_kind::drag_update,

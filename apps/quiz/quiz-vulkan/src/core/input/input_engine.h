@@ -5,14 +5,38 @@
 #include "core/input/text_input_model.h"
 #include "platform/platform_input_event.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
 
 namespace quiz_vulkan::input {
 
+enum class action_route_policy_kind {
+    pointer_capture_reset,
+    wheel_summary,
+    text_submit_boundary,
+    focus_loss,
+    ime_commit,
+    ime_cancel,
+};
+
+struct action_route_policy_diagnostic {
+    action_route_policy_kind kind = action_route_policy_kind::pointer_capture_reset;
+    std::int64_t timestamp_ms = 0;
+    bool emits_input_event = false;
+    std::size_t event_index = 0;
+    std::string target_id;
+    std::size_t text_byte_count = 0;
+    normalized_input_event_summary normalized_event;
+    ime_composition_state composition;
+    pointer_capture_snapshot pointer_capture_before;
+    pointer_capture_snapshot pointer_capture_after;
+};
+
 struct input_routing_diagnostics {
     std::vector<normalized_input_event_summary> normalized_events;
+    std::vector<action_route_policy_diagnostic> action_routes;
     pointer_capture_snapshot pointer_capture;
 };
 
@@ -43,6 +67,7 @@ private:
     void finish_route_diagnostics();
     void append_gestures(std::vector<input_event>& events, const std::vector<gesture_event>& gestures);
     void append_scroll(std::vector<input_event>& events, const scroll_event& scroll);
+    void append_policy(action_route_policy_diagnostic diagnostic);
 
     gesture_recognizer gestures_;
     text_input_model text_;

@@ -51,6 +51,18 @@ void require_capture_snapshot(
     require(snapshot.tracked_pointer_count == tracked_pointer_count, message);
 }
 
+const quiz_vulkan::input::action_route_policy_diagnostic& require_policy(
+    const quiz_vulkan::input::input_routing_diagnostics& diagnostics,
+    std::size_t index,
+    quiz_vulkan::input::action_route_policy_kind kind,
+    const char* message)
+{
+    require(index < diagnostics.action_routes.size(), message);
+    const quiz_vulkan::input::action_route_policy_diagnostic& policy = diagnostics.action_routes[index];
+    require(policy.kind == kind, message);
+    return policy;
+}
+
 template <typename T>
 const T& require_event(const std::vector<quiz_vulkan::input::input_event>& events, std::size_t index)
 {
@@ -749,6 +761,19 @@ void test_gesture_routing_diagnostics_summarize_gestures_and_wheel()
     require(wheel_summaries[0].y == 50.0f, "diagnostic wheel summary y is preserved");
     require(wheel_summaries[0].line_delta_y == -3.0f, "diagnostic wheel line delta is preserved");
     require(wheel_summaries[0].pixel_delta_y == 0.0f, "diagnostic wheel pixel delta defaults to zero");
+    const action_route_policy_diagnostic& wheel_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::wheel_summary,
+        "diagnostic wheel action route policy is emitted");
+    require(engine.routing_diagnostics().action_routes.size() == 1,
+        "diagnostic wheel emits one action route policy");
+    require(wheel_policy.emits_input_event, "diagnostic wheel policy marks emitted input event");
+    require(wheel_policy.event_index == 0, "diagnostic wheel policy points at first emitted event");
+    require(wheel_policy.normalized_event.kind == input_event_summary_kind::wheel,
+        "diagnostic wheel policy includes normalized wheel summary");
+    require(wheel_policy.normalized_event.line_delta_y == -3.0f,
+        "diagnostic wheel policy preserves line delta");
 }
 
 void test_gesture_routing_diagnostics_cancel_and_focus_loss()
@@ -812,6 +837,25 @@ void test_gesture_routing_diagnostics_cancel_and_focus_loss()
         0,
         0,
         "diagnostic focus loss resets pointer capture snapshot");
+    require(engine.routing_diagnostics().action_routes.size() == 2,
+        "diagnostic focus loss emits pointer reset and focus loss policies");
+    const action_route_policy_diagnostic& reset_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::pointer_capture_reset,
+        "diagnostic focus loss first policy resets pointer capture");
+    require(!reset_policy.emits_input_event, "diagnostic pointer reset policy emits no input event");
+    require(reset_policy.pointer_capture_before.lifecycle == pointer_capture_lifecycle::captured,
+        "diagnostic pointer reset policy records captured state before reset");
+    require(reset_policy.pointer_capture_after.lifecycle == pointer_capture_lifecycle::idle,
+        "diagnostic pointer reset policy records idle state after reset");
+    const action_route_policy_diagnostic& focus_policy = require_policy(
+        engine.routing_diagnostics(),
+        1,
+        action_route_policy_kind::focus_loss,
+        "diagnostic focus loss second policy records focus loss");
+    require(!focus_policy.emits_input_event, "diagnostic focus loss without text focus emits no input event");
+    require(focus_policy.event_index == 0, "diagnostic focus loss without text focus points at zero event index");
     require(engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 240, 9.0f, 0.0f)).empty(),
         "diagnostic up after focus loss emits no stale event");
 }
@@ -849,8 +893,20 @@ void test_text_key_flow()
     require(submit.utf8_text == "ok", "submit carries committed buffer");
     require(engine.text_model().text().empty(), "submit clears editing buffer");
     require(engine.text_model().has_submit_text(), "text model retains consumable submit text");
+    require(engine.routing_diagnostics().action_routes.size() == 1,
+        "submit emits one action route policy");
+    const action_route_policy_diagnostic& submit_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::text_submit_boundary,
+        "submit action route policy is emitted");
+    require(submit_policy.emits_input_event, "submit policy marks emitted event");
+    require(submit_policy.event_index == 0, "submit policy points at submit event index");
+    require(submit_policy.target_id == "answer", "submit policy preserves target id");
+    require(submit_policy.text_byte_count == 2, "submit policy records submitted byte count before clear");
 
     require(engine.process_raw_event(key(151, "Enter", true)).empty(), "repeat enter is ignored");
+    require(engine.routing_diagnostics().action_routes.empty(), "repeat enter emits no submit policy");
 }
 
 void test_key_code_fallback_edges()
@@ -1033,6 +1089,21 @@ void test_ime_composition_suppresses_text_and_key_events()
     require(engine.text_model().text() == utf8(u8"한"), "ime commit updates text model");
     require(engine.text_model().preedit_text().empty(), "ime commit clears preedit");
     require(!engine.text_model().ime_composition().active, "ime commit clears model composition state");
+    require(engine.routing_diagnostics().action_routes.size() == 1,
+        "ime commit emits one action route policy");
+    const action_route_policy_diagnostic& commit_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::ime_commit,
+        "ime commit action route policy is emitted");
+    require(commit_policy.emits_input_event, "ime commit policy marks emitted event");
+    require(commit_policy.event_index == 0, "ime commit policy points at first event");
+    require(commit_policy.target_id == "answer", "ime commit policy preserves target id");
+    require(commit_policy.text_byte_count == std::string(utf8(u8"한")).size(),
+        "ime commit policy records utf8 byte count");
+    require(commit_policy.composition.active, "ime commit policy carries pre-commit composition");
+    require(commit_policy.composition.preedit_text == utf8(u8"ㅎ"),
+        "ime commit policy carries pre-commit preedit text");
 }
 
 void test_ime_preedit_commit_edges()
@@ -1100,6 +1171,18 @@ void test_ime_composition_restart_cancels_visible_preedit()
     require(cancel.composition.active, "composition restart cancel carries stale active composition");
     require(cancel.composition.preedit_text == "draft", "composition restart cancel carries stale preedit text");
     require_range(cancel.composition.preedit_range, 0, 5, "composition restart cancel carries stale preedit range");
+    require(engine.routing_diagnostics().action_routes.size() == 1,
+        "composition restart cancel emits one action route policy");
+    const action_route_policy_diagnostic& cancel_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::ime_cancel,
+        "composition restart cancel action route policy is emitted");
+    require(cancel_policy.emits_input_event, "composition restart cancel policy marks emitted event");
+    require(cancel_policy.event_index == 0, "composition restart cancel policy points at first event");
+    require(cancel_policy.composition.active, "composition restart cancel policy carries stale composition");
+    require(cancel_policy.composition.preedit_text == "draft",
+        "composition restart cancel policy carries stale preedit text");
     require(engine.text_model().preedit_text().empty(), "composition restart clears stale preedit");
 
     require(engine.process_raw_event(text(120, "duplicate")).empty(),
@@ -1286,6 +1369,18 @@ void test_reset_clears_text_ime_and_pointer_state()
     require(engine.text_focus_id().empty(), "reset clears text focus id");
     require(engine.text_model().text().empty(), "reset clears committed text");
     require(engine.text_model().preedit_text().empty(), "reset clears preedit text");
+    require(engine.routing_diagnostics().action_routes.size() == 1,
+        "reset emits one pointer capture reset policy");
+    const action_route_policy_diagnostic& reset_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::pointer_capture_reset,
+        "reset action route policy records pointer capture reset");
+    require(!reset_policy.emits_input_event, "reset pointer policy emits no input event");
+    require(reset_policy.pointer_capture_before.lifecycle == pointer_capture_lifecycle::tracking,
+        "reset pointer policy records tracked pointer before reset");
+    require(reset_policy.pointer_capture_after.lifecycle == pointer_capture_lifecycle::idle,
+        "reset pointer policy records idle pointer after reset");
     require(engine.process_raw_event(text(130, "ignored")).empty(), "text after reset is ignored without focus");
     require(engine.process_raw_event(key(140, "Backspace")).empty(), "key after reset is ignored without focus");
     require(engine.update_time(800).empty(), "reset clears pending long press state");
@@ -1346,6 +1441,35 @@ void test_focus_loss_cancels_composition_and_pointer_state()
     require(lost.target_id == "answer", "focus loss preserves target id");
     require(!engine.has_text_focus(), "focus loss clears text focus");
     require(engine.text_model().preedit_text().empty(), "focus loss clears preedit");
+    require(engine.routing_diagnostics().action_routes.size() == 3,
+        "focus loss emits pointer reset, ime cancel, and focus loss policies");
+    const action_route_policy_diagnostic& reset_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::pointer_capture_reset,
+        "focus loss first policy records pointer reset");
+    require(!reset_policy.emits_input_event, "focus loss pointer reset policy emits no input event");
+    require(reset_policy.pointer_capture_before.lifecycle == pointer_capture_lifecycle::tracking,
+        "focus loss pointer reset records tracked pointer before reset");
+    require(reset_policy.pointer_capture_after.lifecycle == pointer_capture_lifecycle::idle,
+        "focus loss pointer reset records idle pointer after reset");
+    const action_route_policy_diagnostic& ime_cancel_policy = require_policy(
+        engine.routing_diagnostics(),
+        1,
+        action_route_policy_kind::ime_cancel,
+        "focus loss second policy records ime cancel");
+    require(ime_cancel_policy.emits_input_event, "focus loss ime cancel policy emits input event");
+    require(ime_cancel_policy.event_index == 0, "focus loss ime cancel policy points at first event");
+    require(ime_cancel_policy.composition.preedit_text == "draft",
+        "focus loss ime cancel policy carries composition snapshot");
+    const action_route_policy_diagnostic& focus_policy = require_policy(
+        engine.routing_diagnostics(),
+        2,
+        action_route_policy_kind::focus_loss,
+        "focus loss third policy records focus loss");
+    require(focus_policy.emits_input_event, "focus loss policy marks emitted text event");
+    require(focus_policy.event_index == 1, "focus loss policy points after ime cancel event");
+    require(focus_policy.target_id == "answer", "focus loss policy preserves target id");
 
     events = engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 130, 0.0f, 0.0f));
     require(events.empty(), "focus loss resets pending pointer state");

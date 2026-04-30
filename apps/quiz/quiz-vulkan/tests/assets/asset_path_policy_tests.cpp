@@ -3,9 +3,11 @@
 #include "asset_path_policy_interface_contract_tests.cpp"
 
 #include <cassert>
+#include <cstddef>
 #include <filesystem>
 #include <iostream>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -36,6 +38,31 @@ bool has_policy_diagnostic(
         }
     }
     return false;
+}
+
+const quiz_vulkan::assets::asset_path_policy_diagnostic* find_policy_diagnostic(
+    const quiz_vulkan::assets::asset_path_policy_catalog& catalog,
+    quiz_vulkan::assets::asset_path_policy_status status,
+    std::string_view id)
+{
+    for (const quiz_vulkan::assets::asset_path_policy_diagnostic& diagnostic : catalog.diagnostics) {
+        if (diagnostic.status == status && diagnostic.id == id) {
+            return &diagnostic;
+        }
+    }
+    return nullptr;
+}
+
+const quiz_vulkan::assets::asset_path_policy_kind_counts* find_kind_counts(
+    const std::vector<quiz_vulkan::assets::asset_path_policy_kind_counts>& counts,
+    quiz_vulkan::assets::asset_type type)
+{
+    for (const quiz_vulkan::assets::asset_path_policy_kind_counts& count : counts) {
+        if (count.type == type) {
+            return &count;
+        }
+    }
+    return nullptr;
 }
 
 quiz_vulkan::assets::runtime_asset_catalog_snapshot make_fake_snapshot(
@@ -163,7 +190,7 @@ void test_path_policy_keeps_equivalent_shader_paths_stable()
     const asset_path_policy_catalog policy_catalog =
         build_asset_path_policy_catalog(build_runtime_asset_catalog(manifest, resolver));
 
-    require(policy_catalog.ok(), "equivalent shader paths do not create policy diagnostics");
+    require(!policy_catalog.ok(), "equivalent shader paths report duplicate catalog paths");
     const asset_path_policy_snapshot* shader_a = policy_catalog.find("shader_a");
     const asset_path_policy_snapshot* shader_b = policy_catalog.find("shader_b");
     require(shader_a != nullptr && shader_b != nullptr, "path policy catalog contains both shader entries");
@@ -171,6 +198,11 @@ void test_path_policy_keeps_equivalent_shader_paths_stable()
     require(shader_b->cache_key == shader_a->cache_key, "equivalent shader cache keys match");
     require(shader_a->catalog_path == "shaders/ui.vert.spv", "shader A catalog path is normalized");
     require(shader_b->catalog_path == shader_a->catalog_path, "equivalent shader catalog paths match");
+    const asset_path_policy_diagnostic* duplicate =
+        find_policy_diagnostic(policy_catalog, asset_path_policy_status::duplicate_catalog_path, "shader_b");
+    require(duplicate != nullptr, "equivalent shader path reports duplicate catalog path diagnostic");
+    require(duplicate->related_id == "shader_a", "duplicate catalog path diagnostic records related id");
+    require(duplicate->catalog_path == "shaders/ui.vert.spv", "duplicate diagnostic records catalog path");
 }
 
 void test_path_policy_rejects_traversal_and_unsupported_paths()
@@ -241,6 +273,85 @@ void test_path_policy_catalog_carries_runtime_diagnostics()
         "path policy catalog preserves unresolved runtime source diagnostics");
 }
 
+void test_path_policy_counts_duplicates_and_sorts_snapshot_view()
+{
+    using namespace quiz_vulkan::assets;
+
+    asset_manifest manifest;
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "main_deck",
+        .type = asset_type::deck,
+        .uri = "decks/main.quiz",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "bad_shader",
+        .type = asset_type::shader,
+        .uri = "asset://shaders/ui.txt",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "image_b",
+        .type = asset_type::image,
+        .uri = "ASSET:///cards/./front.png",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "body_font",
+        .type = asset_type::font,
+        .uri = "fonts/body.ttf",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "image_a",
+        .type = asset_type::image,
+        .uri = "asset://cards/front.png",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const asset_path_policy_catalog policy_catalog =
+        build_asset_path_policy_catalog(build_runtime_asset_catalog(manifest, resolver));
+    const asset_path_policy_catalog_snapshot_view snapshot_view =
+        make_asset_path_policy_catalog_snapshot_view(policy_catalog);
+
+    require(!policy_catalog.ok(), "path policy catalog reports duplicate and rejected entries");
+    require(snapshot_view.entries.size() == 4U, "snapshot view keeps accepted entries");
+    require(snapshot_view.diagnostics.size() == 2U, "snapshot view keeps policy diagnostics");
+
+    require(snapshot_view.entries[0].id == "body_font", "sorted snapshot view orders font entries first");
+    require(snapshot_view.entries[1].id == "image_a", "sorted snapshot view orders image entries by catalog path and id");
+    require(snapshot_view.entries[2].id == "image_b", "sorted snapshot view preserves deterministic duplicate order");
+    require(snapshot_view.entries[3].id == "main_deck", "sorted snapshot view orders deck entries after images");
+
+    const asset_path_policy_diagnostic& duplicate = snapshot_view.diagnostics[0];
+    require(
+        duplicate.status == asset_path_policy_status::duplicate_catalog_path,
+        "sorted diagnostics include duplicate catalog path first by asset kind");
+    require(duplicate.id == "image_a", "duplicate diagnostic records later duplicate id");
+    require(duplicate.related_id == "image_b", "duplicate diagnostic records first catalog path owner");
+    require(duplicate.catalog_path == "images/cards/front.png", "duplicate diagnostic records stable catalog path");
+
+    const asset_path_policy_diagnostic& rejected_shader = snapshot_view.diagnostics[1];
+    require(
+        rejected_shader.status == asset_path_policy_status::unsupported_extension,
+        "sorted diagnostics include rejected shader extension");
+    require(rejected_shader.id == "bad_shader", "rejected shader diagnostic records id");
+
+    const asset_path_policy_kind_counts* font_counts = find_kind_counts(snapshot_view.kind_counts, asset_type::font);
+    const asset_path_policy_kind_counts* image_counts = find_kind_counts(snapshot_view.kind_counts, asset_type::image);
+    const asset_path_policy_kind_counts* shader_counts = find_kind_counts(snapshot_view.kind_counts, asset_type::shader);
+    const asset_path_policy_kind_counts* deck_counts = find_kind_counts(snapshot_view.kind_counts, asset_type::deck);
+
+    require(font_counts != nullptr, "snapshot view includes font counts");
+    require(font_counts->accepted_count == 1U && font_counts->rejected_count == 0U, "font counts are stable");
+    require(image_counts != nullptr, "snapshot view includes image counts");
+    require(image_counts->accepted_count == 2U && image_counts->rejected_count == 1U, "image counts include duplicates");
+    require(shader_counts != nullptr, "snapshot view includes shader counts");
+    require(
+        shader_counts->accepted_count == 0U && shader_counts->rejected_count == 1U,
+        "shader counts include rejected entries");
+    require(deck_counts != nullptr, "snapshot view includes deck counts");
+    require(deck_counts->accepted_count == 1U && deck_counts->rejected_count == 0U, "deck counts are stable");
+
+    require(policy_catalog.find_catalog_path("images/cards/front.png") != nullptr, "catalog path lookup is available");
+}
+
 } // namespace
 
 int main()
@@ -249,5 +360,6 @@ int main()
     test_path_policy_keeps_equivalent_shader_paths_stable();
     test_path_policy_rejects_traversal_and_unsupported_paths();
     test_path_policy_catalog_carries_runtime_diagnostics();
+    test_path_policy_counts_duplicates_and_sorts_snapshot_view();
     return 0;
 }

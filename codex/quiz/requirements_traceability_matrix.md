@@ -23,6 +23,7 @@
 - `89a4515`: image sampler/cache policy diagnostics 추가.
 - `5400a28`: asset pack validation diagnostics 추가.
 - `8b61a9a`: Vulkan frame lifecycle policy diagnostics 추가.
+- `8db41dd`: input routing action policy diagnostics 추가.
 - 기준 검증 예시: 2026-04-30 Windows MinGW full CTest `30/30` 통과. 현재 권위 있는 테스트 목록은 항상 `ctest -N`으로 확인한다.
 - 기준 검증은 고정 개수로 적지 않는다. 현재 전체 테스트 수는 `ctest -N`이 권위이며, handoff에는 실행한 focused target만 기록한다.
 
@@ -58,7 +59,7 @@
 | 21 | 0. 작업 기준 고정<br>5. AI/OCR/Proof/Code worker | 개념 의존성 그래프 트래킹: AI가 PDF 지문을 추출할 때(12번), 단순히 텍스트만 나누는 것이 아니... | [21](구현/21.md); [quiz-editor](quiz-editor/구현/21.md) | - | 계획 문서화 | 하위 프로젝트 구현 착수 시 fixture/test 추가 |
 | 22 | 0. 작업 기준 고정<br>5. AI/OCR/Proof/Code worker | 코드/로직 스니펫 샌드박스 채점: 수학 증명(11번)과 결합하여, 프로그래밍이나 알고리즘 문제의 경우 학... | [22](구현/22.md); [quiz-editor](quiz-editor/구현/22.md) | - | 계획 문서화 | 하위 프로젝트 구현 착수 시 fixture/test 추가 |
 | 23 | 0. 작업 기준 고정<br>5. AI/OCR/Proof/Code worker | ​리버스 엔지니어링 / 디버깅 퀴즈: AI가 의도적으로 논리적 비약이 있는 수학 증명이나, 미세한 버그(... | [23](구현/23.md); [quiz-editor](quiz-editor/구현/23.md) | - | 계획 문서화 | 하위 프로젝트 구현 착수 시 fixture/test 추가 |
-| 24 | 0. 작업 기준 고정<br>1. 공통 데이터 계약/도메인<br>4. Vulkan 플레이어 재작성 | ​**오토마타(FSM) 기반 퀴즈 플로우 및 상태 관리:** 6번(슬라이드), 14번(AI 토론), 19... | [24](구현/24.md); [quiz-vulkan](quiz-vulkan/구현/24.md) | `src/app/app_state.*`, `src/app/app_action_router.*`, `src/core/layout/input_hit_test.h`, `src/platform/platform_shell.h`, `src/core/input/*`, `tests/app/app_action_router_tests.cpp`, `tests/layout/input_hit_test_tests.cpp`, input/IME composition snapshot and input routing/capture diagnostics focused tests | 부분 구현 | normalized input/IME route를 app action과 창 실행까지 연결 |
+| 24 | 0. 작업 기준 고정<br>1. 공통 데이터 계약/도메인<br>4. Vulkan 플레이어 재작성 | ​**오토마타(FSM) 기반 퀴즈 플로우 및 상태 관리:** 6번(슬라이드), 14번(AI 토론), 19... | [24](구현/24.md); [quiz-vulkan](quiz-vulkan/구현/24.md) | `src/app/app_state.*`, `src/app/app_action_router.*`, `src/core/layout/input_hit_test.h`, `src/platform/platform_shell.h`, `src/core/input/*`, `tests/app/app_action_router_tests.cpp`, `tests/layout/input_hit_test_tests.cpp`, input/IME composition snapshot and input routing/capture/action policy diagnostics focused tests | 부분 구현 | normalized input/IME route를 app action과 창 실행까지 연결 |
 | 26 | 0. 작업 기준 고정<br>1. 공통 데이터 계약/도메인<br>3. Editor 데이터 제작 | 책에서 주요개념과 책에 나온 관련 설명 퀴즈앱에 MultiSelect 유형으로 그대로 매핑(인덱스로 해서... | [26](구현/26.md); [android-quiz-app](android-quiz-app/구현/26.md), [quiz-editor](quiz-editor/구현/26.md) | `src/core/domain/quiz_model.*`, `src/core/domain/deck_artifact_loader.*` | 부분 구현 | 프로젝트 구현 문서의 검증 기준을 native 테스트로 확대 |
 | 27 | 0. 작업 기준 고정<br>2. Android UX 기준/FSM | 유저가 빈캰뚫을 수 있게 | [27](구현/27.md); [android-quiz-app](android-quiz-app/구현/27.md), [quiz-editor](quiz-editor/구현/27.md) | - | 계획 문서화 | 하위 프로젝트 구현 착수 시 fixture/test 추가 |
 | 28 | 0. 작업 기준 고정<br>1. 공통 데이터 계약/도메인<br>3. Editor 데이터 제작 | 문단 / 문제 개념 / 정답 | [28](구현/28.md); [android-quiz-app](android-quiz-app/구현/28.md), [quiz-editor](quiz-editor/구현/28.md) | `src/core/domain/quiz_model.*`, `src/core/domain/deck_artifact_loader.*` | 부분 구현 | 프로젝트 구현 문서의 검증 기준을 native 테스트로 확대 |
@@ -127,7 +128,7 @@
 - Renderer/App smoke: `apps/quiz/quiz-vulkan/src/render/render_draw_list.h`, `apps/quiz/quiz-vulkan/src/render/vulkan/*`, `apps/quiz/quiz-vulkan/src/app/app_demo.*`, `apps/quiz/quiz-vulkan/src/app/app.cpp`, `apps/quiz/quiz-vulkan/src/app/app_action_router.*`, `apps/quiz/quiz-vulkan/src/platform/*`, CPU fallback framebuffer present path
 - Text/Image engines: `apps/quiz/quiz-vulkan/src/render/text/*`, `apps/quiz/quiz-vulkan/src/render/image/*`, `apps/quiz/quiz-vulkan/tests/render/fake_text_engine_tests.cpp`, `apps/quiz/quiz-vulkan/tests/render/fake_image_texture_cache_tests.cpp`, line-break/glyph cache policy and sampler/cache/decoder format diagnostics
 - Asset system: `apps/quiz/quiz-vulkan/src/assets/*`, `apps/quiz/quiz-vulkan/tests/assets/*`, asset manifest/runtime resolver/pack validation diagnostics
-- Input/Audio engines: `apps/quiz/quiz-vulkan/src/core/input/*`, `apps/quiz/quiz-vulkan/tests/input/*`, `apps/quiz/quiz-vulkan/src/audio/*`, `apps/quiz/quiz-vulkan/tests/audio/*`
+- Input/Audio engines: `apps/quiz/quiz-vulkan/src/core/input/*`, `apps/quiz/quiz-vulkan/tests/input/*`, input routing/action policy diagnostics, `apps/quiz/quiz-vulkan/src/audio/*`, `apps/quiz/quiz-vulkan/tests/audio/*`
 - Tests: `apps/quiz/quiz-vulkan/tests/**`, `apps/quiz/quiz-vulkan/tests/test_manifest.json`
 - Build wrapper/runtime: `apps/quiz/quiz-vulkan/CMakeLists.txt`, `tools/run_windows_mingw_ascii.ps1`
 

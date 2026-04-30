@@ -858,6 +858,34 @@ void test_fake_font_resolver_records_family_and_style_fallbacks()
     require(
         engine.last_diagnostics().font_face_selections[1].used_family_fallback,
         "font selection records family fallback use");
+    require(engine.last_diagnostics().has_font_catalog_policy(), "font resolver records catalog policy");
+    require(
+        engine.last_diagnostics().font_catalog_policy.style_face_mappings.size() == 2,
+        "font resolver records two catalog mappings");
+    require(
+        engine.last_diagnostics().font_catalog_policy.style_face_mappings[0].style_token == "display",
+        "font resolver sorts catalog mappings by style token");
+    require(
+        engine.last_diagnostics().font_catalog_policy.style_face_mappings[0].resolved_face_id == 1,
+        "font resolver maps display to fallback face id");
+    require(
+        engine.last_diagnostics().font_catalog_policy.style_face_mappings[1].style_token == "heavy",
+        "font resolver keeps heavy mapping after sort");
+    require(
+        engine.last_diagnostics().font_catalog_policy.style_face_mappings[1].resolved_face_id == 2,
+        "font resolver maps heavy to style fallback face id");
+    require(
+        engine.last_diagnostics().font_catalog_policy.missing_face_fallback_count == 2,
+        "font resolver counts missing face fallbacks");
+    require(
+        engine.last_diagnostics().font_catalog_policy.supported_codepoint_count == 2,
+        "font resolver counts supported catalog glyphs");
+    require(
+        engine.last_diagnostics().font_catalog_policy.fallback_codepoint_count == 0,
+        "font resolver counts no fallback glyphs for ASCII catalog request");
+    require(
+        engine.last_diagnostics().font_catalog_policy.missing_glyph_count == 0,
+        "font resolver counts no missing glyphs for ASCII catalog request");
     require(engine.last_diagnostics().used_font_fallback(), "font resolver records fallback diagnostics");
     require(engine.last_diagnostics().font_fallbacks.size() == 2, "font resolver records both fallback runs");
 
@@ -975,6 +1003,25 @@ void test_fake_font_resolution_policy_tracks_codepoint_fallbacks_and_cache_readi
     require(
         engine.last_diagnostics().font_resolution_policy.unique_resolved_face_count == 2,
         "font policy counts unique resolved glyph faces");
+    require(engine.last_diagnostics().has_font_catalog_policy(), "coverage fallback records catalog policy");
+    require(
+        engine.last_diagnostics().font_catalog_policy.style_face_mappings.size() == 1,
+        "coverage fallback records one catalog mapping");
+    require(
+        engine.last_diagnostics().font_catalog_policy.style_face_mappings[0].resolved_face_id == latin_face_id,
+        "coverage fallback catalog keeps the run on the Latin face");
+    require(
+        engine.last_diagnostics().font_catalog_policy.missing_face_fallback_count == 0,
+        "coverage fallback does not report missing face fallback");
+    require(
+        engine.last_diagnostics().font_catalog_policy.supported_codepoint_count == 2,
+        "coverage fallback counts supported glyphs in catalog policy");
+    require(
+        engine.last_diagnostics().font_catalog_policy.fallback_codepoint_count == 1,
+        "coverage fallback counts codepoint fallback glyphs in catalog policy");
+    require(
+        engine.last_diagnostics().font_catalog_policy.missing_glyph_count == 0,
+        "coverage fallback counts no missing glyphs in catalog policy");
 
     const std::vector<render_text_glyph_cluster>& clusters = engine.last_diagnostics().glyph_clusters;
     require(clusters.size() == 2, "coverage fallback records one cluster per scalar");

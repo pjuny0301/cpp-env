@@ -115,6 +115,14 @@ struct render_text_font_face_selection_snapshot {
     bool used_style_fallback = false;
 };
 
+struct render_text_font_catalog_policy_snapshot {
+    std::vector<render_text_font_face_selection_snapshot> style_face_mappings;
+    std::size_t missing_face_fallback_count = 0;
+    std::size_t supported_codepoint_count = 0;
+    std::size_t fallback_codepoint_count = 0;
+    std::size_t missing_glyph_count = 0;
+};
+
 struct render_text_glyph_font_resolution_snapshot {
     std::size_t run_index = 0;
     std::size_t byte_offset = 0;

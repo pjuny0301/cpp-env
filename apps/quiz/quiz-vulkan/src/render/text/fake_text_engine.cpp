@@ -247,6 +247,36 @@ void record_glyph_font_resolution(
     diagnostics.font_resolution_policy.unique_resolved_face_count = unique_faces.size();
 }
 
+void record_font_catalog_policy_diagnostics(fake_text_engine_diagnostics& diagnostics)
+{
+    diagnostics.font_catalog_policy = {};
+    diagnostics.font_catalog_policy.style_face_mappings = diagnostics.font_face_selections;
+    std::sort(
+        diagnostics.font_catalog_policy.style_face_mappings.begin(),
+        diagnostics.font_catalog_policy.style_face_mappings.end(),
+        [](const render_text_font_face_selection_snapshot& left,
+           const render_text_font_face_selection_snapshot& right) {
+            return left.style_token < right.style_token
+                || (left.style_token == right.style_token && left.run_index < right.run_index);
+        });
+
+    for (const render_text_font_face_selection_snapshot& selection : diagnostics.font_face_selections) {
+        if (selection.used_family_fallback || selection.used_style_fallback) {
+            ++diagnostics.font_catalog_policy.missing_face_fallback_count;
+        }
+    }
+    for (const render_text_glyph_font_resolution_snapshot& glyph : diagnostics.glyph_font_resolutions) {
+        if (glyph.glyph_supported) {
+            ++diagnostics.font_catalog_policy.supported_codepoint_count;
+        } else {
+            ++diagnostics.font_catalog_policy.missing_glyph_count;
+        }
+        if (glyph.used_codepoint_fallback) {
+            ++diagnostics.font_catalog_policy.fallback_codepoint_count;
+        }
+    }
+}
+
 void record_utf8_clusters(
     fake_text_engine_diagnostics& diagnostics,
     const std::size_t run_index,
@@ -324,6 +354,7 @@ std::vector<shaped_glyph> shape_request(
         }
     }
 
+    record_font_catalog_policy_diagnostics(diagnostics);
     return glyphs;
 }
 

@@ -71,6 +71,7 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.utf8_clusters } -> std::same_as<std::vector<render::render_text_utf8_cluster_snapshot>&>;
     { diagnostics.font_face_selections }
         -> std::same_as<std::vector<render::render_text_font_face_selection_snapshot>&>;
+    { diagnostics.font_catalog_policy } -> std::same_as<render::render_text_font_catalog_policy_snapshot&>;
     { diagnostics.glyph_font_resolutions }
         -> std::same_as<std::vector<render::render_text_glyph_font_resolution_snapshot>&>;
     { diagnostics.font_resolution_policy } -> std::same_as<render::render_text_font_resolution_policy_snapshot&>;
@@ -94,6 +95,7 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.has_glyph_atlas_pages() } -> std::same_as<bool>;
     { diagnostics.has_utf8_clusters() } -> std::same_as<bool>;
     { diagnostics.has_font_face_selections() } -> std::same_as<bool>;
+    { diagnostics.has_font_catalog_policy() } -> std::same_as<bool>;
     { diagnostics.has_glyph_font_resolutions() } -> std::same_as<bool>;
     { diagnostics.has_glyph_cache_readiness() } -> std::same_as<bool>;
     { diagnostics.has_line_breaks() } -> std::same_as<bool>;
@@ -210,6 +212,14 @@ static_assert(requires(render::render_text_font_face_selection_snapshot selectio
     { selection.resolved_face_id } -> std::same_as<render::font_face_id&>;
     { selection.used_family_fallback } -> std::same_as<bool&>;
     { selection.used_style_fallback } -> std::same_as<bool&>;
+});
+
+static_assert(requires(render::render_text_font_catalog_policy_snapshot policy) {
+    { policy.style_face_mappings } -> std::same_as<std::vector<render::render_text_font_face_selection_snapshot>&>;
+    { policy.missing_face_fallback_count } -> std::same_as<std::size_t&>;
+    { policy.supported_codepoint_count } -> std::same_as<std::size_t&>;
+    { policy.fallback_codepoint_count } -> std::same_as<std::size_t&>;
+    { policy.missing_glyph_count } -> std::same_as<std::size_t&>;
 });
 
 static_assert(requires(render::render_text_glyph_font_resolution_snapshot glyph) {

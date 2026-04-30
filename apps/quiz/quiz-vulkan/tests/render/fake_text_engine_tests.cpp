@@ -775,6 +775,16 @@ void test_fake_font_resolver_records_family_and_style_fallbacks()
 
     const render_text_layout layout = engine.layout_text(request);
     require(layout.glyphs.size() == 2, "font fallback diagnostics do not change fake glyph emission");
+    require(engine.last_diagnostics().has_font_face_selections(), "font resolver records all face selections");
+    require(engine.last_diagnostics().font_face_selections.size() == 2, "font resolver records both selected faces");
+    require(engine.last_diagnostics().font_face_selections[0].resolved_face_id == 2, "font selection records style fallback face");
+    require(
+        engine.last_diagnostics().font_face_selections[0].used_style_fallback,
+        "font selection records style fallback use");
+    require(engine.last_diagnostics().font_face_selections[1].resolved_face_id == 1, "font selection records family fallback face");
+    require(
+        engine.last_diagnostics().font_face_selections[1].used_family_fallback,
+        "font selection records family fallback use");
     require(engine.last_diagnostics().used_font_fallback(), "font resolver records fallback diagnostics");
     require(engine.last_diagnostics().font_fallbacks.size() == 2, "font resolver records both fallback runs");
 
@@ -1338,6 +1348,116 @@ void test_fake_glyph_clusters_track_wrapped_hangul_lines()
     require(clusters[2].resolved_face_id == 1, "third wrapped cluster records resolved face");
 }
 
+void test_fake_shaping_diagnostics_track_utf8_clusters_and_wrap_decisions()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "\xed\x95\x9c \xea\xb8\x80", .style_token = "body"},
+    };
+    request.bounds = render_rect{4.0f, 6.0f, 25.0f, 0.0f};
+    request.style_catalog = make_style_catalog();
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::word,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    const render_text_layout layout = engine.layout_text(request);
+    require(layout.glyphs.size() == 2, "shaping diagnostics fixture wraps two Hangul syllables");
+    require(engine.last_diagnostics().has_utf8_clusters(), "shaping diagnostics record UTF-8 clusters");
+    require(engine.last_diagnostics().utf8_clusters.size() == 3, "shaping diagnostics record Hangul space Hangul clusters");
+    require(engine.last_diagnostics().utf8_clusters[0].run_index == 0, "first UTF-8 cluster records run");
+    require(engine.last_diagnostics().utf8_clusters[0].byte_offset == 0, "first UTF-8 cluster records byte offset");
+    require(engine.last_diagnostics().utf8_clusters[0].byte_count == 3, "first UTF-8 cluster records Hangul bytes");
+    require(engine.last_diagnostics().utf8_clusters[0].codepoint_offset == 0, "first UTF-8 cluster records scalar offset");
+    require(engine.last_diagnostics().utf8_clusters[0].codepoint_count == 1, "first UTF-8 cluster records scalar count");
+    require(engine.last_diagnostics().utf8_clusters[0].valid, "first UTF-8 cluster is valid");
+    require(engine.last_diagnostics().utf8_clusters[1].byte_offset == 3, "space UTF-8 cluster records separator byte");
+    require(engine.last_diagnostics().utf8_clusters[1].byte_count == 1, "space UTF-8 cluster records one byte");
+    require(engine.last_diagnostics().utf8_clusters[2].byte_offset == 4, "second Hangul UTF-8 cluster records byte offset");
+    require(engine.last_diagnostics().utf8_clusters[2].byte_count == 3, "second Hangul UTF-8 cluster records bytes");
+
+    require(engine.last_diagnostics().has_line_breaks(), "shaping diagnostics record line breaks");
+    require(engine.last_diagnostics().line_breaks.size() == 2, "wrapped fixture records two break decisions");
+    const render_text_line_break_snapshot& first_break = engine.last_diagnostics().line_breaks[0];
+    const render_text_line_break_snapshot& second_break = engine.last_diagnostics().line_breaks[1];
+    require(first_break.break_reason == utf8_line_break_reason::ascii_whitespace, "first break records whitespace wrap");
+    require(first_break.wrapped, "first break records wrapped decision");
+    require(first_break.line_index == 0, "first break records first line");
+    require(first_break.start_run_index == 0 && first_break.start_byte_offset == 0, "first break records start byte");
+    require(first_break.end_run_index == 0 && first_break.end_byte_offset == 3, "first break records content end");
+    require(
+        first_break.separator_run_index == 0 && first_break.separator_byte_offset == 3,
+        "first break records separator byte");
+    require(first_break.separator_byte_count == 1, "first break records separator length");
+    require(near(first_break.line_width, 20.0f), "first break records line width");
+    require(near(first_break.max_width, 25.0f), "first break records max width");
+
+    require(second_break.break_reason == utf8_line_break_reason::end_of_text, "second break records end of text");
+    require(!second_break.wrapped, "second break is not a wrap decision");
+    require(second_break.line_index == 1, "second break records second line");
+    require(second_break.start_run_index == 0 && second_break.start_byte_offset == 4, "second break records start byte");
+    require(second_break.end_run_index == 0 && second_break.end_byte_offset == 7, "second break records end byte");
+    require(near(second_break.line_width, 20.0f), "second break records line width");
+
+    require(engine.last_diagnostics().has_line_metrics(), "shaping diagnostics record line metrics");
+    require(engine.last_diagnostics().line_metrics.size() == 2, "wrapped fixture records two line metrics");
+    require(engine.last_diagnostics().line_layout_metrics.produced_line_count == 2, "line metrics record produced lines");
+    require(engine.last_diagnostics().line_layout_metrics.visible_line_count == 2, "line metrics record visible lines");
+    require(engine.last_diagnostics().line_layout_metrics.truncated_line_count == 0, "wrapped fixture is not truncated");
+    require(!engine.last_diagnostics().line_layout_metrics.overflowed, "wrapped fixture does not overflow");
+    require(near(engine.last_diagnostics().line_metrics[0].width, 20.0f), "first line metric records width");
+    require(near(engine.last_diagnostics().line_metrics[1].width, 20.0f), "second line metric records width");
+}
+
+void test_fake_line_metrics_track_overflow_and_truncation()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "ABC\nD\nE", .style_token = "body"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 15.0f, 0.0f};
+    request.style_catalog = make_style_catalog();
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::start,
+        .max_lines = 2,
+    };
+
+    const render_text_layout layout = engine.layout_text(request);
+    require(near(layout.measure.width, 30.0f), "truncated layout still measures visible overflow width");
+    require(near(layout.measure.height, 48.0f), "truncated layout measures visible lines only");
+    require(layout.glyphs.size() == 4, "truncated layout emits only visible line glyphs");
+
+    require(engine.last_diagnostics().line_breaks.size() == 3, "line metrics fixture records all line breaks");
+    require(engine.last_diagnostics().line_metrics.size() == 3, "line metrics fixture records all produced lines");
+    require(engine.last_diagnostics().line_layout_metrics.produced_line_count == 3, "line metrics count produced lines");
+    require(engine.last_diagnostics().line_layout_metrics.visible_line_count == 2, "line metrics count visible lines");
+    require(engine.last_diagnostics().line_layout_metrics.truncated_line_count == 1, "line metrics count truncated lines");
+    require(engine.last_diagnostics().line_layout_metrics.overflow_line_count == 1, "line metrics count overflow lines");
+    require(engine.last_diagnostics().line_layout_metrics.truncated, "line metrics mark layout truncated");
+    require(engine.last_diagnostics().line_layout_metrics.overflowed, "line metrics mark layout overflowed");
+
+    const render_text_line_metrics_snapshot& first_line = engine.last_diagnostics().line_metrics[0];
+    const render_text_line_metrics_snapshot& second_line = engine.last_diagnostics().line_metrics[1];
+    const render_text_line_metrics_snapshot& third_line = engine.last_diagnostics().line_metrics[2];
+    require(near(first_line.width, 30.0f), "first line metric records overflowing width");
+    require(first_line.overflowed, "first line metric records overflow");
+    require(near(first_line.overflow_width, 15.0f), "first line metric records overflow amount");
+    require(!first_line.truncated, "first visible line is not truncated");
+    require(near(second_line.width, 10.0f), "second line metric records width");
+    require(!second_line.overflowed, "second line metric does not overflow");
+    require(!second_line.truncated, "second visible line is not truncated");
+    require(near(third_line.width, 10.0f), "third line metric records hidden line width");
+    require(third_line.truncated, "third line metric records truncation");
+}
+
 void test_fake_utf8_hangul_uses_codepoints()
 {
     using namespace quiz_vulkan::render;
@@ -1653,6 +1773,8 @@ int main()
     test_fake_caret_positions_follow_wrapped_hangul_lines();
     test_fake_glyph_clusters_track_utf8_runs_and_font_faces();
     test_fake_glyph_clusters_track_wrapped_hangul_lines();
+    test_fake_shaping_diagnostics_track_utf8_clusters_and_wrap_decisions();
+    test_fake_line_metrics_track_overflow_and_truncation();
     test_fake_utf8_hangul_uses_codepoints();
     test_fake_utf8_handles_wide_combining_and_invalid_sequences();
     test_fake_diagnostics_reset_after_clean_request();

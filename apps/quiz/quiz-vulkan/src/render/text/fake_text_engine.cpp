@@ -129,6 +129,44 @@ void record_font_fallback(
     });
 }
 
+void record_font_face_selection(
+    fake_text_engine_diagnostics& diagnostics,
+    const std::size_t run_index,
+    const render_style_id& style_token,
+    const font_resolver_result& resolution)
+{
+    diagnostics.font_face_selections.push_back(render_text_font_face_selection_snapshot{
+        .run_index = run_index,
+        .style_token = style_token,
+        .requested_family = resolution.requested.family,
+        .resolved_family = resolution.resolved_family,
+        .requested_weight = resolution.requested.weight,
+        .resolved_weight = resolution.resolved_weight,
+        .requested_italic = resolution.requested.italic,
+        .resolved_italic = resolution.resolved_italic,
+        .resolved_face_id = resolution.resolved_face_id,
+        .used_family_fallback = resolution.used_family_fallback,
+        .used_style_fallback = resolution.used_style_fallback,
+    });
+}
+
+void record_utf8_clusters(
+    fake_text_engine_diagnostics& diagnostics,
+    const std::size_t run_index,
+    const std::vector<utf8_text_codepoint>& codepoints)
+{
+    for (const utf8_text_cluster& cluster : cluster_utf8_text_run(codepoints)) {
+        diagnostics.utf8_clusters.push_back(render_text_utf8_cluster_snapshot{
+            .run_index = run_index,
+            .byte_offset = cluster.byte_offset,
+            .byte_count = cluster.byte_count,
+            .codepoint_offset = cluster.codepoint_offset,
+            .codepoint_count = cluster.codepoint_count,
+            .valid = cluster.valid,
+        });
+    }
+}
+
 std::vector<shaped_glyph> shape_request(
     const render_text_request& request,
     const deterministic_fake_font_resolver& font_resolver,
@@ -149,9 +187,12 @@ std::vector<shaped_glyph> shape_request(
             });
         }
         const font_resolver_result font_resolution = font_resolver.resolve(style);
+        record_font_face_selection(diagnostics, run_index, run.style_token, font_resolution);
         record_font_fallback(diagnostics, run_index, run.style_token, font_resolution);
 
-        for (const utf8_text_codepoint& scalar : iterate_utf8_text_run(run.text)) {
+        const std::vector<utf8_text_codepoint> codepoints = iterate_utf8_text_run(run.text);
+        record_utf8_clusters(diagnostics, run_index, codepoints);
+        for (const utf8_text_codepoint& scalar : codepoints) {
             const std::uint32_t code_point = scalar.code_point;
             if (!scalar.valid) {
                 ++diagnostics.invalid_utf8_sequence_count;
@@ -287,10 +328,115 @@ std::pair<std::size_t, std::size_t> separator_end_position(
     return {0, 0};
 }
 
-std::vector<laid_out_line> break_lines(const render_text_request& request, const std::vector<shaped_glyph>& glyphs)
+std::pair<std::size_t, std::size_t> content_start_position(
+    const std::vector<shaped_glyph>& glyphs,
+    const utf8_line_fragment& fragment)
+{
+    if (fragment.codepoint_offset < glyphs.size()) {
+        const shaped_glyph& glyph = glyphs[fragment.codepoint_offset];
+        return {glyph.run_index, glyph.byte_offset};
+    }
+    if (!glyphs.empty()) {
+        const shaped_glyph& glyph = glyphs.back();
+        return {glyph.run_index, glyph.byte_offset + glyph.byte_count};
+    }
+    return {0, 0};
+}
+
+std::pair<std::size_t, std::size_t> content_end_position(
+    const std::vector<shaped_glyph>& glyphs,
+    const utf8_line_fragment& fragment)
+{
+    if (fragment.codepoint_count == 0) {
+        return content_start_position(glyphs, fragment);
+    }
+
+    const std::size_t last_content_index = fragment.codepoint_offset + fragment.codepoint_count - 1U;
+    if (last_content_index < glyphs.size()) {
+        const shaped_glyph& glyph = glyphs[last_content_index];
+        return {glyph.run_index, glyph.byte_offset + glyph.byte_count};
+    }
+    return content_start_position(glyphs, fragment);
+}
+
+void record_line_break_diagnostic(
+    fake_text_engine_diagnostics& diagnostics,
+    const render_text_request& request,
+    const std::vector<shaped_glyph>& glyphs,
+    const utf8_line_fragment& fragment,
+    const std::vector<std::size_t>& line,
+    const std::size_t line_index)
+{
+    const auto [start_run_index, start_byte_offset] = content_start_position(glyphs, fragment);
+    const auto [end_run_index, end_byte_offset] = content_end_position(glyphs, fragment);
+    const auto [separator_run_index, separator_byte_offset] = separator_start_position(glyphs, fragment);
+    diagnostics.line_breaks.push_back(render_text_line_break_snapshot{
+        .line_index = line_index,
+        .codepoint_offset = fragment.codepoint_offset,
+        .codepoint_count = fragment.codepoint_count,
+        .start_run_index = start_run_index,
+        .start_byte_offset = start_byte_offset,
+        .end_run_index = end_run_index,
+        .end_byte_offset = end_byte_offset,
+        .separator_run_index = separator_run_index,
+        .separator_byte_offset = separator_byte_offset,
+        .separator_byte_count = fragment.separator_byte_count,
+        .break_reason = fragment.break_reason,
+        .line_width = line_width(glyphs, line),
+        .max_width = request.bounds.width,
+        .wrapped = fragment.break_reason == utf8_line_break_reason::ascii_whitespace
+            || fragment.break_reason == utf8_line_break_reason::width_pressure,
+    });
+}
+
+void record_line_metrics_diagnostics(
+    fake_text_engine_diagnostics& diagnostics,
+    const render_text_request& request,
+    const std::vector<laid_out_line>& lines)
+{
+    diagnostics.line_metrics.clear();
+    diagnostics.line_layout_metrics = render_text_line_layout_metrics_snapshot{
+        .produced_line_count = lines.size(),
+        .visible_line_count = request.options.max_lines == 0
+            ? lines.size()
+            : std::min<std::size_t>(lines.size(), request.options.max_lines),
+        .truncated_line_count = request.options.max_lines > 0 && lines.size() > request.options.max_lines
+            ? lines.size() - request.options.max_lines
+            : 0U,
+    };
+    diagnostics.line_layout_metrics.truncated = diagnostics.line_layout_metrics.truncated_line_count > 0;
+
+    for (std::size_t line_index = 0; line_index < lines.size(); ++line_index) {
+        const laid_out_line& line = lines[line_index];
+        const bool overflowed = request.bounds.width > 0.0f && line.width > request.bounds.width;
+        const float overflow_width = overflowed ? line.width - request.bounds.width : 0.0f;
+        diagnostics.line_metrics.push_back(render_text_line_metrics_snapshot{
+            .line_index = line_index,
+            .width = line.width,
+            .height = line.height,
+            .max_width = request.bounds.width,
+            .overflow_width = overflow_width,
+            .overflowed = overflowed,
+            .truncated = line_index >= diagnostics.line_layout_metrics.visible_line_count,
+        });
+        if (overflowed) {
+            ++diagnostics.line_layout_metrics.overflow_line_count;
+        }
+    }
+    diagnostics.line_layout_metrics.overflowed = diagnostics.line_layout_metrics.overflow_line_count > 0;
+}
+
+std::vector<laid_out_line> break_lines(
+    const render_text_request& request,
+    const std::vector<shaped_glyph>& glyphs,
+    fake_text_engine_diagnostics* diagnostics = nullptr)
 {
     if (glyphs.empty()) {
-        return {make_line(glyphs, {})};
+        std::vector<laid_out_line> empty_lines = {make_line(glyphs, {})};
+        if (diagnostics != nullptr) {
+            record_line_metrics_diagnostics(*diagnostics, request, empty_lines);
+        }
+        return empty_lines;
     }
 
     std::vector<laid_out_line> lines;
@@ -312,6 +458,10 @@ std::vector<laid_out_line> break_lines(const render_text_request& request, const
 
     for (const utf8_line_fragment& fragment : fragments) {
         std::vector<std::size_t> line = glyph_indices_for_fragment(fragment);
+        const std::size_t line_index = lines.size();
+        if (diagnostics != nullptr) {
+            record_line_break_diagnostic(*diagnostics, request, glyphs, fragment, line, line_index);
+        }
         if (!line.empty()) {
             append_line(glyphs, lines, std::move(line));
             pending_empty_line_height = 0.0f;
@@ -348,6 +498,10 @@ std::vector<laid_out_line> break_lines(const render_text_request& request, const
 
     if (lines.empty()) {
         lines.push_back(make_line(glyphs, {}));
+    }
+
+    if (diagnostics != nullptr) {
+        record_line_metrics_diagnostics(*diagnostics, request, lines);
     }
 
     if (request.options.max_lines > 0 && lines.size() > request.options.max_lines) {
@@ -754,14 +908,14 @@ render_text_measure fake_text_engine::measure_text(const render_text_request& re
 {
     diagnostics_ = {};
     const std::vector<shaped_glyph> glyphs = shape_request(request, font_resolver_, diagnostics_);
-    return measure_lines(break_lines(request, glyphs));
+    return measure_lines(break_lines(request, glyphs, &diagnostics_));
 }
 
 render_text_layout fake_text_engine::layout_text(const render_text_request& request) const
 {
     diagnostics_ = {};
     const std::vector<shaped_glyph> shaped_glyphs = shape_request(request, font_resolver_, diagnostics_);
-    const std::vector<laid_out_line> lines = break_lines(request, shaped_glyphs);
+    const std::vector<laid_out_line> lines = break_lines(request, shaped_glyphs, &diagnostics_);
     std::vector<laid_out_glyph_cluster> cluster_layouts =
         collect_glyph_cluster_layouts(request, shaped_glyphs, lines);
     record_glyph_cluster_diagnostics(diagnostics_, cluster_layouts);
@@ -806,7 +960,7 @@ std::vector<fake_text_engine_caret> fake_text_engine::caret_positions(const rend
 {
     diagnostics_ = {};
     const std::vector<shaped_glyph> shaped_glyphs = shape_request(request, font_resolver_, diagnostics_);
-    const std::vector<laid_out_line> lines = break_lines(request, shaped_glyphs);
+    const std::vector<laid_out_line> lines = break_lines(request, shaped_glyphs, &diagnostics_);
     const std::vector<laid_out_glyph_cluster> cluster_layouts =
         collect_glyph_cluster_layouts(request, shaped_glyphs, lines);
     record_glyph_cluster_diagnostics(diagnostics_, cluster_layouts);
@@ -847,7 +1001,7 @@ std::vector<render_rect> fake_text_engine::selection_rects(
     }
 
     const std::vector<shaped_glyph> shaped_glyphs = shape_request(request, font_resolver_, diagnostics_);
-    const std::vector<laid_out_line> lines = break_lines(request, shaped_glyphs);
+    const std::vector<laid_out_line> lines = break_lines(request, shaped_glyphs, &diagnostics_);
     const std::vector<laid_out_glyph_cluster> cluster_layouts =
         collect_glyph_cluster_layouts(request, shaped_glyphs, lines);
     record_glyph_cluster_diagnostics(diagnostics_, cluster_layouts);

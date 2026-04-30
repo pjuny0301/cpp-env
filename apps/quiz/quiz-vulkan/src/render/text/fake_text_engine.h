@@ -94,6 +94,11 @@ struct fake_text_engine_diagnostics {
         return !glyph_atlas_pages.empty();
     }
 
+    bool has_clean_glyph_atlas_pages() const
+    {
+        return has_glyph_atlas_pages() && glyph_atlas_page_policy.repeated_layout_clean_page_count > 0;
+    }
+
     bool has_utf8_clusters() const
     {
         return !utf8_clusters.empty();

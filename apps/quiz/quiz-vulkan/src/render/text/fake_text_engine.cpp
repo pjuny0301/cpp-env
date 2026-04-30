@@ -73,7 +73,9 @@ struct atlas_page_diagnostic_result {
     std::size_t cache_hit_count = 0;
     std::size_t new_slot_count = 0;
     std::size_t created_page_count = 0;
+    std::size_t reused_page_count = 0;
     std::size_t dirty_update_count = 0;
+    std::size_t dirty_cluster_count = 0;
     render_rect dirty_bounds;
     bool upload_ready = false;
 };
@@ -1129,9 +1131,11 @@ void record_glyph_atlas_page_diagnostics(
     std::size_t total_cache_hit_count = 0;
     std::size_t allocated_page_count = 0;
     std::size_t created_page_count = 0;
+    std::size_t reused_page_count = 0;
     std::size_t dirty_page_count = 0;
     std::size_t upload_ready_page_count = 0;
     std::size_t cache_hit_page_count = 0;
+    std::size_t dirty_cluster_count = 0;
 
     for (const render_text_atlas_page& page : pages) {
         atlas_page_diagnostic_result result{
@@ -1155,6 +1159,9 @@ void record_glyph_atlas_page_diagnostics(
             if (placement.created_page) {
                 ++result.created_page_count;
                 ++created_page_count;
+            } else if (placement.newly_allocated) {
+                ++result.reused_page_count;
+                ++reused_page_count;
             }
         }
 
@@ -1167,11 +1174,20 @@ void record_glyph_atlas_page_diagnostics(
 
         if (const render_text_atlas_update* update = find_dirty_update_for_page(dirty_updates, page.id);
             update != nullptr) {
+            const std::size_t dirty_cluster_count_for_page = static_cast<std::size_t>(std::count_if(
+                placements.begin(),
+                placements.end(),
+                [&page](const render_text_glyph_atlas_placement_snapshot& placement) {
+                    return placement.page.id == page.id && placement.newly_allocated;
+                }));
+
             result.dirty_update_count = 1;
+            result.dirty_cluster_count = dirty_cluster_count_for_page;
             result.dirty_bounds = update->updated_bounds;
             result.upload_ready = true;
             ++dirty_page_count;
             ++upload_ready_page_count;
+            dirty_cluster_count += dirty_cluster_count_for_page;
         }
 
         diagnostics.glyph_atlas_pages.push_back(render_text_glyph_atlas_page_snapshot{
@@ -1180,7 +1196,9 @@ void record_glyph_atlas_page_diagnostics(
             .cache_hit_count = result.cache_hit_count,
             .new_slot_count = result.new_slot_count,
             .created_page_count = result.created_page_count,
+            .reused_page_count = result.reused_page_count,
             .dirty_update_count = result.dirty_update_count,
+            .dirty_cluster_count = result.dirty_cluster_count,
             .dirty_bounds = result.dirty_bounds,
             .upload_ready = result.upload_ready,
         });
@@ -1191,9 +1209,11 @@ void record_glyph_atlas_page_diagnostics(
     diagnostics.glyph_atlas_page_policy.dirty_page_count = dirty_page_count;
     diagnostics.glyph_atlas_page_policy.upload_ready_page_count = upload_ready_page_count;
     diagnostics.glyph_atlas_page_policy.cache_hit_page_count = cache_hit_page_count;
+    diagnostics.glyph_atlas_page_policy.dirty_cluster_count = dirty_cluster_count;
     diagnostics.glyph_atlas_page_policy.total_cluster_count = total_cluster_count;
     diagnostics.glyph_atlas_page_policy.total_new_slot_count = total_new_slot_count;
     diagnostics.glyph_atlas_page_policy.total_cache_hit_count = total_cache_hit_count;
+    diagnostics.glyph_atlas_page_policy.repeated_layout_clean_page_count = dirty_page_count == 0 ? pages.size() : 0;
 }
 
 void record_glyph_cache_readiness_diagnostics(

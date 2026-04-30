@@ -38,6 +38,8 @@ struct fake_text_engine_diagnostics {
     std::vector<render_text_selection_rect_snapshot> selection_rects;
     std::vector<render_text_glyph_atlas_placement_snapshot> glyph_atlas_placements;
     render_text_glyph_atlas_metrics_snapshot glyph_atlas_metrics;
+    std::vector<render_text_glyph_atlas_page_snapshot> glyph_atlas_pages;
+    render_text_glyph_atlas_page_policy_snapshot glyph_atlas_page_policy;
     std::vector<render_text_utf8_cluster_snapshot> utf8_clusters;
     std::vector<render_text_font_face_selection_snapshot> font_face_selections;
     std::vector<render_text_glyph_font_resolution_snapshot> glyph_font_resolutions;
@@ -85,6 +87,11 @@ struct fake_text_engine_diagnostics {
     bool has_glyph_atlas_placements() const
     {
         return !glyph_atlas_placements.empty();
+    }
+
+    bool has_glyph_atlas_pages() const
+    {
+        return !glyph_atlas_pages.empty();
     }
 
     bool has_utf8_clusters() const

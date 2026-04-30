@@ -43,8 +43,15 @@ static_assert(requires(audio::sound_mixer_state mixer, audio::sound_bus bus) {
     { mixer.audible(bus) } -> std::same_as<bool>;
 });
 
+static_assert(requires(audio::sound_mixer_event mixer_event) {
+    { mixer_event.event } -> std::same_as<audio::sound_event&>;
+    { mixer_event.kind } -> std::same_as<audio::sound_mixer_event_kind&>;
+    { mixer_event.status } -> std::same_as<audio::sound_playback_status&>;
+});
+
 static_assert(requires(
     audio::catalog_audio_engine catalog_engine,
+    audio::procedural_audio_engine procedural_engine,
     audio::null_audio_engine null_engine,
     audio::sound_bus bus,
     float gain,
@@ -56,6 +63,13 @@ static_assert(requires(
     { catalog_engine.mixer_state() } -> std::same_as<audio::sound_mixer_state>;
     { catalog_engine.mixer_events() } -> std::same_as<const std::vector<audio::sound_mixer_event>&>;
     { catalog_engine.clear_mixer_events() } -> std::same_as<void>;
+    { procedural_engine.set_bus_gain(bus, gain) } -> std::same_as<void>;
+    { procedural_engine.bus_gain(bus) } -> std::same_as<float>;
+    { procedural_engine.set_bus_muted(bus, muted) } -> std::same_as<void>;
+    { procedural_engine.bus_muted(bus) } -> std::same_as<bool>;
+    { procedural_engine.mixer_state() } -> std::same_as<audio::sound_mixer_state>;
+    { procedural_engine.mixer_events() } -> std::same_as<const std::vector<audio::sound_mixer_event>&>;
+    { procedural_engine.clear_mixer_events() } -> std::same_as<void>;
     { null_engine.events() } -> std::same_as<const std::vector<audio::sound_event>&>;
     { null_engine.mixer_events() } -> std::same_as<const std::vector<audio::sound_mixer_event>&>;
     { null_engine.clear_mixer_events() } -> std::same_as<void>;

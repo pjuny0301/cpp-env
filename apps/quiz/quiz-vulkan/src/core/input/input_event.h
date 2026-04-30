@@ -1,5 +1,8 @@
 #pragma once
 
+#include "core/input/text_input_types.h"
+
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <variant>
@@ -69,12 +72,43 @@ struct scroll_event {
     float line_delta_y = 0.0f;
 };
 
+enum class input_event_summary_kind {
+    tap,
+    long_press,
+    swipe_left,
+    swipe_right,
+    drag_start,
+    drag_update,
+    drag_end,
+    drag_cancel,
+    wheel,
+};
+
+struct normalized_input_event_summary {
+    input_event_summary_kind kind = input_event_summary_kind::tap;
+    std::int64_t timestamp_ms = 0;
+    std::int64_t duration_ms = 0;
+    std::int32_t pointer_id = 0;
+    float start_x = 0.0f;
+    float start_y = 0.0f;
+    float x = 0.0f;
+    float y = 0.0f;
+    float delta_x = 0.0f;
+    float delta_y = 0.0f;
+    float pixel_delta_x = 0.0f;
+    float pixel_delta_y = 0.0f;
+    float line_delta_x = 0.0f;
+    float line_delta_y = 0.0f;
+};
+
 enum class text_event_kind {
     commit,
     backspace,
     submit,
     focus_gained,
     focus_lost,
+    caret_moved,
+    selection_changed,
 };
 
 struct text_event {
@@ -95,6 +129,7 @@ struct ime_event {
     std::int64_t timestamp_ms = 0;
     std::string target_id;
     std::string utf8_text;
+    ime_composition_state composition;
 };
 
 using input_event = std::variant<gesture_event, text_event, ime_event, scroll_event>;

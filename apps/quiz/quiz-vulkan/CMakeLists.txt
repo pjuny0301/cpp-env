@@ -79,6 +79,7 @@ target_sources(
         FILE_SET HEADERS
         BASE_DIRS src
         FILES
+            src/assets/asset_path_policy.h
             src/assets/asset_resolver.h
 )
 target_compile_features(quiz_vulkan_asset_contract INTERFACE cxx_std_23)
@@ -168,6 +169,7 @@ target_sources(
             src/core/input/input_engine.h
             src/core/input/input_event.h
             src/core/input/text_input_model.h
+            src/core/input/text_input_types.h
 )
 target_compile_features(quiz_vulkan_input PUBLIC cxx_std_23)
 target_include_directories(quiz_vulkan_input PUBLIC src)
@@ -463,6 +465,16 @@ if(BUILD_TESTING)
     quiz_vulkan_add_test_directory(tests/layout LINK_LIBRARIES quiz_vulkan_scene)
     quiz_vulkan_add_test_directory(tests/input LINK_LIBRARIES quiz_vulkan_input)
     quiz_vulkan_add_test_directory(tests/ui LINK_LIBRARIES quiz_vulkan_ui)
+
+    quiz_vulkan_add_test_executable(
+        quiz_vulkan_architecture_boundary_tests
+        tests/architecture/architecture_boundary_tests.cpp
+    )
+    target_compile_definitions(
+        quiz_vulkan_architecture_boundary_tests
+        PRIVATE
+            QUIZ_VULKAN_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}"
+    )
 
     add_executable(quiz_vulkan_renderer_tests tests/render/vulkan_renderer_tests.cpp)
     target_link_libraries(quiz_vulkan_renderer_tests PRIVATE quiz_vulkan_renderer)

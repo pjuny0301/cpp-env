@@ -152,6 +152,13 @@ public:
             const sound_definition& fallback = catalog_.resolve(request.sound);
             const std::string diagnostic = "sound is not registered";
             mixer_events_.push_back(sound_mixer_event{
+                .event = sound_event{
+                    .id = request.event_id,
+                    .kind = sound_event_kind::play,
+                    .sound = request.sound,
+                    .playback_id = 0,
+                    .muted = false,
+                },
                 .id = request.event_id,
                 .kind = sound_mixer_event_kind::playback_suppressed,
                 .sound = request.sound,
@@ -186,6 +193,13 @@ public:
                 .muted = true,
             });
             mixer_events_.push_back(sound_mixer_event{
+                .event = sound_event{
+                    .id = request.event_id,
+                    .kind = sound_event_kind::play,
+                    .sound = request.sound,
+                    .playback_id = 0,
+                    .muted = true,
+                },
                 .id = request.event_id,
                 .kind = sound_mixer_event_kind::playback_suppressed,
                 .sound = request.sound,
@@ -222,6 +236,13 @@ public:
             .muted = false,
         });
         mixer_events_.push_back(sound_mixer_event{
+            .event = sound_event{
+                .id = request.event_id,
+                .kind = sound_event_kind::play,
+                .sound = request.sound,
+                .playback_id = playback_id,
+                .muted = false,
+            },
             .id = request.event_id,
             .kind = sound_mixer_event_kind::playback_queued,
             .sound = request.sound,
@@ -255,6 +276,13 @@ public:
             .muted = false,
         });
         mixer_events_.push_back(sound_mixer_event{
+            .event = sound_event{
+                .id = 0,
+                .kind = sound_event_kind::stop,
+                .sound = request.sound,
+                .playback_id = request.playback_id,
+                .muted = false,
+            },
             .id = 0,
             .kind = sound_mixer_event_kind::playback_stopped,
             .sound = request.sound,
@@ -301,6 +329,13 @@ public:
             .muted = false,
         });
         mixer_events_.push_back(sound_mixer_event{
+            .event = sound_event{
+                .id = 0,
+                .kind = sound_event_kind::stop_all,
+                .sound = {},
+                .playback_id = 0,
+                .muted = false,
+            },
             .id = 0,
             .kind = sound_mixer_event_kind::all_playbacks_stopped,
             .sound = {},
@@ -330,6 +365,13 @@ public:
             .muted = muted_,
         });
         mixer_events_.push_back(sound_mixer_event{
+            .event = sound_event{
+                .id = 0,
+                .kind = sound_event_kind::mute_changed,
+                .sound = {},
+                .playback_id = 0,
+                .muted = muted_,
+            },
             .id = 0,
             .kind = sound_mixer_event_kind::global_mute_changed,
             .sound = {},
@@ -356,6 +398,13 @@ public:
         mix.gain = std::max(0.0f, gain);
         refresh_active_bus_gain(bus);
         mixer_events_.push_back(sound_mixer_event{
+            .event = sound_event{
+                .id = 0,
+                .kind = sound_event_kind::mute_changed,
+                .sound = {},
+                .playback_id = 0,
+                .muted = !mixer_.audible(bus),
+            },
             .id = 0,
             .kind = sound_mixer_event_kind::bus_gain_changed,
             .sound = {},
@@ -381,6 +430,13 @@ public:
         mixer_.bus_mix(bus).muted = muted;
         refresh_active_bus_gain(bus);
         mixer_events_.push_back(sound_mixer_event{
+            .event = sound_event{
+                .id = 0,
+                .kind = sound_event_kind::mute_changed,
+                .sound = {},
+                .playback_id = 0,
+                .muted = muted,
+            },
             .id = 0,
             .kind = sound_mixer_event_kind::bus_mute_changed,
             .sound = {},
@@ -516,62 +572,52 @@ public:
 
     sound_playback_result play_sound(const sound_playback_request& request) override
     {
-        const sound_playback_result result = catalog_engine_.play_sound(request);
-        if (result.status == sound_playback_status::queued) {
-            mixer_events_.push_back(sound_mixer_event{
-                .event = sound_event{
-                    .id = request.event_id,
-                    .kind = sound_event_kind::play,
-                    .sound = request.sound,
-                    .playback_id = result.playback_id,
-                },
-                .definition = result.definition,
-                .mode = request.mode,
-            });
-        }
-        return result;
+        return catalog_engine_.play_sound(request);
     }
 
     void stop_sound(const sound_stop_request& request) override
     {
-        const std::vector<active_sound_playback> removed_playbacks = matching_active_playbacks(request);
         catalog_engine_.stop_sound(request);
-
-        for (const active_sound_playback& playback : removed_playbacks) {
-            mixer_events_.push_back(sound_mixer_event{
-                .event = sound_event{
-                    .kind = sound_event_kind::stop,
-                    .sound = playback.sound,
-                    .playback_id = playback.playback_id,
-                },
-                .definition = catalog_engine_.catalog().resolve(playback.sound),
-                .mode = playback.mode,
-            });
-        }
     }
 
     void stop_all_sounds() override
     {
         catalog_engine_.stop_all_sounds();
-        mixer_events_.push_back(sound_mixer_event{
-            .event = sound_event{.kind = sound_event_kind::stop_all},
-        });
     }
 
     void set_muted(bool muted) override
     {
         catalog_engine_.set_muted(muted);
-        mixer_events_.push_back(sound_mixer_event{
-            .event = sound_event{
-                .kind = sound_event_kind::mute_changed,
-                .muted = muted,
-            },
-        });
     }
 
     bool muted() const override
     {
         return catalog_engine_.muted();
+    }
+
+    void set_bus_gain(sound_bus bus, float gain)
+    {
+        catalog_engine_.set_bus_gain(bus, gain);
+    }
+
+    float bus_gain(sound_bus bus) const
+    {
+        return catalog_engine_.bus_gain(bus);
+    }
+
+    void set_bus_muted(sound_bus bus, bool muted)
+    {
+        catalog_engine_.set_bus_muted(bus, muted);
+    }
+
+    bool bus_muted(sound_bus bus) const
+    {
+        return catalog_engine_.bus_muted(bus);
+    }
+
+    sound_mixer_state mixer_state() const
+    {
+        return catalog_engine_.mixer_state();
     }
 
     const sound_catalog& catalog() const
@@ -591,7 +637,7 @@ public:
 
     const std::vector<sound_mixer_event>& mixer_events() const
     {
-        return mixer_events_;
+        return catalog_engine_.mixer_events();
     }
 
     void clear_events()
@@ -601,30 +647,11 @@ public:
 
     void clear_mixer_events()
     {
-        mixer_events_.clear();
+        catalog_engine_.clear_mixer_events();
     }
 
 private:
-    std::vector<active_sound_playback> matching_active_playbacks(const sound_stop_request& request) const
-    {
-        std::vector<active_sound_playback> matches;
-        for (const active_sound_playback& playback : catalog_engine_.active_playbacks()) {
-            if (request.all_instances) {
-                if (request.sound.empty() || playback.sound == request.sound) {
-                    matches.push_back(playback);
-                }
-                continue;
-            }
-
-            if (request.playback_id != 0 && playback.playback_id == request.playback_id) {
-                matches.push_back(playback);
-            }
-        }
-        return matches;
-    }
-
     catalog_audio_engine catalog_engine_;
-    std::vector<sound_mixer_event> mixer_events_;
 };
 
 class null_audio_engine final : public audio_engine_interface {
@@ -640,6 +667,13 @@ public:
             .muted = muted_,
         });
         mixer_events_.push_back(sound_mixer_event{
+            .event = sound_event{
+                .id = request.event_id,
+                .kind = sound_event_kind::play,
+                .sound = request.sound,
+                .playback_id = 0,
+                .muted = muted_,
+            },
             .id = request.event_id,
             .kind = sound_mixer_event_kind::playback_suppressed,
             .sound = request.sound,
@@ -680,6 +714,13 @@ public:
             .muted = muted_,
         });
         mixer_events_.push_back(sound_mixer_event{
+            .event = sound_event{
+                .id = 0,
+                .kind = sound_event_kind::stop,
+                .sound = request.sound,
+                .playback_id = request.playback_id,
+                .muted = muted_,
+            },
             .id = 0,
             .kind = sound_mixer_event_kind::playback_stopped,
             .sound = request.sound,
@@ -710,6 +751,13 @@ public:
             .muted = muted_,
         });
         mixer_events_.push_back(sound_mixer_event{
+            .event = sound_event{
+                .id = 0,
+                .kind = sound_event_kind::stop_all,
+                .sound = {},
+                .playback_id = 0,
+                .muted = muted_,
+            },
             .id = 0,
             .kind = sound_mixer_event_kind::all_playbacks_stopped,
             .sound = {},
@@ -736,6 +784,13 @@ public:
             .muted = muted_,
         });
         mixer_events_.push_back(sound_mixer_event{
+            .event = sound_event{
+                .id = 0,
+                .kind = sound_event_kind::mute_changed,
+                .sound = {},
+                .playback_id = 0,
+                .muted = muted_,
+            },
             .id = 0,
             .kind = sound_mixer_event_kind::global_mute_changed,
             .sound = {},

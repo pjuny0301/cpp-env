@@ -69,6 +69,10 @@ std::vector<gesture_event> gesture_recognizer::process_pointer_event(const point
 {
     std::vector<gesture_event> gestures;
 
+    if (captured_by_other_pointer(event.pointer_id)) {
+        return gestures;
+    }
+
     if (event.phase == pointer_phase::down) {
         if (auto old_pointer = pointers_.find(event.pointer_id);
             old_pointer != pointers_.end() && old_pointer->second.dragging) {
@@ -80,6 +84,7 @@ std::vector<gesture_event> gesture_recognizer::process_pointer_event(const point
                 old_state.start_y,
                 old_state.last_x,
                 old_state.last_y));
+            release_pointer_capture(event.pointer_id);
         }
 
         pointers_[event.pointer_id] = pointer_state{
@@ -118,6 +123,7 @@ std::vector<gesture_event> gesture_recognizer::process_pointer_event(const point
                 previous_y));
         }
         pointers_.erase(pointer);
+        release_pointer_capture(event.pointer_id);
         return gestures;
     }
 
@@ -141,6 +147,7 @@ std::vector<gesture_event> gesture_recognizer::process_pointer_event(const point
         if (!inside_drag_slop(state, event.x, event.y)) {
             state.dragging = true;
             state.suppress_release_gesture = true;
+            capture_pointer(event.pointer_id);
             gestures.push_back(drag_event(
                 gesture_kind::drag_start,
                 event,
@@ -171,6 +178,7 @@ std::vector<gesture_event> gesture_recognizer::process_pointer_event(const point
             previous_x,
             previous_y));
         pointers_.erase(pointer);
+        release_pointer_capture(event.pointer_id);
         return gestures;
     }
 
@@ -208,6 +216,7 @@ std::vector<gesture_event> gesture_recognizer::process_pointer_event(const point
     }
 
     pointers_.erase(pointer);
+    release_pointer_capture(event.pointer_id);
     return gestures;
 }
 
@@ -228,6 +237,36 @@ std::vector<gesture_event> gesture_recognizer::update_time(std::int64_t timestam
 void gesture_recognizer::reset()
 {
     pointers_.clear();
+    captured_pointer_id_.reset();
+}
+
+pointer_capture_snapshot gesture_recognizer::capture_snapshot() const
+{
+    if (captured_pointer_id_.has_value()) {
+        return pointer_capture_snapshot{
+            .lifecycle = pointer_capture_lifecycle::captured,
+            .active = true,
+            .pointer_id = *captured_pointer_id_,
+            .tracked_pointer_count = pointers_.size(),
+        };
+    }
+
+    if (pointers_.empty()) {
+        return pointer_capture_snapshot{};
+    }
+
+    std::int32_t pointer_id = pointers_.begin()->first;
+    for (const auto& [tracked_pointer_id, state] : pointers_) {
+        static_cast<void>(state);
+        pointer_id = std::min(pointer_id, tracked_pointer_id);
+    }
+
+    return pointer_capture_snapshot{
+        .lifecycle = pointer_capture_lifecycle::tracking,
+        .active = false,
+        .pointer_id = pointer_id,
+        .tracked_pointer_count = pointers_.size(),
+    };
 }
 
 std::optional<gesture_event> gesture_recognizer::maybe_emit_long_press(
@@ -235,7 +274,7 @@ std::optional<gesture_event> gesture_recognizer::maybe_emit_long_press(
     pointer_state& state,
     std::int64_t timestamp_ms)
 {
-    if (state.long_press_emitted || state.moved_outside_tap_slop) {
+    if (state.long_press_emitted || state.moved_outside_tap_slop || state.dragging) {
         return std::nullopt;
     }
 
@@ -264,10 +303,34 @@ bool gesture_recognizer::inside_tap_slop(const pointer_state& state, float x, fl
         && abs_float(y - state.start_y) <= thresholds_.tap_slop;
 }
 
+bool gesture_recognizer::captured_by_other_pointer(std::int32_t pointer_id) const
+{
+    return captured_pointer_id_.has_value() && *captured_pointer_id_ != pointer_id;
+}
+
 bool gesture_recognizer::inside_drag_slop(const pointer_state& state, float x, float y) const
 {
     return abs_float(x - state.start_x) <= thresholds_.drag_start_slop
         && abs_float(y - state.start_y) <= thresholds_.drag_start_slop;
+}
+
+void gesture_recognizer::capture_pointer(std::int32_t pointer_id)
+{
+    captured_pointer_id_ = pointer_id;
+    for (auto pointer = pointers_.begin(); pointer != pointers_.end();) {
+        if (pointer->first == pointer_id) {
+            ++pointer;
+        } else {
+            pointer = pointers_.erase(pointer);
+        }
+    }
+}
+
+void gesture_recognizer::release_pointer_capture(std::int32_t pointer_id)
+{
+    if (captured_pointer_id_ == pointer_id) {
+        captured_pointer_id_.reset();
+    }
 }
 
 } // namespace quiz_vulkan::input

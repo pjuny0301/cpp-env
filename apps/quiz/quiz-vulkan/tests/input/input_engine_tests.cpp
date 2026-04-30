@@ -1,8 +1,10 @@
 #include "core/input/input_engine.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <utility>
 #include <variant>
@@ -23,6 +25,42 @@ void require(bool condition, const char* message)
 
     std::cerr << "input_engine_tests failed: " << message << '\n';
     std::exit(1);
+}
+
+void require_range(
+    quiz_vulkan::input::text_range range,
+    std::size_t start_byte,
+    std::size_t end_byte,
+    const char* message)
+{
+    require(range.start_byte == start_byte, message);
+    require(range.end_byte == end_byte, message);
+}
+
+void require_capture_snapshot(
+    quiz_vulkan::input::pointer_capture_snapshot snapshot,
+    quiz_vulkan::input::pointer_capture_lifecycle lifecycle,
+    bool active,
+    std::int32_t pointer_id,
+    std::size_t tracked_pointer_count,
+    const char* message)
+{
+    require(snapshot.lifecycle == lifecycle, message);
+    require(snapshot.active == active, message);
+    require(snapshot.pointer_id == pointer_id, message);
+    require(snapshot.tracked_pointer_count == tracked_pointer_count, message);
+}
+
+const quiz_vulkan::input::action_route_policy_diagnostic& require_policy(
+    const quiz_vulkan::input::input_routing_diagnostics& diagnostics,
+    std::size_t index,
+    quiz_vulkan::input::action_route_policy_kind kind,
+    const char* message)
+{
+    require(index < diagnostics.action_routes.size(), message);
+    const quiz_vulkan::input::action_route_policy_diagnostic& policy = diagnostics.action_routes[index];
+    require(policy.kind == kind, message);
+    return policy;
 }
 
 template <typename T>
@@ -75,13 +113,19 @@ quiz_vulkan::raw_platform_input_event key(
     std::int64_t timestamp_ms,
     std::string logical_key,
     bool repeat = false,
-    quiz_vulkan::raw_platform_key_phase phase = quiz_vulkan::raw_platform_key_phase::down)
+    quiz_vulkan::raw_platform_key_phase phase = quiz_vulkan::raw_platform_key_phase::down,
+    bool ctrl = false,
+    bool shift = false,
+    bool meta = false)
 {
     return quiz_vulkan::raw_platform_key_event{
         .timestamp_ms = timestamp_ms,
         .phase = phase,
         .key_code = 0,
         .logical_key = std::move(logical_key),
+        .ctrl = ctrl,
+        .shift = shift,
+        .meta = meta,
         .repeat = repeat,
     };
 }
@@ -363,6 +407,115 @@ void test_drag_gestures_route_from_raw_pointer()
     require(cancel.delta_y == 3.0f, "raw touch drag cancel delta y is from previous pointer");
 }
 
+void test_pointer_capture_routes_drag_and_ignores_other_pointers()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    require(engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::down,
+                100,
+                0.0f,
+                0.0f,
+                raw_platform_pointer_button::primary,
+                1))
+                .empty(),
+        "capture route first pointer down emits no gesture");
+    require(engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::down,
+                105,
+                50.0f,
+                0.0f,
+                raw_platform_pointer_button::primary,
+                2))
+                .empty(),
+        "capture route second pointer before drag emits no gesture");
+
+    std::vector<input_event> events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::move,
+        120,
+        9.0f,
+        0.0f,
+        raw_platform_pointer_button::primary,
+        1));
+    require(events.size() == 1, "capture route first pointer starts drag");
+    const gesture_event& start = require_event<gesture_event>(events, 0);
+    require(start.kind == gesture_kind::drag_start, "capture route first pointer emits drag start");
+    require(start.pointer_id == 1, "capture route drag start preserves first pointer id");
+
+    require(engine.update_time(705).empty(), "capture route suppresses other pointer long press");
+    require(engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::up,
+                710,
+                50.0f,
+                0.0f,
+                raw_platform_pointer_button::primary,
+                2))
+                .empty(),
+        "capture route ignores other pointer up");
+    require(engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::down,
+                720,
+                60.0f,
+                0.0f,
+                raw_platform_pointer_button::primary,
+                2))
+                .empty(),
+        "capture route ignores new other pointer down");
+    require(engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::up,
+                730,
+                60.0f,
+                0.0f,
+                raw_platform_pointer_button::primary,
+                2))
+                .empty(),
+        "capture route ignores new other pointer up");
+
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::cancel,
+        740,
+        12.0f,
+        3.0f,
+        raw_platform_pointer_button::primary,
+        1));
+    require(events.size() == 1, "capture route first pointer cancel emits drag cancel");
+    const gesture_event& cancel = require_event<gesture_event>(events, 0);
+    require(cancel.kind == gesture_kind::drag_cancel, "capture route cancel kind is routed");
+    require(cancel.pointer_id == 1, "capture route cancel preserves first pointer id");
+    require(engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::up,
+                750,
+                12.0f,
+                3.0f,
+                raw_platform_pointer_button::primary,
+                1))
+                .empty(),
+        "capture route up after drag cancel emits no stale gesture");
+
+    require(engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::down,
+                800,
+                60.0f,
+                0.0f,
+                raw_platform_pointer_button::primary,
+                2))
+                .empty(),
+        "capture route second pointer is accepted after release");
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::up,
+        820,
+        60.0f,
+        0.0f,
+        raw_platform_pointer_button::primary,
+        2));
+    require(events.size() == 1, "capture route second pointer taps after release");
+    const gesture_event& tap = require_event<gesture_event>(events, 0);
+    require(tap.kind == gesture_kind::tap, "capture route second pointer tap kind is routed");
+    require(tap.pointer_id == 2, "capture route second pointer tap preserves id");
+}
+
 void test_drag_start_slop_routes_from_engine_thresholds()
 {
     using namespace quiz_vulkan;
@@ -493,6 +646,220 @@ void test_raw_platform_scroll_routes_through_input_engine()
     require(events.empty(), "raw platform zero scroll emits no input event");
 }
 
+void test_gesture_routing_diagnostics_summarize_gestures_and_wheel()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    require_capture_snapshot(
+        engine.routing_diagnostics().pointer_capture,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "routing diagnostics start with idle capture");
+
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 100, 0.0f, 0.0f)).empty(),
+        "diagnostic swipe down emits no gesture");
+    require(engine.routing_diagnostics().normalized_events.empty(), "diagnostic swipe down has no summaries");
+    require_capture_snapshot(
+        engine.routing_diagnostics().pointer_capture,
+        pointer_capture_lifecycle::tracking,
+        false,
+        1,
+        1,
+        "diagnostic swipe down tracks pointer");
+
+    std::vector<input_event> events =
+        engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 180, 70.0f, 0.0f));
+    require(events.size() == 1, "diagnostic swipe emits one event");
+    const auto& swipe_summaries = engine.routing_diagnostics().normalized_events;
+    require(swipe_summaries.size() == 1, "diagnostic swipe emits one summary");
+    require(swipe_summaries[0].kind == input_event_summary_kind::swipe_right,
+        "diagnostic swipe summary kind is swipe right");
+    require(swipe_summaries[0].timestamp_ms == 180, "diagnostic swipe summary timestamp is preserved");
+    require(swipe_summaries[0].duration_ms == 80, "diagnostic swipe summary duration is preserved");
+    require(swipe_summaries[0].pointer_id == 1, "diagnostic swipe summary pointer id is preserved");
+    require(swipe_summaries[0].start_x == 0.0f, "diagnostic swipe summary start x is preserved");
+    require(swipe_summaries[0].x == 70.0f, "diagnostic swipe summary end x is preserved");
+    require_capture_snapshot(
+        engine.routing_diagnostics().pointer_capture,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "diagnostic swipe release clears pointer capture");
+
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 200, 10.0f, 10.0f)).empty(),
+        "diagnostic long press down emits no gesture");
+    events = engine.update_time(800);
+    require(events.size() == 1, "diagnostic long press emits one event");
+    const auto& long_press_summaries = engine.routing_diagnostics().normalized_events;
+    require(long_press_summaries.size() == 1, "diagnostic long press emits one summary");
+    require(long_press_summaries[0].kind == input_event_summary_kind::long_press,
+        "diagnostic long press summary kind is long press");
+    require(long_press_summaries[0].duration_ms == 600, "diagnostic long press duration is preserved");
+    require(long_press_summaries[0].x == 10.0f, "diagnostic long press x is preserved");
+    require_capture_snapshot(
+        engine.routing_diagnostics().pointer_capture,
+        pointer_capture_lifecycle::tracking,
+        false,
+        1,
+        1,
+        "diagnostic long press keeps pointer tracked until release");
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 810, 10.0f, 10.0f)).empty(),
+        "diagnostic long press release is suppressed");
+
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 900, 0.0f, 0.0f)).empty(),
+        "diagnostic drag down emits no gesture");
+    events = engine.process_raw_event(pointer(raw_platform_pointer_phase::move, 920, 9.0f, 4.0f));
+    require(events.size() == 1, "diagnostic drag start emits one event");
+    const auto& drag_start_summaries = engine.routing_diagnostics().normalized_events;
+    require(drag_start_summaries.size() == 1, "diagnostic drag start emits one summary");
+    require(drag_start_summaries[0].kind == input_event_summary_kind::drag_start,
+        "diagnostic drag start summary kind is drag start");
+    require(drag_start_summaries[0].delta_x == 9.0f, "diagnostic drag start delta x is preserved");
+    require(drag_start_summaries[0].delta_y == 4.0f, "diagnostic drag start delta y is preserved");
+    require_capture_snapshot(
+        engine.routing_diagnostics().pointer_capture,
+        pointer_capture_lifecycle::captured,
+        true,
+        1,
+        1,
+        "diagnostic drag start captures pointer");
+
+    events = engine.process_raw_event(pointer(raw_platform_pointer_phase::move, 940, 12.0f, 8.0f));
+    require(events.size() == 1, "diagnostic drag update emits one event");
+    const auto& drag_update_summaries = engine.routing_diagnostics().normalized_events;
+    require(drag_update_summaries.size() == 1, "diagnostic drag update emits one summary");
+    require(drag_update_summaries[0].kind == input_event_summary_kind::drag_update,
+        "diagnostic drag update summary kind is drag update");
+    require(drag_update_summaries[0].delta_x == 3.0f, "diagnostic drag update delta x is previous-relative");
+    require(drag_update_summaries[0].delta_y == 4.0f, "diagnostic drag update delta y is previous-relative");
+
+    events = engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 960, 14.0f, 10.0f));
+    require(events.size() == 1, "diagnostic drag end emits one event");
+    const auto& drag_end_summaries = engine.routing_diagnostics().normalized_events;
+    require(drag_end_summaries.size() == 1, "diagnostic drag end emits one summary");
+    require(drag_end_summaries[0].kind == input_event_summary_kind::drag_end,
+        "diagnostic drag end summary kind is drag end");
+    require_capture_snapshot(
+        engine.routing_diagnostics().pointer_capture,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "diagnostic drag end releases capture");
+
+    events = engine.process_scroll_event(scroll(1000, 40.0f, 50.0f, 0.0f, -3.0f, scroll_delta_unit::lines));
+    require(events.size() == 1, "diagnostic wheel emits one event");
+    const auto& wheel_summaries = engine.routing_diagnostics().normalized_events;
+    require(wheel_summaries.size() == 1, "diagnostic wheel emits one summary");
+    require(wheel_summaries[0].kind == input_event_summary_kind::wheel, "diagnostic wheel summary kind is wheel");
+    require(wheel_summaries[0].x == 40.0f, "diagnostic wheel summary x is preserved");
+    require(wheel_summaries[0].y == 50.0f, "diagnostic wheel summary y is preserved");
+    require(wheel_summaries[0].line_delta_y == -3.0f, "diagnostic wheel line delta is preserved");
+    require(wheel_summaries[0].pixel_delta_y == 0.0f, "diagnostic wheel pixel delta defaults to zero");
+    const action_route_policy_diagnostic& wheel_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::wheel_summary,
+        "diagnostic wheel action route policy is emitted");
+    require(engine.routing_diagnostics().action_routes.size() == 1,
+        "diagnostic wheel emits one action route policy");
+    require(wheel_policy.emits_input_event, "diagnostic wheel policy marks emitted input event");
+    require(wheel_policy.event_index == 0, "diagnostic wheel policy points at first emitted event");
+    require(wheel_policy.normalized_event.kind == input_event_summary_kind::wheel,
+        "diagnostic wheel policy includes normalized wheel summary");
+    require(wheel_policy.normalized_event.line_delta_y == -3.0f,
+        "diagnostic wheel policy preserves line delta");
+}
+
+void test_gesture_routing_diagnostics_cancel_and_focus_loss()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 100, 0.0f, 0.0f)).empty(),
+        "diagnostic cancel down emits no gesture");
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::move, 120, 9.0f, 0.0f)).size() == 1,
+        "diagnostic cancel setup starts drag");
+    require_capture_snapshot(
+        engine.routing_diagnostics().pointer_capture,
+        pointer_capture_lifecycle::captured,
+        true,
+        1,
+        1,
+        "diagnostic cancel setup captures pointer");
+
+    std::vector<input_event> events =
+        engine.process_raw_event(pointer(raw_platform_pointer_phase::cancel, 130, 12.0f, 0.0f));
+    require(events.size() == 1, "diagnostic cancel emits one event");
+    const auto& cancel_summaries = engine.routing_diagnostics().normalized_events;
+    require(cancel_summaries.size() == 1, "diagnostic cancel emits one summary");
+    require(cancel_summaries[0].kind == input_event_summary_kind::drag_cancel,
+        "diagnostic cancel summary kind is drag cancel");
+    require(cancel_summaries[0].delta_x == 3.0f, "diagnostic cancel delta x is previous-relative");
+    require_capture_snapshot(
+        engine.routing_diagnostics().pointer_capture,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "diagnostic cancel releases pointer capture");
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 140, 12.0f, 0.0f)).empty(),
+        "diagnostic up after cancel emits no stale event");
+    require(engine.routing_diagnostics().normalized_events.empty(),
+        "diagnostic up after cancel clears stale summaries");
+
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 200, 0.0f, 0.0f)).empty(),
+        "diagnostic focus loss down emits no gesture");
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::move, 220, 9.0f, 0.0f)).size() == 1,
+        "diagnostic focus loss setup starts drag");
+    require_capture_snapshot(
+        engine.routing_diagnostics().pointer_capture,
+        pointer_capture_lifecycle::captured,
+        true,
+        1,
+        1,
+        "diagnostic focus loss setup captures pointer");
+
+    events = engine.process_raw_event(focus(raw_platform_focus_phase::lost, 230));
+    require(events.empty(), "diagnostic focus loss without text focus emits no input events");
+    require(engine.routing_diagnostics().normalized_events.empty(),
+        "diagnostic focus loss clears gesture summaries");
+    require_capture_snapshot(
+        engine.routing_diagnostics().pointer_capture,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "diagnostic focus loss resets pointer capture snapshot");
+    require(engine.routing_diagnostics().action_routes.size() == 2,
+        "diagnostic focus loss emits pointer reset and focus loss policies");
+    const action_route_policy_diagnostic& reset_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::pointer_capture_reset,
+        "diagnostic focus loss first policy resets pointer capture");
+    require(!reset_policy.emits_input_event, "diagnostic pointer reset policy emits no input event");
+    require(reset_policy.pointer_capture_before.lifecycle == pointer_capture_lifecycle::captured,
+        "diagnostic pointer reset policy records captured state before reset");
+    require(reset_policy.pointer_capture_after.lifecycle == pointer_capture_lifecycle::idle,
+        "diagnostic pointer reset policy records idle state after reset");
+    const action_route_policy_diagnostic& focus_policy = require_policy(
+        engine.routing_diagnostics(),
+        1,
+        action_route_policy_kind::focus_loss,
+        "diagnostic focus loss second policy records focus loss");
+    require(!focus_policy.emits_input_event, "diagnostic focus loss without text focus emits no input event");
+    require(focus_policy.event_index == 0, "diagnostic focus loss without text focus points at zero event index");
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 240, 9.0f, 0.0f)).empty(),
+        "diagnostic up after focus loss emits no stale event");
+}
+
 void test_text_key_flow()
 {
     using namespace quiz_vulkan;
@@ -526,8 +893,20 @@ void test_text_key_flow()
     require(submit.utf8_text == "ok", "submit carries committed buffer");
     require(engine.text_model().text().empty(), "submit clears editing buffer");
     require(engine.text_model().has_submit_text(), "text model retains consumable submit text");
+    require(engine.routing_diagnostics().action_routes.size() == 1,
+        "submit emits one action route policy");
+    const action_route_policy_diagnostic& submit_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::text_submit_boundary,
+        "submit action route policy is emitted");
+    require(submit_policy.emits_input_event, "submit policy marks emitted event");
+    require(submit_policy.event_index == 0, "submit policy points at submit event index");
+    require(submit_policy.target_id == "answer", "submit policy preserves target id");
+    require(submit_policy.text_byte_count == 2, "submit policy records submitted byte count before clear");
 
     require(engine.process_raw_event(key(151, "Enter", true)).empty(), "repeat enter is ignored");
+    require(engine.routing_diagnostics().action_routes.empty(), "repeat enter emits no submit policy");
 }
 
 void test_key_code_fallback_edges()
@@ -558,6 +937,104 @@ void test_key_code_fallback_edges()
     require(submit.utf8_text == "ok", "key-code enter submits committed text");
 }
 
+void test_text_keyboard_navigation_and_selection()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    require(engine.process_raw_event(key(90, "ArrowLeft")).empty(), "unfocused arrow left is ignored");
+
+    engine.focus_text_target("answer");
+    const std::string initial = std::string("A") + utf8(u8"한") + "B";
+    require(engine.process_raw_event(text(100, initial)).size() == 1, "text before navigation commits");
+    require(engine.text_model().caret_byte_offset() == initial.size(), "caret starts at committed end");
+
+    require(engine.process_raw_event(key(110, "ArrowLeft", false, raw_platform_key_phase::up)).empty(),
+        "arrow keyup is ignored");
+    std::vector<input_event> events = engine.process_raw_event(key(120, "ArrowLeft"));
+    require(events.size() == 1, "arrow left emits one caret event");
+    const text_event& left = require_event<text_event>(events, 0);
+    require(left.kind == text_event_kind::caret_moved, "arrow left emits caret moved kind");
+    require(left.target_id == "answer", "arrow left preserves target id");
+    require(engine.text_model().caret_byte_offset() == 4, "arrow left moves over trailing ascii");
+    require(!engine.text_model().selection_range().has_value(), "plain arrow left leaves no selection");
+
+    events = engine.process_raw_event(key(130, "ArrowLeft"));
+    require(events.size() == 1, "second arrow left emits one caret event");
+    require(require_event<text_event>(events, 0).kind == text_event_kind::caret_moved,
+        "second arrow left emits caret moved kind");
+    require(engine.text_model().caret_byte_offset() == 1, "second arrow left moves over utf8 codepoint");
+
+    events = engine.process_raw_event(key(140, "ArrowRight"));
+    require(events.size() == 1, "arrow right emits one caret event");
+    require(require_event<text_event>(events, 0).kind == text_event_kind::caret_moved,
+        "arrow right emits caret moved kind");
+    require(engine.text_model().caret_byte_offset() == 4, "arrow right moves over utf8 codepoint");
+
+    events = engine.process_raw_event(key(150, "Home"));
+    require(events.size() == 1, "home emits one caret event");
+    require(require_event<text_event>(events, 0).kind == text_event_kind::caret_moved, "home emits caret moved kind");
+    require(engine.text_model().caret_byte_offset() == 0, "home moves caret to start");
+    require(engine.process_raw_event(key(151, "Home")).empty(), "home at start emits no event");
+
+    events = engine.process_raw_event(key(160, "End"));
+    require(events.size() == 1, "end emits one caret event");
+    require(require_event<text_event>(events, 0).kind == text_event_kind::caret_moved, "end emits caret moved kind");
+    require(engine.text_model().caret_byte_offset() == initial.size(), "end moves caret to committed end");
+
+    events = engine.process_raw_event(key(170, "ArrowLeft", false, raw_platform_key_phase::down, false, true));
+    require(events.size() == 1, "shift arrow left emits one selection event");
+    const text_event& shift_left = require_event<text_event>(events, 0);
+    require(shift_left.kind == text_event_kind::selection_changed, "shift arrow left emits selection changed kind");
+    auto selection = engine.text_model().selection_range();
+    require(selection.has_value(), "shift arrow left exposes selection");
+    require_range(*selection, 4, initial.size(), "shift arrow left selects trailing ascii");
+    require(engine.text_model().caret_byte_offset() == 4, "shift arrow left places active caret at selection start");
+
+    events = engine.process_raw_event(key(180, "ArrowLeft", false, raw_platform_key_phase::down, false, true));
+    require(events.size() == 1, "second shift arrow left emits one selection event");
+    selection = engine.text_model().selection_range();
+    require(selection.has_value(), "second shift arrow left keeps selection");
+    require_range(*selection, 1, initial.size(), "second shift arrow left extends over utf8 codepoint");
+    require(engine.text_model().caret_byte_offset() == 1, "second shift arrow left updates active caret");
+
+    events = engine.process_raw_event(key(190, "ArrowRight", false, raw_platform_key_phase::down, false, true));
+    require(events.size() == 1, "shift arrow right shrinks selection");
+    require(require_event<text_event>(events, 0).kind == text_event_kind::selection_changed,
+        "shift arrow right emits selection changed kind");
+    selection = engine.text_model().selection_range();
+    require(selection.has_value(), "shift arrow right keeps selection while not collapsed");
+    require_range(*selection, 4, initial.size(), "shift arrow right shrinks over utf8 codepoint");
+    require(engine.text_model().caret_byte_offset() == 4, "shift arrow right updates active caret");
+
+    events = engine.process_raw_event(key(200, "ArrowRight"));
+    require(events.size() == 1, "plain arrow right collapses selection");
+    require(require_event<text_event>(events, 0).kind == text_event_kind::caret_moved,
+        "plain arrow collapse emits caret moved kind");
+    require(!engine.text_model().selection_range().has_value(), "plain arrow right clears selection");
+    require(engine.text_model().caret_byte_offset() == initial.size(), "plain arrow right collapses to selection end");
+
+    events = engine.process_raw_event(key(210, "a", false, raw_platform_key_phase::down, true));
+    require(events.size() == 1, "ctrl+a emits one selection event");
+    const text_event& ctrl_a = require_event<text_event>(events, 0);
+    require(ctrl_a.kind == text_event_kind::selection_changed, "ctrl+a emits selection changed kind");
+    selection = engine.text_model().selection_range();
+    require(selection.has_value(), "ctrl+a exposes selection");
+    require_range(*selection, 0, initial.size(), "ctrl+a selects all committed text");
+    require(engine.process_raw_event(key(211, "a", false, raw_platform_key_phase::down, true)).empty(),
+        "repeat select all without state change emits no event");
+
+    require(engine.process_raw_event(key(220, "Home")).size() == 1, "home clears selection before meta+a");
+    events = engine.process_raw_event(key(230, "A", false, raw_platform_key_phase::down, false, false, true));
+    require(events.size() == 1, "meta+a emits one selection event");
+    require(require_event<text_event>(events, 0).kind == text_event_kind::selection_changed,
+        "meta+a emits selection changed kind");
+    selection = engine.text_model().selection_range();
+    require(selection.has_value(), "meta+a exposes selection");
+    require_range(*selection, 0, initial.size(), "meta+a selects all committed text");
+}
+
 void test_ime_composition_suppresses_text_and_key_events()
 {
     using namespace quiz_vulkan;
@@ -568,25 +1045,65 @@ void test_ime_composition_suppresses_text_and_key_events()
 
     require(engine.process_raw_event(ime(raw_platform_ime_phase::composition_start, 100)).empty(),
         "composition start is state only");
+    require(engine.text_model().ime_composition().active, "composition start creates active empty composition");
+    require_range(engine.text_model().ime_composition().preedit_range, 0, 0,
+        "composition start preedit range is collapsed");
     std::vector<input_event> events =
         engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 110, utf8(u8"ㅎ")));
     require(events.size() == 1, "preedit emits one ime event");
     const ime_event& preedit = require_event<ime_event>(events, 0);
     require(preedit.kind == ime_event_kind::preedit, "preedit event is emitted");
     require(preedit.utf8_text == utf8(u8"ㅎ"), "preedit text is preserved");
+    require(preedit.composition.active, "preedit event carries active composition");
+    require(preedit.composition.preedit_text == utf8(u8"ㅎ"), "preedit event carries composition text");
+    require_range(preedit.composition.replacement_range, 0, 0, "preedit event replacement range is caret collapsed");
+    require_range(preedit.composition.preedit_range, 0, std::string(utf8(u8"ㅎ")).size(),
+        "preedit event range covers hangul jamo bytes");
+    require_range(preedit.composition.caret_range,
+        std::string(utf8(u8"ㅎ")).size(),
+        std::string(utf8(u8"ㅎ")).size(),
+        "preedit event caret follows hangul jamo");
     require(engine.text_model().display_text() == utf8(u8"ㅎ"), "display text includes preedit");
 
     require(engine.process_raw_event(key(120, "Enter")).empty(), "enter is suppressed during composition");
+    require(engine.process_raw_event(key(121, "ArrowLeft")).empty(), "arrow left is suppressed during composition");
+    require(engine.process_raw_event(key(122, "ArrowLeft", false, raw_platform_key_phase::down, false, true)).empty(),
+        "shift arrow left is suppressed during composition");
+    require(engine.process_raw_event(key(123, "a", false, raw_platform_key_phase::down, true)).empty(),
+        "ctrl+a is suppressed during composition");
     require(engine.process_raw_event(text(130, "duplicate")).empty(), "raw text is suppressed during composition");
     require(engine.text_model().text().empty(), "suppressed raw text does not commit");
+    require(!engine.text_model().selection_range().has_value(), "suppressed composition navigation leaves no selection");
+    require(engine.text_model().display_text() == utf8(u8"ㅎ"), "suppressed composition navigation preserves preedit");
 
     events = engine.process_raw_event(ime(raw_platform_ime_phase::composition_end, 140, utf8(u8"한")));
     require(events.size() == 1, "composition end with text commits ime text");
     const ime_event& commit = require_event<ime_event>(events, 0);
     require(commit.kind == ime_event_kind::commit, "ime commit event is emitted");
     require(commit.utf8_text == utf8(u8"한"), "ime commit text is preserved");
+    require(commit.composition.active, "ime commit carries composition snapshot before commit");
+    require(commit.composition.preedit_text == utf8(u8"ㅎ"), "ime commit preserves previous preedit snapshot");
+    require_range(commit.composition.replacement_range, 0, 0, "ime commit replacement range is original caret");
+    require_range(commit.composition.preedit_range, 0, std::string(utf8(u8"ㅎ")).size(),
+        "ime commit preedit range is previous hangul jamo range");
     require(engine.text_model().text() == utf8(u8"한"), "ime commit updates text model");
     require(engine.text_model().preedit_text().empty(), "ime commit clears preedit");
+    require(!engine.text_model().ime_composition().active, "ime commit clears model composition state");
+    require(engine.routing_diagnostics().action_routes.size() == 1,
+        "ime commit emits one action route policy");
+    const action_route_policy_diagnostic& commit_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::ime_commit,
+        "ime commit action route policy is emitted");
+    require(commit_policy.emits_input_event, "ime commit policy marks emitted event");
+    require(commit_policy.event_index == 0, "ime commit policy points at first event");
+    require(commit_policy.target_id == "answer", "ime commit policy preserves target id");
+    require(commit_policy.text_byte_count == std::string(utf8(u8"한")).size(),
+        "ime commit policy records utf8 byte count");
+    require(commit_policy.composition.active, "ime commit policy carries pre-commit composition");
+    require(commit_policy.composition.preedit_text == utf8(u8"ㅎ"),
+        "ime commit policy carries pre-commit preedit text");
 }
 
 void test_ime_preedit_commit_edges()
@@ -600,12 +1117,20 @@ void test_ime_preedit_commit_edges()
     std::vector<input_event> events =
         engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 100, utf8(u8"ㅎ")));
     require(events.size() == 1, "first preedit emits one event");
-    require(require_event<ime_event>(events, 0).utf8_text == utf8(u8"ㅎ"), "first preedit text is emitted");
+    const ime_event& first_preedit = require_event<ime_event>(events, 0);
+    require(first_preedit.utf8_text == utf8(u8"ㅎ"), "first preedit text is emitted");
+    require(first_preedit.composition.active, "first preedit carries active composition");
+    require_range(first_preedit.composition.replacement_range, 0, 0, "first preedit replacement is collapsed");
     require(engine.text_model().display_text() == utf8(u8"ㅎ"), "first preedit is displayed");
 
     events = engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 110, utf8(u8"하")));
     require(events.size() == 1, "replacement preedit emits one event");
-    require(require_event<ime_event>(events, 0).utf8_text == utf8(u8"하"), "replacement preedit text is emitted");
+    const ime_event& replacement_preedit = require_event<ime_event>(events, 0);
+    require(replacement_preedit.utf8_text == utf8(u8"하"), "replacement preedit text is emitted");
+    require(replacement_preedit.composition.active, "replacement preedit carries active composition");
+    require(replacement_preedit.composition.preedit_text == utf8(u8"하"), "replacement preedit composition text is emitted");
+    require_range(replacement_preedit.composition.preedit_range, 0, std::string(utf8(u8"하")).size(),
+        "replacement preedit range covers hangul syllable bytes");
     require(engine.text_model().text().empty(), "replacement preedit does not commit text");
     require(engine.text_model().display_text() == utf8(u8"하"), "replacement preedit replaces displayed preedit");
 
@@ -614,6 +1139,8 @@ void test_ime_preedit_commit_edges()
     const ime_event& commit = require_event<ime_event>(events, 0);
     require(commit.kind == ime_event_kind::commit, "explicit ime commit emits commit kind");
     require(commit.utf8_text == utf8(u8"한"), "explicit ime commit preserves final text");
+    require(commit.composition.active, "explicit ime commit carries active composition snapshot");
+    require(commit.composition.preedit_text == utf8(u8"하"), "explicit ime commit carries previous preedit text");
     require(engine.text_model().text() == utf8(u8"한"), "explicit ime commit updates committed text");
     require(engine.text_model().preedit_text().empty(), "explicit ime commit clears preedit");
 
@@ -641,6 +1168,21 @@ void test_ime_composition_restart_cancels_visible_preedit()
     require(cancel.kind == ime_event_kind::cancel, "composition restart emits cancel for stale preedit");
     require(cancel.target_id == "answer", "composition restart cancel preserves target id");
     require(cancel.utf8_text.empty(), "composition restart cancel carries no text");
+    require(cancel.composition.active, "composition restart cancel carries stale active composition");
+    require(cancel.composition.preedit_text == "draft", "composition restart cancel carries stale preedit text");
+    require_range(cancel.composition.preedit_range, 0, 5, "composition restart cancel carries stale preedit range");
+    require(engine.routing_diagnostics().action_routes.size() == 1,
+        "composition restart cancel emits one action route policy");
+    const action_route_policy_diagnostic& cancel_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::ime_cancel,
+        "composition restart cancel action route policy is emitted");
+    require(cancel_policy.emits_input_event, "composition restart cancel policy marks emitted event");
+    require(cancel_policy.event_index == 0, "composition restart cancel policy points at first event");
+    require(cancel_policy.composition.active, "composition restart cancel policy carries stale composition");
+    require(cancel_policy.composition.preedit_text == "draft",
+        "composition restart cancel policy carries stale preedit text");
     require(engine.text_model().preedit_text().empty(), "composition restart clears stale preedit");
 
     require(engine.process_raw_event(text(120, "duplicate")).empty(),
@@ -667,6 +1209,8 @@ void test_empty_ime_commit_and_end_cancel_preedit()
     const ime_event& empty_commit = require_event<ime_event>(events, 0);
     require(empty_commit.kind == ime_event_kind::cancel, "empty ime commit emits cancel kind");
     require(empty_commit.utf8_text.empty(), "empty ime commit cancel carries no text");
+    require(empty_commit.composition.active, "empty ime commit cancel carries active composition snapshot");
+    require(empty_commit.composition.preedit_text == "draft", "empty ime commit cancel carries preedit text");
     require(engine.text_model().text().empty(), "empty ime commit does not append text");
     require(engine.text_model().preedit_text().empty(), "empty ime commit clears preedit");
 
@@ -679,6 +1223,8 @@ void test_empty_ime_commit_and_end_cancel_preedit()
     require(events.size() == 1, "empty composition end emits cancellation");
     const ime_event& empty_end = require_event<ime_event>(events, 0);
     require(empty_end.kind == ime_event_kind::cancel, "empty composition end emits cancel kind");
+    require(empty_end.composition.active, "empty composition end cancel carries active composition snapshot");
+    require(empty_end.composition.preedit_text == "draft", "empty composition end cancel carries preedit text");
     require(engine.text_model().text() == "a", "empty composition end preserves committed text");
     require(engine.text_model().preedit_text().empty(), "empty composition end clears preedit");
 }
@@ -693,6 +1239,9 @@ void test_ime_empty_preedit_and_commit_only_edges()
 
     require(engine.process_raw_event(ime(raw_platform_ime_phase::composition_start, 100)).empty(),
         "empty composition start emits no event");
+    require(engine.text_model().ime_composition().active, "empty composition start activates composition state");
+    require_range(engine.text_model().ime_composition().preedit_range, 0, 0,
+        "empty composition start has collapsed preedit range");
     require(engine.process_raw_event(key(105, "Backspace")).empty(),
         "backspace is suppressed during empty composition");
     require(engine.process_raw_event(text(106, "duplicate")).empty(),
@@ -704,6 +1253,9 @@ void test_ime_empty_preedit_and_commit_only_edges()
     const ime_event& empty_commit = require_event<ime_event>(events, 0);
     require(empty_commit.kind == ime_event_kind::cancel, "empty commit after composition start is cancel kind");
     require(empty_commit.target_id == "answer", "empty commit cancel preserves target id");
+    require(empty_commit.composition.active, "empty commit cancel carries active empty composition snapshot");
+    require(empty_commit.composition.preedit_text.empty(), "empty commit cancel carries empty preedit text");
+    require_range(empty_commit.composition.preedit_range, 0, 0, "empty commit cancel carries collapsed preedit range");
 
     events = engine.process_raw_event(text(120, "a"));
     require(events.size() == 1, "raw text resumes after empty composition commit");
@@ -714,12 +1266,19 @@ void test_ime_empty_preedit_and_commit_only_edges()
     const ime_event& empty_preedit = require_event<ime_event>(events, 0);
     require(empty_preedit.kind == ime_event_kind::preedit, "empty preedit event uses preedit kind");
     require(empty_preedit.utf8_text.empty(), "empty preedit event carries no text");
+    require(empty_preedit.composition.active, "empty preedit event carries active composition");
+    require(empty_preedit.composition.preedit_text.empty(), "empty preedit composition text is empty");
+    require_range(empty_preedit.composition.replacement_range, 1, 1, "empty preedit replacement range is at caret");
+    require_range(empty_preedit.composition.preedit_range, 1, 1, "empty preedit range is collapsed at caret");
     require(engine.text_model().display_text() == "a", "empty preedit displays committed text only");
 
     events = engine.process_raw_event(ime(raw_platform_ime_phase::composition_end, 140));
     require(events.size() == 1, "empty composition end after empty preedit emits cancel");
     const ime_event& empty_end = require_event<ime_event>(events, 0);
     require(empty_end.kind == ime_event_kind::cancel, "empty composition end after empty preedit is cancel kind");
+    require(empty_end.composition.active, "empty composition end carries active empty composition snapshot");
+    require_range(empty_end.composition.replacement_range, 1, 1,
+        "empty composition end replacement range is collapsed at caret");
     require(engine.text_model().text() == "a", "empty composition end after empty preedit preserves text");
 
     require(engine.process_raw_event(ime(raw_platform_ime_phase::cancel, 150)).empty(),
@@ -732,12 +1291,64 @@ void test_ime_empty_preedit_and_commit_only_edges()
     const ime_event& commit_only = require_event<ime_event>(events, 0);
     require(commit_only.kind == ime_event_kind::commit, "commit-only ime flow uses commit kind");
     require(commit_only.utf8_text == utf8(u8"한"), "commit-only ime flow preserves utf8 text");
+    require(!commit_only.composition.active, "commit-only ime flow carries inactive composition snapshot");
+    require_range(commit_only.composition.replacement_range, 0, 0, "commit-only ime flow replacement range is caret");
     require(commit_only_engine.text_model().text() == utf8(u8"한"), "commit-only ime flow updates text model");
 
     events = commit_only_engine.process_raw_event(text(210, "x"));
     require(events.size() == 1, "raw text resumes after commit-only ime flow");
     require(commit_only_engine.text_model().text() == std::string(utf8(u8"한")) + "x",
         "raw text appends after commit-only ime flow");
+}
+
+void test_ime_hangul_replacement_composition_ranges()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    engine.focus_text_target("answer");
+    const std::string base = std::string("A") + utf8(u8"한") + "B";
+    require(engine.process_raw_event(text(100, base)).size() == 1, "hangul replacement base text commits");
+
+    require(engine.process_raw_event(key(110, "Home")).size() == 1, "home before hangul selection moves caret");
+    require(engine.process_raw_event(key(120, "ArrowRight")).size() == 1,
+        "arrow right before hangul selection moves past ascii");
+    require(engine.process_raw_event(key(130, "ArrowRight", false, raw_platform_key_phase::down, false, true)).size() == 1,
+        "shift arrow right selects hangul codepoint");
+    const std::optional<text_range> selection = engine.text_model().selection_range();
+    require(selection.has_value(), "hangul replacement selection is active");
+    require_range(*selection, 1, 1 + std::string(utf8(u8"한")).size(),
+        "hangul replacement selection spans full utf8 codepoint");
+
+    std::vector<input_event> events = engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 140, utf8(u8"하")));
+    require(events.size() == 1, "hangul replacement preedit emits one event");
+    const ime_event& preedit = require_event<ime_event>(events, 0);
+    require(preedit.kind == ime_event_kind::preedit, "hangul replacement preedit kind is emitted");
+    require(preedit.composition.active, "hangul replacement preedit carries active composition");
+    require(preedit.composition.preedit_text == utf8(u8"하"), "hangul replacement preedit carries hangul text");
+    require_range(preedit.composition.replacement_range, 1, 1 + std::string(utf8(u8"한")).size(),
+        "hangul replacement preedit replacement range covers selected hangul");
+    require_range(preedit.composition.preedit_range, 1, 1 + std::string(utf8(u8"하")).size(),
+        "hangul replacement preedit range covers new hangul");
+    require(engine.text_model().display_text() == std::string("A") + utf8(u8"하") + "B",
+        "hangul replacement preedit display replaces selected hangul");
+
+    events = engine.process_raw_event(ime(raw_platform_ime_phase::commit, 150, utf8(u8"각")));
+    require(events.size() == 1, "hangul replacement commit emits one event");
+    const ime_event& commit = require_event<ime_event>(events, 0);
+    require(commit.kind == ime_event_kind::commit, "hangul replacement commit kind is emitted");
+    require(commit.utf8_text == utf8(u8"각"), "hangul replacement commit carries final hangul");
+    require(commit.composition.active, "hangul replacement commit carries previous composition snapshot");
+    require(commit.composition.preedit_text == utf8(u8"하"), "hangul replacement commit carries previous preedit");
+    require_range(commit.composition.replacement_range, 1, 1 + std::string(utf8(u8"한")).size(),
+        "hangul replacement commit replacement range covers selected hangul");
+    require(engine.text_model().text() == std::string("A") + utf8(u8"각") + "B",
+        "hangul replacement commit updates committed text");
+    require(engine.text_model().caret_byte_offset() == 1 + std::string(utf8(u8"각")).size(),
+        "hangul replacement commit places caret after final hangul");
+    require(!engine.text_model().selection_range().has_value(), "hangul replacement commit clears selection");
+    require(!engine.text_model().ime_composition().active, "hangul replacement commit clears model composition");
 }
 
 void test_reset_clears_text_ime_and_pointer_state()
@@ -758,6 +1369,18 @@ void test_reset_clears_text_ime_and_pointer_state()
     require(engine.text_focus_id().empty(), "reset clears text focus id");
     require(engine.text_model().text().empty(), "reset clears committed text");
     require(engine.text_model().preedit_text().empty(), "reset clears preedit text");
+    require(engine.routing_diagnostics().action_routes.size() == 1,
+        "reset emits one pointer capture reset policy");
+    const action_route_policy_diagnostic& reset_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::pointer_capture_reset,
+        "reset action route policy records pointer capture reset");
+    require(!reset_policy.emits_input_event, "reset pointer policy emits no input event");
+    require(reset_policy.pointer_capture_before.lifecycle == pointer_capture_lifecycle::tracking,
+        "reset pointer policy records tracked pointer before reset");
+    require(reset_policy.pointer_capture_after.lifecycle == pointer_capture_lifecycle::idle,
+        "reset pointer policy records idle pointer after reset");
     require(engine.process_raw_event(text(130, "ignored")).empty(), "text after reset is ignored without focus");
     require(engine.process_raw_event(key(140, "Backspace")).empty(), "key after reset is ignored without focus");
     require(engine.update_time(800).empty(), "reset clears pending long press state");
@@ -810,11 +1433,43 @@ void test_focus_loss_cancels_composition_and_pointer_state()
     require(events.size() == 2, "focus loss emits ime cancel and focus lost");
     const ime_event& cancel = require_event<ime_event>(events, 0);
     require(cancel.kind == ime_event_kind::cancel, "focus loss cancels composition");
+    require(cancel.composition.active, "focus loss cancel carries active composition snapshot");
+    require(cancel.composition.preedit_text == "draft", "focus loss cancel carries preedit text");
+    require_range(cancel.composition.preedit_range, 0, 5, "focus loss cancel carries preedit range");
     const text_event& lost = require_event<text_event>(events, 1);
     require(lost.kind == text_event_kind::focus_lost, "focus loss emits text focus lost");
     require(lost.target_id == "answer", "focus loss preserves target id");
     require(!engine.has_text_focus(), "focus loss clears text focus");
     require(engine.text_model().preedit_text().empty(), "focus loss clears preedit");
+    require(engine.routing_diagnostics().action_routes.size() == 3,
+        "focus loss emits pointer reset, ime cancel, and focus loss policies");
+    const action_route_policy_diagnostic& reset_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::pointer_capture_reset,
+        "focus loss first policy records pointer reset");
+    require(!reset_policy.emits_input_event, "focus loss pointer reset policy emits no input event");
+    require(reset_policy.pointer_capture_before.lifecycle == pointer_capture_lifecycle::tracking,
+        "focus loss pointer reset records tracked pointer before reset");
+    require(reset_policy.pointer_capture_after.lifecycle == pointer_capture_lifecycle::idle,
+        "focus loss pointer reset records idle pointer after reset");
+    const action_route_policy_diagnostic& ime_cancel_policy = require_policy(
+        engine.routing_diagnostics(),
+        1,
+        action_route_policy_kind::ime_cancel,
+        "focus loss second policy records ime cancel");
+    require(ime_cancel_policy.emits_input_event, "focus loss ime cancel policy emits input event");
+    require(ime_cancel_policy.event_index == 0, "focus loss ime cancel policy points at first event");
+    require(ime_cancel_policy.composition.preedit_text == "draft",
+        "focus loss ime cancel policy carries composition snapshot");
+    const action_route_policy_diagnostic& focus_policy = require_policy(
+        engine.routing_diagnostics(),
+        2,
+        action_route_policy_kind::focus_loss,
+        "focus loss third policy records focus loss");
+    require(focus_policy.emits_input_event, "focus loss policy marks emitted text event");
+    require(focus_policy.event_index == 1, "focus loss policy points after ime cancel event");
+    require(focus_policy.target_id == "answer", "focus loss policy preserves target id");
 
     events = engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 130, 0.0f, 0.0f));
     require(events.empty(), "focus loss resets pending pointer state");
@@ -829,17 +1484,22 @@ int main()
     test_pointer_filter_and_timing_edges();
     test_pointer_id_reuse_routes_replacement_state();
     test_drag_gestures_route_from_raw_pointer();
+    test_pointer_capture_routes_drag_and_ignores_other_pointers();
     test_drag_start_slop_routes_from_engine_thresholds();
     test_multi_pointer_long_press_order_routes_stably();
     test_scroll_events_normalize_line_and_pixel_deltas();
     test_raw_platform_scroll_routes_through_input_engine();
+    test_gesture_routing_diagnostics_summarize_gestures_and_wheel();
+    test_gesture_routing_diagnostics_cancel_and_focus_loss();
     test_text_key_flow();
     test_key_code_fallback_edges();
+    test_text_keyboard_navigation_and_selection();
     test_ime_composition_suppresses_text_and_key_events();
     test_ime_preedit_commit_edges();
     test_ime_composition_restart_cancels_visible_preedit();
     test_empty_ime_commit_and_end_cancel_preedit();
     test_ime_empty_preedit_and_commit_only_edges();
+    test_ime_hangul_replacement_composition_ranges();
     test_reset_clears_text_ime_and_pointer_state();
     test_unfocused_ime_and_focus_gained_edges();
     test_focus_loss_cancels_composition_and_pointer_state();

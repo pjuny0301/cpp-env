@@ -41,13 +41,6 @@ scroll_delta_unit to_scroll_delta_unit(raw_platform_scroll_delta_unit unit)
     return scroll_delta_unit::pixels;
 }
 
-void append_gestures(std::vector<input_event>& events, const std::vector<gesture_event>& gestures)
-{
-    for (const gesture_event& gesture : gestures) {
-        events.emplace_back(gesture);
-    }
-}
-
 bool is_backspace_key(const raw_platform_key_event& event)
 {
     return event.logical_key == "Backspace" || event.key_code == 8;
@@ -59,6 +52,151 @@ bool is_submit_key(const raw_platform_key_event& event)
         || event.logical_key == "NumpadEnter"
         || event.logical_key == "Return"
         || event.key_code == 13;
+}
+
+bool is_arrow_left_key(const raw_platform_key_event& event)
+{
+    return event.logical_key == "ArrowLeft"
+        || event.logical_key == "Left"
+        || event.key_code == 37;
+}
+
+bool is_arrow_right_key(const raw_platform_key_event& event)
+{
+    return event.logical_key == "ArrowRight"
+        || event.logical_key == "Right"
+        || event.key_code == 39;
+}
+
+bool is_home_key(const raw_platform_key_event& event)
+{
+    return event.logical_key == "Home" || event.key_code == 36;
+}
+
+bool is_end_key(const raw_platform_key_event& event)
+{
+    return event.logical_key == "End" || event.key_code == 35;
+}
+
+bool is_a_key(const raw_platform_key_event& event)
+{
+    return event.logical_key == "a"
+        || event.logical_key == "A"
+        || event.logical_key == "KeyA"
+        || event.key_code == 65;
+}
+
+bool is_select_all_key(const raw_platform_key_event& event)
+{
+    return !event.alt && (event.ctrl || event.meta) && is_a_key(event);
+}
+
+ime_event make_ime_event(
+    ime_event_kind kind,
+    std::int64_t timestamp_ms,
+    const std::string& target_id,
+    std::string utf8_text,
+    ime_composition_state composition)
+{
+    return ime_event{
+        .kind = kind,
+        .timestamp_ms = timestamp_ms,
+        .target_id = target_id,
+        .utf8_text = std::move(utf8_text),
+        .composition = std::move(composition),
+    };
+}
+
+input_event_summary_kind summary_kind_for(gesture_kind kind)
+{
+    switch (kind) {
+    case gesture_kind::tap:
+        return input_event_summary_kind::tap;
+    case gesture_kind::long_press:
+        return input_event_summary_kind::long_press;
+    case gesture_kind::swipe_left:
+        return input_event_summary_kind::swipe_left;
+    case gesture_kind::swipe_right:
+        return input_event_summary_kind::swipe_right;
+    case gesture_kind::drag_start:
+        return input_event_summary_kind::drag_start;
+    case gesture_kind::drag_update:
+        return input_event_summary_kind::drag_update;
+    case gesture_kind::drag_end:
+        return input_event_summary_kind::drag_end;
+    case gesture_kind::drag_cancel:
+        return input_event_summary_kind::drag_cancel;
+    }
+
+    return input_event_summary_kind::tap;
+}
+
+normalized_input_event_summary summarize_gesture(const gesture_event& gesture)
+{
+    return normalized_input_event_summary{
+        .kind = summary_kind_for(gesture.kind),
+        .timestamp_ms = gesture.timestamp_ms,
+        .duration_ms = gesture.duration_ms,
+        .pointer_id = gesture.pointer_id,
+        .start_x = gesture.start_x,
+        .start_y = gesture.start_y,
+        .x = gesture.x,
+        .y = gesture.y,
+        .delta_x = gesture.delta_x,
+        .delta_y = gesture.delta_y,
+    };
+}
+
+normalized_input_event_summary summarize_scroll(const scroll_event& scroll)
+{
+    return normalized_input_event_summary{
+        .kind = input_event_summary_kind::wheel,
+        .timestamp_ms = scroll.timestamp_ms,
+        .x = scroll.x,
+        .y = scroll.y,
+        .pixel_delta_x = scroll.pixel_delta_x,
+        .pixel_delta_y = scroll.pixel_delta_y,
+        .line_delta_x = scroll.line_delta_x,
+        .line_delta_y = scroll.line_delta_y,
+    };
+}
+
+bool has_pointer_capture_state(const pointer_capture_snapshot& snapshot)
+{
+    return snapshot.lifecycle != pointer_capture_lifecycle::idle
+        || snapshot.active
+        || snapshot.tracked_pointer_count > 0;
+}
+
+action_route_policy_diagnostic make_policy(
+    action_route_policy_kind kind,
+    std::int64_t timestamp_ms,
+    pointer_capture_snapshot pointer_capture_before,
+    pointer_capture_snapshot pointer_capture_after)
+{
+    action_route_policy_diagnostic diagnostic{};
+    diagnostic.kind = kind;
+    diagnostic.timestamp_ms = timestamp_ms;
+    diagnostic.pointer_capture_before = pointer_capture_before;
+    diagnostic.pointer_capture_after = pointer_capture_after;
+    return diagnostic;
+}
+
+action_route_policy_diagnostic make_event_policy(
+    action_route_policy_kind kind,
+    std::int64_t timestamp_ms,
+    std::size_t event_index,
+    pointer_capture_snapshot pointer_capture_before,
+    pointer_capture_snapshot pointer_capture_after)
+{
+    action_route_policy_diagnostic diagnostic = make_policy(
+        kind,
+        timestamp_ms,
+        pointer_capture_before,
+        pointer_capture_after);
+    diagnostic.emits_input_event = true;
+    diagnostic.event_index = event_index;
+    return diagnostic;
 }
 
 } // namespace
@@ -95,6 +233,11 @@ const text_input_model& input_engine::text_model() const
     return text_;
 }
 
+const input_routing_diagnostics& input_engine::routing_diagnostics() const
+{
+    return diagnostics_;
+}
+
 std::vector<input_event> input_engine::process_raw_event(const raw_platform_input_event& event)
 {
     return std::visit(
@@ -127,14 +270,18 @@ std::vector<input_event> input_engine::process_raw_event(const raw_platform_inpu
 std::vector<input_event> input_engine::update_time(std::int64_t timestamp_ms)
 {
     std::vector<input_event> events;
+    begin_route_diagnostics();
     append_gestures(events, gestures_.update_time(timestamp_ms));
+    finish_route_diagnostics();
     return events;
 }
 
 std::vector<input_event> input_engine::process_scroll_event(const raw_scroll_event& event)
 {
     std::vector<input_event> events;
+    begin_route_diagnostics();
     if (event.delta_x == 0.0f && event.delta_y == 0.0f) {
+        finish_route_diagnostics();
         return events;
     }
 
@@ -152,21 +299,34 @@ std::vector<input_event> input_engine::process_scroll_event(const raw_scroll_eve
         normalized.pixel_delta_y = event.delta_y;
     }
 
-    events.emplace_back(normalized);
+    append_scroll(events, normalized);
+    finish_route_diagnostics();
     return events;
 }
 
 void input_engine::reset()
 {
+    const pointer_capture_snapshot pointer_capture_before = gestures_.capture_snapshot();
     gestures_.reset();
     text_ = text_input_model{};
     ime_composing_ = false;
+    begin_route_diagnostics();
+    if (has_pointer_capture_state(pointer_capture_before)) {
+        append_policy(make_policy(
+            action_route_policy_kind::pointer_capture_reset,
+            0,
+            pointer_capture_before,
+            gestures_.capture_snapshot()));
+    }
+    finish_route_diagnostics();
 }
 
 std::vector<input_event> input_engine::process_pointer_event(const raw_platform_pointer_event& event)
 {
     std::vector<input_event> events;
+    begin_route_diagnostics();
     if (!is_primary_pointer(event)) {
+        finish_route_diagnostics();
         return events;
     }
 
@@ -179,13 +339,16 @@ std::vector<input_event> input_engine::process_pointer_event(const raw_platform_
             .x = event.x,
             .y = event.y,
         }));
+    finish_route_diagnostics();
     return events;
 }
 
 std::vector<input_event> input_engine::process_text_event(const raw_platform_text_event& event)
 {
     std::vector<input_event> events;
-    if (ime_composing_ || !text_.commit_utf8(event.utf8_text)) {
+    begin_route_diagnostics();
+    if (ime_composing_ || text_.ime_composition().active || !text_.commit_utf8(event.utf8_text)) {
+        finish_route_diagnostics();
         return events;
     }
 
@@ -195,59 +358,87 @@ std::vector<input_event> input_engine::process_text_event(const raw_platform_tex
         .target_id = text_.focus_id(),
         .utf8_text = event.utf8_text,
     });
+    finish_route_diagnostics();
     return events;
 }
 
 std::vector<input_event> input_engine::process_ime_event(const raw_platform_ime_event& event)
 {
     std::vector<input_event> events;
+    begin_route_diagnostics();
     if (!text_.has_focus()) {
         ime_composing_ = false;
+        finish_route_diagnostics();
         return events;
     }
 
     const std::string target_id = text_.focus_id();
-    const bool had_composition = ime_composing_ || !text_.preedit_text().empty();
+    const ime_composition_state initial_composition = text_.ime_composition();
+    const bool had_composition = ime_composing_ || initial_composition.active;
 
     if (event.phase == raw_platform_ime_phase::composition_start) {
-        const bool had_preedit = !text_.preedit_text().empty();
         ime_composing_ = true;
-        if (had_preedit) {
+        if (had_composition) {
             text_.cancel_ime();
-            events.emplace_back(ime_event{
-                .kind = ime_event_kind::cancel,
-                .timestamp_ms = event.timestamp_ms,
-                .target_id = target_id,
-                .utf8_text = {},
-            });
+            const std::size_t event_index = events.size();
+            events.emplace_back(make_ime_event(
+                ime_event_kind::cancel,
+                event.timestamp_ms,
+                target_id,
+                {},
+                initial_composition));
+            action_route_policy_diagnostic policy = make_event_policy(
+                action_route_policy_kind::ime_cancel,
+                event.timestamp_ms,
+                event_index,
+                diagnostics_.pointer_capture,
+                gestures_.capture_snapshot());
+            policy.target_id = target_id;
+            policy.composition = initial_composition;
+            append_policy(std::move(policy));
         } else {
             text_.set_preedit("");
         }
+        finish_route_diagnostics();
         return events;
     }
 
     if (event.phase == raw_platform_ime_phase::preedit_update) {
         ime_composing_ = true;
         text_.set_preedit(event.utf8_text);
-        events.emplace_back(ime_event{
-            .kind = ime_event_kind::preedit,
-            .timestamp_ms = event.timestamp_ms,
-            .target_id = target_id,
-            .utf8_text = event.utf8_text,
-        });
+        events.emplace_back(make_ime_event(
+            ime_event_kind::preedit,
+            event.timestamp_ms,
+            target_id,
+            event.utf8_text,
+            text_.ime_composition()));
+        finish_route_diagnostics();
         return events;
     }
 
-    if (event.phase == raw_platform_ime_phase::commit
+    if ((event.phase == raw_platform_ime_phase::commit && !event.utf8_text.empty())
         || (event.phase == raw_platform_ime_phase::composition_end && !event.utf8_text.empty())) {
+        const ime_composition_state committed_composition = text_.ime_composition();
         ime_composing_ = false;
         if (text_.commit_ime(event.utf8_text)) {
-            events.emplace_back(ime_event{
-                .kind = ime_event_kind::commit,
-                .timestamp_ms = event.timestamp_ms,
-                .target_id = target_id,
-                .utf8_text = event.utf8_text,
-            });
+            const std::size_t event_index = events.size();
+            events.emplace_back(make_ime_event(
+                ime_event_kind::commit,
+                event.timestamp_ms,
+                target_id,
+                event.utf8_text,
+                committed_composition));
+            action_route_policy_diagnostic policy = make_event_policy(
+                action_route_policy_kind::ime_commit,
+                event.timestamp_ms,
+                event_index,
+                diagnostics_.pointer_capture,
+                gestures_.capture_snapshot());
+            policy.target_id = target_id;
+            policy.text_byte_count = event.utf8_text.size();
+            policy.composition = committed_composition;
+            append_policy(std::move(policy));
+            finish_route_diagnostics();
             return events;
         }
     }
@@ -255,25 +446,111 @@ std::vector<input_event> input_engine::process_ime_event(const raw_platform_ime_
     if (event.phase == raw_platform_ime_phase::cancel
         || event.phase == raw_platform_ime_phase::composition_end
         || (event.phase == raw_platform_ime_phase::commit && event.utf8_text.empty())) {
+        const ime_composition_state canceled_composition = text_.ime_composition();
         ime_composing_ = false;
         text_.cancel_ime();
         if (had_composition) {
-            events.emplace_back(ime_event{
-                .kind = ime_event_kind::cancel,
-                .timestamp_ms = event.timestamp_ms,
-                .target_id = target_id,
-                .utf8_text = {},
-            });
+            const std::size_t event_index = events.size();
+            events.emplace_back(make_ime_event(
+                ime_event_kind::cancel,
+                event.timestamp_ms,
+                target_id,
+                {},
+                canceled_composition));
+            action_route_policy_diagnostic policy = make_event_policy(
+                action_route_policy_kind::ime_cancel,
+                event.timestamp_ms,
+                event_index,
+                diagnostics_.pointer_capture,
+                gestures_.capture_snapshot());
+            policy.target_id = target_id;
+            policy.composition = canceled_composition;
+            append_policy(std::move(policy));
         }
     }
 
+    finish_route_diagnostics();
     return events;
 }
 
 std::vector<input_event> input_engine::process_key_event(const raw_platform_key_event& event)
 {
     std::vector<input_event> events;
-    if (event.phase != raw_platform_key_phase::down || ime_composing_ || !text_.has_focus()) {
+    begin_route_diagnostics();
+    if (event.phase != raw_platform_key_phase::down
+        || ime_composing_
+        || text_.ime_composition().active
+        || !text_.has_focus()) {
+        finish_route_diagnostics();
+        return events;
+    }
+
+    const std::string target_id = text_.focus_id();
+
+    if (is_select_all_key(event)) {
+        if (text_.select_all()) {
+            events.emplace_back(text_event{
+                .kind = text_event_kind::selection_changed,
+                .timestamp_ms = event.timestamp_ms,
+                .target_id = target_id,
+                .utf8_text = {},
+            });
+        }
+        finish_route_diagnostics();
+        return events;
+    }
+
+    if (is_arrow_left_key(event)) {
+        const bool changed = event.shift ? text_.extend_selection_left() : text_.move_caret_left();
+        if (changed) {
+            events.emplace_back(text_event{
+                .kind = event.shift ? text_event_kind::selection_changed : text_event_kind::caret_moved,
+                .timestamp_ms = event.timestamp_ms,
+                .target_id = target_id,
+                .utf8_text = {},
+            });
+        }
+        finish_route_diagnostics();
+        return events;
+    }
+
+    if (is_arrow_right_key(event)) {
+        const bool changed = event.shift ? text_.extend_selection_right() : text_.move_caret_right();
+        if (changed) {
+            events.emplace_back(text_event{
+                .kind = event.shift ? text_event_kind::selection_changed : text_event_kind::caret_moved,
+                .timestamp_ms = event.timestamp_ms,
+                .target_id = target_id,
+                .utf8_text = {},
+            });
+        }
+        finish_route_diagnostics();
+        return events;
+    }
+
+    if (is_home_key(event)) {
+        if (text_.move_caret_to_start()) {
+            events.emplace_back(text_event{
+                .kind = text_event_kind::caret_moved,
+                .timestamp_ms = event.timestamp_ms,
+                .target_id = target_id,
+                .utf8_text = {},
+            });
+        }
+        finish_route_diagnostics();
+        return events;
+    }
+
+    if (is_end_key(event)) {
+        if (text_.move_caret_to_end()) {
+            events.emplace_back(text_event{
+                .kind = text_event_kind::caret_moved,
+                .timestamp_ms = event.timestamp_ms,
+                .target_id = target_id,
+                .utf8_text = {},
+            });
+        }
+        finish_route_diagnostics();
         return events;
     }
 
@@ -282,35 +559,49 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
             events.emplace_back(text_event{
                 .kind = text_event_kind::backspace,
                 .timestamp_ms = event.timestamp_ms,
-                .target_id = text_.focus_id(),
+                .target_id = target_id,
                 .utf8_text = {},
             });
         }
+        finish_route_diagnostics();
         return events;
     }
 
     if (is_submit_key(event)) {
         if (event.repeat) {
+            finish_route_diagnostics();
             return events;
         }
 
         const std::string submitted_text = text_.text();
         if (text_.submit()) {
+            const std::size_t event_index = events.size();
             events.emplace_back(text_event{
                 .kind = text_event_kind::submit,
                 .timestamp_ms = event.timestamp_ms,
-                .target_id = text_.focus_id(),
+                .target_id = target_id,
                 .utf8_text = submitted_text,
             });
+            action_route_policy_diagnostic policy = make_event_policy(
+                action_route_policy_kind::text_submit_boundary,
+                event.timestamp_ms,
+                event_index,
+                diagnostics_.pointer_capture,
+                gestures_.capture_snapshot());
+            policy.target_id = target_id;
+            policy.text_byte_count = submitted_text.size();
+            append_policy(std::move(policy));
         }
     }
 
+    finish_route_diagnostics();
     return events;
 }
 
 std::vector<input_event> input_engine::process_focus_event(const raw_platform_focus_event& event)
 {
     std::vector<input_event> events;
+    begin_route_diagnostics();
     if (event.phase == raw_platform_focus_phase::gained) {
         if (text_.has_focus()) {
             events.emplace_back(text_event{
@@ -320,26 +611,49 @@ std::vector<input_event> input_engine::process_focus_event(const raw_platform_fo
                 .utf8_text = {},
             });
         }
+        finish_route_diagnostics();
         return events;
     }
 
     const bool had_focus = text_.has_focus();
-    const bool had_composition = ime_composing_ || !text_.preedit_text().empty();
+    const ime_composition_state canceled_composition = text_.ime_composition();
+    const bool had_composition = ime_composing_ || canceled_composition.active;
     const std::string target_id = text_.focus_id();
+    const pointer_capture_snapshot pointer_capture_before = gestures_.capture_snapshot();
 
     gestures_.reset();
     text_.clear_focus();
     ime_composing_ = false;
+    const pointer_capture_snapshot pointer_capture_after = gestures_.capture_snapshot();
 
-    if (had_composition) {
-        events.emplace_back(ime_event{
-            .kind = ime_event_kind::cancel,
-            .timestamp_ms = event.timestamp_ms,
-            .target_id = target_id,
-            .utf8_text = {},
-        });
+    if (has_pointer_capture_state(pointer_capture_before)) {
+        append_policy(make_policy(
+            action_route_policy_kind::pointer_capture_reset,
+            event.timestamp_ms,
+            pointer_capture_before,
+            pointer_capture_after));
     }
 
+    if (had_composition) {
+        const std::size_t event_index = events.size();
+        events.emplace_back(make_ime_event(
+            ime_event_kind::cancel,
+            event.timestamp_ms,
+            target_id,
+            {},
+            canceled_composition));
+        action_route_policy_diagnostic policy = make_event_policy(
+            action_route_policy_kind::ime_cancel,
+            event.timestamp_ms,
+            event_index,
+            pointer_capture_before,
+            pointer_capture_after);
+        policy.target_id = target_id;
+        policy.composition = canceled_composition;
+        append_policy(std::move(policy));
+    }
+
+    std::size_t focus_loss_event_index = events.size();
     if (had_focus) {
         events.emplace_back(text_event{
             .kind = text_event_kind::focus_lost,
@@ -348,8 +662,59 @@ std::vector<input_event> input_engine::process_focus_event(const raw_platform_fo
             .utf8_text = {},
         });
     }
+    action_route_policy_diagnostic policy = make_policy(
+        action_route_policy_kind::focus_loss,
+        event.timestamp_ms,
+        pointer_capture_before,
+        pointer_capture_after);
+    policy.emits_input_event = had_focus;
+    policy.event_index = focus_loss_event_index;
+    policy.target_id = target_id;
+    append_policy(std::move(policy));
 
+    finish_route_diagnostics();
     return events;
+}
+
+void input_engine::begin_route_diagnostics()
+{
+    diagnostics_.normalized_events.clear();
+    diagnostics_.action_routes.clear();
+    diagnostics_.pointer_capture = gestures_.capture_snapshot();
+}
+
+void input_engine::finish_route_diagnostics()
+{
+    diagnostics_.pointer_capture = gestures_.capture_snapshot();
+}
+
+void input_engine::append_gestures(std::vector<input_event>& events, const std::vector<gesture_event>& gestures)
+{
+    for (const gesture_event& gesture : gestures) {
+        diagnostics_.normalized_events.push_back(summarize_gesture(gesture));
+        events.emplace_back(gesture);
+    }
+}
+
+void input_engine::append_scroll(std::vector<input_event>& events, const scroll_event& scroll)
+{
+    const std::size_t event_index = events.size();
+    const normalized_input_event_summary summary = summarize_scroll(scroll);
+    diagnostics_.normalized_events.push_back(summary);
+    action_route_policy_diagnostic policy = make_event_policy(
+        action_route_policy_kind::wheel_summary,
+        scroll.timestamp_ms,
+        event_index,
+        diagnostics_.pointer_capture,
+        gestures_.capture_snapshot());
+    policy.normalized_event = summary;
+    append_policy(std::move(policy));
+    events.emplace_back(scroll);
+}
+
+void input_engine::append_policy(action_route_policy_diagnostic diagnostic)
+{
+    diagnostics_.action_routes.push_back(std::move(diagnostic));
 }
 
 } // namespace quiz_vulkan::input

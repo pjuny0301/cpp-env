@@ -2,6 +2,7 @@
 
 #include "core/input/input_event.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <unordered_map>
@@ -18,12 +19,26 @@ struct gesture_thresholds {
     float drag_start_slop = 8.0f;
 };
 
+enum class pointer_capture_lifecycle {
+    idle,
+    tracking,
+    captured,
+};
+
+struct pointer_capture_snapshot {
+    pointer_capture_lifecycle lifecycle = pointer_capture_lifecycle::idle;
+    bool active = false;
+    std::int32_t pointer_id = 0;
+    std::size_t tracked_pointer_count = 0;
+};
+
 class gesture_recognizer {
 public:
     explicit gesture_recognizer(gesture_thresholds thresholds = {});
 
     [[nodiscard]] std::vector<gesture_event> process_pointer_event(const pointer_event& event);
     [[nodiscard]] std::vector<gesture_event> update_time(std::int64_t timestamp_ms);
+    [[nodiscard]] pointer_capture_snapshot capture_snapshot() const;
     void reset();
 
 private:
@@ -44,11 +59,15 @@ private:
         std::int32_t pointer_id,
         pointer_state& state,
         std::int64_t timestamp_ms);
+    [[nodiscard]] bool captured_by_other_pointer(std::int32_t pointer_id) const;
     [[nodiscard]] bool inside_drag_slop(const pointer_state& state, float x, float y) const;
     [[nodiscard]] bool inside_tap_slop(const pointer_state& state, float x, float y) const;
+    void capture_pointer(std::int32_t pointer_id);
+    void release_pointer_capture(std::int32_t pointer_id);
 
     gesture_thresholds thresholds_;
     std::unordered_map<std::int32_t, pointer_state> pointers_;
+    std::optional<std::int32_t> captured_pointer_id_;
 };
 
 } // namespace quiz_vulkan::input

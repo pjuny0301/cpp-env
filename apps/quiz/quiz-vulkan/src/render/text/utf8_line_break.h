@@ -19,11 +19,13 @@ enum class utf8_line_break_reason {
 struct utf8_line_break_options {
     std::size_t max_columns = 0;
     bool break_hangul_syllables_on_width = true;
+    bool break_long_tokens_on_width = false;
 };
 
 struct utf8_line_layout_options {
     float max_width = 0.0f;
     bool break_hangul_syllables_on_width = true;
+    bool break_long_tokens_on_width = false;
 };
 
 struct utf8_line_fragment {
@@ -121,6 +123,13 @@ inline bool can_break_utf8_line_for_width(
         && is_utf8_hangul_syllable(current.code_point);
 }
 
+inline bool can_fallback_break_utf8_long_token_for_width(
+    const bool enabled,
+    const utf8_text_codepoint& current)
+{
+    return enabled && current.cluster_start;
+}
+
 inline std::vector<utf8_line_fragment> break_utf8_text_run(
     const std::string_view text,
     const utf8_line_break_options& options = {})
@@ -170,6 +179,22 @@ inline std::vector<utf8_line_fragment> break_utf8_text_run(
         const std::size_t column_width = utf8_line_break_column_width(codepoint.code_point);
         if (options.max_columns > 0 && line_columns > 0 && line_columns + column_width > options.max_columns
             && index > line_start && can_break_utf8_line_for_width(options, codepoints[index - 1U], codepoint)) {
+            fragments.push_back(make_utf8_line_fragment(
+                codepoints,
+                text.size(),
+                line_start,
+                index,
+                utf8_line_break_reason::width_pressure,
+                index,
+                0));
+            line_start = index;
+            line_columns = 0;
+            continue;
+        }
+
+        if (options.max_columns > 0 && line_columns > 0 && line_columns + column_width > options.max_columns
+            && index > line_start
+            && can_fallback_break_utf8_long_token_for_width(options.break_long_tokens_on_width, codepoint)) {
             fragments.push_back(make_utf8_line_fragment(
                 codepoints,
                 text.size(),
@@ -276,6 +301,23 @@ inline std::vector<utf8_line_fragment> break_utf8_text_run(
                     },
                     codepoints[index - 1U],
                     codepoint)) {
+                fragments.push_back(make_utf8_line_fragment(
+                    codepoints,
+                    text_size,
+                    line_start,
+                    index,
+                    utf8_line_break_reason::width_pressure,
+                    index,
+                    0));
+                line_start = index;
+                last_space = 0;
+                has_last_space = false;
+                line_width = 0.0f;
+                continue;
+            }
+
+            if (index > line_start
+                && can_fallback_break_utf8_long_token_for_width(options.break_long_tokens_on_width, codepoint)) {
                 fragments.push_back(make_utf8_line_fragment(
                     codepoints,
                     text_size,

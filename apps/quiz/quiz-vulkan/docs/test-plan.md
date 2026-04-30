@@ -20,7 +20,7 @@ Representative smoke and contract targets include:
 - `quiz_vulkan_renderer_tests`
 - `quiz_vulkan_interface_contract_compile_tests`
 
-The preferred local compiler is the ASCII-path GCC 13.1.0 toolchain at `C:\qtmingw1310_ascii`. The legacy `C:\MinGW\bin\g++.exe` is GCC 6.3.0 and is useful only for old scene/layout smoke checks.
+The preferred local compiler is the ASCII-path GCC 13.1.0 toolchain at `C:\qtmingw1310_ascii`. The CMake targets require C++23. The legacy `C:\MinGW\bin\g++.exe` is GCC 6.3.0 and is useful only for old scene/layout smoke checks.
 
 The local Windows user has a `cmd.exe` AutoRun entry. Use `tools/run_windows_mingw_ascii.ps1` so CMake/Ninja link steps run with AutoRun temporarily cleared and restored afterward.
 
@@ -85,9 +85,9 @@ The helper scripts use a temporary directory under `C:\aa\build\out\quiz\quiz-vu
 
 ## Modern Compiler Checks
 
-Use these checks when a modern C++17/20 compiler is available. The local ASCII GCC 13 toolchain satisfies this.
+Use these checks when a modern C++23 compiler is available. The local ASCII GCC 13 toolchain satisfies this for the CMake targets.
 
-Domain smoke test, representative direct compile:
+Domain smoke test, representative direct compile for legacy standalone checks:
 
 ```sh
 g++ -std=c++17 -Wall -Wextra -pedantic -Isrc \

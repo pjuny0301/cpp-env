@@ -27,7 +27,7 @@
       "linker_bin": "C:/qtmingw1310_ascii/x86_64-w64-mingw32/bin",
       "ninja": "C:/dev/tools/ninja-1.13.2/ninja.exe",
       "cmake": "C:/Program Files/CMake/bin/cmake.exe",
-      "minimum_standard": "C++20",
+      "minimum_standard": "C++23",
       "helper_script": "tools/run_windows_mingw_ascii.ps1"
     },
     "modern_cxx17_or_newer": {
@@ -36,7 +36,7 @@
     },
     "modern_cxx20_app": {
       "description": "Required for the full app/CMake presets described in README.md.",
-      "minimum_standard": "C++20"
+      "minimum_standard": "C++23"
     }
   },
   "suites": [

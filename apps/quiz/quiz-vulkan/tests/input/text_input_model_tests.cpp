@@ -309,6 +309,158 @@ void test_selection_replacement_and_backspace()
     require(!model.selection_range().has_value(), "selected backspace with preedit clears selection");
 }
 
+void test_shift_selection_extension_by_utf8_codepoint()
+{
+    quiz_vulkan::input::text_input_model model;
+    require(!model.extend_selection_left(), "unfocused extend left is ignored");
+    require(!model.extend_selection_right(), "unfocused extend right is ignored");
+
+    model.focus("answer");
+    const std::string initial = std::string("A") + utf8(u8"한") + "B";
+    require(model.commit_utf8(initial), "initial commit before shift selection succeeds");
+    require(!model.extend_selection_right(), "extend right at text end is ignored");
+
+    require(model.extend_selection_left(), "extend left selects trailing ascii");
+    std::optional<quiz_vulkan::input::text_range> selection = model.selection_range();
+    require(selection.has_value(), "extend left exposes selection");
+    require_range(*selection, 4, 5, "extend left selects trailing ascii range");
+    require(model.caret_byte_offset() == 4, "extend left places caret at active edge");
+
+    require(model.extend_selection_left(), "second extend left selects utf8 codepoint");
+    selection = model.selection_range();
+    require(selection.has_value(), "second extend left preserves selection");
+    require_range(*selection, 1, 5, "second extend left spans whole utf8 codepoint");
+    require(model.caret_byte_offset() == 1, "second extend left moves active edge by utf8 codepoint");
+
+    require(model.extend_selection_right(), "extend right shrinks utf8 selection");
+    selection = model.selection_range();
+    require(selection.has_value(), "extend right keeps remaining selection");
+    require_range(*selection, 4, 5, "extend right shrinks to trailing ascii");
+    require(model.caret_byte_offset() == 4, "extend right moves active edge forward by utf8 codepoint");
+
+    require(model.extend_selection_right(), "extend right collapses selection at anchor");
+    require(!model.selection_range().has_value(), "extend right to anchor clears selection");
+    require(model.caret_byte_offset() == 5, "extend right to anchor restores caret at end");
+
+    require(model.move_caret_to_start(), "move to start before forward extension succeeds");
+    require(model.extend_selection_right(), "extend right from start selects ascii");
+    selection = model.selection_range();
+    require(selection.has_value(), "forward extension exposes selection");
+    require_range(*selection, 0, 1, "forward extension selects first ascii byte");
+    require(model.caret_byte_offset() == 1, "forward extension places active caret after ascii");
+
+    require(model.extend_selection_right(), "forward extension over utf8 succeeds");
+    selection = model.selection_range();
+    require(selection.has_value(), "forward utf8 extension preserves selection");
+    require_range(*selection, 0, 4, "forward extension spans utf8 codepoint boundary");
+    require(model.caret_byte_offset() == 4, "forward extension advances active edge over utf8");
+}
+
+void test_ime_composition_state_preedit_update_commit_and_cancel()
+{
+    quiz_vulkan::input::text_input_model model;
+    quiz_vulkan::input::ime_composition_state composition = model.ime_composition();
+    require(!composition.active, "default ime composition is inactive");
+    require(composition.preedit_text.empty(), "default ime composition preedit is empty");
+    require_range(composition.replacement_range, 0, 0, "default ime replacement range is collapsed");
+    require_range(composition.preedit_range, 0, 0, "default ime preedit range is collapsed");
+    require_range(composition.caret_range, 0, 0, "default ime caret range is collapsed");
+
+    model.focus("answer");
+    const std::string base = std::string("A") + utf8(u8"한") + "B";
+    require(model.commit_utf8(base), "base commit before ime composition state succeeds");
+    require(model.move_caret_left(), "move caret before trailing ascii for ime composition succeeds");
+    require(model.caret_byte_offset() == 4, "caret sits between hangul and trailing ascii");
+
+    const std::string preedit = utf8(u8"ㅎ");
+    require(model.set_preedit(preedit), "hangul jamo preedit update succeeds");
+    composition = model.ime_composition();
+    require(composition.active, "hangul jamo preedit marks composition active");
+    require(composition.preedit_text == preedit, "composition stores hangul jamo preedit text");
+    require_range(composition.replacement_range, 4, 4, "preedit insert replacement range is collapsed at caret");
+    require_range(composition.preedit_range, 4, 4 + preedit.size(), "preedit range is normalized from caret");
+    require_range(composition.caret_range, 4 + preedit.size(), 4 + preedit.size(), "composition caret follows preedit");
+    require_range(model.preedit_range().value(), 4, 4 + preedit.size(), "model preedit range matches composition");
+    require_range(model.caret_range(), 4 + preedit.size(), 4 + preedit.size(), "model caret range follows preedit");
+    require(model.display_text() == std::string("A") + utf8(u8"한") + preedit + "B",
+        "display text inserts preedit at caret");
+
+    const std::string updated_preedit = utf8(u8"하");
+    require(model.set_preedit(updated_preedit), "hangul syllable preedit update succeeds");
+    composition = model.ime_composition();
+    require(composition.active, "updated preedit keeps composition active");
+    require(composition.preedit_text == updated_preedit, "composition stores updated hangul syllable preedit");
+    require_range(composition.replacement_range, 4, 4, "updated preedit keeps replacement range");
+    require_range(composition.preedit_range, 4, 4 + updated_preedit.size(), "updated preedit range is normalized");
+    require(model.display_text() == std::string("A") + utf8(u8"한") + updated_preedit + "B",
+        "display text updates preedit without mutating committed text");
+    require(model.text() == base, "preedit update preserves committed text");
+
+    const std::string final_text = utf8(u8"한");
+    require(model.commit_ime(final_text), "hangul ime commit succeeds");
+    require(model.text() == std::string("A") + utf8(u8"한") + final_text + "B",
+        "ime commit inserts final hangul at caret");
+    require(model.caret_byte_offset() == 4 + final_text.size(), "ime commit moves caret after final hangul");
+    require(!model.preedit_range().has_value(), "ime commit clears model preedit range");
+    composition = model.ime_composition();
+    require(!composition.active, "ime commit clears composition active state");
+    require(composition.preedit_text.empty(), "ime commit clears composition preedit text");
+
+    require(model.set_selection({.start_byte = 1, .end_byte = 4}), "select committed hangul for ime replacement");
+    const std::string replacement_preedit = utf8(u8"하");
+    require(model.set_preedit(replacement_preedit), "preedit over selected hangul succeeds");
+    composition = model.ime_composition();
+    require(composition.active, "selected preedit marks composition active");
+    require_range(composition.replacement_range, 1, 4, "selected preedit replacement range covers committed hangul");
+    require_range(composition.preedit_range, 1, 1 + replacement_preedit.size(), "selected preedit range starts at selection");
+    require_range(composition.caret_range,
+        1 + replacement_preedit.size(),
+        1 + replacement_preedit.size(),
+        "selected preedit caret follows replacement text");
+    require(model.display_text() == std::string("A") + replacement_preedit + final_text + "B",
+        "selected preedit replaces selected committed text in display");
+
+    require(model.cancel_ime(), "canceling selected preedit succeeds");
+    composition = model.ime_composition();
+    require(!composition.active, "cancel clears composition active state");
+    require(composition.preedit_text.empty(), "cancel clears composition preedit text");
+    require(!model.preedit_range().has_value(), "cancel clears model preedit range");
+    require(model.selection_range().has_value(), "cancel preserves committed selection for caller");
+    require(model.display_text() == model.text(), "cancel restores committed display text");
+
+    const std::string replacement_commit = utf8(u8"각");
+    require(model.set_preedit(replacement_commit), "second selected preedit succeeds");
+    require(model.commit_ime(replacement_commit), "selected hangul ime commit succeeds");
+    require(model.text() == std::string("A") + replacement_commit + final_text + "B",
+        "ime commit replaces selected hangul with final hangul");
+    require(model.caret_byte_offset() == 1 + replacement_commit.size(), "selected ime commit places caret after replacement");
+    require(!model.selection_range().has_value(), "selected ime commit clears selection");
+    require(!model.ime_composition().active, "selected ime commit clears composition state");
+}
+
+void test_empty_ime_preedit_has_active_composition_contract()
+{
+    quiz_vulkan::input::text_input_model model;
+    model.focus("answer");
+    require(model.commit_utf8(std::string("A") + utf8(u8"한")), "base commit before empty preedit succeeds");
+
+    require(model.set_preedit(""), "empty preedit starts active composition");
+    quiz_vulkan::input::ime_composition_state composition = model.ime_composition();
+    require(composition.active, "empty preedit is represented as active composition");
+    require(composition.preedit_text.empty(), "empty preedit stores empty composition text");
+    require_range(composition.replacement_range, model.caret_byte_offset(), model.caret_byte_offset(),
+        "empty preedit replacement range is caret collapsed");
+    require_range(composition.preedit_range, model.caret_byte_offset(), model.caret_byte_offset(),
+        "empty preedit range is caret collapsed");
+    require_range(model.preedit_range().value(), model.caret_byte_offset(), model.caret_byte_offset(),
+        "empty active preedit exposes collapsed model range");
+    require(model.display_text() == model.text(), "empty active preedit preserves display text");
+
+    require(model.cancel_ime(), "empty active composition can be canceled");
+    require(!model.ime_composition().active, "empty preedit cancel clears composition state");
+    require(!model.preedit_range().has_value(), "empty preedit cancel clears preedit range");
+}
+
 void test_ime_preedit_and_commit()
 {
     quiz_vulkan::input::text_input_model model;
@@ -358,7 +510,9 @@ void test_empty_preedit_edges()
     require(model.set_preedit(""), "empty preedit replacement succeeds");
     require(model.preedit_text().empty(), "empty preedit leaves no preedit text");
     require(model.display_text() == "base", "empty preedit display falls back to committed text");
-    require(!model.cancel_ime(), "cancel empty preedit reports no mutation");
+    require(model.ime_composition().active, "empty preedit still tracks active composition");
+    require(model.preedit_range().has_value(), "empty preedit exposes collapsed active range");
+    require(model.cancel_ime(), "cancel empty active preedit reports mutation");
     require(model.text() == "base", "empty preedit cancel preserves committed text");
 
     require(!model.commit_ime(""), "empty ime commit after empty preedit reports no committed text");
@@ -429,6 +583,9 @@ int main()
     test_caret_movement_insert_and_backspace();
     test_selection_range_and_preedit_coherence();
     test_selection_replacement_and_backspace();
+    test_shift_selection_extension_by_utf8_codepoint();
+    test_ime_composition_state_preedit_update_commit_and_cancel();
+    test_empty_ime_preedit_has_active_composition_contract();
     test_ime_preedit_and_commit();
     test_ime_commit_edges();
     test_empty_preedit_edges();

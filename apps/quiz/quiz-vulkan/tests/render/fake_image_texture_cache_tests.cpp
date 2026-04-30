@@ -2,6 +2,7 @@
 #include "render/image/image_resolver.h"
 #include "render/image/image_source_bytes_loader.h"
 #include "render/image/image_texture_cache.h"
+#include "render/image/image_texture_pipeline.h"
 #include "render/render_draw_list.h"
 
 #include <cassert>
@@ -65,6 +66,53 @@ std::vector<std::byte> make_ppm_1x1_encoded_bytes()
     append_byte(bytes, 0x00);
     append_byte(bytes, 0xff);
     return bytes;
+}
+
+std::vector<std::byte> make_png_signature_fixture_bytes()
+{
+    std::vector<std::byte> bytes;
+    append_byte(bytes, 0x89);
+    append_ascii(bytes, "PNG\r\n");
+    append_byte(bytes, 0x1a);
+    append_byte(bytes, '\n');
+    append_ascii(bytes, "fake-png-payload");
+    return bytes;
+}
+
+std::vector<std::byte> make_jpeg_signature_fixture_bytes()
+{
+    std::vector<std::byte> bytes;
+    append_byte(bytes, 0xff);
+    append_byte(bytes, 0xd8);
+    append_byte(bytes, 0xff);
+    append_ascii(bytes, "fake-jpeg-payload");
+    return bytes;
+}
+
+std::vector<std::byte> make_unknown_image_fixture_bytes()
+{
+    std::vector<std::byte> bytes;
+    append_ascii(bytes, "not-a-known-image-format");
+    return bytes;
+}
+
+quiz_vulkan::render::render_decoded_image make_rgba_2x1_decoded_image()
+{
+    return quiz_vulkan::render::render_decoded_image{
+        .width = 2,
+        .height = 1,
+        .pixel_format = quiz_vulkan::render::render_image_pixel_format::rgba8_srgb,
+        .pixels = {
+            std::byte{0xff},
+            std::byte{0x00},
+            std::byte{0x00},
+            std::byte{0xff},
+            std::byte{0x00},
+            std::byte{0xff},
+            std::byte{0x00},
+            std::byte{0xff},
+        },
+    };
 }
 
 class malformed_payload_decoder final : public quiz_vulkan::render::image_decoder_interface {
@@ -133,6 +181,44 @@ public:
     mutable int decode_request_count = 0;
 };
 
+class linear_pixel_format_decoder final : public quiz_vulkan::render::image_decoder_interface {
+public:
+    bool supports(const quiz_vulkan::render::render_image_decode_request&) const override
+    {
+        ++support_request_count;
+        return true;
+    }
+
+    quiz_vulkan::render::render_image_decode_result decode(
+        const quiz_vulkan::render::render_image_decode_request& request) const override
+    {
+        ++decode_request_count;
+        quiz_vulkan::render::render_decoded_image image{
+            .width = 1,
+            .height = 1,
+            .pixel_format = quiz_vulkan::render::render_image_pixel_format::rgba8_unorm,
+            .pixels = {
+                std::byte{0x10},
+                std::byte{0x20},
+                std::byte{0x30},
+                std::byte{0xff},
+            },
+        };
+        return quiz_vulkan::render::render_image_decode_result{
+            .status = quiz_vulkan::render::render_image_decode_status::decoded,
+            .image = image,
+            .diagnostic = {},
+            .metadata = quiz_vulkan::render::make_render_image_decode_metadata(
+                "linear_pixel_format_decoder",
+                request,
+                image),
+        };
+    }
+
+    mutable int support_request_count = 0;
+    mutable int decode_request_count = 0;
+};
+
 const quiz_vulkan::render::fake_image_texture_cache_entry_snapshot* find_snapshot_entry(
     const quiz_vulkan::render::fake_image_texture_cache_snapshot& snapshot,
     std::string_view source_key)
@@ -140,6 +226,20 @@ const quiz_vulkan::render::fake_image_texture_cache_entry_snapshot* find_snapsho
     for (const quiz_vulkan::render::fake_image_texture_cache_entry_snapshot& entry : snapshot.entries) {
         if (entry.key.source_key == source_key) {
             return &entry;
+        }
+    }
+
+    return nullptr;
+}
+
+const quiz_vulkan::render::fake_image_texture_eviction_snapshot* find_eviction_snapshot(
+    const quiz_vulkan::render::fake_image_texture_cache_snapshot& snapshot,
+    std::string_view source_key,
+    quiz_vulkan::render::fake_image_texture_eviction_reason reason)
+{
+    for (const quiz_vulkan::render::fake_image_texture_eviction_snapshot& eviction : snapshot.evictions) {
+        if (eviction.key.source_key == source_key && eviction.reason == reason) {
+            return &eviction;
         }
     }
 
@@ -236,9 +336,98 @@ void test_decoder_interface_shape()
     require(decoded.metadata.height == 1, "fake decoder reports metadata height");
     require(decoded.metadata.decoded_byte_count == 8, "fake decoder reports decoded byte count");
     require(decoded.metadata.has_image(), "fake decoder metadata reports image");
+    require(
+        decoded.metadata.format_detection.detected_format == render_image_encoded_format::unknown,
+        "fake decoder reports unknown fixture format by default");
+    require(decoded.metadata.format_detection.placeholder_fallback, "fake decoder reports placeholder fallback");
+    require(decoded.metadata.size_validation.valid, "fake decoder validates decoded size");
+    require(decoded.metadata.size_validation.row_stride_byte_count == 8, "fake decoder reports row stride");
+    require(decoded.metadata.size_validation.expected_decoded_byte_count == 8, "fake decoder reports expected byte count");
     require(decoded.decoder_diagnostics.empty(), "direct fake decoder has no chain diagnostics");
     require(decoder.support_requests.size() == 1, "support request was recorded");
     require(decoder.decode_requests.size() == 1, "decode request was recorded");
+}
+
+void test_fake_decoder_reports_format_detection_and_placeholder_fallbacks()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_resolved_image_source source{
+        .original_uri = "asset://card.fake",
+        .normalized_uri = "asset://card.fake",
+        .kind = render_image_source_kind::asset_uri,
+    };
+    fake_image_decoder decoder;
+
+    const render_image_decode_result png = decoder.decode(render_image_decode_request{
+        .source = source,
+        .encoded_bytes = make_png_signature_fixture_bytes(),
+    });
+    require(png.ok(), "fake decoder decodes PNG fixture through placeholder fallback");
+    require(
+        png.metadata.format_detection.detected_format == render_image_encoded_format::png,
+        "fake decoder detects PNG signature");
+    require(png.metadata.format_detection.extension_hint == "fake", "fake decoder reports extension hint");
+    require(png.metadata.format_detection.recognized_signature, "PNG fixture has recognized signature");
+    require(png.metadata.format_detection.placeholder_fallback, "PNG fixture reports placeholder fallback");
+    require(!png.metadata.format_detection.diagnostic.empty(), "PNG fallback includes diagnostic");
+    require(png.metadata.size_validation.valid, "PNG placeholder validates decoded payload");
+    require(png.metadata.size_validation.row_stride_byte_count == 8, "PNG placeholder reports row stride");
+
+    const render_image_decode_result jpeg = decoder.decode(render_image_decode_request{
+        .source = source,
+        .encoded_bytes = make_jpeg_signature_fixture_bytes(),
+    });
+    require(jpeg.ok(), "fake decoder decodes JPEG fixture through placeholder fallback");
+    require(
+        jpeg.metadata.format_detection.detected_format == render_image_encoded_format::jpeg,
+        "fake decoder detects JPEG signature");
+    require(jpeg.metadata.format_detection.recognized_signature, "JPEG fixture has recognized signature");
+    require(jpeg.metadata.format_detection.placeholder_fallback, "JPEG fixture reports placeholder fallback");
+    require(jpeg.metadata.size_validation.expected_decoded_byte_count == 8, "JPEG placeholder reports byte size");
+    require(jpeg.metadata.size_validation.actual_decoded_byte_count == 8, "JPEG placeholder reports actual bytes");
+
+    const render_image_decode_result unknown = decoder.decode(render_image_decode_request{
+        .source = source,
+        .encoded_bytes = make_unknown_image_fixture_bytes(),
+    });
+    require(unknown.ok(), "fake decoder decodes unknown fixture through placeholder fallback");
+    require(
+        unknown.metadata.format_detection.detected_format == render_image_encoded_format::unknown,
+        "fake decoder reports unknown format");
+    require(!unknown.metadata.format_detection.recognized_signature, "unknown fixture has no recognized signature");
+    require(unknown.metadata.format_detection.placeholder_fallback, "unknown fixture reports placeholder fallback");
+    require(!unknown.metadata.format_detection.diagnostic.empty(), "unknown fallback includes diagnostic");
+    require(unknown.metadata.size_validation.valid, "unknown placeholder validates decoded payload");
+    require(decoder.decode_requests.size() == 3, "fake decoder records format diagnostic decode requests");
+}
+
+void test_decoder_size_validation_reports_stride_and_invalid_payloads()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_decoded_image valid = make_rgba_2x1_decoded_image();
+    const render_image_decode_size_validation valid_size = validate_render_image_decode_size(valid);
+    require(valid_size.valid, "decoded size validation accepts valid RGBA payload");
+    require(valid_size.row_stride_byte_count == 8, "decoded size validation reports row stride");
+    require(valid_size.expected_decoded_byte_count == 8, "decoded size validation reports expected bytes");
+    require(valid_size.actual_decoded_byte_count == 8, "decoded size validation reports actual bytes");
+
+    render_decoded_image short_payload = make_rgba_2x1_decoded_image();
+    short_payload.pixels.pop_back();
+    const render_image_decode_size_validation invalid_size = validate_render_image_decode_size(short_payload);
+    require(!invalid_size.valid, "decoded size validation rejects short payload");
+    require(invalid_size.row_stride_byte_count == 8, "invalid payload still reports row stride");
+    require(invalid_size.expected_decoded_byte_count == 8, "invalid payload reports expected bytes");
+    require(invalid_size.actual_decoded_byte_count == 7, "invalid payload reports actual bytes");
+    require(!invalid_size.diagnostic.empty(), "invalid payload includes size diagnostic");
+
+    render_decoded_image unknown_format = make_rgba_2x1_decoded_image();
+    unknown_format.pixel_format = static_cast<render_image_pixel_format>(99);
+    const render_image_decode_size_validation invalid_format = validate_render_image_decode_size(unknown_format);
+    require(!invalid_format.valid, "decoded size validation rejects unknown pixel format");
+    require(invalid_format.expected_decoded_byte_count == 0, "unknown pixel format has no expected byte count");
+    require(!invalid_format.diagnostic.empty(), "unknown pixel format includes size diagnostic");
 }
 
 void test_decoder_reports_explicit_failures()
@@ -324,6 +513,13 @@ void test_ppm_decoder_decodes_binary_rgb_to_rgba()
     require(decoded.metadata.height == 1, "ppm decoder metadata carries height");
     require(decoded.metadata.decoded_byte_count == 8, "ppm decoder metadata carries decoded byte count");
     require(decoded.metadata.has_image(), "ppm decoder metadata reports image");
+    require(
+        decoded.metadata.format_detection.detected_format == render_image_encoded_format::ppm,
+        "ppm decoder reports detected PPM format");
+    require(decoded.metadata.format_detection.recognized_signature, "ppm decoder reports recognized signature");
+    require(!decoded.metadata.format_detection.placeholder_fallback, "ppm decoder does not use placeholder fallback");
+    require(decoded.metadata.size_validation.valid, "ppm decoder validates decoded size");
+    require(decoded.metadata.size_validation.row_stride_byte_count == 8, "ppm decoder reports row stride");
 }
 
 void test_ppm_decoder_reports_invalid_payload_size()
@@ -551,6 +747,392 @@ void test_texture_cache_can_use_loaded_source_bytes()
     require(cache.cached_decoded_byte_count() == 8, "source loader fixture decodes to rgba bytes");
 }
 
+void test_texture_uploader_uploads_valid_decoded_image()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_image_texture_key key{
+        .source_key = "textures/upload.ppm",
+        .sampler = render_image_sampler_policy{},
+    };
+    fake_image_texture_uploader uploader;
+    const render_image_texture_upload_result uploaded = uploader.upload(render_image_texture_upload_request{
+        .key = key,
+        .sampler = render_image_sampler_policy{},
+        .image = make_rgba_2x1_decoded_image(),
+    });
+
+    require(uploaded.ok(), "texture uploader uploads valid decoded image");
+    require(uploaded.status == render_image_texture_upload_status::uploaded, "texture uploader reports uploaded");
+    require(uploaded.generation_id == 1, "texture uploader reports deterministic generation id");
+    require(uploaded.sampler == render_image_sampler_policy{}, "texture uploader result preserves sampler policy");
+    require(uploaded.texture.valid(), "texture uploader returns valid handle");
+    require(uploaded.texture.id == 1, "texture uploader handle id is deterministic");
+    require(uploaded.texture.width == 2, "texture uploader handle carries width");
+    require(uploaded.texture.height == 1, "texture uploader handle carries height");
+    require(uploaded.pixel_count == 2, "texture uploader reports pixel count");
+    require(uploaded.pixel_byte_count == 8, "texture uploader reports expected pixel bytes");
+    require(uploaded.decoded_byte_count == 8, "texture uploader reports decoded byte count");
+    require(uploaded.staging_byte_count == 8, "texture uploader reports staging byte count");
+    require(uploader.upload_requests.size() == 1, "texture uploader records upload request");
+    require(uploader.upload_request_snapshots.size() == 1, "texture uploader records request snapshot");
+    require(uploader.upload_result_snapshots.size() == 1, "texture uploader records result snapshot");
+    require(uploader.upload_request_snapshots[0].generation_id == 1, "request snapshot records generation id");
+    require(uploader.upload_request_snapshots[0].sampler == render_image_sampler_policy{}, "request snapshot records sampler");
+    require(uploader.upload_request_snapshots[0].staging_byte_count == 8, "request snapshot records staging bytes");
+    require(uploader.upload_result_snapshots[0].generation_id == 1, "result snapshot records generation id");
+    require(uploader.upload_result_snapshots[0].status == render_image_texture_upload_status::uploaded, "result snapshot records status");
+    require(uploader.upload_result_snapshots[0].staging_byte_count == 8, "result snapshot records staging bytes");
+
+    const fake_image_texture_upload_snapshot snapshot = uploader.diagnostic_snapshot();
+    require(snapshot.upload_count == 1, "texture uploader snapshot reports upload count");
+    require(snapshot.failed_upload_count == 0, "texture uploader snapshot reports no failures");
+    require(snapshot.uploaded_pixel_count == 2, "texture uploader snapshot reports uploaded pixels");
+    require(snapshot.uploaded_pixel_byte_count == 8, "texture uploader snapshot reports uploaded pixel bytes");
+    require(snapshot.uploaded_decoded_byte_count == 8, "texture uploader snapshot reports uploaded decoded bytes");
+    require(snapshot.staged_byte_count == 8, "texture uploader snapshot reports successful staging bytes");
+    require(snapshot.attempted_staging_byte_count == 8, "texture uploader snapshot reports attempted staging bytes");
+    require(snapshot.next_generation_id == 2, "texture uploader snapshot reports next generation id");
+    require(snapshot.request_snapshots.size() == 1, "texture uploader snapshot carries request snapshot");
+    require(snapshot.result_snapshots.size() == 1, "texture uploader snapshot carries result snapshot");
+    require(snapshot.entries.size() == 1, "texture uploader snapshot records entry");
+    require(snapshot.entries[0].generation_id == 1, "texture uploader snapshot records generation id");
+    require(snapshot.entries[0].key == key, "texture uploader snapshot records key");
+    require(snapshot.entries[0].sampler == render_image_sampler_policy{}, "texture uploader snapshot records sampler");
+    require(snapshot.entries[0].texture.id == uploaded.texture.id, "texture uploader snapshot records handle");
+    require(snapshot.entries[0].status == render_image_texture_upload_status::uploaded, "snapshot records status");
+    require(snapshot.entries[0].staging_byte_count == 8, "texture uploader snapshot records staging bytes");
+    require(snapshot.entries[0].request.generation_id == 1, "entry request snapshot records generation id");
+    require(snapshot.entries[0].result.texture.id == uploaded.texture.id, "entry result snapshot records handle");
+}
+
+void test_texture_uploader_rejects_invalid_inputs()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_image_texture_key valid_key{
+        .source_key = "textures/upload-invalid.ppm",
+        .sampler = render_image_sampler_policy{},
+    };
+    fake_image_texture_uploader uploader;
+
+    const render_image_texture_upload_result invalid_key = uploader.upload(render_image_texture_upload_request{
+        .key = render_image_texture_key{.source_key = {}, .sampler = render_image_sampler_policy{}},
+        .sampler = render_image_sampler_policy{},
+        .image = make_rgba_2x1_decoded_image(),
+    });
+    require(!invalid_key.ok(), "texture uploader rejects invalid key");
+    require(invalid_key.status == render_image_texture_upload_status::invalid_key, "invalid key status is reported");
+    require(invalid_key.generation_id == 1, "invalid key reports generation id");
+    require(invalid_key.staging_byte_count == 8, "invalid key preserves staging diagnostics for valid payload");
+    require(!invalid_key.diagnostic.empty(), "invalid key includes diagnostic");
+
+    render_image_sampler_policy invalid_sampler;
+    invalid_sampler.wrap_u = static_cast<render_image_wrap_mode>(99);
+    const render_image_texture_upload_result invalid_sampler_result = uploader.upload(
+        render_image_texture_upload_request{
+            .key = valid_key,
+            .sampler = invalid_sampler,
+            .image = make_rgba_2x1_decoded_image(),
+        });
+    require(!invalid_sampler_result.ok(), "texture uploader rejects invalid sampler");
+    require(
+        invalid_sampler_result.status == render_image_texture_upload_status::invalid_sampler,
+        "invalid sampler status is reported");
+    require(invalid_sampler_result.generation_id == 2, "invalid sampler reports generation id");
+    require(invalid_sampler_result.sampler == invalid_sampler, "invalid sampler result records attempted sampler");
+    require(invalid_sampler_result.staging_byte_count == 8, "invalid sampler preserves staging diagnostics");
+    require(!invalid_sampler_result.diagnostic.empty(), "invalid sampler includes diagnostic");
+
+    render_decoded_image unsupported_format = make_rgba_2x1_decoded_image();
+    unsupported_format.pixel_format = static_cast<render_image_pixel_format>(99);
+    const render_image_texture_upload_result unsupported = uploader.upload(render_image_texture_upload_request{
+        .key = valid_key,
+        .sampler = render_image_sampler_policy{},
+        .image = unsupported_format,
+    });
+    require(!unsupported.ok(), "texture uploader rejects unsupported format");
+    require(
+        unsupported.status == render_image_texture_upload_status::unsupported_format,
+        "unsupported format status is reported");
+    require(unsupported.generation_id == 3, "unsupported format reports generation id");
+    require(unsupported.staging_byte_count == 0, "unsupported format reports no staged bytes");
+    require(!unsupported.diagnostic.empty(), "unsupported format includes diagnostic");
+
+    render_decoded_image invalid_payload = make_rgba_2x1_decoded_image();
+    invalid_payload.pixels.pop_back();
+    const render_image_texture_upload_result invalid_image = uploader.upload(render_image_texture_upload_request{
+        .key = valid_key,
+        .sampler = render_image_sampler_policy{},
+        .image = invalid_payload,
+    });
+    require(!invalid_image.ok(), "texture uploader rejects invalid payload");
+    require(
+        invalid_image.status == render_image_texture_upload_status::invalid_image,
+        "invalid payload status is reported");
+    require(invalid_image.generation_id == 4, "invalid payload reports generation id");
+    require(invalid_image.staging_byte_count == 0, "invalid payload reports no staged bytes");
+    require(!invalid_image.diagnostic.empty(), "invalid payload includes diagnostic");
+
+    const fake_image_texture_upload_snapshot snapshot = uploader.diagnostic_snapshot();
+    require(snapshot.upload_count == 4, "texture uploader snapshot records failed attempts");
+    require(snapshot.failed_upload_count == 4, "texture uploader snapshot counts failures");
+    require(snapshot.next_generation_id == 5, "texture uploader failure snapshot reports next generation id");
+    require(snapshot.request_snapshots.size() == 4, "texture uploader failure snapshot records request snapshots");
+    require(snapshot.result_snapshots.size() == 4, "texture uploader failure snapshot records result snapshots");
+    require(snapshot.entries.size() == 4, "texture uploader snapshot records failure entries");
+    require(snapshot.uploaded_pixel_count == 0, "texture uploader snapshot excludes failed pixels");
+    require(snapshot.staged_byte_count == 0, "texture uploader failure snapshot reports no successful staging");
+    require(
+        snapshot.attempted_staging_byte_count == 16,
+        "texture uploader failure snapshot reports attempted staging bytes");
+    require(snapshot.entries[0].generation_id == 1, "snapshot records invalid key generation");
+    require(snapshot.entries[0].status == render_image_texture_upload_status::invalid_key, "snapshot records invalid key");
+    require(snapshot.entries[0].staging_byte_count == 8, "snapshot records invalid key staging bytes");
+    require(
+        snapshot.entries[1].status == render_image_texture_upload_status::invalid_sampler,
+        "snapshot records invalid sampler");
+    require(snapshot.entries[1].generation_id == 2, "snapshot records invalid sampler generation");
+    require(snapshot.entries[1].sampler == invalid_sampler, "snapshot records invalid sampler policy");
+    require(
+        snapshot.entries[2].status == render_image_texture_upload_status::unsupported_format,
+        "snapshot records unsupported format");
+    require(snapshot.entries[2].generation_id == 3, "snapshot records unsupported format generation");
+    require(
+        snapshot.entries[3].status == render_image_texture_upload_status::invalid_image,
+        "snapshot records invalid image");
+    require(snapshot.entries[3].generation_id == 4, "snapshot records invalid image generation");
+    require(!snapshot.entries[3].texture.valid(), "failed upload snapshot records no handle");
+    require(!snapshot.entries[3].result.diagnostic.empty(), "failed upload result snapshot keeps diagnostic");
+}
+
+void test_texture_cache_uses_injected_texture_uploader()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/cache-uploader.ppm"})
+                                                .source;
+    ppm_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    cache.set_placeholder_encoded_bytes_for_source(source.cache_key(), make_ppm_1x1_encoded_bytes());
+
+    const render_image_texture_request request{.source = source, .sampler = render_image_sampler_policy{}};
+    const render_image_texture_result first = cache.acquire_texture(request);
+    require(first.ok(), "texture cache uses injected uploader to create texture");
+    require(!first.cache_hit, "first uploader-backed cache request is a miss");
+    require(first.texture.id == 1, "injected uploader returns deterministic texture id");
+    require(uploader.upload_requests.size() == 1, "injected uploader records first upload");
+    require(uploader.upload_requests[0].key == first.key, "injected uploader receives texture key");
+    require(uploader.upload_requests[0].sampler == request.sampler, "injected uploader receives sampler");
+    require(uploader.upload_requests[0].image.width == 1, "injected uploader receives decoded image");
+
+    const render_image_texture_result second = cache.acquire_texture(request);
+    require(second.ok(), "uploader-backed cache request can be reacquired");
+    require(second.cache_hit, "uploader-backed cache hit avoids upload");
+    require(second.texture.id == first.texture.id, "uploader-backed cache hit reuses handle");
+    require(uploader.upload_requests.size() == 1, "cache hit does not call uploader again");
+
+    const fake_image_texture_upload_snapshot snapshot = uploader.diagnostic_snapshot();
+    require(snapshot.upload_count == 1, "injected uploader snapshot records one upload");
+    require(snapshot.entries[0].generation_id == 1, "injected uploader snapshot records generation id");
+    require(snapshot.entries[0].sampler == request.sampler, "injected uploader snapshot records sampler");
+    require(snapshot.entries[0].staging_byte_count == 4, "injected uploader snapshot records staging bytes");
+    require(snapshot.entries[0].texture.id == first.texture.id, "injected uploader snapshot matches cache handle");
+}
+
+void test_texture_pipeline_resolves_loads_decodes_and_uploads_image_ref()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_image_resolve_result setup_source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/pipeline-success.ppm"});
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes(setup_source.source, make_ppm_2x1_encoded_bytes());
+
+    ppm_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
+
+    render_image_ref image;
+    image.uri = "  ./textures\\pipeline-success.ppm ";
+    image.sampler.mag_filter = render_image_filter::nearest;
+
+    const render_image_texture_pipeline_result result = pipeline.acquire_texture(image);
+    require(result.ok(), "texture pipeline creates a texture for an image ref");
+    require(result.status == render_image_texture_pipeline_status::ready, "texture pipeline reports ready");
+    require(result.resolve.ok(), "texture pipeline resolves image ref uri");
+    require(
+        result.resolve.source.cache_key() == setup_source.source.cache_key(),
+        "texture pipeline uses normalized resolver key");
+    require(result.source_bytes.ok(), "texture pipeline loads encoded source bytes");
+    require(result.texture.ok(), "texture pipeline returns cache texture result");
+    require(!result.texture.cache_hit, "first texture pipeline acquire is a cache miss");
+    require(result.texture.texture.width == 2, "texture pipeline preserves decoded width");
+    require(result.texture.texture.height == 1, "texture pipeline preserves decoded height");
+    require(result.texture.key.sampler == image.sampler, "texture pipeline preserves image sampler policy");
+    require(uploader.upload_requests.size() == 1, "texture pipeline reaches uploader once");
+    require(uploader.upload_requests[0].sampler == image.sampler, "texture pipeline sends sampler to uploader");
+    require(cache.cached_texture_count() == 1, "texture pipeline stores uploaded texture in cache");
+
+    const fake_image_texture_pipeline_snapshot snapshot = pipeline.diagnostic_snapshot();
+    require(snapshot.acquire_count == 1, "texture pipeline snapshot records acquire count");
+    require(snapshot.ready_count == 1, "texture pipeline snapshot records ready count");
+    require(snapshot.failure_count == 0, "texture pipeline snapshot reports no failures");
+    require(!snapshot.entries[0].cache_hit, "texture pipeline snapshot records first miss");
+    require(snapshot.entries[0].encoded_byte_count == make_ppm_2x1_encoded_bytes().size(), "snapshot records encoded bytes");
+    require(snapshot.entries[0].decode_metadata.decoder_id == "ppm_image_decoder", "snapshot records decoder id");
+    require(snapshot.entries[0].decode_metadata.width == 2, "snapshot records decoded width");
+    require(snapshot.entries[0].decode_metadata.decoded_byte_count == 8, "snapshot records decoded byte count");
+    require(snapshot.entries[0].upload_count_before == 0, "snapshot records upload count before acquire");
+    require(snapshot.entries[0].upload_count_after == 1, "snapshot records upload count after acquire");
+    require(snapshot.cache_snapshot.texture_count == 1, "snapshot includes cache state");
+    require(snapshot.upload_diagnostics_available, "snapshot reports upload diagnostics are available");
+    require(snapshot.upload_snapshot.upload_count == 1, "snapshot includes upload queue state");
+}
+
+void test_texture_pipeline_reports_source_load_failure()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    ppm_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
+
+    const render_image_texture_pipeline_result result = pipeline.acquire_texture(
+        render_image_texture_pipeline_request{.uri = "textures/pipeline-missing.ppm"});
+    require(!result.ok(), "texture pipeline does not create texture without source bytes");
+    require(
+        result.status == render_image_texture_pipeline_status::source_load_failed,
+        "texture pipeline reports source load failure");
+    require(result.resolve.ok(), "texture pipeline resolves source before load failure");
+    require(
+        result.source_bytes.status == render_image_source_bytes_load_status::missing_bytes,
+        "texture pipeline preserves source loader failure status");
+    require(!result.diagnostic.empty(), "texture pipeline source failure includes diagnostic");
+    require(cache.cached_texture_count() == 0, "texture pipeline source failure does not cache texture");
+    require(uploader.upload_requests.empty(), "texture pipeline source failure does not upload");
+
+    const fake_image_texture_pipeline_snapshot snapshot = pipeline.diagnostic_snapshot();
+    require(snapshot.acquire_count == 1, "source failure snapshot records acquire count");
+    require(snapshot.failure_count == 1, "source failure snapshot records failure count");
+    require(snapshot.source_load_failure_count == 1, "source failure snapshot counts loader failures");
+    require(snapshot.entries[0].status == render_image_texture_pipeline_status::source_load_failed, "snapshot records source load status");
+    require(snapshot.entries[0].source_bytes_status == render_image_source_bytes_load_status::missing_bytes, "snapshot records loader status");
+    require(snapshot.entries[0].encoded_byte_count == 0, "source failure snapshot records no encoded bytes");
+    require(!snapshot.entries[0].decode_metadata.has_image(), "source failure snapshot records no decoded metadata");
+    require(snapshot.entries[0].upload_count_before == 0, "source failure snapshot records upload count before");
+    require(snapshot.entries[0].upload_count_after == 0, "source failure snapshot records unchanged upload count");
+}
+
+void test_texture_pipeline_reports_decode_failure()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_image_resolve_result source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/pipeline-decode.ppm"});
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes(source.source, make_short_ppm_2x1_encoded_bytes());
+
+    ppm_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
+
+    const render_image_texture_pipeline_result result = pipeline.acquire_texture(
+        render_image_texture_pipeline_request{.uri = "textures/pipeline-decode.ppm"});
+    require(!result.ok(), "texture pipeline does not create texture when decode fails");
+    require(
+        result.status == render_image_texture_pipeline_status::decode_failed,
+        "texture pipeline maps cache decode failure");
+    require(result.source_bytes.ok(), "texture pipeline loaded bytes before decode failure");
+    require(result.texture.status == render_image_texture_status::decode_failed, "texture result preserves decode failure");
+    require(!result.diagnostic.empty(), "texture pipeline decode failure includes diagnostic");
+    require(result.texture.decode_metadata.decoder_id == "ppm_image_decoder", "decode failure preserves decoder id");
+    require(uploader.upload_requests.empty(), "decode failure does not reach uploader");
+
+    const fake_image_texture_pipeline_snapshot snapshot = pipeline.diagnostic_snapshot();
+    require(snapshot.acquire_count == 1, "decode failure snapshot records acquire count");
+    require(snapshot.decode_failure_count == 1, "decode failure snapshot counts decode failures");
+    require(snapshot.upload_snapshot.upload_count == 0, "decode failure snapshot records no uploads");
+    require(snapshot.entries[0].texture_status == render_image_texture_status::decode_failed, "snapshot records texture decode status");
+    require(snapshot.entries[0].decode_metadata.decoder_id == "ppm_image_decoder", "snapshot records failed decoder id");
+    require(
+        snapshot.entries[0].decode_metadata.encoded_byte_count == make_short_ppm_2x1_encoded_bytes().size(),
+        "snapshot records failed decode encoded byte count");
+    require(snapshot.entries[0].upload_count_before == 0, "decode failure snapshot records upload count before");
+    require(snapshot.entries[0].upload_count_after == 0, "decode failure snapshot records upload count after");
+}
+
+void test_texture_pipeline_reuses_cache_hits()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_image_resolve_result source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/pipeline-cache.fake"});
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes(source.source, {std::byte{0x01}});
+
+    fake_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
+
+    const render_image_texture_pipeline_request request{
+        .uri = "textures/pipeline-cache.fake",
+        .sampler = render_image_sampler_policy{},
+    };
+    const render_image_texture_pipeline_result first = pipeline.acquire_texture(request);
+    const render_image_texture_pipeline_result second = pipeline.acquire_texture(request);
+    require(first.ok(), "first texture pipeline cache request succeeds");
+    require(second.ok(), "second texture pipeline cache request succeeds");
+    require(!first.texture.cache_hit, "first texture pipeline cache request is a miss");
+    require(second.texture.cache_hit, "second texture pipeline cache request is a cache hit");
+    require(second.texture.texture.id == first.texture.texture.id, "texture pipeline reuses cached handle");
+    require(loader.load_requests.size() == 2, "texture pipeline loads bytes deterministically before cache access");
+    require(decoder.decode_requests.size() == 1, "texture pipeline cache hit avoids second decode");
+    require(uploader.upload_requests.size() == 1, "texture pipeline cache hit avoids second upload");
+
+    fake_image_texture_pipeline_snapshot after_hit = pipeline.diagnostic_snapshot();
+    require(after_hit.acquire_count == 2, "pipeline snapshot records cache-hit acquire count");
+    require(after_hit.ready_count == 2, "pipeline snapshot records cache-hit ready count");
+    require(after_hit.cache_hit_count == 1, "pipeline snapshot counts cache hits");
+    require(after_hit.entries[0].upload_count_before == 0, "first pipeline entry starts with no uploads");
+    require(after_hit.entries[0].upload_count_after == 1, "first pipeline entry uploads once");
+    require(after_hit.entries[1].cache_hit, "second pipeline entry records cache hit");
+    require(after_hit.entries[1].upload_count_before == 1, "cache-hit pipeline entry sees previous upload");
+    require(after_hit.entries[1].upload_count_after == 1, "cache-hit pipeline entry does not upload");
+    require(after_hit.upload_snapshot.upload_count == 1, "pipeline snapshot records one upload after cache hit");
+
+    pipeline.invalidate_source(source.source.cache_key());
+    const render_image_texture_pipeline_result third = pipeline.acquire_texture(request);
+    require(third.ok(), "texture pipeline reacquires after source invalidation");
+    require(!third.texture.cache_hit, "texture pipeline invalidation forces cache miss");
+    require(third.texture.texture.id != first.texture.texture.id, "texture pipeline invalidation creates new handle");
+    require(decoder.decode_requests.size() == 2, "texture pipeline invalidation forces second decode");
+    require(uploader.upload_requests.size() == 2, "texture pipeline invalidation forces second upload");
+
+    const fake_image_texture_pipeline_snapshot after_invalidation = pipeline.diagnostic_snapshot();
+    require(after_invalidation.acquire_count == 3, "pipeline snapshot records post-invalidation acquire");
+    require(after_invalidation.invalidation_count == 1, "pipeline snapshot records invalidation count");
+    require(after_invalidation.cache_hit_count == 1, "pipeline snapshot preserves cache-hit count after invalidation");
+    require(after_invalidation.entries[2].sequence == 3, "pipeline snapshot keeps deterministic entry sequence");
+    require(!after_invalidation.entries[2].cache_hit, "post-invalidation entry records cache miss");
+    require(after_invalidation.entries[2].upload_count_before == 1, "post-invalidation entry records upload count before");
+    require(after_invalidation.entries[2].upload_count_after == 2, "post-invalidation entry records upload count after");
+    require(after_invalidation.cache_snapshot.texture_count == 1, "post-invalidation snapshot includes current cache state");
+    require(after_invalidation.upload_snapshot.upload_count == 2, "post-invalidation snapshot includes upload state");
+}
+
 void test_sampler_policy_validation_rejects_unknown_enum_values()
 {
     using namespace quiz_vulkan::render;
@@ -658,6 +1240,176 @@ void test_texture_cache_keys_include_all_sampler_policy_fields()
     require(base_again.ok(), "base sampler can still be reacquired");
     require(base_again.cache_hit, "base sampler remains cached after sampler variants");
     require(base_again.texture.id == base.texture.id, "base sampler cache entry is unchanged");
+}
+
+void test_sampler_cache_policy_diagnostics_report_choices_and_stable_keys()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_image_sampler_policy base_sampler;
+    const render_image_sampler_policy_diagnostic base_policy =
+        make_render_image_sampler_policy_diagnostic(base_sampler);
+    require(base_policy.valid, "default sampler diagnostic reports valid policy");
+    require(base_policy.min_filter == "linear", "default sampler diagnostic reports min filter");
+    require(base_policy.mag_filter == "linear", "default sampler diagnostic reports mag filter");
+    require(base_policy.mipmap_mode == "none", "default sampler diagnostic reports mipmap mode");
+    require(base_policy.wrap_u == "clamp_to_edge", "default sampler diagnostic reports wrap_u");
+    require(base_policy.wrap_v == "clamp_to_edge", "default sampler diagnostic reports wrap_v");
+    require(base_policy.uses_linear_filtering, "default sampler diagnostic reports linear filtering");
+    require(!base_policy.uses_nearest_filtering, "default sampler diagnostic reports no nearest filtering");
+    require(!base_policy.uses_mipmaps, "default sampler diagnostic reports no mipmaps");
+    require(base_policy.clamps_u && base_policy.clamps_v, "default sampler diagnostic reports clamp wraps");
+    require(!base_policy.repeats_u && !base_policy.repeats_v, "default sampler diagnostic reports no repeats");
+    require(
+        base_policy.stable_key_fragment
+            == "min=linear;mag=linear;mipmap=none;wrap_u=clamp_to_edge;wrap_v=clamp_to_edge",
+        "default sampler diagnostic reports stable key fragment");
+
+    render_image_sampler_policy variant_sampler;
+    variant_sampler.min_filter = render_image_filter::nearest;
+    variant_sampler.mipmap_mode = render_image_mipmap_mode::linear;
+    variant_sampler.wrap_u = render_image_wrap_mode::repeat;
+    variant_sampler.wrap_v = render_image_wrap_mode::mirrored_repeat;
+    const render_image_sampler_policy_diagnostic variant_policy =
+        make_render_image_sampler_policy_diagnostic(variant_sampler);
+    require(variant_policy.valid, "variant sampler diagnostic reports valid policy");
+    require(variant_policy.uses_nearest_filtering, "variant sampler diagnostic reports nearest filtering");
+    require(variant_policy.uses_linear_filtering, "variant sampler diagnostic reports linear filtering");
+    require(variant_policy.uses_mipmaps, "variant sampler diagnostic reports mipmaps");
+    require(variant_policy.repeats_u && variant_policy.repeats_v, "variant sampler diagnostic reports repeat wraps");
+    require(!variant_policy.clamps_u && !variant_policy.clamps_v, "variant sampler diagnostic reports no clamps");
+    require(
+        variant_policy.stable_key_fragment
+            == "min=nearest;mag=linear;mipmap=linear;wrap_u=repeat;wrap_v=mirrored_repeat",
+        "variant sampler diagnostic reports stable key fragment");
+
+    const render_image_texture_key base_key{
+        .source_key = "textures/policy.fake",
+        .sampler = base_sampler,
+    };
+    const render_image_texture_key variant_key{
+        .source_key = "textures/policy.fake",
+        .sampler = variant_sampler,
+    };
+    const render_image_texture_key_diagnostic base_key_diagnostic =
+        make_render_image_texture_key_diagnostic(base_key);
+    const render_image_texture_key_diagnostic variant_key_diagnostic =
+        make_render_image_texture_key_diagnostic(variant_key);
+    require(base_key_diagnostic.valid, "base texture key diagnostic reports valid key");
+    require(variant_key_diagnostic.valid, "variant texture key diagnostic reports valid key");
+    require(
+        base_key_diagnostic.stable_cache_key
+            == "source=textures/policy.fake|min=linear;mag=linear;mipmap=none;wrap_u=clamp_to_edge;wrap_v=clamp_to_edge",
+        "base texture key diagnostic reports stable cache key");
+    require(
+        variant_key_diagnostic.stable_cache_key
+            == "source=textures/policy.fake|min=nearest;mag=linear;mipmap=linear;wrap_u=repeat;wrap_v=mirrored_repeat",
+        "variant texture key diagnostic reports stable cache key");
+    require(
+        base_key_diagnostic.stable_cache_key != variant_key_diagnostic.stable_cache_key,
+        "stable texture key changes when sampler policy changes");
+
+    render_image_sampler_policy invalid_sampler;
+    invalid_sampler.wrap_u = static_cast<render_image_wrap_mode>(99);
+    const render_image_sampler_policy_diagnostic invalid_policy =
+        make_render_image_sampler_policy_diagnostic(invalid_sampler);
+    require(!invalid_policy.valid, "invalid sampler diagnostic reports invalid policy");
+    require(invalid_policy.wrap_u == "unknown", "invalid sampler diagnostic reports unknown wrap");
+    require(!invalid_policy.diagnostic.empty(), "invalid sampler diagnostic includes text");
+
+    require(
+        render_image_texture_color_space_for(render_image_pixel_format::rgba8_srgb)
+            == render_image_texture_color_space::srgb,
+        "srgb pixel format maps to srgb texture color space");
+    require(
+        render_image_texture_color_space_for(render_image_pixel_format::rgba8_unorm)
+            == render_image_texture_color_space::linear,
+        "unorm pixel format maps to linear texture color space");
+    require(
+        render_image_texture_color_space_name(render_image_texture_color_space::srgb) == "srgb",
+        "color-space diagnostic reports srgb name");
+}
+
+void test_texture_cache_snapshot_reports_policy_readiness_and_placeholder_fallback()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/readiness.fake"})
+                                                    .source;
+    fake_image_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+
+    render_image_sampler_policy sampler;
+    sampler.min_filter = render_image_filter::nearest;
+    sampler.mipmap_mode = render_image_mipmap_mode::linear;
+    sampler.wrap_u = render_image_wrap_mode::repeat;
+    sampler.wrap_v = render_image_wrap_mode::mirrored_repeat;
+
+    const render_image_texture_result result = cache.acquire_texture(
+        render_image_texture_request{.source = source, .sampler = sampler});
+    require(result.ok(), "readiness texture cache request succeeds");
+    require(result.decode_metadata.format_detection.placeholder_fallback, "fake decode reports placeholder fallback");
+
+    const fake_image_texture_cache_snapshot snapshot = cache.diagnostic_snapshot();
+    require(snapshot.texture_count == 1, "readiness snapshot reports one texture");
+    require(snapshot.upload_ready_texture_count == 1, "readiness snapshot reports upload-ready texture");
+    require(
+        snapshot.placeholder_fallback_texture_count == 1,
+        "readiness snapshot reports placeholder fallback texture");
+
+    const fake_image_texture_cache_entry_snapshot* entry = find_snapshot_entry(snapshot, source.cache_key());
+    require(entry != nullptr, "readiness snapshot includes texture entry");
+    require(entry->key == result.key, "readiness entry reports texture key");
+    require(entry->key_diagnostic.valid, "readiness entry reports valid texture key");
+    require(
+        entry->key_diagnostic.stable_cache_key
+            == make_render_image_texture_key_diagnostic(result.key).stable_cache_key,
+        "readiness entry reports deterministic stable cache key");
+    require(entry->sampler_policy.sampler == sampler, "readiness entry reports sampler association");
+    require(entry->sampler_policy.uses_nearest_filtering, "readiness entry reports nearest filtering");
+    require(entry->sampler_policy.uses_mipmaps, "readiness entry reports mipmap policy");
+    require(entry->sampler_policy.repeats_u && entry->sampler_policy.repeats_v, "readiness entry reports wrap repeats");
+
+    require(entry->upload_readiness.key == result.key, "upload readiness records texture key");
+    require(entry->upload_readiness.upload_ready, "upload readiness reports ready payload");
+    require(entry->upload_readiness.payload_valid, "upload readiness reports valid decoded payload");
+    require(entry->upload_readiness.placeholder_fallback, "upload readiness reports placeholder fallback");
+    require(
+        entry->upload_readiness.color_space == render_image_texture_color_space::srgb,
+        "upload readiness reports srgb color space");
+    require(entry->upload_readiness.color_space_name == "srgb", "upload readiness reports color space name");
+    require(entry->upload_readiness.pixel_count == 2, "upload readiness reports pixel count");
+    require(entry->upload_readiness.pixel_byte_count == 8, "upload readiness reports pixel bytes");
+    require(entry->upload_readiness.decoded_byte_count == 8, "upload readiness reports decoded bytes");
+    require(entry->upload_readiness.staging_byte_count == 8, "upload readiness reports staging bytes");
+    require(!entry->upload_readiness.diagnostic.empty(), "upload readiness includes diagnostic text");
+
+    const render_image_upload_readiness_snapshot invalid_key_readiness =
+        make_render_image_upload_readiness_snapshot(
+            render_image_texture_key{.source_key = {}, .sampler = render_image_sampler_policy{}},
+            result.decode_metadata,
+            make_rgba_2x1_decoded_image());
+    require(!invalid_key_readiness.upload_ready, "upload readiness rejects invalid cache key");
+    require(!invalid_key_readiness.key_diagnostic.valid, "upload readiness reports invalid key diagnostic");
+
+    linear_pixel_format_decoder linear_decoder;
+    fake_image_texture_cache linear_cache(linear_decoder);
+    const render_resolved_image_source linear_source = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/readiness-linear.fake"})
+                                                           .source;
+    const render_image_texture_result linear_result = linear_cache.acquire_texture(
+        render_image_texture_request{.source = linear_source, .sampler = render_image_sampler_policy{}});
+    require(linear_result.ok(), "linear readiness texture cache request succeeds");
+    const fake_image_texture_cache_entry_snapshot* linear_entry = find_snapshot_entry(
+        linear_cache.diagnostic_snapshot(),
+        linear_source.cache_key());
+    require(linear_entry != nullptr, "linear readiness snapshot includes texture entry");
+    require(
+        linear_entry->upload_readiness.color_space == render_image_texture_color_space::linear,
+        "upload readiness reports linear color space");
+    require(!linear_entry->upload_readiness.placeholder_fallback, "linear decoder does not report placeholder fallback");
 }
 
 void test_texture_cache_reuses_normalized_equivalent_cache_keys()
@@ -831,11 +1583,20 @@ void test_texture_cache_tracks_pixel_budget_and_evicts_lru_entries()
     require(!first_d.cache_hit, "budget source D is a cache miss");
     require(cache.cached_texture_count() == 3, "budget insert evicts one texture");
     require(cache.cached_pixel_count() == 3, "budget insert preserves pixel budget");
+    require(cache.eviction_count() == 1, "budget insert increments capacity eviction count");
+
+    const fake_image_texture_cache_snapshot after_eviction = cache.diagnostic_snapshot();
+    require(after_eviction.eviction_count == 1, "budget snapshot reports capacity eviction count");
+    require(after_eviction.pinned_texture_count == 0, "budget snapshot starts with no pinned textures");
+    require(after_eviction.evictable_texture_count == 3, "budget snapshot reports evictable textures");
+    require(after_eviction.evictable_pixel_count == 3, "budget snapshot reports evictable pixels");
+    require(!after_eviction.capacity_exceeded, "budget snapshot stays within capacity");
 
     const render_image_texture_result second_b = acquire(source_b);
     require(second_b.ok(), "budget source B can be reacquired");
     require(!second_b.cache_hit, "least recently used source B was evicted");
     require(second_b.texture.id != first_b.texture.id, "evicted source B receives a new texture id");
+    require(cache.eviction_count() == 2, "reacquiring evicted source increments capacity eviction count again");
 
     const render_image_texture_result second_a = acquire(source_a);
     require(second_a.ok(), "recently touched source A remains available");
@@ -868,6 +1629,311 @@ void test_texture_cache_skips_caching_entries_over_pixel_budget()
     require(cache.cached_pixel_count() == 0, "over-budget texture does not increase cached pixels");
     require(cache.cached_pixel_byte_count() == 0, "over-budget texture does not increase cached pixel bytes");
     require(cache.cached_decoded_byte_count() == 0, "over-budget texture does not increase cached bytes");
+    require(cache.over_capacity_texture_count() == 2, "over-budget texture attempts are counted");
+
+    const fake_image_texture_cache_snapshot snapshot = cache.diagnostic_snapshot();
+    require(snapshot.over_capacity_texture_count == 2, "over-budget snapshot counts uncached handles");
+    require(snapshot.eviction_count == 0, "over-budget snapshot does not evict existing entries");
+    require(!snapshot.capacity_exceeded, "over-budget evictable texture is not resident over capacity");
+}
+
+void test_texture_cache_pinned_residency_survives_capacity_eviction()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source_a = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/resident-a.ppm"})
+                                                     .source;
+    const render_resolved_image_source source_b = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/resident-b.ppm"})
+                                                     .source;
+    const render_resolved_image_source source_c = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/resident-c.ppm"})
+                                                     .source;
+
+    ppm_image_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+    cache.set_max_cached_pixel_count(2);
+    cache.set_placeholder_encoded_bytes_for_source(source_a.cache_key(), make_ppm_1x1_encoded_bytes());
+    cache.set_placeholder_encoded_bytes_for_source(source_b.cache_key(), make_ppm_1x1_encoded_bytes());
+    cache.set_placeholder_encoded_bytes_for_source(source_c.cache_key(), make_ppm_1x1_encoded_bytes());
+
+    const render_image_texture_request request_a{.source = source_a, .sampler = render_image_sampler_policy{}};
+    const render_image_texture_request request_b{.source = source_b, .sampler = render_image_sampler_policy{}};
+    const render_image_texture_request request_c{.source = source_c, .sampler = render_image_sampler_policy{}};
+    const render_image_texture_key key_a = make_render_image_texture_key(request_a);
+    const render_image_texture_key key_b = make_render_image_texture_key(request_b);
+    const render_image_texture_key key_c = make_render_image_texture_key(request_c);
+
+    cache.pin_texture(key_a);
+    require(cache.is_texture_pinned(key_a), "pinning a future texture is visible in residency policy");
+
+    const render_image_texture_result first_a = cache.acquire_texture(request_a);
+    const render_image_texture_result first_b = cache.acquire_texture(request_b);
+    require(first_a.ok(), "pinned source A creates a texture");
+    require(first_b.ok(), "evictable source B creates a texture");
+    require(cache.cached_texture_count() == 2, "residency test starts at capacity");
+
+    const fake_image_texture_cache_snapshot before_eviction = cache.diagnostic_snapshot();
+    require(before_eviction.pinned_texture_count == 1, "residency snapshot reports one pinned texture");
+    require(before_eviction.evictable_texture_count == 1, "residency snapshot reports one evictable texture");
+    require(before_eviction.pinned_pixel_count == 1, "residency snapshot reports pinned pixels");
+    require(find_snapshot_entry(before_eviction, source_a.cache_key())->residency == fake_image_texture_residency::pinned, "source A is pinned in snapshot");
+
+    const render_image_texture_result first_c = cache.acquire_texture(request_c);
+    require(first_c.ok(), "residency source C creates a texture");
+    require(!first_c.cache_hit, "residency source C is a cache miss");
+    require(cache.cached_texture_count() == 2, "residency insert preserves cache capacity");
+    require(cache.eviction_count() == 1, "residency insert evicts one evictable texture");
+
+    const fake_image_texture_cache_snapshot after_eviction = cache.diagnostic_snapshot();
+    require(find_snapshot_entry(after_eviction, source_a.cache_key()) != nullptr, "pinned source A survives eviction");
+    require(find_snapshot_entry(after_eviction, source_b.cache_key()) == nullptr, "evictable source B is evicted");
+    require(find_snapshot_entry(after_eviction, source_c.cache_key()) != nullptr, "source C is cached");
+    require(find_snapshot_entry(after_eviction, source_c.cache_key())->residency == fake_image_texture_residency::evictable, "source C remains evictable");
+
+    const render_image_texture_result second_a = cache.acquire_texture(request_a);
+    require(second_a.cache_hit, "pinned source A remains cache resident");
+    require(second_a.texture.id == first_a.texture.id, "pinned source A keeps its handle");
+
+    cache.unpin_texture(key_a);
+    require(!cache.is_texture_pinned(key_a), "unpinning makes source A evictable");
+    cache.set_texture_residency(key_c, fake_image_texture_residency::pinned);
+    require(cache.is_texture_pinned(key_c), "set_texture_residency can pin an existing texture");
+    require(!cache.is_texture_pinned(key_b), "evicted source B is not pinned");
+}
+
+void test_texture_cache_pinned_residency_can_exceed_capacity_without_failures()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source_a = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/pinned-over-a.ppm"})
+                                                     .source;
+    const render_resolved_image_source source_b = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/pinned-over-b.ppm"})
+                                                     .source;
+    const render_resolved_image_source source_c = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/pinned-over-c.ppm"})
+                                                     .source;
+
+    ppm_image_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+    cache.set_max_cached_pixel_count(1);
+    cache.set_placeholder_encoded_bytes_for_source(source_a.cache_key(), make_ppm_1x1_encoded_bytes());
+    cache.set_placeholder_encoded_bytes_for_source(source_b.cache_key(), make_ppm_1x1_encoded_bytes());
+    cache.set_placeholder_encoded_bytes_for_source(source_c.cache_key(), make_ppm_1x1_encoded_bytes());
+
+    const render_image_texture_request request_a{.source = source_a, .sampler = render_image_sampler_policy{}};
+    const render_image_texture_request request_b{.source = source_b, .sampler = render_image_sampler_policy{}};
+    const render_image_texture_request request_c{.source = source_c, .sampler = render_image_sampler_policy{}};
+    cache.pin_texture(make_render_image_texture_key(request_a));
+    cache.pin_texture(make_render_image_texture_key(request_b));
+
+    const render_image_texture_result first_a = cache.acquire_texture(request_a);
+    const render_image_texture_result first_b = cache.acquire_texture(request_b);
+    require(first_a.ok(), "first pinned over-capacity texture succeeds");
+    require(first_b.ok(), "second pinned over-capacity texture succeeds");
+    require(cache.cached_texture_count() == 2, "pinned textures can remain resident over capacity");
+    require(cache.cached_pixel_count() == 2, "pinned textures account for over-capacity pixels");
+
+    const fake_image_texture_cache_snapshot pinned_snapshot = cache.diagnostic_snapshot();
+    require(pinned_snapshot.capacity_exceeded, "pinned snapshot reports capacity exceeded");
+    require(pinned_snapshot.pinned_texture_count == 2, "pinned snapshot reports two pinned textures");
+    require(pinned_snapshot.evictable_texture_count == 0, "pinned snapshot reports no evictable textures");
+    require(pinned_snapshot.eviction_count == 0, "pinned over-capacity setup does not evict pinned textures");
+
+    const render_image_texture_result first_c = cache.acquire_texture(request_c);
+    const render_image_texture_result second_c = cache.acquire_texture(request_c);
+    require(first_c.ok(), "evictable texture still returns a handle when pinned entries exceed capacity");
+    require(second_c.ok(), "evictable over-capacity texture can be retried");
+    require(!first_c.cache_hit, "first evictable over-capacity texture is not cached");
+    require(!second_c.cache_hit, "second evictable over-capacity texture is not cached");
+    require(first_c.texture.id != second_c.texture.id, "uncached over-capacity texture receives new handles");
+    require(find_snapshot_entry(cache.diagnostic_snapshot(), source_c.cache_key()) == nullptr, "evictable over-capacity texture is not resident");
+    require(cache.over_capacity_texture_count() == 2, "over-capacity evictable attempts are counted");
+
+    const fake_image_texture_cache_snapshot final_snapshot = cache.diagnostic_snapshot();
+    require(final_snapshot.texture_count == 2, "final pinned snapshot keeps pinned entries");
+    require(final_snapshot.capacity_exceeded, "final pinned snapshot still reports capacity exceeded");
+    require(final_snapshot.over_capacity_texture_count == 2, "final pinned snapshot counts uncached attempts");
+}
+
+void test_texture_cache_reports_upload_lifetime_and_invalidation_evictions()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source_a = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/lifetime-a.ppm"})
+                                                    .source;
+    const render_resolved_image_source source_b = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/lifetime-b.ppm"})
+                                                    .source;
+
+    ppm_image_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+    cache.set_placeholder_encoded_bytes_for_source(source_a.cache_key(), make_ppm_1x1_encoded_bytes());
+    cache.set_placeholder_encoded_bytes_for_source(source_b.cache_key(), make_ppm_1x1_encoded_bytes());
+
+    const render_image_texture_request request_a{.source = source_a, .sampler = render_image_sampler_policy{}};
+    const render_image_texture_request request_b{.source = source_b, .sampler = render_image_sampler_policy{}};
+    const render_image_texture_key key_a = make_render_image_texture_key(request_a);
+    const render_image_texture_key key_b = make_render_image_texture_key(request_b);
+
+    const render_image_texture_result first_a = cache.acquire_texture(request_a);
+    const render_image_texture_result hit_a = cache.acquire_texture(request_a);
+    const render_image_texture_result first_b = cache.acquire_texture(request_b);
+    require(first_a.ok(), "lifetime source A creates a texture");
+    require(hit_a.cache_hit, "lifetime source A hit refreshes lifetime");
+    require(first_b.ok(), "lifetime source B creates a texture");
+
+    const fake_image_texture_cache_snapshot resident = cache.diagnostic_snapshot();
+    require(resident.texture_count == 2, "lifetime snapshot reports resident textures");
+    require(resident.next_access_sequence == 4, "lifetime snapshot reports next access sequence");
+    require(resident.resident_access_count == 3, "lifetime snapshot sums resident access counts");
+    require(resident.evictions.empty(), "lifetime snapshot starts with no evictions");
+
+    const fake_image_texture_cache_entry_snapshot* entry_a = find_snapshot_entry(resident, source_a.cache_key());
+    const fake_image_texture_cache_entry_snapshot* entry_b = find_snapshot_entry(resident, source_b.cache_key());
+    require(entry_a != nullptr, "lifetime snapshot includes source A");
+    require(entry_b != nullptr, "lifetime snapshot includes source B");
+    require(entry_a->upload_generation_id == 1, "source A records upload generation");
+    require(entry_a->first_used_sequence == 1, "source A records first use");
+    require(entry_a->last_used_sequence == 2, "source A records refreshed last use");
+    require(entry_a->access_count == 2, "source A records access count");
+    require(entry_a->resident_lifetime_sequence_count == 2, "source A records lifetime sequence span");
+    require(entry_b->upload_generation_id == 2, "source B records upload generation");
+    require(entry_b->first_used_sequence == 3, "source B records first use");
+    require(entry_b->last_used_sequence == 3, "source B records last use");
+    require(entry_b->access_count == 1, "source B records access count");
+    require(entry_b->resident_lifetime_sequence_count == 1, "source B records lifetime sequence span");
+
+    cache.invalidate_texture(key_a);
+    const fake_image_texture_cache_snapshot after_texture_invalidation = cache.diagnostic_snapshot();
+    require(after_texture_invalidation.texture_count == 1, "texture invalidation removes one resident texture");
+    require(after_texture_invalidation.invalidation_eviction_count == 1, "texture invalidation counts eviction");
+    require(after_texture_invalidation.release_eviction_count == 0, "texture invalidation does not count release");
+    require(after_texture_invalidation.capacity_eviction_count == 0, "texture invalidation does not count capacity");
+    require(after_texture_invalidation.evictions.size() == 1, "texture invalidation records eviction snapshot");
+    const fake_image_texture_eviction_snapshot* key_eviction = find_eviction_snapshot(
+        after_texture_invalidation,
+        source_a.cache_key(),
+        fake_image_texture_eviction_reason::texture_invalidation);
+    require(key_eviction != nullptr, "texture invalidation eviction is findable");
+    require(key_eviction->key == key_a, "texture invalidation records texture key");
+    require(key_eviction->texture.id == first_a.texture.id, "texture invalidation records handle");
+    require(key_eviction->upload_generation_id == 1, "texture invalidation records upload generation");
+    require(key_eviction->first_used_sequence == 1, "texture invalidation records first use");
+    require(key_eviction->last_used_sequence == 2, "texture invalidation records last use");
+    require(key_eviction->access_count == 2, "texture invalidation records access count");
+    require(key_eviction->resident_lifetime_sequence_count == 2, "texture invalidation records lifetime span");
+    require(!key_eviction->diagnostic.empty(), "texture invalidation eviction includes diagnostic");
+    require(
+        fake_image_texture_eviction_reason_name(key_eviction->reason) == "texture_invalidation",
+        "texture invalidation reports reason name");
+    require(find_snapshot_entry(after_texture_invalidation, source_a.cache_key()) == nullptr, "source A is no longer resident");
+
+    cache.release_unused();
+    const fake_image_texture_cache_snapshot after_release = cache.diagnostic_snapshot();
+    require(after_release.texture_count == 0, "release eviction clears remaining texture");
+    require(after_release.release_eviction_count == 1, "release eviction count increments");
+    require(after_release.invalidation_eviction_count == 1, "release preserves invalidation count");
+    require(after_release.evictions.size() == 2, "release appends eviction snapshot");
+    const fake_image_texture_eviction_snapshot* release_eviction = find_eviction_snapshot(
+        after_release,
+        source_b.cache_key(),
+        fake_image_texture_eviction_reason::release_unused);
+    require(release_eviction != nullptr, "release eviction is findable");
+    require(release_eviction->key == key_b, "release eviction records texture key");
+    require(release_eviction->texture.id == first_b.texture.id, "release eviction records handle");
+    require(release_eviction->upload_generation_id == 2, "release eviction records upload generation");
+    require(release_eviction->access_count == 1, "release eviction records access count");
+    require(release_eviction->resident_lifetime_sequence_count == 1, "release eviction records lifetime span");
+}
+
+void test_texture_cache_records_capacity_eviction_lifetime_diagnostics()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    const render_resolved_image_source source_a = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/lifetime-capacity-a.ppm"})
+                                                    .source;
+    const render_resolved_image_source source_b = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/lifetime-capacity-b.ppm"})
+                                                    .source;
+    const render_resolved_image_source source_c = resolver.resolve(
+        render_image_resolve_request{.uri = "textures/lifetime-capacity-c.ppm"})
+                                                    .source;
+
+    ppm_image_decoder decoder;
+    fake_image_texture_cache cache(decoder);
+    cache.set_max_cached_pixel_count(2);
+    cache.set_placeholder_encoded_bytes_for_source(source_a.cache_key(), make_ppm_1x1_encoded_bytes());
+    cache.set_placeholder_encoded_bytes_for_source(source_b.cache_key(), make_ppm_1x1_encoded_bytes());
+    cache.set_placeholder_encoded_bytes_for_source(source_c.cache_key(), make_ppm_1x1_encoded_bytes());
+
+    const render_image_texture_request request_a{.source = source_a, .sampler = render_image_sampler_policy{}};
+    const render_image_texture_request request_b{.source = source_b, .sampler = render_image_sampler_policy{}};
+    const render_image_texture_request request_c{.source = source_c, .sampler = render_image_sampler_policy{}};
+
+    const render_image_texture_result first_a = cache.acquire_texture(request_a);
+    const render_image_texture_result first_b = cache.acquire_texture(request_b);
+    const render_image_texture_result hit_a = cache.acquire_texture(request_a);
+    const render_image_texture_result first_c = cache.acquire_texture(request_c);
+    require(first_a.ok(), "capacity lifetime source A creates a texture");
+    require(first_b.ok(), "capacity lifetime source B creates a texture");
+    require(hit_a.cache_hit, "capacity lifetime source A hit refreshes recency");
+    require(first_c.ok(), "capacity lifetime source C creates a texture");
+    require(!first_c.cache_hit, "capacity lifetime source C is a cache miss");
+
+    const fake_image_texture_cache_snapshot snapshot = cache.diagnostic_snapshot();
+    require(snapshot.texture_count == 2, "capacity lifetime snapshot keeps two textures");
+    require(snapshot.eviction_count == 1, "capacity lifetime snapshot reports capacity eviction");
+    require(snapshot.capacity_eviction_count == 1, "capacity lifetime snapshot reports capacity eviction count");
+    require(snapshot.release_eviction_count == 0, "capacity lifetime snapshot reports no release evictions");
+    require(snapshot.invalidation_eviction_count == 0, "capacity lifetime snapshot reports no invalidation evictions");
+    require(snapshot.evictions.size() == 1, "capacity lifetime snapshot records eviction");
+    require(snapshot.next_access_sequence == 5, "capacity lifetime snapshot reports next access sequence");
+    require(snapshot.resident_access_count == 3, "capacity lifetime snapshot sums resident access counts");
+
+    const fake_image_texture_eviction_snapshot* capacity_eviction = find_eviction_snapshot(
+        snapshot,
+        source_b.cache_key(),
+        fake_image_texture_eviction_reason::capacity);
+    require(capacity_eviction != nullptr, "capacity eviction is findable");
+    require(capacity_eviction->key.source_key == source_b.cache_key(), "capacity eviction records source B key");
+    require(capacity_eviction->texture.id == first_b.texture.id, "capacity eviction records evicted handle");
+    require(capacity_eviction->upload_generation_id == 2, "capacity eviction records upload generation");
+    require(capacity_eviction->first_used_sequence == 2, "capacity eviction records first use");
+    require(capacity_eviction->last_used_sequence == 2, "capacity eviction records last use");
+    require(capacity_eviction->access_count == 1, "capacity eviction records access count");
+    require(capacity_eviction->resident_lifetime_sequence_count == 1, "capacity eviction records lifetime span");
+    require(capacity_eviction->pixel_count == 1, "capacity eviction records pixel count");
+    require(capacity_eviction->pixel_byte_count == 4, "capacity eviction records pixel bytes");
+    require(capacity_eviction->decoded_byte_count == 4, "capacity eviction records decoded bytes");
+    require(
+        fake_image_texture_eviction_reason_name(capacity_eviction->reason) == "capacity",
+        "capacity eviction reports reason name");
+
+    const fake_image_texture_cache_entry_snapshot* entry_a = find_snapshot_entry(snapshot, source_a.cache_key());
+    const fake_image_texture_cache_entry_snapshot* entry_c = find_snapshot_entry(snapshot, source_c.cache_key());
+    require(entry_a != nullptr, "capacity lifetime snapshot keeps refreshed source A");
+    require(entry_c != nullptr, "capacity lifetime snapshot stores source C");
+    require(entry_a->texture.id == first_a.texture.id, "source A keeps original handle");
+    require(entry_a->upload_generation_id == 1, "source A keeps upload generation");
+    require(entry_a->first_used_sequence == 1, "source A records first use");
+    require(entry_a->last_used_sequence == 3, "source A records last use");
+    require(entry_a->access_count == 2, "source A records two accesses");
+    require(entry_a->resident_lifetime_sequence_count == 3, "source A records resident sequence span");
+    require(entry_c->texture.id == first_c.texture.id, "source C records new handle");
+    require(entry_c->upload_generation_id == 3, "source C records upload generation");
+    require(entry_c->first_used_sequence == 4, "source C records first use");
+    require(entry_c->last_used_sequence == 4, "source C records last use");
+    require(entry_c->access_count == 1, "source C records one access");
 }
 
 void test_texture_cache_diagnostic_snapshot_reports_entries_and_recency()
@@ -1306,6 +2372,8 @@ int main()
     test_sampler_defaults_are_appended_to_render_image_ref();
     test_resolver_normalizes_without_fetching();
     test_decoder_interface_shape();
+    test_fake_decoder_reports_format_detection_and_placeholder_fallbacks();
+    test_decoder_size_validation_reports_stride_and_invalid_payloads();
     test_decoder_reports_explicit_failures();
     test_ppm_decoder_decodes_binary_rgb_to_rgba();
     test_ppm_decoder_reports_invalid_payload_size();
@@ -1314,14 +2382,27 @@ int main()
     test_source_bytes_loader_returns_registered_local_bytes();
     test_source_bytes_loader_reports_explicit_failures();
     test_texture_cache_can_use_loaded_source_bytes();
+    test_texture_uploader_uploads_valid_decoded_image();
+    test_texture_uploader_rejects_invalid_inputs();
+    test_texture_cache_uses_injected_texture_uploader();
+    test_texture_pipeline_resolves_loads_decodes_and_uploads_image_ref();
+    test_texture_pipeline_reports_source_load_failure();
+    test_texture_pipeline_reports_decode_failure();
+    test_texture_pipeline_reuses_cache_hits();
     test_sampler_policy_validation_rejects_unknown_enum_values();
     test_texture_cache_reuses_matching_key_and_misses_on_sampler_change();
     test_texture_cache_keys_include_all_sampler_policy_fields();
+    test_sampler_cache_policy_diagnostics_report_choices_and_stable_keys();
+    test_texture_cache_snapshot_reports_policy_readiness_and_placeholder_fallback();
     test_texture_cache_reuses_normalized_equivalent_cache_keys();
     test_texture_cache_rejects_invalid_sampler_policy_before_decode();
     test_texture_cache_release_unused_evicts_fake_entries();
     test_texture_cache_tracks_pixel_budget_and_evicts_lru_entries();
     test_texture_cache_skips_caching_entries_over_pixel_budget();
+    test_texture_cache_pinned_residency_survives_capacity_eviction();
+    test_texture_cache_pinned_residency_can_exceed_capacity_without_failures();
+    test_texture_cache_reports_upload_lifetime_and_invalidation_evictions();
+    test_texture_cache_records_capacity_eviction_lifetime_diagnostics();
     test_texture_cache_diagnostic_snapshot_reports_entries_and_recency();
     test_texture_cache_invalidates_by_texture_key_and_source();
     test_texture_cache_reports_explicit_failures();

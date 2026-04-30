@@ -9,7 +9,7 @@ Last updated: 2026-04-30
 - Keep test status counts derived from the configured build with `ctest -N`; do not freeze global CTest totals in docs.
 - Build the engine stack in dependency order: Vulkan backend diagnostics, text layout/atlas, image texture cache, input/IME, then audio/backend wiring.
 - Worker branches should start from the current baseline with a fresh branch. Do not rebase stale worker branches that contain already-cherry-picked historical commits.
-- Latest integrated baseline includes Vulkan resource registry, text glyph cache policy, image decoder format validation, asset manifest policy validation, input routing diagnostics, and procedural audio mixer event unification.
+- Latest integrated baseline includes Vulkan resource registry, text glyph cache policy, image decoder format validation, asset manifest/runtime resolver policy validation, input routing diagnostics, and procedural audio mixer event unification.
 
 ## Active requirement IDs
 

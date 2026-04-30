@@ -1060,6 +1060,28 @@ struct asset_manifest_catalog_summary {
     }
 };
 
+struct asset_manifest_catalog_duplicate_cache_key_report {
+    asset_type type = asset_type::generic;
+    asset_cache_key cache_key;
+    std::vector<std::string> entry_ids;
+
+    [[nodiscard]] bool duplicate() const
+    {
+        return entry_ids.size() > 1U;
+    }
+};
+
+struct asset_manifest_catalog_cache_policy_summary {
+    std::string manifest_version;
+    asset_manifest_catalog_summary catalog;
+    std::vector<asset_manifest_catalog_duplicate_cache_key_report> duplicate_cache_keys;
+
+    [[nodiscard]] bool ok() const
+    {
+        return duplicate_cache_keys.empty();
+    }
+};
+
 namespace detail {
 
 inline bool manifest_catalog_contains_string(
@@ -1094,6 +1116,25 @@ inline asset_manifest_catalog_type_summary& find_or_add_manifest_catalog_type(
     }
     summary.types.push_back(asset_manifest_catalog_type_summary{.type = type});
     return summary.types.back();
+}
+
+inline int asset_manifest_catalog_type_rank(asset_type type)
+{
+    switch (type) {
+        case asset_type::font:
+            return 1;
+        case asset_type::image:
+            return 2;
+        case asset_type::sound:
+            return 3;
+        case asset_type::shader:
+            return 4;
+        case asset_type::deck:
+            return 5;
+        case asset_type::generic:
+            return 6;
+    }
+    return 6;
 }
 
 inline asset_manifest_catalog_root_summary& find_or_add_manifest_catalog_root(
@@ -1157,6 +1198,60 @@ inline asset_manifest_catalog_summary summarize_asset_manifest_catalog(
     const asset_resolver_interface& resolver)
 {
     return summarize_asset_manifest_catalog(normalize_asset_manifest(manifest, resolver));
+}
+
+inline std::vector<asset_manifest_catalog_duplicate_cache_key_report> summarize_asset_manifest_catalog_duplicate_cache_keys(
+    const asset_manifest_catalog_summary& summary)
+{
+    std::vector<asset_manifest_catalog_duplicate_cache_key_report> duplicate_cache_keys;
+    for (const asset_manifest_catalog_type_summary& type : summary.types) {
+        for (const asset_manifest_catalog_cache_key_summary& cache_key : type.cache_keys) {
+            if (cache_key.entry_ids.size() < 2U) {
+                continue;
+            }
+
+            duplicate_cache_keys.push_back(asset_manifest_catalog_duplicate_cache_key_report{
+                .type = type.type,
+                .cache_key = cache_key.cache_key,
+                .entry_ids = cache_key.entry_ids,
+            });
+        }
+    }
+
+    for (asset_manifest_catalog_duplicate_cache_key_report& report : duplicate_cache_keys) {
+        std::ranges::sort(report.entry_ids);
+        report.entry_ids.erase(std::ranges::unique(report.entry_ids).begin(), report.entry_ids.end());
+    }
+
+    duplicate_cache_keys.erase(
+        std::ranges::remove_if(duplicate_cache_keys, [](const asset_manifest_catalog_duplicate_cache_key_report& report) {
+            return report.entry_ids.size() < 2U;
+        }).begin(),
+        duplicate_cache_keys.end());
+
+    std::ranges::sort(duplicate_cache_keys, [](const auto& left, const auto& right) {
+        return std::tuple(
+                   detail::asset_manifest_catalog_type_rank(left.type),
+                   std::string_view(left.cache_key))
+            < std::tuple(
+                   detail::asset_manifest_catalog_type_rank(right.type),
+                   std::string_view(right.cache_key));
+    });
+    return duplicate_cache_keys;
+}
+
+inline asset_manifest_catalog_cache_policy_summary summarize_asset_manifest_catalog_cache_policy(
+    std::string_view manifest_version,
+    const asset_manifest& manifest,
+    const asset_resolver_interface& resolver)
+{
+    const asset_manifest_catalog_summary catalog = summarize_asset_manifest_catalog(manifest, resolver);
+    asset_manifest_catalog_cache_policy_summary summary{
+        .manifest_version = std::string(manifest_version),
+        .catalog = catalog,
+        .duplicate_cache_keys = summarize_asset_manifest_catalog_duplicate_cache_keys(catalog),
+    };
+    return summary;
 }
 
 struct asset_manifest_missing_root_report {

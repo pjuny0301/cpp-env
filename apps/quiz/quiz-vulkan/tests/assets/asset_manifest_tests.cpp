@@ -71,6 +71,18 @@ bool contains_string(const std::vector<std::string>& values, std::string_view ex
     return false;
 }
 
+const quiz_vulkan::assets::asset_manifest_catalog_duplicate_cache_key_report* find_duplicate_cache_key(
+    const std::vector<quiz_vulkan::assets::asset_manifest_catalog_duplicate_cache_key_report>& reports,
+    std::string_view cache_key)
+{
+    for (const quiz_vulkan::assets::asset_manifest_catalog_duplicate_cache_key_report& report : reports) {
+        if (report.cache_key == cache_key) {
+            return &report;
+        }
+    }
+    return nullptr;
+}
+
 bool manifests_equal(
     const quiz_vulkan::assets::asset_manifest& left,
     const quiz_vulkan::assets::asset_manifest& right)
@@ -526,6 +538,184 @@ void test_summarize_asset_manifest_catalog_carries_validation_and_skips_invalid_
     require(
         has_issue(summary.validation, asset_manifest_validation_issue_kind::asset_resolve_failed, "bad"),
         "catalog summary carries resolver validation issue");
+}
+
+void test_summarize_asset_manifest_catalog_cache_policy_tracks_version_and_duplicate_cache_keys()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "fixture_a",
+        .root_path = fixture_root / "a",
+    });
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "fixture_b",
+        .root_path = fixture_root / "b",
+    });
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "external_shader_pack",
+        .root_path = fixture_root / "build" / "external" / "shader_pack",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "font_regular",
+        .type = asset_type::font,
+        .uri = "fonts/Inter Regular.ttf",
+        .root_id = "fixture_a",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_front",
+        .type = asset_type::image,
+        .uri = "asset://images/card front.png",
+        .root_id = "fixture_a",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_front_copy",
+        .type = asset_type::image,
+        .uri = "ASSET:///images/./card front.png",
+        .root_id = "fixture_b",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_front_repeat",
+        .type = asset_type::image,
+        .uri = "ASSET:///images/./card front.png",
+        .root_id = "fixture_b",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "answer_sound",
+        .type = asset_type::sound,
+        .uri = "sounds/answer.wav",
+        .root_id = "fixture_a",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "traversal",
+        .type = asset_type::sound,
+        .uri = "asset://sounds/%2e%2e/secret.wav",
+        .root_id = "fixture_a",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "ui_shader",
+        .type = asset_type::shader,
+        .uri = "shaders/ui.vert.spv",
+        .root_id = "external_shader_pack",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "main_deck",
+        .type = asset_type::deck,
+        .uri = "decks/main deck.quiz",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const asset_manifest_catalog_cache_policy_summary summary =
+        summarize_asset_manifest_catalog_cache_policy("catalog.v1", manifest, resolver);
+
+    require(summary.manifest_version == "catalog.v1", "cache policy summary preserves manifest version");
+    require(!summary.ok(), "cache policy summary fails only for real duplicate cache keys and invalid entries");
+    require(summary.catalog.types.size() == 5U, "cache policy summary groups all typed asset entries");
+
+    const asset_manifest_catalog_type_summary* images = summary.catalog.find_type(asset_type::image);
+    require(images != nullptr, "cache policy summary keeps image group");
+    require(contains_string(images->entry_ids, "card_front"), "cache policy summary keeps first image entry");
+    require(
+        contains_string(images->entry_ids, "card_front_copy"),
+        "cache policy summary keeps duplicate image entry");
+    require(
+        contains_string(images->entry_ids, "card_front_repeat"),
+        "cache policy summary keeps repeated image entry");
+    require(
+        !contains_string(images->entry_ids, "traversal"),
+        "cache policy summary skips traversal entries");
+
+    const asset_manifest_catalog_type_summary* sounds = summary.catalog.find_type(asset_type::sound);
+    require(sounds != nullptr, "cache policy summary keeps sound group");
+    require(sounds->find_cache_key("sound|sounds/answer.wav") != nullptr, "valid sound cache key is preserved");
+    require(sounds->find_cache_key("sound|asset://sounds/secret.wav") == nullptr, "invalid traversal sound is omitted");
+
+    const asset_manifest_catalog_duplicate_cache_key_report* duplicate =
+        find_duplicate_cache_key(summary.duplicate_cache_keys, "image|asset://images/card front.png");
+    require(duplicate != nullptr, "cache policy summary reports duplicate cache keys");
+    require(duplicate->type == asset_type::image, "duplicate cache key keeps asset type");
+    require(
+        duplicate->entry_ids == std::vector<std::string>{"card_front", "card_front_copy", "card_front_repeat"},
+        "duplicate cache key keeps deterministic entry ids");
+
+    const asset_manifest_catalog_duplicate_cache_key_report* font_duplicate =
+        find_duplicate_cache_key(summary.duplicate_cache_keys, "font|fonts/Inter Regular.ttf");
+    require(font_duplicate == nullptr, "identical repeated ids are not reported as duplicate cache keys");
+
+    require(
+        find_duplicate_cache_key(summary.duplicate_cache_keys, "sound|asset://sounds/secret.wav") == nullptr,
+        "invalid traversal entries do not leak into duplicate cache keys");
+    require(
+        summary.catalog.find_type(asset_type::shader)->find_root("external_shader_pack") != nullptr,
+        "catalog summary keeps canonical external root ids without path leakage");
+    require(
+        summary.catalog.find_type(asset_type::deck)->find_cache_key("deck|decks/main deck.quiz") != nullptr,
+        "catalog summary keeps rootless deck cache keys");
+}
+
+void test_summarize_asset_manifest_catalog_cache_policy_reports_only_real_duplicate_cache_keys()
+{
+    using namespace quiz_vulkan::assets;
+
+    asset_manifest_catalog_summary summary;
+    summary.types.push_back(asset_manifest_catalog_type_summary{
+        .type = asset_type::image,
+        .entry_ids = {"card_a", "card_b"},
+        .roots = {},
+        .cache_keys = {
+            asset_manifest_catalog_cache_key_summary{
+                .cache_key = "image|asset://cards/front.png",
+                .entry_ids = {"card_a", "card_a"},
+                .root_ids = {"fixture"},
+            },
+            asset_manifest_catalog_cache_key_summary{
+                .cache_key = "image|asset://cards/back.png",
+                .entry_ids = {"card_b", "card_c", "card_b"},
+                .root_ids = {"fixture", "fixture_b"},
+            },
+        },
+    });
+
+    const std::vector<asset_manifest_catalog_duplicate_cache_key_report> duplicate_cache_keys =
+        summarize_asset_manifest_catalog_duplicate_cache_keys(summary);
+
+    require(
+        duplicate_cache_keys.size() == 1U,
+        "duplicate cache-key summaries ignore repeated identical ids and keep real duplicates");
+    require(
+        duplicate_cache_keys[0].cache_key == "image|asset://cards/back.png",
+        "duplicate cache-key summaries keep deterministic cache-key order");
+    require(
+        duplicate_cache_keys[0].entry_ids == std::vector<std::string>{"card_b", "card_c"},
+        "duplicate cache-key summaries de-duplicate repeated ids before reporting");
+}
+
+void test_summarize_asset_manifest_catalog_cache_policy_ok_ignores_validation_without_duplicates()
+{
+    using namespace quiz_vulkan::assets;
+
+    asset_manifest manifest;
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "body_font",
+        .type = asset_type::font,
+        .uri = "fonts/Inter.ttf",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "traversal",
+        .type = asset_type::image,
+        .uri = "asset://images/%2e%2e/secret.png",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const asset_manifest_catalog_cache_policy_summary summary =
+        summarize_asset_manifest_catalog_cache_policy("catalog.v1", manifest, resolver);
+
+    require(summary.manifest_version == "catalog.v1", "cache policy summary keeps manifest version");
+    require(summary.duplicate_cache_keys.empty(), "cache policy summary has no real duplicate cache keys");
+    require(summary.ok(), "cache policy summary stays ok when traversal entries are only validation failures");
+    require(!summary.catalog.ok(), "catalog validation still records traversal failures independently");
 }
 
 void test_asset_manifest_diagnostic_report_summarizes_targeted_issues()
@@ -1221,6 +1411,9 @@ int main()
     test_normalize_asset_manifest_skips_invalid_entries_but_reports_validation();
     test_summarize_asset_manifest_catalog_groups_all_asset_types();
     test_summarize_asset_manifest_catalog_carries_validation_and_skips_invalid_entries();
+    test_summarize_asset_manifest_catalog_cache_policy_tracks_version_and_duplicate_cache_keys();
+    test_summarize_asset_manifest_catalog_cache_policy_reports_only_real_duplicate_cache_keys();
+    test_summarize_asset_manifest_catalog_cache_policy_ok_ignores_validation_without_duplicates();
     test_asset_manifest_diagnostic_report_summarizes_targeted_issues();
     test_asset_manifest_diagnostic_report_preserves_stable_order();
     test_manifest_normalizes_asset_uri_and_roots_fixture_path();

@@ -152,6 +152,13 @@ static_assert(requires(assets::asset_manifest_catalog_cache_key_summary cache_ke
     { cache_key.root_ids } -> std::same_as<std::vector<std::string>&>;
 });
 
+static_assert(requires(assets::asset_manifest_catalog_duplicate_cache_key_report report) {
+    { report.type } -> std::same_as<assets::asset_type&>;
+    { report.cache_key } -> std::same_as<assets::asset_cache_key&>;
+    { report.entry_ids } -> std::same_as<std::vector<std::string>&>;
+    { report.duplicate() } -> std::same_as<bool>;
+});
+
 static_assert(requires(
     assets::asset_manifest_catalog_type_summary type,
     const assets::asset_manifest_catalog_type_summary& const_type,
@@ -177,6 +184,16 @@ static_assert(requires(
 });
 
 static_assert(requires(
+    assets::asset_manifest_catalog_cache_policy_summary summary,
+    const assets::asset_manifest_catalog_cache_policy_summary& const_summary) {
+    { summary.manifest_version } -> std::same_as<std::string&>;
+    { summary.catalog } -> std::same_as<assets::asset_manifest_catalog_summary&>;
+    { summary.duplicate_cache_keys } ->
+        std::same_as<std::vector<assets::asset_manifest_catalog_duplicate_cache_key_report>&>;
+    { const_summary.ok() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
     const assets::asset_manifest& manifest,
     const assets::asset_resolver_interface& resolver,
     const assets::asset_manifest_normalization_result& normalized) {
@@ -184,6 +201,11 @@ static_assert(requires(
         std::same_as<assets::asset_manifest_catalog_summary>;
     { assets::summarize_asset_manifest_catalog(manifest, resolver) } ->
         std::same_as<assets::asset_manifest_catalog_summary>;
+    { assets::summarize_asset_manifest_catalog_duplicate_cache_keys(
+        assets::summarize_asset_manifest_catalog(manifest, resolver)) } ->
+        std::same_as<std::vector<assets::asset_manifest_catalog_duplicate_cache_key_report>>;
+    { assets::summarize_asset_manifest_catalog_cache_policy("v1", manifest, resolver) } ->
+        std::same_as<assets::asset_manifest_catalog_cache_policy_summary>;
 });
 
 static_assert(requires(assets::asset_manifest_missing_root_report report) {

@@ -240,6 +240,35 @@ void gesture_recognizer::reset()
     captured_pointer_id_.reset();
 }
 
+pointer_capture_snapshot gesture_recognizer::capture_snapshot() const
+{
+    if (captured_pointer_id_.has_value()) {
+        return pointer_capture_snapshot{
+            .lifecycle = pointer_capture_lifecycle::captured,
+            .active = true,
+            .pointer_id = *captured_pointer_id_,
+            .tracked_pointer_count = pointers_.size(),
+        };
+    }
+
+    if (pointers_.empty()) {
+        return pointer_capture_snapshot{};
+    }
+
+    std::int32_t pointer_id = pointers_.begin()->first;
+    for (const auto& [tracked_pointer_id, state] : pointers_) {
+        static_cast<void>(state);
+        pointer_id = std::min(pointer_id, tracked_pointer_id);
+    }
+
+    return pointer_capture_snapshot{
+        .lifecycle = pointer_capture_lifecycle::tracking,
+        .active = false,
+        .pointer_id = pointer_id,
+        .tracked_pointer_count = pointers_.size(),
+    };
+}
+
 std::optional<gesture_event> gesture_recognizer::maybe_emit_long_press(
     std::int32_t pointer_id,
     pointer_state& state,

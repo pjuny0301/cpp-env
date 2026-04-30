@@ -1,5 +1,7 @@
 #include "core/input/gesture_recognizer.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <iostream>
 #include <vector>
@@ -35,6 +37,20 @@ quiz_vulkan::input::pointer_event pointer(
 void require_empty(const std::vector<quiz_vulkan::input::gesture_event>& gestures, const char* message)
 {
     require(gestures.empty(), message);
+}
+
+void require_capture_snapshot(
+    quiz_vulkan::input::pointer_capture_snapshot snapshot,
+    quiz_vulkan::input::pointer_capture_lifecycle lifecycle,
+    bool active,
+    std::int32_t pointer_id,
+    std::size_t tracked_pointer_count,
+    const char* message)
+{
+    require(snapshot.lifecycle == lifecycle, message);
+    require(snapshot.active == active, message);
+    require(snapshot.pointer_id == pointer_id, message);
+    require(snapshot.tracked_pointer_count == tracked_pointer_count, message);
 }
 
 void test_swipe_thresholds()
@@ -270,6 +286,13 @@ void test_drag_gesture_lifecycle_and_cancel()
     require(gestures[0].kind == gesture_kind::drag_cancel, "drag cancel kind is emitted");
     require(gestures[0].delta_x == 0.0f, "drag cancel delta x is measured from previous pointer");
     require(gestures[0].delta_y == 3.0f, "drag cancel delta y is measured from previous pointer");
+    require_capture_snapshot(
+        recognizer.capture_snapshot(),
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "drag cancel releases capture snapshot");
     require_empty(recognizer.process_pointer_event(pointer(pointer_phase::up, 230, 30.0f, 42.0f, 6)),
         "up after drag cancel emits no stale gesture");
     require_empty(recognizer.update_time(900), "drag cancel clears pending long press state");
@@ -280,16 +303,44 @@ void test_drag_capture_ignores_other_pointers_until_release()
     using namespace quiz_vulkan::input;
 
     gesture_recognizer recognizer;
+    require_capture_snapshot(
+        recognizer.capture_snapshot(),
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "capture snapshot starts idle");
     require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 100, 0.0f, 0.0f, 1)),
         "captured drag first pointer down emits no gesture");
+    require_capture_snapshot(
+        recognizer.capture_snapshot(),
+        pointer_capture_lifecycle::tracking,
+        false,
+        1,
+        1,
+        "capture snapshot tracks first pointer before drag");
     require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 105, 40.0f, 0.0f, 2)),
         "second pointer before capture emits no gesture");
+    require_capture_snapshot(
+        recognizer.capture_snapshot(),
+        pointer_capture_lifecycle::tracking,
+        false,
+        1,
+        2,
+        "capture snapshot tracks multiple pending pointers deterministically");
 
     std::vector<gesture_event> gestures =
         recognizer.process_pointer_event(pointer(pointer_phase::move, 120, 9.0f, 0.0f, 1));
     require(gestures.size() == 1, "first pointer starts captured drag");
     require(gestures[0].kind == gesture_kind::drag_start, "captured drag start kind is emitted");
     require(gestures[0].pointer_id == 1, "captured drag start preserves first pointer id");
+    require_capture_snapshot(
+        recognizer.capture_snapshot(),
+        pointer_capture_lifecycle::captured,
+        true,
+        1,
+        1,
+        "capture snapshot marks first pointer captured");
 
     require_empty(recognizer.update_time(705), "captured drag drops other pending long press state");
     require_empty(recognizer.process_pointer_event(pointer(pointer_phase::up, 710, 40.0f, 0.0f, 2)),
@@ -307,6 +358,13 @@ void test_drag_capture_ignores_other_pointers_until_release()
     gestures = recognizer.process_pointer_event(pointer(pointer_phase::up, 760, 18.0f, 3.0f, 1));
     require(gestures.size() == 1, "captured first pointer releases with drag end");
     require(gestures[0].kind == gesture_kind::drag_end, "captured drag releases with drag end kind");
+    require_capture_snapshot(
+        recognizer.capture_snapshot(),
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "capture snapshot returns idle after drag release");
 
     require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 800, 60.0f, 0.0f, 2)),
         "second pointer down after capture release is accepted");

@@ -1,6 +1,7 @@
 #include "core/input/input_engine.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <iostream>
 #include <optional>
@@ -34,6 +35,20 @@ void require_range(
 {
     require(range.start_byte == start_byte, message);
     require(range.end_byte == end_byte, message);
+}
+
+void require_capture_snapshot(
+    quiz_vulkan::input::pointer_capture_snapshot snapshot,
+    quiz_vulkan::input::pointer_capture_lifecycle lifecycle,
+    bool active,
+    std::int32_t pointer_id,
+    std::size_t tracked_pointer_count,
+    const char* message)
+{
+    require(snapshot.lifecycle == lifecycle, message);
+    require(snapshot.active == active, message);
+    require(snapshot.pointer_id == pointer_id, message);
+    require(snapshot.tracked_pointer_count == tracked_pointer_count, message);
 }
 
 template <typename T>
@@ -619,6 +634,188 @@ void test_raw_platform_scroll_routes_through_input_engine()
     require(events.empty(), "raw platform zero scroll emits no input event");
 }
 
+void test_gesture_routing_diagnostics_summarize_gestures_and_wheel()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    require_capture_snapshot(
+        engine.routing_diagnostics().pointer_capture,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "routing diagnostics start with idle capture");
+
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 100, 0.0f, 0.0f)).empty(),
+        "diagnostic swipe down emits no gesture");
+    require(engine.routing_diagnostics().normalized_events.empty(), "diagnostic swipe down has no summaries");
+    require_capture_snapshot(
+        engine.routing_diagnostics().pointer_capture,
+        pointer_capture_lifecycle::tracking,
+        false,
+        1,
+        1,
+        "diagnostic swipe down tracks pointer");
+
+    std::vector<input_event> events =
+        engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 180, 70.0f, 0.0f));
+    require(events.size() == 1, "diagnostic swipe emits one event");
+    const auto& swipe_summaries = engine.routing_diagnostics().normalized_events;
+    require(swipe_summaries.size() == 1, "diagnostic swipe emits one summary");
+    require(swipe_summaries[0].kind == input_event_summary_kind::swipe_right,
+        "diagnostic swipe summary kind is swipe right");
+    require(swipe_summaries[0].timestamp_ms == 180, "diagnostic swipe summary timestamp is preserved");
+    require(swipe_summaries[0].duration_ms == 80, "diagnostic swipe summary duration is preserved");
+    require(swipe_summaries[0].pointer_id == 1, "diagnostic swipe summary pointer id is preserved");
+    require(swipe_summaries[0].start_x == 0.0f, "diagnostic swipe summary start x is preserved");
+    require(swipe_summaries[0].x == 70.0f, "diagnostic swipe summary end x is preserved");
+    require_capture_snapshot(
+        engine.routing_diagnostics().pointer_capture,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "diagnostic swipe release clears pointer capture");
+
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 200, 10.0f, 10.0f)).empty(),
+        "diagnostic long press down emits no gesture");
+    events = engine.update_time(800);
+    require(events.size() == 1, "diagnostic long press emits one event");
+    const auto& long_press_summaries = engine.routing_diagnostics().normalized_events;
+    require(long_press_summaries.size() == 1, "diagnostic long press emits one summary");
+    require(long_press_summaries[0].kind == input_event_summary_kind::long_press,
+        "diagnostic long press summary kind is long press");
+    require(long_press_summaries[0].duration_ms == 600, "diagnostic long press duration is preserved");
+    require(long_press_summaries[0].x == 10.0f, "diagnostic long press x is preserved");
+    require_capture_snapshot(
+        engine.routing_diagnostics().pointer_capture,
+        pointer_capture_lifecycle::tracking,
+        false,
+        1,
+        1,
+        "diagnostic long press keeps pointer tracked until release");
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 810, 10.0f, 10.0f)).empty(),
+        "diagnostic long press release is suppressed");
+
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 900, 0.0f, 0.0f)).empty(),
+        "diagnostic drag down emits no gesture");
+    events = engine.process_raw_event(pointer(raw_platform_pointer_phase::move, 920, 9.0f, 4.0f));
+    require(events.size() == 1, "diagnostic drag start emits one event");
+    const auto& drag_start_summaries = engine.routing_diagnostics().normalized_events;
+    require(drag_start_summaries.size() == 1, "diagnostic drag start emits one summary");
+    require(drag_start_summaries[0].kind == input_event_summary_kind::drag_start,
+        "diagnostic drag start summary kind is drag start");
+    require(drag_start_summaries[0].delta_x == 9.0f, "diagnostic drag start delta x is preserved");
+    require(drag_start_summaries[0].delta_y == 4.0f, "diagnostic drag start delta y is preserved");
+    require_capture_snapshot(
+        engine.routing_diagnostics().pointer_capture,
+        pointer_capture_lifecycle::captured,
+        true,
+        1,
+        1,
+        "diagnostic drag start captures pointer");
+
+    events = engine.process_raw_event(pointer(raw_platform_pointer_phase::move, 940, 12.0f, 8.0f));
+    require(events.size() == 1, "diagnostic drag update emits one event");
+    const auto& drag_update_summaries = engine.routing_diagnostics().normalized_events;
+    require(drag_update_summaries.size() == 1, "diagnostic drag update emits one summary");
+    require(drag_update_summaries[0].kind == input_event_summary_kind::drag_update,
+        "diagnostic drag update summary kind is drag update");
+    require(drag_update_summaries[0].delta_x == 3.0f, "diagnostic drag update delta x is previous-relative");
+    require(drag_update_summaries[0].delta_y == 4.0f, "diagnostic drag update delta y is previous-relative");
+
+    events = engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 960, 14.0f, 10.0f));
+    require(events.size() == 1, "diagnostic drag end emits one event");
+    const auto& drag_end_summaries = engine.routing_diagnostics().normalized_events;
+    require(drag_end_summaries.size() == 1, "diagnostic drag end emits one summary");
+    require(drag_end_summaries[0].kind == input_event_summary_kind::drag_end,
+        "diagnostic drag end summary kind is drag end");
+    require_capture_snapshot(
+        engine.routing_diagnostics().pointer_capture,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "diagnostic drag end releases capture");
+
+    events = engine.process_scroll_event(scroll(1000, 40.0f, 50.0f, 0.0f, -3.0f, scroll_delta_unit::lines));
+    require(events.size() == 1, "diagnostic wheel emits one event");
+    const auto& wheel_summaries = engine.routing_diagnostics().normalized_events;
+    require(wheel_summaries.size() == 1, "diagnostic wheel emits one summary");
+    require(wheel_summaries[0].kind == input_event_summary_kind::wheel, "diagnostic wheel summary kind is wheel");
+    require(wheel_summaries[0].x == 40.0f, "diagnostic wheel summary x is preserved");
+    require(wheel_summaries[0].y == 50.0f, "diagnostic wheel summary y is preserved");
+    require(wheel_summaries[0].line_delta_y == -3.0f, "diagnostic wheel line delta is preserved");
+    require(wheel_summaries[0].pixel_delta_y == 0.0f, "diagnostic wheel pixel delta defaults to zero");
+}
+
+void test_gesture_routing_diagnostics_cancel_and_focus_loss()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 100, 0.0f, 0.0f)).empty(),
+        "diagnostic cancel down emits no gesture");
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::move, 120, 9.0f, 0.0f)).size() == 1,
+        "diagnostic cancel setup starts drag");
+    require_capture_snapshot(
+        engine.routing_diagnostics().pointer_capture,
+        pointer_capture_lifecycle::captured,
+        true,
+        1,
+        1,
+        "diagnostic cancel setup captures pointer");
+
+    std::vector<input_event> events =
+        engine.process_raw_event(pointer(raw_platform_pointer_phase::cancel, 130, 12.0f, 0.0f));
+    require(events.size() == 1, "diagnostic cancel emits one event");
+    const auto& cancel_summaries = engine.routing_diagnostics().normalized_events;
+    require(cancel_summaries.size() == 1, "diagnostic cancel emits one summary");
+    require(cancel_summaries[0].kind == input_event_summary_kind::drag_cancel,
+        "diagnostic cancel summary kind is drag cancel");
+    require(cancel_summaries[0].delta_x == 3.0f, "diagnostic cancel delta x is previous-relative");
+    require_capture_snapshot(
+        engine.routing_diagnostics().pointer_capture,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "diagnostic cancel releases pointer capture");
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 140, 12.0f, 0.0f)).empty(),
+        "diagnostic up after cancel emits no stale event");
+    require(engine.routing_diagnostics().normalized_events.empty(),
+        "diagnostic up after cancel clears stale summaries");
+
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 200, 0.0f, 0.0f)).empty(),
+        "diagnostic focus loss down emits no gesture");
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::move, 220, 9.0f, 0.0f)).size() == 1,
+        "diagnostic focus loss setup starts drag");
+    require_capture_snapshot(
+        engine.routing_diagnostics().pointer_capture,
+        pointer_capture_lifecycle::captured,
+        true,
+        1,
+        1,
+        "diagnostic focus loss setup captures pointer");
+
+    events = engine.process_raw_event(focus(raw_platform_focus_phase::lost, 230));
+    require(events.empty(), "diagnostic focus loss without text focus emits no input events");
+    require(engine.routing_diagnostics().normalized_events.empty(),
+        "diagnostic focus loss clears gesture summaries");
+    require_capture_snapshot(
+        engine.routing_diagnostics().pointer_capture,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "diagnostic focus loss resets pointer capture snapshot");
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 240, 9.0f, 0.0f)).empty(),
+        "diagnostic up after focus loss emits no stale event");
+}
+
 void test_text_key_flow()
 {
     using namespace quiz_vulkan;
@@ -1168,6 +1365,8 @@ int main()
     test_multi_pointer_long_press_order_routes_stably();
     test_scroll_events_normalize_line_and_pixel_deltas();
     test_raw_platform_scroll_routes_through_input_engine();
+    test_gesture_routing_diagnostics_summarize_gestures_and_wheel();
+    test_gesture_routing_diagnostics_cancel_and_focus_loss();
     test_text_key_flow();
     test_key_code_fallback_edges();
     test_text_keyboard_navigation_and_selection();

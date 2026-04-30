@@ -41,13 +41,6 @@ scroll_delta_unit to_scroll_delta_unit(raw_platform_scroll_delta_unit unit)
     return scroll_delta_unit::pixels;
 }
 
-void append_gestures(std::vector<input_event>& events, const std::vector<gesture_event>& gestures)
-{
-    for (const gesture_event& gesture : gestures) {
-        events.emplace_back(gesture);
-    }
-}
-
 bool is_backspace_key(const raw_platform_key_event& event)
 {
     return event.logical_key == "Backspace" || event.key_code == 8;
@@ -114,6 +107,60 @@ ime_event make_ime_event(
     };
 }
 
+input_event_summary_kind summary_kind_for(gesture_kind kind)
+{
+    switch (kind) {
+    case gesture_kind::tap:
+        return input_event_summary_kind::tap;
+    case gesture_kind::long_press:
+        return input_event_summary_kind::long_press;
+    case gesture_kind::swipe_left:
+        return input_event_summary_kind::swipe_left;
+    case gesture_kind::swipe_right:
+        return input_event_summary_kind::swipe_right;
+    case gesture_kind::drag_start:
+        return input_event_summary_kind::drag_start;
+    case gesture_kind::drag_update:
+        return input_event_summary_kind::drag_update;
+    case gesture_kind::drag_end:
+        return input_event_summary_kind::drag_end;
+    case gesture_kind::drag_cancel:
+        return input_event_summary_kind::drag_cancel;
+    }
+
+    return input_event_summary_kind::tap;
+}
+
+normalized_input_event_summary summarize_gesture(const gesture_event& gesture)
+{
+    return normalized_input_event_summary{
+        .kind = summary_kind_for(gesture.kind),
+        .timestamp_ms = gesture.timestamp_ms,
+        .duration_ms = gesture.duration_ms,
+        .pointer_id = gesture.pointer_id,
+        .start_x = gesture.start_x,
+        .start_y = gesture.start_y,
+        .x = gesture.x,
+        .y = gesture.y,
+        .delta_x = gesture.delta_x,
+        .delta_y = gesture.delta_y,
+    };
+}
+
+normalized_input_event_summary summarize_scroll(const scroll_event& scroll)
+{
+    return normalized_input_event_summary{
+        .kind = input_event_summary_kind::wheel,
+        .timestamp_ms = scroll.timestamp_ms,
+        .x = scroll.x,
+        .y = scroll.y,
+        .pixel_delta_x = scroll.pixel_delta_x,
+        .pixel_delta_y = scroll.pixel_delta_y,
+        .line_delta_x = scroll.line_delta_x,
+        .line_delta_y = scroll.line_delta_y,
+    };
+}
+
 } // namespace
 
 input_engine::input_engine(gesture_thresholds thresholds)
@@ -148,6 +195,11 @@ const text_input_model& input_engine::text_model() const
     return text_;
 }
 
+const input_routing_diagnostics& input_engine::routing_diagnostics() const
+{
+    return diagnostics_;
+}
+
 std::vector<input_event> input_engine::process_raw_event(const raw_platform_input_event& event)
 {
     return std::visit(
@@ -180,14 +232,18 @@ std::vector<input_event> input_engine::process_raw_event(const raw_platform_inpu
 std::vector<input_event> input_engine::update_time(std::int64_t timestamp_ms)
 {
     std::vector<input_event> events;
+    begin_route_diagnostics();
     append_gestures(events, gestures_.update_time(timestamp_ms));
+    finish_route_diagnostics();
     return events;
 }
 
 std::vector<input_event> input_engine::process_scroll_event(const raw_scroll_event& event)
 {
     std::vector<input_event> events;
+    begin_route_diagnostics();
     if (event.delta_x == 0.0f && event.delta_y == 0.0f) {
+        finish_route_diagnostics();
         return events;
     }
 
@@ -205,7 +261,8 @@ std::vector<input_event> input_engine::process_scroll_event(const raw_scroll_eve
         normalized.pixel_delta_y = event.delta_y;
     }
 
-    events.emplace_back(normalized);
+    append_scroll(events, normalized);
+    finish_route_diagnostics();
     return events;
 }
 
@@ -214,12 +271,16 @@ void input_engine::reset()
     gestures_.reset();
     text_ = text_input_model{};
     ime_composing_ = false;
+    begin_route_diagnostics();
+    finish_route_diagnostics();
 }
 
 std::vector<input_event> input_engine::process_pointer_event(const raw_platform_pointer_event& event)
 {
     std::vector<input_event> events;
+    begin_route_diagnostics();
     if (!is_primary_pointer(event)) {
+        finish_route_diagnostics();
         return events;
     }
 
@@ -232,13 +293,16 @@ std::vector<input_event> input_engine::process_pointer_event(const raw_platform_
             .x = event.x,
             .y = event.y,
         }));
+    finish_route_diagnostics();
     return events;
 }
 
 std::vector<input_event> input_engine::process_text_event(const raw_platform_text_event& event)
 {
     std::vector<input_event> events;
+    begin_route_diagnostics();
     if (ime_composing_ || text_.ime_composition().active || !text_.commit_utf8(event.utf8_text)) {
+        finish_route_diagnostics();
         return events;
     }
 
@@ -248,14 +312,17 @@ std::vector<input_event> input_engine::process_text_event(const raw_platform_tex
         .target_id = text_.focus_id(),
         .utf8_text = event.utf8_text,
     });
+    finish_route_diagnostics();
     return events;
 }
 
 std::vector<input_event> input_engine::process_ime_event(const raw_platform_ime_event& event)
 {
     std::vector<input_event> events;
+    begin_route_diagnostics();
     if (!text_.has_focus()) {
         ime_composing_ = false;
+        finish_route_diagnostics();
         return events;
     }
 
@@ -276,6 +343,7 @@ std::vector<input_event> input_engine::process_ime_event(const raw_platform_ime_
         } else {
             text_.set_preedit("");
         }
+        finish_route_diagnostics();
         return events;
     }
 
@@ -288,6 +356,7 @@ std::vector<input_event> input_engine::process_ime_event(const raw_platform_ime_
             target_id,
             event.utf8_text,
             text_.ime_composition()));
+        finish_route_diagnostics();
         return events;
     }
 
@@ -302,6 +371,7 @@ std::vector<input_event> input_engine::process_ime_event(const raw_platform_ime_
                 target_id,
                 event.utf8_text,
                 committed_composition));
+            finish_route_diagnostics();
             return events;
         }
     }
@@ -322,16 +392,19 @@ std::vector<input_event> input_engine::process_ime_event(const raw_platform_ime_
         }
     }
 
+    finish_route_diagnostics();
     return events;
 }
 
 std::vector<input_event> input_engine::process_key_event(const raw_platform_key_event& event)
 {
     std::vector<input_event> events;
+    begin_route_diagnostics();
     if (event.phase != raw_platform_key_phase::down
         || ime_composing_
         || text_.ime_composition().active
         || !text_.has_focus()) {
+        finish_route_diagnostics();
         return events;
     }
 
@@ -346,6 +419,7 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
                 .utf8_text = {},
             });
         }
+        finish_route_diagnostics();
         return events;
     }
 
@@ -359,6 +433,7 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
                 .utf8_text = {},
             });
         }
+        finish_route_diagnostics();
         return events;
     }
 
@@ -372,6 +447,7 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
                 .utf8_text = {},
             });
         }
+        finish_route_diagnostics();
         return events;
     }
 
@@ -384,6 +460,7 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
                 .utf8_text = {},
             });
         }
+        finish_route_diagnostics();
         return events;
     }
 
@@ -396,6 +473,7 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
                 .utf8_text = {},
             });
         }
+        finish_route_diagnostics();
         return events;
     }
 
@@ -408,11 +486,13 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
                 .utf8_text = {},
             });
         }
+        finish_route_diagnostics();
         return events;
     }
 
     if (is_submit_key(event)) {
         if (event.repeat) {
+            finish_route_diagnostics();
             return events;
         }
 
@@ -427,12 +507,14 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
         }
     }
 
+    finish_route_diagnostics();
     return events;
 }
 
 std::vector<input_event> input_engine::process_focus_event(const raw_platform_focus_event& event)
 {
     std::vector<input_event> events;
+    begin_route_diagnostics();
     if (event.phase == raw_platform_focus_phase::gained) {
         if (text_.has_focus()) {
             events.emplace_back(text_event{
@@ -442,6 +524,7 @@ std::vector<input_event> input_engine::process_focus_event(const raw_platform_fo
                 .utf8_text = {},
             });
         }
+        finish_route_diagnostics();
         return events;
     }
 
@@ -472,7 +555,33 @@ std::vector<input_event> input_engine::process_focus_event(const raw_platform_fo
         });
     }
 
+    finish_route_diagnostics();
     return events;
+}
+
+void input_engine::begin_route_diagnostics()
+{
+    diagnostics_.normalized_events.clear();
+    diagnostics_.pointer_capture = gestures_.capture_snapshot();
+}
+
+void input_engine::finish_route_diagnostics()
+{
+    diagnostics_.pointer_capture = gestures_.capture_snapshot();
+}
+
+void input_engine::append_gestures(std::vector<input_event>& events, const std::vector<gesture_event>& gestures)
+{
+    for (const gesture_event& gesture : gestures) {
+        diagnostics_.normalized_events.push_back(summarize_gesture(gesture));
+        events.emplace_back(gesture);
+    }
+}
+
+void input_engine::append_scroll(std::vector<input_event>& events, const scroll_event& scroll)
+{
+    diagnostics_.normalized_events.push_back(summarize_scroll(scroll));
+    events.emplace_back(scroll);
 }
 
 } // namespace quiz_vulkan::input

@@ -12,8 +12,19 @@
 
 namespace quiz_vulkan::input {
 
+enum class pointer_arbitration_decision {
+    none,
+    tracked,
+    captured,
+    ignored_by_capture,
+    canceled,
+    released,
+    restarted,
+};
+
 enum class action_route_policy_kind {
     pointer_capture_reset,
+    pointer_capture_arbitration,
     wheel_summary,
     gesture_route_snapshot,
     text_commit_boundary,
@@ -48,6 +59,9 @@ struct action_route_policy_diagnostic {
     ime_composition_state composition;
     pointer_capture_snapshot pointer_capture_before;
     pointer_capture_snapshot pointer_capture_after;
+    pointer_arbitration_decision pointer_decision = pointer_arbitration_decision::none;
+    pointer_phase pointer_event_phase = pointer_phase::down;
+    std::int32_t pointer_id = 0;
 };
 
 struct input_routing_diagnostics {

@@ -1059,6 +1059,262 @@ void test_pointer_cancel_policy_records_non_emitting_stream_cleanup()
         "long-pressed pointer cancel suppresses stale release");
 }
 
+void test_pointer_capture_arbitration_diagnostics()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 100, 0.0f, 0.0f, raw_platform_pointer_button::none, 10))
+                .empty(),
+        "arbitration first pointer down emits no input event");
+    require(engine.routing_diagnostics().action_routes.size() == 1,
+        "arbitration first pointer down emits tracking policy");
+    const action_route_policy_diagnostic& first_track_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::pointer_capture_arbitration,
+        "arbitration first pointer down policy is emitted");
+    require(first_track_policy.pointer_decision == pointer_arbitration_decision::tracked,
+        "arbitration first pointer down records tracked decision");
+    require(first_track_policy.pointer_event_phase == pointer_phase::down,
+        "arbitration first pointer down records down phase");
+    require(first_track_policy.pointer_id == 10, "arbitration first pointer down records pointer id");
+    require_capture_snapshot(
+        first_track_policy.pointer_capture_before,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "arbitration first pointer down records idle before");
+    require_capture_snapshot(
+        first_track_policy.pointer_capture_after,
+        pointer_capture_lifecycle::tracking,
+        false,
+        10,
+        1,
+        "arbitration first pointer down records tracked after");
+
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 110, 50.0f, 0.0f, raw_platform_pointer_button::none, 20))
+                .empty(),
+        "arbitration second pointer down emits no input event");
+    const action_route_policy_diagnostic& second_track_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::pointer_capture_arbitration,
+        "arbitration second pointer down policy is emitted");
+    require(second_track_policy.pointer_decision == pointer_arbitration_decision::tracked,
+        "arbitration second pointer down records tracked decision");
+    require(second_track_policy.pointer_id == 20, "arbitration second pointer down records pointer id");
+    require_capture_snapshot(
+        second_track_policy.pointer_capture_before,
+        pointer_capture_lifecycle::tracking,
+        false,
+        10,
+        1,
+        "arbitration second pointer down records first tracked pointer before");
+    require_capture_snapshot(
+        second_track_policy.pointer_capture_after,
+        pointer_capture_lifecycle::tracking,
+        false,
+        10,
+        2,
+        "arbitration second pointer down records deterministic lowest pointer id after");
+
+    std::vector<input_event> events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::move,
+        130,
+        59.0f,
+        0.0f,
+        raw_platform_pointer_button::none,
+        20));
+    require(events.size() == 1, "arbitration second pointer starts captured drag");
+    const gesture_event& start = require_event<gesture_event>(events, 0);
+    require(start.kind == gesture_kind::drag_start, "arbitration second pointer emits drag start");
+    const action_route_policy_diagnostic& capture_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "arbitration drag start policy is gesture snapshot");
+    require(capture_policy.pointer_decision == pointer_arbitration_decision::captured,
+        "arbitration drag start records captured decision");
+    require(capture_policy.pointer_event_phase == pointer_phase::move,
+        "arbitration drag start records move phase");
+    require(capture_policy.pointer_id == 20, "arbitration drag start records pointer id");
+    require_capture_snapshot(
+        capture_policy.pointer_capture_before,
+        pointer_capture_lifecycle::tracking,
+        false,
+        10,
+        2,
+        "arbitration drag start records both tracked pointers before capture");
+    require_capture_snapshot(
+        capture_policy.pointer_capture_after,
+        pointer_capture_lifecycle::captured,
+        true,
+        20,
+        1,
+        "arbitration drag start records captured pointer after");
+
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::cancel,
+        140,
+        0.0f,
+        0.0f,
+        raw_platform_pointer_button::none,
+        10));
+    require(events.empty(), "arbitration cancel for noncaptured pointer is ignored");
+    require(engine.routing_diagnostics().action_routes.size() == 1,
+        "arbitration ignored cancel emits one diagnostic policy");
+    const action_route_policy_diagnostic& ignored_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::pointer_capture_arbitration,
+        "arbitration ignored cancel policy is emitted");
+    require(ignored_policy.pointer_decision == pointer_arbitration_decision::ignored_by_capture,
+        "arbitration ignored cancel records ignored decision");
+    require(ignored_policy.pointer_event_phase == pointer_phase::cancel,
+        "arbitration ignored cancel records cancel phase");
+    require(ignored_policy.pointer_id == 10, "arbitration ignored cancel records ignored pointer id");
+    require_capture_snapshot(
+        ignored_policy.pointer_capture_before,
+        pointer_capture_lifecycle::captured,
+        true,
+        20,
+        1,
+        "arbitration ignored cancel records captured pointer before");
+    require_capture_snapshot(
+        ignored_policy.pointer_capture_after,
+        pointer_capture_lifecycle::captured,
+        true,
+        20,
+        1,
+        "arbitration ignored cancel keeps captured pointer after");
+
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::up,
+        160,
+        65.0f,
+        2.0f,
+        raw_platform_pointer_button::none,
+        20));
+    require(events.size() == 1, "arbitration captured pointer up emits drag end");
+    const action_route_policy_diagnostic& release_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "arbitration drag end policy is gesture snapshot");
+    require(release_policy.pointer_decision == pointer_arbitration_decision::released,
+        "arbitration drag end records released decision");
+    require(release_policy.pointer_event_phase == pointer_phase::up,
+        "arbitration drag end records up phase");
+    require(release_policy.pointer_id == 20, "arbitration drag end records pointer id");
+    require_capture_snapshot(
+        release_policy.pointer_capture_before,
+        pointer_capture_lifecycle::captured,
+        true,
+        20,
+        1,
+        "arbitration drag end records captured before release");
+    require_capture_snapshot(
+        release_policy.pointer_capture_after,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "arbitration drag end records idle after release");
+
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::down, 200, 0.0f, 0.0f, raw_platform_pointer_button::none, 30))
+                .empty(),
+        "arbitration restart down emits no input event");
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::move, 220, 10.0f, 0.0f, raw_platform_pointer_button::none, 30))
+                .size() == 1,
+        "arbitration restart setup captures pointer");
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::down,
+        240,
+        2.0f,
+        2.0f,
+        raw_platform_pointer_button::none,
+        30));
+    require(events.size() == 1, "arbitration repeated down cancels captured drag");
+    const gesture_event& restart_cancel = require_event<gesture_event>(events, 0);
+    require(restart_cancel.kind == gesture_kind::drag_cancel,
+        "arbitration repeated down emits drag cancel");
+    const action_route_policy_diagnostic& restart_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "arbitration repeated down policy is gesture snapshot");
+    require(restart_policy.pointer_decision == pointer_arbitration_decision::restarted,
+        "arbitration repeated down records restarted decision");
+    require(restart_policy.pointer_event_phase == pointer_phase::down,
+        "arbitration repeated down records down phase");
+    require(restart_policy.pointer_id == 30, "arbitration repeated down records pointer id");
+    require_capture_snapshot(
+        restart_policy.pointer_capture_before,
+        pointer_capture_lifecycle::captured,
+        true,
+        30,
+        1,
+        "arbitration repeated down records captured before restart");
+    require_capture_snapshot(
+        restart_policy.pointer_capture_after,
+        pointer_capture_lifecycle::tracking,
+        false,
+        30,
+        1,
+        "arbitration repeated down records replacement tracking after restart");
+
+    require(engine.process_raw_event(pointer(raw_platform_pointer_phase::move, 260, 11.0f, 2.0f, raw_platform_pointer_button::none, 30))
+                .size() == 1,
+        "arbitration restarted pointer captures again");
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::cancel,
+        270,
+        11.0f,
+        4.0f,
+        raw_platform_pointer_button::none,
+        30));
+    require(events.size() == 1, "arbitration captured pointer cancel emits drag cancel");
+    require(engine.routing_diagnostics().action_routes.size() == 2,
+        "arbitration captured pointer cancel emits gesture and reset policies");
+    const action_route_policy_diagnostic& cancel_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "arbitration captured cancel first policy is gesture snapshot");
+    require(cancel_policy.pointer_decision == pointer_arbitration_decision::canceled,
+        "arbitration captured cancel gesture records canceled decision");
+    require(cancel_policy.pointer_event_phase == pointer_phase::cancel,
+        "arbitration captured cancel gesture records cancel phase");
+    const action_route_policy_diagnostic& cancel_reset_policy = require_policy(
+        engine.routing_diagnostics(),
+        1,
+        action_route_policy_kind::pointer_capture_reset,
+        "arbitration captured cancel second policy is reset");
+    require(cancel_reset_policy.pointer_decision == pointer_arbitration_decision::canceled,
+        "arbitration captured cancel reset records canceled decision");
+    require(cancel_reset_policy.pointer_event_phase == pointer_phase::cancel,
+        "arbitration captured cancel reset records cancel phase");
+    require(cancel_reset_policy.pointer_id == 30,
+        "arbitration captured cancel reset records pointer id");
+    require_capture_snapshot(
+        cancel_reset_policy.pointer_capture_before,
+        pointer_capture_lifecycle::captured,
+        true,
+        30,
+        1,
+        "arbitration captured cancel reset records captured before");
+    require_capture_snapshot(
+        cancel_reset_policy.pointer_capture_after,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "arbitration captured cancel reset records idle after");
+}
+
 void test_text_key_flow()
 {
     using namespace quiz_vulkan;
@@ -2105,6 +2361,7 @@ int main()
     test_gesture_routing_diagnostics_summarize_gestures_and_wheel();
     test_gesture_routing_diagnostics_cancel_and_focus_loss();
     test_pointer_cancel_policy_records_non_emitting_stream_cleanup();
+    test_pointer_capture_arbitration_diagnostics();
     test_text_key_flow();
     test_key_code_fallback_edges();
     test_text_keyboard_navigation_and_selection();

@@ -374,6 +374,75 @@ void test_drag_capture_ignores_other_pointers_until_release()
     require(gestures[0].pointer_id == 2, "second pointer tap preserves pointer id after release");
 }
 
+void test_capture_arbitration_restart_and_ignored_cancel()
+{
+    using namespace quiz_vulkan::input;
+
+    gesture_recognizer recognizer;
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 100, 0.0f, 0.0f, 4)),
+        "arbitration first down emits no gesture");
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::down, 105, 40.0f, 0.0f, 9)),
+        "arbitration second down emits no gesture");
+    require_capture_snapshot(
+        recognizer.capture_snapshot(),
+        pointer_capture_lifecycle::tracking,
+        false,
+        4,
+        2,
+        "arbitration pending snapshot uses lowest pointer id");
+
+    std::vector<gesture_event> gestures =
+        recognizer.process_pointer_event(pointer(pointer_phase::move, 120, 50.0f, 0.0f, 9));
+    require(gestures.size() == 1, "arbitration second pointer starts drag");
+    require(gestures[0].kind == gesture_kind::drag_start, "arbitration second pointer emits drag start");
+    require_capture_snapshot(
+        recognizer.capture_snapshot(),
+        pointer_capture_lifecycle::captured,
+        true,
+        9,
+        1,
+        "arbitration capture drops noncaptured pending pointer");
+
+    require_empty(recognizer.process_pointer_event(pointer(pointer_phase::cancel, 130, 0.0f, 0.0f, 4)),
+        "arbitration noncaptured cancel is ignored while another pointer is captured");
+    require_capture_snapshot(
+        recognizer.capture_snapshot(),
+        pointer_capture_lifecycle::captured,
+        true,
+        9,
+        1,
+        "arbitration ignored cancel preserves capture");
+
+    gestures = recognizer.process_pointer_event(pointer(pointer_phase::down, 140, 45.0f, 2.0f, 9));
+    require(gestures.size() == 1, "arbitration repeated captured down cancels existing drag");
+    require(gestures[0].kind == gesture_kind::drag_cancel,
+        "arbitration repeated captured down emits drag cancel");
+    require(gestures[0].pointer_id == 9, "arbitration repeated captured down preserves pointer id");
+    require_capture_snapshot(
+        recognizer.capture_snapshot(),
+        pointer_capture_lifecycle::tracking,
+        false,
+        9,
+        1,
+        "arbitration repeated captured down restarts pointer as tracked");
+
+    gestures = recognizer.process_pointer_event(pointer(pointer_phase::move, 150, 55.0f, 2.0f, 9));
+    require(gestures.size() == 1, "arbitration restarted pointer starts drag again");
+    require(gestures[0].kind == gesture_kind::drag_start,
+        "arbitration restarted pointer emits drag start");
+    gestures = recognizer.process_pointer_event(pointer(pointer_phase::cancel, 160, 55.0f, 4.0f, 9));
+    require(gestures.size() == 1, "arbitration captured cancel emits drag cancel");
+    require(gestures[0].kind == gesture_kind::drag_cancel,
+        "arbitration captured cancel emits drag cancel kind");
+    require_capture_snapshot(
+        recognizer.capture_snapshot(),
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "arbitration captured cancel releases capture");
+}
+
 void test_drag_suppresses_long_press_when_drag_slop_is_inside_tap_slop()
 {
     using namespace quiz_vulkan::input;
@@ -450,6 +519,7 @@ int main()
     test_pointer_id_reuse_replaces_pending_state();
     test_drag_gesture_lifecycle_and_cancel();
     test_drag_capture_ignores_other_pointers_until_release();
+    test_capture_arbitration_restart_and_ignored_cancel();
     test_drag_suppresses_long_press_when_drag_slop_is_inside_tap_slop();
     test_drag_start_slop_is_configurable();
     test_multi_pointer_long_press_order_is_stable();

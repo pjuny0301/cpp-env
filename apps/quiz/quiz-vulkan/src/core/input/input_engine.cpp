@@ -1,5 +1,6 @@
 #include "core/input/input_engine.h"
 
+#include <algorithm>
 #include <optional>
 #include <type_traits>
 #include <utility>
@@ -215,6 +216,69 @@ bool pointer_capture_changed(const pointer_capture_snapshot& before, const point
         || before.tracked_pointer_count != after.tracked_pointer_count;
 }
 
+void apply_pointer_arbitration(
+    action_route_policy_diagnostic& diagnostic,
+    std::int32_t pointer_id,
+    pointer_phase phase,
+    pointer_arbitration_decision decision)
+{
+    diagnostic.pointer_id = pointer_id;
+    diagnostic.pointer_event_phase = phase;
+    diagnostic.pointer_decision = decision;
+}
+
+bool has_gesture_kind(
+    const std::vector<gesture_event>& gestures,
+    std::int32_t pointer_id,
+    gesture_kind kind)
+{
+    return std::ranges::any_of(gestures, [pointer_id, kind](const gesture_event& gesture) {
+        return gesture.pointer_id == pointer_id && gesture.kind == kind;
+    });
+}
+
+pointer_arbitration_decision pointer_decision_for(
+    const raw_platform_pointer_event& event,
+    pointer_phase phase,
+    const pointer_capture_snapshot& before,
+    const pointer_capture_snapshot& after,
+    const std::vector<gesture_event>& gestures)
+{
+    if (before.active && before.pointer_id != event.pointer_id) {
+        return pointer_arbitration_decision::ignored_by_capture;
+    }
+
+    if (phase == pointer_phase::down
+        && has_gesture_kind(gestures, event.pointer_id, gesture_kind::drag_cancel)) {
+        return pointer_arbitration_decision::restarted;
+    }
+
+    if (phase == pointer_phase::cancel
+        && has_pointer_capture_state(before)
+        && pointer_capture_changed(before, after)) {
+        return pointer_arbitration_decision::canceled;
+    }
+
+    if (before.active
+        && before.pointer_id == event.pointer_id
+        && after.lifecycle == pointer_capture_lifecycle::idle
+        && phase == pointer_phase::up) {
+        return pointer_arbitration_decision::released;
+    }
+
+    if (!before.active && after.active && after.pointer_id == event.pointer_id) {
+        return pointer_arbitration_decision::captured;
+    }
+
+    if (phase == pointer_phase::down
+        && after.lifecycle == pointer_capture_lifecycle::tracking
+        && pointer_capture_changed(before, after)) {
+        return pointer_arbitration_decision::tracked;
+    }
+
+    return pointer_arbitration_decision::none;
+}
+
 action_route_policy_diagnostic make_policy(
     action_route_policy_kind kind,
     std::int64_t timestamp_ms,
@@ -226,6 +290,23 @@ action_route_policy_diagnostic make_policy(
     diagnostic.timestamp_ms = timestamp_ms;
     diagnostic.pointer_capture_before = pointer_capture_before;
     diagnostic.pointer_capture_after = pointer_capture_after;
+    return diagnostic;
+}
+
+action_route_policy_diagnostic make_pointer_arbitration_policy(
+    std::int64_t timestamp_ms,
+    std::int32_t pointer_id,
+    pointer_phase phase,
+    pointer_arbitration_decision decision,
+    pointer_capture_snapshot pointer_capture_before,
+    pointer_capture_snapshot pointer_capture_after)
+{
+    action_route_policy_diagnostic diagnostic = make_policy(
+        action_route_policy_kind::pointer_capture_arbitration,
+        timestamp_ms,
+        pointer_capture_before,
+        pointer_capture_after);
+    apply_pointer_arbitration(diagnostic, pointer_id, phase, decision);
     return diagnostic;
 }
 
@@ -444,24 +525,55 @@ std::vector<input_event> input_engine::process_pointer_event(const raw_platform_
         return events;
     }
 
-    append_gestures(
-        events,
-        gestures_.process_pointer_event(pointer_event{
-            .timestamp_ms = event.timestamp_ms,
-            .pointer_id = event.pointer_id,
-            .phase = to_pointer_phase(event.phase),
-            .x = event.x,
-            .y = event.y,
-        }));
+    const pointer_phase phase = to_pointer_phase(event.phase);
+    const pointer_capture_snapshot pointer_capture_before = diagnostics_.pointer_capture;
+    const std::vector<gesture_event> gestures = gestures_.process_pointer_event(pointer_event{
+        .timestamp_ms = event.timestamp_ms,
+        .pointer_id = event.pointer_id,
+        .phase = phase,
+        .x = event.x,
+        .y = event.y,
+    });
     const pointer_capture_snapshot pointer_capture_after = gestures_.capture_snapshot();
-    if (event.phase == raw_platform_pointer_phase::cancel
+    const pointer_arbitration_decision decision = pointer_decision_for(
+        event,
+        phase,
+        pointer_capture_before,
+        pointer_capture_after,
+        gestures);
+
+    const std::size_t first_gesture_policy = diagnostics_.action_routes.size();
+    append_gestures(events, gestures);
+    for (std::size_t index = first_gesture_policy; index < diagnostics_.action_routes.size(); ++index) {
+        action_route_policy_diagnostic& policy = diagnostics_.action_routes[index];
+        if (policy.kind == action_route_policy_kind::gesture_route_snapshot
+            && policy.normalized_event.pointer_id == event.pointer_id) {
+            apply_pointer_arbitration(policy, event.pointer_id, phase, decision);
+        }
+    }
+
+    if (gestures.empty()
+        && (decision == pointer_arbitration_decision::tracked
+            || decision == pointer_arbitration_decision::ignored_by_capture)) {
+        append_policy(make_pointer_arbitration_policy(
+            event.timestamp_ms,
+            event.pointer_id,
+            phase,
+            decision,
+            pointer_capture_before,
+            pointer_capture_after));
+    }
+
+    if (phase == pointer_phase::cancel
         && has_pointer_capture_state(diagnostics_.pointer_capture)
         && pointer_capture_changed(diagnostics_.pointer_capture, pointer_capture_after)) {
-        append_policy(make_policy(
+        action_route_policy_diagnostic policy = make_policy(
             action_route_policy_kind::pointer_capture_reset,
             event.timestamp_ms,
             diagnostics_.pointer_capture,
-            pointer_capture_after));
+            pointer_capture_after);
+        apply_pointer_arbitration(policy, event.pointer_id, phase, decision);
+        append_policy(std::move(policy));
     }
     finish_route_diagnostics();
     return events;

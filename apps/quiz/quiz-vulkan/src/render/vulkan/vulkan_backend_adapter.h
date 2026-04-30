@@ -21,8 +21,10 @@ enum class vulkan_backend_fallback_reason {
     surface_unavailable,
     viewport_unavailable,
     begin_frame_failed,
+    acquire_image_failed,
     record_commands_failed,
     submit_frame_failed,
+    present_image_failed,
     present_frame_failed,
 };
 
@@ -63,6 +65,80 @@ struct vulkan_backend_lifecycle_readiness {
     {
         return instance_ready && device_ready && swapchain_ready
             && pipeline_ready && command_recorder_ready;
+    }
+};
+
+struct vulkan_swapchain_image_id {
+    std::size_t value = 0;
+};
+
+struct vulkan_swapchain_image_state {
+    vulkan_swapchain_image_id id;
+    bool available = false;
+    bool acquired = false;
+    bool presented = false;
+
+    bool ready_for_recording() const
+    {
+        return available && acquired;
+    }
+};
+
+enum class vulkan_swapchain_acquire_status {
+    not_requested,
+    acquired,
+    failed,
+};
+
+std::string_view swapchain_acquire_status_name(vulkan_swapchain_acquire_status status);
+
+enum class vulkan_swapchain_present_status {
+    not_requested,
+    presented,
+    failed,
+};
+
+std::string_view swapchain_present_status_name(vulkan_swapchain_present_status status);
+
+struct vulkan_swapchain_acquire_result {
+    vulkan_swapchain_acquire_status status = vulkan_swapchain_acquire_status::not_requested;
+    vulkan_swapchain_image_state image;
+
+    bool completed() const
+    {
+        return status == vulkan_swapchain_acquire_status::acquired && image.ready_for_recording();
+    }
+};
+
+struct vulkan_swapchain_present_result {
+    vulkan_swapchain_present_status status = vulkan_swapchain_present_status::not_requested;
+    vulkan_swapchain_image_id image_id;
+
+    bool completed() const
+    {
+        return status == vulkan_swapchain_present_status::presented;
+    }
+};
+
+struct vulkan_backend_swapchain_lifecycle_state {
+    bool acquire_requested = false;
+    bool present_requested = false;
+    vulkan_swapchain_acquire_result acquire;
+    vulkan_swapchain_present_result present;
+
+    bool acquired() const
+    {
+        return acquire_requested && acquire.completed();
+    }
+
+    bool presented() const
+    {
+        return present_requested && present.completed();
+    }
+
+    bool completed() const
+    {
+        return acquired() && presented();
     }
 };
 
@@ -282,6 +358,7 @@ private:
 struct vulkan_backend_frame_result {
     vulkan_surface_extent surface;
     vulkan_backend_lifecycle_readiness lifecycle;
+    vulkan_backend_swapchain_lifecycle_state swapchain;
     vulkan_backend_pipeline_state pipeline;
     vulkan_backend_command_recorder_state command_recorder;
     vulkan_backend_frame_stage reached_stage = vulkan_backend_frame_stage::not_started;
@@ -303,7 +380,8 @@ struct vulkan_backend_frame_result {
     {
         return reached_stage == vulkan_backend_frame_stage::frame_presented
             && lifecycle_ready && surface_ready && frame_begun && commands_recorded
-            && frame_submitted && frame_presented && !fallback_required;
+            && frame_submitted && frame_presented && swapchain.completed()
+            && !fallback_required;
     }
 };
 
@@ -314,8 +392,10 @@ public:
     virtual vulkan_backend_lifecycle_readiness current_lifecycle_readiness() const = 0;
     virtual vulkan_surface_extent current_surface_extent() const = 0;
     virtual bool begin_frame(vulkan_surface_extent surface) = 0;
+    virtual vulkan_swapchain_acquire_result acquire_next_image(vulkan_surface_extent surface) = 0;
     virtual bool record_frame_commands(const vulkan_frame_plan& plan) = 0;
     virtual bool submit_frame() = 0;
+    virtual vulkan_swapchain_present_result present_image(vulkan_swapchain_image_id image_id) = 0;
     virtual bool present_frame() = 0;
 };
 
@@ -324,8 +404,10 @@ public:
     vulkan_backend_lifecycle_readiness current_lifecycle_readiness() const override;
     vulkan_surface_extent current_surface_extent() const override;
     bool begin_frame(vulkan_surface_extent surface) override;
+    vulkan_swapchain_acquire_result acquire_next_image(vulkan_surface_extent surface) override;
     bool record_frame_commands(const vulkan_frame_plan& plan) override;
     bool submit_frame() override;
+    vulkan_swapchain_present_result present_image(vulkan_swapchain_image_id image_id) override;
     bool present_frame() override;
 };
 

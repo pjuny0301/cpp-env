@@ -283,10 +283,14 @@ std::string_view fallback_reason_name(vulkan_backend_fallback_reason reason)
         return "viewport_unavailable";
     case vulkan_backend_fallback_reason::begin_frame_failed:
         return "begin_frame_failed";
+    case vulkan_backend_fallback_reason::acquire_image_failed:
+        return "acquire_image_failed";
     case vulkan_backend_fallback_reason::record_commands_failed:
         return "record_commands_failed";
     case vulkan_backend_fallback_reason::submit_frame_failed:
         return "submit_frame_failed";
+    case vulkan_backend_fallback_reason::present_image_failed:
+        return "present_image_failed";
     case vulkan_backend_fallback_reason::present_frame_failed:
         return "present_frame_failed";
     }
@@ -315,6 +319,34 @@ std::string_view frame_stage_name(vulkan_backend_frame_stage stage)
         return "frame_submitted";
     case vulkan_backend_frame_stage::frame_presented:
         return "frame_presented";
+    }
+
+    return "unknown";
+}
+
+std::string_view swapchain_acquire_status_name(vulkan_swapchain_acquire_status status)
+{
+    switch (status) {
+    case vulkan_swapchain_acquire_status::not_requested:
+        return "not_requested";
+    case vulkan_swapchain_acquire_status::acquired:
+        return "acquired";
+    case vulkan_swapchain_acquire_status::failed:
+        return "failed";
+    }
+
+    return "unknown";
+}
+
+std::string_view swapchain_present_status_name(vulkan_swapchain_present_status status)
+{
+    switch (status) {
+    case vulkan_swapchain_present_status::not_requested:
+        return "not_requested";
+    case vulkan_swapchain_present_status::presented:
+        return "presented";
+    case vulkan_swapchain_present_status::failed:
+        return "failed";
     }
 
     return "unknown";
@@ -430,6 +462,15 @@ bool null_vulkan_backend_device::begin_frame(vulkan_surface_extent surface)
     return false;
 }
 
+vulkan_swapchain_acquire_result null_vulkan_backend_device::acquire_next_image(vulkan_surface_extent surface)
+{
+    static_cast<void>(surface);
+    return vulkan_swapchain_acquire_result{
+        .status = vulkan_swapchain_acquire_status::failed,
+        .image = {},
+    };
+}
+
 bool null_vulkan_backend_device::record_frame_commands(const vulkan_frame_plan& plan)
 {
     static_cast<void>(plan);
@@ -439,6 +480,15 @@ bool null_vulkan_backend_device::record_frame_commands(const vulkan_frame_plan& 
 bool null_vulkan_backend_device::submit_frame()
 {
     return false;
+}
+
+vulkan_swapchain_present_result null_vulkan_backend_device::present_image(
+    vulkan_swapchain_image_id image_id)
+{
+    return vulkan_swapchain_present_result{
+        .status = vulkan_swapchain_present_status::failed,
+        .image_id = image_id,
+    };
 }
 
 bool null_vulkan_backend_device::present_frame()
@@ -699,6 +749,13 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     }
     result.reached_stage = vulkan_backend_frame_stage::frame_begun;
 
+    result.swapchain.acquire_requested = true;
+    result.swapchain.acquire = device.acquire_next_image(result.surface);
+    if (!result.swapchain.acquire.completed()) {
+        result.fallback_reason = vulkan_backend_fallback_reason::acquire_image_failed;
+        return result;
+    }
+
     if (!command_recorder.begin_recording(result.surface, plan.batches.size())) {
         result.command_recorder = command_recorder.recorder_state();
         result.fallback_reason = vulkan_backend_fallback_reason::record_commands_failed;
@@ -732,6 +789,13 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
         return result;
     }
     result.reached_stage = vulkan_backend_frame_stage::frame_submitted;
+
+    result.swapchain.present_requested = true;
+    result.swapchain.present = device.present_image(result.swapchain.acquire.image.id);
+    if (!result.swapchain.present.completed()) {
+        result.fallback_reason = vulkan_backend_fallback_reason::present_image_failed;
+        return result;
+    }
 
     result.frame_presented = device.present_frame();
     if (!result.frame_presented) {

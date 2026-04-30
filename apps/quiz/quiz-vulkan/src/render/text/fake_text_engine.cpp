@@ -17,8 +17,11 @@ struct shaped_glyph {
     std::size_t byte_offset = 0;
     std::size_t byte_count = 1;
     std::uint32_t code_point = 0;
+    font_face_id resolved_face_id = 0;
     float advance = 0.0f;
     float line_height = 0.0f;
+    bool valid = true;
+    bool cluster_start = true;
     bool newline = false;
 };
 
@@ -137,7 +140,8 @@ std::vector<shaped_glyph> shape_request(
                 .fallback_style_token = request.style_catalog.fallback_style.id,
             });
         }
-        record_font_fallback(diagnostics, run_index, run.style_token, font_resolver.resolve(style));
+        const font_resolver_result font_resolution = font_resolver.resolve(style);
+        record_font_fallback(diagnostics, run_index, run.style_token, font_resolution);
 
         for (const utf8_text_codepoint& scalar : iterate_utf8_text_run(run.text)) {
             const std::uint32_t code_point = scalar.code_point;
@@ -149,8 +153,11 @@ std::vector<shaped_glyph> shape_request(
                 .byte_offset = scalar.byte_offset,
                 .byte_count = scalar.byte_count,
                 .code_point = code_point,
+                .resolved_face_id = font_resolution.resolved_face_id,
                 .advance = glyph_advance_for(style, code_point),
                 .line_height = line_height_for(style),
+                .valid = scalar.valid,
+                .cluster_start = scalar.cluster_start,
                 .newline = code_point == '\n' || code_point == '\r',
             });
         }
@@ -203,8 +210,8 @@ std::vector<utf8_text_codepoint> line_break_codepoints_for(const std::vector<sha
             .code_point = glyphs[index].code_point,
             .byte_offset = index,
             .byte_count = 1,
-            .valid = true,
-            .cluster_start = true,
+            .valid = glyphs[index].valid,
+            .cluster_start = glyphs[index].cluster_start,
         });
     }
     return codepoints;
@@ -383,6 +390,59 @@ float visible_line_height(const render_text_request& request, const float y, con
     return std::min(line_height, clip_bottom - y);
 }
 
+void append_glyph_clusters_for_line(
+    const std::vector<shaped_glyph>& shaped_glyphs,
+    const laid_out_line& line,
+    const std::size_t line_index,
+    const float baseline,
+    const std::size_t first_layout_glyph_offset,
+    std::vector<render_text_glyph_cluster>& clusters)
+{
+    bool has_active_cluster = false;
+    render_text_glyph_cluster active_cluster;
+    std::size_t layout_glyph_offset = first_layout_glyph_offset;
+
+    for (const std::size_t glyph_index : line.glyph_indices) {
+        const shaped_glyph& glyph = shaped_glyphs[glyph_index];
+        if (glyph.newline) {
+            continue;
+        }
+
+        const bool starts_new_cluster =
+            !has_active_cluster
+            || glyph.cluster_start
+            || active_cluster.run_index != glyph.run_index
+            || active_cluster.resolved_face_id != glyph.resolved_face_id;
+        if (starts_new_cluster) {
+            if (has_active_cluster) {
+                clusters.push_back(active_cluster);
+            }
+            active_cluster = render_text_glyph_cluster{
+                .run_index = glyph.run_index,
+                .byte_offset = glyph.byte_offset,
+                .byte_count = glyph.byte_count,
+                .glyph_offset = layout_glyph_offset,
+                .glyph_count = 1,
+                .advance = glyph.advance,
+                .baseline = baseline,
+                .line_index = line_index,
+                .resolved_face_id = glyph.resolved_face_id,
+            };
+            has_active_cluster = true;
+        } else {
+            active_cluster.byte_count = (glyph.byte_offset + glyph.byte_count) - active_cluster.byte_offset;
+            ++active_cluster.glyph_count;
+            active_cluster.advance += glyph.advance;
+        }
+
+        ++layout_glyph_offset;
+    }
+
+    if (has_active_cluster) {
+        clusters.push_back(active_cluster);
+    }
+}
+
 render_text_revision update_atlas_for_layout(
     const std::vector<shaped_glyph>& shaped_glyphs,
     const std::vector<laid_out_line>& lines,
@@ -445,7 +505,16 @@ render_text_layout fake_text_engine::layout_text(const render_text_request& requ
     layout.measure = measure_lines(lines);
 
     float y = request.bounds.y;
+    std::size_t line_index = 0;
     for (const laid_out_line& line : lines) {
+        append_glyph_clusters_for_line(
+            shaped_glyphs,
+            line,
+            line_index,
+            y + line.height,
+            layout.glyphs.size(),
+            diagnostics_.glyph_clusters);
+
         float x = aligned_line_x(request, line.width);
         for (const std::size_t glyph_index : line.glyph_indices) {
             const shaped_glyph& glyph = shaped_glyphs[glyph_index];
@@ -464,6 +533,7 @@ render_text_layout fake_text_engine::layout_text(const render_text_request& requ
             x += glyph.advance;
         }
         y += line.height;
+        ++line_index;
     }
 
     return layout;

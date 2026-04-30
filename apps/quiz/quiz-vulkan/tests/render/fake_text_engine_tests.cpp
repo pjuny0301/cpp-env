@@ -1072,6 +1072,100 @@ void test_fake_caret_positions_follow_wrapped_hangul_lines()
     require(near(carets[4].bounds.y, 54.0f), "fifth wrapped Hangul caret y advances by two line heights");
 }
 
+void test_fake_glyph_clusters_track_utf8_runs_and_font_faces()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "A\xed\x95\x9c", .style_token = "body"},
+        render_text_run{.text = "e\xcc\x81", .style_token = "caption"},
+    };
+    request.bounds = render_rect{2.0f, 3.0f, 200.0f, 0.0f};
+    request.style_catalog = make_style_catalog();
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    const render_text_layout layout = engine.layout_text(request);
+    require(layout.glyphs.size() == 4, "glyph cluster fixture emits decoded glyph scalars");
+    require(engine.last_diagnostics().has_glyph_clusters(), "layout records glyph cluster diagnostics");
+
+    const std::vector<render_text_glyph_cluster>& clusters = engine.last_diagnostics().glyph_clusters;
+    require(clusters.size() == 3, "glyph clusters combine ASCII base with combining mark");
+
+    require(clusters[0].run_index == 0, "first glyph cluster records first run");
+    require(clusters[0].byte_offset == 0 && clusters[0].byte_count == 1, "first glyph cluster tracks ASCII bytes");
+    require(clusters[0].glyph_offset == 0 && clusters[0].glyph_count == 1, "first glyph cluster tracks glyph range");
+    require(near(clusters[0].advance, 10.0f), "first glyph cluster tracks ASCII advance");
+    require(near(clusters[0].baseline, 27.0f), "first glyph cluster records line baseline");
+    require(clusters[0].line_index == 0, "first glyph cluster records line index");
+    require(clusters[0].resolved_face_id == 1, "first glyph cluster records resolved Sans face");
+
+    require(clusters[1].run_index == 0, "Hangul glyph cluster records first run");
+    require(clusters[1].byte_offset == 1 && clusters[1].byte_count == 3, "Hangul glyph cluster tracks UTF-8 bytes");
+    require(clusters[1].glyph_offset == 1 && clusters[1].glyph_count == 1, "Hangul glyph cluster tracks glyph range");
+    require(near(clusters[1].advance, 20.0f), "Hangul glyph cluster tracks full-width advance");
+    require(near(clusters[1].baseline, 27.0f), "Hangul glyph cluster keeps first line baseline");
+    require(clusters[1].line_index == 0, "Hangul glyph cluster remains on first line");
+    require(clusters[1].resolved_face_id == 1, "Hangul glyph cluster records body resolved face");
+
+    require(clusters[2].run_index == 1, "combining glyph cluster records second run");
+    require(clusters[2].byte_offset == 0 && clusters[2].byte_count == 3, "combining glyph cluster spans base bytes");
+    require(clusters[2].glyph_offset == 2 && clusters[2].glyph_count == 2, "combining glyph cluster spans two glyphs");
+    require(near(clusters[2].advance, 6.0f), "combining glyph cluster keeps base advance");
+    require(near(clusters[2].baseline, 27.0f), "combining glyph cluster shares first line baseline");
+    require(clusters[2].line_index == 0, "combining glyph cluster remains on first line");
+    require(clusters[2].resolved_face_id == 3, "combining glyph cluster records resolved Serif face");
+}
+
+void test_fake_glyph_clusters_track_wrapped_hangul_lines()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "\xed\x95\x9c\xea\xb8\x80\xeb\x82\xa0", .style_token = "body"},
+    };
+    request.bounds = render_rect{3.0f, 5.0f, 25.0f, 0.0f};
+    request.style_catalog = make_style_catalog();
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::word,
+        .alignment = render_text_alignment::end,
+        .max_lines = 0,
+    };
+
+    const render_text_layout layout = engine.layout_text(request);
+    require(layout.glyphs.size() == 3, "wrapped Hangul cluster fixture emits one glyph per syllable");
+
+    const std::vector<render_text_glyph_cluster>& clusters = engine.last_diagnostics().glyph_clusters;
+    require(clusters.size() == 3, "wrapped Hangul records one cluster per syllable");
+
+    require(clusters[0].byte_offset == 0 && clusters[0].byte_count == 3, "first wrapped cluster tracks bytes");
+    require(clusters[1].byte_offset == 3 && clusters[1].byte_count == 3, "second wrapped cluster tracks bytes");
+    require(clusters[2].byte_offset == 6 && clusters[2].byte_count == 3, "third wrapped cluster tracks bytes");
+    require(clusters[0].glyph_offset == 0 && clusters[1].glyph_offset == 1, "wrapped clusters track glyph offsets");
+    require(clusters[2].glyph_offset == 2, "final wrapped cluster tracks glyph offset");
+    require(clusters[0].glyph_count == 1 && clusters[1].glyph_count == 1, "wrapped clusters keep one glyph each");
+    require(clusters[2].glyph_count == 1, "final wrapped cluster keeps one glyph");
+    require(near(clusters[0].advance, 20.0f), "first wrapped cluster tracks advance");
+    require(near(clusters[1].advance, 20.0f), "second wrapped cluster tracks advance");
+    require(near(clusters[2].advance, 20.0f), "third wrapped cluster tracks advance");
+    require(clusters[0].line_index == 0, "first wrapped cluster records first line");
+    require(clusters[1].line_index == 1, "second wrapped cluster records second line");
+    require(clusters[2].line_index == 2, "third wrapped cluster records third line");
+    require(near(clusters[0].baseline, 29.0f), "first wrapped cluster records baseline");
+    require(near(clusters[1].baseline, 53.0f), "second wrapped cluster records baseline");
+    require(near(clusters[2].baseline, 77.0f), "third wrapped cluster records baseline");
+    require(clusters[0].resolved_face_id == 1, "first wrapped cluster records resolved face");
+    require(clusters[1].resolved_face_id == 1, "second wrapped cluster records resolved face");
+    require(clusters[2].resolved_face_id == 1, "third wrapped cluster records resolved face");
+}
+
 void test_fake_utf8_hangul_uses_codepoints()
 {
     using namespace quiz_vulkan::render;
@@ -1384,6 +1478,8 @@ int main()
     test_fake_caret_and_selection_clip_to_request_height();
     test_fake_selection_rects_follow_wrapped_hangul_lines();
     test_fake_caret_positions_follow_wrapped_hangul_lines();
+    test_fake_glyph_clusters_track_utf8_runs_and_font_faces();
+    test_fake_glyph_clusters_track_wrapped_hangul_lines();
     test_fake_utf8_hangul_uses_codepoints();
     test_fake_utf8_handles_wide_combining_and_invalid_sequences();
     test_fake_diagnostics_reset_after_clean_request();

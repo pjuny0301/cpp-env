@@ -1,10 +1,12 @@
 #include "render/render_draw_list.h"
 #include "render/text/fake_text_engine.h"
 #include "render/text/font_resolver.h"
+#include "render/text/glyph_run.h"
 #include "render/text/scene_text_metrics_adapter.h"
 #include "render/text/text_engine.h"
 
 #include <concepts>
+#include <cstddef>
 #include <vector>
 
 namespace {
@@ -45,7 +47,21 @@ static_assert(requires(render::font_resolver_result result) {
 
 static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.font_fallbacks } -> std::same_as<std::vector<render::fake_text_engine_font_fallback>&>;
+    { diagnostics.glyph_clusters } -> std::same_as<std::vector<render::render_text_glyph_cluster>&>;
     { diagnostics.used_font_fallback() } -> std::same_as<bool>;
+    { diagnostics.has_glyph_clusters() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::render_text_glyph_cluster cluster) {
+    { cluster.run_index } -> std::same_as<std::size_t&>;
+    { cluster.byte_offset } -> std::same_as<std::size_t&>;
+    { cluster.byte_count } -> std::same_as<std::size_t&>;
+    { cluster.glyph_offset } -> std::same_as<std::size_t&>;
+    { cluster.glyph_count } -> std::same_as<std::size_t&>;
+    { cluster.advance } -> std::same_as<float&>;
+    { cluster.baseline } -> std::same_as<float&>;
+    { cluster.line_index } -> std::same_as<std::size_t&>;
+    { cluster.resolved_face_id } -> std::same_as<render::font_face_id&>;
 });
 
 static_assert(requires(render::render_draw_command command) {

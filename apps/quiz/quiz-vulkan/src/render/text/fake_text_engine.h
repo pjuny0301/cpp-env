@@ -1,6 +1,7 @@
 #pragma once
 
 #include "render/text/font_resolver.h"
+#include "render/text/glyph_run.h"
 #include "render/text/text_engine.h"
 
 #include <cstddef>
@@ -32,6 +33,7 @@ struct fake_text_engine_font_fallback {
 struct fake_text_engine_diagnostics {
     std::vector<fake_text_engine_style_fallback> style_fallbacks;
     std::vector<fake_text_engine_font_fallback> font_fallbacks;
+    std::vector<render_text_glyph_cluster> glyph_clusters;
     std::size_t invalid_utf8_sequence_count = 0;
 
     bool used_style_fallback() const
@@ -47,6 +49,11 @@ struct fake_text_engine_diagnostics {
     bool used_font_fallback() const
     {
         return !font_fallbacks.empty();
+    }
+
+    bool has_glyph_clusters() const
+    {
+        return !glyph_clusters.empty();
     }
 };
 

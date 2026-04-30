@@ -378,6 +378,86 @@ const vulkan_pipeline_descriptor* find_pipeline_descriptor(
     return nullptr;
 }
 
+vulkan_pipeline_lifecycle_snapshot make_pipeline_lifecycle_snapshot(
+    const vulkan_draw_batch& batch,
+    vulkan_pipeline_lifecycle_status render_pass_status)
+{
+    return vulkan_pipeline_lifecycle_snapshot{
+        .batch_kind = batch.kind,
+        .command_index = batch.command_index,
+        .render_pass_status = render_pass_status,
+        .failed_stage = vulkan_pipeline_lifecycle_stage::render_pass,
+        .missing_shader_stage = vulkan_shader_stage::vertex,
+        .missing_shader_id = {},
+    };
+}
+
+vulkan_pipeline_shader_stage_snapshot make_pipeline_shader_stage_snapshot(
+    const vulkan_draw_batch& batch,
+    const vulkan_pipeline_descriptor& descriptor)
+{
+    return vulkan_pipeline_shader_stage_snapshot{
+        .batch_kind = batch.kind,
+        .command_index = batch.command_index,
+        .vertex_shader = descriptor.vertex_shader,
+        .fragment_shader = descriptor.fragment_shader,
+    };
+}
+
+void mark_pipeline_lifecycle_failure(
+    vulkan_backend_pipeline_state& state,
+    vulkan_pipeline_lifecycle_snapshot snapshot,
+    vulkan_pipeline_lifecycle_stage stage)
+{
+    snapshot.failed_stage = stage;
+    if (stage == vulkan_pipeline_lifecycle_stage::render_pass) {
+        snapshot.render_pass_status = vulkan_pipeline_lifecycle_status::unavailable;
+    } else if (stage == vulkan_pipeline_lifecycle_stage::shader_stages) {
+        snapshot.shader_stage_status = vulkan_pipeline_lifecycle_status::unavailable;
+    } else {
+        snapshot.pipeline_status = vulkan_pipeline_lifecycle_status::unavailable;
+    }
+
+    state.lifecycle.missing_pipeline = stage == vulkan_pipeline_lifecycle_stage::pipeline;
+    state.lifecycle.missing_shader_stage = stage == vulkan_pipeline_lifecycle_stage::shader_stages;
+    state.lifecycle.missing_render_pass = stage == vulkan_pipeline_lifecycle_stage::render_pass;
+    state.lifecycle.failed_stage = stage;
+    state.lifecycle.missing_batch_kind = snapshot.batch_kind;
+    state.lifecycle.missing_command_index = snapshot.command_index;
+    state.lifecycle.pipeline_snapshots.push_back(std::move(snapshot));
+}
+
+void mark_pipeline_lifecycle_shader_failure(
+    vulkan_backend_pipeline_state& state,
+    vulkan_pipeline_lifecycle_snapshot snapshot,
+    vulkan_pipeline_shader_stage_snapshot shader_snapshot,
+    vulkan_shader_stage stage,
+    const vulkan_shader_module_id& shader_id)
+{
+    snapshot.missing_shader_stage = stage;
+    snapshot.missing_shader_id = shader_id;
+    state.lifecycle.missing_shader_stage_kind = stage;
+    state.lifecycle.missing_shader_id = shader_id;
+    state.lifecycle.shader_stage_snapshots.push_back(std::move(shader_snapshot));
+    mark_pipeline_lifecycle_failure(
+        state,
+        std::move(snapshot),
+        vulkan_pipeline_lifecycle_stage::shader_stages);
+}
+
+void mark_pipeline_lifecycle_success(
+    vulkan_backend_pipeline_state& state,
+    vulkan_pipeline_lifecycle_snapshot snapshot,
+    vulkan_pipeline_shader_stage_snapshot shader_snapshot)
+{
+    snapshot.shader_stage_status = vulkan_pipeline_lifecycle_status::ready;
+    snapshot.pipeline_status = vulkan_pipeline_lifecycle_status::ready;
+    shader_snapshot.vertex_stage_ready = true;
+    shader_snapshot.fragment_stage_ready = true;
+    state.lifecycle.shader_stage_snapshots.push_back(std::move(shader_snapshot));
+    state.lifecycle.pipeline_snapshots.push_back(std::move(snapshot));
+}
+
 void mark_missing_pipeline_descriptor(
     vulkan_backend_pipeline_state& state,
     const vulkan_draw_batch& batch)
@@ -902,6 +982,34 @@ std::string_view shader_stage_name(vulkan_shader_stage stage)
     return "unknown";
 }
 
+std::string_view pipeline_lifecycle_stage_name(vulkan_pipeline_lifecycle_stage stage)
+{
+    switch (stage) {
+    case vulkan_pipeline_lifecycle_stage::render_pass:
+        return "render_pass";
+    case vulkan_pipeline_lifecycle_stage::shader_stages:
+        return "shader_stages";
+    case vulkan_pipeline_lifecycle_stage::pipeline:
+        return "pipeline";
+    }
+
+    return "unknown";
+}
+
+std::string_view pipeline_lifecycle_status_name(vulkan_pipeline_lifecycle_status status)
+{
+    switch (status) {
+    case vulkan_pipeline_lifecycle_status::not_checked:
+        return "not_checked";
+    case vulkan_pipeline_lifecycle_status::ready:
+        return "ready";
+    case vulkan_pipeline_lifecycle_status::unavailable:
+        return "unavailable";
+    }
+
+    return "unknown";
+}
+
 bool vulkan_backend_shader_registry_state::contains(
     const vulkan_shader_module_id& id,
     vulkan_shader_stage stage) const
@@ -965,7 +1073,7 @@ const vulkan_pipeline_descriptor* vulkan_backend_pipeline_state::descriptor_for(
 
 bool vulkan_backend_pipeline_state::completed() const
 {
-    return ready && !missing_pipeline;
+    return ready && !missing_pipeline && lifecycle.completed();
 }
 
 vulkan_backend_lifecycle_readiness null_vulkan_backend_device::current_lifecycle_readiness() const
@@ -1044,13 +1152,34 @@ diagnostic_vulkan_pipeline_cache::diagnostic_vulkan_pipeline_cache(
     apply_pipeline_descriptor_overrides(
         state_.pipeline_descriptors,
         std::move(options_.pipeline_descriptors));
-    state_.ready = true;
+    state_.lifecycle.checked = true;
+    state_.lifecycle.render_pass = options_.render_pass;
+    state_.lifecycle.missing_render_pass = !state_.lifecycle.render_pass.valid();
+    state_.ready = state_.lifecycle.render_pass_ready();
 }
 
 bool diagnostic_vulkan_pipeline_cache::ensure_pipeline(const vulkan_draw_batch& batch)
 {
     state_.cache_checked = true;
     ++state_.requested_pipeline_count;
+    ++state_.lifecycle.requested_pipeline_count;
+
+    vulkan_pipeline_lifecycle_snapshot lifecycle_snapshot = make_pipeline_lifecycle_snapshot(
+        batch,
+        state_.lifecycle.render_pass_ready()
+            ? vulkan_pipeline_lifecycle_status::ready
+            : vulkan_pipeline_lifecycle_status::unavailable);
+    if (!state_.lifecycle.render_pass_ready()) {
+        state_.missing_pipeline = true;
+        state_.ready = false;
+        state_.missing_batch_kind = batch.kind;
+        state_.missing_command_index = batch.command_index;
+        mark_pipeline_lifecycle_failure(
+            state_,
+            std::move(lifecycle_snapshot),
+            vulkan_pipeline_lifecycle_stage::render_pass);
+        return false;
+    }
 
     vulkan_pipeline_cache_entry* entry = find_pipeline_entry(state_.cache_entries, batch.kind);
     if (entry == nullptr) {
@@ -1058,6 +1187,11 @@ bool diagnostic_vulkan_pipeline_cache::ensure_pipeline(const vulkan_draw_batch& 
         state_.ready = false;
         state_.missing_batch_kind = batch.kind;
         state_.missing_command_index = batch.command_index;
+        lifecycle_snapshot.shader_stage_status = vulkan_pipeline_lifecycle_status::not_checked;
+        mark_pipeline_lifecycle_failure(
+            state_,
+            std::move(lifecycle_snapshot),
+            vulkan_pipeline_lifecycle_stage::pipeline);
         return false;
     }
 
@@ -1069,25 +1203,55 @@ bool diagnostic_vulkan_pipeline_cache::ensure_pipeline(const vulkan_draw_batch& 
         state_.ready = false;
         state_.missing_batch_kind = batch.kind;
         state_.missing_command_index = batch.command_index;
+        lifecycle_snapshot.shader_stage_status = vulkan_pipeline_lifecycle_status::not_checked;
+        mark_pipeline_lifecycle_failure(
+            state_,
+            std::move(lifecycle_snapshot),
+            vulkan_pipeline_lifecycle_stage::pipeline);
         return false;
     }
 
     const vulkan_pipeline_descriptor* descriptor = state_.descriptor_for(batch.kind);
     if (descriptor == nullptr || !descriptor->complete()) {
         mark_missing_pipeline_descriptor(state_, batch);
+        lifecycle_snapshot.shader_stage_status = vulkan_pipeline_lifecycle_status::not_checked;
+        mark_pipeline_lifecycle_failure(
+            state_,
+            std::move(lifecycle_snapshot),
+            vulkan_pipeline_lifecycle_stage::pipeline);
         return false;
     }
+    vulkan_pipeline_shader_stage_snapshot shader_stage_snapshot =
+        make_pipeline_shader_stage_snapshot(batch, *descriptor);
     if (!shader_registry_.require_shader(batch.kind, vulkan_shader_stage::vertex, descriptor->vertex_shader)) {
         mark_missing_pipeline_shader(state_, batch, shader_registry_.registry_state());
+        mark_pipeline_lifecycle_shader_failure(
+            state_,
+            std::move(lifecycle_snapshot),
+            std::move(shader_stage_snapshot),
+            vulkan_shader_stage::vertex,
+            descriptor->vertex_shader);
         return false;
     }
+    shader_stage_snapshot.vertex_stage_ready = true;
     if (!shader_registry_.require_shader(batch.kind, vulkan_shader_stage::fragment, descriptor->fragment_shader)) {
         mark_missing_pipeline_shader(state_, batch, shader_registry_.registry_state());
+        mark_pipeline_lifecycle_shader_failure(
+            state_,
+            std::move(lifecycle_snapshot),
+            std::move(shader_stage_snapshot),
+            vulkan_shader_stage::fragment,
+            descriptor->fragment_shader);
         return false;
     }
+    shader_stage_snapshot.fragment_stage_ready = true;
 
     state_.shader_registry = shader_registry_.registry_state();
-    state_.ready = !state_.missing_pipeline;
+    mark_pipeline_lifecycle_success(
+        state_,
+        std::move(lifecycle_snapshot),
+        std::move(shader_stage_snapshot));
+    state_.ready = !state_.missing_pipeline && state_.lifecycle.render_pass_ready();
     return true;
 }
 

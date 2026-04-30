@@ -426,6 +426,42 @@ void test_vulkan_shader_stage_names_are_stable()
         "shader stage name for fragment is stable");
 }
 
+void test_vulkan_pipeline_lifecycle_names_are_stable()
+{
+    using namespace quiz_vulkan::render;
+
+    require(
+        vulkan_backend::pipeline_lifecycle_stage_name(
+            vulkan_backend::vulkan_pipeline_lifecycle_stage::render_pass)
+            == std::string_view{"render_pass"},
+        "pipeline lifecycle stage name for render pass is stable");
+    require(
+        vulkan_backend::pipeline_lifecycle_stage_name(
+            vulkan_backend::vulkan_pipeline_lifecycle_stage::shader_stages)
+            == std::string_view{"shader_stages"},
+        "pipeline lifecycle stage name for shader stages is stable");
+    require(
+        vulkan_backend::pipeline_lifecycle_stage_name(
+            vulkan_backend::vulkan_pipeline_lifecycle_stage::pipeline)
+            == std::string_view{"pipeline"},
+        "pipeline lifecycle stage name for pipeline is stable");
+    require(
+        vulkan_backend::pipeline_lifecycle_status_name(
+            vulkan_backend::vulkan_pipeline_lifecycle_status::not_checked)
+            == std::string_view{"not_checked"},
+        "pipeline lifecycle status name for not checked is stable");
+    require(
+        vulkan_backend::pipeline_lifecycle_status_name(
+            vulkan_backend::vulkan_pipeline_lifecycle_status::ready)
+            == std::string_view{"ready"},
+        "pipeline lifecycle status name for ready is stable");
+    require(
+        vulkan_backend::pipeline_lifecycle_status_name(
+            vulkan_backend::vulkan_pipeline_lifecycle_status::unavailable)
+            == std::string_view{"unavailable"},
+        "pipeline lifecycle status name for unavailable is stable");
+}
+
 quiz_vulkan::render::render_draw_command make_quad_command(
     std::string node_id,
     quiz_vulkan::render::render_rect bounds,
@@ -1177,6 +1213,16 @@ void test_vulkan_diagnostic_pipeline_cache_reports_batch_capabilities()
     require(state.shader_registry.registered_shader_count == 8, "pipeline cache registers vertex and fragment shaders");
     require(state.shader_registry.registry_checked, "pipeline cache verifies shaders while checking pipelines");
     require(!state.shader_registry.missing_shader, "pipeline cache reports no missing shader on happy path");
+    require(state.lifecycle.checked, "pipeline lifecycle is checked");
+    require(state.lifecycle.render_pass.valid(), "pipeline lifecycle has a valid render pass descriptor");
+    require(state.lifecycle.render_pass_ready(), "pipeline lifecycle render pass is ready");
+    require(state.lifecycle.completed(), "pipeline lifecycle completes when requested pipelines are ready");
+    require(!state.lifecycle.missing_render_pass, "pipeline lifecycle reports no missing render pass");
+    require(!state.lifecycle.missing_shader_stage, "pipeline lifecycle reports no missing shader stage");
+    require(!state.lifecycle.missing_pipeline, "pipeline lifecycle reports no missing pipeline");
+    require(state.lifecycle.requested_pipeline_count == 2, "pipeline lifecycle records requested pipeline count");
+    require(state.lifecycle.pipeline_snapshots.size() == 2, "pipeline lifecycle stores one snapshot per request");
+    require(state.lifecycle.shader_stage_snapshots.size() == 2, "pipeline lifecycle stores one shader snapshot per request");
     require(
         state.descriptor_for(vulkan_backend::vulkan_batch_kind::quad) != nullptr,
         "pipeline cache exposes quad descriptor");
@@ -1202,6 +1248,35 @@ void test_vulkan_diagnostic_pipeline_cache_reports_batch_capabilities()
         state.cache_entries[3].kind == vulkan_backend::vulkan_batch_kind::debug_bounds,
         "fourth pipeline cache entry is debug bounds");
     require(!state.cache_entries[3].requested, "debug pipeline cache entry is not requested");
+
+    const vulkan_backend::vulkan_pipeline_lifecycle_snapshot& quad_lifecycle =
+        state.lifecycle.pipeline_snapshots[0];
+    require(quad_lifecycle.batch_kind == vulkan_backend::vulkan_batch_kind::quad, "first lifecycle request is quad");
+    require(quad_lifecycle.command_index == 0, "quad lifecycle snapshot records command index");
+    require(quad_lifecycle.completed(), "quad lifecycle snapshot completes");
+    require(
+        quad_lifecycle.render_pass_status == vulkan_backend::vulkan_pipeline_lifecycle_status::ready,
+        "quad lifecycle render pass is ready");
+    require(
+        quad_lifecycle.shader_stage_status == vulkan_backend::vulkan_pipeline_lifecycle_status::ready,
+        "quad lifecycle shader stages are ready");
+    require(
+        quad_lifecycle.pipeline_status == vulkan_backend::vulkan_pipeline_lifecycle_status::ready,
+        "quad lifecycle pipeline is ready");
+
+    const vulkan_backend::vulkan_pipeline_shader_stage_snapshot& quad_shaders =
+        state.lifecycle.shader_stage_snapshots[0];
+    require(quad_shaders.completed(), "quad shader lifecycle snapshot completes");
+    require(quad_shaders.vertex_shader.value == "quad.vertex", "quad shader lifecycle records vertex shader id");
+    require(quad_shaders.fragment_shader.value == "quad.fragment", "quad shader lifecycle records fragment shader id");
+    require(quad_shaders.vertex_stage_ready, "quad vertex stage is ready");
+    require(quad_shaders.fragment_stage_ready, "quad fragment stage is ready");
+
+    const vulkan_backend::vulkan_pipeline_lifecycle_snapshot& image_lifecycle =
+        state.lifecycle.pipeline_snapshots[1];
+    require(image_lifecycle.batch_kind == vulkan_backend::vulkan_batch_kind::image, "second lifecycle request is image");
+    require(image_lifecycle.command_index == 1, "image lifecycle snapshot records command index");
+    require(image_lifecycle.completed(), "image lifecycle snapshot completes");
 }
 
 void test_vulkan_diagnostic_pipeline_cache_identifies_missing_batch_pipeline()
@@ -1254,6 +1329,89 @@ void test_vulkan_diagnostic_pipeline_cache_identifies_missing_batch_pipeline()
     require(state.cache_entries[2].requested, "missing pipeline cache records image request");
     require(!state.cache_entries[2].available, "missing pipeline cache entry records unavailable image pipeline");
     require(state.cache_entries[2].last_command_index == 1, "missing pipeline cache entry records failed command index");
+    require(state.lifecycle.checked, "missing pipeline lifecycle is checked");
+    require(!state.lifecycle.completed(), "missing pipeline lifecycle does not complete");
+    require(!state.lifecycle.missing_render_pass, "missing pipeline lifecycle keeps render pass ready");
+    require(!state.lifecycle.missing_shader_stage, "missing pipeline lifecycle does not check shaders");
+    require(state.lifecycle.missing_pipeline, "missing pipeline lifecycle records pipeline failure");
+    require(
+        state.lifecycle.failed_stage == vulkan_backend::vulkan_pipeline_lifecycle_stage::pipeline,
+        "missing pipeline lifecycle identifies pipeline stage");
+    require(
+        state.lifecycle.missing_batch_kind == vulkan_backend::vulkan_batch_kind::image,
+        "missing pipeline lifecycle records image batch");
+    require(state.lifecycle.missing_command_index == 1, "missing pipeline lifecycle records command index");
+    require(state.lifecycle.pipeline_snapshots.size() == 2, "missing pipeline lifecycle stores snapshots through failure");
+    require(state.lifecycle.pipeline_snapshots[0].completed(), "missing pipeline lifecycle preserves completed quad snapshot");
+    require(
+        state.lifecycle.pipeline_snapshots[1].pipeline_status
+            == vulkan_backend::vulkan_pipeline_lifecycle_status::unavailable,
+        "missing pipeline lifecycle marks image pipeline unavailable");
+    require(
+        state.lifecycle.pipeline_snapshots[1].failed_stage
+            == vulkan_backend::vulkan_pipeline_lifecycle_stage::pipeline,
+        "missing pipeline lifecycle snapshot records failed stage");
+}
+
+void test_vulkan_diagnostic_pipeline_cache_identifies_unavailable_render_pass()
+{
+    using namespace quiz_vulkan::render;
+
+    render_draw_list draw_list;
+    draw_list.commands.push_back(make_quad_command(
+        "quad",
+        render_rect{10.0f, 10.0f, 20.0f, 20.0f},
+        render_color{1.0f, 0.0f, 0.0f, 1.0f}));
+
+    const vulkan_backend::vulkan_frame_plan plan = vulkan_backend::build_vulkan_frame_plan(
+        draw_list,
+        vulkan_backend::vulkan_frame_plan_options{
+            .viewport = render_rect{0.0f, 0.0f, 100.0f, 100.0f},
+            .surface_width = 10,
+            .surface_height = 10,
+        });
+
+    vulkan_backend::diagnostic_vulkan_pipeline_cache cache(
+        vulkan_backend::diagnostic_vulkan_pipeline_cache_options{
+            .render_pass = vulkan_backend::vulkan_render_pass_descriptor{
+                .color_attachment_count = 0,
+                .has_depth_attachment = false,
+                .surface_compatible = true,
+            },
+        });
+
+    require(!cache.ensure_pipeline(plan.batches.front()), "pipeline cache reports unavailable render pass");
+
+    const vulkan_backend::vulkan_backend_pipeline_state& state = cache.pipeline_state();
+    require(state.cache_checked, "render pass failure checks pipeline cache");
+    require(!state.ready, "render pass failure marks pipeline cache not ready");
+    require(!state.completed(), "render pass failure does not complete pipeline cache");
+    require(state.missing_pipeline, "render pass failure marks pipeline unavailable");
+    require(state.lifecycle.checked, "render pass lifecycle is checked");
+    require(!state.lifecycle.render_pass.valid(), "render pass lifecycle records invalid descriptor");
+    require(!state.lifecycle.render_pass_ready(), "render pass lifecycle is not ready");
+    require(state.lifecycle.missing_render_pass, "render pass lifecycle records missing render pass");
+    require(!state.lifecycle.missing_shader_stage, "render pass lifecycle does not check shaders");
+    require(!state.lifecycle.missing_pipeline, "render pass lifecycle failure is not a pipeline-object miss");
+    require(
+        state.lifecycle.failed_stage == vulkan_backend::vulkan_pipeline_lifecycle_stage::render_pass,
+        "render pass lifecycle identifies render pass stage");
+    require(state.lifecycle.missing_command_index == 0, "render pass lifecycle records command index");
+    require(state.lifecycle.requested_pipeline_count == 1, "render pass lifecycle records one request");
+    require(state.lifecycle.pipeline_snapshots.size() == 1, "render pass lifecycle stores failed request snapshot");
+    require(state.lifecycle.shader_stage_snapshots.empty(), "render pass lifecycle stores no shader snapshot");
+    require(
+        state.lifecycle.pipeline_snapshots.front().render_pass_status
+            == vulkan_backend::vulkan_pipeline_lifecycle_status::unavailable,
+        "render pass lifecycle marks render pass unavailable");
+    require(
+        state.lifecycle.pipeline_snapshots.front().shader_stage_status
+            == vulkan_backend::vulkan_pipeline_lifecycle_status::not_checked,
+        "render pass lifecycle does not check shader stages");
+    require(
+        state.lifecycle.pipeline_snapshots.front().pipeline_status
+            == vulkan_backend::vulkan_pipeline_lifecycle_status::not_checked,
+        "render pass lifecycle does not check graphics pipeline");
 }
 
 void test_vulkan_diagnostic_pipeline_cache_identifies_missing_vertex_shader()
@@ -1301,6 +1459,33 @@ void test_vulkan_diagnostic_pipeline_cache_identifies_missing_vertex_shader()
         state.shader_registry.missing_stage == vulkan_backend::vulkan_shader_stage::vertex,
         "shader registry records missing vertex stage");
     require(state.shader_registry.missing_shader_id.value == "quad.vertex", "shader registry records vertex id");
+    require(!state.lifecycle.completed(), "missing vertex shader lifecycle does not complete");
+    require(!state.lifecycle.missing_render_pass, "missing vertex shader lifecycle keeps render pass ready");
+    require(state.lifecycle.missing_shader_stage, "missing vertex shader lifecycle records shader stage failure");
+    require(!state.lifecycle.missing_pipeline, "missing vertex shader lifecycle is not a pipeline-object miss");
+    require(
+        state.lifecycle.failed_stage == vulkan_backend::vulkan_pipeline_lifecycle_stage::shader_stages,
+        "missing vertex shader lifecycle identifies shader stage");
+    require(
+        state.lifecycle.missing_shader_stage_kind == vulkan_backend::vulkan_shader_stage::vertex,
+        "missing vertex shader lifecycle records vertex stage");
+    require(state.lifecycle.missing_shader_id.value == "quad.vertex", "missing vertex shader lifecycle records shader id");
+    require(state.lifecycle.pipeline_snapshots.size() == 1, "missing vertex shader lifecycle stores request snapshot");
+    require(state.lifecycle.shader_stage_snapshots.size() == 1, "missing vertex shader lifecycle stores shader snapshot");
+    require(
+        state.lifecycle.pipeline_snapshots.front().shader_stage_status
+            == vulkan_backend::vulkan_pipeline_lifecycle_status::unavailable,
+        "missing vertex shader lifecycle marks shader stages unavailable");
+    require(
+        state.lifecycle.pipeline_snapshots.front().pipeline_status
+            == vulkan_backend::vulkan_pipeline_lifecycle_status::not_checked,
+        "missing vertex shader lifecycle does not check graphics pipeline");
+    require(
+        !state.lifecycle.shader_stage_snapshots.front().vertex_stage_ready,
+        "missing vertex shader lifecycle records unavailable vertex stage");
+    require(
+        !state.lifecycle.shader_stage_snapshots.front().fragment_stage_ready,
+        "missing vertex shader lifecycle stops before fragment stage");
 }
 
 void test_vulkan_diagnostic_pipeline_cache_identifies_missing_fragment_shader()
@@ -1348,6 +1533,35 @@ void test_vulkan_diagnostic_pipeline_cache_identifies_missing_fragment_shader()
         state.shader_registry.missing_stage == vulkan_backend::vulkan_shader_stage::fragment,
         "shader registry records missing fragment stage");
     require(state.shader_registry.missing_shader_id.value == "image.fragment", "shader registry records fragment id");
+    require(!state.lifecycle.completed(), "missing fragment shader lifecycle does not complete");
+    require(!state.lifecycle.missing_render_pass, "missing fragment shader lifecycle keeps render pass ready");
+    require(state.lifecycle.missing_shader_stage, "missing fragment shader lifecycle records shader stage failure");
+    require(!state.lifecycle.missing_pipeline, "missing fragment shader lifecycle is not a pipeline-object miss");
+    require(
+        state.lifecycle.failed_stage == vulkan_backend::vulkan_pipeline_lifecycle_stage::shader_stages,
+        "missing fragment shader lifecycle identifies shader stage");
+    require(
+        state.lifecycle.missing_shader_stage_kind == vulkan_backend::vulkan_shader_stage::fragment,
+        "missing fragment shader lifecycle records fragment stage");
+    require(
+        state.lifecycle.missing_shader_id.value == "image.fragment",
+        "missing fragment shader lifecycle records shader id");
+    require(state.lifecycle.pipeline_snapshots.size() == 1, "missing fragment shader lifecycle stores request snapshot");
+    require(state.lifecycle.shader_stage_snapshots.size() == 1, "missing fragment shader lifecycle stores shader snapshot");
+    require(
+        state.lifecycle.pipeline_snapshots.front().shader_stage_status
+            == vulkan_backend::vulkan_pipeline_lifecycle_status::unavailable,
+        "missing fragment shader lifecycle marks shader stages unavailable");
+    require(
+        state.lifecycle.pipeline_snapshots.front().pipeline_status
+            == vulkan_backend::vulkan_pipeline_lifecycle_status::not_checked,
+        "missing fragment shader lifecycle does not check graphics pipeline");
+    require(
+        state.lifecycle.shader_stage_snapshots.front().vertex_stage_ready,
+        "missing fragment shader lifecycle records ready vertex stage");
+    require(
+        !state.lifecycle.shader_stage_snapshots.front().fragment_stage_ready,
+        "missing fragment shader lifecycle records unavailable fragment stage");
 }
 
 void test_vulkan_diagnostic_pipeline_cache_identifies_missing_batch_descriptor()
@@ -1393,6 +1607,27 @@ void test_vulkan_diagnostic_pipeline_cache_identifies_missing_batch_descriptor()
         state.descriptor_for(vulkan_backend::vulkan_batch_kind::text) == nullptr,
         "pipeline cache exposes no text descriptor");
     require(!state.shader_registry.registry_checked, "missing descriptor stops before shader registry lookup");
+    require(!state.lifecycle.completed(), "missing descriptor lifecycle does not complete");
+    require(!state.lifecycle.missing_render_pass, "missing descriptor lifecycle keeps render pass ready");
+    require(!state.lifecycle.missing_shader_stage, "missing descriptor lifecycle does not check shaders");
+    require(state.lifecycle.missing_pipeline, "missing descriptor lifecycle records pipeline-stage failure");
+    require(
+        state.lifecycle.failed_stage == vulkan_backend::vulkan_pipeline_lifecycle_stage::pipeline,
+        "missing descriptor lifecycle identifies pipeline stage");
+    require(state.lifecycle.pipeline_snapshots.size() == 1, "missing descriptor lifecycle stores request snapshot");
+    require(state.lifecycle.shader_stage_snapshots.empty(), "missing descriptor lifecycle stores no shader snapshot");
+    require(
+        state.lifecycle.pipeline_snapshots.front().render_pass_status
+            == vulkan_backend::vulkan_pipeline_lifecycle_status::ready,
+        "missing descriptor lifecycle records ready render pass");
+    require(
+        state.lifecycle.pipeline_snapshots.front().shader_stage_status
+            == vulkan_backend::vulkan_pipeline_lifecycle_status::not_checked,
+        "missing descriptor lifecycle does not check shader stages");
+    require(
+        state.lifecycle.pipeline_snapshots.front().pipeline_status
+            == vulkan_backend::vulkan_pipeline_lifecycle_status::unavailable,
+        "missing descriptor lifecycle marks pipeline unavailable");
 }
 
 void require_completed_frame_sync(
@@ -1860,6 +2095,11 @@ void test_vulkan_backend_adapter_completes_fake_device_lifecycle()
     require(result.clipped_draw_call_count == 0, "unclipped fake backend batch is not clipped");
     require(result.discarded_draw_call_count == 0, "visible fake backend batch is not discarded");
     require(result.pipeline.completed(), "fake backend pipeline cache reports completed state");
+    require(result.pipeline.lifecycle.completed(), "fake backend pipeline lifecycle reports completed state");
+    require(result.pipeline.lifecycle.pipeline_snapshots.size() == 1, "fake backend pipeline lifecycle stores one request");
+    require(
+        result.pipeline.lifecycle.pipeline_snapshots.front().completed(),
+        "fake backend pipeline lifecycle request completes");
     require(result.pipeline.supports(vulkan_backend::vulkan_batch_kind::quad), "fake backend pipeline cache supports quads");
     require(result.pipeline.requested_pipeline_count == 1, "fake backend pipeline cache records one pipeline request");
     require(result.pipeline.cache_entries[0].requested, "fake backend pipeline cache records quad request");
@@ -2879,6 +3119,7 @@ int main()
     test_vulkan_command_recorder_failure_stage_names_are_stable();
     test_vulkan_frame_lifecycle_policy_names_are_stable();
     test_vulkan_shader_stage_names_are_stable();
+    test_vulkan_pipeline_lifecycle_names_are_stable();
     test_draw_list_submission_counts_generic_work();
     test_renderer_backend_diagnostics_report_vulkan_not_requested();
     test_cpu_fallback_clips_and_discards();
@@ -2892,6 +3133,7 @@ int main()
     test_vulkan_diagnostic_command_recorder_reports_finish_failure();
     test_vulkan_diagnostic_pipeline_cache_reports_batch_capabilities();
     test_vulkan_diagnostic_pipeline_cache_identifies_missing_batch_pipeline();
+    test_vulkan_diagnostic_pipeline_cache_identifies_unavailable_render_pass();
     test_vulkan_diagnostic_pipeline_cache_identifies_missing_vertex_shader();
     test_vulkan_diagnostic_pipeline_cache_identifies_missing_fragment_shader();
     test_vulkan_diagnostic_pipeline_cache_identifies_missing_batch_descriptor();

@@ -1,0 +1,220 @@
+#include "assets/asset_bytes_provider.h"
+
+#include "asset_bytes_provider_interface_contract_tests.cpp"
+
+#include <cassert>
+#include <cstddef>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <string>
+#include <vector>
+
+namespace {
+
+void require(bool condition, const char* message)
+{
+    if (!condition) {
+        std::cerr << "asset_bytes_provider_tests failed: " << message << '\n';
+    }
+    assert((condition) && message);
+}
+
+std::filesystem::path reset_fixture_root()
+{
+    const std::filesystem::path root = std::filesystem::temp_directory_path() / "quiz_vulkan_asset_bytes_provider_tests";
+    std::filesystem::remove_all(root);
+    std::filesystem::create_directories(root / "packaged" / "cards");
+    std::filesystem::create_directories(root / "packaged" / "fonts");
+    return root;
+}
+
+void write_fixture_file(const std::filesystem::path& path, std::string_view text)
+{
+    std::filesystem::create_directories(path.parent_path());
+    std::ofstream stream(path, std::ios::binary);
+    stream.write(text.data(), static_cast<std::streamsize>(text.size()));
+}
+
+std::string bytes_to_string(const std::vector<std::byte>& bytes)
+{
+    std::string text;
+    text.reserve(bytes.size());
+    for (const std::byte value : bytes) {
+        text.push_back(static_cast<char>(std::to_integer<unsigned char>(value)));
+    }
+    return text;
+}
+
+void test_fake_provider_loads_bytes_by_snapshot_and_catalog_id()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "packaged",
+        .root_path = fixture_root / "packaged",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_front",
+        .type = asset_type::image,
+        .uri = "ASSET:///cards/./front.png",
+        .root_id = "packaged",
+        .cache_revision = "rev1",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const runtime_asset_catalog catalog = build_runtime_asset_catalog(manifest, resolver);
+    const runtime_asset_catalog_lookup_result image = catalog.lookup_image("card_front");
+    require(image.ok(), "runtime catalog resolves image for fake byte provider");
+
+    fake_asset_bytes_provider provider;
+    provider.set_text(image.asset.cache_key, "image bytes");
+
+    const asset_bytes_load_result by_snapshot = load_asset_bytes(provider, image.asset);
+    require(by_snapshot.ok(), "fake byte provider loads bytes by snapshot");
+    require(by_snapshot.status == asset_bytes_load_status::loaded, "fake byte provider reports loaded status");
+    require(by_snapshot.cache_key == "image|asset://cards/front.png|rev=rev1", "byte result includes cache key");
+    require(by_snapshot.source_uri == "asset://cards/front.png", "byte result includes source uri");
+    require(by_snapshot.byte_count == 11U, "byte result includes byte count");
+    require(bytes_to_string(by_snapshot.bytes) == "image bytes", "fake byte provider returns registered bytes");
+
+    const asset_bytes_load_result by_id = load_asset_bytes(
+        provider,
+        catalog,
+        asset_bytes_catalog_request{.id = "card_front", .expected_type = asset_type::image});
+    require(by_id.ok(), "fake byte provider loads bytes by catalog id");
+    require(by_id.cache_key == by_snapshot.cache_key, "catalog byte request preserves cache key");
+    require(by_id.source_uri == by_snapshot.source_uri, "catalog byte request preserves source uri");
+    require(bytes_to_string(by_id.bytes) == "image bytes", "catalog byte request returns registered bytes");
+}
+
+void test_fake_provider_reports_lookup_and_cache_misses()
+{
+    using namespace quiz_vulkan::assets;
+
+    asset_manifest manifest;
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_front",
+        .type = asset_type::image,
+        .uri = "asset://cards/front.png",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "missing_root",
+        .type = asset_type::image,
+        .uri = "asset://cards/missing.png",
+        .root_id = "not_configured",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const runtime_asset_catalog catalog = build_runtime_asset_catalog(manifest, resolver);
+    const fake_asset_bytes_provider provider;
+
+    const asset_bytes_load_result missing = load_asset_bytes(
+        provider,
+        catalog,
+        asset_bytes_catalog_request{.id = "missing", .expected_type = asset_type::image});
+    require(missing.status == asset_bytes_load_status::missing_id, "byte request reports missing catalog id");
+    require(!missing.diagnostic.empty(), "missing id byte result includes diagnostic");
+
+    const asset_bytes_load_result wrong_type = load_asset_bytes(
+        provider,
+        catalog,
+        asset_bytes_catalog_request{.id = "card_front", .expected_type = asset_type::sound});
+    require(wrong_type.status == asset_bytes_load_status::type_mismatch, "byte request reports type mismatch");
+    require(wrong_type.cache_key == "image|asset://cards/front.png", "type mismatch byte result keeps cache key");
+    require(wrong_type.source_uri == "asset://cards/front.png", "type mismatch byte result keeps source uri");
+
+    const asset_bytes_load_result unresolved = load_asset_bytes(
+        provider,
+        catalog,
+        asset_bytes_catalog_request{.id = "missing_root", .expected_type = asset_type::image});
+    require(unresolved.status == asset_bytes_load_status::unresolved_asset, "byte request reports unresolved assets");
+    require(!unresolved.diagnostic.empty(), "unresolved byte result includes diagnostic");
+
+    const runtime_asset_catalog_lookup_result image = catalog.lookup_image("card_front");
+    require(image.ok(), "runtime catalog resolves image for missing-byte test");
+    const asset_bytes_load_result cache_miss = load_asset_bytes(provider, image.asset);
+    require(cache_miss.status == asset_bytes_load_status::missing_bytes, "fake provider reports cache misses");
+    require(cache_miss.cache_key == image.asset.cache_key, "cache miss result includes cache key");
+    require(cache_miss.source_uri == image.asset.source.normalized_uri, "cache miss result includes source uri");
+}
+
+void test_local_file_provider_reads_rooted_paths_and_rejects_unreadable_sources()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    write_fixture_file(fixture_root / "packaged" / "fonts" / "body.ttf", "font bytes");
+
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "packaged",
+        .root_path = fixture_root / "packaged",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "body_font",
+        .type = asset_type::font,
+        .uri = "fonts/body.ttf",
+        .root_id = "packaged",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "ui_shader",
+        .type = asset_type::shader,
+        .uri = "asset://shaders/ui.vert.spv",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const runtime_asset_catalog catalog = build_runtime_asset_catalog(manifest, resolver);
+    const local_file_asset_bytes_provider provider;
+
+    const asset_bytes_load_result font = load_asset_bytes(
+        provider,
+        catalog,
+        asset_bytes_catalog_request{.id = "body_font", .expected_type = asset_type::font});
+    require(font.ok(), "local file provider reads rooted font bytes");
+    require(font.byte_count == 10U, "local file provider reports byte count");
+    require(font.cache_key == "font|fonts/body.ttf", "local file provider result includes cache key");
+    require(font.source_uri == "fonts/body.ttf", "local file provider result includes source uri");
+    require(bytes_to_string(font.bytes) == "font bytes", "local file provider returns file bytes");
+
+    const asset_bytes_load_result rootless_shader = load_asset_bytes(
+        provider,
+        catalog,
+        asset_bytes_catalog_request{.id = "ui_shader", .expected_type = asset_type::shader});
+    require(
+        rootless_shader.status == asset_bytes_load_status::source_not_readable,
+        "local file provider rejects rootless sources");
+
+    const runtime_asset_catalog_snapshot unsafe_snapshot{
+        .entry = asset_manifest_entry{
+            .id = "unsafe",
+            .type = asset_type::deck,
+            .uri = "decks/main.quiz",
+        },
+        .source = resolved_asset_source{
+            .original_uri = "decks/main.quiz",
+            .normalized_uri = "decks/main.quiz",
+            .kind = asset_source_kind::local_path,
+            .type = asset_type::deck,
+        },
+        .cache_key = "deck|decks/main.quiz",
+        .resolved_root_id = "packaged",
+        .rooted_path = fixture_root / "packaged" / ".." / "main.quiz",
+    };
+    const asset_bytes_load_result unsafe = load_asset_bytes(provider, unsafe_snapshot);
+    require(
+        unsafe.status == asset_bytes_load_status::invalid_rooted_path,
+        "local file provider rejects rooted paths with parent traversal");
+}
+
+} // namespace
+
+int main()
+{
+    test_fake_provider_loads_bytes_by_snapshot_and_catalog_id();
+    test_fake_provider_reports_lookup_and_cache_misses();
+    test_local_file_provider_reads_rooted_paths_and_rejects_unreadable_sources();
+    return 0;
+}

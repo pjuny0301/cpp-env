@@ -87,7 +87,9 @@ bool manifests_equal(
     const quiz_vulkan::assets::asset_manifest& left,
     const quiz_vulkan::assets::asset_manifest& right)
 {
-    if (left.roots.size() != right.roots.size() || left.entries.size() != right.entries.size()) {
+    if (left.schema_version != right.schema_version || left.required_features != right.required_features
+        || left.optional_features != right.optional_features || left.roots.size() != right.roots.size()
+        || left.entries.size() != right.entries.size()) {
         return false;
     }
     for (std::size_t index = 0U; index < left.roots.size(); ++index) {
@@ -146,6 +148,9 @@ void test_format_asset_manifest_round_trips_through_parser()
     using namespace quiz_vulkan::assets;
 
     asset_manifest manifest;
+    manifest.schema_version = "manifest.v2";
+    manifest.required_features = {"feature alpha", "feature\\beta"};
+    manifest.optional_features = {"optional feature", "feature\ttab"};
     manifest.roots.push_back(asset_manifest_root{
         .id = "packaged",
         .aliases = {"images", "shared pack"},
@@ -191,6 +196,70 @@ void test_format_asset_manifest_round_trips_through_parser()
     require(parsed.ok(), "formatted manifest parses");
     require(manifests_equal(parsed.manifest, manifest), "formatted manifest round-trips through parser");
     require(format_asset_manifest(parsed.manifest) == formatted, "manifest formatter is idempotent after parse");
+}
+
+void test_summarize_asset_manifest_version_policy_tracks_schema_version_and_feature_acceptance()
+{
+    using namespace quiz_vulkan::assets;
+
+    asset_manifest compatible_manifest;
+    compatible_manifest.schema_version = "manifest.v2";
+    compatible_manifest.required_features = {"feature.alpha"};
+    compatible_manifest.optional_features = {"feature.beta"};
+
+    const std::vector<std::string_view> supported_features = {"feature.alpha"};
+    const asset_manifest_version_policy_summary compatible_summary = summarize_asset_manifest_version_policy(
+        compatible_manifest,
+        "manifest.v2",
+        supported_features);
+
+    require(
+        compatible_summary.schema_version == "manifest.v2",
+        "version policy summary preserves manifest schema version");
+    require(
+        compatible_summary.expected_schema_version == "manifest.v2",
+        "version policy summary preserves expected schema version");
+    require(
+        compatible_summary.required_features == compatible_manifest.required_features,
+        "version policy summary preserves required feature order");
+    require(
+        compatible_summary.optional_features == compatible_manifest.optional_features,
+        "version policy summary preserves optional feature order");
+    require(
+        compatible_summary.unsupported_features.size() == 1U,
+        "version policy summary reports unsupported optional features deterministically");
+    require(
+        compatible_summary.unsupported_features[0].feature == "feature.beta"
+            && !compatible_summary.unsupported_features[0].required,
+        "version policy summary marks optional unsupported features");
+    require(compatible_summary.compatible_accepted, "version policy summary accepts compatible manifests");
+    require(!compatible_summary.strict_accepted, "version policy summary rejects strict mode when optional features are unsupported");
+    require(compatible_summary.ok(), "version policy summary ok() follows compatible acceptance");
+
+    asset_manifest strict_manifest;
+    strict_manifest.schema_version = "manifest.v2";
+    strict_manifest.required_features = {"feature.gamma", "feature.alpha"};
+    strict_manifest.optional_features = {"feature.delta"};
+
+    const asset_manifest_version_policy_summary strict_summary = summarize_asset_manifest_version_policy(
+        strict_manifest,
+        "manifest.v2",
+        supported_features);
+
+    require(
+        strict_summary.unsupported_features.size() == 2U,
+        "version policy summary reports required and optional unsupported features");
+    require(
+        strict_summary.unsupported_features[0].feature == "feature.gamma"
+            && strict_summary.unsupported_features[0].required,
+        "version policy summary sorts required unsupported features first");
+    require(
+        strict_summary.unsupported_features[1].feature == "feature.delta"
+            && !strict_summary.unsupported_features[1].required,
+        "version policy summary sorts optional unsupported features after required features");
+    require(!strict_summary.compatible_accepted, "version policy summary rejects incompatible manifests");
+    require(!strict_summary.strict_accepted, "version policy summary rejects strict mode for incompatible manifests");
+    require(!strict_summary.ok(), "version policy summary ok() fails for incompatible manifests");
 }
 
 void test_parse_asset_manifest_text_loads_roots_entries_and_aliases()

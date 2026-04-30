@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <filesystem>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -37,6 +38,9 @@ static_assert(requires(
     assets::asset_manifest manifest,
     const assets::asset_manifest& const_manifest,
     std::string_view id) {
+    { manifest.schema_version } -> std::same_as<std::string&>;
+    { manifest.required_features } -> std::same_as<std::vector<std::string>&>;
+    { manifest.optional_features } -> std::same_as<std::vector<std::string>&>;
     { manifest.roots } -> std::same_as<std::vector<assets::asset_manifest_root>&>;
     { manifest.entries } -> std::same_as<std::vector<assets::asset_manifest_entry>&>;
     { const_manifest.find_root(id) } -> std::same_as<const assets::asset_manifest_root*>;
@@ -206,6 +210,34 @@ static_assert(requires(
         std::same_as<std::vector<assets::asset_manifest_catalog_duplicate_cache_key_report>>;
     { assets::summarize_asset_manifest_catalog_cache_policy("v1", manifest, resolver) } ->
         std::same_as<assets::asset_manifest_catalog_cache_policy_summary>;
+});
+
+static_assert(requires(
+    assets::asset_manifest_version_unsupported_feature_report report) {
+    { report.feature } -> std::same_as<std::string&>;
+    { report.required } -> std::same_as<bool&>;
+});
+
+static_assert(requires(
+    assets::asset_manifest_version_policy_summary summary,
+    const assets::asset_manifest_version_policy_summary& const_summary) {
+    { summary.schema_version } -> std::same_as<std::string&>;
+    { summary.expected_schema_version } -> std::same_as<std::string&>;
+    { summary.required_features } -> std::same_as<std::vector<std::string>&>;
+    { summary.optional_features } -> std::same_as<std::vector<std::string>&>;
+    { summary.unsupported_features } ->
+        std::same_as<std::vector<assets::asset_manifest_version_unsupported_feature_report>&>;
+    { summary.strict_accepted } -> std::same_as<bool&>;
+    { summary.compatible_accepted } -> std::same_as<bool&>;
+    { const_summary.ok() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    const assets::asset_manifest& manifest,
+    std::string_view expected_schema_version,
+    std::span<const std::string_view> supported_features) {
+    { assets::summarize_asset_manifest_version_policy(manifest, expected_schema_version, supported_features) } ->
+        std::same_as<assets::asset_manifest_version_policy_summary>;
 });
 
 static_assert(requires(assets::asset_manifest_missing_root_report report) {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include "assets/asset_resolver.h"
 
 #include <cstddef>
@@ -7,8 +8,10 @@
 #include <fstream>
 #include <iterator>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -65,6 +68,9 @@ struct asset_manifest_entry {
 };
 
 struct asset_manifest {
+    std::string schema_version;
+    std::vector<std::string> required_features;
+    std::vector<std::string> optional_features;
     std::vector<asset_manifest_root> roots;
     std::vector<asset_manifest_entry> entries;
 
@@ -442,6 +448,19 @@ inline std::optional<std::string_view> manifest_field_value(
     return std::nullopt;
 }
 
+inline std::vector<std::string_view> manifest_field_values(
+    const std::vector<asset_manifest_field>& fields,
+    std::string_view key)
+{
+    std::vector<std::string_view> values;
+    for (const asset_manifest_field& field : fields) {
+        if (field.has_value && field.key == key) {
+            values.push_back(field.value);
+        }
+    }
+    return values;
+}
+
 inline bool parse_manifest_asset_type(std::string_view value, asset_type& type)
 {
     if (value == "generic") {
@@ -618,6 +637,22 @@ inline bool rooted_paths_conflict(
 inline std::string format_asset_manifest(const asset_manifest& manifest)
 {
     std::string formatted;
+    if (!manifest.schema_version.empty() || !manifest.required_features.empty()
+        || !manifest.optional_features.empty()) {
+        std::string line = "manifest";
+        if (!manifest.schema_version.empty()) {
+            detail::append_manifest_field(line, "schema_version", manifest.schema_version);
+        }
+        for (const std::string& feature : manifest.required_features) {
+            detail::append_manifest_field(line, "required_feature", feature);
+        }
+        for (const std::string& feature : manifest.optional_features) {
+            detail::append_manifest_field(line, "optional_feature", feature);
+        }
+        formatted.append(line);
+        formatted.push_back('\n');
+    }
+
     for (const asset_manifest_root& root : manifest.roots) {
         std::string line = "root";
         detail::append_manifest_field(line, "id", root.id);
@@ -676,7 +711,29 @@ inline asset_manifest_parse_result parse_asset_manifest(std::string_view text)
             } else {
                 const std::vector<detail::asset_manifest_field>& fields = parsed_fields.fields;
                 const std::string_view record = fields.empty() ? std::string_view{} : std::string_view(fields.front().key);
-                if (record == "root") {
+                if (record == "manifest") {
+                    const std::optional<std::string_view> schema_version =
+                        detail::manifest_field_value(fields, "schema_version");
+                    if (!schema_version.has_value() || schema_version->empty()) {
+                        detail::add_manifest_parse_issue(
+                            result,
+                            asset_manifest_parse_issue_kind::missing_field,
+                            line_number,
+                            "asset manifest manifest records require schema_version fields");
+                    } else {
+                        result.manifest.schema_version = std::string(*schema_version);
+                        result.manifest.required_features.clear();
+                        result.manifest.optional_features.clear();
+                        for (const std::string_view feature :
+                             detail::manifest_field_values(fields, "required_feature")) {
+                            result.manifest.required_features.push_back(std::string(feature));
+                        }
+                        for (const std::string_view feature :
+                             detail::manifest_field_values(fields, "optional_feature")) {
+                            result.manifest.optional_features.push_back(std::string(feature));
+                        }
+                    }
+                } else if (record == "root") {
                     const std::optional<std::string_view> id = detail::manifest_field_value(fields, "id");
                     const std::optional<std::string_view> path = detail::manifest_field_value(fields, "path");
                     if (!id.has_value() || id->empty() || !path.has_value() || path->empty()) {
@@ -1082,6 +1139,26 @@ struct asset_manifest_catalog_cache_policy_summary {
     }
 };
 
+struct asset_manifest_version_unsupported_feature_report {
+    std::string feature;
+    bool required = false;
+};
+
+struct asset_manifest_version_policy_summary {
+    std::string schema_version;
+    std::string expected_schema_version;
+    std::vector<std::string> required_features;
+    std::vector<std::string> optional_features;
+    std::vector<asset_manifest_version_unsupported_feature_report> unsupported_features;
+    bool strict_accepted = false;
+    bool compatible_accepted = false;
+
+    [[nodiscard]] bool ok() const
+    {
+        return compatible_accepted;
+    }
+};
+
 namespace detail {
 
 inline bool manifest_catalog_contains_string(
@@ -1251,6 +1328,72 @@ inline asset_manifest_catalog_cache_policy_summary summarize_asset_manifest_cata
         .catalog = catalog,
         .duplicate_cache_keys = summarize_asset_manifest_catalog_duplicate_cache_keys(catalog),
     };
+    return summary;
+}
+
+inline asset_manifest_version_policy_summary summarize_asset_manifest_version_policy(
+    const asset_manifest& manifest,
+    std::string_view expected_schema_version,
+    std::span<const std::string_view> supported_features)
+{
+    asset_manifest_version_policy_summary summary{
+        .schema_version = manifest.schema_version,
+        .expected_schema_version = std::string(expected_schema_version),
+        .required_features = manifest.required_features,
+        .optional_features = manifest.optional_features,
+    };
+
+    auto feature_supported = [&](std::string_view feature) {
+        for (const std::string_view supported_feature : supported_features) {
+            if (supported_feature == feature) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    for (const std::string& feature : manifest.required_features) {
+        if (!feature_supported(feature)) {
+            summary.unsupported_features.push_back(asset_manifest_version_unsupported_feature_report{
+                .feature = feature,
+                .required = true,
+            });
+        }
+    }
+    for (const std::string& feature : manifest.optional_features) {
+        if (!feature_supported(feature)) {
+            summary.unsupported_features.push_back(asset_manifest_version_unsupported_feature_report{
+                .feature = feature,
+                .required = false,
+            });
+        }
+    }
+
+    std::ranges::sort(summary.unsupported_features, [](const auto& left, const auto& right) {
+        return std::tuple(
+                   left.required ? 0 : 1,
+                   std::string_view(left.feature))
+            < std::tuple(
+                   right.required ? 0 : 1,
+                   std::string_view(right.feature));
+    });
+    summary.unsupported_features.erase(
+        std::ranges::unique(summary.unsupported_features, [](const auto& left, const auto& right) {
+            return left.required == right.required && left.feature == right.feature;
+        }).begin(),
+        summary.unsupported_features.end());
+
+    const bool schema_matches = !summary.schema_version.empty() && summary.schema_version == expected_schema_version;
+    const bool required_features_supported =
+        std::ranges::none_of(summary.unsupported_features, [](const asset_manifest_version_unsupported_feature_report& report) {
+            return report.required;
+        });
+    const bool optional_features_supported =
+        std::ranges::none_of(summary.unsupported_features, [](const asset_manifest_version_unsupported_feature_report& report) {
+            return !report.required;
+        });
+    summary.compatible_accepted = schema_matches && required_features_supported;
+    summary.strict_accepted = summary.compatible_accepted && optional_features_supported;
     return summary;
 }
 

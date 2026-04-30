@@ -9,7 +9,7 @@ Last updated: 2026-04-30
 - Keep test status counts derived from the configured build with `ctest -N`; do not freeze global CTest totals in docs.
 - Build the engine stack in dependency order: Vulkan backend diagnostics, text layout/atlas, image texture cache, input/IME, then audio/backend wiring.
 - Worker branches should start from the current baseline with a fresh branch. Do not rebase stale worker branches that contain already-cherry-picked historical commits.
-- Latest integrated baseline includes Vulkan resource registry, text glyph cache policy, image decoder format validation, asset manifest/runtime resolver policy validation, input routing diagnostics, and procedural audio mixer event unification.
+- Latest integrated baseline includes architecture boundary locks, text line-break/glyph cache policy, image sampler/cache and decoder diagnostics, asset pack/manifest/runtime resolver validation, Vulkan frame lifecycle/resource diagnostics, input routing diagnostics, and procedural audio mixer event unification.
 
 ## Active requirement IDs
 
@@ -32,6 +32,7 @@ Last updated: 2026-04-30
 - `src/app/app_quiz_screens.h` reads `domain::app_snapshot` as the app-owned presentation bridge. Do not move that coupling into `src/core/ui`.
 - Scene/UI modifiers emit actions only; app/domain services own state changes.
 - Renderer layers must not own quiz, domain, UI, input, or audio state.
+- Architecture boundary tests now lock the intended direction: layout does not depend on UI/render, UI does not depend on Vulkan backend, scene layout data does not depend on render, and Vulkan backend does not depend on scene/UI/app/domain.
 - Engine workers own only their engine folders. App/runtime, top-level CMake, and aggregate contract wiring stay with the integrator unless explicitly assigned.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
 

@@ -7,7 +7,10 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -45,6 +48,37 @@ std::string bytes_to_string(const std::vector<std::byte>& bytes)
     }
     return text;
 }
+
+class counting_asset_bytes_provider final : public quiz_vulkan::assets::asset_bytes_provider_interface {
+public:
+    explicit counting_asset_bytes_provider(quiz_vulkan::assets::asset_bytes_load_result result = {})
+        : result_(std::move(result))
+    {
+    }
+
+    quiz_vulkan::assets::asset_bytes_load_result load_bytes(
+        const quiz_vulkan::assets::asset_bytes_snapshot_request& request) const override
+    {
+        ++load_count_;
+        last_snapshot_ = request.snapshot;
+        return result_;
+    }
+
+    [[nodiscard]] std::size_t load_count() const
+    {
+        return load_count_;
+    }
+
+    [[nodiscard]] const std::optional<quiz_vulkan::assets::runtime_asset_catalog_snapshot>& last_snapshot() const
+    {
+        return last_snapshot_;
+    }
+
+private:
+    quiz_vulkan::assets::asset_bytes_load_result result_;
+    mutable std::size_t load_count_ = 0U;
+    mutable std::optional<quiz_vulkan::assets::runtime_asset_catalog_snapshot> last_snapshot_;
+};
 
 void test_fake_provider_loads_bytes_by_snapshot_and_catalog_id()
 {
@@ -209,6 +243,239 @@ void test_local_file_provider_reads_rooted_paths_and_rejects_unreadable_sources(
         "local file provider rejects rooted paths with parent traversal");
 }
 
+void test_materialized_asset_bytes_read_local_files()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    write_fixture_file(fixture_root / "packaged" / "fonts" / "body.ttf", "font bytes");
+
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "packaged",
+        .root_path = fixture_root / "packaged",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "body_font",
+        .type = asset_type::font,
+        .uri = "fonts/body.ttf",
+        .root_id = "packaged",
+        .cache_revision = "v2",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const runtime_asset_catalog catalog = build_runtime_asset_catalog(manifest, resolver);
+    const local_file_asset_bytes_provider provider;
+
+    const asset_bytes_load_result font = load_materialized_asset_bytes(
+        provider,
+        catalog,
+        asset_bytes_catalog_request{.id = "body_font", .expected_type = asset_type::font});
+
+    require(font.ok(), "materialized byte provider reads local rooted files");
+    require(font.status == asset_bytes_load_status::loaded, "materialized byte load reports loaded status");
+    require(font.byte_count == 10U, "materialized byte load reports byte count");
+    require(font.cache_key == "font|fonts/body.ttf|rev=v2", "materialized byte load preserves cache key");
+    require(font.source_uri == "fonts/body.ttf", "materialized byte load preserves normalized source uri");
+    require(bytes_to_string(font.bytes) == "font bytes", "materialized byte load returns local file bytes");
+}
+
+void test_materialized_asset_bytes_do_not_read_unsupported_or_unmaterialized_sources()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "packaged",
+        .root_path = fixture_root / "packaged",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_front",
+        .type = asset_type::image,
+        .uri = "asset://cards/front.png",
+        .root_id = "packaged",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "rootless_shader",
+        .type = asset_type::shader,
+        .uri = "asset://shaders/ui.vert.spv",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "remote_image",
+        .type = asset_type::image,
+        .uri = "https://example.test/cards/front.png",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "missing_root",
+        .type = asset_type::deck,
+        .uri = "decks/main.quiz",
+        .root_id = "not_configured",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const runtime_asset_catalog catalog = build_runtime_asset_catalog(manifest, resolver);
+    const counting_asset_bytes_provider provider;
+
+    const asset_bytes_load_result missing = load_materialized_asset_bytes(
+        provider,
+        catalog,
+        asset_bytes_catalog_request{.id = "missing", .expected_type = asset_type::image});
+    require(missing.status == asset_bytes_load_status::missing_id, "materialized byte load reports missing ids");
+    require(provider.load_count() == 0U, "missing materialized assets do not call the byte provider");
+
+    const asset_bytes_load_result wrong_type = load_materialized_asset_bytes(
+        provider,
+        catalog,
+        asset_bytes_catalog_request{.id = "card_front", .expected_type = asset_type::sound});
+    require(
+        wrong_type.status == asset_bytes_load_status::type_mismatch,
+        "materialized byte load reports type mismatches");
+    require(wrong_type.cache_key == "image|asset://cards/front.png", "type mismatch keeps cache key diagnostics");
+    require(wrong_type.source_uri == "asset://cards/front.png", "type mismatch keeps source uri diagnostics");
+    require(provider.load_count() == 0U, "type mismatches do not call the byte provider");
+
+    const asset_bytes_load_result unresolved = load_materialized_asset_bytes(
+        provider,
+        catalog,
+        asset_bytes_catalog_request{.id = "missing_root", .expected_type = asset_type::deck});
+    require(
+        unresolved.status == asset_bytes_load_status::unresolved_asset,
+        "materialized byte load reports unresolved manifest entries");
+    require(!unresolved.diagnostic.empty(), "unresolved materialized byte load includes diagnostics");
+    require(provider.load_count() == 0U, "unresolved materialized assets do not call the byte provider");
+
+    const asset_bytes_load_result rootless = load_materialized_asset_bytes(
+        provider,
+        catalog,
+        asset_bytes_catalog_request{.id = "rootless_shader", .expected_type = asset_type::shader});
+    require(
+        rootless.status == asset_bytes_load_status::source_not_readable,
+        "materialized byte load rejects rootless local sources");
+    require(rootless.cache_key == "shader|asset://shaders/ui.vert.spv", "rootless rejection keeps cache key");
+    require(provider.load_count() == 0U, "rootless materialized assets do not call the byte provider");
+
+    const asset_bytes_load_result remote = load_materialized_asset_bytes(
+        provider,
+        catalog,
+        asset_bytes_catalog_request{.id = "remote_image", .expected_type = asset_type::image});
+    require(
+        remote.status == asset_bytes_load_status::source_not_readable,
+        "materialized byte load rejects remote sources");
+    require(remote.source_uri == "https://example.test/cards/front.png", "remote rejection keeps source uri");
+    require(provider.load_count() == 0U, "remote materialized assets do not call the byte provider");
+}
+
+void test_materialized_asset_bytes_surface_materialization_policy_diagnostics()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    const counting_asset_bytes_provider provider;
+
+    runtime_asset_catalog_snapshot unsafe_snapshot{
+        .entry = asset_manifest_entry{
+            .id = "unsafe_deck",
+            .type = asset_type::deck,
+            .uri = "decks/main.quiz",
+        },
+        .source = resolved_asset_source{
+            .original_uri = "decks/main.quiz",
+            .normalized_uri = "decks/main.quiz",
+            .kind = asset_source_kind::local_path,
+            .type = asset_type::deck,
+        },
+        .cache_key = "deck|decks/main.quiz",
+        .resolved_root_id = "packaged",
+        .rooted_path = fixture_root / "packaged" / ".." / "main.quiz",
+    };
+    const asset_bytes_load_result unsafe = load_materialized_asset_bytes(
+        provider,
+        materialize_runtime_asset(unsafe_snapshot));
+    require(
+        unsafe.status == asset_bytes_load_status::invalid_rooted_path,
+        "materialized byte load surfaces rooted path traversal rejection");
+    require(unsafe.cache_key == "deck|decks/main.quiz", "rooted path rejection keeps cache key");
+    require(provider.load_count() == 0U, "unsafe materialized assets do not call the byte provider");
+
+    unsafe_snapshot.cache_key = "deck|decks/other.quiz";
+    unsafe_snapshot.rooted_path = std::filesystem::absolute(fixture_root / "packaged" / "decks" / "main.quiz");
+    const asset_bytes_load_result mismatched_key = load_materialized_asset_bytes(
+        provider,
+        materialize_runtime_asset(unsafe_snapshot));
+    require(
+        mismatched_key.status == asset_bytes_load_status::cache_key_mismatch,
+        "materialized byte load surfaces cache key mismatches");
+    require(provider.load_count() == 0U, "cache key mismatches do not call the byte provider");
+
+    runtime_asset_catalog_snapshot noncanonical_snapshot{
+        .entry = asset_manifest_entry{
+            .id = "noncanonical_image",
+            .type = asset_type::image,
+            .uri = "asset:///cards/front.png",
+        },
+        .source = resolved_asset_source{
+            .original_uri = "asset:///cards/front.png",
+            .normalized_uri = "asset:///cards/front.png",
+            .kind = asset_source_kind::asset_uri,
+            .type = asset_type::image,
+        },
+        .cache_key = "image|asset:///cards/front.png",
+        .resolved_root_id = "packaged",
+        .rooted_path = std::filesystem::absolute(fixture_root / "packaged" / "cards" / "front.png"),
+    };
+    const asset_bytes_load_result noncanonical = load_materialized_asset_bytes(
+        provider,
+        asset_materialized_bytes_request{.materialized = materialize_runtime_asset(noncanonical_snapshot)});
+    require(
+        noncanonical.status == asset_bytes_load_status::noncanonical_cache_key,
+        "materialized byte load surfaces noncanonical cache keys");
+    require(!noncanonical.diagnostic.empty(), "noncanonical cache key result includes diagnostics");
+    require(provider.load_count() == 0U, "noncanonical cache keys do not call the byte provider");
+}
+
+void test_materialized_asset_bytes_call_provider_after_materialization()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    runtime_asset_catalog_snapshot snapshot{
+        .entry = asset_manifest_entry{
+            .id = "card_front",
+            .type = asset_type::image,
+            .uri = "asset://cards/front.png",
+        },
+        .source = resolved_asset_source{
+            .original_uri = "asset://cards/front.png",
+            .normalized_uri = "asset://cards/front.png",
+            .kind = asset_source_kind::asset_uri,
+            .type = asset_type::image,
+        },
+        .cache_key = "image|asset://cards/front.png",
+        .resolved_root_id = "packaged",
+        .rooted_path = std::filesystem::absolute(fixture_root / "packaged" / "cards" / "front.png"),
+    };
+
+    asset_bytes_load_result provider_result{
+        .status = asset_bytes_load_status::loaded,
+        .bytes = detail::make_asset_byte_vector("image bytes"),
+        .byte_count = 11U,
+        .cache_key = snapshot.cache_key,
+        .source_uri = snapshot.source.normalized_uri,
+    };
+    const counting_asset_bytes_provider provider(std::move(provider_result));
+
+    const asset_bytes_load_result loaded = load_materialized_asset_bytes(
+        provider,
+        materialize_runtime_asset(snapshot));
+
+    require(loaded.ok(), "materialized byte load calls provider for materialized local assets");
+    require(provider.load_count() == 1U, "materialized local assets call the byte provider once");
+    require(provider.last_snapshot().has_value(), "provider receives a materialized catalog snapshot");
+    require(provider.last_snapshot()->entry.id == "card_front", "provider receives the materialized asset id");
+    require(bytes_to_string(loaded.bytes) == "image bytes", "provider result is returned after materialization");
+}
+
 } // namespace
 
 int main()
@@ -216,5 +483,9 @@ int main()
     test_fake_provider_loads_bytes_by_snapshot_and_catalog_id();
     test_fake_provider_reports_lookup_and_cache_misses();
     test_local_file_provider_reads_rooted_paths_and_rejects_unreadable_sources();
+    test_materialized_asset_bytes_read_local_files();
+    test_materialized_asset_bytes_do_not_read_unsupported_or_unmaterialized_sources();
+    test_materialized_asset_bytes_surface_materialization_policy_diagnostics();
+    test_materialized_asset_bytes_call_provider_after_materialization();
     return 0;
 }

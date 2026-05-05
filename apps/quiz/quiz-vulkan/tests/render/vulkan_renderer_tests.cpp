@@ -586,6 +586,36 @@ void test_vulkan_frame_resource_lifetime_names_are_stable()
         "frame resource release stage name for fallback cleanup is stable");
 }
 
+void test_vulkan_descriptor_validation_names_are_stable()
+{
+    using namespace quiz_vulkan::render;
+
+    require(
+        vulkan_backend::descriptor_validation_status_name(
+            vulkan_backend::vulkan_descriptor_validation_status::not_checked)
+            == std::string_view{"not_checked"},
+        "descriptor validation status name for not checked is stable");
+    require(
+        vulkan_backend::descriptor_validation_status_name(vulkan_backend::vulkan_descriptor_validation_status::valid)
+            == std::string_view{"valid"},
+        "descriptor validation status name for valid is stable");
+    require(
+        vulkan_backend::descriptor_validation_status_name(
+            vulkan_backend::vulkan_descriptor_validation_status::missing_required_resource)
+            == std::string_view{"missing_required_resource"},
+        "descriptor validation status name for missing resource is stable");
+    require(
+        vulkan_backend::descriptor_validation_status_name(
+            vulkan_backend::vulkan_descriptor_validation_status::duplicate_binding)
+            == std::string_view{"duplicate_binding"},
+        "descriptor validation status name for duplicate binding is stable");
+    require(
+        vulkan_backend::descriptor_validation_status_name(
+            vulkan_backend::vulkan_descriptor_validation_status::invalid_layout)
+            == std::string_view{"invalid_layout"},
+        "descriptor validation status name for invalid layout is stable");
+}
+
 void test_vulkan_shader_stage_names_are_stable()
 {
     using namespace quiz_vulkan::render;
@@ -2459,6 +2489,23 @@ void test_vulkan_resource_binding_state_builds_batch_snapshots()
     require(state.descriptor_set_count == 3, "resource binding state creates one descriptor set per batch");
     require(state.binding_count == 8, "resource binding state has stable aggregate bind count");
     require(state.batch_snapshots.size() == 3, "resource binding state stores one snapshot per batch");
+    require(state.descriptor_validation.checked, "resource binding state checks descriptor validation");
+    require(state.descriptor_validation.completed(), "descriptor validation completes for valid bindings");
+    require(!state.descriptor_validation.missing_required_resource, "descriptor validation reports no missing resources");
+    require(!state.descriptor_validation.duplicate_binding, "descriptor validation reports no duplicate bindings");
+    require(!state.descriptor_validation.invalid_layout, "descriptor validation reports no invalid layouts");
+    require(state.descriptor_validation.planned_batch_count == 3, "descriptor validation tracks planned batch count");
+    require(state.descriptor_validation.descriptor_set_count == 3, "descriptor validation counts descriptor sets");
+    require(
+        state.descriptor_validation.valid_descriptor_set_count == 3,
+        "descriptor validation counts valid descriptor sets");
+    require(
+        state.descriptor_validation.invalid_descriptor_set_count == 0,
+        "descriptor validation counts no invalid descriptor sets");
+    require(state.descriptor_validation.requested_binding_count == 8, "descriptor validation counts requested bindings");
+    require(state.descriptor_validation.valid_binding_count == 8, "descriptor validation counts valid bindings");
+    require(state.descriptor_validation.invalid_binding_count == 0, "descriptor validation counts no invalid bindings");
+    require(state.descriptor_validation.descriptor_sets.size() == 3, "descriptor validation stores one set per batch");
 
     const vulkan_backend::vulkan_batch_resource_binding_snapshot& quad = state.batch_snapshots[0];
     require(quad.batch_kind == vulkan_backend::vulkan_batch_kind::quad, "first binding snapshot is quad");
@@ -2475,6 +2522,20 @@ void test_vulkan_resource_binding_state_builds_batch_snapshots()
     require(quad.bindings[0].resource_id == "batch_uniform:quad", "quad uniform resource id is stable");
     require(quad.bindings[1].resource_id == "quad_vertices:quad", "quad vertex resource id is stable");
 
+    const vulkan_backend::vulkan_descriptor_set_validation_snapshot& quad_descriptor =
+        state.descriptor_validation.descriptor_sets[0];
+    require(quad_descriptor.batch_kind == vulkan_backend::vulkan_batch_kind::quad, "first descriptor set is quad");
+    require(quad_descriptor.command_index == 0, "quad descriptor validation keeps command index");
+    require(quad_descriptor.expected_binding_count == 2, "quad descriptor expects two bindings");
+    require(quad_descriptor.actual_binding_count == 2, "quad descriptor validates two actual bindings");
+    require(quad_descriptor.completed(), "quad descriptor validation completes");
+    require(
+        quad_descriptor.status == vulkan_backend::vulkan_descriptor_validation_status::valid,
+        "quad descriptor validation status is valid");
+    require(quad_descriptor.bindings[0].binding_index_matches_order, "quad uniform binding order is valid");
+    require(quad_descriptor.bindings[1].binding_index_matches_order, "quad vertex binding order is valid");
+    require(quad_descriptor.bindings[1].completed(), "quad vertex descriptor binding completes");
+
     const vulkan_backend::vulkan_batch_resource_binding_snapshot& image = state.batch_snapshots[1];
     require(image.batch_kind == vulkan_backend::vulkan_batch_kind::image, "second binding snapshot is image");
     require(image.binding_count == 3, "image binding snapshot has stable bind count");
@@ -2488,6 +2549,13 @@ void test_vulkan_resource_binding_state_builds_batch_snapshots()
     require(
         image.bindings[1].resource_id == "fixture://renderer/card.png",
         "image binding snapshot uses image URI as texture resource");
+    require(
+        state.descriptor_validation.descriptor_sets[1].expected_binding_count == 3,
+        "image descriptor validation expects texture and sampler bindings");
+    require(
+        state.descriptor_validation.descriptor_sets[1].bindings[2].kind
+            == vulkan_backend::vulkan_resource_binding_kind::image_sampler,
+        "image descriptor validation records sampler binding");
 
     const vulkan_backend::vulkan_batch_resource_binding_snapshot& text = state.batch_snapshots[2];
     require(text.batch_kind == vulkan_backend::vulkan_batch_kind::text, "third binding snapshot is text");
@@ -2501,6 +2569,10 @@ void test_vulkan_resource_binding_state_builds_batch_snapshots()
         "text binding snapshot binds glyph atlas");
     require(text.bindings[1].resource_id == "text_runs:text", "text run resource id is stable");
     require(text.bindings[2].resource_id == "glyph_atlas:title", "text glyph atlas resource id is stable");
+    require(
+        state.descriptor_validation.descriptor_sets[2].bindings[2].kind
+            == vulkan_backend::vulkan_resource_binding_kind::text_glyph_atlas,
+        "text descriptor validation records glyph atlas binding");
 }
 
 const quiz_vulkan::render::vulkan_backend::vulkan_resource_registry_entry* find_registry_resource(
@@ -2643,6 +2715,58 @@ void test_vulkan_resource_registry_state_reports_missing_resources()
         vulkan_backend::build_vulkan_resource_binding_state(draw_list, plan);
     const vulkan_backend::vulkan_backend_resource_registry_state registry =
         vulkan_backend::build_vulkan_resource_registry_state(draw_list, plan, bindings);
+
+    require(bindings.descriptor_validation.checked, "missing-resource descriptor validation is checked");
+    require(!bindings.descriptor_validation.completed(), "missing-resource descriptor validation does not complete");
+    require(
+        bindings.descriptor_validation.missing_required_resource,
+        "missing-resource descriptor validation reports missing required resource");
+    require(!bindings.descriptor_validation.duplicate_binding, "missing-resource descriptor validation has no duplicate binding");
+    require(!bindings.descriptor_validation.invalid_layout, "missing-resource descriptor validation has valid layout");
+    require(bindings.descriptor_validation.planned_batch_count == 2, "missing-resource validation tracks planned batches");
+    require(bindings.descriptor_validation.descriptor_set_count == 2, "missing-resource validation counts descriptor sets");
+    require(
+        bindings.descriptor_validation.valid_descriptor_set_count == 0,
+        "missing-resource validation counts no fully valid descriptor sets");
+    require(
+        bindings.descriptor_validation.invalid_descriptor_set_count == 2,
+        "missing-resource validation counts invalid descriptor sets");
+    require(
+        bindings.descriptor_validation.requested_binding_count == 6,
+        "missing-resource validation counts requested bindings");
+    require(bindings.descriptor_validation.valid_binding_count == 3, "missing-resource validation counts valid bindings");
+    require(
+        bindings.descriptor_validation.invalid_binding_count == 3,
+        "missing-resource validation counts invalid bindings");
+    require(
+        bindings.descriptor_validation.failed_batch_kind == vulkan_backend::vulkan_batch_kind::image,
+        "missing-resource validation records first failed batch kind");
+    require(bindings.descriptor_validation.failed_command_index == 0, "missing-resource validation records command index");
+    require(
+        bindings.descriptor_validation.failed_binding_kind == vulkan_backend::vulkan_resource_binding_kind::image_texture,
+        "missing-resource validation records first missing binding kind");
+    require(bindings.descriptor_validation.failed_binding == 1, "missing-resource validation records first missing binding slot");
+
+    const vulkan_backend::vulkan_descriptor_set_validation_snapshot& image_descriptor =
+        bindings.descriptor_validation.descriptor_sets[0];
+    require(image_descriptor.missing_required_resource, "image descriptor validation records missing texture");
+    require(
+        image_descriptor.status == vulkan_backend::vulkan_descriptor_validation_status::missing_required_resource,
+        "image descriptor validation status reports missing resource");
+    require(image_descriptor.bindings[1].bound == false, "image descriptor texture binding is not bound");
+    require(
+        image_descriptor.bindings[1].status
+            == vulkan_backend::vulkan_descriptor_validation_status::missing_required_resource,
+        "image descriptor texture binding status reports missing resource");
+
+    const vulkan_backend::vulkan_descriptor_set_validation_snapshot& text_descriptor =
+        bindings.descriptor_validation.descriptor_sets[1];
+    require(text_descriptor.missing_required_resource, "text descriptor validation records missing text resources");
+    require(text_descriptor.invalid_layout == false, "text descriptor validation keeps expected layout");
+    require(
+        text_descriptor.bindings[1].status
+            == vulkan_backend::vulkan_descriptor_validation_status::missing_required_resource,
+        "text run descriptor binding status reports missing resource");
 
     require(registry.checked, "missing-resource registry is checked");
     require(!registry.completed(), "missing-resource registry does not complete");

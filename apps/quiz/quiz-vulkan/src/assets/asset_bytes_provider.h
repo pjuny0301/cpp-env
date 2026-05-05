@@ -22,6 +22,8 @@ enum class asset_bytes_load_status {
     source_not_readable,
     invalid_rooted_path,
     file_read_failed,
+    cache_key_mismatch,
+    noncanonical_cache_key,
 };
 
 struct asset_bytes_snapshot_request {
@@ -31,6 +33,10 @@ struct asset_bytes_snapshot_request {
 struct asset_bytes_catalog_request {
     std::string id;
     asset_type expected_type = asset_type::generic;
+};
+
+struct asset_materialized_bytes_request {
+    runtime_materialized_asset_lookup_result materialized;
 };
 
 struct asset_bytes_load_result {
@@ -92,6 +98,41 @@ inline asset_bytes_load_status asset_bytes_status_from_lookup_status(runtime_ass
             return asset_bytes_load_status::unresolved_asset;
     }
     return asset_bytes_load_status::missing_bytes;
+}
+
+inline asset_bytes_load_status asset_bytes_status_from_materialized_status(
+    runtime_materialized_asset_lookup_status status)
+{
+    switch (status) {
+        case runtime_materialized_asset_lookup_status::materialized:
+            return asset_bytes_load_status::missing_bytes;
+        case runtime_materialized_asset_lookup_status::missing_id:
+            return asset_bytes_load_status::missing_id;
+        case runtime_materialized_asset_lookup_status::type_mismatch:
+            return asset_bytes_load_status::type_mismatch;
+        case runtime_materialized_asset_lookup_status::unresolved_asset:
+            return asset_bytes_load_status::unresolved_asset;
+        case runtime_materialized_asset_lookup_status::unsupported_source_kind:
+        case runtime_materialized_asset_lookup_status::missing_rooted_path:
+            return asset_bytes_load_status::source_not_readable;
+        case runtime_materialized_asset_lookup_status::invalid_rooted_path:
+            return asset_bytes_load_status::invalid_rooted_path;
+        case runtime_materialized_asset_lookup_status::cache_key_mismatch:
+            return asset_bytes_load_status::cache_key_mismatch;
+        case runtime_materialized_asset_lookup_status::noncanonical_cache_key:
+            return asset_bytes_load_status::noncanonical_cache_key;
+    }
+    return asset_bytes_load_status::missing_bytes;
+}
+
+inline asset_bytes_load_result make_asset_bytes_metadata(
+    const runtime_materialized_asset_lookup_result& materialized)
+{
+    const runtime_asset_catalog_snapshot& snapshot = materialized.materialized.asset;
+    return asset_bytes_load_result{
+        .cache_key = snapshot.cache_key,
+        .source_uri = snapshot.source.normalized_uri,
+    };
 }
 
 inline bool asset_bytes_path_has_parent_reference(const std::filesystem::path& path)
@@ -222,6 +263,40 @@ inline asset_bytes_load_result load_asset_bytes(
     }
 
     return load_asset_bytes(provider, lookup.asset);
+}
+
+inline asset_bytes_load_result load_materialized_asset_bytes(
+    const asset_bytes_provider_interface& provider,
+    const asset_materialized_bytes_request& request)
+{
+    if (!request.materialized.ok()) {
+        asset_bytes_load_result result = detail::make_asset_bytes_metadata(request.materialized);
+        result.status = detail::asset_bytes_status_from_materialized_status(request.materialized.status);
+        result.diagnostic = request.materialized.diagnostic;
+        return result;
+    }
+
+    return load_asset_bytes(provider, request.materialized.materialized.asset);
+}
+
+inline asset_bytes_load_result load_materialized_asset_bytes(
+    const asset_bytes_provider_interface& provider,
+    const runtime_materialized_asset_lookup_result& materialized)
+{
+    return load_materialized_asset_bytes(provider, asset_materialized_bytes_request{.materialized = materialized});
+}
+
+inline asset_bytes_load_result load_materialized_asset_bytes(
+    const asset_bytes_provider_interface& provider,
+    const runtime_asset_catalog& catalog,
+    const asset_bytes_catalog_request& request)
+{
+    return load_materialized_asset_bytes(
+        provider,
+        lookup_runtime_materialized_asset(catalog, runtime_materialized_asset_lookup_request{
+                                               .id = request.id,
+                                               .expected_type = request.expected_type,
+                                           }));
 }
 
 } // namespace quiz_vulkan::assets

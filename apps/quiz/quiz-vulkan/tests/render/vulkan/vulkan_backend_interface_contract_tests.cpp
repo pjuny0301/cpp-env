@@ -522,6 +522,82 @@ static_assert(requires(render::vulkan_backend::vulkan_resource_binding_snapshot 
     { binding.bound() } -> std::same_as<bool>;
 });
 
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_descriptor_validation_status::not_checked),
+    render::vulkan_backend::vulkan_descriptor_validation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_descriptor_validation_status::valid),
+    render::vulkan_backend::vulkan_descriptor_validation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_descriptor_validation_status::missing_required_resource),
+    render::vulkan_backend::vulkan_descriptor_validation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_descriptor_validation_status::duplicate_binding),
+    render::vulkan_backend::vulkan_descriptor_validation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_descriptor_validation_status::invalid_layout),
+    render::vulkan_backend::vulkan_descriptor_validation_status>);
+
+static_assert(requires(render::vulkan_backend::vulkan_descriptor_validation_status status) {
+    { render::vulkan_backend::descriptor_validation_status_name(status) } -> std::same_as<std::string_view>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_descriptor_binding_validation_snapshot binding) {
+    { binding.set } -> std::same_as<std::size_t&>;
+    { binding.binding } -> std::same_as<std::size_t&>;
+    { binding.kind } -> std::same_as<render::vulkan_backend::vulkan_resource_binding_kind&>;
+    { binding.resource_id } -> std::same_as<std::string&>;
+    { binding.required } -> std::same_as<bool&>;
+    { binding.available } -> std::same_as<bool&>;
+    { binding.bound } -> std::same_as<bool&>;
+    { binding.binding_index_matches_order } -> std::same_as<bool&>;
+    { binding.duplicate_binding } -> std::same_as<bool&>;
+    { binding.status } -> std::same_as<render::vulkan_backend::vulkan_descriptor_validation_status&>;
+    { binding.completed() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_descriptor_set_validation_snapshot descriptor_set) {
+    { descriptor_set.batch_kind } -> std::same_as<render::vulkan_backend::vulkan_batch_kind&>;
+    { descriptor_set.command_index } -> std::same_as<std::size_t&>;
+    { descriptor_set.node_id } -> std::same_as<render::render_node_id&>;
+    { descriptor_set.set } -> std::same_as<std::size_t&>;
+    { descriptor_set.expected_binding_count } -> std::same_as<std::size_t&>;
+    { descriptor_set.actual_binding_count } -> std::same_as<std::size_t&>;
+    { descriptor_set.checked } -> std::same_as<bool&>;
+    { descriptor_set.descriptor_set_declared } -> std::same_as<bool&>;
+    { descriptor_set.binding_count_matches } -> std::same_as<bool&>;
+    { descriptor_set.missing_required_resource } -> std::same_as<bool&>;
+    { descriptor_set.duplicate_binding } -> std::same_as<bool&>;
+    { descriptor_set.invalid_layout } -> std::same_as<bool&>;
+    { descriptor_set.failed_binding_kind } -> std::same_as<render::vulkan_backend::vulkan_resource_binding_kind&>;
+    { descriptor_set.failed_binding } -> std::same_as<std::size_t&>;
+    { descriptor_set.status } -> std::same_as<render::vulkan_backend::vulkan_descriptor_validation_status&>;
+    { descriptor_set.bindings }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_descriptor_binding_validation_snapshot>&>;
+    { descriptor_set.completed() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_backend_descriptor_validation_state validation) {
+    { validation.checked } -> std::same_as<bool&>;
+    { validation.missing_required_resource } -> std::same_as<bool&>;
+    { validation.duplicate_binding } -> std::same_as<bool&>;
+    { validation.invalid_layout } -> std::same_as<bool&>;
+    { validation.failed_batch_kind } -> std::same_as<render::vulkan_backend::vulkan_batch_kind&>;
+    { validation.failed_command_index } -> std::same_as<std::size_t&>;
+    { validation.failed_binding_kind } -> std::same_as<render::vulkan_backend::vulkan_resource_binding_kind&>;
+    { validation.failed_binding } -> std::same_as<std::size_t&>;
+    { validation.planned_batch_count } -> std::same_as<std::size_t&>;
+    { validation.descriptor_set_count } -> std::same_as<std::size_t&>;
+    { validation.valid_descriptor_set_count } -> std::same_as<std::size_t&>;
+    { validation.invalid_descriptor_set_count } -> std::same_as<std::size_t&>;
+    { validation.requested_binding_count } -> std::same_as<std::size_t&>;
+    { validation.valid_binding_count } -> std::same_as<std::size_t&>;
+    { validation.invalid_binding_count } -> std::same_as<std::size_t&>;
+    { validation.descriptor_sets }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_descriptor_set_validation_snapshot>&>;
+    { validation.completed() } -> std::same_as<bool>;
+});
+
 static_assert(requires(render::vulkan_backend::vulkan_batch_resource_binding_snapshot snapshot) {
     { snapshot.batch_kind } -> std::same_as<render::vulkan_backend::vulkan_batch_kind&>;
     { snapshot.command_index } -> std::same_as<std::size_t&>;
@@ -545,6 +621,8 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_resource_binding_s
     { resources.planned_batch_count } -> std::same_as<std::size_t&>;
     { resources.descriptor_set_count } -> std::same_as<std::size_t&>;
     { resources.binding_count } -> std::same_as<std::size_t&>;
+    { resources.descriptor_validation }
+        -> std::same_as<render::vulkan_backend::vulkan_backend_descriptor_validation_state&>;
     { resources.batch_snapshots }
         -> std::same_as<std::vector<render::vulkan_backend::vulkan_batch_resource_binding_snapshot>&>;
     { resources.completed() } -> std::same_as<bool>;

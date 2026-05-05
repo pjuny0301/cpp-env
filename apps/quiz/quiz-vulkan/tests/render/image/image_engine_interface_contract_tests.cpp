@@ -66,6 +66,7 @@ static_assert(ImageDecoderInterface<render::image_decoder_chain>);
 static_assert(ImageDecoderInterface<render::fake_image_decoder>);
 static_assert(ImageDecoderInterface<render::ppm_image_decoder>);
 static_assert(ImageSourceBytesLoaderInterface<render::image_source_bytes_loader_interface>);
+static_assert(ImageSourceBytesLoaderInterface<render::filesystem_image_source_bytes_loader>);
 static_assert(ImageSourceBytesLoaderInterface<render::fake_image_source_bytes_loader>);
 static_assert(ImageTextureCacheInterface<render::image_texture_cache_interface>);
 static_assert(ImageTextureCacheInterface<render::fake_image_texture_cache>);

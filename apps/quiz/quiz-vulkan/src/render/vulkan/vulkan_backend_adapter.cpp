@@ -1067,7 +1067,14 @@ vulkan_backend_frame_resource_lifetime_state make_frame_resource_lifetime_state(
 {
     return vulkan_backend_frame_resource_lifetime_state{
         .checked = true,
+        .fallback_cleanup = false,
         .planned_batch_count = plan.batches.size(),
+        .tracked_resource_count = 0,
+        .acquired_resource_count = 0,
+        .released_resource_count = 0,
+        .pending_resource_count = 0,
+        .fallback_release_count = 0,
+        .resources = {},
     };
 }
 

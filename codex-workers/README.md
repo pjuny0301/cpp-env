@@ -10,6 +10,8 @@ The workers are meant to implement behind existing quiz-vulkan interfaces, not r
 - `prompts/<role>.md`: role-specific task scope.
 - `setup-worktrees.sh`: creates role worktrees under `/mnt/c/aa-workers` by default.
 - `run-codex-tmux.sh`: starts one role in a persistent tmux session.
+- `with-build-lock.sh`: serializes shared Windows CMake/CTest access so
+  parallel workers do not race on the same build directory.
 
 ## One-Time Setup
 
@@ -82,6 +84,7 @@ Each worker should:
 - build `quiz_vulkan_interface_contract_compile_tests`,
 - run role-specific tests,
 - run `git diff --check`,
+- run shared Windows CMake/CTest commands through `with-build-lock.sh`,
 - reserve full CTest for app/CMake/public-contract changes, large integration batches, or explicit integrator requests,
 - keep all downloaded dependencies, tools, fixtures, fonts, SDK/header drops, and datasets under `/mnt/c/aa/build/external` or the worker worktree's `build/external` equivalent,
 - report source URL, version/commit, license, exact local path, and reason for each external item used,

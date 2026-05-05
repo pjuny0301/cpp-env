@@ -31,4 +31,28 @@ static_assert(requires(assets::asset_type type, std::string_view uri) {
     { assets::make_asset_cache_key(type, uri) } -> std::same_as<assets::asset_cache_key>;
 });
 
+static_assert(requires(assets::asset_cache_key_classification classification) {
+    { classification.status } -> std::same_as<assets::asset_cache_key_policy_status&>;
+    { classification.type } -> std::same_as<assets::asset_type&>;
+    { classification.source_kind } -> std::same_as<assets::asset_source_kind&>;
+    { classification.normalized_uri } -> std::same_as<std::string&>;
+    { classification.source_path } -> std::same_as<std::string&>;
+    { classification.cache_revision } -> std::same_as<std::string&>;
+    { classification.diagnostic } -> std::same_as<std::string&>;
+    { classification.ok() } -> std::same_as<bool>;
+    { classification.has_cache_revision() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    std::string_view token,
+    std::string_view cache_key,
+    assets::asset_type& type,
+    const assets::resolved_asset_source& source) {
+    { assets::parse_asset_type_token(token, type) } -> std::same_as<bool>;
+    { assets::asset_cache_revision_is_valid(token) } -> std::same_as<bool>;
+    { assets::asset_cache_key_source_path(source) } -> std::same_as<std::string>;
+    { assets::classify_asset_cache_key(cache_key) } -> std::same_as<assets::asset_cache_key_classification>;
+    { assets::asset_cache_key_is_canonical(cache_key) } -> std::same_as<bool>;
+});
+
 } // namespace

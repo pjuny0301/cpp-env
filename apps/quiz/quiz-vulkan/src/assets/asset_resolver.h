@@ -38,6 +38,18 @@ enum class asset_resolve_status {
     absolute_path,
 };
 
+enum class asset_cache_key_policy_status {
+    accepted,
+    empty_key,
+    missing_type_separator,
+    unsupported_asset_type,
+    missing_source_uri,
+    invalid_source_uri,
+    noncanonical_source_uri,
+    path_traversal,
+    invalid_revision,
+};
+
 struct asset_resolve_request {
     asset_type type = asset_type::generic;
     std::string uri;
@@ -62,6 +74,35 @@ inline constexpr std::string_view asset_type_token(asset_type type)
     return "generic";
 }
 
+inline bool parse_asset_type_token(std::string_view token, asset_type& type)
+{
+    if (token == "generic") {
+        type = asset_type::generic;
+        return true;
+    }
+    if (token == "font") {
+        type = asset_type::font;
+        return true;
+    }
+    if (token == "image") {
+        type = asset_type::image;
+        return true;
+    }
+    if (token == "sound") {
+        type = asset_type::sound;
+        return true;
+    }
+    if (token == "shader") {
+        type = asset_type::shader;
+        return true;
+    }
+    if (token == "deck") {
+        type = asset_type::deck;
+        return true;
+    }
+    return false;
+}
+
 inline asset_cache_key make_asset_cache_key(asset_type type, std::string_view normalized_uri)
 {
     const std::string_view type_token = asset_type_token(type);
@@ -72,6 +113,26 @@ inline asset_cache_key make_asset_cache_key(asset_type type, std::string_view no
     key.append(normalized_uri);
     return key;
 }
+
+struct asset_cache_key_classification {
+    asset_cache_key_policy_status status = asset_cache_key_policy_status::empty_key;
+    asset_type type = asset_type::generic;
+    asset_source_kind source_kind = asset_source_kind::unsupported;
+    std::string normalized_uri;
+    std::string source_path;
+    std::string cache_revision;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return status == asset_cache_key_policy_status::accepted;
+    }
+
+    bool has_cache_revision() const
+    {
+        return !cache_revision.empty();
+    }
+};
 
 struct resolved_asset_source {
     std::string original_uri;
@@ -427,5 +488,113 @@ public:
         return result;
     }
 };
+
+inline bool asset_cache_revision_is_valid(std::string_view revision)
+{
+    if (revision.empty()) {
+        return false;
+    }
+    return std::ranges::none_of(revision, [](char character) {
+        return character == '|' || character == '\n' || character == '\r' || character == '\t'
+            || static_cast<unsigned char>(character) < 0x20U;
+    });
+}
+
+inline asset_cache_key_policy_status cache_key_status_from_resolve_status(asset_resolve_status status)
+{
+    if (status == asset_resolve_status::path_traversal) {
+        return asset_cache_key_policy_status::path_traversal;
+    }
+    return asset_cache_key_policy_status::invalid_source_uri;
+}
+
+inline std::string asset_cache_key_source_path(const resolved_asset_source& source)
+{
+    constexpr std::string_view asset_prefix = "asset://";
+    if (source.kind == asset_source_kind::asset_uri && source.normalized_uri.starts_with(asset_prefix)) {
+        return std::string(std::string_view(source.normalized_uri).substr(asset_prefix.size()));
+    }
+    if (source.kind == asset_source_kind::local_path) {
+        return source.normalized_uri;
+    }
+    return {};
+}
+
+inline asset_cache_key_classification classify_asset_cache_key(std::string_view cache_key)
+{
+    asset_cache_key_classification classification;
+    if (cache_key.empty()) {
+        classification.status = asset_cache_key_policy_status::empty_key;
+        classification.diagnostic = "asset cache key is empty";
+        return classification;
+    }
+
+    const std::string_view::size_type type_separator = cache_key.find('|');
+    if (type_separator == std::string_view::npos || type_separator == 0U) {
+        classification.status = asset_cache_key_policy_status::missing_type_separator;
+        classification.diagnostic = "asset cache key requires a type separator";
+        return classification;
+    }
+
+    if (!parse_asset_type_token(cache_key.substr(0U, type_separator), classification.type)) {
+        classification.status = asset_cache_key_policy_status::unsupported_asset_type;
+        classification.diagnostic = "asset cache key type token is not recognized";
+        return classification;
+    }
+
+    const std::string_view::size_type source_begin = type_separator + 1U;
+    const std::string_view::size_type revision_separator = cache_key.find('|', source_begin);
+    const std::string_view source_uri = cache_key.substr(
+        source_begin,
+        revision_separator == std::string_view::npos ? std::string_view::npos : revision_separator - source_begin);
+    if (source_uri.empty()) {
+        classification.status = asset_cache_key_policy_status::missing_source_uri;
+        classification.diagnostic = "asset cache key requires a source uri";
+        return classification;
+    }
+
+    if (revision_separator != std::string_view::npos) {
+        constexpr std::string_view revision_prefix = "rev=";
+        const std::string_view revision = cache_key.substr(revision_separator + 1U);
+        if (!revision.starts_with(revision_prefix)
+            || !asset_cache_revision_is_valid(revision.substr(revision_prefix.size()))) {
+            classification.status = asset_cache_key_policy_status::invalid_revision;
+            classification.normalized_uri = std::string(source_uri);
+            classification.diagnostic = "asset cache key revision segment must be a non-empty rev= token";
+            return classification;
+        }
+        classification.cache_revision = std::string(revision.substr(revision_prefix.size()));
+    }
+
+    const normalizing_asset_resolver resolver;
+    const asset_resolve_result resolved = resolver.resolve(asset_resolve_request{
+        .type = classification.type,
+        .uri = std::string(source_uri),
+    });
+    classification.source_kind = resolved.source.kind;
+    classification.normalized_uri = std::string(source_uri);
+    if (!resolved.ok()) {
+        classification.status = cache_key_status_from_resolve_status(resolved.status);
+        classification.diagnostic = resolved.diagnostic;
+        return classification;
+    }
+
+    if (std::string_view(resolved.source.normalized_uri) != source_uri) {
+        classification.status = asset_cache_key_policy_status::noncanonical_source_uri;
+        classification.diagnostic = "asset cache key source uri must already be normalized";
+        return classification;
+    }
+
+    classification.status = asset_cache_key_policy_status::accepted;
+    classification.source_kind = resolved.source.kind;
+    classification.normalized_uri = resolved.source.normalized_uri;
+    classification.source_path = asset_cache_key_source_path(resolved.source);
+    return classification;
+}
+
+inline bool asset_cache_key_is_canonical(std::string_view cache_key)
+{
+    return classify_asset_cache_key(cache_key).ok();
+}
 
 } // namespace quiz_vulkan::assets

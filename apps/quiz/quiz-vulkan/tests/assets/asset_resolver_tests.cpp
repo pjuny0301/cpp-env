@@ -60,6 +60,110 @@ void test_asset_cache_key_partitions_types()
     }
 }
 
+void test_asset_cache_key_classification_extracts_source_policy()
+{
+    using namespace quiz_vulkan::assets;
+
+    const asset_cache_key_classification shader =
+        classify_asset_cache_key("shader|asset://shaders/ui.vert.spv|rev=pack-2026.05");
+    require(shader.ok(), "shader cache key classification is accepted");
+    require(shader.status == asset_cache_key_policy_status::accepted, "shader cache key status is accepted");
+    require(shader.type == asset_type::shader, "shader cache key type is parsed");
+    require(shader.source_kind == asset_source_kind::asset_uri, "shader cache key source kind is parsed");
+    require(shader.normalized_uri == "asset://shaders/ui.vert.spv", "shader cache key uri is preserved");
+    require(shader.source_path == "shaders/ui.vert.spv", "shader cache key source path is available");
+    require(shader.has_cache_revision(), "shader cache key revision is detected");
+    require(shader.cache_revision == "pack-2026.05", "shader cache key revision is parsed");
+    require(
+        asset_cache_key_is_canonical("shader|asset://shaders/ui.vert.spv|rev=pack-2026.05"),
+        "canonical shader cache key is accepted by helper");
+
+    const asset_cache_key_classification deck = classify_asset_cache_key("deck|decks/main.quiz");
+    require(deck.ok(), "deck cache key classification is accepted");
+    require(deck.type == asset_type::deck, "deck cache key type is parsed");
+    require(deck.source_kind == asset_source_kind::local_path, "deck cache key local source is classified");
+    require(deck.source_path == "decks/main.quiz", "deck cache key local source path is available");
+    require(!deck.has_cache_revision(), "deck cache key without rev has no revision");
+
+    const asset_cache_key_classification remote =
+        classify_asset_cache_key("image|https://example.test/cards/front.png");
+    require(remote.ok(), "remote image cache key classification is accepted");
+    require(remote.source_kind == asset_source_kind::https_uri, "remote image cache key source kind is parsed");
+    require(remote.source_path.empty(), "remote cache keys do not claim a rooted source path");
+}
+
+void test_asset_cache_key_classification_rejects_ambiguous_or_noncanonical_keys()
+{
+    using namespace quiz_vulkan::assets;
+
+    const asset_cache_key_classification empty = classify_asset_cache_key("");
+    require(!empty.ok(), "empty cache key is rejected");
+    require(empty.status == asset_cache_key_policy_status::empty_key, "empty cache key status is explicit");
+
+    const asset_cache_key_classification missing_separator = classify_asset_cache_key("image");
+    require(!missing_separator.ok(), "cache key without separator is rejected");
+    require(
+        missing_separator.status == asset_cache_key_policy_status::missing_type_separator,
+        "missing separator status is explicit");
+
+    const asset_cache_key_classification unsupported = classify_asset_cache_key("video|asset://movies/intro.mp4");
+    require(!unsupported.ok(), "unsupported cache key type is rejected");
+    require(
+        unsupported.status == asset_cache_key_policy_status::unsupported_asset_type,
+        "unsupported type status is explicit");
+
+    const asset_cache_key_classification missing_source = classify_asset_cache_key("image|");
+    require(!missing_source.ok(), "cache key without source uri is rejected");
+    require(
+        missing_source.status == asset_cache_key_policy_status::missing_source_uri,
+        "missing source status is explicit");
+
+    const asset_cache_key_classification asset_slashes = classify_asset_cache_key("image|asset:///cards/front.png");
+    require(!asset_slashes.ok(), "cache key requires canonical asset uri slashes");
+    require(
+        asset_slashes.status == asset_cache_key_policy_status::noncanonical_source_uri,
+        "noncanonical slash status is explicit");
+
+    const asset_cache_key_classification asset_dot_segment =
+        classify_asset_cache_key("image|asset://cards/./front.png");
+    require(!asset_dot_segment.ok(), "cache key requires normalized asset uri path segments");
+    require(
+        asset_dot_segment.status == asset_cache_key_policy_status::noncanonical_source_uri,
+        "dot segment status is explicit");
+
+    const asset_cache_key_classification traversal =
+        classify_asset_cache_key("sound|asset://sounds/%2e%2e/secret.wav");
+    require(!traversal.ok(), "cache key traversal is rejected after decoding");
+    require(
+        traversal.status == asset_cache_key_policy_status::path_traversal,
+        "cache key traversal status is explicit");
+
+    const asset_cache_key_classification bad_revision =
+        classify_asset_cache_key("font|asset://fonts/body.ttf|version=v2");
+    require(!bad_revision.ok(), "cache key rejects unknown revision fields");
+    require(
+        bad_revision.status == asset_cache_key_policy_status::invalid_revision,
+        "unknown revision field status is explicit");
+
+    const asset_cache_key_classification empty_revision =
+        classify_asset_cache_key("font|asset://fonts/body.ttf|rev=");
+    require(!empty_revision.ok(), "cache key rejects empty revision fields");
+    require(
+        empty_revision.status == asset_cache_key_policy_status::invalid_revision,
+        "empty revision field status is explicit");
+
+    const asset_cache_key_classification extra_separator =
+        classify_asset_cache_key("font|asset://fonts/body.ttf|rev=v2|extra");
+    require(!extra_separator.ok(), "cache key rejects additional separators after revision");
+    require(
+        extra_separator.status == asset_cache_key_policy_status::invalid_revision,
+        "extra separator revision status is explicit");
+
+    require(
+        !asset_cache_key_is_canonical("image|asset:///cards/front.png"),
+        "noncanonical cache key is rejected by helper");
+}
+
 void test_relative_local_path_normalizes_without_fetching()
 {
     using namespace quiz_vulkan::assets;
@@ -146,6 +250,8 @@ int main()
 {
     test_asset_uri_normalizes_to_package_path();
     test_asset_cache_key_partitions_types();
+    test_asset_cache_key_classification_extracts_source_policy();
+    test_asset_cache_key_classification_rejects_ambiguous_or_noncanonical_keys();
     test_relative_local_path_normalizes_without_fetching();
     test_remote_uri_keeps_payload_and_namespaced_cache_key();
     test_path_traversal_is_rejected_after_decoding();

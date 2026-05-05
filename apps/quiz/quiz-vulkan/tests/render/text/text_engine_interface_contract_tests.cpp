@@ -76,6 +76,10 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.font_source_resolutions }
         -> std::same_as<std::vector<render::render_text_font_source_resolution_snapshot>&>;
     { diagnostics.font_source_policy } -> std::same_as<render::render_text_font_source_policy_snapshot&>;
+    { diagnostics.font_source_bytes }
+        -> std::same_as<std::vector<render::render_text_font_source_bytes_snapshot>&>;
+    { diagnostics.font_source_bytes_policy }
+        -> std::same_as<render::render_text_font_source_bytes_policy_snapshot&>;
     { diagnostics.glyph_font_resolutions }
         -> std::same_as<std::vector<render::render_text_glyph_font_resolution_snapshot>&>;
     { diagnostics.font_resolution_policy } -> std::same_as<render::render_text_font_resolution_policy_snapshot&>;
@@ -105,6 +109,8 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.has_font_catalog_policy() } -> std::same_as<bool>;
     { diagnostics.has_font_source_resolutions() } -> std::same_as<bool>;
     { diagnostics.has_font_source_policy() } -> std::same_as<bool>;
+    { diagnostics.has_font_source_bytes() } -> std::same_as<bool>;
+    { diagnostics.has_font_source_bytes_policy() } -> std::same_as<bool>;
     { diagnostics.has_glyph_font_resolutions() } -> std::same_as<bool>;
     { diagnostics.has_glyph_cache_readiness() } -> std::same_as<bool>;
     { diagnostics.has_line_breaks() } -> std::same_as<bool>;
@@ -256,8 +262,47 @@ static_assert(requires(render::render_text_font_source_policy_snapshot policy) {
     { policy.virtual_source_count } -> std::same_as<std::size_t&>;
 });
 
+static_assert(requires(render::render_text_font_source_bytes_snapshot source) {
+    { source.run_index } -> std::same_as<std::size_t&>;
+    { source.style_token } -> std::same_as<render::render_style_id&>;
+    { source.resolved_face_id } -> std::same_as<render::font_face_id&>;
+    { source.source_kind } -> std::same_as<render::render_text_font_source_kind&>;
+    { source.status } -> std::same_as<render::render_text_font_source_bytes_status&>;
+    { source.cache_key } -> std::same_as<std::string&>;
+    { source.estimated_byte_count } -> std::same_as<std::size_t&>;
+    { source.cacheable } -> std::same_as<bool&>;
+    { source.cache_hit } -> std::same_as<bool&>;
+    { source.cache_inserted } -> std::same_as<bool&>;
+    { source.requires_io } -> std::same_as<bool&>;
+    { source.bytes_available_without_io } -> std::same_as<bool&>;
+});
+
+static_assert(requires(render::render_text_font_source_bytes_policy_snapshot policy) {
+    { policy.request_count } -> std::same_as<std::size_t&>;
+    { policy.cacheable_source_count } -> std::same_as<std::size_t&>;
+    { policy.cached_source_count } -> std::same_as<std::size_t&>;
+    { policy.cache_hit_count } -> std::same_as<std::size_t&>;
+    { policy.cache_miss_count } -> std::same_as<std::size_t&>;
+    { policy.cache_insert_count } -> std::same_as<std::size_t&>;
+    { policy.available_virtual_source_count } -> std::same_as<std::size_t&>;
+    { policy.pending_file_load_count } -> std::same_as<std::size_t&>;
+    { policy.missing_source_count } -> std::same_as<std::size_t&>;
+    { policy.unsupported_source_count } -> std::same_as<std::size_t&>;
+    { policy.estimated_available_byte_count } -> std::same_as<std::size_t&>;
+});
+
 static_assert(requires(const render::font_face_descriptor& descriptor) {
     { render::resolve_font_source(descriptor) } -> std::same_as<render::font_source_resolution>;
+});
+
+static_assert(requires(const render::font_source_resolution& source) {
+    { render::inspect_font_source_bytes(source) } -> std::same_as<render::font_source_bytes_readiness>;
+    { render::font_source_bytes_cache_key_for(source) } -> std::same_as<std::string>;
+    { render::estimate_virtual_font_source_byte_count(source) } -> std::same_as<std::size_t>;
+});
+
+static_assert(requires(std::string cache_key) {
+    { render::is_valid_font_source_bytes_cache_key(cache_key) } -> std::same_as<bool>;
 });
 
 static_assert(requires(render::render_text_glyph_font_resolution_snapshot glyph) {

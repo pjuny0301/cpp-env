@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <numeric>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -86,6 +87,11 @@ struct glyph_cache_policy_access_result {
     bool inserted = false;
     bool evicted = false;
     glyph_atlas_key evicted_key;
+};
+
+struct font_source_bytes_cache_access_result {
+    bool hit = false;
+    bool inserted = false;
 };
 
 float line_height_for(const render_text_style& style)
@@ -197,12 +203,98 @@ void record_font_face_selection(
     }
 }
 
+std::vector<std::string>::iterator find_font_source_bytes_cache_entry(
+    std::vector<std::string>& entries,
+    const std::string& cache_key)
+{
+    return std::find(entries.begin(), entries.end(), cache_key);
+}
+
+font_source_bytes_cache_access_result access_font_source_bytes_cache(
+    std::vector<std::string>& entries,
+    const font_source_bytes_readiness& readiness)
+{
+    if (!readiness.cacheable) {
+        return {};
+    }
+
+    const auto match = find_font_source_bytes_cache_entry(entries, readiness.cache_key);
+    if (match != entries.end()) {
+        return font_source_bytes_cache_access_result{
+            .hit = true,
+        };
+    }
+
+    entries.push_back(readiness.cache_key);
+    return font_source_bytes_cache_access_result{
+        .inserted = true,
+    };
+}
+
+void record_font_source_bytes_readiness(
+    fake_text_engine_diagnostics& diagnostics,
+    const std::size_t run_index,
+    const render_style_id& style_token,
+    const font_source_resolution& source,
+    std::vector<std::string>& source_cache_entries)
+{
+    const font_source_bytes_readiness readiness = inspect_font_source_bytes(source);
+    const font_source_bytes_cache_access_result cache_access =
+        access_font_source_bytes_cache(source_cache_entries, readiness);
+
+    diagnostics.font_source_bytes.push_back(render_text_font_source_bytes_snapshot{
+        .run_index = run_index,
+        .style_token = style_token,
+        .resolved_face_id = source.face_id,
+        .source_kind = readiness.source_kind,
+        .status = readiness.status,
+        .cache_key = readiness.cache_key,
+        .estimated_byte_count = readiness.estimated_byte_count,
+        .cacheable = readiness.cacheable,
+        .cache_hit = cache_access.hit,
+        .cache_inserted = cache_access.inserted,
+        .requires_io = readiness.requires_io,
+        .bytes_available_without_io = readiness.bytes_available_without_io,
+    });
+
+    ++diagnostics.font_source_bytes_policy.request_count;
+    diagnostics.font_source_bytes_policy.cached_source_count = source_cache_entries.size();
+    if (readiness.cacheable) {
+        ++diagnostics.font_source_bytes_policy.cacheable_source_count;
+        if (cache_access.hit) {
+            ++diagnostics.font_source_bytes_policy.cache_hit_count;
+        } else {
+            ++diagnostics.font_source_bytes_policy.cache_miss_count;
+        }
+        if (cache_access.inserted) {
+            ++diagnostics.font_source_bytes_policy.cache_insert_count;
+        }
+    }
+
+    switch (readiness.status) {
+    case render_text_font_source_bytes_status::available_virtual_fixture:
+        ++diagnostics.font_source_bytes_policy.available_virtual_source_count;
+        diagnostics.font_source_bytes_policy.estimated_available_byte_count += readiness.estimated_byte_count;
+        break;
+    case render_text_font_source_bytes_status::pending_file_load:
+        ++diagnostics.font_source_bytes_policy.pending_file_load_count;
+        break;
+    case render_text_font_source_bytes_status::missing_source:
+        ++diagnostics.font_source_bytes_policy.missing_source_count;
+        break;
+    case render_text_font_source_bytes_status::unsupported_source:
+        ++diagnostics.font_source_bytes_policy.unsupported_source_count;
+        break;
+    }
+}
+
 void record_font_source_resolution(
     fake_text_engine_diagnostics& diagnostics,
     const std::size_t run_index,
     const render_style_id& style_token,
     const font_face_catalog& catalog,
-    const font_resolver_result& resolution)
+    const font_resolver_result& resolution,
+    std::vector<std::string>& source_cache_entries)
 {
     const font_face_descriptor* face = catalog.find_by_id(resolution.resolved_face_id);
     const font_source_resolution source = face == nullptr
@@ -243,6 +335,13 @@ void record_font_source_resolution(
     if (source.virtual_fixture) {
         ++diagnostics.font_source_policy.virtual_source_count;
     }
+
+    record_font_source_bytes_readiness(
+        diagnostics,
+        run_index,
+        style_token,
+        source,
+        source_cache_entries);
 }
 
 bool contains_face_id(const std::vector<font_face_id>& faces, const font_face_id face_id)
@@ -346,7 +445,8 @@ void record_utf8_clusters(
 std::vector<shaped_glyph> shape_request(
     const render_text_request& request,
     const deterministic_fake_font_resolver& font_resolver,
-    fake_text_engine_diagnostics& diagnostics)
+    fake_text_engine_diagnostics& diagnostics,
+    std::vector<std::string>& source_cache_entries)
 {
     std::vector<shaped_glyph> glyphs;
 
@@ -369,7 +469,8 @@ std::vector<shaped_glyph> shape_request(
             run_index,
             run.style_token,
             font_resolver.catalog(),
-            font_resolution);
+            font_resolution,
+            source_cache_entries);
         record_font_fallback(diagnostics, run_index, run.style_token, font_resolution);
 
         const std::vector<utf8_text_codepoint> codepoints = iterate_utf8_text_run(run.text);
@@ -1704,14 +1805,16 @@ const glyph_atlas_slot* atlas_slot_for_visible_glyph(
 render_text_measure fake_text_engine::measure_text(const render_text_request& request) const
 {
     diagnostics_ = {};
-    const std::vector<shaped_glyph> glyphs = shape_request(request, font_resolver_, diagnostics_);
+    const std::vector<shaped_glyph> glyphs =
+        shape_request(request, font_resolver_, diagnostics_, font_source_bytes_cache_entries_);
     return measure_lines(break_lines(request, glyphs, &diagnostics_));
 }
 
 render_text_layout fake_text_engine::layout_text(const render_text_request& request) const
 {
     diagnostics_ = {};
-    const std::vector<shaped_glyph> shaped_glyphs = shape_request(request, font_resolver_, diagnostics_);
+    const std::vector<shaped_glyph> shaped_glyphs =
+        shape_request(request, font_resolver_, diagnostics_, font_source_bytes_cache_entries_);
     const std::vector<laid_out_line> lines = break_lines(request, shaped_glyphs, &diagnostics_);
     std::vector<laid_out_glyph_cluster> cluster_layouts =
         collect_glyph_cluster_layouts(request, shaped_glyphs, lines);
@@ -1762,7 +1865,8 @@ render_text_layout fake_text_engine::layout_text(const render_text_request& requ
 std::vector<fake_text_engine_caret> fake_text_engine::caret_positions(const render_text_request& request) const
 {
     diagnostics_ = {};
-    const std::vector<shaped_glyph> shaped_glyphs = shape_request(request, font_resolver_, diagnostics_);
+    const std::vector<shaped_glyph> shaped_glyphs =
+        shape_request(request, font_resolver_, diagnostics_, font_source_bytes_cache_entries_);
     const std::vector<laid_out_line> lines = break_lines(request, shaped_glyphs, &diagnostics_);
     const std::vector<laid_out_glyph_cluster> cluster_layouts =
         collect_glyph_cluster_layouts(request, shaped_glyphs, lines);
@@ -1804,7 +1908,8 @@ std::vector<render_rect> fake_text_engine::selection_rects(
         return {};
     }
 
-    const std::vector<shaped_glyph> shaped_glyphs = shape_request(request, font_resolver_, diagnostics_);
+    const std::vector<shaped_glyph> shaped_glyphs =
+        shape_request(request, font_resolver_, diagnostics_, font_source_bytes_cache_entries_);
     const std::vector<laid_out_line> lines = break_lines(request, shaped_glyphs, &diagnostics_);
     const std::vector<laid_out_glyph_cluster> cluster_layouts =
         collect_glyph_cluster_layouts(request, shaped_glyphs, lines);

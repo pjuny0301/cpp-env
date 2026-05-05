@@ -135,6 +135,21 @@ struct render_text_font_source_resolution_snapshot {
     bool virtual_fixture = false;
 };
 
+struct render_text_font_source_bytes_snapshot {
+    std::size_t run_index = 0;
+    render_style_id style_token;
+    font_face_id resolved_face_id = 0;
+    render_text_font_source_kind source_kind = render_text_font_source_kind::missing;
+    render_text_font_source_bytes_status status = render_text_font_source_bytes_status::missing_source;
+    std::string cache_key;
+    std::size_t estimated_byte_count = 0;
+    bool cacheable = false;
+    bool cache_hit = false;
+    bool cache_inserted = false;
+    bool requires_io = false;
+    bool bytes_available_without_io = false;
+};
+
 struct render_text_font_source_policy_snapshot {
     std::size_t request_count = 0;
     std::size_t fixture_source_count = 0;
@@ -143,6 +158,20 @@ struct render_text_font_source_policy_snapshot {
     std::size_t unknown_uri_count = 0;
     std::size_t loadable_source_count = 0;
     std::size_t virtual_source_count = 0;
+};
+
+struct render_text_font_source_bytes_policy_snapshot {
+    std::size_t request_count = 0;
+    std::size_t cacheable_source_count = 0;
+    std::size_t cached_source_count = 0;
+    std::size_t cache_hit_count = 0;
+    std::size_t cache_miss_count = 0;
+    std::size_t cache_insert_count = 0;
+    std::size_t available_virtual_source_count = 0;
+    std::size_t pending_file_load_count = 0;
+    std::size_t missing_source_count = 0;
+    std::size_t unsupported_source_count = 0;
+    std::size_t estimated_available_byte_count = 0;
 };
 
 struct render_text_glyph_font_resolution_snapshot {

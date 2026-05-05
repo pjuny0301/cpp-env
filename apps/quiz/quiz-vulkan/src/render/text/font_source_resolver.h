@@ -16,6 +16,13 @@ enum class render_text_font_source_kind {
     unknown_uri,
 };
 
+enum class render_text_font_source_bytes_status {
+    missing_source,
+    available_virtual_fixture,
+    pending_file_load,
+    unsupported_source,
+};
+
 struct font_source_resolution {
     font_face_id face_id = 0;
     std::string family;
@@ -24,6 +31,17 @@ struct font_source_resolution {
     std::string resolved_location;
     bool can_attempt_load = false;
     bool virtual_fixture = false;
+};
+
+struct font_source_bytes_readiness {
+    font_face_id face_id = 0;
+    std::string cache_key;
+    render_text_font_source_kind source_kind = render_text_font_source_kind::missing;
+    render_text_font_source_bytes_status status = render_text_font_source_bytes_status::missing_source;
+    std::size_t estimated_byte_count = 0;
+    bool cacheable = false;
+    bool requires_io = false;
+    bool bytes_available_without_io = false;
 };
 
 inline bool font_source_is_ascii_alpha(const char value)
@@ -151,6 +169,80 @@ inline std::string font_source_file_uri_path(const std::string_view source_uri)
         path.erase(path.begin());
     }
     return font_source_normalize_path_separators(path);
+}
+
+inline bool is_valid_font_source_bytes_cache_key(const std::string_view cache_key)
+{
+    if (cache_key.empty()) {
+        return false;
+    }
+
+    for (const char value : cache_key) {
+        if (static_cast<unsigned char>(value) < 0x20U || value == 0x7f) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+inline std::string font_source_bytes_cache_key_for(const font_source_resolution& source)
+{
+    switch (source.kind) {
+    case render_text_font_source_kind::fixture_uri:
+        return source.source_uri;
+    case render_text_font_source_kind::file_uri:
+    case render_text_font_source_kind::file_path:
+        return source.resolved_location;
+    case render_text_font_source_kind::unknown_uri:
+        return source.source_uri;
+    case render_text_font_source_kind::missing:
+        return {};
+    }
+
+    return {};
+}
+
+inline std::size_t estimate_virtual_font_source_byte_count(const font_source_resolution& source)
+{
+    if (!source.virtual_fixture || source.resolved_location.empty()) {
+        return 0;
+    }
+    return 64U + source.family.size() + source.resolved_location.size();
+}
+
+inline font_source_bytes_readiness inspect_font_source_bytes(const font_source_resolution& source)
+{
+    font_source_bytes_readiness readiness{
+        .face_id = source.face_id,
+        .cache_key = font_source_bytes_cache_key_for(source),
+        .source_kind = source.kind,
+    };
+
+    switch (source.kind) {
+    case render_text_font_source_kind::fixture_uri:
+        readiness.status = render_text_font_source_bytes_status::available_virtual_fixture;
+        readiness.estimated_byte_count = estimate_virtual_font_source_byte_count(source);
+        readiness.cacheable = is_valid_font_source_bytes_cache_key(readiness.cache_key);
+        readiness.bytes_available_without_io = readiness.estimated_byte_count > 0U;
+        return readiness;
+    case render_text_font_source_kind::file_uri:
+    case render_text_font_source_kind::file_path:
+        readiness.status = source.can_attempt_load
+            ? render_text_font_source_bytes_status::pending_file_load
+            : render_text_font_source_bytes_status::missing_source;
+        readiness.cacheable = source.can_attempt_load && is_valid_font_source_bytes_cache_key(readiness.cache_key);
+        readiness.requires_io = source.can_attempt_load;
+        return readiness;
+    case render_text_font_source_kind::unknown_uri:
+        readiness.status = render_text_font_source_bytes_status::unsupported_source;
+        return readiness;
+    case render_text_font_source_kind::missing:
+        readiness.status = render_text_font_source_bytes_status::missing_source;
+        return readiness;
+    }
+
+    return readiness;
 }
 
 inline font_source_resolution resolve_font_source(

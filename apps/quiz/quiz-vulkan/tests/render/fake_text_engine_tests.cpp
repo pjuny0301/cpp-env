@@ -655,6 +655,174 @@ void test_fake_font_source_diagnostics_track_selected_face_sources()
     require(engine.last_diagnostics().font_source_policy.virtual_source_count == 1, "font source policy counts virtual sources");
 }
 
+void test_font_source_bytes_readiness_classifies_virtual_and_loadable_sources()
+{
+    using namespace quiz_vulkan::render;
+
+    const font_source_resolution fixture = resolve_font_source(font_face_descriptor{
+        .id = 21,
+        .family = "Fixture Sans",
+        .source_uri = "fixture://fonts/fixture-sans-regular",
+        .version = "fixture-1",
+        .license = "test-fixture",
+    });
+    const font_source_bytes_readiness fixture_bytes = inspect_font_source_bytes(fixture);
+    require(
+        fixture_bytes.status == render_text_font_source_bytes_status::available_virtual_fixture,
+        "font source bytes marks fixture sources available without IO");
+    require(fixture_bytes.cache_key == "fixture://fonts/fixture-sans-regular", "fixture source bytes cache key is stable");
+    require(fixture_bytes.cacheable, "fixture source bytes are cacheable");
+    require(!fixture_bytes.requires_io, "fixture source bytes do not require IO");
+    require(fixture_bytes.bytes_available_without_io, "fixture source bytes are available without IO");
+    require(
+        fixture_bytes.estimated_byte_count == 64U + std::string("Fixture Sans").size()
+            + std::string("fonts/fixture-sans-regular").size(),
+        "fixture source bytes estimate is deterministic");
+
+    const font_source_resolution local = resolve_font_source(
+        font_face_descriptor{
+            .id = 22,
+            .family = "Fixture Local",
+            .source_uri = "fonts/local.ttf",
+            .version = "fixture-1",
+            .license = "test-fixture",
+        },
+        "/mnt/c/aa/build/external/text");
+    const font_source_bytes_readiness local_bytes = inspect_font_source_bytes(local);
+    require(
+        local_bytes.status == render_text_font_source_bytes_status::pending_file_load,
+        "font source bytes marks local paths as pending file loads");
+    require(
+        local_bytes.cache_key == "/mnt/c/aa/build/external/text/fonts/local.ttf",
+        "local source bytes cache key uses resolved path");
+    require(local_bytes.cacheable, "local source bytes are cacheable before the future load step");
+    require(local_bytes.requires_io, "local source bytes require IO");
+    require(!local_bytes.bytes_available_without_io, "local source bytes are not available without IO");
+
+    const font_source_resolution unknown = resolve_font_source(font_face_descriptor{
+        .id = 23,
+        .family = "Fixture Remote",
+        .source_uri = "https://example.test/font.ttf",
+        .version = "fixture-1",
+        .license = "test-fixture",
+    });
+    const font_source_bytes_readiness unknown_bytes = inspect_font_source_bytes(unknown);
+    require(
+        unknown_bytes.status == render_text_font_source_bytes_status::unsupported_source,
+        "font source bytes marks unknown URI schemes unsupported");
+    require(!unknown_bytes.cacheable, "unsupported font source bytes are not cacheable");
+
+    require(is_valid_font_source_bytes_cache_key("fonts/local.ttf"), "font source bytes cache accepts paths");
+    require(!is_valid_font_source_bytes_cache_key({}), "font source bytes cache rejects empty keys");
+    require(!is_valid_font_source_bytes_cache_key("fonts/bad\n.ttf"), "font source bytes cache rejects controls");
+}
+
+void test_fake_font_source_bytes_diagnostics_track_availability_and_cache()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    const font_face_id local_face_id = engine.add_font_face(font_face_descriptor{
+        .family = "Fixture Local",
+        .source_uri = "build/external/fonts/fixture-local.ttf",
+        .version = "fixture-1",
+        .license = "test-fixture",
+        .coverage = {font_codepoint_range{.first = 0x0020, .last = 0x007e}},
+        .weight = 400,
+        .italic = false,
+        .fallback = false,
+    }).id;
+
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "a", .style_token = "body"},
+        render_text_run{.text = "b", .style_token = "body"},
+        render_text_run{.text = "c", .style_token = "local"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 200.0f, 0.0f};
+    request.style_catalog = make_style_catalog();
+    request.style_catalog.styles.push_back(render_text_style{
+        .id = "local",
+        .font_family = "Fixture Local",
+        .font_size = 20.0f,
+        .line_height = 24.0f,
+        .letter_spacing = 0.0f,
+        .font_weight = 400,
+        .italic = false,
+    });
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    const render_text_layout first_layout = engine.layout_text(request);
+    require(first_layout.glyphs.size() == 3, "font source byte diagnostics do not change glyph emission");
+    require(engine.last_diagnostics().has_font_source_bytes(), "fake engine records font source byte diagnostics");
+    require(
+        engine.last_diagnostics().font_source_bytes.size() == 3,
+        "fake engine records one font source byte entry per run");
+
+    const render_text_font_source_bytes_snapshot& first_fixture = engine.last_diagnostics().font_source_bytes[0];
+    require(first_fixture.run_index == 0, "first fixture source bytes records run index");
+    require(first_fixture.style_token == "body", "first fixture source bytes records style token");
+    require(first_fixture.resolved_face_id == 1, "first fixture source bytes records resolved Sans face");
+    require(
+        first_fixture.status == render_text_font_source_bytes_status::available_virtual_fixture,
+        "first fixture source bytes are available without IO");
+    require(first_fixture.cacheable, "first fixture source bytes are cacheable");
+    require(!first_fixture.cache_hit, "first fixture source bytes miss the empty cache");
+    require(first_fixture.cache_inserted, "first fixture source bytes insert into cache");
+    require(first_fixture.bytes_available_without_io, "first fixture source bytes are available without IO");
+
+    const render_text_font_source_bytes_snapshot& repeated_fixture = engine.last_diagnostics().font_source_bytes[1];
+    require(repeated_fixture.cache_key == first_fixture.cache_key, "repeated fixture source bytes share cache key");
+    require(repeated_fixture.cache_hit, "repeated fixture source bytes hit cache inside the request");
+    require(!repeated_fixture.cache_inserted, "repeated fixture source bytes do not insert twice");
+
+    const render_text_font_source_bytes_snapshot& local_file = engine.last_diagnostics().font_source_bytes[2];
+    require(local_file.resolved_face_id == local_face_id, "local source bytes records selected local face");
+    require(
+        local_file.status == render_text_font_source_bytes_status::pending_file_load,
+        "local source bytes are pending a future file load");
+    require(local_file.cacheable, "local source bytes are cacheable");
+    require(local_file.cache_inserted, "local source bytes insert into cache metadata");
+    require(local_file.requires_io, "local source bytes require IO");
+    require(!local_file.bytes_available_without_io, "local source bytes are not available without IO");
+
+    require(engine.last_diagnostics().has_font_source_bytes_policy(), "fake engine records source byte policy");
+    require(engine.last_diagnostics().font_source_bytes_policy.request_count == 3, "source byte policy counts runs");
+    require(
+        engine.last_diagnostics().font_source_bytes_policy.cacheable_source_count == 3,
+        "source byte policy counts cacheable sources");
+    require(engine.last_diagnostics().font_source_bytes_policy.cached_source_count == 2, "source byte policy counts cached keys");
+    require(engine.last_diagnostics().font_source_bytes_policy.cache_hit_count == 1, "source byte policy counts cache hits");
+    require(engine.last_diagnostics().font_source_bytes_policy.cache_miss_count == 2, "source byte policy counts cache misses");
+    require(engine.last_diagnostics().font_source_bytes_policy.cache_insert_count == 2, "source byte policy counts cache inserts");
+    require(
+        engine.last_diagnostics().font_source_bytes_policy.available_virtual_source_count == 2,
+        "source byte policy counts virtual fixtures by run");
+    require(
+        engine.last_diagnostics().font_source_bytes_policy.pending_file_load_count == 1,
+        "source byte policy counts pending file loads");
+    require(
+        engine.last_diagnostics().font_source_bytes_policy.estimated_available_byte_count
+            == first_fixture.estimated_byte_count + repeated_fixture.estimated_byte_count,
+        "source byte policy sums available virtual bytes");
+
+    const render_text_layout second_layout = engine.layout_text(request);
+    require(second_layout.glyphs.size() == 3, "cached source byte diagnostics keep glyph emission stable");
+    require(
+        engine.last_diagnostics().font_source_bytes_policy.cache_hit_count == 3,
+        "second layout hits the source byte cache for all runs");
+    require(
+        engine.last_diagnostics().font_source_bytes_policy.cache_insert_count == 0,
+        "second layout does not add source byte cache entries");
+    require(
+        engine.last_diagnostics().font_source_bytes_policy.cached_source_count == 2,
+        "second layout keeps source byte cache size stable");
+}
+
 void test_glyph_atlas_cache_allocates_rows_pages_and_cached_slots()
 {
     using namespace quiz_vulkan::render;
@@ -2455,6 +2623,8 @@ int main()
     test_deterministic_fake_font_resolver_reports_face_fallbacks();
     test_font_source_resolver_classifies_fixture_file_and_unknown_sources();
     test_fake_font_source_diagnostics_track_selected_face_sources();
+    test_font_source_bytes_readiness_classifies_virtual_and_loadable_sources();
+    test_fake_font_source_bytes_diagnostics_track_availability_and_cache();
     test_glyph_atlas_cache_allocates_rows_pages_and_cached_slots();
     test_glyph_atlas_cache_consumes_dirty_page_updates_by_revision();
     test_fake_measure_and_layout_emit_stable_glyphs();

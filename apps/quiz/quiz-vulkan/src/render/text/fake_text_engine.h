@@ -45,6 +45,8 @@ struct fake_text_engine_diagnostics {
     render_text_font_catalog_policy_snapshot font_catalog_policy;
     std::vector<render_text_font_source_resolution_snapshot> font_source_resolutions;
     render_text_font_source_policy_snapshot font_source_policy;
+    std::vector<render_text_font_source_bytes_snapshot> font_source_bytes;
+    render_text_font_source_bytes_policy_snapshot font_source_bytes_policy;
     std::vector<render_text_glyph_font_resolution_snapshot> glyph_font_resolutions;
     render_text_font_resolution_policy_snapshot font_resolution_policy;
     std::vector<render_text_line_break_snapshot> line_breaks;
@@ -131,6 +133,16 @@ struct fake_text_engine_diagnostics {
         return font_source_policy.request_count > 0;
     }
 
+    bool has_font_source_bytes() const
+    {
+        return !font_source_bytes.empty();
+    }
+
+    bool has_font_source_bytes_policy() const
+    {
+        return font_source_bytes_policy.request_count > 0;
+    }
+
     bool has_glyph_font_resolutions() const
     {
         return !glyph_font_resolutions.empty();
@@ -215,6 +227,7 @@ private:
         .padding = 1,
     }};
     mutable std::vector<glyph_atlas_key> glyph_cache_policy_entries_;
+    mutable std::vector<std::string> font_source_bytes_cache_entries_;
     mutable std::vector<render_text_atlas_update> atlas_updates_;
     mutable fake_text_engine_diagnostics diagnostics_;
     deterministic_fake_font_resolver font_resolver_;

@@ -10,6 +10,11 @@ First read:
 Task:
 Define and implement the next asset resolver/cache-key step used by font/image/sound/shader/deck assets.
 
+Current assignment:
+- Add a small asset resolver/cache-key policy improvement that can be consumed later by text/image/audio/Vulkan without editing those engines.
+- Prefer asset URI normalization, manifest lookup diagnostics, path traversal rejection, pack/version compatibility checks, or shader/font/image/sound/deck cache-key classification.
+- Keep it data-only and testable; no runtime app wiring.
+
 Scope:
 - Own only `apps/quiz/quiz-vulkan/src/assets/*` and `apps/quiz/quiz-vulkan/tests/assets/*`.
 - Keep asset lookup neutral and independent of renderer/domain where possible.
@@ -24,4 +29,5 @@ Do not:
 Required verification:
 - Build `quiz_vulkan_interface_contract_compile_tests`.
 - Run any new asset tests.
+- Run the focused existing asset test touched by this task.
 - Run `git diff --check`.

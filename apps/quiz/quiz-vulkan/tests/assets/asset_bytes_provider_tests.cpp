@@ -80,6 +80,39 @@ private:
     mutable std::optional<quiz_vulkan::assets::runtime_asset_catalog_snapshot> last_snapshot_;
 };
 
+bool integrity_issue_at(
+    const quiz_vulkan::assets::asset_bytes_integrity_report& report,
+    std::size_t index,
+    quiz_vulkan::assets::asset_bytes_integrity_issue_kind kind,
+    std::string_view id)
+{
+    return report.issues.size() > index && report.issues[index].kind == kind
+        && std::string_view(report.issues[index].id) == id;
+}
+
+quiz_vulkan::assets::runtime_asset_catalog_snapshot make_card_front_snapshot(
+    const std::filesystem::path& fixture_root)
+{
+    using namespace quiz_vulkan::assets;
+
+    return runtime_asset_catalog_snapshot{
+        .entry = asset_manifest_entry{
+            .id = "card_front",
+            .type = asset_type::image,
+            .uri = "asset://cards/front.png",
+        },
+        .source = resolved_asset_source{
+            .original_uri = "asset://cards/front.png",
+            .normalized_uri = "asset://cards/front.png",
+            .kind = asset_source_kind::asset_uri,
+            .type = asset_type::image,
+        },
+        .cache_key = "image|asset://cards/front.png",
+        .resolved_root_id = "packaged",
+        .rooted_path = std::filesystem::absolute(fixture_root / "packaged" / "cards" / "front.png"),
+    };
+}
+
 void test_fake_provider_loads_bytes_by_snapshot_and_catalog_id()
 {
     using namespace quiz_vulkan::assets;
@@ -476,6 +509,160 @@ void test_materialized_asset_bytes_call_provider_after_materialization()
     require(bytes_to_string(loaded.bytes) == "image bytes", "provider result is returned after materialization");
 }
 
+void test_asset_bytes_integrity_validates_load_result_byte_count_and_content()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    const runtime_asset_catalog_snapshot snapshot = make_card_front_snapshot(fixture_root);
+    asset_bytes_load_result load{
+        .status = asset_bytes_load_status::loaded,
+        .bytes = detail::make_asset_byte_vector("image bytes"),
+        .byte_count = 11U,
+        .cache_key = snapshot.cache_key,
+        .source_uri = snapshot.source.normalized_uri,
+    };
+
+    const asset_bytes_integrity_report valid = validate_asset_bytes_integrity(asset_bytes_integrity_request{
+        .snapshot = snapshot,
+        .load = load,
+    });
+    require(valid.ok(), "asset byte integrity accepts matching metadata and byte counts");
+
+    load.byte_count = 12U;
+    const asset_bytes_integrity_report count_mismatch =
+        validate_asset_bytes_integrity(asset_bytes_integrity_request{
+            .snapshot = snapshot,
+            .load = load,
+        });
+    require(
+        integrity_issue_at(
+            count_mismatch,
+            0U,
+            asset_bytes_integrity_issue_kind::byte_count_mismatch,
+            "card_front"),
+        "asset byte integrity reports byte count mismatches");
+    require(
+        count_mismatch.issues[0].reported_byte_count == 12U && count_mismatch.issues[0].actual_byte_count == 11U,
+        "byte count mismatch reports both provider count and payload size");
+
+    load.bytes.clear();
+    load.byte_count = 0U;
+    const asset_bytes_integrity_report missing_content =
+        validate_asset_bytes_integrity(asset_bytes_integrity_request{
+            .snapshot = snapshot,
+            .load = load,
+        });
+    require(
+        integrity_issue_at(
+            missing_content,
+            0U,
+            asset_bytes_integrity_issue_kind::missing_content,
+            "card_front"),
+        "asset byte integrity reports empty content by default");
+
+    const asset_bytes_integrity_report empty_allowed =
+        validate_asset_bytes_integrity(asset_bytes_integrity_request{
+            .snapshot = snapshot,
+            .load = load,
+            .require_non_empty = false,
+        });
+    require(empty_allowed.ok(), "asset byte integrity can explicitly allow empty content");
+}
+
+void test_materialized_asset_bytes_integrity_fails_before_provider_for_unmaterialized_sources()
+{
+    using namespace quiz_vulkan::assets;
+
+    asset_manifest manifest;
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "rootless_shader",
+        .type = asset_type::shader,
+        .uri = "asset://shaders/ui.vert.spv",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const runtime_asset_catalog catalog = build_runtime_asset_catalog(manifest, resolver);
+    const counting_asset_bytes_provider provider(asset_bytes_load_result{
+        .status = asset_bytes_load_status::loaded,
+        .bytes = detail::make_asset_byte_vector("shader bytes"),
+        .byte_count = 12U,
+        .cache_key = "shader|asset://shaders/ui.vert.spv",
+        .source_uri = "asset://shaders/ui.vert.spv",
+    });
+
+    const asset_bytes_integrity_report report = load_materialized_asset_bytes_with_integrity(
+        provider,
+        catalog,
+        asset_bytes_catalog_request{.id = "rootless_shader", .expected_type = asset_type::shader});
+
+    require(!report.ok(), "rootless assets fail before byte integrity can pass");
+    require(report.load.status == asset_bytes_load_status::source_not_readable, "pre-provider failure preserves load status");
+    require(provider.load_count() == 0U, "materialization failures do not call the byte provider");
+    require(
+        integrity_issue_at(report, 0U, asset_bytes_integrity_issue_kind::load_failed, "rootless_shader"),
+        "pre-provider failure is reported as a load failure integrity issue");
+    require(
+        report.issues[0].expected_cache_key == "shader|asset://shaders/ui.vert.spv",
+        "pre-provider integrity failure keeps expected cache-key diagnostics");
+}
+
+void test_materialized_asset_bytes_integrity_fails_after_provider_for_byte_count_mismatch()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    const runtime_asset_catalog_snapshot snapshot = make_card_front_snapshot(fixture_root);
+    const counting_asset_bytes_provider provider(asset_bytes_load_result{
+        .status = asset_bytes_load_status::loaded,
+        .bytes = detail::make_asset_byte_vector("image bytes"),
+        .byte_count = 12U,
+        .cache_key = snapshot.cache_key,
+        .source_uri = snapshot.source.normalized_uri,
+    });
+
+    const asset_bytes_integrity_report report = load_materialized_asset_bytes_with_integrity(
+        provider,
+        materialize_runtime_asset(snapshot));
+
+    require(!report.ok(), "byte-count mismatches fail after provider load");
+    require(provider.load_count() == 1U, "byte-count integrity is checked after provider read");
+    require(
+        integrity_issue_at(report, 0U, asset_bytes_integrity_issue_kind::byte_count_mismatch, "card_front"),
+        "post-provider byte-count mismatch is reported");
+    require(report.load.ok(), "post-provider integrity failure keeps the loaded byte result");
+}
+
+void test_materialized_asset_bytes_integrity_fails_after_provider_for_metadata_mismatch()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    const runtime_asset_catalog_snapshot snapshot = make_card_front_snapshot(fixture_root);
+    const counting_asset_bytes_provider provider(asset_bytes_load_result{
+        .status = asset_bytes_load_status::loaded,
+        .bytes = detail::make_asset_byte_vector("image bytes"),
+        .byte_count = 11U,
+        .cache_key = "image|asset://cards/back.png",
+        .source_uri = "asset://cards/back.png",
+    });
+
+    const asset_bytes_integrity_report report = load_asset_bytes_with_integrity(provider, snapshot);
+
+    require(!report.ok(), "metadata mismatches fail after provider load");
+    require(provider.load_count() == 1U, "metadata integrity is checked after provider read");
+    require(
+        integrity_issue_at(report, 0U, asset_bytes_integrity_issue_kind::cache_key_mismatch, "card_front"),
+        "post-provider cache-key mismatch is reported");
+    require(
+        integrity_issue_at(report, 1U, asset_bytes_integrity_issue_kind::source_uri_mismatch, "card_front"),
+        "post-provider source-uri mismatch is reported");
+    require(
+        report.issues[0].expected_cache_key == snapshot.cache_key
+            && report.issues[0].cache_key == "image|asset://cards/back.png",
+        "metadata mismatch carries observed and expected cache keys");
+}
+
 } // namespace
 
 int main()
@@ -487,5 +674,9 @@ int main()
     test_materialized_asset_bytes_do_not_read_unsupported_or_unmaterialized_sources();
     test_materialized_asset_bytes_surface_materialization_policy_diagnostics();
     test_materialized_asset_bytes_call_provider_after_materialization();
+    test_asset_bytes_integrity_validates_load_result_byte_count_and_content();
+    test_materialized_asset_bytes_integrity_fails_before_provider_for_unmaterialized_sources();
+    test_materialized_asset_bytes_integrity_fails_after_provider_for_byte_count_mismatch();
+    test_materialized_asset_bytes_integrity_fails_after_provider_for_metadata_mismatch();
     return 0;
 }

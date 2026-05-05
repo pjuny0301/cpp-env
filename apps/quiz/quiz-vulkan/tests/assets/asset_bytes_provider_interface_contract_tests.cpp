@@ -21,6 +21,10 @@ static_assert(requires(asset_bytes_catalog_request request) {
     { request.expected_type } -> std::same_as<asset_type&>;
 });
 
+static_assert(requires(asset_materialized_bytes_request request) {
+    { request.materialized } -> std::same_as<runtime_materialized_asset_lookup_result&>;
+});
+
 static_assert(requires(asset_bytes_load_result result) {
     { result.status } -> std::same_as<asset_bytes_load_status&>;
     { result.bytes } -> std::same_as<std::vector<std::byte>&>;
@@ -59,10 +63,15 @@ static_assert(requires(
 static_assert(requires(
     const asset_bytes_provider_interface& provider,
     const runtime_asset_catalog_snapshot& snapshot,
+    const runtime_materialized_asset_lookup_result& materialized,
+    const asset_materialized_bytes_request& materialized_request,
     const runtime_asset_catalog& catalog,
     const asset_bytes_catalog_request& request) {
     { load_asset_bytes(provider, snapshot) } -> std::same_as<asset_bytes_load_result>;
     { load_asset_bytes(provider, catalog, request) } -> std::same_as<asset_bytes_load_result>;
+    { load_materialized_asset_bytes(provider, materialized_request) } -> std::same_as<asset_bytes_load_result>;
+    { load_materialized_asset_bytes(provider, materialized) } -> std::same_as<asset_bytes_load_result>;
+    { load_materialized_asset_bytes(provider, catalog, request) } -> std::same_as<asset_bytes_load_result>;
 });
 
 } // namespace

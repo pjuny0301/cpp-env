@@ -1,6 +1,6 @@
 # Quiz Current Handoff
 
-Last updated: 2026-05-05
+Last updated: 2026-05-06
 
 ## Top priorities
 
@@ -9,7 +9,7 @@ Last updated: 2026-05-05
 - Keep test status counts derived from the configured build with `ctest -N`; do not freeze global CTest totals in docs.
 - Build the engine stack in dependency order: Vulkan backend diagnostics, text layout/atlas, image texture cache, asset materialization, and input/IME. Audio/backend wiring is intentionally deferred for now.
 - Worker branches should start from the current baseline with a fresh branch. Do not rebase stale worker branches that contain already-cherry-picked historical commits.
-- Latest integrated baseline includes architecture boundary locks, worker build-lock serialization, text line-break/glyph cache/font-resolution/readiness/font-face catalog/source/source-byte/line-layout/run-box/caret-hit-test/atlas-page/upload-policy/eviction diagnostics, image sampler/cache/upload queue/retry/lifetime eviction/decoder/decoder-chain/data-URI/filesystem source-byte/placeholder texture diagnostics, asset pack index/lookup/fallback/validation/manifest/version-policy/integrity/runtime resolver/catalog/materialization/byte-provider/cache-key cache-policy validation, Vulkan frame/pipeline/command-buffer-submit/frame-present/frame-resource/descriptor-validation/swapchain policy/pipeline compatibility diagnostics, and input routing/action/text-edit/UTF-8-safe IME preedit/selection/gesture-cancel/focus-traversal/pointer-capture arbitration/gesture route-policy/multipointer touch diagnostics. Audio work is not a current priority.
+- Latest integrated baseline includes architecture boundary locks, worker build-lock serialization, text line-break/glyph cache/font-resolution/readiness/font-face catalog/source/source-byte/file-byte-loader/line-layout/run-box/caret-hit-test/atlas-page/upload-policy/eviction diagnostics, image sampler/cache/upload queue/retry/lifetime eviction/decoder/decoder-chain/data-URI/filesystem source-byte/placeholder texture diagnostics, asset pack index/lookup/fallback/validation/manifest/version-policy/integrity/runtime resolver/catalog/materialization/byte-provider/byte-integrity/cache-key cache-policy validation, Vulkan frame/pipeline/command-buffer-submit/command-recorder-gate/frame-present/frame-resource/descriptor-validation/swapchain policy/pipeline compatibility diagnostics, and input routing/action/text-edit/UTF-8-safe IME preedit/selection/gesture-cancel/focus-traversal/pointer-capture arbitration/gesture route-policy/multipointer touch diagnostics. Audio work is not a current priority.
 
 ## Active requirement IDs
 
@@ -34,7 +34,9 @@ Last updated: 2026-05-05
 - Renderer layers must not own quiz, domain, UI, input, or audio state.
 - Architecture boundary tests now lock the intended direction: layout does not depend on UI/render, UI does not depend on Vulkan backend, scene layout data does not depend on render, and Vulkan backend does not depend on scene/UI/app/domain.
 - Engine workers own only their engine folders. App/runtime, top-level CMake, and aggregate contract wiring stay with the integrator unless explicitly assigned.
+- Large file splitting is allowed when it improves module cohesion, worker ownership, reviewability, or conflict isolation. Do not split files only because they exceed a line-count threshold, and do not move stable public interfaces without explicit integrator approval.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
+- Latest verification: Windows MinGW focused renderer/asset/text tests and a full CTest pass completed after the 2026-05-06 worker integrations. Use `ctest -N` for the authoritative current test list.
 
 ## Verification commands
 

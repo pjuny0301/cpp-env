@@ -554,6 +554,38 @@ void test_vulkan_frame_lifecycle_policy_names_are_stable()
         "frame lifecycle classification name for fatal is stable");
 }
 
+void test_vulkan_frame_resource_lifetime_names_are_stable()
+{
+    using namespace quiz_vulkan::render;
+
+    require(
+        vulkan_backend::frame_resource_kind_name(vulkan_backend::vulkan_frame_resource_kind::swapchain_image)
+            == std::string_view{"swapchain_image"},
+        "frame resource kind name for swapchain image is stable");
+    require(
+        vulkan_backend::frame_resource_kind_name(vulkan_backend::vulkan_frame_resource_kind::command_buffer)
+            == std::string_view{"command_buffer"},
+        "frame resource kind name for command buffer is stable");
+    require(
+        vulkan_backend::frame_resource_kind_name(vulkan_backend::vulkan_frame_resource_kind::descriptor_set)
+            == std::string_view{"descriptor_set"},
+        "frame resource kind name for descriptor set is stable");
+    require(
+        vulkan_backend::frame_resource_release_stage_name(vulkan_backend::vulkan_frame_resource_release_stage::none)
+            == std::string_view{"none"},
+        "frame resource release stage name for none is stable");
+    require(
+        vulkan_backend::frame_resource_release_stage_name(
+            vulkan_backend::vulkan_frame_resource_release_stage::after_present)
+            == std::string_view{"after_present"},
+        "frame resource release stage name for after present is stable");
+    require(
+        vulkan_backend::frame_resource_release_stage_name(
+            vulkan_backend::vulkan_frame_resource_release_stage::fallback_cleanup)
+            == std::string_view{"fallback_cleanup"},
+        "frame resource release stage name for fallback cleanup is stable");
+}
+
 void test_vulkan_shader_stage_names_are_stable()
 {
     using namespace quiz_vulkan::render;
@@ -2484,6 +2516,20 @@ const quiz_vulkan::render::vulkan_backend::vulkan_resource_registry_entry* find_
     return nullptr;
 }
 
+const quiz_vulkan::render::vulkan_backend::vulkan_frame_resource_lifetime_snapshot* find_frame_resource(
+    const quiz_vulkan::render::vulkan_backend::vulkan_backend_frame_resource_lifetime_state& state,
+    quiz_vulkan::render::vulkan_backend::vulkan_frame_resource_kind kind,
+    std::string_view resource_id)
+{
+    for (const quiz_vulkan::render::vulkan_backend::vulkan_frame_resource_lifetime_snapshot& resource :
+         state.resources) {
+        if (resource.kind == kind && resource.resource_id == resource_id) {
+            return &resource;
+        }
+    }
+    return nullptr;
+}
+
 void test_vulkan_resource_registry_state_tracks_reuse_counts()
 {
     using namespace quiz_vulkan::render;
@@ -2673,6 +2719,49 @@ void test_vulkan_backend_adapter_completes_fake_device_lifecycle()
     require(result.resource_registry.descriptor_binding_count == 2, "fake backend resource registry counts descriptor slots");
     require(result.resource_registry.registered_resource_count == 2, "fake backend resource registry stores quad resources");
     require(result.resource_registry.resource_reuse_count == 0, "fake backend resource registry records no quad reuse");
+    require(result.frame_resources.checked, "fake backend checks frame resource lifetime");
+    require(result.frame_resources.completed(), "fake backend releases all frame resources after presentation");
+    require(!result.frame_resources.fallback_cleanup, "completed fake backend frame does not use fallback cleanup");
+    require(result.frame_resources.planned_batch_count == 1, "fake backend frame resources track planned batch count");
+    require(result.frame_resources.tracked_resource_count == 3, "fake backend tracks descriptor, image, and command resources");
+    require(result.frame_resources.acquired_resource_count == 3, "fake backend acquires all tracked frame resources");
+    require(result.frame_resources.released_resource_count == 3, "fake backend releases all tracked frame resources");
+    require(result.frame_resources.pending_resource_count == 0, "fake backend leaves no pending frame resources");
+    require(result.frame_resources.fallback_release_count == 0, "fake backend has no fallback resource releases");
+
+    const vulkan_backend::vulkan_frame_resource_lifetime_snapshot* descriptor_set =
+        find_frame_resource(
+            result.frame_resources,
+            vulkan_backend::vulkan_frame_resource_kind::descriptor_set,
+            "descriptor_set:quad");
+    require(descriptor_set != nullptr, "fake backend tracks quad descriptor set lifetime");
+    require(descriptor_set->command_index == 0, "descriptor set lifetime keeps source command index");
+    require(descriptor_set->completed(), "descriptor set lifetime completes");
+    require(
+        descriptor_set->release_stage == vulkan_backend::vulkan_frame_resource_release_stage::after_present,
+        "descriptor set releases after completed presentation");
+
+    const vulkan_backend::vulkan_frame_resource_lifetime_snapshot* swapchain_image =
+        find_frame_resource(
+            result.frame_resources,
+            vulkan_backend::vulkan_frame_resource_kind::swapchain_image,
+            "swapchain_image:7");
+    require(swapchain_image != nullptr, "fake backend tracks acquired swapchain image lifetime");
+    require(swapchain_image->completed(), "swapchain image lifetime completes");
+    require(
+        swapchain_image->release_stage == vulkan_backend::vulkan_frame_resource_release_stage::after_present,
+        "swapchain image releases after completed presentation");
+
+    const vulkan_backend::vulkan_frame_resource_lifetime_snapshot* command_buffer =
+        find_frame_resource(
+            result.frame_resources,
+            vulkan_backend::vulkan_frame_resource_kind::command_buffer,
+            "command_buffer:1001");
+    require(command_buffer != nullptr, "fake backend tracks command buffer lifetime");
+    require(command_buffer->completed(), "command buffer lifetime completes");
+    require(
+        command_buffer->release_stage == vulkan_backend::vulkan_frame_resource_release_stage::after_present,
+        "command buffer releases after completed presentation");
     require(result.frame_presented, "fake backend presents frame");
     require(result.planned_batch_count == 1, "fake backend receives one planned batch");
     require(result.recorded_batch_count == 1, "fake backend records one batch");
@@ -2730,6 +2819,69 @@ void test_vulkan_backend_adapter_completes_fake_device_lifecycle()
     require(batch.scissor.y == 8, "recorded batch scissor y maps to device surface");
     require(batch.scissor.width == 16, "recorded batch scissor width maps to device surface");
     require(batch.scissor.height == 8, "recorded batch scissor height maps to device surface");
+}
+
+void test_vulkan_backend_adapter_releases_frame_resources_on_fallback_cleanup()
+{
+    using namespace quiz_vulkan::render;
+
+    render_draw_list draw_list;
+    draw_list.commands.push_back(make_quad_command(
+        "quad",
+        render_rect{0.0f, 0.0f, 100.0f, 100.0f},
+        render_color{1.0f, 1.0f, 1.0f, 1.0f}));
+
+    fake_vulkan_backend_device device(vulkan_backend::vulkan_surface_extent{.width = 16, .height = 16});
+    device.submit_succeeds = false;
+    const vulkan_backend::vulkan_backend_frame_result result = vulkan_backend::submit_vulkan_backend_frame(
+        device,
+        draw_list,
+        render_rect{0.0f, 0.0f, 100.0f, 100.0f});
+
+    require(!result.completed(), "backend frame does not complete when submit fails");
+    require(result.fallback_required, "submit failure requires CPU fallback");
+    require(
+        result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::submit_frame_failed,
+        "submit failure reports submit fallback reason");
+    require(result.frame_resources.checked, "submit failure checks frame resource lifetime");
+    require(result.frame_resources.completed(), "submit failure cleans up all acquired frame resources");
+    require(result.frame_resources.fallback_cleanup, "submit failure records fallback resource cleanup");
+    require(result.frame_resources.planned_batch_count == 1, "submit failure frame resources keep planned batch count");
+    require(result.frame_resources.tracked_resource_count == 3, "submit failure tracks three acquired frame resources");
+    require(result.frame_resources.acquired_resource_count == 3, "submit failure acquired resource count is stable");
+    require(result.frame_resources.released_resource_count == 3, "submit failure releases all acquired frame resources");
+    require(result.frame_resources.pending_resource_count == 0, "submit failure leaves no pending frame resources");
+    require(result.frame_resources.fallback_release_count == 3, "submit failure releases every resource at fallback boundary");
+
+    const vulkan_backend::vulkan_frame_resource_lifetime_snapshot* descriptor_set =
+        find_frame_resource(
+            result.frame_resources,
+            vulkan_backend::vulkan_frame_resource_kind::descriptor_set,
+            "descriptor_set:quad");
+    require(descriptor_set != nullptr, "fallback cleanup tracks descriptor set lifetime");
+    require(
+        descriptor_set->release_stage == vulkan_backend::vulkan_frame_resource_release_stage::fallback_cleanup,
+        "fallback cleanup releases descriptor set");
+
+    const vulkan_backend::vulkan_frame_resource_lifetime_snapshot* swapchain_image =
+        find_frame_resource(
+            result.frame_resources,
+            vulkan_backend::vulkan_frame_resource_kind::swapchain_image,
+            "swapchain_image:7");
+    require(swapchain_image != nullptr, "fallback cleanup tracks swapchain image lifetime");
+    require(
+        swapchain_image->release_stage == vulkan_backend::vulkan_frame_resource_release_stage::fallback_cleanup,
+        "fallback cleanup releases swapchain image");
+
+    const vulkan_backend::vulkan_frame_resource_lifetime_snapshot* command_buffer =
+        find_frame_resource(
+            result.frame_resources,
+            vulkan_backend::vulkan_frame_resource_kind::command_buffer,
+            "command_buffer:1001");
+    require(command_buffer != nullptr, "fallback cleanup tracks command buffer lifetime");
+    require(
+        command_buffer->release_stage == vulkan_backend::vulkan_frame_resource_release_stage::fallback_cleanup,
+        "fallback cleanup releases command buffer");
 }
 
 void test_vulkan_backend_adapter_preserves_plan_diagnostics()
@@ -3891,6 +4043,7 @@ int main()
     test_vulkan_command_recorder_failure_stage_names_are_stable();
     test_vulkan_command_buffer_submit_names_are_stable();
     test_vulkan_frame_lifecycle_policy_names_are_stable();
+    test_vulkan_frame_resource_lifetime_names_are_stable();
     test_vulkan_shader_stage_names_are_stable();
     test_vulkan_pipeline_lifecycle_names_are_stable();
     test_draw_list_submission_counts_generic_work();
@@ -3914,6 +4067,7 @@ int main()
     test_vulkan_resource_registry_state_tracks_reuse_counts();
     test_vulkan_resource_registry_state_reports_missing_resources();
     test_vulkan_backend_adapter_completes_fake_device_lifecycle();
+    test_vulkan_backend_adapter_releases_frame_resources_on_fallback_cleanup();
     test_vulkan_backend_adapter_preserves_plan_diagnostics();
     test_vulkan_backend_adapter_completes_empty_frame();
     test_vulkan_backend_adapter_completes_all_discarded_frame();

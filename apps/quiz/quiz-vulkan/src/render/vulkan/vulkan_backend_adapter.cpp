@@ -1062,6 +1062,134 @@ vulkan_command_buffer_id make_command_buffer_id(const vulkan_frame_in_flight_id&
     };
 }
 
+vulkan_backend_frame_resource_lifetime_state make_frame_resource_lifetime_state(
+    const vulkan_frame_plan& plan)
+{
+    return vulkan_backend_frame_resource_lifetime_state{
+        .checked = true,
+        .planned_batch_count = plan.batches.size(),
+    };
+}
+
+std::string frame_resource_id(
+    std::string prefix,
+    std::size_t value)
+{
+    prefix += ":";
+    prefix += std::to_string(value);
+    return prefix;
+}
+
+std::string descriptor_set_resource_id(
+    const vulkan_batch_resource_binding_snapshot& snapshot)
+{
+    return "descriptor_set:"
+        + (snapshot.node_id.empty() ? std::to_string(snapshot.command_index) : snapshot.node_id);
+}
+
+void refresh_frame_resource_lifetime_counts(
+    vulkan_backend_frame_resource_lifetime_state& state)
+{
+    state.tracked_resource_count = state.resources.size();
+    state.acquired_resource_count = 0;
+    state.released_resource_count = 0;
+    state.pending_resource_count = 0;
+    state.fallback_release_count = 0;
+
+    for (const vulkan_frame_resource_lifetime_snapshot& resource : state.resources) {
+        if (resource.acquired) {
+            ++state.acquired_resource_count;
+        }
+        if (resource.released) {
+            ++state.released_resource_count;
+        }
+        if (resource.pending()) {
+            ++state.pending_resource_count;
+        }
+        if (resource.release_stage == vulkan_frame_resource_release_stage::fallback_cleanup) {
+            ++state.fallback_release_count;
+        }
+    }
+}
+
+void track_frame_resource(
+    vulkan_backend_frame_resource_lifetime_state& state,
+    vulkan_frame_resource_lifetime_snapshot resource)
+{
+    resource.acquired = true;
+    state.resources.push_back(std::move(resource));
+    refresh_frame_resource_lifetime_counts(state);
+}
+
+void track_descriptor_set_resources(
+    vulkan_backend_frame_resource_lifetime_state& state,
+    const vulkan_backend_resource_binding_state& resource_bindings)
+{
+    for (const vulkan_batch_resource_binding_snapshot& snapshot : resource_bindings.batch_snapshots) {
+        if (!snapshot.completed() || snapshot.descriptor_set_count == 0) {
+            continue;
+        }
+        track_frame_resource(
+            state,
+            vulkan_frame_resource_lifetime_snapshot{
+                .kind = vulkan_frame_resource_kind::descriptor_set,
+                .resource_id = descriptor_set_resource_id(snapshot),
+                .command_index = snapshot.command_index,
+            });
+    }
+}
+
+void track_swapchain_image_resource(
+    vulkan_backend_frame_resource_lifetime_state& state,
+    vulkan_swapchain_image_id image_id)
+{
+    track_frame_resource(
+        state,
+        vulkan_frame_resource_lifetime_snapshot{
+            .kind = vulkan_frame_resource_kind::swapchain_image,
+            .resource_id = frame_resource_id("swapchain_image", image_id.value),
+        });
+}
+
+void track_command_buffer_resource(
+    vulkan_backend_frame_resource_lifetime_state& state,
+    vulkan_command_buffer_id command_buffer)
+{
+    if (!command_buffer.valid()) {
+        refresh_frame_resource_lifetime_counts(state);
+        return;
+    }
+
+    track_frame_resource(
+        state,
+        vulkan_frame_resource_lifetime_snapshot{
+            .kind = vulkan_frame_resource_kind::command_buffer,
+            .resource_id = frame_resource_id("command_buffer", command_buffer.value),
+        });
+}
+
+void release_frame_resources(
+    vulkan_backend_frame_resource_lifetime_state& state,
+    vulkan_frame_resource_release_stage release_stage)
+{
+    if (!state.checked) {
+        return;
+    }
+    if (release_stage == vulkan_frame_resource_release_stage::fallback_cleanup) {
+        state.fallback_cleanup = true;
+    }
+
+    for (vulkan_frame_resource_lifetime_snapshot& resource : state.resources) {
+        if (!resource.acquired || resource.released) {
+            continue;
+        }
+        resource.released = true;
+        resource.release_stage = release_stage;
+    }
+
+    refresh_frame_resource_lifetime_counts(state);
+}
+
 vulkan_backend_command_buffer_submit_state make_command_buffer_submit_state(
     const vulkan_frame_in_flight_id& frame,
     std::size_t planned_batch_count)
@@ -1380,6 +1508,34 @@ std::string_view frame_present_result_status_name(vulkan_frame_present_result_st
         return "image_failed";
     case vulkan_frame_present_result_status::frame_failed:
         return "frame_failed";
+    }
+
+    return "unknown";
+}
+
+std::string_view frame_resource_kind_name(vulkan_frame_resource_kind kind)
+{
+    switch (kind) {
+    case vulkan_frame_resource_kind::swapchain_image:
+        return "swapchain_image";
+    case vulkan_frame_resource_kind::command_buffer:
+        return "command_buffer";
+    case vulkan_frame_resource_kind::descriptor_set:
+        return "descriptor_set";
+    }
+
+    return "unknown";
+}
+
+std::string_view frame_resource_release_stage_name(vulkan_frame_resource_release_stage stage)
+{
+    switch (stage) {
+    case vulkan_frame_resource_release_stage::none:
+        return "none";
+    case vulkan_frame_resource_release_stage::after_present:
+        return "after_present";
+    case vulkan_frame_resource_release_stage::fallback_cleanup:
+        return "fallback_cleanup";
     }
 
     return "unknown";
@@ -2003,8 +2159,12 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     result.clipped_draw_call_count = plan.clipped_draw_call_count;
     result.discarded_draw_call_count = plan.discarded_draw_call_count;
     result.reached_stage = vulkan_backend_frame_stage::frame_plan_ready;
+    result.frame_resources = make_frame_resource_lifetime_state(plan);
 
     if (!ensure_frame_plan_pipelines(pipeline_cache, plan, result)) {
+        release_frame_resources(
+            result.frame_resources,
+            vulkan_frame_resource_release_stage::fallback_cleanup);
         return result;
     }
 
@@ -2014,15 +2174,22 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
         plan,
         result.resource_bindings);
     if (!result.resource_bindings.completed()) {
+        release_frame_resources(
+            result.frame_resources,
+            vulkan_frame_resource_release_stage::fallback_cleanup);
         mark_frame_fallback(result, vulkan_backend_fallback_reason::resource_binding_unavailable);
         return result;
     }
+    track_descriptor_set_resources(result.frame_resources, result.resource_bindings);
 
     result.lifecycle_policy = make_frame_lifecycle_policy_state();
     result.present_policy = make_frame_present_policy_state();
     const auto fail_frame_lifecycle = [&result](
                                           vulkan_frame_lifecycle_step step,
                                           vulkan_backend_fallback_reason reason) {
+        release_frame_resources(
+            result.frame_resources,
+            vulkan_frame_resource_release_stage::fallback_cleanup);
         mark_frame_fallback(result, reason);
         fail_lifecycle_step(result.lifecycle_policy, step, reason);
     };
@@ -2045,6 +2212,7 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
             vulkan_backend_fallback_reason::acquire_image_failed);
         return result;
     }
+    track_swapchain_image_resource(result.frame_resources, result.swapchain.acquire.image.id);
     complete_lifecycle_step(result.lifecycle_policy, vulkan_frame_lifecycle_step::acquire);
 
     start_lifecycle_step(result.lifecycle_policy, vulkan_frame_lifecycle_step::begin);
@@ -2061,6 +2229,9 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     result.command_buffer_submit = make_command_buffer_submit_state(
         result.frame_sync.frame,
         plan.batches.size());
+    track_command_buffer_resource(
+        result.frame_resources,
+        result.command_buffer_submit.recording.command_buffer);
     start_lifecycle_step(result.lifecycle_policy, vulkan_frame_lifecycle_step::render);
     mark_command_buffer_recording_started(result.command_buffer_submit);
     if (!command_recorder.begin_recording(result.surface, plan.batches.size())) {
@@ -2162,6 +2333,9 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     complete_lifecycle_step(result.lifecycle_policy, vulkan_frame_lifecycle_step::present);
     result.reached_stage = vulkan_backend_frame_stage::frame_presented;
 
+    release_frame_resources(
+        result.frame_resources,
+        vulkan_frame_resource_release_stage::after_present);
     mark_frame_fallback(result, vulkan_backend_fallback_reason::none);
     return result;
 }

@@ -6,6 +6,10 @@
 
 최근 baseline 통합 증거:
 
+- `9dea60a`: Vulkan resource binding diagnostics tests를 전용 파일로 분리.
+- `6561069`: image texture cache residency tests를 전용 파일로 분리.
+- `81d5c03`: fake text layout diagnostics tests를 전용 파일로 분리.
+- `4494d54`: input engine IME tests를 전용 파일로 분리.
 - `afcb47d`: filesystem image pipeline fixture/cache/failure tests 추가.
 - `48d1565`: Vulkan command recorder gate tests를 전용 파일로 분리.
 - `bf35ad8`: materialized asset byte integrity e2e tests 추가.
@@ -74,7 +78,7 @@
 - `5965a4b`: Vulkan swapchain policy/pipeline compatibility/shader binding/fallback diagnostics 추가.
 - `244d5b7`: input multipointer touch-like arbitration diagnostics 추가.
 - `94a922f`: asset manifest integrity diagnostics 추가.
-- 기준 검증 예시: 2026-05-06 Windows MinGW focused renderer/image/asset/text tests와 full CTest 통과. 최신 full run은 37개 테스트 통과였지만, 현재 권위 있는 테스트 목록은 항상 `ctest -N`으로 확인한다.
+- 기준 검증 예시: 2026-05-06 Windows MinGW focused input/text/image/Vulkan split tests 통과 후 full CTest 41/41 통과. 권위 있는 테스트 목록은 항상 실행 시점의 `ctest -N`으로 확인한다.
 - 기준 검증은 고정 개수로 적지 않는다. 현재 전체 테스트 수는 `ctest -N`이 권위이며, handoff에는 실행한 focused target만 기록한다.
 
 상태 기준:

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "render/text/font_glyph_atlas.h"
+#include "render/text/font_source_resolver.h"
 #include "render/text/text_engine.h"
 #include "render/text/utf8_line_break.h"
 
@@ -121,6 +121,28 @@ struct render_text_font_catalog_policy_snapshot {
     std::size_t supported_codepoint_count = 0;
     std::size_t fallback_codepoint_count = 0;
     std::size_t missing_glyph_count = 0;
+};
+
+struct render_text_font_source_resolution_snapshot {
+    std::size_t run_index = 0;
+    render_style_id style_token;
+    font_face_id resolved_face_id = 0;
+    std::string resolved_family;
+    std::string source_uri;
+    render_text_font_source_kind source_kind = render_text_font_source_kind::missing;
+    std::string resolved_location;
+    bool can_attempt_load = false;
+    bool virtual_fixture = false;
+};
+
+struct render_text_font_source_policy_snapshot {
+    std::size_t request_count = 0;
+    std::size_t fixture_source_count = 0;
+    std::size_t file_source_count = 0;
+    std::size_t missing_source_count = 0;
+    std::size_t unknown_uri_count = 0;
+    std::size_t loadable_source_count = 0;
+    std::size_t virtual_source_count = 0;
 };
 
 struct render_text_glyph_font_resolution_snapshot {

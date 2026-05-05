@@ -11,6 +11,11 @@ First read:
 Task:
 Implement the next Vulkan backend step while consuming only existing render contracts.
 
+Current assignment:
+- Improve backend lifecycle/resource diagnostics behind `src/render/vulkan/*`.
+- Prefer frame resource lifetime, shader/pipeline descriptor validation, swapchain acquire/present policy, command batch recording diagnostics, or CPU-fallback boundary tests.
+- Do not add scene/domain/app/UI dependencies and do not wire platform windows; keep it contract-level and testable.
+
 Scope:
 - Own only `apps/quiz/quiz-vulkan/src/render/vulkan/*`, `apps/quiz/quiz-vulkan/tests/render/vulkan/*`, and renderer-owned tests explicitly named in the prompt.
 - Incrementally introduce real Vulkan backend pieces behind renderer boundaries.
@@ -27,4 +32,5 @@ Do not:
 Required verification:
 - Build `quiz_vulkan_interface_contract_compile_tests`.
 - Run `quiz_vulkan_renderer_tests`.
+- Run any new `tests/render/vulkan/*` test added by this task.
 - Run `git diff --check`.

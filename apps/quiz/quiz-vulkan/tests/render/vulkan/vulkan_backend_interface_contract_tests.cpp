@@ -360,6 +360,58 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_frame_sync_state s
 });
 
 static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_resource_kind::swapchain_image),
+    render::vulkan_backend::vulkan_frame_resource_kind>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_resource_kind::command_buffer),
+    render::vulkan_backend::vulkan_frame_resource_kind>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_resource_kind::descriptor_set),
+    render::vulkan_backend::vulkan_frame_resource_kind>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_resource_release_stage::none),
+    render::vulkan_backend::vulkan_frame_resource_release_stage>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_resource_release_stage::after_present),
+    render::vulkan_backend::vulkan_frame_resource_release_stage>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_frame_resource_release_stage::fallback_cleanup),
+    render::vulkan_backend::vulkan_frame_resource_release_stage>);
+
+static_assert(requires(
+    render::vulkan_backend::vulkan_frame_resource_kind kind,
+    render::vulkan_backend::vulkan_frame_resource_release_stage stage) {
+    { render::vulkan_backend::frame_resource_kind_name(kind) } -> std::same_as<std::string_view>;
+    { render::vulkan_backend::frame_resource_release_stage_name(stage) } -> std::same_as<std::string_view>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_frame_resource_lifetime_snapshot resource) {
+    { resource.kind } -> std::same_as<render::vulkan_backend::vulkan_frame_resource_kind&>;
+    { resource.resource_id } -> std::same_as<std::string&>;
+    { resource.command_index } -> std::same_as<std::size_t&>;
+    { resource.acquired } -> std::same_as<bool&>;
+    { resource.released } -> std::same_as<bool&>;
+    { resource.release_stage } -> std::same_as<render::vulkan_backend::vulkan_frame_resource_release_stage&>;
+    { resource.pending() } -> std::same_as<bool>;
+    { resource.completed() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_backend_frame_resource_lifetime_state lifetime) {
+    { lifetime.checked } -> std::same_as<bool&>;
+    { lifetime.fallback_cleanup } -> std::same_as<bool&>;
+    { lifetime.planned_batch_count } -> std::same_as<std::size_t&>;
+    { lifetime.tracked_resource_count } -> std::same_as<std::size_t&>;
+    { lifetime.acquired_resource_count } -> std::same_as<std::size_t&>;
+    { lifetime.released_resource_count } -> std::same_as<std::size_t&>;
+    { lifetime.pending_resource_count } -> std::same_as<std::size_t&>;
+    { lifetime.fallback_release_count } -> std::same_as<std::size_t&>;
+    { lifetime.resources }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_frame_resource_lifetime_snapshot>&>;
+    { lifetime.completed() } -> std::same_as<bool>;
+});
+
+static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_frame_lifecycle_step::acquire),
     render::vulkan_backend::vulkan_frame_lifecycle_step>);
 static_assert(std::same_as<
@@ -895,6 +947,8 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_frame_result resul
     { result.swapchain } -> std::same_as<render::vulkan_backend::vulkan_backend_swapchain_lifecycle_state&>;
     { result.swapchain_policy } -> std::same_as<render::vulkan_backend::vulkan_backend_swapchain_policy_state&>;
     { result.frame_sync } -> std::same_as<render::vulkan_backend::vulkan_backend_frame_sync_state&>;
+    { result.frame_resources }
+        -> std::same_as<render::vulkan_backend::vulkan_backend_frame_resource_lifetime_state&>;
     { result.lifecycle_policy }
         -> std::same_as<render::vulkan_backend::vulkan_backend_frame_lifecycle_policy_state&>;
     { result.present_policy }

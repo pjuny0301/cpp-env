@@ -22,6 +22,12 @@ enum class pointer_arbitration_decision {
     restarted,
 };
 
+enum class pointer_contact_kind {
+    unknown,
+    mouse_like,
+    touch_like,
+};
+
 enum class action_route_policy_kind {
     pointer_capture_reset,
     pointer_capture_arbitration,
@@ -62,7 +68,10 @@ struct action_route_policy_diagnostic {
     pointer_capture_snapshot pointer_capture_after;
     pointer_arbitration_decision pointer_decision = pointer_arbitration_decision::none;
     pointer_phase pointer_event_phase = pointer_phase::down;
+    pointer_contact_kind pointer_contact = pointer_contact_kind::unknown;
     std::int32_t pointer_id = 0;
+    std::size_t tracked_pointer_count_before = 0;
+    std::size_t tracked_pointer_count_after = 0;
 };
 
 struct input_routing_diagnostics {

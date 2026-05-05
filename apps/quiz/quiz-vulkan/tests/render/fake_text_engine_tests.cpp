@@ -2,6 +2,7 @@
 #include "render/text/fake_text_engine.h"
 #include "render/text/font_glyph_atlas.h"
 #include "render/text/font_resolver.h"
+#include "render/text/font_source_resolver.h"
 #include "render/text/scene_text_metrics_adapter.h"
 #include "render/text/text_engine.h"
 #include "render/text/utf8_line_break.h"
@@ -523,6 +524,135 @@ void test_deterministic_fake_font_resolver_reports_face_fallbacks()
     require(family_fallback.resolved_family == "Sans", "font resolver reports fallback family");
     require(family_fallback.used_family_fallback, "font resolver reports family fallback");
     require(!family_fallback.used_style_fallback, "font resolver does not report style fallback for missing family");
+}
+
+void test_font_source_resolver_classifies_fixture_file_and_unknown_sources()
+{
+    using namespace quiz_vulkan::render;
+
+    const font_source_resolution fixture = resolve_font_source(font_face_descriptor{
+        .id = 11,
+        .family = "Fixture Sans",
+        .source_uri = "fixture://fonts/fixture-sans-regular",
+        .version = "fixture-1",
+        .license = "test-fixture",
+    });
+    require(fixture.face_id == 11, "font source resolver preserves face id");
+    require(fixture.kind == render_text_font_source_kind::fixture_uri, "font source resolver classifies fixture URIs");
+    require(fixture.resolved_location == "fonts/fixture-sans-regular", "font source resolver strips fixture scheme");
+    require(fixture.virtual_fixture, "font source resolver marks fixture sources as virtual");
+    require(!fixture.can_attempt_load, "font source resolver does not load virtual fixtures as files");
+
+    const font_source_resolution rooted_path = resolve_font_source(
+        font_face_descriptor{
+            .id = 12,
+            .family = "Fixture Local",
+            .source_uri = "fonts\\fixture local.ttf",
+            .version = "fixture-1",
+            .license = "test-fixture",
+        },
+        "/mnt/c/aa/build/external/text");
+    require(rooted_path.kind == render_text_font_source_kind::file_path, "font source resolver classifies bare paths");
+    require(
+        rooted_path.resolved_location == "/mnt/c/aa/build/external/text/fonts/fixture local.ttf",
+        "font source resolver joins relative paths to an asset root");
+    require(rooted_path.can_attempt_load, "font source resolver marks local paths loadable");
+
+    const font_source_resolution file_uri = resolve_font_source(font_face_descriptor{
+        .id = 13,
+        .family = "Fixture URI",
+        .source_uri = "file:///C:/aa/build/external/text/fixture%20uri.ttf",
+        .version = "fixture-1",
+        .license = "test-fixture",
+    });
+    require(file_uri.kind == render_text_font_source_kind::file_uri, "font source resolver classifies file URIs");
+    require(
+        file_uri.resolved_location == "C:/aa/build/external/text/fixture uri.ttf",
+        "font source resolver decodes file URI paths");
+    require(file_uri.can_attempt_load, "font source resolver marks file URIs loadable");
+
+    const font_source_resolution unknown = resolve_font_source(font_face_descriptor{
+        .id = 14,
+        .family = "Fixture Remote",
+        .source_uri = "https://example.test/font.ttf",
+        .version = "fixture-1",
+        .license = "test-fixture",
+    });
+    require(unknown.kind == render_text_font_source_kind::unknown_uri, "font source resolver classifies unknown schemes");
+    require(!unknown.can_attempt_load, "font source resolver keeps unknown schemes out of file loading");
+}
+
+void test_fake_font_source_diagnostics_track_selected_face_sources()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    const font_face_id local_face_id = engine.add_font_face(font_face_descriptor{
+        .family = "Fixture Local",
+        .source_uri = "build/external/fonts/fixture-local.ttf",
+        .version = "fixture-1",
+        .license = "test-fixture",
+        .coverage = {font_codepoint_range{.first = 0x0020, .last = 0x007e}},
+        .weight = 400,
+        .italic = false,
+        .fallback = false,
+    }).id;
+
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "a", .style_token = "local"},
+        render_text_run{.text = "b", .style_token = "body"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 200.0f, 0.0f};
+    request.style_catalog = make_style_catalog();
+    request.style_catalog.styles.push_back(render_text_style{
+        .id = "local",
+        .font_family = "Fixture Local",
+        .font_size = 20.0f,
+        .line_height = 24.0f,
+        .letter_spacing = 0.0f,
+        .font_weight = 400,
+        .italic = false,
+    });
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    const render_text_layout layout = engine.layout_text(request);
+    require(layout.glyphs.size() == 2, "font source diagnostics do not change glyph emission");
+    require(engine.last_diagnostics().has_font_source_resolutions(), "fake engine records selected font source diagnostics");
+    require(engine.last_diagnostics().font_source_resolutions.size() == 2, "fake engine records one font source per run");
+
+    const render_text_font_source_resolution_snapshot& local_source =
+        engine.last_diagnostics().font_source_resolutions[0];
+    require(local_source.run_index == 0, "font source diagnostic records run index");
+    require(local_source.style_token == "local", "font source diagnostic records style token");
+    require(local_source.resolved_face_id == local_face_id, "font source diagnostic records resolved face");
+    require(
+        local_source.source_kind == render_text_font_source_kind::file_path,
+        "font source diagnostic classifies local face paths");
+    require(
+        local_source.resolved_location == "build/external/fonts/fixture-local.ttf",
+        "font source diagnostic preserves local face path");
+    require(local_source.can_attempt_load, "font source diagnostic marks local face path loadable");
+    require(!local_source.virtual_fixture, "font source diagnostic keeps local face non-virtual");
+
+    const render_text_font_source_resolution_snapshot& fixture_source =
+        engine.last_diagnostics().font_source_resolutions[1];
+    require(fixture_source.run_index == 1, "fixture source diagnostic records second run");
+    require(fixture_source.source_kind == render_text_font_source_kind::fixture_uri, "fixture source diagnostic classifies fixture URI");
+    require(fixture_source.resolved_location == "fonts/sans-regular", "fixture source diagnostic stores fixture id");
+    require(!fixture_source.can_attempt_load, "fixture source diagnostic stays non-loadable");
+    require(fixture_source.virtual_fixture, "fixture source diagnostic marks virtual fixture");
+
+    require(engine.last_diagnostics().has_font_source_policy(), "fake engine records font source policy summary");
+    require(engine.last_diagnostics().font_source_policy.request_count == 2, "font source policy counts runs");
+    require(engine.last_diagnostics().font_source_policy.file_source_count == 1, "font source policy counts file paths");
+    require(engine.last_diagnostics().font_source_policy.fixture_source_count == 1, "font source policy counts fixtures");
+    require(engine.last_diagnostics().font_source_policy.loadable_source_count == 1, "font source policy counts loadable sources");
+    require(engine.last_diagnostics().font_source_policy.virtual_source_count == 1, "font source policy counts virtual sources");
 }
 
 void test_glyph_atlas_cache_allocates_rows_pages_and_cached_slots()
@@ -2323,6 +2453,8 @@ int main()
     test_font_face_catalog_reports_codepoint_fallback_diagnostics();
     test_font_face_catalog_prefers_known_coverage_fallbacks();
     test_deterministic_fake_font_resolver_reports_face_fallbacks();
+    test_font_source_resolver_classifies_fixture_file_and_unknown_sources();
+    test_fake_font_source_diagnostics_track_selected_face_sources();
     test_glyph_atlas_cache_allocates_rows_pages_and_cached_slots();
     test_glyph_atlas_cache_consumes_dirty_page_updates_by_revision();
     test_fake_measure_and_layout_emit_stable_glyphs();

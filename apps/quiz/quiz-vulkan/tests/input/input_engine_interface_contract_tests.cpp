@@ -109,7 +109,10 @@ concept ActionRoutePolicyDiagnosticInterface = requires(T diagnostic) {
     { diagnostic.pointer_capture_after } -> std::same_as<input::pointer_capture_snapshot&>;
     { diagnostic.pointer_decision } -> std::same_as<input::pointer_arbitration_decision&>;
     { diagnostic.pointer_event_phase } -> std::same_as<input::pointer_phase&>;
+    { diagnostic.pointer_contact } -> std::same_as<input::pointer_contact_kind&>;
     { diagnostic.pointer_id } -> std::same_as<std::int32_t&>;
+    { diagnostic.tracked_pointer_count_before } -> std::same_as<std::size_t&>;
+    { diagnostic.tracked_pointer_count_after } -> std::same_as<std::size_t&>;
 };
 
 template <typename T>
@@ -251,7 +254,10 @@ constexpr input::action_route_policy_diagnostic submit_policy_contract{
     .pointer_capture_after = input::pointer_capture_snapshot{},
     .pointer_decision = input::pointer_arbitration_decision::none,
     .pointer_event_phase = input::pointer_phase::down,
+    .pointer_contact = input::pointer_contact_kind::touch_like,
     .pointer_id = 0,
+    .tracked_pointer_count_before = 2,
+    .tracked_pointer_count_after = 1,
 };
 static_assert(submit_policy_contract.kind == input::action_route_policy_kind::text_submit_boundary);
 static_assert(submit_policy_contract.emits_input_event);
@@ -259,10 +265,15 @@ static_assert(submit_policy_contract.event_index == 2);
 static_assert(submit_policy_contract.text_byte_count_before == 6);
 static_assert(submit_policy_contract.caret_after.start_byte == 0);
 static_assert(submit_policy_contract.pointer_decision == input::pointer_arbitration_decision::none);
+static_assert(submit_policy_contract.pointer_contact == input::pointer_contact_kind::touch_like);
+static_assert(submit_policy_contract.tracked_pointer_count_before == 2);
+static_assert(submit_policy_contract.tracked_pointer_count_after == 1);
 
 constexpr input::pointer_arbitration_decision ignored_pointer_contract =
     input::pointer_arbitration_decision::ignored_by_capture;
 static_assert(ignored_pointer_contract == input::pointer_arbitration_decision::ignored_by_capture);
+constexpr input::pointer_contact_kind touch_like_pointer_contract = input::pointer_contact_kind::touch_like;
+static_assert(touch_like_pointer_contract == input::pointer_contact_kind::touch_like);
 
 constexpr input::action_route_policy_kind text_commit_policy_kind =
     input::action_route_policy_kind::text_commit_boundary;

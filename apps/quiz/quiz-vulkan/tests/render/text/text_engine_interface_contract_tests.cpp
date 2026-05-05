@@ -1,5 +1,6 @@
 #include "render/render_draw_list.h"
 #include "render/text/fake_text_engine.h"
+#include "render/text/font_source_resolver.h"
 #include "render/text/font_resolver.h"
 #include "render/text/glyph_run.h"
 #include "render/text/scene_text_metrics_adapter.h"
@@ -72,6 +73,9 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.font_face_selections }
         -> std::same_as<std::vector<render::render_text_font_face_selection_snapshot>&>;
     { diagnostics.font_catalog_policy } -> std::same_as<render::render_text_font_catalog_policy_snapshot&>;
+    { diagnostics.font_source_resolutions }
+        -> std::same_as<std::vector<render::render_text_font_source_resolution_snapshot>&>;
+    { diagnostics.font_source_policy } -> std::same_as<render::render_text_font_source_policy_snapshot&>;
     { diagnostics.glyph_font_resolutions }
         -> std::same_as<std::vector<render::render_text_glyph_font_resolution_snapshot>&>;
     { diagnostics.font_resolution_policy } -> std::same_as<render::render_text_font_resolution_policy_snapshot&>;
@@ -99,6 +103,8 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.has_utf8_clusters() } -> std::same_as<bool>;
     { diagnostics.has_font_face_selections() } -> std::same_as<bool>;
     { diagnostics.has_font_catalog_policy() } -> std::same_as<bool>;
+    { diagnostics.has_font_source_resolutions() } -> std::same_as<bool>;
+    { diagnostics.has_font_source_policy() } -> std::same_as<bool>;
     { diagnostics.has_glyph_font_resolutions() } -> std::same_as<bool>;
     { diagnostics.has_glyph_cache_readiness() } -> std::same_as<bool>;
     { diagnostics.has_line_breaks() } -> std::same_as<bool>;
@@ -226,6 +232,32 @@ static_assert(requires(render::render_text_font_catalog_policy_snapshot policy) 
     { policy.supported_codepoint_count } -> std::same_as<std::size_t&>;
     { policy.fallback_codepoint_count } -> std::same_as<std::size_t&>;
     { policy.missing_glyph_count } -> std::same_as<std::size_t&>;
+});
+
+static_assert(requires(render::render_text_font_source_resolution_snapshot source) {
+    { source.run_index } -> std::same_as<std::size_t&>;
+    { source.style_token } -> std::same_as<render::render_style_id&>;
+    { source.resolved_face_id } -> std::same_as<render::font_face_id&>;
+    { source.resolved_family } -> std::same_as<std::string&>;
+    { source.source_uri } -> std::same_as<std::string&>;
+    { source.source_kind } -> std::same_as<render::render_text_font_source_kind&>;
+    { source.resolved_location } -> std::same_as<std::string&>;
+    { source.can_attempt_load } -> std::same_as<bool&>;
+    { source.virtual_fixture } -> std::same_as<bool&>;
+});
+
+static_assert(requires(render::render_text_font_source_policy_snapshot policy) {
+    { policy.request_count } -> std::same_as<std::size_t&>;
+    { policy.fixture_source_count } -> std::same_as<std::size_t&>;
+    { policy.file_source_count } -> std::same_as<std::size_t&>;
+    { policy.missing_source_count } -> std::same_as<std::size_t&>;
+    { policy.unknown_uri_count } -> std::same_as<std::size_t&>;
+    { policy.loadable_source_count } -> std::same_as<std::size_t&>;
+    { policy.virtual_source_count } -> std::same_as<std::size_t&>;
+});
+
+static_assert(requires(const render::font_face_descriptor& descriptor) {
+    { render::resolve_font_source(descriptor) } -> std::same_as<render::font_source_resolution>;
 });
 
 static_assert(requires(render::render_text_glyph_font_resolution_snapshot glyph) {

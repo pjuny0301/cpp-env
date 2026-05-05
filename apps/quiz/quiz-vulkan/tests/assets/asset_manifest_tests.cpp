@@ -71,6 +71,16 @@ bool contains_string(const std::vector<std::string>& values, std::string_view ex
     return false;
 }
 
+bool integrity_issue_at(
+    const quiz_vulkan::assets::asset_manifest_integrity_report& report,
+    std::size_t index,
+    quiz_vulkan::assets::asset_manifest_integrity_issue_kind kind,
+    std::string_view id)
+{
+    return report.issues.size() > index && report.issues[index].kind == kind
+        && std::string_view(report.issues[index].id) == id;
+}
+
 const quiz_vulkan::assets::asset_manifest_catalog_duplicate_cache_key_report* find_duplicate_cache_key(
     const std::vector<quiz_vulkan::assets::asset_manifest_catalog_duplicate_cache_key_report>& reports,
     std::string_view cache_key)
@@ -1464,6 +1474,79 @@ void test_manifest_validation_allows_equivalent_aliases_to_same_rooted_path()
     require(result.ok(), "equivalent aliases to the same rooted path validate");
 }
 
+void test_asset_manifest_integrity_report_orders_duplicate_root_alias_and_entry_integrity_issues()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "shared",
+        .root_path = fixture_root / "a",
+    });
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "shared",
+        .root_path = fixture_root / "b",
+    });
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "alias_root",
+        .aliases = {"shared"},
+        .root_path = fixture_root / "c",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "generic_entry",
+        .type = asset_type::generic,
+        .uri = "asset://images/card.png",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "empty_uri",
+        .type = asset_type::image,
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "bad_revision",
+        .type = asset_type::sound,
+        .uri = "sounds/answer.wav",
+        .cache_revision = "rev|bad",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "duplicate_entry",
+        .type = asset_type::image,
+        .uri = "images/front.png",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "duplicate_entry",
+        .type = asset_type::image,
+        .uri = "images/back.png",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const asset_manifest_integrity_report report = make_asset_manifest_integrity_report(manifest, resolver);
+
+    require(!report.ok(), "integrity report flags invalid manifests");
+    require(report.issues.size() == 7U, "integrity report tracks duplicate roots, entries, and entry integrity");
+    require(
+        integrity_issue_at(report, 0U, asset_manifest_integrity_issue_kind::duplicate_root_id, "shared"),
+        "integrity report orders duplicate root ids first");
+    require(
+        integrity_issue_at(report, 1U, asset_manifest_integrity_issue_kind::duplicate_root_alias, "shared"),
+        "integrity report orders duplicate root aliases after root ids");
+    require(
+        integrity_issue_at(report, 2U, asset_manifest_integrity_issue_kind::invalid_entry, "empty_uri"),
+        "integrity report keeps invalid entries before later entry diagnostics");
+    require(
+        integrity_issue_at(report, 3U, asset_manifest_integrity_issue_kind::duplicate_entry_id, "duplicate_entry"),
+        "integrity report orders duplicate entry ids after invalid entries");
+    require(
+        integrity_issue_at(report, 4U, asset_manifest_integrity_issue_kind::unsupported_asset_type, "generic_entry"),
+        "integrity report flags missing or unsupported asset types");
+    require(
+        integrity_issue_at(report, 5U, asset_manifest_integrity_issue_kind::missing_source_uri, "empty_uri"),
+        "integrity report flags missing source uris");
+    require(
+        integrity_issue_at(report, 6U, asset_manifest_integrity_issue_kind::invalid_cache_revision, "bad_revision"),
+        "integrity report flags invalid cache revisions");
+}
+
 } // namespace
 
 int main()
@@ -1498,5 +1581,6 @@ int main()
     test_manifest_validation_detects_rooted_cache_key_collisions();
     test_manifest_validation_normalizes_manifest_cache_keys_before_collision_checks();
     test_manifest_validation_allows_equivalent_aliases_to_same_rooted_path();
+    test_asset_manifest_integrity_report_orders_duplicate_root_alias_and_entry_integrity_issues();
     return 0;
 }

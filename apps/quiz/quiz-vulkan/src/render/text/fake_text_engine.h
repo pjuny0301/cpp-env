@@ -43,6 +43,8 @@ struct fake_text_engine_diagnostics {
     std::vector<render_text_utf8_cluster_snapshot> utf8_clusters;
     std::vector<render_text_font_face_selection_snapshot> font_face_selections;
     render_text_font_catalog_policy_snapshot font_catalog_policy;
+    std::vector<render_text_font_source_resolution_snapshot> font_source_resolutions;
+    render_text_font_source_policy_snapshot font_source_policy;
     std::vector<render_text_glyph_font_resolution_snapshot> glyph_font_resolutions;
     render_text_font_resolution_policy_snapshot font_resolution_policy;
     std::vector<render_text_line_break_snapshot> line_breaks;
@@ -117,6 +119,16 @@ struct fake_text_engine_diagnostics {
     bool has_font_catalog_policy() const
     {
         return !font_catalog_policy.style_face_mappings.empty();
+    }
+
+    bool has_font_source_resolutions() const
+    {
+        return !font_source_resolutions.empty();
+    }
+
+    bool has_font_source_policy() const
+    {
+        return font_source_policy.request_count > 0;
     }
 
     bool has_glyph_font_resolutions() const

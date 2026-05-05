@@ -460,6 +460,64 @@ struct vulkan_backend_frame_sync_state {
     }
 };
 
+enum class vulkan_frame_resource_kind {
+    swapchain_image,
+    command_buffer,
+    descriptor_set,
+};
+
+std::string_view frame_resource_kind_name(vulkan_frame_resource_kind kind);
+
+enum class vulkan_frame_resource_release_stage {
+    none,
+    after_present,
+    fallback_cleanup,
+};
+
+std::string_view frame_resource_release_stage_name(vulkan_frame_resource_release_stage stage);
+
+struct vulkan_frame_resource_lifetime_snapshot {
+    vulkan_frame_resource_kind kind = vulkan_frame_resource_kind::swapchain_image;
+    std::string resource_id;
+    std::size_t command_index = 0;
+    bool acquired = false;
+    bool released = false;
+    vulkan_frame_resource_release_stage release_stage = vulkan_frame_resource_release_stage::none;
+
+    bool pending() const
+    {
+        return acquired && !released;
+    }
+
+    bool completed() const
+    {
+        return acquired && released
+            && release_stage != vulkan_frame_resource_release_stage::none
+            && !resource_id.empty();
+    }
+};
+
+struct vulkan_backend_frame_resource_lifetime_state {
+    bool checked = false;
+    bool fallback_cleanup = false;
+    std::size_t planned_batch_count = 0;
+    std::size_t tracked_resource_count = 0;
+    std::size_t acquired_resource_count = 0;
+    std::size_t released_resource_count = 0;
+    std::size_t pending_resource_count = 0;
+    std::size_t fallback_release_count = 0;
+    std::vector<vulkan_frame_resource_lifetime_snapshot> resources;
+
+    bool completed() const
+    {
+        return checked
+            && tracked_resource_count == resources.size()
+            && acquired_resource_count == tracked_resource_count
+            && released_resource_count == tracked_resource_count
+            && pending_resource_count == 0;
+    }
+};
+
 enum class vulkan_resource_binding_kind {
     batch_uniform,
     quad_vertex_buffer,
@@ -1041,6 +1099,7 @@ struct vulkan_backend_frame_result {
     vulkan_backend_swapchain_lifecycle_state swapchain;
     vulkan_backend_swapchain_policy_state swapchain_policy;
     vulkan_backend_frame_sync_state frame_sync;
+    vulkan_backend_frame_resource_lifetime_state frame_resources;
     vulkan_backend_frame_lifecycle_policy_state lifecycle_policy;
     vulkan_backend_frame_present_policy_state present_policy;
     vulkan_backend_resource_binding_state resource_bindings;
@@ -1071,6 +1130,7 @@ struct vulkan_backend_frame_result {
             && frame_submitted && frame_presented && swapchain.completed()
             && swapchain_policy.completed()
             && frame_sync.completed()
+            && frame_resources.completed()
             && lifecycle_policy.completed()
             && present_policy.completed()
             && command_buffer_submit.completed()

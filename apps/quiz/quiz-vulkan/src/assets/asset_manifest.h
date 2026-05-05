@@ -577,6 +577,17 @@ inline void add_manifest_validation_issue(
     });
 }
 
+inline bool manifest_cache_revision_is_valid(std::string_view revision)
+{
+    for (const char character : revision) {
+        if (character == '|' || character == '\n' || character == '\r' || character == '\t'
+            || static_cast<unsigned char>(character) < 0x20U) {
+            return false;
+        }
+    }
+    return true;
+}
+
 inline bool manifest_contains_prior_root_identifier(
     const asset_manifest& manifest,
     std::size_t root_index,
@@ -1159,6 +1170,41 @@ struct asset_manifest_version_policy_summary {
     }
 };
 
+enum class asset_manifest_integrity_issue_kind {
+    invalid_root,
+    duplicate_root_id,
+    duplicate_root_alias,
+    invalid_entry,
+    duplicate_entry_id,
+    missing_asset_type,
+    unsupported_asset_type,
+    missing_source_uri,
+    invalid_cache_revision,
+    missing_root,
+    asset_resolve_failed,
+    invalid_root_path,
+    cache_key_collision,
+};
+
+struct asset_manifest_integrity_issue {
+    asset_manifest_integrity_issue_kind kind = asset_manifest_integrity_issue_kind::invalid_entry;
+    std::string id;
+    std::string related_id;
+    asset_type type = asset_type::generic;
+    asset_cache_key cache_key;
+    std::string diagnostic;
+};
+
+struct asset_manifest_integrity_report {
+    asset_manifest_validation_result validation;
+    std::vector<asset_manifest_integrity_issue> issues;
+
+    [[nodiscard]] bool ok() const
+    {
+        return issues.empty();
+    }
+};
+
 namespace detail {
 
 inline bool manifest_catalog_contains_string(
@@ -1469,6 +1515,171 @@ inline asset_manifest_diagnostic_report make_asset_manifest_diagnostic_report(
         }
     }
 
+    return report;
+}
+
+namespace detail {
+
+inline int asset_manifest_integrity_issue_rank(asset_manifest_integrity_issue_kind kind)
+{
+    switch (kind) {
+        case asset_manifest_integrity_issue_kind::invalid_root:
+            return 0;
+        case asset_manifest_integrity_issue_kind::duplicate_root_id:
+            return 1;
+        case asset_manifest_integrity_issue_kind::duplicate_root_alias:
+            return 2;
+        case asset_manifest_integrity_issue_kind::invalid_entry:
+            return 3;
+        case asset_manifest_integrity_issue_kind::duplicate_entry_id:
+            return 4;
+        case asset_manifest_integrity_issue_kind::missing_asset_type:
+            return 5;
+        case asset_manifest_integrity_issue_kind::unsupported_asset_type:
+            return 6;
+        case asset_manifest_integrity_issue_kind::missing_source_uri:
+            return 7;
+        case asset_manifest_integrity_issue_kind::invalid_cache_revision:
+            return 8;
+        case asset_manifest_integrity_issue_kind::missing_root:
+            return 9;
+        case asset_manifest_integrity_issue_kind::asset_resolve_failed:
+            return 10;
+        case asset_manifest_integrity_issue_kind::invalid_root_path:
+            return 11;
+        case asset_manifest_integrity_issue_kind::cache_key_collision:
+            return 12;
+    }
+    return 13;
+}
+
+inline asset_manifest_integrity_issue make_manifest_integrity_issue(
+    asset_manifest_integrity_issue_kind kind,
+    std::string id,
+    std::string diagnostic,
+    std::string related_id = {},
+    asset_type type = asset_type::generic,
+    asset_cache_key cache_key = {})
+{
+    return asset_manifest_integrity_issue{
+        .kind = kind,
+        .id = std::move(id),
+        .related_id = std::move(related_id),
+        .type = type,
+        .cache_key = std::move(cache_key),
+        .diagnostic = std::move(diagnostic),
+    };
+}
+
+} // namespace detail
+
+inline asset_manifest_integrity_report make_asset_manifest_integrity_report(
+    const asset_manifest& manifest,
+    const asset_resolver_interface& resolver)
+{
+    asset_manifest_integrity_report report{
+        .validation = validate_asset_manifest(manifest, resolver),
+    };
+
+    for (const asset_manifest_validation_issue& issue : report.validation.issues) {
+        switch (issue.kind) {
+            case asset_manifest_validation_issue_kind::invalid_root:
+                report.issues.push_back(detail::make_manifest_integrity_issue(
+                    asset_manifest_integrity_issue_kind::invalid_root,
+                    issue.id,
+                    issue.diagnostic));
+                break;
+            case asset_manifest_validation_issue_kind::duplicate_root_id:
+                report.issues.push_back(detail::make_manifest_integrity_issue(
+                    issue.related_id.empty() ? asset_manifest_integrity_issue_kind::duplicate_root_id
+                                             : asset_manifest_integrity_issue_kind::duplicate_root_alias,
+                    issue.id,
+                    issue.diagnostic,
+                    issue.related_id));
+                break;
+            case asset_manifest_validation_issue_kind::invalid_entry:
+                report.issues.push_back(detail::make_manifest_integrity_issue(
+                    asset_manifest_integrity_issue_kind::invalid_entry,
+                    issue.id,
+                    issue.diagnostic));
+                break;
+            case asset_manifest_validation_issue_kind::duplicate_entry_id:
+                report.issues.push_back(detail::make_manifest_integrity_issue(
+                    asset_manifest_integrity_issue_kind::duplicate_entry_id,
+                    issue.id,
+                    issue.diagnostic));
+                break;
+            case asset_manifest_validation_issue_kind::missing_root:
+                report.issues.push_back(detail::make_manifest_integrity_issue(
+                    asset_manifest_integrity_issue_kind::missing_root,
+                    issue.id,
+                    issue.diagnostic,
+                    issue.related_id));
+                break;
+            case asset_manifest_validation_issue_kind::asset_resolve_failed:
+                report.issues.push_back(detail::make_manifest_integrity_issue(
+                    asset_manifest_integrity_issue_kind::asset_resolve_failed,
+                    issue.id,
+                    issue.diagnostic));
+                break;
+            case asset_manifest_validation_issue_kind::invalid_root_path:
+                report.issues.push_back(detail::make_manifest_integrity_issue(
+                    asset_manifest_integrity_issue_kind::invalid_root_path,
+                    issue.id,
+                    issue.diagnostic,
+                    issue.related_id));
+                break;
+            case asset_manifest_validation_issue_kind::cache_key_collision:
+                report.issues.push_back(detail::make_manifest_integrity_issue(
+                    asset_manifest_integrity_issue_kind::cache_key_collision,
+                    issue.id,
+                    issue.diagnostic,
+                    issue.related_id,
+                    asset_type::generic,
+                    issue.cache_key));
+                break;
+        }
+    }
+
+    for (const asset_manifest_entry& entry : manifest.entries) {
+        if (entry.type == asset_type::generic) {
+            report.issues.push_back(detail::make_manifest_integrity_issue(
+                asset_manifest_integrity_issue_kind::unsupported_asset_type,
+                entry.id,
+                "asset manifest entry type is missing or unsupported",
+                {},
+                entry.type));
+        }
+        if (entry.uri.empty()) {
+            report.issues.push_back(detail::make_manifest_integrity_issue(
+                asset_manifest_integrity_issue_kind::missing_source_uri,
+                entry.id,
+                "asset manifest entry uri is missing",
+                {},
+                entry.type));
+        }
+        if (!detail::manifest_cache_revision_is_valid(entry.cache_revision)) {
+            report.issues.push_back(detail::make_manifest_integrity_issue(
+                asset_manifest_integrity_issue_kind::invalid_cache_revision,
+                entry.id,
+                "asset manifest entry cache revision contains unsupported characters",
+                {},
+                entry.type));
+        }
+    }
+
+    std::ranges::sort(report.issues, [](const auto& left, const auto& right) {
+        return std::tuple(
+                   detail::asset_manifest_integrity_issue_rank(left.kind),
+                   std::string_view(left.id),
+                   std::string_view(left.related_id),
+                   std::string_view(left.cache_key))
+            < std::tuple(
+                   detail::asset_manifest_integrity_issue_rank(right.kind),
+                   std::string_view(right.id),
+                   std::string_view(right.related_id),
+                   std::string_view(right.cache_key));
+    });
     return report;
 }
 

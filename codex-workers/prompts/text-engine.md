@@ -10,6 +10,11 @@ First read:
 Task:
 Implement the next Text Engine step behind the existing `text_engine_interface`.
 
+Current assignment:
+- Add one focused improvement to the text backend contract or fake implementation that moves toward real font/glyph rendering without app wiring.
+- Prefer font source resolution, glyph atlas diagnostics, shaping/line-break edge cases, caret/selection/preedit metric behavior, or a small dependency-backed prototype hidden behind the existing interface.
+- Do not rewrite the existing fake engine wholesale; preserve the current public contract and add measurable behavior with tests.
+
 Scope:
 - Own only `apps/quiz/quiz-vulkan/src/render/text/*`, `apps/quiz/quiz-vulkan/tests/render/text/*`, and existing text-owned tests explicitly named in the prompt.
 - Add concrete text-engine implementation files only if they consume the existing interface.
@@ -28,4 +33,5 @@ Do not:
 Required verification:
 - Build `quiz_vulkan_interface_contract_compile_tests`.
 - Run `quiz_vulkan_fake_text_engine_tests`.
+- Run any new `tests/render/text/*` test added by this task.
 - Run `git diff --check`.

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <optional>
 #include <utility>
 
 namespace quiz_vulkan::input {
@@ -80,6 +81,59 @@ std::size_t previous_utf8_boundary(const std::string& value, std::size_t offset)
     return clamped - 1;
 }
 
+std::optional<text_range> containing_utf8_codepoint(const std::string& value, std::size_t offset)
+{
+    if (offset == 0 || offset >= value.size()) {
+        return std::nullopt;
+    }
+
+    const std::size_t search_start = offset > 4 ? offset - 4 : 0;
+    for (std::size_t start = search_start; start < offset; ++start) {
+        const std::size_t expected = expected_codepoint_length(static_cast<unsigned char>(value[start]));
+        const std::size_t end = start + expected;
+        if (expected > 1 && start < offset && offset < end && is_valid_codepoint_range(value, start, end)) {
+            return text_range{
+                .start_byte = start,
+                .end_byte = end,
+            };
+        }
+    }
+
+    return std::nullopt;
+}
+
+std::size_t floor_utf8_boundary(const std::string& value, std::size_t offset)
+{
+    const std::size_t clamped = std::min(offset, value.size());
+    if (const std::optional<text_range> codepoint = containing_utf8_codepoint(value, clamped)) {
+        return codepoint->start_byte;
+    }
+
+    return clamped;
+}
+
+std::size_t ceil_utf8_boundary(const std::string& value, std::size_t offset)
+{
+    const std::size_t clamped = std::min(offset, value.size());
+    if (const std::optional<text_range> codepoint = containing_utf8_codepoint(value, clamped)) {
+        return codepoint->end_byte;
+    }
+
+    return clamped;
+}
+
+std::size_t nearest_utf8_boundary(const std::string& value, std::size_t offset)
+{
+    const std::size_t clamped = std::min(offset, value.size());
+    if (const std::optional<text_range> codepoint = containing_utf8_codepoint(value, clamped)) {
+        const std::size_t distance_to_start = clamped - codepoint->start_byte;
+        const std::size_t distance_to_end = codepoint->end_byte - clamped;
+        return distance_to_start < distance_to_end ? codepoint->start_byte : codepoint->end_byte;
+    }
+
+    return clamped;
+}
+
 void erase_utf8_codepoint_before(std::string& value, std::size_t& offset)
 {
     if (value.empty()) {
@@ -98,14 +152,30 @@ void erase_utf8_codepoint_before(std::string& value, std::size_t& offset)
 
 text_range normalized_range(text_range range, std::size_t text_size)
 {
-    text_range normalized{
-        .start_byte = std::min(range.start_byte, text_size),
-        .end_byte = std::min(range.end_byte, text_size),
-    };
+    text_range normalized = range;
     if (normalized.end_byte < normalized.start_byte) {
         std::swap(normalized.start_byte, normalized.end_byte);
     }
+    normalized.start_byte = std::min(normalized.start_byte, text_size);
+    normalized.end_byte = std::min(normalized.end_byte, text_size);
     return normalized;
+}
+
+text_range normalized_utf8_selection_range(const std::string& value, text_range range)
+{
+    const text_range normalized = normalized_range(range, value.size());
+    if (normalized.start_byte == normalized.end_byte) {
+        const std::size_t caret = nearest_utf8_boundary(value, normalized.start_byte);
+        return text_range{
+            .start_byte = caret,
+            .end_byte = caret,
+        };
+    }
+
+    return text_range{
+        .start_byte = floor_utf8_boundary(value, normalized.start_byte),
+        .end_byte = ceil_utf8_boundary(value, normalized.end_byte),
+    };
 }
 
 bool same_range(text_range lhs, text_range rhs)
@@ -154,7 +224,7 @@ const std::string& text_input_model::preedit_text() const
 
 std::string text_input_model::display_text() const
 {
-    if (preedit_text_.empty()) {
+    if (!ime_composition_active_) {
         return text_;
     }
 
@@ -352,7 +422,7 @@ bool text_input_model::set_selection(text_range range)
         return false;
     }
 
-    const text_range normalized = normalized_range(range, text_.size());
+    const text_range normalized = normalized_utf8_selection_range(text_, range);
     const bool collapsed = normalized.start_byte == normalized.end_byte;
     const bool changed = selection_range_.has_value()
         ? (!collapsed && !same_range(*selection_range_, normalized))

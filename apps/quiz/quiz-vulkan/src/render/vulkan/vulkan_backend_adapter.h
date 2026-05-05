@@ -541,6 +541,89 @@ struct vulkan_resource_binding_snapshot {
     }
 };
 
+enum class vulkan_descriptor_validation_status {
+    not_checked,
+    valid,
+    missing_required_resource,
+    duplicate_binding,
+    invalid_layout,
+};
+
+std::string_view descriptor_validation_status_name(vulkan_descriptor_validation_status status);
+
+struct vulkan_descriptor_binding_validation_snapshot {
+    std::size_t set = 0;
+    std::size_t binding = 0;
+    vulkan_resource_binding_kind kind = vulkan_resource_binding_kind::batch_uniform;
+    std::string resource_id;
+    bool required = true;
+    bool available = false;
+    bool bound = false;
+    bool binding_index_matches_order = false;
+    bool duplicate_binding = false;
+    vulkan_descriptor_validation_status status = vulkan_descriptor_validation_status::not_checked;
+
+    bool completed() const
+    {
+        return status == vulkan_descriptor_validation_status::valid
+            && bound && binding_index_matches_order && !duplicate_binding;
+    }
+};
+
+struct vulkan_descriptor_set_validation_snapshot {
+    vulkan_batch_kind batch_kind = vulkan_batch_kind::quad;
+    std::size_t command_index = 0;
+    render_node_id node_id;
+    std::size_t set = 0;
+    std::size_t expected_binding_count = 0;
+    std::size_t actual_binding_count = 0;
+    bool checked = false;
+    bool descriptor_set_declared = false;
+    bool binding_count_matches = false;
+    bool missing_required_resource = false;
+    bool duplicate_binding = false;
+    bool invalid_layout = false;
+    vulkan_resource_binding_kind failed_binding_kind = vulkan_resource_binding_kind::batch_uniform;
+    std::size_t failed_binding = 0;
+    vulkan_descriptor_validation_status status = vulkan_descriptor_validation_status::not_checked;
+    std::vector<vulkan_descriptor_binding_validation_snapshot> bindings;
+
+    bool completed() const
+    {
+        return checked && descriptor_set_declared && binding_count_matches
+            && !missing_required_resource && !duplicate_binding && !invalid_layout
+            && status == vulkan_descriptor_validation_status::valid
+            && actual_binding_count == bindings.size();
+    }
+};
+
+struct vulkan_backend_descriptor_validation_state {
+    bool checked = false;
+    bool missing_required_resource = false;
+    bool duplicate_binding = false;
+    bool invalid_layout = false;
+    vulkan_batch_kind failed_batch_kind = vulkan_batch_kind::quad;
+    std::size_t failed_command_index = 0;
+    vulkan_resource_binding_kind failed_binding_kind = vulkan_resource_binding_kind::batch_uniform;
+    std::size_t failed_binding = 0;
+    std::size_t planned_batch_count = 0;
+    std::size_t descriptor_set_count = 0;
+    std::size_t valid_descriptor_set_count = 0;
+    std::size_t invalid_descriptor_set_count = 0;
+    std::size_t requested_binding_count = 0;
+    std::size_t valid_binding_count = 0;
+    std::size_t invalid_binding_count = 0;
+    std::vector<vulkan_descriptor_set_validation_snapshot> descriptor_sets;
+
+    bool completed() const
+    {
+        return checked && !missing_required_resource && !duplicate_binding && !invalid_layout
+            && invalid_descriptor_set_count == 0
+            && invalid_binding_count == 0
+            && descriptor_sets.size() == planned_batch_count;
+    }
+};
+
 struct vulkan_batch_resource_binding_snapshot {
     vulkan_batch_kind batch_kind = vulkan_batch_kind::quad;
     std::size_t command_index = 0;
@@ -568,11 +651,13 @@ struct vulkan_backend_resource_binding_state {
     std::size_t planned_batch_count = 0;
     std::size_t descriptor_set_count = 0;
     std::size_t binding_count = 0;
+    vulkan_backend_descriptor_validation_state descriptor_validation;
     std::vector<vulkan_batch_resource_binding_snapshot> batch_snapshots;
 
     bool completed() const
     {
-        return checked && !missing_resource && batch_snapshots.size() == planned_batch_count;
+        return checked && !missing_resource && descriptor_validation.completed()
+            && batch_snapshots.size() == planned_batch_count;
     }
 };
 

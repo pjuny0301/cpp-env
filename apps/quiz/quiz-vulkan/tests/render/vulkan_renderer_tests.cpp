@@ -440,6 +440,37 @@ void test_vulkan_command_recorder_failure_stage_names_are_stable()
         "command recorder failure stage name for finish is stable");
 }
 
+void test_vulkan_command_recorder_gate_status_names_are_stable()
+{
+    using namespace quiz_vulkan::render;
+
+    require(
+        vulkan_backend::command_recorder_gate_status_name(
+            vulkan_backend::vulkan_command_recorder_gate_status::not_checked)
+            == std::string_view{"not_checked"},
+        "command recorder gate status name for not checked is stable");
+    require(
+        vulkan_backend::command_recorder_gate_status_name(
+            vulkan_backend::vulkan_command_recorder_gate_status::allowed)
+            == std::string_view{"allowed"},
+        "command recorder gate status name for allowed is stable");
+    require(
+        vulkan_backend::command_recorder_gate_status_name(
+            vulkan_backend::vulkan_command_recorder_gate_status::blocked_by_descriptor_validation)
+            == std::string_view{"blocked_by_descriptor_validation"},
+        "command recorder gate status name for descriptor validation block is stable");
+    require(
+        vulkan_backend::command_recorder_gate_status_name(
+            vulkan_backend::vulkan_command_recorder_gate_status::blocked_by_resource_binding)
+            == std::string_view{"blocked_by_resource_binding"},
+        "command recorder gate status name for resource binding block is stable");
+    require(
+        vulkan_backend::command_recorder_gate_status_name(
+            vulkan_backend::vulkan_command_recorder_gate_status::blocked_by_resource_registry)
+            == std::string_view{"blocked_by_resource_registry"},
+        "command recorder gate status name for resource registry block is stable");
+}
+
 void test_vulkan_command_buffer_submit_names_are_stable()
 {
     using namespace quiz_vulkan::render;
@@ -802,6 +833,12 @@ void test_draw_list_submission_counts_generic_work()
     require(!summary.backend_command_recorder_ready, "renderer summary exposes backend command recorder readiness");
     require(!summary.backend_command_recorder_frame_open, "renderer summary exposes command recorder frame-open state");
     require(!summary.backend_command_buffer_recorded, "renderer summary exposes command buffer recorded state");
+    require(!summary.backend_command_recorder_gate_checked, "renderer summary exposes unchecked recorder gate");
+    require(!summary.backend_command_recorder_gate_allowed, "renderer summary exposes blocked recorder gate by default");
+    require(
+        summary.backend_command_recorder_gate_status
+            == vulkan_backend::vulkan_command_recorder_gate_status::not_checked,
+        "renderer summary exposes recorder gate status");
     require(!summary.backend_lifecycle_ready, "renderer summary exposes aggregate lifecycle readiness");
     require(
         summary.backend_fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::instance_unavailable,
@@ -2051,6 +2088,88 @@ void require_completed_command_buffer_submit_state(
     require(!state.submit.failed(), "frame submit diagnostics do not fail");
 }
 
+void require_allowed_command_recorder_gate(
+    const quiz_vulkan::render::vulkan_backend::vulkan_command_recorder_gate_state& gate,
+    std::size_t planned_batch_count)
+{
+    using namespace quiz_vulkan::render;
+
+    require(gate.checked, "command recorder gate is checked");
+    require(gate.completed(), "command recorder gate allows recording");
+    require(!gate.blocked(), "command recorder gate is not blocked");
+    require(gate.recording_allowed, "command recorder gate records allowed state");
+    require(
+        gate.status == vulkan_backend::vulkan_command_recorder_gate_status::allowed,
+        "command recorder gate status is allowed");
+    require(
+        gate.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::none,
+        "allowed command recorder gate has no fallback reason");
+    require(gate.resource_bindings_checked, "allowed gate checks resource bindings");
+    require(gate.resource_bindings_completed, "allowed gate completes resource bindings");
+    require(gate.descriptor_validation_checked, "allowed gate checks descriptor validation");
+    require(gate.descriptor_validation_completed, "allowed gate completes descriptor validation");
+    require(gate.resource_registry_checked, "allowed gate checks resource registry");
+    require(gate.resource_registry_completed, "allowed gate completes resource registry");
+    require(!gate.missing_required_resource, "allowed gate has no missing required resource");
+    require(!gate.duplicate_binding, "allowed gate has no duplicate binding");
+    require(!gate.invalid_layout, "allowed gate has no invalid descriptor layout");
+    require(
+        gate.descriptor_status == vulkan_backend::vulkan_descriptor_validation_status::valid,
+        "allowed gate descriptor status is valid");
+    require(gate.planned_batch_count == planned_batch_count, "allowed gate tracks planned batch count");
+    require(gate.invalid_descriptor_set_count == 0, "allowed gate has no invalid descriptor sets");
+    require(gate.missing_resource_count == 0, "allowed gate has no missing registry resources");
+}
+
+void require_descriptor_blocked_command_recorder_gate(
+    const quiz_vulkan::render::vulkan_backend::vulkan_command_recorder_gate_state& gate,
+    quiz_vulkan::render::vulkan_backend::vulkan_batch_kind batch_kind,
+    std::size_t command_index,
+    quiz_vulkan::render::vulkan_backend::vulkan_resource_binding_kind binding_kind,
+    std::size_t binding,
+    std::string_view resource_id,
+    std::size_t planned_batch_count,
+    std::size_t descriptor_set_count,
+    std::size_t missing_resource_count)
+{
+    using namespace quiz_vulkan::render;
+
+    require(gate.checked, "blocked command recorder gate is checked");
+    require(!gate.completed(), "blocked command recorder gate does not complete");
+    require(gate.blocked(), "command recorder gate reports a block");
+    require(!gate.recording_allowed, "blocked command recorder gate disallows recording");
+    require(
+        gate.status == vulkan_backend::vulkan_command_recorder_gate_status::blocked_by_descriptor_validation,
+        "command recorder gate blocks on descriptor validation");
+    require(
+        gate.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::resource_binding_unavailable,
+        "blocked command recorder gate records resource fallback reason");
+    require(gate.resource_bindings_checked, "blocked gate checks resource bindings");
+    require(!gate.resource_bindings_completed, "blocked gate records incomplete resource bindings");
+    require(gate.descriptor_validation_checked, "blocked gate checks descriptor validation");
+    require(!gate.descriptor_validation_completed, "blocked gate records incomplete descriptor validation");
+    require(gate.resource_registry_checked, "blocked gate checks resource registry");
+    require(!gate.resource_registry_completed, "blocked gate records incomplete resource registry");
+    require(gate.missing_required_resource, "blocked gate records missing required resource");
+    require(!gate.duplicate_binding, "blocked gate has no duplicate binding");
+    require(!gate.invalid_layout, "blocked gate has no invalid descriptor layout");
+    require(
+        gate.descriptor_status
+            == vulkan_backend::vulkan_descriptor_validation_status::missing_required_resource,
+        "blocked gate descriptor status records missing resource");
+    require(gate.blocked_batch_kind == batch_kind, "blocked gate records failed batch kind");
+    require(gate.blocked_command_index == command_index, "blocked gate records failed command index");
+    require(gate.blocked_binding_kind == binding_kind, "blocked gate records failed binding kind");
+    require(gate.blocked_binding == binding, "blocked gate records failed binding slot");
+    require(gate.blocked_resource_id == resource_id, "blocked gate records stable missing resource id");
+    require(gate.planned_batch_count == planned_batch_count, "blocked gate tracks planned batch count");
+    require(gate.descriptor_set_count == descriptor_set_count, "blocked gate tracks descriptor set count");
+    require(
+        gate.invalid_descriptor_set_count == descriptor_set_count,
+        "blocked gate records invalid descriptor set count");
+    require(gate.missing_resource_count == missing_resource_count, "blocked gate tracks missing registry count");
+}
+
 void require_failed_command_buffer_recording_state(
     const quiz_vulkan::render::vulkan_backend::vulkan_backend_command_buffer_submit_state& state,
     quiz_vulkan::render::vulkan_backend::vulkan_command_recorder_failure_stage failure_stage,
@@ -2910,6 +3029,7 @@ void test_vulkan_backend_adapter_completes_fake_device_lifecycle()
     require(result.command_recorder.command_buffer_recorded, "fake backend command buffer is recorded");
     require(result.command_recorder.planned_batch_count == 1, "fake backend command recorder sees planned batch count");
     require(result.command_recorder.recorded_batch_count == 1, "fake backend command recorder sees recorded batch count");
+    require_allowed_command_recorder_gate(result.command_recorder.gate, 1);
     require(result.command_recorder.completed(), "fake backend command recorder reports completed state");
     require(!result.command_recorder.failed(), "fake backend command recorder reports no failure");
     require(recorder.recorder_state().completed(), "adapter drives injected command recorder to completion");
@@ -3101,6 +3221,7 @@ void test_vulkan_backend_adapter_completes_empty_frame()
     require(result.command_recorder.frame_open, "empty frame opens command recorder state");
     require(result.command_recorder.command_buffer_recorded, "empty frame records an empty command buffer");
     require(result.command_recorder.empty(), "empty frame command recorder has no batches");
+    require_allowed_command_recorder_gate(result.command_recorder.gate, 0);
     require_completed_command_buffer_submit_state(result.command_buffer_submit, 0);
     require(result.swapchain.completed(), "empty frame still completes swapchain lifecycle");
     require_completed_frame_lifecycle_policy(result.lifecycle_policy);
@@ -3140,6 +3261,7 @@ void test_vulkan_backend_adapter_completes_all_discarded_frame()
     require(result.command_recorder.frame_open, "all-discarded frame opens command recorder state");
     require(result.command_recorder.command_buffer_recorded, "all-discarded frame records an empty command buffer");
     require(result.command_recorder.empty(), "all-discarded frame command recorder has no batches");
+    require_allowed_command_recorder_gate(result.command_recorder.gate, 0);
     require_completed_command_buffer_submit_state(result.command_buffer_submit, 0);
     require(result.swapchain.completed(), "all-discarded frame still completes swapchain lifecycle");
     require_completed_frame_lifecycle_policy(result.lifecycle_policy);
@@ -3402,6 +3524,22 @@ void test_vulkan_backend_adapter_falls_back_when_image_resource_is_missing()
             == vulkan_backend::vulkan_resource_binding_kind::image_texture,
         "backend registry records missing image texture kind");
     require(result.resource_registry.registered_resource_count == 2, "backend registry records available image bindings");
+    require_descriptor_blocked_command_recorder_gate(
+        result.command_recorder.gate,
+        vulkan_backend::vulkan_batch_kind::image,
+        0,
+        vulkan_backend::vulkan_resource_binding_kind::image_texture,
+        1,
+        "missing_image_texture:image",
+        1,
+        1,
+        1);
+    require(result.command_recorder.ready, "backend keeps command recorder ready when image resource gates recording");
+    require(!result.command_recorder.frame_open, "backend does not open recorder after image gate failure");
+    require(!result.command_recorder.command_buffer_recorded, "backend records no command buffer after image gate failure");
+    require(result.command_recorder.planned_batch_count == 1, "backend command recorder preserves gated image batch count");
+    require(result.command_recorder.recorded_batch_count == 0, "backend command recorder records no gated image batches");
+    require(result.command_buffer_submit.checked == false, "backend does not allocate command buffer after image gate failure");
     require(!result.frame_begun, "backend does not begin frame when image resource is missing");
     require(!result.swapchain.acquire_requested, "backend does not acquire image when resource binding is missing");
     require(!result.commands_recorded, "backend does not record commands when image resource is missing");
@@ -3456,6 +3594,22 @@ void test_vulkan_backend_adapter_falls_back_when_text_resource_is_missing()
     require(
         result.resource_registry.missing_resources[1].resource_id == "missing_text_glyph_atlas:text",
         "backend registry records stable missing glyph atlas id");
+    require_descriptor_blocked_command_recorder_gate(
+        result.command_recorder.gate,
+        vulkan_backend::vulkan_batch_kind::text,
+        0,
+        vulkan_backend::vulkan_resource_binding_kind::text_run_buffer,
+        1,
+        "missing_text_run_buffer:text",
+        1,
+        1,
+        2);
+    require(result.command_recorder.ready, "backend keeps command recorder ready when text resource gates recording");
+    require(!result.command_recorder.frame_open, "backend does not open recorder after text gate failure");
+    require(!result.command_recorder.command_buffer_recorded, "backend records no command buffer after text gate failure");
+    require(result.command_recorder.planned_batch_count == 1, "backend command recorder preserves gated text batch count");
+    require(result.command_recorder.recorded_batch_count == 0, "backend command recorder records no gated text batches");
+    require(result.command_buffer_submit.checked == false, "backend does not allocate command buffer after text gate failure");
     require(device.calls.empty(), "backend does not call device lifecycle when text resource is missing");
 }
 
@@ -4165,9 +4319,11 @@ int main()
     test_vulkan_frame_present_policy_names_are_stable();
     test_vulkan_backend_frame_stage_names_are_stable();
     test_vulkan_command_recorder_failure_stage_names_are_stable();
+    test_vulkan_command_recorder_gate_status_names_are_stable();
     test_vulkan_command_buffer_submit_names_are_stable();
     test_vulkan_frame_lifecycle_policy_names_are_stable();
     test_vulkan_frame_resource_lifetime_names_are_stable();
+    test_vulkan_descriptor_validation_names_are_stable();
     test_vulkan_shader_stage_names_are_stable();
     test_vulkan_pipeline_lifecycle_names_are_stable();
     test_draw_list_submission_counts_generic_work();

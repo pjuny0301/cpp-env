@@ -1518,6 +1518,90 @@ vulkan_resource_registry_entry* find_registry_entry(
     return nullptr;
 }
 
+vulkan_descriptor_validation_status descriptor_validation_status_for(
+    const vulkan_backend_descriptor_validation_state& validation)
+{
+    if (!validation.checked) {
+        return vulkan_descriptor_validation_status::not_checked;
+    }
+    for (const vulkan_descriptor_set_validation_snapshot& descriptor_set :
+         validation.descriptor_sets) {
+        if (!descriptor_set.completed()) {
+            return descriptor_set.status;
+        }
+    }
+    return validation.completed()
+        ? vulkan_descriptor_validation_status::valid
+        : vulkan_descriptor_validation_status::invalid_layout;
+}
+
+vulkan_command_recorder_gate_state make_command_recorder_gate_state(
+    const vulkan_backend_resource_binding_state& resource_bindings,
+    const vulkan_backend_resource_registry_state& resource_registry)
+{
+    const vulkan_backend_descriptor_validation_state& validation =
+        resource_bindings.descriptor_validation;
+    vulkan_command_recorder_gate_state state{
+        .checked = true,
+        .recording_allowed = false,
+        .resource_bindings_checked = resource_bindings.checked,
+        .resource_bindings_completed = resource_bindings.completed(),
+        .descriptor_validation_checked = validation.checked,
+        .descriptor_validation_completed = validation.completed(),
+        .resource_registry_checked = resource_registry.checked,
+        .resource_registry_completed = resource_registry.completed(),
+        .missing_required_resource = validation.missing_required_resource,
+        .duplicate_binding = validation.duplicate_binding,
+        .invalid_layout = validation.invalid_layout,
+        .status = vulkan_command_recorder_gate_status::not_checked,
+        .descriptor_status = descriptor_validation_status_for(validation),
+        .fallback_reason = vulkan_backend_fallback_reason::not_requested,
+        .blocked_batch_kind = validation.failed_batch_kind,
+        .blocked_command_index = validation.failed_command_index,
+        .blocked_binding_kind = validation.failed_binding_kind,
+        .blocked_binding = validation.failed_binding,
+        .blocked_resource_id = resource_bindings.missing_resource_id,
+        .planned_batch_count = resource_bindings.planned_batch_count,
+        .descriptor_set_count = validation.descriptor_set_count,
+        .invalid_descriptor_set_count = validation.invalid_descriptor_set_count,
+        .missing_resource_count = resource_registry.missing_resource_count,
+    };
+
+    if (resource_bindings.completed() && resource_registry.completed()) {
+        state.recording_allowed = true;
+        state.status = vulkan_command_recorder_gate_status::allowed;
+        state.descriptor_status = vulkan_descriptor_validation_status::valid;
+        state.fallback_reason = vulkan_backend_fallback_reason::none;
+        return state;
+    }
+
+    state.fallback_reason = vulkan_backend_fallback_reason::resource_binding_unavailable;
+    if (validation.checked && !validation.completed()) {
+        state.status = vulkan_command_recorder_gate_status::blocked_by_descriptor_validation;
+        return state;
+    }
+    if (resource_bindings.checked && !resource_bindings.completed()) {
+        state.status = vulkan_command_recorder_gate_status::blocked_by_resource_binding;
+        state.blocked_batch_kind = resource_bindings.missing_batch_kind;
+        state.blocked_command_index = resource_bindings.missing_command_index;
+        state.blocked_binding_kind = resource_bindings.missing_binding_kind;
+        state.blocked_binding = 0;
+        return state;
+    }
+
+    state.status = vulkan_command_recorder_gate_status::blocked_by_resource_registry;
+    if (!resource_registry.missing_resources.empty()) {
+        const vulkan_resource_registry_missing_resource& missing =
+            resource_registry.missing_resources.front();
+        state.blocked_batch_kind = missing.batch_kind;
+        state.blocked_command_index = missing.command_index;
+        state.blocked_binding_kind = missing.kind;
+        state.blocked_binding = missing.binding;
+        state.blocked_resource_id = missing.resource_id;
+    }
+    return state;
+}
+
 } // namespace
 
 std::string_view fallback_reason_name(vulkan_backend_fallback_reason reason)
@@ -1780,6 +1864,24 @@ std::string_view command_recorder_failure_stage_name(vulkan_command_recorder_fai
         return "record_draw_batch";
     case vulkan_command_recorder_failure_stage::finish_recording:
         return "finish_recording";
+    }
+
+    return "unknown";
+}
+
+std::string_view command_recorder_gate_status_name(vulkan_command_recorder_gate_status status)
+{
+    switch (status) {
+    case vulkan_command_recorder_gate_status::not_checked:
+        return "not_checked";
+    case vulkan_command_recorder_gate_status::allowed:
+        return "allowed";
+    case vulkan_command_recorder_gate_status::blocked_by_descriptor_validation:
+        return "blocked_by_descriptor_validation";
+    case vulkan_command_recorder_gate_status::blocked_by_resource_binding:
+        return "blocked_by_resource_binding";
+    case vulkan_command_recorder_gate_status::blocked_by_resource_registry:
+        return "blocked_by_resource_registry";
     }
 
     return "unknown";
@@ -2404,7 +2506,10 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
         draw_list,
         plan,
         result.resource_bindings);
-    if (!result.resource_bindings.completed()) {
+    result.command_recorder.gate = make_command_recorder_gate_state(
+        result.resource_bindings,
+        result.resource_registry);
+    if (result.command_recorder.gate.blocked()) {
         release_frame_resources(
             result.frame_resources,
             vulkan_frame_resource_release_stage::fallback_cleanup);
@@ -2466,7 +2571,10 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     start_lifecycle_step(result.lifecycle_policy, vulkan_frame_lifecycle_step::render);
     mark_command_buffer_recording_started(result.command_buffer_submit);
     if (!command_recorder.begin_recording(result.surface, plan.batches.size())) {
+        const vulkan_command_recorder_gate_state command_recorder_gate =
+            result.command_recorder.gate;
         result.command_recorder = command_recorder.recorder_state();
+        result.command_recorder.gate = command_recorder_gate;
         mark_command_buffer_recording_failed(
             result.command_buffer_submit,
             result.command_recorder);
@@ -2477,7 +2585,10 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     }
     for (const vulkan_draw_batch& batch : plan.batches) {
         if (!command_recorder.record_draw_batch(batch)) {
+            const vulkan_command_recorder_gate_state command_recorder_gate =
+                result.command_recorder.gate;
             result.command_recorder = command_recorder.recorder_state();
+            result.command_recorder.gate = command_recorder_gate;
             mark_command_buffer_recording_failed(
                 result.command_buffer_submit,
                 result.command_recorder);
@@ -2488,7 +2599,10 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
         }
     }
     if (!command_recorder.finish_recording()) {
+        const vulkan_command_recorder_gate_state command_recorder_gate =
+            result.command_recorder.gate;
         result.command_recorder = command_recorder.recorder_state();
+        result.command_recorder.gate = command_recorder_gate;
         mark_command_buffer_recording_failed(
             result.command_buffer_submit,
             result.command_recorder);
@@ -2497,7 +2611,10 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
             vulkan_backend_fallback_reason::record_commands_failed);
         return result;
     }
+    const vulkan_command_recorder_gate_state command_recorder_gate =
+        result.command_recorder.gate;
     result.command_recorder = command_recorder.recorder_state();
+    result.command_recorder.gate = command_recorder_gate;
     mark_command_buffer_recording_finished(
         result.command_buffer_submit,
         result.command_recorder);

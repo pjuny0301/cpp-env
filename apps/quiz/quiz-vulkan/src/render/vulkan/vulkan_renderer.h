@@ -66,6 +66,10 @@ struct vulkan_renderer_frame_summary {
     bool backend_command_recorder_ready = false;
     bool backend_command_recorder_frame_open = false;
     bool backend_command_buffer_recorded = false;
+    bool backend_command_recorder_gate_checked = false;
+    bool backend_command_recorder_gate_allowed = false;
+    vulkan_backend::vulkan_command_recorder_gate_status backend_command_recorder_gate_status =
+        vulkan_backend::vulkan_command_recorder_gate_status::not_checked;
     bool backend_lifecycle_ready = false;
     bool backend_surface_ready = false;
     bool backend_frame_begun = false;

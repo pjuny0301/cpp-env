@@ -914,6 +914,26 @@ static_assert(requires(render::vulkan_backend::vulkan_command_recorder_failure_s
     { render::vulkan_backend::command_recorder_failure_stage_name(stage) } -> std::same_as<std::string_view>;
 });
 
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_command_recorder_gate_status::not_checked),
+    render::vulkan_backend::vulkan_command_recorder_gate_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_command_recorder_gate_status::allowed),
+    render::vulkan_backend::vulkan_command_recorder_gate_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_command_recorder_gate_status::blocked_by_descriptor_validation),
+    render::vulkan_backend::vulkan_command_recorder_gate_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_command_recorder_gate_status::blocked_by_resource_binding),
+    render::vulkan_backend::vulkan_command_recorder_gate_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_command_recorder_gate_status::blocked_by_resource_registry),
+    render::vulkan_backend::vulkan_command_recorder_gate_status>);
+
+static_assert(requires(render::vulkan_backend::vulkan_command_recorder_gate_status status) {
+    { render::vulkan_backend::command_recorder_gate_status_name(status) } -> std::same_as<std::string_view>;
+});
+
 static_assert(requires(render::vulkan_backend::vulkan_command_buffer_id id) {
     { id.value } -> std::same_as<std::size_t&>;
     { id.valid() } -> std::same_as<bool>;
@@ -988,6 +1008,34 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_command_buffer_sub
     { command_buffer_submit.completed() } -> std::same_as<bool>;
 });
 
+static_assert(requires(render::vulkan_backend::vulkan_command_recorder_gate_state gate) {
+    { gate.checked } -> std::same_as<bool&>;
+    { gate.recording_allowed } -> std::same_as<bool&>;
+    { gate.resource_bindings_checked } -> std::same_as<bool&>;
+    { gate.resource_bindings_completed } -> std::same_as<bool&>;
+    { gate.descriptor_validation_checked } -> std::same_as<bool&>;
+    { gate.descriptor_validation_completed } -> std::same_as<bool&>;
+    { gate.resource_registry_checked } -> std::same_as<bool&>;
+    { gate.resource_registry_completed } -> std::same_as<bool&>;
+    { gate.missing_required_resource } -> std::same_as<bool&>;
+    { gate.duplicate_binding } -> std::same_as<bool&>;
+    { gate.invalid_layout } -> std::same_as<bool&>;
+    { gate.status } -> std::same_as<render::vulkan_backend::vulkan_command_recorder_gate_status&>;
+    { gate.descriptor_status } -> std::same_as<render::vulkan_backend::vulkan_descriptor_validation_status&>;
+    { gate.fallback_reason } -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
+    { gate.blocked_batch_kind } -> std::same_as<render::vulkan_backend::vulkan_batch_kind&>;
+    { gate.blocked_command_index } -> std::same_as<std::size_t&>;
+    { gate.blocked_binding_kind } -> std::same_as<render::vulkan_backend::vulkan_resource_binding_kind&>;
+    { gate.blocked_binding } -> std::same_as<std::size_t&>;
+    { gate.blocked_resource_id } -> std::same_as<std::string&>;
+    { gate.planned_batch_count } -> std::same_as<std::size_t&>;
+    { gate.descriptor_set_count } -> std::same_as<std::size_t&>;
+    { gate.invalid_descriptor_set_count } -> std::same_as<std::size_t&>;
+    { gate.missing_resource_count } -> std::same_as<std::size_t&>;
+    { gate.completed() } -> std::same_as<bool>;
+    { gate.blocked() } -> std::same_as<bool>;
+});
+
 static_assert(requires(render::vulkan_backend::vulkan_backend_command_recorder_state recorder) {
     { recorder.ready } -> std::same_as<bool&>;
     { recorder.frame_open } -> std::same_as<bool&>;
@@ -996,6 +1044,7 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_command_recorder_s
     { recorder.failure_recording_index } -> std::same_as<std::size_t&>;
     { recorder.planned_batch_count } -> std::same_as<std::size_t&>;
     { recorder.recorded_batch_count } -> std::same_as<std::size_t&>;
+    { recorder.gate } -> std::same_as<render::vulkan_backend::vulkan_command_recorder_gate_state&>;
     { recorder.recorded_batches } -> std::same_as<std::vector<render::vulkan_backend::vulkan_recorded_draw_batch>&>;
     { recorder.empty() } -> std::same_as<bool>;
     { recorder.completed() } -> std::same_as<bool>;

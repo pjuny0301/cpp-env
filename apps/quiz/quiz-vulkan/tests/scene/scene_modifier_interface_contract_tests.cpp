@@ -1,6 +1,7 @@
 #include "core/scene/modifier_interface.h"
 
 #include <concepts>
+#include <type_traits>
 
 namespace {
 
@@ -15,6 +16,15 @@ concept SceneModifierInterface = requires(
 };
 
 static_assert(SceneModifierInterface<scene::scene_modifier>);
+
+static_assert(requires(const scene::scene_modifier_context& context) {
+    { context.current_scene } -> std::same_as<const scene::scene_layout_data* const&>;
+    { context.viewport } -> std::same_as<const scene::scene_rect&>;
+    { context.layout_environment } -> std::same_as<const scene::scene_layout_environment&>;
+    { context.route_state } -> std::same_as<const scene::scene_route_state&>;
+});
+
+static_assert(std::is_const_v<std::remove_pointer_t<decltype(scene::scene_modifier_context::current_scene)>>);
 
 static_assert(requires(
     scene::scene_layout_data_modifier modifier_stack,

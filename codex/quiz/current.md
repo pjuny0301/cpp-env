@@ -1,15 +1,15 @@
 # Quiz Current Handoff
 
-Last updated: 2026-04-30
+Last updated: 2026-05-05
 
 ## Top priorities
 
 - Keep the native C++/Vulkan remake aligned with the Android quiz UX baseline while routing UX actions through app/domain actions.
 - Treat long press as the unknown-question path: UI button contract `mark_question_unknown`, app input route `mark_question_unknown`, domain payload `mark_question_unknown_action`.
 - Keep test status counts derived from the configured build with `ctest -N`; do not freeze global CTest totals in docs.
-- Build the engine stack in dependency order: Vulkan backend diagnostics, text layout/atlas, image texture cache, input/IME, then audio/backend wiring.
+- Build the engine stack in dependency order: Vulkan backend diagnostics, text layout/atlas, image texture cache, asset materialization, and input/IME. Audio/backend wiring is intentionally deferred for now.
 - Worker branches should start from the current baseline with a fresh branch. Do not rebase stale worker branches that contain already-cherry-picked historical commits.
-- Latest integrated baseline includes architecture boundary locks, text line-break/glyph cache/font-resolution/readiness/font-face catalog/line-layout/run-box/caret-hit-test/atlas-page/upload-policy/eviction diagnostics, image sampler/cache/upload queue/retry/lifetime eviction/decoder/decoder-chain/data-URI/placeholder texture diagnostics, asset pack index/lookup/fallback/validation/manifest/version-policy/integrity/runtime resolver/catalog cache-policy validation, Vulkan frame/pipeline/command-buffer-submit/frame-present/swapchain policy/pipeline compatibility diagnostics, input routing/action/text-edit/IME preedit/gesture-cancel/focus-traversal/pointer-capture arbitration/gesture route-policy/multipointer touch diagnostics, and procedural audio mixer event unification.
+- Latest integrated baseline includes architecture boundary locks, worker build-lock serialization, text line-break/glyph cache/font-resolution/readiness/font-face catalog/source/line-layout/run-box/caret-hit-test/atlas-page/upload-policy/eviction diagnostics, image sampler/cache/upload queue/retry/lifetime eviction/decoder/decoder-chain/data-URI/filesystem source-byte/placeholder texture diagnostics, asset pack index/lookup/fallback/validation/manifest/version-policy/integrity/runtime resolver/catalog/cache-key cache-policy validation, Vulkan frame/pipeline/command-buffer-submit/frame-present/frame-resource/swapchain policy/pipeline compatibility diagnostics, and input routing/action/text-edit/UTF-8-safe IME preedit/selection/gesture-cancel/focus-traversal/pointer-capture arbitration/gesture route-policy/multipointer touch diagnostics. Audio work is not a current priority.
 
 ## Active requirement IDs
 

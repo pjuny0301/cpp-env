@@ -18,6 +18,18 @@ enum class runtime_asset_catalog_lookup_status {
     unresolved_asset,
 };
 
+enum class runtime_materialized_asset_lookup_status {
+    materialized,
+    missing_id,
+    type_mismatch,
+    unresolved_asset,
+    unsupported_source_kind,
+    missing_rooted_path,
+    invalid_rooted_path,
+    cache_key_mismatch,
+    noncanonical_cache_key,
+};
+
 struct runtime_asset_catalog_snapshot {
     asset_manifest_entry entry;
     resolved_asset_source source;
@@ -34,6 +46,30 @@ struct runtime_asset_catalog_lookup_result {
     [[nodiscard]] bool ok() const
     {
         return status == runtime_asset_catalog_lookup_status::found;
+    }
+};
+
+struct runtime_materialized_asset_snapshot {
+    runtime_asset_catalog_snapshot asset;
+    asset_cache_key_classification cache_key_policy;
+    std::filesystem::path local_path;
+    std::string source_path;
+};
+
+struct runtime_materialized_asset_lookup_request {
+    std::string id;
+    asset_type expected_type = asset_type::generic;
+};
+
+struct runtime_materialized_asset_lookup_result {
+    runtime_materialized_asset_lookup_status status =
+        runtime_materialized_asset_lookup_status::missing_id;
+    runtime_materialized_asset_snapshot materialized;
+    std::string diagnostic;
+
+    [[nodiscard]] bool ok() const
+    {
+        return status == runtime_materialized_asset_lookup_status::materialized;
     }
 };
 
@@ -164,7 +200,103 @@ inline void add_runtime_asset_catalog_validation_diagnostics(
     }
 }
 
+inline bool runtime_asset_path_has_parent_reference(const std::filesystem::path& path)
+{
+    for (const std::filesystem::path& part : path) {
+        if (part == "..") {
+            return true;
+        }
+    }
+    return false;
+}
+
+inline bool runtime_asset_rooted_path_is_safe(const std::filesystem::path& path)
+{
+    return !path.empty() && path.is_absolute() && !runtime_asset_path_has_parent_reference(path);
+}
+
+inline runtime_materialized_asset_lookup_status materialized_status_from_catalog_lookup_status(
+    runtime_asset_catalog_lookup_status status)
+{
+    switch (status) {
+        case runtime_asset_catalog_lookup_status::found:
+            return runtime_materialized_asset_lookup_status::missing_rooted_path;
+        case runtime_asset_catalog_lookup_status::missing_id:
+            return runtime_materialized_asset_lookup_status::missing_id;
+        case runtime_asset_catalog_lookup_status::type_mismatch:
+            return runtime_materialized_asset_lookup_status::type_mismatch;
+        case runtime_asset_catalog_lookup_status::unresolved_asset:
+            return runtime_materialized_asset_lookup_status::unresolved_asset;
+    }
+    return runtime_materialized_asset_lookup_status::missing_id;
+}
+
 } // namespace detail
+
+inline runtime_materialized_asset_lookup_result materialize_runtime_asset(
+    const runtime_asset_catalog_snapshot& snapshot)
+{
+    runtime_materialized_asset_lookup_result result{
+        .materialized = runtime_materialized_asset_snapshot{
+            .asset = snapshot,
+        },
+    };
+
+    const asset_cache_key expected_cache_key = make_manifest_asset_cache_key(snapshot.entry, snapshot.source);
+    if (snapshot.cache_key != expected_cache_key) {
+        result.status = runtime_materialized_asset_lookup_status::cache_key_mismatch;
+        result.diagnostic = "runtime materialized asset cache key does not match the normalized source";
+        return result;
+    }
+
+    result.materialized.cache_key_policy = classify_asset_cache_key(snapshot.cache_key);
+    if (!result.materialized.cache_key_policy.ok()) {
+        result.status = runtime_materialized_asset_lookup_status::noncanonical_cache_key;
+        result.diagnostic = result.materialized.cache_key_policy.diagnostic;
+        return result;
+    }
+
+    if (snapshot.source.kind != asset_source_kind::asset_uri && snapshot.source.kind != asset_source_kind::local_path) {
+        result.status = runtime_materialized_asset_lookup_status::unsupported_source_kind;
+        result.diagnostic = "runtime materialized assets require asset uri or local path sources";
+        return result;
+    }
+
+    if (!snapshot.rooted_path.has_value()) {
+        result.status = runtime_materialized_asset_lookup_status::missing_rooted_path;
+        result.diagnostic = "runtime materialized asset requires a rooted local path";
+        return result;
+    }
+
+    if (!detail::runtime_asset_rooted_path_is_safe(*snapshot.rooted_path)) {
+        result.status = runtime_materialized_asset_lookup_status::invalid_rooted_path;
+        result.diagnostic = "runtime materialized asset rooted path must be absolute and cannot contain parent traversal";
+        return result;
+    }
+
+    result.status = runtime_materialized_asset_lookup_status::materialized;
+    result.materialized.local_path = snapshot.rooted_path->lexically_normal();
+    result.materialized.source_path = result.materialized.cache_key_policy.source_path;
+    return result;
+}
+
+inline runtime_materialized_asset_lookup_result lookup_runtime_materialized_asset(
+    const runtime_asset_catalog& catalog,
+    const runtime_materialized_asset_lookup_request& request)
+{
+    const runtime_asset_catalog_lookup_result lookup = catalog.lookup(request.id, request.expected_type);
+    if (!lookup.ok()) {
+        runtime_materialized_asset_lookup_result result;
+        result.status = detail::materialized_status_from_catalog_lookup_status(lookup.status);
+        result.diagnostic = lookup.diagnostic;
+        if (!lookup.asset.entry.id.empty()) {
+            result.materialized.asset = lookup.asset;
+        }
+        return result;
+    }
+
+    return materialize_runtime_asset(lookup.asset);
+}
 
 inline runtime_asset_catalog build_runtime_asset_catalog(
     const asset_manifest& manifest,

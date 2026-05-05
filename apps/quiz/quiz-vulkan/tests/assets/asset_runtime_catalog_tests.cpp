@@ -216,6 +216,217 @@ void test_runtime_asset_catalog_reports_unresolved_assets_and_cache_collisions()
     require(catalog.lookup_image("card_b").ok(), "runtime catalog keeps second colliding asset snapshot");
 }
 
+void test_runtime_materialized_lookup_resolves_rooted_paths_for_all_asset_types()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "packaged",
+        .root_path = fixture_root / "packaged",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "body_font",
+        .type = asset_type::font,
+        .uri = "fonts/body.ttf",
+        .root_id = "packaged",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_front",
+        .type = asset_type::image,
+        .uri = "ASSET:///cards/./front.png",
+        .root_id = "packaged",
+        .cache_revision = "rev1",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "answer_sound",
+        .type = asset_type::sound,
+        .uri = "sounds/answer.wav",
+        .root_id = "packaged",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "ui_shader",
+        .type = asset_type::shader,
+        .uri = "asset://shaders/ui.vert.spv",
+        .root_id = "packaged",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "main_deck",
+        .type = asset_type::deck,
+        .uri = "decks/main.quiz",
+        .root_id = "packaged",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const runtime_asset_catalog catalog = build_runtime_asset_catalog(manifest, resolver);
+
+    const runtime_materialized_asset_lookup_result font = lookup_runtime_materialized_asset(
+        catalog,
+        runtime_materialized_asset_lookup_request{.id = "body_font", .expected_type = asset_type::font});
+    require(font.ok(), "materialized lookup accepts rooted font assets");
+    require(font.materialized.source_path == "fonts/body.ttf", "font materialized source path is stable");
+    require(
+        font.materialized.local_path
+            == std::filesystem::absolute(fixture_root / "packaged" / "fonts" / "body.ttf").lexically_normal(),
+        "font materialized local path is rooted");
+
+    const runtime_materialized_asset_lookup_result image = lookup_runtime_materialized_asset(
+        catalog,
+        runtime_materialized_asset_lookup_request{.id = "card_front", .expected_type = asset_type::image});
+    require(image.ok(), "materialized lookup accepts rooted image assets");
+    require(image.materialized.source_path == "cards/front.png", "image materialized source path strips asset scheme");
+    require(image.materialized.cache_key_policy.has_cache_revision(), "image materialized lookup preserves revisions");
+    require(image.materialized.cache_key_policy.cache_revision == "rev1", "image materialized revision is parsed");
+    require(
+        image.materialized.local_path
+            == std::filesystem::absolute(fixture_root / "packaged" / "cards" / "front.png").lexically_normal(),
+        "image materialized local path is rooted");
+
+    const runtime_materialized_asset_lookup_result sound = lookup_runtime_materialized_asset(
+        catalog,
+        runtime_materialized_asset_lookup_request{.id = "answer_sound", .expected_type = asset_type::sound});
+    require(sound.ok(), "materialized lookup accepts rooted sound assets");
+    require(sound.materialized.cache_key_policy.type == asset_type::sound, "sound cache key type is classified");
+    require(sound.materialized.source_path == "sounds/answer.wav", "sound materialized source path is stable");
+
+    const runtime_materialized_asset_lookup_result shader = lookup_runtime_materialized_asset(
+        catalog,
+        runtime_materialized_asset_lookup_request{.id = "ui_shader", .expected_type = asset_type::shader});
+    require(shader.ok(), "materialized lookup accepts rooted shader assets");
+    require(shader.materialized.source_path == "shaders/ui.vert.spv", "shader materialized source path is stable");
+    require(shader.materialized.cache_key_policy.source_kind == asset_source_kind::asset_uri, "shader source kind is classified");
+
+    const runtime_materialized_asset_lookup_result deck = lookup_runtime_materialized_asset(
+        catalog,
+        runtime_materialized_asset_lookup_request{.id = "main_deck", .expected_type = asset_type::deck});
+    require(deck.ok(), "materialized lookup accepts rooted deck assets");
+    require(deck.materialized.source_path == "decks/main.quiz", "deck materialized source path is stable");
+    require(
+        deck.materialized.local_path
+            == std::filesystem::absolute(fixture_root / "packaged" / "decks" / "main.quiz").lexically_normal(),
+        "deck materialized local path is rooted");
+}
+
+void test_runtime_materialized_lookup_reports_lookup_and_path_diagnostics()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "packaged",
+        .root_path = fixture_root / "packaged",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "rootless_shader",
+        .type = asset_type::shader,
+        .uri = "asset://shaders/ui.vert.spv",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "remote_image",
+        .type = asset_type::image,
+        .uri = "https://example.test/cards/front.png",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "missing_root",
+        .type = asset_type::deck,
+        .uri = "decks/main.quiz",
+        .root_id = "missing",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const runtime_asset_catalog catalog = build_runtime_asset_catalog(manifest, resolver);
+
+    const runtime_materialized_asset_lookup_result missing = lookup_runtime_materialized_asset(
+        catalog,
+        runtime_materialized_asset_lookup_request{.id = "missing", .expected_type = asset_type::image});
+    require(
+        missing.status == runtime_materialized_asset_lookup_status::missing_id,
+        "materialized lookup reports missing ids");
+    require(!missing.diagnostic.empty(), "missing materialized lookup includes diagnostics");
+
+    const runtime_materialized_asset_lookup_result wrong_type = lookup_runtime_materialized_asset(
+        catalog,
+        runtime_materialized_asset_lookup_request{.id = "rootless_shader", .expected_type = asset_type::sound});
+    require(
+        wrong_type.status == runtime_materialized_asset_lookup_status::type_mismatch,
+        "materialized lookup reports type mismatches");
+    require(
+        wrong_type.materialized.asset.entry.id == "rootless_shader",
+        "type mismatch materialized lookup keeps the catalog snapshot");
+
+    const runtime_materialized_asset_lookup_result unresolved = lookup_runtime_materialized_asset(
+        catalog,
+        runtime_materialized_asset_lookup_request{.id = "missing_root", .expected_type = asset_type::deck});
+    require(
+        unresolved.status == runtime_materialized_asset_lookup_status::unresolved_asset,
+        "materialized lookup reports unresolved manifest entries");
+
+    const runtime_materialized_asset_lookup_result rootless = lookup_runtime_materialized_asset(
+        catalog,
+        runtime_materialized_asset_lookup_request{.id = "rootless_shader", .expected_type = asset_type::shader});
+    require(
+        rootless.status == runtime_materialized_asset_lookup_status::missing_rooted_path,
+        "materialized lookup requires rooted local paths");
+
+    const runtime_materialized_asset_lookup_result remote = lookup_runtime_materialized_asset(
+        catalog,
+        runtime_materialized_asset_lookup_request{.id = "remote_image", .expected_type = asset_type::image});
+    require(
+        remote.status == runtime_materialized_asset_lookup_status::unsupported_source_kind,
+        "materialized lookup rejects remote sources before local file materialization");
+
+    runtime_asset_catalog_snapshot unsafe_snapshot{
+        .entry = asset_manifest_entry{
+            .id = "unsafe_deck",
+            .type = asset_type::deck,
+            .uri = "decks/main.quiz",
+        },
+        .source = resolved_asset_source{
+            .original_uri = "decks/main.quiz",
+            .normalized_uri = "decks/main.quiz",
+            .kind = asset_source_kind::local_path,
+            .type = asset_type::deck,
+        },
+        .cache_key = "deck|decks/main.quiz",
+        .resolved_root_id = "packaged",
+        .rooted_path = fixture_root / "packaged" / ".." / "main.quiz",
+    };
+    const runtime_materialized_asset_lookup_result unsafe = materialize_runtime_asset(unsafe_snapshot);
+    require(
+        unsafe.status == runtime_materialized_asset_lookup_status::invalid_rooted_path,
+        "materialized snapshot rejects unsafe rooted paths");
+
+    unsafe_snapshot.cache_key = "deck|decks/other.quiz";
+    unsafe_snapshot.rooted_path = std::filesystem::absolute(fixture_root / "packaged" / "decks" / "main.quiz");
+    const runtime_materialized_asset_lookup_result mismatched_key = materialize_runtime_asset(unsafe_snapshot);
+    require(
+        mismatched_key.status == runtime_materialized_asset_lookup_status::cache_key_mismatch,
+        "materialized snapshot rejects mismatched cache keys");
+
+    runtime_asset_catalog_snapshot noncanonical_snapshot{
+        .entry = asset_manifest_entry{
+            .id = "noncanonical_image",
+            .type = asset_type::image,
+            .uri = "asset:///cards/front.png",
+        },
+        .source = resolved_asset_source{
+            .original_uri = "asset:///cards/front.png",
+            .normalized_uri = "asset:///cards/front.png",
+            .kind = asset_source_kind::asset_uri,
+            .type = asset_type::image,
+        },
+        .cache_key = "image|asset:///cards/front.png",
+        .resolved_root_id = "packaged",
+        .rooted_path = std::filesystem::absolute(fixture_root / "packaged" / "cards" / "front.png"),
+    };
+    const runtime_materialized_asset_lookup_result noncanonical = materialize_runtime_asset(noncanonical_snapshot);
+    require(
+        noncanonical.status == runtime_materialized_asset_lookup_status::noncanonical_cache_key,
+        "materialized snapshot rejects noncanonical cache keys");
+}
+
 } // namespace
 
 int main()
@@ -223,5 +434,7 @@ int main()
     test_runtime_asset_catalog_builds_typed_snapshots();
     test_runtime_asset_catalog_reports_missing_id_and_type_mismatch();
     test_runtime_asset_catalog_reports_unresolved_assets_and_cache_collisions();
+    test_runtime_materialized_lookup_resolves_rooted_paths_for_all_asset_types();
+    test_runtime_materialized_lookup_reports_lookup_and_path_diagnostics();
     return 0;
 }

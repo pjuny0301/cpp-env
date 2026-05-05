@@ -4,9 +4,15 @@
 
 #include <cctype>
 #include <cstddef>
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <ios>
+#include <limits>
 #include <map>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -446,6 +452,358 @@ inline render_image_data_uri_decode_result decode_render_image_data_uri(std::str
     return decode_data_uri_percent_payload(payload, std::move(media_type), false);
 }
 
+inline render_image_source_bytes_load_result load_render_image_data_uri_source_bytes(
+    const render_resolved_image_source& source)
+{
+    const render_image_data_uri_decode_result decoded = decode_render_image_data_uri(source.cache_key());
+    if (!decoded.ok()) {
+        return render_image_source_bytes_load_result{
+            .status = decoded.status == render_image_data_uri_decode_status::empty_payload
+                ? render_image_source_bytes_load_status::empty_bytes
+                : render_image_source_bytes_load_status::malformed_data_uri,
+            .source = source,
+            .encoded_bytes = {},
+            .diagnostic = decoded.diagnostic,
+        };
+    }
+
+    return render_image_source_bytes_load_result{
+        .status = render_image_source_bytes_load_status::loaded,
+        .source = source,
+        .encoded_bytes = decoded.encoded_bytes,
+        .diagnostic = {},
+    };
+}
+
+namespace detail {
+
+inline bool image_source_uri_decode_path(std::string_view encoded, std::string& decoded)
+{
+    decoded.clear();
+    decoded.reserve(encoded.size());
+    for (std::size_t index = 0; index < encoded.size(); ++index) {
+        const char value = encoded[index];
+        if (value != '%') {
+            decoded.push_back(value);
+            continue;
+        }
+
+        if (index + 2 >= encoded.size()) {
+            return false;
+        }
+        const int high = data_uri_hex_digit_value(encoded[index + 1]);
+        const int low = data_uri_hex_digit_value(encoded[index + 2]);
+        if (high < 0 || low < 0) {
+            return false;
+        }
+        decoded.push_back(static_cast<char>((high << 4) | low));
+        index += 2;
+    }
+    return true;
+}
+
+inline bool image_source_path_has_windows_drive_prefix(std::string_view path)
+{
+    return path.size() >= 2 && std::isalpha(static_cast<unsigned char>(path[0])) != 0 && path[1] == ':';
+}
+
+struct image_source_path_resolution {
+    render_image_source_bytes_load_status status = render_image_source_bytes_load_status::missing_source;
+    std::filesystem::path path;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return status == render_image_source_bytes_load_status::loaded;
+    }
+};
+
+inline image_source_path_resolution resolve_file_uri_image_source_path(
+    const render_resolved_image_source& source)
+{
+    constexpr std::string_view file_scheme = "file:";
+    const render_image_cache_key uri = source.cache_key();
+    if (!uri.starts_with(file_scheme)) {
+        return image_source_path_resolution{
+            .status = render_image_source_bytes_load_status::missing_source,
+            .path = {},
+            .diagnostic = "file image source must start with the file scheme",
+        };
+    }
+
+    std::string_view remainder(uri);
+    remainder.remove_prefix(file_scheme.size());
+    if (remainder.starts_with("//")) {
+        remainder.remove_prefix(2);
+        const std::string_view::size_type slash = remainder.find('/');
+        const std::string_view authority = slash == std::string_view::npos
+            ? remainder
+            : remainder.substr(0, slash);
+        if (!authority.empty() && authority != "localhost") {
+            return image_source_path_resolution{
+                .status = render_image_source_bytes_load_status::unsupported_source,
+                .path = {},
+                .diagnostic = "file URI authority is not supported by the local image source loader",
+            };
+        }
+        remainder = slash == std::string_view::npos ? std::string_view{} : remainder.substr(slash);
+    }
+
+    std::string decoded;
+    if (!image_source_uri_decode_path(remainder, decoded)) {
+        return image_source_path_resolution{
+            .status = render_image_source_bytes_load_status::missing_source,
+            .path = {},
+            .diagnostic = "file URI path contains invalid percent encoding",
+        };
+    }
+
+    if (decoded.size() >= 3 && decoded[0] == '/' && image_source_path_has_windows_drive_prefix(
+            std::string_view(decoded).substr(1))) {
+        decoded.erase(0, 1);
+    }
+    if (decoded.empty()) {
+        return image_source_path_resolution{
+            .status = render_image_source_bytes_load_status::missing_source,
+            .path = {},
+            .diagnostic = "file URI path is empty",
+        };
+    }
+
+    return image_source_path_resolution{
+        .status = render_image_source_bytes_load_status::loaded,
+        .path = std::filesystem::path(decoded),
+        .diagnostic = {},
+    };
+}
+
+inline image_source_path_resolution resolve_asset_uri_image_source_path(
+    const render_resolved_image_source& source,
+    const std::filesystem::path& base_directory)
+{
+    const render_image_cache_key source_key = source.cache_key();
+    const std::string_view::size_type scheme = source_key.find(':');
+    std::string asset_path = scheme == std::string_view::npos
+        ? std::string(source_key)
+        : std::string(source_key.substr(scheme + 1));
+    while (asset_path.starts_with('/')) {
+        asset_path.erase(0, 1);
+    }
+    if (asset_path.empty()) {
+        return image_source_path_resolution{
+            .status = render_image_source_bytes_load_status::missing_source,
+            .path = {},
+            .diagnostic = "asset image source path is empty",
+        };
+    }
+
+    std::filesystem::path path(asset_path);
+    if (!base_directory.empty() && !path.is_absolute()) {
+        path = base_directory / path;
+    }
+
+    return image_source_path_resolution{
+        .status = render_image_source_bytes_load_status::loaded,
+        .path = std::move(path),
+        .diagnostic = {},
+    };
+}
+
+inline std::filesystem::path image_source_path_with_base_directory(
+    const std::filesystem::path& base_directory,
+    std::filesystem::path path)
+{
+    return !base_directory.empty() && !path.is_absolute()
+        ? base_directory / path
+        : std::move(path);
+}
+
+} // namespace detail
+
+class filesystem_image_source_bytes_loader final : public image_source_bytes_loader_interface {
+public:
+    filesystem_image_source_bytes_loader() = default;
+
+    explicit filesystem_image_source_bytes_loader(std::filesystem::path base_directory)
+        : base_directory_(std::move(base_directory))
+    {
+    }
+
+    const std::filesystem::path& base_directory() const
+    {
+        return base_directory_;
+    }
+
+    void set_base_directory(std::filesystem::path base_directory)
+    {
+        base_directory_ = std::move(base_directory);
+    }
+
+    render_image_source_bytes_load_result load(
+        const render_image_source_bytes_load_request& request) const override
+    {
+        load_requests.push_back(request);
+        const render_image_cache_key source_key = request.source.cache_key();
+        if (!is_valid_image_source_bytes_cache_key(source_key)) {
+            return render_image_source_bytes_load_result{
+                .status = render_image_source_bytes_load_status::missing_source,
+                .source = request.source,
+                .encoded_bytes = {},
+                .diagnostic = "image source bytes cache key is empty or contains control characters",
+            };
+        }
+
+        if (request.source.kind == render_image_source_kind::unsupported || request.source.is_remote()) {
+            return render_image_source_bytes_load_result{
+                .status = render_image_source_bytes_load_status::unsupported_source,
+                .source = request.source,
+                .encoded_bytes = {},
+                .diagnostic = "filesystem image source bytes loader only loads local, file, asset, or data sources",
+            };
+        }
+
+        if (request.source.kind == render_image_source_kind::data_uri) {
+            return load_render_image_data_uri_source_bytes(request.source);
+        }
+
+        const detail::image_source_path_resolution resolved_path = source_path_for(request.source);
+        if (!resolved_path.ok()) {
+            return render_image_source_bytes_load_result{
+                .status = resolved_path.status,
+                .source = request.source,
+                .encoded_bytes = {},
+                .diagnostic = resolved_path.diagnostic,
+            };
+        }
+
+        return load_path_bytes(request.source, resolved_path.path);
+    }
+
+    mutable std::vector<render_image_source_bytes_load_request> load_requests;
+
+private:
+    detail::image_source_path_resolution source_path_for(
+        const render_resolved_image_source& source) const
+    {
+        switch (source.kind) {
+        case render_image_source_kind::local_path:
+            if (source.normalized_uri.empty()) {
+                return detail::image_source_path_resolution{
+                    .status = render_image_source_bytes_load_status::missing_source,
+                    .path = {},
+                    .diagnostic = "local image source path is empty",
+                };
+            }
+            return detail::image_source_path_resolution{
+                .status = render_image_source_bytes_load_status::loaded,
+                .path = detail::image_source_path_with_base_directory(
+                    base_directory_,
+                    std::filesystem::path(source.normalized_uri)),
+                .diagnostic = {},
+            };
+        case render_image_source_kind::file_uri:
+            return detail::resolve_file_uri_image_source_path(source);
+        case render_image_source_kind::asset_uri:
+            return detail::resolve_asset_uri_image_source_path(source, base_directory_);
+        case render_image_source_kind::data_uri:
+        case render_image_source_kind::http_uri:
+        case render_image_source_kind::https_uri:
+        case render_image_source_kind::unsupported:
+            break;
+        }
+
+        return detail::image_source_path_resolution{
+            .status = render_image_source_bytes_load_status::unsupported_source,
+            .path = {},
+            .diagnostic = "image source kind is not backed by the local filesystem",
+        };
+    }
+
+    static render_image_source_bytes_load_result load_path_bytes(
+        const render_resolved_image_source& source,
+        const std::filesystem::path& path)
+    {
+        std::error_code error;
+        const bool exists = std::filesystem::exists(path, error);
+        if (error || !exists) {
+            return render_image_source_bytes_load_result{
+                .status = render_image_source_bytes_load_status::missing_bytes,
+                .source = source,
+                .encoded_bytes = {},
+                .diagnostic = "image source file is missing or cannot be inspected: " + path.generic_string(),
+            };
+        }
+
+        if (!std::filesystem::is_regular_file(path, error) || error) {
+            return render_image_source_bytes_load_result{
+                .status = render_image_source_bytes_load_status::missing_bytes,
+                .source = source,
+                .encoded_bytes = {},
+                .diagnostic = "image source path is not a readable regular file: " + path.generic_string(),
+            };
+        }
+
+        const std::uintmax_t file_size = std::filesystem::file_size(path, error);
+        if (error) {
+            return render_image_source_bytes_load_result{
+                .status = render_image_source_bytes_load_status::missing_bytes,
+                .source = source,
+                .encoded_bytes = {},
+                .diagnostic = "image source file size cannot be inspected",
+            };
+        }
+        if (file_size == 0) {
+            return render_image_source_bytes_load_result{
+                .status = render_image_source_bytes_load_status::empty_bytes,
+                .source = source,
+                .encoded_bytes = {},
+                .diagnostic = "image source file is empty",
+            };
+        }
+        if (file_size > static_cast<std::uintmax_t>(std::numeric_limits<std::size_t>::max())
+            || file_size > static_cast<std::uintmax_t>(std::numeric_limits<std::streamsize>::max())) {
+            return render_image_source_bytes_load_result{
+                .status = render_image_source_bytes_load_status::missing_bytes,
+                .source = source,
+                .encoded_bytes = {},
+                .diagnostic = "image source file is too large to load into memory",
+            };
+        }
+
+        std::ifstream file(path, std::ios::binary);
+        if (!file) {
+            return render_image_source_bytes_load_result{
+                .status = render_image_source_bytes_load_status::missing_bytes,
+                .source = source,
+                .encoded_bytes = {},
+                .diagnostic = "image source file could not be opened",
+            };
+        }
+
+        std::vector<std::byte> bytes(static_cast<std::size_t>(file_size));
+        file.read(
+            reinterpret_cast<char*>(bytes.data()),
+            static_cast<std::streamsize>(bytes.size()));
+        if (!file) {
+            return render_image_source_bytes_load_result{
+                .status = render_image_source_bytes_load_status::missing_bytes,
+                .source = source,
+                .encoded_bytes = {},
+                .diagnostic = "image source file could not be read completely",
+            };
+        }
+
+        return render_image_source_bytes_load_result{
+            .status = render_image_source_bytes_load_status::loaded,
+            .source = source,
+            .encoded_bytes = std::move(bytes),
+            .diagnostic = {},
+        };
+    }
+
+    std::filesystem::path base_directory_;
+};
+
 class fake_image_source_bytes_loader final : public image_source_bytes_loader_interface {
 public:
     void set_source_bytes(render_image_cache_key source_key, std::vector<std::byte> encoded_bytes)
@@ -492,24 +850,7 @@ public:
         }
 
         if (request.source.kind == render_image_source_kind::data_uri) {
-            const render_image_data_uri_decode_result decoded = decode_render_image_data_uri(source_key);
-            if (!decoded.ok()) {
-                return render_image_source_bytes_load_result{
-                    .status = decoded.status == render_image_data_uri_decode_status::empty_payload
-                        ? render_image_source_bytes_load_status::empty_bytes
-                        : render_image_source_bytes_load_status::malformed_data_uri,
-                    .source = request.source,
-                    .encoded_bytes = {},
-                    .diagnostic = decoded.diagnostic,
-                };
-            }
-
-            return render_image_source_bytes_load_result{
-                .status = render_image_source_bytes_load_status::loaded,
-                .source = request.source,
-                .encoded_bytes = decoded.encoded_bytes,
-                .diagnostic = {},
-            };
+            return load_render_image_data_uri_source_bytes(request.source);
         }
 
         const auto source_bytes = source_bytes_.find(source_key);

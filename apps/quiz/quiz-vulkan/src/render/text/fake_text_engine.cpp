@@ -1,4 +1,5 @@
 #include "render/text/fake_text_engine.h"
+#include "render/text/font_source_resolver.h"
 #include "render/text/utf8_line_break.h"
 #include "render/text/utf8_text_run.h"
 
@@ -196,6 +197,54 @@ void record_font_face_selection(
     }
 }
 
+void record_font_source_resolution(
+    fake_text_engine_diagnostics& diagnostics,
+    const std::size_t run_index,
+    const render_style_id& style_token,
+    const font_face_catalog& catalog,
+    const font_resolver_result& resolution)
+{
+    const font_face_descriptor* face = catalog.find_by_id(resolution.resolved_face_id);
+    const font_source_resolution source = face == nullptr
+        ? font_source_resolution{}
+        : resolve_font_source(*face);
+
+    diagnostics.font_source_resolutions.push_back(render_text_font_source_resolution_snapshot{
+        .run_index = run_index,
+        .style_token = style_token,
+        .resolved_face_id = resolution.resolved_face_id,
+        .resolved_family = resolution.resolved_family,
+        .source_uri = source.source_uri,
+        .source_kind = source.kind,
+        .resolved_location = source.resolved_location,
+        .can_attempt_load = source.can_attempt_load,
+        .virtual_fixture = source.virtual_fixture,
+    });
+
+    ++diagnostics.font_source_policy.request_count;
+    switch (source.kind) {
+    case render_text_font_source_kind::fixture_uri:
+        ++diagnostics.font_source_policy.fixture_source_count;
+        break;
+    case render_text_font_source_kind::file_uri:
+    case render_text_font_source_kind::file_path:
+        ++diagnostics.font_source_policy.file_source_count;
+        break;
+    case render_text_font_source_kind::missing:
+        ++diagnostics.font_source_policy.missing_source_count;
+        break;
+    case render_text_font_source_kind::unknown_uri:
+        ++diagnostics.font_source_policy.unknown_uri_count;
+        break;
+    }
+    if (source.can_attempt_load) {
+        ++diagnostics.font_source_policy.loadable_source_count;
+    }
+    if (source.virtual_fixture) {
+        ++diagnostics.font_source_policy.virtual_source_count;
+    }
+}
+
 bool contains_face_id(const std::vector<font_face_id>& faces, const font_face_id face_id)
 {
     return std::find(faces.begin(), faces.end(), face_id) != faces.end();
@@ -315,6 +364,12 @@ std::vector<shaped_glyph> shape_request(
         }
         const font_resolver_result font_resolution = font_resolver.resolve(style);
         record_font_face_selection(diagnostics, run_index, run.style_token, font_resolution);
+        record_font_source_resolution(
+            diagnostics,
+            run_index,
+            run.style_token,
+            font_resolver.catalog(),
+            font_resolution);
         record_font_fallback(diagnostics, run_index, run.style_token, font_resolution);
 
         const std::vector<utf8_text_codepoint> codepoints = iterate_utf8_text_run(run.text);

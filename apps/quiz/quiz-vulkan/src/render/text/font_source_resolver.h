@@ -257,6 +257,10 @@ inline font_source_resolution resolve_font_source(
         .face_id = descriptor.id,
         .family = descriptor.family,
         .source_uri = descriptor.source_uri,
+        .kind = render_text_font_source_kind::missing,
+        .resolved_location = {},
+        .can_attempt_load = false,
+        .virtual_fixture = false,
     };
 
     if (source_uri.empty()) {

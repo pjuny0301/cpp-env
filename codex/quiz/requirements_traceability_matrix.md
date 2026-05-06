@@ -1,11 +1,25 @@
 # Quiz 요구사항 추적 매트릭스
 
-마지막 갱신: 2026-05-06
+마지막 갱신: 2026-05-07
 
 이 문서는 요구사항 번호를 실행 순서가 아니라 추적 ID로 관리한다. 실제 구현 순서는 `big_plan.md`의 의존관계 기반 단계가 기준이며, 각 행은 루트 구현 문서, 하위 프로젝트 문서, 현재 C++/문서 증거를 연결한다.
 
 최근 baseline 통합 증거:
 
+- `bbd8ecf`: 실제 uncompressed BMP image decoder와 BMP decoder focused tests 추가.
+- `c091b53`: Vulkan resource binding diagnostics implementation을 전용 source 파일로 분리.
+- `bdc9d21`: input keyboard/text-edit tests를 전용 파일로 분리.
+- `964f515`: Vulkan diagnostic pipeline cache implementation을 전용 source 파일로 분리.
+- `53bcc29`: input text route policy helpers를 전용 header로 분리.
+- `8fd8c5a`: Vulkan pipeline cache diagnostics tests를 전용 파일로 분리.
+- `0d865fd`: input pointer policy helpers를 전용 header로 분리.
+- `ca4795e`: image upload retry policy를 전용 header로 분리.
+- `73bb74b`: image engine architecture boundary lock 추가.
+- `eadd012`: input touch arbitration tests를 전용 파일로 분리.
+- `d222206`: image texture uploader tests를 전용 파일로 분리.
+- `dc8e9f8`: input key policy helpers를 전용 header로 분리.
+- `1ecdd14`: Vulkan frame lifecycle helpers를 전용 source/header로 분리.
+- `0b94ca8`: input core architecture boundary lock 추가.
 - `4411467`: fake text engine line layout helpers를 전용 header로 분리.
 - `8ae5a73`: asset manifest version policy를 전용 header로 분리.
 - `bc27039`: asset/text engine core boundary locks and explicit bridge exceptions 추가.
@@ -83,7 +97,7 @@
 - `5965a4b`: Vulkan swapchain policy/pipeline compatibility/shader binding/fallback diagnostics 추가.
 - `244d5b7`: input multipointer touch-like arbitration diagnostics 추가.
 - `94a922f`: asset manifest integrity diagnostics 추가.
-- 기준 검증 예시: 2026-05-06 Windows MinGW focused input/text/image/Vulkan split tests 통과 후 full CTest 41/41 통과. 권위 있는 테스트 목록은 항상 실행 시점의 `ctest -N`으로 확인한다.
+- 기준 검증 예시: 2026-05-07 Windows MinGW focused image build와 BMP/image cache/pipeline CTest 5/5 통과 후 `ctest -N`이 46개 테스트를 보고. 직전 full CTest는 45/45 통과. 권위 있는 테스트 목록은 항상 실행 시점의 `ctest -N`으로 확인한다.
 - 기준 검증은 고정 개수로 적지 않는다. 현재 전체 테스트 수는 `ctest -N`이 권위이며, handoff에는 실행한 focused target만 기록한다.
 
 상태 기준:

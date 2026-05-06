@@ -23,6 +23,7 @@ enum class render_image_encoded_format {
     png,
     jpeg,
     ppm,
+    bmp,
 };
 
 inline std::string render_image_encoded_format_name(render_image_encoded_format format)
@@ -36,6 +37,8 @@ inline std::string render_image_encoded_format_name(render_image_encoded_format 
         return "jpeg";
     case render_image_encoded_format::ppm:
         return "ppm";
+    case render_image_encoded_format::bmp:
+        return "bmp";
     }
 
     return "unknown";
@@ -50,6 +53,8 @@ inline std::string render_image_encoded_format_mime_type(render_image_encoded_fo
         return "image/jpeg";
     case render_image_encoded_format::ppm:
         return "image/x-portable-pixmap";
+    case render_image_encoded_format::bmp:
+        return "image/bmp";
     case render_image_encoded_format::unknown:
         return "application/octet-stream";
     }
@@ -197,6 +202,13 @@ inline bool starts_with_ppm_signature(const std::vector<std::byte>& bytes)
         && std::to_integer<unsigned char>(bytes[1]) == '6';
 }
 
+inline bool starts_with_bmp_signature(const std::vector<std::byte>& bytes)
+{
+    return bytes.size() >= 2
+        && std::to_integer<unsigned char>(bytes[0]) == 'B'
+        && std::to_integer<unsigned char>(bytes[1]) == 'M';
+}
+
 inline render_image_format_detection_summary detect_render_image_format(
     const render_image_decode_request& request)
 {
@@ -234,6 +246,19 @@ inline render_image_format_detection_summary detect_render_image_format(
         return summary;
     }
 
+    if (starts_with_bmp_signature(request.encoded_bytes)) {
+        summary.detected_format = render_image_encoded_format::bmp;
+        summary.recognized_signature = true;
+        summary.diagnostic = "image format detection found BMP signature";
+        return summary;
+    }
+
+    if (summary.extension_hint == "bmp") {
+        summary.detected_format = render_image_encoded_format::bmp;
+        summary.diagnostic = "image format detection used BMP extension hint";
+        return summary;
+    }
+
     summary.diagnostic = "image format detection did not recognize encoded bytes";
     return summary;
 }
@@ -259,7 +284,7 @@ inline std::size_t render_image_source_kind_decode_order(render_image_source_kin
 
 inline std::size_t render_image_extension_decode_order(std::string_view extension_hint)
 {
-    if (extension_hint == "ppm" || extension_hint == "pnm") {
+    if (extension_hint == "bmp" || extension_hint == "ppm" || extension_hint == "pnm") {
         return 0;
     }
     if (extension_hint == "fake") {
@@ -280,6 +305,7 @@ inline std::size_t render_image_extension_decode_order(std::string_view extensio
 inline std::size_t render_image_encoded_format_decode_order(render_image_encoded_format format)
 {
     switch (format) {
+    case render_image_encoded_format::bmp:
     case render_image_encoded_format::ppm:
         return 0;
     case render_image_encoded_format::png:
@@ -402,6 +428,10 @@ inline render_image_format_detection_summary with_placeholder_fallback(
     case render_image_encoded_format::ppm:
         summary.diagnostic = std::string(decoder_id)
             + " detected PPM bytes and used deterministic placeholder pixels";
+        break;
+    case render_image_encoded_format::bmp:
+        summary.diagnostic = std::string(decoder_id)
+            + " detected BMP bytes and used deterministic placeholder pixels";
         break;
     case render_image_encoded_format::unknown:
         summary.diagnostic = std::string(decoder_id)
@@ -879,3 +909,5 @@ public:
 };
 
 } // namespace quiz_vulkan::render
+
+#include "render/image/bmp_image_decoder.h"

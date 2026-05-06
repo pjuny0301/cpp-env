@@ -1,4 +1,5 @@
 #include "core/input/input_engine.h"
+#include "core/input/input_key_policy.h"
 
 #include <algorithm>
 #include <optional>
@@ -55,87 +56,6 @@ scroll_delta_unit to_scroll_delta_unit(raw_platform_scroll_delta_unit unit)
     }
 
     return scroll_delta_unit::pixels;
-}
-
-bool is_backspace_key(const raw_platform_key_event& event)
-{
-    return event.logical_key == "Backspace" || event.key_code == 8;
-}
-
-bool is_submit_key(const raw_platform_key_event& event)
-{
-    return event.logical_key == "Enter"
-        || event.logical_key == "NumpadEnter"
-        || event.logical_key == "Return"
-        || event.key_code == 13;
-}
-
-bool is_arrow_left_key(const raw_platform_key_event& event)
-{
-    return event.logical_key == "ArrowLeft"
-        || event.logical_key == "Left"
-        || event.key_code == 37;
-}
-
-bool is_arrow_right_key(const raw_platform_key_event& event)
-{
-    return event.logical_key == "ArrowRight"
-        || event.logical_key == "Right"
-        || event.key_code == 39;
-}
-
-bool is_home_key(const raw_platform_key_event& event)
-{
-    return event.logical_key == "Home" || event.key_code == 36;
-}
-
-bool is_end_key(const raw_platform_key_event& event)
-{
-    return event.logical_key == "End" || event.key_code == 35;
-}
-
-bool is_tab_key(const raw_platform_key_event& event)
-{
-    return event.logical_key == "Tab" || event.key_code == 9;
-}
-
-bool is_a_key(const raw_platform_key_event& event)
-{
-    return event.logical_key == "a"
-        || event.logical_key == "A"
-        || event.logical_key == "KeyA"
-        || event.key_code == 65;
-}
-
-bool is_select_all_key(const raw_platform_key_event& event)
-{
-    return !event.alt && (event.ctrl || event.meta) && is_a_key(event);
-}
-
-bool is_keyboard_navigation_key(const raw_platform_key_event& event)
-{
-    return is_arrow_left_key(event)
-        || is_arrow_right_key(event)
-        || is_home_key(event)
-        || is_end_key(event)
-        || is_tab_key(event)
-        || is_select_all_key(event);
-}
-
-action_route_policy_kind navigation_policy_kind(const raw_platform_key_event& event)
-{
-    if (is_tab_key(event)) {
-        return event.shift
-            ? action_route_policy_kind::focus_traversal_previous
-            : action_route_policy_kind::focus_traversal_next;
-    }
-
-    if (is_select_all_key(event)
-        || ((is_arrow_left_key(event) || is_arrow_right_key(event)) && event.shift)) {
-        return action_route_policy_kind::selection_changed;
-    }
-
-    return action_route_policy_kind::caret_moved;
 }
 
 ime_event make_ime_event(
@@ -878,9 +798,9 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
         };
 
     if (ime_composing_ || text_.ime_composition().active) {
-        if (is_keyboard_navigation_key(event)) {
+        if (detail::is_keyboard_navigation_key(event)) {
             action_route_policy_diagnostic policy = make_text_state_policy(
-                navigation_policy_kind(event),
+                detail::navigation_policy_kind(event),
                 event.timestamp_ms,
                 target_id,
                 edit_before,
@@ -894,13 +814,13 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
         return events;
     }
 
-    if (is_tab_key(event)) {
-        append_state_policy(navigation_policy_kind(event));
+    if (detail::is_tab_key(event)) {
+        append_state_policy(detail::navigation_policy_kind(event));
         finish_route_diagnostics();
         return events;
     }
 
-    if (is_select_all_key(event)) {
+    if (detail::is_select_all_key(event)) {
         if (text_.select_all()) {
             emit_text_policy(text_event_kind::selection_changed, action_route_policy_kind::selection_changed);
         } else {
@@ -910,33 +830,33 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
         return events;
     }
 
-    if (is_arrow_left_key(event)) {
+    if (detail::is_arrow_left_key(event)) {
         const bool changed = event.shift ? text_.extend_selection_left() : text_.move_caret_left();
         if (changed) {
             emit_text_policy(
                 event.shift ? text_event_kind::selection_changed : text_event_kind::caret_moved,
                 event.shift ? action_route_policy_kind::selection_changed : action_route_policy_kind::caret_moved);
         } else {
-            append_state_policy(navigation_policy_kind(event));
+            append_state_policy(detail::navigation_policy_kind(event));
         }
         finish_route_diagnostics();
         return events;
     }
 
-    if (is_arrow_right_key(event)) {
+    if (detail::is_arrow_right_key(event)) {
         const bool changed = event.shift ? text_.extend_selection_right() : text_.move_caret_right();
         if (changed) {
             emit_text_policy(
                 event.shift ? text_event_kind::selection_changed : text_event_kind::caret_moved,
                 event.shift ? action_route_policy_kind::selection_changed : action_route_policy_kind::caret_moved);
         } else {
-            append_state_policy(navigation_policy_kind(event));
+            append_state_policy(detail::navigation_policy_kind(event));
         }
         finish_route_diagnostics();
         return events;
     }
 
-    if (is_home_key(event)) {
+    if (detail::is_home_key(event)) {
         if (text_.move_caret_to_start()) {
             emit_text_policy(text_event_kind::caret_moved, action_route_policy_kind::caret_moved);
         } else {
@@ -946,7 +866,7 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
         return events;
     }
 
-    if (is_end_key(event)) {
+    if (detail::is_end_key(event)) {
         if (text_.move_caret_to_end()) {
             emit_text_policy(text_event_kind::caret_moved, action_route_policy_kind::caret_moved);
         } else {
@@ -956,7 +876,7 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
         return events;
     }
 
-    if (is_backspace_key(event)) {
+    if (detail::is_backspace_key(event)) {
         if (text_.backspace()) {
             const std::size_t event_index = events.size();
             events.emplace_back(text_event{
@@ -984,7 +904,7 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
         return events;
     }
 
-    if (is_submit_key(event)) {
+    if (detail::is_submit_key(event)) {
         if (event.repeat) {
             finish_route_diagnostics();
             return events;

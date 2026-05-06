@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -10,6 +11,7 @@ namespace {
 struct boundary_rule {
     std::string_view area;
     std::vector<std::filesystem::path> roots;
+    std::vector<std::filesystem::path> excluded_files;
     std::vector<std::string_view> forbidden_tokens;
 };
 
@@ -42,11 +44,25 @@ std::vector<std::filesystem::path> source_files_under(const std::filesystem::pat
     return files;
 }
 
+bool is_excluded_file(
+    const std::filesystem::path& source_root,
+    const std::filesystem::path& file,
+    const boundary_rule& rule)
+{
+    const std::filesystem::path relative_file = std::filesystem::relative(file, source_root);
+    return std::find(rule.excluded_files.begin(), rule.excluded_files.end(), relative_file)
+        != rule.excluded_files.end();
+}
+
 std::vector<violation> scan_rule(const std::filesystem::path& source_root, const boundary_rule& rule)
 {
     std::vector<violation> violations;
     for (const std::filesystem::path& relative_root : rule.roots) {
         for (const std::filesystem::path& file : source_files_under(source_root / relative_root)) {
+            if (is_excluded_file(source_root, file, rule)) {
+                continue;
+            }
+
             std::ifstream input(file);
             std::string line;
             std::size_t line_number = 0;
@@ -94,6 +110,7 @@ int main()
                 "src/core/layout",
                 "src/render",
             },
+            .excluded_files = {},
             .forbidden_tokens = {
                 "#include \"app/",
                 "#include <app/",
@@ -111,6 +128,7 @@ int main()
             .roots = {
                 "src/core/ui",
             },
+            .excluded_files = {},
             .forbidden_tokens = {
                 "#include \"render/vulkan/",
                 "#include <render/vulkan/",
@@ -122,6 +140,7 @@ int main()
             .roots = {
                 "src/core/layout",
             },
+            .excluded_files = {},
             .forbidden_tokens = {
                 "#include \"core/ui/",
                 "#include <core/ui/",
@@ -136,6 +155,7 @@ int main()
             .roots = {
                 "src/core/scene",
             },
+            .excluded_files = {},
             .forbidden_tokens = {
                 "#include \"core/ui/",
                 "#include <core/ui/",
@@ -151,6 +171,7 @@ int main()
             .roots = {
                 "src/render/vulkan",
             },
+            .excluded_files = {},
             .forbidden_tokens = {
                 "#include \"app/",
                 "#include <app/",
@@ -176,12 +197,79 @@ int main()
                 "src/core/input",
                 "src/audio",
             },
+            .excluded_files = {},
             .forbidden_tokens = {
                 "#include \"core/ui/",
                 "#include <core/ui/",
                 "#include \"render/",
                 "#include <render/",
                 "render::",
+                "vulkan_backend::",
+            },
+        },
+        boundary_rule{
+            .area = "asset-core-to-upper-layers",
+            .roots = {
+                "src/assets",
+            },
+            .excluded_files = {
+                "src/assets/deck_source_asset_adapter.cpp",
+                "src/assets/deck_source_asset_adapter.h",
+            },
+            .forbidden_tokens = {
+                "#include \"app/",
+                "#include <app/",
+                "#include \"audio/",
+                "#include <audio/",
+                "#include \"core/domain/",
+                "#include <core/domain/",
+                "#include \"core/input/",
+                "#include <core/input/",
+                "#include \"core/layout/",
+                "#include <core/layout/",
+                "#include \"core/scene/",
+                "#include <core/scene/",
+                "#include \"core/ui/",
+                "#include <core/ui/",
+                "#include \"render/",
+                "#include <render/",
+                "#include \"platform/",
+                "#include <platform/",
+                "domain::",
+                "scene::",
+                "ui::",
+                "render::",
+                "vulkan_backend::",
+            },
+        },
+        boundary_rule{
+            .area = "text-engine-core-to-upper-layers",
+            .roots = {
+                "src/render/text",
+            },
+            .excluded_files = {
+                "src/render/text/scene_text_metrics_adapter.h",
+            },
+            .forbidden_tokens = {
+                "#include \"app/",
+                "#include <app/",
+                "#include \"audio/",
+                "#include <audio/",
+                "#include \"core/domain/",
+                "#include <core/domain/",
+                "#include \"core/input/",
+                "#include <core/input/",
+                "#include \"core/layout/",
+                "#include <core/layout/",
+                "#include \"core/scene/",
+                "#include <core/scene/",
+                "#include \"core/ui/",
+                "#include <core/ui/",
+                "#include \"platform/",
+                "#include <platform/",
+                "domain::",
+                "scene::",
+                "ui::",
                 "vulkan_backend::",
             },
         },

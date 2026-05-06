@@ -1,6 +1,6 @@
 # Quiz Current Handoff
 
-Last updated: 2026-05-05
+Last updated: 2026-05-06
 
 ## Top priorities
 
@@ -9,7 +9,7 @@ Last updated: 2026-05-05
 - Keep test status counts derived from the configured build with `ctest -N`; do not freeze global CTest totals in docs.
 - Build the engine stack in dependency order: Vulkan backend diagnostics, text layout/atlas, image texture cache, asset materialization, and input/IME. Audio/backend wiring is intentionally deferred for now.
 - Worker branches should start from the current baseline with a fresh branch. Do not rebase stale worker branches that contain already-cherry-picked historical commits.
-- Latest integrated baseline includes architecture boundary locks, worker build-lock serialization, text line-break/glyph cache/font-resolution/readiness/font-face catalog/source/source-byte/line-layout/run-box/caret-hit-test/atlas-page/upload-policy/eviction diagnostics, image sampler/cache/upload queue/retry/lifetime eviction/decoder/decoder-chain/data-URI/filesystem source-byte/placeholder texture diagnostics, asset pack index/lookup/fallback/validation/manifest/version-policy/integrity/runtime resolver/catalog/materialization/byte-provider/cache-key cache-policy validation, Vulkan frame/pipeline/command-buffer-submit/frame-present/frame-resource/descriptor-validation/swapchain policy/pipeline compatibility diagnostics, and input routing/action/text-edit/UTF-8-safe IME preedit/selection/gesture-cancel/focus-traversal/pointer-capture arbitration/gesture route-policy/multipointer touch diagnostics. Audio work is not a current priority.
+- Latest integrated baseline includes architecture boundary locks, worker build-lock serialization, text line-break/glyph cache/font-resolution/readiness/font-face catalog/source/source-byte/file-byte-loader/file-byte-loader split tests/line-layout helper split/run-box/caret-hit-test/atlas-page/upload-policy/eviction diagnostics, fake text layout diagnostics split tests, image sampler/cache/upload queue/retry/lifetime eviction/decoder/decoder-chain/data-URI/filesystem source-byte/filesystem pipeline/placeholder texture diagnostics, image texture cache residency split tests, image texture diagnostics helper split, asset pack index/lookup/fallback/validation/manifest/version-policy split/integrity/runtime resolver/catalog/materialization/byte-provider/materialized byte-integrity/cache-key cache-policy validation, Vulkan frame/pipeline/command-buffer-submit/command-recorder-gate split tests/resource-binding split tests/frame-present/frame-resource/descriptor-validation/swapchain policy/pipeline compatibility diagnostics, Vulkan adapter name diagnostics split, and input routing/action/text-edit/UTF-8-safe IME preedit/selection/IME split tests/gesture-cancel/focus-traversal/pointer-capture arbitration/gesture route-policy/multipointer touch diagnostics. Audio work is not a current priority.
 
 ## Active requirement IDs
 
@@ -32,9 +32,11 @@ Last updated: 2026-05-05
 - `src/app/app_quiz_screens.h` reads `domain::app_snapshot` as the app-owned presentation bridge. Do not move that coupling into `src/core/ui`.
 - Scene/UI modifiers emit actions only; app/domain services own state changes.
 - Renderer layers must not own quiz, domain, UI, input, or audio state.
-- Architecture boundary tests now lock the intended direction: layout does not depend on UI/render, UI does not depend on Vulkan backend, scene layout data does not depend on render, and Vulkan backend does not depend on scene/UI/app/domain.
+- Architecture boundary tests now lock the intended direction: layout does not depend on UI/render, UI does not depend on Vulkan backend, scene layout data does not depend on render, Vulkan backend does not depend on scene/UI/app/domain, and asset/text engine core files do not depend on upper layers except explicit bridge adapters.
 - Engine workers own only their engine folders. App/runtime, top-level CMake, and aggregate contract wiring stay with the integrator unless explicitly assigned.
+- Large file splitting is allowed when it improves module cohesion, worker ownership, reviewability, or conflict isolation. Do not split files only because they exceed a line-count threshold, and do not move stable public interfaces without explicit integrator approval.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
+- Latest verification: Windows MinGW focused input/text/image/Vulkan split tests passed after the 2026-05-06 worker integrations, then full CTest passed with 41/41 tests. Use `ctest -N` for the authoritative current test list before editing docs.
 
 ## Verification commands
 

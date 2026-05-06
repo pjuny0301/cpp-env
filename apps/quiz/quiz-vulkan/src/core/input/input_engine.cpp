@@ -1,33 +1,15 @@
 #include "core/input/input_engine.h"
+#include "core/input/input_key_policy.h"
+#include "core/input/input_pointer_policy.h"
+#include "core/input/input_text_route_policy.h"
 
 #include <algorithm>
-#include <optional>
 #include <type_traits>
 #include <utility>
 #include <variant>
 
 namespace quiz_vulkan::input {
 namespace {
-
-struct text_edit_snapshot {
-    std::size_t text_byte_count = 0;
-    text_range caret;
-    bool has_selection = false;
-    text_range selection;
-};
-
-bool is_primary_pointer(const raw_platform_pointer_event& event)
-{
-    return event.button == raw_platform_pointer_button::none
-        || event.button == raw_platform_pointer_button::primary;
-}
-
-pointer_contact_kind pointer_contact_for(const raw_platform_pointer_event& event)
-{
-    return event.button == raw_platform_pointer_button::none
-        ? pointer_contact_kind::touch_like
-        : pointer_contact_kind::mouse_like;
-}
 
 pointer_phase to_pointer_phase(raw_platform_pointer_phase phase)
 {
@@ -55,87 +37,6 @@ scroll_delta_unit to_scroll_delta_unit(raw_platform_scroll_delta_unit unit)
     }
 
     return scroll_delta_unit::pixels;
-}
-
-bool is_backspace_key(const raw_platform_key_event& event)
-{
-    return event.logical_key == "Backspace" || event.key_code == 8;
-}
-
-bool is_submit_key(const raw_platform_key_event& event)
-{
-    return event.logical_key == "Enter"
-        || event.logical_key == "NumpadEnter"
-        || event.logical_key == "Return"
-        || event.key_code == 13;
-}
-
-bool is_arrow_left_key(const raw_platform_key_event& event)
-{
-    return event.logical_key == "ArrowLeft"
-        || event.logical_key == "Left"
-        || event.key_code == 37;
-}
-
-bool is_arrow_right_key(const raw_platform_key_event& event)
-{
-    return event.logical_key == "ArrowRight"
-        || event.logical_key == "Right"
-        || event.key_code == 39;
-}
-
-bool is_home_key(const raw_platform_key_event& event)
-{
-    return event.logical_key == "Home" || event.key_code == 36;
-}
-
-bool is_end_key(const raw_platform_key_event& event)
-{
-    return event.logical_key == "End" || event.key_code == 35;
-}
-
-bool is_tab_key(const raw_platform_key_event& event)
-{
-    return event.logical_key == "Tab" || event.key_code == 9;
-}
-
-bool is_a_key(const raw_platform_key_event& event)
-{
-    return event.logical_key == "a"
-        || event.logical_key == "A"
-        || event.logical_key == "KeyA"
-        || event.key_code == 65;
-}
-
-bool is_select_all_key(const raw_platform_key_event& event)
-{
-    return !event.alt && (event.ctrl || event.meta) && is_a_key(event);
-}
-
-bool is_keyboard_navigation_key(const raw_platform_key_event& event)
-{
-    return is_arrow_left_key(event)
-        || is_arrow_right_key(event)
-        || is_home_key(event)
-        || is_end_key(event)
-        || is_tab_key(event)
-        || is_select_all_key(event);
-}
-
-action_route_policy_kind navigation_policy_kind(const raw_platform_key_event& event)
-{
-    if (is_tab_key(event)) {
-        return event.shift
-            ? action_route_policy_kind::focus_traversal_previous
-            : action_route_policy_kind::focus_traversal_next;
-    }
-
-    if (is_select_all_key(event)
-        || ((is_arrow_left_key(event) || is_arrow_right_key(event)) && event.shift)) {
-        return action_route_policy_kind::selection_changed;
-    }
-
-    return action_route_policy_kind::caret_moved;
 }
 
 ime_event make_ime_event(
@@ -208,80 +109,6 @@ normalized_input_event_summary summarize_scroll(const scroll_event& scroll)
     };
 }
 
-bool has_pointer_capture_state(const pointer_capture_snapshot& snapshot)
-{
-    return snapshot.lifecycle != pointer_capture_lifecycle::idle
-        || snapshot.active
-        || snapshot.tracked_pointer_count > 0;
-}
-
-bool pointer_capture_changed(const pointer_capture_snapshot& before, const pointer_capture_snapshot& after)
-{
-    return before.lifecycle != after.lifecycle
-        || before.active != after.active
-        || before.pointer_id != after.pointer_id
-        || before.tracked_pointer_count != after.tracked_pointer_count;
-}
-
-void apply_pointer_arbitration(
-    action_route_policy_diagnostic& diagnostic,
-    std::int32_t pointer_id,
-    pointer_phase phase,
-    pointer_arbitration_decision decision)
-{
-    diagnostic.pointer_id = pointer_id;
-    diagnostic.pointer_event_phase = phase;
-    diagnostic.pointer_decision = decision;
-}
-
-void apply_pointer_route_context(
-    action_route_policy_diagnostic& diagnostic,
-    const raw_platform_pointer_event& event,
-    pointer_phase phase,
-    pointer_arbitration_decision decision,
-    const pointer_capture_snapshot& pointer_capture_before,
-    const pointer_capture_snapshot& pointer_capture_after)
-{
-    apply_pointer_arbitration(diagnostic, event.pointer_id, phase, decision);
-    diagnostic.pointer_contact = pointer_contact_for(event);
-    diagnostic.tracked_pointer_count_before = pointer_capture_before.tracked_pointer_count;
-    diagnostic.tracked_pointer_count_after = pointer_capture_after.tracked_pointer_count;
-}
-
-bool has_gesture_kind(
-    const std::vector<gesture_event>& gestures,
-    std::int32_t pointer_id,
-    gesture_kind kind)
-{
-    return std::ranges::any_of(gestures, [pointer_id, kind](const gesture_event& gesture) {
-        return gesture.pointer_id == pointer_id && gesture.kind == kind;
-    });
-}
-
-bool is_emitless_gesture_policy(const gesture_policy_snapshot& snapshot)
-{
-    switch (snapshot.decision) {
-    case gesture_policy_decision::swipe_rejected_distance:
-    case gesture_policy_decision::swipe_rejected_cross_axis:
-    case gesture_policy_decision::swipe_rejected_duration:
-    case gesture_policy_decision::release_suppressed:
-        return true;
-    case gesture_policy_decision::none:
-    case gesture_policy_decision::tracking_started:
-    case gesture_policy_decision::tap_accepted:
-    case gesture_policy_decision::long_press_accepted:
-    case gesture_policy_decision::swipe_accepted:
-    case gesture_policy_decision::drag_started:
-    case gesture_policy_decision::drag_updated:
-    case gesture_policy_decision::drag_released:
-    case gesture_policy_decision::drag_canceled:
-    case gesture_policy_decision::ignored_by_capture:
-        return false;
-    }
-
-    return false;
-}
-
 const gesture_policy_snapshot* find_policy_for_gesture(
     const std::vector<gesture_policy_snapshot>& policies,
     const gesture_event& gesture)
@@ -293,48 +120,6 @@ const gesture_policy_snapshot* find_policy_for_gesture(
             && snapshot.timestamp_ms == gesture.timestamp_ms;
     });
     return policy == policies.end() ? nullptr : &*policy;
-}
-
-pointer_arbitration_decision pointer_decision_for(
-    const raw_platform_pointer_event& event,
-    pointer_phase phase,
-    const pointer_capture_snapshot& before,
-    const pointer_capture_snapshot& after,
-    const std::vector<gesture_event>& gestures)
-{
-    if (before.active && before.pointer_id != event.pointer_id) {
-        return pointer_arbitration_decision::ignored_by_capture;
-    }
-
-    if (phase == pointer_phase::down
-        && has_gesture_kind(gestures, event.pointer_id, gesture_kind::drag_cancel)) {
-        return pointer_arbitration_decision::restarted;
-    }
-
-    if (phase == pointer_phase::cancel
-        && has_pointer_capture_state(before)
-        && pointer_capture_changed(before, after)) {
-        return pointer_arbitration_decision::canceled;
-    }
-
-    if (before.active
-        && before.pointer_id == event.pointer_id
-        && after.lifecycle == pointer_capture_lifecycle::idle
-        && phase == pointer_phase::up) {
-        return pointer_arbitration_decision::released;
-    }
-
-    if (!before.active && after.active && after.pointer_id == event.pointer_id) {
-        return pointer_arbitration_decision::captured;
-    }
-
-    if (phase == pointer_phase::down
-        && after.lifecycle == pointer_capture_lifecycle::tracking
-        && pointer_capture_changed(before, after)) {
-        return pointer_arbitration_decision::tracked;
-    }
-
-    return pointer_arbitration_decision::none;
 }
 
 action_route_policy_diagnostic make_policy(
@@ -364,7 +149,7 @@ action_route_policy_diagnostic make_pointer_arbitration_policy(
         timestamp_ms,
         pointer_capture_before,
         pointer_capture_after);
-    apply_pointer_arbitration(diagnostic, pointer_id, phase, decision);
+    detail::apply_pointer_arbitration(diagnostic, pointer_id, phase, decision);
     return diagnostic;
 }
 
@@ -382,73 +167,6 @@ action_route_policy_diagnostic make_event_policy(
         pointer_capture_after);
     diagnostic.emits_input_event = true;
     diagnostic.event_index = event_index;
-    return diagnostic;
-}
-
-text_edit_snapshot capture_text_edit(const text_input_model& model)
-{
-    text_edit_snapshot snapshot{};
-    snapshot.text_byte_count = model.text().size();
-    snapshot.caret = model.caret_range();
-    if (const std::optional<text_range> selection = model.selection_range()) {
-        snapshot.has_selection = true;
-        snapshot.selection = *selection;
-    }
-    return snapshot;
-}
-
-void apply_text_edit_boundary(
-    action_route_policy_diagnostic& diagnostic,
-    text_edit_snapshot before,
-    text_edit_snapshot after)
-{
-    diagnostic.text_byte_count_before = before.text_byte_count;
-    diagnostic.text_byte_count_after = after.text_byte_count;
-    diagnostic.caret_before = before.caret;
-    diagnostic.caret_after = after.caret;
-    diagnostic.had_selection_before = before.has_selection;
-    diagnostic.has_selection_after = after.has_selection;
-    diagnostic.selection_before = before.selection;
-    diagnostic.selection_after = after.selection;
-}
-
-action_route_policy_diagnostic make_text_event_policy(
-    action_route_policy_kind kind,
-    std::int64_t timestamp_ms,
-    std::size_t event_index,
-    const std::string& target_id,
-    text_edit_snapshot before,
-    text_edit_snapshot after,
-    pointer_capture_snapshot pointer_capture_before,
-    pointer_capture_snapshot pointer_capture_after)
-{
-    action_route_policy_diagnostic diagnostic = make_event_policy(
-        kind,
-        timestamp_ms,
-        event_index,
-        pointer_capture_before,
-        pointer_capture_after);
-    diagnostic.target_id = target_id;
-    apply_text_edit_boundary(diagnostic, before, after);
-    return diagnostic;
-}
-
-action_route_policy_diagnostic make_text_state_policy(
-    action_route_policy_kind kind,
-    std::int64_t timestamp_ms,
-    const std::string& target_id,
-    text_edit_snapshot before,
-    text_edit_snapshot after,
-    pointer_capture_snapshot pointer_capture_before,
-    pointer_capture_snapshot pointer_capture_after)
-{
-    action_route_policy_diagnostic diagnostic = make_policy(
-        kind,
-        timestamp_ms,
-        pointer_capture_before,
-        pointer_capture_after);
-    diagnostic.target_id = target_id;
-    apply_text_edit_boundary(diagnostic, before, after);
     return diagnostic;
 }
 
@@ -565,7 +283,7 @@ void input_engine::reset()
     text_ = text_input_model{};
     ime_composing_ = false;
     begin_route_diagnostics();
-    if (has_pointer_capture_state(pointer_capture_before)) {
+    if (detail::has_pointer_capture_state(pointer_capture_before)) {
         append_policy(make_policy(
             action_route_policy_kind::pointer_capture_reset,
             0,
@@ -579,7 +297,7 @@ std::vector<input_event> input_engine::process_pointer_event(const raw_platform_
 {
     std::vector<input_event> events;
     begin_route_diagnostics();
-    if (!is_primary_pointer(event)) {
+    if (!detail::is_primary_pointer(event)) {
         finish_route_diagnostics();
         return events;
     }
@@ -595,7 +313,7 @@ std::vector<input_event> input_engine::process_pointer_event(const raw_platform_
     });
     const std::vector<gesture_policy_snapshot> gesture_policies = gestures_.policy_snapshots();
     const pointer_capture_snapshot pointer_capture_after = gestures_.capture_snapshot();
-    const pointer_arbitration_decision decision = pointer_decision_for(
+    const pointer_arbitration_decision decision = detail::pointer_decision_for(
         event,
         phase,
         pointer_capture_before,
@@ -608,12 +326,12 @@ std::vector<input_event> input_engine::process_pointer_event(const raw_platform_
         action_route_policy_diagnostic& policy = diagnostics_.action_routes[index];
         if (policy.kind == action_route_policy_kind::gesture_route_snapshot
             && policy.normalized_event.pointer_id == event.pointer_id) {
-            apply_pointer_route_context(policy, event, phase, decision, pointer_capture_before, pointer_capture_after);
+            detail::apply_pointer_route_context(policy, event, phase, decision, pointer_capture_before, pointer_capture_after);
         }
     }
 
     for (const gesture_policy_snapshot& gesture_policy : gesture_policies) {
-        if (!is_emitless_gesture_policy(gesture_policy)) {
+        if (!detail::is_emitless_gesture_policy(gesture_policy)) {
             continue;
         }
 
@@ -623,7 +341,7 @@ std::vector<input_event> input_engine::process_pointer_event(const raw_platform_
             pointer_capture_before,
             pointer_capture_after);
         policy.gesture_policy = gesture_policy;
-        apply_pointer_route_context(policy, event, phase, decision, pointer_capture_before, pointer_capture_after);
+        detail::apply_pointer_route_context(policy, event, phase, decision, pointer_capture_before, pointer_capture_after);
         append_policy(std::move(policy));
     }
 
@@ -637,7 +355,7 @@ std::vector<input_event> input_engine::process_pointer_event(const raw_platform_
             decision,
             pointer_capture_before,
             pointer_capture_after);
-        apply_pointer_route_context(policy, event, phase, decision, pointer_capture_before, pointer_capture_after);
+        detail::apply_pointer_route_context(policy, event, phase, decision, pointer_capture_before, pointer_capture_after);
         if (!gesture_policies.empty()) {
             policy.gesture_policy = gesture_policies.front();
         }
@@ -645,14 +363,14 @@ std::vector<input_event> input_engine::process_pointer_event(const raw_platform_
     }
 
     if (phase == pointer_phase::cancel
-        && has_pointer_capture_state(diagnostics_.pointer_capture)
-        && pointer_capture_changed(diagnostics_.pointer_capture, pointer_capture_after)) {
+        && detail::has_pointer_capture_state(diagnostics_.pointer_capture)
+        && detail::pointer_capture_changed(diagnostics_.pointer_capture, pointer_capture_after)) {
         action_route_policy_diagnostic policy = make_policy(
             action_route_policy_kind::pointer_capture_reset,
             event.timestamp_ms,
             diagnostics_.pointer_capture,
             pointer_capture_after);
-        apply_pointer_route_context(
+        detail::apply_pointer_route_context(
             policy,
             event,
             phase,
@@ -672,7 +390,7 @@ std::vector<input_event> input_engine::process_text_event(const raw_platform_tex
 {
     std::vector<input_event> events;
     begin_route_diagnostics();
-    const text_edit_snapshot edit_before = capture_text_edit(text_);
+    const auto edit_before = detail::capture_text_edit(text_);
     if (ime_composing_ || text_.ime_composition().active || !text_.commit_utf8(event.utf8_text)) {
         finish_route_diagnostics();
         return events;
@@ -685,13 +403,13 @@ std::vector<input_event> input_engine::process_text_event(const raw_platform_tex
         .target_id = text_.focus_id(),
         .utf8_text = event.utf8_text,
     });
-    action_route_policy_diagnostic policy = make_text_event_policy(
+    action_route_policy_diagnostic policy = detail::make_text_event_policy(
         action_route_policy_kind::text_commit_boundary,
         event.timestamp_ms,
         event_index,
         text_.focus_id(),
         edit_before,
-        capture_text_edit(text_),
+        detail::capture_text_edit(text_),
         diagnostics_.pointer_capture,
         gestures_.capture_snapshot());
     policy.text_byte_count = event.utf8_text.size();
@@ -713,7 +431,7 @@ std::vector<input_event> input_engine::process_ime_event(const raw_platform_ime_
     const std::string target_id = text_.focus_id();
     const ime_composition_state initial_composition = text_.ime_composition();
     const bool had_composition = ime_composing_ || initial_composition.active;
-    const text_edit_snapshot edit_before = capture_text_edit(text_);
+    const auto edit_before = detail::capture_text_edit(text_);
 
     if (event.phase == raw_platform_ime_phase::composition_start) {
         ime_composing_ = true;
@@ -726,13 +444,13 @@ std::vector<input_event> input_engine::process_ime_event(const raw_platform_ime_
                 target_id,
                 {},
                 initial_composition));
-            action_route_policy_diagnostic policy = make_text_event_policy(
+            action_route_policy_diagnostic policy = detail::make_text_event_policy(
                 action_route_policy_kind::ime_cancel,
                 event.timestamp_ms,
                 event_index,
                 target_id,
                 edit_before,
-                capture_text_edit(text_),
+                detail::capture_text_edit(text_),
                 diagnostics_.pointer_capture,
                 gestures_.capture_snapshot());
             policy.composition = initial_composition;
@@ -755,13 +473,13 @@ std::vector<input_event> input_engine::process_ime_event(const raw_platform_ime_
             target_id,
             event.utf8_text,
             preedit_composition));
-        action_route_policy_diagnostic policy = make_text_event_policy(
+        action_route_policy_diagnostic policy = detail::make_text_event_policy(
             action_route_policy_kind::ime_preedit,
             event.timestamp_ms,
             event_index,
             target_id,
             edit_before,
-            capture_text_edit(text_),
+            detail::capture_text_edit(text_),
             diagnostics_.pointer_capture,
             gestures_.capture_snapshot());
         policy.text_byte_count = event.utf8_text.size();
@@ -783,13 +501,13 @@ std::vector<input_event> input_engine::process_ime_event(const raw_platform_ime_
                 target_id,
                 event.utf8_text,
                 committed_composition));
-            action_route_policy_diagnostic policy = make_text_event_policy(
+            action_route_policy_diagnostic policy = detail::make_text_event_policy(
                 action_route_policy_kind::ime_commit,
                 event.timestamp_ms,
                 event_index,
                 target_id,
                 edit_before,
-                capture_text_edit(text_),
+                detail::capture_text_edit(text_),
                 diagnostics_.pointer_capture,
                 gestures_.capture_snapshot());
             policy.text_byte_count = event.utf8_text.size();
@@ -814,13 +532,13 @@ std::vector<input_event> input_engine::process_ime_event(const raw_platform_ime_
                 target_id,
                 {},
                 canceled_composition));
-            action_route_policy_diagnostic policy = make_text_event_policy(
+            action_route_policy_diagnostic policy = detail::make_text_event_policy(
                 action_route_policy_kind::ime_cancel,
                 event.timestamp_ms,
                 event_index,
                 target_id,
                 edit_before,
-                capture_text_edit(text_),
+                detail::capture_text_edit(text_),
                 diagnostics_.pointer_capture,
                 gestures_.capture_snapshot());
             policy.composition = canceled_composition;
@@ -842,16 +560,16 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
     }
 
     const std::string target_id = text_.focus_id();
-    const text_edit_snapshot edit_before = capture_text_edit(text_);
+    const auto edit_before = detail::capture_text_edit(text_);
     const pointer_capture_snapshot pointer_capture = gestures_.capture_snapshot();
     const auto append_state_policy =
         [this, &event, &target_id, &edit_before, pointer_capture](action_route_policy_kind kind) {
-            append_policy(make_text_state_policy(
+            append_policy(detail::make_text_state_policy(
                 kind,
                 event.timestamp_ms,
                 target_id,
                 edit_before,
-                capture_text_edit(text_),
+                detail::capture_text_edit(text_),
                 diagnostics_.pointer_capture,
                 pointer_capture));
         };
@@ -866,25 +584,25 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
                 .target_id = target_id,
                 .utf8_text = {},
             });
-            append_policy(make_text_event_policy(
+            append_policy(detail::make_text_event_policy(
                 policy_kind,
                 event.timestamp_ms,
                 event_index,
                 target_id,
                 edit_before,
-                capture_text_edit(text_),
+                detail::capture_text_edit(text_),
                 diagnostics_.pointer_capture,
                 pointer_capture));
         };
 
     if (ime_composing_ || text_.ime_composition().active) {
-        if (is_keyboard_navigation_key(event)) {
-            action_route_policy_diagnostic policy = make_text_state_policy(
-                navigation_policy_kind(event),
+        if (detail::is_keyboard_navigation_key(event)) {
+            action_route_policy_diagnostic policy = detail::make_text_state_policy(
+                detail::navigation_policy_kind(event),
                 event.timestamp_ms,
                 target_id,
                 edit_before,
-                capture_text_edit(text_),
+                detail::capture_text_edit(text_),
                 diagnostics_.pointer_capture,
                 pointer_capture);
             policy.composition = text_.ime_composition();
@@ -894,13 +612,13 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
         return events;
     }
 
-    if (is_tab_key(event)) {
-        append_state_policy(navigation_policy_kind(event));
+    if (detail::is_tab_key(event)) {
+        append_state_policy(detail::navigation_policy_kind(event));
         finish_route_diagnostics();
         return events;
     }
 
-    if (is_select_all_key(event)) {
+    if (detail::is_select_all_key(event)) {
         if (text_.select_all()) {
             emit_text_policy(text_event_kind::selection_changed, action_route_policy_kind::selection_changed);
         } else {
@@ -910,33 +628,33 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
         return events;
     }
 
-    if (is_arrow_left_key(event)) {
+    if (detail::is_arrow_left_key(event)) {
         const bool changed = event.shift ? text_.extend_selection_left() : text_.move_caret_left();
         if (changed) {
             emit_text_policy(
                 event.shift ? text_event_kind::selection_changed : text_event_kind::caret_moved,
                 event.shift ? action_route_policy_kind::selection_changed : action_route_policy_kind::caret_moved);
         } else {
-            append_state_policy(navigation_policy_kind(event));
+            append_state_policy(detail::navigation_policy_kind(event));
         }
         finish_route_diagnostics();
         return events;
     }
 
-    if (is_arrow_right_key(event)) {
+    if (detail::is_arrow_right_key(event)) {
         const bool changed = event.shift ? text_.extend_selection_right() : text_.move_caret_right();
         if (changed) {
             emit_text_policy(
                 event.shift ? text_event_kind::selection_changed : text_event_kind::caret_moved,
                 event.shift ? action_route_policy_kind::selection_changed : action_route_policy_kind::caret_moved);
         } else {
-            append_state_policy(navigation_policy_kind(event));
+            append_state_policy(detail::navigation_policy_kind(event));
         }
         finish_route_diagnostics();
         return events;
     }
 
-    if (is_home_key(event)) {
+    if (detail::is_home_key(event)) {
         if (text_.move_caret_to_start()) {
             emit_text_policy(text_event_kind::caret_moved, action_route_policy_kind::caret_moved);
         } else {
@@ -946,7 +664,7 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
         return events;
     }
 
-    if (is_end_key(event)) {
+    if (detail::is_end_key(event)) {
         if (text_.move_caret_to_end()) {
             emit_text_policy(text_event_kind::caret_moved, action_route_policy_kind::caret_moved);
         } else {
@@ -956,7 +674,7 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
         return events;
     }
 
-    if (is_backspace_key(event)) {
+    if (detail::is_backspace_key(event)) {
         if (text_.backspace()) {
             const std::size_t event_index = events.size();
             events.emplace_back(text_event{
@@ -965,8 +683,8 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
                 .target_id = target_id,
                 .utf8_text = {},
             });
-            const text_edit_snapshot edit_after = capture_text_edit(text_);
-            action_route_policy_diagnostic policy = make_text_event_policy(
+            const auto edit_after = detail::capture_text_edit(text_);
+            action_route_policy_diagnostic policy = detail::make_text_event_policy(
                 action_route_policy_kind::text_backspace_boundary,
                 event.timestamp_ms,
                 event_index,
@@ -975,16 +693,14 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
                 edit_after,
                 diagnostics_.pointer_capture,
                 gestures_.capture_snapshot());
-            policy.text_byte_count = edit_before.text_byte_count >= edit_after.text_byte_count
-                ? edit_before.text_byte_count - edit_after.text_byte_count
-                : 0;
+            policy.text_byte_count = detail::removed_text_byte_count(edit_before, edit_after);
             append_policy(std::move(policy));
         }
         finish_route_diagnostics();
         return events;
     }
 
-    if (is_submit_key(event)) {
+    if (detail::is_submit_key(event)) {
         if (event.repeat) {
             finish_route_diagnostics();
             return events;
@@ -999,13 +715,13 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
                 .target_id = target_id,
                 .utf8_text = submitted_text,
             });
-            action_route_policy_diagnostic policy = make_text_event_policy(
+            action_route_policy_diagnostic policy = detail::make_text_event_policy(
                 action_route_policy_kind::text_submit_boundary,
                 event.timestamp_ms,
                 event_index,
                 target_id,
                 edit_before,
-                capture_text_edit(text_),
+                detail::capture_text_edit(text_),
                 diagnostics_.pointer_capture,
                 gestures_.capture_snapshot());
             policy.text_byte_count = submitted_text.size();
@@ -1039,15 +755,15 @@ std::vector<input_event> input_engine::process_focus_event(const raw_platform_fo
     const bool had_composition = ime_composing_ || canceled_composition.active;
     const std::string target_id = text_.focus_id();
     const pointer_capture_snapshot pointer_capture_before = gestures_.capture_snapshot();
-    const text_edit_snapshot edit_before = capture_text_edit(text_);
+    const auto edit_before = detail::capture_text_edit(text_);
 
     gestures_.reset();
     text_.clear_focus();
     ime_composing_ = false;
     const pointer_capture_snapshot pointer_capture_after = gestures_.capture_snapshot();
-    const text_edit_snapshot edit_after = capture_text_edit(text_);
+    const auto edit_after = detail::capture_text_edit(text_);
 
-    if (has_pointer_capture_state(pointer_capture_before)) {
+    if (detail::has_pointer_capture_state(pointer_capture_before)) {
         append_policy(make_policy(
             action_route_policy_kind::pointer_capture_reset,
             event.timestamp_ms,
@@ -1063,7 +779,7 @@ std::vector<input_event> input_engine::process_focus_event(const raw_platform_fo
             target_id,
             {},
             canceled_composition));
-        action_route_policy_diagnostic policy = make_text_event_policy(
+        action_route_policy_diagnostic policy = detail::make_text_event_policy(
             action_route_policy_kind::ime_cancel,
             event.timestamp_ms,
             event_index,
@@ -1093,7 +809,7 @@ std::vector<input_event> input_engine::process_focus_event(const raw_platform_fo
     policy.emits_input_event = had_focus;
     policy.event_index = focus_loss_event_index;
     policy.target_id = target_id;
-    apply_text_edit_boundary(policy, edit_before, edit_after);
+    detail::apply_text_edit_boundary(policy, edit_before, edit_after);
     append_policy(std::move(policy));
 
     finish_route_diagnostics();

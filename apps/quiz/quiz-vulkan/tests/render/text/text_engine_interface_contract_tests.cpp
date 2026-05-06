@@ -1,5 +1,6 @@
 #include "render/render_draw_list.h"
 #include "render/text/fake_text_engine.h"
+#include "render/text/font_source_bytes_loader.h"
 #include "render/text/font_source_resolver.h"
 #include "render/text/font_resolver.h"
 #include "render/text/glyph_run.h"
@@ -9,6 +10,7 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -40,6 +42,16 @@ concept FontResolverContract = requires(
 };
 
 static_assert(FontResolverContract<render::deterministic_fake_font_resolver>);
+
+template <typename T>
+concept FontSourceBytesLoaderContract = requires(
+    const T& loader,
+    const render::render_text_font_source_bytes_load_request& request) {
+    { loader.load(request) } -> std::same_as<render::render_text_font_source_bytes_load_result>;
+};
+
+static_assert(FontSourceBytesLoaderContract<render::font_source_bytes_loader_interface>);
+static_assert(FontSourceBytesLoaderContract<render::filesystem_font_source_bytes_loader>);
 
 static_assert(requires(render::font_resolver_result result) {
     { result.resolved_face_id } -> std::same_as<render::font_face_id&>;
@@ -303,6 +315,31 @@ static_assert(requires(const render::font_source_resolution& source) {
 
 static_assert(requires(std::string cache_key) {
     { render::is_valid_font_source_bytes_cache_key(cache_key) } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::render_text_font_source_bytes_load_request request) {
+    { request.source } -> std::same_as<render::font_source_resolution&>;
+});
+
+static_assert(requires(render::render_text_font_source_bytes_load_result result) {
+    { result.status } -> std::same_as<render::render_text_font_source_bytes_load_status&>;
+    { result.source } -> std::same_as<render::font_source_resolution&>;
+    { result.readiness } -> std::same_as<render::font_source_bytes_readiness&>;
+    { result.cache_key } -> std::same_as<std::string&>;
+    { result.resolved_path } -> std::same_as<std::string&>;
+    { result.bytes } -> std::same_as<std::vector<std::byte>&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.ok() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    const render::render_text_font_source_bytes_load_status status,
+    const render::font_source_resolution& source,
+    const std::filesystem::path& base_path) {
+    { render::render_text_font_source_bytes_load_status_name(status) } -> std::same_as<std::string>;
+    { render::font_source_path_has_parent_reference(base_path) } -> std::same_as<bool>;
+    { render::font_source_path_is_under_base(base_path, base_path) } -> std::same_as<bool>;
+    { render::font_source_loader_path_for(source, base_path) } -> std::same_as<std::filesystem::path>;
 });
 
 static_assert(requires(render::render_text_glyph_font_resolution_snapshot glyph) {

@@ -1009,6 +1009,16 @@ enum class vulkan_command_recorder_failure_stage {
 
 std::string_view command_recorder_failure_stage_name(vulkan_command_recorder_failure_stage stage);
 
+enum class vulkan_command_recorder_gate_status {
+    not_checked,
+    allowed,
+    blocked_by_descriptor_validation,
+    blocked_by_resource_binding,
+    blocked_by_resource_registry,
+};
+
+std::string_view command_recorder_gate_status_name(vulkan_command_recorder_gate_status status);
+
 struct vulkan_command_buffer_id {
     std::size_t value = 0;
 
@@ -1103,6 +1113,46 @@ struct vulkan_backend_command_buffer_submit_state {
     }
 };
 
+struct vulkan_command_recorder_gate_state {
+    bool checked = false;
+    bool recording_allowed = false;
+    bool resource_bindings_checked = false;
+    bool resource_bindings_completed = false;
+    bool descriptor_validation_checked = false;
+    bool descriptor_validation_completed = false;
+    bool resource_registry_checked = false;
+    bool resource_registry_completed = false;
+    bool missing_required_resource = false;
+    bool duplicate_binding = false;
+    bool invalid_layout = false;
+    vulkan_command_recorder_gate_status status = vulkan_command_recorder_gate_status::not_checked;
+    vulkan_descriptor_validation_status descriptor_status =
+        vulkan_descriptor_validation_status::not_checked;
+    vulkan_backend_fallback_reason fallback_reason = vulkan_backend_fallback_reason::not_requested;
+    vulkan_batch_kind blocked_batch_kind = vulkan_batch_kind::quad;
+    std::size_t blocked_command_index = 0;
+    vulkan_resource_binding_kind blocked_binding_kind = vulkan_resource_binding_kind::batch_uniform;
+    std::size_t blocked_binding = 0;
+    std::string blocked_resource_id;
+    std::size_t planned_batch_count = 0;
+    std::size_t descriptor_set_count = 0;
+    std::size_t invalid_descriptor_set_count = 0;
+    std::size_t missing_resource_count = 0;
+
+    bool completed() const
+    {
+        return checked && recording_allowed
+            && status == vulkan_command_recorder_gate_status::allowed
+            && fallback_reason == vulkan_backend_fallback_reason::none;
+    }
+
+    bool blocked() const
+    {
+        return checked && !recording_allowed
+            && status != vulkan_command_recorder_gate_status::not_checked;
+    }
+};
+
 struct vulkan_backend_command_recorder_state {
     bool ready = false;
     bool frame_open = false;
@@ -1111,6 +1161,7 @@ struct vulkan_backend_command_recorder_state {
     std::size_t failure_recording_index = 0;
     std::size_t planned_batch_count = 0;
     std::size_t recorded_batch_count = 0;
+    vulkan_command_recorder_gate_state gate;
     std::vector<vulkan_recorded_draw_batch> recorded_batches;
 
     bool empty() const
@@ -1123,6 +1174,7 @@ struct vulkan_backend_command_recorder_state {
     {
         return ready && frame_open && command_buffer_recorded
             && recorded_batch_count == planned_batch_count
+            && (!gate.checked || gate.completed())
             && recorded_batches.size() == recorded_batch_count;
     }
 
@@ -1219,6 +1271,8 @@ struct vulkan_backend_frame_result {
             && lifecycle_policy.completed()
             && present_policy.completed()
             && command_buffer_submit.completed()
+            && command_recorder.completed()
+            && command_recorder.gate.completed()
             && resource_bindings.completed()
             && resource_registry.completed()
             && fallback_summary.completed()

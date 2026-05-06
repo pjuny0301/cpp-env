@@ -53,6 +53,43 @@ struct asset_bytes_load_result {
     }
 };
 
+enum class asset_bytes_integrity_issue_kind {
+    load_failed,
+    cache_key_mismatch,
+    source_uri_mismatch,
+    byte_count_mismatch,
+    missing_content,
+};
+
+struct asset_bytes_integrity_issue {
+    asset_bytes_integrity_issue_kind kind = asset_bytes_integrity_issue_kind::load_failed;
+    std::string id;
+    asset_type type = asset_type::generic;
+    asset_cache_key cache_key;
+    asset_cache_key expected_cache_key;
+    std::string source_uri;
+    std::string expected_source_uri;
+    std::size_t reported_byte_count = 0U;
+    std::size_t actual_byte_count = 0U;
+    std::string diagnostic;
+};
+
+struct asset_bytes_integrity_request {
+    runtime_asset_catalog_snapshot snapshot;
+    asset_bytes_load_result load;
+    bool require_non_empty = true;
+};
+
+struct asset_bytes_integrity_report {
+    asset_bytes_load_result load;
+    std::vector<asset_bytes_integrity_issue> issues;
+
+    [[nodiscard]] bool ok() const
+    {
+        return issues.empty();
+    }
+};
+
 class asset_bytes_provider_interface {
 public:
     virtual ~asset_bytes_provider_interface() = default;
@@ -135,6 +172,26 @@ inline asset_bytes_load_result make_asset_bytes_metadata(
     };
 }
 
+inline asset_bytes_integrity_issue make_asset_bytes_integrity_issue(
+    asset_bytes_integrity_issue_kind kind,
+    const runtime_asset_catalog_snapshot& snapshot,
+    const asset_bytes_load_result& load,
+    std::string diagnostic)
+{
+    return asset_bytes_integrity_issue{
+        .kind = kind,
+        .id = snapshot.entry.id,
+        .type = snapshot.entry.type,
+        .cache_key = load.cache_key,
+        .expected_cache_key = snapshot.cache_key,
+        .source_uri = load.source_uri,
+        .expected_source_uri = snapshot.source.normalized_uri,
+        .reported_byte_count = load.byte_count,
+        .actual_byte_count = load.bytes.size(),
+        .diagnostic = std::move(diagnostic),
+    };
+}
+
 inline bool asset_bytes_path_has_parent_reference(const std::filesystem::path& path)
 {
     for (const std::filesystem::path& part : path) {
@@ -151,6 +208,61 @@ inline bool asset_bytes_rooted_path_is_safe(const std::filesystem::path& path)
 }
 
 } // namespace detail
+
+inline asset_bytes_integrity_report validate_asset_bytes_integrity(
+    const asset_bytes_integrity_request& request)
+{
+    asset_bytes_integrity_report report{
+        .load = request.load,
+    };
+
+    if (!request.load.ok()) {
+        std::string diagnostic = request.load.diagnostic;
+        if (diagnostic.empty()) {
+            diagnostic = "asset bytes did not load before integrity validation";
+        }
+        report.issues.push_back(detail::make_asset_bytes_integrity_issue(
+            asset_bytes_integrity_issue_kind::load_failed,
+            request.snapshot,
+            request.load,
+            std::move(diagnostic)));
+        return report;
+    }
+
+    if (request.load.cache_key != request.snapshot.cache_key) {
+        report.issues.push_back(detail::make_asset_bytes_integrity_issue(
+            asset_bytes_integrity_issue_kind::cache_key_mismatch,
+            request.snapshot,
+            request.load,
+            "loaded asset bytes cache key does not match the catalog snapshot"));
+    }
+
+    if (request.load.source_uri != request.snapshot.source.normalized_uri) {
+        report.issues.push_back(detail::make_asset_bytes_integrity_issue(
+            asset_bytes_integrity_issue_kind::source_uri_mismatch,
+            request.snapshot,
+            request.load,
+            "loaded asset bytes source uri does not match the catalog snapshot"));
+    }
+
+    if (request.load.byte_count != request.load.bytes.size()) {
+        report.issues.push_back(detail::make_asset_bytes_integrity_issue(
+            asset_bytes_integrity_issue_kind::byte_count_mismatch,
+            request.snapshot,
+            request.load,
+            "loaded asset byte count does not match the byte payload size"));
+    }
+
+    if (request.require_non_empty && request.load.bytes.empty()) {
+        report.issues.push_back(detail::make_asset_bytes_integrity_issue(
+            asset_bytes_integrity_issue_kind::missing_content,
+            request.snapshot,
+            request.load,
+            "loaded asset bytes payload is empty"));
+    }
+
+    return report;
+}
 
 class fake_asset_bytes_provider final : public asset_bytes_provider_interface {
 public:
@@ -245,6 +357,16 @@ inline asset_bytes_load_result load_asset_bytes(
     return provider.load_bytes(asset_bytes_snapshot_request{.snapshot = snapshot});
 }
 
+inline asset_bytes_integrity_report load_asset_bytes_with_integrity(
+    const asset_bytes_provider_interface& provider,
+    const runtime_asset_catalog_snapshot& snapshot)
+{
+    return validate_asset_bytes_integrity(asset_bytes_integrity_request{
+        .snapshot = snapshot,
+        .load = load_asset_bytes(provider, snapshot),
+    });
+}
+
 inline asset_bytes_load_result load_asset_bytes(
     const asset_bytes_provider_interface& provider,
     const runtime_asset_catalog& catalog,
@@ -292,6 +414,38 @@ inline asset_bytes_load_result load_materialized_asset_bytes(
     const asset_bytes_catalog_request& request)
 {
     return load_materialized_asset_bytes(
+        provider,
+        lookup_runtime_materialized_asset(catalog, runtime_materialized_asset_lookup_request{
+                                               .id = request.id,
+                                               .expected_type = request.expected_type,
+                                           }));
+}
+
+inline asset_bytes_integrity_report load_materialized_asset_bytes_with_integrity(
+    const asset_bytes_provider_interface& provider,
+    const asset_materialized_bytes_request& request)
+{
+    return validate_asset_bytes_integrity(asset_bytes_integrity_request{
+        .snapshot = request.materialized.materialized.asset,
+        .load = load_materialized_asset_bytes(provider, request),
+    });
+}
+
+inline asset_bytes_integrity_report load_materialized_asset_bytes_with_integrity(
+    const asset_bytes_provider_interface& provider,
+    const runtime_materialized_asset_lookup_result& materialized)
+{
+    return load_materialized_asset_bytes_with_integrity(
+        provider,
+        asset_materialized_bytes_request{.materialized = materialized});
+}
+
+inline asset_bytes_integrity_report load_materialized_asset_bytes_with_integrity(
+    const asset_bytes_provider_interface& provider,
+    const runtime_asset_catalog& catalog,
+    const asset_bytes_catalog_request& request)
+{
+    return load_materialized_asset_bytes_with_integrity(
         provider,
         lookup_runtime_materialized_asset(catalog, runtime_materialized_asset_lookup_request{
                                                .id = request.id,

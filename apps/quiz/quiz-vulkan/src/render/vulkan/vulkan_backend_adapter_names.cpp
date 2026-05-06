@@ -1,4 +1,5 @@
 #include "render/vulkan/vulkan_backend_adapter.h"
+#include "render/vulkan/vulkan_backend_loader.h"
 
 namespace quiz_vulkan::render::vulkan_backend {
 
@@ -353,6 +354,22 @@ std::string_view pipeline_lifecycle_status_name(vulkan_pipeline_lifecycle_status
         return "ready";
     case vulkan_pipeline_lifecycle_status::unavailable:
         return "unavailable";
+    }
+
+    return "unknown";
+}
+
+std::string_view loader_probe_status_name(vulkan_loader_probe_status status)
+{
+    switch (status) {
+    case vulkan_loader_probe_status::not_checked:
+        return "not_checked";
+    case vulkan_loader_probe_status::available:
+        return "available";
+    case vulkan_loader_probe_status::library_missing:
+        return "library_missing";
+    case vulkan_loader_probe_status::required_symbol_missing:
+        return "required_symbol_missing";
     }
 
     return "unknown";

@@ -1,4 +1,5 @@
 #include "render/vulkan/vulkan_backend_adapter.h"
+#include "render/vulkan/vulkan_backend_loader.h"
 
 #include <concepts>
 #include <cstddef>
@@ -9,6 +10,74 @@
 namespace {
 
 using namespace quiz_vulkan;
+
+template <typename T>
+concept VulkanLoaderInterface = requires(
+    T& loader,
+    const render::vulkan_backend::vulkan_loader_probe_request& request) {
+    { loader.probe_loader(request) }
+        -> std::same_as<render::vulkan_backend::vulkan_loader_probe_result>;
+};
+
+static_assert(VulkanLoaderInterface<render::vulkan_backend::vulkan_loader_interface>);
+static_assert(VulkanLoaderInterface<render::vulkan_backend::fake_vulkan_loader>);
+static_assert(VulkanLoaderInterface<render::vulkan_backend::system_vulkan_loader>);
+static_assert(std::default_initializable<render::vulkan_backend::fake_vulkan_loader>);
+static_assert(std::constructible_from<
+    render::vulkan_backend::fake_vulkan_loader,
+    render::vulkan_backend::fake_vulkan_loader_options>);
+static_assert(std::default_initializable<render::vulkan_backend::system_vulkan_loader>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_loader_probe_status::not_checked),
+    render::vulkan_backend::vulkan_loader_probe_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_loader_probe_status::available),
+    render::vulkan_backend::vulkan_loader_probe_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_loader_probe_status::library_missing),
+    render::vulkan_backend::vulkan_loader_probe_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_loader_probe_status::required_symbol_missing),
+    render::vulkan_backend::vulkan_loader_probe_status>);
+
+static_assert(requires(render::vulkan_backend::vulkan_loader_probe_status status) {
+    { render::vulkan_backend::loader_probe_status_name(status) } -> std::same_as<std::string_view>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_loader_probe_request request) {
+    { request.candidate_library_names } -> std::same_as<std::vector<std::string>&>;
+    { request.required_symbol_name } -> std::same_as<std::string&>;
+    { request.use_default_library_names } -> std::same_as<bool&>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_loader_probe_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.status } -> std::same_as<render::vulkan_backend::vulkan_loader_probe_status&>;
+    { result.attempted_library_names } -> std::same_as<std::vector<std::string>&>;
+    { result.loaded_library_name } -> std::same_as<std::string&>;
+    { result.required_symbol_name } -> std::same_as<std::string&>;
+    { result.attempted_library_count } -> std::same_as<std::size_t&>;
+    { result.library_found } -> std::same_as<bool&>;
+    { result.required_symbol_found } -> std::same_as<bool&>;
+    { result.available() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::fake_vulkan_loader_options options) {
+    { options.library_name } -> std::same_as<std::string&>;
+    { options.library_available } -> std::same_as<bool&>;
+    { options.required_symbol_available } -> std::same_as<bool&>;
+});
+
+static_assert(requires(
+    render::vulkan_backend::vulkan_loader_interface& loader,
+    const render::vulkan_backend::vulkan_loader_probe_request& request) {
+    { render::vulkan_backend::vulkan_loader_required_symbol_name() } -> std::same_as<std::string_view>;
+    { render::vulkan_backend::default_vulkan_loader_library_names() }
+        -> std::same_as<std::vector<std::string>>;
+    { render::vulkan_backend::probe_vulkan_loader(loader, request) }
+        -> std::same_as<render::vulkan_backend::vulkan_loader_probe_result>;
+});
 
 template <typename T>
 concept VulkanBackendDeviceInterface = requires(

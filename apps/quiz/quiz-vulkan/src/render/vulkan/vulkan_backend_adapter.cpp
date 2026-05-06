@@ -1,12 +1,189 @@
 #include "render/vulkan/vulkan_backend_adapter.h"
 #include "render/vulkan/vulkan_backend_frame_lifecycle.h"
+#include "render/vulkan/vulkan_backend_loader.h"
 
 #include <algorithm>
 #include <string>
 #include <utility>
+#include <vector>
+
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#elif defined(__APPLE__) || defined(__unix__) || defined(__linux__)
+#include <dlfcn.h>
+#endif
 
 namespace quiz_vulkan::render::vulkan_backend {
 namespace {
+
+constexpr std::string_view k_vulkan_loader_required_symbol_name = "vkGetInstanceProcAddr";
+
+std::string required_symbol_name_for(const vulkan_loader_probe_request& request)
+{
+    if (request.required_symbol_name.empty()) {
+        return std::string{k_vulkan_loader_required_symbol_name};
+    }
+
+    return request.required_symbol_name;
+}
+
+void append_unique_library_name(
+    std::vector<std::string>& names,
+    const std::string& candidate_name)
+{
+    if (candidate_name.empty()) {
+        return;
+    }
+    if (std::find(names.begin(), names.end(), candidate_name) != names.end()) {
+        return;
+    }
+
+    names.push_back(candidate_name);
+}
+
+std::vector<std::string> merge_loader_candidate_names(
+    const vulkan_loader_probe_request& request,
+    const std::vector<std::string>& default_library_names)
+{
+    std::vector<std::string> candidate_names;
+    candidate_names.reserve(
+        request.candidate_library_names.size() + default_library_names.size());
+    for (const std::string& candidate_name : request.candidate_library_names) {
+        append_unique_library_name(candidate_names, candidate_name);
+    }
+    if (request.use_default_library_names) {
+        for (const std::string& candidate_name : default_library_names) {
+            append_unique_library_name(candidate_names, candidate_name);
+        }
+    }
+
+    return candidate_names;
+}
+
+vulkan_loader_probe_result make_loader_probe_result(
+    const vulkan_loader_probe_request& request)
+{
+    return vulkan_loader_probe_result{
+        .checked = true,
+        .status = vulkan_loader_probe_status::library_missing,
+        .attempted_library_names = {},
+        .loaded_library_name = {},
+        .required_symbol_name = required_symbol_name_for(request),
+        .attempted_library_count = 0,
+        .library_found = false,
+        .required_symbol_found = false,
+    };
+}
+
+void record_loader_attempt(
+    vulkan_loader_probe_result& result,
+    const std::string& library_name)
+{
+    result.attempted_library_names.push_back(library_name);
+    result.attempted_library_count = result.attempted_library_names.size();
+}
+
+void mark_loader_library_found(
+    vulkan_loader_probe_result& result,
+    const std::string& library_name)
+{
+    result.library_found = true;
+    if (result.loaded_library_name.empty()) {
+        result.loaded_library_name = library_name;
+    }
+}
+
+void mark_loader_available(
+    vulkan_loader_probe_result& result,
+    const std::string& library_name)
+{
+    result.status = vulkan_loader_probe_status::available;
+    result.loaded_library_name = library_name;
+    result.library_found = true;
+    result.required_symbol_found = true;
+}
+
+void mark_loader_probe_completed(vulkan_loader_probe_result& result)
+{
+    if (result.required_symbol_found) {
+        result.status = vulkan_loader_probe_status::available;
+        return;
+    }
+
+    result.status = result.library_found
+        ? vulkan_loader_probe_status::required_symbol_missing
+        : vulkan_loader_probe_status::library_missing;
+}
+
+class native_loader_library {
+public:
+    explicit native_loader_library(const std::string& library_name)
+    {
+#if defined(_WIN32)
+        handle_ = ::LoadLibraryA(library_name.c_str());
+#elif defined(__APPLE__) || defined(__unix__) || defined(__linux__)
+        int open_flags = RTLD_LAZY;
+#if defined(RTLD_LOCAL)
+        open_flags |= RTLD_LOCAL;
+#endif
+        handle_ = ::dlopen(library_name.c_str(), open_flags);
+#else
+        static_cast<void>(library_name);
+#endif
+    }
+
+    native_loader_library(const native_loader_library&) = delete;
+    native_loader_library& operator=(const native_loader_library&) = delete;
+
+    ~native_loader_library()
+    {
+#if defined(_WIN32)
+        if (handle_ != nullptr) {
+            ::FreeLibrary(handle_);
+        }
+#elif defined(__APPLE__) || defined(__unix__) || defined(__linux__)
+        if (handle_ != nullptr) {
+            ::dlclose(handle_);
+        }
+#endif
+    }
+
+    bool valid() const
+    {
+        return handle_ != nullptr;
+    }
+
+    bool has_symbol(const std::string& symbol_name) const
+    {
+        if (handle_ == nullptr) {
+            return false;
+        }
+
+#if defined(_WIN32)
+        return ::GetProcAddress(handle_, symbol_name.c_str()) != nullptr;
+#elif defined(__APPLE__) || defined(__unix__) || defined(__linux__)
+        return ::dlsym(handle_, symbol_name.c_str()) != nullptr;
+#else
+        static_cast<void>(symbol_name);
+        return false;
+#endif
+    }
+
+private:
+#if defined(_WIN32)
+    HMODULE handle_ = nullptr;
+#elif defined(__APPLE__) || defined(__unix__) || defined(__linux__)
+    void* handle_ = nullptr;
+#else
+    void* handle_ = nullptr;
+#endif
+};
 
 bool has_visible_area(const render_rect& rect)
 {
@@ -617,6 +794,93 @@ vulkan_command_recorder_gate_state make_command_recorder_gate_state(
 }
 
 } // namespace
+
+std::string_view vulkan_loader_required_symbol_name()
+{
+    return k_vulkan_loader_required_symbol_name;
+}
+
+std::vector<std::string> default_vulkan_loader_library_names()
+{
+#if defined(_WIN32)
+    return {"vulkan-1.dll"};
+#elif defined(__APPLE__)
+    return {"libvulkan.1.dylib", "libvulkan.dylib"};
+#else
+    return {"libvulkan.so.1", "libvulkan.so"};
+#endif
+}
+
+fake_vulkan_loader::fake_vulkan_loader()
+    : fake_vulkan_loader(fake_vulkan_loader_options{})
+{
+}
+
+fake_vulkan_loader::fake_vulkan_loader(fake_vulkan_loader_options options)
+    : options_(std::move(options))
+{
+}
+
+vulkan_loader_probe_result fake_vulkan_loader::probe_loader(
+    const vulkan_loader_probe_request& request)
+{
+    vulkan_loader_probe_result result = make_loader_probe_result(request);
+    const std::vector<std::string> candidate_names = merge_loader_candidate_names(
+        request,
+        {options_.library_name});
+
+    for (const std::string& candidate_name : candidate_names) {
+        record_loader_attempt(result, candidate_name);
+    }
+
+    if (candidate_names.empty() || !options_.library_available) {
+        mark_loader_probe_completed(result);
+        return result;
+    }
+
+    mark_loader_library_found(result, candidate_names.front());
+    if (options_.required_symbol_available) {
+        mark_loader_available(result, candidate_names.front());
+        return result;
+    }
+
+    mark_loader_probe_completed(result);
+    return result;
+}
+
+vulkan_loader_probe_result system_vulkan_loader::probe_loader(
+    const vulkan_loader_probe_request& request)
+{
+    vulkan_loader_probe_result result = make_loader_probe_result(request);
+    const std::vector<std::string> candidate_names = merge_loader_candidate_names(
+        request,
+        default_vulkan_loader_library_names());
+
+    for (const std::string& candidate_name : candidate_names) {
+        record_loader_attempt(result, candidate_name);
+
+        native_loader_library library(candidate_name);
+        if (!library.valid()) {
+            continue;
+        }
+
+        mark_loader_library_found(result, candidate_name);
+        if (library.has_symbol(result.required_symbol_name)) {
+            mark_loader_available(result, candidate_name);
+            return result;
+        }
+    }
+
+    mark_loader_probe_completed(result);
+    return result;
+}
+
+vulkan_loader_probe_result probe_vulkan_loader(
+    vulkan_loader_interface& loader,
+    const vulkan_loader_probe_request& request)
+{
+    return loader.probe_loader(request);
+}
 
 vulkan_backend_lifecycle_readiness null_vulkan_backend_device::current_lifecycle_readiness() const
 {

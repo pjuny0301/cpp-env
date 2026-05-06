@@ -4,6 +4,7 @@
 #include "render/text/font_sfnt_inspector.h"
 #include "render/text/font_source_bytes_loader.h"
 #include "render/text/font_source_resolver.h"
+#include "render/text/font_unicode_coverage.h"
 #include "render/text/font_resolver.h"
 #include "render/text/glyph_run.h"
 #include "render/text/scene_text_metrics_adapter.h"
@@ -75,6 +76,18 @@ concept FontCmapInspectorContract = requires(
 
 static_assert(FontCmapInspectorContract<render::font_cmap_inspector_interface>);
 static_assert(FontCmapInspectorContract<render::basic_font_cmap_inspector>);
+
+template <typename T>
+concept FontUnicodeCoverageResolverContract = requires(
+    const T& resolver,
+    const render::render_text_font_unicode_coverage_request& request,
+    const render::render_text_font_source_bytes_load_result& load_result) {
+    { resolver.resolve(request) } -> std::same_as<render::render_text_font_unicode_coverage_snapshot>;
+    { resolver.resolve(load_result) } -> std::same_as<render::render_text_font_unicode_coverage_snapshot>;
+};
+
+static_assert(FontUnicodeCoverageResolverContract<render::font_unicode_coverage_resolver_interface>);
+static_assert(FontUnicodeCoverageResolverContract<render::basic_font_unicode_coverage_resolver>);
 
 static_assert(requires(render::font_resolver_result result) {
     { result.resolved_face_id } -> std::same_as<render::font_face_id&>;
@@ -444,6 +457,42 @@ static_assert(requires(
     render::render_text_font_cmap_inspect_status status) {
     { render::inspect_font_cmap_coverage(request) } -> std::same_as<render::render_text_font_cmap_inspection>;
     { render::render_text_font_cmap_inspect_status_name(status) } -> std::same_as<std::string>;
+});
+
+static_assert(requires(
+    render::render_text_font_unicode_coverage_snapshot coverage,
+    char32_t codepoint) {
+    { coverage.source_label } -> std::same_as<std::string&>;
+    { coverage.status } -> std::same_as<render::render_text_font_unicode_coverage_status&>;
+    { coverage.sfnt } -> std::same_as<render::render_text_font_sfnt_inspection&>;
+    { coverage.cmap } -> std::same_as<render::render_text_font_cmap_inspection&>;
+    { coverage.ranges } -> std::same_as<std::vector<render::render_text_font_cmap_range>&>;
+    { coverage.diagnostic } -> std::same_as<std::string&>;
+    { coverage.ok() } -> std::same_as<bool>;
+    { coverage.supports_codepoint(codepoint) } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::render_text_font_unicode_coverage_request request) {
+    { request.bytes } -> std::same_as<std::span<const std::byte>&>;
+    { request.source_label } -> std::same_as<std::string&>;
+});
+
+static_assert(requires(
+    render::render_text_font_unicode_coverage_request request,
+    render::render_text_font_source_bytes_load_result load_result,
+    render::render_text_font_unicode_coverage_status status,
+    const render::font_sfnt_inspector_interface& sfnt_inspector,
+    const render::font_cmap_inspector_interface& cmap_inspector,
+    char32_t codepoint) {
+    { render::render_text_font_unicode_coverage_status_name(status) } -> std::same_as<std::string>;
+    { render::font_unicode_coverage_codepoint_is_unicode_scalar(codepoint) } -> std::same_as<bool>;
+    { render::font_unicode_coverage_source_label_for(load_result) } -> std::same_as<std::string>;
+    { render::resolve_font_unicode_coverage(request) } -> std::same_as<render::render_text_font_unicode_coverage_snapshot>;
+    { render::resolve_font_unicode_coverage(load_result) } -> std::same_as<render::render_text_font_unicode_coverage_snapshot>;
+    { render::resolve_font_unicode_coverage(request, sfnt_inspector, cmap_inspector) }
+        -> std::same_as<render::render_text_font_unicode_coverage_snapshot>;
+    { render::resolve_font_unicode_coverage(load_result, sfnt_inspector, cmap_inspector) }
+        -> std::same_as<render::render_text_font_unicode_coverage_snapshot>;
 });
 
 static_assert(requires(render::render_text_glyph_font_resolution_snapshot glyph) {

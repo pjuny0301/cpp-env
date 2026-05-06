@@ -6,6 +6,7 @@
 
 최근 baseline 통합 증거:
 
+- `20fc3e6`: Vulkan instance creation boundary를 전용 header로 분리하고 loader 역방향 include 없이 직접 include 계약으로 정리.
 - `4f6af6e`: text engine에 font cmap Unicode coverage inspector와 contract/focused tests 추가.
 - `e668cca`: Vulkan instance creation boundary, fake instance factory, lifecycle gate, focused tests 추가.
 - `98a5e3d`: text engine에 SFNT/TrueType/OpenType font bytes inspector와 contract/focused tests 추가.

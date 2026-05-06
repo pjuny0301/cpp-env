@@ -1,5 +1,6 @@
 #include "render/render_draw_list.h"
 #include "render/text/fake_text_engine.h"
+#include "render/text/font_sfnt_inspector.h"
 #include "render/text/font_source_bytes_loader.h"
 #include "render/text/font_source_resolver.h"
 #include "render/text/font_resolver.h"
@@ -11,6 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -52,6 +54,16 @@ concept FontSourceBytesLoaderContract = requires(
 
 static_assert(FontSourceBytesLoaderContract<render::font_source_bytes_loader_interface>);
 static_assert(FontSourceBytesLoaderContract<render::filesystem_font_source_bytes_loader>);
+
+template <typename T>
+concept FontSfntInspectorContract = requires(
+    const T& inspector,
+    const render::render_text_font_sfnt_inspect_request& request) {
+    { inspector.inspect(request) } -> std::same_as<render::render_text_font_sfnt_inspection>;
+};
+
+static_assert(FontSfntInspectorContract<render::font_sfnt_inspector_interface>);
+static_assert(FontSfntInspectorContract<render::basic_font_sfnt_inspector>);
 
 static_assert(requires(render::font_resolver_result result) {
     { result.resolved_face_id } -> std::same_as<render::font_face_id&>;
@@ -340,6 +352,58 @@ static_assert(requires(
     { render::font_source_path_has_parent_reference(base_path) } -> std::same_as<bool>;
     { render::font_source_path_is_under_base(base_path, base_path) } -> std::same_as<bool>;
     { render::font_source_loader_path_for(source, base_path) } -> std::same_as<std::filesystem::path>;
+});
+
+static_assert(requires(render::render_text_font_sfnt_table_record table) {
+    { table.tag } -> std::same_as<std::string&>;
+    { table.checksum } -> std::same_as<std::uint32_t&>;
+    { table.offset } -> std::same_as<std::uint32_t&>;
+    { table.length } -> std::same_as<std::uint32_t&>;
+});
+
+static_assert(requires(render::render_text_font_sfnt_name_record name) {
+    { name.platform_id } -> std::same_as<std::uint16_t&>;
+    { name.encoding_id } -> std::same_as<std::uint16_t&>;
+    { name.language_id } -> std::same_as<std::uint16_t&>;
+    { name.name_id } -> std::same_as<std::uint16_t&>;
+    { name.value } -> std::same_as<std::string&>;
+});
+
+static_assert(requires(render::render_text_font_sfnt_inspection inspection) {
+    { inspection.status } -> std::same_as<render::render_text_font_sfnt_inspect_status&>;
+    { inspection.source_label } -> std::same_as<std::string&>;
+    { inspection.scaler_tag } -> std::same_as<std::string&>;
+    { inspection.scaler_tag_label } -> std::same_as<std::string&>;
+    { inspection.table_count } -> std::same_as<std::uint16_t&>;
+    { inspection.tables } -> std::same_as<std::vector<render::render_text_font_sfnt_table_record>&>;
+    { inspection.missing_required_tables } -> std::same_as<std::vector<std::string>&>;
+    { inspection.names } -> std::same_as<std::vector<render::render_text_font_sfnt_name_record>&>;
+    { inspection.family_name } -> std::same_as<std::string&>;
+    { inspection.full_name } -> std::same_as<std::string&>;
+    { inspection.diagnostic } -> std::same_as<std::string&>;
+    { inspection.has_cmap } -> std::same_as<bool&>;
+    { inspection.has_head } -> std::same_as<bool&>;
+    { inspection.has_hhea } -> std::same_as<bool&>;
+    { inspection.has_hmtx } -> std::same_as<bool&>;
+    { inspection.has_maxp } -> std::same_as<bool&>;
+    { inspection.has_name } -> std::same_as<bool&>;
+    { inspection.has_glyf } -> std::same_as<bool&>;
+    { inspection.has_loca } -> std::same_as<bool&>;
+    { inspection.has_cff } -> std::same_as<bool&>;
+    { inspection.ok() } -> std::same_as<bool>;
+    { inspection.has_table("name") } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    std::span<const std::byte> bytes,
+    std::string source_label,
+    render::render_text_font_sfnt_inspect_status status,
+    std::string scaler_tag) {
+    { render::inspect_font_sfnt_bytes(bytes, source_label) } -> std::same_as<render::render_text_font_sfnt_inspection>;
+    { render::render_text_font_sfnt_inspect_status_name(status) } -> std::same_as<std::string>;
+    { render::font_sfnt_scaler_tag_label(scaler_tag) } -> std::same_as<std::string>;
+    { render::font_sfnt_scaler_tag_is_supported(scaler_tag) } -> std::same_as<bool>;
+    { render::font_sfnt_required_tables_for_scaler(scaler_tag) } -> std::same_as<std::vector<std::string>>;
 });
 
 static_assert(requires(render::render_text_glyph_font_resolution_snapshot glyph) {

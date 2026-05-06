@@ -6,6 +6,7 @@
 
 최근 baseline 통합 증거:
 
+- `bc27039`: asset/text engine core boundary locks and explicit bridge exceptions 추가.
 - `7dc9932`: Vulkan adapter name diagnostics를 전용 source 파일로 분리.
 - `d0aee07`: image texture diagnostics helpers를 전용 header로 분리.
 - `9dea60a`: Vulkan resource binding diagnostics tests를 전용 파일로 분리.

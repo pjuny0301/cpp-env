@@ -277,6 +277,7 @@ target_sources(
     PRIVATE
         src/render/vulkan/vulkan_backend_adapter.cpp
         src/render/vulkan/vulkan_backend_adapter.h
+        src/render/vulkan/vulkan_backend_adapter_names.cpp
         src/render/vulkan/vulkan_frame_plan.cpp
         src/render/vulkan/vulkan_frame_plan.h
         src/render/vulkan/vulkan_renderer.cpp

@@ -6,6 +6,7 @@
 
 최근 baseline 통합 증거:
 
+- `bbd8ecf`: 실제 uncompressed BMP image decoder와 BMP decoder focused tests 추가.
 - `c091b53`: Vulkan resource binding diagnostics implementation을 전용 source 파일로 분리.
 - `bdc9d21`: input keyboard/text-edit tests를 전용 파일로 분리.
 - `964f515`: Vulkan diagnostic pipeline cache implementation을 전용 source 파일로 분리.
@@ -96,7 +97,7 @@
 - `5965a4b`: Vulkan swapchain policy/pipeline compatibility/shader binding/fallback diagnostics 추가.
 - `244d5b7`: input multipointer touch-like arbitration diagnostics 추가.
 - `94a922f`: asset manifest integrity diagnostics 추가.
-- 기준 검증 예시: 2026-05-07 Windows MinGW full build 통과 후 full CTest 45/45 통과. 권위 있는 테스트 목록은 항상 실행 시점의 `ctest -N`으로 확인한다.
+- 기준 검증 예시: 2026-05-07 Windows MinGW focused image build와 BMP/image cache/pipeline CTest 5/5 통과 후 `ctest -N`이 46개 테스트를 보고. 직전 full CTest는 45/45 통과. 권위 있는 테스트 목록은 항상 실행 시점의 `ctest -N`으로 확인한다.
 - 기준 검증은 고정 개수로 적지 않는다. 현재 전체 테스트 수는 `ctest -N`이 권위이며, handoff에는 실행한 focused target만 기록한다.
 
 상태 기준:

@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- `4411467`: fake text engine line layout helpers를 전용 header로 분리.
+- `8ae5a73`: asset manifest version policy를 전용 header로 분리.
 - `bc27039`: asset/text engine core boundary locks and explicit bridge exceptions 추가.
 - `7dc9932`: Vulkan adapter name diagnostics를 전용 source 파일로 분리.
 - `d0aee07`: image texture diagnostics helpers를 전용 header로 분리.

@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- `7dc9932`: Vulkan adapter name diagnostics를 전용 source 파일로 분리.
+- `d0aee07`: image texture diagnostics helpers를 전용 header로 분리.
 - `9dea60a`: Vulkan resource binding diagnostics tests를 전용 파일로 분리.
 - `6561069`: image texture cache residency tests를 전용 파일로 분리.
 - `81d5c03`: fake text layout diagnostics tests를 전용 파일로 분리.

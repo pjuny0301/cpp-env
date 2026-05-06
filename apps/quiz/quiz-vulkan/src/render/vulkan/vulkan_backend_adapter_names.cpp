@@ -391,4 +391,24 @@ std::string_view loader_readiness_status_name(vulkan_loader_readiness_status sta
     return "unknown";
 }
 
+std::string_view instance_create_status_name(vulkan_instance_create_status status)
+{
+    switch (status) {
+    case vulkan_instance_create_status::not_requested:
+        return "not_requested";
+    case vulkan_instance_create_status::created:
+        return "created";
+    case vulkan_instance_create_status::loader_unavailable:
+        return "loader_unavailable";
+    case vulkan_instance_create_status::missing_required_extension:
+        return "missing_required_extension";
+    case vulkan_instance_create_status::missing_requested_layer:
+        return "missing_requested_layer";
+    case vulkan_instance_create_status::creation_failed:
+        return "creation_failed";
+    }
+
+    return "unknown";
+}
+
 } // namespace quiz_vulkan::render::vulkan_backend

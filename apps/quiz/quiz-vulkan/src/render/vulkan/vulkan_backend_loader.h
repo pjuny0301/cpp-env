@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -67,6 +68,82 @@ struct vulkan_loader_readiness_state {
     }
 };
 
+struct vulkan_instance_create_request {
+    std::string app_name = "quiz-vulkan";
+    std::string engine_name = "quiz-vulkan-renderer";
+    std::uint32_t api_version = 0;
+    std::vector<std::string> required_instance_extensions;
+    std::vector<std::string> optional_instance_extensions;
+    std::vector<std::string> requested_layers;
+    bool enable_validation = false;
+};
+
+struct vulkan_instance_handle {
+    std::uintptr_t value = 0;
+
+    bool valid() const
+    {
+        return value != 0;
+    }
+};
+
+enum class vulkan_instance_create_status {
+    not_requested,
+    created,
+    loader_unavailable,
+    missing_required_extension,
+    missing_requested_layer,
+    creation_failed,
+};
+
+std::string_view instance_create_status_name(vulkan_instance_create_status status);
+std::string_view vulkan_validation_layer_name();
+
+struct vulkan_instance_create_result {
+    bool checked = false;
+    vulkan_instance_create_status status = vulkan_instance_create_status::not_requested;
+    vulkan_loader_readiness_state loader;
+    vulkan_instance_handle handle;
+    std::vector<std::string> selected_extensions;
+    std::vector<std::string> enabled_layers;
+    std::string diagnostic;
+
+    bool ready_for_device() const
+    {
+        return checked && status == vulkan_instance_create_status::created
+            && loader.ready_for_instance() && handle.valid();
+    }
+};
+
+class vulkan_instance_factory_interface {
+public:
+    virtual ~vulkan_instance_factory_interface() = default;
+
+    virtual vulkan_instance_create_result create_instance(
+        const vulkan_loader_readiness_state& loader_readiness,
+        const vulkan_instance_create_request& request) = 0;
+};
+
+struct fake_vulkan_instance_factory_options {
+    std::vector<std::string> supported_instance_extensions;
+    std::vector<std::string> supported_layers;
+    bool fail_creation = false;
+    vulkan_instance_handle handle{.value = 1};
+};
+
+class fake_vulkan_instance_factory final : public vulkan_instance_factory_interface {
+public:
+    fake_vulkan_instance_factory();
+    explicit fake_vulkan_instance_factory(fake_vulkan_instance_factory_options options);
+
+    vulkan_instance_create_result create_instance(
+        const vulkan_loader_readiness_state& loader_readiness,
+        const vulkan_instance_create_request& request) override;
+
+private:
+    fake_vulkan_instance_factory_options options_;
+};
+
 class vulkan_loader_interface {
 public:
     virtual ~vulkan_loader_interface() = default;
@@ -107,5 +184,10 @@ vulkan_loader_probe_result probe_vulkan_loader(
 
 vulkan_loader_readiness_state make_vulkan_loader_readiness_state(
     const vulkan_loader_probe_result& probe_result);
+
+vulkan_instance_create_result create_vulkan_instance(
+    vulkan_instance_factory_interface& factory,
+    const vulkan_loader_readiness_state& loader_readiness,
+    const vulkan_instance_create_request& request = {});
 
 } // namespace quiz_vulkan::render::vulkan_backend

@@ -3,6 +3,7 @@
 
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -27,6 +28,22 @@ static_assert(std::constructible_from<
     render::vulkan_backend::fake_vulkan_loader,
     render::vulkan_backend::fake_vulkan_loader_options>);
 static_assert(std::default_initializable<render::vulkan_backend::system_vulkan_loader>);
+
+template <typename T>
+concept VulkanInstanceFactoryInterface = requires(
+    T& factory,
+    const render::vulkan_backend::vulkan_loader_readiness_state& loader_readiness,
+    const render::vulkan_backend::vulkan_instance_create_request& request) {
+    { factory.create_instance(loader_readiness, request) }
+        -> std::same_as<render::vulkan_backend::vulkan_instance_create_result>;
+};
+
+static_assert(VulkanInstanceFactoryInterface<render::vulkan_backend::vulkan_instance_factory_interface>);
+static_assert(VulkanInstanceFactoryInterface<render::vulkan_backend::fake_vulkan_instance_factory>);
+static_assert(std::default_initializable<render::vulkan_backend::fake_vulkan_instance_factory>);
+static_assert(std::constructible_from<
+    render::vulkan_backend::fake_vulkan_instance_factory,
+    render::vulkan_backend::fake_vulkan_instance_factory_options>);
 
 static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_loader_probe_status::not_checked),
@@ -54,6 +71,25 @@ static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_loader_readiness_status::required_symbol_missing),
     render::vulkan_backend::vulkan_loader_readiness_status>);
 
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_instance_create_status::not_requested),
+    render::vulkan_backend::vulkan_instance_create_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_instance_create_status::created),
+    render::vulkan_backend::vulkan_instance_create_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_instance_create_status::loader_unavailable),
+    render::vulkan_backend::vulkan_instance_create_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_instance_create_status::missing_required_extension),
+    render::vulkan_backend::vulkan_instance_create_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_instance_create_status::missing_requested_layer),
+    render::vulkan_backend::vulkan_instance_create_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_instance_create_status::creation_failed),
+    render::vulkan_backend::vulkan_instance_create_status>);
+
 static_assert(requires(render::vulkan_backend::vulkan_loader_probe_status status) {
     { render::vulkan_backend::loader_probe_status_name(status) } -> std::same_as<std::string_view>;
 });
@@ -62,10 +98,25 @@ static_assert(requires(render::vulkan_backend::vulkan_loader_readiness_status st
     { render::vulkan_backend::loader_readiness_status_name(status) } -> std::same_as<std::string_view>;
 });
 
+static_assert(requires(render::vulkan_backend::vulkan_instance_create_status status) {
+    { render::vulkan_backend::instance_create_status_name(status) } -> std::same_as<std::string_view>;
+    { render::vulkan_backend::vulkan_validation_layer_name() } -> std::same_as<std::string_view>;
+});
+
 static_assert(requires(render::vulkan_backend::vulkan_loader_probe_request request) {
     { request.candidate_library_names } -> std::same_as<std::vector<std::string>&>;
     { request.required_symbol_name } -> std::same_as<std::string&>;
     { request.use_default_library_names } -> std::same_as<bool&>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_instance_create_request request) {
+    { request.app_name } -> std::same_as<std::string&>;
+    { request.engine_name } -> std::same_as<std::string&>;
+    { request.api_version } -> std::same_as<std::uint32_t&>;
+    { request.required_instance_extensions } -> std::same_as<std::vector<std::string>&>;
+    { request.optional_instance_extensions } -> std::same_as<std::vector<std::string>&>;
+    { request.requested_layers } -> std::same_as<std::vector<std::string>&>;
+    { request.enable_validation } -> std::same_as<bool&>;
 });
 
 static_assert(requires(render::vulkan_backend::vulkan_loader_probe_result result) {
@@ -93,10 +144,33 @@ static_assert(requires(render::vulkan_backend::vulkan_loader_readiness_state rea
     { readiness.ready_for_instance() } -> std::same_as<bool>;
 });
 
+static_assert(requires(render::vulkan_backend::vulkan_instance_handle handle) {
+    { handle.value } -> std::same_as<std::uintptr_t&>;
+    { handle.valid() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_instance_create_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.status } -> std::same_as<render::vulkan_backend::vulkan_instance_create_status&>;
+    { result.loader } -> std::same_as<render::vulkan_backend::vulkan_loader_readiness_state&>;
+    { result.handle } -> std::same_as<render::vulkan_backend::vulkan_instance_handle&>;
+    { result.selected_extensions } -> std::same_as<std::vector<std::string>&>;
+    { result.enabled_layers } -> std::same_as<std::vector<std::string>&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.ready_for_device() } -> std::same_as<bool>;
+});
+
 static_assert(requires(render::vulkan_backend::fake_vulkan_loader_options options) {
     { options.library_name } -> std::same_as<std::string&>;
     { options.library_available } -> std::same_as<bool&>;
     { options.required_symbol_available } -> std::same_as<bool&>;
+});
+
+static_assert(requires(render::vulkan_backend::fake_vulkan_instance_factory_options options) {
+    { options.supported_instance_extensions } -> std::same_as<std::vector<std::string>&>;
+    { options.supported_layers } -> std::same_as<std::vector<std::string>&>;
+    { options.fail_creation } -> std::same_as<bool&>;
+    { options.handle } -> std::same_as<render::vulkan_backend::vulkan_instance_handle&>;
 });
 
 static_assert(requires(
@@ -113,6 +187,16 @@ static_assert(requires(
     const render::vulkan_backend::vulkan_loader_probe_result& probe_result) {
     { render::vulkan_backend::make_vulkan_loader_readiness_state(probe_result) }
         -> std::same_as<render::vulkan_backend::vulkan_loader_readiness_state>;
+});
+
+static_assert(requires(
+    render::vulkan_backend::vulkan_instance_factory_interface& factory,
+    const render::vulkan_backend::vulkan_loader_readiness_state& loader_readiness,
+    const render::vulkan_backend::vulkan_instance_create_request& request) {
+    { render::vulkan_backend::create_vulkan_instance(
+        factory,
+        loader_readiness,
+        request) } -> std::same_as<render::vulkan_backend::vulkan_instance_create_result>;
 });
 
 template <typename T>
@@ -143,6 +227,9 @@ static_assert(std::constructible_from<
 static_assert(std::constructible_from<
     render::vulkan_backend::null_vulkan_backend_device,
     const render::vulkan_backend::vulkan_loader_probe_result&>);
+static_assert(std::constructible_from<
+    render::vulkan_backend::null_vulkan_backend_device,
+    render::vulkan_backend::vulkan_instance_create_result>);
 
 template <typename T>
 concept VulkanPipelineCacheInterface = requires(
@@ -200,6 +287,7 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_lifecycle_readines
     { lifecycle.pipeline_ready } -> std::same_as<bool&>;
     { lifecycle.command_recorder_ready } -> std::same_as<bool&>;
     { lifecycle.loader } -> std::same_as<render::vulkan_backend::vulkan_loader_readiness_state&>;
+    { lifecycle.instance } -> std::same_as<render::vulkan_backend::vulkan_instance_create_result&>;
     { lifecycle.effective_instance_ready() } -> std::same_as<bool>;
     { lifecycle.ready_for_frame() } -> std::same_as<bool>;
 });
@@ -210,6 +298,14 @@ static_assert(requires(
     { render::vulkan_backend::apply_vulkan_loader_readiness_to_lifecycle(
         lifecycle,
         loader_readiness) } -> std::same_as<render::vulkan_backend::vulkan_backend_lifecycle_readiness>;
+});
+
+static_assert(requires(
+    render::vulkan_backend::vulkan_backend_lifecycle_readiness lifecycle,
+    render::vulkan_backend::vulkan_instance_create_result instance_result) {
+    { render::vulkan_backend::apply_vulkan_instance_create_result_to_lifecycle(
+        lifecycle,
+        instance_result) } -> std::same_as<render::vulkan_backend::vulkan_backend_lifecycle_readiness>;
 });
 
 static_assert(requires(render::vulkan_backend::vulkan_swapchain_image_id id) {

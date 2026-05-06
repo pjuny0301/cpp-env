@@ -23,6 +23,7 @@ namespace quiz_vulkan::render::vulkan_backend {
 namespace {
 
 constexpr std::string_view k_vulkan_loader_required_symbol_name = "vkGetInstanceProcAddr";
+constexpr std::string_view k_vulkan_validation_layer_name = "VK_LAYER_KHRONOS_validation";
 
 std::string required_symbol_name_for(const vulkan_loader_probe_request& request)
 {
@@ -45,6 +46,24 @@ void append_unique_library_name(
     }
 
     names.push_back(candidate_name);
+}
+
+bool contains_string(
+    const std::vector<std::string>& values,
+    const std::string& value)
+{
+    return std::find(values.begin(), values.end(), value) != values.end();
+}
+
+void append_unique_string(
+    std::vector<std::string>& values,
+    const std::string& value)
+{
+    if (value.empty() || contains_string(values, value)) {
+        return;
+    }
+
+    values.push_back(value);
 }
 
 std::vector<std::string> merge_loader_candidate_names(
@@ -79,6 +98,45 @@ vulkan_loader_probe_result make_loader_probe_result(
         .library_found = false,
         .required_symbol_found = false,
     };
+}
+
+vulkan_instance_create_result make_instance_create_result(
+    const vulkan_loader_readiness_state& loader_readiness)
+{
+    return vulkan_instance_create_result{
+        .checked = true,
+        .status = vulkan_instance_create_status::not_requested,
+        .loader = loader_readiness,
+        .handle = {},
+        .selected_extensions = {},
+        .enabled_layers = {},
+        .diagnostic = {},
+    };
+}
+
+std::vector<std::string> requested_instance_layers(
+    const vulkan_instance_create_request& request)
+{
+    std::vector<std::string> layers;
+    layers.reserve(request.requested_layers.size() + (request.enable_validation ? 1 : 0));
+    for (const std::string& layer : request.requested_layers) {
+        append_unique_string(layers, layer);
+    }
+    if (request.enable_validation) {
+        append_unique_string(layers, std::string{k_vulkan_validation_layer_name});
+    }
+
+    return layers;
+}
+
+std::string make_missing_required_extension_diagnostic(const std::string& extension_name)
+{
+    return "missing required instance extension: " + extension_name;
+}
+
+std::string make_missing_requested_layer_diagnostic(const std::string& layer_name)
+{
+    return "missing requested instance layer: " + layer_name;
 }
 
 void record_loader_attempt(
@@ -817,6 +875,11 @@ std::string_view vulkan_loader_required_symbol_name()
     return k_vulkan_loader_required_symbol_name;
 }
 
+std::string_view vulkan_validation_layer_name()
+{
+    return k_vulkan_validation_layer_name;
+}
+
 std::vector<std::string> default_vulkan_loader_library_names()
 {
 #if defined(_WIN32)
@@ -836,6 +899,67 @@ fake_vulkan_loader::fake_vulkan_loader()
 fake_vulkan_loader::fake_vulkan_loader(fake_vulkan_loader_options options)
     : options_(std::move(options))
 {
+}
+
+fake_vulkan_instance_factory::fake_vulkan_instance_factory()
+    : fake_vulkan_instance_factory(fake_vulkan_instance_factory_options{})
+{
+}
+
+fake_vulkan_instance_factory::fake_vulkan_instance_factory(
+    fake_vulkan_instance_factory_options options)
+    : options_(std::move(options))
+{
+}
+
+vulkan_instance_create_result fake_vulkan_instance_factory::create_instance(
+    const vulkan_loader_readiness_state& loader_readiness,
+    const vulkan_instance_create_request& request)
+{
+    vulkan_instance_create_result result = make_instance_create_result(loader_readiness);
+
+    if (!loader_readiness.ready_for_instance()) {
+        result.status = vulkan_instance_create_status::loader_unavailable;
+        result.diagnostic = "Vulkan loader is not ready for instance creation";
+        return result;
+    }
+
+    for (const std::string& extension_name : request.required_instance_extensions) {
+        if (!contains_string(options_.supported_instance_extensions, extension_name)) {
+            result.status = vulkan_instance_create_status::missing_required_extension;
+            result.diagnostic = make_missing_required_extension_diagnostic(extension_name);
+            return result;
+        }
+        append_unique_string(result.selected_extensions, extension_name);
+    }
+
+    for (const std::string& extension_name : request.optional_instance_extensions) {
+        if (contains_string(options_.supported_instance_extensions, extension_name)) {
+            append_unique_string(result.selected_extensions, extension_name);
+        }
+    }
+
+    for (const std::string& layer_name : requested_instance_layers(request)) {
+        if (!contains_string(options_.supported_layers, layer_name)) {
+            result.status = vulkan_instance_create_status::missing_requested_layer;
+            result.diagnostic = make_missing_requested_layer_diagnostic(layer_name);
+            return result;
+        }
+        append_unique_string(result.enabled_layers, layer_name);
+    }
+
+    if (options_.fail_creation || !options_.handle.valid()) {
+        result.status = vulkan_instance_create_status::creation_failed;
+        result.diagnostic = options_.fail_creation
+            ? "Vulkan instance creation failed"
+            : "Vulkan instance creation returned an invalid handle";
+        return result;
+    }
+
+    result.status = vulkan_instance_create_status::created;
+    result.handle = options_.handle;
+    result.diagnostic = "Vulkan instance created";
+    return result;
 }
 
 vulkan_loader_probe_result fake_vulkan_loader::probe_loader(
@@ -923,6 +1047,14 @@ vulkan_loader_readiness_state make_vulkan_loader_readiness_state(
     };
 }
 
+vulkan_instance_create_result create_vulkan_instance(
+    vulkan_instance_factory_interface& factory,
+    const vulkan_loader_readiness_state& loader_readiness,
+    const vulkan_instance_create_request& request)
+{
+    return factory.create_instance(loader_readiness, request);
+}
+
 vulkan_backend_lifecycle_readiness apply_vulkan_loader_readiness_to_lifecycle(
     vulkan_backend_lifecycle_readiness lifecycle,
     vulkan_loader_readiness_state loader)
@@ -932,6 +1064,20 @@ vulkan_backend_lifecycle_readiness apply_vulkan_loader_readiness_to_lifecycle(
         lifecycle.instance_ready = lifecycle.loader.ready_for_instance();
     }
 
+    return lifecycle;
+}
+
+vulkan_backend_lifecycle_readiness apply_vulkan_instance_create_result_to_lifecycle(
+    vulkan_backend_lifecycle_readiness lifecycle,
+    vulkan_instance_create_result instance)
+{
+    if (!instance.checked) {
+        return lifecycle;
+    }
+
+    lifecycle.loader = instance.loader;
+    lifecycle.instance = std::move(instance);
+    lifecycle.instance_ready = lifecycle.instance.ready_for_device();
     return lifecycle;
 }
 
@@ -949,9 +1095,20 @@ null_vulkan_backend_device::null_vulkan_backend_device(
 {
 }
 
+null_vulkan_backend_device::null_vulkan_backend_device(
+    vulkan_instance_create_result instance_result)
+    : loader_readiness_(instance_result.loader)
+    , instance_result_(std::move(instance_result))
+{
+}
+
 vulkan_backend_lifecycle_readiness null_vulkan_backend_device::current_lifecycle_readiness() const
 {
-    return apply_vulkan_loader_readiness_to_lifecycle({}, loader_readiness_);
+    vulkan_backend_lifecycle_readiness lifecycle =
+        apply_vulkan_loader_readiness_to_lifecycle({}, loader_readiness_);
+    return apply_vulkan_instance_create_result_to_lifecycle(
+        std::move(lifecycle),
+        instance_result_);
 }
 
 vulkan_surface_extent null_vulkan_backend_device::current_surface_extent() const

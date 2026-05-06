@@ -130,9 +130,13 @@ struct vulkan_backend_lifecycle_readiness {
     bool pipeline_ready = false;
     bool command_recorder_ready = false;
     vulkan_loader_readiness_state loader;
+    vulkan_instance_create_result instance;
 
     bool effective_instance_ready() const
     {
+        if (instance.checked) {
+            return instance.ready_for_device();
+        }
         if (loader.checked) {
             return loader.ready_for_instance();
         }
@@ -150,6 +154,10 @@ struct vulkan_backend_lifecycle_readiness {
 vulkan_backend_lifecycle_readiness apply_vulkan_loader_readiness_to_lifecycle(
     vulkan_backend_lifecycle_readiness lifecycle,
     vulkan_loader_readiness_state loader);
+
+vulkan_backend_lifecycle_readiness apply_vulkan_instance_create_result_to_lifecycle(
+    vulkan_backend_lifecycle_readiness lifecycle,
+    vulkan_instance_create_result instance);
 
 struct vulkan_swapchain_image_id {
     std::size_t value = 0;
@@ -1314,6 +1322,7 @@ public:
     null_vulkan_backend_device();
     explicit null_vulkan_backend_device(vulkan_loader_readiness_state loader_readiness);
     explicit null_vulkan_backend_device(const vulkan_loader_probe_result& loader_probe);
+    explicit null_vulkan_backend_device(vulkan_instance_create_result instance_result);
 
     vulkan_backend_lifecycle_readiness current_lifecycle_readiness() const override;
     vulkan_surface_extent current_surface_extent() const override;
@@ -1326,6 +1335,7 @@ public:
 
 private:
     vulkan_loader_readiness_state loader_readiness_;
+    vulkan_instance_create_result instance_result_;
 };
 
 vulkan_backend_resource_binding_state build_vulkan_resource_binding_state(

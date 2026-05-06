@@ -41,8 +41,25 @@ static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_loader_probe_status::required_symbol_missing),
     render::vulkan_backend::vulkan_loader_probe_status>);
 
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_loader_readiness_status::not_checked),
+    render::vulkan_backend::vulkan_loader_readiness_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_loader_readiness_status::ready),
+    render::vulkan_backend::vulkan_loader_readiness_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_loader_readiness_status::library_missing),
+    render::vulkan_backend::vulkan_loader_readiness_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_loader_readiness_status::required_symbol_missing),
+    render::vulkan_backend::vulkan_loader_readiness_status>);
+
 static_assert(requires(render::vulkan_backend::vulkan_loader_probe_status status) {
     { render::vulkan_backend::loader_probe_status_name(status) } -> std::same_as<std::string_view>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_loader_readiness_status status) {
+    { render::vulkan_backend::loader_readiness_status_name(status) } -> std::same_as<std::string_view>;
 });
 
 static_assert(requires(render::vulkan_backend::vulkan_loader_probe_request request) {
@@ -63,6 +80,19 @@ static_assert(requires(render::vulkan_backend::vulkan_loader_probe_result result
     { result.available() } -> std::same_as<bool>;
 });
 
+static_assert(requires(render::vulkan_backend::vulkan_loader_readiness_state readiness) {
+    { readiness.checked } -> std::same_as<bool&>;
+    { readiness.status } -> std::same_as<render::vulkan_backend::vulkan_loader_readiness_status&>;
+    { readiness.probe_status } -> std::same_as<render::vulkan_backend::vulkan_loader_probe_status&>;
+    { readiness.loader_library_available } -> std::same_as<bool&>;
+    { readiness.instance_proc_address_available } -> std::same_as<bool&>;
+    { readiness.instance_ready } -> std::same_as<bool&>;
+    { readiness.loaded_library_name } -> std::same_as<std::string&>;
+    { readiness.required_symbol_name } -> std::same_as<std::string&>;
+    { readiness.attempted_library_count } -> std::same_as<std::size_t&>;
+    { readiness.ready_for_instance() } -> std::same_as<bool>;
+});
+
 static_assert(requires(render::vulkan_backend::fake_vulkan_loader_options options) {
     { options.library_name } -> std::same_as<std::string&>;
     { options.library_available } -> std::same_as<bool&>;
@@ -77,6 +107,12 @@ static_assert(requires(
         -> std::same_as<std::vector<std::string>>;
     { render::vulkan_backend::probe_vulkan_loader(loader, request) }
         -> std::same_as<render::vulkan_backend::vulkan_loader_probe_result>;
+});
+
+static_assert(requires(
+    const render::vulkan_backend::vulkan_loader_probe_result& probe_result) {
+    { render::vulkan_backend::make_vulkan_loader_readiness_state(probe_result) }
+        -> std::same_as<render::vulkan_backend::vulkan_loader_readiness_state>;
 });
 
 template <typename T>
@@ -100,6 +136,13 @@ concept VulkanBackendDeviceInterface = requires(
 
 static_assert(VulkanBackendDeviceInterface<render::vulkan_backend::vulkan_backend_device_interface>);
 static_assert(VulkanBackendDeviceInterface<render::vulkan_backend::null_vulkan_backend_device>);
+static_assert(std::default_initializable<render::vulkan_backend::null_vulkan_backend_device>);
+static_assert(std::constructible_from<
+    render::vulkan_backend::null_vulkan_backend_device,
+    render::vulkan_backend::vulkan_loader_readiness_state>);
+static_assert(std::constructible_from<
+    render::vulkan_backend::null_vulkan_backend_device,
+    const render::vulkan_backend::vulkan_loader_probe_result&>);
 
 template <typename T>
 concept VulkanPipelineCacheInterface = requires(
@@ -156,7 +199,17 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_lifecycle_readines
     { lifecycle.swapchain_ready } -> std::same_as<bool&>;
     { lifecycle.pipeline_ready } -> std::same_as<bool&>;
     { lifecycle.command_recorder_ready } -> std::same_as<bool&>;
+    { lifecycle.loader } -> std::same_as<render::vulkan_backend::vulkan_loader_readiness_state&>;
+    { lifecycle.effective_instance_ready() } -> std::same_as<bool>;
     { lifecycle.ready_for_frame() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    render::vulkan_backend::vulkan_backend_lifecycle_readiness lifecycle,
+    render::vulkan_backend::vulkan_loader_readiness_state loader_readiness) {
+    { render::vulkan_backend::apply_vulkan_loader_readiness_to_lifecycle(
+        lifecycle,
+        loader_readiness) } -> std::same_as<render::vulkan_backend::vulkan_backend_lifecycle_readiness>;
 });
 
 static_assert(requires(render::vulkan_backend::vulkan_swapchain_image_id id) {

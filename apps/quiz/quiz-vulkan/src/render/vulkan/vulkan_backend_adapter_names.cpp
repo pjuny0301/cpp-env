@@ -375,4 +375,20 @@ std::string_view loader_probe_status_name(vulkan_loader_probe_status status)
     return "unknown";
 }
 
+std::string_view loader_readiness_status_name(vulkan_loader_readiness_status status)
+{
+    switch (status) {
+    case vulkan_loader_readiness_status::not_checked:
+        return "not_checked";
+    case vulkan_loader_readiness_status::ready:
+        return "ready";
+    case vulkan_loader_readiness_status::library_missing:
+        return "library_missing";
+    case vulkan_loader_readiness_status::required_symbol_missing:
+        return "required_symbol_missing";
+    }
+
+    return "unknown";
+}
+
 } // namespace quiz_vulkan::render::vulkan_backend

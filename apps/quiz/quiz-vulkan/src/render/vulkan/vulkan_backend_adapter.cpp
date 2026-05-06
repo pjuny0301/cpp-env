@@ -121,6 +121,23 @@ void mark_loader_probe_completed(vulkan_loader_probe_result& result)
         : vulkan_loader_probe_status::library_missing;
 }
 
+vulkan_loader_readiness_status loader_readiness_status_for_probe(
+    vulkan_loader_probe_status status)
+{
+    switch (status) {
+    case vulkan_loader_probe_status::not_checked:
+        return vulkan_loader_readiness_status::not_checked;
+    case vulkan_loader_probe_status::available:
+        return vulkan_loader_readiness_status::ready;
+    case vulkan_loader_probe_status::library_missing:
+        return vulkan_loader_readiness_status::library_missing;
+    case vulkan_loader_probe_status::required_symbol_missing:
+        return vulkan_loader_readiness_status::required_symbol_missing;
+    }
+
+    return vulkan_loader_readiness_status::not_checked;
+}
+
 class native_loader_library {
 public:
     explicit native_loader_library(const std::string& library_name)
@@ -193,7 +210,7 @@ bool has_visible_area(const render_rect& rect)
 vulkan_backend_fallback_reason first_unready_reason(
     const vulkan_backend_lifecycle_readiness& lifecycle)
 {
-    if (!lifecycle.instance_ready) {
+    if (!lifecycle.effective_instance_ready()) {
         return vulkan_backend_fallback_reason::instance_unavailable;
     }
     if (!lifecycle.device_ready) {
@@ -882,9 +899,59 @@ vulkan_loader_probe_result probe_vulkan_loader(
     return loader.probe_loader(request);
 }
 
+vulkan_loader_readiness_state make_vulkan_loader_readiness_state(
+    const vulkan_loader_probe_result& probe_result)
+{
+    const vulkan_loader_readiness_status status =
+        loader_readiness_status_for_probe(probe_result.status);
+    const bool instance_ready =
+        probe_result.checked
+        && status == vulkan_loader_readiness_status::ready
+        && probe_result.library_found
+        && probe_result.required_symbol_found;
+
+    return vulkan_loader_readiness_state{
+        .checked = probe_result.checked,
+        .status = status,
+        .probe_status = probe_result.status,
+        .loader_library_available = probe_result.library_found,
+        .instance_proc_address_available = probe_result.required_symbol_found,
+        .instance_ready = instance_ready,
+        .loaded_library_name = probe_result.loaded_library_name,
+        .required_symbol_name = probe_result.required_symbol_name,
+        .attempted_library_count = probe_result.attempted_library_count,
+    };
+}
+
+vulkan_backend_lifecycle_readiness apply_vulkan_loader_readiness_to_lifecycle(
+    vulkan_backend_lifecycle_readiness lifecycle,
+    vulkan_loader_readiness_state loader)
+{
+    lifecycle.loader = std::move(loader);
+    if (lifecycle.loader.checked) {
+        lifecycle.instance_ready = lifecycle.loader.ready_for_instance();
+    }
+
+    return lifecycle;
+}
+
+null_vulkan_backend_device::null_vulkan_backend_device() = default;
+
+null_vulkan_backend_device::null_vulkan_backend_device(
+    vulkan_loader_readiness_state loader_readiness)
+    : loader_readiness_(std::move(loader_readiness))
+{
+}
+
+null_vulkan_backend_device::null_vulkan_backend_device(
+    const vulkan_loader_probe_result& loader_probe)
+    : null_vulkan_backend_device(make_vulkan_loader_readiness_state(loader_probe))
+{
+}
+
 vulkan_backend_lifecycle_readiness null_vulkan_backend_device::current_lifecycle_readiness() const
 {
-    return {};
+    return apply_vulkan_loader_readiness_to_lifecycle({}, loader_readiness_);
 }
 
 vulkan_surface_extent null_vulkan_backend_device::current_surface_extent() const

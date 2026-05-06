@@ -1,6 +1,7 @@
 #pragma once
 
 #include "render/render_draw_list.h"
+#include "render/vulkan/vulkan_backend_loader.h"
 #include "render/vulkan/vulkan_frame_plan.h"
 
 #include <cstddef>
@@ -128,13 +129,27 @@ struct vulkan_backend_lifecycle_readiness {
     bool swapchain_ready = false;
     bool pipeline_ready = false;
     bool command_recorder_ready = false;
+    vulkan_loader_readiness_state loader;
+
+    bool effective_instance_ready() const
+    {
+        if (loader.checked) {
+            return loader.ready_for_instance();
+        }
+
+        return instance_ready;
+    }
 
     bool ready_for_frame() const
     {
-        return instance_ready && device_ready && swapchain_ready
+        return effective_instance_ready() && device_ready && swapchain_ready
             && pipeline_ready && command_recorder_ready;
     }
 };
+
+vulkan_backend_lifecycle_readiness apply_vulkan_loader_readiness_to_lifecycle(
+    vulkan_backend_lifecycle_readiness lifecycle,
+    vulkan_loader_readiness_state loader);
 
 struct vulkan_swapchain_image_id {
     std::size_t value = 0;
@@ -1296,6 +1311,10 @@ public:
 
 class null_vulkan_backend_device final : public vulkan_backend_device_interface {
 public:
+    null_vulkan_backend_device();
+    explicit null_vulkan_backend_device(vulkan_loader_readiness_state loader_readiness);
+    explicit null_vulkan_backend_device(const vulkan_loader_probe_result& loader_probe);
+
     vulkan_backend_lifecycle_readiness current_lifecycle_readiness() const override;
     vulkan_surface_extent current_surface_extent() const override;
     bool begin_frame(vulkan_surface_extent surface) override;
@@ -1304,6 +1323,9 @@ public:
     bool submit_frame() override;
     vulkan_swapchain_present_result present_image(vulkan_swapchain_image_id image_id) override;
     bool present_frame() override;
+
+private:
+    vulkan_loader_readiness_state loader_readiness_;
 };
 
 vulkan_backend_resource_binding_state build_vulkan_resource_binding_state(

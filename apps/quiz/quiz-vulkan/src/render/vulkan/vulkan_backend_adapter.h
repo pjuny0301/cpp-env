@@ -1,6 +1,7 @@
 #pragma once
 
 #include "render/render_draw_list.h"
+#include "render/vulkan/vulkan_backend_instance.h"
 #include "render/vulkan/vulkan_backend_loader.h"
 #include "render/vulkan/vulkan_frame_plan.h"
 

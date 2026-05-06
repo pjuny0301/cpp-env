@@ -1,5 +1,6 @@
 #include "render/render_draw_list.h"
 #include "render/text/fake_text_engine.h"
+#include "render/text/font_cmap_inspector.h"
 #include "render/text/font_sfnt_inspector.h"
 #include "render/text/font_source_bytes_loader.h"
 #include "render/text/font_source_resolver.h"
@@ -64,6 +65,16 @@ concept FontSfntInspectorContract = requires(
 
 static_assert(FontSfntInspectorContract<render::font_sfnt_inspector_interface>);
 static_assert(FontSfntInspectorContract<render::basic_font_sfnt_inspector>);
+
+template <typename T>
+concept FontCmapInspectorContract = requires(
+    const T& inspector,
+    const render::render_text_font_cmap_inspect_request& request) {
+    { inspector.inspect(request) } -> std::same_as<render::render_text_font_cmap_inspection>;
+};
+
+static_assert(FontCmapInspectorContract<render::font_cmap_inspector_interface>);
+static_assert(FontCmapInspectorContract<render::basic_font_cmap_inspector>);
 
 static_assert(requires(render::font_resolver_result result) {
     { result.resolved_face_id } -> std::same_as<render::font_face_id&>;
@@ -404,6 +415,35 @@ static_assert(requires(
     { render::font_sfnt_scaler_tag_label(scaler_tag) } -> std::same_as<std::string>;
     { render::font_sfnt_scaler_tag_is_supported(scaler_tag) } -> std::same_as<bool>;
     { render::font_sfnt_required_tables_for_scaler(scaler_tag) } -> std::same_as<std::vector<std::string>>;
+});
+
+static_assert(requires(render::render_text_font_cmap_range range, char32_t codepoint) {
+    { range.first_codepoint } -> std::same_as<char32_t&>;
+    { range.last_codepoint } -> std::same_as<char32_t&>;
+    { range.contains(codepoint) } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::render_text_font_cmap_inspection inspection, char32_t codepoint) {
+    { inspection.status } -> std::same_as<render::render_text_font_cmap_inspect_status&>;
+    { inspection.selected_platform_id } -> std::same_as<std::uint16_t&>;
+    { inspection.selected_encoding_id } -> std::same_as<std::uint16_t&>;
+    { inspection.selected_format } -> std::same_as<std::uint16_t&>;
+    { inspection.ranges } -> std::same_as<std::vector<render::render_text_font_cmap_range>&>;
+    { inspection.diagnostic } -> std::same_as<std::string&>;
+    { inspection.ok() } -> std::same_as<bool>;
+    { inspection.supports_codepoint(codepoint) } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::render_text_font_cmap_inspect_request request) {
+    { request.bytes } -> std::same_as<std::span<const std::byte>&>;
+    { request.sfnt } -> std::same_as<render::render_text_font_sfnt_inspection&>;
+});
+
+static_assert(requires(
+    render::render_text_font_cmap_inspect_request request,
+    render::render_text_font_cmap_inspect_status status) {
+    { render::inspect_font_cmap_coverage(request) } -> std::same_as<render::render_text_font_cmap_inspection>;
+    { render::render_text_font_cmap_inspect_status_name(status) } -> std::same_as<std::string>;
 });
 
 static_assert(requires(render::render_text_glyph_font_resolution_snapshot glyph) {

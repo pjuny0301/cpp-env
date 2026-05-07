@@ -40,6 +40,15 @@ std::vector<std::byte> make_ppm_1x1_bytes(unsigned char red, unsigned char green
     return bytes;
 }
 
+std::vector<std::byte> make_short_ppm_1x1_bytes()
+{
+    std::vector<std::byte> bytes;
+    append_ascii(bytes, "P6\n1 1\n255\n");
+    append_byte(bytes, 0xff);
+    append_byte(bytes, 0x00);
+    return bytes;
+}
+
 quiz_vulkan::render::render_image_sampler_policy nearest_sampler()
 {
     quiz_vulkan::render::render_image_sampler_policy sampler;
@@ -84,6 +93,26 @@ void test_manifest_adapter_builds_normalized_asset_cache_key()
     require(result.texture.height == 1, "manifest asset texture preserves height");
     require(!result.cache_hit, "first manifest asset texture is a cache miss");
     require(manifest_resolver.requests.size() == 1, "manifest resolver is consulted once");
+
+    const render_image_manifest_texture_pipeline_snapshot snapshot = adapter.diagnostic_snapshot();
+    require(snapshot.acquire_count == 1, "manifest success snapshot records acquire");
+    require(snapshot.ready_count == 1, "manifest success snapshot records ready");
+    require(snapshot.failure_count == 0, "manifest success snapshot records no failures");
+    require(snapshot.pipeline_acquire_count == 1, "manifest success snapshot records pipeline acquire");
+    require(snapshot.pipeline_decode_attempt_count == 1, "manifest success snapshot records decode");
+    require(snapshot.pipeline_upload_count == 1, "manifest success snapshot records upload");
+    require(snapshot.entries.size() == 1, "manifest success snapshot records entry");
+    require(snapshot.entries[0].manifest_source_status == render_image_manifest_source_status::resolved, "success entry records manifest source resolution");
+    require(snapshot.entries[0].resolve_status == render_image_resolve_status::resolved, "success entry records URI resolution");
+    require(snapshot.entries[0].source_bytes_status == render_image_source_bytes_load_status::loaded, "success entry records loaded source bytes");
+    require(snapshot.entries[0].pipeline_status == render_image_texture_pipeline_status::ready, "success entry records pipeline ready");
+    require(snapshot.entries[0].texture_status == render_image_texture_status::ready, "success entry records texture ready");
+    require(snapshot.entries[0].pipeline_acquired, "success entry records pipeline acquisition");
+    require(snapshot.entries[0].normalized_source_key == "asset://textures/card.ppm", "success entry records normalized key");
+    require(snapshot.entries[0].pipeline_decode_attempt_count_before == 0, "success entry records decode count before");
+    require(snapshot.entries[0].pipeline_decode_attempt_count_after == 1, "success entry records decode count after");
+    require(snapshot.entries[0].pipeline_upload_count_before == 0, "success entry records upload count before");
+    require(snapshot.entries[0].pipeline_upload_count_after == 1, "success entry records upload count after");
 }
 
 void test_manifest_adapter_accepts_file_uri_cache_key()
@@ -105,6 +134,45 @@ void test_manifest_adapter_accepts_file_uri_cache_key()
     require(result.normalized_source_key == "file:///tmp/card.ppm", "manifest adapter normalizes file URI scheme");
     require(result.source_kind == render_image_source_kind::file_uri, "manifest adapter records file source kind");
     require(result.texture_key.source_key == "file:///tmp/card.ppm", "file URI source key reaches texture pipeline");
+}
+
+void test_manifest_adapter_diagnostics_record_cache_hit_reuse()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_image_manifest_source_resolver manifest_resolver;
+    manifest_resolver.set_source("card", "asset://textures/card.ppm", 1);
+    fake_image_source_bytes_loader loader;
+    set_source_bytes(loader, "asset://textures/card.ppm", make_ppm_1x1_bytes(1, 2, 3));
+    normalizing_image_resolver pipeline_resolver;
+    standard_image_texture_pipeline pipeline(pipeline_resolver, loader);
+    image_manifest_texture_pipeline_adapter adapter(manifest_resolver, pipeline);
+
+    const render_image_manifest_texture_result first = adapter.acquire_texture(
+        render_image_manifest_texture_request{.source_id = "card"});
+    const render_image_manifest_texture_result second = adapter.acquire_texture(
+        render_image_manifest_texture_request{.source_id = "card"});
+
+    require(first.ok(), "first manifest cache reuse request succeeds");
+    require(second.ok(), "second manifest cache reuse request succeeds");
+    require(!first.cache_hit, "first manifest cache reuse request misses cache");
+    require(second.cache_hit, "second manifest cache reuse request hits cache");
+    require(first.texture.id == second.texture.id, "manifest cache reuse returns same texture");
+
+    const render_image_manifest_texture_pipeline_snapshot snapshot = adapter.diagnostic_snapshot();
+    require(snapshot.acquire_count == 2, "manifest cache reuse snapshot records two acquires");
+    require(snapshot.ready_count == 2, "manifest cache reuse snapshot records ready results");
+    require(snapshot.cache_hit_count == 1, "manifest cache reuse snapshot counts cache hit");
+    require(snapshot.pipeline_acquire_count == 2, "manifest cache reuse snapshot records two pipeline acquires");
+    require(snapshot.pipeline_decode_attempt_count == 1, "manifest cache reuse decodes once");
+    require(snapshot.pipeline_upload_count == 1, "manifest cache reuse uploads once");
+    require(snapshot.entries.size() == 2, "manifest cache reuse snapshot records two entries");
+    require(!snapshot.entries[0].cache_hit, "manifest cache reuse first entry records miss");
+    require(snapshot.entries[1].cache_hit, "manifest cache reuse second entry records hit");
+    require(snapshot.entries[1].pipeline_decode_attempt_count_before == 1, "cache hit entry records decode count before");
+    require(snapshot.entries[1].pipeline_decode_attempt_count_after == 1, "cache hit entry records unchanged decode count");
+    require(snapshot.entries[1].pipeline_upload_count_before == 1, "cache hit entry records upload count before");
+    require(snapshot.entries[1].pipeline_upload_count_after == 1, "cache hit entry records unchanged upload count");
 }
 
 void test_manifest_adapter_invalidates_standard_pipeline_when_source_revision_changes()
@@ -140,6 +208,16 @@ void test_manifest_adapter_invalidates_standard_pipeline_when_source_revision_ch
     require(snapshot.pipeline.invalidation_count == 1, "manifest revision change invalidates the standard pipeline");
     require(snapshot.pipeline.upload_snapshot.upload_count == 2, "manifest revision change uploads twice");
     require(snapshot.decoder.decode_attempt_count == 2, "manifest revision change decodes twice");
+
+    const render_image_manifest_texture_pipeline_snapshot manifest_snapshot = adapter.diagnostic_snapshot();
+    require(manifest_snapshot.revision_invalidation_count == 1, "manifest snapshot counts revision invalidation");
+    require(manifest_snapshot.pipeline_upload_count == 2, "manifest snapshot records two uploads after revision change");
+    require(manifest_snapshot.pipeline_decode_attempt_count == 2, "manifest snapshot records two decodes after revision change");
+    require(manifest_snapshot.entries.size() == 2, "manifest revision snapshot records entries");
+    require(!manifest_snapshot.entries[0].invalidated_source, "first revision entry does not invalidate");
+    require(manifest_snapshot.entries[1].invalidated_source, "changed revision entry records invalidation");
+    require(manifest_snapshot.entries[1].pipeline_invalidation_count_before == 0, "changed revision entry records invalidation count before");
+    require(manifest_snapshot.entries[1].pipeline_invalidation_count_after == 1, "changed revision entry records invalidation count after");
 }
 
 void test_manifest_adapter_returns_placeholder_for_missing_source_bytes()
@@ -179,6 +257,17 @@ void test_manifest_adapter_returns_placeholder_for_missing_source_bytes()
     const standard_image_texture_pipeline_snapshot snapshot = pipeline.standard_diagnostic_snapshot();
     require(snapshot.pipeline.source_load_failure_count == 2, "standard pipeline records missing source load failures");
     require(snapshot.pipeline.upload_snapshot.upload_count == 0, "missing source placeholder does not upload source pixels");
+
+    const render_image_manifest_texture_pipeline_snapshot manifest_snapshot = adapter.diagnostic_snapshot();
+    require(manifest_snapshot.acquire_count == 2, "missing source placeholder snapshot records acquires");
+    require(manifest_snapshot.ready_count == 2, "missing source placeholder snapshot reports ready placeholders");
+    require(manifest_snapshot.source_load_failure_count == 2, "missing source placeholder snapshot counts source load failures");
+    require(manifest_snapshot.placeholder_texture_count == 2, "missing source placeholder snapshot counts placeholders");
+    require(manifest_snapshot.placeholder_cache_hit_count == 1, "missing source placeholder snapshot counts placeholder cache hit");
+    require(manifest_snapshot.pipeline_upload_count == 0, "missing source placeholder snapshot records no upload");
+    require(manifest_snapshot.entries[0].pipeline_status == render_image_texture_pipeline_status::source_load_failed, "missing source entry records pipeline load failure");
+    require(manifest_snapshot.entries[0].placeholder_texture, "missing source entry records placeholder path");
+    require(manifest_snapshot.entries[1].cache_hit, "repeat missing source entry records placeholder cache hit");
 }
 
 void test_manifest_adapter_rejects_local_path_traversal_before_pipeline()
@@ -204,6 +293,53 @@ void test_manifest_adapter_rejects_local_path_traversal_before_pipeline()
     const standard_image_texture_pipeline_snapshot snapshot = pipeline.standard_diagnostic_snapshot();
     require(snapshot.pipeline.acquire_count == 0, "path traversal is rejected before texture pipeline acquire");
     require(snapshot.decoder.decode_attempt_count == 0, "path traversal rejection avoids decode");
+
+    const render_image_manifest_texture_pipeline_snapshot manifest_snapshot = adapter.diagnostic_snapshot();
+    require(manifest_snapshot.acquire_count == 1, "traversal snapshot records acquire");
+    require(manifest_snapshot.failure_count == 1, "traversal snapshot records failure");
+    require(manifest_snapshot.invalid_source_count == 1, "traversal snapshot counts invalid source");
+    require(manifest_snapshot.pipeline_acquire_count == 0, "traversal snapshot records no pipeline acquire");
+    require(!manifest_snapshot.entries[0].pipeline_acquired, "traversal entry avoids pipeline");
+    require(manifest_snapshot.entries[0].resolve_status == render_image_resolve_status::resolved, "traversal entry records resolved URI before rejection");
+    require(manifest_snapshot.entries[0].pipeline_decode_attempt_count_after == 0, "traversal entry records no decode");
+}
+
+void test_manifest_adapter_diagnostics_propagate_decode_failure()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_image_manifest_source_resolver manifest_resolver;
+    manifest_resolver.set_source("bad-card", "asset://textures/bad.ppm", 1);
+    fake_image_source_bytes_loader loader;
+    set_source_bytes(loader, "asset://textures/bad.ppm", make_short_ppm_1x1_bytes());
+    normalizing_image_resolver pipeline_resolver;
+    standard_image_texture_pipeline pipeline(pipeline_resolver, loader);
+    image_manifest_texture_pipeline_adapter adapter(manifest_resolver, pipeline);
+
+    const render_image_manifest_texture_result result = adapter.acquire_texture(
+        render_image_manifest_texture_request{.source_id = "bad-card"});
+
+    require(!result.ok(), "manifest decode failure does not return a texture");
+    require(result.status == render_image_manifest_texture_status::decode_failed, "manifest decode failure status propagates");
+    require(result.normalized_source_key == "asset://textures/bad.ppm", "decode failure preserves normalized source key");
+    require(!result.diagnostic.empty(), "manifest decode failure preserves diagnostic");
+
+    const render_image_manifest_texture_pipeline_snapshot snapshot = adapter.diagnostic_snapshot();
+    require(snapshot.acquire_count == 1, "decode failure snapshot records acquire");
+    require(snapshot.failure_count == 1, "decode failure snapshot records failure");
+    require(snapshot.decode_failure_count == 1, "decode failure snapshot counts decode failure");
+    require(snapshot.pipeline_decode_attempt_count == 1, "decode failure snapshot records decode attempt");
+    require(snapshot.pipeline_upload_count == 0, "decode failure snapshot records no upload");
+    require(snapshot.entries.size() == 1, "decode failure snapshot records entry");
+    require(snapshot.entries[0].manifest_source_status == render_image_manifest_source_status::resolved, "decode failure entry records manifest source");
+    require(snapshot.entries[0].source_bytes_status == render_image_source_bytes_load_status::loaded, "decode failure entry records loaded bytes");
+    require(snapshot.entries[0].pipeline_status == render_image_texture_pipeline_status::decode_failed, "decode failure entry records pipeline decode failure");
+    require(snapshot.entries[0].texture_status == render_image_texture_status::decode_failed, "decode failure entry records texture decode failure");
+    require(snapshot.entries[0].pipeline_decode_attempt_count_before == 0, "decode failure entry records decode before");
+    require(snapshot.entries[0].pipeline_decode_attempt_count_after == 1, "decode failure entry records decode after");
+    require(snapshot.entries[0].pipeline_upload_count_before == 0, "decode failure entry records upload before");
+    require(snapshot.entries[0].pipeline_upload_count_after == 0, "decode failure entry records unchanged upload");
+    require(!snapshot.entries[0].decode_metadata.decoder_id.empty(), "decode failure entry preserves decoder metadata");
 }
 
 void test_manifest_adapter_preserves_sampler_cache_separation()
@@ -243,6 +379,11 @@ void test_manifest_adapter_preserves_sampler_cache_separation()
     require(snapshot.pipeline.acquire_count == 3, "sampler separation records three requests");
     require(snapshot.pipeline.cache_hit_count == 1, "sampler separation records one cache hit");
     require(snapshot.pipeline.upload_snapshot.upload_count == 2, "sampler separation uploads once per sampler key");
+
+    const render_image_manifest_texture_pipeline_snapshot manifest_snapshot = adapter.diagnostic_snapshot();
+    require(manifest_snapshot.acquire_count == 3, "sampler separation manifest snapshot records three requests");
+    require(manifest_snapshot.cache_hit_count == 1, "sampler separation manifest snapshot counts cache hit");
+    require(manifest_snapshot.pipeline_upload_count == 2, "sampler separation manifest snapshot records two uploads");
 }
 
 } // namespace
@@ -251,9 +392,11 @@ int main()
 {
     test_manifest_adapter_builds_normalized_asset_cache_key();
     test_manifest_adapter_accepts_file_uri_cache_key();
+    test_manifest_adapter_diagnostics_record_cache_hit_reuse();
     test_manifest_adapter_invalidates_standard_pipeline_when_source_revision_changes();
     test_manifest_adapter_returns_placeholder_for_missing_source_bytes();
     test_manifest_adapter_rejects_local_path_traversal_before_pipeline();
+    test_manifest_adapter_diagnostics_propagate_decode_failure();
     test_manifest_adapter_preserves_sampler_cache_separation();
     return 0;
 }

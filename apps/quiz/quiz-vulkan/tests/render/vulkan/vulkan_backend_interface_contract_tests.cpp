@@ -2,6 +2,7 @@
 #include "render/vulkan/vulkan_backend_command_recording.h"
 #include "render/vulkan/vulkan_backend_command_submit.h"
 #include "render/vulkan/vulkan_backend_device.h"
+#include "render/vulkan/vulkan_backend_graphics_pipeline.h"
 #include "render/vulkan/vulkan_backend_instance.h"
 #include "render/vulkan/vulkan_backend_loader.h"
 #include "render/vulkan/vulkan_backend_queue_submit.h"
@@ -981,6 +982,25 @@ static_assert(requires(render::vulkan_backend::fake_vulkan_pipeline_layout_facto
         -> std::same_as<std::vector<render::vulkan_backend::vulkan_descriptor_set_layout_handle>&>;
 });
 
+static_assert(requires(render::vulkan_backend::fake_vulkan_graphics_pipeline_factory_options options) {
+    { options.create_status }
+        -> std::same_as<render::vulkan_backend::vulkan_graphics_pipeline_adapter_call_status&>;
+    { options.destroy_status }
+        -> std::same_as<render::vulkan_backend::vulkan_graphics_pipeline_adapter_call_status&>;
+    { options.handle } -> std::same_as<render::vulkan_backend::vulkan_graphics_pipeline_handle&>;
+});
+
+static_assert(requires(render::vulkan_backend::fake_vulkan_graphics_pipeline_factory_state state) {
+    { state.create_call_count } -> std::same_as<std::size_t&>;
+    { state.destroy_call_count } -> std::same_as<std::size_t&>;
+    { state.last_create_call }
+        -> std::same_as<render::vulkan_backend::vulkan_graphics_pipeline_create_call&>;
+    { state.last_destroy_call }
+        -> std::same_as<render::vulkan_backend::vulkan_graphics_pipeline_destroy_call&>;
+    { state.destroyed_pipelines }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_graphics_pipeline_handle>&>;
+});
+
 static_assert(std::default_initializable<render::vulkan_backend::fake_vulkan_queue_submit_adapter>);
 static_assert(std::constructible_from<
     render::vulkan_backend::fake_vulkan_queue_submit_adapter,
@@ -1009,6 +1029,16 @@ static_assert(requires(render::vulkan_backend::fake_vulkan_pipeline_layout_facto
     { fake.adapter() } -> std::same_as<render::vulkan_backend::vulkan_pipeline_layout_factory_adapter>;
     { fake.state() }
         -> std::same_as<const render::vulkan_backend::fake_vulkan_pipeline_layout_factory_state&>;
+});
+
+static_assert(std::default_initializable<render::vulkan_backend::fake_vulkan_graphics_pipeline_factory>);
+static_assert(std::constructible_from<
+    render::vulkan_backend::fake_vulkan_graphics_pipeline_factory,
+    render::vulkan_backend::fake_vulkan_graphics_pipeline_factory_options>);
+static_assert(requires(render::vulkan_backend::fake_vulkan_graphics_pipeline_factory fake) {
+    { fake.adapter() } -> std::same_as<render::vulkan_backend::vulkan_graphics_pipeline_factory_adapter>;
+    { fake.state() }
+        -> std::same_as<const render::vulkan_backend::fake_vulkan_graphics_pipeline_factory_state&>;
 });
 
 static_assert(requires(
@@ -1121,6 +1151,21 @@ static_assert(requires(
         request) } -> std::same_as<render::vulkan_backend::vulkan_pipeline_layout_create_result>;
     { render::vulkan_backend::destroy_vulkan_pipeline_layout(adapter, create_result) }
         -> std::same_as<render::vulkan_backend::vulkan_pipeline_layout_destroy_result>;
+});
+
+static_assert(requires(
+    render::vulkan_backend::vulkan_graphics_pipeline_factory_adapter adapter,
+    const render::vulkan_backend::vulkan_backend_shader_module_readiness_state& shader_modules,
+    const render::vulkan_backend::vulkan_pipeline_layout_create_result& pipeline_layout,
+    const render::vulkan_backend::vulkan_graphics_pipeline_request& request,
+    render::vulkan_backend::vulkan_graphics_pipeline_handle handle) {
+    { render::vulkan_backend::create_vulkan_graphics_pipeline(
+        adapter,
+        shader_modules,
+        pipeline_layout,
+        request) } -> std::same_as<render::vulkan_backend::vulkan_graphics_pipeline_create_result>;
+    { render::vulkan_backend::destroy_vulkan_graphics_pipeline(adapter, handle) }
+        -> std::same_as<render::vulkan_backend::vulkan_graphics_pipeline_destroy_result>;
 });
 
 template <typename T>
@@ -2399,6 +2444,308 @@ static_assert(requires(render::vulkan_backend::vulkan_pipeline_layout_destroy_re
     { result.failed() } -> std::same_as<bool>;
 });
 
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_vertex_input_rate::vertex),
+    render::vulkan_backend::vulkan_vertex_input_rate>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_vertex_input_rate::instance),
+    render::vulkan_backend::vulkan_vertex_input_rate>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_primitive_topology::triangle_list),
+    render::vulkan_backend::vulkan_primitive_topology>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_primitive_topology::triangle_strip),
+    render::vulkan_backend::vulkan_primitive_topology>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_primitive_topology::line_list),
+    render::vulkan_backend::vulkan_primitive_topology>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_graphics_pipeline_adapter_call_status::not_called),
+    render::vulkan_backend::vulkan_graphics_pipeline_adapter_call_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_graphics_pipeline_adapter_call_status::completed),
+    render::vulkan_backend::vulkan_graphics_pipeline_adapter_call_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_graphics_pipeline_adapter_call_status::failed_recoverable),
+    render::vulkan_backend::vulkan_graphics_pipeline_adapter_call_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_graphics_pipeline_adapter_call_status::failed_fatal),
+    render::vulkan_backend::vulkan_graphics_pipeline_adapter_call_status>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_graphics_pipeline_create_status::not_requested),
+    render::vulkan_backend::vulkan_graphics_pipeline_create_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_graphics_pipeline_create_status::created),
+    render::vulkan_backend::vulkan_graphics_pipeline_create_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_graphics_pipeline_create_status::shader_module_unavailable),
+    render::vulkan_backend::vulkan_graphics_pipeline_create_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_graphics_pipeline_create_status::pipeline_layout_unavailable),
+    render::vulkan_backend::vulkan_graphics_pipeline_create_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_graphics_pipeline_create_status::incompatible_shader_stages),
+    render::vulkan_backend::vulkan_graphics_pipeline_create_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_graphics_pipeline_create_status::invalid_vertex_input_state),
+    render::vulkan_backend::vulkan_graphics_pipeline_create_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_graphics_pipeline_create_status::invalid_input_assembly_state),
+    render::vulkan_backend::vulkan_graphics_pipeline_create_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_graphics_pipeline_create_status::invalid_rasterization_state),
+    render::vulkan_backend::vulkan_graphics_pipeline_create_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_graphics_pipeline_create_status::invalid_blend_state),
+    render::vulkan_backend::vulkan_graphics_pipeline_create_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_graphics_pipeline_create_status::invalid_depth_state),
+    render::vulkan_backend::vulkan_graphics_pipeline_create_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_graphics_pipeline_create_status::create_failed_recoverable),
+    render::vulkan_backend::vulkan_graphics_pipeline_create_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_graphics_pipeline_create_status::create_failed_fatal),
+    render::vulkan_backend::vulkan_graphics_pipeline_create_status>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_graphics_pipeline_destroy_status::not_requested),
+    render::vulkan_backend::vulkan_graphics_pipeline_destroy_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_graphics_pipeline_destroy_status::destroyed),
+    render::vulkan_backend::vulkan_graphics_pipeline_destroy_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_graphics_pipeline_destroy_status::invalid_handle),
+    render::vulkan_backend::vulkan_graphics_pipeline_destroy_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_graphics_pipeline_destroy_status::destroy_failed_recoverable),
+    render::vulkan_backend::vulkan_graphics_pipeline_destroy_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_graphics_pipeline_destroy_status::destroy_failed_fatal),
+    render::vulkan_backend::vulkan_graphics_pipeline_destroy_status>);
+
+static_assert(std::same_as<
+    render::vulkan_backend::vulkan_graphics_pipeline_readiness_result,
+    render::vulkan_backend::vulkan_graphics_pipeline_create_result>);
+
+static_assert(requires(
+    render::vulkan_backend::vulkan_vertex_input_rate input_rate,
+    render::vulkan_backend::vulkan_primitive_topology topology,
+    render::vulkan_backend::vulkan_graphics_pipeline_adapter_call_status call_status,
+    render::vulkan_backend::vulkan_graphics_pipeline_create_status create_status,
+    render::vulkan_backend::vulkan_graphics_pipeline_destroy_status destroy_status) {
+    { render::vulkan_backend::vertex_input_rate_name(input_rate) }
+        -> std::same_as<std::string_view>;
+    { render::vulkan_backend::primitive_topology_name(topology) }
+        -> std::same_as<std::string_view>;
+    { render::vulkan_backend::graphics_pipeline_adapter_call_status_name(call_status) }
+        -> std::same_as<std::string_view>;
+    { render::vulkan_backend::graphics_pipeline_create_status_name(create_status) }
+        -> std::same_as<std::string_view>;
+    { render::vulkan_backend::graphics_pipeline_destroy_status_name(destroy_status) }
+        -> std::same_as<std::string_view>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_graphics_pipeline_handle handle) {
+    { handle.value } -> std::same_as<std::uintptr_t&>;
+    { handle.valid() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_vertex_input_binding binding) {
+    { binding.binding } -> std::same_as<std::size_t&>;
+    { binding.stride } -> std::same_as<std::size_t&>;
+    { binding.input_rate } -> std::same_as<render::vulkan_backend::vulkan_vertex_input_rate&>;
+    { binding.valid() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_vertex_attribute attribute) {
+    { attribute.location } -> std::same_as<std::size_t&>;
+    { attribute.binding } -> std::same_as<std::size_t&>;
+    { attribute.offset } -> std::same_as<std::size_t&>;
+    { attribute.byte_size } -> std::same_as<std::size_t&>;
+    { attribute.end_offset() } -> std::same_as<std::size_t>;
+    { attribute.valid() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_vertex_input_state state) {
+    { state.bindings } -> std::same_as<std::vector<render::vulkan_backend::vulkan_vertex_input_binding>&>;
+    { state.attributes } -> std::same_as<std::vector<render::vulkan_backend::vulkan_vertex_attribute>&>;
+    { state.binding_for(0) }
+        -> std::same_as<const render::vulkan_backend::vulkan_vertex_input_binding*>;
+    { state.has_duplicate_attribute_location() } -> std::same_as<bool>;
+    { state.valid() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_input_assembly_state state) {
+    { state.topology } -> std::same_as<render::vulkan_backend::vulkan_primitive_topology&>;
+    { state.primitive_restart_enable } -> std::same_as<bool&>;
+    { state.valid() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_rasterization_state state) {
+    { state.polygon_mode } -> std::same_as<render::vulkan_backend::vulkan_polygon_mode&>;
+    { state.cull_mode } -> std::same_as<render::vulkan_backend::vulkan_cull_mode&>;
+    { state.front_face } -> std::same_as<render::vulkan_backend::vulkan_front_face&>;
+    { state.line_width } -> std::same_as<float&>;
+    { state.valid() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_color_blend_attachment_state attachment) {
+    { attachment.blend_enable } -> std::same_as<bool&>;
+    { attachment.src_color_factor } -> std::same_as<render::vulkan_backend::vulkan_blend_factor&>;
+    { attachment.dst_color_factor } -> std::same_as<render::vulkan_backend::vulkan_blend_factor&>;
+    { attachment.color_op } -> std::same_as<render::vulkan_backend::vulkan_blend_op&>;
+    { attachment.color_write_mask } -> std::same_as<std::uint8_t&>;
+    { attachment.valid() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_color_blend_state state) {
+    { state.attachments }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_color_blend_attachment_state>&>;
+    { state.valid() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_depth_stencil_state state) {
+    { state.depth_test_enable } -> std::same_as<bool&>;
+    { state.depth_write_enable } -> std::same_as<bool&>;
+    { state.compare_op } -> std::same_as<render::vulkan_backend::vulkan_depth_compare_op&>;
+    { state.depth_bounds_test_enable } -> std::same_as<bool&>;
+    { state.min_depth_bounds } -> std::same_as<float&>;
+    { state.max_depth_bounds } -> std::same_as<float&>;
+    { state.valid() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_graphics_pipeline_request request) {
+    { request.pipeline_id } -> std::same_as<std::string&>;
+    { request.required_shader_stages }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_shader_stage>&>;
+    { request.require_vertex_input } -> std::same_as<bool&>;
+    { request.vertex_input } -> std::same_as<render::vulkan_backend::vulkan_vertex_input_state&>;
+    { request.input_assembly } -> std::same_as<render::vulkan_backend::vulkan_input_assembly_state&>;
+    { request.rasterization } -> std::same_as<render::vulkan_backend::vulkan_rasterization_state&>;
+    { request.color_blend } -> std::same_as<render::vulkan_backend::vulkan_color_blend_state&>;
+    { request.depth_stencil } -> std::same_as<render::vulkan_backend::vulkan_depth_stencil_state&>;
+});
+
+static_assert(requires(
+    render::vulkan_backend::vulkan_graphics_pipeline_shader_stage_diagnostics diagnostics) {
+    { diagnostics.stage } -> std::same_as<render::vulkan_backend::vulkan_shader_stage&>;
+    { diagnostics.required } -> std::same_as<bool&>;
+    { diagnostics.shader_module_ready } -> std::same_as<bool&>;
+    { diagnostics.pipeline_layout_compatible } -> std::same_as<bool&>;
+    { diagnostics.shader_id } -> std::same_as<render::vulkan_backend::vulkan_shader_module_id&>;
+    { diagnostics.completed() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    render::vulkan_backend::vulkan_graphics_pipeline_fixed_function_diagnostics diagnostics) {
+    { diagnostics.checked } -> std::same_as<bool&>;
+    { diagnostics.vertex_input_valid } -> std::same_as<bool&>;
+    { diagnostics.input_assembly_valid } -> std::same_as<bool&>;
+    { diagnostics.rasterization_valid } -> std::same_as<bool&>;
+    { diagnostics.blend_valid } -> std::same_as<bool&>;
+    { diagnostics.depth_valid } -> std::same_as<bool&>;
+    { diagnostics.vertex_binding_count } -> std::same_as<std::size_t&>;
+    { diagnostics.vertex_attribute_count } -> std::same_as<std::size_t&>;
+    { diagnostics.color_attachment_count } -> std::same_as<std::size_t&>;
+    { diagnostics.completed() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_graphics_pipeline_create_call call) {
+    { call.pipeline_id } -> std::same_as<std::string&>;
+    { call.shader_modules }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_shader_module_id>&>;
+    { call.pipeline_layout } -> std::same_as<render::vulkan_backend::vulkan_pipeline_layout_handle&>;
+    { call.vertex_input } -> std::same_as<render::vulkan_backend::vulkan_vertex_input_state&>;
+    { call.valid() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_graphics_pipeline_destroy_call call) {
+    { call.handle } -> std::same_as<render::vulkan_backend::vulkan_graphics_pipeline_handle&>;
+    { call.valid() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_graphics_pipeline_create_operation_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.status }
+        -> std::same_as<render::vulkan_backend::vulkan_graphics_pipeline_adapter_call_status&>;
+    { result.handle } -> std::same_as<render::vulkan_backend::vulkan_graphics_pipeline_handle&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.completed() } -> std::same_as<bool>;
+    { result.recoverable_failure() } -> std::same_as<bool>;
+    { result.fatal_failure() } -> std::same_as<bool>;
+    { result.failed() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_graphics_pipeline_destroy_operation_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.status }
+        -> std::same_as<render::vulkan_backend::vulkan_graphics_pipeline_adapter_call_status&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.completed() } -> std::same_as<bool>;
+    { result.recoverable_failure() } -> std::same_as<bool>;
+    { result.fatal_failure() } -> std::same_as<bool>;
+    { result.failed() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_graphics_pipeline_function_table table) {
+    { table.create_graphics_pipeline }
+        -> std::same_as<render::vulkan_backend::vulkan_graphics_pipeline_create_fn&>;
+    { table.destroy_graphics_pipeline }
+        -> std::same_as<render::vulkan_backend::vulkan_graphics_pipeline_destroy_fn&>;
+    { table.valid() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_graphics_pipeline_factory_adapter adapter) {
+    { adapter.user_data } -> std::same_as<void*&>;
+    { adapter.functions }
+        -> std::same_as<render::vulkan_backend::vulkan_graphics_pipeline_function_table&>;
+    { adapter.valid() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_graphics_pipeline_create_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.status }
+        -> std::same_as<render::vulkan_backend::vulkan_graphics_pipeline_create_status&>;
+    { result.shader_modules }
+        -> std::same_as<render::vulkan_backend::vulkan_backend_shader_module_readiness_state&>;
+    { result.pipeline_layout }
+        -> std::same_as<render::vulkan_backend::vulkan_pipeline_layout_create_result&>;
+    { result.request } -> std::same_as<render::vulkan_backend::vulkan_graphics_pipeline_request&>;
+    { result.shader_stage_diagnostics }
+        -> std::same_as<std::vector<
+            render::vulkan_backend::vulkan_graphics_pipeline_shader_stage_diagnostics>&>;
+    { result.fixed_function }
+        -> std::same_as<render::vulkan_backend::vulkan_graphics_pipeline_fixed_function_diagnostics&>;
+    { result.pipeline } -> std::same_as<render::vulkan_backend::vulkan_graphics_pipeline_handle&>;
+    { result.create_call } -> std::same_as<render::vulkan_backend::vulkan_graphics_pipeline_create_call&>;
+    { result.create_result }
+        -> std::same_as<render::vulkan_backend::vulkan_graphics_pipeline_create_operation_result&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.ready_for_draw() } -> std::same_as<bool>;
+    { result.recoverable_create_failure() } -> std::same_as<bool>;
+    { result.fatal_create_failure() } -> std::same_as<bool>;
+    { result.failed() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_graphics_pipeline_destroy_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.status }
+        -> std::same_as<render::vulkan_backend::vulkan_graphics_pipeline_destroy_status&>;
+    { result.pipeline } -> std::same_as<render::vulkan_backend::vulkan_graphics_pipeline_handle&>;
+    { result.destroy_call } -> std::same_as<render::vulkan_backend::vulkan_graphics_pipeline_destroy_call&>;
+    { result.destroy_result }
+        -> std::same_as<render::vulkan_backend::vulkan_graphics_pipeline_destroy_operation_result&>;
+    { result.destroyed_pipeline_count } -> std::same_as<std::size_t&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.completed() } -> std::same_as<bool>;
+    { result.recoverable_failure() } -> std::same_as<bool>;
+    { result.fatal_failure() } -> std::same_as<bool>;
+    { result.failed() } -> std::same_as<bool>;
+});
+
 static_assert(requires(render::vulkan_backend::vulkan_pipeline_descriptor descriptor) {
     { descriptor.kind } -> std::same_as<render::vulkan_backend::vulkan_batch_kind&>;
     { descriptor.vertex_shader } -> std::same_as<render::vulkan_backend::vulkan_shader_module_id&>;
@@ -2591,6 +2938,8 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_pipeline_state pip
         -> std::same_as<render::vulkan_backend::vulkan_backend_shader_binding_readiness_state&>;
     { pipeline.pipeline_layout }
         -> std::same_as<render::vulkan_backend::vulkan_pipeline_layout_create_result&>;
+    { pipeline.graphics_pipeline }
+        -> std::same_as<render::vulkan_backend::vulkan_graphics_pipeline_create_result&>;
     { pipeline.lifecycle } -> std::same_as<render::vulkan_backend::vulkan_backend_pipeline_lifecycle_state&>;
     { pipeline.supports(render::vulkan_backend::vulkan_batch_kind::quad) } -> std::same_as<bool>;
     { pipeline.descriptor_for(render::vulkan_backend::vulkan_batch_kind::quad) }

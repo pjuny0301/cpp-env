@@ -4,6 +4,7 @@
 #include "render/vulkan/vulkan_backend_command_recording.h"
 #include "render/vulkan/vulkan_backend_command_submit.h"
 #include "render/vulkan/vulkan_backend_device.h"
+#include "render/vulkan/vulkan_backend_graphics_pipeline.h"
 #include "render/vulkan/vulkan_backend_instance.h"
 #include "render/vulkan/vulkan_backend_loader.h"
 #include "render/vulkan/vulkan_backend_queue_submit.h"
@@ -977,6 +978,7 @@ struct vulkan_backend_pipeline_state {
     vulkan_pipeline_compatibility_key_summary compatibility;
     vulkan_backend_shader_binding_readiness_state shader_bindings;
     vulkan_pipeline_layout_create_result pipeline_layout;
+    vulkan_graphics_pipeline_create_result graphics_pipeline;
     vulkan_backend_pipeline_lifecycle_state lifecycle;
 
     bool supports(vulkan_batch_kind kind) const;

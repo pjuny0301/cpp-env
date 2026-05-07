@@ -1,5 +1,6 @@
 #include "core/input/gesture_recognizer.h"
 #include "core/input/input_engine.h"
+#include "core/input/platform_input_engine_adapter.h"
 #include "core/input/platform_input_translator.h"
 #include "core/input/text_input_model.h"
 #include "platform/platform_input_event.h"
@@ -8,9 +9,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -105,6 +108,34 @@ template <typename T>
 concept PlatformInputTranslationResultInterface = requires(T result) {
     { result.event } -> std::same_as<std::optional<raw_platform_input_event>&>;
     { result.diagnostic } -> std::same_as<input::platform_input_translation_diagnostic&>;
+};
+
+template <typename T>
+concept PlatformInputDispatchResultInterface = requires(T result) {
+    { result.translation } -> std::same_as<input::platform_input_translation_result&>;
+    { result.dispatched_to_engine } -> std::same_as<bool&>;
+    { result.input_events } -> std::same_as<std::vector<input::input_event>&>;
+    { result.routing_diagnostics } -> std::same_as<input::input_routing_diagnostics&>;
+};
+
+template <typename T>
+concept PlatformInputDispatchBatchResultInterface = requires(T result) {
+    { result.items } -> std::same_as<std::vector<input::platform_input_dispatch_result>&>;
+};
+
+template <typename T>
+concept PlatformInputEngineAdapterFunctions = requires(
+    input::input_engine& engine,
+    const input::platform_input_translator& translator,
+    input::platform_input_translation_result translation,
+    const input::platform_input_translation_request& request,
+    std::span<const input::platform_input_translation_request> requests) {
+    { input::dispatch_translated_platform_input(engine, std::move(translation)) }
+        -> std::same_as<input::platform_input_dispatch_result>;
+    { input::translate_and_dispatch_platform_input(engine, translator, request) }
+        -> std::same_as<input::platform_input_dispatch_result>;
+    { input::translate_and_dispatch_platform_input_batch(engine, translator, requests) }
+        -> std::same_as<input::platform_input_dispatch_batch_result>;
 };
 
 template <typename T>
@@ -256,6 +287,9 @@ static_assert(PlatformCharacterSampleInterface<input::platform_character_sample>
 static_assert(PlatformImeCompositionSampleInterface<input::platform_ime_composition_sample>);
 static_assert(PlatformInputTranslationDiagnosticInterface<input::platform_input_translation_diagnostic>);
 static_assert(PlatformInputTranslationResultInterface<input::platform_input_translation_result>);
+static_assert(PlatformInputDispatchResultInterface<input::platform_input_dispatch_result>);
+static_assert(PlatformInputDispatchBatchResultInterface<input::platform_input_dispatch_batch_result>);
+static_assert(PlatformInputEngineAdapterFunctions<void>);
 static_assert(TextInputModelInterface<input::text_input_model>);
 
 constexpr input::text_range text_range_contract{

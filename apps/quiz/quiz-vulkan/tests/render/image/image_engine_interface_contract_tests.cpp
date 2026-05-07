@@ -235,6 +235,9 @@ static_assert(requires(
     render::render_image_texture_batch_plan_options batch_plan_options,
     render::render_image_texture_batch_plan_entry batch_plan_entry,
     render::render_image_texture_batch_plan batch_plan,
+    render::render_image_texture_batch_execution_entry_status batch_execution_entry_status,
+    render::render_image_texture_batch_execution_entry batch_execution_entry,
+    render::render_image_texture_batch_execution_diagnostics batch_execution,
     render::fake_image_texture_pipeline_entry_snapshot pipeline_entry,
     render::fake_image_texture_pipeline_snapshot pipeline_snapshot,
     render::standard_image_texture_pipeline_decode_snapshot standard_pipeline_decoder_snapshot,
@@ -651,6 +654,12 @@ static_assert(requires(
         -> std::same_as<render::render_image_texture_batch_plan>;
     { render::plan_render_image_texture_batch(image_refs, resolver, batch_plan_options) }
         -> std::same_as<render::render_image_texture_batch_plan>;
+    { render::render_image_texture_batch_execution_entry_status_name(batch_execution_entry_status) }
+        -> std::same_as<std::string>;
+    { render::batch_execution_status_for_pipeline_status(pipeline_status) }
+        -> std::same_as<render::render_image_texture_batch_execution_entry_status>;
+    { render::execute_render_image_texture_batch_plan(batch_plan, mutable_pipeline) }
+        -> std::same_as<render::render_image_texture_batch_execution_diagnostics>;
     { render::render_image_decoder_capability_candidate_kind_name(decoder_capability_kind) }
         -> std::same_as<std::string>;
     { render::render_image_decoder_capability_candidate_status_name(decoder_capability_status) }
@@ -690,6 +699,7 @@ static_assert(requires(
     { decoder_capability_manifest.diagnostic } -> std::same_as<std::string&>;
     pipeline_status;
     batch_plan_entry_status;
+    batch_execution_entry_status;
     decoder_capability_kind;
     decoder_capability_status;
     { batch_plan_options.placeholder_policy } -> std::same_as<render::fake_image_texture_placeholder_policy&>;
@@ -738,6 +748,48 @@ static_assert(requires(
     { batch_plan.entries } -> std::same_as<std::vector<render::render_image_texture_batch_plan_entry>&>;
     { batch_plan.diagnostic } -> std::same_as<std::string&>;
     { batch_plan.ok() } -> std::same_as<bool>;
+    { batch_execution_entry.sequence } -> std::same_as<std::size_t&>;
+    { batch_execution_entry.request_index } -> std::same_as<std::size_t&>;
+    { batch_execution_entry.plan_status } -> std::same_as<render::render_image_texture_batch_plan_entry_status&>;
+    { batch_execution_entry.status }
+        -> std::same_as<render::render_image_texture_batch_execution_entry_status&>;
+    { batch_execution_entry.request } -> std::same_as<render::render_image_texture_pipeline_request&>;
+    { batch_execution_entry.pipeline_status } -> std::same_as<render::render_image_texture_pipeline_status&>;
+    { batch_execution_entry.source_bytes_status }
+        -> std::same_as<render::render_image_source_bytes_load_status&>;
+    { batch_execution_entry.texture_status } -> std::same_as<render::render_image_texture_status&>;
+    { batch_execution_entry.texture_key } -> std::same_as<render::render_image_texture_key&>;
+    { batch_execution_entry.texture } -> std::same_as<render::render_image_texture_handle&>;
+    { batch_execution_entry.executed } -> std::same_as<bool&>;
+    { batch_execution_entry.ready } -> std::same_as<bool&>;
+    { batch_execution_entry.cache_hit } -> std::same_as<bool&>;
+    { batch_execution_entry.cache_reused } -> std::same_as<bool&>;
+    { batch_execution_entry.expected_cache_reuse } -> std::same_as<bool&>;
+    { batch_execution_entry.cache_reuse_expectation_matched } -> std::same_as<bool&>;
+    { batch_execution_entry.placeholder_texture } -> std::same_as<bool&>;
+    { batch_execution_entry.fallback_placeholder_available } -> std::same_as<bool&>;
+    { batch_execution_entry.fallback_placeholder_key } -> std::same_as<render::render_image_texture_key&>;
+    { batch_execution_entry.invalid_reason } -> std::same_as<std::string&>;
+    { batch_execution_entry.diagnostic } -> std::same_as<std::string&>;
+    { batch_execution_entry.ok() } -> std::same_as<bool>;
+    { batch_execution.request_count } -> std::same_as<std::size_t&>;
+    { batch_execution.planned_request_count } -> std::same_as<std::size_t&>;
+    { batch_execution.invalid_request_count } -> std::same_as<std::size_t&>;
+    { batch_execution.executed_request_count } -> std::same_as<std::size_t&>;
+    { batch_execution.skipped_request_count } -> std::same_as<std::size_t&>;
+    { batch_execution.ready_count } -> std::same_as<std::size_t&>;
+    { batch_execution.failure_count } -> std::same_as<std::size_t&>;
+    { batch_execution.cache_hit_count } -> std::same_as<std::size_t&>;
+    { batch_execution.cache_reuse_count } -> std::same_as<std::size_t&>;
+    { batch_execution.cache_reuse_expected_count } -> std::same_as<std::size_t&>;
+    { batch_execution.cache_reuse_expectation_match_count } -> std::same_as<std::size_t&>;
+    { batch_execution.cache_reuse_expectation_mismatch_count } -> std::same_as<std::size_t&>;
+    { batch_execution.placeholder_texture_count } -> std::same_as<std::size_t&>;
+    { batch_execution.all_planned_requests_executed } -> std::same_as<bool&>;
+    { batch_execution.entries }
+        -> std::same_as<std::vector<render::render_image_texture_batch_execution_entry>&>;
+    { batch_execution.diagnostic } -> std::same_as<std::string&>;
+    { batch_execution.ok() } -> std::same_as<bool>;
     { pipeline_entry.sequence } -> std::same_as<std::size_t&>;
     { pipeline_entry.request } -> std::same_as<render::render_image_texture_pipeline_request&>;
     { pipeline_entry.status } -> std::same_as<render::render_image_texture_pipeline_status&>;
@@ -1012,15 +1064,22 @@ static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_manifes
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_manifest_texture_pipeline_snapshot>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_batch_plan_entry>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_batch_plan>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_batch_execution_entry>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_batch_execution_diagnostics>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_manifest_texture_entry_snapshot>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_manifest_texture_pipeline_snapshot>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_batch_plan_entry>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_batch_plan>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_batch_execution_entry>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_batch_execution_diagnostics>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_manifest_texture_entry_snapshot>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_manifest_texture_pipeline_snapshot>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_batch_plan_entry>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_batch_plan>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_batch_execution_entry>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_batch_execution_diagnostics>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_manifest_texture_pipeline_snapshot>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_batch_plan>);
+static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_batch_execution_diagnostics>);
 
 } // namespace

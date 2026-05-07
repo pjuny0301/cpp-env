@@ -38,6 +38,10 @@ static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_textu
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_batch_plan>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_batch_plan_entry>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_batch_plan>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_batch_execution_entry>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_batch_execution_diagnostics>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_batch_execution_entry>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_batch_execution_diagnostics>);
 
 void require(bool condition, const char* message)
 {
@@ -702,6 +706,180 @@ void test_batch_plan_reports_placeholder_fallback_policy_without_cache_internals
         "batch plan placeholder key records fallback reason");
 }
 
+void test_batch_execution_runs_planned_requests_and_reports_cache_reuse()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes("asset://textures/card.ppm", make_ppm_2x1_fixture_bytes());
+    ppm_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
+
+    render_image_sampler_policy nearest_sampler;
+    nearest_sampler.min_filter = render_image_filter::nearest;
+    nearest_sampler.mag_filter = render_image_filter::nearest;
+
+    const render_image_texture_batch_plan plan = plan_render_image_texture_batch(std::vector<render_image_ref>{
+        render_image_ref{.uri = "asset://textures/card.ppm"},
+        render_image_ref{.uri = "  ASSET:///textures\\card.ppm  "},
+        render_image_ref{.uri = "asset://textures/card.ppm", .sampler = nearest_sampler},
+    });
+    const render_image_texture_batch_execution_diagnostics execution =
+        execute_render_image_texture_batch_plan(plan, pipeline);
+
+    require(execution.ok(), "batch execution succeeds for planned PPM requests");
+    require(execution.request_count == 3, "batch execution records request count");
+    require(execution.planned_request_count == 3, "batch execution records planned count");
+    require(execution.invalid_request_count == 0, "batch execution records no invalid requests");
+    require(execution.executed_request_count == 3, "batch execution runs all planned requests");
+    require(execution.skipped_request_count == 0, "batch execution skips no valid requests");
+    require(execution.ready_count == 3, "batch execution counts ready requests");
+    require(execution.failure_count == 0, "batch execution records no failures");
+    require(execution.cache_hit_count == 1, "batch execution counts cache hits");
+    require(execution.cache_reuse_count == 1, "batch execution counts cache reuse");
+    require(execution.cache_reuse_expected_count == 1, "batch execution carries plan cache reuse expectation");
+    require(
+        execution.cache_reuse_expectation_match_count == 3,
+        "batch execution records matched cache reuse expectations");
+    require(execution.cache_reuse_expectation_mismatch_count == 0, "batch execution records no reuse mismatch");
+    require(execution.placeholder_texture_count == 0, "batch execution records no placeholder fallback");
+    require(execution.all_planned_requests_executed, "batch execution records all planned requests executed");
+    require(execution.entries.size() == 3, "batch execution records one entry per request");
+    require(execution.entries[0].status == render_image_texture_batch_execution_entry_status::ready, "first execution is ready");
+    require(execution.entries[0].executed, "first execution reached pipeline");
+    require(!execution.entries[0].cache_reused, "first execution is not cache reuse");
+    require(execution.entries[1].cache_reused, "second execution reuses cached texture");
+    require(execution.entries[1].expected_cache_reuse, "second execution records expected reuse");
+    require(execution.entries[1].cache_reuse_expectation_matched, "second execution matches reuse expectation");
+    require(
+        execution.entries[1].texture.id == execution.entries[0].texture.id,
+        "second execution returns the same cached texture handle");
+    require(!execution.entries[2].expected_cache_reuse, "third execution expects no texture cache reuse");
+    require(!execution.entries[2].cache_reused, "third execution does not reuse due sampler separation");
+    require(
+        execution.entries[2].texture.id != execution.entries[0].texture.id,
+        "third execution uploads a distinct sampler texture");
+}
+
+void test_batch_execution_accepts_standard_pipeline_interface()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes("asset://textures/standard.ppm", make_ppm_2x1_fixture_bytes());
+    standard_image_texture_pipeline pipeline(resolver, loader);
+
+    const render_image_texture_batch_plan plan = plan_render_image_texture_batch(std::vector<render_image_ref>{
+        render_image_ref{.uri = "asset://textures/standard.ppm"},
+        render_image_ref{.uri = "asset://textures/standard.ppm"},
+    });
+    image_texture_pipeline_interface& pipeline_interface = pipeline;
+    const render_image_texture_batch_execution_diagnostics execution =
+        execute_render_image_texture_batch_plan(plan, pipeline_interface);
+
+    require(execution.ok(), "batch execution accepts standard image texture pipeline through interface");
+    require(execution.executed_request_count == 2, "standard batch execution runs both requests");
+    require(execution.ready_count == 2, "standard batch execution records ready count");
+    require(execution.cache_reuse_expected_count == 1, "standard batch execution carries reuse expectation");
+    require(execution.cache_reuse_count == 1, "standard batch execution observes cache reuse");
+    require(execution.entries[1].cache_reused, "standard batch execution records repeat cache reuse");
+    require(
+        execution.entries[1].texture.id == execution.entries[0].texture.id,
+        "standard batch execution reuses cached texture handle");
+}
+
+void test_batch_execution_skips_invalid_requests_and_counts_pipeline_failures()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes("asset://textures/bad.ppm", make_short_ppm_2x1_fixture_bytes());
+    ppm_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
+
+    const render_image_texture_batch_plan plan = plan_render_image_texture_batch(std::vector<render_image_ref>{
+        render_image_ref{.uri = "   "},
+        render_image_ref{.uri = "asset://textures/bad.ppm"},
+    });
+    const render_image_texture_batch_execution_diagnostics execution =
+        execute_render_image_texture_batch_plan(plan, pipeline);
+
+    require(!execution.ok(), "batch execution reports invalid and failed requests");
+    require(execution.request_count == 2, "failed batch execution records request count");
+    require(execution.planned_request_count == 1, "failed batch execution records one planned request");
+    require(execution.invalid_request_count == 1, "failed batch execution carries invalid plan count");
+    require(execution.executed_request_count == 1, "failed batch execution runs only valid planned requests");
+    require(execution.skipped_request_count == 1, "failed batch execution skips invalid request");
+    require(execution.ready_count == 0, "failed batch execution records no ready requests");
+    require(execution.failure_count == 2, "failed batch execution counts skipped and decode failures");
+    require(execution.all_planned_requests_executed, "failed batch execution still runs all planned requests");
+    require(
+        execution.diagnostic == "image texture batch execution contains failed requests",
+        "failed batch execution records deterministic diagnostic");
+    require(
+        execution.entries[0].status == render_image_texture_batch_execution_entry_status::skipped_invalid_request,
+        "invalid batch execution entry is skipped");
+    require(!execution.entries[0].executed, "invalid batch execution entry does not reach pipeline");
+    require(execution.entries[0].invalid_reason.find("empty") != std::string::npos, "skipped entry keeps invalid reason");
+    require(
+        execution.entries[1].status == render_image_texture_batch_execution_entry_status::decode_failed,
+        "bad PPM execution entry reports decode failure");
+    require(execution.entries[1].executed, "valid failed entry reaches pipeline");
+    require(!execution.entries[1].ready, "valid failed entry is not ready");
+    require(execution.entries[1].texture_status == render_image_texture_status::decode_failed, "failed entry records texture status");
+}
+
+void test_batch_execution_reports_placeholder_fallback_without_cache_internals()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_image_texture_placeholder_policy placeholder_policy{
+        .enabled = true,
+        .width = 2,
+        .height = 2,
+    };
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes("asset://textures/bad.ppm", make_short_ppm_2x1_fixture_bytes());
+    ppm_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    cache.set_placeholder_texture_policy(placeholder_policy);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
+
+    const render_image_texture_batch_plan plan = plan_render_image_texture_batch(
+        std::vector<render_image_ref>{render_image_ref{.uri = "asset://textures/bad.ppm"}},
+        render_image_texture_batch_plan_options{.placeholder_policy = placeholder_policy});
+    const render_image_texture_batch_execution_diagnostics execution =
+        execute_render_image_texture_batch_plan(plan, pipeline);
+
+    require(execution.ok(), "batch execution treats placeholder fallback as ready");
+    require(execution.executed_request_count == 1, "placeholder batch execution runs planned request");
+    require(execution.ready_count == 1, "placeholder batch execution records ready count");
+    require(execution.failure_count == 0, "placeholder batch execution records no failure");
+    require(execution.placeholder_texture_count == 1, "placeholder batch execution counts placeholder fallback");
+    require(execution.entries[0].placeholder_texture, "placeholder batch execution entry records placeholder texture");
+    require(
+        execution.entries[0].fallback_placeholder_available,
+        "placeholder batch execution entry keeps planned fallback availability");
+    require(
+        is_fake_image_texture_placeholder_key(execution.entries[0].fallback_placeholder_key),
+        "placeholder batch execution entry keeps planned placeholder key");
+    require(
+        is_fake_image_texture_placeholder_key(execution.entries[0].texture_key),
+        "placeholder batch execution entry records actual placeholder texture key");
+    require(
+        execution.entries[0].diagnostic.find("placeholder") != std::string::npos,
+        "placeholder batch execution entry records placeholder diagnostic");
+}
+
 } // namespace
 
 int main()
@@ -717,5 +895,9 @@ int main()
     test_batch_plan_normalizes_and_deduplicates_texture_requests();
     test_batch_plan_reports_invalid_request_reasons();
     test_batch_plan_reports_placeholder_fallback_policy_without_cache_internals();
+    test_batch_execution_runs_planned_requests_and_reports_cache_reuse();
+    test_batch_execution_accepts_standard_pipeline_interface();
+    test_batch_execution_skips_invalid_requests_and_counts_pipeline_failures();
+    test_batch_execution_reports_placeholder_fallback_without_cache_internals();
     return 0;
 }

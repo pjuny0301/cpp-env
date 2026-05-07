@@ -470,6 +470,192 @@ public:
         const render_image_texture_pipeline_request& request) = 0;
 };
 
+enum class render_image_texture_batch_execution_entry_status {
+    ready,
+    skipped_invalid_request,
+    resolve_failed,
+    source_load_failed,
+    decode_failed,
+    upload_failed,
+};
+
+inline std::string render_image_texture_batch_execution_entry_status_name(
+    render_image_texture_batch_execution_entry_status status)
+{
+    switch (status) {
+    case render_image_texture_batch_execution_entry_status::ready:
+        return "ready";
+    case render_image_texture_batch_execution_entry_status::skipped_invalid_request:
+        return "skipped_invalid_request";
+    case render_image_texture_batch_execution_entry_status::resolve_failed:
+        return "resolve_failed";
+    case render_image_texture_batch_execution_entry_status::source_load_failed:
+        return "source_load_failed";
+    case render_image_texture_batch_execution_entry_status::decode_failed:
+        return "decode_failed";
+    case render_image_texture_batch_execution_entry_status::upload_failed:
+        return "upload_failed";
+    }
+
+    return "unknown";
+}
+
+inline render_image_texture_batch_execution_entry_status batch_execution_status_for_pipeline_status(
+    render_image_texture_pipeline_status status)
+{
+    switch (status) {
+    case render_image_texture_pipeline_status::ready:
+        return render_image_texture_batch_execution_entry_status::ready;
+    case render_image_texture_pipeline_status::resolve_failed:
+        return render_image_texture_batch_execution_entry_status::resolve_failed;
+    case render_image_texture_pipeline_status::source_load_failed:
+        return render_image_texture_batch_execution_entry_status::source_load_failed;
+    case render_image_texture_pipeline_status::decode_failed:
+        return render_image_texture_batch_execution_entry_status::decode_failed;
+    case render_image_texture_pipeline_status::upload_failed:
+        return render_image_texture_batch_execution_entry_status::upload_failed;
+    }
+
+    return render_image_texture_batch_execution_entry_status::upload_failed;
+}
+
+struct render_image_texture_batch_execution_entry {
+    std::size_t sequence = 0;
+    std::size_t request_index = 0;
+    render_image_texture_batch_plan_entry_status plan_status =
+        render_image_texture_batch_plan_entry_status::resolve_failed;
+    render_image_texture_batch_execution_entry_status status =
+        render_image_texture_batch_execution_entry_status::skipped_invalid_request;
+    render_image_texture_pipeline_request request;
+    render_image_texture_pipeline_status pipeline_status =
+        render_image_texture_pipeline_status::resolve_failed;
+    render_image_source_bytes_load_status source_bytes_status =
+        render_image_source_bytes_load_status::missing_source;
+    render_image_texture_status texture_status = render_image_texture_status::missing_source;
+    render_image_texture_key texture_key;
+    render_image_texture_handle texture;
+    bool executed = false;
+    bool ready = false;
+    bool cache_hit = false;
+    bool cache_reused = false;
+    bool expected_cache_reuse = false;
+    bool cache_reuse_expectation_matched = false;
+    bool placeholder_texture = false;
+    bool fallback_placeholder_available = false;
+    render_image_texture_key fallback_placeholder_key;
+    std::string invalid_reason;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return ready;
+    }
+};
+
+struct render_image_texture_batch_execution_diagnostics {
+    std::size_t request_count = 0;
+    std::size_t planned_request_count = 0;
+    std::size_t invalid_request_count = 0;
+    std::size_t executed_request_count = 0;
+    std::size_t skipped_request_count = 0;
+    std::size_t ready_count = 0;
+    std::size_t failure_count = 0;
+    std::size_t cache_hit_count = 0;
+    std::size_t cache_reuse_count = 0;
+    std::size_t cache_reuse_expected_count = 0;
+    std::size_t cache_reuse_expectation_match_count = 0;
+    std::size_t cache_reuse_expectation_mismatch_count = 0;
+    std::size_t placeholder_texture_count = 0;
+    bool all_planned_requests_executed = false;
+    std::vector<render_image_texture_batch_execution_entry> entries;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return failure_count == 0 && skipped_request_count == 0;
+    }
+};
+
+inline render_image_texture_batch_execution_diagnostics execute_render_image_texture_batch_plan(
+    const render_image_texture_batch_plan& plan,
+    image_texture_pipeline_interface& pipeline)
+{
+    render_image_texture_batch_execution_diagnostics diagnostics{
+        .request_count = plan.request_count,
+        .planned_request_count = plan.planned_request_count,
+        .invalid_request_count = plan.invalid_request_count,
+        .cache_reuse_expected_count = plan.cache_reuse_expected_count,
+    };
+
+    std::size_t sequence = 1;
+    for (const render_image_texture_batch_plan_entry& plan_entry : plan.entries) {
+        render_image_texture_batch_execution_entry entry{
+            .sequence = sequence++,
+            .request_index = plan_entry.request_index,
+            .plan_status = plan_entry.status,
+            .request = plan_entry.pipeline_request,
+            .expected_cache_reuse = plan_entry.expects_cache_reuse,
+            .fallback_placeholder_available = plan_entry.fallback_placeholder_available,
+            .fallback_placeholder_key = plan_entry.fallback_placeholder_key,
+            .invalid_reason = plan_entry.invalid_reason,
+        };
+
+        if (!plan_entry.ok()) {
+            entry.status = render_image_texture_batch_execution_entry_status::skipped_invalid_request;
+            entry.diagnostic = plan_entry.invalid_reason;
+            ++diagnostics.skipped_request_count;
+            ++diagnostics.failure_count;
+            diagnostics.entries.push_back(std::move(entry));
+            continue;
+        }
+
+        render_image_texture_pipeline_result result = pipeline.acquire_texture(plan_entry.pipeline_request);
+        entry.executed = true;
+        entry.pipeline_status = result.status;
+        entry.source_bytes_status = result.source_bytes.status;
+        entry.texture_status = result.texture.status;
+        entry.status = batch_execution_status_for_pipeline_status(result.status);
+        entry.texture_key = result.texture.key;
+        entry.texture = result.texture.texture;
+        entry.ready = result.ok();
+        entry.cache_hit = result.texture.cache_hit;
+        entry.cache_reused = result.texture.cache_hit;
+        entry.cache_reuse_expectation_matched = entry.expected_cache_reuse == entry.cache_reused;
+        entry.placeholder_texture = is_fake_image_texture_placeholder_key(result.texture.key);
+        entry.diagnostic = result.diagnostic.empty() ? result.texture.diagnostic : result.diagnostic;
+
+        ++diagnostics.executed_request_count;
+        if (entry.ready) {
+            ++diagnostics.ready_count;
+        } else {
+            ++diagnostics.failure_count;
+        }
+        if (entry.cache_hit) {
+            ++diagnostics.cache_hit_count;
+        }
+        if (entry.cache_reused) {
+            ++diagnostics.cache_reuse_count;
+        }
+        if (entry.cache_reuse_expectation_matched) {
+            ++diagnostics.cache_reuse_expectation_match_count;
+        } else {
+            ++diagnostics.cache_reuse_expectation_mismatch_count;
+        }
+        if (entry.placeholder_texture) {
+            ++diagnostics.placeholder_texture_count;
+        }
+
+        diagnostics.entries.push_back(std::move(entry));
+    }
+
+    diagnostics.all_planned_requests_executed =
+        diagnostics.executed_request_count == diagnostics.planned_request_count;
+    diagnostics.diagnostic = diagnostics.ok()
+        ? "image texture batch execution ready"
+        : "image texture batch execution contains failed requests";
+    return diagnostics;
+}
+
 class fake_image_texture_pipeline final : public image_texture_pipeline_interface {
 public:
     fake_image_texture_pipeline(

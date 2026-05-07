@@ -1,5 +1,6 @@
 #include "render/render_draw_list.h"
 #include "render/text/fake_text_engine.h"
+#include "render/text/font_backend_capabilities.h"
 #include "render/text/font_cmap_inspector.h"
 #include "render/text/font_coverage_run_segmentation.h"
 #include "render/text/font_glyph_id_resolver.h"
@@ -118,6 +119,16 @@ static_assert(FontRasterizerContract<render::font_rasterizer_interface>);
 static_assert(FontRasterizerContract<render::deterministic_fake_font_rasterizer>);
 
 template <typename T>
+concept FontBackendCapabilityProbeContract = requires(
+    const T& probe,
+    const render::render_text_font_backend_capability_probe_request& request) {
+    { probe.probe(request) } -> std::same_as<render::render_text_font_backend_capability_snapshot>;
+};
+
+static_assert(FontBackendCapabilityProbeContract<render::font_backend_capability_probe_interface>);
+static_assert(FontBackendCapabilityProbeContract<render::deterministic_fake_font_backend_capability_probe>);
+
+template <typename T>
 concept FontShapingBackendContract = requires(
     const T& backend,
     const render::render_text_font_shaping_request& request) {
@@ -166,6 +177,12 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
         -> std::same_as<std::vector<render::render_text_font_source_bytes_snapshot>&>;
     { diagnostics.font_source_bytes_policy }
         -> std::same_as<render::render_text_font_source_bytes_policy_snapshot&>;
+    { diagnostics.font_backend_capability }
+        -> std::same_as<render::render_text_font_backend_capability_snapshot&>;
+    { diagnostics.font_backend_shaping_capability }
+        -> std::same_as<render::render_text_font_backend_shaping_capability&>;
+    { diagnostics.font_backend_uses_deterministic_shaping } -> std::same_as<bool&>;
+    { diagnostics.font_backend_uses_deterministic_rasterizer } -> std::same_as<bool&>;
     { diagnostics.shaped_glyphs } -> std::same_as<std::vector<render::render_text_shaped_glyph>&>;
     { diagnostics.font_shaping_diagnostics }
         -> std::same_as<std::vector<render::render_text_font_shaping_diagnostic>&>;
@@ -213,6 +230,7 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.has_font_source_policy() } -> std::same_as<bool>;
     { diagnostics.has_font_source_bytes() } -> std::same_as<bool>;
     { diagnostics.has_font_source_bytes_policy() } -> std::same_as<bool>;
+    { diagnostics.has_font_backend_capability() } -> std::same_as<bool>;
     { diagnostics.has_shaped_glyphs() } -> std::same_as<bool>;
     { diagnostics.has_font_shaping_diagnostics() } -> std::same_as<bool>;
     { diagnostics.has_font_shaping_policy() } -> std::same_as<bool>;
@@ -236,6 +254,11 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
 
 static_assert(requires(render::fake_text_engine& engine, render::font_face_descriptor descriptor) {
     { engine.add_font_face(descriptor) } -> std::same_as<const render::font_face_descriptor&>;
+    { engine.set_font_backend_capability_components(
+        std::vector<render::render_text_font_backend_component>{}) } -> std::same_as<void>;
+    { engine.clear_font_backend_capability_components() } -> std::same_as<void>;
+    { engine.set_font_backend_capability_probe_request(
+        render::render_text_font_backend_capability_probe_request{}) } -> std::same_as<void>;
 });
 
 static_assert(requires(render::render_text_glyph_cluster cluster) {
@@ -404,6 +427,10 @@ static_assert(requires(render::render_text_font_source_bytes_policy_snapshot pol
 
 static_assert(requires(const render::font_face_descriptor& descriptor) {
     { render::resolve_font_source(descriptor) } -> std::same_as<render::font_source_resolution>;
+});
+
+static_assert(requires(render::font_face_descriptor descriptor) {
+    { descriptor.glyph_id_offset } -> std::same_as<std::uint32_t&>;
 });
 
 static_assert(requires(const render::font_source_resolution& source) {
@@ -604,6 +631,8 @@ static_assert(requires(
     { snapshot.used_codepoint_fallback } -> std::same_as<bool&>;
     { snapshot.used_fallback_glyph_id } -> std::same_as<bool&>;
     { snapshot.has_glyph_id } -> std::same_as<bool&>;
+    { snapshot.glyph_id_offset } -> std::same_as<std::uint32_t&>;
+    { snapshot.glyph_id_matches_codepoint } -> std::same_as<bool&>;
     { snapshot.coverage_status } -> std::same_as<render::render_text_font_unicode_coverage_status&>;
     { snapshot.cmap_status } -> std::same_as<render::render_text_font_cmap_inspect_status&>;
     { snapshot.selected_cmap_format } -> std::same_as<std::uint16_t&>;
@@ -625,6 +654,7 @@ static_assert(requires(
     { run_request.requests } -> std::same_as<std::vector<render::render_text_font_glyph_id_resolution_request>&>;
     { render::font_glyph_id_hex_codepoint_label(codepoint) } -> std::same_as<std::string>;
     { render::font_glyph_id_source_label_for(descriptor) } -> std::same_as<std::string>;
+    { render::font_glyph_id_apply_descriptor_mapping(descriptor, codepoint) } -> std::same_as<std::uint32_t>;
     { render::font_glyph_id_coverage_snapshot_for_descriptor(descriptor) }
         -> std::same_as<render::render_text_font_unicode_coverage_snapshot>;
     { render::font_glyph_id_request_supports_codepoint(request) } -> std::same_as<bool>;
@@ -707,6 +737,83 @@ static_assert(requires(
 });
 
 static_assert(requires(
+    render::render_text_font_backend_library library,
+    render::render_text_font_backend_feature feature,
+    render::render_text_font_backend_capability_status capability_status,
+    render::render_text_font_backend_version version,
+    render::render_text_font_backend_version minimum_version,
+    render::render_text_font_backend_component component,
+    render::render_text_font_backend_minimum_version minimum,
+    render::render_text_font_backend_version_mismatch mismatch,
+    render::render_text_font_backend_capability_probe_request probe_request,
+    render::render_text_font_backend_capability_snapshot capability,
+    render::render_text_font_backend_shaping_capability shaping_capability,
+    render::render_text_font_shaping_request shaping_request,
+    std::vector<render::render_text_font_backend_component> components,
+    std::vector<render::render_text_font_backend_library> libraries,
+    std::vector<render::render_text_font_backend_feature> features,
+    std::vector<render::render_text_font_backend_minimum_version> minimum_versions) {
+    { render::render_text_font_backend_library_name(library) } -> std::same_as<std::string>;
+    { render::render_text_font_backend_feature_name(feature) } -> std::same_as<std::string>;
+    { render::render_text_font_backend_capability_status_name(capability_status) } -> std::same_as<std::string>;
+    { version.major } -> std::same_as<std::uint32_t&>;
+    { version.minor } -> std::same_as<std::uint32_t&>;
+    { version.patch } -> std::same_as<std::uint32_t&>;
+    { version.label } -> std::same_as<std::string&>;
+    { version.display_label() } -> std::same_as<std::string>;
+    { render::compare_render_text_font_backend_versions(version, minimum_version) } -> std::same_as<int>;
+    { render::render_text_font_backend_version_satisfies(version, minimum_version) } -> std::same_as<bool>;
+    { component.library } -> std::same_as<render::render_text_font_backend_library&>;
+    { component.name } -> std::same_as<std::string&>;
+    { component.available } -> std::same_as<bool&>;
+    { component.version } -> std::same_as<render::render_text_font_backend_version&>;
+    { component.features } -> std::same_as<std::vector<render::render_text_font_backend_feature>&>;
+    { component.fallback_only } -> std::same_as<bool&>;
+    { component.diagnostic } -> std::same_as<std::string&>;
+    { component.supports_feature(feature) } -> std::same_as<bool>;
+    { minimum.library } -> std::same_as<render::render_text_font_backend_library&>;
+    { minimum.version } -> std::same_as<render::render_text_font_backend_version&>;
+    { mismatch.library } -> std::same_as<render::render_text_font_backend_library&>;
+    { mismatch.required } -> std::same_as<render::render_text_font_backend_version&>;
+    { mismatch.actual } -> std::same_as<render::render_text_font_backend_version&>;
+    { probe_request.required_libraries } -> std::same_as<std::vector<render::render_text_font_backend_library>&>;
+    { probe_request.required_features } -> std::same_as<std::vector<render::render_text_font_backend_feature>&>;
+    { probe_request.minimum_versions } -> std::same_as<std::vector<render::render_text_font_backend_minimum_version>&>;
+    { probe_request.allow_fallback_only } -> std::same_as<bool&>;
+    { capability.status } -> std::same_as<render::render_text_font_backend_capability_status&>;
+    { capability.components } -> std::same_as<std::vector<render::render_text_font_backend_component>&>;
+    { capability.missing_libraries } -> std::same_as<std::vector<render::render_text_font_backend_library>&>;
+    { capability.missing_features } -> std::same_as<std::vector<render::render_text_font_backend_feature>&>;
+    { capability.version_mismatches } -> std::same_as<std::vector<render::render_text_font_backend_version_mismatch>&>;
+    { capability.fallback_only } -> std::same_as<bool&>;
+    { capability.diagnostic } -> std::same_as<std::string&>;
+    { capability.ok() } -> std::same_as<bool>;
+    { capability.can_shape_with_fallback() } -> std::same_as<bool>;
+    { capability.supports_feature(feature) } -> std::same_as<bool>;
+    { shaping_capability.backend_available } -> std::same_as<bool&>;
+    { shaping_capability.support_complex_scripts } -> std::same_as<bool&>;
+    { shaping_capability.fallback_only } -> std::same_as<bool&>;
+    { shaping_capability.diagnostic } -> std::same_as<std::string&>;
+    { render::find_render_text_font_backend_component(components, library) }
+        -> std::same_as<const render::render_text_font_backend_component*>;
+    { render::render_text_font_backend_feature_is_supported(components, feature) } -> std::same_as<bool>;
+    { render::missing_render_text_font_backend_libraries(components, libraries) }
+        -> std::same_as<std::vector<render::render_text_font_backend_library>>;
+    { render::missing_render_text_font_backend_features(components, features) }
+        -> std::same_as<std::vector<render::render_text_font_backend_feature>>;
+    { render::mismatched_render_text_font_backend_versions(components, minimum_versions) }
+        -> std::same_as<std::vector<render::render_text_font_backend_version_mismatch>>;
+    { render::render_text_font_backend_components_are_fallback_only(components) } -> std::same_as<bool>;
+    { render::render_text_font_backend_has_available_component(components) } -> std::same_as<bool>;
+    { render::make_render_text_font_backend_capability_snapshot(components, probe_request) }
+        -> std::same_as<render::render_text_font_backend_capability_snapshot>;
+    { render::render_text_font_backend_capability_to_shaping(capability) }
+        -> std::same_as<render::render_text_font_backend_shaping_capability>;
+    { render::apply_render_text_font_backend_capability(shaping_request, capability) }
+        -> std::same_as<render::render_text_font_shaping_request>;
+});
+
+static_assert(requires(
     render::render_text_font_shaping_backend_status shaping_status,
     render::render_text_font_shaping_codepoint_selection selection,
     render::render_text_font_shaping_request shaping_request,
@@ -721,8 +828,11 @@ static_assert(requires(
     { selection.resolved_face_id } -> std::same_as<render::font_face_id&>;
     { selection.glyph_id } -> std::same_as<std::uint32_t&>;
     { selection.has_glyph_id } -> std::same_as<bool&>;
+    { selection.glyph_id_offset } -> std::same_as<std::uint32_t&>;
+    { selection.glyph_id_matches_codepoint } -> std::same_as<bool&>;
     { selection.glyph_supported } -> std::same_as<bool&>;
     { selection.used_codepoint_fallback } -> std::same_as<bool&>;
+    { selection.used_fallback_glyph_id } -> std::same_as<bool&>;
     { shaping_request.run_index } -> std::same_as<std::size_t&>;
     { shaping_request.style_token } -> std::same_as<render::render_style_id&>;
     { shaping_request.style } -> std::same_as<render::render_text_style&>;
@@ -754,6 +864,9 @@ static_assert(requires(
     { shaped_glyph.glyph_supported } -> std::same_as<bool&>;
     { shaped_glyph.used_codepoint_fallback } -> std::same_as<bool&>;
     { shaped_glyph.used_fallback_glyph_id } -> std::same_as<bool&>;
+    { shaped_glyph.glyph_id_from_selection } -> std::same_as<bool&>;
+    { shaped_glyph.glyph_id_offset } -> std::same_as<std::uint32_t&>;
+    { shaped_glyph.glyph_id_matches_codepoint } -> std::same_as<bool&>;
     { shaped_glyph.zero_advance } -> std::same_as<bool&>;
     { shaped_glyph.combining_mark } -> std::same_as<bool&>;
     { shaping_diagnostic.status } -> std::same_as<render::render_text_font_shaping_backend_status&>;
@@ -982,6 +1095,7 @@ static_assert(requires(render::render_text_glyph_cache_readiness_snapshot readin
     { readiness.run_index } -> std::same_as<std::size_t&>;
     { readiness.byte_offset } -> std::same_as<std::size_t&>;
     { readiness.byte_count } -> std::same_as<std::size_t&>;
+    { readiness.codepoint } -> std::same_as<std::uint32_t&>;
     { readiness.glyph_id } -> std::same_as<std::uint32_t&>;
     { readiness.requested_face_id } -> std::same_as<render::font_face_id&>;
     { readiness.resolved_face_id } -> std::same_as<render::font_face_id&>;
@@ -991,6 +1105,10 @@ static_assert(requires(render::render_text_glyph_cache_readiness_snapshot readin
     { readiness.estimated_rgba_bytes } -> std::same_as<std::size_t&>;
     { readiness.glyph_supported } -> std::same_as<bool&>;
     { readiness.used_codepoint_fallback } -> std::same_as<bool&>;
+    { readiness.used_fallback_glyph_id } -> std::same_as<bool&>;
+    { readiness.glyph_id_from_selection } -> std::same_as<bool&>;
+    { readiness.glyph_id_matches_codepoint } -> std::same_as<bool&>;
+    { readiness.glyph_id_offset } -> std::same_as<std::uint32_t&>;
     { readiness.cacheable } -> std::same_as<bool&>;
     { readiness.has_atlas_slot } -> std::same_as<bool&>;
 });
@@ -1012,6 +1130,7 @@ static_assert(requires(render::render_text_rasterized_glyph_atlas_payload_snapsh
     { payload.run_index } -> std::same_as<std::size_t&>;
     { payload.byte_offset } -> std::same_as<std::size_t&>;
     { payload.byte_count } -> std::same_as<std::size_t&>;
+    { payload.codepoint } -> std::same_as<std::uint32_t&>;
     { payload.glyph_id } -> std::same_as<std::uint32_t&>;
     { payload.resolved_face_id } -> std::same_as<render::font_face_id&>;
     { payload.cache_key } -> std::same_as<render::glyph_atlas_key&>;
@@ -1023,6 +1142,15 @@ static_assert(requires(render::render_text_rasterized_glyph_atlas_payload_snapsh
     { payload.rgba_bytes } -> std::same_as<std::size_t&>;
     { payload.source_label } -> std::same_as<std::string&>;
     { payload.diagnostic } -> std::same_as<std::string&>;
+    { payload.glyph_id_from_selection } -> std::same_as<bool&>;
+    { payload.glyph_id_matches_codepoint } -> std::same_as<bool&>;
+    { payload.used_fallback_glyph_id } -> std::same_as<bool&>;
+    { payload.glyph_id_offset } -> std::same_as<std::uint32_t&>;
+    { payload.font_backend_capability_status }
+        -> std::same_as<render::render_text_font_backend_capability_status&>;
+    { payload.font_backend_fallback_only } -> std::same_as<bool&>;
+    { payload.font_backend_supports_rasterization } -> std::same_as<bool&>;
+    { payload.uses_deterministic_rasterizer } -> std::same_as<bool&>;
     { payload.cacheable } -> std::same_as<bool&>;
     { payload.upload_ready } -> std::same_as<bool&>;
     { payload.skipped } -> std::same_as<bool&>;
@@ -1053,11 +1181,20 @@ static_assert(requires(
     { request.run_index } -> std::same_as<std::size_t&>;
     { request.cluster_byte_offset } -> std::same_as<std::size_t&>;
     { request.cluster_byte_count } -> std::same_as<std::size_t&>;
+    { request.codepoint } -> std::same_as<std::uint32_t&>;
     { request.shaped_glyph_ids } -> std::same_as<std::vector<std::uint32_t>&>;
+    { request.resolved_glyph_id } -> std::same_as<std::uint32_t&>;
+    { request.shaped_glyphs_match_cache_key } -> std::same_as<bool&>;
     { request.resolved_face_id } -> std::same_as<render::font_face_id&>;
     { request.cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { request.cache_key_matches_resolved_glyph_id } -> std::same_as<bool&>;
     { request.has_cache_key } -> std::same_as<bool&>;
     { request.rasterizer_status } -> std::same_as<render::render_text_font_rasterizer_status&>;
+    { request.raster_payload_matches_cache_key } -> std::same_as<bool&>;
+    { request.glyph_id_from_selection } -> std::same_as<bool&>;
+    { request.glyph_id_matches_codepoint } -> std::same_as<bool&>;
+    { request.used_fallback_glyph_id } -> std::same_as<bool&>;
+    { request.glyph_id_offset } -> std::same_as<std::uint32_t&>;
     { request.rasterized_payload_skipped } -> std::same_as<bool&>;
     { request.payload_upload_ready } -> std::same_as<bool&>;
     { request.payload_alpha_bytes } -> std::same_as<std::size_t&>;
@@ -1073,11 +1210,20 @@ static_assert(requires(
     { trace.run_index } -> std::same_as<std::size_t&>;
     { trace.cluster_byte_offset } -> std::same_as<std::size_t&>;
     { trace.cluster_byte_count } -> std::same_as<std::size_t&>;
+    { trace.codepoint } -> std::same_as<std::uint32_t&>;
     { trace.shaped_glyph_ids } -> std::same_as<std::vector<std::uint32_t>&>;
+    { trace.resolved_glyph_id } -> std::same_as<std::uint32_t&>;
+    { trace.shaped_glyphs_match_cache_key } -> std::same_as<bool&>;
     { trace.resolved_face_id } -> std::same_as<render::font_face_id&>;
     { trace.cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { trace.cache_key_matches_resolved_glyph_id } -> std::same_as<bool&>;
     { trace.has_cache_key } -> std::same_as<bool&>;
     { trace.rasterizer_status } -> std::same_as<render::render_text_font_rasterizer_status&>;
+    { trace.raster_payload_matches_cache_key } -> std::same_as<bool&>;
+    { trace.glyph_id_from_selection } -> std::same_as<bool&>;
+    { trace.glyph_id_matches_codepoint } -> std::same_as<bool&>;
+    { trace.used_fallback_glyph_id } -> std::same_as<bool&>;
+    { trace.glyph_id_offset } -> std::same_as<std::uint32_t&>;
     { trace.payload_alpha_bytes } -> std::same_as<std::size_t&>;
     { trace.payload_rgba_bytes } -> std::same_as<std::size_t&>;
     { trace.expected_payload_rgba_bytes } -> std::same_as<std::size_t&>;

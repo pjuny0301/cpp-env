@@ -47,8 +47,11 @@ struct render_text_font_shaping_codepoint_selection {
     font_face_id resolved_face_id = 0;
     std::uint32_t glyph_id = 0;
     bool has_glyph_id = false;
+    std::uint32_t glyph_id_offset = 0;
+    bool glyph_id_matches_codepoint = false;
     bool glyph_supported = true;
     bool used_codepoint_fallback = false;
+    bool used_fallback_glyph_id = false;
 };
 
 struct render_text_font_shaping_request {
@@ -85,6 +88,9 @@ struct render_text_shaped_glyph {
     bool glyph_supported = true;
     bool used_codepoint_fallback = false;
     bool used_fallback_glyph_id = false;
+    bool glyph_id_from_selection = false;
+    std::uint32_t glyph_id_offset = 0;
+    bool glyph_id_matches_codepoint = false;
     bool zero_advance = false;
     bool combining_mark = false;
 };
@@ -302,7 +308,9 @@ public:
             const bool zero_advance = advance == 0.0f;
             const bool glyph_supported = !unsupported_script && !unsupported_glyph;
             const bool uses_fallback_glyph_id = !glyph_supported;
-            const std::uint32_t glyph_id = selection.has_glyph_id && (!uses_fallback_glyph_id || unsupported_glyph)
+            const bool glyph_id_from_selection =
+                selection.has_glyph_id && (!uses_fallback_glyph_id || unsupported_glyph);
+            const std::uint32_t glyph_id = glyph_id_from_selection
                 ? selection.glyph_id
                 : (uses_fallback_glyph_id ? request.fallback_glyph_id : scalar.code_point);
 
@@ -328,6 +336,9 @@ public:
                 .glyph_supported = glyph_supported,
                 .used_codepoint_fallback = selection.used_codepoint_fallback,
                 .used_fallback_glyph_id = uses_fallback_glyph_id,
+                .glyph_id_from_selection = glyph_id_from_selection,
+                .glyph_id_offset = selection.glyph_id_offset,
+                .glyph_id_matches_codepoint = glyph_id == scalar.code_point,
                 .zero_advance = zero_advance,
                 .combining_mark = combining_mark,
             });

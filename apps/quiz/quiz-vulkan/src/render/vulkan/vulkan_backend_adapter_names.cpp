@@ -328,6 +328,8 @@ std::string_view shader_stage_name(vulkan_shader_stage stage)
         return "vertex";
     case vulkan_shader_stage::fragment:
         return "fragment";
+    case vulkan_shader_stage::compute:
+        return "compute";
     }
 
     return "unknown";

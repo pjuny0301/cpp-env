@@ -6,6 +6,26 @@
 
 최근 baseline 통합 증거:
 
+- current: platform input engine adapter header를 CMake public FILE_SET에 등록하고 image manifest diagnostics와 함께 Windows MinGW focused input/image CTest 13/13 및 `ctest -N` 76개 확인.
+- `f879a62`: image manifest texture pipeline에 source resolution, normalized key, cache/revision, placeholder, decode/upload status diagnostics 추가.
+- `3db2baf`: translated platform input을 input_engine/gesture/text handling에 공급하는 input-only adapter와 tests 추가.
+- current: Vulkan pipeline layout readiness header를 CMake public FILE_SET에 등록하고 font backend capability diagnostics와 함께 Windows MinGW focused text/Vulkan CTest 6/6 및 `ctest -N` 75개 확인.
+- `6fd844d`: Vulkan descriptor-set/pipeline-layout readiness boundary, fake create/destroy diagnostics, push constant/binding validation tests 추가.
+- `5f02ac7`: fake text engine diagnostics에 font backend capability mode를 연결하고 complex-script fallback/backend-supported behavior tests 추가.
+- current: image manifest texture pipeline header를 CMake public FILE_SET에 등록하고 Windows MinGW focused image CTest 4/4 및 `ctest -N` 74개 확인.
+- `a6645a8`: image manifest texture pipeline boundary를 `image_manifest_texture_pipeline.h`로 분리해 decode/upload/cache core header 부담을 낮춤.
+- current: platform input translator header를 CMake public FILE_SET에 등록하고 Windows MinGW focused input CTest 8/8 및 `ctest -N` 74개 확인.
+- `f161648`: input core에 raw-ish mouse/touch/key/wheel/char/IME samples를 기존 normalized `raw_platform_input_event`로 변환하는 platform input translator boundary와 tests 추가.
+- current: font backend capability probe header를 CMake public FILE_SET에 등록하고 image manifest texture pipeline boundary와 함께 Windows MinGW focused text/image CTest 5/5 및 `ctest -N` 73개 확인.
+- `56e3d0d`: image manifest/source-to-texture pipeline adapter, normalized source key, source revision invalidation, missing-source placeholder, path traversal rejection tests 추가.
+- `7058a02`: text engine에 FreeType/HarfBuzz/DirectWrite 가능성을 data-only로 표현하는 font backend capability probe와 fallback-mode contract tests 추가.
+- current: Vulkan shader module readiness header를 CMake public FILE_SET에 등록하고 Windows MinGW focused Vulkan CTest 3/3 및 `ctest -N` 72개 확인.
+- `516c4bc`: Vulkan pipeline/cache 뒤에 data-only SPIR-V shader module readiness boundary, fake create/destroy diagnostics, shader stage/entry validation tests 추가.
+- current: input gesture diagnostics split tests를 통합하고 Windows MinGW focused input CTest 7/7 및 `ctest -N` 71개 확인.
+- `8f6b959`: input engine gesture diagnostics tests를 전용 파일로 추가해 swipe threshold, mouse/touch parity, drag cancel, long-press timing, wheel delta normalization을 고정.
+- current: standard image pipeline cache-reuse diagnostics와 resolved glyph-id atlas diagnostics를 통합하고 Windows MinGW focused text/image CTest 7/7 및 `ctest -N` 70개 확인.
+- `60c92fb`: text engine의 resolved glyph id를 shaping selection, glyph atlas key, raster payload, shaped-atlas update trace diagnostics로 일관되게 연결.
+- `7a4c528`: standard image texture pipeline에 normalized cache key 재사용, revision invalidation, decode/upload attempt diagnostics tests 추가.
 - current: standard decoder-backed image texture pipeline을 통합하고 Windows MinGW focused image CTest 2/2 및 `ctest -N` 70개 확인.
 - `aa4ce88`: image texture pipeline에 standard decoder chain 기반 encoded bytes decode-to-upload wrapper와 decode failure diagnostics tests 추가.
 - current: Vulkan queue submit adapter summary diagnostics를 통합하고 Windows MinGW focused Vulkan CTest 2/2 및 `ctest -N` 69개 확인.

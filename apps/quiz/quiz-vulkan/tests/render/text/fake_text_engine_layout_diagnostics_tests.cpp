@@ -55,6 +55,61 @@ quiz_vulkan::render::render_text_style_catalog make_style_catalog()
     return catalog;
 }
 
+quiz_vulkan::render::render_text_font_backend_component freetype_component()
+{
+    using namespace quiz_vulkan::render;
+
+    return render_text_font_backend_component{
+        .library = render_text_font_backend_library::freetype,
+        .name = "FreeType",
+        .available = true,
+        .version = render_text_font_backend_version{.major = 2, .minor = 13, .patch = 2},
+        .features = {
+            render_text_font_backend_feature::font_file_loading,
+            render_text_font_backend_feature::unicode_cmap,
+            render_text_font_backend_feature::glyph_id_mapping,
+            render_text_font_backend_feature::glyph_rasterization,
+        },
+        .diagnostic = "FreeType probe fixture is available",
+    };
+}
+
+quiz_vulkan::render::render_text_font_backend_component harfbuzz_component()
+{
+    using namespace quiz_vulkan::render;
+
+    return render_text_font_backend_component{
+        .library = render_text_font_backend_library::harfbuzz,
+        .name = "HarfBuzz",
+        .available = true,
+        .version = render_text_font_backend_version{.major = 8, .minor = 3, .patch = 0},
+        .features = {
+            render_text_font_backend_feature::glyph_id_mapping,
+            render_text_font_backend_feature::glyph_shaping,
+            render_text_font_backend_feature::complex_script_shaping,
+        },
+        .diagnostic = "HarfBuzz probe fixture is available",
+    };
+}
+
+quiz_vulkan::render::render_text_request make_single_run_request(const std::string& text)
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = text, .style_token = "body"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 200.0f, 0.0f};
+    request.style_catalog = make_style_catalog();
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+    return request;
+}
+
 void test_fake_glyph_clusters_track_utf8_runs_and_font_faces()
 {
     using namespace quiz_vulkan::render;
@@ -445,6 +500,343 @@ void test_fake_text_engine_records_rasterized_atlas_payloads_for_cacheable_glyph
         "trace policy counts shaped glyph id");
 }
 
+void test_fake_text_engine_records_fallback_only_backend_capability_for_latin_hangul()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    const render_text_layout layout = engine.layout_text(make_single_run_request("A" "\xed\x95\x9c"));
+    const fake_text_engine_diagnostics& diagnostics = engine.last_diagnostics();
+
+    require(layout.glyphs.size() == 2U, "fallback-only backend keeps Latin and Hangul layout glyphs");
+    require(layout.glyphs[0].glyph_id == U'A', "fallback-only backend keeps Latin glyph id");
+    require(layout.glyphs[1].glyph_id == 0xd55cU, "fallback-only backend keeps Hangul glyph id");
+    require(diagnostics.has_font_backend_capability(), "fallback-only layout records backend capability");
+    require(
+        diagnostics.font_backend_capability.status == render_text_font_backend_capability_status::fallback_only,
+        "default fake engine records fallback-only backend mode");
+    require(diagnostics.font_backend_capability.fallback_only, "default backend capability records fallback-only flag");
+    require(diagnostics.font_backend_shaping_capability.backend_available, "fallback-only backend keeps shaping available");
+    require(
+        !diagnostics.font_backend_shaping_capability.support_complex_scripts,
+        "fallback-only backend does not claim complex script support");
+    require(diagnostics.font_backend_uses_deterministic_shaping, "fallback-only backend uses deterministic shaping");
+    require(
+        diagnostics.font_backend_uses_deterministic_rasterizer,
+        "fallback-only backend uses deterministic rasterizer");
+    require(diagnostics.shaped_glyphs.size() == 2U, "fallback-only backend still records shaped glyphs");
+    require(diagnostics.shaped_glyphs[0].glyph_supported, "fallback-only Latin glyph remains supported");
+    require(diagnostics.shaped_glyphs[1].glyph_supported, "fallback-only Hangul glyph remains supported");
+
+    require(diagnostics.rasterized_glyph_atlas_payloads.size() == 2U, "fallback-only backend rasterizes supported glyphs");
+    for (const render_text_rasterized_glyph_atlas_payload_snapshot& payload :
+         diagnostics.rasterized_glyph_atlas_payloads) {
+        require(
+            payload.font_backend_capability_status == render_text_font_backend_capability_status::fallback_only,
+            "raster payload records fallback-only backend mode");
+        require(payload.font_backend_fallback_only, "raster payload records fallback-only backend flag");
+        require(
+            payload.font_backend_supports_rasterization,
+            "raster payload records fake rasterization capability");
+        require(payload.uses_deterministic_rasterizer, "raster payload records deterministic fake rasterizer use");
+    }
+}
+
+void test_fake_text_engine_records_unavailable_backend_capability()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    engine.set_font_backend_capability_components({
+        render_text_font_backend_component{
+            .library = render_text_font_backend_library::directwrite,
+            .name = "DirectWrite",
+            .available = false,
+            .version = render_text_font_backend_version{.major = 0, .minor = 0, .patch = 0},
+            .features = {
+                render_text_font_backend_feature::glyph_shaping,
+                render_text_font_backend_feature::complex_script_shaping,
+            },
+            .diagnostic = "DirectWrite is unavailable in this deterministic fixture",
+        },
+    });
+
+    const render_text_layout layout = engine.layout_text(make_single_run_request("A"));
+    const fake_text_engine_diagnostics& diagnostics = engine.last_diagnostics();
+
+    require(layout.glyphs.empty(), "unavailable backend emits no layout glyphs");
+    require(diagnostics.has_font_backend_capability(), "unavailable backend records capability diagnostics");
+    require(
+        diagnostics.font_backend_capability.status == render_text_font_backend_capability_status::unavailable,
+        "unavailable backend mode is recorded");
+    require(
+        !diagnostics.font_backend_shaping_capability.backend_available,
+        "unavailable backend disables shaping");
+    require(
+        diagnostics.font_shaping_policy.backend_unavailable_count == 1U,
+        "unavailable backend is counted by shaping diagnostics");
+    require(diagnostics.shaped_glyphs.empty(), "unavailable backend records no shaped glyphs");
+    require(
+        diagnostics.rasterized_glyph_atlas_payloads.empty(),
+        "unavailable backend records no raster payloads because no glyphs were shaped");
+}
+
+void test_fake_text_engine_keeps_complex_script_on_fallback_until_backend_supports_it()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine fallback_engine;
+    const render_text_layout fallback_layout =
+        fallback_engine.layout_text(make_single_run_request("\xd8\xa7"));
+    const fake_text_engine_diagnostics& fallback_diagnostics = fallback_engine.last_diagnostics();
+
+    require(fallback_layout.glyphs.size() == 1U, "fallback-only complex script keeps diagnostic glyph");
+    require(
+        fallback_diagnostics.font_backend_capability.status == render_text_font_backend_capability_status::fallback_only,
+        "complex script fallback fixture starts in fallback-only mode");
+    require(
+        !fallback_diagnostics.font_backend_shaping_capability.support_complex_scripts,
+        "fallback-only mode does not support complex scripts");
+    require(
+        fallback_diagnostics.shaped_glyphs.front().glyph_id == 0U,
+        "fallback-only complex script uses backend fallback glyph id");
+    require(
+        !fallback_diagnostics.shaped_glyphs.front().glyph_supported,
+        "fallback-only complex script does not claim glyph support");
+    require(
+        fallback_diagnostics.rasterized_glyph_atlas_payloads.front().font_backend_fallback_only,
+        "fallback-only skipped payload records backend mode");
+
+    fake_text_engine supported_engine;
+    supported_engine.set_font_backend_capability_components({
+        freetype_component(),
+        harfbuzz_component(),
+    });
+    const render_text_layout supported_layout =
+        supported_engine.layout_text(make_single_run_request("\xd8\xa7"));
+    const fake_text_engine_diagnostics& supported_diagnostics = supported_engine.last_diagnostics();
+
+    require(supported_layout.glyphs.size() == 1U, "backend-supported complex script lays out one glyph");
+    require(
+        supported_diagnostics.font_backend_capability.status == render_text_font_backend_capability_status::available,
+        "backend-supported complex script records available backend mode");
+    require(
+        supported_diagnostics.font_backend_shaping_capability.support_complex_scripts,
+        "backend-supported complex script enables complex shaping flag");
+    require(
+        supported_diagnostics.shaped_glyphs.front().glyph_id == 0x0627U,
+        "backend-supported complex script keeps resolved glyph id");
+    require(
+        supported_diagnostics.shaped_glyphs.front().glyph_supported,
+        "backend-supported complex script claims glyph support");
+    require(
+        !supported_diagnostics.shaped_glyphs.front().used_fallback_glyph_id,
+        "backend-supported complex script avoids fallback glyph id");
+    require(
+        supported_diagnostics.rasterized_glyph_atlas_payloads.front().status
+            == render_text_font_rasterizer_status::rasterized,
+        "backend-supported complex script still produces deterministic raster payload");
+    require(
+        supported_diagnostics.rasterized_glyph_atlas_payloads.front().font_backend_capability_status
+            == render_text_font_backend_capability_status::available,
+        "backend-supported raster payload records available backend mode");
+    require(
+        !supported_diagnostics.rasterized_glyph_atlas_payloads.front().font_backend_fallback_only,
+        "backend-supported raster payload does not claim fallback-only mode");
+    require(
+        supported_diagnostics.rasterized_glyph_atlas_payloads.front().uses_deterministic_rasterizer,
+        "backend-supported fake engine still records deterministic rasterizer use");
+}
+
+void test_fake_text_engine_wires_resolved_glyph_id_through_atlas_payloads()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    engine.add_font_face(font_face_descriptor{
+        .id = 82,
+        .family = "Mapped Sans",
+        .source_uri = "fixture://fonts/mapped-sans",
+        .version = "fixture-1",
+        .license = "test-fixture",
+        .coverage = {
+            font_codepoint_range{.first = U'A', .last = U'A'},
+        },
+        .weight = 400,
+        .italic = false,
+        .glyph_id_offset = 1000,
+    });
+
+    render_text_style_catalog catalog = make_style_catalog();
+    catalog.styles.push_back(render_text_style{
+        .id = "mapped",
+        .font_family = "Mapped Sans",
+        .font_size = 20.0f,
+        .line_height = 24.0f,
+        .font_weight = 400,
+    });
+
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "A", .style_token = "mapped"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 200.0f, 0.0f};
+    request.style_catalog = catalog;
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    const render_text_layout layout = engine.layout_text(request);
+    const fake_text_engine_diagnostics& diagnostics = engine.last_diagnostics();
+    require(layout.glyphs.size() == 1, "mapped glyph fixture lays out one glyph");
+    require(layout.glyphs.front().glyph_id == 1065U, "layout uses resolved glyph id instead of codepoint");
+
+    const render_text_font_glyph_id_resolution_snapshot& glyph_id = diagnostics.glyph_id_resolutions.front();
+    require(glyph_id.codepoint == U'A', "glyph id diagnostic keeps source codepoint");
+    require(glyph_id.glyph_id == 1065U, "glyph id diagnostic records mapped glyph id");
+    require(glyph_id.glyph_id_offset == 1000U, "glyph id diagnostic records face-local offset");
+    require(!glyph_id.glyph_id_matches_codepoint, "glyph id diagnostic proves id differs from codepoint");
+    require(!glyph_id.used_fallback_glyph_id, "mapped glyph id is not a fallback glyph id");
+
+    const render_text_shaped_glyph& shaped = diagnostics.shaped_glyphs.front();
+    require(shaped.codepoint == U'A', "shaped glyph keeps source codepoint");
+    require(shaped.glyph_id == glyph_id.glyph_id, "shaped glyph consumes resolver glyph id");
+    require(shaped.glyph_id_from_selection, "shaped glyph records selection-sourced glyph id");
+    require(!shaped.glyph_id_matches_codepoint, "shaped glyph records non-codepoint glyph id");
+    require(shaped.glyph_id_offset == 1000U, "shaped glyph preserves glyph id offset");
+
+    const render_text_glyph_cache_readiness_snapshot& readiness = diagnostics.glyph_cache_readiness.front();
+    require(readiness.codepoint == U'A', "cache readiness keeps source codepoint");
+    require(readiness.glyph_id == glyph_id.glyph_id, "cache readiness uses resolver glyph id");
+    require(readiness.cache_key.glyph_id == glyph_id.glyph_id, "atlas key uses resolver glyph id");
+    require(readiness.glyph_id_from_selection, "cache readiness records selection-sourced glyph id");
+    require(!readiness.glyph_id_matches_codepoint, "cache readiness records non-codepoint glyph id");
+
+    const render_text_glyph_atlas_placement_snapshot& placement = diagnostics.glyph_atlas_placements.front();
+    require(placement.key == readiness.cache_key, "atlas placement uses readiness cache key");
+    require(placement.key.glyph_id == glyph_id.glyph_id, "atlas placement key uses resolver glyph id");
+
+    const render_text_rasterized_glyph_atlas_payload_snapshot& payload =
+        diagnostics.rasterized_glyph_atlas_payloads.front();
+    require(payload.status == render_text_font_rasterizer_status::rasterized, "mapped glyph rasterizes");
+    require(payload.codepoint == U'A', "raster payload keeps source codepoint for coverage checks");
+    require(payload.glyph_id == glyph_id.glyph_id, "raster payload uses resolver glyph id");
+    require(payload.cache_key == readiness.cache_key, "raster payload keeps atlas key");
+    require(payload.glyph_id_from_selection, "raster payload records selection-sourced glyph id");
+    require(!payload.glyph_id_matches_codepoint, "raster payload records non-codepoint glyph id");
+
+    const render_text_shaped_atlas_update_trace_snapshot& trace = diagnostics.shaped_atlas_update_traces.front();
+    require(trace.status == render_text_shaped_atlas_update_trace_status::upload_ready_payload_queued, "mapped glyph queues upload trace");
+    require(trace.codepoint == U'A', "trace keeps source codepoint");
+    require(trace.resolved_glyph_id == glyph_id.glyph_id, "trace records resolver glyph id");
+    require(trace.shaped_glyph_ids.size() == 1U && trace.shaped_glyph_ids.front() == glyph_id.glyph_id, "trace shaped ids use resolver glyph id");
+    require(trace.cache_key.glyph_id == glyph_id.glyph_id, "trace cache key uses resolver glyph id");
+    require(trace.cache_key_matches_resolved_glyph_id, "trace proves cache key matches resolver glyph id");
+    require(trace.shaped_glyphs_match_cache_key, "trace proves shaped glyph id matches cache key");
+    require(trace.raster_payload_matches_cache_key, "trace proves raster payload matches cache key");
+    require(trace.glyph_id_from_selection, "trace records selection-sourced glyph id");
+    require(!trace.glyph_id_matches_codepoint, "trace records non-codepoint glyph id");
+}
+
+void test_fake_text_engine_wires_unsupported_shaped_glyph_id_to_skipped_payloads()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "\xd8\xa7", .style_token = "body"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 200.0f, 0.0f};
+    request.style_catalog = make_style_catalog();
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    (void)engine.layout_text(request);
+    const fake_text_engine_diagnostics& diagnostics = engine.last_diagnostics();
+    const render_text_font_glyph_id_resolution_snapshot& glyph_id = diagnostics.glyph_id_resolutions.front();
+    require(glyph_id.status == render_text_font_glyph_id_resolution_status::resolved, "Arabic codepoint resolves before shaping");
+    require(glyph_id.codepoint == 0x0627U, "unsupported shaped glyph diagnostic keeps source codepoint");
+    require(glyph_id.glyph_id == 0x0627U, "glyph id resolver does not silently replace supported codepoint");
+    require(!glyph_id.used_fallback_glyph_id, "glyph id resolver does not use fallback before shaping");
+
+    const render_text_shaped_glyph& shaped = diagnostics.shaped_glyphs.front();
+    require(shaped.glyph_id == 0U, "unsupported shaped glyph uses backend fallback glyph id");
+    require(!shaped.glyph_id_from_selection, "unsupported shaped glyph records backend fallback instead of selection id");
+    require(!shaped.glyph_id_matches_codepoint, "unsupported shaped glyph proves fallback id differs from codepoint");
+    require(shaped.used_fallback_glyph_id, "unsupported shaped glyph records fallback glyph id");
+    require(!shaped.glyph_supported, "unsupported shaped glyph does not claim support");
+
+    const render_text_glyph_cache_readiness_snapshot& readiness = diagnostics.glyph_cache_readiness.front();
+    require(readiness.codepoint == 0x0627U, "unsupported cache readiness keeps source codepoint");
+    require(readiness.glyph_id == shaped.glyph_id, "unsupported cache readiness keeps shaped fallback glyph id");
+    require(readiness.cache_key.glyph_id == shaped.glyph_id, "unsupported cache key uses shaped fallback glyph id");
+    require(!readiness.cacheable, "unsupported glyph is not cacheable");
+
+    const render_text_rasterized_glyph_atlas_payload_snapshot& payload =
+        diagnostics.rasterized_glyph_atlas_payloads.front();
+    require(payload.status == render_text_font_rasterizer_status::unsupported_glyph, "unsupported payload is skipped");
+    require(payload.codepoint == 0x0627U, "unsupported payload keeps source codepoint");
+    require(payload.glyph_id == shaped.glyph_id, "unsupported payload keeps shaped fallback glyph id");
+    require(payload.cache_key == readiness.cache_key, "unsupported payload keeps fallback atlas key");
+    require(payload.used_fallback_glyph_id, "unsupported payload records fallback glyph id");
+
+    const render_text_shaped_atlas_update_trace_snapshot& trace = diagnostics.shaped_atlas_update_traces.front();
+    require(trace.status == render_text_shaped_atlas_update_trace_status::shaped_glyph_without_cache_key, "unsupported glyph has no cache key");
+    require(trace.codepoint == 0x0627U, "unsupported trace keeps source codepoint");
+    require(trace.resolved_glyph_id == shaped.glyph_id, "unsupported trace keeps shaped fallback glyph id");
+    require(trace.shaped_glyph_ids.size() == 1U && trace.shaped_glyph_ids.front() == shaped.glyph_id, "unsupported trace uses fallback glyph id");
+    require(trace.cache_key_matches_resolved_glyph_id, "unsupported trace cache key matches fallback glyph id");
+    require(trace.raster_payload_matches_cache_key, "unsupported trace payload matches fallback key");
+    require(trace.used_fallback_glyph_id, "unsupported trace records fallback glyph id");
+}
+
+void test_fake_text_engine_wires_invalid_utf8_fallback_glyph_id()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = std::string(1U, static_cast<char>(0xc0U)), .style_token = "body"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 200.0f, 0.0f};
+    request.style_catalog = make_style_catalog();
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    (void)engine.layout_text(request);
+    const fake_text_engine_diagnostics& diagnostics = engine.last_diagnostics();
+    const render_text_font_glyph_id_resolution_snapshot& glyph_id = diagnostics.glyph_id_resolutions.front();
+    require(glyph_id.status == render_text_font_glyph_id_resolution_status::invalid_utf8, "invalid UTF-8 is diagnosed before shaping");
+    require(glyph_id.glyph_id == utf8_replacement_codepoint, "invalid UTF-8 uses replacement fallback glyph id");
+    require(glyph_id.used_fallback_glyph_id, "invalid UTF-8 records fallback glyph id");
+
+    const render_text_shaped_glyph& shaped = diagnostics.shaped_glyphs.front();
+    require(shaped.glyph_id == utf8_replacement_codepoint, "invalid UTF-8 shaped glyph keeps fallback glyph id");
+    require(shaped.glyph_id_from_selection, "invalid UTF-8 shaped glyph comes from resolver selection");
+    require(shaped.used_fallback_glyph_id, "invalid UTF-8 shaped glyph records fallback glyph id");
+
+    const render_text_rasterized_glyph_atlas_payload_snapshot& payload =
+        diagnostics.rasterized_glyph_atlas_payloads.front();
+    require(payload.status == render_text_font_rasterizer_status::unsupported_glyph, "invalid UTF-8 payload is skipped");
+    require(payload.glyph_id == utf8_replacement_codepoint, "invalid UTF-8 payload keeps fallback glyph id");
+    require(payload.used_fallback_glyph_id, "invalid UTF-8 payload records fallback glyph id");
+
+    const render_text_shaped_atlas_update_trace_snapshot& trace = diagnostics.shaped_atlas_update_traces.front();
+    require(trace.resolved_glyph_id == utf8_replacement_codepoint, "invalid UTF-8 trace keeps fallback glyph id");
+    require(trace.shaped_glyph_ids.size() == 1U && trace.shaped_glyph_ids.front() == utf8_replacement_codepoint, "invalid UTF-8 trace uses fallback glyph id");
+    require(trace.used_fallback_glyph_id, "invalid UTF-8 trace records fallback glyph id");
+}
+
 void test_fake_text_engine_skips_rasterized_payloads_when_font_bytes_are_missing()
 {
     using namespace quiz_vulkan::render;
@@ -676,6 +1068,12 @@ int main()
     test_fake_line_metrics_track_overflow_and_truncation();
     test_fake_line_break_policy_keeps_combining_clusters_caret_safe();
     test_fake_text_engine_records_rasterized_atlas_payloads_for_cacheable_glyphs();
+    test_fake_text_engine_records_fallback_only_backend_capability_for_latin_hangul();
+    test_fake_text_engine_records_unavailable_backend_capability();
+    test_fake_text_engine_keeps_complex_script_on_fallback_until_backend_supports_it();
+    test_fake_text_engine_wires_resolved_glyph_id_through_atlas_payloads();
+    test_fake_text_engine_wires_unsupported_shaped_glyph_id_to_skipped_payloads();
+    test_fake_text_engine_wires_invalid_utf8_fallback_glyph_id();
     test_fake_text_engine_skips_rasterized_payloads_when_font_bytes_are_missing();
     test_fake_text_engine_consumes_shaping_backend_glyph_data();
     test_fake_text_engine_traces_repeated_layout_to_clean_atlas_page();

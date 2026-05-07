@@ -132,6 +132,7 @@ target_sources(
         FILES
             src/render/image/bmp_image_decoder.h
             src/render/image/image_decoder.h
+            src/render/image/image_manifest_texture_pipeline.h
             src/render/image/image_resolver.h
             src/render/image/image_source_bytes_loader.h
             src/render/image/image_texture_cache.h
@@ -150,6 +151,7 @@ target_sources(
             src/render/image/png_image_zlib_inflater.h
             src/render/image/standard_image_decoder_chain.h
             src/render/render_draw_list.h
+            src/render/text/font_backend_capabilities.h
             src/render/text/font_coverage_run_segmentation.h
             src/render/text/font_cmap_inspector.h
             src/render/text/font_glyph_atlas.h
@@ -198,6 +200,8 @@ target_sources(
             src/core/input/gesture_recognizer.h
             src/core/input/input_engine.h
             src/core/input/input_event.h
+            src/core/input/platform_input_engine_adapter.h
+            src/core/input/platform_input_translator.h
             src/core/input/text_input_model.h
             src/core/input/text_input_types.h
 )
@@ -324,8 +328,10 @@ target_sources(
             src/render/vulkan/vulkan_backend_frame_lifecycle.h
             src/render/vulkan/vulkan_backend_instance.h
             src/render/vulkan/vulkan_backend_loader.h
+            src/render/vulkan/vulkan_backend_pipeline_layout.h
             src/render/vulkan/vulkan_backend_queue_submit.h
             src/render/vulkan/vulkan_backend_render_pass.h
+            src/render/vulkan/vulkan_backend_shader_module.h
             src/render/vulkan/vulkan_backend_swapchain.h
             src/render/vulkan/vulkan_frame_plan.h
             src/render/vulkan/vulkan_renderer.h

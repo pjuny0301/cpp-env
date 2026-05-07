@@ -75,6 +75,21 @@ struct fake_image_texture_pipeline_snapshot {
     std::vector<fake_image_texture_pipeline_entry_snapshot> entries;
 };
 
+struct standard_image_texture_pipeline_decode_snapshot {
+    std::size_t support_check_count = 0;
+    std::size_t decode_attempt_count = 0;
+    std::size_t decoded_count = 0;
+    std::size_t failed_decode_count = 0;
+    std::size_t last_encoded_byte_count = 0;
+    render_image_decode_status last_decode_status = render_image_decode_status::empty_input;
+    std::string last_diagnostic;
+};
+
+struct standard_image_texture_pipeline_snapshot {
+    fake_image_texture_pipeline_snapshot pipeline;
+    standard_image_texture_pipeline_decode_snapshot decoder;
+};
+
 inline render_image_texture_pipeline_request make_render_image_texture_pipeline_request(
     std::string uri,
     render_image_sampler_policy sampler = {})
@@ -310,16 +325,49 @@ class standard_image_texture_pipeline_decoder final : public image_decoder_inter
 public:
     bool supports(const render_image_decode_request& request) const override
     {
+        ++support_check_count_;
+        last_encoded_byte_count_ = request.encoded_bytes.size();
         return !request.source.cache_key().empty() && !request.encoded_bytes.empty();
     }
 
     render_image_decode_result decode(const render_image_decode_request& request) const override
     {
-        return decoder_.decode(request);
+        ++decode_attempt_count_;
+        last_encoded_byte_count_ = request.encoded_bytes.size();
+
+        render_image_decode_result result = decoder_.decode(request);
+        last_decode_status_ = result.status;
+        last_diagnostic_ = result.diagnostic;
+        if (result.ok()) {
+            ++decoded_count_;
+        } else {
+            ++failed_decode_count_;
+        }
+        return result;
+    }
+
+    standard_image_texture_pipeline_decode_snapshot diagnostic_snapshot() const
+    {
+        return standard_image_texture_pipeline_decode_snapshot{
+            .support_check_count = support_check_count_,
+            .decode_attempt_count = decode_attempt_count_,
+            .decoded_count = decoded_count_,
+            .failed_decode_count = failed_decode_count_,
+            .last_encoded_byte_count = last_encoded_byte_count_,
+            .last_decode_status = last_decode_status_,
+            .last_diagnostic = last_diagnostic_,
+        };
     }
 
 private:
     standard_image_decoder_chain decoder_;
+    mutable std::size_t support_check_count_ = 0;
+    mutable std::size_t decode_attempt_count_ = 0;
+    mutable std::size_t decoded_count_ = 0;
+    mutable std::size_t failed_decode_count_ = 0;
+    mutable std::size_t last_encoded_byte_count_ = 0;
+    mutable render_image_decode_status last_decode_status_ = render_image_decode_status::empty_input;
+    mutable std::string last_diagnostic_;
 };
 
 } // namespace detail
@@ -363,6 +411,14 @@ public:
     fake_image_texture_pipeline_snapshot diagnostic_snapshot() const
     {
         return pipeline_.diagnostic_snapshot();
+    }
+
+    standard_image_texture_pipeline_snapshot standard_diagnostic_snapshot() const
+    {
+        return standard_image_texture_pipeline_snapshot{
+            .pipeline = pipeline_.diagnostic_snapshot(),
+            .decoder = decoder_.diagnostic_snapshot(),
+        };
     }
 
 private:

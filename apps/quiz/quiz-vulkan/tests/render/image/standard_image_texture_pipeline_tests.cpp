@@ -190,6 +190,13 @@ std::vector<std::byte> make_filter_none_scanlines()
     return bytes;
 }
 
+std::vector<std::byte> make_filter_none_scanlines_variant(unsigned char first_pixel_red)
+{
+    std::vector<std::byte> bytes = make_filter_none_scanlines();
+    bytes[1] = std::byte{first_pixel_red};
+    return bytes;
+}
+
 std::vector<std::byte> make_zlib_stored_stream(const std::vector<std::byte>& payload)
 {
     std::vector<std::byte> bytes;
@@ -300,6 +307,95 @@ void test_standard_pipeline_uploads_zlib_stored_png()
     require(snapshot.upload_snapshot.request_snapshots[0].decoded_byte_count == 16, "PNG upload stages RGBA bytes");
 }
 
+void test_standard_pipeline_reuses_cached_decode_and_upload_for_same_normalized_key()
+{
+    using namespace quiz_vulkan::render;
+
+    normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    set_source_bytes(
+        loader,
+        "textures/card.png",
+        make_png_bytes(make_zlib_stored_stream(make_filter_none_scanlines())));
+    standard_image_texture_pipeline pipeline(resolver, loader);
+
+    const render_image_texture_pipeline_result first =
+        pipeline.acquire_texture(make_render_image_texture_pipeline_request("  ./textures\\card.png  "));
+    const render_image_texture_pipeline_result second =
+        pipeline.acquire_texture(make_render_image_texture_pipeline_request("textures/card.png"));
+
+    require(first.ok(), "first normalized PNG request succeeds");
+    require(second.ok(), "second normalized PNG request succeeds");
+    require(!first.texture.cache_hit, "first normalized PNG request uploads texture");
+    require(second.texture.cache_hit, "second normalized PNG request reuses cached texture");
+    require(first.resolve.source.cache_key() == "textures/card.png", "first request normalizes cache key");
+    require(second.resolve.source.cache_key() == "textures/card.png", "second request uses same normalized key");
+    require(first.texture.texture.id == second.texture.texture.id, "cache reuse returns same texture handle");
+
+    const standard_image_texture_pipeline_snapshot snapshot = pipeline.standard_diagnostic_snapshot();
+    require(snapshot.pipeline.acquire_count == 2, "standard reuse snapshot records both requests");
+    require(snapshot.pipeline.ready_count == 2, "standard reuse snapshot records both ready results");
+    require(snapshot.pipeline.cache_hit_count == 1, "standard reuse snapshot counts cache hit");
+    require(snapshot.pipeline.upload_snapshot.upload_count == 1, "standard reuse uploads only once");
+    require(snapshot.decoder.support_check_count == 1, "standard reuse checks decoder support only on cache miss");
+    require(snapshot.decoder.decode_attempt_count == 1, "standard reuse decodes only once");
+    require(snapshot.decoder.decoded_count == 1, "standard reuse records one successful decode");
+    require(snapshot.decoder.failed_decode_count == 0, "standard reuse records no decode failures");
+    require(snapshot.pipeline.entries.size() == 2, "standard reuse records two pipeline entries");
+    require(!snapshot.pipeline.entries[0].cache_hit, "first standard reuse entry is not a cache hit");
+    require(snapshot.pipeline.entries[1].cache_hit, "second standard reuse entry is a cache hit");
+    require(
+        snapshot.pipeline.entries[1].upload_count_before == snapshot.pipeline.entries[1].upload_count_after,
+        "cache hit entry does not upload");
+    require(
+        snapshot.pipeline.entries[1].decode_metadata.decoder_id == "png_image_decoder",
+        "cache hit preserves decoded metadata");
+}
+
+void test_standard_pipeline_decodes_and_uploads_distinct_cache_revision_after_invalidation()
+{
+    using namespace quiz_vulkan::render;
+
+    normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    set_source_bytes(
+        loader,
+        "textures/card.png",
+        make_png_bytes(make_zlib_stored_stream(make_filter_none_scanlines_variant(1))));
+    standard_image_texture_pipeline pipeline(resolver, loader);
+
+    const render_image_texture_pipeline_result first =
+        pipeline.acquire_texture(make_render_image_texture_pipeline_request("textures/card.png"));
+    set_source_bytes(
+        loader,
+        "textures/card.png",
+        make_png_bytes(make_zlib_stored_stream(make_filter_none_scanlines_variant(42))));
+    pipeline.invalidate_source("textures/card.png");
+    const render_image_texture_pipeline_result second =
+        pipeline.acquire_texture(make_render_image_texture_pipeline_request("./textures/card.png"));
+
+    require(first.ok(), "first cache revision PNG request succeeds");
+    require(second.ok(), "second cache revision PNG request succeeds");
+    require(!first.texture.cache_hit, "first cache revision is a cache miss");
+    require(!second.texture.cache_hit, "second cache revision decodes after invalidation");
+    require(first.resolve.source.cache_key() == second.resolve.source.cache_key(), "cache revisions share normalized key");
+    require(first.texture.texture.id != second.texture.texture.id, "distinct cache revision uploads a new texture handle");
+
+    const standard_image_texture_pipeline_snapshot snapshot = pipeline.standard_diagnostic_snapshot();
+    require(snapshot.pipeline.acquire_count == 2, "cache revision snapshot records two requests");
+    require(snapshot.pipeline.cache_hit_count == 0, "cache revision snapshot records no cache hits");
+    require(snapshot.pipeline.invalidation_count == 1, "cache revision snapshot records invalidation");
+    require(snapshot.pipeline.upload_snapshot.upload_count == 2, "cache revision uploads twice");
+    require(snapshot.decoder.support_check_count == 2, "cache revision checks decoder support twice");
+    require(snapshot.decoder.decode_attempt_count == 2, "cache revision decodes twice");
+    require(snapshot.decoder.decoded_count == 2, "cache revision records two successful decodes");
+    require(snapshot.decoder.failed_decode_count == 0, "cache revision records no decode failures");
+    require(snapshot.pipeline.entries.size() == 2, "cache revision records two entries");
+    require(snapshot.pipeline.entries[0].upload_count_after == 1, "first cache revision upload is recorded");
+    require(snapshot.pipeline.entries[1].upload_count_before == 1, "second cache revision starts after first upload");
+    require(snapshot.pipeline.entries[1].upload_count_after == 2, "second cache revision upload is recorded");
+}
+
 void test_standard_pipeline_reports_unsupported_decode_with_candidate_diagnostics()
 {
     using namespace quiz_vulkan::render;
@@ -326,6 +422,10 @@ void test_standard_pipeline_reports_unsupported_decode_with_candidate_diagnostic
     require(snapshot.decode_failure_count == 1, "unsupported JPEG snapshot counts decode failure");
     require(snapshot.upload_snapshot.upload_count == 0, "unsupported JPEG does not upload");
     require(snapshot.cache_snapshot.placeholder_policy_texture_count == 0, "unsupported JPEG has no placeholder texture");
+
+    const standard_image_texture_pipeline_snapshot standard_snapshot = pipeline.standard_diagnostic_snapshot();
+    require(standard_snapshot.decoder.decode_attempt_count == 1, "unsupported JPEG attempts standard decode once");
+    require(standard_snapshot.decoder.failed_decode_count == 1, "unsupported JPEG counts failed standard decode");
 }
 
 void test_standard_pipeline_reports_invalid_decode_with_candidate_diagnostics()
@@ -379,6 +479,10 @@ void test_standard_pipeline_reports_invalid_png_inflater_failure()
     const fake_image_texture_pipeline_snapshot snapshot = pipeline.diagnostic_snapshot();
     require(snapshot.decode_failure_count == 1, "bad PNG snapshot counts decode failure");
     require(snapshot.upload_snapshot.upload_count == 0, "bad PNG does not upload");
+
+    const standard_image_texture_pipeline_snapshot standard_snapshot = pipeline.standard_diagnostic_snapshot();
+    require(standard_snapshot.decoder.decode_attempt_count == 1, "bad PNG attempts standard decode once");
+    require(standard_snapshot.decoder.failed_decode_count == 1, "bad PNG counts failed standard decode");
 }
 
 } // namespace
@@ -388,6 +492,8 @@ int main()
     test_standard_pipeline_uploads_bmp();
     test_standard_pipeline_uploads_ppm();
     test_standard_pipeline_uploads_zlib_stored_png();
+    test_standard_pipeline_reuses_cached_decode_and_upload_for_same_normalized_key();
+    test_standard_pipeline_decodes_and_uploads_distinct_cache_revision_after_invalidation();
     test_standard_pipeline_reports_unsupported_decode_with_candidate_diagnostics();
     test_standard_pipeline_reports_invalid_decode_with_candidate_diagnostics();
     test_standard_pipeline_reports_invalid_png_inflater_failure();

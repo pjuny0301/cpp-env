@@ -157,6 +157,8 @@ static_assert(requires(
     render::png_image_decode_boundary_status png_decode_boundary_status,
     render::png_image_decode_boundary_result png_decode_boundary_result,
     render::fake_png_image_inflater png_inflater,
+    render::png_image_unfilter_status png_unfilter_status,
+    render::png_image_unfilter_result png_unfilter_result,
     render::render_image_format_detection_summary format_detection,
     render::render_image_decode_size_validation size_validation,
     render::render_image_decoder_diagnostic diagnostic,
@@ -247,6 +249,11 @@ static_assert(requires(
     { render::png_image_decode_boundary_status_name(png_decode_boundary_status) } -> std::same_as<std::string>;
     { render::decode_png_image_with_inflater(request.encoded_bytes, png_chunk_scan_result, &png_inflater) }
         -> std::same_as<render::png_image_decode_boundary_result>;
+    { render::png_image_unfilter_status_name(png_unfilter_status) } -> std::same_as<std::string>;
+    { render::unfilter_png_image_rgba8_scanlines(png_decode_plan, png_inflate_result.inflated_bytes) }
+        -> std::same_as<render::png_image_unfilter_result>;
+    { render::unfilter_png_image_rgba8(png_decode_boundary_result) }
+        -> std::same_as<render::png_image_unfilter_result>;
     { png_header.width } -> std::same_as<std::size_t&>;
     { png_header.height } -> std::same_as<std::size_t&>;
     { png_header.bit_depth } -> std::same_as<std::uint8_t&>;
@@ -316,6 +323,17 @@ static_assert(requires(
     { png_inflater.inflate(png_inflate_request) } -> std::same_as<render::png_image_inflate_result>;
     { png_inflater.set_result(png_inflate_result) } -> std::same_as<void>;
     { png_inflater.requests } -> std::same_as<std::vector<render::png_image_inflate_request>&>;
+    { png_unfilter_result.status } -> std::same_as<render::png_image_unfilter_status&>;
+    { png_unfilter_result.image } -> std::same_as<render::render_decoded_image&>;
+    { png_unfilter_result.plan } -> std::same_as<render::png_image_decode_plan&>;
+    { png_unfilter_result.row_count } -> std::same_as<std::size_t&>;
+    { png_unfilter_result.row_byte_count } -> std::same_as<std::size_t&>;
+    { png_unfilter_result.filtered_row_byte_count } -> std::same_as<std::size_t&>;
+    { png_unfilter_result.inflated_byte_count } -> std::same_as<std::size_t&>;
+    { png_unfilter_result.decoded_byte_count } -> std::same_as<std::size_t&>;
+    { png_unfilter_result.failed_filter_type } -> std::same_as<std::uint8_t&>;
+    { png_unfilter_result.diagnostic } -> std::same_as<std::string&>;
+    { png_unfilter_result.ok() } -> std::same_as<bool>;
     { render::detect_render_image_format(request) } -> std::same_as<render::render_image_format_detection_summary>;
     { render::render_image_source_kind_decode_order(source_kind) } -> std::same_as<std::size_t>;
     { render::render_image_extension_decode_order("ppm") } -> std::same_as<std::size_t>;
@@ -336,6 +354,7 @@ static_assert(requires(
     png_decode_plan_status;
     png_inflate_status;
     png_decode_boundary_status;
+    png_unfilter_status;
     { diagnostic.decoder_id } -> std::same_as<std::string&>;
     { diagnostic.candidate_index } -> std::same_as<std::size_t&>;
     { diagnostic.candidate_order } -> std::same_as<std::size_t&>;

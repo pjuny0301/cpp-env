@@ -135,6 +135,10 @@ static_assert(requires(
     render::png_image_header_inspect_status png_header_status,
     render::png_image_header png_header,
     render::png_image_header_inspect_result png_header_result,
+    render::png_image_chunk_scan_status png_chunk_scan_status,
+    render::png_image_chunk_kind png_chunk_kind,
+    render::png_image_chunk_snapshot png_chunk,
+    render::png_image_chunk_scan_result png_chunk_scan_result,
     render::render_image_format_detection_summary format_detection,
     render::render_image_decode_size_validation size_validation,
     render::render_image_decoder_diagnostic diagnostic,
@@ -212,6 +216,10 @@ static_assert(requires(
     { render::starts_with_png_signature(request.encoded_bytes) } -> std::same_as<bool>;
     { render::inspect_png_image_header(request.encoded_bytes) }
         -> std::same_as<render::png_image_header_inspect_result>;
+    { render::png_image_chunk_scan_status_name(png_chunk_scan_status) } -> std::same_as<std::string>;
+    { render::png_image_chunk_kind_name(png_chunk_kind) } -> std::same_as<std::string>;
+    { render::scan_png_image_chunks(request.encoded_bytes) }
+        -> std::same_as<render::png_image_chunk_scan_result>;
     { png_header.width } -> std::same_as<std::size_t&>;
     { png_header.height } -> std::same_as<std::size_t&>;
     { png_header.bit_depth } -> std::same_as<std::uint8_t&>;
@@ -229,6 +237,27 @@ static_assert(requires(
     { png_header_result.ihdr_present } -> std::same_as<bool&>;
     { png_header_result.diagnostic } -> std::same_as<std::string&>;
     { png_header_result.ok() } -> std::same_as<bool>;
+    { png_chunk.index } -> std::same_as<std::size_t&>;
+    { png_chunk.kind } -> std::same_as<render::png_image_chunk_kind&>;
+    { png_chunk.type_code } -> std::same_as<std::string&>;
+    { png_chunk.chunk_offset } -> std::same_as<std::size_t&>;
+    { png_chunk.data_offset } -> std::same_as<std::size_t&>;
+    { png_chunk.crc_offset } -> std::same_as<std::size_t&>;
+    { png_chunk.next_chunk_offset } -> std::same_as<std::size_t&>;
+    { png_chunk.data_byte_count } -> std::same_as<std::size_t&>;
+    { png_chunk_scan_result.status } -> std::same_as<render::png_image_chunk_scan_status&>;
+    { png_chunk_scan_result.header } -> std::same_as<render::png_image_header_inspect_result&>;
+    { png_chunk_scan_result.signature_valid } -> std::same_as<bool&>;
+    { png_chunk_scan_result.ihdr_seen } -> std::same_as<bool&>;
+    { png_chunk_scan_result.idat_seen } -> std::same_as<bool&>;
+    { png_chunk_scan_result.iend_seen } -> std::same_as<bool&>;
+    { png_chunk_scan_result.chunk_count } -> std::same_as<std::size_t&>;
+    { png_chunk_scan_result.unknown_chunk_count } -> std::same_as<std::size_t&>;
+    { png_chunk_scan_result.idat_chunk_count } -> std::same_as<std::size_t&>;
+    { png_chunk_scan_result.idat_compressed_byte_count } -> std::same_as<std::size_t&>;
+    { png_chunk_scan_result.chunks } -> std::same_as<std::vector<render::png_image_chunk_snapshot>&>;
+    { png_chunk_scan_result.diagnostic } -> std::same_as<std::string&>;
+    { png_chunk_scan_result.ok() } -> std::same_as<bool>;
     { render::detect_render_image_format(request) } -> std::same_as<render::render_image_format_detection_summary>;
     { render::render_image_source_kind_decode_order(source_kind) } -> std::same_as<std::size_t>;
     { render::render_image_extension_decode_order("ppm") } -> std::same_as<std::size_t>;
@@ -244,6 +273,8 @@ static_assert(requires(
     encoded_format;
     source_kind;
     png_header_status;
+    png_chunk_scan_status;
+    png_chunk_kind;
     { diagnostic.decoder_id } -> std::same_as<std::string&>;
     { diagnostic.candidate_index } -> std::same_as<std::size_t&>;
     { diagnostic.candidate_order } -> std::same_as<std::size_t&>;

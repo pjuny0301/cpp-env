@@ -1,6 +1,7 @@
 #pragma once
 
 #include "render/image/image_types.h"
+#include "render/image/png_image_chunk_scanner.h"
 #include "render/image/png_image_header_inspector.h"
 
 #include <cctype>

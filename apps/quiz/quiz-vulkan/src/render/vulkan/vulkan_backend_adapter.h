@@ -6,6 +6,7 @@
 #include "render/vulkan/vulkan_backend_device.h"
 #include "render/vulkan/vulkan_backend_instance.h"
 #include "render/vulkan/vulkan_backend_loader.h"
+#include "render/vulkan/vulkan_backend_queue_submit.h"
 #include "render/vulkan/vulkan_backend_render_pass.h"
 #include "render/vulkan/vulkan_backend_swapchain.h"
 #include "render/vulkan/vulkan_frame_plan.h"

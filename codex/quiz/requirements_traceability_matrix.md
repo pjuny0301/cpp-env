@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: Vulkan command recorder operation plan diagnostics를 통합하고 Windows MinGW focused Vulkan CTest 5/5 및 `ctest -N` 84개 확인.
+- `da544dc`: Vulkan backend에 command packet execution 뒤의 recorder operation plan/result/event diagnostics를 추가해 rect/text/image/debug packet을 real Vulkan 호출 전 data-only operation summary로 추적.
 - current: glyph atlas materialization diagnostics를 통합하고 Windows MinGW focused text CTest 2/2 확인.
 - `6ac0d43`: fake text engine diagnostics에 glyph atlas materialization request/summary를 추가해 shaped glyph/layout output과 backend selection metadata가 renderer/Vulkan upload 전 단계까지 추적되도록 보강.
 - current: image decoder capability manifest pipeline diagnostics를 통합하고 Windows MinGW focused image CTest 4/4 확인.

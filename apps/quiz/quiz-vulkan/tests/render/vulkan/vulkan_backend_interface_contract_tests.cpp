@@ -2,6 +2,7 @@
 #include "render/vulkan/vulkan_backend_device.h"
 #include "render/vulkan/vulkan_backend_instance.h"
 #include "render/vulkan/vulkan_backend_loader.h"
+#include "render/vulkan/vulkan_backend_swapchain.h"
 
 #include <concepts>
 #include <cstddef>
@@ -62,6 +63,22 @@ static_assert(std::default_initializable<render::vulkan_backend::fake_vulkan_dev
 static_assert(std::constructible_from<
     render::vulkan_backend::fake_vulkan_device_factory,
     render::vulkan_backend::fake_vulkan_device_factory_options>);
+
+template <typename T>
+concept VulkanSwapchainFactoryInterface = requires(
+    T& factory,
+    const render::vulkan_backend::vulkan_device_create_result& device_result,
+    const render::vulkan_backend::vulkan_swapchain_create_request& request) {
+    { factory.create_swapchain(device_result, request) }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_create_result>;
+};
+
+static_assert(VulkanSwapchainFactoryInterface<render::vulkan_backend::vulkan_swapchain_factory_interface>);
+static_assert(VulkanSwapchainFactoryInterface<render::vulkan_backend::fake_vulkan_swapchain_factory>);
+static_assert(std::default_initializable<render::vulkan_backend::fake_vulkan_swapchain_factory>);
+static_assert(std::constructible_from<
+    render::vulkan_backend::fake_vulkan_swapchain_factory,
+    render::vulkan_backend::fake_vulkan_swapchain_factory_options>);
 
 static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_loader_probe_status::not_checked),
@@ -143,6 +160,28 @@ static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_device_create_status::creation_failed),
     render::vulkan_backend::vulkan_device_create_status>);
 
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_create_status::not_requested),
+    render::vulkan_backend::vulkan_swapchain_create_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_create_status::created),
+    render::vulkan_backend::vulkan_swapchain_create_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_create_status::device_unavailable),
+    render::vulkan_backend::vulkan_swapchain_create_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_create_status::invalid_surface_extent),
+    render::vulkan_backend::vulkan_swapchain_create_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_create_status::missing_present_queue),
+    render::vulkan_backend::vulkan_swapchain_create_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_create_status::unsupported_present_mode),
+    render::vulkan_backend::vulkan_swapchain_create_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_create_status::creation_failed),
+    render::vulkan_backend::vulkan_swapchain_create_status>);
+
 static_assert(requires(render::vulkan_backend::vulkan_loader_probe_status status) {
     { render::vulkan_backend::loader_probe_status_name(status) } -> std::same_as<std::string_view>;
 });
@@ -162,6 +201,11 @@ static_assert(requires(
     { render::vulkan_backend::device_queue_capability_name(capability) }
         -> std::same_as<std::string_view>;
     { render::vulkan_backend::device_create_status_name(status) }
+        -> std::same_as<std::string_view>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_swapchain_create_status status) {
+    { render::vulkan_backend::swapchain_create_status_name(status) }
         -> std::same_as<std::string_view>;
 });
 
@@ -186,6 +230,13 @@ static_assert(requires(render::vulkan_backend::vulkan_device_create_request requ
     { request.optional_device_extensions } -> std::same_as<std::vector<std::string>&>;
     { request.required_queue_capabilities }
         -> std::same_as<std::vector<render::vulkan_backend::vulkan_device_queue_capability>&>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_swapchain_create_request request) {
+    { request.requested_extent } -> std::same_as<render::vulkan_backend::vulkan_surface_extent&>;
+    { request.requested_present_mode }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_present_mode&>;
+    { request.min_image_count } -> std::same_as<std::size_t&>;
 });
 
 static_assert(requires(render::vulkan_backend::vulkan_loader_probe_result result) {
@@ -259,6 +310,29 @@ static_assert(requires(render::vulkan_backend::vulkan_device_create_result resul
     { result.ready_for_backend() } -> std::same_as<bool>;
 });
 
+static_assert(requires(render::vulkan_backend::vulkan_swapchain_handle handle) {
+    { handle.value } -> std::same_as<std::uintptr_t&>;
+    { handle.valid() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_swapchain_create_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.status } -> std::same_as<render::vulkan_backend::vulkan_swapchain_create_status&>;
+    { result.device } -> std::same_as<render::vulkan_backend::vulkan_device_create_result&>;
+    { result.handle } -> std::same_as<render::vulkan_backend::vulkan_swapchain_handle&>;
+    { result.requested_extent } -> std::same_as<render::vulkan_backend::vulkan_surface_extent&>;
+    { result.selected_extent } -> std::same_as<render::vulkan_backend::vulkan_surface_extent&>;
+    { result.requested_present_mode }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_present_mode&>;
+    { result.selected_present_mode }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_present_mode&>;
+    { result.requested_present_mode_supported } -> std::same_as<bool&>;
+    { result.fallback_to_fifo } -> std::same_as<bool&>;
+    { result.min_image_count } -> std::same_as<std::size_t&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.ready_for_frame() } -> std::same_as<bool>;
+});
+
 static_assert(requires(render::vulkan_backend::fake_vulkan_loader_options options) {
     { options.library_name } -> std::same_as<std::string&>;
     { options.library_available } -> std::same_as<bool&>;
@@ -280,6 +354,15 @@ static_assert(requires(render::vulkan_backend::fake_vulkan_device_factory_option
     { options.fail_creation } -> std::same_as<bool&>;
     { options.handle } -> std::same_as<render::vulkan_backend::vulkan_device_handle&>;
     { options.queue_handle_base } -> std::same_as<std::uintptr_t&>;
+});
+
+static_assert(requires(render::vulkan_backend::fake_vulkan_swapchain_factory_options options) {
+    { options.supported_present_modes }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_swapchain_present_mode>&>;
+    { options.min_extent } -> std::same_as<render::vulkan_backend::vulkan_surface_extent&>;
+    { options.max_extent } -> std::same_as<render::vulkan_backend::vulkan_surface_extent&>;
+    { options.fail_creation } -> std::same_as<bool&>;
+    { options.handle } -> std::same_as<render::vulkan_backend::vulkan_swapchain_handle&>;
 });
 
 static_assert(requires(
@@ -318,6 +401,16 @@ static_assert(requires(
         request) } -> std::same_as<render::vulkan_backend::vulkan_device_create_result>;
 });
 
+static_assert(requires(
+    render::vulkan_backend::vulkan_swapchain_factory_interface& factory,
+    const render::vulkan_backend::vulkan_device_create_result& device_result,
+    const render::vulkan_backend::vulkan_swapchain_create_request& request) {
+    { render::vulkan_backend::create_vulkan_swapchain(
+        factory,
+        device_result,
+        request) } -> std::same_as<render::vulkan_backend::vulkan_swapchain_create_result>;
+});
+
 template <typename T>
 concept VulkanBackendDeviceInterface = requires(
     const T& const_device,
@@ -352,6 +445,9 @@ static_assert(std::constructible_from<
 static_assert(std::constructible_from<
     render::vulkan_backend::null_vulkan_backend_device,
     render::vulkan_backend::vulkan_device_create_result>);
+static_assert(std::constructible_from<
+    render::vulkan_backend::null_vulkan_backend_device,
+    render::vulkan_backend::vulkan_swapchain_create_result>);
 
 template <typename T>
 concept VulkanPipelineCacheInterface = requires(
@@ -411,8 +507,10 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_lifecycle_readines
     { lifecycle.loader } -> std::same_as<render::vulkan_backend::vulkan_loader_readiness_state&>;
     { lifecycle.instance } -> std::same_as<render::vulkan_backend::vulkan_instance_create_result&>;
     { lifecycle.device } -> std::same_as<render::vulkan_backend::vulkan_device_create_result&>;
+    { lifecycle.swapchain } -> std::same_as<render::vulkan_backend::vulkan_swapchain_create_result&>;
     { lifecycle.effective_instance_ready() } -> std::same_as<bool>;
     { lifecycle.effective_device_ready() } -> std::same_as<bool>;
+    { lifecycle.effective_swapchain_ready() } -> std::same_as<bool>;
     { lifecycle.ready_for_frame() } -> std::same_as<bool>;
 });
 
@@ -438,6 +536,14 @@ static_assert(requires(
     { render::vulkan_backend::apply_vulkan_device_create_result_to_lifecycle(
         lifecycle,
         device_result) } -> std::same_as<render::vulkan_backend::vulkan_backend_lifecycle_readiness>;
+});
+
+static_assert(requires(
+    render::vulkan_backend::vulkan_backend_lifecycle_readiness lifecycle,
+    render::vulkan_backend::vulkan_swapchain_create_result swapchain_result) {
+    { render::vulkan_backend::apply_vulkan_swapchain_create_result_to_lifecycle(
+        lifecycle,
+        swapchain_result) } -> std::same_as<render::vulkan_backend::vulkan_backend_lifecycle_readiness>;
 });
 
 static_assert(requires(render::vulkan_backend::vulkan_swapchain_image_id id) {

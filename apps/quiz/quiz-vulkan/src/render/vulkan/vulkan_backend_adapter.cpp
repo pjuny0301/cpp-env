@@ -3,6 +3,7 @@
 #include "render/vulkan/vulkan_backend_frame_lifecycle.h"
 #include "render/vulkan/vulkan_backend_instance.h"
 #include "render/vulkan/vulkan_backend_loader.h"
+#include "render/vulkan/vulkan_backend_swapchain.h"
 
 #include <algorithm>
 #include <string>
@@ -218,7 +219,7 @@ vulkan_backend_fallback_reason first_unready_reason(
     if (!lifecycle.effective_device_ready()) {
         return vulkan_backend_fallback_reason::device_unavailable;
     }
-    if (!lifecycle.swapchain_ready) {
+    if (!lifecycle.effective_swapchain_ready()) {
         return vulkan_backend_fallback_reason::swapchain_unavailable;
     }
     if (!lifecycle.pipeline_ready) {
@@ -967,6 +968,22 @@ vulkan_backend_lifecycle_readiness apply_vulkan_device_create_result_to_lifecycl
     return lifecycle;
 }
 
+vulkan_backend_lifecycle_readiness apply_vulkan_swapchain_create_result_to_lifecycle(
+    vulkan_backend_lifecycle_readiness lifecycle,
+    vulkan_swapchain_create_result swapchain)
+{
+    if (!swapchain.checked) {
+        return lifecycle;
+    }
+
+    lifecycle = apply_vulkan_device_create_result_to_lifecycle(
+        std::move(lifecycle),
+        swapchain.device);
+    lifecycle.swapchain = std::move(swapchain);
+    lifecycle.swapchain_ready = lifecycle.swapchain.ready_for_frame();
+    return lifecycle;
+}
+
 null_vulkan_backend_device::null_vulkan_backend_device() = default;
 
 null_vulkan_backend_device::null_vulkan_backend_device(
@@ -996,6 +1013,15 @@ null_vulkan_backend_device::null_vulkan_backend_device(
 {
 }
 
+null_vulkan_backend_device::null_vulkan_backend_device(
+    vulkan_swapchain_create_result swapchain_result)
+    : loader_readiness_(swapchain_result.device.instance.loader)
+    , instance_result_(swapchain_result.device.instance)
+    , device_result_(swapchain_result.device)
+    , swapchain_result_(std::move(swapchain_result))
+{
+}
+
 vulkan_backend_lifecycle_readiness null_vulkan_backend_device::current_lifecycle_readiness() const
 {
     vulkan_backend_lifecycle_readiness lifecycle =
@@ -1003,13 +1029,20 @@ vulkan_backend_lifecycle_readiness null_vulkan_backend_device::current_lifecycle
     lifecycle = apply_vulkan_instance_create_result_to_lifecycle(
         std::move(lifecycle),
         instance_result_);
-    return apply_vulkan_device_create_result_to_lifecycle(
+    lifecycle = apply_vulkan_device_create_result_to_lifecycle(
         std::move(lifecycle),
         device_result_);
+    return apply_vulkan_swapchain_create_result_to_lifecycle(
+        std::move(lifecycle),
+        swapchain_result_);
 }
 
 vulkan_surface_extent null_vulkan_backend_device::current_surface_extent() const
 {
+    if (swapchain_result_.ready_for_frame()) {
+        return swapchain_result_.selected_extent;
+    }
+
     return {};
 }
 

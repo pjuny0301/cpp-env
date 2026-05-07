@@ -177,6 +177,12 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
         -> std::same_as<std::vector<render::render_text_font_source_bytes_snapshot>&>;
     { diagnostics.font_source_bytes_policy }
         -> std::same_as<render::render_text_font_source_bytes_policy_snapshot&>;
+    { diagnostics.font_backend_capability }
+        -> std::same_as<render::render_text_font_backend_capability_snapshot&>;
+    { diagnostics.font_backend_shaping_capability }
+        -> std::same_as<render::render_text_font_backend_shaping_capability&>;
+    { diagnostics.font_backend_uses_deterministic_shaping } -> std::same_as<bool&>;
+    { diagnostics.font_backend_uses_deterministic_rasterizer } -> std::same_as<bool&>;
     { diagnostics.shaped_glyphs } -> std::same_as<std::vector<render::render_text_shaped_glyph>&>;
     { diagnostics.font_shaping_diagnostics }
         -> std::same_as<std::vector<render::render_text_font_shaping_diagnostic>&>;
@@ -224,6 +230,7 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.has_font_source_policy() } -> std::same_as<bool>;
     { diagnostics.has_font_source_bytes() } -> std::same_as<bool>;
     { diagnostics.has_font_source_bytes_policy() } -> std::same_as<bool>;
+    { diagnostics.has_font_backend_capability() } -> std::same_as<bool>;
     { diagnostics.has_shaped_glyphs() } -> std::same_as<bool>;
     { diagnostics.has_font_shaping_diagnostics() } -> std::same_as<bool>;
     { diagnostics.has_font_shaping_policy() } -> std::same_as<bool>;
@@ -247,6 +254,11 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
 
 static_assert(requires(render::fake_text_engine& engine, render::font_face_descriptor descriptor) {
     { engine.add_font_face(descriptor) } -> std::same_as<const render::font_face_descriptor&>;
+    { engine.set_font_backend_capability_components(
+        std::vector<render::render_text_font_backend_component>{}) } -> std::same_as<void>;
+    { engine.clear_font_backend_capability_components() } -> std::same_as<void>;
+    { engine.set_font_backend_capability_probe_request(
+        render::render_text_font_backend_capability_probe_request{}) } -> std::same_as<void>;
 });
 
 static_assert(requires(render::render_text_glyph_cluster cluster) {
@@ -1134,6 +1146,11 @@ static_assert(requires(render::render_text_rasterized_glyph_atlas_payload_snapsh
     { payload.glyph_id_matches_codepoint } -> std::same_as<bool&>;
     { payload.used_fallback_glyph_id } -> std::same_as<bool&>;
     { payload.glyph_id_offset } -> std::same_as<std::uint32_t&>;
+    { payload.font_backend_capability_status }
+        -> std::same_as<render::render_text_font_backend_capability_status&>;
+    { payload.font_backend_fallback_only } -> std::same_as<bool&>;
+    { payload.font_backend_supports_rasterization } -> std::same_as<bool&>;
+    { payload.uses_deterministic_rasterizer } -> std::same_as<bool&>;
     { payload.cacheable } -> std::same_as<bool&>;
     { payload.upload_ready } -> std::same_as<bool&>;
     { payload.skipped } -> std::same_as<bool&>;

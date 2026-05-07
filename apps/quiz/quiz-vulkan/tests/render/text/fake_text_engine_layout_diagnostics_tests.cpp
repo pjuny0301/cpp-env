@@ -55,6 +55,61 @@ quiz_vulkan::render::render_text_style_catalog make_style_catalog()
     return catalog;
 }
 
+quiz_vulkan::render::render_text_font_backend_component freetype_component()
+{
+    using namespace quiz_vulkan::render;
+
+    return render_text_font_backend_component{
+        .library = render_text_font_backend_library::freetype,
+        .name = "FreeType",
+        .available = true,
+        .version = render_text_font_backend_version{.major = 2, .minor = 13, .patch = 2},
+        .features = {
+            render_text_font_backend_feature::font_file_loading,
+            render_text_font_backend_feature::unicode_cmap,
+            render_text_font_backend_feature::glyph_id_mapping,
+            render_text_font_backend_feature::glyph_rasterization,
+        },
+        .diagnostic = "FreeType probe fixture is available",
+    };
+}
+
+quiz_vulkan::render::render_text_font_backend_component harfbuzz_component()
+{
+    using namespace quiz_vulkan::render;
+
+    return render_text_font_backend_component{
+        .library = render_text_font_backend_library::harfbuzz,
+        .name = "HarfBuzz",
+        .available = true,
+        .version = render_text_font_backend_version{.major = 8, .minor = 3, .patch = 0},
+        .features = {
+            render_text_font_backend_feature::glyph_id_mapping,
+            render_text_font_backend_feature::glyph_shaping,
+            render_text_font_backend_feature::complex_script_shaping,
+        },
+        .diagnostic = "HarfBuzz probe fixture is available",
+    };
+}
+
+quiz_vulkan::render::render_text_request make_single_run_request(const std::string& text)
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = text, .style_token = "body"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 200.0f, 0.0f};
+    request.style_catalog = make_style_catalog();
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+    return request;
+}
+
 void test_fake_glyph_clusters_track_utf8_runs_and_font_faces()
 {
     using namespace quiz_vulkan::render;
@@ -443,6 +498,154 @@ void test_fake_text_engine_records_rasterized_atlas_payloads_for_cacheable_glyph
     require(
         diagnostics.shaped_atlas_update_trace_policy.traced_shaped_glyph_count == 1,
         "trace policy counts shaped glyph id");
+}
+
+void test_fake_text_engine_records_fallback_only_backend_capability_for_latin_hangul()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    const render_text_layout layout = engine.layout_text(make_single_run_request("A" "\xed\x95\x9c"));
+    const fake_text_engine_diagnostics& diagnostics = engine.last_diagnostics();
+
+    require(layout.glyphs.size() == 2U, "fallback-only backend keeps Latin and Hangul layout glyphs");
+    require(layout.glyphs[0].glyph_id == U'A', "fallback-only backend keeps Latin glyph id");
+    require(layout.glyphs[1].glyph_id == 0xd55cU, "fallback-only backend keeps Hangul glyph id");
+    require(diagnostics.has_font_backend_capability(), "fallback-only layout records backend capability");
+    require(
+        diagnostics.font_backend_capability.status == render_text_font_backend_capability_status::fallback_only,
+        "default fake engine records fallback-only backend mode");
+    require(diagnostics.font_backend_capability.fallback_only, "default backend capability records fallback-only flag");
+    require(diagnostics.font_backend_shaping_capability.backend_available, "fallback-only backend keeps shaping available");
+    require(
+        !diagnostics.font_backend_shaping_capability.support_complex_scripts,
+        "fallback-only backend does not claim complex script support");
+    require(diagnostics.font_backend_uses_deterministic_shaping, "fallback-only backend uses deterministic shaping");
+    require(
+        diagnostics.font_backend_uses_deterministic_rasterizer,
+        "fallback-only backend uses deterministic rasterizer");
+    require(diagnostics.shaped_glyphs.size() == 2U, "fallback-only backend still records shaped glyphs");
+    require(diagnostics.shaped_glyphs[0].glyph_supported, "fallback-only Latin glyph remains supported");
+    require(diagnostics.shaped_glyphs[1].glyph_supported, "fallback-only Hangul glyph remains supported");
+
+    require(diagnostics.rasterized_glyph_atlas_payloads.size() == 2U, "fallback-only backend rasterizes supported glyphs");
+    for (const render_text_rasterized_glyph_atlas_payload_snapshot& payload :
+         diagnostics.rasterized_glyph_atlas_payloads) {
+        require(
+            payload.font_backend_capability_status == render_text_font_backend_capability_status::fallback_only,
+            "raster payload records fallback-only backend mode");
+        require(payload.font_backend_fallback_only, "raster payload records fallback-only backend flag");
+        require(
+            payload.font_backend_supports_rasterization,
+            "raster payload records fake rasterization capability");
+        require(payload.uses_deterministic_rasterizer, "raster payload records deterministic fake rasterizer use");
+    }
+}
+
+void test_fake_text_engine_records_unavailable_backend_capability()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    engine.set_font_backend_capability_components({
+        render_text_font_backend_component{
+            .library = render_text_font_backend_library::directwrite,
+            .name = "DirectWrite",
+            .available = false,
+            .version = render_text_font_backend_version{.major = 0, .minor = 0, .patch = 0},
+            .features = {
+                render_text_font_backend_feature::glyph_shaping,
+                render_text_font_backend_feature::complex_script_shaping,
+            },
+            .diagnostic = "DirectWrite is unavailable in this deterministic fixture",
+        },
+    });
+
+    const render_text_layout layout = engine.layout_text(make_single_run_request("A"));
+    const fake_text_engine_diagnostics& diagnostics = engine.last_diagnostics();
+
+    require(layout.glyphs.empty(), "unavailable backend emits no layout glyphs");
+    require(diagnostics.has_font_backend_capability(), "unavailable backend records capability diagnostics");
+    require(
+        diagnostics.font_backend_capability.status == render_text_font_backend_capability_status::unavailable,
+        "unavailable backend mode is recorded");
+    require(
+        !diagnostics.font_backend_shaping_capability.backend_available,
+        "unavailable backend disables shaping");
+    require(
+        diagnostics.font_shaping_policy.backend_unavailable_count == 1U,
+        "unavailable backend is counted by shaping diagnostics");
+    require(diagnostics.shaped_glyphs.empty(), "unavailable backend records no shaped glyphs");
+    require(
+        diagnostics.rasterized_glyph_atlas_payloads.empty(),
+        "unavailable backend records no raster payloads because no glyphs were shaped");
+}
+
+void test_fake_text_engine_keeps_complex_script_on_fallback_until_backend_supports_it()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine fallback_engine;
+    const render_text_layout fallback_layout =
+        fallback_engine.layout_text(make_single_run_request("\xd8\xa7"));
+    const fake_text_engine_diagnostics& fallback_diagnostics = fallback_engine.last_diagnostics();
+
+    require(fallback_layout.glyphs.size() == 1U, "fallback-only complex script keeps diagnostic glyph");
+    require(
+        fallback_diagnostics.font_backend_capability.status == render_text_font_backend_capability_status::fallback_only,
+        "complex script fallback fixture starts in fallback-only mode");
+    require(
+        !fallback_diagnostics.font_backend_shaping_capability.support_complex_scripts,
+        "fallback-only mode does not support complex scripts");
+    require(
+        fallback_diagnostics.shaped_glyphs.front().glyph_id == 0U,
+        "fallback-only complex script uses backend fallback glyph id");
+    require(
+        !fallback_diagnostics.shaped_glyphs.front().glyph_supported,
+        "fallback-only complex script does not claim glyph support");
+    require(
+        fallback_diagnostics.rasterized_glyph_atlas_payloads.front().font_backend_fallback_only,
+        "fallback-only skipped payload records backend mode");
+
+    fake_text_engine supported_engine;
+    supported_engine.set_font_backend_capability_components({
+        freetype_component(),
+        harfbuzz_component(),
+    });
+    const render_text_layout supported_layout =
+        supported_engine.layout_text(make_single_run_request("\xd8\xa7"));
+    const fake_text_engine_diagnostics& supported_diagnostics = supported_engine.last_diagnostics();
+
+    require(supported_layout.glyphs.size() == 1U, "backend-supported complex script lays out one glyph");
+    require(
+        supported_diagnostics.font_backend_capability.status == render_text_font_backend_capability_status::available,
+        "backend-supported complex script records available backend mode");
+    require(
+        supported_diagnostics.font_backend_shaping_capability.support_complex_scripts,
+        "backend-supported complex script enables complex shaping flag");
+    require(
+        supported_diagnostics.shaped_glyphs.front().glyph_id == 0x0627U,
+        "backend-supported complex script keeps resolved glyph id");
+    require(
+        supported_diagnostics.shaped_glyphs.front().glyph_supported,
+        "backend-supported complex script claims glyph support");
+    require(
+        !supported_diagnostics.shaped_glyphs.front().used_fallback_glyph_id,
+        "backend-supported complex script avoids fallback glyph id");
+    require(
+        supported_diagnostics.rasterized_glyph_atlas_payloads.front().status
+            == render_text_font_rasterizer_status::rasterized,
+        "backend-supported complex script still produces deterministic raster payload");
+    require(
+        supported_diagnostics.rasterized_glyph_atlas_payloads.front().font_backend_capability_status
+            == render_text_font_backend_capability_status::available,
+        "backend-supported raster payload records available backend mode");
+    require(
+        !supported_diagnostics.rasterized_glyph_atlas_payloads.front().font_backend_fallback_only,
+        "backend-supported raster payload does not claim fallback-only mode");
+    require(
+        supported_diagnostics.rasterized_glyph_atlas_payloads.front().uses_deterministic_rasterizer,
+        "backend-supported fake engine still records deterministic rasterizer use");
 }
 
 void test_fake_text_engine_wires_resolved_glyph_id_through_atlas_payloads()
@@ -865,6 +1068,9 @@ int main()
     test_fake_line_metrics_track_overflow_and_truncation();
     test_fake_line_break_policy_keeps_combining_clusters_caret_safe();
     test_fake_text_engine_records_rasterized_atlas_payloads_for_cacheable_glyphs();
+    test_fake_text_engine_records_fallback_only_backend_capability_for_latin_hangul();
+    test_fake_text_engine_records_unavailable_backend_capability();
+    test_fake_text_engine_keeps_complex_script_on_fallback_until_backend_supports_it();
     test_fake_text_engine_wires_resolved_glyph_id_through_atlas_payloads();
     test_fake_text_engine_wires_unsupported_shaped_glyph_id_to_skipped_payloads();
     test_fake_text_engine_wires_invalid_utf8_fallback_glyph_id();

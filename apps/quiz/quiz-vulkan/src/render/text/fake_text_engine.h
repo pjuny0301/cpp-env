@@ -1,5 +1,6 @@
 #pragma once
 
+#include "render/text/font_backend_capabilities.h"
 #include "render/text/font_rasterizer.h"
 #include "render/text/font_glyph_id_resolver.h"
 #include "render/text/font_resolver.h"
@@ -51,6 +52,10 @@ struct fake_text_engine_diagnostics {
     render_text_font_source_policy_snapshot font_source_policy;
     std::vector<render_text_font_source_bytes_snapshot> font_source_bytes;
     render_text_font_source_bytes_policy_snapshot font_source_bytes_policy;
+    render_text_font_backend_capability_snapshot font_backend_capability;
+    render_text_font_backend_shaping_capability font_backend_shaping_capability;
+    bool font_backend_uses_deterministic_shaping = true;
+    bool font_backend_uses_deterministic_rasterizer = true;
     std::vector<render_text_shaped_glyph> shaped_glyphs;
     std::vector<render_text_font_shaping_diagnostic> font_shaping_diagnostics;
     render_text_font_shaping_policy_snapshot font_shaping_policy;
@@ -154,6 +159,12 @@ struct fake_text_engine_diagnostics {
     bool has_font_source_bytes_policy() const
     {
         return font_source_bytes_policy.request_count > 0;
+    }
+
+    bool has_font_backend_capability() const
+    {
+        return !font_backend_capability.components.empty()
+            || !font_backend_capability.diagnostic.empty();
     }
 
     bool has_shaped_glyphs() const
@@ -273,6 +284,11 @@ public:
 
     const fake_text_engine_diagnostics& last_diagnostics() const;
     const font_face_descriptor& add_font_face(font_face_descriptor descriptor);
+    void set_font_backend_capability_components(
+        std::vector<render_text_font_backend_component> components);
+    void clear_font_backend_capability_components();
+    void set_font_backend_capability_probe_request(
+        render_text_font_backend_capability_probe_request request);
     std::vector<fake_text_engine_caret> caret_positions(const render_text_request& request) const;
     std::vector<render_rect> selection_rects(
         const render_text_request& request,
@@ -289,6 +305,14 @@ private:
     mutable std::vector<render_text_atlas_update> atlas_updates_;
     mutable fake_text_engine_diagnostics diagnostics_;
     deterministic_fake_font_resolver font_resolver_;
+    std::vector<render_text_font_backend_component> font_backend_capability_components_;
+    render_text_font_backend_capability_probe_request font_backend_capability_request_{
+        .required_features = {
+            render_text_font_backend_feature::glyph_id_mapping,
+            render_text_font_backend_feature::glyph_shaping,
+            render_text_font_backend_feature::glyph_rasterization,
+        },
+    };
 };
 
 } // namespace quiz_vulkan::render

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "render/text/font_backend_capabilities.h"
 #include "render/text/font_glyph_atlas.h"
 #include "render/text/font_source_bytes_loader.h"
 
@@ -130,6 +131,11 @@ struct render_text_rasterized_glyph_atlas_payload_snapshot {
     bool glyph_id_matches_codepoint = false;
     bool used_fallback_glyph_id = false;
     std::uint32_t glyph_id_offset = 0;
+    render_text_font_backend_capability_status font_backend_capability_status =
+        render_text_font_backend_capability_status::unavailable;
+    bool font_backend_fallback_only = false;
+    bool font_backend_supports_rasterization = false;
+    bool uses_deterministic_rasterizer = true;
     bool cacheable = false;
     bool upload_ready = false;
     bool skipped = true;

@@ -62,6 +62,30 @@ struct font_source_bytes_cache_access_result {
     bool inserted = false;
 };
 
+render_text_font_backend_capability_snapshot probe_fake_text_engine_font_backend_capability(
+    const std::vector<render_text_font_backend_component>& components,
+    const render_text_font_backend_capability_probe_request& request)
+{
+    if (components.empty()) {
+        const deterministic_fake_font_backend_capability_probe probe;
+        return probe.probe(request);
+    }
+
+    const deterministic_fake_font_backend_capability_probe probe{components};
+    return probe.probe(request);
+}
+
+void record_font_backend_capability(
+    fake_text_engine_diagnostics& diagnostics,
+    const render_text_font_backend_capability_snapshot& capability)
+{
+    diagnostics.font_backend_capability = capability;
+    diagnostics.font_backend_shaping_capability =
+        render_text_font_backend_capability_to_shaping(capability);
+    diagnostics.font_backend_uses_deterministic_shaping = true;
+    diagnostics.font_backend_uses_deterministic_rasterizer = true;
+}
+
 float line_height_for(const render_text_style& style)
 {
     return style.line_height > 0.0f ? style.line_height : style.font_size;
@@ -420,7 +444,8 @@ std::vector<shaped_glyph> shape_request(
     const render_text_request& request,
     const deterministic_fake_font_resolver& font_resolver,
     fake_text_engine_diagnostics& diagnostics,
-    std::vector<std::string>& source_cache_entries)
+    std::vector<std::string>& source_cache_entries,
+    const render_text_font_backend_capability_snapshot& font_backend_capability)
 {
     std::vector<shaped_glyph> glyphs;
 
@@ -501,16 +526,19 @@ std::vector<shaped_glyph> shape_request(
         }
 
         const deterministic_fake_font_shaping_backend shaping_backend;
+        render_text_font_shaping_request shaping_request{
+            .run_index = run_index,
+            .style_token = run.style_token,
+            .style = style,
+            .codepoints = codepoints,
+            .clusters = utf8_clusters,
+            .font_selections = shaping_selections,
+        };
+        shaping_request = apply_render_text_font_backend_capability(
+            std::move(shaping_request),
+            font_backend_capability);
         const render_text_font_shaping_result shaped_run = shaping_backend.shape(
-            render_text_font_shaping_request{
-                .run_index = run_index,
-                .style_token = run.style_token,
-                .style = style,
-                .codepoints = codepoints,
-                .clusters = utf8_clusters,
-                .font_selections = shaping_selections,
-                .support_complex_scripts = false,
-            });
+            shaping_request);
         record_font_shaping_result(diagnostics, shaped_run);
 
         for (const render_text_shaped_glyph& glyph : shaped_run.glyphs) {
@@ -1090,7 +1118,8 @@ void append_rasterized_glyph_atlas_payload_snapshot(
 void record_rasterized_glyph_atlas_payload_diagnostics(
     fake_text_engine_diagnostics& diagnostics,
     const std::vector<laid_out_glyph_cluster>& clusters,
-    const font_face_catalog& catalog)
+    const font_face_catalog& catalog,
+    const render_text_font_backend_capability_snapshot& font_backend_capability)
 {
     diagnostics.rasterized_glyph_atlas_payloads.clear();
     diagnostics.rasterized_glyph_atlas_payloads.reserve(clusters.size());
@@ -1122,6 +1151,12 @@ void record_rasterized_glyph_atlas_payload_diagnostics(
                     .glyph_id_matches_codepoint = cluster.glyph_id_matches_codepoint,
                     .used_fallback_glyph_id = cluster.used_fallback_glyph_id,
                     .glyph_id_offset = cluster.glyph_id_offset,
+                    .font_backend_capability_status = font_backend_capability.status,
+                    .font_backend_fallback_only = font_backend_capability.fallback_only,
+                    .font_backend_supports_rasterization =
+                        font_backend_capability.supports_feature(
+                            render_text_font_backend_feature::glyph_rasterization),
+                    .uses_deterministic_rasterizer = true,
                     .cacheable = false,
                     .upload_ready = false,
                     .skipped = true,
@@ -1151,6 +1186,12 @@ void record_rasterized_glyph_atlas_payload_diagnostics(
                     .glyph_id_matches_codepoint = cluster.glyph_id_matches_codepoint,
                     .used_fallback_glyph_id = cluster.used_fallback_glyph_id,
                     .glyph_id_offset = cluster.glyph_id_offset,
+                    .font_backend_capability_status = font_backend_capability.status,
+                    .font_backend_fallback_only = font_backend_capability.fallback_only,
+                    .font_backend_supports_rasterization =
+                        font_backend_capability.supports_feature(
+                            render_text_font_backend_feature::glyph_rasterization),
+                    .uses_deterministic_rasterizer = true,
                     .cacheable = true,
                     .upload_ready = false,
                     .skipped = true,
@@ -1193,6 +1234,12 @@ void record_rasterized_glyph_atlas_payload_diagnostics(
                 .glyph_id_matches_codepoint = cluster.glyph_id_matches_codepoint,
                 .used_fallback_glyph_id = cluster.used_fallback_glyph_id,
                 .glyph_id_offset = cluster.glyph_id_offset,
+                .font_backend_capability_status = font_backend_capability.status,
+                .font_backend_fallback_only = font_backend_capability.fallback_only,
+                .font_backend_supports_rasterization =
+                    font_backend_capability.supports_feature(
+                        render_text_font_backend_feature::glyph_rasterization),
+                .uses_deterministic_rasterizer = true,
                 .cacheable = true,
                 .upload_ready = payload.upload_ready,
                 .skipped = !payload.upload_ready,
@@ -1456,6 +1503,7 @@ void update_atlas_for_clusters(
     glyph_atlas_cache& atlas_cache,
     std::vector<glyph_atlas_key>& glyph_cache_policy_entries,
     const font_face_catalog& catalog,
+    const render_text_font_backend_capability_snapshot& font_backend_capability,
     fake_text_engine_diagnostics& diagnostics,
     std::vector<render_text_atlas_update>& atlas_updates)
 {
@@ -1538,7 +1586,11 @@ void update_atlas_for_clusters(
     }
 
     record_glyph_cache_readiness_diagnostics(diagnostics, clusters);
-    record_rasterized_glyph_atlas_payload_diagnostics(diagnostics, clusters, catalog);
+    record_rasterized_glyph_atlas_payload_diagnostics(
+        diagnostics,
+        clusters,
+        catalog,
+        font_backend_capability);
 
     const std::vector<render_text_atlas_page> pages = atlas_cache.pages();
     std::vector<render_text_atlas_update> dirty_updates = atlas_cache.consume_dirty_page_updates();
@@ -1578,16 +1630,26 @@ const glyph_atlas_slot* atlas_slot_for_visible_glyph(
 render_text_measure fake_text_engine::measure_text(const render_text_request& request) const
 {
     diagnostics_ = {};
+    const render_text_font_backend_capability_snapshot font_backend_capability =
+        probe_fake_text_engine_font_backend_capability(
+            font_backend_capability_components_,
+            font_backend_capability_request_);
+    record_font_backend_capability(diagnostics_, font_backend_capability);
     const std::vector<shaped_glyph> glyphs =
-        shape_request(request, font_resolver_, diagnostics_, font_source_bytes_cache_entries_);
+        shape_request(request, font_resolver_, diagnostics_, font_source_bytes_cache_entries_, font_backend_capability);
     return measure_lines(break_lines(request, glyphs, &diagnostics_));
 }
 
 render_text_layout fake_text_engine::layout_text(const render_text_request& request) const
 {
     diagnostics_ = {};
+    const render_text_font_backend_capability_snapshot font_backend_capability =
+        probe_fake_text_engine_font_backend_capability(
+            font_backend_capability_components_,
+            font_backend_capability_request_);
+    record_font_backend_capability(diagnostics_, font_backend_capability);
     const std::vector<shaped_glyph> shaped_glyphs =
-        shape_request(request, font_resolver_, diagnostics_, font_source_bytes_cache_entries_);
+        shape_request(request, font_resolver_, diagnostics_, font_source_bytes_cache_entries_, font_backend_capability);
     const std::vector<laid_out_line> lines = break_lines(request, shaped_glyphs, &diagnostics_);
     std::vector<laid_out_glyph_cluster> cluster_layouts =
         collect_glyph_cluster_layouts(request, shaped_glyphs, lines);
@@ -1598,6 +1660,7 @@ render_text_layout fake_text_engine::layout_text(const render_text_request& requ
         glyph_atlas_cache_,
         glyph_cache_policy_entries_,
         font_resolver_.catalog(),
+        font_backend_capability,
         diagnostics_,
         atlas_updates_);
 
@@ -1639,8 +1702,13 @@ render_text_layout fake_text_engine::layout_text(const render_text_request& requ
 std::vector<fake_text_engine_caret> fake_text_engine::caret_positions(const render_text_request& request) const
 {
     diagnostics_ = {};
+    const render_text_font_backend_capability_snapshot font_backend_capability =
+        probe_fake_text_engine_font_backend_capability(
+            font_backend_capability_components_,
+            font_backend_capability_request_);
+    record_font_backend_capability(diagnostics_, font_backend_capability);
     const std::vector<shaped_glyph> shaped_glyphs =
-        shape_request(request, font_resolver_, diagnostics_, font_source_bytes_cache_entries_);
+        shape_request(request, font_resolver_, diagnostics_, font_source_bytes_cache_entries_, font_backend_capability);
     const std::vector<laid_out_line> lines = break_lines(request, shaped_glyphs, &diagnostics_);
     const std::vector<laid_out_glyph_cluster> cluster_layouts =
         collect_glyph_cluster_layouts(request, shaped_glyphs, lines);
@@ -1682,8 +1750,13 @@ std::vector<render_rect> fake_text_engine::selection_rects(
         return {};
     }
 
+    const render_text_font_backend_capability_snapshot font_backend_capability =
+        probe_fake_text_engine_font_backend_capability(
+            font_backend_capability_components_,
+            font_backend_capability_request_);
+    record_font_backend_capability(diagnostics_, font_backend_capability);
     const std::vector<shaped_glyph> shaped_glyphs =
-        shape_request(request, font_resolver_, diagnostics_, font_source_bytes_cache_entries_);
+        shape_request(request, font_resolver_, diagnostics_, font_source_bytes_cache_entries_, font_backend_capability);
     const std::vector<laid_out_line> lines = break_lines(request, shaped_glyphs, &diagnostics_);
     const std::vector<laid_out_glyph_cluster> cluster_layouts =
         collect_glyph_cluster_layouts(request, shaped_glyphs, lines);
@@ -1712,6 +1785,23 @@ const fake_text_engine_diagnostics& fake_text_engine::last_diagnostics() const
 const font_face_descriptor& fake_text_engine::add_font_face(font_face_descriptor descriptor)
 {
     return font_resolver_.add_face(std::move(descriptor));
+}
+
+void fake_text_engine::set_font_backend_capability_components(
+    std::vector<render_text_font_backend_component> components)
+{
+    font_backend_capability_components_ = std::move(components);
+}
+
+void fake_text_engine::clear_font_backend_capability_components()
+{
+    font_backend_capability_components_.clear();
+}
+
+void fake_text_engine::set_font_backend_capability_probe_request(
+    render_text_font_backend_capability_probe_request request)
+{
+    font_backend_capability_request_ = std::move(request);
 }
 
 } // namespace quiz_vulkan::render

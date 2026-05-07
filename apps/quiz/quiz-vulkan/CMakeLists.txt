@@ -144,6 +144,7 @@ target_sources(
             src/render/image/image_types.h
             src/render/image/png_image_chunk_scanner.h
             src/render/image/png_image_decode_boundary.h
+            src/render/image/png_image_decoder.h
             src/render/image/png_image_header_inspector.h
             src/render/image/png_image_unfilter_boundary.h
             src/render/render_draw_list.h
@@ -152,6 +153,7 @@ target_sources(
             src/render/text/font_glyph_atlas.h
             src/render/text/font_rasterizer.h
             src/render/text/font_resolver.h
+            src/render/text/font_shaped_atlas_update.h
             src/render/text/font_shaping_backend.h
             src/render/text/font_sfnt_inspector.h
             src/render/text/font_source_bytes_loader.h
@@ -314,6 +316,7 @@ target_sources(
         FILES
             src/render/vulkan/vulkan_backend_adapter.h
             src/render/vulkan/vulkan_backend_command_recording.h
+            src/render/vulkan/vulkan_backend_command_submit.h
             src/render/vulkan/vulkan_backend_device.h
             src/render/vulkan/vulkan_backend_frame_lifecycle.h
             src/render/vulkan/vulkan_backend_instance.h

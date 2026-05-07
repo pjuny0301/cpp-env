@@ -110,6 +110,44 @@ quiz_vulkan::render::render_text_request make_single_run_request(const std::stri
     return request;
 }
 
+quiz_vulkan::render::render_text_real_font_shaping_adapter_result mismatched_adapter_shape(
+    const quiz_vulkan::render::render_text_real_font_shaping_adapter_request& request)
+{
+    quiz_vulkan::render::render_text_real_font_shaping_adapter_result result =
+        quiz_vulkan::render::deterministic_fake_real_font_backend_shape(request);
+    if (!result.glyphs.empty()) {
+        ++result.glyphs.front().glyph_id;
+    }
+    return result;
+}
+
+quiz_vulkan::render::render_text_real_font_shaping_adapter_result recoverable_adapter_shape_failure(
+    const quiz_vulkan::render::render_text_real_font_shaping_adapter_request& request)
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_real_font_shaping_adapter_result result{
+        .status = render_text_font_backend_adapter_status::recoverable_backend_failure,
+        .library = request.library,
+        .capability_status = request.capability.status,
+        .run_index = request.run_index,
+        .style_token = request.style_token,
+        .recoverable = true,
+        .fatal = false,
+        .diagnostic = "recoverable injected adapter shaping failure",
+    };
+    result.diagnostics.push_back(render_text_font_backend_adapter_diagnostic{
+        .status = result.status,
+        .library = request.library,
+        .capability_status = request.capability.status,
+        .run_index = request.run_index,
+        .recoverable = true,
+        .fatal = false,
+        .diagnostic = result.diagnostic,
+    });
+    return result;
+}
+
 void test_fake_glyph_clusters_track_utf8_runs_and_font_faces()
 {
     using namespace quiz_vulkan::render;
@@ -648,6 +686,192 @@ void test_fake_text_engine_keeps_complex_script_on_fallback_until_backend_suppor
         "backend-supported fake engine still records deterministic rasterizer use");
 }
 
+void test_fake_text_engine_uses_default_deterministic_shaping_without_adapter()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    const render_text_layout layout = engine.layout_text(make_single_run_request("A"));
+    const fake_text_engine_diagnostics& diagnostics = engine.last_diagnostics();
+
+    require(layout.glyphs.size() == 1U, "default fake engine lays out deterministic Latin glyph");
+    require(diagnostics.font_backend_uses_deterministic_shaping, "default fake engine uses deterministic shaping");
+    require(!diagnostics.font_backend_uses_adapter_shaping, "default fake engine does not use adapter shaping");
+    require(
+        !diagnostics.font_backend_adapter_policy.configured,
+        "default fake engine has no adapter configured");
+    require(
+        diagnostics.font_backend_adapter_policy.shaping_request_count == 0U,
+        "default fake engine makes no adapter shaping requests");
+    require(
+        !diagnostics.has_font_backend_adapter_diagnostics(),
+        "default fake engine records no adapter diagnostics");
+}
+
+void test_fake_text_engine_injected_adapter_unavailable_drives_shaping_diagnostics()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    engine.set_font_backend_capability_components({
+        render_text_font_backend_component{
+            .library = render_text_font_backend_library::directwrite,
+            .name = "DirectWrite",
+            .available = false,
+            .version = render_text_font_backend_version{.major = 0, .minor = 0, .patch = 0},
+            .features = {
+                render_text_font_backend_feature::glyph_shaping,
+                render_text_font_backend_feature::complex_script_shaping,
+            },
+            .diagnostic = "DirectWrite is unavailable in this deterministic fixture",
+        },
+    });
+    engine.set_font_backend_adapter_functions(render_text_font_backend_adapter_functions{
+        .shape = deterministic_fake_real_font_backend_shape,
+        .rasterize = deterministic_fake_real_font_backend_rasterize,
+        .label = "injected unavailable adapter",
+    });
+
+    const render_text_layout layout = engine.layout_text(make_single_run_request("A"));
+    const fake_text_engine_diagnostics& diagnostics = engine.last_diagnostics();
+
+    require(layout.glyphs.empty(), "unavailable injected adapter emits no layout glyphs");
+    require(!diagnostics.font_backend_uses_deterministic_shaping, "injected adapter replaces deterministic shaping");
+    require(diagnostics.font_backend_uses_adapter_shaping, "injected adapter path is recorded");
+    require(diagnostics.font_backend_adapter_policy.configured, "adapter configuration is recorded");
+    require(
+        diagnostics.font_backend_adapter_policy.used_for_shaping,
+        "adapter shaping use is recorded");
+    require(
+        diagnostics.font_backend_adapter_policy.backend_unavailable_count == 1U,
+        "adapter unavailable status is counted");
+    require(
+        diagnostics.font_backend_adapter_diagnostics.front().status
+            == render_text_font_backend_adapter_status::backend_unavailable,
+        "adapter unavailable diagnostic is preserved");
+    require(
+        diagnostics.font_backend_adapter_diagnostics.front().capability_status
+            == render_text_font_backend_capability_status::unavailable,
+        "adapter unavailable diagnostic preserves capability status");
+    require(
+        diagnostics.font_shaping_policy.backend_unavailable_count == 1U,
+        "adapter unavailable status drives shaping diagnostics");
+    require(diagnostics.shaped_glyphs.empty(), "adapter unavailable produces no shaped glyphs");
+}
+
+void test_fake_text_engine_injected_adapter_shapes_available_complex_script()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    engine.set_font_backend_capability_components({
+        freetype_component(),
+        harfbuzz_component(),
+    });
+    engine.set_font_backend_adapter_functions(render_text_font_backend_adapter_functions{
+        .shape = deterministic_fake_real_font_backend_shape,
+        .rasterize = deterministic_fake_real_font_backend_rasterize,
+        .label = "injected available adapter",
+    });
+
+    const render_text_layout layout = engine.layout_text(make_single_run_request("\xd8\xa7"));
+    const fake_text_engine_diagnostics& diagnostics = engine.last_diagnostics();
+
+    require(layout.glyphs.size() == 1U, "available injected adapter lays out complex script glyph");
+    require(!diagnostics.font_backend_uses_deterministic_shaping, "available adapter replaces deterministic shaping");
+    require(diagnostics.font_backend_uses_adapter_shaping, "available adapter shaping path is recorded");
+    require(
+        diagnostics.font_backend_adapter_policy.shaping_request_count == 1U,
+        "available adapter records one shaping request");
+    require(
+        diagnostics.font_backend_adapter_policy.shaped_count == 1U,
+        "available adapter records shaped result");
+    require(
+        diagnostics.font_backend_adapter_diagnostics.front().status == render_text_font_backend_adapter_status::shaped,
+        "available adapter records shaped diagnostic");
+    require(
+        diagnostics.font_shaping_policy.shaped_run_count == 1U,
+        "available adapter shaped result drives shaping policy");
+    require(diagnostics.shaped_glyphs.front().codepoint == 0x0627U, "adapter shaped glyph keeps Arabic codepoint");
+    require(diagnostics.shaped_glyphs.front().glyph_id == 0x0627U, "adapter shaped glyph keeps resolved glyph id");
+    require(diagnostics.shaped_glyphs.front().glyph_supported, "adapter shaped glyph claims support");
+    require(!diagnostics.shaped_glyphs.front().used_fallback_glyph_id, "adapter shaped glyph avoids fallback id");
+}
+
+void test_fake_text_engine_injected_adapter_glyph_mismatch_drives_failure_diagnostics()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    engine.set_font_backend_capability_components({
+        freetype_component(),
+        harfbuzz_component(),
+    });
+    engine.set_font_backend_adapter_functions(render_text_font_backend_adapter_functions{
+        .shape = mismatched_adapter_shape,
+        .rasterize = deterministic_fake_real_font_backend_rasterize,
+        .label = "injected mismatch adapter",
+    });
+
+    const render_text_layout layout = engine.layout_text(make_single_run_request("A"));
+    const fake_text_engine_diagnostics& diagnostics = engine.last_diagnostics();
+
+    require(layout.glyphs.empty(), "glyph id mismatch prevents untrusted adapter glyphs from layout");
+    require(diagnostics.font_backend_uses_adapter_shaping, "mismatch adapter path is recorded");
+    require(
+        diagnostics.font_backend_adapter_policy.glyph_id_mismatch_count == 1U,
+        "glyph id mismatch is counted by adapter policy");
+    require(
+        diagnostics.font_backend_adapter_diagnostics.back().status
+            == render_text_font_backend_adapter_status::glyph_id_mismatch,
+        "glyph id mismatch adapter diagnostic is preserved");
+    require(
+        diagnostics.font_backend_adapter_diagnostics.back().expected_glyph_id == U'A',
+        "glyph id mismatch diagnostic records expected glyph id");
+    require(
+        diagnostics.font_backend_adapter_diagnostics.back().actual_glyph_id == U'A' + 1U,
+        "glyph id mismatch diagnostic records actual glyph id");
+    require(
+        diagnostics.font_shaping_policy.unsupported_glyph_count == 1U,
+        "glyph id mismatch drives shaping unsupported glyph diagnostic");
+    require(diagnostics.shaped_glyphs.empty(), "glyph id mismatch records no trusted shaped glyphs");
+}
+
+void test_fake_text_engine_injected_adapter_failure_drives_shaping_diagnostics()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    engine.set_font_backend_capability_components({
+        freetype_component(),
+        harfbuzz_component(),
+    });
+    engine.set_font_backend_adapter_functions(render_text_font_backend_adapter_functions{
+        .shape = recoverable_adapter_shape_failure,
+        .rasterize = deterministic_fake_real_font_backend_rasterize,
+        .label = "injected recoverable failure adapter",
+    });
+
+    const render_text_layout layout = engine.layout_text(make_single_run_request("A"));
+    const fake_text_engine_diagnostics& diagnostics = engine.last_diagnostics();
+
+    require(layout.glyphs.empty(), "recoverable adapter failure emits no layout glyphs");
+    require(
+        diagnostics.font_backend_adapter_policy.recoverable_failure_count == 1U,
+        "recoverable adapter failure is counted");
+    require(
+        diagnostics.font_backend_adapter_diagnostics.front().status
+            == render_text_font_backend_adapter_status::recoverable_backend_failure,
+        "recoverable adapter failure diagnostic is preserved");
+    require(
+        diagnostics.font_shaping_policy.backend_unavailable_count == 1U,
+        "recoverable adapter failure drives shaping backend diagnostic");
+    require(
+        diagnostics.font_shaping_diagnostics.front().diagnostic
+            == "recoverable injected adapter shaping failure",
+        "recoverable adapter failure message is visible through shaping diagnostics");
+}
+
 void test_fake_text_engine_wires_resolved_glyph_id_through_atlas_payloads()
 {
     using namespace quiz_vulkan::render;
@@ -1071,6 +1295,11 @@ int main()
     test_fake_text_engine_records_fallback_only_backend_capability_for_latin_hangul();
     test_fake_text_engine_records_unavailable_backend_capability();
     test_fake_text_engine_keeps_complex_script_on_fallback_until_backend_supports_it();
+    test_fake_text_engine_uses_default_deterministic_shaping_without_adapter();
+    test_fake_text_engine_injected_adapter_unavailable_drives_shaping_diagnostics();
+    test_fake_text_engine_injected_adapter_shapes_available_complex_script();
+    test_fake_text_engine_injected_adapter_glyph_mismatch_drives_failure_diagnostics();
+    test_fake_text_engine_injected_adapter_failure_drives_shaping_diagnostics();
     test_fake_text_engine_wires_resolved_glyph_id_through_atlas_payloads();
     test_fake_text_engine_wires_unsupported_shaped_glyph_id_to_skipped_payloads();
     test_fake_text_engine_wires_invalid_utf8_fallback_glyph_id();

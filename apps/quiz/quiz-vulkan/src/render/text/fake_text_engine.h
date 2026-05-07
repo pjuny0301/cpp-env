@@ -1,5 +1,6 @@
 #pragma once
 
+#include "render/text/font_backend_adapter.h"
 #include "render/text/font_backend_capabilities.h"
 #include "render/text/font_rasterizer.h"
 #include "render/text/font_glyph_id_resolver.h"
@@ -10,6 +11,7 @@
 #include "render/text/text_engine.h"
 
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -35,6 +37,19 @@ struct fake_text_engine_font_fallback {
     bool used_style_fallback = false;
 };
 
+struct fake_text_engine_font_backend_adapter_policy_snapshot {
+    bool configured = false;
+    bool used_for_shaping = false;
+    std::size_t shaping_request_count = 0;
+    std::size_t shaped_count = 0;
+    std::size_t backend_unavailable_count = 0;
+    std::size_t unsupported_script_count = 0;
+    std::size_t unsupported_glyph_count = 0;
+    std::size_t glyph_id_mismatch_count = 0;
+    std::size_t recoverable_failure_count = 0;
+    std::size_t fatal_failure_count = 0;
+};
+
 struct fake_text_engine_diagnostics {
     std::vector<fake_text_engine_style_fallback> style_fallbacks;
     std::vector<fake_text_engine_font_fallback> font_fallbacks;
@@ -56,6 +71,9 @@ struct fake_text_engine_diagnostics {
     render_text_font_backend_shaping_capability font_backend_shaping_capability;
     bool font_backend_uses_deterministic_shaping = true;
     bool font_backend_uses_deterministic_rasterizer = true;
+    bool font_backend_uses_adapter_shaping = false;
+    std::vector<render_text_font_backend_adapter_diagnostic> font_backend_adapter_diagnostics;
+    fake_text_engine_font_backend_adapter_policy_snapshot font_backend_adapter_policy;
     std::vector<render_text_shaped_glyph> shaped_glyphs;
     std::vector<render_text_font_shaping_diagnostic> font_shaping_diagnostics;
     render_text_font_shaping_policy_snapshot font_shaping_policy;
@@ -165,6 +183,17 @@ struct fake_text_engine_diagnostics {
     {
         return !font_backend_capability.components.empty()
             || !font_backend_capability.diagnostic.empty();
+    }
+
+    bool has_font_backend_adapter_diagnostics() const
+    {
+        return !font_backend_adapter_diagnostics.empty();
+    }
+
+    bool has_font_backend_adapter_policy() const
+    {
+        return font_backend_adapter_policy.configured
+            || font_backend_adapter_policy.shaping_request_count > 0;
     }
 
     bool has_shaped_glyphs() const
@@ -289,6 +318,9 @@ public:
     void clear_font_backend_capability_components();
     void set_font_backend_capability_probe_request(
         render_text_font_backend_capability_probe_request request);
+    void set_font_backend_adapter_functions(
+        render_text_font_backend_adapter_functions functions);
+    void clear_font_backend_adapter_functions();
     std::vector<fake_text_engine_caret> caret_positions(const render_text_request& request) const;
     std::vector<render_rect> selection_rects(
         const render_text_request& request,
@@ -306,6 +338,7 @@ private:
     mutable fake_text_engine_diagnostics diagnostics_;
     deterministic_fake_font_resolver font_resolver_;
     std::vector<render_text_font_backend_component> font_backend_capability_components_;
+    std::optional<render_text_font_backend_adapter_functions> font_backend_adapter_functions_;
     render_text_font_backend_capability_probe_request font_backend_capability_request_{
         .required_features = {
             render_text_font_backend_feature::glyph_id_mapping,

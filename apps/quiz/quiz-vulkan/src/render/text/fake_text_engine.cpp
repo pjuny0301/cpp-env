@@ -77,13 +77,16 @@ render_text_font_backend_capability_snapshot probe_fake_text_engine_font_backend
 
 void record_font_backend_capability(
     fake_text_engine_diagnostics& diagnostics,
-    const render_text_font_backend_capability_snapshot& capability)
+    const render_text_font_backend_capability_snapshot& capability,
+    const bool adapter_configured)
 {
     diagnostics.font_backend_capability = capability;
     diagnostics.font_backend_shaping_capability =
         render_text_font_backend_capability_to_shaping(capability);
     diagnostics.font_backend_uses_deterministic_shaping = true;
     diagnostics.font_backend_uses_deterministic_rasterizer = true;
+    diagnostics.font_backend_uses_adapter_shaping = false;
+    diagnostics.font_backend_adapter_policy.configured = adapter_configured;
 }
 
 float line_height_for(const render_text_style& style)
@@ -430,6 +433,151 @@ void record_font_shaping_result(
         result.policy.zero_advance_combining_mark_count;
 }
 
+void count_font_backend_adapter_status(
+    fake_text_engine_font_backend_adapter_policy_snapshot& policy,
+    const render_text_font_backend_adapter_status status)
+{
+    switch (status) {
+    case render_text_font_backend_adapter_status::shaped:
+        ++policy.shaped_count;
+        return;
+    case render_text_font_backend_adapter_status::backend_unavailable:
+        ++policy.backend_unavailable_count;
+        return;
+    case render_text_font_backend_adapter_status::unsupported_script:
+        ++policy.unsupported_script_count;
+        return;
+    case render_text_font_backend_adapter_status::unsupported_glyph:
+        ++policy.unsupported_glyph_count;
+        return;
+    case render_text_font_backend_adapter_status::glyph_id_mismatch:
+        ++policy.glyph_id_mismatch_count;
+        return;
+    case render_text_font_backend_adapter_status::recoverable_backend_failure:
+        ++policy.recoverable_failure_count;
+        return;
+    case render_text_font_backend_adapter_status::fatal_backend_failure:
+        ++policy.fatal_failure_count;
+        return;
+    case render_text_font_backend_adapter_status::rasterized:
+        return;
+    }
+}
+
+render_text_font_shaping_backend_status font_shaping_status_for_adapter_status(
+    const render_text_font_backend_adapter_status status)
+{
+    switch (status) {
+    case render_text_font_backend_adapter_status::shaped:
+    case render_text_font_backend_adapter_status::rasterized:
+        return render_text_font_shaping_backend_status::shaped;
+    case render_text_font_backend_adapter_status::backend_unavailable:
+    case render_text_font_backend_adapter_status::recoverable_backend_failure:
+    case render_text_font_backend_adapter_status::fatal_backend_failure:
+        return render_text_font_shaping_backend_status::backend_unavailable;
+    case render_text_font_backend_adapter_status::unsupported_script:
+        return render_text_font_shaping_backend_status::unsupported_script;
+    case render_text_font_backend_adapter_status::unsupported_glyph:
+    case render_text_font_backend_adapter_status::glyph_id_mismatch:
+        return render_text_font_shaping_backend_status::unsupported_glyph;
+    }
+
+    return render_text_font_shaping_backend_status::backend_unavailable;
+}
+
+render_text_font_shaping_diagnostic font_shaping_diagnostic_for_adapter_diagnostic(
+    const render_text_font_backend_adapter_diagnostic& diagnostic)
+{
+    return render_text_font_shaping_diagnostic{
+        .status = font_shaping_status_for_adapter_status(diagnostic.status),
+        .run_index = diagnostic.run_index,
+        .byte_offset = diagnostic.byte_offset,
+        .byte_count = diagnostic.byte_count,
+        .codepoint = diagnostic.codepoint,
+        .glyph_id = diagnostic.actual_glyph_id != 0U
+            ? diagnostic.actual_glyph_id
+            : diagnostic.expected_glyph_id,
+        .diagnostic = diagnostic.diagnostic,
+    };
+}
+
+render_text_font_shaping_result font_shaping_result_for_adapter_result(
+    const render_text_real_font_shaping_adapter_result& adapter_result,
+    const render_text_font_shaping_request& request)
+{
+    render_text_font_shaping_result result{
+        .status = font_shaping_status_for_adapter_status(adapter_result.status),
+        .run_index = request.run_index,
+        .style_token = request.style_token,
+        .policy = render_text_font_shaping_policy_snapshot{
+            .run_count = 1,
+            .codepoint_count = request.codepoints.size(),
+        },
+        .diagnostic = adapter_result.diagnostic,
+    };
+
+    if (adapter_result.ok()) {
+        result.glyphs = adapter_result.glyphs;
+    }
+
+    for (const render_text_shaped_glyph& glyph : result.glyphs) {
+        ++result.policy.glyph_count;
+        if (glyph.glyph_supported) {
+            ++result.policy.supported_glyph_count;
+        }
+        if (glyph.zero_advance && glyph.combining_mark) {
+            font_shaping_backend_append_diagnostic(
+                result,
+                render_text_font_shaping_diagnostic{
+                    .status = render_text_font_shaping_backend_status::zero_advance_combining_mark,
+                    .run_index = glyph.run_index,
+                    .byte_offset = glyph.byte_offset,
+                    .byte_count = glyph.byte_count,
+                    .codepoint = glyph.codepoint,
+                    .glyph_id = glyph.glyph_id,
+                    .resolved_face_id = glyph.resolved_face_id,
+                    .diagnostic = "adapter shaped combining mark with zero advance",
+                });
+        }
+    }
+
+    bool appended_adapter_diagnostic = false;
+    for (const render_text_font_backend_adapter_diagnostic& diagnostic : adapter_result.diagnostics) {
+        if (!adapter_result.ok() && diagnostic.status == render_text_font_backend_adapter_status::shaped) {
+            continue;
+        }
+        font_shaping_backend_append_diagnostic(
+            result,
+            font_shaping_diagnostic_for_adapter_diagnostic(diagnostic));
+        appended_adapter_diagnostic = true;
+    }
+    if (!appended_adapter_diagnostic) {
+        font_shaping_backend_append_diagnostic(
+            result,
+            render_text_font_shaping_diagnostic{
+                .status = result.status,
+                .run_index = request.run_index,
+                .diagnostic = adapter_result.diagnostic,
+            });
+    }
+    return result;
+}
+
+void record_font_backend_adapter_result(
+    fake_text_engine_diagnostics& diagnostics,
+    const render_text_real_font_shaping_adapter_result& result)
+{
+    diagnostics.font_backend_uses_adapter_shaping = true;
+    diagnostics.font_backend_uses_deterministic_shaping = false;
+    diagnostics.font_backend_adapter_policy.used_for_shaping = true;
+    ++diagnostics.font_backend_adapter_policy.shaping_request_count;
+    count_font_backend_adapter_status(diagnostics.font_backend_adapter_policy, result.status);
+    diagnostics.font_backend_adapter_diagnostics.insert(
+        diagnostics.font_backend_adapter_diagnostics.end(),
+        result.diagnostics.begin(),
+        result.diagnostics.end());
+}
+
 void record_font_glyph_id_resolution(
     fake_text_engine_diagnostics& diagnostics,
     render_text_font_glyph_id_resolution_snapshot resolution)
@@ -445,7 +593,8 @@ std::vector<shaped_glyph> shape_request(
     const deterministic_fake_font_resolver& font_resolver,
     fake_text_engine_diagnostics& diagnostics,
     std::vector<std::string>& source_cache_entries,
-    const render_text_font_backend_capability_snapshot& font_backend_capability)
+    const render_text_font_backend_capability_snapshot& font_backend_capability,
+    const render_text_font_backend_adapter_functions* adapter_functions)
 {
     std::vector<shaped_glyph> glyphs;
 
@@ -525,7 +674,6 @@ std::vector<shaped_glyph> shape_request(
             shaping_selections.push_back(shaping_selection);
         }
 
-        const deterministic_fake_font_shaping_backend shaping_backend;
         render_text_font_shaping_request shaping_request{
             .run_index = run_index,
             .style_token = run.style_token,
@@ -537,8 +685,29 @@ std::vector<shaped_glyph> shape_request(
         shaping_request = apply_render_text_font_backend_capability(
             std::move(shaping_request),
             font_backend_capability);
-        const render_text_font_shaping_result shaped_run = shaping_backend.shape(
-            shaping_request);
+
+        render_text_font_shaping_result shaped_run;
+        if (adapter_functions != nullptr) {
+            const function_table_font_backend_adapter adapter{*adapter_functions};
+            const render_text_real_font_shaping_adapter_result adapter_result = adapter.shape(
+                render_text_real_font_shaping_adapter_request{
+                    .capability = font_backend_capability,
+                    .library = render_text_font_backend_library::harfbuzz,
+                    .run_index = shaping_request.run_index,
+                    .style_token = shaping_request.style_token,
+                    .style = shaping_request.style,
+                    .codepoints = shaping_request.codepoints,
+                    .clusters = shaping_request.clusters,
+                    .font_selections = shaping_request.font_selections,
+                    .fallback_glyph_id = shaping_request.fallback_glyph_id,
+                    .source_label = "fake_text_engine",
+                });
+            record_font_backend_adapter_result(diagnostics, adapter_result);
+            shaped_run = font_shaping_result_for_adapter_result(adapter_result, shaping_request);
+        } else {
+            const deterministic_fake_font_shaping_backend shaping_backend;
+            shaped_run = shaping_backend.shape(shaping_request);
+        }
         record_font_shaping_result(diagnostics, shaped_run);
 
         for (const render_text_shaped_glyph& glyph : shaped_run.glyphs) {
@@ -1634,9 +1803,18 @@ render_text_measure fake_text_engine::measure_text(const render_text_request& re
         probe_fake_text_engine_font_backend_capability(
             font_backend_capability_components_,
             font_backend_capability_request_);
-    record_font_backend_capability(diagnostics_, font_backend_capability);
+    record_font_backend_capability(
+        diagnostics_,
+        font_backend_capability,
+        font_backend_adapter_functions_.has_value());
     const std::vector<shaped_glyph> glyphs =
-        shape_request(request, font_resolver_, diagnostics_, font_source_bytes_cache_entries_, font_backend_capability);
+        shape_request(
+            request,
+            font_resolver_,
+            diagnostics_,
+            font_source_bytes_cache_entries_,
+            font_backend_capability,
+            font_backend_adapter_functions_ ? &*font_backend_adapter_functions_ : nullptr);
     return measure_lines(break_lines(request, glyphs, &diagnostics_));
 }
 
@@ -1647,9 +1825,18 @@ render_text_layout fake_text_engine::layout_text(const render_text_request& requ
         probe_fake_text_engine_font_backend_capability(
             font_backend_capability_components_,
             font_backend_capability_request_);
-    record_font_backend_capability(diagnostics_, font_backend_capability);
+    record_font_backend_capability(
+        diagnostics_,
+        font_backend_capability,
+        font_backend_adapter_functions_.has_value());
     const std::vector<shaped_glyph> shaped_glyphs =
-        shape_request(request, font_resolver_, diagnostics_, font_source_bytes_cache_entries_, font_backend_capability);
+        shape_request(
+            request,
+            font_resolver_,
+            diagnostics_,
+            font_source_bytes_cache_entries_,
+            font_backend_capability,
+            font_backend_adapter_functions_ ? &*font_backend_adapter_functions_ : nullptr);
     const std::vector<laid_out_line> lines = break_lines(request, shaped_glyphs, &diagnostics_);
     std::vector<laid_out_glyph_cluster> cluster_layouts =
         collect_glyph_cluster_layouts(request, shaped_glyphs, lines);
@@ -1706,9 +1893,18 @@ std::vector<fake_text_engine_caret> fake_text_engine::caret_positions(const rend
         probe_fake_text_engine_font_backend_capability(
             font_backend_capability_components_,
             font_backend_capability_request_);
-    record_font_backend_capability(diagnostics_, font_backend_capability);
+    record_font_backend_capability(
+        diagnostics_,
+        font_backend_capability,
+        font_backend_adapter_functions_.has_value());
     const std::vector<shaped_glyph> shaped_glyphs =
-        shape_request(request, font_resolver_, diagnostics_, font_source_bytes_cache_entries_, font_backend_capability);
+        shape_request(
+            request,
+            font_resolver_,
+            diagnostics_,
+            font_source_bytes_cache_entries_,
+            font_backend_capability,
+            font_backend_adapter_functions_ ? &*font_backend_adapter_functions_ : nullptr);
     const std::vector<laid_out_line> lines = break_lines(request, shaped_glyphs, &diagnostics_);
     const std::vector<laid_out_glyph_cluster> cluster_layouts =
         collect_glyph_cluster_layouts(request, shaped_glyphs, lines);
@@ -1754,9 +1950,18 @@ std::vector<render_rect> fake_text_engine::selection_rects(
         probe_fake_text_engine_font_backend_capability(
             font_backend_capability_components_,
             font_backend_capability_request_);
-    record_font_backend_capability(diagnostics_, font_backend_capability);
+    record_font_backend_capability(
+        diagnostics_,
+        font_backend_capability,
+        font_backend_adapter_functions_.has_value());
     const std::vector<shaped_glyph> shaped_glyphs =
-        shape_request(request, font_resolver_, diagnostics_, font_source_bytes_cache_entries_, font_backend_capability);
+        shape_request(
+            request,
+            font_resolver_,
+            diagnostics_,
+            font_source_bytes_cache_entries_,
+            font_backend_capability,
+            font_backend_adapter_functions_ ? &*font_backend_adapter_functions_ : nullptr);
     const std::vector<laid_out_line> lines = break_lines(request, shaped_glyphs, &diagnostics_);
     const std::vector<laid_out_glyph_cluster> cluster_layouts =
         collect_glyph_cluster_layouts(request, shaped_glyphs, lines);
@@ -1802,6 +2007,17 @@ void fake_text_engine::set_font_backend_capability_probe_request(
     render_text_font_backend_capability_probe_request request)
 {
     font_backend_capability_request_ = std::move(request);
+}
+
+void fake_text_engine::set_font_backend_adapter_functions(
+    render_text_font_backend_adapter_functions functions)
+{
+    font_backend_adapter_functions_ = std::move(functions);
+}
+
+void fake_text_engine::clear_font_backend_adapter_functions()
+{
+    font_backend_adapter_functions_.reset();
 }
 
 } // namespace quiz_vulkan::render

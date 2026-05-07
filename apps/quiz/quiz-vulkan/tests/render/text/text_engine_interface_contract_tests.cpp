@@ -1513,6 +1513,134 @@ static_assert(requires(
 });
 
 static_assert(requires(
+    render::render_text_batch_ref text_ref,
+    render::render_text_request_batch_item item,
+    render::render_text_batch_normalized_style_key style_key,
+    render::render_text_batch_materialization_work_key work_key,
+    render::render_text_batch_layout_request_snapshot layout_request,
+    render::render_text_batch_atlas_update_request_snapshot atlas_request,
+    render::render_text_request_batch_plan_policy_snapshot plan_policy,
+    render::render_text_request_batch_plan_snapshot plan,
+    render::render_text_glyph_atlas_materialization_snapshot snapshot,
+    render::render_text_request request,
+    render::render_draw_command draw_command,
+    render::render_text_style_catalog style_catalog,
+    std::vector<render::render_text_request_batch_item> items,
+    std::vector<render::render_text_glyph_atlas_materialization_snapshot> materializations,
+    std::vector<std::string> unique_style_keys,
+    std::vector<render::render_text_batch_materialization_work_key> unique_work,
+    std::string style_key_text,
+    bool duplicate) {
+    { text_ref.node_id } -> std::same_as<render::render_node_id&>;
+    { text_ref.text_runs } -> std::same_as<std::vector<render::render_text_run>&>;
+    { text_ref.bounds } -> std::same_as<render::render_rect&>;
+    { text_ref.options } -> std::same_as<render::render_text_options&>;
+    { text_ref.source_label } -> std::same_as<std::string&>;
+    { item.item_index } -> std::same_as<std::size_t&>;
+    { item.node_id } -> std::same_as<render::render_node_id&>;
+    { item.source_label } -> std::same_as<std::string&>;
+    { item.text_runs } -> std::same_as<std::vector<render::render_text_run>&>;
+    { item.bounds } -> std::same_as<render::render_rect&>;
+    { item.style_catalog } -> std::same_as<render::render_text_style_catalog&>;
+    { item.options } -> std::same_as<render::render_text_options&>;
+    { item.materializations }
+        -> std::same_as<std::vector<render::render_text_glyph_atlas_materialization_snapshot>&>;
+    { style_key.requested_style_token } -> std::same_as<render::render_style_id&>;
+    { style_key.resolved_style_id } -> std::same_as<render::render_style_id&>;
+    { style_key.normalized_font_family } -> std::same_as<std::string&>;
+    { style_key.font_size } -> std::same_as<float&>;
+    { style_key.line_height } -> std::same_as<float&>;
+    { style_key.letter_spacing } -> std::same_as<float&>;
+    { style_key.font_weight } -> std::same_as<int&>;
+    { style_key.italic } -> std::same_as<bool&>;
+    { style_key.used_fallback_style } -> std::same_as<bool&>;
+    { style_key.key } -> std::same_as<std::string&>;
+    { work_key.cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { work_key.shaping_font_backend_library } -> std::same_as<render::render_text_font_backend_library&>;
+    { work_key.shaping_font_backend_label } -> std::same_as<std::string&>;
+    { work_key.raster_font_backend_library } -> std::same_as<render::render_text_font_backend_library&>;
+    { work_key.raster_font_backend_label } -> std::same_as<std::string&>;
+    { work_key.payload_alpha_bytes } -> std::same_as<std::size_t&>;
+    { work_key.payload_rgba_bytes } -> std::same_as<std::size_t&>;
+    { layout_request.item_index } -> std::same_as<std::size_t&>;
+    { layout_request.node_id } -> std::same_as<render::render_node_id&>;
+    { layout_request.source_label } -> std::same_as<std::string&>;
+    { layout_request.bounds } -> std::same_as<render::render_rect&>;
+    { layout_request.options } -> std::same_as<render::render_text_options&>;
+    { layout_request.run_count } -> std::same_as<std::size_t&>;
+    { layout_request.style_key_offset } -> std::same_as<std::size_t&>;
+    { layout_request.style_key_count } -> std::same_as<std::size_t&>;
+    { layout_request.fallback_style_count } -> std::same_as<std::size_t&>;
+    { layout_request.planned } -> std::same_as<bool&>;
+    { atlas_request.item_index } -> std::same_as<std::size_t&>;
+    { atlas_request.materialization_index } -> std::same_as<std::size_t&>;
+    { atlas_request.unique_work_index } -> std::same_as<std::size_t&>;
+    { atlas_request.duplicate_of } -> std::same_as<std::size_t&>;
+    { atlas_request.materialization_status }
+        -> std::same_as<render::render_text_glyph_atlas_materialization_status&>;
+    { atlas_request.cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { atlas_request.resolved_glyph_id } -> std::same_as<std::uint32_t&>;
+    { atlas_request.resolved_face_id } -> std::same_as<render::font_face_id&>;
+    { atlas_request.shaping_font_backend_library } -> std::same_as<render::render_text_font_backend_library&>;
+    { atlas_request.raster_font_backend_library } -> std::same_as<render::render_text_font_backend_library&>;
+    { atlas_request.payload_alpha_bytes } -> std::same_as<std::size_t&>;
+    { atlas_request.payload_rgba_bytes } -> std::same_as<std::size_t&>;
+    { atlas_request.atlas_update_rgba_bytes } -> std::same_as<std::size_t&>;
+    { atlas_request.materialized } -> std::same_as<bool&>;
+    { atlas_request.duplicate } -> std::same_as<bool&>;
+    { atlas_request.skipped } -> std::same_as<bool&>;
+    { atlas_request.used_deterministic_fallback } -> std::same_as<bool&>;
+    { atlas_request.used_real_backend } -> std::same_as<bool&>;
+    { atlas_request.diagnostic } -> std::same_as<std::string&>;
+    { plan_policy.item_count } -> std::same_as<std::size_t&>;
+    { plan_policy.layout_request_count } -> std::same_as<std::size_t&>;
+    { plan_policy.text_run_count } -> std::same_as<std::size_t&>;
+    { plan_policy.style_key_count } -> std::same_as<std::size_t&>;
+    { plan_policy.unique_style_key_count } -> std::same_as<std::size_t&>;
+    { plan_policy.fallback_style_count } -> std::same_as<std::size_t&>;
+    { plan_policy.materialization_count } -> std::same_as<std::size_t&>;
+    { plan_policy.atlas_update_request_count } -> std::same_as<std::size_t&>;
+    { plan_policy.unique_atlas_materialization_count } -> std::same_as<std::size_t&>;
+    { plan_policy.duplicate_atlas_materialization_count } -> std::same_as<std::size_t&>;
+    { plan_policy.skipped_materialization_count } -> std::same_as<std::size_t&>;
+    { plan_policy.fallback_materialization_count } -> std::same_as<std::size_t&>;
+    { plan_policy.real_backend_materialization_count } -> std::same_as<std::size_t&>;
+    { plan_policy.total_payload_rgba_bytes } -> std::same_as<std::size_t&>;
+    { plan_policy.planned_atlas_update_rgba_bytes } -> std::same_as<std::size_t&>;
+    { plan.layout_requests } -> std::same_as<std::vector<render::render_text_batch_layout_request_snapshot>&>;
+    { plan.atlas_update_requests }
+        -> std::same_as<std::vector<render::render_text_batch_atlas_update_request_snapshot>&>;
+    { plan.style_keys } -> std::same_as<std::vector<render::render_text_batch_normalized_style_key>&>;
+    { plan.unique_style_keys } -> std::same_as<std::vector<std::string>&>;
+    { plan.unique_materialization_work }
+        -> std::same_as<std::vector<render::render_text_batch_materialization_work_key>&>;
+    { plan.policy } -> std::same_as<render::render_text_request_batch_plan_policy_snapshot&>;
+    { plan.has_layout_requests() } -> std::same_as<bool>;
+    { plan.has_atlas_update_requests() } -> std::same_as<bool>;
+    { render::render_text_batch_normalize_font_family(style_key_text) } -> std::same_as<std::string>;
+    { render::render_text_batch_float_key(float{}) } -> std::same_as<std::string>;
+    { render::render_text_batch_make_style_key(style_key_text, style_catalog.fallback_style) }
+        -> std::same_as<std::string>;
+    { render::render_text_batch_normalized_style_key_for(style_catalog, style_key_text) }
+        -> std::same_as<render::render_text_batch_normalized_style_key>;
+    { render::make_render_text_request_batch_item(request, materializations, style_key_text, style_key_text) }
+        -> std::same_as<render::render_text_request_batch_item>;
+    { render::make_render_text_request_batch_item(text_ref, style_catalog, materializations) }
+        -> std::same_as<render::render_text_request_batch_item>;
+    { render::make_render_text_request_batch_item(draw_command, style_catalog, materializations) }
+        -> std::same_as<render::render_text_request_batch_item>;
+    { render::render_text_batch_materialization_work_key_for(snapshot) }
+        -> std::same_as<render::render_text_batch_materialization_work_key>;
+    { render::render_text_batch_find_or_append_unique_style_key(unique_style_keys, style_key_text) }
+        -> std::same_as<std::size_t>;
+    { render::render_text_batch_find_or_append_unique_materialization_work(unique_work, work_key, duplicate) }
+        -> std::same_as<std::size_t>;
+    { render::render_text_batch_materialization_uses_deterministic_fallback(snapshot) } -> std::same_as<bool>;
+    { render::render_text_batch_materialization_uses_real_backend(snapshot) } -> std::same_as<bool>;
+    { render::plan_render_text_request_batch(items) } -> std::same_as<render::render_text_request_batch_plan_snapshot>;
+});
+
+static_assert(requires(
     render::render_text_shaped_atlas_update_trace_status status,
     render::render_text_shaped_atlas_update_trace_request request,
     render::render_text_shaped_atlas_update_trace_snapshot trace,

@@ -3,9 +3,12 @@
 #include "render/text/font_rasterizer.h"
 #include "render/text/font_shaping_backend.h"
 
+#include <algorithm>
+#include <cctype>
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -289,6 +292,414 @@ inline void append_render_text_glyph_atlas_materialization(
     }
 
     snapshots.push_back(std::move(snapshot));
+}
+
+struct render_text_batch_ref {
+    render_node_id node_id;
+    std::vector<render_text_run> text_runs;
+    render_rect bounds;
+    render_text_options options;
+    std::string source_label;
+};
+
+struct render_text_request_batch_item {
+    std::size_t item_index = 0;
+    render_node_id node_id;
+    std::string source_label;
+    std::vector<render_text_run> text_runs;
+    render_rect bounds;
+    render_text_style_catalog style_catalog;
+    render_text_options options;
+    std::vector<render_text_glyph_atlas_materialization_snapshot> materializations;
+};
+
+struct render_text_batch_normalized_style_key {
+    render_style_id requested_style_token;
+    render_style_id resolved_style_id;
+    std::string normalized_font_family;
+    float font_size = 0.0f;
+    float line_height = 0.0f;
+    float letter_spacing = 0.0f;
+    int font_weight = 400;
+    bool italic = false;
+    bool used_fallback_style = false;
+    std::string key;
+};
+
+struct render_text_batch_materialization_work_key {
+    glyph_atlas_key cache_key;
+    render_text_font_backend_library shaping_font_backend_library =
+        render_text_font_backend_library::deterministic_fake;
+    std::string shaping_font_backend_label;
+    render_text_font_backend_library raster_font_backend_library =
+        render_text_font_backend_library::deterministic_fake;
+    std::string raster_font_backend_label;
+    std::size_t payload_alpha_bytes = 0;
+    std::size_t payload_rgba_bytes = 0;
+
+    friend bool operator==(
+        const render_text_batch_materialization_work_key&,
+        const render_text_batch_materialization_work_key&) = default;
+};
+
+struct render_text_batch_layout_request_snapshot {
+    std::size_t item_index = 0;
+    render_node_id node_id;
+    std::string source_label;
+    render_rect bounds;
+    render_text_options options;
+    std::size_t run_count = 0;
+    std::size_t style_key_offset = 0;
+    std::size_t style_key_count = 0;
+    std::size_t fallback_style_count = 0;
+    bool planned = true;
+};
+
+struct render_text_batch_atlas_update_request_snapshot {
+    std::size_t item_index = 0;
+    std::size_t materialization_index = 0;
+    std::size_t unique_work_index = 0;
+    std::size_t duplicate_of = 0;
+    render_text_glyph_atlas_materialization_status materialization_status =
+        render_text_glyph_atlas_materialization_status::skipped_missing_cache_key;
+    glyph_atlas_key cache_key;
+    std::uint32_t resolved_glyph_id = 0;
+    font_face_id resolved_face_id = 0;
+    render_text_font_backend_library shaping_font_backend_library =
+        render_text_font_backend_library::deterministic_fake;
+    std::string shaping_font_backend_label;
+    render_text_font_backend_library raster_font_backend_library =
+        render_text_font_backend_library::deterministic_fake;
+    std::string raster_font_backend_label;
+    std::size_t payload_alpha_bytes = 0;
+    std::size_t payload_rgba_bytes = 0;
+    std::size_t atlas_update_rgba_bytes = 0;
+    bool materialized = false;
+    bool duplicate = false;
+    bool skipped = true;
+    bool used_deterministic_fallback = false;
+    bool used_real_backend = false;
+    std::string diagnostic;
+};
+
+struct render_text_request_batch_plan_policy_snapshot {
+    std::size_t item_count = 0;
+    std::size_t layout_request_count = 0;
+    std::size_t text_run_count = 0;
+    std::size_t style_key_count = 0;
+    std::size_t unique_style_key_count = 0;
+    std::size_t fallback_style_count = 0;
+    std::size_t materialization_count = 0;
+    std::size_t atlas_update_request_count = 0;
+    std::size_t unique_atlas_materialization_count = 0;
+    std::size_t duplicate_atlas_materialization_count = 0;
+    std::size_t skipped_materialization_count = 0;
+    std::size_t fallback_materialization_count = 0;
+    std::size_t real_backend_materialization_count = 0;
+    std::size_t total_payload_rgba_bytes = 0;
+    std::size_t planned_atlas_update_rgba_bytes = 0;
+};
+
+struct render_text_request_batch_plan_snapshot {
+    std::vector<render_text_batch_layout_request_snapshot> layout_requests;
+    std::vector<render_text_batch_atlas_update_request_snapshot> atlas_update_requests;
+    std::vector<render_text_batch_normalized_style_key> style_keys;
+    std::vector<std::string> unique_style_keys;
+    std::vector<render_text_batch_materialization_work_key> unique_materialization_work;
+    render_text_request_batch_plan_policy_snapshot policy;
+
+    bool has_layout_requests() const
+    {
+        return !layout_requests.empty();
+    }
+
+    bool has_atlas_update_requests() const
+    {
+        return !atlas_update_requests.empty();
+    }
+};
+
+inline std::string render_text_batch_normalize_font_family(const std::string_view family)
+{
+    std::string normalized;
+    normalized.reserve(family.size());
+    bool pending_space = false;
+    for (const unsigned char value : family) {
+        if (std::isspace(value) != 0) {
+            pending_space = !normalized.empty();
+            continue;
+        }
+        if (pending_space) {
+            normalized.push_back(' ');
+            pending_space = false;
+        }
+        normalized.push_back(static_cast<char>(std::tolower(value)));
+    }
+    return normalized;
+}
+
+inline std::string render_text_batch_float_key(const float value)
+{
+    std::string text = std::to_string(value);
+    while (!text.empty() && text.back() == '0') {
+        text.pop_back();
+    }
+    if (!text.empty() && text.back() == '.') {
+        text.pop_back();
+    }
+    return text.empty() ? "0" : text;
+}
+
+inline std::string render_text_batch_make_style_key(
+    const std::string& normalized_font_family,
+    const render_text_style& style)
+{
+    return normalized_font_family
+        + "|w=" + std::to_string(style.font_weight)
+        + "|i=" + (style.italic ? "1" : "0")
+        + "|fs=" + render_text_batch_float_key(style.font_size)
+        + "|lh=" + render_text_batch_float_key(style.line_height)
+        + "|ls=" + render_text_batch_float_key(style.letter_spacing);
+}
+
+inline render_text_batch_normalized_style_key render_text_batch_normalized_style_key_for(
+    const render_text_style_catalog& catalog,
+    const render_style_id& requested_style_token)
+{
+    const render_text_style* resolved = catalog.find(requested_style_token);
+    const render_text_style& style = resolved == nullptr ? catalog.fallback_style : *resolved;
+    const std::string normalized_font_family =
+        render_text_batch_normalize_font_family(style.font_family);
+    return render_text_batch_normalized_style_key{
+        .requested_style_token = requested_style_token,
+        .resolved_style_id = style.id,
+        .normalized_font_family = normalized_font_family,
+        .font_size = style.font_size,
+        .line_height = style.line_height,
+        .letter_spacing = style.letter_spacing,
+        .font_weight = style.font_weight,
+        .italic = style.italic,
+        .used_fallback_style = resolved == nullptr,
+        .key = render_text_batch_make_style_key(normalized_font_family, style),
+    };
+}
+
+inline render_text_request_batch_item make_render_text_request_batch_item(
+    render_text_request request,
+    std::vector<render_text_glyph_atlas_materialization_snapshot> materializations = {},
+    std::string source_label = {},
+    render_node_id node_id = {})
+{
+    return render_text_request_batch_item{
+        .node_id = std::move(node_id),
+        .source_label = std::move(source_label),
+        .text_runs = std::move(request.text_runs),
+        .bounds = request.bounds,
+        .style_catalog = std::move(request.style_catalog),
+        .options = request.options,
+        .materializations = std::move(materializations),
+    };
+}
+
+inline render_text_request_batch_item make_render_text_request_batch_item(
+    render_text_batch_ref text_ref,
+    render_text_style_catalog style_catalog,
+    std::vector<render_text_glyph_atlas_materialization_snapshot> materializations = {})
+{
+    return render_text_request_batch_item{
+        .node_id = std::move(text_ref.node_id),
+        .source_label = std::move(text_ref.source_label),
+        .text_runs = std::move(text_ref.text_runs),
+        .bounds = text_ref.bounds,
+        .style_catalog = std::move(style_catalog),
+        .options = text_ref.options,
+        .materializations = std::move(materializations),
+    };
+}
+
+inline render_text_request_batch_item make_render_text_request_batch_item(
+    const render_draw_command& command,
+    render_text_style_catalog style_catalog,
+    std::vector<render_text_glyph_atlas_materialization_snapshot> materializations = {})
+{
+    return render_text_request_batch_item{
+        .node_id = command.node_id,
+        .source_label = command.node_id,
+        .text_runs = command.text_runs,
+        .bounds = command.bounds,
+        .style_catalog = std::move(style_catalog),
+        .options = command.text_options,
+        .materializations = std::move(materializations),
+    };
+}
+
+inline render_text_batch_materialization_work_key render_text_batch_materialization_work_key_for(
+    const render_text_glyph_atlas_materialization_snapshot& materialization)
+{
+    return render_text_batch_materialization_work_key{
+        .cache_key = materialization.cache_key,
+        .shaping_font_backend_library = materialization.shaping_font_backend_library,
+        .shaping_font_backend_label = materialization.shaping_font_backend_label,
+        .raster_font_backend_library = materialization.raster_font_backend_library,
+        .raster_font_backend_label = materialization.raster_font_backend_label,
+        .payload_alpha_bytes = materialization.payload_alpha_bytes,
+        .payload_rgba_bytes = materialization.payload_rgba_bytes,
+    };
+}
+
+inline std::size_t render_text_batch_find_or_append_unique_style_key(
+    std::vector<std::string>& unique_style_keys,
+    const std::string& key)
+{
+    const auto match = std::find(unique_style_keys.begin(), unique_style_keys.end(), key);
+    if (match != unique_style_keys.end()) {
+        return static_cast<std::size_t>(match - unique_style_keys.begin());
+    }
+    unique_style_keys.push_back(key);
+    return unique_style_keys.size() - 1U;
+}
+
+inline std::size_t render_text_batch_find_or_append_unique_materialization_work(
+    std::vector<render_text_batch_materialization_work_key>& unique_work,
+    const render_text_batch_materialization_work_key& key,
+    bool& duplicate)
+{
+    const auto match = std::find(unique_work.begin(), unique_work.end(), key);
+    if (match != unique_work.end()) {
+        duplicate = true;
+        return static_cast<std::size_t>(match - unique_work.begin());
+    }
+    duplicate = false;
+    unique_work.push_back(key);
+    return unique_work.size() - 1U;
+}
+
+inline bool render_text_batch_materialization_uses_deterministic_fallback(
+    const render_text_glyph_atlas_materialization_snapshot& materialization)
+{
+    return materialization.shaping_font_backend_used_deterministic_fallback
+        || materialization.raster_font_backend_used_deterministic_fallback
+        || materialization.shaping_font_backend_fallback_only
+        || materialization.raster_font_backend_fallback_only;
+}
+
+inline bool render_text_batch_materialization_uses_real_backend(
+    const render_text_glyph_atlas_materialization_snapshot& materialization)
+{
+    return materialization.shaping_font_backend_library != render_text_font_backend_library::deterministic_fake
+        || materialization.raster_font_backend_library != render_text_font_backend_library::deterministic_fake;
+}
+
+inline render_text_request_batch_plan_snapshot plan_render_text_request_batch(
+    std::vector<render_text_request_batch_item> items)
+{
+    render_text_request_batch_plan_snapshot plan;
+    plan.policy.item_count = items.size();
+    plan.layout_requests.reserve(items.size());
+
+    for (std::size_t item_index = 0; item_index < items.size(); ++item_index) {
+        render_text_request_batch_item& item = items[item_index];
+        item.item_index = item_index;
+
+        const std::size_t style_key_offset = plan.style_keys.size();
+        std::size_t fallback_style_count = 0;
+        for (const render_text_run& run : item.text_runs) {
+            render_text_batch_normalized_style_key style_key =
+                render_text_batch_normalized_style_key_for(item.style_catalog, run.style_token);
+            if (style_key.used_fallback_style) {
+                ++fallback_style_count;
+            }
+            render_text_batch_find_or_append_unique_style_key(plan.unique_style_keys, style_key.key);
+            plan.style_keys.push_back(std::move(style_key));
+        }
+
+        plan.layout_requests.push_back(render_text_batch_layout_request_snapshot{
+            .item_index = item_index,
+            .node_id = item.node_id,
+            .source_label = item.source_label,
+            .bounds = item.bounds,
+            .options = item.options,
+            .run_count = item.text_runs.size(),
+            .style_key_offset = style_key_offset,
+            .style_key_count = item.text_runs.size(),
+            .fallback_style_count = fallback_style_count,
+            .planned = true,
+        });
+
+        ++plan.policy.layout_request_count;
+        plan.policy.text_run_count += item.text_runs.size();
+        plan.policy.style_key_count += item.text_runs.size();
+        plan.policy.fallback_style_count += fallback_style_count;
+
+        for (std::size_t materialization_index = 0;
+             materialization_index < item.materializations.size();
+             ++materialization_index) {
+            const render_text_glyph_atlas_materialization_snapshot& materialization =
+                item.materializations[materialization_index];
+            ++plan.policy.materialization_count;
+            plan.policy.total_payload_rgba_bytes += materialization.payload_rgba_bytes;
+            if (!materialization.materialized) {
+                ++plan.policy.skipped_materialization_count;
+            }
+            if (render_text_batch_materialization_uses_deterministic_fallback(materialization)) {
+                ++plan.policy.fallback_materialization_count;
+            }
+            if (render_text_batch_materialization_uses_real_backend(materialization)) {
+                ++plan.policy.real_backend_materialization_count;
+            }
+
+            bool duplicate = false;
+            std::size_t unique_work_index = 0;
+            std::size_t duplicate_of = 0;
+            if (materialization.materialized && materialization.has_cache_key) {
+                const render_text_batch_materialization_work_key work_key =
+                    render_text_batch_materialization_work_key_for(materialization);
+                unique_work_index = render_text_batch_find_or_append_unique_materialization_work(
+                    plan.unique_materialization_work,
+                    work_key,
+                    duplicate);
+                duplicate_of = unique_work_index;
+                if (duplicate) {
+                    ++plan.policy.duplicate_atlas_materialization_count;
+                } else {
+                    ++plan.policy.unique_atlas_materialization_count;
+                    plan.policy.planned_atlas_update_rgba_bytes += materialization.atlas_update_rgba_bytes;
+                }
+            } else {
+                duplicate = false;
+                duplicate_of = plan.unique_materialization_work.size();
+            }
+
+            plan.atlas_update_requests.push_back(render_text_batch_atlas_update_request_snapshot{
+                .item_index = item_index,
+                .materialization_index = materialization_index,
+                .unique_work_index = unique_work_index,
+                .duplicate_of = duplicate_of,
+                .materialization_status = materialization.status,
+                .cache_key = materialization.cache_key,
+                .resolved_glyph_id = materialization.resolved_glyph_id,
+                .resolved_face_id = materialization.resolved_face_id,
+                .shaping_font_backend_library = materialization.shaping_font_backend_library,
+                .shaping_font_backend_label = materialization.shaping_font_backend_label,
+                .raster_font_backend_library = materialization.raster_font_backend_library,
+                .raster_font_backend_label = materialization.raster_font_backend_label,
+                .payload_alpha_bytes = materialization.payload_alpha_bytes,
+                .payload_rgba_bytes = materialization.payload_rgba_bytes,
+                .atlas_update_rgba_bytes = materialization.atlas_update_rgba_bytes,
+                .materialized = materialization.materialized,
+                .duplicate = duplicate,
+                .skipped = !materialization.materialized,
+                .used_deterministic_fallback =
+                    render_text_batch_materialization_uses_deterministic_fallback(materialization),
+                .used_real_backend = render_text_batch_materialization_uses_real_backend(materialization),
+                .diagnostic = materialization.diagnostic,
+            });
+            ++plan.policy.atlas_update_request_count;
+        }
+    }
+
+    plan.policy.unique_style_key_count = plan.unique_style_keys.size();
+    return plan;
 }
 
 enum class render_text_shaped_atlas_update_trace_status {

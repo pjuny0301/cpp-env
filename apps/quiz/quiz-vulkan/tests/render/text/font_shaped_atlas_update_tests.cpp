@@ -57,6 +57,87 @@ quiz_vulkan::render::render_text_shaped_atlas_update_trace_request upload_ready_
     };
 }
 
+quiz_vulkan::render::render_text_glyph_atlas_materialization_snapshot upload_ready_materialization(
+    quiz_vulkan::render::glyph_atlas_key key = key_for_a())
+{
+    using namespace quiz_vulkan::render;
+
+    return make_render_text_glyph_atlas_materialization(
+        render_text_glyph_atlas_materialization_request{
+            .cluster_index = 3,
+            .run_index = 1,
+            .cluster_byte_offset = 4,
+            .cluster_byte_count = 1,
+            .codepoint = key.glyph_id,
+            .shaped_glyph_ids = {key.glyph_id},
+            .resolved_glyph_id = key.glyph_id,
+            .resolved_face_id = key.face_id,
+            .cache_key = key,
+            .has_cache_key = true,
+            .glyph_supported = true,
+            .glyph_id_from_selection = true,
+            .glyph_id_matches_codepoint = true,
+            .layout_bounds = render_rect{10.0f, 20.0f, 8.0f, 8.0f},
+            .has_layout_bounds = true,
+            .shaping_font_backend_library = render_text_font_backend_library::deterministic_fake,
+            .shaping_font_backend_label = "Deterministic fake text backend",
+            .shaping_font_backend_capability_status = render_text_font_backend_capability_status::fallback_only,
+            .shaping_font_backend_used_deterministic_fallback = true,
+            .shaping_font_backend_fallback_only = true,
+            .raster_font_backend_library = render_text_font_backend_library::deterministic_fake,
+            .raster_font_backend_label = "Deterministic fake text backend",
+            .raster_font_backend_capability_status = render_text_font_backend_capability_status::fallback_only,
+            .raster_font_backend_used_deterministic_fallback = true,
+            .raster_font_backend_fallback_only = true,
+            .rasterizer_status = render_text_font_rasterizer_status::rasterized,
+            .raster_payload_matches_cache_key = true,
+            .rasterized_payload_skipped = false,
+            .payload_upload_ready = true,
+            .payload_alpha_bytes = 64,
+            .payload_rgba_bytes = 256,
+            .has_atlas_placement = true,
+            .page = render_text_atlas_page{
+                .id = 2,
+                .revision = 5,
+                .width = 64,
+                .height = 64,
+            },
+            .atlas_bounds = render_rect{1.0f, 2.0f, 8.0f, 8.0f},
+            .has_atlas_update = true,
+            .atlas_update_bounds = render_rect{1.0f, 2.0f, 8.0f, 8.0f},
+            .atlas_update_rgba_bytes = 64U * 64U * 4U,
+        });
+}
+
+quiz_vulkan::render::render_text_style_catalog batch_style_catalog()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_style_catalog catalog;
+    catalog.fallback_style = render_text_style{
+        .id = "fallback",
+        .font_family = "Fallback Sans",
+        .font_size = 16.0f,
+        .line_height = 18.0f,
+        .font_weight = 400,
+    };
+    catalog.styles.push_back(render_text_style{
+        .id = "body",
+        .font_family = "  Quiz Sans  ",
+        .font_size = 20.0f,
+        .line_height = 24.0f,
+        .font_weight = 500,
+    });
+    catalog.styles.push_back(render_text_style{
+        .id = "body-duplicate",
+        .font_family = "quiz   sans",
+        .font_size = 20.0f,
+        .line_height = 24.0f,
+        .font_weight = 500,
+    });
+    return catalog;
+}
+
 void test_trace_reports_upload_ready_payload_queued()
 {
     using namespace quiz_vulkan::render;
@@ -154,6 +235,151 @@ void test_trace_reports_payload_byte_count_mismatch()
     require(policy.payload_byte_count_mismatch_count == 1U, "trace policy counts byte mismatches");
 }
 
+void test_batch_plan_normalizes_style_keys_and_layout_requests()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "A", .style_token = "body"},
+        render_text_run{.text = "B", .style_token = "missing"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 100.0f, 40.0f};
+    request.style_catalog = batch_style_catalog();
+    request.options = render_text_options{.wrap = render_text_wrap_mode::word};
+
+    render_text_batch_ref text_ref{
+        .node_id = "ref-node",
+        .text_runs = {
+            render_text_run{.text = "C", .style_token = "body-duplicate"},
+        },
+        .bounds = render_rect{4.0f, 5.0f, 80.0f, 20.0f},
+        .source_label = "ref-source",
+    };
+
+    render_text_request_batch_plan_snapshot plan =
+        plan_render_text_request_batch({
+            make_render_text_request_batch_item(std::move(request), {}, "request-source", "request-node"),
+            make_render_text_request_batch_item(std::move(text_ref), batch_style_catalog()),
+        });
+
+    require(plan.has_layout_requests(), "batch plan records layout requests");
+    require(plan.layout_requests.size() == 2U, "batch plan keeps two layout items");
+    require(plan.policy.item_count == 2U, "batch plan counts items");
+    require(plan.policy.layout_request_count == 2U, "batch plan counts layout requests");
+    require(plan.policy.text_run_count == 3U, "batch plan counts text runs");
+    require(plan.policy.style_key_count == 3U, "batch plan counts style keys");
+    require(plan.policy.unique_style_key_count == 2U, "batch plan deduplicates normalized style keys");
+    require(plan.policy.fallback_style_count == 1U, "batch plan counts missing style fallback");
+    require(
+        plan.style_keys[0].normalized_font_family == "quiz sans",
+        "style key normalization trims and folds font family");
+    require(
+        plan.style_keys[0].key == plan.style_keys[2].key,
+        "style key normalization deduplicates equivalent font/style properties");
+    require(plan.style_keys[1].used_fallback_style, "missing style records fallback key");
+    require(plan.layout_requests[1].node_id == "ref-node", "text ref item preserves node id");
+    require(plan.layout_requests[1].source_label == "ref-source", "text ref item preserves source label");
+}
+
+void test_batch_plan_deduplicates_glyph_atlas_materialization_work()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "A", .style_token = "body"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 100.0f, 40.0f};
+    request.style_catalog = batch_style_catalog();
+
+    const render_text_glyph_atlas_materialization_snapshot materialization =
+        upload_ready_materialization();
+
+    render_text_request_batch_plan_snapshot plan =
+        plan_render_text_request_batch({
+            make_render_text_request_batch_item(request, {materialization}, "first"),
+            make_render_text_request_batch_item(std::move(request), {materialization}, "second"),
+        });
+
+    require(plan.has_atlas_update_requests(), "batch plan records atlas update requests");
+    require(plan.atlas_update_requests.size() == 2U, "batch plan records both materialization requests");
+    require(plan.unique_materialization_work.size() == 1U, "batch plan deduplicates identical atlas work");
+    require(plan.policy.materialization_count == 2U, "batch plan counts materializations");
+    require(plan.policy.unique_atlas_materialization_count == 1U, "batch plan counts unique materialization work");
+    require(
+        plan.policy.duplicate_atlas_materialization_count == 1U,
+        "batch plan counts duplicate materialization work");
+    require(!plan.atlas_update_requests[0].duplicate, "first atlas request is unique");
+    require(plan.atlas_update_requests[1].duplicate, "second atlas request is duplicate");
+    require(
+        plan.atlas_update_requests[1].duplicate_of == plan.atlas_update_requests[0].unique_work_index,
+        "duplicate atlas request points at unique work");
+    require(
+        plan.policy.planned_atlas_update_rgba_bytes == materialization.atlas_update_rgba_bytes,
+        "batch plan totals queued atlas bytes once for deduped work");
+}
+
+void test_batch_plan_reports_fallback_real_backend_and_skipped_materializations()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_glyph_atlas_materialization_snapshot fallback_materialization =
+        upload_ready_materialization();
+
+    render_text_glyph_atlas_materialization_snapshot real_materialization =
+        upload_ready_materialization(glyph_atlas_key{
+            .face_id = 9,
+            .glyph_id = U'B',
+            .pixel_size = 20,
+        });
+    real_materialization.shaping_font_backend_library = render_text_font_backend_library::harfbuzz;
+    real_materialization.shaping_font_backend_label = "HarfBuzz";
+    real_materialization.shaping_font_backend_used_deterministic_fallback = false;
+    real_materialization.shaping_font_backend_fallback_only = false;
+    real_materialization.raster_font_backend_library = render_text_font_backend_library::freetype;
+    real_materialization.raster_font_backend_label = "FreeType";
+    real_materialization.raster_font_backend_used_deterministic_fallback = false;
+    real_materialization.raster_font_backend_fallback_only = false;
+
+    render_text_glyph_atlas_materialization_snapshot skipped =
+        make_render_text_glyph_atlas_materialization(
+            render_text_glyph_atlas_materialization_request{
+                .cluster_index = 5,
+                .run_index = 0,
+                .codepoint = U'\u0301',
+                .shaped_glyph_ids = {0x0301U},
+                .resolved_glyph_id = 0x0301U,
+                .glyph_supported = true,
+                .rasterized_payload_skipped = true,
+                .payload_upload_ready = false,
+            });
+
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "AB", .style_token = "body"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 100.0f, 40.0f};
+    request.style_catalog = batch_style_catalog();
+
+    render_text_request_batch_plan_snapshot plan =
+        plan_render_text_request_batch({
+            make_render_text_request_batch_item(
+                std::move(request),
+                {fallback_materialization, real_materialization, skipped},
+                "mixed"),
+        });
+
+    require(plan.policy.materialization_count == 3U, "batch plan counts mixed materializations");
+    require(plan.policy.unique_atlas_materialization_count == 2U, "batch plan only dedupes materialized cache work");
+    require(plan.policy.skipped_materialization_count == 1U, "batch plan counts skipped materialization");
+    require(plan.policy.fallback_materialization_count == 1U, "batch plan counts deterministic fallback work");
+    require(plan.policy.real_backend_materialization_count == 1U, "batch plan counts real backend work");
+    require(plan.atlas_update_requests[0].used_deterministic_fallback, "first request records fallback backend");
+    require(plan.atlas_update_requests[1].used_real_backend, "second request records real backend metadata");
+    require(plan.atlas_update_requests[2].skipped, "third request records skipped materialization");
+}
+
 } // namespace
 
 int main()
@@ -162,5 +388,8 @@ int main()
     test_trace_reports_clean_reuse_when_update_is_absent();
     test_trace_reports_skipped_payload_and_missing_cache_key();
     test_trace_reports_payload_byte_count_mismatch();
+    test_batch_plan_normalizes_style_keys_and_layout_requests();
+    test_batch_plan_deduplicates_glyph_atlas_materialization_work();
+    test_batch_plan_reports_fallback_real_backend_and_skipped_materializations();
     return 0;
 }

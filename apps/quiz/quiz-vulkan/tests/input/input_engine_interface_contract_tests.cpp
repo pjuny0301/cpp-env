@@ -1,5 +1,6 @@
 #include "core/input/gesture_recognizer.h"
 #include "core/input/input_engine.h"
+#include "core/input/platform_input_translator.h"
 #include "core/input/text_input_model.h"
 #include "platform/platform_input_event.h"
 
@@ -27,6 +28,83 @@ concept GestureRecognizerInterface = requires(
     { recognizer.capture_snapshot() } -> std::same_as<input::pointer_capture_snapshot>;
     { recognizer.policy_snapshots() } -> std::same_as<const std::vector<input::gesture_policy_snapshot>&>;
     { recognizer.reset() } -> std::same_as<void>;
+};
+
+template <typename T>
+concept PlatformInputTranslatorInterface = requires(
+    const T& translator,
+    const input::platform_input_translation_request& request) {
+    { translator.translate(request) } -> std::same_as<input::platform_input_translation_result>;
+};
+
+template <typename T>
+concept PlatformMouseSampleInterface = requires(T sample) {
+    { sample.timestamp_ms } -> std::same_as<std::int64_t&>;
+    { sample.pointer_id } -> std::same_as<std::int32_t&>;
+    { sample.phase } -> std::same_as<input::platform_pointer_sample_phase&>;
+    { sample.button } -> std::same_as<input::platform_mouse_button&>;
+    { sample.x } -> std::same_as<float&>;
+    { sample.y } -> std::same_as<float&>;
+};
+
+template <typename T>
+concept PlatformTouchSampleInterface = requires(T sample) {
+    { sample.timestamp_ms } -> std::same_as<std::int64_t&>;
+    { sample.contact_id } -> std::same_as<std::int32_t&>;
+    { sample.phase } -> std::same_as<input::platform_pointer_sample_phase&>;
+    { sample.x } -> std::same_as<float&>;
+    { sample.y } -> std::same_as<float&>;
+};
+
+template <typename T>
+concept PlatformWheelSampleInterface = requires(T sample) {
+    { sample.timestamp_ms } -> std::same_as<std::int64_t&>;
+    { sample.x } -> std::same_as<float&>;
+    { sample.y } -> std::same_as<float&>;
+    { sample.delta_x } -> std::same_as<float&>;
+    { sample.delta_y } -> std::same_as<float&>;
+    { sample.unit } -> std::same_as<input::platform_scroll_delta_unit&>;
+};
+
+template <typename T>
+concept PlatformKeySampleInterface = requires(T sample) {
+    { sample.timestamp_ms } -> std::same_as<std::int64_t&>;
+    { sample.phase } -> std::same_as<input::platform_key_sample_phase&>;
+    { sample.key_code } -> std::same_as<std::int32_t&>;
+    { sample.logical_key } -> std::same_as<std::string&>;
+    { sample.alt } -> std::same_as<bool&>;
+    { sample.ctrl } -> std::same_as<bool&>;
+    { sample.shift } -> std::same_as<bool&>;
+    { sample.meta } -> std::same_as<bool&>;
+    { sample.repeat } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept PlatformCharacterSampleInterface = requires(T sample) {
+    { sample.timestamp_ms } -> std::same_as<std::int64_t&>;
+    { sample.utf8_text } -> std::same_as<std::string&>;
+};
+
+template <typename T>
+concept PlatformImeCompositionSampleInterface = requires(T sample) {
+    { sample.timestamp_ms } -> std::same_as<std::int64_t&>;
+    { sample.phase } -> std::same_as<input::platform_ime_sample_phase&>;
+    { sample.utf8_text } -> std::same_as<std::string&>;
+};
+
+template <typename T>
+concept PlatformInputTranslationDiagnosticInterface = requires(T diagnostic) {
+    { diagnostic.source } -> std::same_as<input::platform_input_source_kind&>;
+    { diagnostic.status } -> std::same_as<input::platform_input_translation_status&>;
+    { diagnostic.rejection_reason } -> std::same_as<input::platform_input_rejection_reason&>;
+    { diagnostic.timestamp_ms } -> std::same_as<std::int64_t&>;
+    { diagnostic.emitted_event } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept PlatformInputTranslationResultInterface = requires(T result) {
+    { result.event } -> std::same_as<std::optional<raw_platform_input_event>&>;
+    { result.diagnostic } -> std::same_as<input::platform_input_translation_diagnostic&>;
 };
 
 template <typename T>
@@ -169,6 +247,15 @@ static_assert(NormalizedInputEventSummaryInterface<input::normalized_input_event
 static_assert(ActionRoutePolicyDiagnosticInterface<input::action_route_policy_diagnostic>);
 static_assert(InputRoutingDiagnosticsInterface<input::input_routing_diagnostics>);
 static_assert(GestureRecognizerInterface<input::gesture_recognizer>);
+static_assert(PlatformInputTranslatorInterface<input::platform_input_translator>);
+static_assert(PlatformMouseSampleInterface<input::platform_mouse_sample>);
+static_assert(PlatformTouchSampleInterface<input::platform_touch_sample>);
+static_assert(PlatformWheelSampleInterface<input::platform_wheel_sample>);
+static_assert(PlatformKeySampleInterface<input::platform_key_sample>);
+static_assert(PlatformCharacterSampleInterface<input::platform_character_sample>);
+static_assert(PlatformImeCompositionSampleInterface<input::platform_ime_composition_sample>);
+static_assert(PlatformInputTranslationDiagnosticInterface<input::platform_input_translation_diagnostic>);
+static_assert(PlatformInputTranslationResultInterface<input::platform_input_translation_result>);
 static_assert(TextInputModelInterface<input::text_input_model>);
 
 constexpr input::text_range text_range_contract{
@@ -319,6 +406,47 @@ constexpr input::gesture_thresholds drag_threshold_contract{
     .drag_start_slop = 12.0f,
 };
 static_assert(drag_threshold_contract.drag_start_slop == 12.0f);
+
+constexpr input::platform_mouse_sample platform_mouse_contract{
+    .timestamp_ms = 20,
+    .pointer_id = 7,
+    .phase = input::platform_pointer_sample_phase::down,
+    .button = input::platform_mouse_button::primary,
+    .x = 3.0f,
+    .y = 4.0f,
+};
+static_assert(platform_mouse_contract.pointer_id == 7);
+static_assert(platform_mouse_contract.button == input::platform_mouse_button::primary);
+
+constexpr input::platform_wheel_sample platform_wheel_contract{
+    .timestamp_ms = 22,
+    .x = 10.0f,
+    .y = 12.0f,
+    .delta_x = 1.0f,
+    .delta_y = -2.0f,
+    .unit = input::platform_scroll_delta_unit::lines,
+};
+static_assert(platform_wheel_contract.unit == input::platform_scroll_delta_unit::lines);
+static_assert(platform_wheel_contract.delta_y == -2.0f);
+
+constexpr input::platform_input_translation_diagnostic platform_translation_diagnostic_contract{
+    .source = input::platform_input_source_kind::character,
+    .status = input::platform_input_translation_status::rejected,
+    .rejection_reason = input::platform_input_rejection_reason::invalid_utf8,
+    .timestamp_ms = 30,
+    .emitted_event = false,
+};
+static_assert(platform_translation_diagnostic_contract.source == input::platform_input_source_kind::character);
+static_assert(platform_translation_diagnostic_contract.rejection_reason
+    == input::platform_input_rejection_reason::invalid_utf8);
+
+static_assert(std::variant_size_v<input::platform_input_sample> == 6);
+static_assert(std::is_same_v<
+    std::variant_alternative_t<0, input::platform_input_sample>,
+    input::platform_mouse_sample>);
+static_assert(std::is_same_v<
+    std::variant_alternative_t<5, input::platform_input_sample>,
+    input::platform_ime_composition_sample>);
 
 constexpr input::raw_scroll_event raw_scroll_contract{
     .timestamp_ms = 10,

@@ -1,10 +1,15 @@
+#include "render/text/font_backend_adapter.h"
 #include "render/text/font_backend_capabilities.h"
 #include "render/text/font_shaping_backend.h"
 
 #include <cassert>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
+#include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -53,6 +58,30 @@ std::vector<quiz_vulkan::render::render_text_font_shaping_codepoint_selection> s
     return selections;
 }
 
+std::vector<quiz_vulkan::render::render_text_font_shaping_codepoint_selection> selections_with_glyph_ids_for(
+    const std::vector<quiz_vulkan::render::utf8_text_codepoint>& codepoints,
+    quiz_vulkan::render::font_face_id face_id,
+    std::uint32_t glyph_id_offset = 0,
+    bool glyph_supported = true)
+{
+    std::vector<quiz_vulkan::render::render_text_font_shaping_codepoint_selection> selections;
+    selections.reserve(codepoints.size());
+    for (const quiz_vulkan::render::utf8_text_codepoint& codepoint : codepoints) {
+        const std::uint32_t glyph_id = codepoint.code_point + glyph_id_offset;
+        selections.push_back(quiz_vulkan::render::render_text_font_shaping_codepoint_selection{
+            .requested_face_id = face_id,
+            .resolved_face_id = face_id,
+            .glyph_id = glyph_id,
+            .has_glyph_id = true,
+            .glyph_id_offset = glyph_id_offset,
+            .glyph_id_matches_codepoint = glyph_id == codepoint.code_point,
+            .glyph_supported = glyph_supported,
+            .used_codepoint_fallback = false,
+        });
+    }
+    return selections;
+}
+
 quiz_vulkan::render::render_text_font_shaping_request request_for(
     const std::string& text,
     std::vector<quiz_vulkan::render::render_text_font_shaping_codepoint_selection> selections = {})
@@ -71,6 +100,28 @@ quiz_vulkan::render::render_text_font_shaping_request request_for(
         .codepoints = codepoints,
         .clusters = cluster_utf8_text_run(codepoints),
         .font_selections = selections,
+    };
+}
+
+quiz_vulkan::render::render_text_real_font_shaping_adapter_request adapter_request_for(
+    const std::string& text,
+    quiz_vulkan::render::render_text_font_backend_capability_snapshot capability,
+    std::vector<quiz_vulkan::render::render_text_font_shaping_codepoint_selection> selections = {})
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_font_shaping_request shaping_request = request_for(text, std::move(selections));
+    return render_text_real_font_shaping_adapter_request{
+        .capability = std::move(capability),
+        .library = render_text_font_backend_library::harfbuzz,
+        .run_index = shaping_request.run_index,
+        .style_token = shaping_request.style_token,
+        .style = shaping_request.style,
+        .codepoints = shaping_request.codepoints,
+        .clusters = shaping_request.clusters,
+        .font_selections = shaping_request.font_selections,
+        .fallback_glyph_id = shaping_request.fallback_glyph_id,
+        .source_label = "adapter-test-font",
     };
 }
 
@@ -111,6 +162,160 @@ quiz_vulkan::render::render_text_font_backend_component harfbuzz_component(
         },
         .diagnostic = "HarfBuzz probe fixture is available",
     };
+}
+
+quiz_vulkan::render::render_text_font_backend_component harfbuzz_shaping_only_component()
+{
+    using namespace quiz_vulkan::render;
+
+    return render_text_font_backend_component{
+        .library = render_text_font_backend_library::harfbuzz,
+        .name = "HarfBuzz",
+        .available = true,
+        .version = render_text_font_backend_version{.major = 8, .minor = 3, .patch = 0},
+        .features = {
+            render_text_font_backend_feature::glyph_id_mapping,
+            render_text_font_backend_feature::glyph_shaping,
+        },
+        .diagnostic = "HarfBuzz probe fixture has no complex script feature",
+    };
+}
+
+quiz_vulkan::render::render_text_font_backend_capability_snapshot real_backend_capability(
+    bool complex_scripts = true,
+    bool rasterization = true)
+{
+    using namespace quiz_vulkan::render;
+
+    std::vector<render_text_font_backend_component> components;
+    if (rasterization) {
+        components.push_back(freetype_component());
+    }
+    components.push_back(complex_scripts ? harfbuzz_component() : harfbuzz_shaping_only_component());
+
+    std::vector<render_text_font_backend_library> required_libraries = {
+        render_text_font_backend_library::harfbuzz,
+    };
+    std::vector<render_text_font_backend_feature> required_features = {
+        render_text_font_backend_feature::glyph_shaping,
+    };
+    if (rasterization) {
+        required_libraries.push_back(render_text_font_backend_library::freetype);
+        required_features.push_back(render_text_font_backend_feature::glyph_rasterization);
+    }
+
+    return deterministic_fake_font_backend_capability_probe(std::move(components))
+        .probe(render_text_font_backend_capability_probe_request{
+            .required_libraries = std::move(required_libraries),
+            .required_features = std::move(required_features),
+        });
+}
+
+quiz_vulkan::render::render_text_font_backend_capability_snapshot fallback_only_capability()
+{
+    using namespace quiz_vulkan::render;
+
+    return deterministic_fake_font_backend_capability_probe().probe(
+        render_text_font_backend_capability_probe_request{
+            .required_libraries = {
+                render_text_font_backend_library::deterministic_fake,
+            },
+            .required_features = {
+                render_text_font_backend_feature::glyph_id_mapping,
+                render_text_font_backend_feature::glyph_shaping,
+            },
+        });
+}
+
+quiz_vulkan::render::render_text_font_backend_capability_snapshot unavailable_directwrite_capability()
+{
+    using namespace quiz_vulkan::render;
+
+    return deterministic_fake_font_backend_capability_probe({
+        render_text_font_backend_component{
+            .library = render_text_font_backend_library::directwrite,
+            .name = "DirectWrite",
+            .available = false,
+            .version = render_text_font_backend_version{.major = 0, .minor = 0, .patch = 0},
+            .features = {
+                render_text_font_backend_feature::glyph_shaping,
+                render_text_font_backend_feature::complex_script_shaping,
+            },
+            .diagnostic = "DirectWrite is not available on this fixture platform",
+        },
+    }).probe(render_text_font_backend_capability_probe_request{
+        .required_libraries = {
+            render_text_font_backend_library::directwrite,
+        },
+        .required_features = {
+            render_text_font_backend_feature::glyph_shaping,
+        },
+    });
+}
+
+quiz_vulkan::render::render_text_real_font_shaping_adapter_result mismatched_shape_callback(
+    const quiz_vulkan::render::render_text_real_font_shaping_adapter_request& request)
+{
+    quiz_vulkan::render::render_text_real_font_shaping_adapter_result result =
+        quiz_vulkan::render::deterministic_fake_real_font_backend_shape(request);
+    if (!result.glyphs.empty()) {
+        ++result.glyphs.front().glyph_id;
+    }
+    return result;
+}
+
+quiz_vulkan::render::render_text_real_font_shaping_adapter_result recoverable_shape_callback(
+    const quiz_vulkan::render::render_text_real_font_shaping_adapter_request& request)
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_real_font_shaping_adapter_result result{
+        .status = render_text_font_backend_adapter_status::recoverable_backend_failure,
+        .library = request.library,
+        .capability_status = request.capability.status,
+        .run_index = request.run_index,
+        .style_token = request.style_token,
+        .recoverable = true,
+        .fatal = false,
+        .diagnostic = "recoverable fake adapter shaping failure",
+    };
+    result.diagnostics.push_back(render_text_font_backend_adapter_diagnostic{
+        .status = result.status,
+        .library = request.library,
+        .capability_status = request.capability.status,
+        .run_index = request.run_index,
+        .recoverable = true,
+        .fatal = false,
+        .diagnostic = result.diagnostic,
+    });
+    return result;
+}
+
+quiz_vulkan::render::render_text_real_font_shaping_adapter_result fatal_shape_callback(
+    const quiz_vulkan::render::render_text_real_font_shaping_adapter_request& request)
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_real_font_shaping_adapter_result result{
+        .status = render_text_font_backend_adapter_status::fatal_backend_failure,
+        .library = request.library,
+        .capability_status = request.capability.status,
+        .run_index = request.run_index,
+        .style_token = request.style_token,
+        .recoverable = false,
+        .fatal = true,
+        .diagnostic = "fatal fake adapter shaping failure",
+    };
+    result.diagnostics.push_back(render_text_font_backend_adapter_diagnostic{
+        .status = result.status,
+        .library = request.library,
+        .capability_status = request.capability.status,
+        .run_index = request.run_index,
+        .recoverable = false,
+        .fatal = true,
+        .diagnostic = result.diagnostic,
+    });
+    return result;
 }
 
 void test_font_backend_probe_reports_available_real_stack()
@@ -465,6 +670,205 @@ void test_fake_backend_consumes_pre_resolved_glyph_ids()
     require(result.policy.fallback_glyph_id_count == 1U, "pre-resolved fallback glyph id is counted");
 }
 
+void test_real_backend_adapter_gates_backend_unavailable()
+{
+    using namespace quiz_vulkan::render;
+
+    const function_table_font_backend_adapter adapter;
+
+    const render_text_real_font_shaping_adapter_result unavailable = adapter.shape(
+        adapter_request_for("A", unavailable_directwrite_capability()));
+    require(
+        unavailable.status == render_text_font_backend_adapter_status::backend_unavailable,
+        "real backend adapter gates unavailable capability");
+    require(unavailable.can_fallback(), "unavailable real adapter shaping can fall back");
+    require(
+        unavailable.capability_status == render_text_font_backend_capability_status::unavailable,
+        "unavailable adapter preserves capability status");
+    require(
+        unavailable.has_diagnostic(render_text_font_backend_adapter_status::backend_unavailable),
+        "unavailable adapter records diagnostic");
+
+    const render_text_real_font_shaping_adapter_result fallback_only = adapter.shape(
+        adapter_request_for("A", fallback_only_capability()));
+    require(
+        fallback_only.status == render_text_font_backend_adapter_status::backend_unavailable,
+        "real backend adapter does not call fallback-only fake capability as a real backend");
+    require(
+        fallback_only.capability_status == render_text_font_backend_capability_status::fallback_only,
+        "fallback-only adapter diagnostic preserves capability mode");
+}
+
+void test_real_backend_adapter_reports_unsupported_script_without_complex_feature()
+{
+    using namespace quiz_vulkan::render;
+
+    const function_table_font_backend_adapter adapter;
+    const render_text_real_font_shaping_adapter_result result = adapter.shape(
+        adapter_request_for("\xd8\xa7", real_backend_capability(false, false)));
+
+    require(
+        result.status == render_text_font_backend_adapter_status::unsupported_script,
+        "real backend adapter blocks complex script when capability omits complex shaping");
+    require(result.can_fallback(), "unsupported script can fall back");
+    require(result.diagnostics.size() == 1U, "unsupported script records one diagnostic");
+    require(result.diagnostics.front().codepoint == 0x0627U, "unsupported script diagnostic names Arabic scalar");
+    require(
+        result.diagnostics.front().capability_status == render_text_font_backend_capability_status::available,
+        "unsupported script preserves available capability status");
+}
+
+void test_real_backend_adapter_shapes_available_run()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::string text = "A" "\xed\x95\x9c" "\xf0\x9f\x98\x80";
+    const std::vector<utf8_text_codepoint> codepoints = iterate_utf8_text_run(text);
+    const function_table_font_backend_adapter adapter;
+    const render_text_real_font_shaping_adapter_result result = adapter.shape(
+        adapter_request_for(text, real_backend_capability(), selections_with_glyph_ids_for(codepoints, 41, 5000)));
+
+    require(result.ok(), "available real backend adapter shapes supported run");
+    require(result.glyphs.size() == 3U, "available adapter emits one glyph per codepoint");
+    require(result.glyphs.front().glyph_id == U'A' + 5000U, "available adapter consumes resolved glyph id");
+    require(result.glyphs.front().glyph_id_from_selection, "available adapter marks glyph id from selection");
+    require(!result.glyphs.front().glyph_id_matches_codepoint, "available adapter does not fall back to codepoint");
+    require(
+        result.has_diagnostic(render_text_font_backend_adapter_status::shaped),
+        "available adapter records shaped diagnostic");
+}
+
+void test_real_backend_adapter_reports_glyph_id_mismatch()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::string text = "A";
+    const std::vector<utf8_text_codepoint> codepoints = iterate_utf8_text_run(text);
+    const function_table_font_backend_adapter adapter(render_text_font_backend_adapter_functions{
+        .shape = mismatched_shape_callback,
+        .rasterize = deterministic_fake_real_font_backend_rasterize,
+        .label = "mismatch fixture",
+    });
+    const render_text_real_font_shaping_adapter_result result = adapter.shape(
+        adapter_request_for(text, real_backend_capability(), selections_with_glyph_ids_for(codepoints, 41, 9)));
+
+    require(
+        result.status == render_text_font_backend_adapter_status::glyph_id_mismatch,
+        "adapter reports glyph id mismatch from function table backend");
+    require(result.can_fallback(), "glyph id mismatch can fall back");
+    require(result.diagnostics.back().expected_glyph_id == U'A' + 9U, "mismatch records expected glyph id");
+    require(result.diagnostics.back().actual_glyph_id == U'A' + 10U, "mismatch records actual glyph id");
+}
+
+void test_real_backend_adapter_reports_recoverable_and_fatal_failures()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_real_font_shaping_adapter_request request =
+        adapter_request_for("A", real_backend_capability());
+    const function_table_font_backend_adapter recoverable(render_text_font_backend_adapter_functions{
+        .shape = recoverable_shape_callback,
+        .rasterize = deterministic_fake_real_font_backend_rasterize,
+        .label = "recoverable fixture",
+    });
+    const render_text_real_font_shaping_adapter_result recoverable_result = recoverable.shape(request);
+    require(
+        recoverable_result.status == render_text_font_backend_adapter_status::recoverable_backend_failure,
+        "adapter preserves recoverable backend failure");
+    require(recoverable_result.can_fallback(), "recoverable backend failure can fall back");
+    require(!recoverable_result.fatal, "recoverable backend failure is not fatal");
+
+    const function_table_font_backend_adapter fatal(render_text_font_backend_adapter_functions{
+        .shape = fatal_shape_callback,
+        .rasterize = deterministic_fake_real_font_backend_rasterize,
+        .label = "fatal fixture",
+    });
+    const render_text_real_font_shaping_adapter_result fatal_result = fatal.shape(request);
+    require(
+        fatal_result.status == render_text_font_backend_adapter_status::fatal_backend_failure,
+        "adapter preserves fatal backend failure");
+    require(!fatal_result.can_fallback(), "fatal backend failure does not report fallback-safe");
+    require(fatal_result.fatal, "fatal backend failure records fatal flag");
+}
+
+void test_real_backend_adapter_diagnostics_are_deterministic()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::string text = "A" "\xed\x95\x9c";
+    const std::vector<utf8_text_codepoint> codepoints = iterate_utf8_text_run(text);
+    const render_text_real_font_shaping_adapter_request request =
+        adapter_request_for(text, real_backend_capability(), selections_with_glyph_ids_for(codepoints, 41, 20));
+    const function_table_font_backend_adapter adapter;
+
+    const render_text_real_font_shaping_adapter_result first = adapter.shape(request);
+    const render_text_real_font_shaping_adapter_result second = adapter.shape(request);
+
+    require(first.status == second.status, "adapter status is deterministic");
+    require(first.diagnostic == second.diagnostic, "adapter diagnostic string is deterministic");
+    require(first.diagnostics.size() == second.diagnostics.size(), "adapter diagnostic count is deterministic");
+    require(first.glyphs.size() == second.glyphs.size(), "adapter glyph count is deterministic");
+    require(first.glyphs[1].glyph_id == second.glyphs[1].glyph_id, "adapter glyph ids are deterministic");
+    require(near(first.glyphs[1].advance_x, second.glyphs[1].advance_x), "adapter advances are deterministic");
+}
+
+void test_real_backend_adapter_rasterizes_and_gates_raster_capability()
+{
+    using namespace quiz_vulkan::render;
+
+    const font_face_descriptor face{
+        .id = 41,
+        .family = "Adapter Sans",
+        .source_uri = "fixture://adapter-sans.ttf",
+        .coverage = {
+            font_codepoint_range{.first = U'A', .last = U'A'},
+        },
+    };
+    const std::vector<std::byte> font_bytes = {
+        std::byte{0x00},
+        std::byte{0x01},
+        std::byte{0x02},
+        std::byte{0x03},
+    };
+    const glyph_atlas_key key{
+        .face_id = face.id,
+        .glyph_id = 8123,
+        .pixel_size = 18,
+    };
+    const render_text_font_rasterize_request raster_request =
+        make_font_rasterize_request(
+            face,
+            key,
+            U'A',
+            std::span<const std::byte>{font_bytes.data(), font_bytes.size()},
+            "adapter-sans");
+    const function_table_font_backend_adapter adapter;
+
+    const render_text_real_font_raster_adapter_result rasterized = adapter.rasterize(
+        render_text_real_font_raster_adapter_request{
+            .capability = real_backend_capability(),
+            .library = render_text_font_backend_library::freetype,
+            .rasterize = raster_request,
+        });
+    require(rasterized.ok(), "adapter rasterizes when capability allows rasterization");
+    require(rasterized.rasterized.glyph_id == key.glyph_id, "adapter raster result preserves glyph atlas key id");
+    require(rasterized.rasterized.has_bitmap(), "adapter raster result has uploadable bitmap");
+    require(
+        rasterized.diagnostics.front().capability_status == render_text_font_backend_capability_status::available,
+        "adapter raster diagnostic records available capability");
+
+    const render_text_real_font_raster_adapter_result gated = adapter.rasterize(
+        render_text_real_font_raster_adapter_request{
+            .capability = unavailable_directwrite_capability(),
+            .library = render_text_font_backend_library::freetype,
+            .rasterize = raster_request,
+        });
+    require(
+        gated.status == render_text_font_backend_adapter_status::backend_unavailable,
+        "adapter gates raster calls when capability is unavailable");
+    require(gated.can_fallback(), "gated raster failure can fall back");
+}
+
 void test_fake_backend_reports_zero_advance_combining_mark_with_cluster_range()
 {
     using namespace quiz_vulkan::render;
@@ -503,6 +907,13 @@ int main()
     test_fake_backend_reports_unsupported_script_and_fallback_glyph_id();
     test_fake_backend_reports_unsupported_glyph_and_fallback_glyph_id();
     test_fake_backend_consumes_pre_resolved_glyph_ids();
+    test_real_backend_adapter_gates_backend_unavailable();
+    test_real_backend_adapter_reports_unsupported_script_without_complex_feature();
+    test_real_backend_adapter_shapes_available_run();
+    test_real_backend_adapter_reports_glyph_id_mismatch();
+    test_real_backend_adapter_reports_recoverable_and_fatal_failures();
+    test_real_backend_adapter_diagnostics_are_deterministic();
+    test_real_backend_adapter_rasterizes_and_gates_raster_capability();
     test_fake_backend_reports_zero_advance_combining_mark_with_cluster_range();
     return 0;
 }

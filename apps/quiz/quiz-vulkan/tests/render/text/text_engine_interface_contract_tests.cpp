@@ -1,5 +1,6 @@
 #include "render/render_draw_list.h"
 #include "render/text/fake_text_engine.h"
+#include "render/text/font_backend_adapter.h"
 #include "render/text/font_backend_capabilities.h"
 #include "render/text/font_cmap_inspector.h"
 #include "render/text/font_coverage_run_segmentation.h"
@@ -129,6 +130,18 @@ static_assert(FontBackendCapabilityProbeContract<render::font_backend_capability
 static_assert(FontBackendCapabilityProbeContract<render::deterministic_fake_font_backend_capability_probe>);
 
 template <typename T>
+concept FontBackendAdapterContract = requires(
+    const T& adapter,
+    const render::render_text_real_font_shaping_adapter_request& shaping_request,
+    const render::render_text_real_font_raster_adapter_request& raster_request) {
+    { adapter.shape(shaping_request) } -> std::same_as<render::render_text_real_font_shaping_adapter_result>;
+    { adapter.rasterize(raster_request) } -> std::same_as<render::render_text_real_font_raster_adapter_result>;
+};
+
+static_assert(FontBackendAdapterContract<render::font_backend_adapter_interface>);
+static_assert(FontBackendAdapterContract<render::function_table_font_backend_adapter>);
+
+template <typename T>
 concept FontShapingBackendContract = requires(
     const T& backend,
     const render::render_text_font_shaping_request& request) {
@@ -250,6 +263,99 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.has_caret_hit_tests() } -> std::same_as<bool>;
     { diagnostics.has_glyph_cache_faces() } -> std::same_as<bool>;
     { diagnostics.has_glyph_cache_evictions() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    render::render_text_font_backend_adapter_status status,
+    render::render_text_font_backend_adapter_diagnostic diagnostic,
+    render::render_text_real_font_shaping_adapter_request shaping_request,
+    render::render_text_real_font_shaping_adapter_result shaping_result,
+    render::render_text_real_font_raster_adapter_request raster_request,
+    render::render_text_real_font_raster_adapter_result raster_result,
+    render::render_text_font_backend_adapter_functions functions,
+    render::render_text_font_backend_capability_snapshot capability,
+    std::size_t codepoint_index) {
+    { render::render_text_font_backend_adapter_status_name(status) } -> std::same_as<std::string>;
+    { diagnostic.status } -> std::same_as<render::render_text_font_backend_adapter_status&>;
+    { diagnostic.library } -> std::same_as<render::render_text_font_backend_library&>;
+    { diagnostic.capability_status } -> std::same_as<render::render_text_font_backend_capability_status&>;
+    { diagnostic.run_index } -> std::same_as<std::size_t&>;
+    { diagnostic.byte_offset } -> std::same_as<std::size_t&>;
+    { diagnostic.byte_count } -> std::same_as<std::size_t&>;
+    { diagnostic.codepoint } -> std::same_as<std::uint32_t&>;
+    { diagnostic.expected_glyph_id } -> std::same_as<std::uint32_t&>;
+    { diagnostic.actual_glyph_id } -> std::same_as<std::uint32_t&>;
+    { diagnostic.recoverable } -> std::same_as<bool&>;
+    { diagnostic.fatal } -> std::same_as<bool&>;
+    { diagnostic.diagnostic } -> std::same_as<std::string&>;
+    { shaping_request.capability } -> std::same_as<render::render_text_font_backend_capability_snapshot&>;
+    { shaping_request.library } -> std::same_as<render::render_text_font_backend_library&>;
+    { shaping_request.run_index } -> std::same_as<std::size_t&>;
+    { shaping_request.style_token } -> std::same_as<render::render_style_id&>;
+    { shaping_request.style } -> std::same_as<render::render_text_style&>;
+    { shaping_request.codepoints } -> std::same_as<std::vector<render::utf8_text_codepoint>&>;
+    { shaping_request.clusters } -> std::same_as<std::vector<render::utf8_text_cluster>&>;
+    { shaping_request.font_selections }
+        -> std::same_as<std::vector<render::render_text_font_shaping_codepoint_selection>&>;
+    { shaping_request.fallback_glyph_id } -> std::same_as<std::uint32_t&>;
+    { shaping_request.source_label } -> std::same_as<std::string&>;
+    { shaping_result.status } -> std::same_as<render::render_text_font_backend_adapter_status&>;
+    { shaping_result.library } -> std::same_as<render::render_text_font_backend_library&>;
+    { shaping_result.capability_status } -> std::same_as<render::render_text_font_backend_capability_status&>;
+    { shaping_result.run_index } -> std::same_as<std::size_t&>;
+    { shaping_result.style_token } -> std::same_as<render::render_style_id&>;
+    { shaping_result.glyphs } -> std::same_as<std::vector<render::render_text_shaped_glyph>&>;
+    { shaping_result.diagnostics } -> std::same_as<std::vector<render::render_text_font_backend_adapter_diagnostic>&>;
+    { shaping_result.recoverable } -> std::same_as<bool&>;
+    { shaping_result.fatal } -> std::same_as<bool&>;
+    { shaping_result.diagnostic } -> std::same_as<std::string&>;
+    { shaping_result.ok() } -> std::same_as<bool>;
+    { shaping_result.can_fallback() } -> std::same_as<bool>;
+    { shaping_result.has_diagnostic(status) } -> std::same_as<bool>;
+    { raster_request.capability } -> std::same_as<render::render_text_font_backend_capability_snapshot&>;
+    { raster_request.library } -> std::same_as<render::render_text_font_backend_library&>;
+    { raster_request.rasterize } -> std::same_as<render::render_text_font_rasterize_request&>;
+    { raster_result.status } -> std::same_as<render::render_text_font_backend_adapter_status&>;
+    { raster_result.library } -> std::same_as<render::render_text_font_backend_library&>;
+    { raster_result.capability_status } -> std::same_as<render::render_text_font_backend_capability_status&>;
+    { raster_result.rasterized } -> std::same_as<render::render_text_font_rasterize_result&>;
+    { raster_result.diagnostics } -> std::same_as<std::vector<render::render_text_font_backend_adapter_diagnostic>&>;
+    { raster_result.recoverable } -> std::same_as<bool&>;
+    { raster_result.fatal } -> std::same_as<bool&>;
+    { raster_result.diagnostic } -> std::same_as<std::string&>;
+    { raster_result.ok() } -> std::same_as<bool>;
+    { raster_result.can_fallback() } -> std::same_as<bool>;
+    { functions.shape } -> std::same_as<render::render_text_font_backend_shape_callback&>;
+    { functions.rasterize } -> std::same_as<render::render_text_font_backend_raster_callback&>;
+    { functions.label } -> std::same_as<std::string&>;
+    { render::render_text_font_backend_adapter_capability_allows_shaping(capability) }
+        -> std::same_as<bool>;
+    { render::render_text_font_backend_adapter_capability_allows_rasterization(capability) }
+        -> std::same_as<bool>;
+    { render::render_text_font_backend_adapter_request_requires_complex_shaping(shaping_request) }
+        -> std::same_as<bool>;
+    { render::render_text_font_backend_adapter_cluster_for_codepoint(shaping_request, codepoint_index) }
+        -> std::same_as<render::utf8_text_cluster>;
+    { render::render_text_font_backend_adapter_selection_for_codepoint(shaping_request, codepoint_index) }
+        -> std::same_as<render::render_text_font_shaping_codepoint_selection>;
+    { render::render_text_font_backend_adapter_diagnostic_for_request(shaping_request, status, std::string{}) }
+        -> std::same_as<render::render_text_font_backend_adapter_diagnostic>;
+    { render::make_render_text_font_backend_adapter_shape_failure(shaping_request, status, std::string{}) }
+        -> std::same_as<render::render_text_real_font_shaping_adapter_result>;
+    { render::make_render_text_font_backend_adapter_raster_failure(raster_request, status, std::string{}) }
+        -> std::same_as<render::render_text_real_font_raster_adapter_result>;
+    { render::render_text_font_backend_adapter_first_complex_codepoint(shaping_request) }
+        -> std::same_as<const render::utf8_text_codepoint*>;
+    { render::make_render_text_font_backend_adapter_unsupported_script(shaping_request) }
+        -> std::same_as<render::render_text_real_font_shaping_adapter_result>;
+    { render::render_text_font_backend_adapter_normalize_shape_result(shaping_result, shaping_request) }
+        -> std::same_as<void>;
+    { render::render_text_font_backend_adapter_validate_glyph_ids(shaping_result, shaping_request) }
+        -> std::same_as<void>;
+    { render::deterministic_fake_real_font_backend_shape(shaping_request) }
+        -> std::same_as<render::render_text_real_font_shaping_adapter_result>;
+    { render::deterministic_fake_real_font_backend_rasterize(raster_request) }
+        -> std::same_as<render::render_text_real_font_raster_adapter_result>;
 });
 
 static_assert(requires(render::fake_text_engine& engine, render::font_face_descriptor descriptor) {

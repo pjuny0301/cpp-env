@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: glyph atlas materialization diagnostics를 통합하고 Windows MinGW focused text CTest 2/2 확인.
+- `6ac0d43`: fake text engine diagnostics에 glyph atlas materialization request/summary를 추가해 shaped glyph/layout output과 backend selection metadata가 renderer/Vulkan upload 전 단계까지 추적되도록 보강.
 - current: image decoder capability manifest pipeline diagnostics를 통합하고 Windows MinGW focused image CTest 4/4 확인.
 - `6170c74`: image texture pipeline diagnostics에 decoder capability manifest, selected decoder, fallback reason, cache reuse, placeholder outcome을 연결해 image engine 내부에서 texture request 처리 경로를 추적 가능하게 보강.
 - current: Vulkan command packet execution diagnostics를 통합하고 Windows MinGW focused Vulkan CTest 4/4 및 `ctest -N` 83개 확인.

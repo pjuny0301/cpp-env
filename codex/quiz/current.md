@@ -38,6 +38,7 @@ Last updated: 2026-05-08
 - Engine workers own only their engine folders. App/runtime, top-level CMake, and aggregate contract wiring stay with the integrator unless explicitly assigned.
 - Large file splitting is allowed when it improves module cohesion, worker ownership, reviewability, or conflict isolation. Do not split files only because they exceed a line-count threshold, and do not move stable public interfaces without explicit integrator approval.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
+- Latest integration note: `6ac0d43` adds glyph atlas materialization diagnostics to the fake text engine so shaped glyph/layout output, backend selection metadata, atlas requests, and summary policy stay visible before renderer/Vulkan upload exists.
 - Latest integration note: `6170c74` threads image decoder capability manifest snapshots into image texture pipeline diagnostics while preserving decoder selection, fallback, cache reuse, and placeholder outcomes inside the image engine boundary.
 - Latest integration note: `1cbc4cf` adds Vulkan command packet execution diagnostics that verify command packet bridge output can be executed only when frame, resource binding, command recorder, and packet prerequisites are satisfied.
 - Latest integration note: `83e0e1d`, `9bd7bff`, and `4f54fac` thread text backend selection diagnostics through fake layout output, add image decoder capability manifest diagnostics, and add input diagnostic summary counts across normalized events and routed actions.
@@ -46,7 +47,7 @@ Last updated: 2026-05-08
 - Latest integration note: `2656970` adds a Vulkan frame pipeline handoff summary/result that composes loader, instance, device, swapchain, render pass, pipeline, resource binding, command recording, submit, present, and fallback readiness without scene/UI/app/domain coupling.
 - Latest integration note: text/image/input worker commits added font backend selection metadata, optional third-party image decoder adapter boundary, and IME/focus/caret hardening; CMake render contract FILE_SET registration was handled by the integrator.
 - Latest integration note: `15d77ce` reports app scene modifier errors in `app_render_report`; `0a721e2` blocks host/external source paths in architecture tests; `7505a63` tracks native dependency manifest/README while ignoring downloaded source directories.
-- Latest verification: Windows MinGW focused image CTest passed 4/4 after `6170c74`; focused Vulkan CTest passed 4/4 after `1cbc4cf`; focused text/image/input CTest passed 9/9 after `83e0e1d`, `9bd7bff`, and `4f54fac`. Most recent full CTest passed 81/81 after `2656970`; current `ctest -N` reports 83 tests.
+- Latest verification: Windows MinGW focused text CTest passed 2/2 after `6ac0d43`; focused image CTest passed 4/4 after `6170c74`; focused Vulkan CTest passed 4/4 after `1cbc4cf`. Most recent full CTest passed 81/81 after `2656970`; current `ctest -N` reports 83 tests.
 
 ## Verification commands
 

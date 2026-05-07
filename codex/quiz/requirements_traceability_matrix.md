@@ -6,6 +6,12 @@
 
 최근 baseline 통합 증거:
 
+- current: font backend selection layer, optional third-party image decoder adapter, input IME/focus/caret hardening을 통합하고 Windows MinGW focused text/image/input/architecture CTest 8/8 및 `ctest -N` 80개 확인.
+- `bad1552`: input engine/text input model에 IME composition_start/restart diagnostics, focus/caret/selection stale-preedit clearing, invalid IME UTF-8 rejection tests 추가.
+- `c662239`: image engine에 optional third-party decoder adapter boundary, fake backend, standard decoder fallback, host-path/include guard tests 추가.
+- `45fec4e`: text engine에 FreeType/HarfBuzz/utf8proc 후보를 logical metadata와 capability/fallback selection으로 표현하는 font backend selection layer 추가.
+- `15d77ce`: app render frame report에 scene modifier error count/first error를 추가해 modifier stack failure가 조용히 사라지지 않도록 보강.
+- `0a721e2`: architecture boundary test에 host-specific source path와 direct `build/external/lib/cpp/desktop` reference 차단 규칙 추가.
 - `7505a63`: native desktop dependency manifest/README를 추적하고, FreeType/HarfBuzz/Vulkan/stb/miniaudio 등 다운로드된 대용량 source snapshots는 `build/external/lib/cpp/desktop/*/` ignore 규칙으로 Git 커밋 대상에서 분리.
 - current: fake text backend-adapter injection, Vulkan pipeline readiness summary, image manifest boundary hardening을 통합하고 Windows MinGW focused text/Vulkan/image CTest 13/13 및 `ctest -N` 79개 확인.
 - `96e5f31`: image manifest texture pipeline boundary tests를 강화해 manifest-owned snapshots와 include/dependency guard를 고정.

@@ -34,11 +34,13 @@ Last updated: 2026-05-08
 - Scene/UI modifiers emit actions only; app/domain services own state changes.
 - Renderer layers must not own quiz, domain, UI, input, or audio state.
 - Architecture boundary tests now lock the intended direction: layout does not depend on UI/render, UI does not depend on Vulkan backend, scene layout data does not depend on render, Vulkan backend does not depend on scene/UI/app/domain, and asset/text engine core files do not depend on upper layers except explicit bridge adapters.
+- Architecture boundary tests also reject host-specific source paths such as `/mnt/c/aa`, `C:/aa`, and direct `build/external/lib/cpp/desktop` references in app source. External libraries are selected through engine metadata/adapters, not hard-coded checkout paths.
 - Engine workers own only their engine folders. App/runtime, top-level CMake, and aggregate contract wiring stay with the integrator unless explicitly assigned.
 - Large file splitting is allowed when it improves module cohesion, worker ownership, reviewability, or conflict isolation. Do not split files only because they exceed a line-count threshold, and do not move stable public interfaces without explicit integrator approval.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
-- Latest integration note: `7505a63` tracks native desktop dependency manifest/README and ignores downloaded third-party source directories under `build/external/lib/cpp/desktop/*/`; no build or app code changed.
-- Latest verification: Windows MinGW focused text/Vulkan/image CTest passed 13/13 after integrating fake text backend-adapter injection, Vulkan pipeline readiness summary, and image manifest boundary hardening. Current `ctest -N` reports 79 tests. Most recent full CTest passed 76/76 after `be66895`.
+- Latest integration note: text/image/input worker commits added font backend selection metadata, optional third-party image decoder adapter boundary, and IME/focus/caret hardening; CMake render contract FILE_SET registration was handled by the integrator.
+- Latest integration note: `15d77ce` reports app scene modifier errors in `app_render_report`; `0a721e2` blocks host/external source paths in architecture tests; `7505a63` tracks native dependency manifest/README while ignoring downloaded source directories.
+- Latest verification: Windows MinGW focused text/image/input/architecture CTest passed 8/8 after integrating `45fec4e`, `c662239`, and `bad1552`. Current `ctest -N` reports 80 tests. Most recent full CTest passed 76/76 after `be66895`.
 
 ## Verification commands
 

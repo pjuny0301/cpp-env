@@ -85,6 +85,7 @@ static_assert(ImageTexturePipelineInterface<render::image_texture_pipeline_inter
 static_assert(ImageTexturePipelineInterface<render::fake_image_texture_pipeline>);
 static_assert(PngImageInflaterInterface<render::png_image_inflater_interface>);
 static_assert(PngImageInflaterInterface<render::fake_png_image_inflater>);
+static_assert(PngImageInflaterInterface<render::png_image_zlib_inflater>);
 
 static_assert(requires(render::render_image_ref image) {
     { image.sampler } -> std::same_as<render::render_image_sampler_policy&>;
@@ -158,6 +159,7 @@ static_assert(requires(
     render::png_image_decode_boundary_status png_decode_boundary_status,
     render::png_image_decode_boundary_result png_decode_boundary_result,
     render::fake_png_image_inflater png_inflater,
+    render::png_image_zlib_inflater png_zlib_inflater,
     render::png_image_unfilter_status png_unfilter_status,
     render::png_image_unfilter_result png_unfilter_result,
     render::png_image_decoder png_decoder,
@@ -251,6 +253,9 @@ static_assert(requires(
     { render::png_image_decode_boundary_status_name(png_decode_boundary_status) } -> std::same_as<std::string>;
     { render::decode_png_image_with_inflater(request.encoded_bytes, png_chunk_scan_result, &png_inflater) }
         -> std::same_as<render::png_image_decode_boundary_result>;
+    { render::inflate_png_zlib_stored_blocks(png_inflate_request) }
+        -> std::same_as<render::png_image_inflate_result>;
+    { png_zlib_inflater.inflate(png_inflate_request) } -> std::same_as<render::png_image_inflate_result>;
     { render::png_image_unfilter_status_name(png_unfilter_status) } -> std::same_as<std::string>;
     { render::unfilter_png_image_rgba8_scanlines(png_decode_plan, png_inflate_result.inflated_bytes) }
         -> std::same_as<render::png_image_unfilter_result>;

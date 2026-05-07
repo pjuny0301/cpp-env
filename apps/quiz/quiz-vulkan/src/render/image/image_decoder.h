@@ -5,6 +5,7 @@
 #include "render/image/png_image_decode_boundary.h"
 #include "render/image/png_image_header_inspector.h"
 #include "render/image/png_image_unfilter_boundary.h"
+#include "render/image/png_image_zlib_inflater.h"
 
 #include <cctype>
 #include <cstddef>

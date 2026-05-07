@@ -1,5 +1,6 @@
 #include "render/text/fake_text_engine.h"
 #include "render/text/fake_text_engine_layout.h"
+#include "render/text/font_rasterizer.h"
 #include "render/text/font_source_resolver.h"
 #include "render/text/utf8_line_break.h"
 #include "render/text/utf8_text_run.h"
@@ -8,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -914,6 +916,193 @@ void record_glyph_cache_readiness_diagnostics(
     diagnostics.glyph_cache_readiness_policy.unique_face_count = unique_faces.size();
 }
 
+render_text_font_source_bytes_load_status fake_rasterizer_font_bytes_status_for(
+    const font_face_descriptor& face)
+{
+    const font_source_resolution source = resolve_font_source(face);
+    const font_source_bytes_readiness readiness = inspect_font_source_bytes(source);
+    switch (readiness.status) {
+    case render_text_font_source_bytes_status::available_virtual_fixture:
+        return render_text_font_source_bytes_load_status::loaded;
+    case render_text_font_source_bytes_status::missing_source:
+        return render_text_font_source_bytes_load_status::missing_source;
+    case render_text_font_source_bytes_status::unsupported_source:
+        return render_text_font_source_bytes_load_status::unsupported_source;
+    case render_text_font_source_bytes_status::pending_file_load:
+        return render_text_font_source_bytes_load_status::missing_bytes;
+    }
+
+    return render_text_font_source_bytes_load_status::missing_bytes;
+}
+
+void append_fake_rasterizer_font_bytes(std::vector<std::byte>& bytes, const std::string& value)
+{
+    for (const unsigned char byte : value) {
+        bytes.push_back(static_cast<std::byte>(byte));
+    }
+    bytes.push_back(std::byte{0});
+}
+
+std::vector<std::byte> fake_rasterizer_font_bytes_for(const font_face_descriptor& face)
+{
+    if (fake_rasterizer_font_bytes_status_for(face) != render_text_font_source_bytes_load_status::loaded) {
+        return {};
+    }
+
+    std::vector<std::byte> bytes;
+    bytes.reserve(face.family.size() + face.source_uri.size() + face.version.size() + face.license.size() + 8U);
+    bytes.push_back(static_cast<std::byte>(face.id & 0xffU));
+    bytes.push_back(static_cast<std::byte>((face.id >> 8U) & 0xffU));
+    append_fake_rasterizer_font_bytes(bytes, face.family);
+    append_fake_rasterizer_font_bytes(bytes, face.source_uri);
+    append_fake_rasterizer_font_bytes(bytes, face.version);
+    append_fake_rasterizer_font_bytes(bytes, face.license);
+    if (bytes.empty()) {
+        bytes.push_back(std::byte{0});
+    }
+    return bytes;
+}
+
+void count_rasterized_glyph_atlas_payload_status(
+    render_text_rasterized_glyph_atlas_payload_policy_snapshot& policy,
+    const render_text_font_rasterizer_status status)
+{
+    switch (status) {
+    case render_text_font_rasterizer_status::rasterized:
+        ++policy.rasterized_count;
+        return;
+    case render_text_font_rasterizer_status::missing_font_source:
+        ++policy.missing_font_source_count;
+        return;
+    case render_text_font_rasterizer_status::missing_font_bytes:
+        ++policy.missing_font_bytes_count;
+        return;
+    case render_text_font_rasterizer_status::unsupported_glyph:
+        ++policy.unsupported_glyph_count;
+        return;
+    case render_text_font_rasterizer_status::invalid_pixel_size:
+        ++policy.invalid_pixel_size_count;
+        return;
+    }
+}
+
+void append_rasterized_glyph_atlas_payload_snapshot(
+    fake_text_engine_diagnostics& diagnostics,
+    render_text_rasterized_glyph_atlas_payload_snapshot snapshot)
+{
+    ++diagnostics.rasterized_glyph_atlas_payload_policy.request_count;
+    if (snapshot.upload_ready) {
+        ++diagnostics.rasterized_glyph_atlas_payload_policy.upload_ready_count;
+    }
+    if (snapshot.skipped) {
+        ++diagnostics.rasterized_glyph_atlas_payload_policy.skipped_count;
+    }
+    diagnostics.rasterized_glyph_atlas_payload_policy.total_alpha_bytes += snapshot.alpha_bytes;
+    diagnostics.rasterized_glyph_atlas_payload_policy.total_rgba_bytes += snapshot.rgba_bytes;
+    count_rasterized_glyph_atlas_payload_status(
+        diagnostics.rasterized_glyph_atlas_payload_policy,
+        snapshot.status);
+    diagnostics.rasterized_glyph_atlas_payloads.push_back(std::move(snapshot));
+}
+
+void record_rasterized_glyph_atlas_payload_diagnostics(
+    fake_text_engine_diagnostics& diagnostics,
+    const std::vector<laid_out_glyph_cluster>& clusters,
+    const font_face_catalog& catalog)
+{
+    diagnostics.rasterized_glyph_atlas_payloads.clear();
+    diagnostics.rasterized_glyph_atlas_payloads.reserve(clusters.size());
+    diagnostics.rasterized_glyph_atlas_payload_policy = {};
+
+    const deterministic_fake_font_rasterizer rasterizer;
+
+    for (std::size_t cluster_index = 0; cluster_index < clusters.size(); ++cluster_index) {
+        const laid_out_glyph_cluster& cluster = clusters[cluster_index];
+        const glyph_atlas_key key = atlas_key_for_cluster(cluster);
+        const bool has_shape = cluster.snapshot.advance > 0.0f && cluster.glyph_height > 0.0f;
+        const bool cacheable = cluster.cacheable && has_shape;
+
+        if (!cluster.glyph_supported) {
+            append_rasterized_glyph_atlas_payload_snapshot(
+                diagnostics,
+                render_text_rasterized_glyph_atlas_payload_snapshot{
+                    .cluster_index = cluster_index,
+                    .run_index = cluster.snapshot.run_index,
+                    .byte_offset = cluster.snapshot.byte_offset,
+                    .byte_count = cluster.snapshot.byte_count,
+                    .glyph_id = cluster.glyph_id,
+                    .resolved_face_id = cluster.snapshot.resolved_face_id,
+                    .cache_key = key,
+                    .status = render_text_font_rasterizer_status::unsupported_glyph,
+                    .diagnostic = "glyph cluster was not resolved to a supported font face",
+                    .cacheable = false,
+                    .upload_ready = false,
+                    .skipped = true,
+                });
+            continue;
+        }
+        if (!cacheable) {
+            continue;
+        }
+
+        const font_face_descriptor* face = catalog.find_by_id(cluster.snapshot.resolved_face_id);
+        if (face == nullptr) {
+            append_rasterized_glyph_atlas_payload_snapshot(
+                diagnostics,
+                render_text_rasterized_glyph_atlas_payload_snapshot{
+                    .cluster_index = cluster_index,
+                    .run_index = cluster.snapshot.run_index,
+                    .byte_offset = cluster.snapshot.byte_offset,
+                    .byte_count = cluster.snapshot.byte_count,
+                    .glyph_id = cluster.glyph_id,
+                    .resolved_face_id = cluster.snapshot.resolved_face_id,
+                    .cache_key = key,
+                    .status = render_text_font_rasterizer_status::missing_font_source,
+                    .diagnostic = "resolved font face is not present in the text font catalog",
+                    .cacheable = true,
+                    .upload_ready = false,
+                    .skipped = true,
+                });
+            continue;
+        }
+
+        const render_text_font_source_bytes_load_status bytes_status =
+            fake_rasterizer_font_bytes_status_for(*face);
+        const std::vector<std::byte> font_bytes = fake_rasterizer_font_bytes_for(*face);
+        render_text_font_rasterize_request request = make_font_rasterize_request(
+            *face,
+            key,
+            cluster.glyph_id,
+            std::span<const std::byte>{font_bytes.data(), font_bytes.size()});
+        request.font_bytes_status = bytes_status;
+
+        const render_text_font_rasterize_result result = rasterizer.rasterize(request);
+        const render_text_font_atlas_glyph_payload payload = make_font_rasterizer_atlas_payload(result);
+        append_rasterized_glyph_atlas_payload_snapshot(
+            diagnostics,
+            render_text_rasterized_glyph_atlas_payload_snapshot{
+                .cluster_index = cluster_index,
+                .run_index = cluster.snapshot.run_index,
+                .byte_offset = cluster.snapshot.byte_offset,
+                .byte_count = cluster.snapshot.byte_count,
+                .glyph_id = cluster.glyph_id,
+                .resolved_face_id = cluster.snapshot.resolved_face_id,
+                .cache_key = key,
+                .status = result.status,
+                .metrics = result.metrics,
+                .bitmap_width = payload.width,
+                .bitmap_height = payload.height,
+                .alpha_bytes = payload.alpha.size(),
+                .rgba_bytes = payload.rgba.size(),
+                .source_label = result.source_label,
+                .diagnostic = result.diagnostic,
+                .cacheable = true,
+                .upload_ready = payload.upload_ready,
+                .skipped = !payload.upload_ready,
+            });
+    }
+}
+
 render_text_revision latest_page_revision(const std::vector<render_text_atlas_page>& pages)
 {
     render_text_revision latest = 0;
@@ -1038,6 +1227,7 @@ void update_atlas_for_clusters(
     std::vector<laid_out_glyph_cluster>& clusters,
     glyph_atlas_cache& atlas_cache,
     std::vector<glyph_atlas_key>& glyph_cache_policy_entries,
+    const font_face_catalog& catalog,
     fake_text_engine_diagnostics& diagnostics,
     std::vector<render_text_atlas_update>& atlas_updates)
 {
@@ -1120,6 +1310,7 @@ void update_atlas_for_clusters(
     }
 
     record_glyph_cache_readiness_diagnostics(diagnostics, clusters);
+    record_rasterized_glyph_atlas_payload_diagnostics(diagnostics, clusters, catalog);
 
     const std::vector<render_text_atlas_page> pages = atlas_cache.pages();
     std::vector<render_text_atlas_update> dirty_updates = atlas_cache.consume_dirty_page_updates();
@@ -1177,6 +1368,7 @@ render_text_layout fake_text_engine::layout_text(const render_text_request& requ
         cluster_layouts,
         glyph_atlas_cache_,
         glyph_cache_policy_entries_,
+        font_resolver_.catalog(),
         diagnostics_,
         atlas_updates_);
 

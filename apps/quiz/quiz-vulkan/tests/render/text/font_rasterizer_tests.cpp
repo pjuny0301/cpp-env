@@ -133,6 +133,11 @@ void test_fake_rasterizer_reports_unsupported_glyph()
     require(result.glyph_id == U'?', "unsupported glyph preserves glyph id");
     require(result.bitmap.alpha.empty(), "unsupported glyph returns no bitmap");
     require(result.diagnostic.find("coverage") != std::string::npos, "unsupported glyph diagnostic names coverage");
+
+    const render_text_font_atlas_glyph_payload payload = make_font_rasterizer_atlas_payload(result);
+    require(!payload.upload_ready, "unsupported glyph does not produce upload-ready atlas payload");
+    require(payload.alpha.empty(), "unsupported glyph payload has no alpha bytes");
+    require(payload.rgba.empty(), "unsupported glyph payload has no RGBA bytes");
 }
 
 void test_fake_rasterizer_reports_invalid_pixel_size()

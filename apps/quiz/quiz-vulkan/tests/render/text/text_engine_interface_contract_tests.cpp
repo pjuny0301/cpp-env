@@ -155,6 +155,10 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
         -> std::same_as<std::vector<render::render_text_glyph_cache_readiness_snapshot>&>;
     { diagnostics.glyph_cache_readiness_policy }
         -> std::same_as<render::render_text_glyph_cache_readiness_policy_snapshot&>;
+    { diagnostics.rasterized_glyph_atlas_payloads }
+        -> std::same_as<std::vector<render::render_text_rasterized_glyph_atlas_payload_snapshot>&>;
+    { diagnostics.rasterized_glyph_atlas_payload_policy }
+        -> std::same_as<render::render_text_rasterized_glyph_atlas_payload_policy_snapshot&>;
     { diagnostics.glyph_cache_faces } -> std::same_as<std::vector<render::render_text_glyph_cache_face_snapshot>&>;
     { diagnostics.glyph_cache_evictions }
         -> std::same_as<std::vector<render::render_text_glyph_cache_eviction_snapshot>&>;
@@ -174,6 +178,8 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.has_font_source_bytes_policy() } -> std::same_as<bool>;
     { diagnostics.has_glyph_font_resolutions() } -> std::same_as<bool>;
     { diagnostics.has_glyph_cache_readiness() } -> std::same_as<bool>;
+    { diagnostics.has_rasterized_glyph_atlas_payloads() } -> std::same_as<bool>;
+    { diagnostics.has_rasterized_glyph_atlas_payload_policy() } -> std::same_as<bool>;
     { diagnostics.has_line_breaks() } -> std::same_as<bool>;
     { diagnostics.has_line_metrics() } -> std::same_as<bool>;
     { diagnostics.has_line_run_boxes() } -> std::same_as<bool>;
@@ -799,6 +805,40 @@ static_assert(requires(render::render_text_glyph_cache_readiness_policy_snapshot
     { policy.unique_cache_key_count } -> std::same_as<std::size_t&>;
     { policy.unique_face_count } -> std::same_as<std::size_t&>;
     { policy.estimated_rgba_bytes } -> std::same_as<std::size_t&>;
+});
+
+static_assert(requires(render::render_text_rasterized_glyph_atlas_payload_snapshot payload) {
+    { payload.cluster_index } -> std::same_as<std::size_t&>;
+    { payload.run_index } -> std::same_as<std::size_t&>;
+    { payload.byte_offset } -> std::same_as<std::size_t&>;
+    { payload.byte_count } -> std::same_as<std::size_t&>;
+    { payload.glyph_id } -> std::same_as<std::uint32_t&>;
+    { payload.resolved_face_id } -> std::same_as<render::font_face_id&>;
+    { payload.cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { payload.status } -> std::same_as<render::render_text_font_rasterizer_status&>;
+    { payload.metrics } -> std::same_as<render::render_text_font_glyph_metrics&>;
+    { payload.bitmap_width } -> std::same_as<std::size_t&>;
+    { payload.bitmap_height } -> std::same_as<std::size_t&>;
+    { payload.alpha_bytes } -> std::same_as<std::size_t&>;
+    { payload.rgba_bytes } -> std::same_as<std::size_t&>;
+    { payload.source_label } -> std::same_as<std::string&>;
+    { payload.diagnostic } -> std::same_as<std::string&>;
+    { payload.cacheable } -> std::same_as<bool&>;
+    { payload.upload_ready } -> std::same_as<bool&>;
+    { payload.skipped } -> std::same_as<bool&>;
+});
+
+static_assert(requires(render::render_text_rasterized_glyph_atlas_payload_policy_snapshot policy) {
+    { policy.request_count } -> std::same_as<std::size_t&>;
+    { policy.rasterized_count } -> std::same_as<std::size_t&>;
+    { policy.skipped_count } -> std::same_as<std::size_t&>;
+    { policy.upload_ready_count } -> std::same_as<std::size_t&>;
+    { policy.missing_font_source_count } -> std::same_as<std::size_t&>;
+    { policy.missing_font_bytes_count } -> std::same_as<std::size_t&>;
+    { policy.unsupported_glyph_count } -> std::same_as<std::size_t&>;
+    { policy.invalid_pixel_size_count } -> std::same_as<std::size_t&>;
+    { policy.total_alpha_bytes } -> std::same_as<std::size_t&>;
+    { policy.total_rgba_bytes } -> std::same_as<std::size_t&>;
 });
 
 static_assert(requires(render::render_draw_command command) {

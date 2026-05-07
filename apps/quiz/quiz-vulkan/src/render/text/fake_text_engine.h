@@ -1,5 +1,6 @@
 #pragma once
 
+#include "render/text/font_rasterizer.h"
 #include "render/text/font_resolver.h"
 #include "render/text/glyph_run.h"
 #include "render/text/text_engine.h"
@@ -58,6 +59,8 @@ struct fake_text_engine_diagnostics {
     std::vector<render_text_caret_rect_snapshot> caret_hit_tests;
     std::vector<render_text_glyph_cache_readiness_snapshot> glyph_cache_readiness;
     render_text_glyph_cache_readiness_policy_snapshot glyph_cache_readiness_policy;
+    std::vector<render_text_rasterized_glyph_atlas_payload_snapshot> rasterized_glyph_atlas_payloads;
+    render_text_rasterized_glyph_atlas_payload_policy_snapshot rasterized_glyph_atlas_payload_policy;
     std::vector<render_text_glyph_cache_face_snapshot> glyph_cache_faces;
     std::vector<render_text_glyph_cache_eviction_snapshot> glyph_cache_evictions;
     render_text_glyph_cache_policy_snapshot glyph_cache_policy;
@@ -151,6 +154,16 @@ struct fake_text_engine_diagnostics {
     bool has_glyph_cache_readiness() const
     {
         return !glyph_cache_readiness.empty();
+    }
+
+    bool has_rasterized_glyph_atlas_payloads() const
+    {
+        return !rasterized_glyph_atlas_payloads.empty();
+    }
+
+    bool has_rasterized_glyph_atlas_payload_policy() const
+    {
+        return rasterized_glyph_atlas_payload_policy.request_count > 0;
     }
 
     bool has_line_breaks() const

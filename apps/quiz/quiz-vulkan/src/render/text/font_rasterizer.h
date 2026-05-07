@@ -108,6 +108,41 @@ struct render_text_font_atlas_glyph_payload {
     bool upload_ready = false;
 };
 
+struct render_text_rasterized_glyph_atlas_payload_snapshot {
+    std::size_t cluster_index = 0;
+    std::size_t run_index = 0;
+    std::size_t byte_offset = 0;
+    std::size_t byte_count = 0;
+    std::uint32_t glyph_id = 0;
+    font_face_id resolved_face_id = 0;
+    glyph_atlas_key cache_key;
+    render_text_font_rasterizer_status status =
+        render_text_font_rasterizer_status::missing_font_source;
+    render_text_font_glyph_metrics metrics;
+    std::size_t bitmap_width = 0;
+    std::size_t bitmap_height = 0;
+    std::size_t alpha_bytes = 0;
+    std::size_t rgba_bytes = 0;
+    std::string source_label;
+    std::string diagnostic;
+    bool cacheable = false;
+    bool upload_ready = false;
+    bool skipped = true;
+};
+
+struct render_text_rasterized_glyph_atlas_payload_policy_snapshot {
+    std::size_t request_count = 0;
+    std::size_t rasterized_count = 0;
+    std::size_t skipped_count = 0;
+    std::size_t upload_ready_count = 0;
+    std::size_t missing_font_source_count = 0;
+    std::size_t missing_font_bytes_count = 0;
+    std::size_t unsupported_glyph_count = 0;
+    std::size_t invalid_pixel_size_count = 0;
+    std::size_t total_alpha_bytes = 0;
+    std::size_t total_rgba_bytes = 0;
+};
+
 class font_rasterizer_interface {
 public:
     virtual ~font_rasterizer_interface() = default;

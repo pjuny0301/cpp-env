@@ -87,6 +87,14 @@ struct vulkan_renderer_frame_summary {
     bool backend_present_image_presented = false;
     vulkan_backend::vulkan_frame_present_result_status backend_present_result_status =
         vulkan_backend::vulkan_frame_present_result_status::not_checked;
+    bool backend_submit_adapter_checked = false;
+    vulkan_backend::vulkan_queue_submit_present_status backend_submit_adapter_status =
+        vulkan_backend::vulkan_queue_submit_present_status::not_requested;
+    bool backend_submit_adapter_submit_called = false;
+    bool backend_submit_adapter_present_called = false;
+    bool backend_submit_adapter_submit_before_present = false;
+    bool backend_submit_adapter_recoverable_failure = false;
+    bool backend_submit_adapter_fatal_failure = false;
     bool backend_attempted = false;
     bool backend_fallback_required = true;
     vulkan_backend::vulkan_backend_fallback_reason backend_fallback_reason =

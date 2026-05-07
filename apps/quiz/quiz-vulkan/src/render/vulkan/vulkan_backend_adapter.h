@@ -1238,6 +1238,37 @@ struct vulkan_backend_frame_fallback_summary {
     }
 };
 
+struct vulkan_backend_queue_submit_adapter_summary {
+    bool checked = false;
+    vulkan_queue_submit_present_status status =
+        vulkan_queue_submit_present_status::not_requested;
+    bool submit_called = false;
+    bool present_called = false;
+    bool submit_before_present = false;
+    bool recoverable_failure = false;
+    bool fatal_failure = false;
+    std::string diagnostic;
+
+    bool completed() const
+    {
+        return checked
+            && status == vulkan_queue_submit_present_status::submitted_and_presented
+            && submit_called && present_called && submit_before_present
+            && !recoverable_failure && !fatal_failure;
+    }
+
+    bool failed() const
+    {
+        return checked
+            && (recoverable_failure || fatal_failure
+                || status == vulkan_queue_submit_present_status::command_submit_unavailable
+                || status == vulkan_queue_submit_present_status::command_buffer_unavailable
+                || status == vulkan_queue_submit_present_status::submit_queue_unavailable
+                || status == vulkan_queue_submit_present_status::present_target_unavailable
+                || status == vulkan_queue_submit_present_status::adapter_unavailable);
+    }
+};
+
 struct diagnostic_vulkan_command_recorder_options {
     bool ready = true;
     vulkan_command_recorder_failure_stage fail_at = vulkan_command_recorder_failure_stage::none;
@@ -1283,6 +1314,8 @@ struct vulkan_backend_frame_result {
     vulkan_backend_pipeline_state pipeline;
     vulkan_backend_command_recorder_state command_recorder;
     vulkan_command_submit_readiness_result command_submit;
+    vulkan_queue_submit_present_result queue_submit;
+    vulkan_backend_queue_submit_adapter_summary queue_submit_adapter;
     vulkan_backend_command_buffer_submit_state command_buffer_submit;
     vulkan_backend_frame_fallback_summary fallback_summary;
     vulkan_backend_frame_stage reached_stage = vulkan_backend_frame_stage::not_started;
@@ -1311,6 +1344,8 @@ struct vulkan_backend_frame_result {
             && lifecycle_policy.completed()
             && present_policy.completed()
             && command_buffer_submit.completed()
+            && (!queue_submit.checked || queue_submit.completed())
+            && (!queue_submit_adapter.checked || queue_submit_adapter.completed())
             && command_recorder.completed()
             && command_recorder.gate.completed()
             && resource_bindings.completed()
@@ -1375,6 +1410,13 @@ vulkan_backend_resource_registry_state build_vulkan_resource_registry_state(
     const render_draw_list& draw_list,
     const vulkan_frame_plan& plan,
     const vulkan_backend_resource_binding_state& resource_bindings);
+
+vulkan_backend_queue_submit_adapter_summary summarize_vulkan_queue_submit_adapter_result(
+    const vulkan_queue_submit_present_result& queue_submit);
+
+vulkan_backend_frame_result apply_vulkan_queue_submit_adapter_result_to_frame(
+    vulkan_backend_frame_result frame,
+    vulkan_queue_submit_present_result queue_submit);
 
 vulkan_backend_frame_result submit_vulkan_backend_frame(
     vulkan_backend_device_interface& device,

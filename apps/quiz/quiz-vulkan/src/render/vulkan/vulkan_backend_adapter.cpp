@@ -1048,6 +1048,31 @@ vulkan_backend_lifecycle_readiness apply_vulkan_command_submit_readiness_to_life
     return lifecycle;
 }
 
+vulkan_backend_queue_submit_adapter_summary summarize_vulkan_queue_submit_adapter_result(
+    const vulkan_queue_submit_present_result& queue_submit)
+{
+    return vulkan_backend_queue_submit_adapter_summary{
+        .checked = queue_submit.checked,
+        .status = queue_submit.status,
+        .submit_called = queue_submit.submit_called,
+        .present_called = queue_submit.present_called,
+        .submit_before_present = queue_submit.submit_before_present(),
+        .recoverable_failure = queue_submit.recoverable_failure(),
+        .fatal_failure = queue_submit.fatal_failure(),
+        .diagnostic = queue_submit.diagnostic,
+    };
+}
+
+vulkan_backend_frame_result apply_vulkan_queue_submit_adapter_result_to_frame(
+    vulkan_backend_frame_result frame,
+    vulkan_queue_submit_present_result queue_submit)
+{
+    frame.command_submit = queue_submit.command_submit;
+    frame.queue_submit_adapter = summarize_vulkan_queue_submit_adapter_result(queue_submit);
+    frame.queue_submit = std::move(queue_submit);
+    return frame;
+}
+
 null_vulkan_backend_device::null_vulkan_backend_device() = default;
 
 null_vulkan_backend_device::null_vulkan_backend_device(

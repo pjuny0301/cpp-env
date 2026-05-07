@@ -1,3 +1,4 @@
+#include "render/vulkan/vulkan_backend_adapter.h"
 #include "render/vulkan/vulkan_backend_command_recording.h"
 #include "render/vulkan/vulkan_backend_command_submit.h"
 #include "render/vulkan/vulkan_backend_device.h"
@@ -380,6 +381,123 @@ void test_queue_submit_adapter_reports_missing_present_queue_after_submit()
     require(fake.state().present_call_count == 0, "fake adapter present is not called without present queue");
 }
 
+void test_queue_submit_adapter_result_wires_backend_frame_summary()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::fake_vulkan_queue_submit_adapter fake;
+    const vulkan_backend::vulkan_queue_submit_present_result queue_result =
+        vulkan_backend::submit_and_present_vulkan_queue_frame(
+            fake.adapter(),
+            make_ready_command_submit(),
+            vulkan_backend::vulkan_queue_submit_present_request{
+                .require_present = true,
+                .image_id = vulkan_backend::vulkan_swapchain_image_id{.value = 9},
+            });
+    const vulkan_backend::vulkan_backend_queue_submit_adapter_summary summary =
+        vulkan_backend::summarize_vulkan_queue_submit_adapter_result(queue_result);
+    const vulkan_backend::vulkan_backend_frame_result frame =
+        vulkan_backend::apply_vulkan_queue_submit_adapter_result_to_frame(
+            {},
+            queue_result);
+
+    require(summary.checked, "backend queue submit summary is checked");
+    require(
+        summary.status
+            == vulkan_backend::vulkan_queue_submit_present_status::submitted_and_presented,
+        "backend queue submit summary stores success status");
+    require(summary.submit_called, "backend queue submit summary records submit call");
+    require(summary.present_called, "backend queue submit summary records present call");
+    require(
+        summary.submit_before_present,
+        "backend queue submit summary records submit-before-present ordering");
+    require(!summary.recoverable_failure, "backend queue submit summary has no recoverable failure");
+    require(!summary.fatal_failure, "backend queue submit summary has no fatal failure");
+    require(summary.completed(), "backend queue submit summary completes for adapter success");
+
+    require(frame.queue_submit.checked, "frame stores queue submit adapter result");
+    require(frame.queue_submit_adapter.checked, "frame stores queue submit adapter summary");
+    require(
+        frame.queue_submit_adapter.submit_before_present,
+        "frame summary exposes submit-before-present ordering");
+    require(
+        frame.command_submit.frame_result.completed(),
+        "frame command submit diagnostics reflect adapter success");
+}
+
+void test_queue_submit_adapter_failures_wire_backend_frame_summary()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::fake_vulkan_queue_submit_adapter recoverable_fake(
+        vulkan_backend::fake_vulkan_queue_submit_adapter_options{
+            .submit_status =
+                vulkan_backend::vulkan_queue_submit_adapter_call_status::failed_recoverable,
+        });
+    const vulkan_backend::vulkan_backend_frame_result recoverable_frame =
+        vulkan_backend::apply_vulkan_queue_submit_adapter_result_to_frame(
+            {},
+            vulkan_backend::submit_and_present_vulkan_queue_frame(
+                recoverable_fake.adapter(),
+                make_ready_command_submit()));
+    require(
+        recoverable_frame.queue_submit_adapter.status
+            == vulkan_backend::vulkan_queue_submit_present_status::submit_failed_recoverable,
+        "frame summary stores recoverable submit failure status");
+    require(
+        recoverable_frame.queue_submit_adapter.submit_called,
+        "frame summary records recoverable submit call");
+    require(
+        !recoverable_frame.queue_submit_adapter.present_called,
+        "frame summary records no present after recoverable submit failure");
+    require(
+        recoverable_frame.queue_submit_adapter.recoverable_failure,
+        "frame summary exposes recoverable adapter failure");
+    require(
+        !recoverable_frame.queue_submit_adapter.fatal_failure,
+        "frame summary does not mark recoverable failure fatal");
+    require(
+        recoverable_frame.queue_submit_adapter.failed(),
+        "frame summary classifies recoverable adapter failure as failed");
+    require(
+        recoverable_frame.command_submit.frame_result.recoverable_failure(),
+        "frame command submit diagnostics expose recoverable failure");
+
+    vulkan_backend::fake_vulkan_queue_submit_adapter fatal_fake(
+        vulkan_backend::fake_vulkan_queue_submit_adapter_options{
+            .present_status =
+                vulkan_backend::vulkan_queue_submit_adapter_call_status::failed_fatal,
+        });
+    const vulkan_backend::vulkan_backend_frame_result fatal_frame =
+        vulkan_backend::apply_vulkan_queue_submit_adapter_result_to_frame(
+            {},
+            vulkan_backend::submit_and_present_vulkan_queue_frame(
+                fatal_fake.adapter(),
+                make_ready_command_submit()));
+    require(
+        fatal_frame.queue_submit_adapter.status
+            == vulkan_backend::vulkan_queue_submit_present_status::present_failed_fatal,
+        "frame summary stores fatal present failure status");
+    require(
+        fatal_frame.queue_submit_adapter.submit_called,
+        "frame summary records submit before fatal present failure");
+    require(
+        fatal_frame.queue_submit_adapter.present_called,
+        "frame summary records fatal present call");
+    require(
+        fatal_frame.queue_submit_adapter.submit_before_present,
+        "frame summary preserves ordering for fatal present failure");
+    require(
+        fatal_frame.queue_submit_adapter.fatal_failure,
+        "frame summary exposes fatal adapter failure");
+    require(
+        !fatal_frame.queue_submit_adapter.recoverable_failure,
+        "frame summary does not mark fatal failure recoverable");
+    require(
+        fatal_frame.queue_submit.fatal_failure(),
+        "frame queue submit diagnostics expose fatal failure");
+}
+
 void test_queue_submit_adapter_names_are_stable()
 {
     namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
@@ -410,6 +528,8 @@ int main()
     test_queue_submit_adapter_maps_recoverable_and_fatal_present_failures();
     test_queue_submit_adapter_reports_missing_submit_queue_and_present_target();
     test_queue_submit_adapter_reports_missing_present_queue_after_submit();
+    test_queue_submit_adapter_result_wires_backend_frame_summary();
+    test_queue_submit_adapter_failures_wire_backend_frame_summary();
     test_queue_submit_adapter_names_are_stable();
     return 0;
 }

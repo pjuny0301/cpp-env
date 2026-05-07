@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: image texture batch planning diagnostics를 통합하고 Windows MinGW focused image CTest 2/2 확인.
+- `38466be`: image engine에 image texture batch planning diagnostics를 추가해 render image refs, normalized texture/sampler keys, source/texture dedupe, placeholder fallback intent, invalid request reasons를 cache/uploader 내부 노출 없이 추적.
 - current: Vulkan command-buffer recording diagnostics를 통합하고 Windows MinGW focused Vulkan CTest 5/5 및 `ctest -N` 86개 확인.
 - `9c8e7ed`: Vulkan backend에 command-buffer recording result/event diagnostics를 추가해 approved recorder operation이 submit/present 전 data-only command-buffer record 상태로 추적되도록 보강.
 - current: text request batch planning diagnostics를 통합하고 Windows MinGW focused text CTest 3/3 확인.

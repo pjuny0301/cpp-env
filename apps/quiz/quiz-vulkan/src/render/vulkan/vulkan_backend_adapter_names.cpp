@@ -308,6 +308,59 @@ std::string_view submit_batch_sync_intent_kind_name(
     return "unknown";
 }
 
+std::string_view present_completion_plan_status_name(
+    vulkan_present_completion_plan_status status)
+{
+    switch (status) {
+    case vulkan_present_completion_plan_status::not_checked:
+        return "not_checked";
+    case vulkan_present_completion_plan_status::ready:
+        return "ready";
+    case vulkan_present_completion_plan_status::submit_batch_unavailable:
+        return "submit_batch_unavailable";
+    case vulkan_present_completion_plan_status::present_request_unavailable:
+        return "present_request_unavailable";
+    case vulkan_present_completion_plan_status::present_adapter_unavailable:
+        return "present_adapter_unavailable";
+    case vulkan_present_completion_plan_status::submit_failed_recoverable:
+        return "submit_failed_recoverable";
+    case vulkan_present_completion_plan_status::submit_failed_fatal:
+        return "submit_failed_fatal";
+    case vulkan_present_completion_plan_status::present_failed_recoverable:
+        return "present_failed_recoverable";
+    case vulkan_present_completion_plan_status::present_failed_fatal:
+        return "present_failed_fatal";
+    }
+
+    return "unknown";
+}
+
+std::string_view frame_completion_status_name(vulkan_frame_completion_status status)
+{
+    switch (status) {
+    case vulkan_frame_completion_status::not_checked:
+        return "not_checked";
+    case vulkan_frame_completion_status::ready_for_present:
+        return "ready_for_present";
+    case vulkan_frame_completion_status::completed:
+        return "completed";
+    case vulkan_frame_completion_status::submit_unavailable:
+        return "submit_unavailable";
+    case vulkan_frame_completion_status::present_unavailable:
+        return "present_unavailable";
+    case vulkan_frame_completion_status::submit_failed_recoverable:
+        return "submit_failed_recoverable";
+    case vulkan_frame_completion_status::submit_failed_fatal:
+        return "submit_failed_fatal";
+    case vulkan_frame_completion_status::present_failed_recoverable:
+        return "present_failed_recoverable";
+    case vulkan_frame_completion_status::present_failed_fatal:
+        return "present_failed_fatal";
+    }
+
+    return "unknown";
+}
+
 std::string_view frame_pipeline_handoff_status_name(
     vulkan_backend_frame_pipeline_handoff_status status)
 {

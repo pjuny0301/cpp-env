@@ -611,6 +611,80 @@ void add_submit_batch_intents(vulkan_submit_batch_plan_result& plan)
     plan.present_intent_count = plan.present_intents.size();
 }
 
+vulkan_present_request_summary present_request_from_submit_batch(
+    const vulkan_submit_batch_plan_result& submit_batch,
+    bool queue_present_checked)
+{
+    return vulkan_present_request_summary{
+        .requested = submit_batch.present_ready,
+        .source_adapter_checked = queue_present_checked,
+        .present_queue = submit_batch.submit_queue,
+        .swapchain = vulkan_swapchain_handle{.value = 1},
+        .image_id = submit_batch.image_id,
+        .wait_render_finished_semaphore =
+            submit_batch.sync_primitives.render_finished_semaphore,
+    };
+}
+
+vulkan_present_request_summary present_request_from_queue_present(
+    const vulkan_queue_submit_present_result& queue_present)
+{
+    return vulkan_present_request_summary{
+        .requested = true,
+        .source_adapter_checked = true,
+        .present_queue = queue_present.present_call.queue,
+        .swapchain = queue_present.present_call.swapchain,
+        .image_id = queue_present.present_call.image_id,
+        .wait_render_finished_semaphore =
+            queue_present.present_call.wait_render_finished_semaphore,
+    };
+}
+
+vulkan_present_result_summary present_result_from_queue_present(
+    const vulkan_queue_submit_present_result& queue_present)
+{
+    return vulkan_present_result_summary{
+        .checked = queue_present.checked,
+        .status = queue_present.present_result.status,
+        .present_called = queue_present.present_called,
+        .submit_before_present = queue_present.submit_before_present(),
+        .recoverable_failure = queue_present.status
+            == vulkan_queue_submit_present_status::present_failed_recoverable,
+        .fatal_failure = queue_present.status
+            == vulkan_queue_submit_present_status::present_failed_fatal,
+        .diagnostic = queue_present.present_result.diagnostic.empty()
+            ? queue_present.diagnostic
+            : queue_present.present_result.diagnostic,
+    };
+}
+
+vulkan_present_result_summary deterministic_present_result_summary()
+{
+    return vulkan_present_result_summary{
+        .checked = true,
+        .status = vulkan_queue_submit_adapter_call_status::completed,
+        .present_called = true,
+        .submit_before_present = true,
+        .recoverable_failure = false,
+        .fatal_failure = false,
+        .diagnostic =
+            "Vulkan present completion planned through existing frame present path",
+    };
+}
+
+void block_present_completion(
+    vulkan_present_completion_plan_result& plan,
+    vulkan_present_completion_plan_status status,
+    vulkan_frame_completion_status frame_status,
+    vulkan_backend_fallback_reason fallback,
+    std::string diagnostic)
+{
+    plan.status = status;
+    plan.frame_status = frame_status;
+    plan.fallback_reason = fallback;
+    plan.diagnostic = std::move(diagnostic);
+}
+
 const vulkan_batch_resource_binding_snapshot* find_binding_snapshot_for_batch(
     const vulkan_backend_resource_binding_state& resource_bindings,
     const vulkan_draw_batch& batch,
@@ -1982,6 +2056,179 @@ vulkan_submit_batch_plan_result build_vulkan_submit_batch_plan(
     return plan;
 }
 
+vulkan_present_completion_plan_result build_vulkan_present_completion_plan(
+    const vulkan_submit_batch_plan_result& submit_batch,
+    const vulkan_queue_submit_present_result& queue_present)
+{
+    vulkan_present_completion_plan_result plan{
+        .checked = true,
+        .status = vulkan_present_completion_plan_status::not_checked,
+        .frame_status = vulkan_frame_completion_status::not_checked,
+        .fallback_reason = vulkan_backend_fallback_reason::not_requested,
+        .submit_batch_checked = submit_batch.checked,
+        .submit_batch_ready = submit_batch.completed(),
+        .queue_present_adapter_checked = queue_present.checked,
+        .queue_present_adapter_ready = !queue_present.checked || queue_present.completed(),
+        .submit_batch_count = submit_batch.submit_batch_count,
+        .present_intent_count = submit_batch.present_intent_count,
+        .request = queue_present.checked && queue_present.present_call.valid()
+            ? present_request_from_queue_present(queue_present)
+            : present_request_from_submit_batch(submit_batch, queue_present.checked),
+        .result = queue_present.checked
+            ? present_result_from_queue_present(queue_present)
+            : deterministic_present_result_summary(),
+        .diagnostic = {},
+    };
+
+    if (!submit_batch.completed()) {
+        vulkan_backend_fallback_reason fallback = submit_batch.fallback_reason;
+        if (fallback == vulkan_backend_fallback_reason::none
+            || fallback == vulkan_backend_fallback_reason::not_requested) {
+            fallback = vulkan_backend_fallback_reason::submit_frame_failed;
+        }
+        const bool present_failure =
+            fallback == vulkan_backend_fallback_reason::present_frame_failed
+            || fallback == vulkan_backend_fallback_reason::present_image_failed;
+        block_present_completion(
+            plan,
+            vulkan_present_completion_plan_status::submit_batch_unavailable,
+            present_failure ? vulkan_frame_completion_status::present_unavailable
+                            : vulkan_frame_completion_status::submit_unavailable,
+            fallback,
+            submit_batch.diagnostic.empty()
+                ? "Vulkan submit batch plan is unavailable for present completion planning"
+                : submit_batch.diagnostic);
+        return plan;
+    }
+
+    if (queue_present.checked) {
+        switch (queue_present.status) {
+        case vulkan_queue_submit_present_status::not_requested:
+            block_present_completion(
+                plan,
+                vulkan_present_completion_plan_status::present_adapter_unavailable,
+                vulkan_frame_completion_status::present_unavailable,
+                vulkan_backend_fallback_reason::present_frame_failed,
+                "Vulkan queue present adapter was not requested for present completion");
+            return plan;
+        case vulkan_queue_submit_present_status::command_submit_unavailable:
+        case vulkan_queue_submit_present_status::command_buffer_unavailable:
+        case vulkan_queue_submit_present_status::submit_queue_unavailable:
+            block_present_completion(
+                plan,
+                vulkan_present_completion_plan_status::submit_batch_unavailable,
+                vulkan_frame_completion_status::submit_unavailable,
+                vulkan_backend_fallback_reason::submit_frame_failed,
+                queue_present.diagnostic.empty()
+                    ? "Vulkan queue submit adapter cannot complete present after submit prerequisites"
+                    : queue_present.diagnostic);
+            return plan;
+        case vulkan_queue_submit_present_status::present_target_unavailable:
+            block_present_completion(
+                plan,
+                vulkan_present_completion_plan_status::present_request_unavailable,
+                vulkan_frame_completion_status::present_unavailable,
+                vulkan_backend_fallback_reason::present_frame_failed,
+                queue_present.diagnostic.empty()
+                    ? "Vulkan present target is unavailable for present completion"
+                    : queue_present.diagnostic);
+            return plan;
+        case vulkan_queue_submit_present_status::adapter_unavailable:
+            block_present_completion(
+                plan,
+                vulkan_present_completion_plan_status::present_adapter_unavailable,
+                vulkan_frame_completion_status::present_unavailable,
+                vulkan_backend_fallback_reason::present_frame_failed,
+                queue_present.diagnostic.empty()
+                    ? "Vulkan queue present adapter is unavailable for present completion"
+                    : queue_present.diagnostic);
+            return plan;
+        case vulkan_queue_submit_present_status::submit_failed_recoverable:
+            plan.recoverable_failure = true;
+            block_present_completion(
+                plan,
+                vulkan_present_completion_plan_status::submit_failed_recoverable,
+                vulkan_frame_completion_status::submit_failed_recoverable,
+                vulkan_backend_fallback_reason::submit_frame_failed,
+                queue_present.diagnostic.empty()
+                    ? "Vulkan queue submit failed recoverably before present completion"
+                    : queue_present.diagnostic);
+            return plan;
+        case vulkan_queue_submit_present_status::submit_failed_fatal:
+            plan.fatal_failure = true;
+            block_present_completion(
+                plan,
+                vulkan_present_completion_plan_status::submit_failed_fatal,
+                vulkan_frame_completion_status::submit_failed_fatal,
+                vulkan_backend_fallback_reason::submit_frame_failed,
+                queue_present.diagnostic.empty()
+                    ? "Vulkan queue submit failed fatally before present completion"
+                    : queue_present.diagnostic);
+            return plan;
+        case vulkan_queue_submit_present_status::present_failed_recoverable:
+            plan.recoverable_failure = true;
+            block_present_completion(
+                plan,
+                vulkan_present_completion_plan_status::present_failed_recoverable,
+                vulkan_frame_completion_status::present_failed_recoverable,
+                vulkan_backend_fallback_reason::present_frame_failed,
+                queue_present.diagnostic.empty()
+                    ? "Vulkan queue present failed recoverably"
+                    : queue_present.diagnostic);
+            return plan;
+        case vulkan_queue_submit_present_status::present_failed_fatal:
+            plan.fatal_failure = true;
+            block_present_completion(
+                plan,
+                vulkan_present_completion_plan_status::present_failed_fatal,
+                vulkan_frame_completion_status::present_failed_fatal,
+                vulkan_backend_fallback_reason::present_frame_failed,
+                queue_present.diagnostic.empty()
+                    ? "Vulkan queue present failed fatally"
+                    : queue_present.diagnostic);
+            return plan;
+        case vulkan_queue_submit_present_status::submitted_and_presented:
+            break;
+        }
+    }
+
+    plan.present_request_ready = plan.request.completed();
+    if (!plan.present_request_ready) {
+        block_present_completion(
+            plan,
+            vulkan_present_completion_plan_status::present_request_unavailable,
+            vulkan_frame_completion_status::present_unavailable,
+            vulkan_backend_fallback_reason::present_frame_failed,
+            "Vulkan present request is incomplete for present completion planning");
+        return plan;
+    }
+
+    plan.present_result_ready = plan.result.completed();
+    if (!plan.present_result_ready) {
+        block_present_completion(
+            plan,
+            vulkan_present_completion_plan_status::present_adapter_unavailable,
+            vulkan_frame_completion_status::present_unavailable,
+            vulkan_backend_fallback_reason::present_frame_failed,
+            plan.result.diagnostic.empty()
+                ? "Vulkan present adapter result is unavailable for present completion"
+                : plan.result.diagnostic);
+        return plan;
+    }
+
+    plan.queue_present_adapter_ready = true;
+    plan.frame_completion_ready = true;
+    plan.status = vulkan_present_completion_plan_status::ready;
+    plan.frame_status = queue_present.checked
+        ? vulkan_frame_completion_status::completed
+        : vulkan_frame_completion_status::ready_for_present;
+    plan.fallback_reason = vulkan_backend_fallback_reason::none;
+    plan.diagnostic = queue_present.checked
+        ? "Vulkan present completion confirmed by queue present adapter"
+        : "Vulkan present completion plan is ready for existing frame present path";
+    return plan;
+}
+
 vulkan_backend_frame_pipeline_handoff summarize_vulkan_frame_pipeline_handoff(
     const vulkan_backend_frame_result& frame)
 {
@@ -2012,6 +2259,11 @@ vulkan_backend_frame_pipeline_handoff summarize_vulkan_frame_pipeline_handoff(
     const bool submit_batch_planning_completed = frame.submit_batch_plan.completed();
     const bool submit_batch_ready_for_queue =
         submit_batch_planning_completed && frame.submit_batch_plan.submit_ready;
+    const bool present_completion_planning_completed =
+        frame.present_completion_plan.completed();
+    const bool frame_completion_ready =
+        present_completion_planning_completed
+        && frame.present_completion_plan.frame_completion_ready;
     const bool command_recorder_gate_allowed = frame.command_recorder.gate.completed();
     const bool command_recording_ready =
         frame.lifecycle.effective_command_recorder_ready()
@@ -2078,6 +2330,9 @@ vulkan_backend_frame_pipeline_handoff summarize_vulkan_frame_pipeline_handoff(
         .submit_batch_planning_checked = frame.submit_batch_plan.checked,
         .submit_batch_planning_completed = submit_batch_planning_completed,
         .submit_batch_ready_for_queue = submit_batch_ready_for_queue,
+        .present_completion_planning_checked = frame.present_completion_plan.checked,
+        .present_completion_planning_completed = present_completion_planning_completed,
+        .frame_completion_ready = frame_completion_ready,
         .command_recorder_lifecycle_ready = frame.lifecycle.effective_command_recorder_ready(),
         .command_recorder_gate_checked = frame.command_recorder.gate.checked,
         .command_recorder_gate_allowed = command_recorder_gate_allowed,
@@ -2106,6 +2361,10 @@ vulkan_backend_frame_result apply_vulkan_queue_submit_adapter_result_to_frame(
     frame.command_submit = queue_submit.command_submit;
     frame.queue_submit_adapter = summarize_vulkan_queue_submit_adapter_result(queue_submit);
     frame.queue_submit = std::move(queue_submit);
+    if (frame.submit_batch_plan.checked) {
+        frame.present_completion_plan =
+            build_vulkan_present_completion_plan(frame.submit_batch_plan, frame.queue_submit);
+    }
     frame.pipeline_handoff = summarize_vulkan_frame_pipeline_handoff(frame);
     return frame;
 }
@@ -2621,6 +2880,19 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
             ? vulkan_frame_lifecycle_step::present
             : vulkan_frame_lifecycle_step::submit;
         fail_frame_lifecycle(failed_step, result.submit_batch_plan.fallback_reason);
+        return finish_frame();
+    }
+
+    result.present_completion_plan = build_vulkan_present_completion_plan(
+        result.submit_batch_plan,
+        result.queue_submit);
+    if (result.present_completion_plan.blocked()) {
+        const vulkan_frame_lifecycle_step failed_step =
+            result.present_completion_plan.fallback_reason
+                == vulkan_backend_fallback_reason::submit_frame_failed
+            ? vulkan_frame_lifecycle_step::submit
+            : vulkan_frame_lifecycle_step::present;
+        fail_frame_lifecycle(failed_step, result.present_completion_plan.fallback_reason);
         return finish_frame();
     }
 

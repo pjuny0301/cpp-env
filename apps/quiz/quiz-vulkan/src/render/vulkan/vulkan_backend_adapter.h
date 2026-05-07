@@ -1735,6 +1735,113 @@ struct vulkan_submit_batch_plan_result {
     }
 };
 
+enum class vulkan_present_completion_plan_status {
+    not_checked,
+    ready,
+    submit_batch_unavailable,
+    present_request_unavailable,
+    present_adapter_unavailable,
+    submit_failed_recoverable,
+    submit_failed_fatal,
+    present_failed_recoverable,
+    present_failed_fatal,
+};
+
+std::string_view present_completion_plan_status_name(
+    vulkan_present_completion_plan_status status);
+
+enum class vulkan_frame_completion_status {
+    not_checked,
+    ready_for_present,
+    completed,
+    submit_unavailable,
+    present_unavailable,
+    submit_failed_recoverable,
+    submit_failed_fatal,
+    present_failed_recoverable,
+    present_failed_fatal,
+};
+
+std::string_view frame_completion_status_name(vulkan_frame_completion_status status);
+
+struct vulkan_present_request_summary {
+    bool requested = false;
+    bool source_adapter_checked = false;
+    vulkan_queue_handle present_queue;
+    vulkan_swapchain_handle swapchain;
+    vulkan_swapchain_image_id image_id;
+    vulkan_command_submit_sync_handle wait_render_finished_semaphore;
+
+    bool completed() const
+    {
+        return requested && present_queue.valid() && swapchain.valid()
+            && image_id.value > 0 && wait_render_finished_semaphore.valid();
+    }
+};
+
+struct vulkan_present_result_summary {
+    bool checked = false;
+    vulkan_queue_submit_adapter_call_status status =
+        vulkan_queue_submit_adapter_call_status::not_called;
+    bool present_called = false;
+    bool submit_before_present = false;
+    bool recoverable_failure = false;
+    bool fatal_failure = false;
+    std::string diagnostic;
+
+    bool completed() const
+    {
+        return checked && status == vulkan_queue_submit_adapter_call_status::completed
+            && present_called && submit_before_present && !recoverable_failure
+            && !fatal_failure;
+    }
+
+    bool failed() const
+    {
+        return recoverable_failure || fatal_failure;
+    }
+};
+
+struct vulkan_present_completion_plan_result {
+    bool checked = false;
+    vulkan_present_completion_plan_status status =
+        vulkan_present_completion_plan_status::not_checked;
+    vulkan_frame_completion_status frame_status =
+        vulkan_frame_completion_status::not_checked;
+    vulkan_backend_fallback_reason fallback_reason = vulkan_backend_fallback_reason::not_requested;
+    bool submit_batch_checked = false;
+    bool submit_batch_ready = false;
+    bool queue_present_adapter_checked = false;
+    bool queue_present_adapter_ready = false;
+    bool present_request_ready = false;
+    bool present_result_ready = false;
+    bool frame_completion_ready = false;
+    bool recoverable_failure = false;
+    bool fatal_failure = false;
+    std::size_t submit_batch_count = 0;
+    std::size_t present_intent_count = 0;
+    vulkan_present_request_summary request;
+    vulkan_present_result_summary result;
+    std::string diagnostic;
+
+    bool completed() const
+    {
+        return checked && status == vulkan_present_completion_plan_status::ready
+            && (frame_status == vulkan_frame_completion_status::ready_for_present
+                || frame_status == vulkan_frame_completion_status::completed)
+            && fallback_reason == vulkan_backend_fallback_reason::none
+            && submit_batch_ready && queue_present_adapter_ready
+            && present_request_ready && present_result_ready
+            && frame_completion_ready && request.completed()
+            && result.completed() && !recoverable_failure && !fatal_failure;
+    }
+
+    bool blocked() const
+    {
+        return checked && status != vulkan_present_completion_plan_status::ready;
+    }
+};
+
 struct fake_vulkan_command_packet_executor_options {
     bool fail_begin = false;
     bool fail_end = false;
@@ -1825,6 +1932,9 @@ struct vulkan_backend_frame_pipeline_handoff {
     bool submit_batch_planning_checked = false;
     bool submit_batch_planning_completed = false;
     bool submit_batch_ready_for_queue = false;
+    bool present_completion_planning_checked = false;
+    bool present_completion_planning_completed = false;
+    bool frame_completion_ready = false;
     bool command_recorder_lifecycle_ready = false;
     bool command_recorder_gate_checked = false;
     bool command_recorder_gate_allowed = false;
@@ -1857,6 +1967,7 @@ struct vulkan_backend_frame_pipeline_handoff {
             && command_recorder_operations_completed
             && command_buffer_recording_completed && command_buffer_ready_for_submit
             && submit_batch_planning_completed && submit_batch_ready_for_queue
+            && present_completion_planning_completed && frame_completion_ready
             && command_recorder_lifecycle_ready && command_recorder_gate_allowed
             && command_recording_ready
             && command_submit_readiness_ready
@@ -1917,6 +2028,7 @@ struct vulkan_backend_frame_result {
     vulkan_command_recorder_operation_plan command_recorder_operations;
     vulkan_command_buffer_record_result command_buffer_recording;
     vulkan_submit_batch_plan_result submit_batch_plan;
+    vulkan_present_completion_plan_result present_completion_plan;
     vulkan_backend_command_recorder_state command_recorder;
     vulkan_command_submit_readiness_result command_submit;
     vulkan_queue_submit_present_result queue_submit;
@@ -1958,6 +2070,7 @@ struct vulkan_backend_frame_result {
             && command_recorder_operations.completed()
             && command_buffer_recording.completed()
             && submit_batch_plan.completed()
+            && present_completion_plan.completed()
             && command_recorder.completed()
             && command_recorder.gate.completed()
             && resource_bindings.completed()
@@ -2043,6 +2156,10 @@ vulkan_command_recorder_operation_plan build_vulkan_command_recorder_operation_p
 vulkan_submit_batch_plan_result build_vulkan_submit_batch_plan(
     const vulkan_command_buffer_record_result& command_buffer_recording,
     const vulkan_command_submit_readiness_result& command_submit);
+
+vulkan_present_completion_plan_result build_vulkan_present_completion_plan(
+    const vulkan_submit_batch_plan_result& submit_batch,
+    const vulkan_queue_submit_present_result& queue_present);
 
 vulkan_backend_frame_pipeline_handoff summarize_vulkan_frame_pipeline_handoff(
     const vulkan_backend_frame_result& frame);

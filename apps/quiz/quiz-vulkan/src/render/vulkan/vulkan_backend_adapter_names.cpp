@@ -227,6 +227,44 @@ std::string_view command_recorder_operation_kind_name(
     return "unknown";
 }
 
+std::string_view command_buffer_record_result_status_name(
+    vulkan_command_buffer_record_result_status status)
+{
+    switch (status) {
+    case vulkan_command_buffer_record_result_status::not_checked:
+        return "not_checked";
+    case vulkan_command_buffer_record_result_status::recorded:
+        return "recorded";
+    case vulkan_command_buffer_record_result_status::operation_plan_unavailable:
+        return "operation_plan_unavailable";
+    case vulkan_command_buffer_record_result_status::command_buffer_unavailable:
+        return "command_buffer_unavailable";
+    case vulkan_command_buffer_record_result_status::begin_failed:
+        return "begin_failed";
+    case vulkan_command_buffer_record_result_status::operation_failed:
+        return "operation_failed";
+    case vulkan_command_buffer_record_result_status::end_failed:
+        return "end_failed";
+    }
+
+    return "unknown";
+}
+
+std::string_view command_buffer_record_event_kind_name(
+    vulkan_command_buffer_record_event_kind kind)
+{
+    switch (kind) {
+    case vulkan_command_buffer_record_event_kind::begin:
+        return "begin";
+    case vulkan_command_buffer_record_event_kind::operation:
+        return "operation";
+    case vulkan_command_buffer_record_event_kind::end:
+        return "end";
+    }
+
+    return "unknown";
+}
+
 std::string_view frame_pipeline_handoff_status_name(
     vulkan_backend_frame_pipeline_handoff_status status)
 {

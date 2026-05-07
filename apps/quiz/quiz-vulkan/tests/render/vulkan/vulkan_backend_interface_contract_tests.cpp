@@ -3471,6 +3471,119 @@ static_assert(requires(render::vulkan_backend::vulkan_command_recorder_operation
 });
 
 static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_command_buffer_record_result_status::not_checked),
+    render::vulkan_backend::vulkan_command_buffer_record_result_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_command_buffer_record_result_status::recorded),
+    render::vulkan_backend::vulkan_command_buffer_record_result_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_command_buffer_record_result_status::operation_plan_unavailable),
+    render::vulkan_backend::vulkan_command_buffer_record_result_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_command_buffer_record_result_status::command_buffer_unavailable),
+    render::vulkan_backend::vulkan_command_buffer_record_result_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_command_buffer_record_result_status::begin_failed),
+    render::vulkan_backend::vulkan_command_buffer_record_result_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_command_buffer_record_result_status::operation_failed),
+    render::vulkan_backend::vulkan_command_buffer_record_result_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_command_buffer_record_result_status::end_failed),
+    render::vulkan_backend::vulkan_command_buffer_record_result_status>);
+static_assert(requires(render::vulkan_backend::vulkan_command_buffer_record_result_status status) {
+    { render::vulkan_backend::command_buffer_record_result_status_name(status) } -> std::same_as<std::string_view>;
+});
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_command_buffer_record_event_kind::begin),
+    render::vulkan_backend::vulkan_command_buffer_record_event_kind>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_command_buffer_record_event_kind::operation),
+    render::vulkan_backend::vulkan_command_buffer_record_event_kind>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_command_buffer_record_event_kind::end),
+    render::vulkan_backend::vulkan_command_buffer_record_event_kind>);
+static_assert(requires(render::vulkan_backend::vulkan_command_buffer_record_event_kind kind) {
+    { render::vulkan_backend::command_buffer_record_event_kind_name(kind) } -> std::same_as<std::string_view>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_command_buffer_record_event event) {
+    { event.event } -> std::same_as<render::vulkan_backend::vulkan_command_buffer_record_event_kind&>;
+    { event.command_buffer } -> std::same_as<render::vulkan_backend::vulkan_command_buffer_id&>;
+    { event.operation_kind } -> std::same_as<render::vulkan_backend::vulkan_command_recorder_operation_kind&>;
+    { event.category } -> std::same_as<render::vulkan_backend::vulkan_command_packet_category&>;
+    { event.batch_kind } -> std::same_as<render::vulkan_backend::vulkan_batch_kind&>;
+    { event.operation_index } -> std::same_as<std::size_t&>;
+    { event.packet_index } -> std::same_as<std::size_t&>;
+    { event.command_index } -> std::same_as<std::size_t&>;
+    { event.attempted } -> std::same_as<bool&>;
+    { event.completed } -> std::same_as<bool&>;
+    { event.failed } -> std::same_as<bool&>;
+    { event.successful() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_command_buffer_record_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.status } -> std::same_as<render::vulkan_backend::vulkan_command_buffer_record_result_status&>;
+    { result.fallback_reason } -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
+    { result.command_buffer } -> std::same_as<render::vulkan_backend::vulkan_command_buffer_id&>;
+    { result.operation_plan_checked } -> std::same_as<bool&>;
+    { result.operation_plan_ready } -> std::same_as<bool&>;
+    { result.begin_attempted } -> std::same_as<bool&>;
+    { result.begin_completed } -> std::same_as<bool&>;
+    { result.end_attempted } -> std::same_as<bool&>;
+    { result.end_completed } -> std::same_as<bool&>;
+    { result.has_failed_operation } -> std::same_as<bool&>;
+    { result.first_failed_operation_kind }
+        -> std::same_as<render::vulkan_backend::vulkan_command_recorder_operation_kind&>;
+    { result.first_failed_category } -> std::same_as<render::vulkan_backend::vulkan_command_packet_category&>;
+    { result.first_failed_batch_kind } -> std::same_as<render::vulkan_backend::vulkan_batch_kind&>;
+    { result.first_failed_operation_index } -> std::same_as<std::size_t&>;
+    { result.first_failed_packet_index } -> std::same_as<std::size_t&>;
+    { result.first_failed_command_index } -> std::same_as<std::size_t&>;
+    { result.planned_operation_count } -> std::same_as<std::size_t&>;
+    { result.attempted_operation_count } -> std::same_as<std::size_t&>;
+    { result.recorded_operation_count } -> std::same_as<std::size_t&>;
+    { result.rect_operation_count } -> std::same_as<std::size_t&>;
+    { result.text_operation_count } -> std::same_as<std::size_t&>;
+    { result.image_operation_count } -> std::same_as<std::size_t&>;
+    { result.debug_bounds_operation_count } -> std::same_as<std::size_t&>;
+    { result.events }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_command_buffer_record_event>&>;
+    { result.completed() } -> std::same_as<bool>;
+    { result.failed() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::fake_vulkan_command_buffer_operation_recorder_options options) {
+    { options.fail_begin } -> std::same_as<bool&>;
+    { options.fail_end } -> std::same_as<bool&>;
+    { options.fail_operation } -> std::same_as<bool&>;
+    { options.fail_operation_index } -> std::same_as<std::size_t&>;
+});
+
+template <typename T>
+concept VulkanCommandBufferOperationRecorderInterface = requires(
+    T& recorder,
+    render::vulkan_backend::vulkan_command_buffer_id command_buffer,
+    const render::vulkan_backend::vulkan_command_recorder_operation_plan& operation_plan) {
+    { recorder.record_operations(command_buffer, operation_plan) }
+        -> std::same_as<render::vulkan_backend::vulkan_command_buffer_record_result>;
+    { recorder.record_result() }
+        -> std::same_as<const render::vulkan_backend::vulkan_command_buffer_record_result&>;
+};
+
+static_assert(VulkanCommandBufferOperationRecorderInterface<
+              render::vulkan_backend::vulkan_command_buffer_operation_recorder_interface>);
+static_assert(VulkanCommandBufferOperationRecorderInterface<
+              render::vulkan_backend::fake_vulkan_command_buffer_operation_recorder>);
+static_assert(std::default_initializable<
+              render::vulkan_backend::fake_vulkan_command_buffer_operation_recorder>);
+static_assert(std::constructible_from<
+    render::vulkan_backend::fake_vulkan_command_buffer_operation_recorder,
+    render::vulkan_backend::fake_vulkan_command_buffer_operation_recorder_options>);
+
+static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status::not_checked),
     render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status>);
 static_assert(std::same_as<
@@ -3548,6 +3661,9 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_frame_pipeline_han
     { handoff.command_packet_execution_completed } -> std::same_as<bool&>;
     { handoff.command_recorder_operations_checked } -> std::same_as<bool&>;
     { handoff.command_recorder_operations_completed } -> std::same_as<bool&>;
+    { handoff.command_buffer_recording_checked } -> std::same_as<bool&>;
+    { handoff.command_buffer_recording_completed } -> std::same_as<bool&>;
+    { handoff.command_buffer_ready_for_submit } -> std::same_as<bool&>;
     { handoff.command_recorder_lifecycle_ready } -> std::same_as<bool&>;
     { handoff.command_recorder_gate_checked } -> std::same_as<bool&>;
     { handoff.command_recorder_gate_allowed } -> std::same_as<bool&>;
@@ -3592,6 +3708,8 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_frame_result resul
         -> std::same_as<render::vulkan_backend::vulkan_command_packet_execution_result&>;
     { result.command_recorder_operations }
         -> std::same_as<render::vulkan_backend::vulkan_command_recorder_operation_plan&>;
+    { result.command_buffer_recording }
+        -> std::same_as<render::vulkan_backend::vulkan_command_buffer_record_result&>;
     { result.command_recorder } -> std::same_as<render::vulkan_backend::vulkan_backend_command_recorder_state&>;
     { result.command_submit }
         -> std::same_as<render::vulkan_backend::vulkan_command_submit_readiness_result&>;

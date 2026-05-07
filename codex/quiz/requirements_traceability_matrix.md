@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: normalized input replay diagnostics를 통합하고 Windows MinGW focused input CTest 11/11 및 `ctest -N` 85개 확인.
+- `5335929`: input core에 normalized input replay recorder/replayer를 추가해 pointer/touch/wheel/text/IME fixture batch와 focus/preedit/pointer-capture end state를 app/domain/renderer 없이 검증.
 - current: Vulkan command recorder operation plan diagnostics를 통합하고 Windows MinGW focused Vulkan CTest 5/5 및 `ctest -N` 84개 확인.
 - `da544dc`: Vulkan backend에 command packet execution 뒤의 recorder operation plan/result/event diagnostics를 추가해 rect/text/image/debug packet을 real Vulkan 호출 전 data-only operation summary로 추적.
 - current: glyph atlas materialization diagnostics를 통합하고 Windows MinGW focused text CTest 2/2 확인.

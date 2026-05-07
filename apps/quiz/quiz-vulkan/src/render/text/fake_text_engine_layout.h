@@ -18,6 +18,7 @@ struct shaped_glyph {
     std::size_t byte_offset = 0;
     std::size_t byte_count = 1;
     std::uint32_t code_point = 0;
+    std::uint32_t glyph_id = 0;
     font_face_id requested_face_id = 0;
     font_face_id resolved_face_id = 0;
     float advance = 0.0f;

@@ -1,6 +1,12 @@
 #include "render/vulkan/vulkan_backend_adapter.h"
+#include "render/vulkan/vulkan_backend_command_recording.h"
+#include "render/vulkan/vulkan_backend_command_submit.h"
+#include "render/vulkan/vulkan_backend_device.h"
 #include "render/vulkan/vulkan_backend_frame_lifecycle.h"
+#include "render/vulkan/vulkan_backend_instance.h"
 #include "render/vulkan/vulkan_backend_loader.h"
+#include "render/vulkan/vulkan_backend_render_pass.h"
+#include "render/vulkan/vulkan_backend_swapchain.h"
 
 #include <algorithm>
 #include <string>
@@ -213,17 +219,30 @@ vulkan_backend_fallback_reason first_unready_reason(
     if (!lifecycle.effective_instance_ready()) {
         return vulkan_backend_fallback_reason::instance_unavailable;
     }
-    if (!lifecycle.device_ready) {
+    if (!lifecycle.effective_device_ready()) {
         return vulkan_backend_fallback_reason::device_unavailable;
     }
-    if (!lifecycle.swapchain_ready) {
+    if (!lifecycle.effective_swapchain_ready()) {
         return vulkan_backend_fallback_reason::swapchain_unavailable;
     }
-    if (!lifecycle.pipeline_ready) {
+    if (lifecycle.render_pass.checked && !lifecycle.effective_render_pass_ready()) {
+        return vulkan_backend_fallback_reason::render_pass_unavailable;
+    }
+    if (!lifecycle.effective_pipeline_ready()) {
         return vulkan_backend_fallback_reason::pipeline_unavailable;
     }
-    if (!lifecycle.command_recorder_ready) {
+    if (!lifecycle.effective_command_recorder_ready()) {
         return vulkan_backend_fallback_reason::command_recorder_unavailable;
+    }
+    if (lifecycle.command_submit.checked && !lifecycle.effective_command_submit_ready()) {
+        if (lifecycle.command_submit.status
+            == vulkan_command_submit_readiness_status::present_target_unavailable) {
+            return vulkan_backend_fallback_reason::present_frame_failed;
+        }
+        return vulkan_backend_fallback_reason::submit_frame_failed;
+    }
+    if (lifecycle.command_submit.checked && !lifecycle.effective_present_target_ready()) {
+        return vulkan_backend_fallback_reason::present_frame_failed;
     }
 
     return vulkan_backend_fallback_reason::none;
@@ -935,6 +954,125 @@ vulkan_backend_lifecycle_readiness apply_vulkan_loader_readiness_to_lifecycle(
     return lifecycle;
 }
 
+vulkan_backend_lifecycle_readiness apply_vulkan_instance_create_result_to_lifecycle(
+    vulkan_backend_lifecycle_readiness lifecycle,
+    vulkan_instance_create_result instance)
+{
+    if (!instance.checked) {
+        return lifecycle;
+    }
+
+    lifecycle.loader = instance.loader;
+    lifecycle.instance = std::move(instance);
+    lifecycle.instance_ready = lifecycle.instance.ready_for_device();
+    return lifecycle;
+}
+
+vulkan_backend_lifecycle_readiness apply_vulkan_device_create_result_to_lifecycle(
+    vulkan_backend_lifecycle_readiness lifecycle,
+    vulkan_device_create_result device)
+{
+    if (!device.checked) {
+        return lifecycle;
+    }
+
+    lifecycle = apply_vulkan_instance_create_result_to_lifecycle(
+        std::move(lifecycle),
+        device.instance);
+    lifecycle.device = std::move(device);
+    lifecycle.device_ready = lifecycle.device.ready_for_backend();
+    return lifecycle;
+}
+
+vulkan_backend_lifecycle_readiness apply_vulkan_swapchain_create_result_to_lifecycle(
+    vulkan_backend_lifecycle_readiness lifecycle,
+    vulkan_swapchain_create_result swapchain)
+{
+    if (!swapchain.checked) {
+        return lifecycle;
+    }
+
+    lifecycle = apply_vulkan_device_create_result_to_lifecycle(
+        std::move(lifecycle),
+        swapchain.device);
+    lifecycle.swapchain = std::move(swapchain);
+    lifecycle.swapchain_ready = lifecycle.swapchain.ready_for_frame();
+    return lifecycle;
+}
+
+vulkan_backend_lifecycle_readiness apply_vulkan_render_pass_create_result_to_lifecycle(
+    vulkan_backend_lifecycle_readiness lifecycle,
+    vulkan_render_pass_create_result render_pass)
+{
+    if (!render_pass.checked) {
+        return lifecycle;
+    }
+
+    lifecycle = apply_vulkan_swapchain_create_result_to_lifecycle(
+        std::move(lifecycle),
+        render_pass.swapchain);
+    lifecycle.render_pass = std::move(render_pass);
+    lifecycle.render_pass_ready = lifecycle.render_pass.ready_for_pipeline();
+    return lifecycle;
+}
+
+vulkan_backend_lifecycle_readiness apply_vulkan_command_recording_readiness_to_lifecycle(
+    vulkan_backend_lifecycle_readiness lifecycle,
+    vulkan_command_recording_readiness_result command_recording)
+{
+    if (!command_recording.checked) {
+        return lifecycle;
+    }
+
+    lifecycle = apply_vulkan_render_pass_create_result_to_lifecycle(
+        std::move(lifecycle),
+        command_recording.render_pass);
+    lifecycle.command_recording = std::move(command_recording);
+    lifecycle.pipeline_ready = lifecycle.command_recording.pipeline_ready();
+    lifecycle.command_recorder_ready = lifecycle.command_recording.ready_for_recording();
+    return lifecycle;
+}
+
+vulkan_backend_lifecycle_readiness apply_vulkan_command_submit_readiness_to_lifecycle(
+    vulkan_backend_lifecycle_readiness lifecycle,
+    vulkan_command_submit_readiness_result command_submit)
+{
+    if (!command_submit.checked) {
+        return lifecycle;
+    }
+
+    lifecycle = apply_vulkan_command_recording_readiness_to_lifecycle(
+        std::move(lifecycle),
+        command_submit.command_recording);
+    lifecycle.command_submit = std::move(command_submit);
+    return lifecycle;
+}
+
+vulkan_backend_queue_submit_adapter_summary summarize_vulkan_queue_submit_adapter_result(
+    const vulkan_queue_submit_present_result& queue_submit)
+{
+    return vulkan_backend_queue_submit_adapter_summary{
+        .checked = queue_submit.checked,
+        .status = queue_submit.status,
+        .submit_called = queue_submit.submit_called,
+        .present_called = queue_submit.present_called,
+        .submit_before_present = queue_submit.submit_before_present(),
+        .recoverable_failure = queue_submit.recoverable_failure(),
+        .fatal_failure = queue_submit.fatal_failure(),
+        .diagnostic = queue_submit.diagnostic,
+    };
+}
+
+vulkan_backend_frame_result apply_vulkan_queue_submit_adapter_result_to_frame(
+    vulkan_backend_frame_result frame,
+    vulkan_queue_submit_present_result queue_submit)
+{
+    frame.command_submit = queue_submit.command_submit;
+    frame.queue_submit_adapter = summarize_vulkan_queue_submit_adapter_result(queue_submit);
+    frame.queue_submit = std::move(queue_submit);
+    return frame;
+}
+
 null_vulkan_backend_device::null_vulkan_backend_device() = default;
 
 null_vulkan_backend_device::null_vulkan_backend_device(
@@ -949,13 +1087,95 @@ null_vulkan_backend_device::null_vulkan_backend_device(
 {
 }
 
+null_vulkan_backend_device::null_vulkan_backend_device(
+    vulkan_instance_create_result instance_result)
+    : loader_readiness_(instance_result.loader)
+    , instance_result_(std::move(instance_result))
+{
+}
+
+null_vulkan_backend_device::null_vulkan_backend_device(
+    vulkan_device_create_result device_result)
+    : loader_readiness_(device_result.instance.loader)
+    , instance_result_(device_result.instance)
+    , device_result_(std::move(device_result))
+{
+}
+
+null_vulkan_backend_device::null_vulkan_backend_device(
+    vulkan_swapchain_create_result swapchain_result)
+    : loader_readiness_(swapchain_result.device.instance.loader)
+    , instance_result_(swapchain_result.device.instance)
+    , device_result_(swapchain_result.device)
+    , swapchain_result_(std::move(swapchain_result))
+{
+}
+
+null_vulkan_backend_device::null_vulkan_backend_device(
+    vulkan_render_pass_create_result render_pass_result)
+    : loader_readiness_(render_pass_result.swapchain.device.instance.loader)
+    , instance_result_(render_pass_result.swapchain.device.instance)
+    , device_result_(render_pass_result.swapchain.device)
+    , swapchain_result_(render_pass_result.swapchain)
+    , render_pass_result_(std::move(render_pass_result))
+{
+}
+
+null_vulkan_backend_device::null_vulkan_backend_device(
+    vulkan_command_recording_readiness_result command_recording_result)
+    : loader_readiness_(command_recording_result.render_pass.swapchain.device.instance.loader)
+    , instance_result_(command_recording_result.render_pass.swapchain.device.instance)
+    , device_result_(command_recording_result.render_pass.swapchain.device)
+    , swapchain_result_(command_recording_result.render_pass.swapchain)
+    , render_pass_result_(command_recording_result.render_pass)
+    , command_recording_result_(std::move(command_recording_result))
+{
+}
+
+null_vulkan_backend_device::null_vulkan_backend_device(
+    vulkan_command_submit_readiness_result command_submit_result)
+    : loader_readiness_(
+        command_submit_result.command_recording.render_pass.swapchain.device.instance.loader)
+    , instance_result_(
+        command_submit_result.command_recording.render_pass.swapchain.device.instance)
+    , device_result_(command_submit_result.command_recording.render_pass.swapchain.device)
+    , swapchain_result_(command_submit_result.command_recording.render_pass.swapchain)
+    , render_pass_result_(command_submit_result.command_recording.render_pass)
+    , command_recording_result_(command_submit_result.command_recording)
+    , command_submit_result_(std::move(command_submit_result))
+{
+}
+
 vulkan_backend_lifecycle_readiness null_vulkan_backend_device::current_lifecycle_readiness() const
 {
-    return apply_vulkan_loader_readiness_to_lifecycle({}, loader_readiness_);
+    vulkan_backend_lifecycle_readiness lifecycle =
+        apply_vulkan_loader_readiness_to_lifecycle({}, loader_readiness_);
+    lifecycle = apply_vulkan_instance_create_result_to_lifecycle(
+        std::move(lifecycle),
+        instance_result_);
+    lifecycle = apply_vulkan_device_create_result_to_lifecycle(
+        std::move(lifecycle),
+        device_result_);
+    lifecycle = apply_vulkan_swapchain_create_result_to_lifecycle(
+        std::move(lifecycle),
+        swapchain_result_);
+    lifecycle = apply_vulkan_render_pass_create_result_to_lifecycle(
+        std::move(lifecycle),
+        render_pass_result_);
+    lifecycle = apply_vulkan_command_recording_readiness_to_lifecycle(
+        std::move(lifecycle),
+        command_recording_result_);
+    return apply_vulkan_command_submit_readiness_to_lifecycle(
+        std::move(lifecycle),
+        command_submit_result_);
 }
 
 vulkan_surface_extent null_vulkan_backend_device::current_surface_extent() const
 {
+    if (swapchain_result_.ready_for_frame()) {
+        return swapchain_result_.selected_extent;
+    }
+
     return {};
 }
 
@@ -1130,6 +1350,7 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     result.attempted = true;
     result.reached_stage = vulkan_backend_frame_stage::backend_attempted;
     result.lifecycle = device.current_lifecycle_readiness();
+    result.command_submit = result.lifecycle.command_submit;
     result.command_recorder.ready = result.lifecycle.command_recorder_ready;
     const vulkan_backend_fallback_reason unready_reason = first_unready_reason(result.lifecycle);
     if (unready_reason != vulkan_backend_fallback_reason::none) {

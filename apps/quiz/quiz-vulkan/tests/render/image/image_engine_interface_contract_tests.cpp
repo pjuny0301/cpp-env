@@ -59,6 +59,13 @@ concept ImageTexturePipelineInterface = requires(
     { pipeline.acquire_texture(request) } -> std::same_as<render::render_image_texture_pipeline_result>;
 };
 
+template <typename T>
+concept PngImageInflaterInterface = requires(
+    const T& inflater,
+    const render::png_image_inflate_request& request) {
+    { inflater.inflate(request) } -> std::same_as<render::png_image_inflate_result>;
+};
+
 static_assert(ImageResolverInterface<render::image_resolver_interface>);
 static_assert(ImageResolverInterface<render::normalizing_image_resolver>);
 static_assert(ImageDecoderInterface<render::image_decoder_interface>);
@@ -66,6 +73,8 @@ static_assert(ImageDecoderInterface<render::image_decoder_chain>);
 static_assert(ImageDecoderInterface<render::fake_image_decoder>);
 static_assert(ImageDecoderInterface<render::ppm_image_decoder>);
 static_assert(ImageDecoderInterface<render::bmp_image_decoder>);
+static_assert(ImageDecoderInterface<render::png_image_decoder>);
+static_assert(ImageDecoderInterface<render::standard_image_decoder_chain>);
 static_assert(ImageSourceBytesLoaderInterface<render::image_source_bytes_loader_interface>);
 static_assert(ImageSourceBytesLoaderInterface<render::filesystem_image_source_bytes_loader>);
 static_assert(ImageSourceBytesLoaderInterface<render::fake_image_source_bytes_loader>);
@@ -75,6 +84,10 @@ static_assert(ImageTextureUploaderInterface<render::image_texture_uploader_inter
 static_assert(ImageTextureUploaderInterface<render::fake_image_texture_uploader>);
 static_assert(ImageTexturePipelineInterface<render::image_texture_pipeline_interface>);
 static_assert(ImageTexturePipelineInterface<render::fake_image_texture_pipeline>);
+static_assert(ImageTexturePipelineInterface<render::standard_image_texture_pipeline>);
+static_assert(PngImageInflaterInterface<render::png_image_inflater_interface>);
+static_assert(PngImageInflaterInterface<render::fake_png_image_inflater>);
+static_assert(PngImageInflaterInterface<render::png_image_zlib_inflater>);
 
 static_assert(requires(render::render_image_ref image) {
     { image.sampler } -> std::same_as<render::render_image_sampler_policy&>;
@@ -132,6 +145,27 @@ static_assert(requires(
     render::render_image_decode_metadata metadata,
     render::render_image_encoded_format encoded_format,
     render::render_image_source_kind source_kind,
+    render::png_image_header_inspect_status png_header_status,
+    render::png_image_header png_header,
+    render::png_image_header_inspect_result png_header_result,
+    render::png_image_chunk_scan_status png_chunk_scan_status,
+    render::png_image_chunk_kind png_chunk_kind,
+    render::png_image_chunk_snapshot png_chunk,
+    render::png_image_chunk_scan_result png_chunk_scan_result,
+    render::png_image_decode_plan_status png_decode_plan_status,
+    render::png_image_decode_plan png_decode_plan,
+    render::png_image_decode_plan_result png_decode_plan_result,
+    render::png_image_inflate_status png_inflate_status,
+    render::png_image_inflate_request png_inflate_request,
+    render::png_image_inflate_result png_inflate_result,
+    render::png_image_decode_boundary_status png_decode_boundary_status,
+    render::png_image_decode_boundary_result png_decode_boundary_result,
+    render::fake_png_image_inflater png_inflater,
+    render::png_image_zlib_inflater png_zlib_inflater,
+    render::png_image_unfilter_status png_unfilter_status,
+    render::png_image_unfilter_result png_unfilter_result,
+    render::png_image_decoder png_decoder,
+    render::standard_image_decoder_chain standard_decoder_chain,
     render::render_image_format_detection_summary format_detection,
     render::render_image_decode_size_validation size_validation,
     render::render_image_decoder_diagnostic diagnostic,
@@ -142,6 +176,7 @@ static_assert(requires(
     render::render_image_source_bytes_load_status bytes_status,
     render::render_image_data_uri_decode_result data_uri_decode_result,
     render::render_image_data_uri_decode_status data_uri_decode_status,
+    render::normalizing_image_resolver resolver,
     render::fake_image_source_bytes_loader source_bytes_loader,
     render::render_image_texture_upload_request upload_request,
     render::render_image_texture_upload_result upload_result,
@@ -166,6 +201,7 @@ static_assert(requires(
     render::fake_image_texture_pipeline_snapshot pipeline_snapshot,
     const render::fake_image_texture_pipeline& pipeline,
     render::fake_image_texture_pipeline& mutable_pipeline,
+    render::standard_image_texture_pipeline& standard_pipeline,
     render::render_image_ref image_ref,
     render::fake_image_texture_residency texture_residency,
     render::fake_image_texture_eviction_reason eviction_reason,
@@ -204,6 +240,122 @@ static_assert(requires(
     { render::render_image_encoded_format_name(encoded_format) } -> std::same_as<std::string>;
     { render::render_image_encoded_format_mime_type(encoded_format) } -> std::same_as<std::string>;
     { render::render_image_source_kind_name(source_kind) } -> std::same_as<std::string>;
+    { render::png_image_header_inspect_status_name(png_header_status) } -> std::same_as<std::string>;
+    { render::png_image_color_type_name(std::uint8_t{}) } -> std::same_as<std::string>;
+    { render::starts_with_png_signature(request.encoded_bytes) } -> std::same_as<bool>;
+    { render::inspect_png_image_header(request.encoded_bytes) }
+        -> std::same_as<render::png_image_header_inspect_result>;
+    { render::png_image_chunk_scan_status_name(png_chunk_scan_status) } -> std::same_as<std::string>;
+    { render::png_image_chunk_kind_name(png_chunk_kind) } -> std::same_as<std::string>;
+    { render::scan_png_image_chunks(request.encoded_bytes) }
+        -> std::same_as<render::png_image_chunk_scan_result>;
+    { render::png_image_decode_plan_status_name(png_decode_plan_status) } -> std::same_as<std::string>;
+    { render::make_png_image_decode_plan(png_chunk_scan_result) }
+        -> std::same_as<render::png_image_decode_plan_result>;
+    { render::png_image_inflate_status_name(png_inflate_status) } -> std::same_as<std::string>;
+    { render::make_png_image_inflate_request(request.encoded_bytes, png_chunk_scan_result, png_decode_plan) }
+        -> std::same_as<render::png_image_inflate_request>;
+    { render::png_image_decode_boundary_status_name(png_decode_boundary_status) } -> std::same_as<std::string>;
+    { render::decode_png_image_with_inflater(request.encoded_bytes, png_chunk_scan_result, &png_inflater) }
+        -> std::same_as<render::png_image_decode_boundary_result>;
+    { render::inflate_png_zlib_stored_blocks(png_inflate_request) }
+        -> std::same_as<render::png_image_inflate_result>;
+    { png_zlib_inflater.inflate(png_inflate_request) } -> std::same_as<render::png_image_inflate_result>;
+    { render::png_image_unfilter_status_name(png_unfilter_status) } -> std::same_as<std::string>;
+    { render::unfilter_png_image_rgba8_scanlines(png_decode_plan, png_inflate_result.inflated_bytes) }
+        -> std::same_as<render::png_image_unfilter_result>;
+    { render::unfilter_png_image_rgba8(png_decode_boundary_result) }
+        -> std::same_as<render::png_image_unfilter_result>;
+    { render::png_image_decoder_supports_source(source) } -> std::same_as<bool>;
+    { render::png_image_decoder_supports_request(request) } -> std::same_as<bool>;
+    { render::decode_png_image_request_with_inflater(request, &png_inflater) }
+        -> std::same_as<render::render_image_decode_result>;
+    { png_decoder.supports(request) } -> std::same_as<bool>;
+    { png_decoder.decode(request) } -> std::same_as<render::render_image_decode_result>;
+    { render::make_standard_image_decoder_chain() } -> std::same_as<render::standard_image_decoder_chain>;
+    { standard_decoder_chain.decoder_count() } -> std::same_as<std::size_t>;
+    { standard_decoder_chain.supports(request) } -> std::same_as<bool>;
+    { standard_decoder_chain.decode(request) } -> std::same_as<render::render_image_decode_result>;
+    { png_header.width } -> std::same_as<std::size_t&>;
+    { png_header.height } -> std::same_as<std::size_t&>;
+    { png_header.bit_depth } -> std::same_as<std::uint8_t&>;
+    { png_header.color_type } -> std::same_as<std::uint8_t&>;
+    { png_header.compression_method } -> std::same_as<std::uint8_t&>;
+    { png_header.filter_method } -> std::same_as<std::uint8_t&>;
+    { png_header.interlace_method } -> std::same_as<std::uint8_t&>;
+    { png_header.pixel_count } -> std::same_as<std::size_t&>;
+    { png_header.decoded_rgba_byte_count } -> std::same_as<std::size_t&>;
+    { png_header.decoded_pixel_format } -> std::same_as<render::render_image_pixel_format&>;
+    { png_header.rgba8_supported } -> std::same_as<bool&>;
+    { png_header_result.status } -> std::same_as<render::png_image_header_inspect_status&>;
+    { png_header_result.header } -> std::same_as<render::png_image_header&>;
+    { png_header_result.signature_valid } -> std::same_as<bool&>;
+    { png_header_result.ihdr_present } -> std::same_as<bool&>;
+    { png_header_result.diagnostic } -> std::same_as<std::string&>;
+    { png_header_result.ok() } -> std::same_as<bool>;
+    { png_chunk.index } -> std::same_as<std::size_t&>;
+    { png_chunk.kind } -> std::same_as<render::png_image_chunk_kind&>;
+    { png_chunk.type_code } -> std::same_as<std::string&>;
+    { png_chunk.chunk_offset } -> std::same_as<std::size_t&>;
+    { png_chunk.data_offset } -> std::same_as<std::size_t&>;
+    { png_chunk.crc_offset } -> std::same_as<std::size_t&>;
+    { png_chunk.next_chunk_offset } -> std::same_as<std::size_t&>;
+    { png_chunk.data_byte_count } -> std::same_as<std::size_t&>;
+    { png_chunk_scan_result.status } -> std::same_as<render::png_image_chunk_scan_status&>;
+    { png_chunk_scan_result.header } -> std::same_as<render::png_image_header_inspect_result&>;
+    { png_chunk_scan_result.signature_valid } -> std::same_as<bool&>;
+    { png_chunk_scan_result.ihdr_seen } -> std::same_as<bool&>;
+    { png_chunk_scan_result.idat_seen } -> std::same_as<bool&>;
+    { png_chunk_scan_result.iend_seen } -> std::same_as<bool&>;
+    { png_chunk_scan_result.chunk_count } -> std::same_as<std::size_t&>;
+    { png_chunk_scan_result.unknown_chunk_count } -> std::same_as<std::size_t&>;
+    { png_chunk_scan_result.idat_chunk_count } -> std::same_as<std::size_t&>;
+    { png_chunk_scan_result.idat_compressed_byte_count } -> std::same_as<std::size_t&>;
+    { png_chunk_scan_result.chunks } -> std::same_as<std::vector<render::png_image_chunk_snapshot>&>;
+    { png_chunk_scan_result.diagnostic } -> std::same_as<std::string&>;
+    { png_chunk_scan_result.ok() } -> std::same_as<bool>;
+    { png_decode_plan.header } -> std::same_as<render::png_image_header&>;
+    { png_decode_plan.chunk_count } -> std::same_as<std::size_t&>;
+    { png_decode_plan.idat_chunk_count } -> std::same_as<std::size_t&>;
+    { png_decode_plan.idat_compressed_byte_count } -> std::same_as<std::size_t&>;
+    { png_decode_plan.bytes_per_pixel } -> std::same_as<std::size_t&>;
+    { png_decode_plan.row_byte_count } -> std::same_as<std::size_t&>;
+    { png_decode_plan.filtered_row_byte_count } -> std::same_as<std::size_t&>;
+    { png_decode_plan.expected_inflated_byte_count } -> std::same_as<std::size_t&>;
+    { png_decode_plan.expected_rgba_byte_count } -> std::same_as<std::size_t&>;
+    { png_decode_plan.pixel_format } -> std::same_as<render::render_image_pixel_format&>;
+    { png_decode_plan_result.status } -> std::same_as<render::png_image_decode_plan_status&>;
+    { png_decode_plan_result.plan } -> std::same_as<render::png_image_decode_plan&>;
+    { png_decode_plan_result.diagnostic } -> std::same_as<std::string&>;
+    { png_decode_plan_result.ok() } -> std::same_as<bool>;
+    { png_inflate_request.compressed_byte_count } -> std::same_as<std::size_t&>;
+    { png_inflate_request.expected_inflated_byte_count } -> std::same_as<std::size_t&>;
+    { png_inflate_request.idat_chunk_count } -> std::same_as<std::size_t&>;
+    { png_inflate_request.compressed_bytes } -> std::same_as<std::vector<std::byte>&>;
+    { png_inflate_result.status } -> std::same_as<render::png_image_inflate_status&>;
+    { png_inflate_result.inflated_bytes } -> std::same_as<std::vector<std::byte>&>;
+    { png_inflate_result.diagnostic } -> std::same_as<std::string&>;
+    { png_inflate_result.ok() } -> std::same_as<bool>;
+    { png_decode_boundary_result.status } -> std::same_as<render::png_image_decode_boundary_status&>;
+    { png_decode_boundary_result.plan } -> std::same_as<render::png_image_decode_plan_result&>;
+    { png_decode_boundary_result.inflate } -> std::same_as<render::png_image_inflate_result&>;
+    { png_decode_boundary_result.inflated_byte_count } -> std::same_as<std::size_t&>;
+    { png_decode_boundary_result.diagnostic } -> std::same_as<std::string&>;
+    { png_decode_boundary_result.ok() } -> std::same_as<bool>;
+    { png_inflater.inflate(png_inflate_request) } -> std::same_as<render::png_image_inflate_result>;
+    { png_inflater.set_result(png_inflate_result) } -> std::same_as<void>;
+    { png_inflater.requests } -> std::same_as<std::vector<render::png_image_inflate_request>&>;
+    { png_unfilter_result.status } -> std::same_as<render::png_image_unfilter_status&>;
+    { png_unfilter_result.image } -> std::same_as<render::render_decoded_image&>;
+    { png_unfilter_result.plan } -> std::same_as<render::png_image_decode_plan&>;
+    { png_unfilter_result.row_count } -> std::same_as<std::size_t&>;
+    { png_unfilter_result.row_byte_count } -> std::same_as<std::size_t&>;
+    { png_unfilter_result.filtered_row_byte_count } -> std::same_as<std::size_t&>;
+    { png_unfilter_result.inflated_byte_count } -> std::same_as<std::size_t&>;
+    { png_unfilter_result.decoded_byte_count } -> std::same_as<std::size_t&>;
+    { png_unfilter_result.failed_filter_type } -> std::same_as<std::uint8_t&>;
+    { png_unfilter_result.diagnostic } -> std::same_as<std::string&>;
+    { png_unfilter_result.ok() } -> std::same_as<bool>;
     { render::detect_render_image_format(request) } -> std::same_as<render::render_image_format_detection_summary>;
     { render::render_image_source_kind_decode_order(source_kind) } -> std::same_as<std::size_t>;
     { render::render_image_extension_decode_order("ppm") } -> std::same_as<std::size_t>;
@@ -218,6 +370,13 @@ static_assert(requires(
         -> std::same_as<render::render_image_format_detection_summary>;
     encoded_format;
     source_kind;
+    png_header_status;
+    png_chunk_scan_status;
+    png_chunk_kind;
+    png_decode_plan_status;
+    png_inflate_status;
+    png_decode_boundary_status;
+    png_unfilter_status;
     { diagnostic.decoder_id } -> std::same_as<std::string&>;
     { diagnostic.candidate_index } -> std::same_as<std::size_t&>;
     { diagnostic.candidate_order } -> std::same_as<std::size_t&>;
@@ -457,6 +616,15 @@ static_assert(requires(
     { pipeline.diagnostic_snapshot() } -> std::same_as<render::fake_image_texture_pipeline_snapshot>;
     { mutable_pipeline.invalidate_source(render::render_image_cache_key{}) } -> std::same_as<void>;
     { mutable_pipeline.invalidate_texture(render::render_image_texture_key{}) } -> std::same_as<void>;
+    { render::make_standard_image_texture_pipeline(resolver, source_bytes_loader) }
+        -> std::same_as<render::standard_image_texture_pipeline>;
+    { standard_pipeline.acquire_texture(pipeline_request) }
+        -> std::same_as<render::render_image_texture_pipeline_result>;
+    { standard_pipeline.acquire_texture(image_ref) }
+        -> std::same_as<render::render_image_texture_pipeline_result>;
+    { standard_pipeline.invalidate_source(render::render_image_cache_key{}) } -> std::same_as<void>;
+    { standard_pipeline.invalidate_texture(render::render_image_texture_key{}) } -> std::same_as<void>;
+    { standard_pipeline.diagnostic_snapshot() } -> std::same_as<render::fake_image_texture_pipeline_snapshot>;
     { render::fake_image_texture_eviction_reason_name(eviction_reason) } -> std::same_as<std::string>;
     { render::fake_image_texture_placeholder_reason_name(placeholder_reason) } -> std::same_as<std::string>;
     { render::fake_image_texture_placeholder_source_fragment(render::render_image_cache_key{}) }

@@ -1,0 +1,338 @@
+#pragma once
+
+#include "render/vulkan/vulkan_backend_instance.h"
+
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
+
+namespace quiz_vulkan::render::vulkan_backend {
+
+enum class vulkan_device_queue_capability {
+    graphics,
+    present,
+    compute,
+    transfer,
+};
+
+inline std::string_view device_queue_capability_name(
+    vulkan_device_queue_capability capability)
+{
+    switch (capability) {
+    case vulkan_device_queue_capability::graphics:
+        return "graphics";
+    case vulkan_device_queue_capability::present:
+        return "present";
+    case vulkan_device_queue_capability::compute:
+        return "compute";
+    case vulkan_device_queue_capability::transfer:
+        return "transfer";
+    }
+
+    return "unknown";
+}
+
+struct vulkan_device_create_request {
+    std::vector<std::string> required_device_extensions;
+    std::vector<std::string> optional_device_extensions;
+    std::vector<vulkan_device_queue_capability> required_queue_capabilities{
+        vulkan_device_queue_capability::graphics,
+    };
+};
+
+struct vulkan_device_handle {
+    std::uintptr_t value = 0;
+
+    bool valid() const
+    {
+        return value != 0;
+    }
+};
+
+struct vulkan_queue_handle {
+    std::uintptr_t value = 0;
+
+    bool valid() const
+    {
+        return value != 0;
+    }
+};
+
+struct vulkan_device_queue_selection {
+    vulkan_device_queue_capability capability = vulkan_device_queue_capability::graphics;
+    std::size_t family_index = 0;
+    vulkan_queue_handle queue;
+
+    bool valid() const
+    {
+        return queue.valid();
+    }
+};
+
+enum class vulkan_device_create_status {
+    not_requested,
+    created,
+    instance_unavailable,
+    no_suitable_device,
+    missing_required_device_extension,
+    missing_required_queue,
+    creation_failed,
+};
+
+inline std::string_view device_create_status_name(vulkan_device_create_status status)
+{
+    switch (status) {
+    case vulkan_device_create_status::not_requested:
+        return "not_requested";
+    case vulkan_device_create_status::created:
+        return "created";
+    case vulkan_device_create_status::instance_unavailable:
+        return "instance_unavailable";
+    case vulkan_device_create_status::no_suitable_device:
+        return "no_suitable_device";
+    case vulkan_device_create_status::missing_required_device_extension:
+        return "missing_required_device_extension";
+    case vulkan_device_create_status::missing_required_queue:
+        return "missing_required_queue";
+    case vulkan_device_create_status::creation_failed:
+        return "creation_failed";
+    }
+
+    return "unknown";
+}
+
+struct vulkan_device_create_result {
+    bool checked = false;
+    vulkan_device_create_status status = vulkan_device_create_status::not_requested;
+    vulkan_instance_create_result instance;
+    vulkan_device_handle handle;
+    std::vector<std::string> selected_extensions;
+    std::vector<vulkan_device_queue_selection> selected_queues;
+    std::string diagnostic;
+
+    bool ready_for_backend() const
+    {
+        return checked && status == vulkan_device_create_status::created
+            && instance.ready_for_device() && handle.valid()
+            && !selected_queues.empty();
+    }
+};
+
+class vulkan_device_factory_interface {
+public:
+    virtual ~vulkan_device_factory_interface() = default;
+
+    virtual vulkan_device_create_result create_device(
+        const vulkan_instance_create_result& instance_result,
+        const vulkan_device_create_request& request) = 0;
+};
+
+struct fake_vulkan_device_factory_options {
+    std::vector<std::string> supported_device_extensions;
+    std::vector<vulkan_device_queue_capability> supported_queue_capabilities{
+        vulkan_device_queue_capability::graphics,
+    };
+    bool device_available = true;
+    bool fail_creation = false;
+    vulkan_device_handle handle{.value = 1};
+    std::uintptr_t queue_handle_base = 100;
+};
+
+class fake_vulkan_device_factory final : public vulkan_device_factory_interface {
+public:
+    fake_vulkan_device_factory();
+    explicit fake_vulkan_device_factory(fake_vulkan_device_factory_options options);
+
+    vulkan_device_create_result create_device(
+        const vulkan_instance_create_result& instance_result,
+        const vulkan_device_create_request& request) override;
+
+private:
+    fake_vulkan_device_factory_options options_;
+};
+
+namespace device_detail {
+
+inline bool contains_string(
+    const std::vector<std::string>& values,
+    const std::string& value)
+{
+    return std::find(values.begin(), values.end(), value) != values.end();
+}
+
+inline bool contains_queue_capability(
+    const std::vector<vulkan_device_queue_capability>& capabilities,
+    vulkan_device_queue_capability capability)
+{
+    return std::find(capabilities.begin(), capabilities.end(), capability)
+        != capabilities.end();
+}
+
+inline void append_unique_string(
+    std::vector<std::string>& values,
+    const std::string& value)
+{
+    if (value.empty() || contains_string(values, value)) {
+        return;
+    }
+
+    values.push_back(value);
+}
+
+inline void append_unique_queue_capability(
+    std::vector<vulkan_device_queue_capability>& capabilities,
+    vulkan_device_queue_capability capability)
+{
+    if (contains_queue_capability(capabilities, capability)) {
+        return;
+    }
+
+    capabilities.push_back(capability);
+}
+
+inline vulkan_device_create_result make_device_create_result(
+    const vulkan_instance_create_result& instance_result)
+{
+    return vulkan_device_create_result{
+        .checked = true,
+        .status = vulkan_device_create_status::not_requested,
+        .instance = instance_result,
+        .handle = {},
+        .selected_extensions = {},
+        .selected_queues = {},
+        .diagnostic = {},
+    };
+}
+
+inline std::string make_missing_required_device_extension_diagnostic(
+    const std::string& extension_name)
+{
+    return "missing required device extension: " + extension_name;
+}
+
+inline std::string make_missing_required_queue_diagnostic(
+    vulkan_device_queue_capability capability)
+{
+    return "missing required device queue: "
+        + std::string{device_queue_capability_name(capability)};
+}
+
+inline std::vector<vulkan_device_queue_capability> requested_queue_capabilities(
+    const vulkan_device_create_request& request)
+{
+    std::vector<vulkan_device_queue_capability> capabilities;
+    capabilities.reserve(request.required_queue_capabilities.size());
+    for (const vulkan_device_queue_capability capability :
+         request.required_queue_capabilities) {
+        append_unique_queue_capability(capabilities, capability);
+    }
+
+    return capabilities;
+}
+
+inline vulkan_device_queue_selection make_queue_selection(
+    vulkan_device_queue_capability capability,
+    std::size_t family_index,
+    std::uintptr_t queue_handle_base)
+{
+    return vulkan_device_queue_selection{
+        .capability = capability,
+        .family_index = family_index,
+        .queue = vulkan_queue_handle{.value = queue_handle_base + family_index + 1},
+    };
+}
+
+} // namespace device_detail
+
+inline fake_vulkan_device_factory::fake_vulkan_device_factory()
+    : fake_vulkan_device_factory(fake_vulkan_device_factory_options{})
+{
+}
+
+inline fake_vulkan_device_factory::fake_vulkan_device_factory(
+    fake_vulkan_device_factory_options options)
+    : options_(std::move(options))
+{
+}
+
+inline vulkan_device_create_result fake_vulkan_device_factory::create_device(
+    const vulkan_instance_create_result& instance_result,
+    const vulkan_device_create_request& request)
+{
+    vulkan_device_create_result result =
+        device_detail::make_device_create_result(instance_result);
+
+    if (!instance_result.ready_for_device()) {
+        result.status = vulkan_device_create_status::instance_unavailable;
+        result.diagnostic = "Vulkan instance is not ready for device creation";
+        return result;
+    }
+    if (!options_.device_available) {
+        result.status = vulkan_device_create_status::no_suitable_device;
+        result.diagnostic = "No suitable Vulkan physical device is available";
+        return result;
+    }
+
+    for (const std::string& extension_name : request.required_device_extensions) {
+        if (!device_detail::contains_string(
+                options_.supported_device_extensions,
+                extension_name)) {
+            result.status = vulkan_device_create_status::missing_required_device_extension;
+            result.diagnostic =
+                device_detail::make_missing_required_device_extension_diagnostic(extension_name);
+            return result;
+        }
+        device_detail::append_unique_string(result.selected_extensions, extension_name);
+    }
+
+    for (const std::string& extension_name : request.optional_device_extensions) {
+        if (device_detail::contains_string(
+                options_.supported_device_extensions,
+                extension_name)) {
+            device_detail::append_unique_string(result.selected_extensions, extension_name);
+        }
+    }
+
+    const std::vector<vulkan_device_queue_capability> requested_capabilities =
+        device_detail::requested_queue_capabilities(request);
+    for (const vulkan_device_queue_capability capability : requested_capabilities) {
+        if (!device_detail::contains_queue_capability(
+                options_.supported_queue_capabilities,
+                capability)) {
+            result.status = vulkan_device_create_status::missing_required_queue;
+            result.diagnostic = device_detail::make_missing_required_queue_diagnostic(capability);
+            return result;
+        }
+        result.selected_queues.push_back(device_detail::make_queue_selection(
+            capability,
+            result.selected_queues.size(),
+            options_.queue_handle_base));
+    }
+
+    if (options_.fail_creation || !options_.handle.valid()) {
+        result.status = vulkan_device_create_status::creation_failed;
+        result.diagnostic = options_.fail_creation
+            ? "Vulkan device creation failed"
+            : "Vulkan device creation returned an invalid handle";
+        return result;
+    }
+
+    result.status = vulkan_device_create_status::created;
+    result.handle = options_.handle;
+    result.diagnostic = "Vulkan device created";
+    return result;
+}
+
+inline vulkan_device_create_result create_vulkan_device(
+    vulkan_device_factory_interface& factory,
+    const vulkan_instance_create_result& instance_result,
+    const vulkan_device_create_request& request = {})
+{
+    return factory.create_device(instance_result, request);
+}
+
+} // namespace quiz_vulkan::render::vulkan_backend

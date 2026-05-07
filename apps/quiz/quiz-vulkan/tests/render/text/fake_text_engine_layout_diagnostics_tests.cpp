@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdio>
+#include <string>
 #include <vector>
 
 namespace {
@@ -339,6 +340,332 @@ void test_fake_line_break_policy_keeps_combining_clusters_caret_safe()
     require(metrics[1].caret_safe, "combining line metric records caret-safe cluster boundaries");
 }
 
+void test_fake_text_engine_records_rasterized_atlas_payloads_for_cacheable_glyphs()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "A", .style_token = "body"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 200.0f, 0.0f};
+    request.style_catalog = make_style_catalog();
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    const render_text_layout layout = engine.layout_text(request);
+    require(layout.glyphs.size() == 1, "rasterized payload fixture lays out one glyph");
+    const fake_text_engine_diagnostics& diagnostics = engine.last_diagnostics();
+    require(diagnostics.has_glyph_cache_readiness(), "rasterized payload fixture records cache readiness");
+    require(
+        diagnostics.has_rasterized_glyph_atlas_payloads(),
+        "rasterized payload fixture records rasterizer atlas payloads");
+    require(
+        diagnostics.has_rasterized_glyph_atlas_payload_policy(),
+        "rasterized payload fixture records rasterizer payload policy");
+    require(diagnostics.has_glyph_id_resolutions(), "rasterized payload fixture records glyph id resolutions");
+    require(
+        diagnostics.has_glyph_id_resolution_policy(),
+        "rasterized payload fixture records glyph id resolution policy");
+    require(diagnostics.glyph_id_resolutions.size() == 1, "one cacheable glyph produces one glyph id resolution");
+    const render_text_font_glyph_id_resolution_snapshot& glyph_id_resolution =
+        diagnostics.glyph_id_resolutions.front();
+    require(
+        glyph_id_resolution.status == render_text_font_glyph_id_resolution_status::resolved,
+        "cacheable glyph id resolves before shaping");
+    require(glyph_id_resolution.glyph_id == U'A', "glyph id resolution maps Latin codepoint deterministically");
+    require(glyph_id_resolution.glyph_supported, "glyph id resolution claims supported fixture glyph");
+    require(
+        diagnostics.glyph_id_resolution_policy.resolved_count == 1,
+        "glyph id resolution policy counts resolved fixture glyph");
+    require(diagnostics.rasterized_glyph_atlas_payloads.size() == 1, "one cacheable glyph produces one payload");
+
+    const render_text_glyph_cache_readiness_snapshot& readiness = diagnostics.glyph_cache_readiness.front();
+    const render_text_rasterized_glyph_atlas_payload_snapshot& payload =
+        diagnostics.rasterized_glyph_atlas_payloads.front();
+    require(readiness.glyph_id == glyph_id_resolution.glyph_id, "cache readiness uses resolved glyph id");
+    require(payload.cluster_index == readiness.cluster_index, "payload records matching cluster index");
+    require(payload.run_index == 0 && payload.byte_offset == 0, "payload records glyph run position");
+    require(payload.glyph_id == glyph_id_resolution.glyph_id, "raster payload uses resolved glyph id");
+    require(payload.cache_key == readiness.cache_key, "payload preserves cache readiness atlas key");
+    require(payload.status == render_text_font_rasterizer_status::rasterized, "payload records rasterized status");
+    require(payload.cacheable, "payload records cacheable glyph");
+    require(payload.upload_ready, "payload is upload-ready for supported fixture glyph");
+    require(!payload.skipped, "rasterized payload is not skipped");
+    require(payload.bitmap_width == 8U && payload.bitmap_height == 8U, "payload records fake bitmap dimensions");
+    require(payload.alpha_bytes == 64U, "payload records fake alpha bytes");
+    require(payload.rgba_bytes == 256U, "payload records expanded RGBA bytes");
+    require(payload.source_label == "fixture://fonts/sans-regular", "payload records source label");
+
+    require(
+        diagnostics.rasterized_glyph_atlas_payload_policy.request_count == 1,
+        "rasterizer payload policy counts request");
+    require(
+        diagnostics.rasterized_glyph_atlas_payload_policy.rasterized_count == 1,
+        "rasterizer payload policy counts rasterized glyph");
+    require(
+        diagnostics.rasterized_glyph_atlas_payload_policy.upload_ready_count == 1,
+        "rasterizer payload policy counts upload-ready payload");
+    require(
+        diagnostics.rasterized_glyph_atlas_payload_policy.skipped_count == 0,
+        "rasterizer payload policy records no skipped fixture glyphs");
+    require(
+        diagnostics.rasterized_glyph_atlas_payload_policy.total_rgba_bytes == 256U,
+        "rasterizer payload policy totals RGBA bytes");
+    require(diagnostics.has_shaped_atlas_update_traces(), "rasterized payload fixture records shaped atlas traces");
+    require(
+        diagnostics.has_shaped_atlas_update_trace_policy(),
+        "rasterized payload fixture records shaped atlas trace policy");
+    require(diagnostics.shaped_atlas_update_traces.size() == 1, "one cacheable glyph produces one shaped atlas trace");
+    const render_text_shaped_atlas_update_trace_snapshot& trace = diagnostics.shaped_atlas_update_traces.front();
+    require(
+        trace.status == render_text_shaped_atlas_update_trace_status::upload_ready_payload_queued,
+        "upload-ready payload is traced to queued atlas update");
+    require(trace.queued, "upload-ready payload trace is queued");
+    require(trace.has_cache_key, "upload-ready payload trace records cache key");
+    require(trace.cache_key == readiness.cache_key, "upload-ready payload trace preserves cache readiness key");
+    require(trace.shaped_glyph_ids.size() == 1 && trace.shaped_glyph_ids.front() == U'A', "trace records shaped glyph id");
+    require(trace.resolved_face_id == readiness.resolved_face_id, "trace records resolved face id");
+    require(trace.rasterizer_status == render_text_font_rasterizer_status::rasterized, "trace records rasterizer status");
+    require(trace.payload_upload_ready, "trace records upload-ready payload");
+    require(trace.payload_rgba_bytes == 256U, "trace records payload RGBA bytes");
+    require(trace.payload_byte_count_matches, "trace validates payload byte count");
+    require(trace.has_atlas_placement, "trace records atlas placement");
+    require(trace.has_atlas_update, "trace records queued atlas update");
+    require(trace.atlas_update_rgba_bytes > 0U, "trace records queued atlas update bytes");
+    require(
+        diagnostics.shaped_atlas_update_trace_policy.upload_ready_payload_queued_count == 1,
+        "trace policy counts queued payload");
+    require(
+        diagnostics.shaped_atlas_update_trace_policy.traced_shaped_glyph_count == 1,
+        "trace policy counts shaped glyph id");
+}
+
+void test_fake_text_engine_skips_rasterized_payloads_when_font_bytes_are_missing()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    engine.add_font_face(font_face_descriptor{
+        .id = 72,
+        .family = "Disk Sans",
+        .source_uri = "fonts/missing-disk-sans.ttf",
+        .version = "fixture-1",
+        .license = "test-fixture",
+        .coverage = {
+            font_codepoint_range{
+                .first = 0x0041U,
+                .last = 0x005aU,
+            },
+        },
+        .weight = 400,
+        .italic = false,
+    });
+
+    render_text_style_catalog catalog = make_style_catalog();
+    catalog.styles.push_back(render_text_style{
+        .id = "disk",
+        .font_family = "Disk Sans",
+        .font_size = 20.0f,
+        .line_height = 24.0f,
+        .letter_spacing = 0.0f,
+        .font_weight = 400,
+        .italic = false,
+    });
+
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "A", .style_token = "disk"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 200.0f, 0.0f};
+    request.style_catalog = catalog;
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    const render_text_layout layout = engine.layout_text(request);
+    require(layout.glyphs.size() == 1, "missing byte fixture still lays out one glyph");
+    const fake_text_engine_diagnostics& diagnostics = engine.last_diagnostics();
+    require(diagnostics.glyph_atlas_placements.size() == 1, "missing byte fixture preserves atlas cache placement");
+    require(diagnostics.glyph_cache_readiness.size() == 1, "missing byte fixture records cache readiness");
+    require(diagnostics.glyph_cache_readiness.front().cacheable, "missing byte glyph remains cacheable before rasterizer");
+    require(
+        diagnostics.glyph_cache_readiness.front().has_atlas_slot,
+        "missing byte glyph keeps existing atlas readiness behavior");
+    require(
+        diagnostics.rasterized_glyph_atlas_payloads.size() == 1,
+        "missing byte fixture records one rasterizer payload decision");
+
+    const render_text_rasterized_glyph_atlas_payload_snapshot& payload =
+        diagnostics.rasterized_glyph_atlas_payloads.front();
+    require(
+        payload.status == render_text_font_rasterizer_status::missing_font_bytes,
+        "missing byte fixture records rasterizer missing bytes");
+    require(payload.cacheable, "missing byte payload records cacheable source glyph");
+    require(!payload.upload_ready, "missing byte payload is not upload-ready");
+    require(payload.skipped, "missing byte payload is skipped");
+    require(payload.alpha_bytes == 0U && payload.rgba_bytes == 0U, "missing byte payload has no bitmap data");
+    require(payload.source_label == "fonts/missing-disk-sans.ttf", "missing byte payload records source label");
+    require(
+        payload.diagnostic.find("missing_bytes") != std::string::npos,
+        "missing byte payload diagnostic preserves byte load status");
+    require(
+        diagnostics.rasterized_glyph_atlas_payload_policy.missing_font_bytes_count == 1,
+        "rasterizer payload policy counts missing bytes");
+    require(
+        diagnostics.rasterized_glyph_atlas_payload_policy.skipped_count == 1,
+        "rasterizer payload policy counts skipped missing-byte payload");
+    require(
+        diagnostics.rasterized_glyph_atlas_payload_policy.rasterized_count == 0,
+        "rasterizer payload policy does not claim rasterized missing-byte glyphs");
+    require(
+        diagnostics.shaped_atlas_update_traces.size() == 1,
+        "missing byte fixture records one shaped atlas trace");
+    const render_text_shaped_atlas_update_trace_snapshot& trace = diagnostics.shaped_atlas_update_traces.front();
+    require(
+        trace.status == render_text_shaped_atlas_update_trace_status::rasterized_payload_skipped,
+        "missing byte payload trace records skipped raster payload");
+    require(trace.has_cache_key, "missing byte payload trace still records atlas cache key");
+    require(trace.rasterizer_status == render_text_font_rasterizer_status::missing_font_bytes, "trace keeps missing byte status");
+    require(!trace.payload_upload_ready, "missing byte trace is not upload-ready");
+    require(
+        diagnostics.shaped_atlas_update_trace_policy.rasterized_payload_skipped_count == 1,
+        "trace policy counts skipped raster payload");
+}
+
+void test_fake_text_engine_consumes_shaping_backend_glyph_data()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "e\xcc\x81", .style_token = "body"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 200.0f, 0.0f};
+    request.style_catalog = make_style_catalog();
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    const render_text_layout layout = engine.layout_text(request);
+    const fake_text_engine_diagnostics& diagnostics = engine.last_diagnostics();
+    require(layout.glyphs.size() == 2, "shaping backend bridge keeps base and mark glyphs");
+    require(diagnostics.has_shaped_glyphs(), "shaping backend bridge records shaped glyphs");
+    require(diagnostics.has_font_shaping_diagnostics(), "shaping backend bridge records diagnostics");
+    require(diagnostics.has_font_shaping_policy(), "shaping backend bridge records shaping policy");
+    require(diagnostics.shaped_glyphs.size() == 2, "shaping backend bridge emits two shaped glyph snapshots");
+    require(diagnostics.font_shaping_policy.run_count == 1, "shaping backend bridge counts one run");
+    require(diagnostics.font_shaping_policy.shaped_run_count == 1, "shaping backend bridge counts shaped run");
+    require(diagnostics.font_shaping_policy.glyph_count == 2, "shaping backend bridge counts glyphs");
+    require(
+        diagnostics.font_shaping_policy.zero_advance_combining_mark_count == 1,
+        "shaping backend bridge counts zero-advance combining mark");
+
+    require(
+        layout.glyphs[0].glyph_id == diagnostics.shaped_glyphs[0].glyph_id,
+        "layout consumes shaped base glyph id");
+    require(
+        layout.glyphs[1].glyph_id == diagnostics.shaped_glyphs[1].glyph_id,
+        "layout consumes shaped mark glyph id");
+    require(
+        near(layout.glyphs[0].bounds.width, diagnostics.shaped_glyphs[0].advance_x),
+        "layout consumes shaped base advance");
+    require(
+        near(layout.glyphs[1].bounds.width, diagnostics.shaped_glyphs[1].advance_x),
+        "layout consumes shaped mark advance");
+    require(diagnostics.shaped_glyphs[1].combining_mark, "shaped mark records combining mark");
+    require(diagnostics.shaped_glyphs[1].zero_advance, "shaped mark records zero advance");
+    require(
+        diagnostics.shaped_glyphs[1].cluster_byte_offset == 0
+            && diagnostics.shaped_glyphs[1].cluster_byte_count == 3,
+        "shaped mark keeps cluster byte range");
+}
+
+void test_fake_text_engine_traces_repeated_layout_to_clean_atlas_page()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "A", .style_token = "body"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 200.0f, 0.0f};
+    request.style_catalog = make_style_catalog();
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    (void)engine.layout_text(request);
+    (void)engine.consume_atlas_updates();
+    const render_text_layout repeated_layout = engine.layout_text(request);
+    const fake_text_engine_diagnostics& diagnostics = engine.last_diagnostics();
+
+    require(repeated_layout.glyphs.size() == 1, "repeated layout keeps one glyph");
+    require(diagnostics.shaped_atlas_update_traces.size() == 1, "repeated layout records one shaped atlas trace");
+    const render_text_shaped_atlas_update_trace_snapshot& trace = diagnostics.shaped_atlas_update_traces.front();
+    require(
+        trace.status == render_text_shaped_atlas_update_trace_status::clean_atlas_page_reused,
+        "repeated layout traces clean atlas page reuse");
+    require(trace.clean_page_reused, "repeated layout trace marks clean reuse");
+    require(!trace.has_atlas_update, "repeated layout trace has no dirty atlas update");
+    require(trace.payload_upload_ready, "repeated layout still has upload-ready payload");
+    require(trace.has_atlas_placement, "repeated layout trace keeps atlas placement");
+    require(
+        diagnostics.shaped_atlas_update_trace_policy.clean_atlas_page_reused_count == 1,
+        "trace policy counts clean page reuse");
+    require(
+        diagnostics.glyph_atlas_page_policy.repeated_layout_clean_page_count > 0,
+        "atlas page policy records repeated clean page");
+}
+
+void test_fake_text_engine_traces_shaped_glyph_without_cache_key()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "\xcc\x81", .style_token = "body"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 200.0f, 0.0f};
+    request.style_catalog = make_style_catalog();
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    const render_text_layout layout = engine.layout_text(request);
+    const fake_text_engine_diagnostics& diagnostics = engine.last_diagnostics();
+
+    require(layout.glyphs.size() == 1, "standalone combining mark remains in layout stream");
+    require(diagnostics.glyph_cache_readiness.size() == 1, "standalone combining mark records cache readiness");
+    require(!diagnostics.glyph_cache_readiness.front().cacheable, "standalone combining mark is not cacheable");
+    require(diagnostics.shaped_atlas_update_traces.size() == 1, "standalone combining mark records shaped atlas trace");
+    const render_text_shaped_atlas_update_trace_snapshot& trace = diagnostics.shaped_atlas_update_traces.front();
+    require(
+        trace.status == render_text_shaped_atlas_update_trace_status::shaped_glyph_without_cache_key,
+        "standalone combining mark traces missing cache key");
+    require(!trace.has_cache_key, "standalone combining mark trace has no cache key");
+    require(trace.shaped_glyph_ids.size() == 1 && trace.shaped_glyph_ids.front() == 0x0301U, "trace records mark glyph id");
+    require(trace.cluster_byte_offset == 0 && trace.cluster_byte_count == 2, "trace records cluster byte range");
+    require(
+        diagnostics.shaped_atlas_update_trace_policy.shaped_glyph_without_cache_key_count == 1,
+        "trace policy counts missing cache key");
+}
+
 } // namespace
 
 int main()
@@ -348,5 +675,10 @@ int main()
     test_fake_shaping_diagnostics_track_utf8_clusters_and_wrap_decisions();
     test_fake_line_metrics_track_overflow_and_truncation();
     test_fake_line_break_policy_keeps_combining_clusters_caret_safe();
+    test_fake_text_engine_records_rasterized_atlas_payloads_for_cacheable_glyphs();
+    test_fake_text_engine_skips_rasterized_payloads_when_font_bytes_are_missing();
+    test_fake_text_engine_consumes_shaping_backend_glyph_data();
+    test_fake_text_engine_traces_repeated_layout_to_clean_atlas_page();
+    test_fake_text_engine_traces_shaped_glyph_without_cache_key();
     return 0;
 }

@@ -1,7 +1,14 @@
 #pragma once
 
 #include "render/render_draw_list.h"
+#include "render/vulkan/vulkan_backend_command_recording.h"
+#include "render/vulkan/vulkan_backend_command_submit.h"
+#include "render/vulkan/vulkan_backend_device.h"
+#include "render/vulkan/vulkan_backend_instance.h"
 #include "render/vulkan/vulkan_backend_loader.h"
+#include "render/vulkan/vulkan_backend_queue_submit.h"
+#include "render/vulkan/vulkan_backend_render_pass.h"
+#include "render/vulkan/vulkan_backend_swapchain.h"
 #include "render/vulkan/vulkan_frame_plan.h"
 
 #include <cstddef>
@@ -17,6 +24,7 @@ enum class vulkan_backend_fallback_reason {
     instance_unavailable,
     device_unavailable,
     swapchain_unavailable,
+    render_pass_unavailable,
     pipeline_unavailable,
     command_recorder_unavailable,
     surface_unavailable,
@@ -113,26 +121,41 @@ struct vulkan_backend_frame_lifecycle_policy_state {
     }
 };
 
-struct vulkan_surface_extent {
-    std::size_t width = 0;
-    std::size_t height = 0;
-
-    bool valid() const
-    {
-        return width > 0 && height > 0;
-    }
-};
-
 struct vulkan_backend_lifecycle_readiness {
     bool instance_ready = false;
     bool device_ready = false;
     bool swapchain_ready = false;
+    bool render_pass_ready = false;
     bool pipeline_ready = false;
     bool command_recorder_ready = false;
     vulkan_loader_readiness_state loader;
+    vulkan_instance_create_result instance;
+    vulkan_device_create_result device;
+    vulkan_swapchain_create_result swapchain;
+    vulkan_render_pass_create_result render_pass;
+    vulkan_command_recording_readiness_result command_recording;
+    vulkan_command_submit_readiness_result command_submit;
 
     bool effective_instance_ready() const
     {
+        if (command_submit.checked) {
+            return command_submit.command_recording.render_pass.swapchain.device.instance.ready_for_device();
+        }
+        if (command_recording.checked) {
+            return command_recording.render_pass.swapchain.device.instance.ready_for_device();
+        }
+        if (render_pass.checked) {
+            return render_pass.swapchain.device.instance.ready_for_device();
+        }
+        if (swapchain.checked) {
+            return swapchain.device.instance.ready_for_device();
+        }
+        if (device.checked) {
+            return device.instance.ready_for_device();
+        }
+        if (instance.checked) {
+            return instance.ready_for_device();
+        }
         if (loader.checked) {
             return loader.ready_for_instance();
         }
@@ -140,10 +163,110 @@ struct vulkan_backend_lifecycle_readiness {
         return instance_ready;
     }
 
+    bool effective_device_ready() const
+    {
+        if (command_submit.checked) {
+            return command_submit.command_recording.render_pass.swapchain.device.ready_for_backend();
+        }
+        if (command_recording.checked) {
+            return command_recording.render_pass.swapchain.device.ready_for_backend();
+        }
+        if (render_pass.checked) {
+            return render_pass.swapchain.device.ready_for_backend();
+        }
+        if (swapchain.checked) {
+            return swapchain.device.ready_for_backend();
+        }
+        if (device.checked) {
+            return device.ready_for_backend();
+        }
+
+        return device_ready;
+    }
+
+    bool effective_swapchain_ready() const
+    {
+        if (command_submit.checked) {
+            return command_submit.command_recording.render_pass.swapchain.ready_for_frame();
+        }
+        if (command_recording.checked) {
+            return command_recording.render_pass.swapchain.ready_for_frame();
+        }
+        if (render_pass.checked) {
+            return render_pass.swapchain.ready_for_frame();
+        }
+        if (swapchain.checked) {
+            return swapchain.ready_for_frame();
+        }
+
+        return swapchain_ready;
+    }
+
+    bool effective_render_pass_ready() const
+    {
+        if (command_submit.checked) {
+            return command_submit.command_recording.render_pass_ready()
+                && command_submit.command_recording.framebuffer_ready();
+        }
+        if (command_recording.checked) {
+            return command_recording.render_pass_ready()
+                && command_recording.framebuffer_ready();
+        }
+        if (render_pass.checked) {
+            return render_pass.ready_for_pipeline();
+        }
+
+        return render_pass_ready || !render_pass.checked;
+    }
+
+    bool effective_pipeline_ready() const
+    {
+        if (command_submit.checked) {
+            return command_submit.command_recording.pipeline_ready();
+        }
+        if (command_recording.checked) {
+            return command_recording.pipeline_ready();
+        }
+
+        return pipeline_ready;
+    }
+
+    bool effective_command_recorder_ready() const
+    {
+        if (command_submit.checked) {
+            return command_submit.command_recording.ready_for_recording();
+        }
+        if (command_recording.checked) {
+            return command_recording.ready_for_recording();
+        }
+
+        return command_recorder_ready;
+    }
+
+    bool effective_command_submit_ready() const
+    {
+        if (command_submit.checked) {
+            return command_submit.ready_for_submit();
+        }
+
+        return true;
+    }
+
+    bool effective_present_target_ready() const
+    {
+        if (command_submit.checked) {
+            return command_submit.ready_for_present();
+        }
+
+        return true;
+    }
+
     bool ready_for_frame() const
     {
-        return effective_instance_ready() && device_ready && swapchain_ready
-            && pipeline_ready && command_recorder_ready;
+        return effective_instance_ready() && effective_device_ready() && effective_swapchain_ready()
+            && effective_render_pass_ready() && effective_pipeline_ready()
+            && effective_command_recorder_ready() && effective_command_submit_ready()
+            && effective_present_target_ready();
     }
 };
 
@@ -151,128 +274,29 @@ vulkan_backend_lifecycle_readiness apply_vulkan_loader_readiness_to_lifecycle(
     vulkan_backend_lifecycle_readiness lifecycle,
     vulkan_loader_readiness_state loader);
 
-struct vulkan_swapchain_image_id {
-    std::size_t value = 0;
-};
+vulkan_backend_lifecycle_readiness apply_vulkan_instance_create_result_to_lifecycle(
+    vulkan_backend_lifecycle_readiness lifecycle,
+    vulkan_instance_create_result instance);
 
-struct vulkan_swapchain_image_state {
-    vulkan_swapchain_image_id id;
-    bool available = false;
-    bool acquired = false;
-    bool presented = false;
+vulkan_backend_lifecycle_readiness apply_vulkan_device_create_result_to_lifecycle(
+    vulkan_backend_lifecycle_readiness lifecycle,
+    vulkan_device_create_result device);
 
-    bool ready_for_recording() const
-    {
-        return available && acquired;
-    }
-};
+vulkan_backend_lifecycle_readiness apply_vulkan_swapchain_create_result_to_lifecycle(
+    vulkan_backend_lifecycle_readiness lifecycle,
+    vulkan_swapchain_create_result swapchain);
 
-enum class vulkan_swapchain_acquire_status {
-    not_requested,
-    acquired,
-    backpressured,
-    failed,
-};
+vulkan_backend_lifecycle_readiness apply_vulkan_render_pass_create_result_to_lifecycle(
+    vulkan_backend_lifecycle_readiness lifecycle,
+    vulkan_render_pass_create_result render_pass);
 
-std::string_view swapchain_acquire_status_name(vulkan_swapchain_acquire_status status);
+vulkan_backend_lifecycle_readiness apply_vulkan_command_recording_readiness_to_lifecycle(
+    vulkan_backend_lifecycle_readiness lifecycle,
+    vulkan_command_recording_readiness_result command_recording);
 
-enum class vulkan_swapchain_present_status {
-    not_requested,
-    presented,
-    failed,
-};
-
-std::string_view swapchain_present_status_name(vulkan_swapchain_present_status status);
-
-enum class vulkan_swapchain_present_mode {
-    immediate,
-    mailbox,
-    fifo,
-    fifo_relaxed,
-};
-
-std::string_view swapchain_present_mode_name(vulkan_swapchain_present_mode mode);
-
-struct vulkan_swapchain_acquire_result {
-    vulkan_swapchain_acquire_status status = vulkan_swapchain_acquire_status::not_requested;
-    vulkan_swapchain_image_state image;
-
-    bool completed() const
-    {
-        return status == vulkan_swapchain_acquire_status::acquired && image.ready_for_recording();
-    }
-};
-
-struct vulkan_swapchain_present_result {
-    vulkan_swapchain_present_status status = vulkan_swapchain_present_status::not_requested;
-    vulkan_swapchain_image_id image_id;
-
-    bool completed() const
-    {
-        return status == vulkan_swapchain_present_status::presented;
-    }
-};
-
-struct vulkan_backend_swapchain_lifecycle_state {
-    bool acquire_requested = false;
-    bool present_requested = false;
-    vulkan_swapchain_acquire_result acquire;
-    vulkan_swapchain_present_result present;
-
-    bool acquired() const
-    {
-        return acquire_requested && acquire.completed();
-    }
-
-    bool presented() const
-    {
-        return present_requested && present.completed();
-    }
-
-    bool completed() const
-    {
-        return acquired() && presented();
-    }
-};
-
-struct vulkan_swapchain_extent_policy_state {
-    bool checked = false;
-    vulkan_surface_extent requested_extent;
-    vulkan_surface_extent selected_extent;
-    vulkan_surface_extent min_extent{.width = 1, .height = 1};
-    vulkan_surface_extent max_extent{.width = 4096, .height = 4096};
-    bool extent_supported = false;
-    bool extent_clamped = false;
-
-    bool completed() const
-    {
-        return checked && extent_supported && selected_extent.valid();
-    }
-};
-
-struct vulkan_swapchain_present_mode_policy_state {
-    bool checked = false;
-    vulkan_swapchain_present_mode requested_mode = vulkan_swapchain_present_mode::fifo;
-    vulkan_swapchain_present_mode selected_mode = vulkan_swapchain_present_mode::fifo;
-    bool requested_mode_supported = true;
-    bool fallback_to_fifo = false;
-
-    bool completed() const
-    {
-        return checked && requested_mode_supported && !fallback_to_fifo;
-    }
-};
-
-struct vulkan_backend_swapchain_policy_state {
-    bool checked = false;
-    vulkan_swapchain_extent_policy_state extent;
-    vulkan_swapchain_present_mode_policy_state present_mode;
-
-    bool completed() const
-    {
-        return checked && extent.completed() && present_mode.completed();
-    }
-};
+vulkan_backend_lifecycle_readiness apply_vulkan_command_submit_readiness_to_lifecycle(
+    vulkan_backend_lifecycle_readiness lifecycle,
+    vulkan_command_submit_readiness_result command_submit);
 
 enum class vulkan_frame_acquire_policy_status {
     not_checked,
@@ -1214,6 +1238,37 @@ struct vulkan_backend_frame_fallback_summary {
     }
 };
 
+struct vulkan_backend_queue_submit_adapter_summary {
+    bool checked = false;
+    vulkan_queue_submit_present_status status =
+        vulkan_queue_submit_present_status::not_requested;
+    bool submit_called = false;
+    bool present_called = false;
+    bool submit_before_present = false;
+    bool recoverable_failure = false;
+    bool fatal_failure = false;
+    std::string diagnostic;
+
+    bool completed() const
+    {
+        return checked
+            && status == vulkan_queue_submit_present_status::submitted_and_presented
+            && submit_called && present_called && submit_before_present
+            && !recoverable_failure && !fatal_failure;
+    }
+
+    bool failed() const
+    {
+        return checked
+            && (recoverable_failure || fatal_failure
+                || status == vulkan_queue_submit_present_status::command_submit_unavailable
+                || status == vulkan_queue_submit_present_status::command_buffer_unavailable
+                || status == vulkan_queue_submit_present_status::submit_queue_unavailable
+                || status == vulkan_queue_submit_present_status::present_target_unavailable
+                || status == vulkan_queue_submit_present_status::adapter_unavailable);
+    }
+};
+
 struct diagnostic_vulkan_command_recorder_options {
     bool ready = true;
     vulkan_command_recorder_failure_stage fail_at = vulkan_command_recorder_failure_stage::none;
@@ -1258,6 +1313,9 @@ struct vulkan_backend_frame_result {
     vulkan_backend_resource_registry_state resource_registry;
     vulkan_backend_pipeline_state pipeline;
     vulkan_backend_command_recorder_state command_recorder;
+    vulkan_command_submit_readiness_result command_submit;
+    vulkan_queue_submit_present_result queue_submit;
+    vulkan_backend_queue_submit_adapter_summary queue_submit_adapter;
     vulkan_backend_command_buffer_submit_state command_buffer_submit;
     vulkan_backend_frame_fallback_summary fallback_summary;
     vulkan_backend_frame_stage reached_stage = vulkan_backend_frame_stage::not_started;
@@ -1286,6 +1344,8 @@ struct vulkan_backend_frame_result {
             && lifecycle_policy.completed()
             && present_policy.completed()
             && command_buffer_submit.completed()
+            && (!queue_submit.checked || queue_submit.completed())
+            && (!queue_submit_adapter.checked || queue_submit_adapter.completed())
             && command_recorder.completed()
             && command_recorder.gate.completed()
             && resource_bindings.completed()
@@ -1314,6 +1374,14 @@ public:
     null_vulkan_backend_device();
     explicit null_vulkan_backend_device(vulkan_loader_readiness_state loader_readiness);
     explicit null_vulkan_backend_device(const vulkan_loader_probe_result& loader_probe);
+    explicit null_vulkan_backend_device(vulkan_instance_create_result instance_result);
+    explicit null_vulkan_backend_device(vulkan_device_create_result device_result);
+    explicit null_vulkan_backend_device(vulkan_swapchain_create_result swapchain_result);
+    explicit null_vulkan_backend_device(vulkan_render_pass_create_result render_pass_result);
+    explicit null_vulkan_backend_device(
+        vulkan_command_recording_readiness_result command_recording_result);
+    explicit null_vulkan_backend_device(
+        vulkan_command_submit_readiness_result command_submit_result);
 
     vulkan_backend_lifecycle_readiness current_lifecycle_readiness() const override;
     vulkan_surface_extent current_surface_extent() const override;
@@ -1326,6 +1394,12 @@ public:
 
 private:
     vulkan_loader_readiness_state loader_readiness_;
+    vulkan_instance_create_result instance_result_;
+    vulkan_device_create_result device_result_;
+    vulkan_swapchain_create_result swapchain_result_;
+    vulkan_render_pass_create_result render_pass_result_;
+    vulkan_command_recording_readiness_result command_recording_result_;
+    vulkan_command_submit_readiness_result command_submit_result_;
 };
 
 vulkan_backend_resource_binding_state build_vulkan_resource_binding_state(
@@ -1336,6 +1410,13 @@ vulkan_backend_resource_registry_state build_vulkan_resource_registry_state(
     const render_draw_list& draw_list,
     const vulkan_frame_plan& plan,
     const vulkan_backend_resource_binding_state& resource_bindings);
+
+vulkan_backend_queue_submit_adapter_summary summarize_vulkan_queue_submit_adapter_result(
+    const vulkan_queue_submit_present_result& queue_submit);
+
+vulkan_backend_frame_result apply_vulkan_queue_submit_adapter_result_to_frame(
+    vulkan_backend_frame_result frame,
+    vulkan_queue_submit_present_result queue_submit);
 
 vulkan_backend_frame_result submit_vulkan_backend_frame(
     vulkan_backend_device_interface& device,

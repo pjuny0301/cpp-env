@@ -1,6 +1,10 @@
 #pragma once
 
+#include "render/text/font_rasterizer.h"
+#include "render/text/font_glyph_id_resolver.h"
 #include "render/text/font_resolver.h"
+#include "render/text/font_shaped_atlas_update.h"
+#include "render/text/font_shaping_backend.h"
 #include "render/text/glyph_run.h"
 #include "render/text/text_engine.h"
 
@@ -47,6 +51,11 @@ struct fake_text_engine_diagnostics {
     render_text_font_source_policy_snapshot font_source_policy;
     std::vector<render_text_font_source_bytes_snapshot> font_source_bytes;
     render_text_font_source_bytes_policy_snapshot font_source_bytes_policy;
+    std::vector<render_text_shaped_glyph> shaped_glyphs;
+    std::vector<render_text_font_shaping_diagnostic> font_shaping_diagnostics;
+    render_text_font_shaping_policy_snapshot font_shaping_policy;
+    std::vector<render_text_font_glyph_id_resolution_snapshot> glyph_id_resolutions;
+    render_text_font_glyph_id_resolution_policy_snapshot glyph_id_resolution_policy;
     std::vector<render_text_glyph_font_resolution_snapshot> glyph_font_resolutions;
     render_text_font_resolution_policy_snapshot font_resolution_policy;
     std::vector<render_text_line_break_snapshot> line_breaks;
@@ -58,6 +67,10 @@ struct fake_text_engine_diagnostics {
     std::vector<render_text_caret_rect_snapshot> caret_hit_tests;
     std::vector<render_text_glyph_cache_readiness_snapshot> glyph_cache_readiness;
     render_text_glyph_cache_readiness_policy_snapshot glyph_cache_readiness_policy;
+    std::vector<render_text_rasterized_glyph_atlas_payload_snapshot> rasterized_glyph_atlas_payloads;
+    render_text_rasterized_glyph_atlas_payload_policy_snapshot rasterized_glyph_atlas_payload_policy;
+    std::vector<render_text_shaped_atlas_update_trace_snapshot> shaped_atlas_update_traces;
+    render_text_shaped_atlas_update_trace_policy_snapshot shaped_atlas_update_trace_policy;
     std::vector<render_text_glyph_cache_face_snapshot> glyph_cache_faces;
     std::vector<render_text_glyph_cache_eviction_snapshot> glyph_cache_evictions;
     render_text_glyph_cache_policy_snapshot glyph_cache_policy;
@@ -143,6 +156,31 @@ struct fake_text_engine_diagnostics {
         return font_source_bytes_policy.request_count > 0;
     }
 
+    bool has_shaped_glyphs() const
+    {
+        return !shaped_glyphs.empty();
+    }
+
+    bool has_font_shaping_diagnostics() const
+    {
+        return !font_shaping_diagnostics.empty();
+    }
+
+    bool has_font_shaping_policy() const
+    {
+        return font_shaping_policy.run_count > 0;
+    }
+
+    bool has_glyph_id_resolutions() const
+    {
+        return !glyph_id_resolutions.empty();
+    }
+
+    bool has_glyph_id_resolution_policy() const
+    {
+        return glyph_id_resolution_policy.request_count > 0;
+    }
+
     bool has_glyph_font_resolutions() const
     {
         return !glyph_font_resolutions.empty();
@@ -151,6 +189,26 @@ struct fake_text_engine_diagnostics {
     bool has_glyph_cache_readiness() const
     {
         return !glyph_cache_readiness.empty();
+    }
+
+    bool has_rasterized_glyph_atlas_payloads() const
+    {
+        return !rasterized_glyph_atlas_payloads.empty();
+    }
+
+    bool has_rasterized_glyph_atlas_payload_policy() const
+    {
+        return rasterized_glyph_atlas_payload_policy.request_count > 0;
+    }
+
+    bool has_shaped_atlas_update_traces() const
+    {
+        return !shaped_atlas_update_traces.empty();
+    }
+
+    bool has_shaped_atlas_update_trace_policy() const
+    {
+        return shaped_atlas_update_trace_policy.trace_count > 0;
     }
 
     bool has_line_breaks() const

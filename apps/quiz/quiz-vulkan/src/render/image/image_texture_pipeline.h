@@ -304,4 +304,79 @@ private:
     std::vector<fake_image_texture_pipeline_entry_snapshot> entries_;
 };
 
+namespace detail {
+
+class standard_image_texture_pipeline_decoder final : public image_decoder_interface {
+public:
+    bool supports(const render_image_decode_request& request) const override
+    {
+        return !request.source.cache_key().empty() && !request.encoded_bytes.empty();
+    }
+
+    render_image_decode_result decode(const render_image_decode_request& request) const override
+    {
+        return decoder_.decode(request);
+    }
+
+private:
+    standard_image_decoder_chain decoder_;
+};
+
+} // namespace detail
+
+class standard_image_texture_pipeline final : public image_texture_pipeline_interface {
+public:
+    standard_image_texture_pipeline(
+        const image_resolver_interface& resolver,
+        const image_source_bytes_loader_interface& source_bytes_loader)
+        : texture_cache_(decoder_, texture_uploader_)
+        , pipeline_(resolver, source_bytes_loader, texture_cache_, texture_uploader_)
+    {
+    }
+
+    standard_image_texture_pipeline(const standard_image_texture_pipeline&) = delete;
+    standard_image_texture_pipeline& operator=(const standard_image_texture_pipeline&) = delete;
+    standard_image_texture_pipeline(standard_image_texture_pipeline&&) = delete;
+    standard_image_texture_pipeline& operator=(standard_image_texture_pipeline&&) = delete;
+
+    render_image_texture_pipeline_result acquire_texture(
+        const render_image_texture_pipeline_request& request) override
+    {
+        return pipeline_.acquire_texture(request);
+    }
+
+    render_image_texture_pipeline_result acquire_texture(const render_image_ref& image)
+    {
+        return pipeline_.acquire_texture(image);
+    }
+
+    void invalidate_source(render_image_cache_key source_key)
+    {
+        pipeline_.invalidate_source(std::move(source_key));
+    }
+
+    void invalidate_texture(const render_image_texture_key& key)
+    {
+        pipeline_.invalidate_texture(key);
+    }
+
+    fake_image_texture_pipeline_snapshot diagnostic_snapshot() const
+    {
+        return pipeline_.diagnostic_snapshot();
+    }
+
+private:
+    detail::standard_image_texture_pipeline_decoder decoder_;
+    fake_image_texture_uploader texture_uploader_;
+    fake_image_texture_cache texture_cache_;
+    fake_image_texture_pipeline pipeline_;
+};
+
+inline standard_image_texture_pipeline make_standard_image_texture_pipeline(
+    const image_resolver_interface& resolver,
+    const image_source_bytes_loader_interface& source_bytes_loader)
+{
+    return standard_image_texture_pipeline{resolver, source_bytes_loader};
+}
+
 } // namespace quiz_vulkan::render

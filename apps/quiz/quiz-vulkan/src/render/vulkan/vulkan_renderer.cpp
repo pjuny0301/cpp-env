@@ -290,6 +290,18 @@ vulkan_renderer_frame_summary vulkan_renderer::summarize_cpu_fallback(
     summary.backend_present_image_presented =
         backend_result.present_policy.present.image_presented;
     summary.backend_present_result_status = backend_result.present_policy.present.status;
+    summary.backend_submit_adapter_checked = backend_result.queue_submit_adapter.checked;
+    summary.backend_submit_adapter_status = backend_result.queue_submit_adapter.status;
+    summary.backend_submit_adapter_submit_called =
+        backend_result.queue_submit_adapter.submit_called;
+    summary.backend_submit_adapter_present_called =
+        backend_result.queue_submit_adapter.present_called;
+    summary.backend_submit_adapter_submit_before_present =
+        backend_result.queue_submit_adapter.submit_before_present;
+    summary.backend_submit_adapter_recoverable_failure =
+        backend_result.queue_submit_adapter.recoverable_failure;
+    summary.backend_submit_adapter_fatal_failure =
+        backend_result.queue_submit_adapter.fatal_failure;
     summary.backend_attempted = backend_result.attempted;
     summary.backend_fallback_required = backend_result.fallback_required;
     summary.backend_fallback_reason = backend_result.fallback_reason;

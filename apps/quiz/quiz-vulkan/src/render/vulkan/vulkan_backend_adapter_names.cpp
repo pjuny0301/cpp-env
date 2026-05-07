@@ -16,6 +16,8 @@ std::string_view fallback_reason_name(vulkan_backend_fallback_reason reason)
         return "device_unavailable";
     case vulkan_backend_fallback_reason::swapchain_unavailable:
         return "swapchain_unavailable";
+    case vulkan_backend_fallback_reason::render_pass_unavailable:
+        return "render_pass_unavailable";
     case vulkan_backend_fallback_reason::pipeline_unavailable:
         return "pipeline_unavailable";
     case vulkan_backend_fallback_reason::command_recorder_unavailable:

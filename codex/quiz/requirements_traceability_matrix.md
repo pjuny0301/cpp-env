@@ -6,6 +6,56 @@
 
 최근 baseline 통합 증거:
 
+- current: standard decoder-backed image texture pipeline을 통합하고 Windows MinGW focused image CTest 2/2 및 `ctest -N` 70개 확인.
+- `aa4ce88`: image texture pipeline에 standard decoder chain 기반 encoded bytes decode-to-upload wrapper와 decode failure diagnostics tests 추가.
+- current: Vulkan queue submit adapter summary diagnostics를 통합하고 Windows MinGW focused Vulkan CTest 2/2 및 `ctest -N` 69개 확인.
+- `b4b04fc`: Vulkan backend frame result와 renderer summary에 queue submit/present adapter checked/status/order/failure diagnostics 추가.
+- current: text glyph-id resolver와 image standard decoder chain headers를 CMake public FILE_SET에 등록하고 Windows MinGW focused text/image CTest 6/6 및 `ctest -N` 69개 확인.
+- `8d808cd`: image engine에 BMP/PPM-style decoder behavior와 PNG zlib inflater를 묶는 standard decoder chain/factory와 focused/contract tests 추가.
+- `81cb2a8`: text engine에 deterministic glyph-id resolver, shaping selection glyph-id bridge, fake-engine diagnostics와 focused/contract tests 추가.
+- current: Vulkan queue submit/present adapter header를 CMake public FILE_SET에 등록하고 Windows MinGW focused Vulkan CTest 2/2 및 `ctest -N` 67개 확인.
+- `6c25c12`: Vulkan command-submit readiness 뒤에 queue submit/present adapter boundary, fake function table, submit-before-present ordering/failure mapping tests 추가.
+- current: PNG zlib stored-block inflater header를 CMake public FILE_SET에 등록하고 Windows MinGW focused image CTest 2/2 및 `ctest -N` 66개 확인.
+- `4695d21`: image engine에 zlib-wrapped stored/no-compression deflate inflater, Adler32 validation, PNG decoder stored-IDAT integration tests 추가.
+- current: shaped glyph atlas-update tracing, PNG decoder-chain wrapper, Vulkan command-submit readiness headers를 CMake public FILE_SET에 등록하고 Windows MinGW focused CTest 7/7 및 `ctest -N` 65개 확인.
+- `710c928`: Vulkan command-recording 다음 단계로 command-submit readiness boundary, sync/present precondition diagnostics와 focused/contract tests 추가.
+- `2356495`: image engine에 PNG decoder-chain wrapper, injected inflater contract, deterministic PNG decode failure diagnostics와 focused/contract tests 추가.
+- `e8f148a`: text engine에 shaped glyph/raster payload/atlas update trace diagnostics와 focused/contract tests 추가.
+- current: PNG RGBA8 unfilter boundary를 CMake public FILE_SET에 등록하고 focused image CTest 2/2 및 `ctest -N` 62개 확인.
+- `e2dc64a`: image engine에 PNG filter-none RGBA8 scanline unfilter boundary, unsupported filter/truncated/stride diagnostics와 focused/contract tests 추가.
+- current: text shaping backend header를 CMake public FILE_SET에 등록하고 focused text CTest 3/3 및 `ctest -N` 61개 확인.
+- `2751777`: text engine에 deterministic shaping backend boundary, shaped glyph diagnostics, fake_text_engine bridge와 focused/contract tests 추가.
+- current: Vulkan command-recording readiness header를 CMake public FILE_SET에 등록하고 focused Vulkan CTest 4/4, full CTest 60/60, `ctest -N` 60개 확인.
+- `ddf7271`: Vulkan render pass 다음 단계로 command-recording readiness, pipeline/framebuffer/command-buffer diagnostics와 focused/contract tests 추가.
+- current: PNG decode boundary를 CMake public FILE_SET에 등록하고 focused image CTest 2/2 및 `ctest -N` 59개 확인.
+- `ce93465`: image engine에 PNG decode plan/inflater boundary, row-byte validation, inflater unavailable/failure diagnostics와 focused/contract tests 추가.
+- current: text rasterizer atlas-readiness integration focused text CTest 3/3 및 `ctest -N` 58개 확인.
+- `ecacbb9`: fake text engine에 deterministic font rasterizer atlas payload diagnostics와 skipped/missing-byte policy tests 추가.
+- current: PNG chunk scanner를 CMake public FILE_SET에 등록하고 focused image CTest 2/2 및 `ctest -N` 58개 확인.
+- `f9205e6`: image engine에 PNG chunk scanner, IDAT byte/count metadata, chunk validity diagnostics와 focused/contract tests 추가.
+- current: Vulkan render-pass/framebuffer readiness header를 CMake public FILE_SET에 등록하고 focused Vulkan CTest 6/6, full CTest 57/57, `ctest -N` 57개 확인.
+- `34af925`: Vulkan swapchain 다음 단계로 render-pass/framebuffer readiness boundary와 focused/contract tests 추가.
+- current: PNG header inspector를 CMake public FILE_SET에 등록하고 focused image CTest 1/1 및 `ctest -N` 56개 확인.
+- `f668eda`: image engine에 PNG signature/IHDR metadata inspector와 focused/contract tests 추가.
+- current: text font rasterizer header를 CMake public FILE_SET에 등록하고 focused text CTest 1/1 및 `ctest -N` 55개 확인.
+- `0c0917f`: text engine에 deterministic fake font rasterizer boundary와 atlas-ready glyph payload helper/focused tests 추가.
+- current: Windows MinGW full CTest 54/54 통과로 text/image/Vulkan worker 통합 라운드 기준선 갱신.
+- current: Vulkan swapchain readiness header를 CMake public FILE_SET에 등록하고 focused Vulkan CTest 5/5 및 `ctest -N` 54개 확인.
+- `d229547`: Vulkan device 다음 단계로 swapchain/surface extent/present-mode readiness boundary와 focused/contract tests 추가.
+- current: image texture cache snapshot header를 CMake public FILE_SET에 등록하고 focused image CTest 3/3 통과 확인.
+- `f7c5bf1`: image texture cache snapshot/residency diagnostics를 전용 header로 분리하면서 `image_texture_cache.h` 안정 include surface 유지.
+- current: text coverage run segmentation header를 CMake public FILE_SET에 등록하고 focused text CTest 2/2 통과 확인.
+- `d144683`: text engine에 coverage 기반 run segmentation helper와 focused/contract tests 추가.
+- current: render image/text/Vulkan split headers를 CMake public FILE_SET에 등록해 worker가 추가한 interface headers를 target metadata에도 반영.
+- `c12ec31`: Vulkan device readiness와 image texture upload split 결과를 RTM/current handoff 문서에 반영.
+- `31275c0`: image texture upload/uploader helpers를 `image_texture_upload.h`로 분리해 `image_texture_cache.h` 토큰 비용 축소.
+- `8f80b6e`: Vulkan instance 다음 단계로 device/queue readiness boundary와 focused tests 추가.
+- `87935ed`: font Unicode coverage 결과를 `font_face_descriptor`/`font_face_catalog` coverage 범위로 연결하는 text catalog adapter 추가.
+- `c83ed69`: text engine에 font Unicode coverage resolver와 contract/focused tests 추가.
+- `20fc3e6`: Vulkan instance creation boundary를 전용 header로 분리하고 loader 역방향 include 없이 직접 include 계약으로 정리.
+- `4f6af6e`: text engine에 font cmap Unicode coverage inspector와 contract/focused tests 추가.
+- `e668cca`: Vulkan instance creation boundary, fake instance factory, lifecycle gate, focused tests 추가.
+- `98a5e3d`: text engine에 SFNT/TrueType/OpenType font bytes inspector와 contract/focused tests 추가.
 - `554ea90`: image texture placeholder policy helpers를 전용 header로 분리.
 - `977e907`: Vulkan loader probe와 deterministic loader tests 추가.
 - `4233267`: BMP decoder 구현을 image decoder contract header에서 분리.
@@ -101,7 +151,7 @@
 - `5965a4b`: Vulkan swapchain policy/pipeline compatibility/shader binding/fallback diagnostics 추가.
 - `244d5b7`: input multipointer touch-like arbitration diagnostics 추가.
 - `94a922f`: asset manifest integrity diagnostics 추가.
-- 기준 검증 예시: 2026-05-07 Windows MinGW focused Vulkan loader/renderer CTest 2/2, image cache/uploader/pipeline CTest 4/4 통과 후 `ctest -N`이 47개 테스트를 보고. 직전 full CTest는 45/45 통과. 권위 있는 테스트 목록은 항상 실행 시점의 `ctest -N`으로 확인한다.
+- 기준 검증 예시: 2026-05-07 Windows MinGW focused image CTest 2/2, focused Vulkan CTest 2/2, focused text/image CTest 6/6, focused text/image/Vulkan CTest 7/7, 최근 full CTest 60/60 통과. 현재 `ctest -N`이 70개 테스트를 보고한다. 권위 있는 테스트 목록은 항상 실행 시점의 `ctest -N`으로 확인한다.
 - 기준 검증은 고정 개수로 적지 않는다. 현재 전체 테스트 수는 `ctest -N`이 권위이며, handoff에는 실행한 focused target만 기록한다.
 
 상태 기준:

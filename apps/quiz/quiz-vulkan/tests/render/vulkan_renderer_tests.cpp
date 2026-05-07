@@ -691,6 +691,22 @@ void test_draw_list_submission_counts_generic_work()
         summary.backend_present_result_status
             == vulkan_backend::vulkan_frame_present_result_status::not_checked,
         "renderer summary exposes present result status");
+    require(!summary.backend_submit_adapter_checked, "renderer summary exposes unchecked submit adapter");
+    require(
+        summary.backend_submit_adapter_status
+            == vulkan_backend::vulkan_queue_submit_present_status::not_requested,
+        "renderer summary exposes submit adapter status");
+    require(!summary.backend_submit_adapter_submit_called, "renderer summary exposes submit adapter submit call");
+    require(!summary.backend_submit_adapter_present_called, "renderer summary exposes submit adapter present call");
+    require(
+        !summary.backend_submit_adapter_submit_before_present,
+        "renderer summary exposes submit adapter ordering");
+    require(
+        !summary.backend_submit_adapter_recoverable_failure,
+        "renderer summary exposes submit adapter recoverable failure");
+    require(
+        !summary.backend_submit_adapter_fatal_failure,
+        "renderer summary exposes submit adapter fatal failure");
     require(summary.backend_attempted, "renderer summary exposes backend attempt status");
     require(summary.backend_planned_batch_count == 0, "renderer summary exposes backend planned batch count");
     require(summary.backend_recorded_batch_count == 0, "renderer summary exposes backend recorded batch count");

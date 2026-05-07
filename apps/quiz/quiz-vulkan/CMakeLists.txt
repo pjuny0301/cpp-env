@@ -146,6 +146,7 @@ target_sources(
             src/render/text/font_coverage_run_segmentation.h
             src/render/text/font_cmap_inspector.h
             src/render/text/font_glyph_atlas.h
+            src/render/text/font_rasterizer.h
             src/render/text/font_resolver.h
             src/render/text/font_sfnt_inspector.h
             src/render/text/font_source_bytes_loader.h

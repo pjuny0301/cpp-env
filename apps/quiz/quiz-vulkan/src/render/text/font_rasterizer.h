@@ -195,6 +195,12 @@ inline render_text_font_rasterize_request make_font_rasterize_request(
     };
 }
 
+render_text_font_rasterize_request make_font_rasterize_request(
+    font_face_descriptor,
+    render_text_font_source_bytes_load_result&&,
+    std::uint32_t,
+    std::uint32_t) = delete;
+
 inline render_text_font_rasterizer_status font_rasterizer_missing_status_for(
     const render_text_font_source_bytes_load_status status)
 {

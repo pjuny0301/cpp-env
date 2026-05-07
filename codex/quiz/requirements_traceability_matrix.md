@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: text font rasterizer header를 CMake public FILE_SET에 등록하고 focused text CTest 1/1 및 `ctest -N` 55개 확인.
+- `0c0917f`: text engine에 deterministic fake font rasterizer boundary와 atlas-ready glyph payload helper/focused tests 추가.
 - current: Windows MinGW full CTest 54/54 통과로 text/image/Vulkan worker 통합 라운드 기준선 갱신.
 - current: Vulkan swapchain readiness header를 CMake public FILE_SET에 등록하고 focused Vulkan CTest 5/5 및 `ctest -N` 54개 확인.
 - `d229547`: Vulkan device 다음 단계로 swapchain/surface extent/present-mode readiness boundary와 focused/contract tests 추가.
@@ -118,7 +120,7 @@
 - `5965a4b`: Vulkan swapchain policy/pipeline compatibility/shader binding/fallback diagnostics 추가.
 - `244d5b7`: input multipointer touch-like arbitration diagnostics 추가.
 - `94a922f`: asset manifest integrity diagnostics 추가.
-- 기준 검증 예시: 2026-05-07 Windows MinGW full CTest 54/54 통과. 직전 focused 검증으로 Vulkan CTest 5/5, image CTest 3/3, text CTest 2/2 통과. 현재 `ctest -N`이 54개 테스트를 보고한다. 권위 있는 테스트 목록은 항상 실행 시점의 `ctest -N`으로 확인한다.
+- 기준 검증 예시: 2026-05-07 Windows MinGW focused text CTest 1/1 통과 후, 직전 full CTest 54/54 통과. 현재 `ctest -N`이 55개 테스트를 보고한다. 권위 있는 테스트 목록은 항상 실행 시점의 `ctest -N`으로 확인한다.
 - 기준 검증은 고정 개수로 적지 않는다. 현재 전체 테스트 수는 `ctest -N`이 권위이며, handoff에는 실행한 focused target만 기록한다.
 
 상태 기준:

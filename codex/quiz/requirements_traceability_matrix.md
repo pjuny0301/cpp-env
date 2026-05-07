@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: Vulkan present-completion planning diagnostics를 통합하고 Windows MinGW focused Vulkan CTest 4/4 및 `ctest -N` 88개 확인.
+- `85dd390`: Vulkan backend에 present-completion plan/result diagnostics를 추가해 submit batch result, queue present readiness, frame completion status를 real `vkQueuePresentKHR` 호출 전 data-only로 추적.
 - current: text helper fallback-chain diagnostics와 image residency execution summary를 통합하고 Windows MinGW focused text/image CTest 4/4 확인.
 - `f61ffe2`: image batch execution diagnostics에 residency budget summary를 연결해 pipeline request success와 memory-budget pressure를 분리해 보고.
 - `ada6db8`: fake text helper paths(caret/selection)에 fallback-chain diagnostics를 확장해 layout_text 외 helper 호출에서도 mixed-script fallback metadata를 노출.

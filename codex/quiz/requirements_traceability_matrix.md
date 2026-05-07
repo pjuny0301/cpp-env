@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: font fallback chain planning diagnostics를 통합하고 Windows MinGW focused text CTest 1/1 확인.
+- `fb8e404`: text engine에 mixed-script font fallback chain planner를 추가해 per-run fallback face order, missing glyph summary, selected coverage/font metadata를 shaping 전 data-only로 추적.
 - current: image texture batch planning diagnostics를 통합하고 Windows MinGW focused image CTest 2/2 확인.
 - `38466be`: image engine에 image texture batch planning diagnostics를 추가해 render image refs, normalized texture/sampler keys, source/texture dedupe, placeholder fallback intent, invalid request reasons를 cache/uploader 내부 노출 없이 추적.
 - current: Vulkan command-buffer recording diagnostics를 통합하고 Windows MinGW focused Vulkan CTest 5/5 및 `ctest -N` 86개 확인.

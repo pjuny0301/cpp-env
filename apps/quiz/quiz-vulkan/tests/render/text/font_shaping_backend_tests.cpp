@@ -1,12 +1,17 @@
 #include "render/text/font_backend_adapter.h"
 #include "render/text/font_backend_capabilities.h"
+#include "render/text/font_backend_selection.h"
 #include "render/text/font_shaping_backend.h"
 
+#include <array>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <cstdio>
+#include <iterator>
 #include <span>
 #include <string>
 #include <utility>
@@ -25,6 +30,20 @@ void require(bool condition, const char* message)
 bool near(float actual, float expected)
 {
     return std::fabs(actual - expected) < 0.001f;
+}
+
+std::string read_text_owned_header(const std::string& header_name)
+{
+    const std::filesystem::path test_path = std::filesystem::path(__FILE__);
+    const std::filesystem::path project_root =
+        test_path.parent_path().parent_path().parent_path().parent_path();
+    const std::filesystem::path header_path =
+        project_root / "src" / "render" / "text" / header_name;
+    std::ifstream input(header_path);
+    require(input.good(), "text-owned public header can be opened for boundary inspection");
+    return std::string(
+        std::istreambuf_iterator<char>{input},
+        std::istreambuf_iterator<char>{});
 }
 
 quiz_vulkan::render::render_text_style shaping_style()
@@ -533,6 +552,167 @@ void test_font_backend_probe_reports_fallback_only_mode()
         "fallback-only backend keeps complex scripts on diagnostic fallback path");
 }
 
+void test_font_backend_selection_picks_harfbuzz_for_shaping_only()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_font_backend_selection_result result = select_render_text_font_backend(
+        render_text_font_backend_selection_request{
+            .purpose = render_text_font_backend_selection_purpose::shaping,
+            .candidates = {
+                make_render_text_freetype_backend_candidate(true),
+                make_render_text_utf8proc_backend_candidate(true),
+                make_render_text_harfbuzz_backend_candidate(true),
+                make_render_text_deterministic_fake_backend_candidate(),
+            },
+        });
+
+    require(result.ok(), "shaping selection succeeds");
+    require(result.selected_real_backend(), "shaping selection uses a real candidate");
+    require(
+        result.selected.library == render_text_font_backend_library::harfbuzz,
+        "shaping request selects HarfBuzz instead of FreeType or utf8proc");
+    require(
+        result.status == render_text_font_backend_selection_status::selected,
+        "shaping selection records selected status");
+    require(
+        result.capability.supports_feature(render_text_font_backend_feature::glyph_shaping),
+        "shaping selection exposes glyph shaping capability");
+    require(
+        !result.capability.supports_feature(render_text_font_backend_feature::glyph_rasterization),
+        "HarfBuzz shaping selection does not claim rasterization");
+    require(result.adapter_functions.shape != nullptr, "shaping selection provides adapter shape callback");
+    require(result.adapter_functions.label == "HarfBuzz", "shaping adapter label follows selected candidate");
+}
+
+void test_font_backend_selection_picks_freetype_for_rasterization_only()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_font_backend_selection_result result = select_render_text_font_backend(
+        render_text_font_backend_selection_request{
+            .purpose = render_text_font_backend_selection_purpose::rasterization,
+            .candidates = {
+                make_render_text_harfbuzz_backend_candidate(true),
+                make_render_text_utf8proc_backend_candidate(true),
+                make_render_text_freetype_backend_candidate(true),
+                make_render_text_deterministic_fake_backend_candidate(),
+            },
+        });
+
+    require(result.ok(), "rasterization selection succeeds");
+    require(result.selected_real_backend(), "rasterization selection uses a real candidate");
+    require(
+        result.selected.library == render_text_font_backend_library::freetype,
+        "rasterization request selects FreeType instead of HarfBuzz or utf8proc");
+    require(
+        result.capability.supports_feature(render_text_font_backend_feature::glyph_rasterization),
+        "rasterization selection exposes glyph rasterization capability");
+    require(
+        !result.capability.supports_feature(render_text_font_backend_feature::glyph_shaping),
+        "FreeType rasterization selection does not claim shaping");
+    require(result.adapter_functions.rasterize != nullptr, "rasterization selection provides adapter raster callback");
+    require(result.adapter_functions.label == "FreeType", "raster adapter label follows selected candidate");
+}
+
+void test_font_backend_selection_picks_utf8proc_for_unicode_processing()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_font_backend_selection_result result = select_render_text_font_backend(
+        render_text_font_backend_selection_request{
+            .purpose = render_text_font_backend_selection_purpose::unicode_processing,
+            .candidates = {
+                make_render_text_harfbuzz_backend_candidate(true),
+                make_render_text_freetype_backend_candidate(true),
+                make_render_text_utf8proc_backend_candidate(true),
+                make_render_text_deterministic_fake_backend_candidate(),
+            },
+        });
+
+    require(result.ok(), "unicode processing selection succeeds");
+    require(
+        result.selected.library == render_text_font_backend_library::utf8proc,
+        "unicode processing request selects utf8proc");
+    require(
+        result.capability.supports_feature(render_text_font_backend_feature::unicode_normalization),
+        "utf8proc selection exposes normalization capability");
+    require(
+        result.capability.supports_feature(render_text_font_backend_feature::unicode_properties),
+        "utf8proc selection exposes codepoint property capability");
+}
+
+void test_font_backend_selection_uses_deterministic_fake_when_real_capabilities_are_unavailable()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_font_backend_selection_result result = select_render_text_font_backend(
+        render_text_font_backend_selection_request{
+            .purpose = render_text_font_backend_selection_purpose::shaping,
+            .candidates = make_render_text_known_font_backend_candidates(false),
+        });
+
+    require(result.ok(), "unavailable real backends still select deterministic fallback");
+    require(
+        result.status == render_text_font_backend_selection_status::fallback_selected,
+        "unavailable real backend selection records fallback status");
+    require(
+        result.selected.library == render_text_font_backend_library::deterministic_fake,
+        "unavailable real backend selection picks deterministic fake");
+    require(result.used_deterministic_fallback, "unavailable real backend selection records fallback use");
+    require(result.capability.fallback_only, "deterministic fallback capability is marked fallback-only");
+    require(!result.diagnostics.empty(), "deterministic fallback selection records diagnostic");
+}
+
+void test_font_backend_selection_metadata_uses_logical_relative_hints()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::vector<render_text_font_backend_candidate> candidates =
+        make_render_text_known_font_backend_candidates(true);
+    require(candidates.size() == 4U, "known backend candidates include real text libraries and fallback");
+    for (const render_text_font_backend_candidate& candidate : candidates) {
+        require(
+            render_text_font_backend_candidate_metadata_is_portable(candidate),
+            "backend candidate metadata uses portable logical labels and relative hints");
+        require(
+            candidate.include_hint.find("/mnt/c/aa") == std::string::npos,
+            "backend include hint does not hard-code worker absolute path");
+        require(
+            candidate.library_hint.find("/mnt/c/aa") == std::string::npos,
+            "backend library hint does not hard-code worker absolute path");
+    }
+    require(candidates[0].version.display_label() == "14.2.0", "HarfBuzz logical version is recorded");
+    require(candidates[1].license.find("FreeType") != std::string::npos, "FreeType logical license is recorded");
+    require(candidates[2].version.display_label() == "v2.11.3", "utf8proc logical version is recorded");
+
+    render_text_font_backend_candidate bad_candidate = make_render_text_harfbuzz_backend_candidate(true);
+    bad_candidate.include_hint = "/mnt/c/aa/build/external/lib/cpp/desktop/harfbuzz-14.2.0/src/hb.h";
+    require(
+        !render_text_font_backend_candidate_metadata_is_portable(bad_candidate),
+        "host-specific absolute backend hints are rejected");
+}
+
+void test_font_backend_selection_header_keeps_text_boundary()
+{
+    const std::string header = read_text_owned_header("font_backend_selection.h");
+    const std::array<const char*, 10> forbidden_tokens = {
+        "render/vulkan",
+        "render/image",
+        "src/app",
+        "app/",
+        "domain/",
+        "ui/",
+        "input/",
+        "platform/",
+        "/mnt/c/aa",
+        "build/external",
+    };
+    for (const char* token : forbidden_tokens) {
+        require(header.find(token) == std::string::npos, "font backend selection header stays text-owned");
+    }
+}
+
 void test_fake_backend_shapes_successful_latin_hangul_and_non_bmp_run()
 {
     using namespace quiz_vulkan::render;
@@ -902,6 +1082,12 @@ int main()
     test_font_backend_probe_reports_unavailable_directwrite();
     test_font_backend_probe_reports_version_mismatch_and_unsupported_feature();
     test_font_backend_probe_reports_fallback_only_mode();
+    test_font_backend_selection_picks_harfbuzz_for_shaping_only();
+    test_font_backend_selection_picks_freetype_for_rasterization_only();
+    test_font_backend_selection_picks_utf8proc_for_unicode_processing();
+    test_font_backend_selection_uses_deterministic_fake_when_real_capabilities_are_unavailable();
+    test_font_backend_selection_metadata_uses_logical_relative_hints();
+    test_font_backend_selection_header_keeps_text_boundary();
     test_fake_backend_shapes_successful_latin_hangul_and_non_bmp_run();
     test_fake_backend_reports_backend_unavailable();
     test_fake_backend_reports_unsupported_script_and_fallback_glyph_id();

@@ -15,6 +15,7 @@ enum class render_text_font_backend_library {
     freetype,
     harfbuzz,
     directwrite,
+    utf8proc,
 };
 
 inline std::string render_text_font_backend_library_name(
@@ -29,6 +30,8 @@ inline std::string render_text_font_backend_library_name(
         return "harfbuzz";
     case render_text_font_backend_library::directwrite:
         return "directwrite";
+    case render_text_font_backend_library::utf8proc:
+        return "utf8proc";
     }
 
     return "unknown";
@@ -41,6 +44,8 @@ enum class render_text_font_backend_feature {
     glyph_rasterization,
     glyph_shaping,
     complex_script_shaping,
+    unicode_normalization,
+    unicode_properties,
     color_glyphs,
     variable_fonts,
 };
@@ -61,6 +66,10 @@ inline std::string render_text_font_backend_feature_name(
         return "glyph_shaping";
     case render_text_font_backend_feature::complex_script_shaping:
         return "complex_script_shaping";
+    case render_text_font_backend_feature::unicode_normalization:
+        return "unicode_normalization";
+    case render_text_font_backend_feature::unicode_properties:
+        return "unicode_properties";
     case render_text_font_backend_feature::color_glyphs:
         return "color_glyphs";
     case render_text_font_backend_feature::variable_fonts:

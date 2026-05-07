@@ -2,6 +2,7 @@
 #include "render/text/fake_text_engine.h"
 #include "render/text/font_backend_adapter.h"
 #include "render/text/font_backend_capabilities.h"
+#include "render/text/font_backend_selection.h"
 #include "render/text/font_cmap_inspector.h"
 #include "render/text/font_coverage_run_segmentation.h"
 #include "render/text/font_glyph_id_resolver.h"
@@ -363,6 +364,73 @@ static_assert(requires(
         -> std::same_as<render::render_text_real_font_shaping_adapter_result>;
     { render::deterministic_fake_real_font_backend_rasterize(raster_request) }
         -> std::same_as<render::render_text_real_font_raster_adapter_result>;
+});
+
+static_assert(requires(
+    render::render_text_font_backend_selection_purpose purpose,
+    render::render_text_font_backend_selection_status status,
+    render::render_text_font_backend_candidate candidate,
+    render::render_text_font_backend_selection_request request,
+    render::render_text_font_backend_selection_result result,
+    std::vector<render::render_text_font_backend_feature> features) {
+    { render::render_text_font_backend_selection_purpose_name(purpose) } -> std::same_as<std::string>;
+    { render::render_text_font_backend_selection_status_name(status) } -> std::same_as<std::string>;
+    { candidate.library } -> std::same_as<render::render_text_font_backend_library&>;
+    { candidate.label } -> std::same_as<std::string&>;
+    { candidate.version } -> std::same_as<render::render_text_font_backend_version&>;
+    { candidate.license } -> std::same_as<std::string&>;
+    { candidate.include_hint } -> std::same_as<std::string&>;
+    { candidate.library_hint } -> std::same_as<std::string&>;
+    { candidate.features } -> std::same_as<std::vector<render::render_text_font_backend_feature>&>;
+    { candidate.available } -> std::same_as<bool&>;
+    { candidate.fallback_only } -> std::same_as<bool&>;
+    { candidate.diagnostic } -> std::same_as<std::string&>;
+    { candidate.supports_feature(render::render_text_font_backend_feature::glyph_shaping) }
+        -> std::same_as<bool>;
+    { candidate.component() } -> std::same_as<render::render_text_font_backend_component>;
+    { request.purpose } -> std::same_as<render::render_text_font_backend_selection_purpose&>;
+    { request.candidates } -> std::same_as<std::vector<render::render_text_font_backend_candidate>&>;
+    { request.required_features } -> std::same_as<std::vector<render::render_text_font_backend_feature>&>;
+    { request.allow_deterministic_fallback } -> std::same_as<bool&>;
+    { result.status } -> std::same_as<render::render_text_font_backend_selection_status&>;
+    { result.purpose } -> std::same_as<render::render_text_font_backend_selection_purpose&>;
+    { result.selected } -> std::same_as<render::render_text_font_backend_candidate&>;
+    { result.has_selection } -> std::same_as<bool&>;
+    { result.used_deterministic_fallback } -> std::same_as<bool&>;
+    { result.required_features } -> std::same_as<std::vector<render::render_text_font_backend_feature>&>;
+    { result.capability } -> std::same_as<render::render_text_font_backend_capability_snapshot&>;
+    { result.adapter_functions } -> std::same_as<render::render_text_font_backend_adapter_functions&>;
+    { result.diagnostics } -> std::same_as<std::vector<std::string>&>;
+    { result.ok() } -> std::same_as<bool>;
+    { result.selected_real_backend() } -> std::same_as<bool>;
+    { render::render_text_font_backend_required_features_for(purpose) }
+        -> std::same_as<std::vector<render::render_text_font_backend_feature>>;
+    { render::render_text_font_backend_candidate_supports_features(candidate, features) }
+        -> std::same_as<bool>;
+    { render::render_text_font_backend_candidate_uses_absolute_or_host_path(candidate) }
+        -> std::same_as<bool>;
+    { render::render_text_font_backend_candidate_metadata_is_portable(candidate) }
+        -> std::same_as<bool>;
+    { render::make_render_text_harfbuzz_backend_candidate() }
+        -> std::same_as<render::render_text_font_backend_candidate>;
+    { render::make_render_text_freetype_backend_candidate() }
+        -> std::same_as<render::render_text_font_backend_candidate>;
+    { render::make_render_text_utf8proc_backend_candidate() }
+        -> std::same_as<render::render_text_font_backend_candidate>;
+    { render::make_render_text_deterministic_fake_backend_candidate() }
+        -> std::same_as<render::render_text_font_backend_candidate>;
+    { render::make_render_text_known_font_backend_candidates() }
+        -> std::same_as<std::vector<render::render_text_font_backend_candidate>>;
+    { render::render_text_font_backend_probe_request_for_selection(candidate, features) }
+        -> std::same_as<render::render_text_font_backend_capability_probe_request>;
+    { render::render_text_font_backend_capability_for_selection(candidate, features) }
+        -> std::same_as<render::render_text_font_backend_capability_snapshot>;
+    { render::render_text_font_backend_adapter_functions_for_selection(candidate) }
+        -> std::same_as<render::render_text_font_backend_adapter_functions>;
+    { render::make_render_text_font_backend_selection_result(status, purpose, candidate, features) }
+        -> std::same_as<render::render_text_font_backend_selection_result>;
+    { render::select_render_text_font_backend(request) }
+        -> std::same_as<render::render_text_font_backend_selection_result>;
 });
 
 static_assert(requires(render::fake_text_engine& engine, render::font_face_descriptor descriptor) {

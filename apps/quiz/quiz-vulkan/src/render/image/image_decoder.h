@@ -1,6 +1,7 @@
 #pragma once
 
 #include "render/image/image_types.h"
+#include "render/image/png_image_header_inspector.h"
 
 #include <cctype>
 #include <cstddef>
@@ -170,21 +171,6 @@ inline std::string image_decode_extension_hint(std::string_view normalized_uri)
         value = static_cast<char>(std::tolower(static_cast<unsigned char>(value)));
     }
     return extension;
-}
-
-inline bool starts_with_png_signature(const std::vector<std::byte>& bytes)
-{
-    constexpr unsigned char signature[] = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
-    constexpr std::size_t signature_size = sizeof(signature) / sizeof(signature[0]);
-    if (bytes.size() < signature_size) {
-        return false;
-    }
-    for (std::size_t index = 0; index < signature_size; ++index) {
-        if (std::to_integer<unsigned char>(bytes[index]) != signature[index]) {
-            return false;
-        }
-    }
-    return true;
 }
 
 inline bool starts_with_jpeg_signature(const std::vector<std::byte>& bytes)

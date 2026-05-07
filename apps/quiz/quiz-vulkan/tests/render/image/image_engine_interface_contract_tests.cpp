@@ -132,6 +132,9 @@ static_assert(requires(
     render::render_image_decode_metadata metadata,
     render::render_image_encoded_format encoded_format,
     render::render_image_source_kind source_kind,
+    render::png_image_header_inspect_status png_header_status,
+    render::png_image_header png_header,
+    render::png_image_header_inspect_result png_header_result,
     render::render_image_format_detection_summary format_detection,
     render::render_image_decode_size_validation size_validation,
     render::render_image_decoder_diagnostic diagnostic,
@@ -204,6 +207,28 @@ static_assert(requires(
     { render::render_image_encoded_format_name(encoded_format) } -> std::same_as<std::string>;
     { render::render_image_encoded_format_mime_type(encoded_format) } -> std::same_as<std::string>;
     { render::render_image_source_kind_name(source_kind) } -> std::same_as<std::string>;
+    { render::png_image_header_inspect_status_name(png_header_status) } -> std::same_as<std::string>;
+    { render::png_image_color_type_name(std::uint8_t{}) } -> std::same_as<std::string>;
+    { render::starts_with_png_signature(request.encoded_bytes) } -> std::same_as<bool>;
+    { render::inspect_png_image_header(request.encoded_bytes) }
+        -> std::same_as<render::png_image_header_inspect_result>;
+    { png_header.width } -> std::same_as<std::size_t&>;
+    { png_header.height } -> std::same_as<std::size_t&>;
+    { png_header.bit_depth } -> std::same_as<std::uint8_t&>;
+    { png_header.color_type } -> std::same_as<std::uint8_t&>;
+    { png_header.compression_method } -> std::same_as<std::uint8_t&>;
+    { png_header.filter_method } -> std::same_as<std::uint8_t&>;
+    { png_header.interlace_method } -> std::same_as<std::uint8_t&>;
+    { png_header.pixel_count } -> std::same_as<std::size_t&>;
+    { png_header.decoded_rgba_byte_count } -> std::same_as<std::size_t&>;
+    { png_header.decoded_pixel_format } -> std::same_as<render::render_image_pixel_format&>;
+    { png_header.rgba8_supported } -> std::same_as<bool&>;
+    { png_header_result.status } -> std::same_as<render::png_image_header_inspect_status&>;
+    { png_header_result.header } -> std::same_as<render::png_image_header&>;
+    { png_header_result.signature_valid } -> std::same_as<bool&>;
+    { png_header_result.ihdr_present } -> std::same_as<bool&>;
+    { png_header_result.diagnostic } -> std::same_as<std::string&>;
+    { png_header_result.ok() } -> std::same_as<bool>;
     { render::detect_render_image_format(request) } -> std::same_as<render::render_image_format_detection_summary>;
     { render::render_image_source_kind_decode_order(source_kind) } -> std::same_as<std::size_t>;
     { render::render_image_extension_decode_order("ppm") } -> std::same_as<std::size_t>;
@@ -218,6 +243,7 @@ static_assert(requires(
         -> std::same_as<render::render_image_format_detection_summary>;
     encoded_format;
     source_kind;
+    png_header_status;
     { diagnostic.decoder_id } -> std::same_as<std::string&>;
     { diagnostic.candidate_index } -> std::same_as<std::size_t&>;
     { diagnostic.candidate_order } -> std::same_as<std::size_t&>;

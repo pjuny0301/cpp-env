@@ -6,6 +6,9 @@
 
 최근 baseline 통합 증거:
 
+- current: text helper fallback-chain diagnostics와 image residency execution summary를 통합하고 Windows MinGW focused text/image CTest 4/4 확인.
+- `f61ffe2`: image batch execution diagnostics에 residency budget summary를 연결해 pipeline request success와 memory-budget pressure를 분리해 보고.
+- `ada6db8`: fake text helper paths(caret/selection)에 fallback-chain diagnostics를 확장해 layout_text 외 helper 호출에서도 mixed-script fallback metadata를 노출.
 - current: IME replay timeline diagnostics를 통합하고 Windows MinGW focused input CTest 3/3 확인.
 - `4afdd42`: normalized input replay에 IME composition timeline, preedit validity, caret/selection snapshots, stale-preedit clearing, final committed text state를 추가.
 - current: fallback-chain layout diagnostics와 image texture residency budget diagnostics를 통합하고 Windows MinGW focused text/image CTest 3/3 확인.

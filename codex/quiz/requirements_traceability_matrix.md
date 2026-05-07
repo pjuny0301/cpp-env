@@ -6,6 +6,9 @@
 
 최근 baseline 통합 증거:
 
+- current: fallback-chain layout diagnostics와 image texture residency budget diagnostics를 통합하고 Windows MinGW focused text/image CTest 3/3 확인.
+- `67d0552`: image engine에 texture residency/budget planner를 추가해 visible/pinned/preload/eviction/retry candidates와 RGBA8-estimated budget pressure를 public batch execution data로 추적.
+- `7004837`: fake text engine layout diagnostics에 fallback-chain snapshots를 연결해 backend selection, glyph-id, atlas materialization, line-layout diagnostics와 같은 layout_text 경로에서 mixed-script fallback을 확인.
 - current: keyboard replay diagnostics summaries를 통합하고 Windows MinGW focused input CTest 3/3 확인.
 - `e50a2b0`: input replay diagnostics에 shortcut intent counts, modifier/repeat policy, final text/focus/preedit state summaries를 연결해 replayed key sequence를 app/domain action 없이 검증.
 - current: Vulkan submit-batch planning diagnostics를 통합하고 Windows MinGW focused Vulkan CTest 5/5 및 `ctest -N` 87개 확인.

@@ -2249,6 +2249,11 @@ std::vector<fake_text_engine_caret> fake_text_engine::caret_positions(const rend
         backend_selection.capability,
         font_backend_adapter_functions_.has_value());
     record_font_backend_selection(diagnostics_, backend_selection);
+    record_font_fallback_chain_plan(
+        diagnostics_,
+        request,
+        font_resolver_.catalog(),
+        backend_selection.shaping);
     const std::vector<shaped_glyph> shaped_glyphs =
         shape_request(
             request,
@@ -2308,6 +2313,11 @@ std::vector<render_rect> fake_text_engine::selection_rects(
         backend_selection.capability,
         font_backend_adapter_functions_.has_value());
     record_font_backend_selection(diagnostics_, backend_selection);
+    record_font_fallback_chain_plan(
+        diagnostics_,
+        request,
+        font_resolver_.catalog(),
+        backend_selection.shaping);
     const std::vector<shaped_glyph> shaped_glyphs =
         shape_request(
             request,

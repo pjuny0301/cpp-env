@@ -122,6 +122,144 @@ const quiz_vulkan::render::render_text_font_fallback_chain_entry_snapshot* find_
     return nullptr;
 }
 
+void configure_mixed_script_fallback_chain_engine(quiz_vulkan::render::fake_text_engine& engine)
+{
+    using namespace quiz_vulkan::render;
+
+    engine.set_font_backend_selection_candidates({
+        make_render_text_harfbuzz_backend_candidate(true),
+        make_render_text_freetype_backend_candidate(true),
+        make_render_text_utf8proc_backend_candidate(true),
+        make_render_text_deterministic_fake_backend_candidate(),
+    });
+    engine.add_font_face(font_face_descriptor{
+        .id = 501,
+        .family = "Primary Chain Sans",
+        .source_uri = "fixture://fonts/primary-chain-sans",
+        .version = "fixture-1",
+        .license = "test-fixture",
+        .coverage = {
+            font_codepoint_range{.first = U'A', .last = U'A'},
+        },
+        .weight = 400,
+    });
+    engine.add_font_face(font_face_descriptor{
+        .id = 502,
+        .family = "Hangul Chain Fallback",
+        .source_uri = "fixture://fonts/hangul-chain",
+        .version = "fixture-1",
+        .license = "test-fixture",
+        .coverage = {
+            font_codepoint_range{.first = 0xd55cU, .last = 0xd55cU},
+        },
+        .weight = 400,
+        .fallback = true,
+    });
+    engine.add_font_face(font_face_descriptor{
+        .id = 503,
+        .family = "Emoji Chain Fallback",
+        .source_uri = "fixture://fonts/emoji-chain",
+        .version = "fixture-1",
+        .license = "test-fixture",
+        .coverage = {
+            font_codepoint_range{.first = 0x1f600U, .last = 0x1f600U},
+        },
+        .weight = 400,
+        .fallback = true,
+    });
+}
+
+quiz_vulkan::render::render_text_request make_mixed_script_fallback_chain_request()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_style_catalog catalog = make_style_catalog();
+    catalog.styles.push_back(render_text_style{
+        .id = "mixed",
+        .font_family = "Primary Chain Sans",
+        .font_size = 20.0f,
+        .line_height = 24.0f,
+        .font_weight = 400,
+    });
+
+    const std::string mixed_text = std::string("A") + std::string("\xed\x95\x9c", 3)
+        + std::string("\xf0\x9f\x98\x80", 4);
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = mixed_text, .style_token = "mixed"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 200.0f, 0.0f};
+    request.style_catalog = catalog;
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+    return request;
+}
+
+void require_mixed_script_fallback_chain_diagnostics(
+    const quiz_vulkan::render::fake_text_engine_diagnostics& diagnostics)
+{
+    using namespace quiz_vulkan::render;
+
+    require(diagnostics.has_font_fallback_chain_runs(), "diagnostics record fallback-chain run snapshots");
+    require(diagnostics.has_font_fallback_chain_policy(), "diagnostics record fallback-chain policy");
+    require(!diagnostics.has_font_fallback_chain_missing_glyphs(), "covered mixed fixture has no missing glyphs");
+    require(diagnostics.font_fallback_chain_runs.size() == 1U, "one text run produces one fallback-chain run");
+    require(diagnostics.font_fallback_chain_policy.run_count == 1U, "fallback-chain policy counts one run");
+    require(diagnostics.font_fallback_chain_policy.codepoint_count == 3U, "fallback-chain policy counts scalars");
+    require(
+        diagnostics.font_fallback_chain_policy.supported_codepoint_count == 3U,
+        "fallback-chain policy counts all mixed glyphs as supported");
+    require(
+        diagnostics.font_fallback_chain_policy.fallback_codepoint_count == 2U,
+        "fallback-chain policy counts Hangul and emoji fallback selections");
+    require(
+        diagnostics.font_fallback_chain_policy.unique_selected_face_count == 3U,
+        "fallback-chain policy records three selected faces");
+    require(
+        diagnostics.font_fallback_chain_selected_face_order.size() == 3U,
+        "fallback-chain selected face order reaches diagnostics");
+    require(diagnostics.font_fallback_chain_selected_face_order[0] == 501U, "Latin requested face is first");
+    require(diagnostics.font_fallback_chain_selected_face_order[1] == 502U, "Hangul fallback face is second");
+    require(diagnostics.font_fallback_chain_selected_face_order[2] == 503U, "emoji fallback face is third");
+    require(
+        diagnostics.font_fallback_chain_shaping_selection.selected.library
+            == render_text_font_backend_library::harfbuzz,
+        "fallback-chain diagnostics carry selected shaping backend");
+
+    const render_text_font_fallback_chain_run_snapshot& run = diagnostics.font_fallback_chain_runs.front();
+    require(run.style_token == "mixed", "fallback-chain run records style token");
+    require(run.source_label == "fake_text_engine", "fallback-chain run records text-engine source");
+    require(run.requested_face_id == 501U, "fallback-chain run records requested face");
+    require(run.selected_face_ids.size() == 3U, "fallback-chain run records per-run selected faces");
+    require(run.selected_face_ids[0] == 501U, "run selected order keeps requested face first");
+    require(run.selected_face_ids[1] == 502U, "run selected order keeps Hangul fallback second");
+    require(run.selected_face_ids[2] == 503U, "run selected order keeps emoji fallback third");
+    require(run.coverage.segments.size() == 3U, "fallback-chain run preserves coverage segmentation");
+    require(run.shaping_backend == render_text_font_backend_library::harfbuzz, "run records HarfBuzz shaping");
+    require(!run.shaping_used_deterministic_fallback, "run does not claim deterministic shaping fallback");
+
+    const render_text_font_fallback_chain_entry_snapshot* primary =
+        find_fallback_chain_entry(run.entries, 501U);
+    const render_text_font_fallback_chain_entry_snapshot* hangul =
+        find_fallback_chain_entry(run.entries, 502U);
+    const render_text_font_fallback_chain_entry_snapshot* emoji =
+        find_fallback_chain_entry(run.entries, 503U);
+    require(primary != nullptr, "fallback chain records requested face entry");
+    require(hangul != nullptr, "fallback chain records Hangul fallback entry");
+    require(emoji != nullptr, "fallback chain records emoji fallback entry");
+    if (primary != nullptr && hangul != nullptr && emoji != nullptr) {
+        require(primary->requested_face, "fallback chain marks requested face entry");
+        require(hangul->fallback_face, "fallback chain marks Hangul fallback entry");
+        require(emoji->fallback_face, "fallback chain marks emoji fallback entry");
+        require(primary->selected_codepoint_count == 1U, "requested face selected for Latin");
+        require(hangul->selected_codepoint_count == 1U, "Hangul fallback selected once");
+        require(emoji->selected_codepoint_count == 1U, "emoji fallback selected once");
+    }
+}
+
 quiz_vulkan::render::render_text_real_font_shaping_adapter_result mismatched_adapter_shape(
     const quiz_vulkan::render::render_text_real_font_shaping_adapter_request& request)
 {
@@ -933,6 +1071,62 @@ void test_fake_text_engine_records_font_fallback_chain_for_mixed_script_layout()
     }
 }
 
+void test_fake_text_engine_records_font_fallback_chain_for_mixed_script_carets()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    configure_mixed_script_fallback_chain_engine(engine);
+    const render_text_request request = make_mixed_script_fallback_chain_request();
+
+    const std::vector<fake_text_engine_caret> carets = engine.caret_positions(request);
+    const fake_text_engine_diagnostics& diagnostics = engine.last_diagnostics();
+
+    require(!carets.empty(), "mixed-script caret helper returns caret positions");
+    require(diagnostics.has_caret_hit_tests(), "mixed-script caret helper records caret diagnostics");
+    require(
+        diagnostics.caret_hit_tests.size() == carets.size(),
+        "mixed-script caret diagnostics mirror returned carets");
+    require(diagnostics.has_font_backend_selection(), "caret helper keeps backend selection diagnostics");
+    require(diagnostics.has_glyph_id_resolutions(), "caret helper keeps glyph-id diagnostics");
+    require(!diagnostics.has_glyph_atlas_materializations(), "caret helper does not materialize atlas payloads");
+    require(!diagnostics.has_shaped_atlas_update_traces(), "caret helper does not queue shaped atlas traces");
+    require_mixed_script_fallback_chain_diagnostics(diagnostics);
+}
+
+void test_fake_text_engine_records_font_fallback_chain_for_mixed_script_selection()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    configure_mixed_script_fallback_chain_engine(engine);
+    const render_text_request request = make_mixed_script_fallback_chain_request();
+
+    const std::vector<render_rect> rects = engine.selection_rects(
+        request,
+        fake_text_engine_selection_range{
+            .start_run_index = 0,
+            .start_byte_offset = 1,
+            .end_run_index = 0,
+            .end_byte_offset = request.text_runs.front().text.size(),
+        });
+    const fake_text_engine_diagnostics& diagnostics = engine.last_diagnostics();
+
+    require(!rects.empty(), "mixed-script selection helper returns selection rectangles");
+    require(diagnostics.has_selection_rects(), "mixed-script selection helper records selection diagnostics");
+    require(
+        diagnostics.selection_rects.size() == rects.size(),
+        "mixed-script selection diagnostics mirror returned rects");
+    require(
+        diagnostics.selection_rects.front().cluster_count >= 2U,
+        "mixed-script selection spans Hangul and emoji clusters");
+    require(diagnostics.has_font_backend_selection(), "selection helper keeps backend selection diagnostics");
+    require(diagnostics.has_glyph_id_resolutions(), "selection helper keeps glyph-id diagnostics");
+    require(!diagnostics.has_glyph_atlas_materializations(), "selection helper does not materialize atlas payloads");
+    require(!diagnostics.has_shaped_atlas_update_traces(), "selection helper does not queue shaped atlas traces");
+    require_mixed_script_fallback_chain_diagnostics(diagnostics);
+}
+
 void test_fake_text_engine_records_unavailable_backend_capability()
 {
     using namespace quiz_vulkan::render;
@@ -1724,6 +1918,8 @@ int main()
     test_fake_text_engine_records_fallback_only_backend_capability_for_latin_hangul();
     test_fake_text_engine_carries_injected_backend_selection_to_layout_diagnostics();
     test_fake_text_engine_records_font_fallback_chain_for_mixed_script_layout();
+    test_fake_text_engine_records_font_fallback_chain_for_mixed_script_carets();
+    test_fake_text_engine_records_font_fallback_chain_for_mixed_script_selection();
     test_fake_text_engine_records_unavailable_backend_capability();
     test_fake_text_engine_keeps_complex_script_on_fallback_until_backend_supports_it();
     test_fake_text_engine_uses_default_deterministic_shaping_without_adapter();

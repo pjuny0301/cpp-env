@@ -199,6 +199,8 @@ static_assert(requires(
     render::render_image_texture_pipeline_status pipeline_status,
     render::fake_image_texture_pipeline_entry_snapshot pipeline_entry,
     render::fake_image_texture_pipeline_snapshot pipeline_snapshot,
+    render::standard_image_texture_pipeline_decode_snapshot standard_pipeline_decoder_snapshot,
+    render::standard_image_texture_pipeline_snapshot standard_pipeline_snapshot,
     const render::fake_image_texture_pipeline& pipeline,
     render::fake_image_texture_pipeline& mutable_pipeline,
     render::standard_image_texture_pipeline& standard_pipeline,
@@ -613,6 +615,16 @@ static_assert(requires(
     { pipeline_snapshot.cache_snapshot } -> std::same_as<render::fake_image_texture_cache_snapshot&>;
     { pipeline_snapshot.upload_snapshot } -> std::same_as<render::fake_image_texture_upload_snapshot&>;
     { pipeline_snapshot.entries } -> std::same_as<std::vector<render::fake_image_texture_pipeline_entry_snapshot>&>;
+    { standard_pipeline_decoder_snapshot.support_check_count } -> std::same_as<std::size_t&>;
+    { standard_pipeline_decoder_snapshot.decode_attempt_count } -> std::same_as<std::size_t&>;
+    { standard_pipeline_decoder_snapshot.decoded_count } -> std::same_as<std::size_t&>;
+    { standard_pipeline_decoder_snapshot.failed_decode_count } -> std::same_as<std::size_t&>;
+    { standard_pipeline_decoder_snapshot.last_encoded_byte_count } -> std::same_as<std::size_t&>;
+    { standard_pipeline_decoder_snapshot.last_decode_status } -> std::same_as<render::render_image_decode_status&>;
+    { standard_pipeline_decoder_snapshot.last_diagnostic } -> std::same_as<std::string&>;
+    { standard_pipeline_snapshot.pipeline } -> std::same_as<render::fake_image_texture_pipeline_snapshot&>;
+    { standard_pipeline_snapshot.decoder }
+        -> std::same_as<render::standard_image_texture_pipeline_decode_snapshot&>;
     { pipeline.diagnostic_snapshot() } -> std::same_as<render::fake_image_texture_pipeline_snapshot>;
     { mutable_pipeline.invalidate_source(render::render_image_cache_key{}) } -> std::same_as<void>;
     { mutable_pipeline.invalidate_texture(render::render_image_texture_key{}) } -> std::same_as<void>;
@@ -625,6 +637,8 @@ static_assert(requires(
     { standard_pipeline.invalidate_source(render::render_image_cache_key{}) } -> std::same_as<void>;
     { standard_pipeline.invalidate_texture(render::render_image_texture_key{}) } -> std::same_as<void>;
     { standard_pipeline.diagnostic_snapshot() } -> std::same_as<render::fake_image_texture_pipeline_snapshot>;
+    { standard_pipeline.standard_diagnostic_snapshot() }
+        -> std::same_as<render::standard_image_texture_pipeline_snapshot>;
     { render::fake_image_texture_eviction_reason_name(eviction_reason) } -> std::same_as<std::string>;
     { render::fake_image_texture_placeholder_reason_name(placeholder_reason) } -> std::same_as<std::string>;
     { render::fake_image_texture_placeholder_source_fragment(render::render_image_cache_key{}) }

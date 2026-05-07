@@ -6,6 +6,9 @@
 
 최근 baseline 통합 증거:
 
+- current: standard image pipeline cache-reuse diagnostics와 resolved glyph-id atlas diagnostics를 통합하고 Windows MinGW focused text/image CTest 7/7 및 `ctest -N` 70개 확인.
+- `60c92fb`: text engine의 resolved glyph id를 shaping selection, glyph atlas key, raster payload, shaped-atlas update trace diagnostics로 일관되게 연결.
+- `7a4c528`: standard image texture pipeline에 normalized cache key 재사용, revision invalidation, decode/upload attempt diagnostics tests 추가.
 - current: standard decoder-backed image texture pipeline을 통합하고 Windows MinGW focused image CTest 2/2 및 `ctest -N` 70개 확인.
 - `aa4ce88`: image texture pipeline에 standard decoder chain 기반 encoded bytes decode-to-upload wrapper와 decode failure diagnostics tests 추가.
 - current: Vulkan queue submit adapter summary diagnostics를 통합하고 Windows MinGW focused Vulkan CTest 2/2 및 `ctest -N` 69개 확인.

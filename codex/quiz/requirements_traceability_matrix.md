@@ -6,6 +6,9 @@
 
 최근 baseline 통합 증거:
 
+- current: image texture batch execution diagnostics와 keyboard shortcut route diagnostics를 통합하고 Windows MinGW focused image/input CTest 13/13 확인.
+- `7f3710b`: input core에 semantic-free keyboard shortcut/chord route diagnostics를 추가해 modifier/repeat policy, Tab/Enter/Escape/arrow/backspace/delete intent를 app/domain action 없이 추적.
+- `85f4b86`: image engine에 image texture batch execution diagnostics를 추가해 batch plan을 pipeline interface로 실행하고 per-request status, cache reuse, placeholder fallback, aggregate success/failure counts를 추적.
 - current: font fallback chain planning diagnostics를 통합하고 Windows MinGW focused text CTest 1/1 확인.
 - `fb8e404`: text engine에 mixed-script font fallback chain planner를 추가해 per-run fallback face order, missing glyph summary, selected coverage/font metadata를 shaping 전 data-only로 추적.
 - current: image texture batch planning diagnostics를 통합하고 Windows MinGW focused image CTest 2/2 확인.

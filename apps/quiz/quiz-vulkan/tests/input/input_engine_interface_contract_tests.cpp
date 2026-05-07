@@ -290,6 +290,32 @@ static_assert(PlatformInputTranslationResultInterface<input::platform_input_tran
 static_assert(PlatformInputDispatchResultInterface<input::platform_input_dispatch_result>);
 static_assert(PlatformInputDispatchBatchResultInterface<input::platform_input_dispatch_batch_result>);
 static_assert(PlatformInputEngineAdapterFunctions<void>);
+static_assert(std::is_default_constructible_v<input::platform_input_translation_request>);
+static_assert(std::is_default_constructible_v<input::platform_input_translation_result>);
+static_assert(std::is_default_constructible_v<input::platform_input_dispatch_result>);
+static_assert(std::is_default_constructible_v<input::platform_input_dispatch_batch_result>);
+static_assert(!std::is_polymorphic_v<input::platform_input_translation_request>);
+static_assert(!std::is_polymorphic_v<input::platform_input_translation_result>);
+static_assert(!std::is_polymorphic_v<input::platform_input_dispatch_result>);
+static_assert(!std::is_polymorphic_v<input::platform_input_dispatch_batch_result>);
+static_assert(std::is_same_v<
+    decltype(input::platform_input_translation_result{}.event),
+    std::optional<raw_platform_input_event>>);
+static_assert(std::is_same_v<
+    decltype(input::platform_input_translation_result{}.diagnostic),
+    input::platform_input_translation_diagnostic>);
+static_assert(std::is_same_v<
+    decltype(input::platform_input_dispatch_result{}.translation),
+    input::platform_input_translation_result>);
+static_assert(std::is_same_v<
+    decltype(input::platform_input_dispatch_result{}.input_events),
+    std::vector<input::input_event>>);
+static_assert(std::is_same_v<
+    decltype(input::platform_input_dispatch_result{}.routing_diagnostics),
+    input::input_routing_diagnostics>);
+static_assert(std::is_same_v<
+    decltype(input::platform_input_dispatch_batch_result{}.items),
+    std::vector<input::platform_input_dispatch_result>>);
 static_assert(TextInputModelInterface<input::text_input_model>);
 
 constexpr input::text_range text_range_contract{

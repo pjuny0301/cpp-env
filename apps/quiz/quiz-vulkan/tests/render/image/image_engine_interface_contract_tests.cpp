@@ -60,6 +60,13 @@ concept ImageTexturePipelineInterface = requires(
 };
 
 template <typename T>
+concept ImageManifestSourceResolverInterface = requires(
+    const T& resolver,
+    const render::render_image_manifest_source_request& request) {
+    { resolver.resolve_manifest_source(request) } -> std::same_as<render::render_image_manifest_source_result>;
+};
+
+template <typename T>
 concept PngImageInflaterInterface = requires(
     const T& inflater,
     const render::png_image_inflate_request& request) {
@@ -85,6 +92,8 @@ static_assert(ImageTextureUploaderInterface<render::fake_image_texture_uploader>
 static_assert(ImageTexturePipelineInterface<render::image_texture_pipeline_interface>);
 static_assert(ImageTexturePipelineInterface<render::fake_image_texture_pipeline>);
 static_assert(ImageTexturePipelineInterface<render::standard_image_texture_pipeline>);
+static_assert(ImageManifestSourceResolverInterface<render::image_manifest_source_resolver_interface>);
+static_assert(ImageManifestSourceResolverInterface<render::fake_image_manifest_source_resolver>);
 static_assert(PngImageInflaterInterface<render::png_image_inflater_interface>);
 static_assert(PngImageInflaterInterface<render::fake_png_image_inflater>);
 static_assert(PngImageInflaterInterface<render::png_image_zlib_inflater>);
@@ -201,6 +210,16 @@ static_assert(requires(
     render::fake_image_texture_pipeline_snapshot pipeline_snapshot,
     render::standard_image_texture_pipeline_decode_snapshot standard_pipeline_decoder_snapshot,
     render::standard_image_texture_pipeline_snapshot standard_pipeline_snapshot,
+    render::render_image_manifest_source_request manifest_source_request,
+    render::render_image_manifest_source_status manifest_source_status,
+    render::render_image_manifest_source manifest_source,
+    render::render_image_manifest_source_result manifest_source_result,
+    render::fake_image_manifest_source_resolver fake_manifest_source_resolver,
+    const render::image_manifest_source_resolver_interface& manifest_source_resolver,
+    render::render_image_manifest_texture_request manifest_texture_request,
+    render::render_image_manifest_texture_status manifest_texture_status,
+    render::render_image_manifest_texture_result manifest_texture_result,
+    render::image_manifest_texture_pipeline_adapter& manifest_texture_adapter,
     const render::fake_image_texture_pipeline& pipeline,
     render::fake_image_texture_pipeline& mutable_pipeline,
     render::standard_image_texture_pipeline& standard_pipeline,
@@ -625,6 +644,54 @@ static_assert(requires(
     { standard_pipeline_snapshot.pipeline } -> std::same_as<render::fake_image_texture_pipeline_snapshot&>;
     { standard_pipeline_snapshot.decoder }
         -> std::same_as<render::standard_image_texture_pipeline_decode_snapshot&>;
+    { manifest_source_request.source_id } -> std::same_as<std::string&>;
+    { render::render_image_manifest_source_status_name(manifest_source_status) } -> std::same_as<std::string>;
+    { manifest_source.source_id } -> std::same_as<std::string&>;
+    { manifest_source.uri } -> std::same_as<std::string&>;
+    { manifest_source.revision } -> std::same_as<render::render_image_revision&>;
+    { manifest_source_result.status } -> std::same_as<render::render_image_manifest_source_status&>;
+    { manifest_source_result.source } -> std::same_as<render::render_image_manifest_source&>;
+    { manifest_source_result.diagnostic } -> std::same_as<std::string&>;
+    { manifest_source_result.ok() } -> std::same_as<bool>;
+    { manifest_source_resolver.resolve_manifest_source(manifest_source_request) }
+        -> std::same_as<render::render_image_manifest_source_result>;
+    { fake_manifest_source_resolver.set_source(manifest_source) } -> std::same_as<void>;
+    { fake_manifest_source_resolver.set_source(std::string{}, std::string{}, render::render_image_revision{}) }
+        -> std::same_as<void>;
+    { fake_manifest_source_resolver.clear_source(std::string{}) } -> std::same_as<void>;
+    { fake_manifest_source_resolver.has_source("card") } -> std::same_as<bool>;
+    { fake_manifest_source_resolver.requests }
+        -> std::same_as<std::vector<render::render_image_manifest_source_request>&>;
+    { manifest_texture_request.source_id } -> std::same_as<std::string&>;
+    { manifest_texture_request.sampler } -> std::same_as<render::render_image_sampler_policy&>;
+    { render::render_image_manifest_texture_status_name(manifest_texture_status) }
+        -> std::same_as<std::string>;
+    { manifest_texture_result.status } -> std::same_as<render::render_image_manifest_texture_status&>;
+    { manifest_texture_result.source_id } -> std::same_as<std::string&>;
+    { manifest_texture_result.uri } -> std::same_as<std::string&>;
+    { manifest_texture_result.revision } -> std::same_as<render::render_image_revision&>;
+    { manifest_texture_result.revision_changed } -> std::same_as<bool&>;
+    { manifest_texture_result.normalized_uri } -> std::same_as<std::string&>;
+    { manifest_texture_result.normalized_source_key } -> std::same_as<render::render_image_cache_key&>;
+    { manifest_texture_result.source_kind } -> std::same_as<render::render_image_source_kind&>;
+    { manifest_texture_result.sampler } -> std::same_as<render::render_image_sampler_policy&>;
+    { manifest_texture_result.texture_key } -> std::same_as<render::render_image_texture_key&>;
+    { manifest_texture_result.texture } -> std::same_as<render::render_image_texture_handle&>;
+    { manifest_texture_result.cache_hit } -> std::same_as<bool&>;
+    { manifest_texture_result.placeholder_texture } -> std::same_as<bool&>;
+    { manifest_texture_result.diagnostic } -> std::same_as<std::string&>;
+    { manifest_texture_result.ok() } -> std::same_as<bool>;
+    { render::render_image_path_contains_parent_segment("../secret.png") } -> std::same_as<bool>;
+    { render::render_image_file_uri_path_for_manifest_validation("file:///tmp/card.png") }
+        -> std::same_as<std::string>;
+    { render::render_image_manifest_source_rejects_path_traversal(source) } -> std::same_as<bool>;
+    { render::manifest_texture_status_for_pipeline_status(pipeline_status) }
+        -> std::same_as<render::render_image_manifest_texture_status>;
+    { manifest_texture_adapter.acquire_texture(manifest_texture_request) }
+        -> std::same_as<render::render_image_manifest_texture_result>;
+    { manifest_texture_adapter.set_missing_source_placeholder_policy(placeholder_policy) } -> std::same_as<void>;
+    { manifest_texture_adapter.missing_source_placeholder_policy() }
+        -> std::same_as<const render::fake_image_texture_placeholder_policy&>;
     { pipeline.diagnostic_snapshot() } -> std::same_as<render::fake_image_texture_pipeline_snapshot>;
     { mutable_pipeline.invalidate_source(render::render_image_cache_key{}) } -> std::same_as<void>;
     { mutable_pipeline.invalidate_texture(render::render_image_texture_key{}) } -> std::same_as<void>;

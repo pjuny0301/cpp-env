@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: platform input boundary contract tests를 통합하고 Windows MinGW focused input CTest 10/10 및 `ctest -N` 78개 확인.
+- `e5042ec`: input translator/adapter path가 renderer picking, app actions, domain semantics를 노출하지 않는 boundary contract tests 추가.
 - current: real font backend adapter와 Vulkan graphics pipeline readiness headers를 CMake public FILE_SET에 등록하고 Windows MinGW focused text/Vulkan CTest 5/5 및 `ctest -N` 77개 확인.
 - `3b32db2`: Vulkan graphics pipeline readiness boundary, shader/layout prerequisite validation, vertex/raster/blend/depth state diagnostics tests 추가.
 - `0287ddb`: text engine에 HarfBuzz/FreeType/DirectWrite-style backend adapter boundary와 fake adapter diagnostics tests 추가.

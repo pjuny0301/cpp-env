@@ -1,5 +1,5 @@
 #include "render/image/image_source_bytes_loader.h"
-#include "render/image/image_texture_pipeline.h"
+#include "render/image/image_manifest_texture_pipeline.h"
 
 #include <cassert>
 #include <cstddef>

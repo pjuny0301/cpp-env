@@ -34,6 +34,10 @@ static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_manif
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_manifest_texture_pipeline_snapshot>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_manifest_texture_entry_snapshot>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_manifest_texture_pipeline_snapshot>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_batch_plan_entry>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_batch_plan>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_batch_plan_entry>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_batch_plan>);
 
 void require(bool condition, const char* message)
 {
@@ -556,6 +560,148 @@ void test_pipeline_decoder_manifest_reports_placeholder_outcome()
     require(snapshot.entries[0].cache_reused == false, "first placeholder entry is not cache reuse");
 }
 
+void test_batch_plan_normalizes_and_deduplicates_texture_requests()
+{
+    using namespace quiz_vulkan::render;
+
+    render_image_sampler_policy nearest_sampler;
+    nearest_sampler.min_filter = render_image_filter::nearest;
+    nearest_sampler.mag_filter = render_image_filter::nearest;
+    nearest_sampler.wrap_u = render_image_wrap_mode::repeat;
+
+    const render_image_texture_batch_plan plan = plan_render_image_texture_batch(std::vector<render_image_ref>{
+        render_image_ref{.uri = "  ASSET:///./textures\\card.ppm  "},
+        render_image_ref{.uri = "asset://textures/card.ppm"},
+        render_image_ref{.uri = "asset://textures/card.ppm", .sampler = nearest_sampler},
+    });
+
+    require(plan.ok(), "batch plan accepts normalized image refs");
+    require(plan.request_count == 3, "batch plan records request count");
+    require(plan.planned_request_count == 3, "batch plan records planned request count");
+    require(plan.invalid_request_count == 0, "batch plan records no invalid requests");
+    require(plan.unique_source_key_count == 1, "batch plan deduplicates normalized source keys");
+    require(plan.unique_texture_key_count == 2, "batch plan keeps sampler policy in texture key identity");
+    require(plan.cache_reuse_expected_count == 1, "batch plan predicts one cache reuse");
+    require(plan.planned_requests.size() == 3, "batch plan exposes planned texture pipeline requests");
+    require(
+        plan.planned_requests[0].uri == "asset://textures/card.ppm",
+        "batch plan normalizes planned texture pipeline uri");
+    require(
+        plan.unique_source_keys[0] == "asset://textures/card.ppm",
+        "batch plan records normalized source cache key");
+    require(
+        plan.entries[0].status == render_image_texture_batch_plan_entry_status::planned,
+        "first batch entry is planned");
+    require(plan.entries[0].ok(), "first batch entry reports ok");
+    require(
+        plan.entries[0].normalized_source_key == "asset://textures/card.ppm",
+        "first batch entry has normalized source key");
+    require(
+        plan.entries[0].stable_texture_cache_key == plan.entries[1].stable_texture_cache_key,
+        "matching sampler shares texture key");
+    require(!plan.entries[0].duplicate_source_key, "first batch entry owns first source key");
+    require(!plan.entries[0].duplicate_texture_key, "first batch entry owns first texture key");
+    require(plan.entries[1].duplicate_source_key, "second batch entry sees duplicate source key");
+    require(plan.entries[1].duplicate_texture_key, "second batch entry sees duplicate texture key");
+    require(plan.entries[1].expects_cache_reuse, "second batch entry expects cache reuse");
+    require(plan.entries[1].first_source_key_request_index == 0, "second batch entry points to first source user");
+    require(plan.entries[1].first_texture_key_request_index == 0, "second batch entry points to first texture user");
+    require(plan.entries[2].duplicate_source_key, "third batch entry sees duplicate source key");
+    require(!plan.entries[2].duplicate_texture_key, "third batch entry keeps distinct sampler cache key");
+    require(!plan.entries[2].expects_cache_reuse, "third batch entry does not reuse texture due sampler separation");
+    require(
+        plan.entries[2].sampler_policy.uses_nearest_filtering,
+        "third batch entry records nearest sampler diagnostics");
+    require(
+        plan.entries[2].stable_texture_cache_key != plan.entries[0].stable_texture_cache_key,
+        "sampler policy changes stable texture cache key");
+}
+
+void test_batch_plan_reports_invalid_request_reasons()
+{
+    using namespace quiz_vulkan::render;
+
+    render_image_sampler_policy invalid_sampler;
+    invalid_sampler.min_filter = static_cast<render_image_filter>(255);
+
+    const render_image_texture_batch_plan plan = plan_render_image_texture_batch(std::vector<render_image_ref>{
+        render_image_ref{.uri = "   "},
+        render_image_ref{.uri = "ftp://example.test/card.ppm"},
+        render_image_ref{.uri = "textures/../secret.ppm"},
+        render_image_ref{.uri = "asset://textures/card.ppm", .sampler = invalid_sampler},
+    });
+
+    require(!plan.ok(), "batch plan reports invalid image refs");
+    require(plan.request_count == 4, "invalid batch plan records request count");
+    require(plan.planned_request_count == 0, "invalid batch plan has no planned texture requests");
+    require(plan.invalid_request_count == 4, "invalid batch plan records invalid count");
+    require(plan.unique_source_key_count == 0, "invalid batch plan does not count invalid source keys");
+    require(plan.unique_texture_key_count == 0, "invalid batch plan does not count invalid texture keys");
+    require(
+        plan.diagnostic == "image texture batch plan contains invalid requests",
+        "invalid batch plan records deterministic diagnostic");
+    require(
+        plan.entries[0].status == render_image_texture_batch_plan_entry_status::resolve_failed,
+        "empty uri is a resolve failure");
+    require(plan.entries[0].invalid_reason.find("empty") != std::string::npos, "empty uri invalid reason is visible");
+    require(
+        plan.entries[1].resolve_status == render_image_resolve_status::unsupported_scheme,
+        "unsupported scheme records resolver status");
+    require(
+        plan.entries[1].invalid_reason.find("scheme") != std::string::npos,
+        "unsupported scheme invalid reason is visible");
+    require(
+        plan.entries[2].status == render_image_texture_batch_plan_entry_status::path_traversal_rejected,
+        "parent path segments are rejected by batch planning");
+    require(
+        plan.entries[2].invalid_reason.find("traversal") != std::string::npos,
+        "path traversal invalid reason is visible");
+    require(
+        plan.entries[3].status == render_image_texture_batch_plan_entry_status::invalid_sampler,
+        "invalid sampler enum is reported separately");
+    require(
+        plan.entries[3].invalid_reason.find("sampler") != std::string::npos,
+        "invalid sampler reason is visible");
+    require(
+        render_image_texture_batch_plan_entry_status_name(plan.entries[3].status) == "invalid_sampler",
+        "batch plan entry status name is stable");
+}
+
+void test_batch_plan_reports_placeholder_fallback_policy_without_cache_internals()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_image_texture_placeholder_policy placeholder_policy{
+        .enabled = true,
+        .width = 4,
+        .height = 4,
+    };
+    const render_image_texture_batch_plan plan = plan_render_image_texture_batch(
+        std::vector<render_image_ref>{render_image_ref{.uri = "asset://textures/card.ppm"}},
+        render_image_texture_batch_plan_options{.placeholder_policy = placeholder_policy});
+
+    require(plan.ok(), "placeholder-aware batch plan is valid for a valid image ref");
+    require(plan.placeholder_policy_enabled, "batch plan records placeholder policy availability");
+    require(plan.placeholder_policy.width == 4, "batch plan records placeholder policy width");
+    require(plan.entries.size() == 1, "placeholder-aware batch plan records one entry");
+    require(plan.entries[0].placeholder_policy_enabled, "batch plan entry records placeholder availability");
+    require(
+        plan.entries[0].fallback_placeholder_reason == fake_image_texture_placeholder_reason::decode_failed,
+        "batch plan entry records decode fallback placeholder reason");
+    require(
+        plan.entries[0].fallback_placeholder_available,
+        "batch plan entry reports fallback placeholder key availability");
+    require(
+        is_fake_image_texture_placeholder_key(plan.entries[0].fallback_placeholder_key),
+        "batch plan entry exposes placeholder key without cache internals");
+    require(
+        plan.entries[0].fallback_placeholder_key.sampler == plan.entries[0].texture_key.sampler,
+        "batch plan placeholder preserves sampler policy");
+    require(
+        plan.entries[0].fallback_placeholder_key.source_key.find("decode_failed") != std::string::npos,
+        "batch plan placeholder key records fallback reason");
+}
+
 } // namespace
 
 int main()
@@ -568,5 +714,8 @@ int main()
     test_optional_adapter_failure_falls_back_before_texture_upload();
     test_unavailable_optional_adapter_keeps_diagnostics_without_upload();
     test_pipeline_decoder_manifest_reports_placeholder_outcome();
+    test_batch_plan_normalizes_and_deduplicates_texture_requests();
+    test_batch_plan_reports_invalid_request_reasons();
+    test_batch_plan_reports_placeholder_fallback_policy_without_cache_internals();
     return 0;
 }

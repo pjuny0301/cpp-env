@@ -124,6 +124,39 @@ std::string_view frame_lifecycle_failure_classification_name(
     return "unknown";
 }
 
+std::string_view command_packet_category_name(vulkan_command_packet_category category)
+{
+    switch (category) {
+    case vulkan_command_packet_category::rect:
+        return "rect";
+    case vulkan_command_packet_category::text:
+        return "text";
+    case vulkan_command_packet_category::image:
+        return "image";
+    case vulkan_command_packet_category::debug_bounds:
+        return "debug_bounds";
+    }
+
+    return "unknown";
+}
+
+std::string_view command_packet_bridge_status_name(
+    vulkan_command_packet_bridge_status status)
+{
+    switch (status) {
+    case vulkan_command_packet_bridge_status::not_checked:
+        return "not_checked";
+    case vulkan_command_packet_bridge_status::ready:
+        return "ready";
+    case vulkan_command_packet_bridge_status::pipeline_unavailable:
+        return "pipeline_unavailable";
+    case vulkan_command_packet_bridge_status::resource_binding_unavailable:
+        return "resource_binding_unavailable";
+    }
+
+    return "unknown";
+}
+
 std::string_view frame_pipeline_handoff_status_name(
     vulkan_backend_frame_pipeline_handoff_status status)
 {

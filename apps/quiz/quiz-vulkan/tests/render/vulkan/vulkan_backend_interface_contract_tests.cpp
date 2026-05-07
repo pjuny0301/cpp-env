@@ -11,6 +11,7 @@
 #include "render/vulkan/vulkan_backend_shader_module.h"
 #include "render/vulkan/vulkan_backend_swapchain.h"
 
+#include <array>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -3220,6 +3221,80 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_queue_submit_adapt
 });
 
 static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_command_packet_category::rect),
+    render::vulkan_backend::vulkan_command_packet_category>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_command_packet_category::text),
+    render::vulkan_backend::vulkan_command_packet_category>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_command_packet_category::image),
+    render::vulkan_backend::vulkan_command_packet_category>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_command_packet_category::debug_bounds),
+    render::vulkan_backend::vulkan_command_packet_category>);
+static_assert(requires(render::vulkan_backend::vulkan_command_packet_category category) {
+    { render::vulkan_backend::command_packet_category_name(category) } -> std::same_as<std::string_view>;
+});
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_command_packet_bridge_status::not_checked),
+    render::vulkan_backend::vulkan_command_packet_bridge_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_command_packet_bridge_status::ready),
+    render::vulkan_backend::vulkan_command_packet_bridge_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_command_packet_bridge_status::pipeline_unavailable),
+    render::vulkan_backend::vulkan_command_packet_bridge_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_command_packet_bridge_status::resource_binding_unavailable),
+    render::vulkan_backend::vulkan_command_packet_bridge_status>);
+static_assert(requires(render::vulkan_backend::vulkan_command_packet_bridge_status status) {
+    { render::vulkan_backend::command_packet_bridge_status_name(status) } -> std::same_as<std::string_view>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_command_packet packet) {
+    { packet.category } -> std::same_as<render::vulkan_backend::vulkan_command_packet_category&>;
+    { packet.batch_kind } -> std::same_as<render::vulkan_backend::vulkan_batch_kind&>;
+    { packet.command_index } -> std::same_as<std::size_t&>;
+    { packet.packet_index } -> std::same_as<std::size_t&>;
+    { packet.node_id } -> std::same_as<render::render_node_id&>;
+    { packet.bounds } -> std::same_as<render::render_rect&>;
+    { packet.clipped_bounds } -> std::same_as<render::render_rect&>;
+    { packet.scissor } -> std::same_as<render::vulkan_backend::vulkan_scissor_rect&>;
+    { packet.vertices } -> std::same_as<std::array<render::vulkan_backend::vulkan_quad_vertex, 4>&>;
+    { packet.descriptor_set_count } -> std::same_as<std::size_t&>;
+    { packet.binding_count } -> std::same_as<std::size_t&>;
+    { packet.bindings } -> std::same_as<std::vector<render::vulkan_backend::vulkan_resource_binding_snapshot>&>;
+    { packet.completed() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_command_packet_bridge_result bridge) {
+    { bridge.checked } -> std::same_as<bool&>;
+    { bridge.status } -> std::same_as<render::vulkan_backend::vulkan_command_packet_bridge_status&>;
+    { bridge.fallback_reason } -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
+    { bridge.pipeline_checked } -> std::same_as<bool&>;
+    { bridge.pipeline_ready } -> std::same_as<bool&>;
+    { bridge.resource_bindings_checked } -> std::same_as<bool&>;
+    { bridge.resource_bindings_ready } -> std::same_as<bool&>;
+    { bridge.resource_registry_checked } -> std::same_as<bool&>;
+    { bridge.resource_registry_ready } -> std::same_as<bool&>;
+    { bridge.blocked_batch_kind } -> std::same_as<render::vulkan_backend::vulkan_batch_kind&>;
+    { bridge.blocked_command_index } -> std::same_as<std::size_t&>;
+    { bridge.blocked_resource_id } -> std::same_as<std::string&>;
+    { bridge.planned_batch_count } -> std::same_as<std::size_t&>;
+    { bridge.packet_count } -> std::same_as<std::size_t&>;
+    { bridge.rect_packet_count } -> std::same_as<std::size_t&>;
+    { bridge.text_packet_count } -> std::same_as<std::size_t&>;
+    { bridge.image_packet_count } -> std::same_as<std::size_t&>;
+    { bridge.debug_bounds_packet_count } -> std::same_as<std::size_t&>;
+    { bridge.clipped_packet_count } -> std::same_as<std::size_t&>;
+    { bridge.discarded_draw_call_count } -> std::same_as<std::size_t&>;
+    { bridge.packets } -> std::same_as<std::vector<render::vulkan_backend::vulkan_command_packet>&>;
+    { bridge.completed() } -> std::same_as<bool>;
+    { bridge.blocked() } -> std::same_as<bool>;
+});
+
+static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status::not_checked),
     render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status>);
 static_assert(std::same_as<
@@ -3291,6 +3366,8 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_frame_pipeline_han
     { handoff.resource_bindings_completed } -> std::same_as<bool&>;
     { handoff.resource_registry_checked } -> std::same_as<bool&>;
     { handoff.resource_registry_completed } -> std::same_as<bool&>;
+    { handoff.command_packets_checked } -> std::same_as<bool&>;
+    { handoff.command_packets_completed } -> std::same_as<bool&>;
     { handoff.command_recorder_lifecycle_ready } -> std::same_as<bool&>;
     { handoff.command_recorder_gate_checked } -> std::same_as<bool&>;
     { handoff.command_recorder_gate_allowed } -> std::same_as<bool&>;
@@ -3330,6 +3407,7 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_frame_result resul
     { result.resource_bindings } -> std::same_as<render::vulkan_backend::vulkan_backend_resource_binding_state&>;
     { result.resource_registry } -> std::same_as<render::vulkan_backend::vulkan_backend_resource_registry_state&>;
     { result.pipeline } -> std::same_as<render::vulkan_backend::vulkan_backend_pipeline_state&>;
+    { result.command_packets } -> std::same_as<render::vulkan_backend::vulkan_command_packet_bridge_result&>;
     { result.command_recorder } -> std::same_as<render::vulkan_backend::vulkan_backend_command_recorder_state&>;
     { result.command_submit }
         -> std::same_as<render::vulkan_backend::vulkan_command_submit_readiness_result&>;
@@ -3379,6 +3457,12 @@ static_assert(requires(
         render::vulkan_backend::vulkan_frame_plan{},
         render::vulkan_backend::vulkan_backend_resource_binding_state{}) }
         -> std::same_as<render::vulkan_backend::vulkan_backend_resource_registry_state>;
+    { render::vulkan_backend::build_vulkan_command_packet_bridge(
+        render::vulkan_backend::vulkan_frame_plan{},
+        render::vulkan_backend::vulkan_backend_pipeline_state{},
+        render::vulkan_backend::vulkan_backend_resource_binding_state{},
+        render::vulkan_backend::vulkan_backend_resource_registry_state{}) }
+        -> std::same_as<render::vulkan_backend::vulkan_command_packet_bridge_result>;
 });
 
 static_assert(requires(

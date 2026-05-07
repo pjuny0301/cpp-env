@@ -366,6 +366,85 @@ void count_handoff_batches_from_frame(
     }
 }
 
+vulkan_command_packet_category command_packet_category_for(vulkan_batch_kind kind)
+{
+    switch (kind) {
+    case vulkan_batch_kind::quad:
+        return vulkan_command_packet_category::rect;
+    case vulkan_batch_kind::text:
+        return vulkan_command_packet_category::text;
+    case vulkan_batch_kind::image:
+        return vulkan_command_packet_category::image;
+    case vulkan_batch_kind::debug_bounds:
+        return vulkan_command_packet_category::debug_bounds;
+    }
+
+    return vulkan_command_packet_category::rect;
+}
+
+void count_command_packet_category(
+    vulkan_command_packet_bridge_result& bridge,
+    vulkan_command_packet_category category)
+{
+    switch (category) {
+    case vulkan_command_packet_category::rect:
+        ++bridge.rect_packet_count;
+        break;
+    case vulkan_command_packet_category::text:
+        ++bridge.text_packet_count;
+        break;
+    case vulkan_command_packet_category::image:
+        ++bridge.image_packet_count;
+        break;
+    case vulkan_command_packet_category::debug_bounds:
+        ++bridge.debug_bounds_packet_count;
+        break;
+    }
+}
+
+const vulkan_batch_resource_binding_snapshot* find_binding_snapshot_for_batch(
+    const vulkan_backend_resource_binding_state& resource_bindings,
+    const vulkan_draw_batch& batch,
+    std::size_t batch_index)
+{
+    if (batch_index < resource_bindings.batch_snapshots.size()) {
+        const vulkan_batch_resource_binding_snapshot& snapshot =
+            resource_bindings.batch_snapshots[batch_index];
+        if (snapshot.command_index == batch.command_index && snapshot.batch_kind == batch.kind) {
+            return &snapshot;
+        }
+    }
+
+    for (const vulkan_batch_resource_binding_snapshot& snapshot :
+         resource_bindings.batch_snapshots) {
+        if (snapshot.command_index == batch.command_index && snapshot.batch_kind == batch.kind) {
+            return &snapshot;
+        }
+    }
+    return nullptr;
+}
+
+vulkan_command_packet make_command_packet(
+    const vulkan_draw_batch& batch,
+    const vulkan_batch_resource_binding_snapshot& bindings,
+    std::size_t packet_index)
+{
+    return vulkan_command_packet{
+        .category = command_packet_category_for(batch.kind),
+        .batch_kind = batch.kind,
+        .command_index = batch.command_index,
+        .packet_index = packet_index,
+        .node_id = batch.node_id,
+        .bounds = batch.bounds,
+        .clipped_bounds = batch.clipped_bounds,
+        .scissor = batch.scissor,
+        .vertices = batch.vertices,
+        .descriptor_set_count = bindings.descriptor_set_count,
+        .binding_count = bindings.binding_count,
+        .bindings = bindings.bindings,
+    };
+}
+
 vulkan_recorded_draw_batch make_recorded_draw_batch(
     const vulkan_draw_batch& batch,
     std::size_t recording_index)
@@ -1181,6 +1260,106 @@ vulkan_backend_queue_submit_adapter_summary summarize_vulkan_queue_submit_adapte
     };
 }
 
+vulkan_command_packet_bridge_result build_vulkan_command_packet_bridge(
+    const vulkan_frame_plan& plan,
+    const vulkan_backend_pipeline_state& pipeline,
+    const vulkan_backend_resource_binding_state& resource_bindings,
+    const vulkan_backend_resource_registry_state& resource_registry)
+{
+    const bool pipeline_required = !plan.batches.empty();
+    const bool pipeline_checked = !pipeline_required
+        || pipeline.cache_checked
+        || pipeline.requested_pipeline_count > 0
+        || pipeline.lifecycle.checked
+        || pipeline.pipeline_readiness_summary.checked;
+    const bool pipeline_ready = !pipeline_required || pipeline.completed();
+
+    vulkan_command_packet_bridge_result bridge{
+        .checked = true,
+        .status = vulkan_command_packet_bridge_status::not_checked,
+        .fallback_reason = vulkan_backend_fallback_reason::not_requested,
+        .pipeline_checked = pipeline_checked,
+        .pipeline_ready = pipeline_ready,
+        .resource_bindings_checked = resource_bindings.checked,
+        .resource_bindings_ready = resource_bindings.completed(),
+        .resource_registry_checked = resource_registry.checked,
+        .resource_registry_ready = resource_registry.completed(),
+        .blocked_batch_kind = pipeline.missing_batch_kind,
+        .blocked_command_index = pipeline.missing_command_index,
+        .blocked_resource_id = {},
+        .planned_batch_count = plan.batches.size(),
+        .packet_count = 0,
+        .rect_packet_count = 0,
+        .text_packet_count = 0,
+        .image_packet_count = 0,
+        .debug_bounds_packet_count = 0,
+        .clipped_packet_count = 0,
+        .discarded_draw_call_count = plan.discarded_draw_call_count,
+        .packets = {},
+    };
+
+    if (!pipeline_ready) {
+        bridge.status = vulkan_command_packet_bridge_status::pipeline_unavailable;
+        bridge.fallback_reason = vulkan_backend_fallback_reason::pipeline_unavailable;
+        return bridge;
+    }
+
+    if (!resource_bindings.completed() || !resource_registry.completed()) {
+        bridge.status = vulkan_command_packet_bridge_status::resource_binding_unavailable;
+        bridge.fallback_reason = vulkan_backend_fallback_reason::resource_binding_unavailable;
+        if (resource_bindings.checked && !resource_bindings.completed()) {
+            bridge.blocked_batch_kind = resource_bindings.missing_batch_kind;
+            bridge.blocked_command_index = resource_bindings.missing_command_index;
+            bridge.blocked_resource_id = resource_bindings.missing_resource_id;
+        } else if (!resource_registry.missing_resources.empty()) {
+            const vulkan_resource_registry_missing_resource& missing =
+                resource_registry.missing_resources.front();
+            bridge.blocked_batch_kind = missing.batch_kind;
+            bridge.blocked_command_index = missing.command_index;
+            bridge.blocked_resource_id = missing.resource_id;
+        }
+        return bridge;
+    }
+
+    bridge.status = vulkan_command_packet_bridge_status::ready;
+    bridge.fallback_reason = vulkan_backend_fallback_reason::none;
+    bridge.packets.reserve(plan.batches.size());
+
+    for (std::size_t batch_index = 0; batch_index < plan.batches.size(); ++batch_index) {
+        const vulkan_draw_batch& batch = plan.batches[batch_index];
+        const vulkan_batch_resource_binding_snapshot* bindings =
+            find_binding_snapshot_for_batch(resource_bindings, batch, batch_index);
+        if (bindings == nullptr || !bindings->completed()) {
+            bridge.status = vulkan_command_packet_bridge_status::resource_binding_unavailable;
+            bridge.fallback_reason = vulkan_backend_fallback_reason::resource_binding_unavailable;
+            bridge.blocked_batch_kind = batch.kind;
+            bridge.blocked_command_index = batch.command_index;
+            bridge.blocked_resource_id = bindings == nullptr ? std::string{} : bindings->missing_resource_id;
+            bridge.packets.clear();
+            bridge.packet_count = 0;
+            bridge.rect_packet_count = 0;
+            bridge.text_packet_count = 0;
+            bridge.image_packet_count = 0;
+            bridge.debug_bounds_packet_count = 0;
+            bridge.clipped_packet_count = 0;
+            return bridge;
+        }
+
+        vulkan_command_packet packet = make_command_packet(batch, *bindings, bridge.packets.size());
+        count_command_packet_category(bridge, packet.category);
+        if (packet.clipped_bounds.x != packet.bounds.x
+            || packet.clipped_bounds.y != packet.bounds.y
+            || packet.clipped_bounds.width != packet.bounds.width
+            || packet.clipped_bounds.height != packet.bounds.height) {
+            ++bridge.clipped_packet_count;
+        }
+        bridge.packets.push_back(std::move(packet));
+    }
+
+    bridge.packet_count = bridge.packets.size();
+    return bridge;
+}
+
 vulkan_backend_frame_pipeline_handoff summarize_vulkan_frame_pipeline_handoff(
     const vulkan_backend_frame_result& frame)
 {
@@ -1201,12 +1380,14 @@ vulkan_backend_frame_pipeline_handoff summarize_vulkan_frame_pipeline_handoff(
         frame.present_policy.present.completed() || frame.frame_presented;
     const bool resource_bindings_completed = frame.resource_bindings.completed();
     const bool resource_registry_completed = frame.resource_registry.completed();
+    const bool command_packets_completed = frame.command_packets.completed();
     const bool command_recorder_gate_allowed = frame.command_recorder.gate.completed();
     const bool command_recording_ready =
         frame.lifecycle.effective_command_recorder_ready()
         && pipeline_completed
         && resource_bindings_completed
         && resource_registry_completed
+        && command_packets_completed
         && command_recorder_gate_allowed
         && frame.command_recorder.completed()
         && frame.commands_recorded
@@ -1250,6 +1431,8 @@ vulkan_backend_frame_pipeline_handoff summarize_vulkan_frame_pipeline_handoff(
         .resource_bindings_completed = resource_bindings_completed,
         .resource_registry_checked = frame.resource_registry.checked,
         .resource_registry_completed = resource_registry_completed,
+        .command_packets_checked = frame.command_packets.checked,
+        .command_packets_completed = command_packets_completed,
         .command_recorder_lifecycle_ready = frame.lifecycle.effective_command_recorder_ready(),
         .command_recorder_gate_checked = frame.command_recorder.gate.checked,
         .command_recorder_gate_allowed = command_recorder_gate_allowed,
@@ -1603,6 +1786,11 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     result.frame_resources = make_frame_resource_lifetime_state(plan);
 
     if (!ensure_frame_plan_pipelines(pipeline_cache, plan, result)) {
+        result.command_packets = build_vulkan_command_packet_bridge(
+            plan,
+            result.pipeline,
+            result.resource_bindings,
+            result.resource_registry);
         release_frame_resources(
             result.frame_resources,
             vulkan_frame_resource_release_stage::fallback_cleanup);
@@ -1614,10 +1802,15 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
         draw_list,
         plan,
         result.resource_bindings);
+    result.command_packets = build_vulkan_command_packet_bridge(
+        plan,
+        result.pipeline,
+        result.resource_bindings,
+        result.resource_registry);
     result.command_recorder.gate = make_command_recorder_gate_state(
         result.resource_bindings,
         result.resource_registry);
-    if (result.command_recorder.gate.blocked()) {
+    if (result.command_packets.blocked() || result.command_recorder.gate.blocked()) {
         release_frame_resources(
             result.frame_resources,
             vulkan_frame_resource_release_stage::fallback_cleanup);

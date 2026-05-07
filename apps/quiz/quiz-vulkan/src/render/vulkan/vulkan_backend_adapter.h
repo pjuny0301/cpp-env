@@ -14,6 +14,7 @@
 #include "render/vulkan/vulkan_backend_swapchain.h"
 #include "render/vulkan/vulkan_frame_plan.h"
 
+#include <array>
 #include <cstddef>
 #include <string>
 #include <string_view>
@@ -1249,6 +1250,85 @@ struct vulkan_backend_queue_submit_adapter_summary {
     }
 };
 
+enum class vulkan_command_packet_category {
+    rect,
+    text,
+    image,
+    debug_bounds,
+};
+
+std::string_view command_packet_category_name(vulkan_command_packet_category category);
+
+enum class vulkan_command_packet_bridge_status {
+    not_checked,
+    ready,
+    pipeline_unavailable,
+    resource_binding_unavailable,
+};
+
+std::string_view command_packet_bridge_status_name(
+    vulkan_command_packet_bridge_status status);
+
+struct vulkan_command_packet {
+    vulkan_command_packet_category category = vulkan_command_packet_category::rect;
+    vulkan_batch_kind batch_kind = vulkan_batch_kind::quad;
+    std::size_t command_index = 0;
+    std::size_t packet_index = 0;
+    render_node_id node_id;
+    render_rect bounds;
+    render_rect clipped_bounds;
+    vulkan_scissor_rect scissor;
+    std::array<vulkan_quad_vertex, 4> vertices{};
+    std::size_t descriptor_set_count = 0;
+    std::size_t binding_count = 0;
+    std::vector<vulkan_resource_binding_snapshot> bindings;
+
+    bool completed() const
+    {
+        return binding_count == bindings.size() && !scissor.empty();
+    }
+};
+
+struct vulkan_command_packet_bridge_result {
+    bool checked = false;
+    vulkan_command_packet_bridge_status status =
+        vulkan_command_packet_bridge_status::not_checked;
+    vulkan_backend_fallback_reason fallback_reason = vulkan_backend_fallback_reason::not_requested;
+    bool pipeline_checked = false;
+    bool pipeline_ready = false;
+    bool resource_bindings_checked = false;
+    bool resource_bindings_ready = false;
+    bool resource_registry_checked = false;
+    bool resource_registry_ready = false;
+    vulkan_batch_kind blocked_batch_kind = vulkan_batch_kind::quad;
+    std::size_t blocked_command_index = 0;
+    std::string blocked_resource_id;
+    std::size_t planned_batch_count = 0;
+    std::size_t packet_count = 0;
+    std::size_t rect_packet_count = 0;
+    std::size_t text_packet_count = 0;
+    std::size_t image_packet_count = 0;
+    std::size_t debug_bounds_packet_count = 0;
+    std::size_t clipped_packet_count = 0;
+    std::size_t discarded_draw_call_count = 0;
+    std::vector<vulkan_command_packet> packets;
+
+    bool completed() const
+    {
+        return checked && status == vulkan_command_packet_bridge_status::ready
+            && fallback_reason == vulkan_backend_fallback_reason::none
+            && pipeline_checked && pipeline_ready
+            && resource_bindings_checked && resource_bindings_ready
+            && resource_registry_checked && resource_registry_ready
+            && packet_count == planned_batch_count && packet_count == packets.size();
+    }
+
+    bool blocked() const
+    {
+        return checked && status != vulkan_command_packet_bridge_status::ready;
+    }
+};
+
 enum class vulkan_backend_frame_pipeline_handoff_status {
     not_checked,
     ready,
@@ -1296,6 +1376,8 @@ struct vulkan_backend_frame_pipeline_handoff {
     bool resource_bindings_completed = false;
     bool resource_registry_checked = false;
     bool resource_registry_completed = false;
+    bool command_packets_checked = false;
+    bool command_packets_completed = false;
     bool command_recorder_lifecycle_ready = false;
     bool command_recorder_gate_checked = false;
     bool command_recorder_gate_allowed = false;
@@ -1324,8 +1406,9 @@ struct vulkan_backend_frame_pipeline_handoff {
             && loader_ready && instance_ready && device_ready && swapchain_ready
             && render_pass_ready && surface_ready && frame_plan_ready && pipeline_completed
             && resource_bindings_completed && resource_registry_completed
-            && command_recorder_lifecycle_ready && command_recorder_gate_allowed
-            && command_recording_ready && command_submit_readiness_ready
+            && command_packets_completed && command_recorder_lifecycle_ready
+            && command_recorder_gate_allowed && command_recording_ready
+            && command_submit_readiness_ready
             && frame_submit_completed && present_completed && frame_lifecycle_completed;
     }
 
@@ -1378,6 +1461,7 @@ struct vulkan_backend_frame_result {
     vulkan_backend_resource_binding_state resource_bindings;
     vulkan_backend_resource_registry_state resource_registry;
     vulkan_backend_pipeline_state pipeline;
+    vulkan_command_packet_bridge_result command_packets;
     vulkan_backend_command_recorder_state command_recorder;
     vulkan_command_submit_readiness_result command_submit;
     vulkan_queue_submit_present_result queue_submit;
@@ -1414,6 +1498,7 @@ struct vulkan_backend_frame_result {
             && (!queue_submit.checked || queue_submit.completed())
             && (!queue_submit_adapter.checked || queue_submit_adapter.completed())
             && (!pipeline_handoff.checked || pipeline_handoff.completed())
+            && command_packets.completed()
             && command_recorder.completed()
             && command_recorder.gate.completed()
             && resource_bindings.completed()
@@ -1485,6 +1570,12 @@ vulkan_backend_queue_submit_adapter_summary summarize_vulkan_queue_submit_adapte
 vulkan_backend_frame_result apply_vulkan_queue_submit_adapter_result_to_frame(
     vulkan_backend_frame_result frame,
     vulkan_queue_submit_present_result queue_submit);
+
+vulkan_command_packet_bridge_result build_vulkan_command_packet_bridge(
+    const vulkan_frame_plan& plan,
+    const vulkan_backend_pipeline_state& pipeline,
+    const vulkan_backend_resource_binding_state& resource_bindings,
+    const vulkan_backend_resource_registry_state& resource_registry);
 
 vulkan_backend_frame_pipeline_handoff summarize_vulkan_frame_pipeline_handoff(
     const vulkan_backend_frame_result& frame);

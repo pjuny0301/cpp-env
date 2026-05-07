@@ -620,6 +620,8 @@ void test_vulkan_frame_pipeline_handoff_accepts_draw_list_render_data()
     require(handoff.pipeline_completed, "handoff requires completed pipeline before command recording");
     require(handoff.resource_bindings_completed, "handoff requires completed resource binding before command recording");
     require(handoff.resource_registry_completed, "handoff requires completed resource registry before command recording");
+    require(handoff.command_packets_checked, "handoff checks command packets before command recording");
+    require(handoff.command_packets_completed, "handoff requires completed command packets before command recording");
     require(handoff.command_recorder_gate_allowed, "handoff allows command recorder after prerequisites");
     require(handoff.command_recording_ready, "handoff records command recording ready");
     require(handoff.frame_submit_completed, "handoff records frame submit completed");

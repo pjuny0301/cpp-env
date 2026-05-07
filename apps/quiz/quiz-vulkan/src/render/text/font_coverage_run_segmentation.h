@@ -1,5 +1,6 @@
 #pragma once
 
+#include "render/text/font_backend_selection.h"
 #include "render/text/font_glyph_atlas.h"
 #include "render/text/utf8_text_run.h"
 
@@ -76,6 +77,127 @@ struct render_text_font_coverage_run_segmentation {
 struct render_text_font_coverage_run_segmentation_request {
     std::string_view text;
     render_text_style style;
+};
+
+struct render_text_font_fallback_chain_entry_snapshot {
+    std::size_t order = 0;
+    font_face_id face_id = 0;
+    std::string family;
+    std::string source_uri;
+    int weight = 400;
+    bool italic = false;
+    bool fallback_face = false;
+    bool requested_face = false;
+    std::size_t covered_codepoint_count = 0;
+    std::size_t selected_codepoint_count = 0;
+
+    bool covers_run() const
+    {
+        return covered_codepoint_count > 0U;
+    }
+
+    bool selected() const
+    {
+        return selected_codepoint_count > 0U;
+    }
+};
+
+struct render_text_font_fallback_chain_missing_glyph_snapshot {
+    std::size_t item_index = 0;
+    std::size_t run_index = 0;
+    render_style_id style_token;
+    std::size_t byte_offset = 0;
+    std::size_t byte_count = 0;
+    std::size_t codepoint_offset = 0;
+    std::uint32_t codepoint = utf8_replacement_codepoint;
+    bool valid_utf8 = true;
+    font_face_id requested_face_id = 0;
+    std::string requested_family;
+    std::vector<font_face_id> attempted_face_ids;
+    std::string diagnostic;
+};
+
+struct render_text_font_fallback_chain_run_snapshot {
+    std::size_t item_index = 0;
+    std::size_t run_index = 0;
+    render_style_id style_token;
+    std::string source_label;
+    std::size_t byte_count = 0;
+    std::size_t codepoint_count = 0;
+    font_face_id requested_face_id = 0;
+    std::string requested_family;
+    std::vector<render_text_font_fallback_chain_entry_snapshot> entries;
+    std::vector<font_face_id> selected_face_ids;
+    render_text_font_coverage_run_segmentation coverage;
+    std::size_t supported_codepoint_count = 0;
+    std::size_t fallback_codepoint_count = 0;
+    std::size_t missing_glyph_count = 0;
+    std::size_t invalid_utf8_count = 0;
+    render_text_font_backend_library shaping_backend =
+        render_text_font_backend_library::deterministic_fake;
+    std::string shaping_backend_label;
+    render_text_font_backend_selection_status shaping_selection_status =
+        render_text_font_backend_selection_status::unavailable;
+    render_text_font_backend_capability_status shaping_capability_status =
+        render_text_font_backend_capability_status::unavailable;
+    bool shaping_used_deterministic_fallback = true;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return missing_glyph_count == 0U && invalid_utf8_count == 0U;
+    }
+
+    bool used_font_fallback() const
+    {
+        return fallback_codepoint_count > 0U;
+    }
+};
+
+struct render_text_font_fallback_chain_plan_item {
+    std::size_t item_index = 0;
+    std::vector<render_text_run> text_runs;
+    render_text_style_catalog style_catalog;
+    std::string source_label;
+};
+
+struct render_text_font_fallback_chain_plan_request {
+    std::vector<render_text_font_fallback_chain_plan_item> items;
+    render_text_font_backend_selection_result shaping_selection;
+};
+
+struct render_text_font_fallback_chain_plan_policy_snapshot {
+    std::size_t item_count = 0;
+    std::size_t run_count = 0;
+    std::size_t codepoint_count = 0;
+    std::size_t supported_codepoint_count = 0;
+    std::size_t fallback_codepoint_count = 0;
+    std::size_t missing_glyph_count = 0;
+    std::size_t invalid_utf8_count = 0;
+    std::size_t fallback_run_count = 0;
+    std::size_t missing_run_count = 0;
+    std::size_t invalid_run_count = 0;
+    std::size_t unique_selected_face_count = 0;
+    bool deterministic_backend_selected = true;
+};
+
+struct render_text_font_fallback_chain_plan_snapshot {
+    std::vector<render_text_font_fallback_chain_run_snapshot> runs;
+    std::vector<render_text_font_fallback_chain_missing_glyph_snapshot> missing_glyphs;
+    std::vector<font_face_id> deterministic_selected_face_order;
+    render_text_font_backend_selection_result shaping_selection;
+    render_text_font_fallback_chain_plan_policy_snapshot policy;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return policy.missing_glyph_count == 0U && policy.invalid_utf8_count == 0U;
+    }
+
+    bool has_missing_glyphs() const
+    {
+        return !missing_glyphs.empty();
+    }
 };
 
 inline std::string font_coverage_run_hex_codepoint_label(const std::uint32_t codepoint)
@@ -247,5 +369,352 @@ public:
         return segment_font_coverage_runs(request, catalog);
     }
 };
+
+inline render_text_font_fallback_chain_plan_item make_render_text_font_fallback_chain_plan_item(
+    render_text_request request,
+    std::string source_label = {},
+    const std::size_t item_index = 0)
+{
+    return render_text_font_fallback_chain_plan_item{
+        .item_index = item_index,
+        .text_runs = std::move(request.text_runs),
+        .style_catalog = std::move(request.style_catalog),
+        .source_label = std::move(source_label),
+    };
+}
+
+inline render_text_font_fallback_chain_plan_item make_render_text_font_fallback_chain_plan_item(
+    std::vector<render_text_run> text_runs,
+    render_text_style_catalog style_catalog,
+    std::string source_label = {},
+    const std::size_t item_index = 0)
+{
+    return render_text_font_fallback_chain_plan_item{
+        .item_index = item_index,
+        .text_runs = std::move(text_runs),
+        .style_catalog = std::move(style_catalog),
+        .source_label = std::move(source_label),
+    };
+}
+
+inline render_text_font_backend_selection_result render_text_font_fallback_chain_effective_shaping_selection(
+    const render_text_font_backend_selection_result& selection)
+{
+    if (selection.has_selection) {
+        return selection;
+    }
+
+    return make_render_text_font_backend_selection_result(
+        render_text_font_backend_selection_status::fallback_selected,
+        render_text_font_backend_selection_purpose::shaping,
+        make_render_text_deterministic_fake_backend_candidate(),
+        render_text_font_backend_required_features_for(render_text_font_backend_selection_purpose::shaping),
+        {"fallback chain planner used deterministic fake shaping metadata"});
+}
+
+inline bool font_fallback_chain_contains_face(
+    const std::vector<const font_face_descriptor*>& faces,
+    const font_face_id face_id)
+{
+    for (const font_face_descriptor* face : faces) {
+        if (face != nullptr && face->id == face_id) {
+            return true;
+        }
+    }
+    return false;
+}
+
+inline bool font_fallback_chain_contains_face_id(
+    const std::vector<font_face_id>& faces,
+    const font_face_id face_id)
+{
+    for (const font_face_id existing : faces) {
+        if (existing == face_id) {
+            return true;
+        }
+    }
+    return false;
+}
+
+inline void font_fallback_chain_append_candidate_face(
+    std::vector<const font_face_descriptor*>& faces,
+    const font_face_descriptor* face)
+{
+    if (face != nullptr && !font_fallback_chain_contains_face(faces, face->id)) {
+        faces.push_back(face);
+    }
+}
+
+inline std::vector<const font_face_descriptor*> font_fallback_chain_candidate_faces_for(
+    const font_face_catalog& catalog,
+    const render_text_style& style)
+{
+    std::vector<const font_face_descriptor*> candidates;
+    font_fallback_chain_append_candidate_face(
+        candidates,
+        catalog.find_exact(style.font_family, style.font_weight, style.italic));
+
+    for (const font_face_descriptor& face : catalog.faces()) {
+        if (face.fallback) {
+            font_fallback_chain_append_candidate_face(candidates, &face);
+        }
+    }
+    for (const font_face_descriptor& face : catalog.faces()) {
+        font_fallback_chain_append_candidate_face(candidates, &face);
+    }
+
+    return candidates;
+}
+
+inline std::vector<font_face_id> font_fallback_chain_attempted_face_ids(
+    const std::vector<const font_face_descriptor*>& candidates)
+{
+    std::vector<font_face_id> face_ids;
+    face_ids.reserve(candidates.size());
+    for (const font_face_descriptor* face : candidates) {
+        if (face != nullptr) {
+            face_ids.push_back(face->id);
+        }
+    }
+    return face_ids;
+}
+
+inline render_text_font_fallback_chain_entry_snapshot make_font_fallback_chain_entry_snapshot(
+    const font_face_descriptor& face,
+    const std::size_t order,
+    const bool requested_face)
+{
+    return render_text_font_fallback_chain_entry_snapshot{
+        .order = order,
+        .face_id = face.id,
+        .family = face.family,
+        .source_uri = face.source_uri,
+        .weight = face.weight,
+        .italic = face.italic,
+        .fallback_face = face.fallback,
+        .requested_face = requested_face,
+    };
+}
+
+inline render_text_font_fallback_chain_entry_snapshot* font_fallback_chain_find_entry(
+    std::vector<render_text_font_fallback_chain_entry_snapshot>& entries,
+    const font_face_id face_id)
+{
+    for (render_text_font_fallback_chain_entry_snapshot& entry : entries) {
+        if (entry.face_id == face_id) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
+inline void font_fallback_chain_append_unique_selected_face(
+    std::vector<font_face_id>& face_ids,
+    const font_face_id face_id)
+{
+    if (face_id != 0U && !font_fallback_chain_contains_face_id(face_ids, face_id)) {
+        face_ids.push_back(face_id);
+    }
+}
+
+inline render_text_font_fallback_chain_missing_glyph_snapshot make_font_fallback_chain_missing_glyph(
+    const std::size_t item_index,
+    const std::size_t run_index,
+    const render_text_run& run,
+    const render_text_style& style,
+    const font_face_descriptor* requested_face,
+    const utf8_text_codepoint& scalar,
+    const std::size_t codepoint_offset,
+    std::vector<font_face_id> attempted_face_ids)
+{
+    const bool valid = scalar.valid;
+    return render_text_font_fallback_chain_missing_glyph_snapshot{
+        .item_index = item_index,
+        .run_index = run_index,
+        .style_token = run.style_token,
+        .byte_offset = scalar.byte_offset,
+        .byte_count = scalar.byte_count,
+        .codepoint_offset = codepoint_offset,
+        .codepoint = valid ? scalar.code_point : utf8_replacement_codepoint,
+        .valid_utf8 = valid,
+        .requested_face_id = requested_face == nullptr ? 0U : requested_face->id,
+        .requested_family = style.font_family,
+        .attempted_face_ids = std::move(attempted_face_ids),
+        .diagnostic = valid
+            ? "no fallback chain face covers " + font_coverage_run_hex_codepoint_label(scalar.code_point)
+            : "invalid UTF-8 sequence at byte " + std::to_string(scalar.byte_offset),
+    };
+}
+
+inline render_text_font_fallback_chain_run_snapshot plan_render_text_font_fallback_chain_run(
+    const std::size_t item_index,
+    const std::size_t run_index,
+    const render_text_run& run,
+    const render_text_style_catalog& style_catalog,
+    const std::string& source_label,
+    const font_face_catalog& font_catalog,
+    const render_text_font_backend_selection_result& shaping_selection,
+    std::vector<render_text_font_fallback_chain_missing_glyph_snapshot>& missing_glyphs,
+    std::vector<font_face_id>& deterministic_selected_face_order)
+{
+    const render_text_style& style = style_catalog.resolve(run.style_token);
+    const font_face_descriptor* requested_face =
+        font_catalog.find_exact(style.font_family, style.font_weight, style.italic);
+    const std::vector<utf8_text_codepoint> codepoints = iterate_utf8_text_run(run.text);
+    const std::vector<const font_face_descriptor*> candidate_faces =
+        font_fallback_chain_candidate_faces_for(font_catalog, style);
+
+    render_text_font_fallback_chain_run_snapshot snapshot{
+        .item_index = item_index,
+        .run_index = run_index,
+        .style_token = run.style_token,
+        .source_label = source_label,
+        .byte_count = run.text.size(),
+        .codepoint_count = codepoints.size(),
+        .requested_face_id = requested_face == nullptr ? 0U : requested_face->id,
+        .requested_family = style.font_family,
+        .coverage = segment_font_coverage_runs(codepoints, font_catalog, style),
+        .shaping_backend = shaping_selection.selected.library,
+        .shaping_backend_label = shaping_selection.selected.label,
+        .shaping_selection_status = shaping_selection.status,
+        .shaping_capability_status = shaping_selection.capability.status,
+        .shaping_used_deterministic_fallback = shaping_selection.used_deterministic_fallback,
+    };
+
+    snapshot.entries.reserve(candidate_faces.size());
+    for (std::size_t order = 0; order < candidate_faces.size(); ++order) {
+        if (candidate_faces[order] != nullptr) {
+            snapshot.entries.push_back(make_font_fallback_chain_entry_snapshot(
+                *candidate_faces[order],
+                order,
+                requested_face != nullptr && candidate_faces[order]->id == requested_face->id));
+        }
+    }
+
+    const std::vector<font_face_id> attempted_face_ids =
+        font_fallback_chain_attempted_face_ids(candidate_faces);
+    for (std::size_t codepoint_index = 0; codepoint_index < codepoints.size(); ++codepoint_index) {
+        const utf8_text_codepoint& scalar = codepoints[codepoint_index];
+        if (!scalar.valid) {
+            ++snapshot.invalid_utf8_count;
+            ++snapshot.missing_glyph_count;
+            missing_glyphs.push_back(make_font_fallback_chain_missing_glyph(
+                item_index,
+                run_index,
+                run,
+                style,
+                requested_face,
+                scalar,
+                codepoint_index,
+                attempted_face_ids));
+            continue;
+        }
+
+        for (render_text_font_fallback_chain_entry_snapshot& entry : snapshot.entries) {
+            if (const font_face_descriptor* face = font_catalog.find_by_id(entry.face_id);
+                face != nullptr && face->supports_codepoint(scalar.code_point)) {
+                ++entry.covered_codepoint_count;
+            }
+        }
+
+        const render_text_font_coverage_run_segment segment =
+            make_font_coverage_codepoint_segment(scalar, codepoint_index, font_catalog, style);
+        if (!segment.glyph_supported) {
+            ++snapshot.missing_glyph_count;
+            missing_glyphs.push_back(make_font_fallback_chain_missing_glyph(
+                item_index,
+                run_index,
+                run,
+                style,
+                requested_face,
+                scalar,
+                codepoint_index,
+                attempted_face_ids));
+            continue;
+        }
+
+        ++snapshot.supported_codepoint_count;
+        if (segment.used_fallback) {
+            ++snapshot.fallback_codepoint_count;
+        }
+        if (render_text_font_fallback_chain_entry_snapshot* entry =
+                font_fallback_chain_find_entry(snapshot.entries, segment.resolved_face_id);
+            entry != nullptr) {
+            ++entry->selected_codepoint_count;
+        }
+        font_fallback_chain_append_unique_selected_face(snapshot.selected_face_ids, segment.resolved_face_id);
+        font_fallback_chain_append_unique_selected_face(deterministic_selected_face_order, segment.resolved_face_id);
+    }
+
+    if (snapshot.ok()) {
+        snapshot.diagnostic = "fallback chain resolved all run codepoints before shaping";
+    } else {
+        snapshot.diagnostic = "fallback chain found "
+            + std::to_string(snapshot.missing_glyph_count)
+            + " missing glyph(s) and "
+            + std::to_string(snapshot.invalid_utf8_count)
+            + " invalid UTF-8 sequence(s) before shaping";
+    }
+
+    return snapshot;
+}
+
+inline render_text_font_fallback_chain_plan_snapshot plan_render_text_font_fallback_chains(
+    const render_text_font_fallback_chain_plan_request& request,
+    const font_face_catalog& font_catalog)
+{
+    render_text_font_fallback_chain_plan_snapshot plan{
+        .shaping_selection = render_text_font_fallback_chain_effective_shaping_selection(
+            request.shaping_selection),
+    };
+    plan.policy.item_count = request.items.size();
+    plan.policy.deterministic_backend_selected = plan.shaping_selection.used_deterministic_fallback;
+
+    for (const render_text_font_fallback_chain_plan_item& item : request.items) {
+        const std::size_t item_index = item.item_index;
+        for (std::size_t run_index = 0; run_index < item.text_runs.size(); ++run_index) {
+            render_text_font_fallback_chain_run_snapshot run = plan_render_text_font_fallback_chain_run(
+                item_index,
+                run_index,
+                item.text_runs[run_index],
+                item.style_catalog,
+                item.source_label,
+                font_catalog,
+                plan.shaping_selection,
+                plan.missing_glyphs,
+                plan.deterministic_selected_face_order);
+
+            ++plan.policy.run_count;
+            plan.policy.codepoint_count += run.codepoint_count;
+            plan.policy.supported_codepoint_count += run.supported_codepoint_count;
+            plan.policy.fallback_codepoint_count += run.fallback_codepoint_count;
+            plan.policy.missing_glyph_count += run.missing_glyph_count;
+            plan.policy.invalid_utf8_count += run.invalid_utf8_count;
+            if (run.used_font_fallback()) {
+                ++plan.policy.fallback_run_count;
+            }
+            if (run.missing_glyph_count > 0U) {
+                ++plan.policy.missing_run_count;
+            }
+            if (run.invalid_utf8_count > 0U) {
+                ++plan.policy.invalid_run_count;
+            }
+            plan.runs.push_back(std::move(run));
+        }
+    }
+
+    plan.policy.unique_selected_face_count = plan.deterministic_selected_face_order.size();
+    if (plan.ok()) {
+        plan.diagnostic = "font fallback chain resolved all batch glyphs before shaping";
+    } else {
+        plan.diagnostic = "font fallback chain found "
+            + std::to_string(plan.policy.missing_glyph_count)
+            + " missing glyph(s) and "
+            + std::to_string(plan.policy.invalid_utf8_count)
+            + " invalid UTF-8 sequence(s) before shaping";
+    }
+
+    return plan;
+}
 
 } // namespace quiz_vulkan::render

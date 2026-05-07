@@ -1219,6 +1219,116 @@ static_assert(requires(
     { segmenter.segment(request, catalog) } -> std::same_as<render::render_text_font_coverage_run_segmentation>;
 });
 
+static_assert(requires(
+    render::render_text_font_fallback_chain_entry_snapshot entry,
+    render::render_text_font_fallback_chain_missing_glyph_snapshot missing,
+    render::render_text_font_fallback_chain_run_snapshot run,
+    render::render_text_font_fallback_chain_plan_item item,
+    render::render_text_font_fallback_chain_plan_request request,
+    render::render_text_font_fallback_chain_plan_policy_snapshot policy,
+    render::render_text_font_fallback_chain_plan_snapshot plan,
+    render::render_text_font_backend_selection_result selection,
+    render::font_face_catalog catalog,
+    render::render_text_style style,
+    render::render_text_request text_request,
+    std::vector<render::render_text_run> text_runs,
+    render::render_text_style_catalog style_catalog,
+    std::vector<const render::font_face_descriptor*> candidate_faces,
+    std::vector<render::render_text_font_fallback_chain_entry_snapshot> entries) {
+    { entry.order } -> std::same_as<std::size_t&>;
+    { entry.face_id } -> std::same_as<render::font_face_id&>;
+    { entry.family } -> std::same_as<std::string&>;
+    { entry.source_uri } -> std::same_as<std::string&>;
+    { entry.weight } -> std::same_as<int&>;
+    { entry.italic } -> std::same_as<bool&>;
+    { entry.fallback_face } -> std::same_as<bool&>;
+    { entry.requested_face } -> std::same_as<bool&>;
+    { entry.covered_codepoint_count } -> std::same_as<std::size_t&>;
+    { entry.selected_codepoint_count } -> std::same_as<std::size_t&>;
+    { entry.covers_run() } -> std::same_as<bool>;
+    { entry.selected() } -> std::same_as<bool>;
+    { missing.item_index } -> std::same_as<std::size_t&>;
+    { missing.run_index } -> std::same_as<std::size_t&>;
+    { missing.style_token } -> std::same_as<render::render_style_id&>;
+    { missing.byte_offset } -> std::same_as<std::size_t&>;
+    { missing.byte_count } -> std::same_as<std::size_t&>;
+    { missing.codepoint_offset } -> std::same_as<std::size_t&>;
+    { missing.codepoint } -> std::same_as<std::uint32_t&>;
+    { missing.valid_utf8 } -> std::same_as<bool&>;
+    { missing.requested_face_id } -> std::same_as<render::font_face_id&>;
+    { missing.requested_family } -> std::same_as<std::string&>;
+    { missing.attempted_face_ids } -> std::same_as<std::vector<render::font_face_id>&>;
+    { missing.diagnostic } -> std::same_as<std::string&>;
+    { run.item_index } -> std::same_as<std::size_t&>;
+    { run.run_index } -> std::same_as<std::size_t&>;
+    { run.style_token } -> std::same_as<render::render_style_id&>;
+    { run.source_label } -> std::same_as<std::string&>;
+    { run.byte_count } -> std::same_as<std::size_t&>;
+    { run.codepoint_count } -> std::same_as<std::size_t&>;
+    { run.requested_face_id } -> std::same_as<render::font_face_id&>;
+    { run.requested_family } -> std::same_as<std::string&>;
+    { run.entries } -> std::same_as<std::vector<render::render_text_font_fallback_chain_entry_snapshot>&>;
+    { run.selected_face_ids } -> std::same_as<std::vector<render::font_face_id>&>;
+    { run.coverage } -> std::same_as<render::render_text_font_coverage_run_segmentation&>;
+    { run.supported_codepoint_count } -> std::same_as<std::size_t&>;
+    { run.fallback_codepoint_count } -> std::same_as<std::size_t&>;
+    { run.missing_glyph_count } -> std::same_as<std::size_t&>;
+    { run.invalid_utf8_count } -> std::same_as<std::size_t&>;
+    { run.shaping_backend } -> std::same_as<render::render_text_font_backend_library&>;
+    { run.shaping_backend_label } -> std::same_as<std::string&>;
+    { run.shaping_selection_status } -> std::same_as<render::render_text_font_backend_selection_status&>;
+    { run.shaping_capability_status } -> std::same_as<render::render_text_font_backend_capability_status&>;
+    { run.shaping_used_deterministic_fallback } -> std::same_as<bool&>;
+    { run.diagnostic } -> std::same_as<std::string&>;
+    { run.ok() } -> std::same_as<bool>;
+    { run.used_font_fallback() } -> std::same_as<bool>;
+    { item.item_index } -> std::same_as<std::size_t&>;
+    { item.text_runs } -> std::same_as<std::vector<render::render_text_run>&>;
+    { item.style_catalog } -> std::same_as<render::render_text_style_catalog&>;
+    { item.source_label } -> std::same_as<std::string&>;
+    { request.items } -> std::same_as<std::vector<render::render_text_font_fallback_chain_plan_item>&>;
+    { request.shaping_selection } -> std::same_as<render::render_text_font_backend_selection_result&>;
+    { policy.item_count } -> std::same_as<std::size_t&>;
+    { policy.run_count } -> std::same_as<std::size_t&>;
+    { policy.codepoint_count } -> std::same_as<std::size_t&>;
+    { policy.supported_codepoint_count } -> std::same_as<std::size_t&>;
+    { policy.fallback_codepoint_count } -> std::same_as<std::size_t&>;
+    { policy.missing_glyph_count } -> std::same_as<std::size_t&>;
+    { policy.invalid_utf8_count } -> std::same_as<std::size_t&>;
+    { policy.fallback_run_count } -> std::same_as<std::size_t&>;
+    { policy.missing_run_count } -> std::same_as<std::size_t&>;
+    { policy.invalid_run_count } -> std::same_as<std::size_t&>;
+    { policy.unique_selected_face_count } -> std::same_as<std::size_t&>;
+    { policy.deterministic_backend_selected } -> std::same_as<bool&>;
+    { plan.runs } -> std::same_as<std::vector<render::render_text_font_fallback_chain_run_snapshot>&>;
+    { plan.missing_glyphs }
+        -> std::same_as<std::vector<render::render_text_font_fallback_chain_missing_glyph_snapshot>&>;
+    { plan.deterministic_selected_face_order } -> std::same_as<std::vector<render::font_face_id>&>;
+    { plan.shaping_selection } -> std::same_as<render::render_text_font_backend_selection_result&>;
+    { plan.policy } -> std::same_as<render::render_text_font_fallback_chain_plan_policy_snapshot&>;
+    { plan.diagnostic } -> std::same_as<std::string&>;
+    { plan.ok() } -> std::same_as<bool>;
+    { plan.has_missing_glyphs() } -> std::same_as<bool>;
+    { render::make_render_text_font_fallback_chain_plan_item(text_request) }
+        -> std::same_as<render::render_text_font_fallback_chain_plan_item>;
+    { render::make_render_text_font_fallback_chain_plan_item(text_runs, style_catalog) }
+        -> std::same_as<render::render_text_font_fallback_chain_plan_item>;
+    { render::render_text_font_fallback_chain_effective_shaping_selection(selection) }
+        -> std::same_as<render::render_text_font_backend_selection_result>;
+    { render::font_fallback_chain_contains_face(candidate_faces, render::font_face_id{}) }
+        -> std::same_as<bool>;
+    { render::font_fallback_chain_contains_face_id(std::vector<render::font_face_id>{}, render::font_face_id{}) }
+        -> std::same_as<bool>;
+    { render::font_fallback_chain_candidate_faces_for(catalog, style) }
+        -> std::same_as<std::vector<const render::font_face_descriptor*>>;
+    { render::font_fallback_chain_attempted_face_ids(candidate_faces) }
+        -> std::same_as<std::vector<render::font_face_id>>;
+    { render::font_fallback_chain_find_entry(entries, render::font_face_id{}) }
+        -> std::same_as<render::render_text_font_fallback_chain_entry_snapshot*>;
+    { render::plan_render_text_font_fallback_chains(request, catalog) }
+        -> std::same_as<render::render_text_font_fallback_chain_plan_snapshot>;
+});
+
 static_assert(requires(render::render_text_line_break_snapshot line_break) {
     { line_break.line_index } -> std::same_as<std::size_t&>;
     { line_break.codepoint_offset } -> std::same_as<std::size_t&>;

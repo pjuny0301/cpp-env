@@ -58,6 +58,7 @@ vulkan_frame_lifecycle_failure_classification classify_failure(
     case vulkan_backend_fallback_reason::instance_unavailable:
     case vulkan_backend_fallback_reason::device_unavailable:
     case vulkan_backend_fallback_reason::swapchain_unavailable:
+    case vulkan_backend_fallback_reason::render_pass_unavailable:
     case vulkan_backend_fallback_reason::pipeline_unavailable:
     case vulkan_backend_fallback_reason::command_recorder_unavailable:
     case vulkan_backend_fallback_reason::surface_unavailable:

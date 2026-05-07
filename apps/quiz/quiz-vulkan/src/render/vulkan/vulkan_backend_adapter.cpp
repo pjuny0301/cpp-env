@@ -3,6 +3,7 @@
 #include "render/vulkan/vulkan_backend_frame_lifecycle.h"
 #include "render/vulkan/vulkan_backend_instance.h"
 #include "render/vulkan/vulkan_backend_loader.h"
+#include "render/vulkan/vulkan_backend_render_pass.h"
 #include "render/vulkan/vulkan_backend_swapchain.h"
 
 #include <algorithm>
@@ -221,6 +222,9 @@ vulkan_backend_fallback_reason first_unready_reason(
     }
     if (!lifecycle.effective_swapchain_ready()) {
         return vulkan_backend_fallback_reason::swapchain_unavailable;
+    }
+    if (lifecycle.render_pass.checked && !lifecycle.effective_render_pass_ready()) {
+        return vulkan_backend_fallback_reason::render_pass_unavailable;
     }
     if (!lifecycle.pipeline_ready) {
         return vulkan_backend_fallback_reason::pipeline_unavailable;
@@ -984,6 +988,22 @@ vulkan_backend_lifecycle_readiness apply_vulkan_swapchain_create_result_to_lifec
     return lifecycle;
 }
 
+vulkan_backend_lifecycle_readiness apply_vulkan_render_pass_create_result_to_lifecycle(
+    vulkan_backend_lifecycle_readiness lifecycle,
+    vulkan_render_pass_create_result render_pass)
+{
+    if (!render_pass.checked) {
+        return lifecycle;
+    }
+
+    lifecycle = apply_vulkan_swapchain_create_result_to_lifecycle(
+        std::move(lifecycle),
+        render_pass.swapchain);
+    lifecycle.render_pass = std::move(render_pass);
+    lifecycle.render_pass_ready = lifecycle.render_pass.ready_for_pipeline();
+    return lifecycle;
+}
+
 null_vulkan_backend_device::null_vulkan_backend_device() = default;
 
 null_vulkan_backend_device::null_vulkan_backend_device(
@@ -1022,6 +1042,16 @@ null_vulkan_backend_device::null_vulkan_backend_device(
 {
 }
 
+null_vulkan_backend_device::null_vulkan_backend_device(
+    vulkan_render_pass_create_result render_pass_result)
+    : loader_readiness_(render_pass_result.swapchain.device.instance.loader)
+    , instance_result_(render_pass_result.swapchain.device.instance)
+    , device_result_(render_pass_result.swapchain.device)
+    , swapchain_result_(render_pass_result.swapchain)
+    , render_pass_result_(std::move(render_pass_result))
+{
+}
+
 vulkan_backend_lifecycle_readiness null_vulkan_backend_device::current_lifecycle_readiness() const
 {
     vulkan_backend_lifecycle_readiness lifecycle =
@@ -1032,9 +1062,12 @@ vulkan_backend_lifecycle_readiness null_vulkan_backend_device::current_lifecycle
     lifecycle = apply_vulkan_device_create_result_to_lifecycle(
         std::move(lifecycle),
         device_result_);
-    return apply_vulkan_swapchain_create_result_to_lifecycle(
+    lifecycle = apply_vulkan_swapchain_create_result_to_lifecycle(
         std::move(lifecycle),
         swapchain_result_);
+    return apply_vulkan_render_pass_create_result_to_lifecycle(
+        std::move(lifecycle),
+        render_pass_result_);
 }
 
 vulkan_surface_extent null_vulkan_backend_device::current_surface_extent() const

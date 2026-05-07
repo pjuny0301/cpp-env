@@ -1,6 +1,7 @@
 #pragma once
 
 #include "render/render_draw_list.h"
+#include "render/vulkan/vulkan_backend_command_recording.h"
 #include "render/vulkan/vulkan_backend_device.h"
 #include "render/vulkan/vulkan_backend_instance.h"
 #include "render/vulkan/vulkan_backend_loader.h"
@@ -130,9 +131,13 @@ struct vulkan_backend_lifecycle_readiness {
     vulkan_device_create_result device;
     vulkan_swapchain_create_result swapchain;
     vulkan_render_pass_create_result render_pass;
+    vulkan_command_recording_readiness_result command_recording;
 
     bool effective_instance_ready() const
     {
+        if (command_recording.checked) {
+            return command_recording.render_pass.swapchain.device.instance.ready_for_device();
+        }
         if (render_pass.checked) {
             return render_pass.swapchain.device.instance.ready_for_device();
         }
@@ -154,6 +159,9 @@ struct vulkan_backend_lifecycle_readiness {
 
     bool effective_device_ready() const
     {
+        if (command_recording.checked) {
+            return command_recording.render_pass.swapchain.device.ready_for_backend();
+        }
         if (render_pass.checked) {
             return render_pass.swapchain.device.ready_for_backend();
         }
@@ -169,6 +177,9 @@ struct vulkan_backend_lifecycle_readiness {
 
     bool effective_swapchain_ready() const
     {
+        if (command_recording.checked) {
+            return command_recording.render_pass.swapchain.ready_for_frame();
+        }
         if (render_pass.checked) {
             return render_pass.swapchain.ready_for_frame();
         }
@@ -181,6 +192,10 @@ struct vulkan_backend_lifecycle_readiness {
 
     bool effective_render_pass_ready() const
     {
+        if (command_recording.checked) {
+            return command_recording.render_pass_ready()
+                && command_recording.framebuffer_ready();
+        }
         if (render_pass.checked) {
             return render_pass.ready_for_pipeline();
         }
@@ -188,10 +203,29 @@ struct vulkan_backend_lifecycle_readiness {
         return render_pass_ready || !render_pass.checked;
     }
 
+    bool effective_pipeline_ready() const
+    {
+        if (command_recording.checked) {
+            return command_recording.pipeline_ready();
+        }
+
+        return pipeline_ready;
+    }
+
+    bool effective_command_recorder_ready() const
+    {
+        if (command_recording.checked) {
+            return command_recording.ready_for_recording();
+        }
+
+        return command_recorder_ready;
+    }
+
     bool ready_for_frame() const
     {
         return effective_instance_ready() && effective_device_ready() && effective_swapchain_ready()
-            && effective_render_pass_ready() && pipeline_ready && command_recorder_ready;
+            && effective_render_pass_ready() && effective_pipeline_ready()
+            && effective_command_recorder_ready();
     }
 };
 
@@ -214,6 +248,10 @@ vulkan_backend_lifecycle_readiness apply_vulkan_swapchain_create_result_to_lifec
 vulkan_backend_lifecycle_readiness apply_vulkan_render_pass_create_result_to_lifecycle(
     vulkan_backend_lifecycle_readiness lifecycle,
     vulkan_render_pass_create_result render_pass);
+
+vulkan_backend_lifecycle_readiness apply_vulkan_command_recording_readiness_to_lifecycle(
+    vulkan_backend_lifecycle_readiness lifecycle,
+    vulkan_command_recording_readiness_result command_recording);
 
 enum class vulkan_frame_acquire_policy_status {
     not_checked,
@@ -1259,6 +1297,8 @@ public:
     explicit null_vulkan_backend_device(vulkan_device_create_result device_result);
     explicit null_vulkan_backend_device(vulkan_swapchain_create_result swapchain_result);
     explicit null_vulkan_backend_device(vulkan_render_pass_create_result render_pass_result);
+    explicit null_vulkan_backend_device(
+        vulkan_command_recording_readiness_result command_recording_result);
 
     vulkan_backend_lifecycle_readiness current_lifecycle_readiness() const override;
     vulkan_surface_extent current_surface_extent() const override;
@@ -1275,6 +1315,7 @@ private:
     vulkan_device_create_result device_result_;
     vulkan_swapchain_create_result swapchain_result_;
     vulkan_render_pass_create_result render_pass_result_;
+    vulkan_command_recording_readiness_result command_recording_result_;
 };
 
 vulkan_backend_resource_binding_state build_vulkan_resource_binding_state(

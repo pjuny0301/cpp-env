@@ -1,4 +1,5 @@
 #include "render/vulkan/vulkan_backend_adapter.h"
+#include "render/vulkan/vulkan_backend_command_recording.h"
 #include "render/vulkan/vulkan_backend_device.h"
 #include "render/vulkan/vulkan_backend_frame_lifecycle.h"
 #include "render/vulkan/vulkan_backend_instance.h"
@@ -226,10 +227,10 @@ vulkan_backend_fallback_reason first_unready_reason(
     if (lifecycle.render_pass.checked && !lifecycle.effective_render_pass_ready()) {
         return vulkan_backend_fallback_reason::render_pass_unavailable;
     }
-    if (!lifecycle.pipeline_ready) {
+    if (!lifecycle.effective_pipeline_ready()) {
         return vulkan_backend_fallback_reason::pipeline_unavailable;
     }
-    if (!lifecycle.command_recorder_ready) {
+    if (!lifecycle.effective_command_recorder_ready()) {
         return vulkan_backend_fallback_reason::command_recorder_unavailable;
     }
 
@@ -1004,6 +1005,23 @@ vulkan_backend_lifecycle_readiness apply_vulkan_render_pass_create_result_to_lif
     return lifecycle;
 }
 
+vulkan_backend_lifecycle_readiness apply_vulkan_command_recording_readiness_to_lifecycle(
+    vulkan_backend_lifecycle_readiness lifecycle,
+    vulkan_command_recording_readiness_result command_recording)
+{
+    if (!command_recording.checked) {
+        return lifecycle;
+    }
+
+    lifecycle = apply_vulkan_render_pass_create_result_to_lifecycle(
+        std::move(lifecycle),
+        command_recording.render_pass);
+    lifecycle.command_recording = std::move(command_recording);
+    lifecycle.pipeline_ready = lifecycle.command_recording.pipeline_ready();
+    lifecycle.command_recorder_ready = lifecycle.command_recording.ready_for_recording();
+    return lifecycle;
+}
+
 null_vulkan_backend_device::null_vulkan_backend_device() = default;
 
 null_vulkan_backend_device::null_vulkan_backend_device(
@@ -1052,6 +1070,17 @@ null_vulkan_backend_device::null_vulkan_backend_device(
 {
 }
 
+null_vulkan_backend_device::null_vulkan_backend_device(
+    vulkan_command_recording_readiness_result command_recording_result)
+    : loader_readiness_(command_recording_result.render_pass.swapchain.device.instance.loader)
+    , instance_result_(command_recording_result.render_pass.swapchain.device.instance)
+    , device_result_(command_recording_result.render_pass.swapchain.device)
+    , swapchain_result_(command_recording_result.render_pass.swapchain)
+    , render_pass_result_(command_recording_result.render_pass)
+    , command_recording_result_(std::move(command_recording_result))
+{
+}
+
 vulkan_backend_lifecycle_readiness null_vulkan_backend_device::current_lifecycle_readiness() const
 {
     vulkan_backend_lifecycle_readiness lifecycle =
@@ -1065,9 +1094,12 @@ vulkan_backend_lifecycle_readiness null_vulkan_backend_device::current_lifecycle
     lifecycle = apply_vulkan_swapchain_create_result_to_lifecycle(
         std::move(lifecycle),
         swapchain_result_);
-    return apply_vulkan_render_pass_create_result_to_lifecycle(
+    lifecycle = apply_vulkan_render_pass_create_result_to_lifecycle(
         std::move(lifecycle),
         render_pass_result_);
+    return apply_vulkan_command_recording_readiness_to_lifecycle(
+        std::move(lifecycle),
+        command_recording_result_);
 }
 
 vulkan_surface_extent null_vulkan_backend_device::current_surface_extent() const

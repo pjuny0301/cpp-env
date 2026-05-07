@@ -1,5 +1,6 @@
 #include "core/input/gesture_recognizer.h"
 #include "core/input/input_engine.h"
+#include "core/input/normalized_input_replay.h"
 #include "core/input/platform_input_engine_adapter.h"
 #include "core/input/platform_input_translator.h"
 #include "core/input/text_input_model.h"
@@ -137,6 +138,54 @@ concept PlatformInputEngineAdapterFunctions = requires(
         -> std::same_as<input::platform_input_dispatch_result>;
     { input::translate_and_dispatch_platform_input_batch(engine, translator, requests) }
         -> std::same_as<input::platform_input_dispatch_batch_result>;
+};
+
+template <typename T>
+concept NormalizedInputReplayEndStateInterface = requires(T state) {
+    { state.pointer_capture } -> std::same_as<input::pointer_capture_snapshot&>;
+    { state.has_text_focus } -> std::same_as<bool&>;
+    { state.focus_id } -> std::same_as<std::string&>;
+    { state.composition } -> std::same_as<input::ime_composition_state&>;
+    { state.pointer_capture_clean } -> std::same_as<bool&>;
+    { state.focus_clean } -> std::same_as<bool&>;
+    { state.preedit_clean } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept NormalizedInputReplayBatchInterface = requires(T batch) {
+    { batch.label } -> std::same_as<std::string&>;
+    { batch.input_events } -> std::same_as<std::vector<input::input_event>&>;
+    { batch.normalized_events } -> std::same_as<std::vector<input::normalized_input_event_summary>&>;
+    { batch.summary } -> std::same_as<input::input_diagnostic_summary&>;
+    { batch.end_state } -> std::same_as<input::normalized_input_replay_end_state&>;
+};
+
+template <typename T>
+concept NormalizedInputReplayRecordingInterface = requires(T recording) {
+    { recording.batches } -> std::same_as<std::vector<input::normalized_input_replay_batch>&>;
+    { recording.summary } -> std::same_as<input::input_diagnostic_summary&>;
+    { recording.final_state } -> std::same_as<input::normalized_input_replay_end_state&>;
+};
+
+template <typename T>
+concept NormalizedInputReplayStepInterface = requires(T step) {
+    { step.label } -> std::same_as<std::string&>;
+    { step.action } -> std::same_as<input::normalized_input_replay_action&>;
+};
+
+template <typename T>
+concept NormalizedInputReplayFunctions = requires(
+    input::input_engine& engine,
+    const input::normalized_input_replay_action& action,
+    std::span<const input::normalized_input_replay_step> steps,
+    const input::normalized_input_replay_options& options) {
+    { input::pointer_capture_snapshot_clean(input::pointer_capture_snapshot{}) } -> std::same_as<bool>;
+    { input::capture_normalized_input_replay_end_state(engine) }
+        -> std::same_as<input::normalized_input_replay_end_state>;
+    { input::record_normalized_input_batch(engine, std::string{}, action) }
+        -> std::same_as<input::normalized_input_replay_batch>;
+    { input::replay_normalized_input_fixture(engine, steps, options) }
+        -> std::same_as<input::normalized_input_replay_recording>;
 };
 
 template <typename T>
@@ -328,14 +377,27 @@ static_assert(PlatformInputTranslationResultInterface<input::platform_input_tran
 static_assert(PlatformInputDispatchResultInterface<input::platform_input_dispatch_result>);
 static_assert(PlatformInputDispatchBatchResultInterface<input::platform_input_dispatch_batch_result>);
 static_assert(PlatformInputEngineAdapterFunctions<void>);
+static_assert(NormalizedInputReplayEndStateInterface<input::normalized_input_replay_end_state>);
+static_assert(NormalizedInputReplayBatchInterface<input::normalized_input_replay_batch>);
+static_assert(NormalizedInputReplayRecordingInterface<input::normalized_input_replay_recording>);
+static_assert(NormalizedInputReplayStepInterface<input::normalized_input_replay_step>);
+static_assert(NormalizedInputReplayFunctions<void>);
 static_assert(std::is_default_constructible_v<input::platform_input_translation_request>);
 static_assert(std::is_default_constructible_v<input::platform_input_translation_result>);
 static_assert(std::is_default_constructible_v<input::platform_input_dispatch_result>);
 static_assert(std::is_default_constructible_v<input::platform_input_dispatch_batch_result>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_time_update>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_options>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_end_state>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_batch>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_recording>);
 static_assert(!std::is_polymorphic_v<input::platform_input_translation_request>);
 static_assert(!std::is_polymorphic_v<input::platform_input_translation_result>);
 static_assert(!std::is_polymorphic_v<input::platform_input_dispatch_result>);
 static_assert(!std::is_polymorphic_v<input::platform_input_dispatch_batch_result>);
+static_assert(!std::is_polymorphic_v<input::normalized_input_replay_step>);
+static_assert(!std::is_polymorphic_v<input::normalized_input_replay_batch>);
+static_assert(!std::is_polymorphic_v<input::normalized_input_replay_recording>);
 static_assert(std::is_same_v<
     decltype(input::platform_input_translation_result{}.event),
     std::optional<raw_platform_input_event>>);
@@ -356,6 +418,15 @@ static_assert(std::is_same_v<
     std::vector<input::platform_input_dispatch_result>>);
 static_assert(std::is_same_v<
     decltype(input::platform_input_dispatch_batch_result{}.summary),
+    input::input_diagnostic_summary>);
+static_assert(std::is_same_v<
+    decltype(input::normalized_input_replay_batch{}.input_events),
+    std::vector<input::input_event>>);
+static_assert(std::is_same_v<
+    decltype(input::normalized_input_replay_batch{}.normalized_events),
+    std::vector<input::normalized_input_event_summary>>);
+static_assert(std::is_same_v<
+    decltype(input::normalized_input_replay_batch{}.summary),
     input::input_diagnostic_summary>);
 static_assert(TextInputModelInterface<input::text_input_model>);
 
@@ -607,6 +678,21 @@ constexpr input::scroll_event scroll_contract{
 static_assert(scroll_contract.pixel_delta_y == -8.0f);
 static_assert(scroll_contract.line_delta_y == -2.0f);
 static_assert(std::variant_size_v<input::input_event> == 4);
+static_assert(std::variant_size_v<input::normalized_input_replay_action> == 3);
+static_assert(std::is_same_v<
+    std::variant_alternative_t<0, input::normalized_input_replay_action>,
+    raw_platform_input_event>);
+static_assert(std::is_same_v<
+    std::variant_alternative_t<1, input::normalized_input_replay_action>,
+    input::raw_scroll_event>);
+static_assert(std::is_same_v<
+    std::variant_alternative_t<2, input::normalized_input_replay_action>,
+    input::normalized_input_replay_time_update>);
+
+constexpr input::normalized_input_replay_time_update replay_time_contract{
+    .timestamp_ms = 44,
+};
+static_assert(replay_time_contract.timestamp_ms == 44);
 
 template <typename T>
 concept InputEngineInterface = requires(

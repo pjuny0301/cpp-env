@@ -447,6 +447,7 @@ const vulkan_pipeline_descriptor* vulkan_backend_pipeline_state::descriptor_for(
 bool vulkan_backend_pipeline_state::completed() const
 {
     return ready && !missing_pipeline && lifecycle.completed()
+        && (!shader_modules.checked || shader_modules.completed())
         && compatibility.completed()
         && shader_bindings.completed();
 }

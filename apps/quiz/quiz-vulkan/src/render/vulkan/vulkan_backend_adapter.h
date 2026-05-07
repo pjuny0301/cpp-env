@@ -8,6 +8,7 @@
 #include "render/vulkan/vulkan_backend_loader.h"
 #include "render/vulkan/vulkan_backend_queue_submit.h"
 #include "render/vulkan/vulkan_backend_render_pass.h"
+#include "render/vulkan/vulkan_backend_shader_module.h"
 #include "render/vulkan/vulkan_backend_swapchain.h"
 #include "render/vulkan/vulkan_frame_plan.h"
 
@@ -748,33 +749,6 @@ struct vulkan_recorded_draw_batch {
     vulkan_scissor_rect scissor;
 };
 
-struct vulkan_shader_module_id {
-    std::string value;
-
-    bool empty() const
-    {
-        return value.empty();
-    }
-};
-
-enum class vulkan_shader_stage {
-    vertex,
-    fragment,
-};
-
-std::string_view shader_stage_name(vulkan_shader_stage stage);
-
-struct vulkan_shader_module_descriptor {
-    vulkan_shader_module_id id;
-    vulkan_shader_stage stage = vulkan_shader_stage::vertex;
-    std::string entry_point = "main";
-
-    bool valid() const
-    {
-        return !id.empty() && !entry_point.empty();
-    }
-};
-
 struct vulkan_pipeline_descriptor {
     vulkan_batch_kind kind = vulkan_batch_kind::quad;
     vulkan_shader_module_id vertex_shader;
@@ -998,6 +972,7 @@ struct vulkan_backend_pipeline_state {
     std::vector<vulkan_pipeline_cache_entry> cache_entries;
     std::vector<vulkan_pipeline_descriptor> pipeline_descriptors;
     vulkan_backend_shader_registry_state shader_registry;
+    vulkan_backend_shader_module_readiness_state shader_modules;
     vulkan_pipeline_compatibility_key_summary compatibility;
     vulkan_backend_shader_binding_readiness_state shader_bindings;
     vulkan_backend_pipeline_lifecycle_state lifecycle;

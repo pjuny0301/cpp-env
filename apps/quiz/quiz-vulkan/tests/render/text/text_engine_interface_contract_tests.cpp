@@ -2,6 +2,7 @@
 #include "render/text/fake_text_engine.h"
 #include "render/text/font_cmap_inspector.h"
 #include "render/text/font_coverage_run_segmentation.h"
+#include "render/text/font_glyph_id_resolver.h"
 #include "render/text/font_rasterizer.h"
 #include "render/text/font_shaped_atlas_update.h"
 #include "render/text/font_shaping_backend.h"
@@ -95,6 +96,18 @@ static_assert(FontUnicodeCoverageResolverContract<render::font_unicode_coverage_
 static_assert(FontUnicodeCoverageResolverContract<render::basic_font_unicode_coverage_resolver>);
 
 template <typename T>
+concept FontGlyphIdResolverContract = requires(
+    const T& resolver,
+    const render::render_text_font_glyph_id_resolution_request& request,
+    const render::render_text_font_glyph_id_resolution_run_request& run_request) {
+    { resolver.resolve(request) } -> std::same_as<render::render_text_font_glyph_id_resolution_snapshot>;
+    { resolver.resolve_run(run_request) } -> std::same_as<render::render_text_font_glyph_id_resolution_run>;
+};
+
+static_assert(FontGlyphIdResolverContract<render::font_glyph_id_resolver_interface>);
+static_assert(FontGlyphIdResolverContract<render::deterministic_font_glyph_id_resolver>);
+
+template <typename T>
 concept FontRasterizerContract = requires(
     const T& rasterizer,
     const render::render_text_font_rasterize_request& request) {
@@ -157,6 +170,10 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.font_shaping_diagnostics }
         -> std::same_as<std::vector<render::render_text_font_shaping_diagnostic>&>;
     { diagnostics.font_shaping_policy } -> std::same_as<render::render_text_font_shaping_policy_snapshot&>;
+    { diagnostics.glyph_id_resolutions }
+        -> std::same_as<std::vector<render::render_text_font_glyph_id_resolution_snapshot>&>;
+    { diagnostics.glyph_id_resolution_policy }
+        -> std::same_as<render::render_text_font_glyph_id_resolution_policy_snapshot&>;
     { diagnostics.glyph_font_resolutions }
         -> std::same_as<std::vector<render::render_text_glyph_font_resolution_snapshot>&>;
     { diagnostics.font_resolution_policy } -> std::same_as<render::render_text_font_resolution_policy_snapshot&>;
@@ -199,6 +216,8 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.has_shaped_glyphs() } -> std::same_as<bool>;
     { diagnostics.has_font_shaping_diagnostics() } -> std::same_as<bool>;
     { diagnostics.has_font_shaping_policy() } -> std::same_as<bool>;
+    { diagnostics.has_glyph_id_resolutions() } -> std::same_as<bool>;
+    { diagnostics.has_glyph_id_resolution_policy() } -> std::same_as<bool>;
     { diagnostics.has_glyph_font_resolutions() } -> std::same_as<bool>;
     { diagnostics.has_glyph_cache_readiness() } -> std::same_as<bool>;
     { diagnostics.has_rasterized_glyph_atlas_payloads() } -> std::same_as<bool>;
@@ -551,6 +570,75 @@ static_assert(requires(
 });
 
 static_assert(requires(
+    render::render_text_font_glyph_id_resolution_status status,
+    render::render_text_font_glyph_id_resolution_request request,
+    render::render_text_font_glyph_id_resolution_snapshot snapshot,
+    render::render_text_font_glyph_id_resolution_policy_snapshot policy,
+    render::render_text_font_glyph_id_resolution_run run,
+    render::render_text_font_glyph_id_resolution_run_request run_request,
+    std::vector<render::render_text_font_glyph_id_resolution_snapshot> snapshots,
+    render::font_face_descriptor descriptor,
+    std::uint32_t codepoint) {
+    { render::render_text_font_glyph_id_resolution_status_name(status) } -> std::same_as<std::string>;
+    { request.run_index } -> std::same_as<std::size_t&>;
+    { request.codepoint_index } -> std::same_as<std::size_t&>;
+    { request.codepoint } -> std::same_as<render::utf8_text_codepoint&>;
+    { request.requested_face_id } -> std::same_as<render::font_face_id&>;
+    { request.resolved_face } -> std::same_as<render::font_face_descriptor&>;
+    { request.has_resolved_face } -> std::same_as<bool&>;
+    { request.used_codepoint_fallback } -> std::same_as<bool&>;
+    { request.coverage } -> std::same_as<render::render_text_font_unicode_coverage_snapshot&>;
+    { request.has_coverage } -> std::same_as<bool&>;
+    { request.fallback_glyph_id } -> std::same_as<std::uint32_t&>;
+    { snapshot.status } -> std::same_as<render::render_text_font_glyph_id_resolution_status&>;
+    { snapshot.run_index } -> std::same_as<std::size_t&>;
+    { snapshot.codepoint_index } -> std::same_as<std::size_t&>;
+    { snapshot.byte_offset } -> std::same_as<std::size_t&>;
+    { snapshot.byte_count } -> std::same_as<std::size_t&>;
+    { snapshot.codepoint } -> std::same_as<std::uint32_t&>;
+    { snapshot.glyph_id } -> std::same_as<std::uint32_t&>;
+    { snapshot.requested_face_id } -> std::same_as<render::font_face_id&>;
+    { snapshot.resolved_face_id } -> std::same_as<render::font_face_id&>;
+    { snapshot.valid_utf8 } -> std::same_as<bool&>;
+    { snapshot.glyph_supported } -> std::same_as<bool&>;
+    { snapshot.used_codepoint_fallback } -> std::same_as<bool&>;
+    { snapshot.used_fallback_glyph_id } -> std::same_as<bool&>;
+    { snapshot.has_glyph_id } -> std::same_as<bool&>;
+    { snapshot.coverage_status } -> std::same_as<render::render_text_font_unicode_coverage_status&>;
+    { snapshot.cmap_status } -> std::same_as<render::render_text_font_cmap_inspect_status&>;
+    { snapshot.selected_cmap_format } -> std::same_as<std::uint16_t&>;
+    { snapshot.source_label } -> std::same_as<std::string&>;
+    { snapshot.diagnostic } -> std::same_as<std::string&>;
+    { snapshot.ok() } -> std::same_as<bool>;
+    { policy.request_count } -> std::same_as<std::size_t&>;
+    { policy.resolved_count } -> std::same_as<std::size_t&>;
+    { policy.invalid_utf8_count } -> std::same_as<std::size_t&>;
+    { policy.missing_face_count } -> std::same_as<std::size_t&>;
+    { policy.coverage_invalid_count } -> std::same_as<std::size_t&>;
+    { policy.unsupported_codepoint_count } -> std::same_as<std::size_t&>;
+    { policy.fallback_glyph_id_count } -> std::same_as<std::size_t&>;
+    { policy.supported_glyph_count } -> std::same_as<std::size_t&>;
+    { run.resolutions } -> std::same_as<std::vector<render::render_text_font_glyph_id_resolution_snapshot>&>;
+    { run.policy } -> std::same_as<render::render_text_font_glyph_id_resolution_policy_snapshot&>;
+    { run.diagnostic } -> std::same_as<std::string&>;
+    { run.ok() } -> std::same_as<bool>;
+    { run_request.requests } -> std::same_as<std::vector<render::render_text_font_glyph_id_resolution_request>&>;
+    { render::font_glyph_id_hex_codepoint_label(codepoint) } -> std::same_as<std::string>;
+    { render::font_glyph_id_source_label_for(descriptor) } -> std::same_as<std::string>;
+    { render::font_glyph_id_coverage_snapshot_for_descriptor(descriptor) }
+        -> std::same_as<render::render_text_font_unicode_coverage_snapshot>;
+    { render::font_glyph_id_request_supports_codepoint(request) } -> std::same_as<bool>;
+    { render::resolve_font_glyph_id(request) }
+        -> std::same_as<render::render_text_font_glyph_id_resolution_snapshot>;
+    { render::append_font_glyph_id_resolution(snapshots, policy, snapshot) } -> std::same_as<void>;
+    { render::append_font_glyph_id_resolution(run, snapshot) } -> std::same_as<void>;
+    { render::resolve_font_glyph_ids(run_request) }
+        -> std::same_as<render::render_text_font_glyph_id_resolution_run>;
+    { render::font_glyph_id_resolution_to_shaping_selection(snapshot) }
+        -> std::same_as<render::render_text_font_shaping_codepoint_selection>;
+});
+
+static_assert(requires(
     render::render_text_font_glyph_bitmap bitmap,
     render::render_text_font_glyph_metrics metrics,
     render::render_text_font_rasterize_request raster_request,
@@ -631,6 +719,8 @@ static_assert(requires(
     { render::render_text_font_shaping_backend_status_name(shaping_status) } -> std::same_as<std::string>;
     { selection.requested_face_id } -> std::same_as<render::font_face_id&>;
     { selection.resolved_face_id } -> std::same_as<render::font_face_id&>;
+    { selection.glyph_id } -> std::same_as<std::uint32_t&>;
+    { selection.has_glyph_id } -> std::same_as<bool&>;
     { selection.glyph_supported } -> std::same_as<bool&>;
     { selection.used_codepoint_fallback } -> std::same_as<bool&>;
     { shaping_request.run_index } -> std::same_as<std::size_t&>;

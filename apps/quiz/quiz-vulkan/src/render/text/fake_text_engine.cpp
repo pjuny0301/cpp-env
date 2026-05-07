@@ -406,6 +406,16 @@ void record_font_shaping_result(
         result.policy.zero_advance_combining_mark_count;
 }
 
+void record_font_glyph_id_resolution(
+    fake_text_engine_diagnostics& diagnostics,
+    render_text_font_glyph_id_resolution_snapshot resolution)
+{
+    append_font_glyph_id_resolution(
+        diagnostics.glyph_id_resolutions,
+        diagnostics.glyph_id_resolution_policy,
+        std::move(resolution));
+}
+
 std::vector<shaped_glyph> shape_request(
     const render_text_request& request,
     const deterministic_fake_font_resolver& font_resolver,
@@ -443,6 +453,7 @@ std::vector<shaped_glyph> shape_request(
 
         std::vector<render_text_font_shaping_codepoint_selection> shaping_selections;
         shaping_selections.reserve(codepoints.size());
+        const deterministic_font_glyph_id_resolver glyph_id_resolver;
         for (const utf8_text_codepoint& scalar : codepoints) {
             const std::uint32_t code_point = scalar.code_point;
             if (!scalar.valid) {
@@ -455,16 +466,38 @@ std::vector<shaped_glyph> shape_request(
             const font_face_id resolved_face_id = glyph_resolution.resolved_face == nullptr
                 ? font_resolution.resolved_face_id
                 : glyph_resolution.resolved_face->id;
+            const render_text_font_glyph_id_resolution_snapshot glyph_id_resolution = glyph_id_resolver.resolve(
+                render_text_font_glyph_id_resolution_request{
+                    .run_index = run_index,
+                    .codepoint_index = shaping_selections.size(),
+                    .codepoint = scalar,
+                    .requested_face_id = requested_face_id,
+                    .resolved_face = glyph_resolution.resolved_face == nullptr
+                        ? font_face_descriptor{}
+                        : *glyph_resolution.resolved_face,
+                    .has_resolved_face = glyph_resolution.resolved_face != nullptr,
+                    .used_codepoint_fallback = glyph_resolution.used_fallback,
+                    .coverage = glyph_resolution.resolved_face == nullptr
+                        ? render_text_font_unicode_coverage_snapshot{}
+                        : font_glyph_id_coverage_snapshot_for_descriptor(*glyph_resolution.resolved_face),
+                    .has_coverage = glyph_resolution.resolved_face != nullptr,
+                    .fallback_glyph_id = scalar.valid ? 0U : utf8_replacement_codepoint,
+                });
+            record_font_glyph_id_resolution(diagnostics, glyph_id_resolution);
+
             const float advance = font_shaping_backend_fake_advance_for(style, code_point);
             const float line_height = line_height_for(style);
-            const bool cacheable = glyph_resolution.glyph_supported && advance > 0.0f && line_height > 0.0f;
-            record_glyph_font_resolution(diagnostics, run_index, scalar, glyph_resolution, cacheable);
-            shaping_selections.push_back(render_text_font_shaping_codepoint_selection{
-                .requested_face_id = requested_face_id,
-                .resolved_face_id = resolved_face_id,
-                .glyph_supported = glyph_resolution.glyph_supported,
-                .used_codepoint_fallback = glyph_resolution.used_fallback,
-            });
+            const bool cacheable = glyph_id_resolution.glyph_supported && advance > 0.0f && line_height > 0.0f;
+            font_face_resolution glyph_resolution_for_diagnostics = glyph_resolution;
+            glyph_resolution_for_diagnostics.glyph_supported = glyph_id_resolution.glyph_supported;
+            record_glyph_font_resolution(diagnostics, run_index, scalar, glyph_resolution_for_diagnostics, cacheable);
+
+            render_text_font_shaping_codepoint_selection shaping_selection =
+                font_glyph_id_resolution_to_shaping_selection(glyph_id_resolution);
+            if (shaping_selection.resolved_face_id == 0U) {
+                shaping_selection.resolved_face_id = resolved_face_id;
+            }
+            shaping_selections.push_back(shaping_selection);
         }
 
         const deterministic_fake_font_shaping_backend shaping_backend;

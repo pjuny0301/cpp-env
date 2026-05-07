@@ -45,6 +45,8 @@ inline std::string render_text_font_shaping_backend_status_name(
 struct render_text_font_shaping_codepoint_selection {
     font_face_id requested_face_id = 0;
     font_face_id resolved_face_id = 0;
+    std::uint32_t glyph_id = 0;
+    bool has_glyph_id = false;
     bool glyph_supported = true;
     bool used_codepoint_fallback = false;
 };
@@ -300,8 +302,9 @@ public:
             const bool zero_advance = advance == 0.0f;
             const bool glyph_supported = !unsupported_script && !unsupported_glyph;
             const bool uses_fallback_glyph_id = !glyph_supported;
-            const std::uint32_t glyph_id =
-                uses_fallback_glyph_id ? request.fallback_glyph_id : scalar.code_point;
+            const std::uint32_t glyph_id = selection.has_glyph_id && (!uses_fallback_glyph_id || unsupported_glyph)
+                ? selection.glyph_id
+                : (uses_fallback_glyph_id ? request.fallback_glyph_id : scalar.code_point);
 
             result.glyphs.push_back(render_text_shaped_glyph{
                 .run_index = request.run_index,

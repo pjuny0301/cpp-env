@@ -177,6 +177,39 @@ void test_fake_backend_reports_unsupported_glyph_and_fallback_glyph_id()
     require(result.policy.unsupported_glyph_count == 1U, "unsupported glyph count is recorded");
 }
 
+void test_fake_backend_consumes_pre_resolved_glyph_ids()
+{
+    using namespace quiz_vulkan::render;
+
+    const deterministic_fake_font_shaping_backend backend;
+    std::vector<render_text_font_shaping_codepoint_selection> selections;
+    selections.push_back(render_text_font_shaping_codepoint_selection{
+        .requested_face_id = 41,
+        .resolved_face_id = 41,
+        .glyph_id = 1234,
+        .has_glyph_id = true,
+        .glyph_supported = true,
+    });
+    selections.push_back(render_text_font_shaping_codepoint_selection{
+        .requested_face_id = 41,
+        .resolved_face_id = 41,
+        .glyph_id = 99,
+        .has_glyph_id = true,
+        .glyph_supported = false,
+    });
+
+    const render_text_font_shaping_result result = backend.shape(request_for("A?", selections));
+
+    require(!result.ok(), "unsupported pre-resolved glyph keeps shaping result diagnostic");
+    require(result.glyphs.size() == 2U, "pre-resolved glyph fixture emits two glyphs");
+    require(result.glyphs[0].glyph_id == 1234U, "fake backend consumes supported pre-resolved glyph id");
+    require(result.glyphs[0].glyph_supported, "supported pre-resolved glyph claims support");
+    require(result.glyphs[1].glyph_id == 99U, "fake backend consumes unsupported fallback glyph id from selection");
+    require(!result.glyphs[1].glyph_supported, "unsupported pre-resolved glyph does not claim support");
+    require(result.glyphs[1].used_fallback_glyph_id, "unsupported pre-resolved glyph records fallback glyph use");
+    require(result.policy.fallback_glyph_id_count == 1U, "pre-resolved fallback glyph id is counted");
+}
+
 void test_fake_backend_reports_zero_advance_combining_mark_with_cluster_range()
 {
     using namespace quiz_vulkan::render;
@@ -210,6 +243,7 @@ int main()
     test_fake_backend_reports_backend_unavailable();
     test_fake_backend_reports_unsupported_script_and_fallback_glyph_id();
     test_fake_backend_reports_unsupported_glyph_and_fallback_glyph_id();
+    test_fake_backend_consumes_pre_resolved_glyph_ids();
     test_fake_backend_reports_zero_advance_combining_mark_with_cluster_range();
     return 0;
 }

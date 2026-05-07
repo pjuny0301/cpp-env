@@ -367,13 +367,30 @@ void test_fake_text_engine_records_rasterized_atlas_payloads_for_cacheable_glyph
     require(
         diagnostics.has_rasterized_glyph_atlas_payload_policy(),
         "rasterized payload fixture records rasterizer payload policy");
+    require(diagnostics.has_glyph_id_resolutions(), "rasterized payload fixture records glyph id resolutions");
+    require(
+        diagnostics.has_glyph_id_resolution_policy(),
+        "rasterized payload fixture records glyph id resolution policy");
+    require(diagnostics.glyph_id_resolutions.size() == 1, "one cacheable glyph produces one glyph id resolution");
+    const render_text_font_glyph_id_resolution_snapshot& glyph_id_resolution =
+        diagnostics.glyph_id_resolutions.front();
+    require(
+        glyph_id_resolution.status == render_text_font_glyph_id_resolution_status::resolved,
+        "cacheable glyph id resolves before shaping");
+    require(glyph_id_resolution.glyph_id == U'A', "glyph id resolution maps Latin codepoint deterministically");
+    require(glyph_id_resolution.glyph_supported, "glyph id resolution claims supported fixture glyph");
+    require(
+        diagnostics.glyph_id_resolution_policy.resolved_count == 1,
+        "glyph id resolution policy counts resolved fixture glyph");
     require(diagnostics.rasterized_glyph_atlas_payloads.size() == 1, "one cacheable glyph produces one payload");
 
     const render_text_glyph_cache_readiness_snapshot& readiness = diagnostics.glyph_cache_readiness.front();
     const render_text_rasterized_glyph_atlas_payload_snapshot& payload =
         diagnostics.rasterized_glyph_atlas_payloads.front();
+    require(readiness.glyph_id == glyph_id_resolution.glyph_id, "cache readiness uses resolved glyph id");
     require(payload.cluster_index == readiness.cluster_index, "payload records matching cluster index");
     require(payload.run_index == 0 && payload.byte_offset == 0, "payload records glyph run position");
+    require(payload.glyph_id == glyph_id_resolution.glyph_id, "raster payload uses resolved glyph id");
     require(payload.cache_key == readiness.cache_key, "payload preserves cache readiness atlas key");
     require(payload.status == render_text_font_rasterizer_status::rasterized, "payload records rasterized status");
     require(payload.cacheable, "payload records cacheable glyph");

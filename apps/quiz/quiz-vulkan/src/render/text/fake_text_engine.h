@@ -1,6 +1,7 @@
 #pragma once
 
 #include "render/text/font_rasterizer.h"
+#include "render/text/font_glyph_id_resolver.h"
 #include "render/text/font_resolver.h"
 #include "render/text/font_shaped_atlas_update.h"
 #include "render/text/font_shaping_backend.h"
@@ -53,6 +54,8 @@ struct fake_text_engine_diagnostics {
     std::vector<render_text_shaped_glyph> shaped_glyphs;
     std::vector<render_text_font_shaping_diagnostic> font_shaping_diagnostics;
     render_text_font_shaping_policy_snapshot font_shaping_policy;
+    std::vector<render_text_font_glyph_id_resolution_snapshot> glyph_id_resolutions;
+    render_text_font_glyph_id_resolution_policy_snapshot glyph_id_resolution_policy;
     std::vector<render_text_glyph_font_resolution_snapshot> glyph_font_resolutions;
     render_text_font_resolution_policy_snapshot font_resolution_policy;
     std::vector<render_text_line_break_snapshot> line_breaks;
@@ -166,6 +169,16 @@ struct fake_text_engine_diagnostics {
     bool has_font_shaping_policy() const
     {
         return font_shaping_policy.run_count > 0;
+    }
+
+    bool has_glyph_id_resolutions() const
+    {
+        return !glyph_id_resolutions.empty();
+    }
+
+    bool has_glyph_id_resolution_policy() const
+    {
+        return glyph_id_resolution_policy.request_count > 0;
     }
 
     bool has_glyph_font_resolutions() const

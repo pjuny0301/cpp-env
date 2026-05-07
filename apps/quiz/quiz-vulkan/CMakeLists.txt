@@ -142,6 +142,7 @@ target_sources(
             src/render/image/image_texture_upload_retry_policy.h
             src/render/image/image_types.h
             src/render/render_draw_list.h
+            src/render/text/font_coverage_run_segmentation.h
             src/render/text/font_cmap_inspector.h
             src/render/text/font_glyph_atlas.h
             src/render/text/font_resolver.h

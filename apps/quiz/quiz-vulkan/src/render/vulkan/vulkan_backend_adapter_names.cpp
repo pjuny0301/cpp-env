@@ -193,6 +193,40 @@ std::string_view command_packet_execution_event_name(
     return "unknown";
 }
 
+std::string_view command_recorder_operation_plan_status_name(
+    vulkan_command_recorder_operation_plan_status status)
+{
+    switch (status) {
+    case vulkan_command_recorder_operation_plan_status::not_checked:
+        return "not_checked";
+    case vulkan_command_recorder_operation_plan_status::ready:
+        return "ready";
+    case vulkan_command_recorder_operation_plan_status::packet_bridge_unavailable:
+        return "packet_bridge_unavailable";
+    case vulkan_command_recorder_operation_plan_status::packet_execution_unavailable:
+        return "packet_execution_unavailable";
+    }
+
+    return "unknown";
+}
+
+std::string_view command_recorder_operation_kind_name(
+    vulkan_command_recorder_operation_kind kind)
+{
+    switch (kind) {
+    case vulkan_command_recorder_operation_kind::draw_rect:
+        return "draw_rect";
+    case vulkan_command_recorder_operation_kind::draw_text:
+        return "draw_text";
+    case vulkan_command_recorder_operation_kind::draw_image:
+        return "draw_image";
+    case vulkan_command_recorder_operation_kind::draw_debug_bounds:
+        return "draw_debug_bounds";
+    }
+
+    return "unknown";
+}
+
 std::string_view frame_pipeline_handoff_status_name(
     vulkan_backend_frame_pipeline_handoff_status status)
 {

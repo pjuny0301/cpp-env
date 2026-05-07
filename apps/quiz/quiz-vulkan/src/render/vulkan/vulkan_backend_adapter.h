@@ -1410,6 +1410,87 @@ struct vulkan_command_packet_execution_result {
     }
 };
 
+enum class vulkan_command_recorder_operation_plan_status {
+    not_checked,
+    ready,
+    packet_bridge_unavailable,
+    packet_execution_unavailable,
+};
+
+std::string_view command_recorder_operation_plan_status_name(
+    vulkan_command_recorder_operation_plan_status status);
+
+enum class vulkan_command_recorder_operation_kind {
+    draw_rect,
+    draw_text,
+    draw_image,
+    draw_debug_bounds,
+};
+
+std::string_view command_recorder_operation_kind_name(
+    vulkan_command_recorder_operation_kind kind);
+
+struct vulkan_command_recorder_operation_summary {
+    vulkan_command_recorder_operation_kind kind =
+        vulkan_command_recorder_operation_kind::draw_rect;
+    vulkan_command_packet_category category = vulkan_command_packet_category::rect;
+    vulkan_batch_kind batch_kind = vulkan_batch_kind::quad;
+    std::size_t operation_index = 0;
+    std::size_t packet_index = 0;
+    std::size_t command_index = 0;
+    render_node_id node_id;
+    render_rect bounds;
+    render_rect clipped_bounds;
+    vulkan_scissor_rect scissor;
+    std::size_t vertex_count = 0;
+    std::size_t descriptor_set_count = 0;
+    std::size_t binding_count = 0;
+
+    bool completed() const
+    {
+        return vertex_count > 0 && binding_count >= descriptor_set_count && !scissor.empty();
+    }
+};
+
+struct vulkan_command_recorder_operation_plan {
+    bool checked = false;
+    vulkan_command_recorder_operation_plan_status status =
+        vulkan_command_recorder_operation_plan_status::not_checked;
+    vulkan_backend_fallback_reason fallback_reason = vulkan_backend_fallback_reason::not_requested;
+    bool packet_bridge_checked = false;
+    bool packet_bridge_ready = false;
+    bool packet_execution_checked = false;
+    bool packet_execution_ready = false;
+    vulkan_command_packet_category blocked_category = vulkan_command_packet_category::rect;
+    vulkan_batch_kind blocked_batch_kind = vulkan_batch_kind::quad;
+    std::size_t blocked_packet_index = 0;
+    std::size_t blocked_command_index = 0;
+    std::size_t planned_packet_count = 0;
+    std::size_t operation_count = 0;
+    std::size_t rect_operation_count = 0;
+    std::size_t text_operation_count = 0;
+    std::size_t image_operation_count = 0;
+    std::size_t debug_bounds_operation_count = 0;
+    std::size_t clipped_operation_count = 0;
+    std::size_t discarded_draw_call_count = 0;
+    std::vector<vulkan_command_recorder_operation_summary> operations;
+
+    bool completed() const
+    {
+        return checked && status == vulkan_command_recorder_operation_plan_status::ready
+            && fallback_reason == vulkan_backend_fallback_reason::none
+            && packet_bridge_checked && packet_bridge_ready
+            && packet_execution_checked && packet_execution_ready
+            && operation_count == planned_packet_count
+            && operation_count == operations.size();
+    }
+
+    bool blocked() const
+    {
+        return checked && status != vulkan_command_recorder_operation_plan_status::ready;
+    }
+};
+
 struct fake_vulkan_command_packet_executor_options {
     bool fail_begin = false;
     bool fail_end = false;
@@ -1492,6 +1573,8 @@ struct vulkan_backend_frame_pipeline_handoff {
     bool command_packets_completed = false;
     bool command_packet_execution_checked = false;
     bool command_packet_execution_completed = false;
+    bool command_recorder_operations_checked = false;
+    bool command_recorder_operations_completed = false;
     bool command_recorder_lifecycle_ready = false;
     bool command_recorder_gate_checked = false;
     bool command_recorder_gate_allowed = false;
@@ -1521,6 +1604,7 @@ struct vulkan_backend_frame_pipeline_handoff {
             && render_pass_ready && surface_ready && frame_plan_ready && pipeline_completed
             && resource_bindings_completed && resource_registry_completed
             && command_packets_completed && command_packet_execution_completed
+            && command_recorder_operations_completed
             && command_recorder_lifecycle_ready && command_recorder_gate_allowed
             && command_recording_ready
             && command_submit_readiness_ready
@@ -1578,6 +1662,7 @@ struct vulkan_backend_frame_result {
     vulkan_backend_pipeline_state pipeline;
     vulkan_command_packet_bridge_result command_packets;
     vulkan_command_packet_execution_result command_packet_execution;
+    vulkan_command_recorder_operation_plan command_recorder_operations;
     vulkan_backend_command_recorder_state command_recorder;
     vulkan_command_submit_readiness_result command_submit;
     vulkan_queue_submit_present_result queue_submit;
@@ -1616,6 +1701,7 @@ struct vulkan_backend_frame_result {
             && (!pipeline_handoff.checked || pipeline_handoff.completed())
             && command_packets.completed()
             && command_packet_execution.completed()
+            && command_recorder_operations.completed()
             && command_recorder.completed()
             && command_recorder.gate.completed()
             && resource_bindings.completed()
@@ -1693,6 +1779,10 @@ vulkan_command_packet_bridge_result build_vulkan_command_packet_bridge(
     const vulkan_backend_pipeline_state& pipeline,
     const vulkan_backend_resource_binding_state& resource_bindings,
     const vulkan_backend_resource_registry_state& resource_registry);
+
+vulkan_command_recorder_operation_plan build_vulkan_command_recorder_operation_plan(
+    const vulkan_command_packet_bridge_result& bridge,
+    const vulkan_command_packet_execution_result& execution);
 
 vulkan_backend_frame_pipeline_handoff summarize_vulkan_frame_pipeline_handoff(
     const vulkan_backend_frame_result& frame);

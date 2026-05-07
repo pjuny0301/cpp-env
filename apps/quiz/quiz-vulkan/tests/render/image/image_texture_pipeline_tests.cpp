@@ -48,6 +48,10 @@ static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_text
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_residency_budget_plan>);
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_residency_budget_summary>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_residency_budget_summary>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_handle_map_entry>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_handle_map_diagnostics>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_handle_map_entry>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_handle_map_diagnostics>);
 
 void require(bool condition, const char* message)
 {
@@ -1084,6 +1088,177 @@ void test_residency_budget_plan_marks_retry_and_placeholder_candidates()
     require(placeholder_residency.unique_resident_rgba8_byte_count == 16, "placeholder contributes estimated RGBA8 bytes");
 }
 
+void test_texture_handle_map_records_renderer_handoff_mapping()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes("asset://textures/card.ppm", make_ppm_2x1_fixture_bytes());
+    ppm_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
+
+    render_image_sampler_policy nearest_sampler;
+    nearest_sampler.min_filter = render_image_filter::nearest;
+    nearest_sampler.mag_filter = render_image_filter::nearest;
+
+    const render_image_texture_batch_plan plan = plan_render_image_texture_batch(std::vector<render_image_ref>{
+        render_image_ref{.uri = "asset://textures/card.ppm"},
+        render_image_ref{.uri = "  ASSET:///textures\\card.ppm  "},
+        render_image_ref{.uri = "asset://textures/card.ppm", .sampler = nearest_sampler},
+    });
+    const render_image_texture_batch_execution_diagnostics execution = execute_render_image_texture_batch_plan(
+        plan,
+        pipeline,
+        render_image_texture_residency_budget_plan_options{
+            .max_resident_texture_count = 1,
+        });
+    const render_image_texture_handle_map_diagnostics handle_map =
+        make_render_image_texture_handle_map_diagnostics(plan, execution);
+
+    require(handle_map.ok(), "texture handle map is ready when every request has a public texture id");
+    require(handle_map.renderer_handoff_ready, "texture handle map records renderer handoff readiness");
+    require(handle_map.request_count == 3, "texture handle map records request count");
+    require(handle_map.mapped_count == 3, "texture handle map records mapped count");
+    require(handle_map.missing_count == 0, "texture handle map records no missing handles");
+    require(handle_map.placeholder_texture_count == 0, "texture handle map records no placeholders");
+    require(handle_map.cache_reused_count == 1, "texture handle map records cache reuse");
+    require(handle_map.unique_texture_id_count == 2, "texture handle map deduplicates repeated texture ids");
+    require(handle_map.residency_budget_diagnostics_available, "texture handle map carries residency summary availability");
+    require(handle_map.residency_budget_pressure, "texture handle map carries residency pressure");
+    require(
+        handle_map.residency_pressure_status
+            == render_image_texture_residency_budget_pressure_status::over_texture_budget,
+        "texture handle map carries residency pressure status");
+    require(handle_map.residency_pressure_status_name == "over_texture_budget", "texture handle pressure name is stable");
+    require(
+        handle_map.diagnostic == "image texture handle map is ready for renderer handoff",
+        "texture handle map ready diagnostic is stable");
+    require(handle_map.entries.size() == 3, "texture handle map records one entry per request");
+
+    const render_image_texture_handle_map_entry& first = handle_map.entries[0];
+    require(first.ok(), "first handle map entry is mapped");
+    require(first.status == render_image_texture_handle_map_entry_status::mapped, "first handle map status is mapped");
+    require(first.plan_status == render_image_texture_batch_plan_entry_status::planned, "first handle map records plan status");
+    require(first.execution_status == render_image_texture_batch_execution_entry_status::ready, "first handle map records execution status");
+    require(first.pipeline_status == render_image_texture_pipeline_status::ready, "first handle map records pipeline status");
+    require(first.request_index == 0, "first handle map entry records request index");
+    require(first.render_image_uri == "asset://textures/card.ppm", "first handle map preserves render image uri");
+    require(first.normalized_uri == "asset://textures/card.ppm", "first handle map records normalized uri");
+    require(first.cache_key == "asset://textures/card.ppm", "first handle map records normalized source cache key");
+    require(first.source_kind == render_image_source_kind::asset_uri, "first handle map records source kind");
+    require(first.texture_id == execution.entries[0].texture.id, "first handle map records public texture id");
+    require(first.texture_revision == execution.entries[0].texture.revision, "first handle map records texture revision");
+    require(first.texture_width == 2, "first handle map records texture width");
+    require(first.texture_height == 1, "first handle map records texture height");
+    require(first.ready, "first handle map records ready state");
+    require(!first.placeholder_texture, "first handle map records non-placeholder texture");
+    require(!first.cache_reused, "first handle map records first request as cache miss");
+    require(!first.expected_cache_reuse, "first handle map records no reuse expectation");
+    require(first.sampler_policy.valid, "first handle map exposes valid sampler policy");
+    require(first.texture_key_diagnostic.valid, "first handle map exposes valid texture key diagnostic");
+    require(first.stable_texture_cache_key == plan.entries[0].stable_texture_cache_key, "first handle map records stable texture key");
+    require(first.residency_budget_pressure, "first handle map entry carries residency pressure");
+    require(first.residency_pressure_status_name == "over_texture_budget", "first handle map entry records pressure name");
+
+    const render_image_texture_handle_map_entry& second = handle_map.entries[1];
+    require(second.ok(), "second handle map entry is mapped");
+    require(second.render_image_uri == "  ASSET:///textures\\card.ppm  ", "second handle map preserves original uri");
+    require(second.normalized_uri == "asset://textures/card.ppm", "second handle map records normalized alias uri");
+    require(second.texture_id == first.texture_id, "second handle map records reused texture id");
+    require(second.cache_reused, "second handle map records cache reuse");
+    require(second.expected_cache_reuse, "second handle map records expected cache reuse");
+    require(second.stable_texture_cache_key == first.stable_texture_cache_key, "second handle map records same texture cache key");
+
+    const render_image_texture_handle_map_entry& third = handle_map.entries[2];
+    require(third.ok(), "third handle map entry is mapped");
+    require(third.texture_id != first.texture_id, "third handle map records sampler-separated texture id");
+    require(!third.cache_reused, "third handle map records sampler separation as non-reuse");
+    require(third.sampler_policy.uses_nearest_filtering, "third handle map records nearest sampler policy");
+    require(third.stable_texture_cache_key != first.stable_texture_cache_key, "third handle map records sampler-separated key");
+}
+
+void test_texture_handle_map_records_missing_and_placeholder_entries()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_image_texture_placeholder_policy placeholder_policy{
+        .enabled = true,
+        .width = 2,
+        .height = 2,
+    };
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes("asset://textures/bad.ppm", make_short_ppm_2x1_fixture_bytes());
+    ppm_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    cache.set_placeholder_texture_policy(placeholder_policy);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
+
+    const render_image_texture_batch_plan plan = plan_render_image_texture_batch(
+        std::vector<render_image_ref>{
+            render_image_ref{.uri = "   "},
+            render_image_ref{.uri = "asset://textures/bad.ppm"},
+        },
+        render_image_texture_batch_plan_options{.placeholder_policy = placeholder_policy});
+    const render_image_texture_batch_execution_diagnostics execution =
+        execute_render_image_texture_batch_plan(plan, pipeline);
+    const render_image_texture_handle_map_diagnostics handle_map =
+        make_render_image_texture_handle_map_diagnostics(plan, execution);
+
+    require(!handle_map.ok(), "texture handle map is not renderer-ready with a skipped request");
+    require(!handle_map.renderer_handoff_ready, "texture handle map records missing handoff readiness");
+    require(handle_map.request_count == 2, "placeholder handle map records request count");
+    require(handle_map.mapped_count == 1, "placeholder handle map records mapped placeholder");
+    require(handle_map.missing_count == 1, "placeholder handle map records skipped request as missing");
+    require(handle_map.placeholder_texture_count == 1, "placeholder handle map counts placeholder texture");
+    require(handle_map.cache_reused_count == 0, "placeholder handle map records no cache reuse");
+    require(handle_map.unique_texture_id_count == 1, "placeholder handle map counts one public texture id");
+    require(!handle_map.residency_budget_pressure, "placeholder handle map records no residency pressure");
+    require(handle_map.residency_pressure_status_name == "within_budget", "placeholder handle pressure name is stable");
+    require(
+        handle_map.diagnostic == "image texture handle map has missing texture handles",
+        "placeholder handle map failure diagnostic is stable");
+    require(handle_map.entries.size() == 2, "placeholder handle map keeps one entry per request");
+
+    const render_image_texture_handle_map_entry& skipped = handle_map.entries[0];
+    require(!skipped.ok(), "skipped handle map entry is not mapped");
+    require(
+        skipped.status == render_image_texture_handle_map_entry_status::skipped_invalid_request,
+        "skipped handle map entry records skipped status");
+    require(skipped.plan_status == render_image_texture_batch_plan_entry_status::resolve_failed, "skipped entry records plan failure");
+    require(
+        skipped.execution_status == render_image_texture_batch_execution_entry_status::skipped_invalid_request,
+        "skipped entry records execution failure");
+    require(skipped.render_image_uri == "   ", "skipped entry preserves original invalid uri");
+    require(skipped.texture_id == 0, "skipped entry has no texture id");
+    require(!skipped.ready, "skipped entry records non-ready state");
+    require(!skipped.placeholder_texture, "skipped entry is not a placeholder texture");
+    require(skipped.diagnostic.find("empty") != std::string::npos, "skipped entry carries invalid request diagnostic");
+
+    const render_image_texture_handle_map_entry& placeholder = handle_map.entries[1];
+    require(placeholder.ok(), "placeholder handle map entry is mapped");
+    require(placeholder.status == render_image_texture_handle_map_entry_status::mapped, "placeholder entry status is mapped");
+    require(placeholder.plan_status == render_image_texture_batch_plan_entry_status::planned, "placeholder entry records plan status");
+    require(placeholder.execution_status == render_image_texture_batch_execution_entry_status::ready, "placeholder entry records ready execution");
+    require(placeholder.render_image_uri == "asset://textures/bad.ppm", "placeholder entry preserves source uri");
+    require(placeholder.normalized_uri == "asset://textures/bad.ppm", "placeholder entry records normalized source uri");
+    require(placeholder.cache_key == "asset://textures/bad.ppm", "placeholder entry records requested source cache key");
+    require(placeholder.texture_id != 0, "placeholder entry exposes a public texture id");
+    require(placeholder.ready, "placeholder entry records ready placeholder");
+    require(placeholder.placeholder_texture, "placeholder entry records placeholder flag");
+    require(is_fake_image_texture_placeholder_key(placeholder.texture_key), "placeholder entry records placeholder texture key");
+    require(placeholder.texture_key.source_key != placeholder.cache_key, "placeholder key stays separate from requested source key");
+    require(placeholder.sampler_policy.valid, "placeholder entry exposes sampler policy");
+    require(placeholder.residency_pressure_status_name == "within_budget", "placeholder entry carries residency status");
+    require(
+        placeholder.diagnostic.find("placeholder") != std::string::npos,
+        "placeholder entry records placeholder diagnostic");
+}
+
 } // namespace
 
 int main()
@@ -1106,5 +1281,7 @@ int main()
     test_batch_execution_reports_placeholder_fallback_without_cache_internals();
     test_residency_budget_plan_classifies_candidates_and_pressure();
     test_residency_budget_plan_marks_retry_and_placeholder_candidates();
+    test_texture_handle_map_records_renderer_handoff_mapping();
+    test_texture_handle_map_records_missing_and_placeholder_entries();
     return 0;
 }

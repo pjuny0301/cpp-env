@@ -999,6 +999,231 @@ inline render_image_texture_batch_execution_diagnostics execute_render_image_tex
         render_image_texture_residency_budget_plan_options{});
 }
 
+enum class render_image_texture_handle_map_entry_status {
+    mapped,
+    skipped_invalid_request,
+    failed_request,
+    missing_execution,
+};
+
+inline std::string render_image_texture_handle_map_entry_status_name(
+    render_image_texture_handle_map_entry_status status)
+{
+    switch (status) {
+    case render_image_texture_handle_map_entry_status::mapped:
+        return "mapped";
+    case render_image_texture_handle_map_entry_status::skipped_invalid_request:
+        return "skipped_invalid_request";
+    case render_image_texture_handle_map_entry_status::failed_request:
+        return "failed_request";
+    case render_image_texture_handle_map_entry_status::missing_execution:
+        return "missing_execution";
+    }
+
+    return "unknown";
+}
+
+struct render_image_texture_handle_map_entry {
+    std::size_t sequence = 0;
+    std::size_t request_index = 0;
+    render_image_texture_handle_map_entry_status status =
+        render_image_texture_handle_map_entry_status::missing_execution;
+    render_image_texture_batch_plan_entry_status plan_status =
+        render_image_texture_batch_plan_entry_status::resolve_failed;
+    render_image_texture_batch_execution_entry_status execution_status =
+        render_image_texture_batch_execution_entry_status::skipped_invalid_request;
+    render_image_texture_pipeline_status pipeline_status =
+        render_image_texture_pipeline_status::resolve_failed;
+    std::string render_image_uri;
+    std::string normalized_uri;
+    render_image_cache_key cache_key;
+    render_image_source_kind source_kind = render_image_source_kind::unsupported;
+    render_image_sampler_policy sampler;
+    render_image_sampler_policy_diagnostic sampler_policy;
+    render_image_texture_key texture_key;
+    render_image_texture_key_diagnostic texture_key_diagnostic;
+    std::string stable_texture_cache_key;
+    render_image_texture_id texture_id = 0;
+    render_image_revision texture_revision = 0;
+    std::size_t texture_width = 0;
+    std::size_t texture_height = 0;
+    bool mapped = false;
+    bool ready = false;
+    bool placeholder_texture = false;
+    bool cache_reused = false;
+    bool expected_cache_reuse = false;
+    bool residency_budget_pressure = false;
+    render_image_texture_residency_budget_pressure_status residency_pressure_status =
+        render_image_texture_residency_budget_pressure_status::within_budget;
+    std::string residency_pressure_status_name;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return mapped;
+    }
+};
+
+struct render_image_texture_handle_map_diagnostics {
+    std::size_t request_count = 0;
+    std::size_t mapped_count = 0;
+    std::size_t missing_count = 0;
+    std::size_t placeholder_texture_count = 0;
+    std::size_t cache_reused_count = 0;
+    std::size_t unique_texture_id_count = 0;
+    bool residency_budget_diagnostics_available = false;
+    bool residency_budget_pressure = false;
+    render_image_texture_residency_budget_pressure_status residency_pressure_status =
+        render_image_texture_residency_budget_pressure_status::within_budget;
+    std::string residency_pressure_status_name;
+    bool renderer_handoff_ready = false;
+    std::vector<render_image_texture_handle_map_entry> entries;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return renderer_handoff_ready;
+    }
+};
+
+inline const render_image_texture_batch_plan_entry* render_image_texture_batch_plan_entry_for_request_index(
+    const render_image_texture_batch_plan& plan,
+    std::size_t request_index)
+{
+    for (const render_image_texture_batch_plan_entry& entry : plan.entries) {
+        if (entry.request_index == request_index) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
+inline render_image_texture_handle_map_entry_status render_image_texture_handle_map_status_for_execution(
+    const render_image_texture_batch_execution_entry& execution_entry)
+{
+    if (execution_entry.ready && execution_entry.texture.valid()) {
+        return render_image_texture_handle_map_entry_status::mapped;
+    }
+    if (execution_entry.status == render_image_texture_batch_execution_entry_status::skipped_invalid_request) {
+        return render_image_texture_handle_map_entry_status::skipped_invalid_request;
+    }
+    return render_image_texture_handle_map_entry_status::failed_request;
+}
+
+inline render_image_texture_handle_map_diagnostics make_render_image_texture_handle_map_diagnostics(
+    const render_image_texture_batch_plan& plan,
+    const render_image_texture_batch_execution_diagnostics& execution)
+{
+    render_image_texture_handle_map_diagnostics diagnostics{
+        .request_count = plan.request_count,
+        .residency_budget_diagnostics_available = execution.residency_budget_diagnostics_available,
+        .residency_budget_pressure = execution.residency_budget.budget_pressure,
+        .residency_pressure_status = execution.residency_budget.pressure_status,
+        .residency_pressure_status_name = execution.residency_budget.pressure_status_name,
+    };
+
+    std::map<render_image_texture_id, bool> mapped_texture_ids;
+    std::map<std::size_t, bool> seen_request_indices;
+    for (const render_image_texture_batch_execution_entry& execution_entry : execution.entries) {
+        const render_image_texture_batch_plan_entry* plan_entry =
+            render_image_texture_batch_plan_entry_for_request_index(plan, execution_entry.request_index);
+        render_image_texture_key texture_key = execution_entry.texture_key;
+        if (texture_key.source_key.empty() && plan_entry != nullptr) {
+            texture_key = plan_entry->texture_key;
+        }
+        const bool mapped = execution_entry.ready && execution_entry.texture.valid();
+        render_image_texture_handle_map_entry entry{
+            .sequence = execution_entry.sequence,
+            .request_index = execution_entry.request_index,
+            .status = render_image_texture_handle_map_status_for_execution(execution_entry),
+            .plan_status = plan_entry == nullptr ? execution_entry.plan_status : plan_entry->status,
+            .execution_status = execution_entry.status,
+            .pipeline_status = execution_entry.pipeline_status,
+            .render_image_uri = plan_entry == nullptr ? execution_entry.request.uri : plan_entry->image.uri,
+            .normalized_uri = plan_entry == nullptr ? execution_entry.request.uri : plan_entry->pipeline_request.uri,
+            .cache_key = plan_entry == nullptr ? texture_key.source_key : plan_entry->normalized_source_key,
+            .source_kind = plan_entry == nullptr ? render_image_source_kind::unsupported : plan_entry->source_kind,
+            .sampler = plan_entry == nullptr ? execution_entry.request.sampler : plan_entry->sampler,
+            .sampler_policy = make_render_image_sampler_policy_diagnostic(
+                plan_entry == nullptr ? execution_entry.request.sampler : plan_entry->sampler),
+            .texture_key = texture_key,
+            .texture_key_diagnostic = make_render_image_texture_key_diagnostic(texture_key),
+            .texture_id = execution_entry.texture.id,
+            .texture_revision = execution_entry.texture.revision,
+            .texture_width = execution_entry.texture.width,
+            .texture_height = execution_entry.texture.height,
+            .mapped = mapped,
+            .ready = execution_entry.ready,
+            .placeholder_texture = execution_entry.placeholder_texture,
+            .cache_reused = execution_entry.cache_reused,
+            .expected_cache_reuse = execution_entry.expected_cache_reuse,
+            .residency_budget_pressure = execution.residency_budget.budget_pressure,
+            .residency_pressure_status = execution.residency_budget.pressure_status,
+            .residency_pressure_status_name = execution.residency_budget.pressure_status_name,
+            .diagnostic = execution_entry.diagnostic,
+        };
+        entry.stable_texture_cache_key = entry.texture_key_diagnostic.stable_cache_key;
+        if (entry.diagnostic.empty()) {
+            entry.diagnostic = entry.mapped
+                ? "image texture handle is mapped for renderer handoff"
+                : "image texture handle is unavailable for renderer handoff";
+        }
+
+        if (entry.mapped) {
+            ++diagnostics.mapped_count;
+            mapped_texture_ids.emplace(entry.texture_id, true);
+        } else {
+            ++diagnostics.missing_count;
+        }
+        if (entry.placeholder_texture) {
+            ++diagnostics.placeholder_texture_count;
+        }
+        if (entry.cache_reused) {
+            ++diagnostics.cache_reused_count;
+        }
+
+        seen_request_indices.emplace(entry.request_index, true);
+        diagnostics.entries.push_back(std::move(entry));
+    }
+
+    for (const render_image_texture_batch_plan_entry& plan_entry : plan.entries) {
+        if (seen_request_indices.find(plan_entry.request_index) != seen_request_indices.end()) {
+            continue;
+        }
+
+        render_image_texture_handle_map_entry entry{
+            .sequence = diagnostics.entries.size() + 1,
+            .request_index = plan_entry.request_index,
+            .status = render_image_texture_handle_map_entry_status::missing_execution,
+            .plan_status = plan_entry.status,
+            .render_image_uri = plan_entry.image.uri,
+            .normalized_uri = plan_entry.pipeline_request.uri,
+            .cache_key = plan_entry.normalized_source_key,
+            .source_kind = plan_entry.source_kind,
+            .sampler = plan_entry.sampler,
+            .sampler_policy = plan_entry.sampler_policy,
+            .texture_key = plan_entry.texture_key,
+            .texture_key_diagnostic = plan_entry.texture_key_diagnostic,
+            .stable_texture_cache_key = plan_entry.stable_texture_cache_key,
+            .residency_budget_pressure = execution.residency_budget.budget_pressure,
+            .residency_pressure_status = execution.residency_budget.pressure_status,
+            .residency_pressure_status_name = execution.residency_budget.pressure_status_name,
+            .diagnostic = "image texture execution entry is missing for renderer handoff",
+        };
+
+        ++diagnostics.missing_count;
+        diagnostics.entries.push_back(std::move(entry));
+    }
+
+    diagnostics.unique_texture_id_count = mapped_texture_ids.size();
+    diagnostics.renderer_handoff_ready = diagnostics.request_count == diagnostics.mapped_count
+        && diagnostics.missing_count == 0;
+    diagnostics.diagnostic = diagnostics.renderer_handoff_ready
+        ? "image texture handle map is ready for renderer handoff"
+        : "image texture handle map has missing texture handles";
+    return diagnostics;
+}
+
 class fake_image_texture_pipeline final : public image_texture_pipeline_interface {
 public:
     fake_image_texture_pipeline(

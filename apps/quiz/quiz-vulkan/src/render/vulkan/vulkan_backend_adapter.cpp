@@ -402,6 +402,26 @@ void count_command_packet_category(
     }
 }
 
+void count_packet_execution_category(
+    vulkan_command_packet_execution_result& result,
+    vulkan_command_packet_category category)
+{
+    switch (category) {
+    case vulkan_command_packet_category::rect:
+        ++result.rect_packet_count;
+        break;
+    case vulkan_command_packet_category::text:
+        ++result.text_packet_count;
+        break;
+    case vulkan_command_packet_category::image:
+        ++result.image_packet_count;
+        break;
+    case vulkan_command_packet_category::debug_bounds:
+        ++result.debug_bounds_packet_count;
+        break;
+    }
+}
+
 const vulkan_batch_resource_binding_snapshot* find_binding_snapshot_for_batch(
     const vulkan_backend_resource_binding_state& resource_bindings,
     const vulkan_draw_batch& batch,
@@ -442,6 +462,28 @@ vulkan_command_packet make_command_packet(
         .descriptor_set_count = bindings.descriptor_set_count,
         .binding_count = bindings.binding_count,
         .bindings = bindings.bindings,
+    };
+}
+
+vulkan_command_packet_execution_snapshot make_execution_event(
+    vulkan_command_packet_execution_event event)
+{
+    return vulkan_command_packet_execution_snapshot{
+        .event = event,
+        .attempted = true,
+    };
+}
+
+vulkan_command_packet_execution_snapshot make_packet_execution_event(
+    const vulkan_command_packet& packet)
+{
+    return vulkan_command_packet_execution_snapshot{
+        .event = vulkan_command_packet_execution_event::packet,
+        .category = packet.category,
+        .batch_kind = packet.batch_kind,
+        .packet_index = packet.packet_index,
+        .command_index = packet.command_index,
+        .attempted = true,
     };
 }
 
@@ -1360,6 +1402,97 @@ vulkan_command_packet_bridge_result build_vulkan_command_packet_bridge(
     return bridge;
 }
 
+fake_vulkan_command_packet_executor::fake_vulkan_command_packet_executor() = default;
+
+fake_vulkan_command_packet_executor::fake_vulkan_command_packet_executor(
+    fake_vulkan_command_packet_executor_options options)
+    : options_(options)
+{
+}
+
+vulkan_command_packet_execution_result fake_vulkan_command_packet_executor::execute_packets(
+    const vulkan_command_packet_bridge_result& bridge)
+{
+    result_ = vulkan_command_packet_execution_result{
+        .checked = true,
+        .status = vulkan_command_packet_execution_status::not_checked,
+        .fallback_reason = vulkan_backend_fallback_reason::not_requested,
+        .packet_bridge_checked = bridge.checked,
+        .packet_bridge_ready = bridge.completed(),
+        .planned_packet_count = bridge.packet_count,
+        .events = {},
+    };
+
+    if (!bridge.completed()) {
+        result_.status = vulkan_command_packet_execution_status::packet_bridge_unavailable;
+        result_.fallback_reason = bridge.fallback_reason == vulkan_backend_fallback_reason::none
+            ? vulkan_backend_fallback_reason::record_commands_failed
+            : bridge.fallback_reason;
+        return result_;
+    }
+
+    vulkan_command_packet_execution_snapshot begin =
+        make_execution_event(vulkan_command_packet_execution_event::begin);
+    result_.begin_attempted = true;
+    if (options_.fail_begin) {
+        begin.failed = true;
+        result_.status = vulkan_command_packet_execution_status::begin_failed;
+        result_.fallback_reason = vulkan_backend_fallback_reason::record_commands_failed;
+        result_.events.push_back(begin);
+        return result_;
+    }
+    begin.completed = true;
+    result_.begin_completed = true;
+    result_.events.push_back(begin);
+
+    for (const vulkan_command_packet& packet : bridge.packets) {
+        vulkan_command_packet_execution_snapshot packet_event =
+            make_packet_execution_event(packet);
+        ++result_.attempted_packet_count;
+        if (options_.fail_packet && packet.packet_index == options_.fail_packet_index) {
+            packet_event.failed = true;
+            result_.status = vulkan_command_packet_execution_status::packet_failed;
+            result_.fallback_reason = vulkan_backend_fallback_reason::record_commands_failed;
+            result_.has_failed_packet = true;
+            result_.first_failed_category = packet.category;
+            result_.first_failed_batch_kind = packet.batch_kind;
+            result_.first_failed_packet_index = packet.packet_index;
+            result_.first_failed_command_index = packet.command_index;
+            result_.events.push_back(packet_event);
+            return result_;
+        }
+
+        packet_event.completed = true;
+        ++result_.executed_packet_count;
+        count_packet_execution_category(result_, packet.category);
+        result_.events.push_back(packet_event);
+    }
+
+    vulkan_command_packet_execution_snapshot end =
+        make_execution_event(vulkan_command_packet_execution_event::end);
+    result_.end_attempted = true;
+    if (options_.fail_end) {
+        end.failed = true;
+        result_.status = vulkan_command_packet_execution_status::end_failed;
+        result_.fallback_reason = vulkan_backend_fallback_reason::record_commands_failed;
+        result_.events.push_back(end);
+        return result_;
+    }
+
+    end.completed = true;
+    result_.end_completed = true;
+    result_.status = vulkan_command_packet_execution_status::completed;
+    result_.fallback_reason = vulkan_backend_fallback_reason::none;
+    result_.events.push_back(end);
+    return result_;
+}
+
+const vulkan_command_packet_execution_result&
+fake_vulkan_command_packet_executor::execution_result() const
+{
+    return result_;
+}
+
 vulkan_backend_frame_pipeline_handoff summarize_vulkan_frame_pipeline_handoff(
     const vulkan_backend_frame_result& frame)
 {
@@ -1381,6 +1514,7 @@ vulkan_backend_frame_pipeline_handoff summarize_vulkan_frame_pipeline_handoff(
     const bool resource_bindings_completed = frame.resource_bindings.completed();
     const bool resource_registry_completed = frame.resource_registry.completed();
     const bool command_packets_completed = frame.command_packets.completed();
+    const bool command_packet_execution_completed = frame.command_packet_execution.completed();
     const bool command_recorder_gate_allowed = frame.command_recorder.gate.completed();
     const bool command_recording_ready =
         frame.lifecycle.effective_command_recorder_ready()
@@ -1388,6 +1522,7 @@ vulkan_backend_frame_pipeline_handoff summarize_vulkan_frame_pipeline_handoff(
         && resource_bindings_completed
         && resource_registry_completed
         && command_packets_completed
+        && command_packet_execution_completed
         && command_recorder_gate_allowed
         && frame.command_recorder.completed()
         && frame.commands_recorded
@@ -1433,6 +1568,8 @@ vulkan_backend_frame_pipeline_handoff summarize_vulkan_frame_pipeline_handoff(
         .resource_registry_completed = resource_registry_completed,
         .command_packets_checked = frame.command_packets.checked,
         .command_packets_completed = command_packets_completed,
+        .command_packet_execution_checked = frame.command_packet_execution.checked,
+        .command_packet_execution_completed = command_packet_execution_completed,
         .command_recorder_lifecycle_ready = frame.lifecycle.effective_command_recorder_ready(),
         .command_recorder_gate_checked = frame.command_recorder.gate.checked,
         .command_recorder_gate_allowed = command_recorder_gate_allowed,
@@ -1820,6 +1957,17 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
         return finish_frame();
     }
     track_descriptor_set_resources(result.frame_resources, result.resource_bindings);
+    fake_vulkan_command_packet_executor packet_executor;
+    result.command_packet_execution = packet_executor.execute_packets(result.command_packets);
+    if (result.command_packet_execution.failed()) {
+        release_frame_resources(
+            result.frame_resources,
+            vulkan_frame_resource_release_stage::fallback_cleanup);
+        frame_lifecycle::mark_fallback(
+            result,
+            vulkan_backend_fallback_reason::record_commands_failed);
+        return finish_frame();
+    }
 
     result.lifecycle_policy = frame_lifecycle::make_policy_state();
     result.present_policy = make_frame_present_policy_state();

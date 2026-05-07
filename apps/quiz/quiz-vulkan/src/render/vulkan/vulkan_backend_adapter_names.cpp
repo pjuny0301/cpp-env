@@ -157,6 +157,42 @@ std::string_view command_packet_bridge_status_name(
     return "unknown";
 }
 
+std::string_view command_packet_execution_status_name(
+    vulkan_command_packet_execution_status status)
+{
+    switch (status) {
+    case vulkan_command_packet_execution_status::not_checked:
+        return "not_checked";
+    case vulkan_command_packet_execution_status::completed:
+        return "completed";
+    case vulkan_command_packet_execution_status::packet_bridge_unavailable:
+        return "packet_bridge_unavailable";
+    case vulkan_command_packet_execution_status::begin_failed:
+        return "begin_failed";
+    case vulkan_command_packet_execution_status::packet_failed:
+        return "packet_failed";
+    case vulkan_command_packet_execution_status::end_failed:
+        return "end_failed";
+    }
+
+    return "unknown";
+}
+
+std::string_view command_packet_execution_event_name(
+    vulkan_command_packet_execution_event event)
+{
+    switch (event) {
+    case vulkan_command_packet_execution_event::begin:
+        return "begin";
+    case vulkan_command_packet_execution_event::packet:
+        return "packet";
+    case vulkan_command_packet_execution_event::end:
+        return "end";
+    }
+
+    return "unknown";
+}
+
 std::string_view frame_pipeline_handoff_status_name(
     vulkan_backend_frame_pipeline_handoff_status status)
 {

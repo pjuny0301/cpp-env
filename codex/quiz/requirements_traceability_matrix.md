@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: Vulkan queue submit/present adapter header를 CMake public FILE_SET에 등록하고 Windows MinGW focused Vulkan CTest 2/2 및 `ctest -N` 67개 확인.
+- `6c25c12`: Vulkan command-submit readiness 뒤에 queue submit/present adapter boundary, fake function table, submit-before-present ordering/failure mapping tests 추가.
 - current: PNG zlib stored-block inflater header를 CMake public FILE_SET에 등록하고 Windows MinGW focused image CTest 2/2 및 `ctest -N` 66개 확인.
 - `4695d21`: image engine에 zlib-wrapped stored/no-compression deflate inflater, Adler32 validation, PNG decoder stored-IDAT integration tests 추가.
 - current: shaped glyph atlas-update tracing, PNG decoder-chain wrapper, Vulkan command-submit readiness headers를 CMake public FILE_SET에 등록하고 Windows MinGW focused CTest 7/7 및 `ctest -N` 65개 확인.
@@ -142,7 +144,7 @@
 - `5965a4b`: Vulkan swapchain policy/pipeline compatibility/shader binding/fallback diagnostics 추가.
 - `244d5b7`: input multipointer touch-like arbitration diagnostics 추가.
 - `94a922f`: asset manifest integrity diagnostics 추가.
-- 기준 검증 예시: 2026-05-07 Windows MinGW focused image CTest 2/2, focused text/image/Vulkan CTest 7/7, 최근 full CTest 60/60 통과. 현재 `ctest -N`이 66개 테스트를 보고한다. 권위 있는 테스트 목록은 항상 실행 시점의 `ctest -N`으로 확인한다.
+- 기준 검증 예시: 2026-05-07 Windows MinGW focused Vulkan CTest 2/2, focused image CTest 2/2, focused text/image/Vulkan CTest 7/7, 최근 full CTest 60/60 통과. 현재 `ctest -N`이 67개 테스트를 보고한다. 권위 있는 테스트 목록은 항상 실행 시점의 `ctest -N`으로 확인한다.
 - 기준 검증은 고정 개수로 적지 않는다. 현재 전체 테스트 수는 `ctest -N`이 권위이며, handoff에는 실행한 focused target만 기록한다.
 
 상태 기준:

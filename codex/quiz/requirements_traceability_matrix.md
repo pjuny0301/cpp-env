@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: text atlas upload request bridge를 통합하고 Windows MinGW focused text CTest 1/1 확인.
+- `2f60e89`: text engine에 atlas upload request bridge diagnostics를 추가해 text batch planning/materialization 결과를 stable request id와 `render_text_atlas_update`-style upload request로 연결.
 - current: Vulkan present-completion planning diagnostics를 통합하고 Windows MinGW focused Vulkan CTest 4/4 및 `ctest -N` 88개 확인.
 - `85dd390`: Vulkan backend에 present-completion plan/result diagnostics를 추가해 submit batch result, queue present readiness, frame completion status를 real `vkQueuePresentKHR` 호출 전 data-only로 추적.
 - current: text helper fallback-chain diagnostics와 image residency execution summary를 통합하고 Windows MinGW focused text/image CTest 4/4 확인.

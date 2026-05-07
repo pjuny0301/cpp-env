@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: image manifest texture pipeline header를 CMake public FILE_SET에 등록하고 Windows MinGW focused image CTest 4/4 및 `ctest -N` 74개 확인.
+- `a6645a8`: image manifest texture pipeline boundary를 `image_manifest_texture_pipeline.h`로 분리해 decode/upload/cache core header 부담을 낮춤.
 - current: platform input translator header를 CMake public FILE_SET에 등록하고 Windows MinGW focused input CTest 8/8 및 `ctest -N` 74개 확인.
 - `f161648`: input core에 raw-ish mouse/touch/key/wheel/char/IME samples를 기존 normalized `raw_platform_input_event`로 변환하는 platform input translator boundary와 tests 추가.
 - current: font backend capability probe header를 CMake public FILE_SET에 등록하고 image manifest texture pipeline boundary와 함께 Windows MinGW focused text/image CTest 5/5 및 `ctest -N` 73개 확인.

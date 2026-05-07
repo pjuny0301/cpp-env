@@ -132,6 +132,7 @@ target_sources(
         FILES
             src/render/image/bmp_image_decoder.h
             src/render/image/image_decoder.h
+            src/render/image/image_manifest_texture_pipeline.h
             src/render/image/image_resolver.h
             src/render/image/image_source_bytes_loader.h
             src/render/image/image_texture_cache.h

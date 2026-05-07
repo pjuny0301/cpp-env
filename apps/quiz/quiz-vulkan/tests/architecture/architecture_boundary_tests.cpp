@@ -355,6 +355,19 @@ int main()
                 "vulkan_backend::",
             },
         },
+        boundary_rule{
+            .area = "source-to-host-external-paths",
+            .roots = {
+                "src",
+            },
+            .excluded_files = {},
+            .forbidden_tokens = {
+                "/mnt/c/aa",
+                "C:\\aa",
+                "C:/aa",
+                "build/external/lib/cpp/desktop",
+            },
+        },
     };
 
     std::vector<violation> violations;

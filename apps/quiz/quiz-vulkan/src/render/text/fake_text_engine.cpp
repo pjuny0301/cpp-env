@@ -1704,6 +1704,83 @@ bool readiness_has_cache_key(const render_text_glyph_cache_readiness_snapshot& r
         && readiness.cache_key.pixel_size != 0U;
 }
 
+void record_glyph_atlas_materialization_diagnostics(
+    fake_text_engine_diagnostics& diagnostics,
+    const std::vector<laid_out_glyph_cluster>& clusters,
+    const std::vector<render_text_atlas_update>& dirty_updates)
+{
+    diagnostics.glyph_atlas_materializations.clear();
+    diagnostics.glyph_atlas_materialization_policy = {};
+    diagnostics.glyph_atlas_materializations.reserve(diagnostics.glyph_cache_readiness.size());
+
+    for (const render_text_glyph_cache_readiness_snapshot& readiness : diagnostics.glyph_cache_readiness) {
+        const render_text_rasterized_glyph_atlas_payload_snapshot* payload =
+            find_rasterized_payload_for_cluster(diagnostics.rasterized_glyph_atlas_payloads, readiness.cluster_index);
+        const render_text_glyph_atlas_placement_snapshot* placement =
+            find_atlas_placement_for_cluster(diagnostics.glyph_atlas_placements, readiness.cluster_index);
+        const render_text_atlas_update* update =
+            placement == nullptr ? nullptr : find_dirty_update_for_page(dirty_updates, placement->page.id);
+        const laid_out_glyph_cluster* cluster =
+            readiness.cluster_index < clusters.size() ? &clusters[readiness.cluster_index] : nullptr;
+
+        render_text_glyph_atlas_materialization_request request{
+            .cluster_index = readiness.cluster_index,
+            .run_index = readiness.run_index,
+            .cluster_byte_offset = readiness.byte_offset,
+            .cluster_byte_count = readiness.byte_count,
+            .codepoint = readiness.codepoint,
+            .shaped_glyph_ids = shaped_glyph_ids_for_cluster(diagnostics.shaped_glyphs, readiness),
+            .resolved_glyph_id = readiness.glyph_id,
+            .resolved_face_id = readiness.resolved_face_id,
+            .cache_key = readiness.cache_key,
+            .has_cache_key = readiness_has_cache_key(readiness),
+            .glyph_supported = readiness.glyph_supported,
+            .glyph_id_from_selection = readiness.glyph_id_from_selection,
+            .glyph_id_matches_codepoint = readiness.glyph_id_matches_codepoint,
+            .used_fallback_glyph_id = readiness.used_fallback_glyph_id,
+            .glyph_id_offset = readiness.glyph_id_offset,
+            .layout_bounds = cluster == nullptr ? render_rect{} : cluster->bounds,
+            .has_layout_bounds = cluster != nullptr,
+            .shaping_font_backend_library = readiness.font_backend_library,
+            .shaping_font_backend_label = readiness.font_backend_label,
+            .shaping_font_backend_capability_status = readiness.font_backend_capability_status,
+            .shaping_font_backend_used_deterministic_fallback =
+                readiness.font_backend_used_deterministic_fallback,
+            .shaping_font_backend_fallback_only = readiness.font_backend_fallback_only,
+            .raster_font_backend_library = payload == nullptr
+                ? render_text_font_backend_library::deterministic_fake
+                : payload->font_backend_library,
+            .raster_font_backend_label = payload == nullptr ? std::string{} : payload->font_backend_label,
+            .raster_font_backend_capability_status = payload == nullptr
+                ? render_text_font_backend_capability_status::unavailable
+                : payload->font_backend_capability_status,
+            .raster_font_backend_used_deterministic_fallback =
+                payload != nullptr && payload->font_backend_used_deterministic_fallback,
+            .raster_font_backend_fallback_only = payload != nullptr && payload->font_backend_fallback_only,
+            .rasterizer_status = payload == nullptr
+                ? render_text_font_rasterizer_status::missing_font_source
+                : payload->status,
+            .raster_payload_matches_cache_key = payload != nullptr && payload->cache_key == readiness.cache_key
+                && payload->glyph_id == readiness.cache_key.glyph_id,
+            .rasterized_payload_skipped = payload == nullptr || payload->skipped,
+            .payload_upload_ready = payload != nullptr && payload->upload_ready,
+            .payload_alpha_bytes = payload == nullptr ? 0U : payload->alpha_bytes,
+            .payload_rgba_bytes = payload == nullptr ? 0U : payload->rgba_bytes,
+            .has_atlas_placement = placement != nullptr,
+            .page = placement == nullptr ? render_text_atlas_page{} : placement->page,
+            .atlas_bounds = placement == nullptr ? render_rect{} : placement->atlas_bounds,
+            .has_atlas_update = update != nullptr,
+            .atlas_update_bounds = update == nullptr ? render_rect{} : update->updated_bounds,
+            .atlas_update_rgba_bytes = update == nullptr ? 0U : update->rgba.size(),
+        };
+
+        append_render_text_glyph_atlas_materialization(
+            diagnostics.glyph_atlas_materializations,
+            diagnostics.glyph_atlas_materialization_policy,
+            make_render_text_glyph_atlas_materialization(std::move(request)));
+    }
+}
+
 void record_shaped_atlas_update_trace_diagnostics(
     fake_text_engine_diagnostics& diagnostics,
     const std::vector<render_text_atlas_update>& dirty_updates)
@@ -1999,6 +2076,7 @@ void update_atlas_for_clusters(
     diagnostics.glyph_atlas_metrics.dirty_page_count = dirty_updates.size();
     atlas_updates.insert(atlas_updates.end(), dirty_updates.begin(), dirty_updates.end());
 
+    record_glyph_atlas_materialization_diagnostics(diagnostics, clusters, dirty_updates);
     record_shaped_atlas_update_trace_diagnostics(diagnostics, dirty_updates);
     record_glyph_atlas_page_diagnostics(diagnostics, pages, diagnostics.glyph_atlas_placements, dirty_updates);
 

@@ -236,6 +236,10 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
         -> std::same_as<std::vector<render::render_text_rasterized_glyph_atlas_payload_snapshot>&>;
     { diagnostics.rasterized_glyph_atlas_payload_policy }
         -> std::same_as<render::render_text_rasterized_glyph_atlas_payload_policy_snapshot&>;
+    { diagnostics.glyph_atlas_materializations }
+        -> std::same_as<std::vector<render::render_text_glyph_atlas_materialization_snapshot>&>;
+    { diagnostics.glyph_atlas_materialization_policy }
+        -> std::same_as<render::render_text_glyph_atlas_materialization_policy_snapshot&>;
     { diagnostics.shaped_atlas_update_traces }
         -> std::same_as<std::vector<render::render_text_shaped_atlas_update_trace_snapshot>&>;
     { diagnostics.shaped_atlas_update_trace_policy }
@@ -271,6 +275,8 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.has_glyph_cache_readiness() } -> std::same_as<bool>;
     { diagnostics.has_rasterized_glyph_atlas_payloads() } -> std::same_as<bool>;
     { diagnostics.has_rasterized_glyph_atlas_payload_policy() } -> std::same_as<bool>;
+    { diagnostics.has_glyph_atlas_materializations() } -> std::same_as<bool>;
+    { diagnostics.has_glyph_atlas_materialization_policy() } -> std::same_as<bool>;
     { diagnostics.has_shaped_atlas_update_traces() } -> std::same_as<bool>;
     { diagnostics.has_shaped_atlas_update_trace_policy() } -> std::same_as<bool>;
     { diagnostics.has_line_breaks() } -> std::same_as<bool>;
@@ -1411,6 +1417,99 @@ static_assert(requires(render::render_text_rasterized_glyph_atlas_payload_policy
     { policy.invalid_pixel_size_count } -> std::same_as<std::size_t&>;
     { policy.total_alpha_bytes } -> std::same_as<std::size_t&>;
     { policy.total_rgba_bytes } -> std::same_as<std::size_t&>;
+});
+
+static_assert(requires(
+    render::render_text_glyph_atlas_materialization_status status,
+    render::render_text_glyph_atlas_materialization_request request,
+    render::render_text_glyph_atlas_materialization_snapshot snapshot,
+    render::render_text_glyph_atlas_materialization_policy_snapshot policy,
+    std::vector<render::render_text_glyph_atlas_materialization_snapshot> snapshots) {
+    { render::render_text_glyph_atlas_materialization_status_name(status) } -> std::same_as<std::string>;
+    { request.cluster_index } -> std::same_as<std::size_t&>;
+    { request.run_index } -> std::same_as<std::size_t&>;
+    { request.cluster_byte_offset } -> std::same_as<std::size_t&>;
+    { request.cluster_byte_count } -> std::same_as<std::size_t&>;
+    { request.codepoint } -> std::same_as<std::uint32_t&>;
+    { request.shaped_glyph_ids } -> std::same_as<std::vector<std::uint32_t>&>;
+    { request.resolved_glyph_id } -> std::same_as<std::uint32_t&>;
+    { request.resolved_face_id } -> std::same_as<render::font_face_id&>;
+    { request.cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { request.has_cache_key } -> std::same_as<bool&>;
+    { request.glyph_supported } -> std::same_as<bool&>;
+    { request.glyph_id_from_selection } -> std::same_as<bool&>;
+    { request.glyph_id_matches_codepoint } -> std::same_as<bool&>;
+    { request.used_fallback_glyph_id } -> std::same_as<bool&>;
+    { request.glyph_id_offset } -> std::same_as<std::uint32_t&>;
+    { request.layout_bounds } -> std::same_as<render::render_rect&>;
+    { request.has_layout_bounds } -> std::same_as<bool&>;
+    { request.shaping_font_backend_library } -> std::same_as<render::render_text_font_backend_library&>;
+    { request.shaping_font_backend_label } -> std::same_as<std::string&>;
+    { request.shaping_font_backend_capability_status }
+        -> std::same_as<render::render_text_font_backend_capability_status&>;
+    { request.shaping_font_backend_used_deterministic_fallback } -> std::same_as<bool&>;
+    { request.shaping_font_backend_fallback_only } -> std::same_as<bool&>;
+    { request.raster_font_backend_library } -> std::same_as<render::render_text_font_backend_library&>;
+    { request.raster_font_backend_label } -> std::same_as<std::string&>;
+    { request.raster_font_backend_capability_status }
+        -> std::same_as<render::render_text_font_backend_capability_status&>;
+    { request.raster_font_backend_used_deterministic_fallback } -> std::same_as<bool&>;
+    { request.raster_font_backend_fallback_only } -> std::same_as<bool&>;
+    { request.rasterizer_status } -> std::same_as<render::render_text_font_rasterizer_status&>;
+    { request.raster_payload_matches_cache_key } -> std::same_as<bool&>;
+    { request.rasterized_payload_skipped } -> std::same_as<bool&>;
+    { request.payload_upload_ready } -> std::same_as<bool&>;
+    { request.payload_alpha_bytes } -> std::same_as<std::size_t&>;
+    { request.payload_rgba_bytes } -> std::same_as<std::size_t&>;
+    { request.has_atlas_placement } -> std::same_as<bool&>;
+    { request.page } -> std::same_as<render::render_text_atlas_page&>;
+    { request.atlas_bounds } -> std::same_as<render::render_rect&>;
+    { request.has_atlas_update } -> std::same_as<bool&>;
+    { request.atlas_update_bounds } -> std::same_as<render::render_rect&>;
+    { request.atlas_update_rgba_bytes } -> std::same_as<std::size_t&>;
+    { snapshot.status } -> std::same_as<render::render_text_glyph_atlas_materialization_status&>;
+    { snapshot.cluster_index } -> std::same_as<std::size_t&>;
+    { snapshot.run_index } -> std::same_as<std::size_t&>;
+    { snapshot.cluster_byte_offset } -> std::same_as<std::size_t&>;
+    { snapshot.cluster_byte_count } -> std::same_as<std::size_t&>;
+    { snapshot.codepoint } -> std::same_as<std::uint32_t&>;
+    { snapshot.shaped_glyph_ids } -> std::same_as<std::vector<std::uint32_t>&>;
+    { snapshot.resolved_glyph_id } -> std::same_as<std::uint32_t&>;
+    { snapshot.resolved_face_id } -> std::same_as<render::font_face_id&>;
+    { snapshot.cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { snapshot.has_cache_key } -> std::same_as<bool&>;
+    { snapshot.glyph_supported } -> std::same_as<bool&>;
+    { snapshot.layout_bounds } -> std::same_as<render::render_rect&>;
+    { snapshot.has_layout_bounds } -> std::same_as<bool&>;
+    { snapshot.shaping_font_backend_library } -> std::same_as<render::render_text_font_backend_library&>;
+    { snapshot.raster_font_backend_library } -> std::same_as<render::render_text_font_backend_library&>;
+    { snapshot.payload_alpha_bytes } -> std::same_as<std::size_t&>;
+    { snapshot.payload_rgba_bytes } -> std::same_as<std::size_t&>;
+    { snapshot.expected_payload_rgba_bytes } -> std::same_as<std::size_t&>;
+    { snapshot.payload_byte_count_matches } -> std::same_as<bool&>;
+    { snapshot.materialized } -> std::same_as<bool&>;
+    { snapshot.queued } -> std::same_as<bool&>;
+    { snapshot.clean_reuse } -> std::same_as<bool&>;
+    { snapshot.diagnostic } -> std::same_as<std::string&>;
+    { policy.request_count } -> std::same_as<std::size_t&>;
+    { policy.materialized_count } -> std::same_as<std::size_t&>;
+    { policy.upload_ready_count } -> std::same_as<std::size_t&>;
+    { policy.clean_reuse_count } -> std::same_as<std::size_t&>;
+    { policy.skipped_count } -> std::same_as<std::size_t&>;
+    { policy.missing_cache_key_count } -> std::same_as<std::size_t&>;
+    { policy.skipped_raster_payload_count } -> std::same_as<std::size_t&>;
+    { policy.unsupported_glyph_count } -> std::same_as<std::size_t&>;
+    { policy.payload_byte_count_mismatch_count } -> std::same_as<std::size_t&>;
+    { policy.deterministic_fallback_count } -> std::same_as<std::size_t&>;
+    { policy.real_backend_count } -> std::same_as<std::size_t&>;
+    { policy.shaped_glyph_count } -> std::same_as<std::size_t&>;
+    { policy.total_alpha_bytes } -> std::same_as<std::size_t&>;
+    { policy.total_rgba_bytes } -> std::same_as<std::size_t&>;
+    { policy.queued_atlas_update_bytes } -> std::same_as<std::size_t&>;
+    { render::make_render_text_glyph_atlas_materialization(request) }
+        -> std::same_as<render::render_text_glyph_atlas_materialization_snapshot>;
+    { render::append_render_text_glyph_atlas_materialization(snapshots, policy, snapshot) }
+        -> std::same_as<void>;
 });
 
 static_assert(requires(

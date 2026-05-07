@@ -513,6 +513,40 @@ void test_fake_text_engine_records_rasterized_atlas_payloads_for_cacheable_glyph
     require(
         diagnostics.has_shaped_atlas_update_trace_policy(),
         "rasterized payload fixture records shaped atlas trace policy");
+    require(
+        diagnostics.has_glyph_atlas_materializations(),
+        "rasterized payload fixture records atlas materialization diagnostics");
+    require(
+        diagnostics.has_glyph_atlas_materialization_policy(),
+        "rasterized payload fixture records atlas materialization policy");
+    require(diagnostics.glyph_atlas_materializations.size() == 1, "one cacheable glyph materializes once");
+    const render_text_glyph_atlas_materialization_snapshot& materialization =
+        diagnostics.glyph_atlas_materializations.front();
+    require(
+        materialization.status == render_text_glyph_atlas_materialization_status::materialized_upload_ready,
+        "upload-ready payload materializes an atlas update request");
+    require(materialization.materialized, "materialization marks upload-ready glyph as materialized");
+    require(materialization.queued, "materialization records queued atlas update");
+    require(materialization.has_layout_bounds, "materialization carries layout bounds");
+    require(materialization.layout_bounds.width > 0.0f, "materialization layout bounds are populated");
+    require(materialization.cache_key == readiness.cache_key, "materialization preserves cache readiness key");
+    require(materialization.payload_rgba_bytes == 256U, "materialization records payload RGBA bytes");
+    require(materialization.payload_byte_count_matches, "materialization validates payload byte count");
+    require(
+        materialization.shaping_font_backend_library == render_text_font_backend_library::deterministic_fake,
+        "materialization records shaping backend metadata");
+    require(
+        materialization.raster_font_backend_library == render_text_font_backend_library::deterministic_fake,
+        "materialization records raster backend metadata");
+    require(
+        diagnostics.glyph_atlas_materialization_policy.materialized_count == 1,
+        "materialization policy counts materialized glyph");
+    require(
+        diagnostics.glyph_atlas_materialization_policy.upload_ready_count == 1,
+        "materialization policy counts upload-ready request");
+    require(
+        diagnostics.glyph_atlas_materialization_policy.queued_atlas_update_bytes > 0U,
+        "materialization policy counts queued atlas update bytes");
     require(diagnostics.shaped_atlas_update_traces.size() == 1, "one cacheable glyph produces one shaped atlas trace");
     const render_text_shaped_atlas_update_trace_snapshot& trace = diagnostics.shaped_atlas_update_traces.front();
     require(
@@ -731,6 +765,23 @@ void test_fake_text_engine_carries_injected_backend_selection_to_layout_diagnost
         "atlas trace carries raster backend selection");
     require(trace.shaping_font_backend_label == "HarfBuzz", "atlas trace carries shaping backend label");
     require(trace.raster_font_backend_label == "FreeType", "atlas trace carries raster backend label");
+
+    const render_text_glyph_atlas_materialization_snapshot& materialization =
+        diagnostics.glyph_atlas_materializations.front();
+    require(
+        materialization.status == render_text_glyph_atlas_materialization_status::materialized_upload_ready,
+        "injected selection materializes upload-ready payload");
+    require(
+        materialization.shaping_font_backend_library == render_text_font_backend_library::harfbuzz,
+        "materialization carries injected shaping backend");
+    require(
+        materialization.raster_font_backend_library == render_text_font_backend_library::freetype,
+        "materialization carries injected raster backend");
+    require(materialization.shaping_font_backend_label == "HarfBuzz", "materialization carries shaping label");
+    require(materialization.raster_font_backend_label == "FreeType", "materialization carries raster label");
+    require(
+        diagnostics.glyph_atlas_materialization_policy.real_backend_count == 1,
+        "materialization policy counts real backend metadata");
 }
 
 void test_fake_text_engine_records_unavailable_backend_capability()
@@ -1115,6 +1166,17 @@ void test_fake_text_engine_wires_resolved_glyph_id_through_atlas_payloads()
     require(trace.raster_payload_matches_cache_key, "trace proves raster payload matches cache key");
     require(trace.glyph_id_from_selection, "trace records selection-sourced glyph id");
     require(!trace.glyph_id_matches_codepoint, "trace records non-codepoint glyph id");
+
+    const render_text_glyph_atlas_materialization_snapshot& materialization =
+        diagnostics.glyph_atlas_materializations.front();
+    require(
+        materialization.status == render_text_glyph_atlas_materialization_status::materialized_upload_ready,
+        "mapped glyph materializes upload-ready atlas request");
+    require(materialization.resolved_glyph_id == glyph_id.glyph_id, "materialization records resolver glyph id");
+    require(materialization.cache_key.glyph_id == glyph_id.glyph_id, "materialization key uses resolver glyph id");
+    require(materialization.glyph_id_from_selection, "materialization records selection-sourced glyph id");
+    require(!materialization.glyph_id_matches_codepoint, "materialization records non-codepoint glyph id");
+    require(materialization.raster_payload_matches_cache_key, "materialization proves payload matches cache key");
 }
 
 void test_fake_text_engine_wires_unsupported_shaped_glyph_id_to_skipped_payloads()
@@ -1171,6 +1233,17 @@ void test_fake_text_engine_wires_unsupported_shaped_glyph_id_to_skipped_payloads
     require(trace.cache_key_matches_resolved_glyph_id, "unsupported trace cache key matches fallback glyph id");
     require(trace.raster_payload_matches_cache_key, "unsupported trace payload matches fallback key");
     require(trace.used_fallback_glyph_id, "unsupported trace records fallback glyph id");
+
+    const render_text_glyph_atlas_materialization_snapshot& materialization =
+        diagnostics.glyph_atlas_materializations.front();
+    require(
+        materialization.status == render_text_glyph_atlas_materialization_status::skipped_unsupported_glyph,
+        "unsupported glyph materialization records unsupported skip");
+    require(!materialization.materialized, "unsupported glyph materialization is not upload-ready");
+    require(materialization.used_fallback_glyph_id, "unsupported materialization records fallback glyph id");
+    require(
+        diagnostics.glyph_atlas_materialization_policy.unsupported_glyph_count == 1,
+        "materialization policy counts unsupported glyph skip");
 }
 
 void test_fake_text_engine_wires_invalid_utf8_fallback_glyph_id()
@@ -1306,6 +1379,22 @@ void test_fake_text_engine_skips_rasterized_payloads_when_font_bytes_are_missing
     require(
         diagnostics.shaped_atlas_update_trace_policy.rasterized_payload_skipped_count == 1,
         "trace policy counts skipped raster payload");
+    require(
+        diagnostics.glyph_atlas_materializations.size() == 1,
+        "missing byte fixture records one materialization decision");
+    const render_text_glyph_atlas_materialization_snapshot& materialization =
+        diagnostics.glyph_atlas_materializations.front();
+    require(
+        materialization.status == render_text_glyph_atlas_materialization_status::skipped_raster_payload,
+        "missing byte materialization records skipped raster payload");
+    require(materialization.has_cache_key, "missing byte materialization still has deterministic cache key");
+    require(
+        materialization.rasterizer_status == render_text_font_rasterizer_status::missing_font_bytes,
+        "missing byte materialization keeps rasterizer status");
+    require(!materialization.payload_upload_ready, "missing byte materialization is not upload-ready");
+    require(
+        diagnostics.glyph_atlas_materialization_policy.skipped_raster_payload_count == 1,
+        "materialization policy counts skipped raster payload");
 }
 
 void test_fake_text_engine_consumes_shaping_backend_glyph_data()
@@ -1395,6 +1484,20 @@ void test_fake_text_engine_traces_repeated_layout_to_clean_atlas_page()
         diagnostics.shaped_atlas_update_trace_policy.clean_atlas_page_reused_count == 1,
         "trace policy counts clean page reuse");
     require(
+        diagnostics.glyph_atlas_materializations.size() == 1,
+        "repeated layout records one materialization decision");
+    const render_text_glyph_atlas_materialization_snapshot& materialization =
+        diagnostics.glyph_atlas_materializations.front();
+    require(
+        materialization.status == render_text_glyph_atlas_materialization_status::materialized_clean_reuse,
+        "repeated layout materialization records clean atlas reuse");
+    require(materialization.materialized, "clean reuse still counts as materialized atlas data");
+    require(materialization.clean_reuse, "materialization marks clean reuse");
+    require(!materialization.has_atlas_update, "clean reuse materialization has no dirty atlas update");
+    require(
+        diagnostics.glyph_atlas_materialization_policy.clean_reuse_count == 1,
+        "materialization policy counts clean reuse");
+    require(
         diagnostics.glyph_atlas_page_policy.repeated_layout_clean_page_count > 0,
         "atlas page policy records repeated clean page");
 }
@@ -1433,6 +1536,19 @@ void test_fake_text_engine_traces_shaped_glyph_without_cache_key()
     require(
         diagnostics.shaped_atlas_update_trace_policy.shaped_glyph_without_cache_key_count == 1,
         "trace policy counts missing cache key");
+    require(
+        diagnostics.glyph_atlas_materializations.size() == 1,
+        "standalone combining mark records one materialization decision");
+    const render_text_glyph_atlas_materialization_snapshot& materialization =
+        diagnostics.glyph_atlas_materializations.front();
+    require(
+        materialization.status == render_text_glyph_atlas_materialization_status::skipped_missing_cache_key,
+        "standalone combining mark materialization records missing cache key");
+    require(!materialization.has_cache_key, "standalone combining mark materialization has no cache key");
+    require(!materialization.materialized, "missing cache key materialization is skipped");
+    require(
+        diagnostics.glyph_atlas_materialization_policy.missing_cache_key_count == 1,
+        "materialization policy counts missing cache key");
 }
 
 } // namespace

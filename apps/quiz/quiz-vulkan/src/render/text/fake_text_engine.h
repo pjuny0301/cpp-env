@@ -120,6 +120,8 @@ struct fake_text_engine_diagnostics {
     render_text_glyph_cache_readiness_policy_snapshot glyph_cache_readiness_policy;
     std::vector<render_text_rasterized_glyph_atlas_payload_snapshot> rasterized_glyph_atlas_payloads;
     render_text_rasterized_glyph_atlas_payload_policy_snapshot rasterized_glyph_atlas_payload_policy;
+    std::vector<render_text_glyph_atlas_materialization_snapshot> glyph_atlas_materializations;
+    render_text_glyph_atlas_materialization_policy_snapshot glyph_atlas_materialization_policy;
     std::vector<render_text_shaped_atlas_update_trace_snapshot> shaped_atlas_update_traces;
     render_text_shaped_atlas_update_trace_policy_snapshot shaped_atlas_update_trace_policy;
     std::vector<render_text_glyph_cache_face_snapshot> glyph_cache_faces;
@@ -279,6 +281,16 @@ struct fake_text_engine_diagnostics {
     bool has_rasterized_glyph_atlas_payload_policy() const
     {
         return rasterized_glyph_atlas_payload_policy.request_count > 0;
+    }
+
+    bool has_glyph_atlas_materializations() const
+    {
+        return !glyph_atlas_materializations.empty();
+    }
+
+    bool has_glyph_atlas_materialization_policy() const
+    {
+        return glyph_atlas_materialization_policy.request_count > 0;
     }
 
     bool has_shaped_atlas_update_traces() const

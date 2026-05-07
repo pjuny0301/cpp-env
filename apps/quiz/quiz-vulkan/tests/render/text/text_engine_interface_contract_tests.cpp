@@ -1,6 +1,7 @@
 #include "render/render_draw_list.h"
 #include "render/text/fake_text_engine.h"
 #include "render/text/font_cmap_inspector.h"
+#include "render/text/font_coverage_run_segmentation.h"
 #include "render/text/font_sfnt_inspector.h"
 #include "render/text/font_source_bytes_loader.h"
 #include "render/text/font_source_resolver.h"
@@ -16,6 +17,7 @@
 #include <filesystem>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace {
@@ -529,6 +531,53 @@ static_assert(requires(render::render_text_font_resolution_policy_snapshot polic
     { policy.missing_glyph_count } -> std::same_as<std::size_t&>;
     { policy.cacheable_glyph_count } -> std::same_as<std::size_t&>;
     { policy.unique_resolved_face_count } -> std::same_as<std::size_t&>;
+});
+
+static_assert(requires(
+    render::render_text_font_coverage_run_segment segment,
+    render::render_text_font_coverage_run_segmentation segmentation,
+    render::render_text_font_coverage_run_segmentation_request request,
+    render::render_text_font_coverage_run_segment_status status,
+    render::font_face_catalog catalog,
+    render::render_text_style style,
+    std::string_view text,
+    std::vector<render::utf8_text_codepoint> codepoints,
+    render::font_coverage_run_segmenter segmenter) {
+    { render::render_text_font_coverage_run_segment_status_name(status) } -> std::same_as<std::string>;
+    { segment.byte_offset } -> std::same_as<std::size_t&>;
+    { segment.byte_count } -> std::same_as<std::size_t&>;
+    { segment.codepoint_offset } -> std::same_as<std::size_t&>;
+    { segment.codepoint_count } -> std::same_as<std::size_t&>;
+    { segment.first_codepoint } -> std::same_as<std::uint32_t&>;
+    { segment.requested_face_id } -> std::same_as<render::font_face_id&>;
+    { segment.resolved_face_id } -> std::same_as<render::font_face_id&>;
+    { segment.requested_family } -> std::same_as<std::string&>;
+    { segment.resolved_family } -> std::same_as<std::string&>;
+    { segment.used_fallback } -> std::same_as<bool&>;
+    { segment.glyph_supported } -> std::same_as<bool&>;
+    { segment.valid_utf8 } -> std::same_as<bool&>;
+    { segment.status } -> std::same_as<render::render_text_font_coverage_run_segment_status&>;
+    { segment.diagnostic } -> std::same_as<std::string&>;
+    { segment.ok() } -> std::same_as<bool>;
+    { segmentation.segments } -> std::same_as<std::vector<render::render_text_font_coverage_run_segment>&>;
+    { segmentation.codepoint_count } -> std::same_as<std::size_t&>;
+    { segmentation.supported_codepoint_count } -> std::same_as<std::size_t&>;
+    { segmentation.fallback_codepoint_count } -> std::same_as<std::size_t&>;
+    { segmentation.invalid_utf8_count } -> std::same_as<std::size_t&>;
+    { segmentation.unsupported_codepoint_count } -> std::same_as<std::size_t&>;
+    { segmentation.diagnostic } -> std::same_as<std::string&>;
+    { segmentation.ok() } -> std::same_as<bool>;
+    { request.text } -> std::same_as<std::string_view&>;
+    { request.style } -> std::same_as<render::render_text_style&>;
+    { render::font_coverage_run_hex_codepoint_label(0x41U) } -> std::same_as<std::string>;
+    { render::font_coverage_run_segments_can_merge(segment, segment) } -> std::same_as<bool>;
+    { render::segment_font_coverage_runs(codepoints, catalog, style) }
+        -> std::same_as<render::render_text_font_coverage_run_segmentation>;
+    { render::segment_font_coverage_runs(text, catalog, style) }
+        -> std::same_as<render::render_text_font_coverage_run_segmentation>;
+    { render::segment_font_coverage_runs(request, catalog) }
+        -> std::same_as<render::render_text_font_coverage_run_segmentation>;
+    { segmenter.segment(request, catalog) } -> std::same_as<render::render_text_font_coverage_run_segmentation>;
 });
 
 static_assert(requires(render::render_text_line_break_snapshot line_break) {

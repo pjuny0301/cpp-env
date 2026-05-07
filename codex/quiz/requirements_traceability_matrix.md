@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: PNG decode boundary를 CMake public FILE_SET에 등록하고 focused image CTest 2/2 및 `ctest -N` 59개 확인.
+- `ce93465`: image engine에 PNG decode plan/inflater boundary, row-byte validation, inflater unavailable/failure diagnostics와 focused/contract tests 추가.
 - current: text rasterizer atlas-readiness integration focused text CTest 3/3 및 `ctest -N` 58개 확인.
 - `ecacbb9`: fake text engine에 deterministic font rasterizer atlas payload diagnostics와 skipped/missing-byte policy tests 추가.
 - current: PNG chunk scanner를 CMake public FILE_SET에 등록하고 focused image CTest 2/2 및 `ctest -N` 58개 확인.
@@ -128,7 +130,7 @@
 - `5965a4b`: Vulkan swapchain policy/pipeline compatibility/shader binding/fallback diagnostics 추가.
 - `244d5b7`: input multipointer touch-like arbitration diagnostics 추가.
 - `94a922f`: asset manifest integrity diagnostics 추가.
-- 기준 검증 예시: 2026-05-07 Windows MinGW focused text CTest 3/3, focused image CTest 2/2, focused Vulkan CTest 6/6, full CTest 57/57 통과. 현재 `ctest -N`이 58개 테스트를 보고한다. 권위 있는 테스트 목록은 항상 실행 시점의 `ctest -N`으로 확인한다.
+- 기준 검증 예시: 2026-05-07 Windows MinGW focused image CTest 2/2, focused text CTest 3/3, focused Vulkan CTest 6/6, full CTest 57/57 통과. 현재 `ctest -N`이 59개 테스트를 보고한다. 권위 있는 테스트 목록은 항상 실행 시점의 `ctest -N`으로 확인한다.
 - 기준 검증은 고정 개수로 적지 않는다. 현재 전체 테스트 수는 `ctest -N`이 권위이며, handoff에는 실행한 focused target만 기록한다.
 
 상태 기준:

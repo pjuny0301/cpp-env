@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: Vulkan command packet bridge를 통합하고 Windows MinGW focused Vulkan CTest 3/3 확인.
+- `81514a6`: Vulkan backend에 draw-list batch를 command packet diagnostics로 변환하는 bridge, packet category counts, pipeline/resource prerequisite fallback tests 추가.
 - current: input gesture/focus diagnostics와 optional decoder pipeline integration을 통합하고 Windows MinGW focused input CTest 6/6, focused image CTest 3/3 확인.
 - `77ecf32`: optional third-party image decoder adapter를 `image_texture_pipeline` 경계로 연결해 fake decoder upload/cache diagnostics, adapter failure fallback, unavailable adapter diagnostics tests 추가.
 - `5b080c8`: input engine에 wheel/touch cancel/focus traversal/pointer capture release-restart route diagnostics tests와 input-owned policy fields 추가.

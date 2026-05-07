@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- `31275c0`: image texture upload/uploader helpers를 `image_texture_upload.h`로 분리해 `image_texture_cache.h` 토큰 비용 축소.
+- `8f80b6e`: Vulkan instance 다음 단계로 device/queue readiness boundary와 focused tests 추가.
 - `87935ed`: font Unicode coverage 결과를 `font_face_descriptor`/`font_face_catalog` coverage 범위로 연결하는 text catalog adapter 추가.
 - `c83ed69`: text engine에 font Unicode coverage resolver와 contract/focused tests 추가.
 - `20fc3e6`: Vulkan instance creation boundary를 전용 header로 분리하고 loader 역방향 include 없이 직접 include 계약으로 정리.
@@ -107,7 +109,7 @@
 - `5965a4b`: Vulkan swapchain policy/pipeline compatibility/shader binding/fallback diagnostics 추가.
 - `244d5b7`: input multipointer touch-like arbitration diagnostics 추가.
 - `94a922f`: asset manifest integrity diagnostics 추가.
-- 기준 검증 예시: 2026-05-07 Windows MinGW full CTest 50/50 통과. 직전 focused 검증으로 text Unicode coverage/cmap/SFNT inspectors CTest 3/3, Vulkan instance/loader/renderer CTest 3/3, image cache/uploader/pipeline CTest 4/4 통과 후 `ctest -N`이 51개 테스트를 보고. 권위 있는 테스트 목록은 항상 실행 시점의 `ctest -N`으로 확인한다.
+- 기준 검증 예시: 2026-05-07 Windows MinGW full CTest 50/50 통과. 직전 focused 검증으로 image cache/uploader/residency/pipeline CTest 4/4, Vulkan device/instance/loader/renderer CTest 4/4, text Unicode coverage/fake engine CTest 2/2 통과 후 `ctest -N`이 52개 테스트를 보고. 권위 있는 테스트 목록은 항상 실행 시점의 `ctest -N`으로 확인한다.
 - 기준 검증은 고정 개수로 적지 않는다. 현재 전체 테스트 수는 `ctest -N`이 권위이며, handoff에는 실행한 focused target만 기록한다.
 
 상태 기준:

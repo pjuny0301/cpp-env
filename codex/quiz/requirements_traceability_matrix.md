@@ -6,6 +6,9 @@
 
 최근 baseline 통합 증거:
 
+- current: platform input engine adapter header를 CMake public FILE_SET에 등록하고 image manifest diagnostics와 함께 Windows MinGW focused input/image CTest 13/13 및 `ctest -N` 76개 확인.
+- `f879a62`: image manifest texture pipeline에 source resolution, normalized key, cache/revision, placeholder, decode/upload status diagnostics 추가.
+- `3db2baf`: translated platform input을 input_engine/gesture/text handling에 공급하는 input-only adapter와 tests 추가.
 - current: Vulkan pipeline layout readiness header를 CMake public FILE_SET에 등록하고 font backend capability diagnostics와 함께 Windows MinGW focused text/Vulkan CTest 6/6 및 `ctest -N` 75개 확인.
 - `6fd844d`: Vulkan descriptor-set/pipeline-layout readiness boundary, fake create/destroy diagnostics, push constant/binding validation tests 추가.
 - `5f02ac7`: fake text engine diagnostics에 font backend capability mode를 연결하고 complex-script fallback/backend-supported behavior tests 추가.

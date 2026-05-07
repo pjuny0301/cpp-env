@@ -200,6 +200,7 @@ target_sources(
             src/core/input/gesture_recognizer.h
             src/core/input/input_engine.h
             src/core/input/input_event.h
+            src/core/input/platform_input_engine_adapter.h
             src/core/input/platform_input_translator.h
             src/core/input/text_input_model.h
             src/core/input/text_input_types.h

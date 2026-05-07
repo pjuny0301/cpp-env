@@ -565,6 +565,14 @@ void test_wheel_after_touch_cancel_has_idle_capture_context()
         0,
         0,
         "wheel after cancel leaves diagnostics idle after cancel");
+    const input_diagnostic_summary& cancel_summary = engine.routing_diagnostics().summary;
+    require(cancel_summary.normalized_event_count == 1, "wheel after cancel summary counts drag cancel event");
+    require(cancel_summary.normalized_events.drag_cancel == 1, "wheel after cancel summary counts drag cancel kind");
+    require(cancel_summary.routes.pointer == 2, "wheel after cancel summary counts gesture and reset routes");
+    require(cancel_summary.routes.total == 2, "wheel after cancel summary counts all cancel routes");
+    require(cancel_summary.pointer_capture_ended_cleanly, "wheel after cancel summary clears capture");
+    require(cancel_summary.focus_ended_cleanly, "wheel after cancel summary leaves focus clean");
+    require(cancel_summary.preedit_ended_cleanly, "wheel after cancel summary leaves preedit clean");
 
     events = engine.process_scroll_event(scroll(
         160,
@@ -610,6 +618,15 @@ void test_wheel_after_touch_cancel_has_idle_capture_context()
         0,
         0,
         "wheel after cancel leaves engine capture idle");
+    const input_diagnostic_summary& wheel_summary = engine.routing_diagnostics().summary;
+    require(wheel_summary.normalized_event_count == 1, "wheel after cancel summary counts wheel event");
+    require(wheel_summary.normalized_events.wheel == 1, "wheel after cancel summary counts wheel kind");
+    require(wheel_summary.routes.wheel == 1, "wheel after cancel summary counts wheel route");
+    require(wheel_summary.routes.pointer == 0, "wheel after cancel summary has no pointer route");
+    require(wheel_summary.routes.total == 1, "wheel after cancel summary counts one route");
+    require(wheel_summary.pointer_capture_ended_cleanly, "wheel after cancel summary keeps capture clean");
+    require(wheel_summary.focus_ended_cleanly, "wheel after cancel summary keeps focus clean");
+    require(wheel_summary.preedit_ended_cleanly, "wheel after cancel summary keeps preedit clean");
 }
 
 void require_release_restart_parity(
@@ -677,6 +694,13 @@ void require_release_restart_parity(
         0,
         0,
         "release parity records idle pointer after");
+    const input_diagnostic_summary& release_summary = release_engine.routing_diagnostics().summary;
+    require(release_summary.normalized_event_count == 1, "release parity summary counts drag end event");
+    require(release_summary.normalized_events.drag_end == 1, "release parity summary counts drag end kind");
+    require(release_summary.routes.pointer == 1, "release parity summary counts pointer route");
+    require(release_summary.routes.total == 1, "release parity summary counts one route");
+    require(release_summary.pointer_capture_ended_cleanly, "release parity summary clears pointer capture");
+    require(release_summary.preedit_ended_cleanly, "release parity summary has clean preedit");
 
     input_engine restart_engine;
     require(restart_engine.process_raw_event(pointer(

@@ -172,7 +172,117 @@ action_route_policy_diagnostic make_event_policy(
     return diagnostic;
 }
 
+void count_normalized_event(input_diagnostic_summary& summary, input_event_summary_kind kind)
+{
+    ++summary.normalized_event_count;
+    switch (kind) {
+    case input_event_summary_kind::tap:
+        ++summary.normalized_events.tap;
+        return;
+    case input_event_summary_kind::long_press:
+        ++summary.normalized_events.long_press;
+        return;
+    case input_event_summary_kind::swipe_left:
+        ++summary.normalized_events.swipe_left;
+        return;
+    case input_event_summary_kind::swipe_right:
+        ++summary.normalized_events.swipe_right;
+        return;
+    case input_event_summary_kind::drag_start:
+        ++summary.normalized_events.drag_start;
+        return;
+    case input_event_summary_kind::drag_update:
+        ++summary.normalized_events.drag_update;
+        return;
+    case input_event_summary_kind::drag_end:
+        ++summary.normalized_events.drag_end;
+        return;
+    case input_event_summary_kind::drag_cancel:
+        ++summary.normalized_events.drag_cancel;
+        return;
+    case input_event_summary_kind::wheel:
+        ++summary.normalized_events.wheel;
+        return;
+    }
+}
+
+void count_route(input_diagnostic_summary& summary, action_route_policy_kind kind)
+{
+    ++summary.routes.total;
+    switch (kind) {
+    case action_route_policy_kind::pointer_capture_reset:
+    case action_route_policy_kind::pointer_capture_arbitration:
+    case action_route_policy_kind::gesture_route_snapshot:
+        ++summary.routes.pointer;
+        return;
+    case action_route_policy_kind::wheel_summary:
+        ++summary.routes.wheel;
+        return;
+    case action_route_policy_kind::text_commit_boundary:
+    case action_route_policy_kind::text_backspace_boundary:
+    case action_route_policy_kind::caret_moved:
+    case action_route_policy_kind::selection_changed:
+    case action_route_policy_kind::text_submit_boundary:
+        ++summary.routes.text;
+        return;
+    case action_route_policy_kind::focus_traversal_next:
+    case action_route_policy_kind::focus_traversal_previous:
+    case action_route_policy_kind::focus_loss:
+        ++summary.routes.focus;
+        return;
+    case action_route_policy_kind::ime_preedit:
+    case action_route_policy_kind::ime_commit:
+    case action_route_policy_kind::ime_cancel:
+    case action_route_policy_kind::ime_composition_start:
+        ++summary.routes.ime;
+        return;
+    }
+}
+
+input_diagnostic_summary summarize_current_diagnostics(
+    const input_routing_diagnostics& diagnostics,
+    const text_input_model& text)
+{
+    input_diagnostic_summary summary{};
+    for (const normalized_input_event_summary& event : diagnostics.normalized_events) {
+        count_normalized_event(summary, event.kind);
+    }
+    for (const action_route_policy_diagnostic& route : diagnostics.action_routes) {
+        count_route(summary, route.kind);
+    }
+
+    summary.pointer_capture_ended_cleanly = !detail::has_pointer_capture_state(diagnostics.pointer_capture);
+    summary.focus_ended_cleanly = text.has_focus() || text.focus_id().empty();
+    summary.preedit_ended_cleanly = !text.ime_composition().active && text.preedit_text().empty();
+    return summary;
+}
+
 } // namespace
+
+void accumulate_input_diagnostic_summary(
+    input_diagnostic_summary& target,
+    const input_diagnostic_summary& source)
+{
+    target.normalized_events.tap += source.normalized_events.tap;
+    target.normalized_events.long_press += source.normalized_events.long_press;
+    target.normalized_events.swipe_left += source.normalized_events.swipe_left;
+    target.normalized_events.swipe_right += source.normalized_events.swipe_right;
+    target.normalized_events.drag_start += source.normalized_events.drag_start;
+    target.normalized_events.drag_update += source.normalized_events.drag_update;
+    target.normalized_events.drag_end += source.normalized_events.drag_end;
+    target.normalized_events.drag_cancel += source.normalized_events.drag_cancel;
+    target.normalized_events.wheel += source.normalized_events.wheel;
+    target.routes.pointer += source.routes.pointer;
+    target.routes.text += source.routes.text;
+    target.routes.ime += source.routes.ime;
+    target.routes.focus += source.routes.focus;
+    target.routes.wheel += source.routes.wheel;
+    target.routes.total += source.routes.total;
+    target.normalized_event_count += source.normalized_event_count;
+    target.pointer_capture_ended_cleanly = source.pointer_capture_ended_cleanly;
+    target.focus_ended_cleanly = source.focus_ended_cleanly;
+    target.preedit_ended_cleanly = source.preedit_ended_cleanly;
+}
 
 input_engine::input_engine(gesture_thresholds thresholds)
     : gestures_(thresholds)
@@ -834,11 +944,13 @@ void input_engine::begin_route_diagnostics()
     diagnostics_.normalized_events.clear();
     diagnostics_.action_routes.clear();
     diagnostics_.pointer_capture = gestures_.capture_snapshot();
+    diagnostics_.summary = input_diagnostic_summary{};
 }
 
 void input_engine::finish_route_diagnostics()
 {
     diagnostics_.pointer_capture = gestures_.capture_snapshot();
+    diagnostics_.summary = summarize_current_diagnostics(diagnostics_, text_);
 }
 
 void input_engine::append_gestures(

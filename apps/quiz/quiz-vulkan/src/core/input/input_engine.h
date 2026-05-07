@@ -75,11 +75,46 @@ struct action_route_policy_diagnostic {
     std::size_t tracked_pointer_count_after = 0;
 };
 
+struct normalized_input_event_kind_counts {
+    std::size_t tap = 0;
+    std::size_t long_press = 0;
+    std::size_t swipe_left = 0;
+    std::size_t swipe_right = 0;
+    std::size_t drag_start = 0;
+    std::size_t drag_update = 0;
+    std::size_t drag_end = 0;
+    std::size_t drag_cancel = 0;
+    std::size_t wheel = 0;
+};
+
+struct input_route_kind_counts {
+    std::size_t pointer = 0;
+    std::size_t text = 0;
+    std::size_t ime = 0;
+    std::size_t focus = 0;
+    std::size_t wheel = 0;
+    std::size_t total = 0;
+};
+
+struct input_diagnostic_summary {
+    normalized_input_event_kind_counts normalized_events;
+    input_route_kind_counts routes;
+    std::size_t normalized_event_count = 0;
+    bool pointer_capture_ended_cleanly = true;
+    bool focus_ended_cleanly = true;
+    bool preedit_ended_cleanly = true;
+};
+
 struct input_routing_diagnostics {
     std::vector<normalized_input_event_summary> normalized_events;
     std::vector<action_route_policy_diagnostic> action_routes;
     pointer_capture_snapshot pointer_capture;
+    input_diagnostic_summary summary;
 };
+
+void accumulate_input_diagnostic_summary(
+    input_diagnostic_summary& target,
+    const input_diagnostic_summary& source);
 
 class input_engine {
 public:

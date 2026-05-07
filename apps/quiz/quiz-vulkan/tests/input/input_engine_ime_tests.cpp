@@ -502,6 +502,36 @@ void test_empty_ime_commit_and_end_cancel_preedit()
     require(engine.text_model().preedit_text().empty(), "empty composition end clears preedit");
 }
 
+void test_ime_cancel_summary_reports_clean_preedit_state()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    engine.focus_text_target("answer");
+
+    require(engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 100, "draft")).size() == 1,
+        "summary ime cancel setup preedits");
+    std::vector<input_event> events = engine.process_raw_event(ime(raw_platform_ime_phase::cancel, 120));
+    require(events.size() == 1, "summary ime cancel emits cancel event");
+    const ime_event& cancel = require_event<ime_event>(events, 0);
+    require(cancel.kind == ime_event_kind::cancel, "summary ime cancel event kind is cancel");
+    require(cancel.composition.preedit_text == "draft", "summary ime cancel event carries stale preedit snapshot");
+    require(engine.text_model().preedit_text().empty(), "summary ime cancel clears model preedit");
+    require(!engine.text_model().ime_composition().active, "summary ime cancel clears composition state");
+
+    const input_diagnostic_summary& summary = engine.routing_diagnostics().summary;
+    require(summary.normalized_event_count == 0, "summary ime cancel emits no normalized gesture events");
+    require(summary.routes.ime == 1, "summary ime cancel counts one ime route");
+    require(summary.routes.pointer == 0, "summary ime cancel counts no pointer routes");
+    require(summary.routes.text == 0, "summary ime cancel counts no text routes");
+    require(summary.routes.focus == 0, "summary ime cancel counts no focus routes");
+    require(summary.routes.total == 1, "summary ime cancel counts one total route");
+    require(summary.pointer_capture_ended_cleanly, "summary ime cancel has no pointer capture");
+    require(summary.focus_ended_cleanly, "summary ime cancel leaves focus state clean");
+    require(summary.preedit_ended_cleanly, "summary ime cancel ends with clean preedit");
+}
+
 void test_ime_empty_preedit_and_commit_only_edges()
 {
     using namespace quiz_vulkan;
@@ -684,6 +714,7 @@ int main()
     test_ime_preedit_commit_edges();
     test_ime_composition_restart_cancels_visible_preedit();
     test_empty_ime_commit_and_end_cancel_preedit();
+    test_ime_cancel_summary_reports_clean_preedit_state();
     test_ime_empty_preedit_and_commit_only_edges();
     test_ime_hangul_replacement_composition_ranges();
 

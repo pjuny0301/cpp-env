@@ -426,6 +426,15 @@ void test_keyboard_focus_traversal_diagnostics()
         "tab traversal policy records no tracked pointers before");
     require(next_policy.tracked_pointer_count_after == 0,
         "tab traversal policy records no tracked pointers after");
+    const input_diagnostic_summary& next_summary = engine.routing_diagnostics().summary;
+    require(next_summary.normalized_event_count == 0, "tab summary emits no normalized events");
+    require(next_summary.routes.focus == 1, "tab summary counts one focus route");
+    require(next_summary.routes.text == 0, "tab summary counts no text routes");
+    require(next_summary.routes.pointer == 0, "tab summary counts no pointer routes");
+    require(next_summary.routes.total == 1, "tab summary counts one total route");
+    require(next_summary.pointer_capture_ended_cleanly, "tab summary keeps pointer capture clean");
+    require(next_summary.focus_ended_cleanly, "tab summary keeps focus state clean");
+    require(next_summary.preedit_ended_cleanly, "tab summary keeps preedit clean");
     require(next_policy.text_byte_count_before == initial.size(),
         "tab traversal policy records before text byte count");
     require(next_policy.text_byte_count_after == initial.size(),
@@ -467,6 +476,15 @@ void test_keyboard_focus_traversal_diagnostics()
         "shift tab traversal policy records no tracked pointers before");
     require(previous_policy.tracked_pointer_count_after == 0,
         "shift tab traversal policy records no tracked pointers after");
+    const input_diagnostic_summary& previous_summary = engine.routing_diagnostics().summary;
+    require(previous_summary.normalized_event_count == 0, "shift tab summary emits no normalized events");
+    require(previous_summary.routes.focus == 1, "shift tab summary counts one focus route");
+    require(previous_summary.routes.text == 0, "shift tab summary counts no text routes");
+    require(previous_summary.routes.pointer == 0, "shift tab summary counts no pointer routes");
+    require(previous_summary.routes.total == 1, "shift tab summary counts one total route");
+    require(previous_summary.pointer_capture_ended_cleanly, "shift tab summary keeps pointer capture clean");
+    require(previous_summary.focus_ended_cleanly, "shift tab summary keeps focus state clean");
+    require(previous_summary.preedit_ended_cleanly, "shift tab summary keeps preedit clean");
     require(previous_policy.had_selection_before, "shift tab traversal policy records prior selection");
     require(previous_policy.has_selection_after, "shift tab traversal policy records retained selection");
     require_range(previous_policy.selection_before, 4, initial.size(),

@@ -18,6 +18,7 @@ struct platform_input_dispatch_result {
 
 struct platform_input_dispatch_batch_result {
     std::vector<platform_input_dispatch_result> items;
+    input_diagnostic_summary summary;
 };
 
 [[nodiscard]] inline platform_input_dispatch_result dispatch_translated_platform_input(
@@ -57,7 +58,11 @@ struct platform_input_dispatch_batch_result {
     platform_input_dispatch_batch_result batch;
     batch.items.reserve(requests.size());
     for (const platform_input_translation_request& request : requests) {
-        batch.items.push_back(translate_and_dispatch_platform_input(engine, translator, request));
+        platform_input_dispatch_result item = translate_and_dispatch_platform_input(engine, translator, request);
+        if (item.dispatched_to_engine) {
+            accumulate_input_diagnostic_summary(batch.summary, item.routing_diagnostics.summary);
+        }
+        batch.items.push_back(std::move(item));
     }
     return batch;
 }

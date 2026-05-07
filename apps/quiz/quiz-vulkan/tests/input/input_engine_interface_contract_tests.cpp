@@ -121,6 +121,7 @@ concept PlatformInputDispatchResultInterface = requires(T result) {
 template <typename T>
 concept PlatformInputDispatchBatchResultInterface = requires(T result) {
     { result.items } -> std::same_as<std::vector<input::platform_input_dispatch_result>&>;
+    { result.summary } -> std::same_as<input::input_diagnostic_summary&>;
 };
 
 template <typename T>
@@ -193,6 +194,40 @@ concept InputRoutingDiagnosticsInterface = requires(T diagnostics) {
     { diagnostics.normalized_events } -> std::same_as<std::vector<input::normalized_input_event_summary>&>;
     { diagnostics.action_routes } -> std::same_as<std::vector<input::action_route_policy_diagnostic>&>;
     { diagnostics.pointer_capture } -> std::same_as<input::pointer_capture_snapshot&>;
+    { diagnostics.summary } -> std::same_as<input::input_diagnostic_summary&>;
+};
+
+template <typename T>
+concept NormalizedInputEventKindCountsInterface = requires(T counts) {
+    { counts.tap } -> std::same_as<std::size_t&>;
+    { counts.long_press } -> std::same_as<std::size_t&>;
+    { counts.swipe_left } -> std::same_as<std::size_t&>;
+    { counts.swipe_right } -> std::same_as<std::size_t&>;
+    { counts.drag_start } -> std::same_as<std::size_t&>;
+    { counts.drag_update } -> std::same_as<std::size_t&>;
+    { counts.drag_end } -> std::same_as<std::size_t&>;
+    { counts.drag_cancel } -> std::same_as<std::size_t&>;
+    { counts.wheel } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
+concept InputRouteKindCountsInterface = requires(T counts) {
+    { counts.pointer } -> std::same_as<std::size_t&>;
+    { counts.text } -> std::same_as<std::size_t&>;
+    { counts.ime } -> std::same_as<std::size_t&>;
+    { counts.focus } -> std::same_as<std::size_t&>;
+    { counts.wheel } -> std::same_as<std::size_t&>;
+    { counts.total } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
+concept InputDiagnosticSummaryInterface = requires(T summary) {
+    { summary.normalized_events } -> std::same_as<input::normalized_input_event_kind_counts&>;
+    { summary.routes } -> std::same_as<input::input_route_kind_counts&>;
+    { summary.normalized_event_count } -> std::same_as<std::size_t&>;
+    { summary.pointer_capture_ended_cleanly } -> std::same_as<bool&>;
+    { summary.focus_ended_cleanly } -> std::same_as<bool&>;
+    { summary.preedit_ended_cleanly } -> std::same_as<bool&>;
 };
 
 template <typename T>
@@ -276,6 +311,9 @@ static_assert(PointerCaptureSnapshotInterface<input::pointer_capture_snapshot>);
 static_assert(GesturePolicySnapshotInterface<input::gesture_policy_snapshot>);
 static_assert(NormalizedInputEventSummaryInterface<input::normalized_input_event_summary>);
 static_assert(ActionRoutePolicyDiagnosticInterface<input::action_route_policy_diagnostic>);
+static_assert(NormalizedInputEventKindCountsInterface<input::normalized_input_event_kind_counts>);
+static_assert(InputRouteKindCountsInterface<input::input_route_kind_counts>);
+static_assert(InputDiagnosticSummaryInterface<input::input_diagnostic_summary>);
 static_assert(InputRoutingDiagnosticsInterface<input::input_routing_diagnostics>);
 static_assert(GestureRecognizerInterface<input::gesture_recognizer>);
 static_assert(PlatformInputTranslatorInterface<input::platform_input_translator>);
@@ -316,6 +354,9 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     decltype(input::platform_input_dispatch_batch_result{}.items),
     std::vector<input::platform_input_dispatch_result>>);
+static_assert(std::is_same_v<
+    decltype(input::platform_input_dispatch_batch_result{}.summary),
+    input::input_diagnostic_summary>);
 static_assert(TextInputModelInterface<input::text_input_model>);
 
 constexpr input::text_range text_range_contract{
@@ -353,6 +394,29 @@ constexpr input::normalized_input_event_summary wheel_summary_contract{
 };
 static_assert(wheel_summary_contract.kind == input::input_event_summary_kind::wheel);
 static_assert(wheel_summary_contract.pixel_delta_y == -120.0f);
+
+constexpr input::input_diagnostic_summary input_summary_contract{
+    .normalized_events = input::normalized_input_event_kind_counts{
+        .tap = 1,
+        .wheel = 2,
+    },
+    .routes = input::input_route_kind_counts{
+        .pointer = 1,
+        .text = 2,
+        .ime = 3,
+        .focus = 4,
+        .wheel = 5,
+        .total = 15,
+    },
+    .normalized_event_count = 3,
+    .pointer_capture_ended_cleanly = true,
+    .focus_ended_cleanly = true,
+    .preedit_ended_cleanly = true,
+};
+static_assert(input_summary_contract.normalized_events.tap == 1);
+static_assert(input_summary_contract.normalized_events.wheel == 2);
+static_assert(input_summary_contract.routes.total == 15);
+static_assert(input_summary_contract.pointer_capture_ended_cleanly);
 
 constexpr input::gesture_policy_snapshot swipe_policy_contract{
     .decision = input::gesture_policy_decision::swipe_accepted,

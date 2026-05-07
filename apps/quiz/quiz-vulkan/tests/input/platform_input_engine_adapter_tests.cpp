@@ -336,6 +336,76 @@ void test_batch_dispatch_preserves_order_and_skips_rejected_items()
         "mixed batch wheel records normalized wheel last");
 }
 
+void test_mixed_batch_summarizes_normalized_routes_and_clean_final_state()
+{
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    engine.focus_text_target("answer");
+    platform_input_translator translator;
+    const std::array requests{
+        request(platform_mouse_sample{
+            .timestamp_ms = 700,
+            .pointer_id = 21,
+            .phase = platform_pointer_sample_phase::down,
+            .button = platform_mouse_button::primary,
+            .x = 2.0f,
+            .y = 4.0f,
+        }),
+        request(platform_mouse_sample{
+            .timestamp_ms = 730,
+            .pointer_id = 21,
+            .phase = platform_pointer_sample_phase::up,
+            .button = platform_mouse_button::primary,
+            .x = 3.0f,
+            .y = 5.0f,
+        }),
+        request(platform_wheel_sample{
+            .timestamp_ms = 740,
+            .x = 20.0f,
+            .y = 30.0f,
+            .delta_x = 0.0f,
+            .delta_y = -2.0f,
+            .unit = platform_scroll_delta_unit::lines,
+        }),
+        request(platform_character_sample{
+            .timestamp_ms = 750,
+            .utf8_text = "x",
+        }),
+        request(platform_ime_composition_sample{
+            .timestamp_ms = 760,
+            .phase = platform_ime_sample_phase::preedit_update,
+            .utf8_text = utf8(u8"ㅎ"),
+        }),
+        request(platform_ime_composition_sample{
+            .timestamp_ms = 770,
+            .phase = platform_ime_sample_phase::commit,
+            .utf8_text = utf8(u8"한"),
+        }),
+    };
+
+    const platform_input_dispatch_batch_result batch =
+        translate_and_dispatch_platform_input_batch(engine, translator, requests);
+    require(batch.items.size() == 6, "summary mixed batch records all dispatch results");
+    require(engine.text_model().text() == std::string("x") + utf8(u8"한"),
+        "summary mixed batch commits text and ime once");
+
+    const input_diagnostic_summary& summary = batch.summary;
+    require(summary.normalized_event_count == 2, "summary mixed batch counts normalized events");
+    require(summary.normalized_events.tap == 1, "summary mixed batch counts tap");
+    require(summary.normalized_events.wheel == 1, "summary mixed batch counts wheel");
+    require(summary.normalized_events.swipe_left == 0, "summary mixed batch leaves absent swipe count zero");
+    require(summary.routes.pointer == 2, "summary mixed batch counts pointer routes");
+    require(summary.routes.wheel == 1, "summary mixed batch counts wheel routes");
+    require(summary.routes.text == 1, "summary mixed batch counts text routes");
+    require(summary.routes.ime == 2, "summary mixed batch counts ime routes");
+    require(summary.routes.focus == 0, "summary mixed batch has no focus routes");
+    require(summary.routes.total == 6, "summary mixed batch counts all accepted routes");
+    require(summary.pointer_capture_ended_cleanly, "summary mixed batch ends with no pointer capture");
+    require(summary.focus_ended_cleanly, "summary mixed batch leaves focus state clean");
+    require(summary.preedit_ended_cleanly, "summary mixed batch clears preedit after ime commit");
+}
+
 } // namespace
 
 int main()
@@ -346,6 +416,7 @@ int main()
     test_ime_batch_dispatches_existing_ime_path();
     test_rejected_translation_result_has_no_engine_side_effects();
     test_batch_dispatch_preserves_order_and_skips_rejected_items();
+    test_mixed_batch_summarizes_normalized_routes_and_clean_final_state();
 
     std::cout << "platform_input_engine_adapter_tests passed\n";
     return 0;

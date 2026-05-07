@@ -6,6 +6,9 @@
 
 최근 baseline 통합 증거:
 
+- current: Vulkan pipeline layout readiness header를 CMake public FILE_SET에 등록하고 font backend capability diagnostics와 함께 Windows MinGW focused text/Vulkan CTest 6/6 및 `ctest -N` 75개 확인.
+- `6fd844d`: Vulkan descriptor-set/pipeline-layout readiness boundary, fake create/destroy diagnostics, push constant/binding validation tests 추가.
+- `5f02ac7`: fake text engine diagnostics에 font backend capability mode를 연결하고 complex-script fallback/backend-supported behavior tests 추가.
 - current: image manifest texture pipeline header를 CMake public FILE_SET에 등록하고 Windows MinGW focused image CTest 4/4 및 `ctest -N` 74개 확인.
 - `a6645a8`: image manifest texture pipeline boundary를 `image_manifest_texture_pipeline.h`로 분리해 decode/upload/cache core header 부담을 낮춤.
 - current: platform input translator header를 CMake public FILE_SET에 등록하고 Windows MinGW focused input CTest 8/8 및 `ctest -N` 74개 확인.

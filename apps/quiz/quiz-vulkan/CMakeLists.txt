@@ -327,6 +327,7 @@ target_sources(
             src/render/vulkan/vulkan_backend_frame_lifecycle.h
             src/render/vulkan/vulkan_backend_instance.h
             src/render/vulkan/vulkan_backend_loader.h
+            src/render/vulkan/vulkan_backend_pipeline_layout.h
             src/render/vulkan/vulkan_backend_queue_submit.h
             src/render/vulkan/vulkan_backend_render_pass.h
             src/render/vulkan/vulkan_backend_shader_module.h

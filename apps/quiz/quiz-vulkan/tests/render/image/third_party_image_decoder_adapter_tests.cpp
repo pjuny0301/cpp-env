@@ -1,6 +1,8 @@
 #include "render/image/third_party_image_decoder_adapter.h"
+#include "render/image/image_texture_cache.h"
 
 #include <cassert>
+#include <concepts>
 #include <cstddef>
 #include <cstdio>
 #include <filesystem>
@@ -13,6 +15,21 @@
 #include <vector>
 
 namespace {
+
+template <typename T>
+concept HasFakeCacheSnapshotField = requires(T value) {
+    { value.cache_snapshot } -> std::same_as<quiz_vulkan::render::fake_image_texture_cache_snapshot&>;
+};
+
+template <typename T>
+concept HasFakeUploadSnapshotField = requires(T value) {
+    { value.upload_snapshot } -> std::same_as<quiz_vulkan::render::fake_image_texture_upload_snapshot&>;
+};
+
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_decoder_capability_manifest>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_decoder_capability_candidate_snapshot>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_decoder_capability_manifest>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_decoder_capability_candidate_snapshot>);
 
 void require(bool condition, const char* message)
 {
@@ -83,6 +100,29 @@ quiz_vulkan::render::render_image_decode_request make_decode_request(
         },
         .encoded_bytes = std::move(encoded_bytes),
     };
+}
+
+void require_candidate(
+    const quiz_vulkan::render::render_image_decoder_capability_manifest& manifest,
+    std::size_t index,
+    quiz_vulkan::render::render_image_decoder_capability_candidate_kind kind,
+    quiz_vulkan::render::render_image_decoder_capability_candidate_status status,
+    std::string_view decoder_id,
+    bool terminal)
+{
+    require(index < manifest.candidates.size(), "capability manifest candidate index exists");
+    const quiz_vulkan::render::render_image_decoder_capability_candidate_snapshot& candidate =
+        manifest.candidates[index];
+    require(candidate.candidate_index == index, "capability manifest candidate records stable index");
+    require(candidate.candidate_order == index + 1, "capability manifest candidate records stable order");
+    require(candidate.kind == kind, "capability manifest candidate records kind");
+    require(candidate.kind_name == quiz_vulkan::render::render_image_decoder_capability_candidate_kind_name(kind),
+        "capability manifest candidate records kind name");
+    require(candidate.status == status, "capability manifest candidate records status");
+    require(candidate.status_name == quiz_vulkan::render::render_image_decoder_capability_candidate_status_name(status),
+        "capability manifest candidate records status name");
+    require(candidate.decoder_id == decoder_id, "capability manifest candidate records decoder id");
+    require(candidate.terminal_candidate == terminal, "capability manifest candidate records terminal flag");
 }
 
 std::filesystem::path locate_source_file(
@@ -170,6 +210,26 @@ void test_optional_chain_decodes_with_adapter_before_standard_candidates()
     require(result.decoder_diagnostics[0].supported, "third-party diagnostic records supported candidate");
     require(result.decoder_diagnostics[0].decode_attempted, "third-party diagnostic records decode attempt");
     require(result.decoder_diagnostics[0].terminal_candidate, "third-party diagnostic records terminal success");
+
+    const render_image_decoder_capability_manifest manifest =
+        make_render_image_decoder_capability_manifest(
+            make_decode_request("textures/card.jpg", make_jpeg_signature_bytes()),
+            result);
+    require(manifest.candidates.size() == 1, "third-party success manifest records one candidate");
+    require(manifest.used_third_party_adapter, "third-party success manifest records adapter use");
+    require(!manifest.fallback_used, "third-party success manifest records no fallback");
+    require(manifest.decoded, "third-party success manifest records decoded result");
+    require_candidate(
+        manifest,
+        0,
+        render_image_decoder_capability_candidate_kind::third_party_adapter,
+        render_image_decoder_capability_candidate_status::decoded,
+        "fake_stb_decoder",
+        true);
+    require(manifest.terminal_decoder_id == "fake_stb_decoder", "third-party success manifest terminal id is adapter");
+    require(
+        manifest.terminal_kind == render_image_decoder_capability_candidate_kind::third_party_adapter,
+        "third-party success manifest terminal kind is adapter");
 }
 
 void test_adapter_failure_falls_back_to_standard_decoder_chain()
@@ -202,6 +262,75 @@ void test_adapter_failure_falls_back_to_standard_decoder_chain()
     require(result.decoder_diagnostics[2].decoder_id == "ppm_image_decoder", "fallback reindexes PPM candidate");
     require(result.decoder_diagnostics[2].candidate_index == 2, "fallback PPM candidate index follows adapter");
     require(result.decoder_diagnostics[2].terminal_candidate, "fallback PPM candidate is terminal");
+
+    const render_image_decoder_capability_manifest manifest =
+        make_render_image_decoder_capability_manifest(
+            make_decode_request("textures/card.ppm", make_ppm_bytes()),
+            result);
+    require(manifest.candidates.size() == 3, "adapter failure manifest records adapter, BMP, and PPM");
+    require(manifest.used_third_party_adapter, "adapter failure manifest records adapter use");
+    require(manifest.fallback_used, "adapter failure manifest records standard fallback");
+    require_candidate(
+        manifest,
+        0,
+        render_image_decoder_capability_candidate_kind::third_party_adapter,
+        render_image_decoder_capability_candidate_status::decode_failed,
+        "fake_stb_decoder",
+        false);
+    require_candidate(
+        manifest,
+        1,
+        render_image_decoder_capability_candidate_kind::bmp,
+        render_image_decoder_capability_candidate_status::unsupported_format,
+        "bmp_image_decoder",
+        false);
+    require_candidate(
+        manifest,
+        2,
+        render_image_decoder_capability_candidate_kind::ppm,
+        render_image_decoder_capability_candidate_status::decoded,
+        "ppm_image_decoder",
+        true);
+    require(manifest.terminal_decoder_id == "ppm_image_decoder", "adapter failure manifest terminal id is fallback PPM");
+}
+
+void test_unsupported_adapter_falls_back_to_standard_decoder_chain()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_third_party_image_decoder_backend backend;
+    backend.set_decoder_id("fake_stb_decoder");
+    backend.set_supported_formats({render_image_encoded_format::jpeg});
+    backend.set_decoded_image(make_rgba_image({1, 2, 3, 4}));
+    const optional_third_party_image_decoder_chain decoder(backend);
+
+    const render_image_decode_result result =
+        decoder.decode(make_decode_request("textures/card.ppm", make_ppm_bytes()));
+
+    require(result.ok(), "unsupported adapter capability falls back to standard decoder");
+    require(result.metadata.decoder_id == "ppm_image_decoder", "unsupported adapter fallback selects PPM");
+    require(result.decoder_diagnostics.size() == 3, "unsupported adapter fallback records adapter, BMP, and PPM");
+
+    const render_image_decoder_capability_manifest manifest =
+        make_render_image_decoder_capability_manifest(
+            make_decode_request("textures/card.ppm", make_ppm_bytes()),
+            result);
+    require(manifest.used_third_party_adapter, "unsupported adapter manifest records adapter");
+    require(manifest.fallback_used, "unsupported adapter manifest records fallback");
+    require_candidate(
+        manifest,
+        0,
+        render_image_decoder_capability_candidate_kind::third_party_adapter,
+        render_image_decoder_capability_candidate_status::unsupported_format,
+        "fake_stb_decoder",
+        false);
+    require_candidate(
+        manifest,
+        2,
+        render_image_decoder_capability_candidate_kind::ppm,
+        render_image_decoder_capability_candidate_status::decoded,
+        "ppm_image_decoder",
+        true);
 }
 
 void test_unavailable_adapter_preserves_standard_unsupported_failure()
@@ -232,6 +361,32 @@ void test_unavailable_adapter_preserves_standard_unsupported_failure()
         result.decoder_diagnostics[3].diagnostic == "decoder chain exhausted all candidates",
         "standard unsupported diagnostic remains deterministic");
     require(backend.decode_requests.empty(), "unavailable adapter does not decode");
+
+    const render_image_decoder_capability_manifest manifest =
+        make_render_image_decoder_capability_manifest(
+            make_decode_request("textures/card.jpg", make_jpeg_signature_bytes()),
+            result);
+    require(manifest.candidates.size() == 5, "unavailable adapter manifest records adapter, standard candidates, and terminal");
+    require(manifest.used_third_party_adapter, "unavailable adapter manifest records adapter");
+    require(manifest.fallback_used, "unavailable adapter manifest records fallback");
+    require(!manifest.decoded, "unavailable adapter manifest records failure");
+    require_candidate(
+        manifest,
+        0,
+        render_image_decoder_capability_candidate_kind::third_party_adapter,
+        render_image_decoder_capability_candidate_status::unavailable,
+        "fake_stb_decoder",
+        false);
+    require_candidate(
+        manifest,
+        4,
+        render_image_decoder_capability_candidate_kind::unsupported_terminal,
+        render_image_decoder_capability_candidate_status::unsupported_terminal,
+        "unsupported_terminal",
+        true);
+    require(
+        manifest.terminal_kind == render_image_decoder_capability_candidate_kind::unsupported_terminal,
+        "unavailable adapter manifest terminal kind is explicit unsupported terminal");
 }
 
 void test_adapter_unsupported_format_is_placeholder_safe()
@@ -303,6 +458,7 @@ int main()
     test_adapter_decodes_matching_format_and_sets_metadata();
     test_optional_chain_decodes_with_adapter_before_standard_candidates();
     test_adapter_failure_falls_back_to_standard_decoder_chain();
+    test_unsupported_adapter_falls_back_to_standard_decoder_chain();
     test_unavailable_adapter_preserves_standard_unsupported_failure();
     test_adapter_unsupported_format_is_placeholder_safe();
     test_third_party_adapter_header_stays_image_owned();

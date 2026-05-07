@@ -1,4 +1,5 @@
 #include "render/image/image_decoder.h"
+#include "render/image/third_party_image_decoder_adapter.h"
 
 #include <cassert>
 #include <cstddef>
@@ -211,6 +212,29 @@ quiz_vulkan::render::render_image_decode_request make_decode_request(
     };
 }
 
+void require_candidate(
+    const quiz_vulkan::render::render_image_decoder_capability_manifest& manifest,
+    std::size_t index,
+    quiz_vulkan::render::render_image_decoder_capability_candidate_kind kind,
+    quiz_vulkan::render::render_image_decoder_capability_candidate_status status,
+    std::string_view decoder_id,
+    bool terminal)
+{
+    require(index < manifest.candidates.size(), "capability manifest candidate index exists");
+    const quiz_vulkan::render::render_image_decoder_capability_candidate_snapshot& candidate =
+        manifest.candidates[index];
+    require(candidate.candidate_index == index, "capability manifest candidate records stable index");
+    require(candidate.candidate_order == index + 1, "capability manifest candidate records stable order");
+    require(candidate.kind == kind, "capability manifest candidate records kind");
+    require(candidate.kind_name == quiz_vulkan::render::render_image_decoder_capability_candidate_kind_name(kind),
+        "capability manifest candidate records kind name");
+    require(candidate.status == status, "capability manifest candidate records status");
+    require(candidate.status_name == quiz_vulkan::render::render_image_decoder_capability_candidate_status_name(status),
+        "capability manifest candidate records status name");
+    require(candidate.decoder_id == decoder_id, "capability manifest candidate records decoder id");
+    require(candidate.terminal_candidate == terminal, "capability manifest candidate records terminal flag");
+}
+
 void test_standard_chain_decodes_bmp_first()
 {
     using namespace quiz_vulkan::render;
@@ -229,6 +253,24 @@ void test_standard_chain_decodes_bmp_first()
     require(
         result.image.pixels == make_bytes({1, 2, 3, 0xff}),
         "standard decoder chain preserves BMP RGBA pixels");
+
+    const render_image_decoder_capability_manifest manifest =
+        make_render_image_decoder_capability_manifest(
+            make_decode_request("textures/card.bmp", make_bmp_bytes()),
+            result);
+    require(manifest.candidates.size() == 1, "BMP manifest records one candidate");
+    require(!manifest.used_third_party_adapter, "BMP manifest does not use third-party adapter");
+    require(!manifest.fallback_used, "BMP manifest does not use fallback");
+    require(manifest.decoded, "BMP manifest records decoded result");
+    require_candidate(
+        manifest,
+        0,
+        render_image_decoder_capability_candidate_kind::bmp,
+        render_image_decoder_capability_candidate_status::decoded,
+        "bmp_image_decoder",
+        true);
+    require(manifest.terminal_decoder_id == "bmp_image_decoder", "BMP manifest terminal decoder is BMP");
+    require(manifest.terminal_kind == render_image_decoder_capability_candidate_kind::bmp, "BMP manifest terminal kind is BMP");
 }
 
 void test_standard_chain_decodes_ppm_after_bmp_candidate()
@@ -249,6 +291,28 @@ void test_standard_chain_decodes_ppm_after_bmp_candidate()
     require(
         result.image.pixels == make_bytes({10, 20, 30, 0xff}),
         "standard decoder chain preserves PPM RGBA pixels");
+
+    const render_image_decoder_capability_manifest manifest =
+        make_render_image_decoder_capability_manifest(
+            make_decode_request("textures/card.ppm", make_ppm_bytes()),
+            result);
+    require(manifest.candidates.size() == 2, "PPM manifest records BMP and PPM candidates");
+    require_candidate(
+        manifest,
+        0,
+        render_image_decoder_capability_candidate_kind::bmp,
+        render_image_decoder_capability_candidate_status::unsupported_format,
+        "bmp_image_decoder",
+        false);
+    require_candidate(
+        manifest,
+        1,
+        render_image_decoder_capability_candidate_kind::ppm,
+        render_image_decoder_capability_candidate_status::decoded,
+        "ppm_image_decoder",
+        true);
+    require(manifest.terminal_decoder_id == "ppm_image_decoder", "PPM manifest terminal decoder is PPM");
+    require(manifest.terminal_kind == render_image_decoder_capability_candidate_kind::ppm, "PPM manifest terminal kind is PPM");
 }
 
 void test_standard_chain_decodes_zlib_stored_png()
@@ -275,6 +339,35 @@ void test_standard_chain_decodes_zlib_stored_png()
     require(
         result.image.pixels == make_bytes({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}),
         "standard decoder chain unfilters zlib-stored PNG rows");
+
+    const render_image_decoder_capability_manifest manifest =
+        make_render_image_decoder_capability_manifest(
+            make_decode_request("textures/card.png", make_png_bytes(make_zlib_stored_stream(scanlines))),
+            result);
+    require(manifest.candidates.size() == 3, "PNG manifest records BMP, PPM, and PNG candidates");
+    require_candidate(
+        manifest,
+        0,
+        render_image_decoder_capability_candidate_kind::bmp,
+        render_image_decoder_capability_candidate_status::unsupported_format,
+        "bmp_image_decoder",
+        false);
+    require_candidate(
+        manifest,
+        1,
+        render_image_decoder_capability_candidate_kind::ppm,
+        render_image_decoder_capability_candidate_status::unsupported_format,
+        "ppm_image_decoder",
+        false);
+    require_candidate(
+        manifest,
+        2,
+        render_image_decoder_capability_candidate_kind::png,
+        render_image_decoder_capability_candidate_status::decoded,
+        "png_image_decoder",
+        true);
+    require(manifest.terminal_decoder_id == "png_image_decoder", "PNG manifest terminal decoder is PNG");
+    require(manifest.terminal_kind == render_image_decoder_capability_candidate_kind::png, "PNG manifest terminal kind is PNG");
 }
 
 void test_standard_chain_reports_png_inflate_failure_without_placeholder_pixels()
@@ -317,6 +410,44 @@ void test_standard_chain_reports_unsupported_source_without_placeholder_pixels()
     require(
         result.decoder_diagnostics[2].diagnostic == "decoder chain exhausted all candidates",
         "unsupported source diagnostic is deterministic");
+
+    const render_image_decoder_capability_manifest manifest =
+        make_render_image_decoder_capability_manifest(
+            make_decode_request("textures/card.jpg", make_bytes({0xff, 0xd8, 0xff, 0xd9})),
+            result);
+    require(manifest.candidates.size() == 4, "unsupported manifest records standard candidates plus terminal");
+    require_candidate(
+        manifest,
+        0,
+        render_image_decoder_capability_candidate_kind::bmp,
+        render_image_decoder_capability_candidate_status::unsupported_format,
+        "bmp_image_decoder",
+        false);
+    require_candidate(
+        manifest,
+        1,
+        render_image_decoder_capability_candidate_kind::ppm,
+        render_image_decoder_capability_candidate_status::unsupported_format,
+        "ppm_image_decoder",
+        false);
+    require_candidate(
+        manifest,
+        2,
+        render_image_decoder_capability_candidate_kind::png,
+        render_image_decoder_capability_candidate_status::unsupported_format,
+        "png_image_decoder",
+        false);
+    require_candidate(
+        manifest,
+        3,
+        render_image_decoder_capability_candidate_kind::unsupported_terminal,
+        render_image_decoder_capability_candidate_status::unsupported_terminal,
+        "unsupported_terminal",
+        true);
+    require(
+        manifest.terminal_kind == render_image_decoder_capability_candidate_kind::unsupported_terminal,
+        "unsupported manifest terminal kind is explicit");
+    require(manifest.terminal_decoder_id == "unsupported_terminal", "unsupported manifest terminal id is explicit");
 }
 
 } // namespace

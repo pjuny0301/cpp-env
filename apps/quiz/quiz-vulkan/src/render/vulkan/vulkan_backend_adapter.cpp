@@ -1,5 +1,6 @@
 #include "render/vulkan/vulkan_backend_adapter.h"
 #include "render/vulkan/vulkan_backend_command_recording.h"
+#include "render/vulkan/vulkan_backend_command_submit.h"
 #include "render/vulkan/vulkan_backend_device.h"
 #include "render/vulkan/vulkan_backend_frame_lifecycle.h"
 #include "render/vulkan/vulkan_backend_instance.h"
@@ -232,6 +233,16 @@ vulkan_backend_fallback_reason first_unready_reason(
     }
     if (!lifecycle.effective_command_recorder_ready()) {
         return vulkan_backend_fallback_reason::command_recorder_unavailable;
+    }
+    if (lifecycle.command_submit.checked && !lifecycle.effective_command_submit_ready()) {
+        if (lifecycle.command_submit.status
+            == vulkan_command_submit_readiness_status::present_target_unavailable) {
+            return vulkan_backend_fallback_reason::present_frame_failed;
+        }
+        return vulkan_backend_fallback_reason::submit_frame_failed;
+    }
+    if (lifecycle.command_submit.checked && !lifecycle.effective_present_target_ready()) {
+        return vulkan_backend_fallback_reason::present_frame_failed;
     }
 
     return vulkan_backend_fallback_reason::none;
@@ -1022,6 +1033,21 @@ vulkan_backend_lifecycle_readiness apply_vulkan_command_recording_readiness_to_l
     return lifecycle;
 }
 
+vulkan_backend_lifecycle_readiness apply_vulkan_command_submit_readiness_to_lifecycle(
+    vulkan_backend_lifecycle_readiness lifecycle,
+    vulkan_command_submit_readiness_result command_submit)
+{
+    if (!command_submit.checked) {
+        return lifecycle;
+    }
+
+    lifecycle = apply_vulkan_command_recording_readiness_to_lifecycle(
+        std::move(lifecycle),
+        command_submit.command_recording);
+    lifecycle.command_submit = std::move(command_submit);
+    return lifecycle;
+}
+
 null_vulkan_backend_device::null_vulkan_backend_device() = default;
 
 null_vulkan_backend_device::null_vulkan_backend_device(
@@ -1081,6 +1107,20 @@ null_vulkan_backend_device::null_vulkan_backend_device(
 {
 }
 
+null_vulkan_backend_device::null_vulkan_backend_device(
+    vulkan_command_submit_readiness_result command_submit_result)
+    : loader_readiness_(
+        command_submit_result.command_recording.render_pass.swapchain.device.instance.loader)
+    , instance_result_(
+        command_submit_result.command_recording.render_pass.swapchain.device.instance)
+    , device_result_(command_submit_result.command_recording.render_pass.swapchain.device)
+    , swapchain_result_(command_submit_result.command_recording.render_pass.swapchain)
+    , render_pass_result_(command_submit_result.command_recording.render_pass)
+    , command_recording_result_(command_submit_result.command_recording)
+    , command_submit_result_(std::move(command_submit_result))
+{
+}
+
 vulkan_backend_lifecycle_readiness null_vulkan_backend_device::current_lifecycle_readiness() const
 {
     vulkan_backend_lifecycle_readiness lifecycle =
@@ -1097,9 +1137,12 @@ vulkan_backend_lifecycle_readiness null_vulkan_backend_device::current_lifecycle
     lifecycle = apply_vulkan_render_pass_create_result_to_lifecycle(
         std::move(lifecycle),
         render_pass_result_);
-    return apply_vulkan_command_recording_readiness_to_lifecycle(
+    lifecycle = apply_vulkan_command_recording_readiness_to_lifecycle(
         std::move(lifecycle),
         command_recording_result_);
+    return apply_vulkan_command_submit_readiness_to_lifecycle(
+        std::move(lifecycle),
+        command_submit_result_);
 }
 
 vulkan_surface_extent null_vulkan_backend_device::current_surface_extent() const
@@ -1282,6 +1325,7 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     result.attempted = true;
     result.reached_stage = vulkan_backend_frame_stage::backend_attempted;
     result.lifecycle = device.current_lifecycle_readiness();
+    result.command_submit = result.lifecycle.command_submit;
     result.command_recorder.ready = result.lifecycle.command_recorder_ready;
     const vulkan_backend_fallback_reason unready_reason = first_unready_reason(result.lifecycle);
     if (unready_reason != vulkan_backend_fallback_reason::none) {

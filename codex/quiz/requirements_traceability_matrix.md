@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: Vulkan command packet execution diagnostics를 통합하고 Windows MinGW focused Vulkan CTest 4/4 및 `ctest -N` 83개 확인.
+- `1cbc4cf`: Vulkan backend에 command packet execution result/event diagnostics를 추가해 frame pipeline/resource binding/command recorder/packet bridge prerequisites가 충족될 때만 execution complete로 기록되도록 보강.
 - current: text backend selection diagnostics, image decoder capability manifest diagnostics, input diagnostic summary counts를 통합하고 Windows MinGW focused text/image/input CTest 9/9 확인.
 - `4f54fac`: input engine/platform adapter diagnostics에 normalized event kind counts, route kind counts, summary snapshots를 추가해 worker-owned input history를 app 밖에서 검증 가능하게 보강.
 - `9bd7bff`: standard/third-party image decoder path에 capability manifest diagnostics를 추가해 BMP/PPM/PNG/unsupported/fallback 후보 상태를 data-only로 추적.

@@ -6,6 +6,9 @@
 
 최근 baseline 통합 증거:
 
+- current: real font backend adapter와 Vulkan graphics pipeline readiness headers를 CMake public FILE_SET에 등록하고 Windows MinGW focused text/Vulkan CTest 5/5 및 `ctest -N` 77개 확인.
+- `3b32db2`: Vulkan graphics pipeline readiness boundary, shader/layout prerequisite validation, vertex/raster/blend/depth state diagnostics tests 추가.
+- `0287ddb`: text engine에 HarfBuzz/FreeType/DirectWrite-style backend adapter boundary와 fake adapter diagnostics tests 추가.
 - current: Windows MinGW full CTest 76/76 통과. 현재 `ctest -N` 76개 확인.
 - current: platform input engine adapter header를 CMake public FILE_SET에 등록하고 image manifest diagnostics와 함께 Windows MinGW focused input/image CTest 13/13 및 `ctest -N` 76개 확인.
 - `f879a62`: image manifest texture pipeline에 source resolution, normalized key, cache/revision, placeholder, decode/upload status diagnostics 추가.

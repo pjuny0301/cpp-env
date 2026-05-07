@@ -1,3 +1,4 @@
+#include "render/text/font_backend_capabilities.h"
 #include "render/text/font_shaping_backend.h"
 
 #include <cassert>
@@ -71,6 +72,260 @@ quiz_vulkan::render::render_text_font_shaping_request request_for(
         .clusters = cluster_utf8_text_run(codepoints),
         .font_selections = selections,
     };
+}
+
+quiz_vulkan::render::render_text_font_backend_component freetype_component()
+{
+    using namespace quiz_vulkan::render;
+
+    return render_text_font_backend_component{
+        .library = render_text_font_backend_library::freetype,
+        .name = "FreeType",
+        .available = true,
+        .version = render_text_font_backend_version{.major = 2, .minor = 13, .patch = 2},
+        .features = {
+            render_text_font_backend_feature::font_file_loading,
+            render_text_font_backend_feature::unicode_cmap,
+            render_text_font_backend_feature::glyph_id_mapping,
+            render_text_font_backend_feature::glyph_rasterization,
+        },
+        .diagnostic = "FreeType probe fixture is available",
+    };
+}
+
+quiz_vulkan::render::render_text_font_backend_component harfbuzz_component(
+    quiz_vulkan::render::render_text_font_backend_version version =
+        quiz_vulkan::render::render_text_font_backend_version{.major = 8, .minor = 3, .patch = 0})
+{
+    using namespace quiz_vulkan::render;
+
+    return render_text_font_backend_component{
+        .library = render_text_font_backend_library::harfbuzz,
+        .name = "HarfBuzz",
+        .available = true,
+        .version = version,
+        .features = {
+            render_text_font_backend_feature::glyph_id_mapping,
+            render_text_font_backend_feature::glyph_shaping,
+            render_text_font_backend_feature::complex_script_shaping,
+        },
+        .diagnostic = "HarfBuzz probe fixture is available",
+    };
+}
+
+void test_font_backend_probe_reports_available_real_stack()
+{
+    using namespace quiz_vulkan::render;
+
+    const deterministic_fake_font_backend_capability_probe probe({
+        freetype_component(),
+        harfbuzz_component(),
+    });
+    const render_text_font_backend_capability_snapshot capability = probe.probe(
+        render_text_font_backend_capability_probe_request{
+            .required_libraries = {
+                render_text_font_backend_library::freetype,
+                render_text_font_backend_library::harfbuzz,
+            },
+            .required_features = {
+                render_text_font_backend_feature::font_file_loading,
+                render_text_font_backend_feature::glyph_rasterization,
+                render_text_font_backend_feature::glyph_shaping,
+                render_text_font_backend_feature::complex_script_shaping,
+            },
+            .minimum_versions = {
+                render_text_font_backend_minimum_version{
+                    .library = render_text_font_backend_library::freetype,
+                    .version = render_text_font_backend_version{.major = 2, .minor = 12, .patch = 0},
+                },
+                render_text_font_backend_minimum_version{
+                    .library = render_text_font_backend_library::harfbuzz,
+                    .version = render_text_font_backend_version{.major = 8, .minor = 0, .patch = 0},
+                },
+            },
+        });
+
+    require(capability.ok(), "available real stack reports ok");
+    require(
+        capability.status == render_text_font_backend_capability_status::available,
+        "available real stack preserves available status");
+    require(capability.missing_libraries.empty(), "available real stack reports no missing libraries");
+    require(capability.missing_features.empty(), "available real stack reports no missing features");
+    require(capability.version_mismatches.empty(), "available real stack reports no version mismatch");
+    require(
+        capability.supports_feature(render_text_font_backend_feature::complex_script_shaping),
+        "available real stack supports complex shaping");
+    require(
+        render_text_font_backend_library_name(render_text_font_backend_library::harfbuzz) == "harfbuzz",
+        "library names keep backend dependency out of app code");
+    require(
+        render_text_font_backend_feature_name(render_text_font_backend_feature::glyph_rasterization)
+            == "glyph_rasterization",
+        "feature names are stable for diagnostics");
+
+    const render_text_font_backend_shaping_capability shaping =
+        render_text_font_backend_capability_to_shaping(capability);
+    require(shaping.backend_available, "available real stack enables shaping backend");
+    require(shaping.support_complex_scripts, "available real stack enables complex script shaping");
+    require(!shaping.fallback_only, "available real stack is not fallback-only");
+
+    const deterministic_fake_font_shaping_backend backend;
+    const render_text_font_shaping_result result =
+        backend.shape(apply_render_text_font_backend_capability(request_for("\xd8\xa7"), capability));
+    require(result.ok(), "capability bridge lets fake backend shape complex script when real support is present");
+}
+
+void test_font_backend_probe_reports_unavailable_directwrite()
+{
+    using namespace quiz_vulkan::render;
+
+    const deterministic_fake_font_backend_capability_probe probe({
+        render_text_font_backend_component{
+            .library = render_text_font_backend_library::directwrite,
+            .name = "DirectWrite",
+            .available = false,
+            .version = render_text_font_backend_version{.major = 0, .minor = 0, .patch = 0},
+            .features = {
+                render_text_font_backend_feature::glyph_shaping,
+                render_text_font_backend_feature::complex_script_shaping,
+            },
+            .diagnostic = "DirectWrite is not available on this fixture platform",
+        },
+    });
+    const render_text_font_backend_capability_snapshot capability = probe.probe(
+        render_text_font_backend_capability_probe_request{
+            .required_libraries = {
+                render_text_font_backend_library::directwrite,
+            },
+            .required_features = {
+                render_text_font_backend_feature::glyph_shaping,
+            },
+        });
+
+    require(!capability.ok(), "unavailable DirectWrite stack does not report ok");
+    require(
+        capability.status == render_text_font_backend_capability_status::unavailable,
+        "unavailable DirectWrite stack preserves unavailable status");
+    require(capability.missing_libraries.size() == 1U, "unavailable DirectWrite stack reports one missing library");
+    require(
+        capability.missing_libraries.front() == render_text_font_backend_library::directwrite,
+        "unavailable DirectWrite stack names missing library");
+
+    const render_text_font_backend_shaping_capability shaping =
+        render_text_font_backend_capability_to_shaping(capability);
+    require(!shaping.backend_available, "unavailable DirectWrite stack disables shaping backend");
+    require(!shaping.support_complex_scripts, "unavailable DirectWrite stack disables complex shaping");
+
+    const deterministic_fake_font_shaping_backend backend;
+    const render_text_font_shaping_result result =
+        backend.shape(apply_render_text_font_backend_capability(request_for("A"), capability));
+    require(
+        result.status == render_text_font_shaping_backend_status::backend_unavailable,
+        "capability bridge maps unavailable backend into shaping diagnostic");
+}
+
+void test_font_backend_probe_reports_version_mismatch_and_unsupported_feature()
+{
+    using namespace quiz_vulkan::render;
+
+    const deterministic_fake_font_backend_capability_probe old_harfbuzz_probe({
+        freetype_component(),
+        harfbuzz_component(render_text_font_backend_version{.major = 7, .minor = 1, .patch = 0}),
+    });
+    const render_text_font_backend_capability_snapshot version_mismatch =
+        old_harfbuzz_probe.probe(render_text_font_backend_capability_probe_request{
+            .required_libraries = {
+                render_text_font_backend_library::harfbuzz,
+            },
+            .required_features = {
+                render_text_font_backend_feature::glyph_shaping,
+            },
+            .minimum_versions = {
+                render_text_font_backend_minimum_version{
+                    .library = render_text_font_backend_library::harfbuzz,
+                    .version = render_text_font_backend_version{.major = 8, .minor = 0, .patch = 0},
+                },
+            },
+        });
+
+    require(!version_mismatch.ok(), "old HarfBuzz stack does not report ok");
+    require(
+        version_mismatch.status == render_text_font_backend_capability_status::version_mismatch,
+        "old HarfBuzz stack preserves version mismatch status");
+    require(version_mismatch.version_mismatches.size() == 1U, "old HarfBuzz stack records one mismatch");
+    require(
+        version_mismatch.version_mismatches.front().library == render_text_font_backend_library::harfbuzz,
+        "old HarfBuzz stack records mismatched library");
+    require(
+        version_mismatch.version_mismatches.front().actual.display_label() == "7.1.0",
+        "old HarfBuzz stack records actual version");
+
+    const deterministic_fake_font_backend_capability_probe limited_probe({
+        freetype_component(),
+        harfbuzz_component(),
+    });
+    const render_text_font_backend_capability_snapshot unsupported_feature =
+        limited_probe.probe(render_text_font_backend_capability_probe_request{
+            .required_libraries = {
+                render_text_font_backend_library::freetype,
+                render_text_font_backend_library::harfbuzz,
+            },
+            .required_features = {
+                render_text_font_backend_feature::variable_fonts,
+            },
+        });
+
+    require(!unsupported_feature.ok(), "unsupported feature stack does not report ok");
+    require(
+        unsupported_feature.status == render_text_font_backend_capability_status::unsupported_feature,
+        "unsupported feature stack preserves unsupported feature status");
+    require(unsupported_feature.missing_features.size() == 1U, "unsupported feature stack records missing feature");
+    require(
+        unsupported_feature.missing_features.front() == render_text_font_backend_feature::variable_fonts,
+        "unsupported feature stack names missing variable font support");
+    require(
+        render_text_font_backend_capability_status_name(unsupported_feature.status) == "unsupported_feature",
+        "capability status names are stable for diagnostics");
+}
+
+void test_font_backend_probe_reports_fallback_only_mode()
+{
+    using namespace quiz_vulkan::render;
+
+    const deterministic_fake_font_backend_capability_probe probe;
+    const render_text_font_backend_capability_snapshot capability = probe.probe(
+        render_text_font_backend_capability_probe_request{
+            .required_libraries = {
+                render_text_font_backend_library::deterministic_fake,
+            },
+            .required_features = {
+                render_text_font_backend_feature::glyph_id_mapping,
+                render_text_font_backend_feature::glyph_shaping,
+            },
+        });
+
+    require(!capability.ok(), "fallback-only backend is intentionally not a real backend ok state");
+    require(capability.can_shape_with_fallback(), "fallback-only backend can still drive deterministic tests");
+    require(
+        capability.status == render_text_font_backend_capability_status::fallback_only,
+        "fallback-only backend preserves fallback-only status");
+    require(capability.fallback_only, "fallback-only backend records fallback-only mode");
+    require(capability.missing_features.empty(), "fallback-only backend satisfies requested fake features");
+
+    const render_text_font_backend_shaping_capability shaping =
+        render_text_font_backend_capability_to_shaping(capability);
+    require(shaping.backend_available, "fallback-only backend keeps fake shaping path available");
+    require(!shaping.support_complex_scripts, "fallback-only backend does not claim complex script shaping");
+    require(shaping.fallback_only, "fallback-only bridge records fallback-only mode");
+
+    const deterministic_fake_font_shaping_backend backend;
+    render_text_font_shaping_request request =
+        apply_render_text_font_backend_capability(request_for("\xd8\xa7"), capability);
+    request.fallback_glyph_id = 0;
+    const render_text_font_shaping_result result = backend.shape(request);
+    require(
+        result.status == render_text_font_shaping_backend_status::unsupported_script,
+        "fallback-only backend keeps complex scripts on diagnostic fallback path");
 }
 
 void test_fake_backend_shapes_successful_latin_hangul_and_non_bmp_run()
@@ -239,6 +494,10 @@ void test_fake_backend_reports_zero_advance_combining_mark_with_cluster_range()
 
 int main()
 {
+    test_font_backend_probe_reports_available_real_stack();
+    test_font_backend_probe_reports_unavailable_directwrite();
+    test_font_backend_probe_reports_version_mismatch_and_unsupported_feature();
+    test_font_backend_probe_reports_fallback_only_mode();
     test_fake_backend_shapes_successful_latin_hangul_and_non_bmp_run();
     test_fake_backend_reports_backend_unavailable();
     test_fake_backend_reports_unsupported_script_and_fallback_glyph_id();

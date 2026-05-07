@@ -1,5 +1,6 @@
 #include "render/render_draw_list.h"
 #include "render/text/fake_text_engine.h"
+#include "render/text/font_backend_capabilities.h"
 #include "render/text/font_cmap_inspector.h"
 #include "render/text/font_coverage_run_segmentation.h"
 #include "render/text/font_glyph_id_resolver.h"
@@ -116,6 +117,16 @@ concept FontRasterizerContract = requires(
 
 static_assert(FontRasterizerContract<render::font_rasterizer_interface>);
 static_assert(FontRasterizerContract<render::deterministic_fake_font_rasterizer>);
+
+template <typename T>
+concept FontBackendCapabilityProbeContract = requires(
+    const T& probe,
+    const render::render_text_font_backend_capability_probe_request& request) {
+    { probe.probe(request) } -> std::same_as<render::render_text_font_backend_capability_snapshot>;
+};
+
+static_assert(FontBackendCapabilityProbeContract<render::font_backend_capability_probe_interface>);
+static_assert(FontBackendCapabilityProbeContract<render::deterministic_fake_font_backend_capability_probe>);
 
 template <typename T>
 concept FontShapingBackendContract = requires(
@@ -711,6 +722,83 @@ static_assert(requires(
         -> std::same_as<render::render_text_font_rasterizer_status>;
     { render::make_font_rasterizer_atlas_payload(raster_result) }
         -> std::same_as<render::render_text_font_atlas_glyph_payload>;
+});
+
+static_assert(requires(
+    render::render_text_font_backend_library library,
+    render::render_text_font_backend_feature feature,
+    render::render_text_font_backend_capability_status capability_status,
+    render::render_text_font_backend_version version,
+    render::render_text_font_backend_version minimum_version,
+    render::render_text_font_backend_component component,
+    render::render_text_font_backend_minimum_version minimum,
+    render::render_text_font_backend_version_mismatch mismatch,
+    render::render_text_font_backend_capability_probe_request probe_request,
+    render::render_text_font_backend_capability_snapshot capability,
+    render::render_text_font_backend_shaping_capability shaping_capability,
+    render::render_text_font_shaping_request shaping_request,
+    std::vector<render::render_text_font_backend_component> components,
+    std::vector<render::render_text_font_backend_library> libraries,
+    std::vector<render::render_text_font_backend_feature> features,
+    std::vector<render::render_text_font_backend_minimum_version> minimum_versions) {
+    { render::render_text_font_backend_library_name(library) } -> std::same_as<std::string>;
+    { render::render_text_font_backend_feature_name(feature) } -> std::same_as<std::string>;
+    { render::render_text_font_backend_capability_status_name(capability_status) } -> std::same_as<std::string>;
+    { version.major } -> std::same_as<std::uint32_t&>;
+    { version.minor } -> std::same_as<std::uint32_t&>;
+    { version.patch } -> std::same_as<std::uint32_t&>;
+    { version.label } -> std::same_as<std::string&>;
+    { version.display_label() } -> std::same_as<std::string>;
+    { render::compare_render_text_font_backend_versions(version, minimum_version) } -> std::same_as<int>;
+    { render::render_text_font_backend_version_satisfies(version, minimum_version) } -> std::same_as<bool>;
+    { component.library } -> std::same_as<render::render_text_font_backend_library&>;
+    { component.name } -> std::same_as<std::string&>;
+    { component.available } -> std::same_as<bool&>;
+    { component.version } -> std::same_as<render::render_text_font_backend_version&>;
+    { component.features } -> std::same_as<std::vector<render::render_text_font_backend_feature>&>;
+    { component.fallback_only } -> std::same_as<bool&>;
+    { component.diagnostic } -> std::same_as<std::string&>;
+    { component.supports_feature(feature) } -> std::same_as<bool>;
+    { minimum.library } -> std::same_as<render::render_text_font_backend_library&>;
+    { minimum.version } -> std::same_as<render::render_text_font_backend_version&>;
+    { mismatch.library } -> std::same_as<render::render_text_font_backend_library&>;
+    { mismatch.required } -> std::same_as<render::render_text_font_backend_version&>;
+    { mismatch.actual } -> std::same_as<render::render_text_font_backend_version&>;
+    { probe_request.required_libraries } -> std::same_as<std::vector<render::render_text_font_backend_library>&>;
+    { probe_request.required_features } -> std::same_as<std::vector<render::render_text_font_backend_feature>&>;
+    { probe_request.minimum_versions } -> std::same_as<std::vector<render::render_text_font_backend_minimum_version>&>;
+    { probe_request.allow_fallback_only } -> std::same_as<bool&>;
+    { capability.status } -> std::same_as<render::render_text_font_backend_capability_status&>;
+    { capability.components } -> std::same_as<std::vector<render::render_text_font_backend_component>&>;
+    { capability.missing_libraries } -> std::same_as<std::vector<render::render_text_font_backend_library>&>;
+    { capability.missing_features } -> std::same_as<std::vector<render::render_text_font_backend_feature>&>;
+    { capability.version_mismatches } -> std::same_as<std::vector<render::render_text_font_backend_version_mismatch>&>;
+    { capability.fallback_only } -> std::same_as<bool&>;
+    { capability.diagnostic } -> std::same_as<std::string&>;
+    { capability.ok() } -> std::same_as<bool>;
+    { capability.can_shape_with_fallback() } -> std::same_as<bool>;
+    { capability.supports_feature(feature) } -> std::same_as<bool>;
+    { shaping_capability.backend_available } -> std::same_as<bool&>;
+    { shaping_capability.support_complex_scripts } -> std::same_as<bool&>;
+    { shaping_capability.fallback_only } -> std::same_as<bool&>;
+    { shaping_capability.diagnostic } -> std::same_as<std::string&>;
+    { render::find_render_text_font_backend_component(components, library) }
+        -> std::same_as<const render::render_text_font_backend_component*>;
+    { render::render_text_font_backend_feature_is_supported(components, feature) } -> std::same_as<bool>;
+    { render::missing_render_text_font_backend_libraries(components, libraries) }
+        -> std::same_as<std::vector<render::render_text_font_backend_library>>;
+    { render::missing_render_text_font_backend_features(components, features) }
+        -> std::same_as<std::vector<render::render_text_font_backend_feature>>;
+    { render::mismatched_render_text_font_backend_versions(components, minimum_versions) }
+        -> std::same_as<std::vector<render::render_text_font_backend_version_mismatch>>;
+    { render::render_text_font_backend_components_are_fallback_only(components) } -> std::same_as<bool>;
+    { render::render_text_font_backend_has_available_component(components) } -> std::same_as<bool>;
+    { render::make_render_text_font_backend_capability_snapshot(components, probe_request) }
+        -> std::same_as<render::render_text_font_backend_capability_snapshot>;
+    { render::render_text_font_backend_capability_to_shaping(capability) }
+        -> std::same_as<render::render_text_font_backend_shaping_capability>;
+    { render::apply_render_text_font_backend_capability(shaping_request, capability) }
+        -> std::same_as<render::render_text_font_shaping_request>;
 });
 
 static_assert(requires(

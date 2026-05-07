@@ -3219,6 +3219,102 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_queue_submit_adapt
     { summary.failed() } -> std::same_as<bool>;
 });
 
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status::not_checked),
+    render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status::ready),
+    render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status::instance_unavailable),
+    render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status::device_unavailable),
+    render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status::swapchain_unavailable),
+    render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status::render_pass_unavailable),
+    render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status::surface_unavailable),
+    render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status::viewport_unavailable),
+    render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status::pipeline_unavailable),
+    render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status::resource_binding_unavailable),
+    render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status::command_recording_unavailable),
+    render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status::frame_lifecycle_unavailable),
+    render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status::submit_unavailable),
+    render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status::present_unavailable),
+    render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status>);
+static_assert(requires(render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status status) {
+    { render::vulkan_backend::frame_pipeline_handoff_status_name(status) } -> std::same_as<std::string_view>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_backend_frame_pipeline_handoff handoff) {
+    { handoff.checked } -> std::same_as<bool&>;
+    { handoff.status } -> std::same_as<render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status&>;
+    { handoff.fallback_reason } -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
+    { handoff.reached_stage } -> std::same_as<render::vulkan_backend::vulkan_backend_frame_stage&>;
+    { handoff.cpu_fallback_available } -> std::same_as<bool&>;
+    { handoff.loader_checked } -> std::same_as<bool&>;
+    { handoff.loader_ready } -> std::same_as<bool&>;
+    { handoff.instance_ready } -> std::same_as<bool&>;
+    { handoff.device_ready } -> std::same_as<bool&>;
+    { handoff.swapchain_ready } -> std::same_as<bool&>;
+    { handoff.render_pass_ready } -> std::same_as<bool&>;
+    { handoff.surface_ready } -> std::same_as<bool&>;
+    { handoff.frame_plan_ready } -> std::same_as<bool&>;
+    { handoff.pipeline_required } -> std::same_as<bool&>;
+    { handoff.pipeline_checked } -> std::same_as<bool&>;
+    { handoff.pipeline_completed } -> std::same_as<bool&>;
+    { handoff.pipeline_readiness_summary_checked } -> std::same_as<bool&>;
+    { handoff.pipeline_readiness_summary_completed } -> std::same_as<bool&>;
+    { handoff.shader_modules_ready } -> std::same_as<bool&>;
+    { handoff.pipeline_layout_ready } -> std::same_as<bool&>;
+    { handoff.graphics_pipeline_ready } -> std::same_as<bool&>;
+    { handoff.resource_bindings_checked } -> std::same_as<bool&>;
+    { handoff.resource_bindings_completed } -> std::same_as<bool&>;
+    { handoff.resource_registry_checked } -> std::same_as<bool&>;
+    { handoff.resource_registry_completed } -> std::same_as<bool&>;
+    { handoff.command_recorder_lifecycle_ready } -> std::same_as<bool&>;
+    { handoff.command_recorder_gate_checked } -> std::same_as<bool&>;
+    { handoff.command_recorder_gate_allowed } -> std::same_as<bool&>;
+    { handoff.command_recording_ready } -> std::same_as<bool&>;
+    { handoff.command_submit_readiness_checked } -> std::same_as<bool&>;
+    { handoff.command_submit_readiness_ready } -> std::same_as<bool&>;
+    { handoff.frame_submit_completed } -> std::same_as<bool&>;
+    { handoff.present_completed } -> std::same_as<bool&>;
+    { handoff.frame_lifecycle_checked } -> std::same_as<bool&>;
+    { handoff.frame_lifecycle_completed } -> std::same_as<bool&>;
+    { handoff.frame_lifecycle_attempted_step_count } -> std::same_as<std::size_t&>;
+    { handoff.frame_lifecycle_completed_step_count } -> std::same_as<std::size_t&>;
+    { handoff.planned_batch_count } -> std::same_as<std::size_t&>;
+    { handoff.recorded_batch_count } -> std::same_as<std::size_t&>;
+    { handoff.quad_batch_count } -> std::same_as<std::size_t&>;
+    { handoff.text_batch_count } -> std::same_as<std::size_t&>;
+    { handoff.image_batch_count } -> std::same_as<std::size_t&>;
+    { handoff.debug_bounds_batch_count } -> std::same_as<std::size_t&>;
+    { handoff.clipped_draw_call_count } -> std::same_as<std::size_t&>;
+    { handoff.discarded_draw_call_count } -> std::same_as<std::size_t&>;
+    { handoff.completed() } -> std::same_as<bool>;
+    { handoff.blocked() } -> std::same_as<bool>;
+});
+
 static_assert(requires(render::vulkan_backend::vulkan_backend_frame_result result) {
     { result.surface } -> std::same_as<render::vulkan_backend::vulkan_surface_extent&>;
     { result.lifecycle } -> std::same_as<render::vulkan_backend::vulkan_backend_lifecycle_readiness&>;
@@ -3244,6 +3340,7 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_frame_result resul
     { result.command_buffer_submit }
         -> std::same_as<render::vulkan_backend::vulkan_backend_command_buffer_submit_state&>;
     { result.fallback_summary } -> std::same_as<render::vulkan_backend::vulkan_backend_frame_fallback_summary&>;
+    { result.pipeline_handoff } -> std::same_as<render::vulkan_backend::vulkan_backend_frame_pipeline_handoff&>;
     { result.reached_stage } -> std::same_as<render::vulkan_backend::vulkan_backend_frame_stage&>;
     { result.lifecycle_ready } -> std::same_as<bool&>;
     { result.surface_ready } -> std::same_as<bool&>;
@@ -3292,6 +3389,8 @@ static_assert(requires(
     { render::vulkan_backend::apply_vulkan_queue_submit_adapter_result_to_frame(
         frame,
         queue_submit) } -> std::same_as<render::vulkan_backend::vulkan_backend_frame_result>;
+    { render::vulkan_backend::summarize_vulkan_frame_pipeline_handoff(frame) }
+        -> std::same_as<render::vulkan_backend::vulkan_backend_frame_pipeline_handoff>;
 });
 
 static_assert(std::same_as<

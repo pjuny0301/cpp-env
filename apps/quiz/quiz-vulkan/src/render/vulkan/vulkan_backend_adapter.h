@@ -1249,6 +1249,92 @@ struct vulkan_backend_queue_submit_adapter_summary {
     }
 };
 
+enum class vulkan_backend_frame_pipeline_handoff_status {
+    not_checked,
+    ready,
+    instance_unavailable,
+    device_unavailable,
+    swapchain_unavailable,
+    render_pass_unavailable,
+    surface_unavailable,
+    viewport_unavailable,
+    pipeline_unavailable,
+    resource_binding_unavailable,
+    command_recording_unavailable,
+    frame_lifecycle_unavailable,
+    submit_unavailable,
+    present_unavailable,
+};
+
+std::string_view frame_pipeline_handoff_status_name(
+    vulkan_backend_frame_pipeline_handoff_status status);
+
+struct vulkan_backend_frame_pipeline_handoff {
+    bool checked = false;
+    vulkan_backend_frame_pipeline_handoff_status status =
+        vulkan_backend_frame_pipeline_handoff_status::not_checked;
+    vulkan_backend_fallback_reason fallback_reason = vulkan_backend_fallback_reason::not_requested;
+    vulkan_backend_frame_stage reached_stage = vulkan_backend_frame_stage::not_started;
+    bool cpu_fallback_available = true;
+    bool loader_checked = false;
+    bool loader_ready = false;
+    bool instance_ready = false;
+    bool device_ready = false;
+    bool swapchain_ready = false;
+    bool render_pass_ready = false;
+    bool surface_ready = false;
+    bool frame_plan_ready = false;
+    bool pipeline_required = false;
+    bool pipeline_checked = false;
+    bool pipeline_completed = false;
+    bool pipeline_readiness_summary_checked = false;
+    bool pipeline_readiness_summary_completed = false;
+    bool shader_modules_ready = false;
+    bool pipeline_layout_ready = false;
+    bool graphics_pipeline_ready = false;
+    bool resource_bindings_checked = false;
+    bool resource_bindings_completed = false;
+    bool resource_registry_checked = false;
+    bool resource_registry_completed = false;
+    bool command_recorder_lifecycle_ready = false;
+    bool command_recorder_gate_checked = false;
+    bool command_recorder_gate_allowed = false;
+    bool command_recording_ready = false;
+    bool command_submit_readiness_checked = false;
+    bool command_submit_readiness_ready = false;
+    bool frame_submit_completed = false;
+    bool present_completed = false;
+    bool frame_lifecycle_checked = false;
+    bool frame_lifecycle_completed = false;
+    std::size_t frame_lifecycle_attempted_step_count = 0;
+    std::size_t frame_lifecycle_completed_step_count = 0;
+    std::size_t planned_batch_count = 0;
+    std::size_t recorded_batch_count = 0;
+    std::size_t quad_batch_count = 0;
+    std::size_t text_batch_count = 0;
+    std::size_t image_batch_count = 0;
+    std::size_t debug_bounds_batch_count = 0;
+    std::size_t clipped_draw_call_count = 0;
+    std::size_t discarded_draw_call_count = 0;
+
+    bool completed() const
+    {
+        return checked && status == vulkan_backend_frame_pipeline_handoff_status::ready
+            && fallback_reason == vulkan_backend_fallback_reason::none
+            && loader_ready && instance_ready && device_ready && swapchain_ready
+            && render_pass_ready && surface_ready && frame_plan_ready && pipeline_completed
+            && resource_bindings_completed && resource_registry_completed
+            && command_recorder_lifecycle_ready && command_recorder_gate_allowed
+            && command_recording_ready && command_submit_readiness_ready
+            && frame_submit_completed && present_completed && frame_lifecycle_completed;
+    }
+
+    bool blocked() const
+    {
+        return checked && status != vulkan_backend_frame_pipeline_handoff_status::ready;
+    }
+};
+
 struct diagnostic_vulkan_command_recorder_options {
     bool ready = true;
     vulkan_command_recorder_failure_stage fail_at = vulkan_command_recorder_failure_stage::none;
@@ -1298,6 +1384,7 @@ struct vulkan_backend_frame_result {
     vulkan_backend_queue_submit_adapter_summary queue_submit_adapter;
     vulkan_backend_command_buffer_submit_state command_buffer_submit;
     vulkan_backend_frame_fallback_summary fallback_summary;
+    vulkan_backend_frame_pipeline_handoff pipeline_handoff;
     vulkan_backend_frame_stage reached_stage = vulkan_backend_frame_stage::not_started;
     bool lifecycle_ready = false;
     bool surface_ready = false;
@@ -1326,6 +1413,7 @@ struct vulkan_backend_frame_result {
             && command_buffer_submit.completed()
             && (!queue_submit.checked || queue_submit.completed())
             && (!queue_submit_adapter.checked || queue_submit_adapter.completed())
+            && (!pipeline_handoff.checked || pipeline_handoff.completed())
             && command_recorder.completed()
             && command_recorder.gate.completed()
             && resource_bindings.completed()
@@ -1397,6 +1485,9 @@ vulkan_backend_queue_submit_adapter_summary summarize_vulkan_queue_submit_adapte
 vulkan_backend_frame_result apply_vulkan_queue_submit_adapter_result_to_frame(
     vulkan_backend_frame_result frame,
     vulkan_queue_submit_present_result queue_submit);
+
+vulkan_backend_frame_pipeline_handoff summarize_vulkan_frame_pipeline_handoff(
+    const vulkan_backend_frame_result& frame);
 
 vulkan_backend_frame_result submit_vulkan_backend_frame(
     vulkan_backend_device_interface& device,

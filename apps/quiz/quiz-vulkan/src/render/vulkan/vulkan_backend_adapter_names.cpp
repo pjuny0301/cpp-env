@@ -124,6 +124,43 @@ std::string_view frame_lifecycle_failure_classification_name(
     return "unknown";
 }
 
+std::string_view frame_pipeline_handoff_status_name(
+    vulkan_backend_frame_pipeline_handoff_status status)
+{
+    switch (status) {
+    case vulkan_backend_frame_pipeline_handoff_status::not_checked:
+        return "not_checked";
+    case vulkan_backend_frame_pipeline_handoff_status::ready:
+        return "ready";
+    case vulkan_backend_frame_pipeline_handoff_status::instance_unavailable:
+        return "instance_unavailable";
+    case vulkan_backend_frame_pipeline_handoff_status::device_unavailable:
+        return "device_unavailable";
+    case vulkan_backend_frame_pipeline_handoff_status::swapchain_unavailable:
+        return "swapchain_unavailable";
+    case vulkan_backend_frame_pipeline_handoff_status::render_pass_unavailable:
+        return "render_pass_unavailable";
+    case vulkan_backend_frame_pipeline_handoff_status::surface_unavailable:
+        return "surface_unavailable";
+    case vulkan_backend_frame_pipeline_handoff_status::viewport_unavailable:
+        return "viewport_unavailable";
+    case vulkan_backend_frame_pipeline_handoff_status::pipeline_unavailable:
+        return "pipeline_unavailable";
+    case vulkan_backend_frame_pipeline_handoff_status::resource_binding_unavailable:
+        return "resource_binding_unavailable";
+    case vulkan_backend_frame_pipeline_handoff_status::command_recording_unavailable:
+        return "command_recording_unavailable";
+    case vulkan_backend_frame_pipeline_handoff_status::frame_lifecycle_unavailable:
+        return "frame_lifecycle_unavailable";
+    case vulkan_backend_frame_pipeline_handoff_status::submit_unavailable:
+        return "submit_unavailable";
+    case vulkan_backend_frame_pipeline_handoff_status::present_unavailable:
+        return "present_unavailable";
+    }
+
+    return "unknown";
+}
+
 std::string_view swapchain_acquire_status_name(vulkan_swapchain_acquire_status status)
 {
     switch (status) {

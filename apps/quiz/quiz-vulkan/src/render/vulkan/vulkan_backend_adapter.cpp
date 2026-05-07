@@ -248,6 +248,124 @@ vulkan_backend_fallback_reason first_unready_reason(
     return vulkan_backend_fallback_reason::none;
 }
 
+int frame_stage_order(vulkan_backend_frame_stage stage)
+{
+    switch (stage) {
+    case vulkan_backend_frame_stage::not_started:
+        return 0;
+    case vulkan_backend_frame_stage::backend_attempted:
+        return 1;
+    case vulkan_backend_frame_stage::lifecycle_ready:
+        return 2;
+    case vulkan_backend_frame_stage::surface_extent_ready:
+        return 3;
+    case vulkan_backend_frame_stage::frame_plan_ready:
+        return 4;
+    case vulkan_backend_frame_stage::frame_begun:
+        return 5;
+    case vulkan_backend_frame_stage::commands_recorded:
+        return 6;
+    case vulkan_backend_frame_stage::frame_submitted:
+        return 7;
+    case vulkan_backend_frame_stage::frame_presented:
+        return 8;
+    }
+
+    return 0;
+}
+
+bool reached_frame_stage(
+    vulkan_backend_frame_stage reached_stage,
+    vulkan_backend_frame_stage target_stage)
+{
+    return frame_stage_order(reached_stage) >= frame_stage_order(target_stage);
+}
+
+vulkan_backend_frame_pipeline_handoff_status frame_pipeline_status_for_fallback(
+    vulkan_backend_fallback_reason reason)
+{
+    switch (reason) {
+    case vulkan_backend_fallback_reason::none:
+        return vulkan_backend_frame_pipeline_handoff_status::ready;
+    case vulkan_backend_fallback_reason::not_requested:
+        return vulkan_backend_frame_pipeline_handoff_status::not_checked;
+    case vulkan_backend_fallback_reason::instance_unavailable:
+        return vulkan_backend_frame_pipeline_handoff_status::instance_unavailable;
+    case vulkan_backend_fallback_reason::device_unavailable:
+        return vulkan_backend_frame_pipeline_handoff_status::device_unavailable;
+    case vulkan_backend_fallback_reason::swapchain_unavailable:
+        return vulkan_backend_frame_pipeline_handoff_status::swapchain_unavailable;
+    case vulkan_backend_fallback_reason::render_pass_unavailable:
+        return vulkan_backend_frame_pipeline_handoff_status::render_pass_unavailable;
+    case vulkan_backend_fallback_reason::pipeline_unavailable:
+        return vulkan_backend_frame_pipeline_handoff_status::pipeline_unavailable;
+    case vulkan_backend_fallback_reason::command_recorder_unavailable:
+    case vulkan_backend_fallback_reason::record_commands_failed:
+        return vulkan_backend_frame_pipeline_handoff_status::command_recording_unavailable;
+    case vulkan_backend_fallback_reason::surface_unavailable:
+        return vulkan_backend_frame_pipeline_handoff_status::surface_unavailable;
+    case vulkan_backend_fallback_reason::viewport_unavailable:
+        return vulkan_backend_frame_pipeline_handoff_status::viewport_unavailable;
+    case vulkan_backend_fallback_reason::begin_frame_failed:
+    case vulkan_backend_fallback_reason::acquire_image_failed:
+        return vulkan_backend_frame_pipeline_handoff_status::frame_lifecycle_unavailable;
+    case vulkan_backend_fallback_reason::resource_binding_unavailable:
+        return vulkan_backend_frame_pipeline_handoff_status::resource_binding_unavailable;
+    case vulkan_backend_fallback_reason::submit_frame_failed:
+        return vulkan_backend_frame_pipeline_handoff_status::submit_unavailable;
+    case vulkan_backend_fallback_reason::present_image_failed:
+    case vulkan_backend_fallback_reason::present_frame_failed:
+        return vulkan_backend_frame_pipeline_handoff_status::present_unavailable;
+    }
+
+    return vulkan_backend_frame_pipeline_handoff_status::not_checked;
+}
+
+void count_handoff_batch_kind(
+    vulkan_backend_frame_pipeline_handoff& handoff,
+    vulkan_batch_kind kind)
+{
+    switch (kind) {
+    case vulkan_batch_kind::quad:
+        ++handoff.quad_batch_count;
+        break;
+    case vulkan_batch_kind::text:
+        ++handoff.text_batch_count;
+        break;
+    case vulkan_batch_kind::image:
+        ++handoff.image_batch_count;
+        break;
+    case vulkan_batch_kind::debug_bounds:
+        ++handoff.debug_bounds_batch_count;
+        break;
+    }
+}
+
+void count_handoff_batches_from_frame(
+    vulkan_backend_frame_pipeline_handoff& handoff,
+    const vulkan_backend_frame_result& frame)
+{
+    if (!frame.resource_bindings.batch_snapshots.empty()) {
+        for (const vulkan_batch_resource_binding_snapshot& snapshot :
+             frame.resource_bindings.batch_snapshots) {
+            count_handoff_batch_kind(handoff, snapshot.batch_kind);
+        }
+        return;
+    }
+
+    if (!frame.pipeline.lifecycle.pipeline_snapshots.empty()) {
+        for (const vulkan_pipeline_lifecycle_snapshot& snapshot :
+             frame.pipeline.lifecycle.pipeline_snapshots) {
+            count_handoff_batch_kind(handoff, snapshot.batch_kind);
+        }
+        return;
+    }
+
+    for (const vulkan_recorded_draw_batch& batch : frame.command_recorder.recorded_batches) {
+        count_handoff_batch_kind(handoff, batch.kind);
+    }
+}
+
 vulkan_recorded_draw_batch make_recorded_draw_batch(
     const vulkan_draw_batch& batch,
     std::size_t recording_index)
@@ -1063,6 +1181,96 @@ vulkan_backend_queue_submit_adapter_summary summarize_vulkan_queue_submit_adapte
     };
 }
 
+vulkan_backend_frame_pipeline_handoff summarize_vulkan_frame_pipeline_handoff(
+    const vulkan_backend_frame_result& frame)
+{
+    const bool checked = frame.attempted || frame.fallback_summary.checked
+        || frame.reached_stage != vulkan_backend_frame_stage::not_started;
+    const bool pipeline_required = frame.planned_batch_count > 0;
+    const bool pipeline_checked = frame.pipeline.cache_checked
+        || frame.pipeline.requested_pipeline_count > 0
+        || frame.pipeline.lifecycle.checked
+        || frame.pipeline.pipeline_readiness_summary.checked;
+    const bool pipeline_completed = !pipeline_required || frame.pipeline.completed();
+    const bool command_submit_readiness_ready =
+        frame.lifecycle.effective_command_submit_ready()
+        && frame.lifecycle.effective_present_target_ready();
+    const bool frame_submit_completed =
+        frame.command_buffer_submit.checked && frame.command_buffer_submit.submit.completed();
+    const bool present_completed =
+        frame.present_policy.present.completed() || frame.frame_presented;
+    const bool resource_bindings_completed = frame.resource_bindings.completed();
+    const bool resource_registry_completed = frame.resource_registry.completed();
+    const bool command_recorder_gate_allowed = frame.command_recorder.gate.completed();
+    const bool command_recording_ready =
+        frame.lifecycle.effective_command_recorder_ready()
+        && pipeline_completed
+        && resource_bindings_completed
+        && resource_registry_completed
+        && command_recorder_gate_allowed
+        && frame.command_recorder.completed()
+        && frame.commands_recorded
+        && (!frame.command_buffer_submit.checked
+            || frame.command_buffer_submit.recording.completed());
+
+    vulkan_backend_frame_pipeline_handoff handoff{
+        .checked = checked,
+        .status = checked
+            ? frame_pipeline_status_for_fallback(frame.fallback_reason)
+            : vulkan_backend_frame_pipeline_handoff_status::not_checked,
+        .fallback_reason = frame.fallback_reason,
+        .reached_stage = frame.reached_stage,
+        .cpu_fallback_available = frame.fallback_required,
+        .loader_checked = frame.lifecycle.loader.checked,
+        .loader_ready = frame.lifecycle.loader.checked
+            ? frame.lifecycle.loader.ready_for_instance()
+            : frame.lifecycle.effective_instance_ready(),
+        .instance_ready = frame.lifecycle.effective_instance_ready(),
+        .device_ready = frame.lifecycle.effective_device_ready(),
+        .swapchain_ready = frame.lifecycle.effective_swapchain_ready(),
+        .render_pass_ready = frame.lifecycle.effective_render_pass_ready(),
+        .surface_ready = frame.surface_ready,
+        .frame_plan_ready = reached_frame_stage(
+            frame.reached_stage,
+            vulkan_backend_frame_stage::frame_plan_ready),
+        .pipeline_required = pipeline_required,
+        .pipeline_checked = pipeline_checked,
+        .pipeline_completed = pipeline_completed,
+        .pipeline_readiness_summary_checked = frame.pipeline.pipeline_readiness_summary.checked,
+        .pipeline_readiness_summary_completed =
+            frame.pipeline.pipeline_readiness_summary.checked
+            && frame.pipeline.pipeline_readiness_summary.completed(),
+        .shader_modules_ready = !frame.pipeline.shader_modules.checked
+            || frame.pipeline.shader_modules.completed(),
+        .pipeline_layout_ready = !frame.pipeline.pipeline_layout.checked
+            || frame.pipeline.pipeline_layout.ready_for_pipeline(),
+        .graphics_pipeline_ready = !frame.pipeline.graphics_pipeline.checked
+            || frame.pipeline.graphics_pipeline.ready_for_draw(),
+        .resource_bindings_checked = frame.resource_bindings.checked,
+        .resource_bindings_completed = resource_bindings_completed,
+        .resource_registry_checked = frame.resource_registry.checked,
+        .resource_registry_completed = resource_registry_completed,
+        .command_recorder_lifecycle_ready = frame.lifecycle.effective_command_recorder_ready(),
+        .command_recorder_gate_checked = frame.command_recorder.gate.checked,
+        .command_recorder_gate_allowed = command_recorder_gate_allowed,
+        .command_recording_ready = command_recording_ready,
+        .command_submit_readiness_checked = frame.lifecycle.command_submit.checked,
+        .command_submit_readiness_ready = command_submit_readiness_ready,
+        .frame_submit_completed = frame_submit_completed,
+        .present_completed = present_completed,
+        .frame_lifecycle_checked = frame.lifecycle_policy.checked,
+        .frame_lifecycle_completed = frame.lifecycle_policy.completed(),
+        .frame_lifecycle_attempted_step_count = frame.lifecycle_policy.attempted_step_count,
+        .frame_lifecycle_completed_step_count = frame.lifecycle_policy.completed_step_count,
+        .planned_batch_count = frame.planned_batch_count,
+        .recorded_batch_count = frame.recorded_batch_count,
+        .clipped_draw_call_count = frame.clipped_draw_call_count,
+        .discarded_draw_call_count = frame.discarded_draw_call_count,
+    };
+    count_handoff_batches_from_frame(handoff, frame);
+    return handoff;
+}
+
 vulkan_backend_frame_result apply_vulkan_queue_submit_adapter_result_to_frame(
     vulkan_backend_frame_result frame,
     vulkan_queue_submit_present_result queue_submit)
@@ -1070,6 +1278,7 @@ vulkan_backend_frame_result apply_vulkan_queue_submit_adapter_result_to_frame(
     frame.command_submit = queue_submit.command_submit;
     frame.queue_submit_adapter = summarize_vulkan_queue_submit_adapter_result(queue_submit);
     frame.queue_submit = std::move(queue_submit);
+    frame.pipeline_handoff = summarize_vulkan_frame_pipeline_handoff(frame);
     return frame;
 }
 
@@ -1349,13 +1558,17 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     vulkan_backend_frame_result result;
     result.attempted = true;
     result.reached_stage = vulkan_backend_frame_stage::backend_attempted;
+    const auto finish_frame = [&result]() -> vulkan_backend_frame_result {
+        result.pipeline_handoff = summarize_vulkan_frame_pipeline_handoff(result);
+        return result;
+    };
     result.lifecycle = device.current_lifecycle_readiness();
     result.command_submit = result.lifecycle.command_submit;
     result.command_recorder.ready = result.lifecycle.command_recorder_ready;
     const vulkan_backend_fallback_reason unready_reason = first_unready_reason(result.lifecycle);
     if (unready_reason != vulkan_backend_fallback_reason::none) {
         frame_lifecycle::mark_fallback(result, unready_reason);
-        return result;
+        return finish_frame();
     }
     result.lifecycle_ready = true;
     result.reached_stage = vulkan_backend_frame_stage::lifecycle_ready;
@@ -1364,14 +1577,14 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     result.swapchain_policy = make_swapchain_policy_state(result.surface);
     if (!result.surface.valid()) {
         frame_lifecycle::mark_fallback(result, vulkan_backend_fallback_reason::surface_unavailable);
-        return result;
+        return finish_frame();
     }
     result.reached_stage = vulkan_backend_frame_stage::surface_extent_ready;
     if (!has_visible_area(viewport)) {
         frame_lifecycle::mark_fallback(
             result,
             vulkan_backend_fallback_reason::viewport_unavailable);
-        return result;
+        return finish_frame();
     }
     result.surface_ready = true;
 
@@ -1393,7 +1606,7 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
         release_frame_resources(
             result.frame_resources,
             vulkan_frame_resource_release_stage::fallback_cleanup);
-        return result;
+        return finish_frame();
     }
 
     result.resource_bindings = build_vulkan_resource_binding_state(draw_list, plan);
@@ -1411,7 +1624,7 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
         frame_lifecycle::mark_fallback(
             result,
             vulkan_backend_fallback_reason::resource_binding_unavailable);
-        return result;
+        return finish_frame();
     }
     track_descriptor_set_resources(result.frame_resources, result.resource_bindings);
 
@@ -1443,7 +1656,7 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
         fail_frame_lifecycle(
             vulkan_frame_lifecycle_step::acquire,
             vulkan_backend_fallback_reason::acquire_image_failed);
-        return result;
+        return finish_frame();
     }
     track_swapchain_image_resource(result.frame_resources, result.swapchain.acquire.image.id);
     frame_lifecycle::complete_step(result.lifecycle_policy, vulkan_frame_lifecycle_step::acquire);
@@ -1454,7 +1667,7 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
         fail_frame_lifecycle(
             vulkan_frame_lifecycle_step::begin,
             vulkan_backend_fallback_reason::begin_frame_failed);
-        return result;
+        return finish_frame();
     }
     frame_lifecycle::complete_step(result.lifecycle_policy, vulkan_frame_lifecycle_step::begin);
     result.reached_stage = vulkan_backend_frame_stage::frame_begun;
@@ -1478,7 +1691,7 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
         fail_frame_lifecycle(
             vulkan_frame_lifecycle_step::render,
             vulkan_backend_fallback_reason::record_commands_failed);
-        return result;
+        return finish_frame();
     }
     for (const vulkan_draw_batch& batch : plan.batches) {
         if (!command_recorder.record_draw_batch(batch)) {
@@ -1492,7 +1705,7 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
             fail_frame_lifecycle(
                 vulkan_frame_lifecycle_step::render,
                 vulkan_backend_fallback_reason::record_commands_failed);
-            return result;
+            return finish_frame();
         }
     }
     if (!command_recorder.finish_recording()) {
@@ -1506,7 +1719,7 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
         fail_frame_lifecycle(
             vulkan_frame_lifecycle_step::render,
             vulkan_backend_fallback_reason::record_commands_failed);
-        return result;
+        return finish_frame();
     }
     const vulkan_command_recorder_gate_state command_recorder_gate =
         result.command_recorder.gate;
@@ -1521,7 +1734,7 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
         fail_frame_lifecycle(
             vulkan_frame_lifecycle_step::render,
             vulkan_backend_fallback_reason::record_commands_failed);
-        return result;
+        return finish_frame();
     }
     frame_lifecycle::complete_step(result.lifecycle_policy, vulkan_frame_lifecycle_step::render);
     result.recorded_batch_count = plan.batches.size();
@@ -1544,7 +1757,7 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
         fail_frame_lifecycle(
             vulkan_frame_lifecycle_step::submit,
             vulkan_backend_fallback_reason::submit_frame_failed);
-        return result;
+        return finish_frame();
     }
     frame_lifecycle::complete_step(result.lifecycle_policy, vulkan_frame_lifecycle_step::submit);
     result.reached_stage = vulkan_backend_frame_stage::frame_submitted;
@@ -1563,7 +1776,7 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
         fail_frame_lifecycle(
             vulkan_frame_lifecycle_step::present,
             vulkan_backend_fallback_reason::present_image_failed);
-        return result;
+        return finish_frame();
     }
 
     mark_present_policy_frame_requested(result.present_policy);
@@ -1573,7 +1786,7 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
         fail_frame_lifecycle(
             vulkan_frame_lifecycle_step::present,
             vulkan_backend_fallback_reason::present_frame_failed);
-        return result;
+        return finish_frame();
     }
     frame_lifecycle::complete_step(result.lifecycle_policy, vulkan_frame_lifecycle_step::present);
     result.reached_stage = vulkan_backend_frame_stage::frame_presented;
@@ -1582,7 +1795,7 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
         result.frame_resources,
         vulkan_frame_resource_release_stage::after_present);
     frame_lifecycle::mark_fallback(result, vulkan_backend_fallback_reason::none);
-    return result;
+    return finish_frame();
 }
 
 } // namespace quiz_vulkan::render::vulkan_backend

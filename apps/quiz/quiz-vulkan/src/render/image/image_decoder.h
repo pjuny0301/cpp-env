@@ -900,3 +900,4 @@ public:
 } // namespace quiz_vulkan::render
 
 #include "render/image/bmp_image_decoder.h"
+#include "render/image/png_image_decoder.h"

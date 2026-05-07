@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: Vulkan frame pipeline handoff를 통합하고 Windows MinGW focused Vulkan CTest 5/5 및 `ctest -N` 81개 확인.
+- `2656970`: Vulkan backend adapter에 loader/instance/device/swapchain/render-pass/pipeline/resource-binding/command-recording/submit/present readiness를 묶는 frame pipeline handoff와 fallback diagnostics tests 추가.
 - current: font backend selection layer, optional third-party image decoder adapter, input IME/focus/caret hardening을 통합하고 Windows MinGW focused text/image/input/architecture CTest 8/8 및 `ctest -N` 80개 확인.
 - `bad1552`: input engine/text input model에 IME composition_start/restart diagnostics, focus/caret/selection stale-preedit clearing, invalid IME UTF-8 rejection tests 추가.
 - `c662239`: image engine에 optional third-party decoder adapter boundary, fake backend, standard decoder fallback, host-path/include guard tests 추가.

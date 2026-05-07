@@ -979,6 +979,7 @@ struct vulkan_backend_pipeline_state {
     vulkan_backend_shader_binding_readiness_state shader_bindings;
     vulkan_pipeline_layout_create_result pipeline_layout;
     vulkan_graphics_pipeline_create_result graphics_pipeline;
+    vulkan_backend_pipeline_readiness_summary pipeline_readiness_summary;
     vulkan_backend_pipeline_lifecycle_state lifecycle;
 
     bool supports(vulkan_batch_kind kind) const;

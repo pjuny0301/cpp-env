@@ -451,7 +451,8 @@ bool vulkan_backend_pipeline_state::completed() const
         && compatibility.completed()
         && shader_bindings.completed()
         && (!pipeline_layout.checked || pipeline_layout.ready_for_pipeline())
-        && (!graphics_pipeline.checked || graphics_pipeline.ready_for_draw());
+        && (!graphics_pipeline.checked || graphics_pipeline.ready_for_draw())
+        && (!pipeline_readiness_summary.checked || pipeline_readiness_summary.completed());
 }
 
 diagnostic_vulkan_pipeline_cache::diagnostic_vulkan_pipeline_cache()

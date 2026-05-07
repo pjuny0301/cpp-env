@@ -579,6 +579,77 @@ struct vulkan_graphics_pipeline_destroy_result {
     }
 };
 
+enum class vulkan_backend_pipeline_readiness_summary_status {
+    not_checked,
+    ready,
+    shader_module_unavailable,
+    pipeline_layout_unavailable,
+    graphics_pipeline_unavailable,
+};
+
+inline std::string_view pipeline_readiness_summary_status_name(
+    vulkan_backend_pipeline_readiness_summary_status status)
+{
+    switch (status) {
+    case vulkan_backend_pipeline_readiness_summary_status::not_checked:
+        return "not_checked";
+    case vulkan_backend_pipeline_readiness_summary_status::ready:
+        return "ready";
+    case vulkan_backend_pipeline_readiness_summary_status::shader_module_unavailable:
+        return "shader_module_unavailable";
+    case vulkan_backend_pipeline_readiness_summary_status::pipeline_layout_unavailable:
+        return "pipeline_layout_unavailable";
+    case vulkan_backend_pipeline_readiness_summary_status::graphics_pipeline_unavailable:
+        return "graphics_pipeline_unavailable";
+    }
+
+    return "unknown";
+}
+
+struct vulkan_backend_pipeline_readiness_summary {
+    bool checked = false;
+    vulkan_backend_pipeline_readiness_summary_status status =
+        vulkan_backend_pipeline_readiness_summary_status::not_checked;
+    bool shader_modules_checked = false;
+    bool shader_modules_ready = false;
+    std::size_t requested_shader_module_count = 0;
+    std::size_t created_shader_module_count = 0;
+    std::size_t failed_shader_module_count = 0;
+    bool pipeline_layout_checked = false;
+    bool pipeline_layout_ready = false;
+    vulkan_pipeline_layout_create_status pipeline_layout_status =
+        vulkan_pipeline_layout_create_status::not_requested;
+    bool graphics_pipeline_checked = false;
+    bool graphics_pipeline_ready = false;
+    vulkan_graphics_pipeline_create_status graphics_pipeline_status =
+        vulkan_graphics_pipeline_create_status::not_requested;
+    bool graphics_create_recoverable_failure = false;
+    bool graphics_create_fatal_failure = false;
+    bool pipeline_layout_destroy_checked = false;
+    bool pipeline_layout_destroyed = false;
+    std::size_t descriptor_set_layout_destroyed_count = 0;
+    vulkan_pipeline_layout_destroy_status pipeline_layout_destroy_status =
+        vulkan_pipeline_layout_destroy_status::not_requested;
+    bool graphics_pipeline_destroy_checked = false;
+    bool graphics_pipeline_destroyed = false;
+    std::size_t graphics_pipeline_destroyed_count = 0;
+    vulkan_graphics_pipeline_destroy_status graphics_pipeline_destroy_status =
+        vulkan_graphics_pipeline_destroy_status::not_requested;
+    std::string diagnostic;
+
+    bool completed() const
+    {
+        return checked && status == vulkan_backend_pipeline_readiness_summary_status::ready
+            && shader_modules_ready && pipeline_layout_ready && graphics_pipeline_ready
+            && !graphics_create_recoverable_failure && !graphics_create_fatal_failure;
+    }
+
+    bool failed() const
+    {
+        return checked && status != vulkan_backend_pipeline_readiness_summary_status::ready;
+    }
+};
+
 struct fake_vulkan_graphics_pipeline_factory_state {
     std::size_t create_call_count = 0;
     std::size_t destroy_call_count = 0;
@@ -911,6 +982,84 @@ inline vulkan_graphics_pipeline_destroy_result destroy_vulkan_graphics_pipeline(
     result.destroyed_pipeline_count = 1;
     result.status = vulkan_graphics_pipeline_destroy_status::destroyed;
     return result;
+}
+
+inline vulkan_backend_pipeline_readiness_summary summarize_vulkan_pipeline_readiness(
+    const vulkan_backend_shader_module_readiness_state& shader_modules,
+    const vulkan_pipeline_layout_create_result& pipeline_layout,
+    const vulkan_graphics_pipeline_create_result& graphics_pipeline,
+    const vulkan_pipeline_layout_destroy_result& pipeline_layout_destroy,
+    const vulkan_graphics_pipeline_destroy_result& graphics_pipeline_destroy)
+{
+    vulkan_backend_pipeline_readiness_summary summary;
+    summary.checked = true;
+    summary.shader_modules_checked = shader_modules.checked;
+    summary.shader_modules_ready = shader_modules.checked && shader_modules.completed();
+    summary.requested_shader_module_count = shader_modules.requested_module_count;
+    summary.created_shader_module_count = shader_modules.created_module_count;
+    summary.failed_shader_module_count = shader_modules.failed_module_count;
+    summary.pipeline_layout_checked = pipeline_layout.checked;
+    summary.pipeline_layout_ready = pipeline_layout.checked && pipeline_layout.ready_for_pipeline();
+    summary.pipeline_layout_status = pipeline_layout.status;
+    summary.graphics_pipeline_checked = graphics_pipeline.checked;
+    summary.graphics_pipeline_ready =
+        graphics_pipeline.checked && graphics_pipeline.ready_for_draw();
+    summary.graphics_pipeline_status = graphics_pipeline.status;
+    summary.graphics_create_recoverable_failure =
+        graphics_pipeline.recoverable_create_failure();
+    summary.graphics_create_fatal_failure = graphics_pipeline.fatal_create_failure();
+    summary.pipeline_layout_destroy_checked = pipeline_layout_destroy.checked;
+    summary.pipeline_layout_destroyed =
+        pipeline_layout_destroy.checked && pipeline_layout_destroy.completed();
+    summary.descriptor_set_layout_destroyed_count =
+        pipeline_layout_destroy.descriptor_set_layout_destroyed_count;
+    summary.pipeline_layout_destroy_status = pipeline_layout_destroy.status;
+    summary.graphics_pipeline_destroy_checked = graphics_pipeline_destroy.checked;
+    summary.graphics_pipeline_destroyed =
+        graphics_pipeline_destroy.checked && graphics_pipeline_destroy.completed();
+    summary.graphics_pipeline_destroyed_count =
+        graphics_pipeline_destroy.destroyed_pipeline_count;
+    summary.graphics_pipeline_destroy_status = graphics_pipeline_destroy.status;
+
+    if (!summary.shader_modules_ready) {
+        summary.status =
+            vulkan_backend_pipeline_readiness_summary_status::shader_module_unavailable;
+        summary.diagnostic = "Vulkan pipeline readiness summary shader modules are unavailable";
+        return summary;
+    }
+    if (!summary.pipeline_layout_ready) {
+        summary.status =
+            vulkan_backend_pipeline_readiness_summary_status::pipeline_layout_unavailable;
+        summary.diagnostic = !pipeline_layout.diagnostic.empty()
+            ? pipeline_layout.diagnostic
+            : "Vulkan pipeline readiness summary pipeline layout is unavailable";
+        return summary;
+    }
+    if (!summary.graphics_pipeline_ready) {
+        summary.status =
+            vulkan_backend_pipeline_readiness_summary_status::graphics_pipeline_unavailable;
+        summary.diagnostic = !graphics_pipeline.diagnostic.empty()
+            ? graphics_pipeline.diagnostic
+            : "Vulkan pipeline readiness summary graphics pipeline is unavailable";
+        return summary;
+    }
+
+    summary.status = vulkan_backend_pipeline_readiness_summary_status::ready;
+    summary.diagnostic = "Vulkan pipeline readiness summary is ready";
+    return summary;
+}
+
+inline vulkan_backend_pipeline_readiness_summary summarize_vulkan_pipeline_readiness(
+    const vulkan_backend_shader_module_readiness_state& shader_modules,
+    const vulkan_pipeline_layout_create_result& pipeline_layout,
+    const vulkan_graphics_pipeline_create_result& graphics_pipeline)
+{
+    return summarize_vulkan_pipeline_readiness(
+        shader_modules,
+        pipeline_layout,
+        graphics_pipeline,
+        vulkan_pipeline_layout_destroy_result{},
+        vulkan_graphics_pipeline_destroy_result{});
 }
 
 } // namespace quiz_vulkan::render::vulkan_backend

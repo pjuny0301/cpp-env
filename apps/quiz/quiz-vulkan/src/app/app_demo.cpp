@@ -171,6 +171,10 @@ app_render_frame render_app_frame(
             .route_state = scene_data.route_state(),
         });
     frame.report.screen_id = scene_data.route_state().screen_id;
+    frame.report.modifier_error_count = apply_result.errors.size();
+    if (!apply_result.errors.empty()) {
+        frame.report.first_modifier_error = apply_result.errors.front();
+    }
     if (!apply_result.applied()) {
         return frame;
     }

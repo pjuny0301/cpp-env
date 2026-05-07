@@ -16,6 +16,8 @@ struct app_render_report {
     std::string screen_id;
     std::size_t node_count = 0;
     std::size_t input_region_count = 0;
+    std::size_t modifier_error_count = 0;
+    std::string first_modifier_error;
     render::vulkan_renderer_frame_stats frame_stats;
     render::vulkan_renderer_frame_summary frame_summary;
 };

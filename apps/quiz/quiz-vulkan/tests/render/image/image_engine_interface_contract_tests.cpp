@@ -74,6 +74,26 @@ concept PngImageInflaterInterface = requires(
     { inflater.inflate(request) } -> std::same_as<render::png_image_inflate_result>;
 };
 
+template <typename T>
+concept ExposesFakeImageTextureCacheSnapshot = requires(T value) {
+    { value.cache_snapshot } -> std::same_as<render::fake_image_texture_cache_snapshot&>;
+};
+
+template <typename T>
+concept ExposesFakeImageTextureUploadSnapshot = requires(T value) {
+    { value.upload_snapshot } -> std::same_as<render::fake_image_texture_upload_snapshot&>;
+};
+
+template <typename T>
+concept ExposesRenderImageDecoderDiagnostics = requires(T value) {
+    { value.decoder_diagnostics } -> std::same_as<std::vector<render::render_image_decoder_diagnostic>&>;
+};
+
+template <typename T>
+concept ExposesFakeImageTexturePipelineEntries = requires(T value) {
+    { value.entries } -> std::same_as<std::vector<render::fake_image_texture_pipeline_entry_snapshot>&>;
+};
+
 static_assert(ImageResolverInterface<render::image_resolver_interface>);
 static_assert(ImageResolverInterface<render::normalizing_image_resolver>);
 static_assert(ImageDecoderInterface<render::image_decoder_interface>);
@@ -869,5 +889,13 @@ static_assert(requires(
     texture_residency;
     eviction_reason;
 });
+
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_manifest_texture_entry_snapshot>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_manifest_texture_pipeline_snapshot>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_manifest_texture_entry_snapshot>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_manifest_texture_pipeline_snapshot>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_manifest_texture_entry_snapshot>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_manifest_texture_pipeline_snapshot>);
+static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_manifest_texture_pipeline_snapshot>);
 
 } // namespace

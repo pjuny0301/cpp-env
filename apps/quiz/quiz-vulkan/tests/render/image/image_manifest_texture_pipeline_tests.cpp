@@ -4,6 +4,9 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -16,6 +19,41 @@ void require(bool condition, const char* message)
         std::fprintf(stderr, "Requirement failed: %s\n", message);
     }
     assert((condition) && message);
+}
+
+std::filesystem::path locate_source_file(
+    std::string_view app_relative_path,
+    std::string_view project_relative_path)
+{
+    std::filesystem::path current = std::filesystem::current_path();
+    while (true) {
+        const std::filesystem::path app_candidate = current / std::string(app_relative_path);
+        if (std::filesystem::exists(app_candidate)) {
+            return app_candidate;
+        }
+
+        const std::filesystem::path project_candidate = current / std::string(project_relative_path);
+        if (std::filesystem::exists(project_candidate)) {
+            return project_candidate;
+        }
+
+        if (!current.has_parent_path() || current == current.parent_path()) {
+            break;
+        }
+        current = current.parent_path();
+    }
+
+    return {};
+}
+
+std::string read_text_file(const std::filesystem::path& path)
+{
+    std::ifstream input(path);
+    require(input.good(), "source file opens for dependency guard");
+
+    std::ostringstream contents;
+    contents << input.rdbuf();
+    return contents.str();
 }
 
 void append_ascii(std::vector<std::byte>& bytes, std::string_view text)
@@ -63,6 +101,46 @@ void set_source_bytes(
     std::vector<std::byte> bytes)
 {
     loader.set_source_bytes(std::move(source_key), std::move(bytes));
+}
+
+void test_manifest_pipeline_header_stays_image_owned()
+{
+    const std::filesystem::path header_path = locate_source_file(
+        "apps/quiz/quiz-vulkan/src/render/image/image_manifest_texture_pipeline.h",
+        "src/render/image/image_manifest_texture_pipeline.h");
+    require(!header_path.empty(), "manifest texture pipeline header is discoverable");
+
+    const std::string header = read_text_file(header_path);
+    require(
+        header.find("#include \"render/image/image_texture_pipeline.h\"") != std::string::npos,
+        "manifest texture pipeline depends on stable image texture pipeline boundary");
+    require(
+        header.find("#include \"render/image/image_texture_cache.h\"") == std::string::npos,
+        "manifest texture pipeline avoids direct cache internals include");
+    require(
+        header.find("#include \"render/image/image_decoder.h\"") == std::string::npos,
+        "manifest texture pipeline avoids direct decoder internals include");
+
+    const std::vector<std::string_view> forbidden_includes = {
+        "#include \"app/",
+        "#include \"asset/",
+        "#include \"assets/",
+        "#include \"audio/",
+        "#include \"domain/",
+        "#include \"input/",
+        "#include \"render/text/",
+        "#include \"render/vulkan/",
+        "#include \"renderer/",
+        "#include \"scene/",
+        "#include \"text/",
+        "#include \"ui/",
+    };
+
+    for (const std::string_view forbidden_include : forbidden_includes) {
+        require(
+            header.find(forbidden_include) == std::string::npos,
+            "manifest texture pipeline header has no upper-layer include");
+    }
 }
 
 void test_manifest_adapter_builds_normalized_asset_cache_key()
@@ -390,6 +468,7 @@ void test_manifest_adapter_preserves_sampler_cache_separation()
 
 int main()
 {
+    test_manifest_pipeline_header_stays_image_owned();
     test_manifest_adapter_builds_normalized_asset_cache_key();
     test_manifest_adapter_accepts_file_uri_cache_key();
     test_manifest_adapter_diagnostics_record_cache_hit_reuse();

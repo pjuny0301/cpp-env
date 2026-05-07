@@ -36,7 +36,7 @@ Last updated: 2026-05-07
 - Engine workers own only their engine folders. App/runtime, top-level CMake, and aggregate contract wiring stay with the integrator unless explicitly assigned.
 - Large file splitting is allowed when it improves module cohesion, worker ownership, reviewability, or conflict isolation. Do not split files only because they exceed a line-count threshold, and do not move stable public interfaces without explicit integrator approval.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
-- Latest verification: Windows MinGW focused input/image CTest passed 13/13 after integrating platform input engine adapter and image manifest diagnostics. Current `ctest -N` reports 76 tests. Most recent full CTest remains 60/60 after `ddf7271`.
+- Latest verification: Windows MinGW full CTest passed 76/76 after integrating platform input engine adapter and image manifest diagnostics. Current `ctest -N` reports 76 tests.
 
 ## Verification commands
 

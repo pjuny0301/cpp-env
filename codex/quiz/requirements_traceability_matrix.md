@@ -6,6 +6,10 @@
 
 최근 baseline 통합 증거:
 
+- current: text backend selection diagnostics, image decoder capability manifest diagnostics, input diagnostic summary counts를 통합하고 Windows MinGW focused text/image/input CTest 9/9 확인.
+- `4f54fac`: input engine/platform adapter diagnostics에 normalized event kind counts, route kind counts, summary snapshots를 추가해 worker-owned input history를 app 밖에서 검증 가능하게 보강.
+- `9bd7bff`: standard/third-party image decoder path에 capability manifest diagnostics를 추가해 BMP/PPM/PNG/unsupported/fallback 후보 상태를 data-only로 추적.
+- `83e0e1d`: text fake layout diagnostics에 selected backend metadata를 연결해 FreeType/HarfBuzz/utf8proc 후보 선택 상태가 glyph/layout 출력까지 보존되는지 검증.
 - current: Vulkan command packet bridge를 통합하고 Windows MinGW focused Vulkan CTest 3/3 확인.
 - `81514a6`: Vulkan backend에 draw-list batch를 command packet diagnostics로 변환하는 bridge, packet category counts, pipeline/resource prerequisite fallback tests 추가.
 - current: input gesture/focus diagnostics와 optional decoder pipeline integration을 통합하고 Windows MinGW focused input CTest 6/6, focused image CTest 3/3 확인.

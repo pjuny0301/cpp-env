@@ -38,12 +38,13 @@ Last updated: 2026-05-08
 - Engine workers own only their engine folders. App/runtime, top-level CMake, and aggregate contract wiring stay with the integrator unless explicitly assigned.
 - Large file splitting is allowed when it improves module cohesion, worker ownership, reviewability, or conflict isolation. Do not split files only because they exceed a line-count threshold, and do not move stable public interfaces without explicit integrator approval.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
+- Latest integration note: `83e0e1d`, `9bd7bff`, and `4f54fac` thread text backend selection diagnostics through fake layout output, add image decoder capability manifest diagnostics, and add input diagnostic summary counts across normalized events and routed actions.
 - Latest integration note: `81514a6` adds a Vulkan command packet bridge that converts prepared draw-list batches into backend packet diagnostics, counts rect/text/image/debug packets, and blocks command recording on missing pipeline/resource prerequisites.
 - Latest integration note: `77ecf32` wires the optional third-party image decoder adapter through the existing image texture pipeline and preserves adapter diagnostics through fallback; `5b080c8` hardens input gesture/focus diagnostics for wheel, touch cancel, focus traversal, and pointer capture restart/release.
 - Latest integration note: `2656970` adds a Vulkan frame pipeline handoff summary/result that composes loader, instance, device, swapchain, render pass, pipeline, resource binding, command recording, submit, present, and fallback readiness without scene/UI/app/domain coupling.
 - Latest integration note: text/image/input worker commits added font backend selection metadata, optional third-party image decoder adapter boundary, and IME/focus/caret hardening; CMake render contract FILE_SET registration was handled by the integrator.
 - Latest integration note: `15d77ce` reports app scene modifier errors in `app_render_report`; `0a721e2` blocks host/external source paths in architecture tests; `7505a63` tracks native dependency manifest/README while ignoring downloaded source directories.
-- Latest verification: Windows MinGW focused Vulkan CTest passed 3/3 after `81514a6`. Focused input CTest passed 6/6 after `5b080c8`; focused image CTest passed 3/3 after `77ecf32`. Most recent full CTest passed 81/81 after `2656970`; current `ctest -N` reports 82 tests.
+- Latest verification: Windows MinGW focused text/image/input CTest passed 9/9 after `83e0e1d`, `9bd7bff`, and `4f54fac`. Focused Vulkan CTest passed 3/3 after `81514a6`. Most recent full CTest passed 81/81 after `2656970`; current `ctest -N` reports 82 tests.
 
 ## Verification commands
 

@@ -6,6 +6,7 @@
 
 최근 baseline 통합 증거:
 
+- `87935ed`: font Unicode coverage 결과를 `font_face_descriptor`/`font_face_catalog` coverage 범위로 연결하는 text catalog adapter 추가.
 - `c83ed69`: text engine에 font Unicode coverage resolver와 contract/focused tests 추가.
 - `20fc3e6`: Vulkan instance creation boundary를 전용 header로 분리하고 loader 역방향 include 없이 직접 include 계약으로 정리.
 - `4f6af6e`: text engine에 font cmap Unicode coverage inspector와 contract/focused tests 추가.

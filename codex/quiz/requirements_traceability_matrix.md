@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: keyboard replay diagnostics summaries를 통합하고 Windows MinGW focused input CTest 3/3 확인.
+- `e50a2b0`: input replay diagnostics에 shortcut intent counts, modifier/repeat policy, final text/focus/preedit state summaries를 연결해 replayed key sequence를 app/domain action 없이 검증.
 - current: Vulkan submit-batch planning diagnostics를 통합하고 Windows MinGW focused Vulkan CTest 5/5 및 `ctest -N` 87개 확인.
 - `6bd7973`: Vulkan backend에 submit-batch plan/result diagnostics를 추가해 recorded command buffers, wait/signal/present intent, queue submit/present prerequisites를 real queue submission 전 data-only로 추적.
 - current: image texture batch execution diagnostics와 keyboard shortcut route diagnostics를 통합하고 Windows MinGW focused image/input CTest 13/13 확인.

@@ -38,6 +38,7 @@ Last updated: 2026-05-08
 - Engine workers own only their engine folders. App/runtime, top-level CMake, and aggregate contract wiring stay with the integrator unless explicitly assigned.
 - Large file splitting is allowed when it improves module cohesion, worker ownership, reviewability, or conflict isolation. Do not split files only because they exceed a line-count threshold, and do not move stable public interfaces without explicit integrator approval.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
+- Latest integration note: `e50a2b0` threads keyboard shortcut/chord diagnostics into normalized input replay summaries so replayed key sequences expose intent counts, modifier/repeat policy, and final focus/text/preedit state.
 - Latest integration note: `6bd7973` adds Vulkan submit-batch planning diagnostics after command-buffer recording, recording wait/signal/present intent and queue submit prerequisites before real Vulkan queue submission.
 - Latest integration note: `85f4b86` and `7f3710b` add image texture batch execution diagnostics and semantic-free keyboard shortcut route diagnostics, keeping image pipeline execution and key/chord intent routing inside their owning engines.
 - Latest integration note: `fb8e404` adds text font fallback chain planning diagnostics for mixed-script batches, producing per-run fallback chains, missing-glyph summaries, and deterministic selected-face order before shaping.
@@ -55,7 +56,7 @@ Last updated: 2026-05-08
 - Latest integration note: `2656970` adds a Vulkan frame pipeline handoff summary/result that composes loader, instance, device, swapchain, render pass, pipeline, resource binding, command recording, submit, present, and fallback readiness without scene/UI/app/domain coupling.
 - Latest integration note: text/image/input worker commits added font backend selection metadata, optional third-party image decoder adapter boundary, and IME/focus/caret hardening; CMake render contract FILE_SET registration was handled by the integrator.
 - Latest integration note: `15d77ce` reports app scene modifier errors in `app_render_report`; `0a721e2` blocks host/external source paths in architecture tests; `7505a63` tracks native dependency manifest/README while ignoring downloaded source directories.
-- Latest verification: Windows MinGW focused Vulkan CTest passed 5/5 after `6bd7973`; focused image/input CTest passed 13/13 after `85f4b86` and `7f3710b`; focused text CTest passed 1/1 after `fb8e404`. Most recent full CTest passed 81/81 after `2656970`; current `ctest -N` reports 87 tests.
+- Latest verification: Windows MinGW focused input CTest passed 3/3 after `e50a2b0`; focused Vulkan CTest passed 5/5 after `6bd7973`; focused image/input CTest passed 13/13 after `85f4b86` and `7f3710b`; focused text CTest passed 1/1 after `fb8e404`. Most recent full CTest passed 81/81 after `2656970`; current `ctest -N` reports 87 tests.
 
 ## Verification commands
 

@@ -1,11 +1,12 @@
 # Quiz 요구사항 추적 매트릭스
 
-마지막 갱신: 2026-05-07
+마지막 갱신: 2026-05-08
 
 이 문서는 요구사항 번호를 실행 순서가 아니라 추적 ID로 관리한다. 실제 구현 순서는 `big_plan.md`의 의존관계 기반 단계가 기준이며, 각 행은 루트 구현 문서, 하위 프로젝트 문서, 현재 C++/문서 증거를 연결한다.
 
 최근 baseline 통합 증거:
 
+- `7505a63`: native desktop dependency manifest/README를 추적하고, FreeType/HarfBuzz/Vulkan/stb/miniaudio 등 다운로드된 대용량 source snapshots는 `build/external/lib/cpp/desktop/*/` ignore 규칙으로 Git 커밋 대상에서 분리.
 - current: fake text backend-adapter injection, Vulkan pipeline readiness summary, image manifest boundary hardening을 통합하고 Windows MinGW focused text/Vulkan/image CTest 13/13 및 `ctest -N` 79개 확인.
 - `96e5f31`: image manifest texture pipeline boundary tests를 강화해 manifest-owned snapshots와 include/dependency guard를 고정.
 - `ae37ddf`: Vulkan shader/layout/graphics pipeline readiness를 함께 볼 수 있는 pipeline readiness summary와 tests 추가.

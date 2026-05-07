@@ -135,6 +135,7 @@ target_sources(
             src/render/image/image_resolver.h
             src/render/image/image_source_bytes_loader.h
             src/render/image/image_texture_cache.h
+            src/render/image/image_texture_cache_snapshot.h
             src/render/image/image_texture_diagnostics.h
             src/render/image/image_texture_pipeline.h
             src/render/image/image_texture_placeholder_policy.h

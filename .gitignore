@@ -9,6 +9,7 @@ build/external/quiz/git-metadata/
 build/external/quiz/quiz-data/
 build/external/quiz/legacy/
 build/external/quiz/figma-make/
+build/external/lib/cpp/desktop/*/
 apps/quiz/*/src-tauri/gen/
 codex/quiz/일자별요구사항/*/generated/*/placeholder_notice.txt
 codex/quiz/일자별요구사항/*/generated/*/*.pdf

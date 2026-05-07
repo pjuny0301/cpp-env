@@ -84,6 +84,7 @@ static_assert(ImageTextureUploaderInterface<render::image_texture_uploader_inter
 static_assert(ImageTextureUploaderInterface<render::fake_image_texture_uploader>);
 static_assert(ImageTexturePipelineInterface<render::image_texture_pipeline_interface>);
 static_assert(ImageTexturePipelineInterface<render::fake_image_texture_pipeline>);
+static_assert(ImageTexturePipelineInterface<render::standard_image_texture_pipeline>);
 static_assert(PngImageInflaterInterface<render::png_image_inflater_interface>);
 static_assert(PngImageInflaterInterface<render::fake_png_image_inflater>);
 static_assert(PngImageInflaterInterface<render::png_image_zlib_inflater>);
@@ -175,6 +176,7 @@ static_assert(requires(
     render::render_image_source_bytes_load_status bytes_status,
     render::render_image_data_uri_decode_result data_uri_decode_result,
     render::render_image_data_uri_decode_status data_uri_decode_status,
+    render::normalizing_image_resolver resolver,
     render::fake_image_source_bytes_loader source_bytes_loader,
     render::render_image_texture_upload_request upload_request,
     render::render_image_texture_upload_result upload_result,
@@ -199,6 +201,7 @@ static_assert(requires(
     render::fake_image_texture_pipeline_snapshot pipeline_snapshot,
     const render::fake_image_texture_pipeline& pipeline,
     render::fake_image_texture_pipeline& mutable_pipeline,
+    render::standard_image_texture_pipeline& standard_pipeline,
     render::render_image_ref image_ref,
     render::fake_image_texture_residency texture_residency,
     render::fake_image_texture_eviction_reason eviction_reason,
@@ -613,6 +616,15 @@ static_assert(requires(
     { pipeline.diagnostic_snapshot() } -> std::same_as<render::fake_image_texture_pipeline_snapshot>;
     { mutable_pipeline.invalidate_source(render::render_image_cache_key{}) } -> std::same_as<void>;
     { mutable_pipeline.invalidate_texture(render::render_image_texture_key{}) } -> std::same_as<void>;
+    { render::make_standard_image_texture_pipeline(resolver, source_bytes_loader) }
+        -> std::same_as<render::standard_image_texture_pipeline>;
+    { standard_pipeline.acquire_texture(pipeline_request) }
+        -> std::same_as<render::render_image_texture_pipeline_result>;
+    { standard_pipeline.acquire_texture(image_ref) }
+        -> std::same_as<render::render_image_texture_pipeline_result>;
+    { standard_pipeline.invalidate_source(render::render_image_cache_key{}) } -> std::same_as<void>;
+    { standard_pipeline.invalidate_texture(render::render_image_texture_key{}) } -> std::same_as<void>;
+    { standard_pipeline.diagnostic_snapshot() } -> std::same_as<render::fake_image_texture_pipeline_snapshot>;
     { render::fake_image_texture_eviction_reason_name(eviction_reason) } -> std::same_as<std::string>;
     { render::fake_image_texture_placeholder_reason_name(placeholder_reason) } -> std::same_as<std::string>;
     { render::fake_image_texture_placeholder_source_fragment(render::render_image_cache_key{}) }

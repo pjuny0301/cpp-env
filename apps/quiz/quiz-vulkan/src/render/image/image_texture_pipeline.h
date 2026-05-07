@@ -656,6 +656,267 @@ inline render_image_texture_batch_execution_diagnostics execute_render_image_tex
     return diagnostics;
 }
 
+enum class render_image_texture_residency_budget_pressure_status {
+    within_budget,
+    over_pixel_budget,
+    over_texture_budget,
+    over_pixel_and_texture_budget,
+};
+
+inline std::string render_image_texture_residency_budget_pressure_status_name(
+    render_image_texture_residency_budget_pressure_status status)
+{
+    switch (status) {
+    case render_image_texture_residency_budget_pressure_status::within_budget:
+        return "within_budget";
+    case render_image_texture_residency_budget_pressure_status::over_pixel_budget:
+        return "over_pixel_budget";
+    case render_image_texture_residency_budget_pressure_status::over_texture_budget:
+        return "over_texture_budget";
+    case render_image_texture_residency_budget_pressure_status::over_pixel_and_texture_budget:
+        return "over_pixel_and_texture_budget";
+    }
+
+    return "unknown";
+}
+
+struct render_image_texture_residency_budget_plan_options {
+    std::vector<std::size_t> visible_request_indices;
+    std::vector<std::size_t> pinned_request_indices;
+    std::vector<std::size_t> preload_request_indices;
+    std::vector<render_image_texture_key> visible_texture_keys;
+    std::vector<render_image_texture_key> pinned_texture_keys;
+    std::vector<render_image_texture_key> preload_texture_keys;
+    std::size_t max_resident_pixel_count = 0;
+    std::size_t max_resident_texture_count = 0;
+};
+
+struct render_image_texture_residency_budget_plan_entry {
+    std::size_t sequence = 0;
+    std::size_t request_index = 0;
+    render_image_texture_batch_execution_entry_status execution_status =
+        render_image_texture_batch_execution_entry_status::skipped_invalid_request;
+    render_image_texture_pipeline_request request;
+    render_image_texture_key texture_key;
+    render_image_texture_key_diagnostic texture_key_diagnostic;
+    render_image_sampler_policy_diagnostic sampler_policy;
+    std::string stable_texture_cache_key;
+    render_image_texture_handle texture;
+    bool ready = false;
+    bool executed = false;
+    bool cache_reused = false;
+    bool placeholder_texture = false;
+    bool visible_candidate = false;
+    bool pinned_candidate = false;
+    bool preload_candidate = false;
+    bool eviction_candidate = false;
+    bool retry_candidate = false;
+    bool duplicate_texture_key = false;
+    bool counts_against_budget = false;
+    std::size_t first_texture_request_index = 0;
+    std::size_t estimated_pixel_count = 0;
+    std::size_t estimated_rgba8_byte_count = 0;
+    std::string retry_reason;
+    std::string diagnostic;
+};
+
+struct render_image_texture_residency_budget_plan {
+    std::size_t request_count = 0;
+    std::size_t executed_request_count = 0;
+    std::size_t ready_count = 0;
+    std::size_t visible_candidate_count = 0;
+    std::size_t pinned_candidate_count = 0;
+    std::size_t preload_candidate_count = 0;
+    std::size_t eviction_candidate_count = 0;
+    std::size_t retry_candidate_count = 0;
+    std::size_t placeholder_texture_count = 0;
+    std::size_t unique_resident_texture_count = 0;
+    std::size_t unique_resident_pixel_count = 0;
+    std::size_t unique_resident_rgba8_byte_count = 0;
+    std::size_t max_resident_pixel_count = 0;
+    std::size_t max_resident_texture_count = 0;
+    bool pixel_budget_enabled = false;
+    bool texture_budget_enabled = false;
+    bool pixel_budget_pressure = false;
+    bool texture_budget_pressure = false;
+    bool budget_pressure = false;
+    std::size_t over_budget_pixel_count = 0;
+    std::size_t over_budget_texture_count = 0;
+    render_image_texture_residency_budget_pressure_status pressure_status =
+        render_image_texture_residency_budget_pressure_status::within_budget;
+    std::string pressure_status_name;
+    std::vector<render_image_texture_residency_budget_plan_entry> entries;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return !budget_pressure;
+    }
+};
+
+inline bool render_image_texture_batch_request_index_list_contains(
+    const std::vector<std::size_t>& request_indices,
+    std::size_t request_index)
+{
+    for (const std::size_t candidate : request_indices) {
+        if (candidate == request_index) {
+            return true;
+        }
+    }
+    return false;
+}
+
+inline bool render_image_texture_batch_texture_key_list_contains(
+    const std::vector<render_image_texture_key>& texture_keys,
+    const render_image_texture_key& texture_key)
+{
+    const std::string stable_cache_key =
+        make_render_image_texture_key_diagnostic(texture_key).stable_cache_key;
+    for (const render_image_texture_key& candidate : texture_keys) {
+        if (make_render_image_texture_key_diagnostic(candidate).stable_cache_key == stable_cache_key) {
+            return true;
+        }
+    }
+    return false;
+}
+
+inline render_image_texture_residency_budget_pressure_status
+render_image_texture_residency_budget_pressure_status_for(
+    bool pixel_budget_pressure,
+    bool texture_budget_pressure)
+{
+    if (pixel_budget_pressure && texture_budget_pressure) {
+        return render_image_texture_residency_budget_pressure_status::over_pixel_and_texture_budget;
+    }
+    if (pixel_budget_pressure) {
+        return render_image_texture_residency_budget_pressure_status::over_pixel_budget;
+    }
+    if (texture_budget_pressure) {
+        return render_image_texture_residency_budget_pressure_status::over_texture_budget;
+    }
+    return render_image_texture_residency_budget_pressure_status::within_budget;
+}
+
+inline render_image_texture_residency_budget_plan plan_render_image_texture_residency_budget(
+    const render_image_texture_batch_execution_diagnostics& execution,
+    const render_image_texture_residency_budget_plan_options& options = {})
+{
+    render_image_texture_residency_budget_plan plan{
+        .request_count = execution.request_count,
+        .executed_request_count = execution.executed_request_count,
+        .ready_count = execution.ready_count,
+        .max_resident_pixel_count = options.max_resident_pixel_count,
+        .max_resident_texture_count = options.max_resident_texture_count,
+        .pixel_budget_enabled = options.max_resident_pixel_count > 0,
+        .texture_budget_enabled = options.max_resident_texture_count > 0,
+    };
+
+    std::map<std::string, std::size_t> first_texture_request_index;
+    for (const render_image_texture_batch_execution_entry& execution_entry : execution.entries) {
+        render_image_texture_residency_budget_plan_entry entry{
+            .sequence = execution_entry.sequence,
+            .request_index = execution_entry.request_index,
+            .execution_status = execution_entry.status,
+            .request = execution_entry.request,
+            .texture_key = execution_entry.texture_key,
+            .texture_key_diagnostic = make_render_image_texture_key_diagnostic(execution_entry.texture_key),
+            .sampler_policy = make_render_image_sampler_policy_diagnostic(execution_entry.request.sampler),
+            .texture = execution_entry.texture,
+            .ready = execution_entry.ready,
+            .executed = execution_entry.executed,
+            .cache_reused = execution_entry.cache_reused,
+            .placeholder_texture = execution_entry.placeholder_texture,
+            .first_texture_request_index = execution_entry.request_index,
+        };
+        entry.stable_texture_cache_key = entry.texture_key_diagnostic.stable_cache_key;
+
+        if (entry.ready) {
+            entry.visible_candidate = render_image_texture_batch_request_index_list_contains(
+                options.visible_request_indices,
+                entry.request_index)
+                || render_image_texture_batch_texture_key_list_contains(
+                    options.visible_texture_keys,
+                    entry.texture_key);
+            entry.pinned_candidate = render_image_texture_batch_request_index_list_contains(
+                options.pinned_request_indices,
+                entry.request_index)
+                || render_image_texture_batch_texture_key_list_contains(
+                    options.pinned_texture_keys,
+                    entry.texture_key);
+            entry.preload_candidate = render_image_texture_batch_request_index_list_contains(
+                options.preload_request_indices,
+                entry.request_index)
+                || render_image_texture_batch_texture_key_list_contains(
+                    options.preload_texture_keys,
+                    entry.texture_key);
+            entry.eviction_candidate =
+                !entry.visible_candidate && !entry.pinned_candidate && !entry.preload_candidate;
+
+            entry.estimated_pixel_count = entry.texture.width * entry.texture.height;
+            entry.estimated_rgba8_byte_count = entry.estimated_pixel_count
+                * render_image_pixel_format_byte_count(render_image_pixel_format::rgba8_srgb);
+
+            const auto first_texture = first_texture_request_index.find(entry.stable_texture_cache_key);
+            if (first_texture == first_texture_request_index.end()) {
+                first_texture_request_index.emplace(entry.stable_texture_cache_key, entry.request_index);
+                entry.counts_against_budget = true;
+                plan.unique_resident_pixel_count += entry.estimated_pixel_count;
+                plan.unique_resident_rgba8_byte_count += entry.estimated_rgba8_byte_count;
+            } else {
+                entry.duplicate_texture_key = true;
+                entry.first_texture_request_index = first_texture->second;
+            }
+
+            if (entry.visible_candidate) {
+                ++plan.visible_candidate_count;
+            }
+            if (entry.pinned_candidate) {
+                ++plan.pinned_candidate_count;
+            }
+            if (entry.preload_candidate) {
+                ++plan.preload_candidate_count;
+            }
+            if (entry.eviction_candidate) {
+                ++plan.eviction_candidate_count;
+            }
+            if (entry.placeholder_texture) {
+                ++plan.placeholder_texture_count;
+            }
+            entry.diagnostic = entry.eviction_candidate
+                ? "image texture is an eviction candidate"
+                : "image texture should remain resident";
+        } else if (entry.executed) {
+            entry.retry_candidate = true;
+            entry.retry_reason = render_image_texture_batch_execution_entry_status_name(entry.execution_status);
+            entry.diagnostic = "image texture request can be retried after batch execution failure";
+            ++plan.retry_candidate_count;
+        } else {
+            entry.diagnostic = "image texture request was not executable";
+        }
+
+        plan.entries.push_back(std::move(entry));
+    }
+
+    plan.unique_resident_texture_count = first_texture_request_index.size();
+    if (plan.pixel_budget_enabled && plan.unique_resident_pixel_count > plan.max_resident_pixel_count) {
+        plan.pixel_budget_pressure = true;
+        plan.over_budget_pixel_count = plan.unique_resident_pixel_count - plan.max_resident_pixel_count;
+    }
+    if (plan.texture_budget_enabled && plan.unique_resident_texture_count > plan.max_resident_texture_count) {
+        plan.texture_budget_pressure = true;
+        plan.over_budget_texture_count = plan.unique_resident_texture_count - plan.max_resident_texture_count;
+    }
+    plan.budget_pressure = plan.pixel_budget_pressure || plan.texture_budget_pressure;
+    plan.pressure_status = render_image_texture_residency_budget_pressure_status_for(
+        plan.pixel_budget_pressure,
+        plan.texture_budget_pressure);
+    plan.pressure_status_name = render_image_texture_residency_budget_pressure_status_name(plan.pressure_status);
+    plan.diagnostic = plan.budget_pressure
+        ? "image texture residency budget is under pressure"
+        : "image texture residency budget is within limits";
+    return plan;
+}
+
 class fake_image_texture_pipeline final : public image_texture_pipeline_interface {
 public:
     fake_image_texture_pipeline(

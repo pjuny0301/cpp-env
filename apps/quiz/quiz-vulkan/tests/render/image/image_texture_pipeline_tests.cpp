@@ -42,6 +42,10 @@ static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_textu
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_batch_execution_diagnostics>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_batch_execution_entry>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_batch_execution_diagnostics>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_residency_budget_plan_entry>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_residency_budget_plan>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_residency_budget_plan_entry>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_residency_budget_plan>);
 
 void require(bool condition, const char* message)
 {
@@ -880,6 +884,133 @@ void test_batch_execution_reports_placeholder_fallback_without_cache_internals()
         "placeholder batch execution entry records placeholder diagnostic");
 }
 
+void test_residency_budget_plan_classifies_candidates_and_pressure()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes("asset://textures/card.ppm", make_ppm_2x1_fixture_bytes());
+    loader.set_source_bytes("asset://textures/background.ppm", make_ppm_2x1_fixture_bytes());
+    ppm_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
+
+    render_image_sampler_policy nearest_sampler;
+    nearest_sampler.min_filter = render_image_filter::nearest;
+    nearest_sampler.mag_filter = render_image_filter::nearest;
+
+    const render_image_texture_batch_plan batch_plan = plan_render_image_texture_batch(std::vector<render_image_ref>{
+        render_image_ref{.uri = "asset://textures/card.ppm"},
+        render_image_ref{.uri = "asset://textures/card.ppm"},
+        render_image_ref{.uri = "asset://textures/card.ppm", .sampler = nearest_sampler},
+        render_image_ref{.uri = "asset://textures/background.ppm"},
+    });
+    const render_image_texture_batch_execution_diagnostics execution =
+        execute_render_image_texture_batch_plan(batch_plan, pipeline);
+    require(execution.ok(), "residency budget fixture execution succeeds");
+
+    const render_image_texture_residency_budget_plan residency = plan_render_image_texture_residency_budget(
+        execution,
+        render_image_texture_residency_budget_plan_options{
+            .visible_request_indices = {0},
+            .preload_request_indices = {1},
+            .pinned_texture_keys = {execution.entries[2].texture_key},
+            .max_resident_pixel_count = 4,
+            .max_resident_texture_count = 2,
+        });
+
+    require(!residency.ok(), "residency budget plan reports budget pressure");
+    require(residency.request_count == 4, "residency budget plan records request count");
+    require(residency.executed_request_count == 4, "residency budget plan records executed count");
+    require(residency.ready_count == 4, "residency budget plan records ready count");
+    require(residency.visible_candidate_count == 1, "residency budget plan counts visible candidates");
+    require(residency.pinned_candidate_count == 1, "residency budget plan counts pinned candidates");
+    require(residency.preload_candidate_count == 1, "residency budget plan counts preload candidates");
+    require(residency.eviction_candidate_count == 1, "residency budget plan counts eviction candidates");
+    require(residency.retry_candidate_count == 0, "residency budget plan records no retry candidates");
+    require(residency.placeholder_texture_count == 0, "residency budget plan records no placeholders");
+    require(residency.unique_resident_texture_count == 3, "residency budget plan deduplicates resident textures");
+    require(residency.unique_resident_pixel_count == 6, "residency budget plan estimates unique resident pixels");
+    require(residency.unique_resident_rgba8_byte_count == 24, "residency budget plan estimates RGBA8 bytes");
+    require(residency.pixel_budget_pressure, "residency budget plan reports pixel budget pressure");
+    require(residency.texture_budget_pressure, "residency budget plan reports texture budget pressure");
+    require(residency.budget_pressure, "residency budget plan reports aggregate pressure");
+    require(residency.over_budget_pixel_count == 2, "residency budget plan reports pixel overage");
+    require(residency.over_budget_texture_count == 1, "residency budget plan reports texture overage");
+    require(
+        residency.pressure_status
+            == render_image_texture_residency_budget_pressure_status::over_pixel_and_texture_budget,
+        "residency budget plan records combined pressure status");
+    require(residency.pressure_status_name == "over_pixel_and_texture_budget", "residency pressure status name is stable");
+    require(residency.entries[0].visible_candidate, "first residency entry is visible");
+    require(residency.entries[0].counts_against_budget, "first residency entry contributes to budget");
+    require(residency.entries[1].preload_candidate, "second residency entry is preload");
+    require(residency.entries[1].duplicate_texture_key, "second residency entry is duplicate texture key");
+    require(!residency.entries[1].counts_against_budget, "second residency entry does not double-count budget");
+    require(residency.entries[1].first_texture_request_index == 0, "second residency entry points to first texture");
+    require(residency.entries[2].pinned_candidate, "third residency entry is pinned by texture key");
+    require(!residency.entries[2].eviction_candidate, "pinned residency entry is not eviction candidate");
+    require(residency.entries[3].eviction_candidate, "unclassified ready entry is eviction candidate");
+}
+
+void test_residency_budget_plan_marks_retry_and_placeholder_candidates()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader retry_loader;
+    retry_loader.set_source_bytes("asset://textures/bad.ppm", make_short_ppm_2x1_fixture_bytes());
+    ppm_image_decoder retry_decoder;
+    fake_image_texture_uploader retry_uploader;
+    fake_image_texture_cache retry_cache(retry_decoder, retry_uploader);
+    fake_image_texture_pipeline retry_pipeline(resolver, retry_loader, retry_cache, retry_uploader);
+
+    const render_image_texture_batch_plan retry_batch_plan = plan_render_image_texture_batch(std::vector<render_image_ref>{
+        render_image_ref{.uri = "   "},
+        render_image_ref{.uri = "asset://textures/bad.ppm"},
+    });
+    const render_image_texture_batch_execution_diagnostics retry_execution =
+        execute_render_image_texture_batch_plan(retry_batch_plan, retry_pipeline);
+    const render_image_texture_residency_budget_plan retry_residency =
+        plan_render_image_texture_residency_budget(retry_execution);
+
+    require(retry_residency.retry_candidate_count == 1, "residency budget plan counts retry candidates");
+    require(!retry_residency.entries[0].retry_candidate, "skipped invalid request is not retryable");
+    require(!retry_residency.entries[0].executed, "skipped invalid request stays unexecuted");
+    require(retry_residency.entries[1].retry_candidate, "executed decode failure is retry candidate");
+    require(retry_residency.entries[1].retry_reason == "decode_failed", "retry candidate records failure reason");
+    require(retry_residency.entries[1].estimated_pixel_count == 0, "retry candidate does not estimate resident pixels");
+
+    fake_image_texture_placeholder_policy placeholder_policy{
+        .enabled = true,
+        .width = 2,
+        .height = 2,
+    };
+    fake_image_source_bytes_loader placeholder_loader;
+    placeholder_loader.set_source_bytes("asset://textures/placeholder.ppm", make_short_ppm_2x1_fixture_bytes());
+    fake_image_texture_uploader placeholder_uploader;
+    fake_image_texture_cache placeholder_cache(retry_decoder, placeholder_uploader);
+    placeholder_cache.set_placeholder_texture_policy(placeholder_policy);
+    fake_image_texture_pipeline placeholder_pipeline(resolver, placeholder_loader, placeholder_cache, placeholder_uploader);
+
+    const render_image_texture_batch_plan placeholder_batch_plan = plan_render_image_texture_batch(
+        std::vector<render_image_ref>{render_image_ref{.uri = "asset://textures/placeholder.ppm"}},
+        render_image_texture_batch_plan_options{.placeholder_policy = placeholder_policy});
+    const render_image_texture_batch_execution_diagnostics placeholder_execution =
+        execute_render_image_texture_batch_plan(placeholder_batch_plan, placeholder_pipeline);
+    const render_image_texture_residency_budget_plan placeholder_residency =
+        plan_render_image_texture_residency_budget(placeholder_execution);
+
+    require(placeholder_residency.placeholder_texture_count == 1, "residency budget plan counts placeholder textures");
+    require(placeholder_residency.retry_candidate_count == 0, "ready placeholder is not retry candidate");
+    require(placeholder_residency.entries[0].placeholder_texture, "residency entry records placeholder texture");
+    require(placeholder_residency.entries[0].eviction_candidate, "unclassified placeholder is eviction candidate");
+    require(placeholder_residency.unique_resident_pixel_count == 4, "placeholder contributes public texture pixels");
+    require(placeholder_residency.unique_resident_rgba8_byte_count == 16, "placeholder contributes estimated RGBA8 bytes");
+}
+
 } // namespace
 
 int main()
@@ -899,5 +1030,7 @@ int main()
     test_batch_execution_accepts_standard_pipeline_interface();
     test_batch_execution_skips_invalid_requests_and_counts_pipeline_failures();
     test_batch_execution_reports_placeholder_fallback_without_cache_internals();
+    test_residency_budget_plan_classifies_candidates_and_pressure();
+    test_residency_budget_plan_marks_retry_and_placeholder_candidates();
     return 0;
 }

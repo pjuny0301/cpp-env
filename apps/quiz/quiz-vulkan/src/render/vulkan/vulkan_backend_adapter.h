@@ -1,6 +1,7 @@
 #pragma once
 
 #include "render/render_draw_list.h"
+#include "render/vulkan/vulkan_backend_device.h"
 #include "render/vulkan/vulkan_backend_instance.h"
 #include "render/vulkan/vulkan_backend_loader.h"
 #include "render/vulkan/vulkan_frame_plan.h"
@@ -132,9 +133,13 @@ struct vulkan_backend_lifecycle_readiness {
     bool command_recorder_ready = false;
     vulkan_loader_readiness_state loader;
     vulkan_instance_create_result instance;
+    vulkan_device_create_result device;
 
     bool effective_instance_ready() const
     {
+        if (device.checked) {
+            return device.instance.ready_for_device();
+        }
         if (instance.checked) {
             return instance.ready_for_device();
         }
@@ -145,9 +150,18 @@ struct vulkan_backend_lifecycle_readiness {
         return instance_ready;
     }
 
+    bool effective_device_ready() const
+    {
+        if (device.checked) {
+            return device.ready_for_backend();
+        }
+
+        return device_ready;
+    }
+
     bool ready_for_frame() const
     {
-        return effective_instance_ready() && device_ready && swapchain_ready
+        return effective_instance_ready() && effective_device_ready() && swapchain_ready
             && pipeline_ready && command_recorder_ready;
     }
 };
@@ -159,6 +173,10 @@ vulkan_backend_lifecycle_readiness apply_vulkan_loader_readiness_to_lifecycle(
 vulkan_backend_lifecycle_readiness apply_vulkan_instance_create_result_to_lifecycle(
     vulkan_backend_lifecycle_readiness lifecycle,
     vulkan_instance_create_result instance);
+
+vulkan_backend_lifecycle_readiness apply_vulkan_device_create_result_to_lifecycle(
+    vulkan_backend_lifecycle_readiness lifecycle,
+    vulkan_device_create_result device);
 
 struct vulkan_swapchain_image_id {
     std::size_t value = 0;
@@ -1324,6 +1342,7 @@ public:
     explicit null_vulkan_backend_device(vulkan_loader_readiness_state loader_readiness);
     explicit null_vulkan_backend_device(const vulkan_loader_probe_result& loader_probe);
     explicit null_vulkan_backend_device(vulkan_instance_create_result instance_result);
+    explicit null_vulkan_backend_device(vulkan_device_create_result device_result);
 
     vulkan_backend_lifecycle_readiness current_lifecycle_readiness() const override;
     vulkan_surface_extent current_surface_extent() const override;
@@ -1337,6 +1356,7 @@ public:
 private:
     vulkan_loader_readiness_state loader_readiness_;
     vulkan_instance_create_result instance_result_;
+    vulkan_device_create_result device_result_;
 };
 
 vulkan_backend_resource_binding_state build_vulkan_resource_binding_state(

@@ -1,4 +1,5 @@
 #include "render/vulkan/vulkan_backend_adapter.h"
+#include "render/vulkan/vulkan_backend_device.h"
 #include "render/vulkan/vulkan_backend_frame_lifecycle.h"
 #include "render/vulkan/vulkan_backend_instance.h"
 #include "render/vulkan/vulkan_backend_loader.h"
@@ -214,7 +215,7 @@ vulkan_backend_fallback_reason first_unready_reason(
     if (!lifecycle.effective_instance_ready()) {
         return vulkan_backend_fallback_reason::instance_unavailable;
     }
-    if (!lifecycle.device_ready) {
+    if (!lifecycle.effective_device_ready()) {
         return vulkan_backend_fallback_reason::device_unavailable;
     }
     if (!lifecycle.swapchain_ready) {
@@ -950,6 +951,22 @@ vulkan_backend_lifecycle_readiness apply_vulkan_instance_create_result_to_lifecy
     return lifecycle;
 }
 
+vulkan_backend_lifecycle_readiness apply_vulkan_device_create_result_to_lifecycle(
+    vulkan_backend_lifecycle_readiness lifecycle,
+    vulkan_device_create_result device)
+{
+    if (!device.checked) {
+        return lifecycle;
+    }
+
+    lifecycle = apply_vulkan_instance_create_result_to_lifecycle(
+        std::move(lifecycle),
+        device.instance);
+    lifecycle.device = std::move(device);
+    lifecycle.device_ready = lifecycle.device.ready_for_backend();
+    return lifecycle;
+}
+
 null_vulkan_backend_device::null_vulkan_backend_device() = default;
 
 null_vulkan_backend_device::null_vulkan_backend_device(
@@ -971,13 +988,24 @@ null_vulkan_backend_device::null_vulkan_backend_device(
 {
 }
 
+null_vulkan_backend_device::null_vulkan_backend_device(
+    vulkan_device_create_result device_result)
+    : loader_readiness_(device_result.instance.loader)
+    , instance_result_(device_result.instance)
+    , device_result_(std::move(device_result))
+{
+}
+
 vulkan_backend_lifecycle_readiness null_vulkan_backend_device::current_lifecycle_readiness() const
 {
     vulkan_backend_lifecycle_readiness lifecycle =
         apply_vulkan_loader_readiness_to_lifecycle({}, loader_readiness_);
-    return apply_vulkan_instance_create_result_to_lifecycle(
+    lifecycle = apply_vulkan_instance_create_result_to_lifecycle(
         std::move(lifecycle),
         instance_result_);
+    return apply_vulkan_device_create_result_to_lifecycle(
+        std::move(lifecycle),
+        device_result_);
 }
 
 vulkan_surface_extent null_vulkan_backend_device::current_surface_extent() const

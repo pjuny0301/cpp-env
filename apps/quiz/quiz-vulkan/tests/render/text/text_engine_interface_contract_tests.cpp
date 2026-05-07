@@ -201,6 +201,17 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
         -> std::same_as<render::render_text_font_backend_selection_result&>;
     { diagnostics.font_backend_run_selections }
         -> std::same_as<std::vector<render::fake_text_engine_font_backend_run_selection_snapshot>&>;
+    { diagnostics.font_fallback_chain_runs }
+        -> std::same_as<std::vector<render::render_text_font_fallback_chain_run_snapshot>&>;
+    { diagnostics.font_fallback_chain_missing_glyphs }
+        -> std::same_as<std::vector<render::render_text_font_fallback_chain_missing_glyph_snapshot>&>;
+    { diagnostics.font_fallback_chain_selected_face_order }
+        -> std::same_as<std::vector<render::font_face_id>&>;
+    { diagnostics.font_fallback_chain_shaping_selection }
+        -> std::same_as<render::render_text_font_backend_selection_result&>;
+    { diagnostics.font_fallback_chain_policy }
+        -> std::same_as<render::render_text_font_fallback_chain_plan_policy_snapshot&>;
+    { diagnostics.font_fallback_chain_diagnostic } -> std::same_as<std::string&>;
     { diagnostics.font_backend_shaping_capability }
         -> std::same_as<render::render_text_font_backend_shaping_capability&>;
     { diagnostics.font_backend_uses_deterministic_shaping } -> std::same_as<bool&>;
@@ -264,6 +275,9 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.has_font_backend_capability() } -> std::same_as<bool>;
     { diagnostics.has_font_backend_selection() } -> std::same_as<bool>;
     { diagnostics.has_font_backend_run_selections() } -> std::same_as<bool>;
+    { diagnostics.has_font_fallback_chain_runs() } -> std::same_as<bool>;
+    { diagnostics.has_font_fallback_chain_missing_glyphs() } -> std::same_as<bool>;
+    { diagnostics.has_font_fallback_chain_policy() } -> std::same_as<bool>;
     { diagnostics.has_font_backend_adapter_diagnostics() } -> std::same_as<bool>;
     { diagnostics.has_font_backend_adapter_policy() } -> std::same_as<bool>;
     { diagnostics.has_shaped_glyphs() } -> std::same_as<bool>;

@@ -3,6 +3,7 @@
 #include "render/text/font_backend_capabilities.h"
 #include "render/text/font_backend_adapter.h"
 #include "render/text/font_backend_selection.h"
+#include "render/text/font_coverage_run_segmentation.h"
 #include "render/text/font_rasterizer.h"
 #include "render/text/font_glyph_id_resolver.h"
 #include "render/text/font_resolver.h"
@@ -96,6 +97,12 @@ struct fake_text_engine_diagnostics {
     render_text_font_backend_selection_result font_backend_rasterization_selection;
     render_text_font_backend_selection_result font_backend_unicode_selection;
     std::vector<fake_text_engine_font_backend_run_selection_snapshot> font_backend_run_selections;
+    std::vector<render_text_font_fallback_chain_run_snapshot> font_fallback_chain_runs;
+    std::vector<render_text_font_fallback_chain_missing_glyph_snapshot> font_fallback_chain_missing_glyphs;
+    std::vector<font_face_id> font_fallback_chain_selected_face_order;
+    render_text_font_backend_selection_result font_fallback_chain_shaping_selection;
+    render_text_font_fallback_chain_plan_policy_snapshot font_fallback_chain_policy;
+    std::string font_fallback_chain_diagnostic;
     render_text_font_backend_shaping_capability font_backend_shaping_capability;
     bool font_backend_uses_deterministic_shaping = true;
     bool font_backend_uses_deterministic_rasterizer = true;
@@ -225,6 +232,21 @@ struct fake_text_engine_diagnostics {
     bool has_font_backend_run_selections() const
     {
         return !font_backend_run_selections.empty();
+    }
+
+    bool has_font_fallback_chain_runs() const
+    {
+        return !font_fallback_chain_runs.empty();
+    }
+
+    bool has_font_fallback_chain_missing_glyphs() const
+    {
+        return !font_fallback_chain_missing_glyphs.empty();
+    }
+
+    bool has_font_fallback_chain_policy() const
+    {
+        return font_fallback_chain_policy.run_count > 0;
     }
 
     bool has_font_backend_adapter_diagnostics() const

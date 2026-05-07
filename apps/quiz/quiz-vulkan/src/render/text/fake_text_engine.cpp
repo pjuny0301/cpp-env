@@ -227,6 +227,31 @@ void record_font_backend_run_selection(
         });
 }
 
+void record_font_fallback_chain_plan(
+    fake_text_engine_diagnostics& diagnostics,
+    const render_text_request& request,
+    const font_face_catalog& font_catalog,
+    const render_text_font_backend_selection_result& shaping_selection)
+{
+    render_text_font_fallback_chain_plan_request plan_request;
+    plan_request.shaping_selection = shaping_selection;
+    plan_request.items.push_back(make_render_text_font_fallback_chain_plan_item(
+        request.text_runs,
+        request.style_catalog,
+        "fake_text_engine",
+        0U));
+
+    render_text_font_fallback_chain_plan_snapshot plan =
+        plan_render_text_font_fallback_chains(plan_request, font_catalog);
+    diagnostics.font_fallback_chain_runs = std::move(plan.runs);
+    diagnostics.font_fallback_chain_missing_glyphs = std::move(plan.missing_glyphs);
+    diagnostics.font_fallback_chain_selected_face_order =
+        std::move(plan.deterministic_selected_face_order);
+    diagnostics.font_fallback_chain_shaping_selection = std::move(plan.shaping_selection);
+    diagnostics.font_fallback_chain_policy = plan.policy;
+    diagnostics.font_fallback_chain_diagnostic = std::move(plan.diagnostic);
+}
+
 void record_font_backend_capability(
     fake_text_engine_diagnostics& diagnostics,
     const render_text_font_backend_capability_snapshot& capability,
@@ -2120,6 +2145,11 @@ render_text_measure fake_text_engine::measure_text(const render_text_request& re
         backend_selection.capability,
         font_backend_adapter_functions_.has_value());
     record_font_backend_selection(diagnostics_, backend_selection);
+    record_font_fallback_chain_plan(
+        diagnostics_,
+        request,
+        font_resolver_.catalog(),
+        backend_selection.shaping);
     const std::vector<shaped_glyph> glyphs =
         shape_request(
             request,
@@ -2144,6 +2174,11 @@ render_text_layout fake_text_engine::layout_text(const render_text_request& requ
         backend_selection.capability,
         font_backend_adapter_functions_.has_value());
     record_font_backend_selection(diagnostics_, backend_selection);
+    record_font_fallback_chain_plan(
+        diagnostics_,
+        request,
+        font_resolver_.catalog(),
+        backend_selection.shaping);
     const std::vector<shaped_glyph> shaped_glyphs =
         shape_request(
             request,

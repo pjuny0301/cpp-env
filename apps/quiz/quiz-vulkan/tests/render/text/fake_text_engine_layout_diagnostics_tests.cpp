@@ -482,6 +482,57 @@ void test_fake_text_engine_skips_rasterized_payloads_when_font_bytes_are_missing
         "rasterizer payload policy does not claim rasterized missing-byte glyphs");
 }
 
+void test_fake_text_engine_consumes_shaping_backend_glyph_data()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "e\xcc\x81", .style_token = "body"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 200.0f, 0.0f};
+    request.style_catalog = make_style_catalog();
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    const render_text_layout layout = engine.layout_text(request);
+    const fake_text_engine_diagnostics& diagnostics = engine.last_diagnostics();
+    require(layout.glyphs.size() == 2, "shaping backend bridge keeps base and mark glyphs");
+    require(diagnostics.has_shaped_glyphs(), "shaping backend bridge records shaped glyphs");
+    require(diagnostics.has_font_shaping_diagnostics(), "shaping backend bridge records diagnostics");
+    require(diagnostics.has_font_shaping_policy(), "shaping backend bridge records shaping policy");
+    require(diagnostics.shaped_glyphs.size() == 2, "shaping backend bridge emits two shaped glyph snapshots");
+    require(diagnostics.font_shaping_policy.run_count == 1, "shaping backend bridge counts one run");
+    require(diagnostics.font_shaping_policy.shaped_run_count == 1, "shaping backend bridge counts shaped run");
+    require(diagnostics.font_shaping_policy.glyph_count == 2, "shaping backend bridge counts glyphs");
+    require(
+        diagnostics.font_shaping_policy.zero_advance_combining_mark_count == 1,
+        "shaping backend bridge counts zero-advance combining mark");
+
+    require(
+        layout.glyphs[0].glyph_id == diagnostics.shaped_glyphs[0].glyph_id,
+        "layout consumes shaped base glyph id");
+    require(
+        layout.glyphs[1].glyph_id == diagnostics.shaped_glyphs[1].glyph_id,
+        "layout consumes shaped mark glyph id");
+    require(
+        near(layout.glyphs[0].bounds.width, diagnostics.shaped_glyphs[0].advance_x),
+        "layout consumes shaped base advance");
+    require(
+        near(layout.glyphs[1].bounds.width, diagnostics.shaped_glyphs[1].advance_x),
+        "layout consumes shaped mark advance");
+    require(diagnostics.shaped_glyphs[1].combining_mark, "shaped mark records combining mark");
+    require(diagnostics.shaped_glyphs[1].zero_advance, "shaped mark records zero advance");
+    require(
+        diagnostics.shaped_glyphs[1].cluster_byte_offset == 0
+            && diagnostics.shaped_glyphs[1].cluster_byte_count == 3,
+        "shaped mark keeps cluster byte range");
+}
+
 } // namespace
 
 int main()
@@ -493,5 +544,6 @@ int main()
     test_fake_line_break_policy_keeps_combining_clusters_caret_safe();
     test_fake_text_engine_records_rasterized_atlas_payloads_for_cacheable_glyphs();
     test_fake_text_engine_skips_rasterized_payloads_when_font_bytes_are_missing();
+    test_fake_text_engine_consumes_shaping_backend_glyph_data();
     return 0;
 }

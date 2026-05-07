@@ -3,6 +3,7 @@
 #include "render/text/font_cmap_inspector.h"
 #include "render/text/font_coverage_run_segmentation.h"
 #include "render/text/font_rasterizer.h"
+#include "render/text/font_shaping_backend.h"
 #include "render/text/font_sfnt_inspector.h"
 #include "render/text/font_source_bytes_loader.h"
 #include "render/text/font_source_resolver.h"
@@ -102,6 +103,16 @@ concept FontRasterizerContract = requires(
 static_assert(FontRasterizerContract<render::font_rasterizer_interface>);
 static_assert(FontRasterizerContract<render::deterministic_fake_font_rasterizer>);
 
+template <typename T>
+concept FontShapingBackendContract = requires(
+    const T& backend,
+    const render::render_text_font_shaping_request& request) {
+    { backend.shape(request) } -> std::same_as<render::render_text_font_shaping_result>;
+};
+
+static_assert(FontShapingBackendContract<render::font_shaping_backend_interface>);
+static_assert(FontShapingBackendContract<render::deterministic_fake_font_shaping_backend>);
+
 static_assert(requires(render::font_resolver_result result) {
     { result.resolved_face_id } -> std::same_as<render::font_face_id&>;
     { result.used_family_fallback } -> std::same_as<bool&>;
@@ -141,6 +152,10 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
         -> std::same_as<std::vector<render::render_text_font_source_bytes_snapshot>&>;
     { diagnostics.font_source_bytes_policy }
         -> std::same_as<render::render_text_font_source_bytes_policy_snapshot&>;
+    { diagnostics.shaped_glyphs } -> std::same_as<std::vector<render::render_text_shaped_glyph>&>;
+    { diagnostics.font_shaping_diagnostics }
+        -> std::same_as<std::vector<render::render_text_font_shaping_diagnostic>&>;
+    { diagnostics.font_shaping_policy } -> std::same_as<render::render_text_font_shaping_policy_snapshot&>;
     { diagnostics.glyph_font_resolutions }
         -> std::same_as<std::vector<render::render_text_glyph_font_resolution_snapshot>&>;
     { diagnostics.font_resolution_policy } -> std::same_as<render::render_text_font_resolution_policy_snapshot&>;
@@ -176,6 +191,9 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.has_font_source_policy() } -> std::same_as<bool>;
     { diagnostics.has_font_source_bytes() } -> std::same_as<bool>;
     { diagnostics.has_font_source_bytes_policy() } -> std::same_as<bool>;
+    { diagnostics.has_shaped_glyphs() } -> std::same_as<bool>;
+    { diagnostics.has_font_shaping_diagnostics() } -> std::same_as<bool>;
+    { diagnostics.has_font_shaping_policy() } -> std::same_as<bool>;
     { diagnostics.has_glyph_font_resolutions() } -> std::same_as<bool>;
     { diagnostics.has_glyph_cache_readiness() } -> std::same_as<bool>;
     { diagnostics.has_rasterized_glyph_atlas_payloads() } -> std::same_as<bool>;
@@ -591,6 +609,91 @@ static_assert(requires(
         -> std::same_as<render::render_text_font_rasterizer_status>;
     { render::make_font_rasterizer_atlas_payload(raster_result) }
         -> std::same_as<render::render_text_font_atlas_glyph_payload>;
+});
+
+static_assert(requires(
+    render::render_text_font_shaping_backend_status shaping_status,
+    render::render_text_font_shaping_codepoint_selection selection,
+    render::render_text_font_shaping_request shaping_request,
+    render::render_text_shaped_glyph shaped_glyph,
+    render::render_text_font_shaping_diagnostic shaping_diagnostic,
+    render::render_text_font_shaping_policy_snapshot shaping_policy,
+    render::render_text_font_shaping_result shaping_result,
+    render::render_text_style style,
+    std::uint32_t codepoint) {
+    { render::render_text_font_shaping_backend_status_name(shaping_status) } -> std::same_as<std::string>;
+    { selection.requested_face_id } -> std::same_as<render::font_face_id&>;
+    { selection.resolved_face_id } -> std::same_as<render::font_face_id&>;
+    { selection.glyph_supported } -> std::same_as<bool&>;
+    { selection.used_codepoint_fallback } -> std::same_as<bool&>;
+    { shaping_request.run_index } -> std::same_as<std::size_t&>;
+    { shaping_request.style_token } -> std::same_as<render::render_style_id&>;
+    { shaping_request.style } -> std::same_as<render::render_text_style&>;
+    { shaping_request.codepoints } -> std::same_as<std::vector<render::utf8_text_codepoint>&>;
+    { shaping_request.clusters } -> std::same_as<std::vector<render::utf8_text_cluster>&>;
+    { shaping_request.font_selections }
+        -> std::same_as<std::vector<render::render_text_font_shaping_codepoint_selection>&>;
+    { shaping_request.backend_available } -> std::same_as<bool&>;
+    { shaping_request.support_complex_scripts } -> std::same_as<bool&>;
+    { shaping_request.fallback_glyph_id } -> std::same_as<std::uint32_t&>;
+    { shaped_glyph.run_index } -> std::same_as<std::size_t&>;
+    { shaped_glyph.glyph_index } -> std::same_as<std::size_t&>;
+    { shaped_glyph.byte_offset } -> std::same_as<std::size_t&>;
+    { shaped_glyph.byte_count } -> std::same_as<std::size_t&>;
+    { shaped_glyph.cluster_byte_offset } -> std::same_as<std::size_t&>;
+    { shaped_glyph.cluster_byte_count } -> std::same_as<std::size_t&>;
+    { shaped_glyph.cluster_codepoint_offset } -> std::same_as<std::size_t&>;
+    { shaped_glyph.cluster_codepoint_count } -> std::same_as<std::size_t&>;
+    { shaped_glyph.codepoint } -> std::same_as<std::uint32_t&>;
+    { shaped_glyph.glyph_id } -> std::same_as<std::uint32_t&>;
+    { shaped_glyph.requested_face_id } -> std::same_as<render::font_face_id&>;
+    { shaped_glyph.resolved_face_id } -> std::same_as<render::font_face_id&>;
+    { shaped_glyph.advance_x } -> std::same_as<float&>;
+    { shaped_glyph.advance_y } -> std::same_as<float&>;
+    { shaped_glyph.offset_x } -> std::same_as<float&>;
+    { shaped_glyph.offset_y } -> std::same_as<float&>;
+    { shaped_glyph.valid_utf8 } -> std::same_as<bool&>;
+    { shaped_glyph.cluster_start } -> std::same_as<bool&>;
+    { shaped_glyph.glyph_supported } -> std::same_as<bool&>;
+    { shaped_glyph.used_codepoint_fallback } -> std::same_as<bool&>;
+    { shaped_glyph.used_fallback_glyph_id } -> std::same_as<bool&>;
+    { shaped_glyph.zero_advance } -> std::same_as<bool&>;
+    { shaped_glyph.combining_mark } -> std::same_as<bool&>;
+    { shaping_diagnostic.status } -> std::same_as<render::render_text_font_shaping_backend_status&>;
+    { shaping_diagnostic.run_index } -> std::same_as<std::size_t&>;
+    { shaping_diagnostic.byte_offset } -> std::same_as<std::size_t&>;
+    { shaping_diagnostic.byte_count } -> std::same_as<std::size_t&>;
+    { shaping_diagnostic.codepoint } -> std::same_as<std::uint32_t&>;
+    { shaping_diagnostic.glyph_id } -> std::same_as<std::uint32_t&>;
+    { shaping_diagnostic.resolved_face_id } -> std::same_as<render::font_face_id&>;
+    { shaping_diagnostic.diagnostic } -> std::same_as<std::string&>;
+    { shaping_policy.run_count } -> std::same_as<std::size_t&>;
+    { shaping_policy.shaped_run_count } -> std::same_as<std::size_t&>;
+    { shaping_policy.codepoint_count } -> std::same_as<std::size_t&>;
+    { shaping_policy.glyph_count } -> std::same_as<std::size_t&>;
+    { shaping_policy.supported_glyph_count } -> std::same_as<std::size_t&>;
+    { shaping_policy.backend_unavailable_count } -> std::same_as<std::size_t&>;
+    { shaping_policy.unsupported_script_count } -> std::same_as<std::size_t&>;
+    { shaping_policy.unsupported_glyph_count } -> std::same_as<std::size_t&>;
+    { shaping_policy.fallback_glyph_id_count } -> std::same_as<std::size_t&>;
+    { shaping_policy.zero_advance_combining_mark_count } -> std::same_as<std::size_t&>;
+    { shaping_result.status } -> std::same_as<render::render_text_font_shaping_backend_status&>;
+    { shaping_result.run_index } -> std::same_as<std::size_t&>;
+    { shaping_result.style_token } -> std::same_as<render::render_style_id&>;
+    { shaping_result.glyphs } -> std::same_as<std::vector<render::render_text_shaped_glyph>&>;
+    { shaping_result.diagnostics } -> std::same_as<std::vector<render::render_text_font_shaping_diagnostic>&>;
+    { shaping_result.policy } -> std::same_as<render::render_text_font_shaping_policy_snapshot&>;
+    { shaping_result.diagnostic } -> std::same_as<std::string&>;
+    { shaping_result.ok() } -> std::same_as<bool>;
+    { shaping_result.has_diagnostic(shaping_status) } -> std::same_as<bool>;
+    { render::font_shaping_backend_codepoint_is_hangul_or_cjk(codepoint) } -> std::same_as<bool>;
+    { render::font_shaping_backend_codepoint_is_wide_symbol(codepoint) } -> std::same_as<bool>;
+    { render::font_shaping_backend_codepoint_requires_complex_backend(codepoint) } -> std::same_as<bool>;
+    { render::font_shaping_backend_fake_advance_for(style, codepoint) } -> std::same_as<float>;
+    { render::font_shaping_backend_cluster_for_codepoint(shaping_request, std::size_t{}) }
+        -> std::same_as<render::utf8_text_cluster>;
+    { render::font_shaping_backend_selection_for_codepoint(shaping_request, std::size_t{}) }
+        -> std::same_as<render::render_text_font_shaping_codepoint_selection>;
 });
 
 static_assert(requires(render::render_text_glyph_font_resolution_snapshot glyph) {

@@ -1,6 +1,7 @@
 #include "render/text/fake_text_engine.h"
 #include "render/text/fake_text_engine_layout.h"
 #include "render/text/font_rasterizer.h"
+#include "render/text/font_shaping_backend.h"
 #include "render/text/font_source_resolver.h"
 #include "render/text/utf8_line_break.h"
 #include "render/text/utf8_text_run.h"
@@ -66,21 +67,6 @@ float line_height_for(const render_text_style& style)
     return style.line_height > 0.0f ? style.line_height : style.font_size;
 }
 
-bool is_hangul_or_cjk(const std::uint32_t code_point)
-{
-    return (code_point >= 0x1100U && code_point <= 0x11ffU)
-        || (code_point >= 0x3130U && code_point <= 0x318fU)
-        || (code_point >= 0x3400U && code_point <= 0x4dbfU)
-        || (code_point >= 0x4e00U && code_point <= 0x9fffU)
-        || (code_point >= 0xac00U && code_point <= 0xd7afU);
-}
-
-bool is_wide_symbol(const std::uint32_t code_point)
-{
-    return (code_point >= 0x1f000U && code_point <= 0x1faffU)
-        || (code_point >= 0xff01U && code_point <= 0xff60U);
-}
-
 bool before_position(
     const std::size_t left_run_index,
     const std::size_t left_byte_offset,
@@ -98,20 +84,6 @@ bool same_position(
     const std::size_t right_byte_offset)
 {
     return left_run_index == right_run_index && left_byte_offset == right_byte_offset;
-}
-
-float glyph_advance_for(const render_text_style& style, const std::uint32_t code_point)
-{
-    if (code_point == '\n' || code_point == '\r' || is_utf8_combining_mark(code_point)) {
-        return 0.0f;
-    }
-    if (code_point == '\t') {
-        return (style.font_size * 2.0f) + style.letter_spacing;
-    }
-    if (is_hangul_or_cjk(code_point) || is_wide_symbol(code_point)) {
-        return style.font_size + style.letter_spacing;
-    }
-    return (style.font_size * 0.5f) + style.letter_spacing;
 }
 
 void record_font_fallback(
@@ -395,9 +367,9 @@ void record_font_catalog_policy_diagnostics(fake_text_engine_diagnostics& diagno
 void record_utf8_clusters(
     fake_text_engine_diagnostics& diagnostics,
     const std::size_t run_index,
-    const std::vector<utf8_text_codepoint>& codepoints)
+    const std::vector<utf8_text_cluster>& clusters)
 {
-    for (const utf8_text_cluster& cluster : cluster_utf8_text_run(codepoints)) {
+    for (const utf8_text_cluster& cluster : clusters) {
         diagnostics.utf8_clusters.push_back(render_text_utf8_cluster_snapshot{
             .run_index = run_index,
             .byte_offset = cluster.byte_offset,
@@ -407,6 +379,31 @@ void record_utf8_clusters(
             .valid = cluster.valid,
         });
     }
+}
+
+void record_font_shaping_result(
+    fake_text_engine_diagnostics& diagnostics,
+    const render_text_font_shaping_result& result)
+{
+    diagnostics.shaped_glyphs.insert(
+        diagnostics.shaped_glyphs.end(),
+        result.glyphs.begin(),
+        result.glyphs.end());
+    diagnostics.font_shaping_diagnostics.insert(
+        diagnostics.font_shaping_diagnostics.end(),
+        result.diagnostics.begin(),
+        result.diagnostics.end());
+    diagnostics.font_shaping_policy.run_count += result.policy.run_count;
+    diagnostics.font_shaping_policy.shaped_run_count += result.policy.shaped_run_count;
+    diagnostics.font_shaping_policy.codepoint_count += result.policy.codepoint_count;
+    diagnostics.font_shaping_policy.glyph_count += result.policy.glyph_count;
+    diagnostics.font_shaping_policy.supported_glyph_count += result.policy.supported_glyph_count;
+    diagnostics.font_shaping_policy.backend_unavailable_count += result.policy.backend_unavailable_count;
+    diagnostics.font_shaping_policy.unsupported_script_count += result.policy.unsupported_script_count;
+    diagnostics.font_shaping_policy.unsupported_glyph_count += result.policy.unsupported_glyph_count;
+    diagnostics.font_shaping_policy.fallback_glyph_id_count += result.policy.fallback_glyph_id_count;
+    diagnostics.font_shaping_policy.zero_advance_combining_mark_count +=
+        result.policy.zero_advance_combining_mark_count;
 }
 
 std::vector<shaped_glyph> shape_request(
@@ -441,7 +438,11 @@ std::vector<shaped_glyph> shape_request(
         record_font_fallback(diagnostics, run_index, run.style_token, font_resolution);
 
         const std::vector<utf8_text_codepoint> codepoints = iterate_utf8_text_run(run.text);
-        record_utf8_clusters(diagnostics, run_index, codepoints);
+        const std::vector<utf8_text_cluster> utf8_clusters = cluster_utf8_text_run(codepoints);
+        record_utf8_clusters(diagnostics, run_index, utf8_clusters);
+
+        std::vector<render_text_font_shaping_codepoint_selection> shaping_selections;
+        shaping_selections.reserve(codepoints.size());
         for (const utf8_text_codepoint& scalar : codepoints) {
             const std::uint32_t code_point = scalar.code_point;
             if (!scalar.valid) {
@@ -454,24 +455,48 @@ std::vector<shaped_glyph> shape_request(
             const font_face_id resolved_face_id = glyph_resolution.resolved_face == nullptr
                 ? font_resolution.resolved_face_id
                 : glyph_resolution.resolved_face->id;
-            const float advance = glyph_advance_for(style, code_point);
+            const float advance = font_shaping_backend_fake_advance_for(style, code_point);
             const float line_height = line_height_for(style);
             const bool cacheable = glyph_resolution.glyph_supported && advance > 0.0f && line_height > 0.0f;
             record_glyph_font_resolution(diagnostics, run_index, scalar, glyph_resolution, cacheable);
-            glyphs.push_back(shaped_glyph{
-                .run_index = run_index,
-                .byte_offset = scalar.byte_offset,
-                .byte_count = scalar.byte_count,
-                .code_point = code_point,
+            shaping_selections.push_back(render_text_font_shaping_codepoint_selection{
                 .requested_face_id = requested_face_id,
                 .resolved_face_id = resolved_face_id,
-                .advance = advance,
-                .line_height = line_height,
-                .valid = scalar.valid,
-                .cluster_start = scalar.cluster_start,
-                .newline = code_point == '\n' || code_point == '\r',
                 .glyph_supported = glyph_resolution.glyph_supported,
                 .used_codepoint_fallback = glyph_resolution.used_fallback,
+            });
+        }
+
+        const deterministic_fake_font_shaping_backend shaping_backend;
+        const render_text_font_shaping_result shaped_run = shaping_backend.shape(
+            render_text_font_shaping_request{
+                .run_index = run_index,
+                .style_token = run.style_token,
+                .style = style,
+                .codepoints = codepoints,
+                .clusters = utf8_clusters,
+                .font_selections = shaping_selections,
+            });
+        record_font_shaping_result(diagnostics, shaped_run);
+
+        for (const render_text_shaped_glyph& glyph : shaped_run.glyphs) {
+            const float line_height = line_height_for(style);
+            const bool cacheable = glyph.glyph_supported && glyph.advance_x > 0.0f && line_height > 0.0f;
+            glyphs.push_back(shaped_glyph{
+                .run_index = run_index,
+                .byte_offset = glyph.byte_offset,
+                .byte_count = glyph.byte_count,
+                .code_point = glyph.codepoint,
+                .glyph_id = glyph.glyph_id,
+                .requested_face_id = glyph.requested_face_id,
+                .resolved_face_id = glyph.resolved_face_id,
+                .advance = glyph.advance_x,
+                .line_height = line_height,
+                .valid = glyph.valid_utf8,
+                .cluster_start = glyph.cluster_start,
+                .newline = glyph.codepoint == '\n' || glyph.codepoint == '\r',
+                .glyph_supported = glyph.glyph_supported,
+                .used_codepoint_fallback = glyph.used_codepoint_fallback,
                 .cacheable = cacheable,
             });
         }
@@ -538,7 +563,7 @@ std::vector<laid_out_glyph_cluster> collect_glyph_cluster_layouts(
                         .resolved_face_id = glyph.resolved_face_id,
                     },
                     .bounds = render_rect{x, y, glyph.advance, line.height},
-                    .glyph_id = glyph.code_point,
+                    .glyph_id = glyph.glyph_id,
                     .glyph_height = glyph.line_height,
                     .requested_face_id = glyph.requested_face_id,
                     .glyph_supported = glyph.glyph_supported,
@@ -552,7 +577,7 @@ std::vector<laid_out_glyph_cluster> collect_glyph_cluster_layouts(
                 ++active_cluster.snapshot.glyph_count;
                 active_cluster.snapshot.advance += glyph.advance;
                 active_cluster.bounds.width += glyph.advance;
-                active_cluster.glyph_id = combine_cluster_glyph_id(active_cluster.glyph_id, glyph.code_point);
+                active_cluster.glyph_id = combine_cluster_glyph_id(active_cluster.glyph_id, glyph.glyph_id);
                 active_cluster.glyph_height = std::max(active_cluster.glyph_height, glyph.line_height);
                 active_cluster.glyph_supported = active_cluster.glyph_supported && glyph.glyph_supported;
                 active_cluster.used_codepoint_fallback =
@@ -1392,7 +1417,7 @@ render_text_layout fake_text_engine::layout_text(const render_text_request& requ
                 .atlas_revision = atlas_slot == nullptr ? 0 : atlas_slot->page.revision,
                 .run_index = glyph.run_index,
                 .byte_offset = glyph.byte_offset,
-                .glyph_id = glyph.code_point,
+                .glyph_id = glyph.glyph_id,
                 .bounds = render_rect{x, y, glyph.advance, glyph.line_height},
                 .atlas_bounds = atlas_slot == nullptr
                     ? render_rect{0.0f, 0.0f, glyph.advance, glyph.line_height}

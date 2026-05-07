@@ -2,6 +2,7 @@
 
 #include "render/text/font_rasterizer.h"
 #include "render/text/font_resolver.h"
+#include "render/text/font_shaping_backend.h"
 #include "render/text/glyph_run.h"
 #include "render/text/text_engine.h"
 
@@ -48,6 +49,9 @@ struct fake_text_engine_diagnostics {
     render_text_font_source_policy_snapshot font_source_policy;
     std::vector<render_text_font_source_bytes_snapshot> font_source_bytes;
     render_text_font_source_bytes_policy_snapshot font_source_bytes_policy;
+    std::vector<render_text_shaped_glyph> shaped_glyphs;
+    std::vector<render_text_font_shaping_diagnostic> font_shaping_diagnostics;
+    render_text_font_shaping_policy_snapshot font_shaping_policy;
     std::vector<render_text_glyph_font_resolution_snapshot> glyph_font_resolutions;
     render_text_font_resolution_policy_snapshot font_resolution_policy;
     std::vector<render_text_line_break_snapshot> line_breaks;
@@ -144,6 +148,21 @@ struct fake_text_engine_diagnostics {
     bool has_font_source_bytes_policy() const
     {
         return font_source_bytes_policy.request_count > 0;
+    }
+
+    bool has_shaped_glyphs() const
+    {
+        return !shaped_glyphs.empty();
+    }
+
+    bool has_font_shaping_diagnostics() const
+    {
+        return !font_shaping_diagnostics.empty();
+    }
+
+    bool has_font_shaping_policy() const
+    {
+        return font_shaping_policy.run_count > 0;
     }
 
     bool has_glyph_font_resolutions() const

@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: text request batch planning diagnostics를 통합하고 Windows MinGW focused text CTest 3/3 확인.
+- `94569e6`: text engine에 text request batch planning diagnostics를 추가해 layout/text request, normalized font/style keys, glyph atlas materialization dedupe, planned update summaries를 renderer upload 전 data-only로 추적.
 - current: normalized input replay diagnostics를 통합하고 Windows MinGW focused input CTest 11/11 및 `ctest -N` 85개 확인.
 - `5335929`: input core에 normalized input replay recorder/replayer를 추가해 pointer/touch/wheel/text/IME fixture batch와 focus/preedit/pointer-capture end state를 app/domain/renderer 없이 검증.
 - current: Vulkan command recorder operation plan diagnostics를 통합하고 Windows MinGW focused Vulkan CTest 5/5 및 `ctest -N` 84개 확인.

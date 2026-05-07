@@ -8,6 +8,7 @@
 #include "render/vulkan/vulkan_backend_loader.h"
 #include "render/vulkan/vulkan_backend_queue_submit.h"
 #include "render/vulkan/vulkan_backend_render_pass.h"
+#include "render/vulkan/vulkan_backend_pipeline_layout.h"
 #include "render/vulkan/vulkan_backend_shader_module.h"
 #include "render/vulkan/vulkan_backend_swapchain.h"
 #include "render/vulkan/vulkan_frame_plan.h"
@@ -975,6 +976,7 @@ struct vulkan_backend_pipeline_state {
     vulkan_backend_shader_module_readiness_state shader_modules;
     vulkan_pipeline_compatibility_key_summary compatibility;
     vulkan_backend_shader_binding_readiness_state shader_bindings;
+    vulkan_pipeline_layout_create_result pipeline_layout;
     vulkan_backend_pipeline_lifecycle_state lifecycle;
 
     bool supports(vulkan_batch_kind kind) const;

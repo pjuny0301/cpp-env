@@ -109,6 +109,86 @@ quiz_vulkan::render::render_text_glyph_atlas_materialization_snapshot upload_rea
         });
 }
 
+quiz_vulkan::render::render_text_glyph_atlas_materialization_snapshot clean_reuse_materialization()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_glyph_atlas_materialization_request request{
+        .cluster_index = 4,
+        .run_index = 1,
+        .cluster_byte_offset = 6,
+        .cluster_byte_count = 1,
+        .codepoint = U'C',
+        .shaped_glyph_ids = {U'C'},
+        .resolved_glyph_id = U'C',
+        .resolved_face_id = 7,
+        .cache_key = glyph_atlas_key{
+            .face_id = 7,
+            .glyph_id = U'C',
+            .pixel_size = 20,
+        },
+        .has_cache_key = true,
+        .glyph_supported = true,
+        .rasterizer_status = render_text_font_rasterizer_status::rasterized,
+        .raster_payload_matches_cache_key = true,
+        .rasterized_payload_skipped = false,
+        .payload_upload_ready = true,
+        .payload_alpha_bytes = 16,
+        .payload_rgba_bytes = 64,
+        .has_atlas_placement = true,
+        .page = render_text_atlas_page{
+            .id = 2,
+            .revision = 5,
+            .width = 64,
+            .height = 64,
+        },
+        .atlas_bounds = render_rect{3.0f, 4.0f, 4.0f, 4.0f},
+        .has_atlas_update = false,
+    };
+    return make_render_text_glyph_atlas_materialization(std::move(request));
+}
+
+quiz_vulkan::render::render_text_glyph_atlas_materialization_snapshot mismatched_materialization()
+{
+    using namespace quiz_vulkan::render;
+
+    return make_render_text_glyph_atlas_materialization(
+        render_text_glyph_atlas_materialization_request{
+            .cluster_index = 6,
+            .run_index = 1,
+            .cluster_byte_offset = 8,
+            .cluster_byte_count = 1,
+            .codepoint = U'D',
+            .shaped_glyph_ids = {U'D'},
+            .resolved_glyph_id = U'D',
+            .resolved_face_id = 7,
+            .cache_key = glyph_atlas_key{
+                .face_id = 7,
+                .glyph_id = U'D',
+                .pixel_size = 20,
+            },
+            .has_cache_key = true,
+            .glyph_supported = true,
+            .rasterizer_status = render_text_font_rasterizer_status::rasterized,
+            .raster_payload_matches_cache_key = true,
+            .rasterized_payload_skipped = false,
+            .payload_upload_ready = true,
+            .payload_alpha_bytes = 4,
+            .payload_rgba_bytes = 12,
+            .has_atlas_placement = true,
+            .page = render_text_atlas_page{
+                .id = 3,
+                .revision = 1,
+                .width = 64,
+                .height = 64,
+            },
+            .atlas_bounds = render_rect{5.0f, 6.0f, 2.0f, 2.0f},
+            .has_atlas_update = true,
+            .atlas_update_bounds = render_rect{5.0f, 6.0f, 2.0f, 2.0f},
+            .atlas_update_rgba_bytes = 16,
+        });
+}
+
 quiz_vulkan::render::render_text_style_catalog batch_style_catalog()
 {
     using namespace quiz_vulkan::render;
@@ -380,6 +460,132 @@ void test_batch_plan_reports_fallback_real_backend_and_skipped_materializations(
     require(plan.atlas_update_requests[2].skipped, "third request records skipped materialization");
 }
 
+void test_atlas_upload_bridge_produces_stable_render_text_atlas_updates()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "A", .style_token = "body"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 100.0f, 40.0f};
+    request.style_catalog = batch_style_catalog();
+
+    const render_text_glyph_atlas_materialization_snapshot materialization =
+        upload_ready_materialization();
+    const render_text_request_batch_plan_snapshot plan =
+        plan_render_text_request_batch({
+            make_render_text_request_batch_item(std::move(request), {materialization}, "upload"),
+        });
+    const render_text_atlas_upload_request_bridge_snapshot bridge =
+        bridge_render_text_atlas_upload_requests(plan);
+    const render_text_atlas_upload_request_bridge_snapshot repeated_bridge =
+        bridge_render_text_atlas_upload_requests(plan);
+
+    require(bridge.has_upload_requests(), "atlas upload bridge emits upload requests");
+    require(bridge.ok(), "upload-ready bridge reports ok");
+    require(bridge.requests.size() == 1U, "atlas upload bridge records one diagnostic request");
+    require(bridge.upload_requests.size() == 1U, "atlas upload bridge emits one render_text_atlas_update");
+    require(bridge.stable_request_ids.size() == 1U, "atlas upload bridge records stable request id");
+    require(bridge.policy.batch_atlas_request_count == 1U, "atlas upload policy records batch request count");
+    require(bridge.policy.upload_request_count == 1U, "atlas upload policy counts upload request");
+    require(bridge.policy.unique_upload_request_count == 1U, "atlas upload policy counts unique upload");
+    require(
+        bridge.policy.total_upload_rgba_bytes == materialization.atlas_update_rgba_bytes,
+        "atlas upload policy totals emitted RGBA bytes");
+
+    const render_text_atlas_upload_request_snapshot& upload = bridge.requests.front();
+    require(upload.status == render_text_atlas_upload_request_status::upload_ready, "upload request is ready");
+    require(upload.ok(), "upload request status is ok");
+    require(upload.has_upload_request, "upload request carries render_text_atlas_update payload");
+    require(upload.request_id == bridge.stable_request_ids.front(), "upload request id is tracked as stable");
+    require(
+        upload.request_id == render_text_atlas_upload_request_stable_id_for(plan.atlas_update_requests.front()),
+        "upload request id is derived from stable atlas/materialization inputs");
+    require(upload.cache_key == materialization.cache_key, "upload request preserves cache key");
+    require(upload.upload_request.page.id == materialization.page.id, "upload request preserves page id");
+    require(upload.upload_request.updated_bounds.x == materialization.atlas_update_bounds.x, "upload bounds preserve x");
+    require(
+        upload.upload_request.rgba.size() == materialization.atlas_update_rgba_bytes,
+        "upload request carries deterministic RGBA bytes");
+    require(
+        repeated_bridge.requests.front().request_id == upload.request_id,
+        "stable upload request id repeats for identical plan input");
+    require(
+        repeated_bridge.upload_requests.front().rgba == upload.upload_request.rgba,
+        "stable upload request RGBA payload repeats for identical plan input");
+}
+
+void test_atlas_upload_bridge_suppresses_duplicates_and_skips_non_uploadable_work()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_glyph_atlas_materialization_snapshot skipped =
+        make_render_text_glyph_atlas_materialization(
+            render_text_glyph_atlas_materialization_request{
+                .cluster_index = 5,
+                .run_index = 0,
+                .codepoint = U'\u0301',
+                .shaped_glyph_ids = {0x0301U},
+                .resolved_glyph_id = 0x0301U,
+                .glyph_supported = true,
+                .rasterized_payload_skipped = true,
+                .payload_upload_ready = false,
+            });
+
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "ABCD", .style_token = "body"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 100.0f, 40.0f};
+    request.style_catalog = batch_style_catalog();
+
+    const render_text_glyph_atlas_materialization_snapshot materialization =
+        upload_ready_materialization();
+    const render_text_request_batch_plan_snapshot plan =
+        plan_render_text_request_batch({
+            make_render_text_request_batch_item(
+                std::move(request),
+                {
+                    materialization,
+                    materialization,
+                    clean_reuse_materialization(),
+                    skipped,
+                    mismatched_materialization(),
+                },
+                "mixed-upload"),
+        });
+    const render_text_atlas_upload_request_bridge_snapshot bridge =
+        bridge_render_text_atlas_upload_requests(plan);
+
+    require(!bridge.ok(), "mixed upload bridge reports skipped work");
+    require(bridge.requests.size() == 5U, "mixed upload bridge records all source requests");
+    require(bridge.upload_requests.size() == 1U, "mixed upload bridge emits only unique upload-ready request");
+    require(bridge.policy.upload_request_count == 1U, "mixed upload bridge counts emitted upload");
+    require(bridge.policy.duplicate_suppressed_count == 1U, "mixed upload bridge suppresses duplicate request");
+    require(bridge.policy.clean_reuse_count == 1U, "mixed upload bridge records clean atlas reuse");
+    require(bridge.policy.skipped_materialization_count == 1U, "mixed upload bridge records skipped materialization");
+    require(bridge.policy.payload_byte_count_mismatch_count == 1U, "mixed upload bridge records byte mismatch");
+    require(
+        bridge.stable_request_ids.size() == 4U,
+        "mixed upload bridge deduplicates stable request ids for duplicate work");
+    require(
+        bridge.requests[1].status == render_text_atlas_upload_request_status::duplicate_suppressed,
+        "duplicate source request is suppressed");
+    require(
+        bridge.requests[1].request_id == bridge.requests[0].request_id,
+        "duplicate source request keeps same stable id");
+    require(
+        bridge.requests[2].status == render_text_atlas_upload_request_status::clean_reuse,
+        "clean reuse request does not upload");
+    require(
+        bridge.requests[3].status == render_text_atlas_upload_request_status::skipped_materialization,
+        "skipped materialization does not upload");
+    require(
+        bridge.requests[4].status == render_text_atlas_upload_request_status::payload_byte_count_mismatch,
+        "byte mismatch does not upload");
+}
+
 } // namespace
 
 int main()
@@ -391,5 +597,7 @@ int main()
     test_batch_plan_normalizes_style_keys_and_layout_requests();
     test_batch_plan_deduplicates_glyph_atlas_materialization_work();
     test_batch_plan_reports_fallback_real_backend_and_skipped_materializations();
+    test_atlas_upload_bridge_produces_stable_render_text_atlas_updates();
+    test_atlas_upload_bridge_suppresses_duplicates_and_skips_non_uploadable_work();
     return 0;
 }

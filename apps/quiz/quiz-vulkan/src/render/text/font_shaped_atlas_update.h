@@ -373,6 +373,11 @@ struct render_text_batch_atlas_update_request_snapshot {
     std::string raster_font_backend_label;
     std::size_t payload_alpha_bytes = 0;
     std::size_t payload_rgba_bytes = 0;
+    bool payload_upload_ready = false;
+    bool payload_byte_count_matches = true;
+    bool has_atlas_update = false;
+    render_text_atlas_page page;
+    render_rect atlas_update_bounds;
     std::size_t atlas_update_rgba_bytes = 0;
     bool materialized = false;
     bool duplicate = false;
@@ -685,6 +690,11 @@ inline render_text_request_batch_plan_snapshot plan_render_text_request_batch(
                 .raster_font_backend_label = materialization.raster_font_backend_label,
                 .payload_alpha_bytes = materialization.payload_alpha_bytes,
                 .payload_rgba_bytes = materialization.payload_rgba_bytes,
+                .payload_upload_ready = materialization.payload_upload_ready,
+                .payload_byte_count_matches = materialization.payload_byte_count_matches,
+                .has_atlas_update = materialization.has_atlas_update,
+                .page = materialization.page,
+                .atlas_update_bounds = materialization.atlas_update_bounds,
                 .atlas_update_rgba_bytes = materialization.atlas_update_rgba_bytes,
                 .materialized = materialization.materialized,
                 .duplicate = duplicate,
@@ -700,6 +710,309 @@ inline render_text_request_batch_plan_snapshot plan_render_text_request_batch(
 
     plan.policy.unique_style_key_count = plan.unique_style_keys.size();
     return plan;
+}
+
+enum class render_text_atlas_upload_request_status {
+    upload_ready,
+    duplicate_suppressed,
+    clean_reuse,
+    skipped_materialization,
+    payload_byte_count_mismatch,
+};
+
+inline std::string render_text_atlas_upload_request_status_name(
+    const render_text_atlas_upload_request_status status)
+{
+    switch (status) {
+    case render_text_atlas_upload_request_status::upload_ready:
+        return "upload_ready";
+    case render_text_atlas_upload_request_status::duplicate_suppressed:
+        return "duplicate_suppressed";
+    case render_text_atlas_upload_request_status::clean_reuse:
+        return "clean_reuse";
+    case render_text_atlas_upload_request_status::skipped_materialization:
+        return "skipped_materialization";
+    case render_text_atlas_upload_request_status::payload_byte_count_mismatch:
+        return "payload_byte_count_mismatch";
+    }
+
+    return "unknown";
+}
+
+struct render_text_atlas_upload_request_snapshot {
+    std::string request_id;
+    render_text_atlas_upload_request_status status =
+        render_text_atlas_upload_request_status::skipped_materialization;
+    std::size_t batch_atlas_request_index = 0;
+    std::size_t item_index = 0;
+    std::size_t materialization_index = 0;
+    std::size_t unique_work_index = 0;
+    std::size_t duplicate_of = 0;
+    glyph_atlas_key cache_key;
+    std::uint32_t resolved_glyph_id = 0;
+    font_face_id resolved_face_id = 0;
+    render_text_glyph_atlas_materialization_status materialization_status =
+        render_text_glyph_atlas_materialization_status::skipped_missing_cache_key;
+    render_text_font_backend_library shaping_font_backend_library =
+        render_text_font_backend_library::deterministic_fake;
+    std::string shaping_font_backend_label;
+    render_text_font_backend_library raster_font_backend_library =
+        render_text_font_backend_library::deterministic_fake;
+    std::string raster_font_backend_label;
+    render_text_atlas_update upload_request;
+    bool has_upload_request = false;
+    bool duplicate = false;
+    bool skipped = true;
+    bool clean_reuse = false;
+    bool payload_byte_count_matches = true;
+    std::size_t payload_rgba_bytes = 0;
+    std::size_t expected_upload_rgba_bytes = 0;
+    std::size_t actual_upload_rgba_bytes = 0;
+    bool stable_request_id = true;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return status == render_text_atlas_upload_request_status::upload_ready
+            || status == render_text_atlas_upload_request_status::duplicate_suppressed
+            || status == render_text_atlas_upload_request_status::clean_reuse;
+    }
+};
+
+struct render_text_atlas_upload_request_policy_snapshot {
+    std::size_t batch_atlas_request_count = 0;
+    std::size_t request_count = 0;
+    std::size_t upload_request_count = 0;
+    std::size_t unique_upload_request_count = 0;
+    std::size_t duplicate_suppressed_count = 0;
+    std::size_t clean_reuse_count = 0;
+    std::size_t skipped_materialization_count = 0;
+    std::size_t payload_byte_count_mismatch_count = 0;
+    std::size_t stable_request_id_count = 0;
+    std::size_t total_payload_rgba_bytes = 0;
+    std::size_t total_upload_rgba_bytes = 0;
+};
+
+struct render_text_atlas_upload_request_bridge_snapshot {
+    std::vector<render_text_atlas_upload_request_snapshot> requests;
+    std::vector<render_text_atlas_update> upload_requests;
+    std::vector<std::string> stable_request_ids;
+    render_text_atlas_upload_request_policy_snapshot policy;
+    std::string diagnostic;
+
+    bool has_upload_requests() const
+    {
+        return !upload_requests.empty();
+    }
+
+    bool ok() const
+    {
+        return policy.skipped_materialization_count == 0U
+            && policy.payload_byte_count_mismatch_count == 0U;
+    }
+};
+
+inline std::string render_text_atlas_upload_request_rect_key(const render_rect& rect)
+{
+    return render_text_batch_float_key(rect.x)
+        + "," + render_text_batch_float_key(rect.y)
+        + "," + render_text_batch_float_key(rect.width)
+        + "," + render_text_batch_float_key(rect.height);
+}
+
+inline std::string render_text_atlas_upload_request_stable_id_for(
+    const render_text_batch_atlas_update_request_snapshot& request)
+{
+    return "text-atlas-upload:v1"
+        + std::string{":face="} + std::to_string(request.cache_key.face_id)
+        + ":glyph=" + std::to_string(request.cache_key.glyph_id)
+        + ":px=" + std::to_string(request.cache_key.pixel_size)
+        + ":page=" + std::to_string(request.page.id)
+        + ":rev=" + std::to_string(request.page.revision)
+        + ":bounds=" + render_text_atlas_upload_request_rect_key(request.atlas_update_bounds)
+        + ":bytes=" + std::to_string(request.atlas_update_rgba_bytes);
+}
+
+inline bool render_text_atlas_upload_request_contains_id(
+    const std::vector<std::string>& ids,
+    const std::string& id)
+{
+    return std::find(ids.begin(), ids.end(), id) != ids.end();
+}
+
+inline void render_text_atlas_upload_request_append_unique_id(
+    std::vector<std::string>& ids,
+    const std::string& id)
+{
+    if (!render_text_atlas_upload_request_contains_id(ids, id)) {
+        ids.push_back(id);
+    }
+}
+
+inline std::vector<unsigned char> make_render_text_atlas_upload_request_rgba(
+    const render_text_batch_atlas_update_request_snapshot& request)
+{
+    std::vector<unsigned char> rgba(request.atlas_update_rgba_bytes);
+    const std::uint32_t seed =
+        (request.cache_key.face_id * 31U)
+        ^ (request.cache_key.glyph_id * 17U)
+        ^ (request.cache_key.pixel_size * 13U)
+        ^ (request.page.id * 7U)
+        ^ static_cast<std::uint32_t>(request.page.revision & 0xffU);
+    for (std::size_t index = 0; index < rgba.size(); ++index) {
+        rgba[index] = static_cast<unsigned char>((seed + static_cast<std::uint32_t>(index)) & 0xffU);
+    }
+    return rgba;
+}
+
+inline render_text_atlas_upload_request_status render_text_atlas_upload_request_status_for(
+    const render_text_batch_atlas_update_request_snapshot& request)
+{
+    if (request.duplicate) {
+        return render_text_atlas_upload_request_status::duplicate_suppressed;
+    }
+    if (!request.payload_byte_count_matches
+        || request.materialization_status
+            == render_text_glyph_atlas_materialization_status::payload_byte_count_mismatch) {
+        return render_text_atlas_upload_request_status::payload_byte_count_mismatch;
+    }
+    if (request.materialization_status
+            == render_text_glyph_atlas_materialization_status::materialized_clean_reuse
+        || (request.materialized && !request.has_atlas_update)) {
+        return render_text_atlas_upload_request_status::clean_reuse;
+    }
+    if (!request.materialized
+        || request.skipped
+        || !request.payload_upload_ready
+        || !request.has_atlas_update) {
+        return render_text_atlas_upload_request_status::skipped_materialization;
+    }
+    return render_text_atlas_upload_request_status::upload_ready;
+}
+
+inline render_text_atlas_upload_request_snapshot make_render_text_atlas_upload_request(
+    const render_text_batch_atlas_update_request_snapshot& request,
+    const std::size_t batch_atlas_request_index)
+{
+    const render_text_atlas_upload_request_status status =
+        render_text_atlas_upload_request_status_for(request);
+    const bool has_upload = status == render_text_atlas_upload_request_status::upload_ready;
+    render_text_atlas_update upload_request;
+    if (has_upload) {
+        upload_request = render_text_atlas_update{
+            .page = request.page,
+            .updated_bounds = request.atlas_update_bounds,
+            .rgba = make_render_text_atlas_upload_request_rgba(request),
+        };
+    }
+
+    std::string diagnostic = "atlas upload request skipped before renderer handoff";
+    switch (status) {
+    case render_text_atlas_upload_request_status::upload_ready:
+        diagnostic = "atlas upload request is ready for text-engine handoff";
+        break;
+    case render_text_atlas_upload_request_status::duplicate_suppressed:
+        diagnostic = "atlas upload request is a duplicate of stable materialization work";
+        break;
+    case render_text_atlas_upload_request_status::clean_reuse:
+        diagnostic = "atlas upload request reused a clean atlas page";
+        break;
+    case render_text_atlas_upload_request_status::skipped_materialization:
+        diagnostic = "atlas upload request skipped a non-materialized glyph";
+        break;
+    case render_text_atlas_upload_request_status::payload_byte_count_mismatch:
+        diagnostic = "atlas upload request rejected a payload byte-count mismatch";
+        break;
+    }
+
+    return render_text_atlas_upload_request_snapshot{
+        .request_id = render_text_atlas_upload_request_stable_id_for(request),
+        .status = status,
+        .batch_atlas_request_index = batch_atlas_request_index,
+        .item_index = request.item_index,
+        .materialization_index = request.materialization_index,
+        .unique_work_index = request.unique_work_index,
+        .duplicate_of = request.duplicate_of,
+        .cache_key = request.cache_key,
+        .resolved_glyph_id = request.resolved_glyph_id,
+        .resolved_face_id = request.resolved_face_id,
+        .materialization_status = request.materialization_status,
+        .shaping_font_backend_library = request.shaping_font_backend_library,
+        .shaping_font_backend_label = request.shaping_font_backend_label,
+        .raster_font_backend_library = request.raster_font_backend_library,
+        .raster_font_backend_label = request.raster_font_backend_label,
+        .upload_request = std::move(upload_request),
+        .has_upload_request = has_upload,
+        .duplicate = request.duplicate,
+        .skipped = status == render_text_atlas_upload_request_status::skipped_materialization
+            || status == render_text_atlas_upload_request_status::payload_byte_count_mismatch,
+        .clean_reuse = status == render_text_atlas_upload_request_status::clean_reuse,
+        .payload_byte_count_matches = request.payload_byte_count_matches,
+        .payload_rgba_bytes = request.payload_rgba_bytes,
+        .expected_upload_rgba_bytes = request.atlas_update_rgba_bytes,
+        .actual_upload_rgba_bytes = has_upload ? request.atlas_update_rgba_bytes : 0U,
+        .stable_request_id = true,
+        .diagnostic = std::move(diagnostic),
+    };
+}
+
+inline void append_render_text_atlas_upload_request(
+    std::vector<render_text_atlas_upload_request_snapshot>& requests,
+    std::vector<render_text_atlas_update>& upload_requests,
+    std::vector<std::string>& stable_request_ids,
+    render_text_atlas_upload_request_policy_snapshot& policy,
+    render_text_atlas_upload_request_snapshot request)
+{
+    ++policy.request_count;
+    policy.total_payload_rgba_bytes += request.payload_rgba_bytes;
+    if (request.stable_request_id) {
+        ++policy.stable_request_id_count;
+    }
+    render_text_atlas_upload_request_append_unique_id(stable_request_ids, request.request_id);
+
+    switch (request.status) {
+    case render_text_atlas_upload_request_status::upload_ready:
+        ++policy.upload_request_count;
+        ++policy.unique_upload_request_count;
+        policy.total_upload_rgba_bytes += request.actual_upload_rgba_bytes;
+        upload_requests.push_back(request.upload_request);
+        break;
+    case render_text_atlas_upload_request_status::duplicate_suppressed:
+        ++policy.duplicate_suppressed_count;
+        break;
+    case render_text_atlas_upload_request_status::clean_reuse:
+        ++policy.clean_reuse_count;
+        break;
+    case render_text_atlas_upload_request_status::skipped_materialization:
+        ++policy.skipped_materialization_count;
+        break;
+    case render_text_atlas_upload_request_status::payload_byte_count_mismatch:
+        ++policy.payload_byte_count_mismatch_count;
+        break;
+    }
+
+    requests.push_back(std::move(request));
+}
+
+inline render_text_atlas_upload_request_bridge_snapshot bridge_render_text_atlas_upload_requests(
+    const render_text_request_batch_plan_snapshot& plan)
+{
+    render_text_atlas_upload_request_bridge_snapshot bridge;
+    bridge.policy.batch_atlas_request_count = plan.atlas_update_requests.size();
+    bridge.requests.reserve(plan.atlas_update_requests.size());
+    for (std::size_t index = 0; index < plan.atlas_update_requests.size(); ++index) {
+        append_render_text_atlas_upload_request(
+            bridge.requests,
+            bridge.upload_requests,
+            bridge.stable_request_ids,
+            bridge.policy,
+            make_render_text_atlas_upload_request(plan.atlas_update_requests[index], index));
+    }
+
+    bridge.diagnostic = bridge.ok()
+        ? "atlas upload bridge produced renderer-agnostic text upload requests"
+        : "atlas upload bridge skipped one or more materialized text glyph uploads";
+    return bridge;
 }
 
 enum class render_text_shaped_atlas_update_trace_status {

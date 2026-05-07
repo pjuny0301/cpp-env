@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: input gesture diagnostics split tests를 통합하고 Windows MinGW focused input CTest 7/7 및 `ctest -N` 71개 확인.
+- `8f6b959`: input engine gesture diagnostics tests를 전용 파일로 추가해 swipe threshold, mouse/touch parity, drag cancel, long-press timing, wheel delta normalization을 고정.
 - current: standard image pipeline cache-reuse diagnostics와 resolved glyph-id atlas diagnostics를 통합하고 Windows MinGW focused text/image CTest 7/7 및 `ctest -N` 70개 확인.
 - `60c92fb`: text engine의 resolved glyph id를 shaping selection, glyph atlas key, raster payload, shaped-atlas update trace diagnostics로 일관되게 연결.
 - `7a4c528`: standard image texture pipeline에 normalized cache key 재사용, revision invalidation, decode/upload attempt diagnostics tests 추가.

@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: Vulkan shader module readiness header를 CMake public FILE_SET에 등록하고 Windows MinGW focused Vulkan CTest 3/3 및 `ctest -N` 72개 확인.
+- `516c4bc`: Vulkan pipeline/cache 뒤에 data-only SPIR-V shader module readiness boundary, fake create/destroy diagnostics, shader stage/entry validation tests 추가.
 - current: input gesture diagnostics split tests를 통합하고 Windows MinGW focused input CTest 7/7 및 `ctest -N` 71개 확인.
 - `8f6b959`: input engine gesture diagnostics tests를 전용 파일로 추가해 swipe threshold, mouse/touch parity, drag cancel, long-press timing, wheel delta normalization을 고정.
 - current: standard image pipeline cache-reuse diagnostics와 resolved glyph-id atlas diagnostics를 통합하고 Windows MinGW focused text/image CTest 7/7 및 `ctest -N` 70개 확인.

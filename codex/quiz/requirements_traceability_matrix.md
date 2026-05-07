@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: platform input translator header를 CMake public FILE_SET에 등록하고 Windows MinGW focused input CTest 8/8 및 `ctest -N` 74개 확인.
+- `f161648`: input core에 raw-ish mouse/touch/key/wheel/char/IME samples를 기존 normalized `raw_platform_input_event`로 변환하는 platform input translator boundary와 tests 추가.
 - current: font backend capability probe header를 CMake public FILE_SET에 등록하고 image manifest texture pipeline boundary와 함께 Windows MinGW focused text/image CTest 5/5 및 `ctest -N` 73개 확인.
 - `56e3d0d`: image manifest/source-to-texture pipeline adapter, normalized source key, source revision invalidation, missing-source placeholder, path traversal rejection tests 추가.
 - `7058a02`: text engine에 FreeType/HarfBuzz/DirectWrite 가능성을 data-only로 표현하는 font backend capability probe와 fallback-mode contract tests 추가.

@@ -133,6 +133,8 @@ action_route_policy_diagnostic make_policy(
     diagnostic.timestamp_ms = timestamp_ms;
     diagnostic.pointer_capture_before = pointer_capture_before;
     diagnostic.pointer_capture_after = pointer_capture_after;
+    diagnostic.tracked_pointer_count_before = pointer_capture_before.tracked_pointer_count;
+    diagnostic.tracked_pointer_count_after = pointer_capture_after.tracked_pointer_count;
     return diagnostic;
 }
 

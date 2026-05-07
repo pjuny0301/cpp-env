@@ -406,6 +406,8 @@ void test_keyboard_focus_traversal_diagnostics()
     require(engine.text_focus_id() == "answer", "tab diagnostics preserve focus id");
     require(engine.text_model().text() == initial, "tab diagnostics preserve text");
     require(engine.text_model().caret_byte_offset() == initial.size(), "tab diagnostics preserve caret");
+    require(engine.routing_diagnostics().normalized_events.empty(),
+        "tab diagnostics emit no normalized gesture or wheel summary");
     require(engine.routing_diagnostics().action_routes.size() == 1,
         "tab emits one focus traversal diagnostic policy");
     const action_route_policy_diagnostic& next_policy = require_policy(
@@ -414,7 +416,16 @@ void test_keyboard_focus_traversal_diagnostics()
         action_route_policy_kind::focus_traversal_next,
         "tab emits forward traversal policy");
     require(!next_policy.emits_input_event, "tab traversal policy emits no input event");
+    require(next_policy.event_index == 0, "tab traversal policy points at no emitted event");
     require(next_policy.target_id == "answer", "tab traversal policy preserves target id");
+    require(next_policy.pointer_decision == pointer_arbitration_decision::none,
+        "tab traversal policy has no pointer arbitration");
+    require(next_policy.pointer_contact == pointer_contact_kind::unknown,
+        "tab traversal policy has no pointer contact semantics");
+    require(next_policy.tracked_pointer_count_before == 0,
+        "tab traversal policy records no tracked pointers before");
+    require(next_policy.tracked_pointer_count_after == 0,
+        "tab traversal policy records no tracked pointers after");
     require(next_policy.text_byte_count_before == initial.size(),
         "tab traversal policy records before text byte count");
     require(next_policy.text_byte_count_after == initial.size(),
@@ -436,6 +447,8 @@ void test_keyboard_focus_traversal_diagnostics()
     require(events.empty(), "shift tab emits no app input event from input engine");
     require(engine.has_text_focus(), "shift tab diagnostics do not clear text focus");
     require(engine.text_model().text() == initial, "shift tab diagnostics preserve text");
+    require(engine.routing_diagnostics().normalized_events.empty(),
+        "shift tab diagnostics emit no normalized gesture or wheel summary");
     selection = engine.text_model().selection_range();
     require(selection.has_value(), "shift tab diagnostics preserve selection");
     require_range(*selection, 4, initial.size(), "shift tab diagnostics preserve selected range");
@@ -445,6 +458,15 @@ void test_keyboard_focus_traversal_diagnostics()
         action_route_policy_kind::focus_traversal_previous,
         "shift tab emits reverse traversal policy");
     require(!previous_policy.emits_input_event, "shift tab traversal policy emits no input event");
+    require(previous_policy.event_index == 0, "shift tab traversal policy points at no emitted event");
+    require(previous_policy.pointer_decision == pointer_arbitration_decision::none,
+        "shift tab traversal policy has no pointer arbitration");
+    require(previous_policy.pointer_contact == pointer_contact_kind::unknown,
+        "shift tab traversal policy has no pointer contact semantics");
+    require(previous_policy.tracked_pointer_count_before == 0,
+        "shift tab traversal policy records no tracked pointers before");
+    require(previous_policy.tracked_pointer_count_after == 0,
+        "shift tab traversal policy records no tracked pointers after");
     require(previous_policy.had_selection_before, "shift tab traversal policy records prior selection");
     require(previous_policy.has_selection_after, "shift tab traversal policy records retained selection");
     require_range(previous_policy.selection_before, 4, initial.size(),

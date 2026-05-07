@@ -65,6 +65,8 @@ inline void apply_text_edit_boundary(
     diagnostic.timestamp_ms = timestamp_ms;
     diagnostic.pointer_capture_before = pointer_capture_before;
     diagnostic.pointer_capture_after = pointer_capture_after;
+    diagnostic.tracked_pointer_count_before = pointer_capture_before.tracked_pointer_count;
+    diagnostic.tracked_pointer_count_after = pointer_capture_after.tracked_pointer_count;
     diagnostic.emits_input_event = true;
     diagnostic.event_index = event_index;
     diagnostic.target_id = target_id;
@@ -86,6 +88,8 @@ inline void apply_text_edit_boundary(
     diagnostic.timestamp_ms = timestamp_ms;
     diagnostic.pointer_capture_before = pointer_capture_before;
     diagnostic.pointer_capture_after = pointer_capture_after;
+    diagnostic.tracked_pointer_count_before = pointer_capture_before.tracked_pointer_count;
+    diagnostic.tracked_pointer_count_after = pointer_capture_after.tracked_pointer_count;
     diagnostic.target_id = target_id;
     apply_text_edit_boundary(diagnostic, before, after);
     return diagnostic;

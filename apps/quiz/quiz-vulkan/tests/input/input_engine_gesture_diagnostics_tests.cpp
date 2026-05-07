@@ -499,6 +499,260 @@ void test_touch_drag_cancel_diagnostics_keep_pointer_id_consistent()
         "touch drag cancel reset records idle pointer after");
 }
 
+void test_wheel_after_touch_cancel_has_idle_capture_context()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    require(engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::down,
+                100,
+                0.0f,
+                0.0f,
+                raw_platform_pointer_button::none,
+                41))
+                .empty(),
+        "wheel after cancel touch down emits no event");
+    require(engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::move,
+                120,
+                10.0f,
+                0.0f,
+                raw_platform_pointer_button::none,
+                41))
+                .size() == 1,
+        "wheel after cancel touch drag captures pointer");
+
+    std::vector<input_event> events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::cancel,
+        140,
+        12.0f,
+        0.0f,
+        raw_platform_pointer_button::none,
+        41));
+    require(events.size() == 1, "wheel after cancel touch cancel emits drag cancel");
+    require(engine.routing_diagnostics().action_routes.size() == 2,
+        "wheel after cancel touch cancel emits route and reset policies");
+    const action_route_policy_diagnostic& cancel_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "wheel after cancel gesture route is emitted");
+    require(cancel_policy.pointer_contact == pointer_contact_kind::touch_like,
+        "wheel after cancel gesture route records touch contact");
+    require(cancel_policy.pointer_decision == pointer_arbitration_decision::canceled,
+        "wheel after cancel gesture route records canceled decision");
+    require(cancel_policy.tracked_pointer_count_before == 1,
+        "wheel after cancel gesture route records tracked pointer before");
+    require(cancel_policy.tracked_pointer_count_after == 0,
+        "wheel after cancel gesture route records no tracked pointer after");
+    const action_route_policy_diagnostic& reset_policy = require_policy(
+        engine.routing_diagnostics(),
+        1,
+        action_route_policy_kind::pointer_capture_reset,
+        "wheel after cancel reset route is emitted");
+    require(reset_policy.pointer_contact == pointer_contact_kind::touch_like,
+        "wheel after cancel reset route records touch contact");
+    require(reset_policy.tracked_pointer_count_before == 1,
+        "wheel after cancel reset route records tracked pointer before");
+    require(reset_policy.tracked_pointer_count_after == 0,
+        "wheel after cancel reset route records no tracked pointer after");
+    require_capture_snapshot(
+        engine.routing_diagnostics().pointer_capture,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "wheel after cancel leaves diagnostics idle after cancel");
+
+    events = engine.process_scroll_event(scroll(
+        160,
+        20.0f,
+        30.0f,
+        0.0f,
+        -2.0f,
+        scroll_delta_unit::lines));
+    require(events.size() == 1, "wheel after cancel emits one wheel event");
+    const action_route_policy_diagnostic& wheel_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::wheel_summary,
+        "wheel after cancel emits wheel summary policy");
+    require(wheel_policy.normalized_event.kind == input_event_summary_kind::wheel,
+        "wheel after cancel policy carries wheel summary");
+    require(wheel_policy.pointer_decision == pointer_arbitration_decision::none,
+        "wheel after cancel policy has no pointer arbitration");
+    require(wheel_policy.pointer_contact == pointer_contact_kind::unknown,
+        "wheel after cancel policy has no pointer contact semantics");
+    require(wheel_policy.tracked_pointer_count_before == 0,
+        "wheel after cancel policy records no tracked pointers before");
+    require(wheel_policy.tracked_pointer_count_after == 0,
+        "wheel after cancel policy records no tracked pointers after");
+    require_capture_snapshot(
+        wheel_policy.pointer_capture_before,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "wheel after cancel policy records idle capture before");
+    require_capture_snapshot(
+        wheel_policy.pointer_capture_after,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "wheel after cancel policy records idle capture after");
+    require_capture_snapshot(
+        engine.routing_diagnostics().pointer_capture,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "wheel after cancel leaves engine capture idle");
+}
+
+void require_release_restart_parity(
+    quiz_vulkan::raw_platform_pointer_button button,
+    quiz_vulkan::input::pointer_contact_kind contact,
+    std::int32_t pointer_id)
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine release_engine;
+    require(release_engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::down,
+                100,
+                0.0f,
+                0.0f,
+                button,
+                pointer_id))
+                .empty(),
+        "release parity down emits no event");
+    require(release_engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::move,
+                120,
+                9.0f,
+                0.0f,
+                button,
+                pointer_id))
+                .size() == 1,
+        "release parity move captures pointer");
+    std::vector<input_event> events = release_engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::up,
+        140,
+        14.0f,
+        0.0f,
+        button,
+        pointer_id));
+    require(events.size() == 1, "release parity up emits drag end");
+    const gesture_event& end = require_event<gesture_event>(events, 0);
+    require(end.kind == gesture_kind::drag_end, "release parity emits drag end");
+    require(end.pointer_id == pointer_id, "release parity event preserves pointer id");
+    const action_route_policy_diagnostic& release_policy = require_policy(
+        release_engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "release parity route is emitted");
+    require(release_policy.pointer_decision == pointer_arbitration_decision::released,
+        "release parity records released decision");
+    require(release_policy.pointer_contact == contact, "release parity records contact kind");
+    require(release_policy.pointer_id == pointer_id, "release parity route records pointer id");
+    require(release_policy.tracked_pointer_count_before == 1,
+        "release parity route records one tracked pointer before");
+    require(release_policy.tracked_pointer_count_after == 0,
+        "release parity route records no tracked pointer after");
+    require_capture_snapshot(
+        release_policy.pointer_capture_before,
+        pointer_capture_lifecycle::captured,
+        true,
+        pointer_id,
+        1,
+        "release parity records captured pointer before");
+    require_capture_snapshot(
+        release_policy.pointer_capture_after,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "release parity records idle pointer after");
+
+    input_engine restart_engine;
+    require(restart_engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::down,
+                200,
+                0.0f,
+                0.0f,
+                button,
+                pointer_id))
+                .empty(),
+        "restart parity down emits no event");
+    require(restart_engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::move,
+                220,
+                10.0f,
+                0.0f,
+                button,
+                pointer_id))
+                .size() == 1,
+        "restart parity move captures pointer");
+    events = restart_engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::down,
+        240,
+        2.0f,
+        2.0f,
+        button,
+        pointer_id));
+    require(events.size() == 1, "restart parity repeated down emits drag cancel");
+    const gesture_event& cancel = require_event<gesture_event>(events, 0);
+    require(cancel.kind == gesture_kind::drag_cancel, "restart parity emits drag cancel");
+    require(cancel.pointer_id == pointer_id, "restart parity event preserves pointer id");
+    const action_route_policy_diagnostic& restart_policy = require_policy(
+        restart_engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "restart parity route is emitted");
+    require(restart_policy.pointer_decision == pointer_arbitration_decision::restarted,
+        "restart parity records restarted decision");
+    require(restart_policy.pointer_contact == contact, "restart parity records contact kind");
+    require(restart_policy.pointer_id == pointer_id, "restart parity route records pointer id");
+    require(restart_policy.tracked_pointer_count_before == 1,
+        "restart parity route records one tracked pointer before");
+    require(restart_policy.tracked_pointer_count_after == 1,
+        "restart parity route records replacement tracked pointer after");
+    require(restart_policy.normalized_event.kind == input_event_summary_kind::drag_cancel,
+        "restart parity route carries normalized drag cancel");
+    require(restart_policy.gesture_policy.decision == gesture_policy_decision::drag_canceled,
+        "restart parity route records drag canceled classifier decision");
+    require_capture_snapshot(
+        restart_policy.pointer_capture_before,
+        pointer_capture_lifecycle::captured,
+        true,
+        pointer_id,
+        1,
+        "restart parity records captured pointer before");
+    require_capture_snapshot(
+        restart_policy.pointer_capture_after,
+        pointer_capture_lifecycle::tracking,
+        false,
+        pointer_id,
+        1,
+        "restart parity records replacement tracking after");
+}
+
+void test_pointer_capture_release_and_restart_are_deterministic_for_mouse_and_touch()
+{
+    require_release_restart_parity(
+        quiz_vulkan::raw_platform_pointer_button::primary,
+        quiz_vulkan::input::pointer_contact_kind::mouse_like,
+        51);
+    require_release_restart_parity(
+        quiz_vulkan::raw_platform_pointer_button::none,
+        quiz_vulkan::input::pointer_contact_kind::touch_like,
+        52);
+}
+
 void test_long_press_timing_and_policy_order_are_deterministic()
 {
     using namespace quiz_vulkan;
@@ -723,6 +977,8 @@ int main()
     test_mouse_and_touch_swipe_classifier_diagnostics_match();
     test_custom_swipe_threshold_rejections_are_diagnostic_only();
     test_touch_drag_cancel_diagnostics_keep_pointer_id_consistent();
+    test_wheel_after_touch_cancel_has_idle_capture_context();
+    test_pointer_capture_release_and_restart_are_deterministic_for_mouse_and_touch();
     test_long_press_timing_and_policy_order_are_deterministic();
     test_wheel_delta_normalization_updates_summaries_and_action_routes();
 

@@ -46,6 +46,8 @@ static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_textu
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_residency_budget_plan>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_residency_budget_plan_entry>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_residency_budget_plan>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_residency_budget_summary>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_residency_budget_summary>);
 
 void require(bool condition, const char* message)
 {
@@ -751,6 +753,14 @@ void test_batch_execution_runs_planned_requests_and_reports_cache_reuse()
     require(execution.cache_reuse_expectation_mismatch_count == 0, "batch execution records no reuse mismatch");
     require(execution.placeholder_texture_count == 0, "batch execution records no placeholder fallback");
     require(execution.all_planned_requests_executed, "batch execution records all planned requests executed");
+    require(execution.residency_budget_diagnostics_available, "batch execution exposes residency budget summary");
+    require(
+        execution.residency_budget.unique_resident_texture_count == 2,
+        "batch execution residency summary deduplicates ready textures");
+    require(
+        execution.residency_budget.eviction_candidate_count == 3,
+        "batch execution residency summary classifies unmarked ready textures as eviction candidates");
+    require(execution.residency_budget.ok(), "batch execution default residency summary is within budget");
     require(execution.entries.size() == 3, "batch execution records one entry per request");
     require(execution.entries[0].status == render_image_texture_batch_execution_entry_status::ready, "first execution is ready");
     require(execution.entries[0].executed, "first execution reached pipeline");
@@ -766,6 +776,66 @@ void test_batch_execution_runs_planned_requests_and_reports_cache_reuse()
     require(
         execution.entries[2].texture.id != execution.entries[0].texture.id,
         "third execution uploads a distinct sampler texture");
+}
+
+void test_batch_execution_threads_residency_budget_pressure_summary()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes("asset://textures/card.ppm", make_ppm_2x1_fixture_bytes());
+    loader.set_source_bytes("asset://textures/background.ppm", make_ppm_2x1_fixture_bytes());
+    ppm_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
+
+    render_image_sampler_policy nearest_sampler;
+    nearest_sampler.min_filter = render_image_filter::nearest;
+    nearest_sampler.mag_filter = render_image_filter::nearest;
+
+    const render_image_texture_batch_plan plan = plan_render_image_texture_batch(std::vector<render_image_ref>{
+        render_image_ref{.uri = "asset://textures/card.ppm"},
+        render_image_ref{.uri = "asset://textures/card.ppm", .sampler = nearest_sampler},
+        render_image_ref{.uri = "asset://textures/background.ppm"},
+    });
+    const render_image_texture_batch_execution_diagnostics execution = execute_render_image_texture_batch_plan(
+        plan,
+        pipeline,
+        render_image_texture_residency_budget_plan_options{
+            .visible_request_indices = {0},
+            .pinned_request_indices = {1},
+            .max_resident_pixel_count = 4,
+            .max_resident_texture_count = 2,
+        });
+
+    require(execution.ok(), "budget-aware batch execution keeps pipeline success separate from residency pressure");
+    require(
+        execution.diagnostic == "image texture batch execution ready with residency budget pressure",
+        "budget-aware batch execution diagnostic mentions residency pressure");
+    require(execution.residency_budget_diagnostics_available, "budget-aware execution exposes residency summary");
+    require(execution.residency_budget.visible_candidate_count == 1, "execution residency summary counts visible");
+    require(execution.residency_budget.pinned_candidate_count == 1, "execution residency summary counts pinned");
+    require(execution.residency_budget.eviction_candidate_count == 1, "execution residency summary counts eviction");
+    require(execution.residency_budget.retry_candidate_count == 0, "execution residency summary records no retries");
+    require(
+        execution.residency_budget.unique_resident_texture_count == 3,
+        "execution residency summary counts unique resident textures");
+    require(
+        execution.residency_budget.unique_resident_pixel_count == 6,
+        "execution residency summary estimates unique resident pixels");
+    require(execution.residency_budget.pixel_budget_pressure, "execution residency summary reports pixel pressure");
+    require(execution.residency_budget.texture_budget_pressure, "execution residency summary reports texture pressure");
+    require(execution.residency_budget.budget_pressure, "execution residency summary reports aggregate pressure");
+    require(!execution.residency_budget.ok(), "execution residency summary ok reflects budget pressure");
+    require(
+        execution.residency_budget.pressure_status
+            == render_image_texture_residency_budget_pressure_status::over_pixel_and_texture_budget,
+        "execution residency summary records pressure status");
+    require(
+        execution.residency_budget.pressure_status_name == "over_pixel_and_texture_budget",
+        "execution residency summary records pressure status name");
 }
 
 void test_batch_execution_accepts_standard_pipeline_interface()
@@ -869,6 +939,9 @@ void test_batch_execution_reports_placeholder_fallback_without_cache_internals()
     require(execution.ready_count == 1, "placeholder batch execution records ready count");
     require(execution.failure_count == 0, "placeholder batch execution records no failure");
     require(execution.placeholder_texture_count == 1, "placeholder batch execution counts placeholder fallback");
+    require(
+        execution.residency_budget.placeholder_texture_count == 1,
+        "placeholder batch execution residency summary counts placeholder fallback");
     require(execution.entries[0].placeholder_texture, "placeholder batch execution entry records placeholder texture");
     require(
         execution.entries[0].fallback_placeholder_available,
@@ -1027,6 +1100,7 @@ int main()
     test_batch_plan_reports_invalid_request_reasons();
     test_batch_plan_reports_placeholder_fallback_policy_without_cache_internals();
     test_batch_execution_runs_planned_requests_and_reports_cache_reuse();
+    test_batch_execution_threads_residency_budget_pressure_summary();
     test_batch_execution_accepts_standard_pipeline_interface();
     test_batch_execution_skips_invalid_requests_and_counts_pipeline_failures();
     test_batch_execution_reports_placeholder_fallback_without_cache_internals();

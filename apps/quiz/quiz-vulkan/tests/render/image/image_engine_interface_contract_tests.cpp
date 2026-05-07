@@ -238,6 +238,7 @@ static_assert(requires(
     render::render_image_texture_batch_execution_entry_status batch_execution_entry_status,
     render::render_image_texture_batch_execution_entry batch_execution_entry,
     render::render_image_texture_batch_execution_diagnostics batch_execution,
+    render::render_image_texture_residency_budget_summary residency_budget_summary,
     render::render_image_texture_residency_budget_pressure_status residency_budget_pressure_status,
     render::render_image_texture_residency_budget_plan_options residency_budget_options,
     render::render_image_texture_residency_budget_plan_entry residency_budget_entry,
@@ -664,6 +665,8 @@ static_assert(requires(
         -> std::same_as<render::render_image_texture_batch_execution_entry_status>;
     { render::execute_render_image_texture_batch_plan(batch_plan, mutable_pipeline) }
         -> std::same_as<render::render_image_texture_batch_execution_diagnostics>;
+    { render::execute_render_image_texture_batch_plan(batch_plan, mutable_pipeline, residency_budget_options) }
+        -> std::same_as<render::render_image_texture_batch_execution_diagnostics>;
     { render::render_image_texture_residency_budget_pressure_status_name(residency_budget_pressure_status) }
         -> std::same_as<std::string>;
     { render::render_image_texture_batch_request_index_list_contains(std::vector<std::size_t>{}, std::size_t{}) }
@@ -676,6 +679,8 @@ static_assert(requires(
         -> std::same_as<render::render_image_texture_residency_budget_plan>;
     { render::plan_render_image_texture_residency_budget(batch_execution, residency_budget_options) }
         -> std::same_as<render::render_image_texture_residency_budget_plan>;
+    { render::make_render_image_texture_residency_budget_summary(residency_budget_plan) }
+        -> std::same_as<render::render_image_texture_residency_budget_summary>;
     { render::render_image_decoder_capability_candidate_kind_name(decoder_capability_kind) }
         -> std::same_as<std::string>;
     { render::render_image_decoder_capability_candidate_status_name(decoder_capability_status) }
@@ -803,10 +808,38 @@ static_assert(requires(
     { batch_execution.cache_reuse_expectation_mismatch_count } -> std::same_as<std::size_t&>;
     { batch_execution.placeholder_texture_count } -> std::same_as<std::size_t&>;
     { batch_execution.all_planned_requests_executed } -> std::same_as<bool&>;
+    { batch_execution.residency_budget_diagnostics_available } -> std::same_as<bool&>;
+    { batch_execution.residency_budget } -> std::same_as<render::render_image_texture_residency_budget_summary&>;
     { batch_execution.entries }
         -> std::same_as<std::vector<render::render_image_texture_batch_execution_entry>&>;
     { batch_execution.diagnostic } -> std::same_as<std::string&>;
     { batch_execution.ok() } -> std::same_as<bool>;
+    { residency_budget_summary.request_count } -> std::same_as<std::size_t&>;
+    { residency_budget_summary.executed_request_count } -> std::same_as<std::size_t&>;
+    { residency_budget_summary.ready_count } -> std::same_as<std::size_t&>;
+    { residency_budget_summary.visible_candidate_count } -> std::same_as<std::size_t&>;
+    { residency_budget_summary.pinned_candidate_count } -> std::same_as<std::size_t&>;
+    { residency_budget_summary.preload_candidate_count } -> std::same_as<std::size_t&>;
+    { residency_budget_summary.eviction_candidate_count } -> std::same_as<std::size_t&>;
+    { residency_budget_summary.retry_candidate_count } -> std::same_as<std::size_t&>;
+    { residency_budget_summary.placeholder_texture_count } -> std::same_as<std::size_t&>;
+    { residency_budget_summary.unique_resident_texture_count } -> std::same_as<std::size_t&>;
+    { residency_budget_summary.unique_resident_pixel_count } -> std::same_as<std::size_t&>;
+    { residency_budget_summary.unique_resident_rgba8_byte_count } -> std::same_as<std::size_t&>;
+    { residency_budget_summary.max_resident_pixel_count } -> std::same_as<std::size_t&>;
+    { residency_budget_summary.max_resident_texture_count } -> std::same_as<std::size_t&>;
+    { residency_budget_summary.pixel_budget_enabled } -> std::same_as<bool&>;
+    { residency_budget_summary.texture_budget_enabled } -> std::same_as<bool&>;
+    { residency_budget_summary.pixel_budget_pressure } -> std::same_as<bool&>;
+    { residency_budget_summary.texture_budget_pressure } -> std::same_as<bool&>;
+    { residency_budget_summary.budget_pressure } -> std::same_as<bool&>;
+    { residency_budget_summary.over_budget_pixel_count } -> std::same_as<std::size_t&>;
+    { residency_budget_summary.over_budget_texture_count } -> std::same_as<std::size_t&>;
+    { residency_budget_summary.pressure_status }
+        -> std::same_as<render::render_image_texture_residency_budget_pressure_status&>;
+    { residency_budget_summary.pressure_status_name } -> std::same_as<std::string&>;
+    { residency_budget_summary.diagnostic } -> std::same_as<std::string&>;
+    { residency_budget_summary.ok() } -> std::same_as<bool>;
     { residency_budget_options.visible_request_indices } -> std::same_as<std::vector<std::size_t>&>;
     { residency_budget_options.pinned_request_indices } -> std::same_as<std::vector<std::size_t>&>;
     { residency_budget_options.preload_request_indices } -> std::same_as<std::vector<std::size_t>&>;
@@ -1146,6 +1179,7 @@ static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_batch_plan>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_batch_execution_entry>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_batch_execution_diagnostics>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_residency_budget_summary>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_residency_budget_plan_entry>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_residency_budget_plan>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_manifest_texture_entry_snapshot>);
@@ -1154,6 +1188,7 @@ static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_textur
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_batch_plan>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_batch_execution_entry>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_batch_execution_diagnostics>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_residency_budget_summary>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_residency_budget_plan_entry>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_residency_budget_plan>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_manifest_texture_entry_snapshot>);
@@ -1162,6 +1197,7 @@ static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_batch_plan>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_batch_execution_entry>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_batch_execution_diagnostics>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_residency_budget_summary>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_residency_budget_plan_entry>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_residency_budget_plan>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_manifest_texture_pipeline_snapshot>);

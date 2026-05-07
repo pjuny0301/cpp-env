@@ -145,6 +145,12 @@ concept NormalizedInputReplayEndStateInterface = requires(T state) {
     { state.pointer_capture } -> std::same_as<input::pointer_capture_snapshot&>;
     { state.has_text_focus } -> std::same_as<bool&>;
     { state.focus_id } -> std::same_as<std::string&>;
+    { state.text } -> std::same_as<std::string&>;
+    { state.display_text } -> std::same_as<std::string&>;
+    { state.caret_byte_offset } -> std::same_as<std::size_t&>;
+    { state.has_selection } -> std::same_as<bool&>;
+    { state.selection } -> std::same_as<input::text_range&>;
+    { state.preedit_text } -> std::same_as<std::string&>;
     { state.composition } -> std::same_as<input::ime_composition_state&>;
     { state.pointer_capture_clean } -> std::same_as<bool&>;
     { state.focus_clean } -> std::same_as<bool&>;
@@ -157,6 +163,7 @@ concept NormalizedInputReplayBatchInterface = requires(T batch) {
     { batch.input_events } -> std::same_as<std::vector<input::input_event>&>;
     { batch.normalized_events } -> std::same_as<std::vector<input::normalized_input_event_summary>&>;
     { batch.summary } -> std::same_as<input::input_diagnostic_summary&>;
+    { batch.keyboard } -> std::same_as<input::normalized_input_replay_keyboard_summary&>;
     { batch.end_state } -> std::same_as<input::normalized_input_replay_end_state&>;
 };
 
@@ -164,6 +171,7 @@ template <typename T>
 concept NormalizedInputReplayRecordingInterface = requires(T recording) {
     { recording.batches } -> std::same_as<std::vector<input::normalized_input_replay_batch>&>;
     { recording.summary } -> std::same_as<input::input_diagnostic_summary&>;
+    { recording.keyboard } -> std::same_as<input::normalized_input_replay_keyboard_summary&>;
     { recording.final_state } -> std::same_as<input::normalized_input_replay_end_state&>;
 };
 
@@ -174,12 +182,67 @@ concept NormalizedInputReplayStepInterface = requires(T step) {
 };
 
 template <typename T>
+concept NormalizedInputReplayKeyboardIntentCountsInterface = requires(T counts) {
+    { counts.none } -> std::same_as<std::size_t&>;
+    { counts.focus_traversal_next } -> std::same_as<std::size_t&>;
+    { counts.focus_traversal_previous } -> std::same_as<std::size_t&>;
+    { counts.submit } -> std::same_as<std::size_t&>;
+    { counts.cancel } -> std::same_as<std::size_t&>;
+    { counts.caret_previous } -> std::same_as<std::size_t&>;
+    { counts.caret_next } -> std::same_as<std::size_t&>;
+    { counts.caret_home } -> std::same_as<std::size_t&>;
+    { counts.caret_end } -> std::same_as<std::size_t&>;
+    { counts.selection_previous } -> std::same_as<std::size_t&>;
+    { counts.selection_next } -> std::same_as<std::size_t&>;
+    { counts.select_all } -> std::same_as<std::size_t&>;
+    { counts.delete_backward } -> std::same_as<std::size_t&>;
+    { counts.delete_forward } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
+concept NormalizedInputReplayKeyboardModifierCountsInterface = requires(T counts) {
+    { counts.unmodified } -> std::same_as<std::size_t&>;
+    { counts.alt } -> std::same_as<std::size_t&>;
+    { counts.ctrl } -> std::same_as<std::size_t&>;
+    { counts.shift } -> std::same_as<std::size_t&>;
+    { counts.meta } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
+concept NormalizedInputReplayKeyboardRepeatPolicyCountsInterface = requires(T counts) {
+    { counts.not_repeat } -> std::same_as<std::size_t&>;
+    { counts.allowed } -> std::same_as<std::size_t&>;
+    { counts.ignored } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
+concept NormalizedInputReplayKeyboardSummaryInterface = requires(T summary) {
+    { summary.chords } -> std::same_as<std::vector<input::keyboard_chord_diagnostic>&>;
+    { summary.intents } -> std::same_as<input::normalized_input_replay_keyboard_intent_counts&>;
+    { summary.modifiers } -> std::same_as<input::normalized_input_replay_keyboard_modifier_counts&>;
+    { summary.repeat_policies }
+        -> std::same_as<input::normalized_input_replay_keyboard_repeat_policy_counts&>;
+    { summary.total } -> std::same_as<std::size_t&>;
+    { summary.emitted_input_event_routes } -> std::same_as<std::size_t&>;
+    { summary.diagnostic_only_routes } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
 concept NormalizedInputReplayFunctions = requires(
     input::input_engine& engine,
     const input::normalized_input_replay_action& action,
     std::span<const input::normalized_input_replay_step> steps,
+    std::span<const input::action_route_policy_diagnostic> routes,
+    const input::keyboard_chord_diagnostic& keyboard,
+    input::normalized_input_replay_keyboard_summary& keyboard_target,
+    const input::normalized_input_replay_keyboard_summary& keyboard_source,
     const input::normalized_input_replay_options& options) {
     { input::pointer_capture_snapshot_clean(input::pointer_capture_snapshot{}) } -> std::same_as<bool>;
+    { input::keyboard_chord_present(keyboard) } -> std::same_as<bool>;
+    { input::summarize_normalized_input_replay_keyboard_routes(routes) }
+        -> std::same_as<input::normalized_input_replay_keyboard_summary>;
+    { input::accumulate_normalized_input_replay_keyboard_summary(keyboard_target, keyboard_source) }
+        -> std::same_as<void>;
     { input::capture_normalized_input_replay_end_state(engine) }
         -> std::same_as<input::normalized_input_replay_end_state>;
     { input::record_normalized_input_batch(engine, std::string{}, action) }
@@ -404,6 +467,13 @@ static_assert(NormalizedInputReplayEndStateInterface<input::normalized_input_rep
 static_assert(NormalizedInputReplayBatchInterface<input::normalized_input_replay_batch>);
 static_assert(NormalizedInputReplayRecordingInterface<input::normalized_input_replay_recording>);
 static_assert(NormalizedInputReplayStepInterface<input::normalized_input_replay_step>);
+static_assert(NormalizedInputReplayKeyboardIntentCountsInterface<
+    input::normalized_input_replay_keyboard_intent_counts>);
+static_assert(NormalizedInputReplayKeyboardModifierCountsInterface<
+    input::normalized_input_replay_keyboard_modifier_counts>);
+static_assert(NormalizedInputReplayKeyboardRepeatPolicyCountsInterface<
+    input::normalized_input_replay_keyboard_repeat_policy_counts>);
+static_assert(NormalizedInputReplayKeyboardSummaryInterface<input::normalized_input_replay_keyboard_summary>);
 static_assert(NormalizedInputReplayFunctions<void>);
 static_assert(std::is_default_constructible_v<input::platform_input_translation_request>);
 static_assert(std::is_default_constructible_v<input::platform_input_translation_result>);
@@ -414,6 +484,10 @@ static_assert(std::is_default_constructible_v<input::normalized_input_replay_opt
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_end_state>);
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_batch>);
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_recording>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_keyboard_intent_counts>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_keyboard_modifier_counts>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_keyboard_repeat_policy_counts>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_keyboard_summary>);
 static_assert(std::is_default_constructible_v<input::keyboard_modifier_state>);
 static_assert(std::is_default_constructible_v<input::keyboard_chord_diagnostic>);
 static_assert(!std::is_polymorphic_v<input::platform_input_translation_request>);
@@ -423,6 +497,7 @@ static_assert(!std::is_polymorphic_v<input::platform_input_dispatch_batch_result
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_step>);
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_batch>);
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_recording>);
+static_assert(!std::is_polymorphic_v<input::normalized_input_replay_keyboard_summary>);
 static_assert(std::is_same_v<
     decltype(input::platform_input_translation_result{}.event),
     std::optional<raw_platform_input_event>>);
@@ -453,6 +528,12 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     decltype(input::normalized_input_replay_batch{}.summary),
     input::input_diagnostic_summary>);
+static_assert(std::is_same_v<
+    decltype(input::normalized_input_replay_batch{}.keyboard),
+    input::normalized_input_replay_keyboard_summary>);
+static_assert(std::is_same_v<
+    decltype(input::normalized_input_replay_recording{}.keyboard),
+    input::normalized_input_replay_keyboard_summary>);
 static_assert(TextInputModelInterface<input::text_input_model>);
 
 constexpr input::text_range text_range_contract{
@@ -501,6 +582,34 @@ static_assert(keyboard_chord_contract.modifiers.shift);
 static_assert(keyboard_chord_contract.repeat);
 static_assert(keyboard_chord_contract.repeat_policy == input::keyboard_repeat_policy::ignored);
 static_assert(keyboard_chord_contract.intent == input::keyboard_shortcut_intent::focus_traversal_previous);
+
+constexpr input::normalized_input_replay_keyboard_intent_counts replay_keyboard_intents_contract{
+    .focus_traversal_next = 1,
+    .submit = 2,
+    .delete_forward = 3,
+};
+static_assert(replay_keyboard_intents_contract.focus_traversal_next == 1);
+static_assert(replay_keyboard_intents_contract.submit == 2);
+static_assert(replay_keyboard_intents_contract.delete_forward == 3);
+
+constexpr input::normalized_input_replay_keyboard_modifier_counts replay_keyboard_modifiers_contract{
+    .unmodified = 4,
+    .alt = 1,
+    .ctrl = 2,
+    .shift = 3,
+};
+static_assert(replay_keyboard_modifiers_contract.unmodified == 4);
+static_assert(replay_keyboard_modifiers_contract.ctrl == 2);
+static_assert(replay_keyboard_modifiers_contract.shift == 3);
+
+constexpr input::normalized_input_replay_keyboard_repeat_policy_counts replay_keyboard_repeat_contract{
+    .not_repeat = 5,
+    .allowed = 6,
+    .ignored = 7,
+};
+static_assert(replay_keyboard_repeat_contract.not_repeat == 5);
+static_assert(replay_keyboard_repeat_contract.allowed == 6);
+static_assert(replay_keyboard_repeat_contract.ignored == 7);
 
 static_assert(std::is_default_constructible_v<input::ime_event>);
 static_assert(std::is_same_v<decltype(input::ime_event{}.composition), input::ime_composition_state>);

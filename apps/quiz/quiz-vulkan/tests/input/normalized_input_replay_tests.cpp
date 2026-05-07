@@ -1,6 +1,7 @@
 #include "core/input/normalized_input_replay.h"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
@@ -23,6 +24,16 @@ void require(bool condition, const char* message)
 
     std::cerr << "normalized_input_replay_tests failed: " << message << '\n';
     std::exit(1);
+}
+
+void require_range(
+    quiz_vulkan::input::text_range range,
+    std::size_t start_byte,
+    std::size_t end_byte,
+    const char* message)
+{
+    require(range.start_byte == start_byte, message);
+    require(range.end_byte == end_byte, message);
 }
 
 quiz_vulkan::raw_platform_input_event pointer(
@@ -51,13 +62,26 @@ quiz_vulkan::raw_platform_input_event text(std::int64_t timestamp_ms, std::strin
     };
 }
 
-quiz_vulkan::raw_platform_input_event key(std::int64_t timestamp_ms, std::string logical_key)
+quiz_vulkan::raw_platform_input_event key(
+    std::int64_t timestamp_ms,
+    std::string logical_key,
+    bool repeat = false,
+    quiz_vulkan::raw_platform_key_phase phase = quiz_vulkan::raw_platform_key_phase::down,
+    bool ctrl = false,
+    bool shift = false,
+    bool meta = false,
+    bool alt = false)
 {
     return quiz_vulkan::raw_platform_key_event{
         .timestamp_ms = timestamp_ms,
-        .phase = quiz_vulkan::raw_platform_key_phase::down,
+        .phase = phase,
         .key_code = 0,
         .logical_key = std::move(logical_key),
+        .alt = alt,
+        .ctrl = ctrl,
+        .shift = shift,
+        .meta = meta,
+        .repeat = repeat,
     };
 }
 
@@ -169,6 +193,8 @@ void test_mixed_fixture_records_stable_summary_counts()
     require(recording.final_state.pointer_capture_clean, "mixed replay final state has no pointer capture");
     require(recording.final_state.has_text_focus, "mixed replay final state keeps focused text target");
     require(recording.final_state.focus_id == "answer", "mixed replay final state preserves focus id");
+    require(recording.final_state.text == utf8(u8"한"), "mixed replay final state records committed text");
+    require(recording.final_state.display_text == utf8(u8"한"), "mixed replay final state records display text");
     require(recording.final_state.preedit_clean, "mixed replay final state clears preedit");
     require(engine.text_model().text() == utf8(u8"한"), "mixed replay leaves committed ime text once");
 }
@@ -279,6 +305,110 @@ void test_pointer_cancel_and_release_replay_have_no_stale_capture()
         "mouse release replay release batch clears pointer capture");
 }
 
+void test_keyboard_shortcut_replay_summarizes_chords_and_final_state()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    const std::string initial = std::string("A") + utf8(u8"한") + "B";
+    const std::array steps{
+        step("text-initial", text(600, initial)),
+        step("home", key(610, "Home")),
+        step("delete", key(620, "Delete")),
+        step("arrow-right", key(630, "ArrowRight")),
+        step("shift-arrow-left", key(640, "ArrowLeft", false, raw_platform_key_phase::down, false, true)),
+        step("ctrl-a", key(650, "a", false, raw_platform_key_phase::down, true)),
+        step("repeat-backspace", key(660, "Backspace", true)),
+        step("text-ok", text(670, "ok")),
+        step("enter", key(680, "Enter")),
+        step("repeat-enter", key(690, "Enter", true)),
+        step("alt-escape", key(700, "Escape", false, raw_platform_key_phase::down, false, false, false, true)),
+        step("tab", key(710, "Tab")),
+        step("repeat-shift-tab", key(720, "Tab", true, raw_platform_key_phase::down, false, true)),
+    };
+
+    const normalized_input_replay_recording recording = replay_normalized_input_fixture(
+        engine,
+        steps,
+        normalized_input_replay_options{.initial_focus_target_id = "answer"});
+
+    require(recording.batches.size() == steps.size(), "keyboard replay records one batch per step");
+    require(recording.summary.routes.text == 11, "keyboard replay aggregate counts text routes");
+    require(recording.summary.routes.focus == 2, "keyboard replay aggregate counts focus traversal routes");
+    require(recording.summary.routes.total == 13, "keyboard replay aggregate counts all routes");
+
+    const normalized_input_replay_keyboard_summary& keyboard = recording.keyboard;
+    require(keyboard.total == 11, "keyboard replay aggregate counts all keyboard chords");
+    require(keyboard.chords.size() == 11, "keyboard replay aggregate stores keyboard chord snapshots");
+    require(keyboard.emitted_input_event_routes == 8,
+        "keyboard replay aggregate counts key routes with emitted input events");
+    require(keyboard.diagnostic_only_routes == 3,
+        "keyboard replay aggregate counts diagnostic-only key routes");
+    require(keyboard.intents.focus_traversal_next == 1,
+        "keyboard replay aggregate counts next traversal intent");
+    require(keyboard.intents.focus_traversal_previous == 1,
+        "keyboard replay aggregate counts previous traversal intent");
+    require(keyboard.intents.submit == 2, "keyboard replay aggregate counts submit and suppressed submit");
+    require(keyboard.intents.cancel == 1, "keyboard replay aggregate counts cancel intent");
+    require(keyboard.intents.caret_next == 1, "keyboard replay aggregate counts caret next intent");
+    require(keyboard.intents.caret_home == 1, "keyboard replay aggregate counts caret home intent");
+    require(keyboard.intents.selection_previous == 1,
+        "keyboard replay aggregate counts selection previous intent");
+    require(keyboard.intents.select_all == 1, "keyboard replay aggregate counts select all intent");
+    require(keyboard.intents.delete_backward == 1, "keyboard replay aggregate counts delete backward intent");
+    require(keyboard.intents.delete_forward == 1, "keyboard replay aggregate counts delete forward intent");
+    require(keyboard.intents.none == 0, "keyboard replay aggregate has no unknown shortcut intent");
+    require(keyboard.modifiers.unmodified == 7, "keyboard replay aggregate counts unmodified chords");
+    require(keyboard.modifiers.alt == 1, "keyboard replay aggregate counts alt chord");
+    require(keyboard.modifiers.ctrl == 1, "keyboard replay aggregate counts ctrl chord");
+    require(keyboard.modifiers.shift == 2, "keyboard replay aggregate counts shift chords");
+    require(keyboard.modifiers.meta == 0, "keyboard replay aggregate counts no meta chords");
+    require(keyboard.repeat_policies.not_repeat == 8,
+        "keyboard replay aggregate counts non-repeat key policies");
+    require(keyboard.repeat_policies.allowed == 1,
+        "keyboard replay aggregate counts allowed repeat key policy");
+    require(keyboard.repeat_policies.ignored == 2,
+        "keyboard replay aggregate counts ignored repeat key policies");
+
+    require(keyboard.chords[0].logical_key == "Home", "keyboard replay stores first chord logical key");
+    require(keyboard.chords[0].intent == keyboard_shortcut_intent::caret_home,
+        "keyboard replay stores first chord intent");
+    require(recording.batches[2].keyboard.intents.delete_forward == 1,
+        "keyboard replay delete batch counts delete-forward intent");
+    require(recording.batches[2].end_state.text == std::string(utf8(u8"한")) + "B",
+        "keyboard replay delete batch records post-delete text state");
+    require(recording.batches[2].end_state.caret_byte_offset == 0,
+        "keyboard replay delete batch records caret at delete position");
+    require(recording.batches[4].keyboard.modifiers.shift == 1,
+        "keyboard replay shift-arrow batch records shift modifier");
+    require(recording.batches[5].keyboard.modifiers.ctrl == 1,
+        "keyboard replay ctrl-a batch records ctrl modifier");
+    require(recording.batches[6].keyboard.repeat_policies.allowed == 1,
+        "keyboard replay repeat backspace batch records allowed repeat policy");
+    require(recording.batches[9].input_events.empty(), "keyboard replay repeat enter emits no event");
+    require(recording.batches[9].keyboard.repeat_policies.ignored == 1,
+        "keyboard replay repeat enter batch records ignored repeat policy");
+    require(recording.batches[10].keyboard.modifiers.alt == 1,
+        "keyboard replay escape batch records alt modifier");
+    require(recording.batches[10].keyboard.intents.cancel == 1,
+        "keyboard replay escape batch counts cancel intent");
+    require(recording.batches[12].keyboard.intents.focus_traversal_previous == 1,
+        "keyboard replay repeat shift-tab batch counts previous traversal intent");
+    require(recording.batches[12].keyboard.repeat_policies.ignored == 1,
+        "keyboard replay repeat shift-tab batch records ignored repeat policy");
+
+    require(recording.final_state.has_text_focus, "keyboard replay final state keeps text focus");
+    require(recording.final_state.focus_id == "answer", "keyboard replay final state preserves focus id");
+    require(recording.final_state.text.empty(), "keyboard replay final state records cleared committed text");
+    require(recording.final_state.display_text.empty(), "keyboard replay final state records cleared display text");
+    require(recording.final_state.caret_byte_offset == 0, "keyboard replay final state records caret offset");
+    require(!recording.final_state.has_selection, "keyboard replay final state records no selection");
+    require_range(recording.final_state.selection, 0, 0, "keyboard replay final selection is collapsed");
+    require(recording.final_state.preedit_text.empty(), "keyboard replay final state records empty preedit");
+    require(recording.final_state.preedit_clean, "keyboard replay final state has clean preedit");
+}
+
 } // namespace
 
 int main()
@@ -286,6 +416,7 @@ int main()
     test_mixed_fixture_records_stable_summary_counts();
     test_focus_loss_and_ime_cancel_replay_clean_preedit();
     test_pointer_cancel_and_release_replay_have_no_stale_capture();
+    test_keyboard_shortcut_replay_summarizes_chords_and_final_state();
 
     std::cout << "normalized_input_replay_tests passed\n";
     return 0;

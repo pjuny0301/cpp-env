@@ -406,6 +406,10 @@ static_assert(requires(const render::font_face_descriptor& descriptor) {
     { render::resolve_font_source(descriptor) } -> std::same_as<render::font_source_resolution>;
 });
 
+static_assert(requires(render::font_face_descriptor descriptor) {
+    { descriptor.glyph_id_offset } -> std::same_as<std::uint32_t&>;
+});
+
 static_assert(requires(const render::font_source_resolution& source) {
     { render::inspect_font_source_bytes(source) } -> std::same_as<render::font_source_bytes_readiness>;
     { render::font_source_bytes_cache_key_for(source) } -> std::same_as<std::string>;
@@ -604,6 +608,8 @@ static_assert(requires(
     { snapshot.used_codepoint_fallback } -> std::same_as<bool&>;
     { snapshot.used_fallback_glyph_id } -> std::same_as<bool&>;
     { snapshot.has_glyph_id } -> std::same_as<bool&>;
+    { snapshot.glyph_id_offset } -> std::same_as<std::uint32_t&>;
+    { snapshot.glyph_id_matches_codepoint } -> std::same_as<bool&>;
     { snapshot.coverage_status } -> std::same_as<render::render_text_font_unicode_coverage_status&>;
     { snapshot.cmap_status } -> std::same_as<render::render_text_font_cmap_inspect_status&>;
     { snapshot.selected_cmap_format } -> std::same_as<std::uint16_t&>;
@@ -625,6 +631,7 @@ static_assert(requires(
     { run_request.requests } -> std::same_as<std::vector<render::render_text_font_glyph_id_resolution_request>&>;
     { render::font_glyph_id_hex_codepoint_label(codepoint) } -> std::same_as<std::string>;
     { render::font_glyph_id_source_label_for(descriptor) } -> std::same_as<std::string>;
+    { render::font_glyph_id_apply_descriptor_mapping(descriptor, codepoint) } -> std::same_as<std::uint32_t>;
     { render::font_glyph_id_coverage_snapshot_for_descriptor(descriptor) }
         -> std::same_as<render::render_text_font_unicode_coverage_snapshot>;
     { render::font_glyph_id_request_supports_codepoint(request) } -> std::same_as<bool>;
@@ -721,8 +728,11 @@ static_assert(requires(
     { selection.resolved_face_id } -> std::same_as<render::font_face_id&>;
     { selection.glyph_id } -> std::same_as<std::uint32_t&>;
     { selection.has_glyph_id } -> std::same_as<bool&>;
+    { selection.glyph_id_offset } -> std::same_as<std::uint32_t&>;
+    { selection.glyph_id_matches_codepoint } -> std::same_as<bool&>;
     { selection.glyph_supported } -> std::same_as<bool&>;
     { selection.used_codepoint_fallback } -> std::same_as<bool&>;
+    { selection.used_fallback_glyph_id } -> std::same_as<bool&>;
     { shaping_request.run_index } -> std::same_as<std::size_t&>;
     { shaping_request.style_token } -> std::same_as<render::render_style_id&>;
     { shaping_request.style } -> std::same_as<render::render_text_style&>;
@@ -754,6 +764,9 @@ static_assert(requires(
     { shaped_glyph.glyph_supported } -> std::same_as<bool&>;
     { shaped_glyph.used_codepoint_fallback } -> std::same_as<bool&>;
     { shaped_glyph.used_fallback_glyph_id } -> std::same_as<bool&>;
+    { shaped_glyph.glyph_id_from_selection } -> std::same_as<bool&>;
+    { shaped_glyph.glyph_id_offset } -> std::same_as<std::uint32_t&>;
+    { shaped_glyph.glyph_id_matches_codepoint } -> std::same_as<bool&>;
     { shaped_glyph.zero_advance } -> std::same_as<bool&>;
     { shaped_glyph.combining_mark } -> std::same_as<bool&>;
     { shaping_diagnostic.status } -> std::same_as<render::render_text_font_shaping_backend_status&>;
@@ -982,6 +995,7 @@ static_assert(requires(render::render_text_glyph_cache_readiness_snapshot readin
     { readiness.run_index } -> std::same_as<std::size_t&>;
     { readiness.byte_offset } -> std::same_as<std::size_t&>;
     { readiness.byte_count } -> std::same_as<std::size_t&>;
+    { readiness.codepoint } -> std::same_as<std::uint32_t&>;
     { readiness.glyph_id } -> std::same_as<std::uint32_t&>;
     { readiness.requested_face_id } -> std::same_as<render::font_face_id&>;
     { readiness.resolved_face_id } -> std::same_as<render::font_face_id&>;
@@ -991,6 +1005,10 @@ static_assert(requires(render::render_text_glyph_cache_readiness_snapshot readin
     { readiness.estimated_rgba_bytes } -> std::same_as<std::size_t&>;
     { readiness.glyph_supported } -> std::same_as<bool&>;
     { readiness.used_codepoint_fallback } -> std::same_as<bool&>;
+    { readiness.used_fallback_glyph_id } -> std::same_as<bool&>;
+    { readiness.glyph_id_from_selection } -> std::same_as<bool&>;
+    { readiness.glyph_id_matches_codepoint } -> std::same_as<bool&>;
+    { readiness.glyph_id_offset } -> std::same_as<std::uint32_t&>;
     { readiness.cacheable } -> std::same_as<bool&>;
     { readiness.has_atlas_slot } -> std::same_as<bool&>;
 });
@@ -1012,6 +1030,7 @@ static_assert(requires(render::render_text_rasterized_glyph_atlas_payload_snapsh
     { payload.run_index } -> std::same_as<std::size_t&>;
     { payload.byte_offset } -> std::same_as<std::size_t&>;
     { payload.byte_count } -> std::same_as<std::size_t&>;
+    { payload.codepoint } -> std::same_as<std::uint32_t&>;
     { payload.glyph_id } -> std::same_as<std::uint32_t&>;
     { payload.resolved_face_id } -> std::same_as<render::font_face_id&>;
     { payload.cache_key } -> std::same_as<render::glyph_atlas_key&>;
@@ -1023,6 +1042,10 @@ static_assert(requires(render::render_text_rasterized_glyph_atlas_payload_snapsh
     { payload.rgba_bytes } -> std::same_as<std::size_t&>;
     { payload.source_label } -> std::same_as<std::string&>;
     { payload.diagnostic } -> std::same_as<std::string&>;
+    { payload.glyph_id_from_selection } -> std::same_as<bool&>;
+    { payload.glyph_id_matches_codepoint } -> std::same_as<bool&>;
+    { payload.used_fallback_glyph_id } -> std::same_as<bool&>;
+    { payload.glyph_id_offset } -> std::same_as<std::uint32_t&>;
     { payload.cacheable } -> std::same_as<bool&>;
     { payload.upload_ready } -> std::same_as<bool&>;
     { payload.skipped } -> std::same_as<bool&>;
@@ -1053,11 +1076,20 @@ static_assert(requires(
     { request.run_index } -> std::same_as<std::size_t&>;
     { request.cluster_byte_offset } -> std::same_as<std::size_t&>;
     { request.cluster_byte_count } -> std::same_as<std::size_t&>;
+    { request.codepoint } -> std::same_as<std::uint32_t&>;
     { request.shaped_glyph_ids } -> std::same_as<std::vector<std::uint32_t>&>;
+    { request.resolved_glyph_id } -> std::same_as<std::uint32_t&>;
+    { request.shaped_glyphs_match_cache_key } -> std::same_as<bool&>;
     { request.resolved_face_id } -> std::same_as<render::font_face_id&>;
     { request.cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { request.cache_key_matches_resolved_glyph_id } -> std::same_as<bool&>;
     { request.has_cache_key } -> std::same_as<bool&>;
     { request.rasterizer_status } -> std::same_as<render::render_text_font_rasterizer_status&>;
+    { request.raster_payload_matches_cache_key } -> std::same_as<bool&>;
+    { request.glyph_id_from_selection } -> std::same_as<bool&>;
+    { request.glyph_id_matches_codepoint } -> std::same_as<bool&>;
+    { request.used_fallback_glyph_id } -> std::same_as<bool&>;
+    { request.glyph_id_offset } -> std::same_as<std::uint32_t&>;
     { request.rasterized_payload_skipped } -> std::same_as<bool&>;
     { request.payload_upload_ready } -> std::same_as<bool&>;
     { request.payload_alpha_bytes } -> std::same_as<std::size_t&>;
@@ -1073,11 +1105,20 @@ static_assert(requires(
     { trace.run_index } -> std::same_as<std::size_t&>;
     { trace.cluster_byte_offset } -> std::same_as<std::size_t&>;
     { trace.cluster_byte_count } -> std::same_as<std::size_t&>;
+    { trace.codepoint } -> std::same_as<std::uint32_t&>;
     { trace.shaped_glyph_ids } -> std::same_as<std::vector<std::uint32_t>&>;
+    { trace.resolved_glyph_id } -> std::same_as<std::uint32_t&>;
+    { trace.shaped_glyphs_match_cache_key } -> std::same_as<bool&>;
     { trace.resolved_face_id } -> std::same_as<render::font_face_id&>;
     { trace.cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { trace.cache_key_matches_resolved_glyph_id } -> std::same_as<bool&>;
     { trace.has_cache_key } -> std::same_as<bool&>;
     { trace.rasterizer_status } -> std::same_as<render::render_text_font_rasterizer_status&>;
+    { trace.raster_payload_matches_cache_key } -> std::same_as<bool&>;
+    { trace.glyph_id_from_selection } -> std::same_as<bool&>;
+    { trace.glyph_id_matches_codepoint } -> std::same_as<bool&>;
+    { trace.used_fallback_glyph_id } -> std::same_as<bool&>;
+    { trace.glyph_id_offset } -> std::same_as<std::uint32_t&>;
     { trace.payload_alpha_bytes } -> std::same_as<std::size_t&>;
     { trace.payload_rgba_bytes } -> std::same_as<std::size_t&>;
     { trace.expected_payload_rgba_bytes } -> std::same_as<std::size_t&>;

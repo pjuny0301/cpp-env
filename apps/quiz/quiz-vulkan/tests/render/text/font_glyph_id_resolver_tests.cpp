@@ -102,10 +102,39 @@ void test_resolver_maps_latin_hangul_and_non_bmp_to_deterministic_glyph_ids()
     require(run.policy.fallback_glyph_id_count == 0U, "resolved glyphs do not use fallback glyph id");
 
     require(run.resolutions[0].glyph_id == U'A', "Latin glyph id is deterministic");
+    require(run.resolutions[0].glyph_id_matches_codepoint, "default Latin glyph id matches codepoint");
     require(run.resolutions[1].glyph_id == 0xac00U, "Hangul glyph id is deterministic");
     require(run.resolutions[2].glyph_id == 0x1f600U, "non-BMP glyph id is deterministic");
     require(run.resolutions[2].selected_cmap_format == 12U, "resolver preserves cmap format diagnostics");
     require(run.resolutions[2].cmap_status == render_text_font_cmap_inspect_status::valid, "resolver preserves cmap status");
+}
+
+void test_resolver_maps_face_local_glyph_id_without_codepoint_fallback()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_font_glyph_id_resolution_request request = request_for(utf8_text_codepoint{
+        .code_point = U'A',
+        .byte_offset = 0,
+        .byte_count = 1,
+        .valid = true,
+    });
+    request.resolved_face.glyph_id_offset = 1000;
+
+    const deterministic_font_glyph_id_resolver resolver;
+    const render_text_font_glyph_id_resolution_snapshot resolution = resolver.resolve(request);
+    const render_text_font_shaping_codepoint_selection selection =
+        font_glyph_id_resolution_to_shaping_selection(resolution);
+
+    require(resolution.ok(), "face-local glyph id resolves successfully");
+    require(resolution.glyph_id == 1065U, "face-local glyph id applies descriptor offset");
+    require(resolution.glyph_id_offset == 1000U, "glyph id resolution records descriptor offset");
+    require(!resolution.glyph_id_matches_codepoint, "face-local glyph id proves codepoint was not reused");
+    require(!resolution.used_fallback_glyph_id, "face-local glyph id does not use fallback glyph id");
+    require(selection.glyph_id == resolution.glyph_id, "shaping selection receives resolved face-local glyph id");
+    require(selection.glyph_id_offset == 1000U, "shaping selection preserves glyph id offset");
+    require(!selection.glyph_id_matches_codepoint, "shaping selection preserves non-codepoint glyph id diagnostic");
+    require(!selection.used_fallback_glyph_id, "shaping selection does not mark fallback glyph id");
 }
 
 void test_resolver_rejects_invalid_utf8_without_claiming_glyph_support()
@@ -129,6 +158,7 @@ void test_resolver_rejects_invalid_utf8_without_claiming_glyph_support()
     require(!resolution.glyph_supported, "invalid UTF-8 does not claim glyph support");
     require(resolution.used_fallback_glyph_id, "invalid UTF-8 records fallback glyph use");
     require(resolution.glyph_id == 9U, "invalid UTF-8 uses configured fallback glyph id");
+    require(!resolution.glyph_id_matches_codepoint, "invalid UTF-8 fallback differs from replacement codepoint");
 }
 
 void test_resolver_preserves_invalid_cmap_coverage_status()
@@ -195,6 +225,7 @@ void test_resolver_reports_unsupported_codepoint_and_shaping_selection()
     require(selection.glyph_id == 99U, "shaping selection receives fallback glyph id");
     require(selection.has_glyph_id, "shaping selection marks glyph id availability");
     require(!selection.glyph_supported, "shaping selection preserves unsupported glyph state");
+    require(selection.used_fallback_glyph_id, "shaping selection marks unsupported fallback glyph id");
 }
 
 void test_descriptor_coverage_snapshot_keeps_known_empty_faces_unsupported()
@@ -220,6 +251,7 @@ void test_descriptor_coverage_snapshot_keeps_known_empty_faces_unsupported()
 int main()
 {
     test_resolver_maps_latin_hangul_and_non_bmp_to_deterministic_glyph_ids();
+    test_resolver_maps_face_local_glyph_id_without_codepoint_fallback();
     test_resolver_rejects_invalid_utf8_without_claiming_glyph_support();
     test_resolver_preserves_invalid_cmap_coverage_status();
     test_resolver_reports_unsupported_codepoint_and_shaping_selection();

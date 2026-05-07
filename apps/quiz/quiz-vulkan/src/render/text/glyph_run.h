@@ -316,6 +316,7 @@ struct render_text_glyph_cache_readiness_snapshot {
     std::size_t run_index = 0;
     std::size_t byte_offset = 0;
     std::size_t byte_count = 0;
+    std::uint32_t codepoint = 0;
     std::uint32_t glyph_id = 0;
     font_face_id requested_face_id = 0;
     font_face_id resolved_face_id = 0;
@@ -325,6 +326,10 @@ struct render_text_glyph_cache_readiness_snapshot {
     std::size_t estimated_rgba_bytes = 0;
     bool glyph_supported = true;
     bool used_codepoint_fallback = false;
+    bool used_fallback_glyph_id = false;
+    bool glyph_id_from_selection = false;
+    bool glyph_id_matches_codepoint = false;
+    std::uint32_t glyph_id_offset = 0;
     bool cacheable = true;
     bool has_atlas_slot = false;
 };

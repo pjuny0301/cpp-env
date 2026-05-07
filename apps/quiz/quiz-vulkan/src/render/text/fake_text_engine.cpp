@@ -509,6 +509,7 @@ std::vector<shaped_glyph> shape_request(
                 .codepoints = codepoints,
                 .clusters = utf8_clusters,
                 .font_selections = shaping_selections,
+                .support_complex_scripts = false,
             });
         record_font_shaping_result(diagnostics, shaped_run);
 
@@ -530,6 +531,10 @@ std::vector<shaped_glyph> shape_request(
                 .newline = glyph.codepoint == '\n' || glyph.codepoint == '\r',
                 .glyph_supported = glyph.glyph_supported,
                 .used_codepoint_fallback = glyph.used_codepoint_fallback,
+                .used_fallback_glyph_id = glyph.used_fallback_glyph_id,
+                .glyph_id_from_selection = glyph.glyph_id_from_selection,
+                .glyph_id_matches_codepoint = glyph.glyph_id_matches_codepoint,
+                .glyph_id_offset = glyph.glyph_id_offset,
                 .cacheable = cacheable,
             });
         }
@@ -596,11 +601,16 @@ std::vector<laid_out_glyph_cluster> collect_glyph_cluster_layouts(
                         .resolved_face_id = glyph.resolved_face_id,
                     },
                     .bounds = render_rect{x, y, glyph.advance, line.height},
+                    .code_point = glyph.code_point,
                     .glyph_id = glyph.glyph_id,
                     .glyph_height = glyph.line_height,
                     .requested_face_id = glyph.requested_face_id,
                     .glyph_supported = glyph.glyph_supported,
                     .used_codepoint_fallback = glyph.used_codepoint_fallback,
+                    .used_fallback_glyph_id = glyph.used_fallback_glyph_id,
+                    .glyph_id_from_selection = glyph.glyph_id_from_selection,
+                    .glyph_id_matches_codepoint = glyph.glyph_id_matches_codepoint,
+                    .glyph_id_offset = glyph.glyph_id_offset,
                     .cacheable = glyph.cacheable,
                 };
                 has_active_cluster = true;
@@ -615,6 +625,15 @@ std::vector<laid_out_glyph_cluster> collect_glyph_cluster_layouts(
                 active_cluster.glyph_supported = active_cluster.glyph_supported && glyph.glyph_supported;
                 active_cluster.used_codepoint_fallback =
                     active_cluster.used_codepoint_fallback || glyph.used_codepoint_fallback;
+                active_cluster.used_fallback_glyph_id =
+                    active_cluster.used_fallback_glyph_id || glyph.used_fallback_glyph_id;
+                active_cluster.glyph_id_from_selection =
+                    active_cluster.glyph_id_from_selection && glyph.glyph_id_from_selection;
+                active_cluster.glyph_id_matches_codepoint =
+                    active_cluster.glyph_id_matches_codepoint && glyph.glyph_id_matches_codepoint;
+                if (active_cluster.glyph_id_offset != glyph.glyph_id_offset) {
+                    active_cluster.glyph_id_offset = 0U;
+                }
                 active_cluster.cacheable = active_cluster.cacheable && glyph.cacheable;
             }
 
@@ -934,6 +953,7 @@ void record_glyph_cache_readiness_diagnostics(
             .run_index = cluster.snapshot.run_index,
             .byte_offset = cluster.snapshot.byte_offset,
             .byte_count = cluster.snapshot.byte_count,
+            .codepoint = cluster.code_point,
             .glyph_id = cluster.glyph_id,
             .requested_face_id = cluster.requested_face_id,
             .resolved_face_id = cluster.snapshot.resolved_face_id,
@@ -943,6 +963,10 @@ void record_glyph_cache_readiness_diagnostics(
             .estimated_rgba_bytes = estimated_rgba_bytes,
             .glyph_supported = cluster.glyph_supported,
             .used_codepoint_fallback = cluster.used_codepoint_fallback,
+            .used_fallback_glyph_id = cluster.used_fallback_glyph_id,
+            .glyph_id_from_selection = cluster.glyph_id_from_selection,
+            .glyph_id_matches_codepoint = cluster.glyph_id_matches_codepoint,
+            .glyph_id_offset = cluster.glyph_id_offset,
             .cacheable = cacheable,
             .has_atlas_slot = cluster.atlas_slot.has_value(),
         });
@@ -1088,11 +1112,16 @@ void record_rasterized_glyph_atlas_payload_diagnostics(
                     .run_index = cluster.snapshot.run_index,
                     .byte_offset = cluster.snapshot.byte_offset,
                     .byte_count = cluster.snapshot.byte_count,
+                    .codepoint = cluster.code_point,
                     .glyph_id = cluster.glyph_id,
                     .resolved_face_id = cluster.snapshot.resolved_face_id,
                     .cache_key = key,
                     .status = render_text_font_rasterizer_status::unsupported_glyph,
                     .diagnostic = "glyph cluster was not resolved to a supported font face",
+                    .glyph_id_from_selection = cluster.glyph_id_from_selection,
+                    .glyph_id_matches_codepoint = cluster.glyph_id_matches_codepoint,
+                    .used_fallback_glyph_id = cluster.used_fallback_glyph_id,
+                    .glyph_id_offset = cluster.glyph_id_offset,
                     .cacheable = false,
                     .upload_ready = false,
                     .skipped = true,
@@ -1112,11 +1141,16 @@ void record_rasterized_glyph_atlas_payload_diagnostics(
                     .run_index = cluster.snapshot.run_index,
                     .byte_offset = cluster.snapshot.byte_offset,
                     .byte_count = cluster.snapshot.byte_count,
+                    .codepoint = cluster.code_point,
                     .glyph_id = cluster.glyph_id,
                     .resolved_face_id = cluster.snapshot.resolved_face_id,
                     .cache_key = key,
                     .status = render_text_font_rasterizer_status::missing_font_source,
                     .diagnostic = "resolved font face is not present in the text font catalog",
+                    .glyph_id_from_selection = cluster.glyph_id_from_selection,
+                    .glyph_id_matches_codepoint = cluster.glyph_id_matches_codepoint,
+                    .used_fallback_glyph_id = cluster.used_fallback_glyph_id,
+                    .glyph_id_offset = cluster.glyph_id_offset,
                     .cacheable = true,
                     .upload_ready = false,
                     .skipped = true,
@@ -1130,7 +1164,7 @@ void record_rasterized_glyph_atlas_payload_diagnostics(
         render_text_font_rasterize_request request = make_font_rasterize_request(
             *face,
             key,
-            cluster.glyph_id,
+            cluster.code_point,
             std::span<const std::byte>{font_bytes.data(), font_bytes.size()});
         request.font_bytes_status = bytes_status;
 
@@ -1143,6 +1177,7 @@ void record_rasterized_glyph_atlas_payload_diagnostics(
                 .run_index = cluster.snapshot.run_index,
                 .byte_offset = cluster.snapshot.byte_offset,
                 .byte_count = cluster.snapshot.byte_count,
+                .codepoint = cluster.code_point,
                 .glyph_id = cluster.glyph_id,
                 .resolved_face_id = cluster.snapshot.resolved_face_id,
                 .cache_key = key,
@@ -1154,6 +1189,10 @@ void record_rasterized_glyph_atlas_payload_diagnostics(
                 .rgba_bytes = payload.rgba.size(),
                 .source_label = result.source_label,
                 .diagnostic = result.diagnostic,
+                .glyph_id_from_selection = cluster.glyph_id_from_selection,
+                .glyph_id_matches_codepoint = cluster.glyph_id_matches_codepoint,
+                .used_fallback_glyph_id = cluster.used_fallback_glyph_id,
+                .glyph_id_offset = cluster.glyph_id_offset,
                 .cacheable = true,
                 .upload_ready = payload.upload_ready,
                 .skipped = !payload.upload_ready,
@@ -1211,6 +1250,19 @@ std::vector<std::uint32_t> shaped_glyph_ids_for_cluster(
     return glyph_ids;
 }
 
+std::uint32_t combined_shaped_glyph_id_for_cluster(const std::vector<std::uint32_t>& glyph_ids)
+{
+    if (glyph_ids.empty()) {
+        return 0U;
+    }
+
+    std::uint32_t combined = glyph_ids.front();
+    for (std::size_t index = 1; index < glyph_ids.size(); ++index) {
+        combined = combine_cluster_glyph_id(combined, glyph_ids[index]);
+    }
+    return combined;
+}
+
 bool readiness_has_cache_key(const render_text_glyph_cache_readiness_snapshot& readiness)
 {
     return readiness.cacheable
@@ -1235,19 +1287,31 @@ void record_shaped_atlas_update_trace_diagnostics(
             find_atlas_placement_for_cluster(diagnostics.glyph_atlas_placements, readiness.cluster_index);
         const render_text_atlas_update* update =
             placement == nullptr ? nullptr : find_dirty_update_for_page(dirty_updates, placement->page.id);
+        std::vector<std::uint32_t> shaped_glyph_ids = shaped_glyph_ids_for_cluster(diagnostics.shaped_glyphs, readiness);
+        const std::uint32_t combined_shaped_glyph_id = combined_shaped_glyph_id_for_cluster(shaped_glyph_ids);
 
         render_text_shaped_atlas_update_trace_request request{
             .cluster_index = readiness.cluster_index,
             .run_index = readiness.run_index,
             .cluster_byte_offset = readiness.byte_offset,
             .cluster_byte_count = readiness.byte_count,
-            .shaped_glyph_ids = shaped_glyph_ids_for_cluster(diagnostics.shaped_glyphs, readiness),
+            .codepoint = readiness.codepoint,
+            .shaped_glyph_ids = std::move(shaped_glyph_ids),
+            .resolved_glyph_id = readiness.glyph_id,
+            .shaped_glyphs_match_cache_key = combined_shaped_glyph_id == readiness.cache_key.glyph_id,
             .resolved_face_id = readiness.resolved_face_id,
             .cache_key = readiness.cache_key,
+            .cache_key_matches_resolved_glyph_id = readiness.cache_key.glyph_id == readiness.glyph_id,
             .has_cache_key = readiness_has_cache_key(readiness),
             .rasterizer_status = payload == nullptr
                 ? render_text_font_rasterizer_status::missing_font_source
                 : payload->status,
+            .raster_payload_matches_cache_key = payload != nullptr && payload->cache_key == readiness.cache_key
+                && payload->glyph_id == readiness.cache_key.glyph_id,
+            .glyph_id_from_selection = readiness.glyph_id_from_selection,
+            .glyph_id_matches_codepoint = readiness.glyph_id_matches_codepoint,
+            .used_fallback_glyph_id = readiness.used_fallback_glyph_id,
+            .glyph_id_offset = readiness.glyph_id_offset,
             .rasterized_payload_skipped = payload == nullptr || payload->skipped,
             .payload_upload_ready = payload != nullptr && payload->upload_ready,
             .payload_alpha_bytes = payload == nullptr ? 0U : payload->alpha_bytes,

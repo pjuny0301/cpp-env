@@ -33,6 +33,7 @@ struct font_face_descriptor {
     int weight = 400;
     bool italic = false;
     bool fallback = false;
+    std::uint32_t glyph_id_offset = 0;
 
     bool supports_codepoint(std::uint32_t codepoint) const
     {

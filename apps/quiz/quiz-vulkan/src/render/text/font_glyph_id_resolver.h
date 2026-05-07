@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <utility>
 #include <vector>
@@ -68,6 +69,8 @@ struct render_text_font_glyph_id_resolution_snapshot {
     bool used_codepoint_fallback = false;
     bool used_fallback_glyph_id = true;
     bool has_glyph_id = true;
+    std::uint32_t glyph_id_offset = 0;
+    bool glyph_id_matches_codepoint = false;
     render_text_font_unicode_coverage_status coverage_status =
         render_text_font_unicode_coverage_status::missing_bytes;
     render_text_font_cmap_inspect_status cmap_status =
@@ -171,6 +174,22 @@ inline std::string font_glyph_id_source_label_for(const font_face_descriptor& fa
     return "unlabeled-font-face";
 }
 
+inline std::uint32_t font_glyph_id_apply_descriptor_mapping(
+    const font_face_descriptor& face,
+    const std::uint32_t codepoint)
+{
+    if (face.glyph_id_offset == 0U) {
+        return codepoint;
+    }
+
+    const std::uint64_t mapped =
+        static_cast<std::uint64_t>(face.glyph_id_offset) + static_cast<std::uint64_t>(codepoint);
+    if (mapped > std::numeric_limits<std::uint32_t>::max()) {
+        return codepoint;
+    }
+    return static_cast<std::uint32_t>(mapped);
+}
+
 inline render_text_font_unicode_coverage_snapshot font_glyph_id_coverage_snapshot_for_descriptor(
     const font_face_descriptor& face)
 {
@@ -233,6 +252,8 @@ inline render_text_font_glyph_id_resolution_snapshot make_font_glyph_id_resoluti
         .used_codepoint_fallback = request.used_codepoint_fallback,
         .used_fallback_glyph_id = true,
         .has_glyph_id = true,
+        .glyph_id_offset = request.has_resolved_face ? request.resolved_face.glyph_id_offset : 0U,
+        .glyph_id_matches_codepoint = request.fallback_glyph_id == request.codepoint.code_point,
         .coverage_status = request.has_coverage
             ? request.coverage.status
             : render_text_font_unicode_coverage_status::valid,
@@ -286,6 +307,8 @@ inline render_text_font_glyph_id_resolution_snapshot resolve_font_glyph_id(
                 + font_glyph_id_hex_codepoint_label(request.codepoint.code_point));
     }
 
+    const std::uint32_t glyph_id =
+        font_glyph_id_apply_descriptor_mapping(request.resolved_face, request.codepoint.code_point);
     return render_text_font_glyph_id_resolution_snapshot{
         .status = render_text_font_glyph_id_resolution_status::resolved,
         .run_index = request.run_index,
@@ -293,7 +316,7 @@ inline render_text_font_glyph_id_resolution_snapshot resolve_font_glyph_id(
         .byte_offset = request.codepoint.byte_offset,
         .byte_count = request.codepoint.byte_count,
         .codepoint = request.codepoint.code_point,
-        .glyph_id = request.codepoint.code_point,
+        .glyph_id = glyph_id,
         .requested_face_id = request.requested_face_id,
         .resolved_face_id = request.resolved_face.id,
         .valid_utf8 = true,
@@ -301,6 +324,8 @@ inline render_text_font_glyph_id_resolution_snapshot resolve_font_glyph_id(
         .used_codepoint_fallback = request.used_codepoint_fallback,
         .used_fallback_glyph_id = false,
         .has_glyph_id = true,
+        .glyph_id_offset = request.resolved_face.glyph_id_offset,
+        .glyph_id_matches_codepoint = glyph_id == request.codepoint.code_point,
         .coverage_status = request.has_coverage
             ? request.coverage.status
             : render_text_font_unicode_coverage_status::valid,
@@ -384,8 +409,11 @@ inline render_text_font_shaping_codepoint_selection font_glyph_id_resolution_to_
         .resolved_face_id = resolution.resolved_face_id,
         .glyph_id = resolution.glyph_id,
         .has_glyph_id = resolution.has_glyph_id,
+        .glyph_id_offset = resolution.glyph_id_offset,
+        .glyph_id_matches_codepoint = resolution.glyph_id_matches_codepoint,
         .glyph_supported = resolution.glyph_supported,
         .used_codepoint_fallback = resolution.used_codepoint_fallback,
+        .used_fallback_glyph_id = resolution.used_fallback_glyph_id,
     };
 }
 

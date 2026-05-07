@@ -28,6 +28,10 @@ struct shaped_glyph {
     bool newline = false;
     bool glyph_supported = true;
     bool used_codepoint_fallback = false;
+    bool used_fallback_glyph_id = false;
+    bool glyph_id_from_selection = false;
+    bool glyph_id_matches_codepoint = false;
+    std::uint32_t glyph_id_offset = 0;
     bool cacheable = true;
 };
 
@@ -42,11 +46,16 @@ struct laid_out_line {
 struct laid_out_glyph_cluster {
     render_text_glyph_cluster snapshot;
     render_rect bounds;
+    std::uint32_t code_point = 0;
     std::uint32_t glyph_id = 0;
     float glyph_height = 0.0f;
     font_face_id requested_face_id = 0;
     bool glyph_supported = true;
     bool used_codepoint_fallback = false;
+    bool used_fallback_glyph_id = false;
+    bool glyph_id_from_selection = false;
+    bool glyph_id_matches_codepoint = false;
+    std::uint32_t glyph_id_offset = 0;
     bool cacheable = true;
     std::optional<glyph_atlas_slot> atlas_slot;
 };

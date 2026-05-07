@@ -275,8 +275,7 @@ public:
 
     bool supports(const render_image_decode_request& request) const override
     {
-        return (adapter_.has_backend() && adapter_.supports(request))
-            || fallback_.supports(request);
+        return adapter_.has_backend() || fallback_.supports(request);
     }
 
     render_image_decode_result decode(const render_image_decode_request& request) const override
@@ -286,12 +285,20 @@ public:
         }
 
         const third_party_image_decoder_capability capability = adapter_.inspect(request);
-        if (!capability.supports_decode()) {
-            return fallback_.decode(request);
-        }
-
         render_image_decoder_diagnostic adapter_diagnostic =
             make_third_party_image_decoder_adapter_diagnostic(request, capability, 0);
+        if (!capability.supports_decode()) {
+            render_image_decode_result fallback_result = fallback_.decode(request);
+            reindex_render_image_decoder_diagnostics(
+                request,
+                fallback_result.decoder_diagnostics,
+                1);
+            fallback_result.decoder_diagnostics.insert(
+                fallback_result.decoder_diagnostics.begin(),
+                std::move(adapter_diagnostic));
+            return fallback_result;
+        }
+
         render_image_decode_result adapter_result =
             adapter_.decode_with_capability(request, capability);
         adapter_diagnostic.decode_attempted = true;

@@ -1,10 +1,13 @@
 #include "render/image/image_decoder.h"
+#include "render/image/image_manifest_texture_pipeline.h"
 #include "render/image/image_resolver.h"
 #include "render/image/image_source_bytes_loader.h"
 #include "render/image/image_texture_cache.h"
 #include "render/image/image_texture_pipeline.h"
+#include "render/image/third_party_image_decoder_adapter.h"
 
 #include <cassert>
+#include <concepts>
 #include <cstddef>
 #include <cstdio>
 #include <filesystem>
@@ -16,6 +19,21 @@
 #include <vector>
 
 namespace {
+
+template <typename T>
+concept HasFakeCacheSnapshotField = requires(T value) {
+    { value.cache_snapshot } -> std::same_as<quiz_vulkan::render::fake_image_texture_cache_snapshot&>;
+};
+
+template <typename T>
+concept HasFakeUploadSnapshotField = requires(T value) {
+    { value.upload_snapshot } -> std::same_as<quiz_vulkan::render::fake_image_texture_upload_snapshot&>;
+};
+
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_manifest_texture_entry_snapshot>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_manifest_texture_pipeline_snapshot>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_manifest_texture_entry_snapshot>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_manifest_texture_pipeline_snapshot>);
 
 void require(bool condition, const char* message)
 {
@@ -58,6 +76,35 @@ std::vector<std::byte> make_short_ppm_2x1_fixture_bytes()
     append_byte(bytes, 0x00);
     append_byte(bytes, 0x00);
     return bytes;
+}
+
+std::vector<std::byte> make_jpeg_signature_bytes()
+{
+    std::vector<std::byte> bytes;
+    append_byte(bytes, 0xff);
+    append_byte(bytes, 0xd8);
+    append_byte(bytes, 0xff);
+    append_byte(bytes, 0xd9);
+    return bytes;
+}
+
+quiz_vulkan::render::render_decoded_image make_rgba_1x1_image(
+    unsigned char red,
+    unsigned char green,
+    unsigned char blue,
+    unsigned char alpha)
+{
+    return quiz_vulkan::render::render_decoded_image{
+        .width = 1,
+        .height = 1,
+        .pixel_format = quiz_vulkan::render::render_image_pixel_format::rgba8_srgb,
+        .pixels = {
+            std::byte{red},
+            std::byte{green},
+            std::byte{blue},
+            std::byte{alpha},
+        },
+    };
 }
 
 std::filesystem::path test_data_root()
@@ -284,6 +331,141 @@ void test_filesystem_pipeline_reports_malformed_ppm_decode_failed()
     require(!snapshot.entries[0].diagnostic.empty(), "malformed file snapshot keeps diagnostic");
 }
 
+void test_pipeline_uses_optional_third_party_decoder_through_interface()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_third_party_image_decoder_backend backend;
+    backend.set_decoder_id("fake_stb_decoder");
+    backend.set_supported_formats({render_image_encoded_format::jpeg});
+    backend.set_decoded_image(make_rgba_1x1_image(9, 8, 7, 6));
+    optional_third_party_image_decoder_chain decoder(backend);
+
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes("asset://textures/card.jpg", make_jpeg_signature_bytes());
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
+
+    const render_image_texture_pipeline_result result = pipeline.acquire_texture(
+        render_image_texture_pipeline_request{.uri = "asset://textures/card.jpg"});
+
+    require(result.ok(), "optional third-party decoder feeds image texture pipeline");
+    require(result.status == render_image_texture_pipeline_status::ready, "third-party pipeline result is ready");
+    require(result.texture.decode_metadata.decoder_id == "fake_stb_decoder", "third-party pipeline records decoder id");
+    require(result.texture.decode_metadata.width == 1, "third-party pipeline records width");
+    require(result.texture.decode_metadata.height == 1, "third-party pipeline records height");
+    require(
+        result.texture.decode_metadata.format_detection.detected_format == render_image_encoded_format::jpeg,
+        "third-party pipeline records detected JPEG format");
+    require(result.texture.decode_metadata.size_validation.valid, "third-party pipeline validates decoded payload");
+    require(result.texture.decoder_diagnostics.size() == 1, "third-party pipeline records adapter diagnostic");
+    require(result.texture.decoder_diagnostics[0].decoder_id == "fake_stb_decoder", "adapter diagnostic records decoder id");
+    require(result.texture.decoder_diagnostics[0].decode_attempted, "adapter diagnostic records decode attempt");
+    require(uploader.upload_requests.size() == 1, "third-party pipeline uploads decoded texture once");
+    require(cache.cached_texture_count() == 1, "third-party pipeline caches decoded texture");
+    require(backend.decode_requests.size() == 1, "third-party backend is called once");
+
+    const fake_image_texture_pipeline_snapshot snapshot = pipeline.diagnostic_snapshot();
+    require(snapshot.acquire_count == 1, "third-party pipeline snapshot records acquire");
+    require(snapshot.ready_count == 1, "third-party pipeline snapshot records ready");
+    require(snapshot.upload_snapshot.upload_count == 1, "third-party pipeline snapshot records upload");
+    require(snapshot.cache_snapshot.texture_count == 1, "third-party pipeline snapshot records cached texture");
+    require(snapshot.entries[0].decode_metadata.decoder_id == "fake_stb_decoder", "pipeline entry records third-party decoder");
+    require(snapshot.entries[0].decoder_diagnostics[0].decoder_id == "fake_stb_decoder", "pipeline entry records adapter diagnostic");
+}
+
+void test_optional_adapter_failure_falls_back_before_texture_upload()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_third_party_image_decoder_backend backend;
+    backend.set_decoder_id("fake_stb_decoder");
+    backend.set_supported_formats({render_image_encoded_format::ppm});
+    backend.set_result(render_image_decode_result{
+        .status = render_image_decode_status::invalid_data,
+        .image = {},
+        .diagnostic = "fake third-party decode failed before fallback",
+        .metadata = {},
+    });
+    optional_third_party_image_decoder_chain decoder(backend);
+
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes("asset://textures/card.ppm", make_ppm_2x1_fixture_bytes());
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
+
+    const render_image_texture_pipeline_result result = pipeline.acquire_texture(
+        render_image_texture_pipeline_request{.uri = "asset://textures/card.ppm"});
+
+    require(result.ok(), "optional decoder fallback feeds image texture pipeline");
+    require(result.texture.decode_metadata.decoder_id == "ppm_image_decoder", "fallback pipeline selects PPM decoder");
+    require(result.texture.decoder_diagnostics.size() == 3, "fallback pipeline records adapter, BMP, and PPM diagnostics");
+    require(result.texture.decoder_diagnostics[0].decoder_id == "fake_stb_decoder", "fallback pipeline records adapter first");
+    require(result.texture.decoder_diagnostics[0].decode_attempted, "fallback pipeline records adapter decode attempt");
+    require(!result.texture.decoder_diagnostics[0].terminal_candidate, "failed adapter is not terminal before fallback");
+    require(result.texture.decoder_diagnostics[1].decoder_id == "bmp_image_decoder", "fallback pipeline records BMP candidate");
+    require(result.texture.decoder_diagnostics[2].decoder_id == "ppm_image_decoder", "fallback pipeline records PPM candidate");
+    require(result.texture.decoder_diagnostics[2].terminal_candidate, "fallback PPM candidate is terminal");
+    require(backend.decode_requests.size() == 1, "failing adapter is called once before fallback");
+    require(uploader.upload_requests.size() == 1, "fallback uploads only after standard decode succeeds");
+
+    const fake_image_texture_pipeline_snapshot snapshot = pipeline.diagnostic_snapshot();
+    require(snapshot.ready_count == 1, "fallback pipeline snapshot records ready");
+    require(snapshot.decode_failure_count == 0, "fallback pipeline snapshot records no terminal decode failure");
+    require(snapshot.upload_snapshot.upload_count == 1, "fallback pipeline snapshot records one upload");
+    require(snapshot.entries[0].upload_count_before == 0, "fallback upload happens after decode path");
+    require(snapshot.entries[0].upload_count_after == 1, "fallback upload count increments once");
+    require(snapshot.entries[0].decode_metadata.decoder_id == "ppm_image_decoder", "fallback entry records standard decoder");
+}
+
+void test_unavailable_optional_adapter_keeps_diagnostics_without_upload()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_third_party_image_decoder_backend backend;
+    backend.set_decoder_id("fake_stb_decoder");
+    backend.set_available(false);
+    backend.set_supported_formats({render_image_encoded_format::jpeg});
+    optional_third_party_image_decoder_chain decoder(backend);
+
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes("asset://textures/card.jpg", make_jpeg_signature_bytes());
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
+
+    const render_image_texture_pipeline_result result = pipeline.acquire_texture(
+        render_image_texture_pipeline_request{.uri = "asset://textures/card.jpg"});
+
+    require(!result.ok(), "unavailable optional adapter does not produce a texture");
+    require(
+        result.status == render_image_texture_pipeline_status::decode_failed,
+        "unavailable optional adapter reports pipeline decode failure");
+    require(result.texture.status == render_image_texture_status::decode_failed, "unavailable adapter preserves texture decode failure");
+    require(result.texture.decoder_diagnostics.size() == 4, "unavailable adapter records adapter plus standard diagnostics");
+    require(result.texture.decoder_diagnostics[0].decoder_id == "fake_stb_decoder", "unavailable adapter diagnostic is visible");
+    require(!result.texture.decoder_diagnostics[0].supported, "unavailable adapter diagnostic records unsupported candidate");
+    require(
+        result.texture.decoder_diagnostics[0].diagnostic.find("unavailable") != std::string::npos,
+        "unavailable adapter diagnostic names unavailable backend");
+    require(result.texture.decoder_diagnostics[1].decoder_id == "bmp_image_decoder", "standard diagnostics remain available");
+    require(result.texture.decoder_diagnostics[3].terminal_candidate, "standard terminal diagnostic remains available");
+    require(uploader.upload_requests.empty(), "unavailable adapter path does not upload");
+    require(backend.decode_requests.empty(), "unavailable adapter path does not call backend decode");
+
+    const fake_image_texture_pipeline_snapshot snapshot = pipeline.diagnostic_snapshot();
+    require(snapshot.failure_count == 1, "unavailable adapter snapshot records failure");
+    require(snapshot.decode_failure_count == 1, "unavailable adapter snapshot counts decode failure");
+    require(snapshot.upload_snapshot.upload_count == 0, "unavailable adapter snapshot records no upload");
+    require(snapshot.entries[0].decoder_diagnostics[0].decoder_id == "fake_stb_decoder", "snapshot keeps adapter diagnostic");
+    require(snapshot.entries[0].upload_count_after == 0, "snapshot records no upload after unavailable adapter");
+}
+
 } // namespace
 
 int main()
@@ -292,5 +474,8 @@ int main()
     test_filesystem_pipeline_reports_missing_file_source_load_failed();
     test_filesystem_pipeline_reports_empty_file_source_load_failed();
     test_filesystem_pipeline_reports_malformed_ppm_decode_failed();
+    test_pipeline_uses_optional_third_party_decoder_through_interface();
+    test_optional_adapter_failure_falls_back_before_texture_upload();
+    test_unavailable_optional_adapter_keeps_diagnostics_without_upload();
     return 0;
 }

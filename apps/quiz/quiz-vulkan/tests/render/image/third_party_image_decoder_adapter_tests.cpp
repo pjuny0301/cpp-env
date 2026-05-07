@@ -222,11 +222,14 @@ void test_unavailable_adapter_preserves_standard_unsupported_failure()
         result.status == render_image_decode_status::unsupported_format,
         "unavailable adapter preserves unsupported format status");
     require(result.image.empty(), "unavailable adapter does not create placeholder pixels");
-    require(result.decoder_diagnostics.size() == 3, "unavailable adapter preserves standard diagnostics");
-    require(result.decoder_diagnostics[0].decoder_id == "bmp_image_decoder", "standard BMP remains first diagnostic");
-    require(result.decoder_diagnostics[2].terminal_candidate, "standard chain terminal diagnostic is stable");
+    require(result.decoder_diagnostics.size() == 4, "unavailable adapter preserves adapter and standard diagnostics");
+    require(result.decoder_diagnostics[0].decoder_id == "fake_stb_decoder", "unavailable adapter diagnostic is visible");
+    require(!result.decoder_diagnostics[0].supported, "unavailable adapter diagnostic records unsupported candidate");
+    require(!result.decoder_diagnostics[0].decode_attempted, "unavailable adapter diagnostic avoids decode attempt");
+    require(result.decoder_diagnostics[1].decoder_id == "bmp_image_decoder", "standard BMP follows adapter diagnostic");
+    require(result.decoder_diagnostics[3].terminal_candidate, "standard chain terminal diagnostic is stable");
     require(
-        result.decoder_diagnostics[2].diagnostic == "decoder chain exhausted all candidates",
+        result.decoder_diagnostics[3].diagnostic == "decoder chain exhausted all candidates",
         "standard unsupported diagnostic remains deterministic");
     require(backend.decode_requests.empty(), "unavailable adapter does not decode");
 }

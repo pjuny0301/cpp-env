@@ -3,6 +3,7 @@
 #include "render/text/font_cmap_inspector.h"
 #include "render/text/font_coverage_run_segmentation.h"
 #include "render/text/font_rasterizer.h"
+#include "render/text/font_shaped_atlas_update.h"
 #include "render/text/font_shaping_backend.h"
 #include "render/text/font_sfnt_inspector.h"
 #include "render/text/font_source_bytes_loader.h"
@@ -174,6 +175,10 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
         -> std::same_as<std::vector<render::render_text_rasterized_glyph_atlas_payload_snapshot>&>;
     { diagnostics.rasterized_glyph_atlas_payload_policy }
         -> std::same_as<render::render_text_rasterized_glyph_atlas_payload_policy_snapshot&>;
+    { diagnostics.shaped_atlas_update_traces }
+        -> std::same_as<std::vector<render::render_text_shaped_atlas_update_trace_snapshot>&>;
+    { diagnostics.shaped_atlas_update_trace_policy }
+        -> std::same_as<render::render_text_shaped_atlas_update_trace_policy_snapshot&>;
     { diagnostics.glyph_cache_faces } -> std::same_as<std::vector<render::render_text_glyph_cache_face_snapshot>&>;
     { diagnostics.glyph_cache_evictions }
         -> std::same_as<std::vector<render::render_text_glyph_cache_eviction_snapshot>&>;
@@ -198,6 +203,8 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.has_glyph_cache_readiness() } -> std::same_as<bool>;
     { diagnostics.has_rasterized_glyph_atlas_payloads() } -> std::same_as<bool>;
     { diagnostics.has_rasterized_glyph_atlas_payload_policy() } -> std::same_as<bool>;
+    { diagnostics.has_shaped_atlas_update_traces() } -> std::same_as<bool>;
+    { diagnostics.has_shaped_atlas_update_trace_policy() } -> std::same_as<bool>;
     { diagnostics.has_line_breaks() } -> std::same_as<bool>;
     { diagnostics.has_line_metrics() } -> std::same_as<bool>;
     { diagnostics.has_line_run_boxes() } -> std::same_as<bool>;
@@ -942,6 +949,74 @@ static_assert(requires(render::render_text_rasterized_glyph_atlas_payload_policy
     { policy.invalid_pixel_size_count } -> std::same_as<std::size_t&>;
     { policy.total_alpha_bytes } -> std::same_as<std::size_t&>;
     { policy.total_rgba_bytes } -> std::same_as<std::size_t&>;
+});
+
+static_assert(requires(
+    render::render_text_shaped_atlas_update_trace_status status,
+    render::render_text_shaped_atlas_update_trace_request request,
+    render::render_text_shaped_atlas_update_trace_snapshot trace,
+    render::render_text_shaped_atlas_update_trace_policy_snapshot policy,
+    std::vector<render::render_text_shaped_atlas_update_trace_snapshot> traces,
+    std::size_t byte_count) {
+    { render::render_text_shaped_atlas_update_trace_status_name(status) } -> std::same_as<std::string>;
+    { request.cluster_index } -> std::same_as<std::size_t&>;
+    { request.run_index } -> std::same_as<std::size_t&>;
+    { request.cluster_byte_offset } -> std::same_as<std::size_t&>;
+    { request.cluster_byte_count } -> std::same_as<std::size_t&>;
+    { request.shaped_glyph_ids } -> std::same_as<std::vector<std::uint32_t>&>;
+    { request.resolved_face_id } -> std::same_as<render::font_face_id&>;
+    { request.cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { request.has_cache_key } -> std::same_as<bool&>;
+    { request.rasterizer_status } -> std::same_as<render::render_text_font_rasterizer_status&>;
+    { request.rasterized_payload_skipped } -> std::same_as<bool&>;
+    { request.payload_upload_ready } -> std::same_as<bool&>;
+    { request.payload_alpha_bytes } -> std::same_as<std::size_t&>;
+    { request.payload_rgba_bytes } -> std::same_as<std::size_t&>;
+    { request.has_atlas_placement } -> std::same_as<bool&>;
+    { request.page } -> std::same_as<render::render_text_atlas_page&>;
+    { request.atlas_bounds } -> std::same_as<render::render_rect&>;
+    { request.has_atlas_update } -> std::same_as<bool&>;
+    { request.atlas_update_bounds } -> std::same_as<render::render_rect&>;
+    { request.atlas_update_rgba_bytes } -> std::same_as<std::size_t&>;
+    { trace.status } -> std::same_as<render::render_text_shaped_atlas_update_trace_status&>;
+    { trace.cluster_index } -> std::same_as<std::size_t&>;
+    { trace.run_index } -> std::same_as<std::size_t&>;
+    { trace.cluster_byte_offset } -> std::same_as<std::size_t&>;
+    { trace.cluster_byte_count } -> std::same_as<std::size_t&>;
+    { trace.shaped_glyph_ids } -> std::same_as<std::vector<std::uint32_t>&>;
+    { trace.resolved_face_id } -> std::same_as<render::font_face_id&>;
+    { trace.cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { trace.has_cache_key } -> std::same_as<bool&>;
+    { trace.rasterizer_status } -> std::same_as<render::render_text_font_rasterizer_status&>;
+    { trace.payload_alpha_bytes } -> std::same_as<std::size_t&>;
+    { trace.payload_rgba_bytes } -> std::same_as<std::size_t&>;
+    { trace.expected_payload_rgba_bytes } -> std::same_as<std::size_t&>;
+    { trace.payload_upload_ready } -> std::same_as<bool&>;
+    { trace.payload_byte_count_matches } -> std::same_as<bool&>;
+    { trace.has_atlas_placement } -> std::same_as<bool&>;
+    { trace.page } -> std::same_as<render::render_text_atlas_page&>;
+    { trace.atlas_bounds } -> std::same_as<render::render_rect&>;
+    { trace.has_atlas_update } -> std::same_as<bool&>;
+    { trace.atlas_update_bounds } -> std::same_as<render::render_rect&>;
+    { trace.atlas_update_rgba_bytes } -> std::same_as<std::size_t&>;
+    { trace.queued } -> std::same_as<bool&>;
+    { trace.clean_page_reused } -> std::same_as<bool&>;
+    { trace.diagnostic } -> std::same_as<std::string&>;
+    { policy.trace_count } -> std::same_as<std::size_t&>;
+    { policy.upload_ready_payload_queued_count } -> std::same_as<std::size_t&>;
+    { policy.clean_atlas_page_reused_count } -> std::same_as<std::size_t&>;
+    { policy.rasterized_payload_skipped_count } -> std::same_as<std::size_t&>;
+    { policy.shaped_glyph_without_cache_key_count } -> std::same_as<std::size_t&>;
+    { policy.payload_byte_count_mismatch_count } -> std::same_as<std::size_t&>;
+    { policy.traced_shaped_glyph_count } -> std::same_as<std::size_t&>;
+    { policy.upload_ready_payload_bytes } -> std::same_as<std::size_t&>;
+    { policy.queued_atlas_update_bytes } -> std::same_as<std::size_t&>;
+    { render::render_text_shaped_atlas_expected_payload_rgba_bytes(byte_count) } -> std::same_as<std::size_t>;
+    { render::render_text_shaped_atlas_payload_byte_count_matches(byte_count, byte_count) }
+        -> std::same_as<bool>;
+    { render::make_render_text_shaped_atlas_update_trace(request) }
+        -> std::same_as<render::render_text_shaped_atlas_update_trace_snapshot>;
+    { render::append_render_text_shaped_atlas_update_trace(traces, policy, trace) } -> std::same_as<void>;
 });
 
 static_assert(requires(render::render_draw_command command) {

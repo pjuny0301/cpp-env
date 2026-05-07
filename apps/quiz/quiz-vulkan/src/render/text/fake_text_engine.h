@@ -2,6 +2,7 @@
 
 #include "render/text/font_rasterizer.h"
 #include "render/text/font_resolver.h"
+#include "render/text/font_shaped_atlas_update.h"
 #include "render/text/font_shaping_backend.h"
 #include "render/text/glyph_run.h"
 #include "render/text/text_engine.h"
@@ -65,6 +66,8 @@ struct fake_text_engine_diagnostics {
     render_text_glyph_cache_readiness_policy_snapshot glyph_cache_readiness_policy;
     std::vector<render_text_rasterized_glyph_atlas_payload_snapshot> rasterized_glyph_atlas_payloads;
     render_text_rasterized_glyph_atlas_payload_policy_snapshot rasterized_glyph_atlas_payload_policy;
+    std::vector<render_text_shaped_atlas_update_trace_snapshot> shaped_atlas_update_traces;
+    render_text_shaped_atlas_update_trace_policy_snapshot shaped_atlas_update_trace_policy;
     std::vector<render_text_glyph_cache_face_snapshot> glyph_cache_faces;
     std::vector<render_text_glyph_cache_eviction_snapshot> glyph_cache_evictions;
     render_text_glyph_cache_policy_snapshot glyph_cache_policy;
@@ -183,6 +186,16 @@ struct fake_text_engine_diagnostics {
     bool has_rasterized_glyph_atlas_payload_policy() const
     {
         return rasterized_glyph_atlas_payload_policy.request_count > 0;
+    }
+
+    bool has_shaped_atlas_update_traces() const
+    {
+        return !shaped_atlas_update_traces.empty();
+    }
+
+    bool has_shaped_atlas_update_trace_policy() const
+    {
+        return shaped_atlas_update_trace_policy.trace_count > 0;
     }
 
     bool has_line_breaks() const

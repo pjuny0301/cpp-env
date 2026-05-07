@@ -1128,6 +1128,112 @@ void record_rasterized_glyph_atlas_payload_diagnostics(
     }
 }
 
+const render_text_rasterized_glyph_atlas_payload_snapshot* find_rasterized_payload_for_cluster(
+    const std::vector<render_text_rasterized_glyph_atlas_payload_snapshot>& payloads,
+    const std::size_t cluster_index)
+{
+    const auto match = std::find_if(
+        payloads.begin(),
+        payloads.end(),
+        [&](const render_text_rasterized_glyph_atlas_payload_snapshot& payload) {
+            return payload.cluster_index == cluster_index;
+        });
+    return match == payloads.end() ? nullptr : &*match;
+}
+
+const render_text_glyph_atlas_placement_snapshot* find_atlas_placement_for_cluster(
+    const std::vector<render_text_glyph_atlas_placement_snapshot>& placements,
+    const std::size_t cluster_index)
+{
+    const auto match = std::find_if(
+        placements.begin(),
+        placements.end(),
+        [&](const render_text_glyph_atlas_placement_snapshot& placement) {
+            return placement.cluster_index == cluster_index;
+        });
+    return match == placements.end() ? nullptr : &*match;
+}
+
+bool shaped_glyph_is_inside_cluster(
+    const render_text_shaped_glyph& glyph,
+    const render_text_glyph_cache_readiness_snapshot& readiness)
+{
+    const std::size_t cluster_end = readiness.byte_offset + readiness.byte_count;
+    const std::size_t glyph_end = glyph.byte_offset + glyph.byte_count;
+    return glyph.run_index == readiness.run_index
+        && glyph.byte_offset >= readiness.byte_offset
+        && glyph_end <= cluster_end;
+}
+
+std::vector<std::uint32_t> shaped_glyph_ids_for_cluster(
+    const std::vector<render_text_shaped_glyph>& shaped_glyphs,
+    const render_text_glyph_cache_readiness_snapshot& readiness)
+{
+    std::vector<std::uint32_t> glyph_ids;
+    for (const render_text_shaped_glyph& glyph : shaped_glyphs) {
+        if (shaped_glyph_is_inside_cluster(glyph, readiness)) {
+            glyph_ids.push_back(glyph.glyph_id);
+        }
+    }
+    return glyph_ids;
+}
+
+bool readiness_has_cache_key(const render_text_glyph_cache_readiness_snapshot& readiness)
+{
+    return readiness.cacheable
+        && readiness.has_atlas_slot
+        && readiness.cache_key.face_id != 0U
+        && readiness.cache_key.glyph_id != 0U
+        && readiness.cache_key.pixel_size != 0U;
+}
+
+void record_shaped_atlas_update_trace_diagnostics(
+    fake_text_engine_diagnostics& diagnostics,
+    const std::vector<render_text_atlas_update>& dirty_updates)
+{
+    diagnostics.shaped_atlas_update_traces.clear();
+    diagnostics.shaped_atlas_update_trace_policy = {};
+    diagnostics.shaped_atlas_update_traces.reserve(diagnostics.glyph_cache_readiness.size());
+
+    for (const render_text_glyph_cache_readiness_snapshot& readiness : diagnostics.glyph_cache_readiness) {
+        const render_text_rasterized_glyph_atlas_payload_snapshot* payload =
+            find_rasterized_payload_for_cluster(diagnostics.rasterized_glyph_atlas_payloads, readiness.cluster_index);
+        const render_text_glyph_atlas_placement_snapshot* placement =
+            find_atlas_placement_for_cluster(diagnostics.glyph_atlas_placements, readiness.cluster_index);
+        const render_text_atlas_update* update =
+            placement == nullptr ? nullptr : find_dirty_update_for_page(dirty_updates, placement->page.id);
+
+        render_text_shaped_atlas_update_trace_request request{
+            .cluster_index = readiness.cluster_index,
+            .run_index = readiness.run_index,
+            .cluster_byte_offset = readiness.byte_offset,
+            .cluster_byte_count = readiness.byte_count,
+            .shaped_glyph_ids = shaped_glyph_ids_for_cluster(diagnostics.shaped_glyphs, readiness),
+            .resolved_face_id = readiness.resolved_face_id,
+            .cache_key = readiness.cache_key,
+            .has_cache_key = readiness_has_cache_key(readiness),
+            .rasterizer_status = payload == nullptr
+                ? render_text_font_rasterizer_status::missing_font_source
+                : payload->status,
+            .rasterized_payload_skipped = payload == nullptr || payload->skipped,
+            .payload_upload_ready = payload != nullptr && payload->upload_ready,
+            .payload_alpha_bytes = payload == nullptr ? 0U : payload->alpha_bytes,
+            .payload_rgba_bytes = payload == nullptr ? 0U : payload->rgba_bytes,
+            .has_atlas_placement = placement != nullptr,
+            .page = placement == nullptr ? render_text_atlas_page{} : placement->page,
+            .atlas_bounds = placement == nullptr ? render_rect{} : placement->atlas_bounds,
+            .has_atlas_update = update != nullptr,
+            .atlas_update_bounds = update == nullptr ? render_rect{} : update->updated_bounds,
+            .atlas_update_rgba_bytes = update == nullptr ? 0U : update->rgba.size(),
+        };
+
+        append_render_text_shaped_atlas_update_trace(
+            diagnostics.shaped_atlas_update_traces,
+            diagnostics.shaped_atlas_update_trace_policy,
+            make_render_text_shaped_atlas_update_trace(std::move(request)));
+    }
+}
+
 render_text_revision latest_page_revision(const std::vector<render_text_atlas_page>& pages)
 {
     render_text_revision latest = 0;
@@ -1342,6 +1448,7 @@ void update_atlas_for_clusters(
     diagnostics.glyph_atlas_metrics.dirty_page_count = dirty_updates.size();
     atlas_updates.insert(atlas_updates.end(), dirty_updates.begin(), dirty_updates.end());
 
+    record_shaped_atlas_update_trace_diagnostics(diagnostics, dirty_updates);
     record_glyph_atlas_page_diagnostics(diagnostics, pages, diagnostics.glyph_atlas_placements, dirty_updates);
 
     diagnostics.glyph_atlas_metrics.page_count_after = pages.size();

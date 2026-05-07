@@ -36,6 +36,16 @@ void require_range(
     require(range.end_byte == end_byte, message);
 }
 
+bool contains_pointer_id(const std::vector<std::int32_t>& pointer_ids, std::int32_t pointer_id)
+{
+    for (const std::int32_t existing_id : pointer_ids) {
+        if (existing_id == pointer_id) {
+            return true;
+        }
+    }
+    return false;
+}
+
 quiz_vulkan::raw_platform_input_event pointer(
     quiz_vulkan::raw_platform_pointer_phase phase,
     std::int64_t timestamp_ms,
@@ -132,6 +142,18 @@ quiz_vulkan::input::normalized_input_replay_step step(
     return quiz_vulkan::input::normalized_input_replay_step{
         .label = std::move(label),
         .action = quiz_vulkan::input::normalized_input_replay_action{std::move(event)},
+    };
+}
+
+quiz_vulkan::input::normalized_input_replay_step time_step(std::string label, std::int64_t timestamp_ms)
+{
+    return quiz_vulkan::input::normalized_input_replay_step{
+        .label = std::move(label),
+        .action = quiz_vulkan::input::normalized_input_replay_action{
+            quiz_vulkan::input::normalized_input_replay_time_update{
+                .timestamp_ms = timestamp_ms,
+            },
+        },
     };
 }
 
@@ -552,6 +574,139 @@ void test_ime_replay_timeline_flags_invalid_preedit_text()
     require(recording.final_state.text.empty(), "invalid ime replay final committed text remains empty");
 }
 
+void test_pointer_replay_timeline_records_gestures_capture_and_wheel()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    const std::array steps{
+        step("mouse-down", pointer(raw_platform_pointer_phase::down, 1000, 0.0f, 0.0f, raw_platform_pointer_button::primary, 11)),
+        step("mouse-up", pointer(raw_platform_pointer_phase::up, 1020, 1.0f, 1.0f, raw_platform_pointer_button::primary, 11)),
+        step("long-press-down", pointer(raw_platform_pointer_phase::down, 1100, 4.0f, 4.0f, raw_platform_pointer_button::none, 21)),
+        time_step("long-press-time", 1700),
+        step("long-press-up", pointer(raw_platform_pointer_phase::up, 1710, 4.0f, 4.0f, raw_platform_pointer_button::none, 21)),
+        step("swipe-down", pointer(raw_platform_pointer_phase::down, 2000, 0.0f, 0.0f, raw_platform_pointer_button::none, 31)),
+        step("swipe-up", pointer(raw_platform_pointer_phase::up, 2050, 80.0f, 2.0f, raw_platform_pointer_button::none, 31)),
+        step("drag-down", pointer(raw_platform_pointer_phase::down, 3000, 0.0f, 0.0f, raw_platform_pointer_button::primary, 41)),
+        step("drag-move", pointer(raw_platform_pointer_phase::move, 3020, 12.0f, 0.0f, raw_platform_pointer_button::primary, 41)),
+        step("drag-update", pointer(raw_platform_pointer_phase::move, 3040, 18.0f, 3.0f, raw_platform_pointer_button::primary, 41)),
+        step("drag-up", pointer(raw_platform_pointer_phase::up, 3060, 20.0f, 5.0f, raw_platform_pointer_button::primary, 41)),
+        step("cancel-down", pointer(raw_platform_pointer_phase::down, 4000, 0.0f, 0.0f, raw_platform_pointer_button::none, 51)),
+        step("cancel-move", pointer(raw_platform_pointer_phase::move, 4020, 10.0f, 0.0f, raw_platform_pointer_button::none, 51)),
+        step("cancel", pointer(raw_platform_pointer_phase::cancel, 4040, 12.0f, 0.0f, raw_platform_pointer_button::none, 51)),
+        step("multi-touch-first-down", pointer(raw_platform_pointer_phase::down, 5000, 0.0f, 0.0f, raw_platform_pointer_button::none, 61)),
+        step("multi-touch-second-down", pointer(raw_platform_pointer_phase::down, 5010, 1.0f, 1.0f, raw_platform_pointer_button::none, 62)),
+        step("multi-touch-first-cancel", pointer(raw_platform_pointer_phase::cancel, 5020, 0.0f, 0.0f, raw_platform_pointer_button::none, 61)),
+        step("multi-touch-second-up", pointer(raw_platform_pointer_phase::up, 5030, 1.0f, 1.0f, raw_platform_pointer_button::none, 62)),
+        step("wheel", platform_scroll(6000, 20.0f, 30.0f, 1.0f, -3.0f, raw_platform_scroll_delta_unit::lines)),
+    };
+
+    const normalized_input_replay_recording recording = replay_normalized_input_fixture(engine, steps);
+
+    require(recording.batches.size() == steps.size(), "pointer replay records one batch per step");
+    require(recording.pointer.timeline.size() == recording.pointer.total,
+        "pointer replay aggregate stores one timeline entry per pointer route");
+    require(recording.pointer.kinds.pointer_capture_arbitration >= 6,
+        "pointer replay timeline counts capture arbitration entries");
+    require(recording.pointer.kinds.pointer_capture_reset >= 1,
+        "pointer replay timeline counts capture reset entries");
+    require(recording.pointer.kinds.tap >= 2, "pointer replay timeline counts tap entries");
+    require(recording.pointer.kinds.long_press == 1, "pointer replay timeline counts long press entry");
+    require(recording.pointer.kinds.swipe_right == 1, "pointer replay timeline counts swipe entry");
+    require(recording.pointer.kinds.drag_start == 2, "pointer replay timeline counts drag start entries");
+    require(recording.pointer.kinds.drag_update == 1, "pointer replay timeline counts drag update entry");
+    require(recording.pointer.kinds.drag_end == 1, "pointer replay timeline counts drag end entry");
+    require(recording.pointer.kinds.drag_cancel == 1, "pointer replay timeline counts drag cancel entry");
+    require(recording.pointer.kinds.wheel == 1, "pointer replay timeline counts wheel entry");
+    require(recording.pointer.contacts.mouse_like >= 5, "pointer replay timeline counts mouse contact routes");
+    require(recording.pointer.contacts.touch_like >= 9, "pointer replay timeline counts touch contact routes");
+    require(recording.pointer.wheel_routes == 1, "pointer replay timeline counts wheel routes");
+    require(recording.pointer.saw_multipointer_touch, "pointer replay timeline detects multipointer touch ids");
+    require(contains_pointer_id(recording.pointer.mouse_pointer_ids, 11),
+        "pointer replay timeline records mouse pointer id");
+    require(contains_pointer_id(recording.pointer.touch_pointer_ids, 61),
+        "pointer replay timeline records first touch pointer id");
+    require(contains_pointer_id(recording.pointer.touch_pointer_ids, 62),
+        "pointer replay timeline records second touch pointer id");
+    require(recording.pointer.capture_transition_count >= 10,
+        "pointer replay timeline counts capture lifecycle transitions");
+    require(recording.pointer.final_capture_clean, "pointer replay timeline ends with clean capture");
+    require(recording.final_state.pointer_capture_clean, "pointer replay final state has clean capture");
+
+    const normalized_input_replay_pointer_summary& mouse_down = recording.batches[0].pointer;
+    require(mouse_down.total == 1, "pointer replay mouse down has one pointer route");
+    require(mouse_down.kinds.pointer_capture_arbitration == 1,
+        "pointer replay mouse down records capture arbitration");
+    require(mouse_down.timeline[0].contact == pointer_contact_kind::mouse_like,
+        "pointer replay mouse down records mouse contact");
+    require(mouse_down.timeline[0].decision == pointer_arbitration_decision::tracked,
+        "pointer replay mouse down records tracked decision");
+    require(mouse_down.timeline[0].capture_changed,
+        "pointer replay mouse down records capture transition");
+    require(mouse_down.timeline[0].capture_before.lifecycle == pointer_capture_lifecycle::idle,
+        "pointer replay mouse down records idle capture before");
+    require(mouse_down.timeline[0].capture_after.lifecycle == pointer_capture_lifecycle::tracking,
+        "pointer replay mouse down records tracking capture after");
+    require(!mouse_down.final_capture_clean, "pointer replay mouse down batch ends with active tracking");
+
+    const normalized_input_replay_pointer_summary& mouse_up = recording.batches[1].pointer;
+    require(mouse_up.kinds.tap == 1, "pointer replay mouse up records tap");
+    require(mouse_up.timeline[0].pointer_id == 11, "pointer replay tap records pointer id");
+    require(mouse_up.timeline[0].duration_ms == 20, "pointer replay tap records duration");
+    require(mouse_up.timeline[0].capture_ended_cleanly_after, "pointer replay tap route releases capture");
+
+    const normalized_input_replay_pointer_summary& long_press = recording.batches[3].pointer;
+    require(long_press.kinds.long_press == 1, "pointer replay time update records long press");
+    require(long_press.timeline[0].pointer_id == 21, "pointer replay long press records pointer id");
+    require(long_press.timeline[0].duration_ms == 600, "pointer replay long press records duration");
+    require(long_press.timeline[0].gesture_policy.decision == gesture_policy_decision::long_press_accepted,
+        "pointer replay long press records gesture policy");
+
+    const normalized_input_replay_pointer_summary& swipe = recording.batches[6].pointer;
+    require(swipe.kinds.swipe_right == 1, "pointer replay swipe up records right swipe");
+    require(swipe.timeline[0].pointer_id == 31, "pointer replay swipe records pointer id");
+    require(swipe.timeline[0].delta_x == 0.0f,
+        "pointer replay swipe keeps existing normalized swipe delta semantics");
+    require(swipe.timeline[0].x == 80.0f, "pointer replay swipe records end x");
+
+    const normalized_input_replay_pointer_summary& drag_start = recording.batches[8].pointer;
+    require(drag_start.kinds.drag_start == 1, "pointer replay drag move records drag start");
+    require(drag_start.timeline[0].capture_after.lifecycle == pointer_capture_lifecycle::captured,
+        "pointer replay drag start captures pointer");
+    require(drag_start.timeline[0].delta_x == 12.0f, "pointer replay drag start records delta");
+
+    const normalized_input_replay_pointer_summary& drag_update = recording.batches[9].pointer;
+    require(drag_update.kinds.drag_update == 1, "pointer replay drag update records update");
+    require(drag_update.timeline[0].delta_x == 6.0f, "pointer replay drag update records incremental x delta");
+    require(drag_update.timeline[0].delta_y == 3.0f, "pointer replay drag update records incremental y delta");
+
+    const normalized_input_replay_pointer_summary& drag_end = recording.batches[10].pointer;
+    require(drag_end.kinds.drag_end == 1, "pointer replay drag up records drag end");
+    require(drag_end.timeline[0].capture_ended_cleanly_after, "pointer replay drag end releases capture");
+
+    const normalized_input_replay_pointer_summary& drag_cancel = recording.batches[13].pointer;
+    require(drag_cancel.kinds.drag_cancel == 1, "pointer replay cancel records drag cancel");
+    require(drag_cancel.kinds.pointer_capture_reset == 1,
+        "pointer replay cancel records capture reset diagnostic");
+    require(drag_cancel.timeline.size() == 2, "pointer replay cancel stores drag and reset entries");
+    require(drag_cancel.final_capture_clean, "pointer replay cancel batch ends with clean capture");
+
+    const normalized_input_replay_pointer_summary& second_touch_down = recording.batches[15].pointer;
+    require(second_touch_down.saw_multipointer_touch,
+        "pointer replay second touch down batch detects multiple tracked touch ids");
+    require(second_touch_down.timeline[0].tracked_pointer_count_after == 2,
+        "pointer replay second touch down records two tracked pointers");
+
+    const normalized_input_replay_pointer_summary& wheel = recording.batches[18].pointer;
+    require(wheel.kinds.wheel == 1, "pointer replay wheel batch records wheel timeline");
+    require(wheel.timeline[0].kind == normalized_input_replay_pointer_timeline_kind::wheel,
+        "pointer replay wheel entry has wheel kind");
+    require(wheel.timeline[0].line_delta_x == 1.0f, "pointer replay wheel records line x delta");
+    require(wheel.timeline[0].line_delta_y == -3.0f, "pointer replay wheel records line y delta");
+    require(wheel.timeline[0].pixel_delta_y == 0.0f, "pointer replay wheel records pixel delta");
+}
+
 } // namespace
 
 int main()
@@ -562,6 +717,7 @@ int main()
     test_keyboard_shortcut_replay_summarizes_chords_and_final_state();
     test_ime_replay_timeline_records_composition_lifecycle();
     test_ime_replay_timeline_flags_invalid_preedit_text();
+    test_pointer_replay_timeline_records_gestures_capture_and_wheel();
 
     std::cout << "normalized_input_replay_tests passed\n";
     return 0;

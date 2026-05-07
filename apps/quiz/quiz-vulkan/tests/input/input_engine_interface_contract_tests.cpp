@@ -165,6 +165,7 @@ concept NormalizedInputReplayBatchInterface = requires(T batch) {
     { batch.summary } -> std::same_as<input::input_diagnostic_summary&>;
     { batch.keyboard } -> std::same_as<input::normalized_input_replay_keyboard_summary&>;
     { batch.ime } -> std::same_as<input::normalized_input_replay_ime_summary&>;
+    { batch.pointer } -> std::same_as<input::normalized_input_replay_pointer_summary&>;
     { batch.end_state } -> std::same_as<input::normalized_input_replay_end_state&>;
 };
 
@@ -174,6 +175,7 @@ concept NormalizedInputReplayRecordingInterface = requires(T recording) {
     { recording.summary } -> std::same_as<input::input_diagnostic_summary&>;
     { recording.keyboard } -> std::same_as<input::normalized_input_replay_keyboard_summary&>;
     { recording.ime } -> std::same_as<input::normalized_input_replay_ime_summary&>;
+    { recording.pointer } -> std::same_as<input::normalized_input_replay_pointer_summary&>;
     { recording.final_state } -> std::same_as<input::normalized_input_replay_end_state&>;
 };
 
@@ -284,12 +286,114 @@ concept NormalizedInputReplayImeSummaryInterface = requires(T summary) {
 };
 
 template <typename T>
+concept NormalizedInputReplayPointerTimelineCountsInterface = requires(T counts) {
+    { counts.pointer_capture_arbitration } -> std::same_as<std::size_t&>;
+    { counts.pointer_capture_reset } -> std::same_as<std::size_t&>;
+    { counts.tap } -> std::same_as<std::size_t&>;
+    { counts.long_press } -> std::same_as<std::size_t&>;
+    { counts.swipe_left } -> std::same_as<std::size_t&>;
+    { counts.swipe_right } -> std::same_as<std::size_t&>;
+    { counts.drag_start } -> std::same_as<std::size_t&>;
+    { counts.drag_update } -> std::same_as<std::size_t&>;
+    { counts.drag_end } -> std::same_as<std::size_t&>;
+    { counts.drag_cancel } -> std::same_as<std::size_t&>;
+    { counts.wheel } -> std::same_as<std::size_t&>;
+    { counts.gesture_suppressed } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
+concept NormalizedInputReplayPointerContactCountsInterface = requires(T counts) {
+    { counts.unknown } -> std::same_as<std::size_t&>;
+    { counts.mouse_like } -> std::same_as<std::size_t&>;
+    { counts.touch_like } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
+concept NormalizedInputReplayPointerCaptureLifecycleCountsInterface = requires(T counts) {
+    { counts.idle } -> std::same_as<std::size_t&>;
+    { counts.tracking } -> std::same_as<std::size_t&>;
+    { counts.captured } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
+concept NormalizedInputReplayPointerDecisionCountsInterface = requires(T counts) {
+    { counts.none } -> std::same_as<std::size_t&>;
+    { counts.tracked } -> std::same_as<std::size_t&>;
+    { counts.captured } -> std::same_as<std::size_t&>;
+    { counts.ignored_by_capture } -> std::same_as<std::size_t&>;
+    { counts.canceled } -> std::same_as<std::size_t&>;
+    { counts.released } -> std::same_as<std::size_t&>;
+    { counts.restarted } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
+concept NormalizedInputReplayPointerTimelineEntryInterface = requires(T entry) {
+    { entry.kind } -> std::same_as<input::normalized_input_replay_pointer_timeline_kind&>;
+    { entry.timestamp_ms } -> std::same_as<std::int64_t&>;
+    { entry.emits_input_event } -> std::same_as<bool&>;
+    { entry.event_index } -> std::same_as<std::size_t&>;
+    { entry.pointer_id } -> std::same_as<std::int32_t&>;
+    { entry.event_phase } -> std::same_as<input::pointer_phase&>;
+    { entry.contact } -> std::same_as<input::pointer_contact_kind&>;
+    { entry.decision } -> std::same_as<input::pointer_arbitration_decision&>;
+    { entry.capture_before } -> std::same_as<input::pointer_capture_snapshot&>;
+    { entry.capture_after } -> std::same_as<input::pointer_capture_snapshot&>;
+    { entry.tracked_pointer_count_before } -> std::same_as<std::size_t&>;
+    { entry.tracked_pointer_count_after } -> std::same_as<std::size_t&>;
+    { entry.normalized_event } -> std::same_as<input::normalized_input_event_summary&>;
+    { entry.gesture_policy } -> std::same_as<input::gesture_policy_snapshot&>;
+    { entry.capture_changed } -> std::same_as<bool&>;
+    { entry.capture_ended_cleanly_after } -> std::same_as<bool&>;
+    { entry.duration_ms } -> std::same_as<std::int64_t&>;
+    { entry.start_x } -> std::same_as<float&>;
+    { entry.start_y } -> std::same_as<float&>;
+    { entry.x } -> std::same_as<float&>;
+    { entry.y } -> std::same_as<float&>;
+    { entry.delta_x } -> std::same_as<float&>;
+    { entry.delta_y } -> std::same_as<float&>;
+    { entry.pixel_delta_x } -> std::same_as<float&>;
+    { entry.pixel_delta_y } -> std::same_as<float&>;
+    { entry.line_delta_x } -> std::same_as<float&>;
+    { entry.line_delta_y } -> std::same_as<float&>;
+};
+
+template <typename T>
+concept NormalizedInputReplayPointerSummaryInterface = requires(T summary) {
+    { summary.timeline } -> std::same_as<std::vector<input::normalized_input_replay_pointer_timeline_entry>&>;
+    { summary.pointer_ids } -> std::same_as<std::vector<std::int32_t>&>;
+    { summary.mouse_pointer_ids } -> std::same_as<std::vector<std::int32_t>&>;
+    { summary.touch_pointer_ids } -> std::same_as<std::vector<std::int32_t>&>;
+    { summary.kinds } -> std::same_as<input::normalized_input_replay_pointer_timeline_counts&>;
+    { summary.contacts } -> std::same_as<input::normalized_input_replay_pointer_contact_counts&>;
+    { summary.capture_before_lifecycles }
+        -> std::same_as<input::normalized_input_replay_pointer_capture_lifecycle_counts&>;
+    { summary.capture_after_lifecycles }
+        -> std::same_as<input::normalized_input_replay_pointer_capture_lifecycle_counts&>;
+    { summary.decisions } -> std::same_as<input::normalized_input_replay_pointer_decision_counts&>;
+    { summary.total } -> std::same_as<std::size_t&>;
+    { summary.emitted_input_event_routes } -> std::same_as<std::size_t&>;
+    { summary.diagnostic_only_routes } -> std::same_as<std::size_t&>;
+    { summary.capture_transition_count } -> std::same_as<std::size_t&>;
+    { summary.wheel_routes } -> std::same_as<std::size_t&>;
+    { summary.saw_multipointer_touch } -> std::same_as<bool&>;
+    { summary.final_capture } -> std::same_as<input::pointer_capture_snapshot&>;
+    { summary.final_capture_clean } -> std::same_as<bool&>;
+};
+
+template <typename T>
 concept NormalizedInputReplayFunctions = requires(
     input::input_engine& engine,
     const input::normalized_input_replay_action& action,
     std::span<const input::normalized_input_replay_step> steps,
     std::span<const input::action_route_policy_diagnostic> routes,
     std::span<const input::input_event> events,
+    const input::action_route_policy_diagnostic& route,
+    input::action_route_policy_kind route_kind,
+    input::gesture_kind gesture_kind,
+    input::input_event_summary_kind event_summary_kind,
+    const input::gesture_policy_snapshot& gesture_policy,
+    const input::pointer_capture_snapshot& pointer_capture_before,
+    const input::pointer_capture_snapshot& pointer_capture_after,
     const input::keyboard_chord_diagnostic& keyboard,
     const input::ime_composition_state& composition,
     const input::normalized_input_replay_end_state& end_state,
@@ -297,14 +401,32 @@ concept NormalizedInputReplayFunctions = requires(
     const input::normalized_input_replay_keyboard_summary& keyboard_source,
     input::normalized_input_replay_ime_summary& ime_target,
     const input::normalized_input_replay_ime_summary& ime_source,
+    input::normalized_input_replay_pointer_summary& pointer_target,
+    const input::normalized_input_replay_pointer_summary& pointer_source,
     const input::normalized_input_replay_options& options) {
     { input::pointer_capture_snapshot_clean(input::pointer_capture_snapshot{}) } -> std::same_as<bool>;
     { input::keyboard_chord_present(keyboard) } -> std::same_as<bool>;
     { input::normalized_input_replay_preedit_text_valid(composition) } -> std::same_as<bool>;
     { input::normalized_input_replay_composition_range_valid(composition) } -> std::same_as<bool>;
+    { input::normalized_input_replay_pointer_route_kind(route_kind) } -> std::same_as<bool>;
+    { input::normalized_input_replay_pointer_kind_for_gesture(gesture_kind) }
+        -> std::same_as<input::normalized_input_replay_pointer_timeline_kind>;
+    { input::normalized_input_replay_pointer_kind_for_summary(event_summary_kind) }
+        -> std::same_as<input::normalized_input_replay_pointer_timeline_kind>;
+    { input::normalized_input_replay_pointer_kind_for_policy(gesture_policy) }
+        -> std::same_as<input::normalized_input_replay_pointer_timeline_kind>;
+    { input::normalized_input_replay_pointer_kind_for_route(route) }
+        -> std::same_as<input::normalized_input_replay_pointer_timeline_kind>;
+    { input::normalized_input_replay_pointer_capture_changed(pointer_capture_before, pointer_capture_after) }
+        -> std::same_as<bool>;
+    { input::normalized_input_replay_pointer_id_for_route(route) } -> std::same_as<std::int32_t>;
     { input::summarize_normalized_input_replay_ime_routes(routes, events, end_state) }
         -> std::same_as<input::normalized_input_replay_ime_summary>;
     { input::accumulate_normalized_input_replay_ime_summary(ime_target, ime_source) }
+        -> std::same_as<void>;
+    { input::summarize_normalized_input_replay_pointer_routes(routes, end_state) }
+        -> std::same_as<input::normalized_input_replay_pointer_summary>;
+    { input::accumulate_normalized_input_replay_pointer_summary(pointer_target, pointer_source) }
         -> std::same_as<void>;
     { input::summarize_normalized_input_replay_keyboard_routes(routes) }
         -> std::same_as<input::normalized_input_replay_keyboard_summary>;
@@ -544,6 +666,17 @@ static_assert(NormalizedInputReplayKeyboardSummaryInterface<input::normalized_in
 static_assert(NormalizedInputReplayImePhaseCountsInterface<input::normalized_input_replay_ime_phase_counts>);
 static_assert(NormalizedInputReplayImeTimelineEntryInterface<input::normalized_input_replay_ime_timeline_entry>);
 static_assert(NormalizedInputReplayImeSummaryInterface<input::normalized_input_replay_ime_summary>);
+static_assert(NormalizedInputReplayPointerTimelineCountsInterface<
+    input::normalized_input_replay_pointer_timeline_counts>);
+static_assert(NormalizedInputReplayPointerContactCountsInterface<
+    input::normalized_input_replay_pointer_contact_counts>);
+static_assert(NormalizedInputReplayPointerCaptureLifecycleCountsInterface<
+    input::normalized_input_replay_pointer_capture_lifecycle_counts>);
+static_assert(NormalizedInputReplayPointerDecisionCountsInterface<
+    input::normalized_input_replay_pointer_decision_counts>);
+static_assert(NormalizedInputReplayPointerTimelineEntryInterface<
+    input::normalized_input_replay_pointer_timeline_entry>);
+static_assert(NormalizedInputReplayPointerSummaryInterface<input::normalized_input_replay_pointer_summary>);
 static_assert(NormalizedInputReplayFunctions<void>);
 static_assert(std::is_default_constructible_v<input::platform_input_translation_request>);
 static_assert(std::is_default_constructible_v<input::platform_input_translation_result>);
@@ -561,6 +694,12 @@ static_assert(std::is_default_constructible_v<input::normalized_input_replay_key
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_ime_phase_counts>);
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_ime_timeline_entry>);
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_ime_summary>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_pointer_timeline_counts>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_pointer_contact_counts>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_pointer_capture_lifecycle_counts>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_pointer_decision_counts>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_pointer_timeline_entry>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_pointer_summary>);
 static_assert(std::is_default_constructible_v<input::keyboard_modifier_state>);
 static_assert(std::is_default_constructible_v<input::keyboard_chord_diagnostic>);
 static_assert(!std::is_polymorphic_v<input::platform_input_translation_request>);
@@ -572,6 +711,7 @@ static_assert(!std::is_polymorphic_v<input::normalized_input_replay_batch>);
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_recording>);
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_keyboard_summary>);
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_ime_summary>);
+static_assert(!std::is_polymorphic_v<input::normalized_input_replay_pointer_summary>);
 static_assert(std::is_same_v<
     decltype(input::platform_input_translation_result{}.event),
     std::optional<raw_platform_input_event>>);
@@ -614,6 +754,12 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     decltype(input::normalized_input_replay_recording{}.ime),
     input::normalized_input_replay_ime_summary>);
+static_assert(std::is_same_v<
+    decltype(input::normalized_input_replay_batch{}.pointer),
+    input::normalized_input_replay_pointer_summary>);
+static_assert(std::is_same_v<
+    decltype(input::normalized_input_replay_recording{}.pointer),
+    input::normalized_input_replay_pointer_summary>);
 static_assert(TextInputModelInterface<input::text_input_model>);
 
 constexpr input::text_range text_range_contract{
@@ -733,6 +879,92 @@ static_assert(replay_ime_entry_contract.emits_input_event);
 static_assert(replay_ime_entry_contract.text_byte_count_after == 1);
 static_assert(replay_ime_entry_contract.preedit_text_valid);
 static_assert(replay_ime_entry_contract.stale_preedit_cleared_after);
+
+constexpr input::normalized_input_replay_pointer_timeline_counts replay_pointer_kinds_contract{
+    .pointer_capture_arbitration = 1,
+    .drag_start = 2,
+    .wheel = 3,
+};
+static_assert(replay_pointer_kinds_contract.pointer_capture_arbitration == 1);
+static_assert(replay_pointer_kinds_contract.drag_start == 2);
+static_assert(replay_pointer_kinds_contract.wheel == 3);
+
+constexpr input::normalized_input_replay_pointer_contact_counts replay_pointer_contacts_contract{
+    .unknown = 1,
+    .mouse_like = 2,
+    .touch_like = 3,
+};
+static_assert(replay_pointer_contacts_contract.unknown == 1);
+static_assert(replay_pointer_contacts_contract.mouse_like == 2);
+static_assert(replay_pointer_contacts_contract.touch_like == 3);
+
+constexpr input::normalized_input_replay_pointer_capture_lifecycle_counts replay_pointer_lifecycles_contract{
+    .idle = 1,
+    .tracking = 2,
+    .captured = 3,
+};
+static_assert(replay_pointer_lifecycles_contract.idle == 1);
+static_assert(replay_pointer_lifecycles_contract.tracking == 2);
+static_assert(replay_pointer_lifecycles_contract.captured == 3);
+
+constexpr input::normalized_input_replay_pointer_decision_counts replay_pointer_decisions_contract{
+    .tracked = 1,
+    .captured = 2,
+    .released = 3,
+};
+static_assert(replay_pointer_decisions_contract.tracked == 1);
+static_assert(replay_pointer_decisions_contract.captured == 2);
+static_assert(replay_pointer_decisions_contract.released == 3);
+
+constexpr input::normalized_input_replay_pointer_timeline_entry replay_pointer_entry_contract{
+    .kind = input::normalized_input_replay_pointer_timeline_kind::drag_start,
+    .timestamp_ms = 90,
+    .emits_input_event = true,
+    .event_index = 0,
+    .pointer_id = 7,
+    .event_phase = input::pointer_phase::move,
+    .contact = input::pointer_contact_kind::touch_like,
+    .decision = input::pointer_arbitration_decision::captured,
+    .capture_before = input::pointer_capture_snapshot{
+        .lifecycle = input::pointer_capture_lifecycle::tracking,
+        .active = false,
+        .pointer_id = 7,
+        .tracked_pointer_count = 1,
+    },
+    .capture_after = input::pointer_capture_snapshot{
+        .lifecycle = input::pointer_capture_lifecycle::captured,
+        .active = true,
+        .pointer_id = 7,
+        .tracked_pointer_count = 1,
+    },
+    .tracked_pointer_count_before = 1,
+    .tracked_pointer_count_after = 1,
+    .normalized_event = input::normalized_input_event_summary{
+        .kind = input::input_event_summary_kind::drag_start,
+        .timestamp_ms = 90,
+        .pointer_id = 7,
+        .delta_x = 9.0f,
+    },
+    .gesture_policy = input::gesture_policy_snapshot{
+        .decision = input::gesture_policy_decision::drag_started,
+        .phase = input::pointer_phase::move,
+        .timestamp_ms = 90,
+        .pointer_id = 7,
+        .delta_x = 9.0f,
+        .emitted_input_event = true,
+        .emitted_kind = input::gesture_kind::drag_start,
+    },
+    .capture_changed = true,
+    .capture_ended_cleanly_after = false,
+    .duration_ms = 20,
+    .delta_x = 9.0f,
+};
+static_assert(replay_pointer_entry_contract.kind == input::normalized_input_replay_pointer_timeline_kind::drag_start);
+static_assert(replay_pointer_entry_contract.pointer_id == 7);
+static_assert(replay_pointer_entry_contract.contact == input::pointer_contact_kind::touch_like);
+static_assert(replay_pointer_entry_contract.capture_after.lifecycle == input::pointer_capture_lifecycle::captured);
+static_assert(replay_pointer_entry_contract.capture_changed);
+static_assert(replay_pointer_entry_contract.delta_x == 9.0f);
 
 static_assert(std::is_default_constructible_v<input::ime_event>);
 static_assert(std::is_same_v<decltype(input::ime_event{}.composition), input::ime_composition_state>);

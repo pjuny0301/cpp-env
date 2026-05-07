@@ -132,6 +132,109 @@ struct normalized_input_replay_ime_summary {
     bool final_preedit_clean = true;
 };
 
+enum class normalized_input_replay_pointer_timeline_kind {
+    pointer_capture_arbitration,
+    pointer_capture_reset,
+    tap,
+    long_press,
+    swipe_left,
+    swipe_right,
+    drag_start,
+    drag_update,
+    drag_end,
+    drag_cancel,
+    wheel,
+    gesture_suppressed,
+};
+
+struct normalized_input_replay_pointer_timeline_counts {
+    std::size_t pointer_capture_arbitration = 0;
+    std::size_t pointer_capture_reset = 0;
+    std::size_t tap = 0;
+    std::size_t long_press = 0;
+    std::size_t swipe_left = 0;
+    std::size_t swipe_right = 0;
+    std::size_t drag_start = 0;
+    std::size_t drag_update = 0;
+    std::size_t drag_end = 0;
+    std::size_t drag_cancel = 0;
+    std::size_t wheel = 0;
+    std::size_t gesture_suppressed = 0;
+};
+
+struct normalized_input_replay_pointer_contact_counts {
+    std::size_t unknown = 0;
+    std::size_t mouse_like = 0;
+    std::size_t touch_like = 0;
+};
+
+struct normalized_input_replay_pointer_capture_lifecycle_counts {
+    std::size_t idle = 0;
+    std::size_t tracking = 0;
+    std::size_t captured = 0;
+};
+
+struct normalized_input_replay_pointer_decision_counts {
+    std::size_t none = 0;
+    std::size_t tracked = 0;
+    std::size_t captured = 0;
+    std::size_t ignored_by_capture = 0;
+    std::size_t canceled = 0;
+    std::size_t released = 0;
+    std::size_t restarted = 0;
+};
+
+struct normalized_input_replay_pointer_timeline_entry {
+    normalized_input_replay_pointer_timeline_kind kind =
+        normalized_input_replay_pointer_timeline_kind::pointer_capture_arbitration;
+    std::int64_t timestamp_ms = 0;
+    bool emits_input_event = false;
+    std::size_t event_index = 0;
+    std::int32_t pointer_id = 0;
+    pointer_phase event_phase = pointer_phase::down;
+    pointer_contact_kind contact = pointer_contact_kind::unknown;
+    pointer_arbitration_decision decision = pointer_arbitration_decision::none;
+    pointer_capture_snapshot capture_before;
+    pointer_capture_snapshot capture_after;
+    std::size_t tracked_pointer_count_before = 0;
+    std::size_t tracked_pointer_count_after = 0;
+    normalized_input_event_summary normalized_event;
+    gesture_policy_snapshot gesture_policy;
+    bool capture_changed = false;
+    bool capture_ended_cleanly_after = true;
+    std::int64_t duration_ms = 0;
+    float start_x = 0.0f;
+    float start_y = 0.0f;
+    float x = 0.0f;
+    float y = 0.0f;
+    float delta_x = 0.0f;
+    float delta_y = 0.0f;
+    float pixel_delta_x = 0.0f;
+    float pixel_delta_y = 0.0f;
+    float line_delta_x = 0.0f;
+    float line_delta_y = 0.0f;
+};
+
+struct normalized_input_replay_pointer_summary {
+    std::vector<normalized_input_replay_pointer_timeline_entry> timeline;
+    std::vector<std::int32_t> pointer_ids;
+    std::vector<std::int32_t> mouse_pointer_ids;
+    std::vector<std::int32_t> touch_pointer_ids;
+    normalized_input_replay_pointer_timeline_counts kinds;
+    normalized_input_replay_pointer_contact_counts contacts;
+    normalized_input_replay_pointer_capture_lifecycle_counts capture_before_lifecycles;
+    normalized_input_replay_pointer_capture_lifecycle_counts capture_after_lifecycles;
+    normalized_input_replay_pointer_decision_counts decisions;
+    std::size_t total = 0;
+    std::size_t emitted_input_event_routes = 0;
+    std::size_t diagnostic_only_routes = 0;
+    std::size_t capture_transition_count = 0;
+    std::size_t wheel_routes = 0;
+    bool saw_multipointer_touch = false;
+    pointer_capture_snapshot final_capture;
+    bool final_capture_clean = true;
+};
+
 struct normalized_input_replay_end_state {
     pointer_capture_snapshot pointer_capture;
     bool has_text_focus = false;
@@ -155,6 +258,7 @@ struct normalized_input_replay_batch {
     input_diagnostic_summary summary;
     normalized_input_replay_keyboard_summary keyboard;
     normalized_input_replay_ime_summary ime;
+    normalized_input_replay_pointer_summary pointer;
     normalized_input_replay_end_state end_state;
 };
 
@@ -163,6 +267,7 @@ struct normalized_input_replay_recording {
     input_diagnostic_summary summary;
     normalized_input_replay_keyboard_summary keyboard;
     normalized_input_replay_ime_summary ime;
+    normalized_input_replay_pointer_summary pointer;
     normalized_input_replay_end_state final_state;
 };
 
@@ -529,6 +634,447 @@ inline void accumulate_normalized_input_replay_ime_summary(
     return summary;
 }
 
+[[nodiscard]] inline bool normalized_input_replay_pointer_route_kind(action_route_policy_kind kind)
+{
+    return kind == action_route_policy_kind::pointer_capture_arbitration
+        || kind == action_route_policy_kind::pointer_capture_reset
+        || kind == action_route_policy_kind::gesture_route_snapshot
+        || kind == action_route_policy_kind::wheel_summary;
+}
+
+[[nodiscard]] inline normalized_input_replay_pointer_timeline_kind
+normalized_input_replay_pointer_kind_for_gesture(gesture_kind kind)
+{
+    switch (kind) {
+    case gesture_kind::tap:
+        return normalized_input_replay_pointer_timeline_kind::tap;
+    case gesture_kind::long_press:
+        return normalized_input_replay_pointer_timeline_kind::long_press;
+    case gesture_kind::swipe_left:
+        return normalized_input_replay_pointer_timeline_kind::swipe_left;
+    case gesture_kind::swipe_right:
+        return normalized_input_replay_pointer_timeline_kind::swipe_right;
+    case gesture_kind::drag_start:
+        return normalized_input_replay_pointer_timeline_kind::drag_start;
+    case gesture_kind::drag_update:
+        return normalized_input_replay_pointer_timeline_kind::drag_update;
+    case gesture_kind::drag_end:
+        return normalized_input_replay_pointer_timeline_kind::drag_end;
+    case gesture_kind::drag_cancel:
+        return normalized_input_replay_pointer_timeline_kind::drag_cancel;
+    }
+
+    return normalized_input_replay_pointer_timeline_kind::gesture_suppressed;
+}
+
+[[nodiscard]] inline normalized_input_replay_pointer_timeline_kind
+normalized_input_replay_pointer_kind_for_summary(input_event_summary_kind kind)
+{
+    switch (kind) {
+    case input_event_summary_kind::tap:
+        return normalized_input_replay_pointer_timeline_kind::tap;
+    case input_event_summary_kind::long_press:
+        return normalized_input_replay_pointer_timeline_kind::long_press;
+    case input_event_summary_kind::swipe_left:
+        return normalized_input_replay_pointer_timeline_kind::swipe_left;
+    case input_event_summary_kind::swipe_right:
+        return normalized_input_replay_pointer_timeline_kind::swipe_right;
+    case input_event_summary_kind::drag_start:
+        return normalized_input_replay_pointer_timeline_kind::drag_start;
+    case input_event_summary_kind::drag_update:
+        return normalized_input_replay_pointer_timeline_kind::drag_update;
+    case input_event_summary_kind::drag_end:
+        return normalized_input_replay_pointer_timeline_kind::drag_end;
+    case input_event_summary_kind::drag_cancel:
+        return normalized_input_replay_pointer_timeline_kind::drag_cancel;
+    case input_event_summary_kind::wheel:
+        return normalized_input_replay_pointer_timeline_kind::wheel;
+    }
+
+    return normalized_input_replay_pointer_timeline_kind::gesture_suppressed;
+}
+
+[[nodiscard]] inline normalized_input_replay_pointer_timeline_kind
+normalized_input_replay_pointer_kind_for_policy(const gesture_policy_snapshot& policy)
+{
+    if (policy.emitted_input_event) {
+        return normalized_input_replay_pointer_kind_for_gesture(policy.emitted_kind);
+    }
+
+    switch (policy.decision) {
+    case gesture_policy_decision::tap_accepted:
+        return normalized_input_replay_pointer_timeline_kind::tap;
+    case gesture_policy_decision::long_press_accepted:
+        return normalized_input_replay_pointer_timeline_kind::long_press;
+    case gesture_policy_decision::swipe_accepted:
+        if (policy.direction == gesture_direction::left) {
+            return normalized_input_replay_pointer_timeline_kind::swipe_left;
+        }
+        if (policy.direction == gesture_direction::right) {
+            return normalized_input_replay_pointer_timeline_kind::swipe_right;
+        }
+        return normalized_input_replay_pointer_timeline_kind::gesture_suppressed;
+    case gesture_policy_decision::drag_started:
+        return normalized_input_replay_pointer_timeline_kind::drag_start;
+    case gesture_policy_decision::drag_updated:
+        return normalized_input_replay_pointer_timeline_kind::drag_update;
+    case gesture_policy_decision::drag_released:
+        return normalized_input_replay_pointer_timeline_kind::drag_end;
+    case gesture_policy_decision::drag_canceled:
+        return normalized_input_replay_pointer_timeline_kind::drag_cancel;
+    case gesture_policy_decision::none:
+    case gesture_policy_decision::tracking_started:
+    case gesture_policy_decision::swipe_rejected_distance:
+    case gesture_policy_decision::swipe_rejected_cross_axis:
+    case gesture_policy_decision::swipe_rejected_duration:
+    case gesture_policy_decision::release_suppressed:
+    case gesture_policy_decision::ignored_by_capture:
+        return normalized_input_replay_pointer_timeline_kind::gesture_suppressed;
+    }
+
+    return normalized_input_replay_pointer_timeline_kind::gesture_suppressed;
+}
+
+[[nodiscard]] inline normalized_input_replay_pointer_timeline_kind
+normalized_input_replay_pointer_kind_for_route(const action_route_policy_diagnostic& route)
+{
+    switch (route.kind) {
+    case action_route_policy_kind::pointer_capture_arbitration:
+        return normalized_input_replay_pointer_timeline_kind::pointer_capture_arbitration;
+    case action_route_policy_kind::pointer_capture_reset:
+        return normalized_input_replay_pointer_timeline_kind::pointer_capture_reset;
+    case action_route_policy_kind::wheel_summary:
+        return normalized_input_replay_pointer_timeline_kind::wheel;
+    case action_route_policy_kind::gesture_route_snapshot:
+        if (route.emits_input_event) {
+            return normalized_input_replay_pointer_kind_for_summary(route.normalized_event.kind);
+        }
+        return normalized_input_replay_pointer_kind_for_policy(route.gesture_policy);
+    case action_route_policy_kind::text_commit_boundary:
+    case action_route_policy_kind::text_backspace_boundary:
+    case action_route_policy_kind::text_delete_forward_boundary:
+    case action_route_policy_kind::caret_moved:
+    case action_route_policy_kind::selection_changed:
+    case action_route_policy_kind::focus_traversal_next:
+    case action_route_policy_kind::focus_traversal_previous:
+    case action_route_policy_kind::text_submit_boundary:
+    case action_route_policy_kind::keyboard_cancel_intent:
+    case action_route_policy_kind::focus_loss:
+    case action_route_policy_kind::ime_preedit:
+    case action_route_policy_kind::ime_commit:
+    case action_route_policy_kind::ime_cancel:
+    case action_route_policy_kind::ime_composition_start:
+        return normalized_input_replay_pointer_timeline_kind::gesture_suppressed;
+    }
+
+    return normalized_input_replay_pointer_timeline_kind::gesture_suppressed;
+}
+
+[[nodiscard]] inline bool normalized_input_replay_pointer_capture_changed(
+    const pointer_capture_snapshot& before,
+    const pointer_capture_snapshot& after)
+{
+    return before.lifecycle != after.lifecycle
+        || before.active != after.active
+        || before.pointer_id != after.pointer_id
+        || before.tracked_pointer_count != after.tracked_pointer_count;
+}
+
+[[nodiscard]] inline std::int32_t normalized_input_replay_pointer_id_for_route(
+    const action_route_policy_diagnostic& route)
+{
+    if (route.pointer_id != 0) {
+        return route.pointer_id;
+    }
+    if (route.normalized_event.pointer_id != 0) {
+        return route.normalized_event.pointer_id;
+    }
+    return route.gesture_policy.pointer_id;
+}
+
+inline void add_unique_normalized_input_replay_pointer_id(
+    std::vector<std::int32_t>& ids,
+    std::int32_t pointer_id)
+{
+    if (pointer_id == 0) {
+        return;
+    }
+    for (const std::int32_t existing_id : ids) {
+        if (existing_id == pointer_id) {
+            return;
+        }
+    }
+    ids.push_back(pointer_id);
+}
+
+inline void count_normalized_input_replay_pointer_kind(
+    normalized_input_replay_pointer_timeline_counts& counts,
+    normalized_input_replay_pointer_timeline_kind kind)
+{
+    switch (kind) {
+    case normalized_input_replay_pointer_timeline_kind::pointer_capture_arbitration:
+        ++counts.pointer_capture_arbitration;
+        return;
+    case normalized_input_replay_pointer_timeline_kind::pointer_capture_reset:
+        ++counts.pointer_capture_reset;
+        return;
+    case normalized_input_replay_pointer_timeline_kind::tap:
+        ++counts.tap;
+        return;
+    case normalized_input_replay_pointer_timeline_kind::long_press:
+        ++counts.long_press;
+        return;
+    case normalized_input_replay_pointer_timeline_kind::swipe_left:
+        ++counts.swipe_left;
+        return;
+    case normalized_input_replay_pointer_timeline_kind::swipe_right:
+        ++counts.swipe_right;
+        return;
+    case normalized_input_replay_pointer_timeline_kind::drag_start:
+        ++counts.drag_start;
+        return;
+    case normalized_input_replay_pointer_timeline_kind::drag_update:
+        ++counts.drag_update;
+        return;
+    case normalized_input_replay_pointer_timeline_kind::drag_end:
+        ++counts.drag_end;
+        return;
+    case normalized_input_replay_pointer_timeline_kind::drag_cancel:
+        ++counts.drag_cancel;
+        return;
+    case normalized_input_replay_pointer_timeline_kind::wheel:
+        ++counts.wheel;
+        return;
+    case normalized_input_replay_pointer_timeline_kind::gesture_suppressed:
+        ++counts.gesture_suppressed;
+        return;
+    }
+}
+
+inline void count_normalized_input_replay_pointer_contact(
+    normalized_input_replay_pointer_contact_counts& counts,
+    pointer_contact_kind contact)
+{
+    switch (contact) {
+    case pointer_contact_kind::unknown:
+        ++counts.unknown;
+        return;
+    case pointer_contact_kind::mouse_like:
+        ++counts.mouse_like;
+        return;
+    case pointer_contact_kind::touch_like:
+        ++counts.touch_like;
+        return;
+    }
+}
+
+inline void count_normalized_input_replay_pointer_lifecycle(
+    normalized_input_replay_pointer_capture_lifecycle_counts& counts,
+    pointer_capture_lifecycle lifecycle)
+{
+    switch (lifecycle) {
+    case pointer_capture_lifecycle::idle:
+        ++counts.idle;
+        return;
+    case pointer_capture_lifecycle::tracking:
+        ++counts.tracking;
+        return;
+    case pointer_capture_lifecycle::captured:
+        ++counts.captured;
+        return;
+    }
+}
+
+inline void count_normalized_input_replay_pointer_decision(
+    normalized_input_replay_pointer_decision_counts& counts,
+    pointer_arbitration_decision decision)
+{
+    switch (decision) {
+    case pointer_arbitration_decision::none:
+        ++counts.none;
+        return;
+    case pointer_arbitration_decision::tracked:
+        ++counts.tracked;
+        return;
+    case pointer_arbitration_decision::captured:
+        ++counts.captured;
+        return;
+    case pointer_arbitration_decision::ignored_by_capture:
+        ++counts.ignored_by_capture;
+        return;
+    case pointer_arbitration_decision::canceled:
+        ++counts.canceled;
+        return;
+    case pointer_arbitration_decision::released:
+        ++counts.released;
+        return;
+    case pointer_arbitration_decision::restarted:
+        ++counts.restarted;
+        return;
+    }
+}
+
+inline void apply_normalized_input_replay_pointer_final_state(
+    normalized_input_replay_pointer_summary& summary,
+    const normalized_input_replay_end_state& end_state)
+{
+    summary.final_capture = end_state.pointer_capture;
+    summary.final_capture_clean = end_state.pointer_capture_clean;
+}
+
+inline void accumulate_normalized_input_replay_pointer_summary(
+    normalized_input_replay_pointer_summary& target,
+    const normalized_input_replay_pointer_summary& source)
+{
+    target.timeline.insert(target.timeline.end(), source.timeline.begin(), source.timeline.end());
+    for (const std::int32_t pointer_id : source.pointer_ids) {
+        add_unique_normalized_input_replay_pointer_id(target.pointer_ids, pointer_id);
+    }
+    for (const std::int32_t pointer_id : source.mouse_pointer_ids) {
+        add_unique_normalized_input_replay_pointer_id(target.mouse_pointer_ids, pointer_id);
+    }
+    for (const std::int32_t pointer_id : source.touch_pointer_ids) {
+        add_unique_normalized_input_replay_pointer_id(target.touch_pointer_ids, pointer_id);
+    }
+
+    target.kinds.pointer_capture_arbitration += source.kinds.pointer_capture_arbitration;
+    target.kinds.pointer_capture_reset += source.kinds.pointer_capture_reset;
+    target.kinds.tap += source.kinds.tap;
+    target.kinds.long_press += source.kinds.long_press;
+    target.kinds.swipe_left += source.kinds.swipe_left;
+    target.kinds.swipe_right += source.kinds.swipe_right;
+    target.kinds.drag_start += source.kinds.drag_start;
+    target.kinds.drag_update += source.kinds.drag_update;
+    target.kinds.drag_end += source.kinds.drag_end;
+    target.kinds.drag_cancel += source.kinds.drag_cancel;
+    target.kinds.wheel += source.kinds.wheel;
+    target.kinds.gesture_suppressed += source.kinds.gesture_suppressed;
+
+    target.contacts.unknown += source.contacts.unknown;
+    target.contacts.mouse_like += source.contacts.mouse_like;
+    target.contacts.touch_like += source.contacts.touch_like;
+    target.capture_before_lifecycles.idle += source.capture_before_lifecycles.idle;
+    target.capture_before_lifecycles.tracking += source.capture_before_lifecycles.tracking;
+    target.capture_before_lifecycles.captured += source.capture_before_lifecycles.captured;
+    target.capture_after_lifecycles.idle += source.capture_after_lifecycles.idle;
+    target.capture_after_lifecycles.tracking += source.capture_after_lifecycles.tracking;
+    target.capture_after_lifecycles.captured += source.capture_after_lifecycles.captured;
+    target.decisions.none += source.decisions.none;
+    target.decisions.tracked += source.decisions.tracked;
+    target.decisions.captured += source.decisions.captured;
+    target.decisions.ignored_by_capture += source.decisions.ignored_by_capture;
+    target.decisions.canceled += source.decisions.canceled;
+    target.decisions.released += source.decisions.released;
+    target.decisions.restarted += source.decisions.restarted;
+    target.total += source.total;
+    target.emitted_input_event_routes += source.emitted_input_event_routes;
+    target.diagnostic_only_routes += source.diagnostic_only_routes;
+    target.capture_transition_count += source.capture_transition_count;
+    target.wheel_routes += source.wheel_routes;
+    target.saw_multipointer_touch = target.saw_multipointer_touch
+        || source.saw_multipointer_touch
+        || target.touch_pointer_ids.size() > 1;
+    target.final_capture = source.final_capture;
+    target.final_capture_clean = source.final_capture_clean;
+}
+
+[[nodiscard]] inline normalized_input_replay_pointer_summary summarize_normalized_input_replay_pointer_routes(
+    std::span<const action_route_policy_diagnostic> routes,
+    const normalized_input_replay_end_state& end_state)
+{
+    normalized_input_replay_pointer_summary summary;
+    apply_normalized_input_replay_pointer_final_state(summary, end_state);
+
+    for (const action_route_policy_diagnostic& route : routes) {
+        if (!normalized_input_replay_pointer_route_kind(route.kind)) {
+            continue;
+        }
+
+        normalized_input_replay_pointer_timeline_entry entry{
+            .kind = normalized_input_replay_pointer_kind_for_route(route),
+            .timestamp_ms = route.timestamp_ms,
+            .emits_input_event = route.emits_input_event,
+            .event_index = route.event_index,
+            .pointer_id = normalized_input_replay_pointer_id_for_route(route),
+            .event_phase = route.pointer_event_phase,
+            .contact = route.pointer_contact,
+            .decision = route.pointer_decision,
+            .capture_before = route.pointer_capture_before,
+            .capture_after = route.pointer_capture_after,
+            .tracked_pointer_count_before = route.tracked_pointer_count_before,
+            .tracked_pointer_count_after = route.tracked_pointer_count_after,
+            .normalized_event = route.normalized_event,
+            .gesture_policy = route.gesture_policy,
+        };
+        entry.capture_changed =
+            normalized_input_replay_pointer_capture_changed(entry.capture_before, entry.capture_after);
+        entry.capture_ended_cleanly_after = pointer_capture_snapshot_clean(entry.capture_after);
+
+        const bool use_policy_geometry = route.kind != action_route_policy_kind::wheel_summary
+            && (!route.emits_input_event
+                || entry.kind == normalized_input_replay_pointer_timeline_kind::pointer_capture_arbitration
+                || entry.kind == normalized_input_replay_pointer_timeline_kind::pointer_capture_reset);
+        if (use_policy_geometry) {
+            entry.duration_ms = route.gesture_policy.duration_ms;
+            entry.start_x = route.gesture_policy.start_x;
+            entry.start_y = route.gesture_policy.start_y;
+            entry.x = route.gesture_policy.x;
+            entry.y = route.gesture_policy.y;
+            entry.delta_x = route.gesture_policy.delta_x;
+            entry.delta_y = route.gesture_policy.delta_y;
+        } else {
+            entry.duration_ms = route.normalized_event.duration_ms;
+            entry.start_x = route.normalized_event.start_x;
+            entry.start_y = route.normalized_event.start_y;
+            entry.x = route.normalized_event.x;
+            entry.y = route.normalized_event.y;
+            entry.delta_x = route.normalized_event.delta_x;
+            entry.delta_y = route.normalized_event.delta_y;
+            entry.pixel_delta_x = route.normalized_event.pixel_delta_x;
+            entry.pixel_delta_y = route.normalized_event.pixel_delta_y;
+            entry.line_delta_x = route.normalized_event.line_delta_x;
+            entry.line_delta_y = route.normalized_event.line_delta_y;
+        }
+
+        ++summary.total;
+        if (route.emits_input_event) {
+            ++summary.emitted_input_event_routes;
+        } else {
+            ++summary.diagnostic_only_routes;
+        }
+        if (entry.kind == normalized_input_replay_pointer_timeline_kind::wheel) {
+            ++summary.wheel_routes;
+        }
+        if (entry.capture_changed) {
+            ++summary.capture_transition_count;
+        }
+        count_normalized_input_replay_pointer_kind(summary.kinds, entry.kind);
+        count_normalized_input_replay_pointer_contact(summary.contacts, entry.contact);
+        count_normalized_input_replay_pointer_lifecycle(
+            summary.capture_before_lifecycles,
+            entry.capture_before.lifecycle);
+        count_normalized_input_replay_pointer_lifecycle(
+            summary.capture_after_lifecycles,
+            entry.capture_after.lifecycle);
+        count_normalized_input_replay_pointer_decision(summary.decisions, entry.decision);
+
+        add_unique_normalized_input_replay_pointer_id(summary.pointer_ids, entry.pointer_id);
+        if (entry.contact == pointer_contact_kind::mouse_like) {
+            add_unique_normalized_input_replay_pointer_id(summary.mouse_pointer_ids, entry.pointer_id);
+        }
+        if (entry.contact == pointer_contact_kind::touch_like) {
+            add_unique_normalized_input_replay_pointer_id(summary.touch_pointer_ids, entry.pointer_id);
+        }
+        summary.saw_multipointer_touch = summary.saw_multipointer_touch
+            || summary.touch_pointer_ids.size() > 1
+            || entry.tracked_pointer_count_before > 1
+            || entry.tracked_pointer_count_after > 1;
+        summary.timeline.push_back(std::move(entry));
+    }
+
+    return summary;
+}
+
 [[nodiscard]] inline normalized_input_replay_end_state capture_normalized_input_replay_end_state(
     const input_engine& engine)
 {
@@ -576,6 +1122,8 @@ inline void accumulate_normalized_input_replay_ime_summary(
     normalized_input_replay_end_state end_state = capture_normalized_input_replay_end_state(engine);
     normalized_input_replay_ime_summary ime =
         summarize_normalized_input_replay_ime_routes(diagnostics.action_routes, events, end_state);
+    normalized_input_replay_pointer_summary pointer =
+        summarize_normalized_input_replay_pointer_routes(diagnostics.action_routes, end_state);
     return normalized_input_replay_batch{
         .label = std::move(label),
         .input_events = std::move(events),
@@ -583,6 +1131,7 @@ inline void accumulate_normalized_input_replay_ime_summary(
         .summary = diagnostics.summary,
         .keyboard = summarize_normalized_input_replay_keyboard_routes(diagnostics.action_routes),
         .ime = std::move(ime),
+        .pointer = std::move(pointer),
         .end_state = std::move(end_state),
     };
 }
@@ -600,10 +1149,11 @@ inline void accumulate_normalized_input_replay_ime_summary(
     recording.batches.reserve(steps.size());
     for (const normalized_input_replay_step& step : steps) {
         normalized_input_replay_batch batch =
-            record_normalized_input_batch(engine, step.label, step.action);
+        record_normalized_input_batch(engine, step.label, step.action);
         accumulate_input_diagnostic_summary(recording.summary, batch.summary);
         accumulate_normalized_input_replay_keyboard_summary(recording.keyboard, batch.keyboard);
         accumulate_normalized_input_replay_ime_summary(recording.ime, batch.ime);
+        accumulate_normalized_input_replay_pointer_summary(recording.pointer, batch.pointer);
         recording.final_state = batch.end_state;
         recording.batches.push_back(std::move(batch));
     }
@@ -612,6 +1162,9 @@ inline void accumulate_normalized_input_replay_ime_summary(
         recording.ime = summarize_normalized_input_replay_ime_routes(
             std::span<const action_route_policy_diagnostic>{},
             std::span<const input_event>{},
+            recording.final_state);
+        recording.pointer = summarize_normalized_input_replay_pointer_routes(
+            std::span<const action_route_policy_diagnostic>{},
             recording.final_state);
     }
     return recording;

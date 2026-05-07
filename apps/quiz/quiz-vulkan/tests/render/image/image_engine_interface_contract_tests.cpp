@@ -59,6 +59,13 @@ concept ImageTexturePipelineInterface = requires(
     { pipeline.acquire_texture(request) } -> std::same_as<render::render_image_texture_pipeline_result>;
 };
 
+template <typename T>
+concept PngImageInflaterInterface = requires(
+    const T& inflater,
+    const render::png_image_inflate_request& request) {
+    { inflater.inflate(request) } -> std::same_as<render::png_image_inflate_result>;
+};
+
 static_assert(ImageResolverInterface<render::image_resolver_interface>);
 static_assert(ImageResolverInterface<render::normalizing_image_resolver>);
 static_assert(ImageDecoderInterface<render::image_decoder_interface>);
@@ -75,6 +82,8 @@ static_assert(ImageTextureUploaderInterface<render::image_texture_uploader_inter
 static_assert(ImageTextureUploaderInterface<render::fake_image_texture_uploader>);
 static_assert(ImageTexturePipelineInterface<render::image_texture_pipeline_interface>);
 static_assert(ImageTexturePipelineInterface<render::fake_image_texture_pipeline>);
+static_assert(PngImageInflaterInterface<render::png_image_inflater_interface>);
+static_assert(PngImageInflaterInterface<render::fake_png_image_inflater>);
 
 static_assert(requires(render::render_image_ref image) {
     { image.sampler } -> std::same_as<render::render_image_sampler_policy&>;
@@ -139,6 +148,15 @@ static_assert(requires(
     render::png_image_chunk_kind png_chunk_kind,
     render::png_image_chunk_snapshot png_chunk,
     render::png_image_chunk_scan_result png_chunk_scan_result,
+    render::png_image_decode_plan_status png_decode_plan_status,
+    render::png_image_decode_plan png_decode_plan,
+    render::png_image_decode_plan_result png_decode_plan_result,
+    render::png_image_inflate_status png_inflate_status,
+    render::png_image_inflate_request png_inflate_request,
+    render::png_image_inflate_result png_inflate_result,
+    render::png_image_decode_boundary_status png_decode_boundary_status,
+    render::png_image_decode_boundary_result png_decode_boundary_result,
+    render::fake_png_image_inflater png_inflater,
     render::render_image_format_detection_summary format_detection,
     render::render_image_decode_size_validation size_validation,
     render::render_image_decoder_diagnostic diagnostic,
@@ -220,6 +238,15 @@ static_assert(requires(
     { render::png_image_chunk_kind_name(png_chunk_kind) } -> std::same_as<std::string>;
     { render::scan_png_image_chunks(request.encoded_bytes) }
         -> std::same_as<render::png_image_chunk_scan_result>;
+    { render::png_image_decode_plan_status_name(png_decode_plan_status) } -> std::same_as<std::string>;
+    { render::make_png_image_decode_plan(png_chunk_scan_result) }
+        -> std::same_as<render::png_image_decode_plan_result>;
+    { render::png_image_inflate_status_name(png_inflate_status) } -> std::same_as<std::string>;
+    { render::make_png_image_inflate_request(request.encoded_bytes, png_chunk_scan_result, png_decode_plan) }
+        -> std::same_as<render::png_image_inflate_request>;
+    { render::png_image_decode_boundary_status_name(png_decode_boundary_status) } -> std::same_as<std::string>;
+    { render::decode_png_image_with_inflater(request.encoded_bytes, png_chunk_scan_result, &png_inflater) }
+        -> std::same_as<render::png_image_decode_boundary_result>;
     { png_header.width } -> std::same_as<std::size_t&>;
     { png_header.height } -> std::same_as<std::size_t&>;
     { png_header.bit_depth } -> std::same_as<std::uint8_t&>;
@@ -258,6 +285,37 @@ static_assert(requires(
     { png_chunk_scan_result.chunks } -> std::same_as<std::vector<render::png_image_chunk_snapshot>&>;
     { png_chunk_scan_result.diagnostic } -> std::same_as<std::string&>;
     { png_chunk_scan_result.ok() } -> std::same_as<bool>;
+    { png_decode_plan.header } -> std::same_as<render::png_image_header&>;
+    { png_decode_plan.chunk_count } -> std::same_as<std::size_t&>;
+    { png_decode_plan.idat_chunk_count } -> std::same_as<std::size_t&>;
+    { png_decode_plan.idat_compressed_byte_count } -> std::same_as<std::size_t&>;
+    { png_decode_plan.bytes_per_pixel } -> std::same_as<std::size_t&>;
+    { png_decode_plan.row_byte_count } -> std::same_as<std::size_t&>;
+    { png_decode_plan.filtered_row_byte_count } -> std::same_as<std::size_t&>;
+    { png_decode_plan.expected_inflated_byte_count } -> std::same_as<std::size_t&>;
+    { png_decode_plan.expected_rgba_byte_count } -> std::same_as<std::size_t&>;
+    { png_decode_plan.pixel_format } -> std::same_as<render::render_image_pixel_format&>;
+    { png_decode_plan_result.status } -> std::same_as<render::png_image_decode_plan_status&>;
+    { png_decode_plan_result.plan } -> std::same_as<render::png_image_decode_plan&>;
+    { png_decode_plan_result.diagnostic } -> std::same_as<std::string&>;
+    { png_decode_plan_result.ok() } -> std::same_as<bool>;
+    { png_inflate_request.compressed_byte_count } -> std::same_as<std::size_t&>;
+    { png_inflate_request.expected_inflated_byte_count } -> std::same_as<std::size_t&>;
+    { png_inflate_request.idat_chunk_count } -> std::same_as<std::size_t&>;
+    { png_inflate_request.compressed_bytes } -> std::same_as<std::vector<std::byte>&>;
+    { png_inflate_result.status } -> std::same_as<render::png_image_inflate_status&>;
+    { png_inflate_result.inflated_bytes } -> std::same_as<std::vector<std::byte>&>;
+    { png_inflate_result.diagnostic } -> std::same_as<std::string&>;
+    { png_inflate_result.ok() } -> std::same_as<bool>;
+    { png_decode_boundary_result.status } -> std::same_as<render::png_image_decode_boundary_status&>;
+    { png_decode_boundary_result.plan } -> std::same_as<render::png_image_decode_plan_result&>;
+    { png_decode_boundary_result.inflate } -> std::same_as<render::png_image_inflate_result&>;
+    { png_decode_boundary_result.inflated_byte_count } -> std::same_as<std::size_t&>;
+    { png_decode_boundary_result.diagnostic } -> std::same_as<std::string&>;
+    { png_decode_boundary_result.ok() } -> std::same_as<bool>;
+    { png_inflater.inflate(png_inflate_request) } -> std::same_as<render::png_image_inflate_result>;
+    { png_inflater.set_result(png_inflate_result) } -> std::same_as<void>;
+    { png_inflater.requests } -> std::same_as<std::vector<render::png_image_inflate_request>&>;
     { render::detect_render_image_format(request) } -> std::same_as<render::render_image_format_detection_summary>;
     { render::render_image_source_kind_decode_order(source_kind) } -> std::same_as<std::size_t>;
     { render::render_image_extension_decode_order("ppm") } -> std::same_as<std::size_t>;
@@ -275,6 +333,9 @@ static_assert(requires(
     png_header_status;
     png_chunk_scan_status;
     png_chunk_kind;
+    png_decode_plan_status;
+    png_inflate_status;
+    png_decode_boundary_status;
     { diagnostic.decoder_id } -> std::same_as<std::string&>;
     { diagnostic.candidate_index } -> std::same_as<std::size_t&>;
     { diagnostic.candidate_order } -> std::same_as<std::size_t&>;

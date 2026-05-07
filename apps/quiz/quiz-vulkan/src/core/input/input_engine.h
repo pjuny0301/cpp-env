@@ -44,6 +44,7 @@ enum class action_route_policy_kind {
     ime_preedit,
     ime_commit,
     ime_cancel,
+    ime_composition_start,
 };
 
 struct action_route_policy_diagnostic {

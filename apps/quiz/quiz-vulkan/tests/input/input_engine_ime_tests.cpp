@@ -228,6 +228,19 @@ void test_ime_composition_suppresses_text_and_key_events()
     require(engine.text_model().ime_composition().active, "composition start creates active empty composition");
     require_range(engine.text_model().ime_composition().preedit_range, 0, 0,
         "composition start preedit range is collapsed");
+    require(engine.routing_diagnostics().action_routes.size() == 1,
+        "composition start emits one state diagnostic policy");
+    const action_route_policy_diagnostic& start_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::ime_composition_start,
+        "composition start emits state diagnostic policy");
+    require(!start_policy.emits_input_event, "composition start policy emits no input event");
+    require(start_policy.target_id == "answer", "composition start policy preserves target id");
+    require(start_policy.composition.active, "composition start policy carries active composition");
+    require(start_policy.composition.preedit_text.empty(), "composition start policy carries empty preedit");
+    require_range(start_policy.composition.preedit_range, 0, 0,
+        "composition start policy carries collapsed preedit range");
     std::vector<input_event> events =
         engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 110, utf8(u8"ㅎ")));
     require(events.size() == 1, "preedit emits one ime event");
@@ -415,8 +428,8 @@ void test_ime_composition_restart_cancels_visible_preedit()
     require(cancel.composition.active, "composition restart cancel carries stale active composition");
     require(cancel.composition.preedit_text == "draft", "composition restart cancel carries stale preedit text");
     require_range(cancel.composition.preedit_range, 0, 5, "composition restart cancel carries stale preedit range");
-    require(engine.routing_diagnostics().action_routes.size() == 1,
-        "composition restart cancel emits one action route policy");
+    require(engine.routing_diagnostics().action_routes.size() == 2,
+        "composition restart emits cancel and restart action route policies");
     const action_route_policy_diagnostic& cancel_policy = require_policy(
         engine.routing_diagnostics(),
         0,
@@ -432,6 +445,18 @@ void test_ime_composition_restart_cancels_visible_preedit()
     require_range(cancel_policy.caret_before, 5, 5, "composition restart cancel policy records preedit caret");
     require_range(cancel_policy.caret_after, 0, 0, "composition restart cancel policy records cleared caret");
     require(engine.text_model().preedit_text().empty(), "composition restart clears stale preedit");
+    const action_route_policy_diagnostic& restart_policy = require_policy(
+        engine.routing_diagnostics(),
+        1,
+        action_route_policy_kind::ime_composition_start,
+        "composition restart emits new composition start policy");
+    require(!restart_policy.emits_input_event, "composition restart start policy emits no input event");
+    require(restart_policy.composition.active, "composition restart start policy carries active empty composition");
+    require(restart_policy.composition.preedit_text.empty(),
+        "composition restart start policy carries empty preedit text");
+    require_range(restart_policy.composition.preedit_range, 0, 0,
+        "composition restart start policy carries collapsed preedit range");
+    require(engine.text_model().ime_composition().active, "composition restart leaves empty composition active");
 
     require(engine.process_raw_event(text(120, "duplicate")).empty(),
         "raw text remains suppressed after composition restart");
@@ -490,6 +515,13 @@ void test_ime_empty_preedit_and_commit_only_edges()
     require(engine.text_model().ime_composition().active, "empty composition start activates composition state");
     require_range(engine.text_model().ime_composition().preedit_range, 0, 0,
         "empty composition start has collapsed preedit range");
+    const action_route_policy_diagnostic& empty_start_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::ime_composition_start,
+        "empty composition start emits start policy");
+    require(!empty_start_policy.emits_input_event, "empty composition start policy emits no event");
+    require(empty_start_policy.composition.active, "empty composition start policy carries active composition");
     require(engine.process_raw_event(key(105, "Backspace")).empty(),
         "backspace is suppressed during empty composition");
     require(engine.process_raw_event(text(106, "duplicate")).empty(),

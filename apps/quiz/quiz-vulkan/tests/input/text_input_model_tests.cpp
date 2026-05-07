@@ -592,6 +592,64 @@ void test_empty_preedit_edges()
     require(model.text() == "base", "empty ime commit after empty preedit preserves text");
 }
 
+void test_caret_and_selection_movement_clear_stale_preedit()
+{
+    quiz_vulkan::input::text_input_model model;
+    model.focus("answer");
+
+    const std::string initial = std::string("A") + utf8(u8"한") + "B";
+    require(model.commit_utf8(initial), "stale preedit movement initial text commits");
+    require(model.move_caret_left(), "stale preedit movement moves before trailing ascii");
+    require(model.caret_byte_offset() == 1 + std::string(utf8(u8"한")).size(),
+        "stale preedit movement caret starts after hangul");
+
+    require(model.set_preedit("draft"), "stale preedit before left move is set");
+    require(model.display_text() == std::string("A") + utf8(u8"한") + "draftB",
+        "stale preedit before left move is displayed");
+    require(model.move_caret_left(), "left move clears stale preedit and moves by codepoint");
+    require(model.preedit_text().empty(), "left move clears stale preedit");
+    require(!model.ime_composition().active, "left move clears composition state");
+    require(model.text() == initial, "left move preserves committed text");
+    require(model.display_text() == initial, "left move restores committed display");
+    require(model.caret_byte_offset() == 1, "left move stays on utf8 boundary before hangul");
+
+    require(model.set_preedit("draft"), "stale preedit before right move is set");
+    require(model.move_caret_right(), "right move clears stale preedit and moves by codepoint");
+    require(model.preedit_text().empty(), "right move clears stale preedit");
+    require(!model.ime_composition().active, "right move clears composition state");
+    require(model.caret_byte_offset() == 1 + std::string(utf8(u8"한")).size(),
+        "right move stays on utf8 boundary after hangul");
+
+    require(model.set_preedit("draft"), "stale preedit before end move is set");
+    require(model.move_caret_to_end(), "end move clears stale preedit");
+    require(model.preedit_text().empty(), "end move clears stale preedit");
+    require(model.caret_byte_offset() == initial.size(), "end move places caret at committed end");
+
+    require(model.set_preedit("draft"), "stale preedit before end edge is set");
+    require(model.move_caret_to_end(), "end edge still clears stale preedit");
+    require(model.preedit_text().empty(), "end edge clears stale preedit");
+    require(model.caret_byte_offset() == initial.size(), "end edge preserves committed end caret");
+
+    require(model.set_preedit("draft"), "stale preedit before shift left is set");
+    require(model.extend_selection_left(), "shift left clears stale preedit and selects previous codepoint");
+    require(model.preedit_text().empty(), "shift left clears stale preedit");
+    std::optional<quiz_vulkan::input::text_range> selection = model.selection_range();
+    require(selection.has_value(), "shift left exposes selection after clearing preedit");
+    require_range(*selection, 1 + std::string(utf8(u8"한")).size(), initial.size(),
+        "shift left selects trailing ascii after clearing preedit");
+
+    require(model.set_preedit("draft"), "stale preedit before shift right is set");
+    require(model.extend_selection_right(), "shift right clears stale preedit and collapses selection");
+    require(model.preedit_text().empty(), "shift right clears stale preedit");
+    require(!model.selection_range().has_value(), "shift right can collapse selection after clearing preedit");
+
+    require(model.move_caret_to_start(), "start move prepares start boundary");
+    require(model.set_preedit("draft"), "stale preedit before left edge is set");
+    require(model.move_caret_left(), "left edge clears stale preedit even without caret movement");
+    require(model.preedit_text().empty(), "left edge clears stale preedit");
+    require(model.caret_byte_offset() == 0, "left edge keeps caret at start");
+}
+
 void test_clear_focus_ignores_text()
 {
     quiz_vulkan::input::text_input_model model;
@@ -664,6 +722,7 @@ int main()
     test_ime_preedit_and_commit();
     test_ime_commit_edges();
     test_empty_preedit_edges();
+    test_caret_and_selection_movement_clear_stale_preedit();
     test_clear_focus_ignores_text();
     test_submit_consumes_buffer();
     test_submit_excludes_preedit();

@@ -455,9 +455,20 @@ std::vector<input_event> input_engine::process_ime_event(const raw_platform_ime_
                 gestures_.capture_snapshot());
             policy.composition = initial_composition;
             append_policy(std::move(policy));
-        } else {
-            text_.set_preedit("");
         }
+
+        const auto composition_start_before = detail::capture_text_edit(text_);
+        text_.set_preedit("");
+        action_route_policy_diagnostic start_policy = detail::make_text_state_policy(
+            action_route_policy_kind::ime_composition_start,
+            event.timestamp_ms,
+            target_id,
+            composition_start_before,
+            detail::capture_text_edit(text_),
+            diagnostics_.pointer_capture,
+            gestures_.capture_snapshot());
+        start_policy.composition = text_.ime_composition();
+        append_policy(std::move(start_policy));
         finish_route_diagnostics();
         return events;
     }

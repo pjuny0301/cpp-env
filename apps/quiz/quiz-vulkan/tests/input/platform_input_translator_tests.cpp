@@ -288,6 +288,31 @@ void test_ime_preedit_commit_and_cancel_translate_to_ime_events()
     input_engine commit_engine;
     commit_engine.focus_text_target("answer");
 
+    platform_input_translation_result start = translate(
+        translator,
+        platform_ime_composition_sample{
+            .timestamp_ms = 590,
+            .phase = platform_ime_sample_phase::composition_start,
+            .utf8_text = {},
+        });
+    require_accepted(start, platform_input_source_kind::ime, "ime composition start is accepted");
+    const raw_platform_ime_event& raw_start = require_translated_event<raw_platform_ime_event>(
+        start,
+        "ime composition start translates to raw ime");
+    require(raw_start.phase == raw_platform_ime_phase::composition_start,
+        "ime composition start preserves phase");
+    std::vector<input_event> events = commit_engine.process_raw_event(*start.event);
+    require(events.empty(), "translated ime composition start emits no normalized input event");
+    require(commit_engine.text_model().ime_composition().active,
+        "translated ime composition start activates composition state");
+    require(commit_engine.routing_diagnostics().action_routes.size() == 1,
+        "translated ime composition start emits one route diagnostic");
+    require(commit_engine.routing_diagnostics().action_routes[0].kind
+            == action_route_policy_kind::ime_composition_start,
+        "translated ime composition start records state-only route kind");
+    require(!commit_engine.routing_diagnostics().action_routes[0].emits_input_event,
+        "translated ime composition start route emits no input event");
+
     platform_input_translation_result preedit = translate(
         translator,
         platform_ime_composition_sample{
@@ -302,7 +327,7 @@ void test_ime_preedit_commit_and_cancel_translate_to_ime_events()
     require(raw_preedit.phase == raw_platform_ime_phase::preedit_update,
         "ime preedit preserves phase");
 
-    std::vector<input_event> events = commit_engine.process_raw_event(*preedit.event);
+    events = commit_engine.process_raw_event(*preedit.event);
     require(events.size() == 1, "translated ime preedit emits one ime event");
     const ime_event& preedit_event = require_input_event<ime_event>(events, 0);
     require(preedit_event.kind == ime_event_kind::preedit, "translated ime preedit emits preedit kind");
@@ -453,6 +478,19 @@ void test_rejected_malformed_samples_emit_diagnostics_without_events()
         platform_input_source_kind::ime,
         platform_input_rejection_reason::empty_text,
         "empty ime commit is rejected");
+
+    platform_input_translation_result bad_ime_preedit = translate(
+        translator,
+        platform_ime_composition_sample{
+            .timestamp_ms = 870,
+            .phase = platform_ime_sample_phase::preedit_update,
+            .utf8_text = std::string("\xF0\x28\x8C\x28", 4),
+        });
+    require_rejected(
+        bad_ime_preedit,
+        platform_input_source_kind::ime,
+        platform_input_rejection_reason::invalid_utf8,
+        "invalid ime preedit utf8 is rejected");
 }
 
 } // namespace

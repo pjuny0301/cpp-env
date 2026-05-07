@@ -295,11 +295,13 @@ bool text_input_model::move_caret_to_start()
     }
 
     const bool had_selection = selection_range_.has_value();
-    if (!had_selection && caret_byte_offset() == 0) {
+    const bool had_preedit = ime_composition_active_;
+    if (!had_selection && !had_preedit && caret_byte_offset() == 0) {
         return false;
     }
 
     reset_selection();
+    clear_preedit();
     caret_byte_offset_ = 0;
     return true;
 }
@@ -311,11 +313,13 @@ bool text_input_model::move_caret_to_end()
     }
 
     const bool had_selection = selection_range_.has_value();
-    if (!had_selection && caret_byte_offset() == text_.size()) {
+    const bool had_preedit = ime_composition_active_;
+    if (!had_selection && !had_preedit && caret_byte_offset() == text_.size()) {
         return false;
     }
 
     reset_selection();
+    clear_preedit();
     caret_byte_offset_ = text_.size();
     return true;
 }
@@ -329,14 +333,20 @@ bool text_input_model::move_caret_left()
     if (selection_range_.has_value()) {
         caret_byte_offset_ = selection_range_->start_byte;
         reset_selection();
+        clear_preedit();
         return true;
     }
 
+    const bool had_preedit = ime_composition_active_;
     if (caret_byte_offset() == 0) {
-        return false;
+        if (had_preedit) {
+            clear_preedit();
+        }
+        return had_preedit;
     }
 
     caret_byte_offset_ = previous_utf8_boundary(text_, caret_byte_offset());
+    clear_preedit();
     return true;
 }
 
@@ -349,38 +359,62 @@ bool text_input_model::move_caret_right()
     if (selection_range_.has_value()) {
         caret_byte_offset_ = selection_range_->end_byte;
         reset_selection();
+        clear_preedit();
         return true;
     }
 
+    const bool had_preedit = ime_composition_active_;
     if (caret_byte_offset() >= text_.size()) {
-        return false;
+        if (had_preedit) {
+            clear_preedit();
+        }
+        return had_preedit;
     }
 
     caret_byte_offset_ = next_utf8_boundary(text_, caret_byte_offset());
+    clear_preedit();
     return true;
 }
 
 bool text_input_model::extend_selection_left()
 {
-    if (!focused_ || caret_byte_offset() == 0) {
+    if (!focused_) {
         return false;
+    }
+
+    const bool had_preedit = ime_composition_active_;
+    if (caret_byte_offset() == 0) {
+        if (had_preedit) {
+            clear_preedit();
+        }
+        return had_preedit;
     }
 
     const std::size_t anchor = selection_anchor_byte_offset_.value_or(caret_byte_offset());
     const std::size_t active = previous_utf8_boundary(text_, caret_byte_offset());
     set_selection_from_anchor(anchor, active);
+    clear_preedit();
     return true;
 }
 
 bool text_input_model::extend_selection_right()
 {
-    if (!focused_ || caret_byte_offset() >= text_.size()) {
+    if (!focused_) {
         return false;
+    }
+
+    const bool had_preedit = ime_composition_active_;
+    if (caret_byte_offset() >= text_.size()) {
+        if (had_preedit) {
+            clear_preedit();
+        }
+        return had_preedit;
     }
 
     const std::size_t anchor = selection_anchor_byte_offset_.value_or(caret_byte_offset());
     const std::size_t active = next_utf8_boundary(text_, caret_byte_offset());
     set_selection_from_anchor(anchor, active);
+    clear_preedit();
     return true;
 }
 

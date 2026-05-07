@@ -431,6 +431,9 @@ static_assert(pointer_arbitration_policy_kind == input::action_route_policy_kind
 constexpr input::action_route_policy_kind ime_preedit_policy_kind =
     input::action_route_policy_kind::ime_preedit;
 static_assert(ime_preedit_policy_kind == input::action_route_policy_kind::ime_preedit);
+constexpr input::action_route_policy_kind ime_composition_start_policy_kind =
+    input::action_route_policy_kind::ime_composition_start;
+static_assert(ime_composition_start_policy_kind == input::action_route_policy_kind::ime_composition_start);
 constexpr input::action_route_policy_kind gesture_snapshot_policy_kind =
     input::action_route_policy_kind::gesture_route_snapshot;
 static_assert(gesture_snapshot_policy_kind == input::action_route_policy_kind::gesture_route_snapshot);

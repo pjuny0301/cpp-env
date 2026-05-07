@@ -130,12 +130,29 @@ target_sources(
         FILE_SET HEADERS
         BASE_DIRS src
         FILES
+            src/render/image/bmp_image_decoder.h
             src/render/image/image_decoder.h
             src/render/image/image_resolver.h
+            src/render/image/image_source_bytes_loader.h
             src/render/image/image_texture_cache.h
+            src/render/image/image_texture_diagnostics.h
+            src/render/image/image_texture_pipeline.h
+            src/render/image/image_texture_placeholder_policy.h
+            src/render/image/image_texture_upload.h
+            src/render/image/image_texture_upload_retry_policy.h
             src/render/image/image_types.h
             src/render/render_draw_list.h
+            src/render/text/font_cmap_inspector.h
+            src/render/text/font_glyph_atlas.h
+            src/render/text/font_resolver.h
+            src/render/text/font_sfnt_inspector.h
+            src/render/text/font_source_bytes_loader.h
+            src/render/text/font_source_resolver.h
+            src/render/text/font_unicode_coverage.h
+            src/render/text/glyph_run.h
             src/render/text/text_engine.h
+            src/render/text/utf8_line_break.h
+            src/render/text/utf8_text_run.h
 )
 target_compile_features(quiz_vulkan_render_contract INTERFACE cxx_std_23)
 target_include_directories(quiz_vulkan_render_contract INTERFACE src)
@@ -233,6 +250,7 @@ target_sources(
         BASE_DIRS src
         FILES
             src/render/text/fake_text_engine.h
+            src/render/text/fake_text_engine_layout.h
 )
 target_compile_features(quiz_vulkan_text_engine PUBLIC cxx_std_23)
 target_include_directories(quiz_vulkan_text_engine PUBLIC src)
@@ -276,19 +294,22 @@ target_sources(
     quiz_vulkan_renderer
     PRIVATE
         src/render/vulkan/vulkan_backend_adapter.cpp
-        src/render/vulkan/vulkan_backend_adapter.h
         src/render/vulkan/vulkan_backend_frame_lifecycle.cpp
-        src/render/vulkan/vulkan_backend_frame_lifecycle.h
         src/render/vulkan/vulkan_backend_pipeline_cache.cpp
         src/render/vulkan/vulkan_backend_resource_binding.cpp
         src/render/vulkan/vulkan_backend_adapter_names.cpp
         src/render/vulkan/vulkan_frame_plan.cpp
-        src/render/vulkan/vulkan_frame_plan.h
         src/render/vulkan/vulkan_renderer.cpp
     PUBLIC
         FILE_SET HEADERS
         BASE_DIRS src
         FILES
+            src/render/vulkan/vulkan_backend_adapter.h
+            src/render/vulkan/vulkan_backend_device.h
+            src/render/vulkan/vulkan_backend_frame_lifecycle.h
+            src/render/vulkan/vulkan_backend_instance.h
+            src/render/vulkan/vulkan_backend_loader.h
+            src/render/vulkan/vulkan_frame_plan.h
             src/render/vulkan/vulkan_renderer.h
 )
 target_compile_features(quiz_vulkan_renderer PUBLIC cxx_std_23)

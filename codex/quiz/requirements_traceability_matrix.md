@@ -6,6 +6,9 @@
 
 최근 baseline 통합 증거:
 
+- current: font backend capability probe header를 CMake public FILE_SET에 등록하고 image manifest texture pipeline boundary와 함께 Windows MinGW focused text/image CTest 5/5 및 `ctest -N` 73개 확인.
+- `56e3d0d`: image manifest/source-to-texture pipeline adapter, normalized source key, source revision invalidation, missing-source placeholder, path traversal rejection tests 추가.
+- `7058a02`: text engine에 FreeType/HarfBuzz/DirectWrite 가능성을 data-only로 표현하는 font backend capability probe와 fallback-mode contract tests 추가.
 - current: Vulkan shader module readiness header를 CMake public FILE_SET에 등록하고 Windows MinGW focused Vulkan CTest 3/3 및 `ctest -N` 72개 확인.
 - `516c4bc`: Vulkan pipeline/cache 뒤에 data-only SPIR-V shader module readiness boundary, fake create/destroy diagnostics, shader stage/entry validation tests 추가.
 - current: input gesture diagnostics split tests를 통합하고 Windows MinGW focused input CTest 7/7 및 `ctest -N` 71개 확인.

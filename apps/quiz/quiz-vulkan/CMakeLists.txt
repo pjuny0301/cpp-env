@@ -150,6 +150,7 @@ target_sources(
             src/render/image/png_image_zlib_inflater.h
             src/render/image/standard_image_decoder_chain.h
             src/render/render_draw_list.h
+            src/render/text/font_backend_capabilities.h
             src/render/text/font_coverage_run_segmentation.h
             src/render/text/font_cmap_inspector.h
             src/render/text/font_glyph_atlas.h

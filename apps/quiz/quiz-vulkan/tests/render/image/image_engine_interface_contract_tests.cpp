@@ -74,6 +74,7 @@ static_assert(ImageDecoderInterface<render::fake_image_decoder>);
 static_assert(ImageDecoderInterface<render::ppm_image_decoder>);
 static_assert(ImageDecoderInterface<render::bmp_image_decoder>);
 static_assert(ImageDecoderInterface<render::png_image_decoder>);
+static_assert(ImageDecoderInterface<render::standard_image_decoder_chain>);
 static_assert(ImageSourceBytesLoaderInterface<render::image_source_bytes_loader_interface>);
 static_assert(ImageSourceBytesLoaderInterface<render::filesystem_image_source_bytes_loader>);
 static_assert(ImageSourceBytesLoaderInterface<render::fake_image_source_bytes_loader>);
@@ -163,6 +164,7 @@ static_assert(requires(
     render::png_image_unfilter_status png_unfilter_status,
     render::png_image_unfilter_result png_unfilter_result,
     render::png_image_decoder png_decoder,
+    render::standard_image_decoder_chain standard_decoder_chain,
     render::render_image_format_detection_summary format_detection,
     render::render_image_decode_size_validation size_validation,
     render::render_image_decoder_diagnostic diagnostic,
@@ -267,6 +269,10 @@ static_assert(requires(
         -> std::same_as<render::render_image_decode_result>;
     { png_decoder.supports(request) } -> std::same_as<bool>;
     { png_decoder.decode(request) } -> std::same_as<render::render_image_decode_result>;
+    { render::make_standard_image_decoder_chain() } -> std::same_as<render::standard_image_decoder_chain>;
+    { standard_decoder_chain.decoder_count() } -> std::same_as<std::size_t>;
+    { standard_decoder_chain.supports(request) } -> std::same_as<bool>;
+    { standard_decoder_chain.decode(request) } -> std::same_as<render::render_image_decode_result>;
     { png_header.width } -> std::same_as<std::size_t&>;
     { png_header.height } -> std::same_as<std::size_t&>;
     { png_header.bit_depth } -> std::same_as<std::uint8_t&>;

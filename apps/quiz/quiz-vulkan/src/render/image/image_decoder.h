@@ -902,3 +902,4 @@ public:
 
 #include "render/image/bmp_image_decoder.h"
 #include "render/image/png_image_decoder.h"
+#include "render/image/standard_image_decoder_chain.h"

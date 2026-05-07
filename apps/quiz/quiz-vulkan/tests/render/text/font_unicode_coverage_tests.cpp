@@ -466,6 +466,187 @@ void test_resolver_preserves_missing_cmap_status_from_valid_sfnt_diagnostics()
         "coverage diagnostic names missing cmap status");
 }
 
+void test_catalog_adapter_converts_valid_coverage_to_descriptor_ranges()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::vector<std::byte> bytes = make_font_bytes_with_cmap(
+        wrap_cmap_subtable(
+            3U,
+            10U,
+            make_format12_subtable({
+                cmap_format12_fixture_range{.first_codepoint = 0x0041U, .last_codepoint = 0x005aU},
+                cmap_format12_fixture_range{.first_codepoint = 0xac00U, .last_codepoint = 0xac02U},
+                cmap_format12_fixture_range{.first_codepoint = 0x1f600U, .last_codepoint = 0x1f64fU},
+            })));
+    const render_text_font_unicode_coverage_snapshot coverage = resolve_font_unicode_coverage(
+        render_text_font_unicode_coverage_request{
+            .bytes = std::span<const std::byte>{bytes},
+            .source_label = "adapter-format12.ttf",
+        });
+
+    const font_unicode_coverage_catalog_adapter adapter;
+    const std::vector<font_codepoint_range> ranges = adapter.coverage_for(coverage);
+    require(ranges.size() == 3U, "adapter preserves Latin, Hangul, and non-BMP coverage ranges");
+    require(ranges[0].first == 0x0041U && ranges[0].last == 0x005aU, "adapter converts Latin coverage range");
+    require(ranges[1].first == 0xac00U && ranges[1].last == 0xac02U, "adapter converts Hangul coverage range");
+    require(ranges[2].first == 0x1f600U && ranges[2].last == 0x1f64fU, "adapter converts non-BMP coverage range");
+
+    const font_face_descriptor descriptor = adapter.apply_to_descriptor(
+        font_face_descriptor{
+            .id = 71,
+            .family = "Adapter Sans",
+            .source_uri = "fixture://fonts/adapter-sans",
+            .version = "fixture-1",
+            .license = "test-fixture",
+            .weight = 400,
+        },
+        coverage);
+
+    require(descriptor.coverage.size() == 3U, "adapted descriptor receives known coverage ranges");
+    require(descriptor.supports_codepoint(0x0041U), "adapted descriptor supports Latin coverage");
+    require(descriptor.supports_codepoint(0xac01U), "adapted descriptor supports Hangul coverage");
+    require(descriptor.supports_codepoint(0x1f600U), "adapted descriptor supports non-BMP coverage");
+    require(!descriptor.supports_codepoint(0x0061U), "adapted descriptor rejects codepoints outside coverage");
+}
+
+void test_catalog_adapter_keeps_missing_and_invalid_coverage_known_empty()
+{
+    using namespace quiz_vulkan::render;
+
+    const font_unicode_coverage_catalog_adapter adapter;
+    const render_text_font_unicode_coverage_snapshot missing{
+        .source_label = "missing.ttf",
+        .status = render_text_font_unicode_coverage_status::missing_bytes,
+        .diagnostic = "missing bytes",
+    };
+    const font_face_descriptor missing_descriptor = adapter.apply_to_descriptor(
+        font_face_descriptor{
+            .id = 72,
+            .family = "Missing Sans",
+            .source_uri = "fonts/missing.ttf",
+            .version = "fixture-1",
+            .license = "test-fixture",
+        },
+        missing);
+
+    require(missing_descriptor.coverage.size() == 1U, "missing coverage becomes an explicit known-empty range");
+    require(
+        font_unicode_coverage_codepoint_range_is_known_empty(missing_descriptor.coverage.front()),
+        "missing coverage range is marked known-empty");
+    require(!missing_descriptor.supports_codepoint(0x0041U), "missing coverage does not claim Latin support");
+    require(!missing_descriptor.supports_codepoint(0xac00U), "missing coverage does not claim Hangul support");
+
+    const render_text_font_unicode_coverage_snapshot invalid{
+        .source_label = "invalid.ttf",
+        .status = render_text_font_unicode_coverage_status::cmap_invalid,
+        .ranges = {
+            render_text_font_cmap_range{
+                .first_codepoint = U'A',
+                .last_codepoint = U'Z',
+            },
+        },
+        .diagnostic = "invalid cmap",
+    };
+    const font_face_descriptor invalid_descriptor = adapter.apply_to_descriptor(
+        font_face_descriptor{
+            .id = 73,
+            .family = "Invalid Sans",
+            .source_uri = "fonts/invalid.ttf",
+            .version = "fixture-1",
+            .license = "test-fixture",
+        },
+        invalid);
+
+    require(invalid_descriptor.coverage.size() == 1U, "invalid coverage ignores stale ranges");
+    require(
+        font_unicode_coverage_codepoint_range_is_known_empty(invalid_descriptor.coverage.front()),
+        "invalid coverage range is marked known-empty");
+    require(!invalid_descriptor.supports_codepoint(0x0041U), "invalid coverage does not claim Latin support");
+    require(!invalid_descriptor.supports_codepoint(0x1f600U), "invalid coverage does not claim non-BMP support");
+}
+
+void test_catalog_adapter_lets_font_catalog_pick_fallback_from_adapted_coverage()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::vector<std::byte> latin_bytes = make_font_bytes_with_cmap(
+        wrap_cmap_subtable(
+            3U,
+            1U,
+            make_format4_subtable({
+                cmap_format4_fixture_range{.first_codepoint = 0x0041U, .last_codepoint = 0x005aU},
+            })));
+    const std::vector<std::byte> fallback_bytes = make_font_bytes_with_cmap(
+        wrap_cmap_subtable(
+            3U,
+            10U,
+            make_format12_subtable({
+                cmap_format12_fixture_range{.first_codepoint = 0xac00U, .last_codepoint = 0xac02U},
+                cmap_format12_fixture_range{.first_codepoint = 0x1f600U, .last_codepoint = 0x1f64fU},
+            })));
+    const render_text_font_unicode_coverage_snapshot latin_coverage = resolve_font_unicode_coverage(
+        render_text_font_unicode_coverage_request{
+            .bytes = std::span<const std::byte>{latin_bytes},
+            .source_label = "primary-latin.ttf",
+        });
+    const render_text_font_unicode_coverage_snapshot fallback_coverage = resolve_font_unicode_coverage(
+        render_text_font_unicode_coverage_request{
+            .bytes = std::span<const std::byte>{fallback_bytes},
+            .source_label = "fallback-hangul-emoji.ttf",
+        });
+
+    const font_unicode_coverage_catalog_adapter adapter;
+    font_face_catalog catalog;
+    catalog.add_face(adapter.apply_to_descriptor(
+        font_face_descriptor{
+            .id = 81,
+            .family = "Primary Sans",
+            .source_uri = "fixture://fonts/primary-latin",
+            .version = "fixture-1",
+            .license = "test-fixture",
+            .weight = 400,
+        },
+        latin_coverage));
+    catalog.add_face(adapter.apply_to_descriptor(
+        font_face_descriptor{
+            .id = 82,
+            .family = "Fallback Sans",
+            .source_uri = "fixture://fonts/fallback-hangul-emoji",
+            .version = "fixture-1",
+            .license = "test-fixture",
+            .weight = 400,
+            .fallback = true,
+        },
+        fallback_coverage));
+
+    const render_text_style primary_style{
+        .font_family = "Primary Sans",
+        .font_weight = 400,
+    };
+    const font_face_resolution latin_resolution =
+        catalog.resolve_for_codepoint(primary_style, 0x0041U);
+    require(latin_resolution.glyph_supported, "catalog resolves Latin from requested adapted face");
+    require(!latin_resolution.used_fallback, "catalog does not fallback for requested Latin coverage");
+    require(latin_resolution.resolved_face != nullptr && latin_resolution.resolved_face->id == 81U, "Latin resolves to primary face");
+
+    const font_face_resolution hangul_resolution =
+        catalog.resolve_for_codepoint(primary_style, 0xac01U);
+    require(hangul_resolution.glyph_supported, "catalog resolves Hangul from adapted fallback coverage");
+    require(hangul_resolution.used_fallback, "catalog reports fallback for Hangul coverage");
+    require(
+        hangul_resolution.resolved_face != nullptr && hangul_resolution.resolved_face->id == 82U,
+        "Hangul resolves to fallback face");
+
+    const font_face_resolution emoji_resolution =
+        catalog.resolve_for_codepoint(primary_style, 0x1f600U);
+    require(emoji_resolution.glyph_supported, "catalog resolves non-BMP from adapted fallback coverage");
+    require(emoji_resolution.used_fallback, "catalog reports fallback for non-BMP coverage");
+    require(
+        emoji_resolution.resolved_face != nullptr && emoji_resolution.resolved_face->id == 82U,
+        "non-BMP resolves to fallback face");
+}
+
 } // namespace
 
 int main()
@@ -477,5 +658,8 @@ int main()
     test_resolver_propagates_invalid_sfnt();
     test_resolver_preserves_unsupported_cmap_status();
     test_resolver_preserves_missing_cmap_status_from_valid_sfnt_diagnostics();
+    test_catalog_adapter_converts_valid_coverage_to_descriptor_ranges();
+    test_catalog_adapter_keeps_missing_and_invalid_coverage_known_empty();
+    test_catalog_adapter_lets_font_catalog_pick_fallback_from_adapted_coverage();
     return 0;
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "render/text/font_cmap_inspector.h"
+#include "render/text/font_glyph_atlas.h"
 #include "render/text/font_source_bytes_loader.h"
 
 #include <algorithm>
@@ -222,6 +223,111 @@ public:
 private:
     basic_font_sfnt_inspector sfnt_inspector_;
     basic_font_cmap_inspector cmap_inspector_;
+};
+
+inline font_codepoint_range font_unicode_coverage_known_empty_codepoint_range()
+{
+    return font_codepoint_range{
+        .first = 1U,
+        .last = 0U,
+    };
+}
+
+inline bool font_unicode_coverage_codepoint_range_is_known_empty(
+    const font_codepoint_range& range)
+{
+    return range.first > range.last;
+}
+
+inline bool font_unicode_coverage_cmap_range_is_adaptable(
+    const render_text_font_cmap_range& range)
+{
+    return range.first_codepoint <= range.last_codepoint
+        && font_unicode_coverage_codepoint_is_unicode_scalar(range.first_codepoint)
+        && font_unicode_coverage_codepoint_is_unicode_scalar(range.last_codepoint);
+}
+
+inline void font_unicode_coverage_normalize_codepoint_ranges(
+    std::vector<font_codepoint_range>& ranges)
+{
+    std::erase_if(
+        ranges,
+        [](const font_codepoint_range& range) {
+            return font_unicode_coverage_codepoint_range_is_known_empty(range);
+        });
+
+    std::ranges::sort(
+        ranges,
+        [](const font_codepoint_range& lhs, const font_codepoint_range& rhs) {
+            return lhs.first < rhs.first;
+        });
+
+    std::vector<font_codepoint_range> normalized;
+    normalized.reserve(ranges.size());
+    for (const font_codepoint_range& range : ranges) {
+        if (normalized.empty()) {
+            normalized.push_back(range);
+            continue;
+        }
+
+        if (range.first <= normalized.back().last + 1U) {
+            normalized.back().last = std::max(normalized.back().last, range.last);
+        } else {
+            normalized.push_back(range);
+        }
+    }
+    ranges = std::move(normalized);
+}
+
+inline std::vector<font_codepoint_range> font_unicode_coverage_to_codepoint_ranges(
+    const render_text_font_unicode_coverage_snapshot& coverage)
+{
+    std::vector<font_codepoint_range> ranges;
+    if (coverage.ok()) {
+        ranges.reserve(coverage.ranges.size());
+        for (const render_text_font_cmap_range& range : coverage.ranges) {
+            if (!font_unicode_coverage_cmap_range_is_adaptable(range)) {
+                continue;
+            }
+
+            ranges.push_back(font_codepoint_range{
+                .first = static_cast<std::uint32_t>(range.first_codepoint),
+                .last = static_cast<std::uint32_t>(range.last_codepoint),
+            });
+        }
+        font_unicode_coverage_normalize_codepoint_ranges(ranges);
+    }
+
+    if (ranges.empty()) {
+        ranges.push_back(font_unicode_coverage_known_empty_codepoint_range());
+    }
+    return ranges;
+}
+
+inline font_face_descriptor font_unicode_coverage_apply_to_descriptor(
+    font_face_descriptor descriptor,
+    const render_text_font_unicode_coverage_snapshot& coverage)
+{
+    descriptor.coverage = font_unicode_coverage_to_codepoint_ranges(coverage);
+    return descriptor;
+}
+
+class font_unicode_coverage_catalog_adapter final {
+public:
+    std::vector<font_codepoint_range> coverage_for(
+        const render_text_font_unicode_coverage_snapshot& coverage) const
+    {
+        return font_unicode_coverage_to_codepoint_ranges(coverage);
+    }
+
+    font_face_descriptor apply_to_descriptor(
+        font_face_descriptor descriptor,
+        const render_text_font_unicode_coverage_snapshot& coverage) const
+    {
+        return font_unicode_coverage_apply_to_descriptor(
+            std::move(descriptor),
+            coverage);
+    }
 };
 
 } // namespace quiz_vulkan::render

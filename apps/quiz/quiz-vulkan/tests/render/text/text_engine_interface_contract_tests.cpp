@@ -481,6 +481,10 @@ static_assert(requires(
     render::render_text_font_unicode_coverage_request request,
     render::render_text_font_source_bytes_load_result load_result,
     render::render_text_font_unicode_coverage_status status,
+    render::render_text_font_unicode_coverage_snapshot coverage,
+    render::font_face_descriptor descriptor,
+    render::font_codepoint_range codepoint_range,
+    render::font_unicode_coverage_catalog_adapter catalog_adapter,
     const render::font_sfnt_inspector_interface& sfnt_inspector,
     const render::font_cmap_inspector_interface& cmap_inspector,
     char32_t codepoint) {
@@ -493,6 +497,13 @@ static_assert(requires(
         -> std::same_as<render::render_text_font_unicode_coverage_snapshot>;
     { render::resolve_font_unicode_coverage(load_result, sfnt_inspector, cmap_inspector) }
         -> std::same_as<render::render_text_font_unicode_coverage_snapshot>;
+    { render::font_unicode_coverage_known_empty_codepoint_range() } -> std::same_as<render::font_codepoint_range>;
+    { render::font_unicode_coverage_codepoint_range_is_known_empty(codepoint_range) } -> std::same_as<bool>;
+    { render::font_unicode_coverage_to_codepoint_ranges(coverage) } -> std::same_as<std::vector<render::font_codepoint_range>>;
+    { render::font_unicode_coverage_apply_to_descriptor(descriptor, coverage) }
+        -> std::same_as<render::font_face_descriptor>;
+    { catalog_adapter.coverage_for(coverage) } -> std::same_as<std::vector<render::font_codepoint_range>>;
+    { catalog_adapter.apply_to_descriptor(descriptor, coverage) } -> std::same_as<render::font_face_descriptor>;
 });
 
 static_assert(requires(render::render_text_glyph_font_resolution_snapshot glyph) {

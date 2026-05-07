@@ -150,6 +150,21 @@ void erase_utf8_codepoint_before(std::string& value, std::size_t& offset)
     offset = start;
 }
 
+void erase_utf8_codepoint_after(std::string& value, std::size_t& offset)
+{
+    if (value.empty()) {
+        return;
+    }
+
+    offset = std::min(offset, value.size());
+    if (offset >= value.size()) {
+        return;
+    }
+
+    const std::size_t end = next_utf8_boundary(value, offset);
+    value.erase(offset, end - offset);
+}
+
 text_range normalized_range(text_range range, std::size_t text_size)
 {
     text_range normalized = range;
@@ -511,6 +526,30 @@ bool text_input_model::backspace()
     }
 
     erase_utf8_codepoint_before(text_, caret_byte_offset_);
+    return true;
+}
+
+bool text_input_model::delete_forward()
+{
+    if (!focused_) {
+        return false;
+    }
+
+    if (erase_selected_text()) {
+        clear_preedit();
+        return true;
+    }
+
+    if (ime_composition_active_) {
+        clear_preedit();
+        return true;
+    }
+
+    if (text_.empty() || caret_byte_offset() >= text_.size()) {
+        return false;
+    }
+
+    erase_utf8_codepoint_after(text_, caret_byte_offset_);
     return true;
 }
 

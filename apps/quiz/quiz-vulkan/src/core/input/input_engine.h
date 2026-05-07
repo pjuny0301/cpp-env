@@ -28,6 +28,46 @@ enum class pointer_contact_kind {
     touch_like,
 };
 
+enum class keyboard_shortcut_intent {
+    none,
+    focus_traversal_next,
+    focus_traversal_previous,
+    submit,
+    cancel,
+    caret_previous,
+    caret_next,
+    caret_home,
+    caret_end,
+    selection_previous,
+    selection_next,
+    select_all,
+    delete_backward,
+    delete_forward,
+};
+
+enum class keyboard_repeat_policy {
+    not_repeat,
+    allowed,
+    ignored,
+};
+
+struct keyboard_modifier_state {
+    bool alt = false;
+    bool ctrl = false;
+    bool shift = false;
+    bool meta = false;
+};
+
+struct keyboard_chord_diagnostic {
+    std::string logical_key;
+    std::int32_t key_code = 0;
+    raw_platform_key_phase phase = raw_platform_key_phase::down;
+    keyboard_modifier_state modifiers;
+    bool repeat = false;
+    keyboard_repeat_policy repeat_policy = keyboard_repeat_policy::not_repeat;
+    keyboard_shortcut_intent intent = keyboard_shortcut_intent::none;
+};
+
 enum class action_route_policy_kind {
     pointer_capture_reset,
     pointer_capture_arbitration,
@@ -35,11 +75,13 @@ enum class action_route_policy_kind {
     gesture_route_snapshot,
     text_commit_boundary,
     text_backspace_boundary,
+    text_delete_forward_boundary,
     caret_moved,
     selection_changed,
     focus_traversal_next,
     focus_traversal_previous,
     text_submit_boundary,
+    keyboard_cancel_intent,
     focus_loss,
     ime_preedit,
     ime_commit,
@@ -65,6 +107,7 @@ struct action_route_policy_diagnostic {
     normalized_input_event_summary normalized_event;
     ime_composition_state composition;
     gesture_policy_snapshot gesture_policy;
+    keyboard_chord_diagnostic keyboard;
     pointer_capture_snapshot pointer_capture_before;
     pointer_capture_snapshot pointer_capture_after;
     pointer_arbitration_decision pointer_decision = pointer_arbitration_decision::none;

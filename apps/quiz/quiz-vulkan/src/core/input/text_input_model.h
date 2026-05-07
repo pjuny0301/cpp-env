@@ -35,6 +35,7 @@ public:
     bool set_selection(text_range range);
     bool commit_utf8(std::string_view utf8_text);
     bool backspace();
+    bool delete_forward();
     bool set_preedit(std::string_view utf8_text);
     bool commit_ime(std::string_view utf8_text);
     bool cancel_ime();

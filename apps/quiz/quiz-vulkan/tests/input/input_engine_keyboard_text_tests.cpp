@@ -72,13 +72,15 @@ quiz_vulkan::raw_platform_input_event key(
     quiz_vulkan::raw_platform_key_phase phase = quiz_vulkan::raw_platform_key_phase::down,
     bool ctrl = false,
     bool shift = false,
-    bool meta = false)
+    bool meta = false,
+    bool alt = false)
 {
     return quiz_vulkan::raw_platform_key_event{
         .timestamp_ms = timestamp_ms,
         .phase = phase,
         .key_code = 0,
         .logical_key = std::move(logical_key),
+        .alt = alt,
         .ctrl = ctrl,
         .shift = shift,
         .meta = meta,
@@ -157,6 +159,13 @@ void test_text_key_flow()
         std::string(utf8(u8"한")).size(),
         "utf8 backspace policy records caret before delete");
     require_range(backspace_policy.caret_after, 0, 0, "utf8 backspace policy records caret after delete");
+    require(backspace_policy.keyboard.logical_key == "Backspace",
+        "utf8 backspace policy records logical key chord");
+    require(backspace_policy.keyboard.intent == keyboard_shortcut_intent::delete_backward,
+        "utf8 backspace policy records delete-backward intent");
+    require(backspace_policy.keyboard.repeat, "utf8 backspace policy records repeat state");
+    require(backspace_policy.keyboard.repeat_policy == keyboard_repeat_policy::allowed,
+        "utf8 backspace policy allows repeat deletion");
 
     require(engine.process_raw_event(text(140, "ok")).size() == 1, "second text commit succeeds");
     events = engine.process_raw_event(key(150, "Enter"));
@@ -181,9 +190,25 @@ void test_text_key_flow()
     require(submit_policy.text_byte_count_after == 0, "submit policy records cleared after byte count");
     require_range(submit_policy.caret_before, 2, 2, "submit policy records caret before submit");
     require_range(submit_policy.caret_after, 0, 0, "submit policy records caret after submit");
+    require(submit_policy.keyboard.intent == keyboard_shortcut_intent::submit,
+        "submit policy records submit intent");
+    require(submit_policy.keyboard.repeat_policy == keyboard_repeat_policy::not_repeat,
+        "submit policy records non-repeat policy");
 
     require(engine.process_raw_event(key(151, "Enter", true)).empty(), "repeat enter is ignored");
-    require(engine.routing_diagnostics().action_routes.empty(), "repeat enter emits no submit policy");
+    require(engine.routing_diagnostics().action_routes.size() == 1,
+        "repeat enter emits one suppressed submit diagnostic");
+    const action_route_policy_diagnostic& repeat_submit_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::text_submit_boundary,
+        "repeat enter emits submit boundary diagnostic");
+    require(!repeat_submit_policy.emits_input_event, "repeat enter diagnostic emits no input event");
+    require(repeat_submit_policy.keyboard.intent == keyboard_shortcut_intent::submit,
+        "repeat enter diagnostic records submit intent");
+    require(repeat_submit_policy.keyboard.repeat, "repeat enter diagnostic records repeat state");
+    require(repeat_submit_policy.keyboard.repeat_policy == keyboard_repeat_policy::ignored,
+        "repeat enter diagnostic records ignored repeat policy");
 }
 
 void test_key_code_fallback_edges()
@@ -212,6 +237,45 @@ void test_key_code_fallback_edges()
     require(submit.kind == text_event_kind::submit, "key-code enter emits submit kind");
     require(submit.target_id == "answer", "key-code enter preserves target id");
     require(submit.utf8_text == "ok", "key-code enter submits committed text");
+
+    const std::string delete_initial = std::string("A") + utf8(u8"한") + "B";
+    require(engine.process_raw_event(text(160, delete_initial)).size() == 1,
+        "text before delete key commits");
+    require(engine.process_raw_event(key(170, "Home")).size() == 1,
+        "home before delete moves caret to start");
+    events = engine.process_raw_event(key(180, "Delete"));
+    require(events.size() == 1, "delete key emits one text edit event");
+    const text_event& delete_forward = require_event<text_event>(events, 0);
+    require(delete_forward.kind == text_event_kind::delete_forward, "delete key emits delete-forward kind");
+    require(delete_forward.target_id == "answer", "delete key preserves target id");
+    require(engine.text_model().text() == std::string(utf8(u8"한")) + "B",
+        "delete key removes next ascii codepoint");
+    const action_route_policy_diagnostic& delete_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::text_delete_forward_boundary,
+        "delete key emits delete-forward boundary policy");
+    require(delete_policy.text_byte_count == 1, "delete key records deleted ascii byte count");
+    require(delete_policy.keyboard.intent == keyboard_shortcut_intent::delete_forward,
+        "delete key records delete-forward intent");
+    require(delete_policy.keyboard.repeat_policy == keyboard_repeat_policy::not_repeat,
+        "delete key records non-repeat policy");
+
+    events = engine.process_raw_event(key(190, "Delete", true));
+    require(events.size() == 1, "repeat delete removes next utf8 codepoint");
+    require(require_event<text_event>(events, 0).kind == text_event_kind::delete_forward,
+        "repeat delete emits delete-forward kind");
+    require(engine.text_model().text() == "B", "repeat delete removes utf8 codepoint on boundary");
+    const action_route_policy_diagnostic& repeat_delete_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::text_delete_forward_boundary,
+        "repeat delete emits delete-forward boundary policy");
+    require(repeat_delete_policy.text_byte_count == std::string(utf8(u8"한")).size(),
+        "repeat delete records deleted utf8 byte count");
+    require(repeat_delete_policy.keyboard.repeat, "repeat delete records repeat state");
+    require(repeat_delete_policy.keyboard.repeat_policy == keyboard_repeat_policy::allowed,
+        "repeat delete records allowed repeat policy");
 }
 
 void test_text_keyboard_navigation_and_selection()
@@ -246,6 +310,11 @@ void test_text_keyboard_navigation_and_selection()
     require_range(left_policy.caret_after, 4, 4, "arrow left policy records caret after");
     require(!left_policy.had_selection_before, "arrow left policy records no prior selection");
     require(!left_policy.has_selection_after, "arrow left policy records no resulting selection");
+    require(left_policy.keyboard.logical_key == "ArrowLeft", "arrow left policy records logical key");
+    require(left_policy.keyboard.intent == keyboard_shortcut_intent::caret_previous,
+        "arrow left policy records caret previous intent");
+    require(left_policy.keyboard.repeat_policy == keyboard_repeat_policy::not_repeat,
+        "arrow left policy records non-repeat policy");
 
     events = engine.process_raw_event(key(130, "ArrowLeft"));
     require(events.size() == 1, "second arrow left emits one caret event");
@@ -315,6 +384,9 @@ void test_text_keyboard_navigation_and_selection()
     require(shift_left_policy.has_selection_after, "shift arrow left policy records resulting selection");
     require_range(shift_left_policy.selection_after, 4, initial.size(),
         "shift arrow left policy records selected range");
+    require(shift_left_policy.keyboard.modifiers.shift, "shift arrow left policy records shift modifier");
+    require(shift_left_policy.keyboard.intent == keyboard_shortcut_intent::selection_previous,
+        "shift arrow left policy records selection previous intent");
 
     events = engine.process_raw_event(key(180, "ArrowLeft", false, raw_platform_key_phase::down, false, true));
     require(events.size() == 1, "second shift arrow left emits one selection event");
@@ -364,6 +436,9 @@ void test_text_keyboard_navigation_and_selection()
         "ctrl+a emits selection policy");
     require(select_all_policy.has_selection_after, "ctrl+a policy records resulting selection");
     require_range(select_all_policy.selection_after, 0, initial.size(), "ctrl+a policy records full selection");
+    require(select_all_policy.keyboard.modifiers.ctrl, "ctrl+a policy records ctrl modifier");
+    require(select_all_policy.keyboard.intent == keyboard_shortcut_intent::select_all,
+        "ctrl+a policy records select-all intent");
     events = engine.process_raw_event(key(211, "a", false, raw_platform_key_phase::down, true));
     require(events.empty(), "repeat select all without state change emits no event");
     const action_route_policy_diagnostic& select_all_edge_policy = require_policy(
@@ -445,6 +520,12 @@ void test_keyboard_focus_traversal_diagnostics()
         "tab traversal policy records caret after");
     require(!next_policy.had_selection_before, "tab traversal policy records no prior selection");
     require(!next_policy.has_selection_after, "tab traversal policy records no resulting selection");
+    require(next_policy.keyboard.logical_key == "Tab", "tab traversal policy records logical key");
+    require(next_policy.keyboard.intent == keyboard_shortcut_intent::focus_traversal_next,
+        "tab traversal policy records next focus intent");
+    require(!next_policy.keyboard.modifiers.shift, "tab traversal policy records shift modifier off");
+    require(next_policy.keyboard.repeat_policy == keyboard_repeat_policy::not_repeat,
+        "tab traversal policy records non-repeat policy");
 
     require(engine.process_raw_event(key(120, "ArrowLeft", false, raw_platform_key_phase::down, false, true)).size() == 1,
         "focus traversal setup selects trailing character");
@@ -493,6 +574,80 @@ void test_keyboard_focus_traversal_diagnostics()
         "shift tab traversal policy records after selection");
     require_range(previous_policy.caret_before, 4, 4, "shift tab traversal policy records caret before");
     require_range(previous_policy.caret_after, 4, 4, "shift tab traversal policy records caret after");
+    require(previous_policy.keyboard.intent == keyboard_shortcut_intent::focus_traversal_previous,
+        "shift tab traversal policy records previous focus intent");
+    require(previous_policy.keyboard.modifiers.shift, "shift tab traversal policy records shift modifier");
+
+    events = engine.process_raw_event(key(140, "Tab", true));
+    require(events.empty(), "repeat tab emits no app input event from input engine");
+    const action_route_policy_diagnostic& repeat_tab_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::focus_traversal_next,
+        "repeat tab emits suppressed forward traversal policy");
+    require(!repeat_tab_policy.emits_input_event, "repeat tab traversal policy emits no input event");
+    require(repeat_tab_policy.keyboard.intent == keyboard_shortcut_intent::focus_traversal_next,
+        "repeat tab traversal policy records next focus intent");
+    require(repeat_tab_policy.keyboard.repeat, "repeat tab traversal policy records repeat state");
+    require(repeat_tab_policy.keyboard.repeat_policy == keyboard_repeat_policy::ignored,
+        "repeat tab traversal policy records ignored repeat policy");
+}
+
+void test_keyboard_cancel_intent_diagnostics()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    engine.focus_text_target("answer");
+    require(engine.process_raw_event(text(100, "draft")).size() == 1,
+        "cancel intent setup commits text");
+
+    std::vector<input_event> events = engine.process_raw_event(
+        key(110, "Escape", false, raw_platform_key_phase::down, false, false, false, true));
+    require(events.size() == 1, "escape emits one semantic-free cancel intent event");
+    const text_event& cancel = require_event<text_event>(events, 0);
+    require(cancel.kind == text_event_kind::cancel, "escape emits cancel text event kind");
+    require(cancel.target_id == "answer", "escape cancel preserves target id");
+    require(cancel.utf8_text.empty(), "escape cancel carries no app semantic payload");
+    require(engine.text_model().text() == "draft", "escape cancel intent does not mutate text");
+    require(engine.has_text_focus(), "escape cancel intent does not clear focus");
+    const action_route_policy_diagnostic& cancel_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::keyboard_cancel_intent,
+        "escape emits keyboard cancel intent policy");
+    require(cancel_policy.emits_input_event, "escape cancel policy records emitted input event");
+    require(cancel_policy.keyboard.logical_key == "Escape", "escape cancel policy records logical key");
+    require(cancel_policy.keyboard.modifiers.alt, "escape cancel policy records alt modifier");
+    require(cancel_policy.keyboard.intent == keyboard_shortcut_intent::cancel,
+        "escape cancel policy records cancel intent");
+    require(cancel_policy.keyboard.repeat_policy == keyboard_repeat_policy::not_repeat,
+        "escape cancel policy records non-repeat policy");
+    require(cancel_policy.text_byte_count_before == 5, "escape cancel policy records before text count");
+    require(cancel_policy.text_byte_count_after == 5, "escape cancel policy records unchanged text count");
+    require_range(cancel_policy.caret_before, 5, 5, "escape cancel policy records caret before");
+    require_range(cancel_policy.caret_after, 5, 5, "escape cancel policy records caret after");
+    const input_diagnostic_summary& cancel_summary = engine.routing_diagnostics().summary;
+    require(cancel_summary.normalized_event_count == 0, "escape cancel emits no gesture or wheel summary");
+    require(cancel_summary.routes.text == 1, "escape cancel summary counts one text route");
+    require(cancel_summary.routes.focus == 0, "escape cancel summary counts no focus route");
+    require(cancel_summary.routes.total == 1, "escape cancel summary counts one total route");
+
+    events = engine.process_raw_event(key(120, "Escape", true));
+    require(events.empty(), "repeat escape emits no cancel intent event");
+    const action_route_policy_diagnostic& repeat_cancel_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::keyboard_cancel_intent,
+        "repeat escape emits suppressed cancel intent policy");
+    require(!repeat_cancel_policy.emits_input_event, "repeat escape policy emits no input event");
+    require(repeat_cancel_policy.keyboard.intent == keyboard_shortcut_intent::cancel,
+        "repeat escape policy records cancel intent");
+    require(repeat_cancel_policy.keyboard.repeat, "repeat escape policy records repeat state");
+    require(repeat_cancel_policy.keyboard.repeat_policy == keyboard_repeat_policy::ignored,
+        "repeat escape policy records ignored repeat policy");
+    require(engine.text_model().text() == "draft", "repeat escape leaves text unchanged");
 }
 
 } // namespace
@@ -503,6 +658,7 @@ int main()
     test_key_code_fallback_edges();
     test_text_keyboard_navigation_and_selection();
     test_keyboard_focus_traversal_diagnostics();
+    test_keyboard_cancel_intent_diagnostics();
 
     std::cout << "input_engine_keyboard_text_tests passed\n";
     return 0;

@@ -298,6 +298,7 @@ concept ActionRoutePolicyDiagnosticInterface = requires(T diagnostic) {
     { diagnostic.normalized_event } -> std::same_as<input::normalized_input_event_summary&>;
     { diagnostic.composition } -> std::same_as<input::ime_composition_state&>;
     { diagnostic.gesture_policy } -> std::same_as<input::gesture_policy_snapshot&>;
+    { diagnostic.keyboard } -> std::same_as<input::keyboard_chord_diagnostic&>;
     { diagnostic.pointer_capture_before } -> std::same_as<input::pointer_capture_snapshot&>;
     { diagnostic.pointer_capture_after } -> std::same_as<input::pointer_capture_snapshot&>;
     { diagnostic.pointer_decision } -> std::same_as<input::pointer_arbitration_decision&>;
@@ -306,6 +307,25 @@ concept ActionRoutePolicyDiagnosticInterface = requires(T diagnostic) {
     { diagnostic.pointer_id } -> std::same_as<std::int32_t&>;
     { diagnostic.tracked_pointer_count_before } -> std::same_as<std::size_t&>;
     { diagnostic.tracked_pointer_count_after } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
+concept KeyboardModifierStateInterface = requires(T state) {
+    { state.alt } -> std::same_as<bool&>;
+    { state.ctrl } -> std::same_as<bool&>;
+    { state.shift } -> std::same_as<bool&>;
+    { state.meta } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept KeyboardChordDiagnosticInterface = requires(T chord) {
+    { chord.logical_key } -> std::same_as<std::string&>;
+    { chord.key_code } -> std::same_as<std::int32_t&>;
+    { chord.phase } -> std::same_as<raw_platform_key_phase&>;
+    { chord.modifiers } -> std::same_as<input::keyboard_modifier_state&>;
+    { chord.repeat } -> std::same_as<bool&>;
+    { chord.repeat_policy } -> std::same_as<input::keyboard_repeat_policy&>;
+    { chord.intent } -> std::same_as<input::keyboard_shortcut_intent&>;
 };
 
 template <typename T>
@@ -346,6 +366,7 @@ concept TextInputModelInterface = requires(
     { model.set_selection(range) } -> std::same_as<bool>;
     { model.commit_utf8(text) } -> std::same_as<bool>;
     { model.backspace() } -> std::same_as<bool>;
+    { model.delete_forward() } -> std::same_as<bool>;
     { model.set_preedit(text) } -> std::same_as<bool>;
     { model.commit_ime(text) } -> std::same_as<bool>;
     { model.cancel_ime() } -> std::same_as<bool>;
@@ -360,6 +381,8 @@ static_assert(PointerCaptureSnapshotInterface<input::pointer_capture_snapshot>);
 static_assert(GesturePolicySnapshotInterface<input::gesture_policy_snapshot>);
 static_assert(NormalizedInputEventSummaryInterface<input::normalized_input_event_summary>);
 static_assert(ActionRoutePolicyDiagnosticInterface<input::action_route_policy_diagnostic>);
+static_assert(KeyboardModifierStateInterface<input::keyboard_modifier_state>);
+static_assert(KeyboardChordDiagnosticInterface<input::keyboard_chord_diagnostic>);
 static_assert(NormalizedInputEventKindCountsInterface<input::normalized_input_event_kind_counts>);
 static_assert(InputRouteKindCountsInterface<input::input_route_kind_counts>);
 static_assert(InputDiagnosticSummaryInterface<input::input_diagnostic_summary>);
@@ -391,6 +414,8 @@ static_assert(std::is_default_constructible_v<input::normalized_input_replay_opt
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_end_state>);
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_batch>);
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_recording>);
+static_assert(std::is_default_constructible_v<input::keyboard_modifier_state>);
+static_assert(std::is_default_constructible_v<input::keyboard_chord_diagnostic>);
 static_assert(!std::is_polymorphic_v<input::platform_input_translation_request>);
 static_assert(!std::is_polymorphic_v<input::platform_input_translation_result>);
 static_assert(!std::is_polymorphic_v<input::platform_input_dispatch_result>);
@@ -442,6 +467,40 @@ static_assert(caret_moved_contract_kind == input::text_event_kind::caret_moved);
 
 constexpr input::text_event_kind selection_changed_contract_kind = input::text_event_kind::selection_changed;
 static_assert(selection_changed_contract_kind == input::text_event_kind::selection_changed);
+
+constexpr input::text_event_kind delete_forward_contract_kind = input::text_event_kind::delete_forward;
+static_assert(delete_forward_contract_kind == input::text_event_kind::delete_forward);
+
+constexpr input::text_event_kind cancel_contract_kind = input::text_event_kind::cancel;
+static_assert(cancel_contract_kind == input::text_event_kind::cancel);
+
+constexpr input::keyboard_modifier_state keyboard_modifiers_contract{
+    .alt = true,
+    .ctrl = true,
+    .shift = false,
+    .meta = true,
+};
+static_assert(keyboard_modifiers_contract.alt);
+static_assert(keyboard_modifiers_contract.ctrl);
+static_assert(!keyboard_modifiers_contract.shift);
+static_assert(keyboard_modifiers_contract.meta);
+
+constexpr input::keyboard_chord_diagnostic keyboard_chord_contract{
+    .logical_key = "Tab",
+    .key_code = 9,
+    .phase = raw_platform_key_phase::down,
+    .modifiers = input::keyboard_modifier_state{
+        .shift = true,
+    },
+    .repeat = true,
+    .repeat_policy = input::keyboard_repeat_policy::ignored,
+    .intent = input::keyboard_shortcut_intent::focus_traversal_previous,
+};
+static_assert(keyboard_chord_contract.key_code == 9);
+static_assert(keyboard_chord_contract.modifiers.shift);
+static_assert(keyboard_chord_contract.repeat);
+static_assert(keyboard_chord_contract.repeat_policy == input::keyboard_repeat_policy::ignored);
+static_assert(keyboard_chord_contract.intent == input::keyboard_shortcut_intent::focus_traversal_previous);
 
 static_assert(std::is_default_constructible_v<input::ime_event>);
 static_assert(std::is_same_v<decltype(input::ime_event{}.composition), input::ime_composition_state>);
@@ -560,6 +619,12 @@ static_assert(touch_like_pointer_contract == input::pointer_contact_kind::touch_
 constexpr input::action_route_policy_kind text_commit_policy_kind =
     input::action_route_policy_kind::text_commit_boundary;
 static_assert(text_commit_policy_kind == input::action_route_policy_kind::text_commit_boundary);
+constexpr input::action_route_policy_kind text_delete_forward_policy_kind =
+    input::action_route_policy_kind::text_delete_forward_boundary;
+static_assert(text_delete_forward_policy_kind == input::action_route_policy_kind::text_delete_forward_boundary);
+constexpr input::action_route_policy_kind keyboard_cancel_policy_kind =
+    input::action_route_policy_kind::keyboard_cancel_intent;
+static_assert(keyboard_cancel_policy_kind == input::action_route_policy_kind::keyboard_cancel_intent);
 constexpr input::action_route_policy_kind pointer_arbitration_policy_kind =
     input::action_route_policy_kind::pointer_capture_arbitration;
 static_assert(pointer_arbitration_policy_kind == input::action_route_policy_kind::pointer_capture_arbitration);

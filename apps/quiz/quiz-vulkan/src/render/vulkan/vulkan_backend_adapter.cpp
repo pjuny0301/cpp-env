@@ -528,6 +528,89 @@ vulkan_command_buffer_record_event make_command_buffer_record_operation_event(
     };
 }
 
+vulkan_command_submit_sync_primitives default_submit_batch_sync_primitives()
+{
+    return vulkan_command_submit_sync_primitives{
+        .image_available_semaphore = vulkan_command_submit_sync_handle{.value = 1},
+        .render_finished_semaphore = vulkan_command_submit_sync_handle{.value = 2},
+        .frame_fence = vulkan_command_submit_sync_handle{.value = 3},
+    };
+}
+
+vulkan_command_recording_command_buffer_handle submit_command_buffer_for(
+    const vulkan_command_buffer_record_result& recording,
+    const vulkan_command_submit_readiness_result& command_submit)
+{
+    if (command_submit.checked && command_submit.command_buffer.valid()) {
+        return command_submit.command_buffer;
+    }
+
+    return vulkan_command_recording_command_buffer_handle{
+        .value = static_cast<std::uintptr_t>(recording.command_buffer.value),
+    };
+}
+
+vulkan_queue_handle submit_queue_for(
+    const vulkan_command_submit_readiness_result& command_submit)
+{
+    if (command_submit.checked && command_submit.submit_queue.valid()) {
+        return command_submit.submit_queue;
+    }
+
+    return vulkan_queue_handle{.value = 1};
+}
+
+vulkan_command_submit_sync_primitives submit_sync_primitives_for(
+    const vulkan_command_submit_readiness_result& command_submit)
+{
+    if (command_submit.checked) {
+        return command_submit.sync_primitives;
+    }
+
+    return default_submit_batch_sync_primitives();
+}
+
+vulkan_swapchain_image_id submit_image_id_for(
+    const vulkan_command_submit_readiness_result& command_submit)
+{
+    if (command_submit.checked && command_submit.image_id.value > 0) {
+        return command_submit.image_id;
+    }
+
+    return vulkan_swapchain_image_id{.value = 1};
+}
+
+void add_submit_batch_intents(vulkan_submit_batch_plan_result& plan)
+{
+    plan.wait_intents.push_back(vulkan_submit_batch_sync_intent{
+        .kind = vulkan_submit_batch_sync_intent_kind::wait_image_available,
+        .handle = plan.sync_primitives.image_available_semaphore,
+        .required = true,
+        .available = plan.sync_primitives.image_available_semaphore.valid(),
+    });
+    plan.signal_intents.push_back(vulkan_submit_batch_sync_intent{
+        .kind = vulkan_submit_batch_sync_intent_kind::signal_render_finished,
+        .handle = plan.sync_primitives.render_finished_semaphore,
+        .required = true,
+        .available = plan.sync_primitives.render_finished_semaphore.valid(),
+    });
+    plan.signal_intents.push_back(vulkan_submit_batch_sync_intent{
+        .kind = vulkan_submit_batch_sync_intent_kind::signal_frame_fence,
+        .handle = plan.sync_primitives.frame_fence,
+        .required = true,
+        .available = plan.sync_primitives.frame_fence.valid(),
+    });
+    plan.present_intents.push_back(vulkan_submit_batch_present_intent{
+        .requested = true,
+        .target_available = plan.present_target_available,
+        .image_id = plan.image_id,
+        .wait_render_finished_semaphore = plan.sync_primitives.render_finished_semaphore,
+    });
+    plan.wait_intent_count = plan.wait_intents.size();
+    plan.signal_intent_count = plan.signal_intents.size();
+    plan.present_intent_count = plan.present_intents.size();
+}
+
 const vulkan_batch_resource_binding_snapshot* find_binding_snapshot_for_batch(
     const vulkan_backend_resource_binding_state& resource_bindings,
     const vulkan_draw_batch& batch,
@@ -1777,6 +1860,128 @@ fake_vulkan_command_buffer_operation_recorder::record_result() const
     return result_;
 }
 
+vulkan_submit_batch_plan_result build_vulkan_submit_batch_plan(
+    const vulkan_command_buffer_record_result& command_buffer_recording,
+    const vulkan_command_submit_readiness_result& command_submit)
+{
+    vulkan_submit_batch_plan_result plan{
+        .checked = true,
+        .status = vulkan_submit_batch_plan_status::not_checked,
+        .fallback_reason = vulkan_backend_fallback_reason::not_requested,
+        .command_buffer_recording_checked = command_buffer_recording.checked,
+        .command_buffer_recording_ready = command_buffer_recording.completed(),
+        .command_submit_readiness_checked = command_submit.checked,
+        .command_submit_readiness_ready =
+            command_submit.checked ? command_submit.ready_for_submit() : true,
+        .recorded_operation_count = command_buffer_recording.recorded_operation_count,
+        .recorded_command_buffer = command_buffer_recording.command_buffer,
+        .submit_command_buffer = submit_command_buffer_for(command_buffer_recording, command_submit),
+        .submit_queue = submit_queue_for(command_submit),
+        .sync_primitives = submit_sync_primitives_for(command_submit),
+        .image_id = submit_image_id_for(command_submit),
+        .submit_batches = {},
+        .wait_intents = {},
+        .signal_intents = {},
+        .present_intents = {},
+        .diagnostic = {},
+    };
+
+    if (!command_buffer_recording.completed()) {
+        plan.status = vulkan_submit_batch_plan_status::command_buffer_recording_unavailable;
+        plan.fallback_reason =
+            command_buffer_recording.fallback_reason == vulkan_backend_fallback_reason::none
+            ? vulkan_backend_fallback_reason::record_commands_failed
+            : command_buffer_recording.fallback_reason;
+        plan.diagnostic = "Vulkan command buffer recording is unavailable for submit planning";
+        return plan;
+    }
+
+    if (command_submit.checked && command_submit.recoverable_submit_failure()) {
+        plan.status = vulkan_submit_batch_plan_status::submit_failed_recoverable;
+        plan.fallback_reason = vulkan_backend_fallback_reason::submit_frame_failed;
+        plan.diagnostic = command_submit.diagnostic;
+        return plan;
+    }
+
+    if (command_submit.checked && command_submit.fatal_submit_failure()) {
+        plan.status = vulkan_submit_batch_plan_status::submit_failed_fatal;
+        plan.fallback_reason = vulkan_backend_fallback_reason::submit_frame_failed;
+        plan.diagnostic = command_submit.diagnostic;
+        return plan;
+    }
+
+    if (command_submit.checked && !command_submit.command_recording_available) {
+        plan.status = vulkan_submit_batch_plan_status::command_submit_unavailable;
+        plan.fallback_reason = vulkan_backend_fallback_reason::submit_frame_failed;
+        plan.diagnostic = command_submit.diagnostic.empty()
+            ? "Vulkan command submit readiness is unavailable for submit planning"
+            : command_submit.diagnostic;
+        return plan;
+    }
+
+    plan.command_buffer_available =
+        plan.recorded_command_buffer.valid() && plan.submit_command_buffer.valid()
+        && (!command_submit.checked || command_submit.command_buffer_available);
+    if (!plan.command_buffer_available) {
+        plan.status = vulkan_submit_batch_plan_status::command_buffer_unavailable;
+        plan.fallback_reason = vulkan_backend_fallback_reason::submit_frame_failed;
+        plan.diagnostic = "Vulkan command buffer is unavailable for submit batch planning";
+        return plan;
+    }
+
+    plan.sync_primitives_available =
+        (!command_submit.checked || command_submit.sync_primitives_available)
+        && plan.sync_primitives.image_available_semaphore.valid()
+        && plan.sync_primitives.render_finished_semaphore.valid()
+        && plan.sync_primitives.frame_fence.valid();
+    if (!plan.sync_primitives_available) {
+        plan.status = vulkan_submit_batch_plan_status::sync_primitives_unavailable;
+        plan.fallback_reason = vulkan_backend_fallback_reason::submit_frame_failed;
+        plan.diagnostic =
+            "Vulkan wait/signal primitives are unavailable for submit batch planning";
+        return plan;
+    }
+
+    plan.submit_queue_available =
+        (!command_submit.checked || command_submit.submit_queue_available)
+        && plan.submit_queue.valid();
+    if (!plan.submit_queue_available) {
+        plan.status = vulkan_submit_batch_plan_status::submit_queue_unavailable;
+        plan.fallback_reason = vulkan_backend_fallback_reason::submit_frame_failed;
+        plan.diagnostic = "Vulkan submit queue is unavailable for submit batch planning";
+        return plan;
+    }
+
+    plan.present_target_available =
+        !command_submit.checked
+        || (command_submit.present_target_available && command_submit.ready_for_present());
+    if (!plan.present_target_available) {
+        plan.status = vulkan_submit_batch_plan_status::present_target_unavailable;
+        plan.fallback_reason = vulkan_backend_fallback_reason::present_frame_failed;
+        plan.diagnostic = "Vulkan present target is unavailable for submit batch planning";
+        return plan;
+    }
+
+    add_submit_batch_intents(plan);
+    plan.submit_batches.push_back(vulkan_submit_batch_record{
+        .batch_index = 0,
+        .recorded_command_buffer = plan.recorded_command_buffer,
+        .submit_command_buffer = plan.submit_command_buffer,
+        .submit_queue = plan.submit_queue,
+        .recorded_operation_count = plan.recorded_operation_count,
+        .wait_intent_count = plan.wait_intent_count,
+        .signal_intent_count = plan.signal_intent_count,
+        .present_intent_count = plan.present_intent_count,
+    });
+    plan.submit_batch_count = plan.submit_batches.size();
+    plan.submit_ready = true;
+    plan.present_ready = true;
+    plan.status = vulkan_submit_batch_plan_status::ready;
+    plan.fallback_reason = vulkan_backend_fallback_reason::none;
+    plan.diagnostic = "Vulkan submit batch plan is ready for queue submit";
+    return plan;
+}
+
 vulkan_backend_frame_pipeline_handoff summarize_vulkan_frame_pipeline_handoff(
     const vulkan_backend_frame_result& frame)
 {
@@ -1804,6 +2009,9 @@ vulkan_backend_frame_pipeline_handoff summarize_vulkan_frame_pipeline_handoff(
     const bool command_buffer_recording_completed =
         frame.command_buffer_recording.completed();
     const bool command_buffer_ready_for_submit = command_buffer_recording_completed;
+    const bool submit_batch_planning_completed = frame.submit_batch_plan.completed();
+    const bool submit_batch_ready_for_queue =
+        submit_batch_planning_completed && frame.submit_batch_plan.submit_ready;
     const bool command_recorder_gate_allowed = frame.command_recorder.gate.completed();
     const bool command_recording_ready =
         frame.lifecycle.effective_command_recorder_ready()
@@ -1814,6 +2022,7 @@ vulkan_backend_frame_pipeline_handoff summarize_vulkan_frame_pipeline_handoff(
         && command_packet_execution_completed
         && command_recorder_operations_completed
         && command_buffer_recording_completed
+        && submit_batch_planning_completed
         && command_recorder_gate_allowed
         && frame.command_recorder.completed()
         && frame.commands_recorded
@@ -1866,6 +2075,9 @@ vulkan_backend_frame_pipeline_handoff summarize_vulkan_frame_pipeline_handoff(
         .command_buffer_recording_checked = frame.command_buffer_recording.checked,
         .command_buffer_recording_completed = command_buffer_recording_completed,
         .command_buffer_ready_for_submit = command_buffer_ready_for_submit,
+        .submit_batch_planning_checked = frame.submit_batch_plan.checked,
+        .submit_batch_planning_completed = submit_batch_planning_completed,
+        .submit_batch_ready_for_queue = submit_batch_ready_for_queue,
         .command_recorder_lifecycle_ready = frame.lifecycle.effective_command_recorder_ready(),
         .command_recorder_gate_checked = frame.command_recorder.gate.checked,
         .command_recorder_gate_allowed = command_recorder_gate_allowed,
@@ -2398,6 +2610,19 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     frame_lifecycle::complete_step(result.lifecycle_policy, vulkan_frame_lifecycle_step::render);
     result.recorded_batch_count = plan.batches.size();
     result.reached_stage = vulkan_backend_frame_stage::commands_recorded;
+
+    result.submit_batch_plan = build_vulkan_submit_batch_plan(
+        result.command_buffer_recording,
+        result.lifecycle.command_submit);
+    if (result.submit_batch_plan.blocked()) {
+        const vulkan_frame_lifecycle_step failed_step =
+            result.submit_batch_plan.fallback_reason
+                == vulkan_backend_fallback_reason::present_frame_failed
+            ? vulkan_frame_lifecycle_step::present
+            : vulkan_frame_lifecycle_step::submit;
+        fail_frame_lifecycle(failed_step, result.submit_batch_plan.fallback_reason);
+        return finish_frame();
+    }
 
     frame_lifecycle::start_step(result.lifecycle_policy, vulkan_frame_lifecycle_step::submit);
     request_wait(result.frame_sync.submit_wait_image_available_semaphore);

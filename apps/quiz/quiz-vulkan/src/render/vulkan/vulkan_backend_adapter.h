@@ -1617,6 +1617,124 @@ private:
     vulkan_command_buffer_record_result result_;
 };
 
+enum class vulkan_submit_batch_plan_status {
+    not_checked,
+    ready,
+    command_buffer_recording_unavailable,
+    command_submit_unavailable,
+    command_buffer_unavailable,
+    sync_primitives_unavailable,
+    submit_queue_unavailable,
+    present_target_unavailable,
+    submit_failed_recoverable,
+    submit_failed_fatal,
+};
+
+std::string_view submit_batch_plan_status_name(vulkan_submit_batch_plan_status status);
+
+enum class vulkan_submit_batch_sync_intent_kind {
+    wait_image_available,
+    signal_render_finished,
+    signal_frame_fence,
+};
+
+std::string_view submit_batch_sync_intent_kind_name(
+    vulkan_submit_batch_sync_intent_kind kind);
+
+struct vulkan_submit_batch_sync_intent {
+    vulkan_submit_batch_sync_intent_kind kind =
+        vulkan_submit_batch_sync_intent_kind::wait_image_available;
+    vulkan_command_submit_sync_handle handle;
+    bool required = false;
+    bool available = false;
+
+    bool completed() const
+    {
+        return !required || (available && handle.valid());
+    }
+};
+
+struct vulkan_submit_batch_present_intent {
+    bool requested = false;
+    bool target_available = false;
+    vulkan_swapchain_image_id image_id;
+    vulkan_command_submit_sync_handle wait_render_finished_semaphore;
+
+    bool completed() const
+    {
+        return !requested
+            || (target_available && image_id.value > 0
+                && wait_render_finished_semaphore.valid());
+    }
+};
+
+struct vulkan_submit_batch_record {
+    std::size_t batch_index = 0;
+    vulkan_command_buffer_id recorded_command_buffer;
+    vulkan_command_recording_command_buffer_handle submit_command_buffer;
+    vulkan_queue_handle submit_queue;
+    std::size_t recorded_operation_count = 0;
+    std::size_t wait_intent_count = 0;
+    std::size_t signal_intent_count = 0;
+    std::size_t present_intent_count = 0;
+
+    bool completed() const
+    {
+        return recorded_command_buffer.valid() && submit_command_buffer.valid()
+            && submit_queue.valid();
+    }
+};
+
+struct vulkan_submit_batch_plan_result {
+    bool checked = false;
+    vulkan_submit_batch_plan_status status = vulkan_submit_batch_plan_status::not_checked;
+    vulkan_backend_fallback_reason fallback_reason = vulkan_backend_fallback_reason::not_requested;
+    bool command_buffer_recording_checked = false;
+    bool command_buffer_recording_ready = false;
+    bool command_submit_readiness_checked = false;
+    bool command_submit_readiness_ready = false;
+    bool command_buffer_available = false;
+    bool sync_primitives_available = false;
+    bool submit_queue_available = false;
+    bool present_target_available = false;
+    bool submit_ready = false;
+    bool present_ready = false;
+    std::size_t recorded_operation_count = 0;
+    std::size_t submit_batch_count = 0;
+    std::size_t wait_intent_count = 0;
+    std::size_t signal_intent_count = 0;
+    std::size_t present_intent_count = 0;
+    vulkan_command_buffer_id recorded_command_buffer;
+    vulkan_command_recording_command_buffer_handle submit_command_buffer;
+    vulkan_queue_handle submit_queue;
+    vulkan_command_submit_sync_primitives sync_primitives;
+    vulkan_swapchain_image_id image_id;
+    std::vector<vulkan_submit_batch_record> submit_batches;
+    std::vector<vulkan_submit_batch_sync_intent> wait_intents;
+    std::vector<vulkan_submit_batch_sync_intent> signal_intents;
+    std::vector<vulkan_submit_batch_present_intent> present_intents;
+    std::string diagnostic;
+
+    bool completed() const
+    {
+        return checked && status == vulkan_submit_batch_plan_status::ready
+            && fallback_reason == vulkan_backend_fallback_reason::none
+            && command_buffer_recording_ready && command_submit_readiness_ready
+            && command_buffer_available && sync_primitives_available
+            && submit_queue_available && present_target_available
+            && submit_ready && present_ready
+            && submit_batch_count == submit_batches.size()
+            && wait_intent_count == wait_intents.size()
+            && signal_intent_count == signal_intents.size()
+            && present_intent_count == present_intents.size();
+    }
+
+    bool blocked() const
+    {
+        return checked && status != vulkan_submit_batch_plan_status::ready;
+    }
+};
+
 struct fake_vulkan_command_packet_executor_options {
     bool fail_begin = false;
     bool fail_end = false;
@@ -1704,6 +1822,9 @@ struct vulkan_backend_frame_pipeline_handoff {
     bool command_buffer_recording_checked = false;
     bool command_buffer_recording_completed = false;
     bool command_buffer_ready_for_submit = false;
+    bool submit_batch_planning_checked = false;
+    bool submit_batch_planning_completed = false;
+    bool submit_batch_ready_for_queue = false;
     bool command_recorder_lifecycle_ready = false;
     bool command_recorder_gate_checked = false;
     bool command_recorder_gate_allowed = false;
@@ -1735,6 +1856,7 @@ struct vulkan_backend_frame_pipeline_handoff {
             && command_packets_completed && command_packet_execution_completed
             && command_recorder_operations_completed
             && command_buffer_recording_completed && command_buffer_ready_for_submit
+            && submit_batch_planning_completed && submit_batch_ready_for_queue
             && command_recorder_lifecycle_ready && command_recorder_gate_allowed
             && command_recording_ready
             && command_submit_readiness_ready
@@ -1794,6 +1916,7 @@ struct vulkan_backend_frame_result {
     vulkan_command_packet_execution_result command_packet_execution;
     vulkan_command_recorder_operation_plan command_recorder_operations;
     vulkan_command_buffer_record_result command_buffer_recording;
+    vulkan_submit_batch_plan_result submit_batch_plan;
     vulkan_backend_command_recorder_state command_recorder;
     vulkan_command_submit_readiness_result command_submit;
     vulkan_queue_submit_present_result queue_submit;
@@ -1834,6 +1957,7 @@ struct vulkan_backend_frame_result {
             && command_packet_execution.completed()
             && command_recorder_operations.completed()
             && command_buffer_recording.completed()
+            && submit_batch_plan.completed()
             && command_recorder.completed()
             && command_recorder.gate.completed()
             && resource_bindings.completed()
@@ -1915,6 +2039,10 @@ vulkan_command_packet_bridge_result build_vulkan_command_packet_bridge(
 vulkan_command_recorder_operation_plan build_vulkan_command_recorder_operation_plan(
     const vulkan_command_packet_bridge_result& bridge,
     const vulkan_command_packet_execution_result& execution);
+
+vulkan_submit_batch_plan_result build_vulkan_submit_batch_plan(
+    const vulkan_command_buffer_record_result& command_buffer_recording,
+    const vulkan_command_submit_readiness_result& command_submit);
 
 vulkan_backend_frame_pipeline_handoff summarize_vulkan_frame_pipeline_handoff(
     const vulkan_backend_frame_result& frame);

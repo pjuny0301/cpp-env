@@ -629,6 +629,9 @@ void test_vulkan_frame_pipeline_handoff_accepts_draw_list_render_data()
     require(handoff.command_buffer_recording_checked, "handoff checks command buffer recording result");
     require(handoff.command_buffer_recording_completed, "handoff requires completed command buffer recording result");
     require(handoff.command_buffer_ready_for_submit, "handoff exposes command buffer readiness before submit");
+    require(handoff.submit_batch_planning_checked, "handoff checks submit batch planning before submit");
+    require(handoff.submit_batch_planning_completed, "handoff requires completed submit batch planning before submit");
+    require(handoff.submit_batch_ready_for_queue, "handoff exposes submit batch readiness before queue submit");
     require(handoff.command_recorder_gate_allowed, "handoff allows command recorder after prerequisites");
     require(handoff.command_recording_ready, "handoff records command recording ready");
     require(handoff.frame_submit_completed, "handoff records frame submit completed");

@@ -265,6 +265,49 @@ std::string_view command_buffer_record_event_kind_name(
     return "unknown";
 }
 
+std::string_view submit_batch_plan_status_name(vulkan_submit_batch_plan_status status)
+{
+    switch (status) {
+    case vulkan_submit_batch_plan_status::not_checked:
+        return "not_checked";
+    case vulkan_submit_batch_plan_status::ready:
+        return "ready";
+    case vulkan_submit_batch_plan_status::command_buffer_recording_unavailable:
+        return "command_buffer_recording_unavailable";
+    case vulkan_submit_batch_plan_status::command_submit_unavailable:
+        return "command_submit_unavailable";
+    case vulkan_submit_batch_plan_status::command_buffer_unavailable:
+        return "command_buffer_unavailable";
+    case vulkan_submit_batch_plan_status::sync_primitives_unavailable:
+        return "sync_primitives_unavailable";
+    case vulkan_submit_batch_plan_status::submit_queue_unavailable:
+        return "submit_queue_unavailable";
+    case vulkan_submit_batch_plan_status::present_target_unavailable:
+        return "present_target_unavailable";
+    case vulkan_submit_batch_plan_status::submit_failed_recoverable:
+        return "submit_failed_recoverable";
+    case vulkan_submit_batch_plan_status::submit_failed_fatal:
+        return "submit_failed_fatal";
+    }
+
+    return "unknown";
+}
+
+std::string_view submit_batch_sync_intent_kind_name(
+    vulkan_submit_batch_sync_intent_kind kind)
+{
+    switch (kind) {
+    case vulkan_submit_batch_sync_intent_kind::wait_image_available:
+        return "wait_image_available";
+    case vulkan_submit_batch_sync_intent_kind::signal_render_finished:
+        return "signal_render_finished";
+    case vulkan_submit_batch_sync_intent_kind::signal_frame_fence:
+        return "signal_frame_fence";
+    }
+
+    return "unknown";
+}
+
 std::string_view frame_pipeline_handoff_status_name(
     vulkan_backend_frame_pipeline_handoff_status status)
 {

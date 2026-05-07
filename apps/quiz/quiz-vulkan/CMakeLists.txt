@@ -142,6 +142,7 @@ target_sources(
             src/render/image/image_texture_upload.h
             src/render/image/image_texture_upload_retry_policy.h
             src/render/image/image_types.h
+            src/render/image/png_image_chunk_scanner.h
             src/render/image/png_image_header_inspector.h
             src/render/render_draw_list.h
             src/render/text/font_coverage_run_segmentation.h

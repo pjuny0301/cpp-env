@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: Vulkan render-pass/framebuffer readiness header를 CMake public FILE_SET에 등록하고 focused Vulkan CTest 6/6, full CTest 57/57, `ctest -N` 57개 확인.
+- `34af925`: Vulkan swapchain 다음 단계로 render-pass/framebuffer readiness boundary와 focused/contract tests 추가.
 - current: PNG header inspector를 CMake public FILE_SET에 등록하고 focused image CTest 1/1 및 `ctest -N` 56개 확인.
 - `f668eda`: image engine에 PNG signature/IHDR metadata inspector와 focused/contract tests 추가.
 - current: text font rasterizer header를 CMake public FILE_SET에 등록하고 focused text CTest 1/1 및 `ctest -N` 55개 확인.
@@ -122,7 +124,7 @@
 - `5965a4b`: Vulkan swapchain policy/pipeline compatibility/shader binding/fallback diagnostics 추가.
 - `244d5b7`: input multipointer touch-like arbitration diagnostics 추가.
 - `94a922f`: asset manifest integrity diagnostics 추가.
-- 기준 검증 예시: 2026-05-07 Windows MinGW focused image CTest 1/1, focused text CTest 1/1 통과 후, 직전 full CTest 54/54 통과. 현재 `ctest -N`이 56개 테스트를 보고한다. 권위 있는 테스트 목록은 항상 실행 시점의 `ctest -N`으로 확인한다.
+- 기준 검증 예시: 2026-05-07 Windows MinGW focused Vulkan CTest 6/6, focused image CTest 1/1, focused text CTest 1/1, full CTest 57/57 통과. 현재 `ctest -N`이 57개 테스트를 보고한다. 권위 있는 테스트 목록은 항상 실행 시점의 `ctest -N`으로 확인한다.
 - 기준 검증은 고정 개수로 적지 않는다. 현재 전체 테스트 수는 `ctest -N`이 권위이며, handoff에는 실행한 focused target만 기록한다.
 
 상태 기준:

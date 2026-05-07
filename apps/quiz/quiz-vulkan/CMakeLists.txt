@@ -147,6 +147,7 @@ target_sources(
             src/render/image/png_image_decoder.h
             src/render/image/png_image_header_inspector.h
             src/render/image/png_image_unfilter_boundary.h
+            src/render/image/png_image_zlib_inflater.h
             src/render/render_draw_list.h
             src/render/text/font_coverage_run_segmentation.h
             src/render/text/font_cmap_inspector.h

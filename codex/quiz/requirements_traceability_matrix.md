@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: Vulkan queue submit adapter summary diagnostics를 통합하고 Windows MinGW focused Vulkan CTest 2/2 및 `ctest -N` 69개 확인.
+- `b4b04fc`: Vulkan backend frame result와 renderer summary에 queue submit/present adapter checked/status/order/failure diagnostics 추가.
 - current: text glyph-id resolver와 image standard decoder chain headers를 CMake public FILE_SET에 등록하고 Windows MinGW focused text/image CTest 6/6 및 `ctest -N` 69개 확인.
 - `8d808cd`: image engine에 BMP/PPM-style decoder behavior와 PNG zlib inflater를 묶는 standard decoder chain/factory와 focused/contract tests 추가.
 - `81cb2a8`: text engine에 deterministic glyph-id resolver, shaping selection glyph-id bridge, fake-engine diagnostics와 focused/contract tests 추가.
@@ -147,7 +149,7 @@
 - `5965a4b`: Vulkan swapchain policy/pipeline compatibility/shader binding/fallback diagnostics 추가.
 - `244d5b7`: input multipointer touch-like arbitration diagnostics 추가.
 - `94a922f`: asset manifest integrity diagnostics 추가.
-- 기준 검증 예시: 2026-05-07 Windows MinGW focused text/image CTest 6/6, focused Vulkan CTest 2/2, focused image CTest 2/2, focused text/image/Vulkan CTest 7/7, 최근 full CTest 60/60 통과. 현재 `ctest -N`이 69개 테스트를 보고한다. 권위 있는 테스트 목록은 항상 실행 시점의 `ctest -N`으로 확인한다.
+- 기준 검증 예시: 2026-05-07 Windows MinGW focused Vulkan CTest 2/2, focused text/image CTest 6/6, focused image CTest 2/2, focused text/image/Vulkan CTest 7/7, 최근 full CTest 60/60 통과. 현재 `ctest -N`이 69개 테스트를 보고한다. 권위 있는 테스트 목록은 항상 실행 시점의 `ctest -N`으로 확인한다.
 - 기준 검증은 고정 개수로 적지 않는다. 현재 전체 테스트 수는 `ctest -N`이 권위이며, handoff에는 실행한 focused target만 기록한다.
 
 상태 기준:

@@ -164,6 +164,7 @@ concept NormalizedInputReplayBatchInterface = requires(T batch) {
     { batch.normalized_events } -> std::same_as<std::vector<input::normalized_input_event_summary>&>;
     { batch.summary } -> std::same_as<input::input_diagnostic_summary&>;
     { batch.keyboard } -> std::same_as<input::normalized_input_replay_keyboard_summary&>;
+    { batch.ime } -> std::same_as<input::normalized_input_replay_ime_summary&>;
     { batch.end_state } -> std::same_as<input::normalized_input_replay_end_state&>;
 };
 
@@ -172,6 +173,7 @@ concept NormalizedInputReplayRecordingInterface = requires(T recording) {
     { recording.batches } -> std::same_as<std::vector<input::normalized_input_replay_batch>&>;
     { recording.summary } -> std::same_as<input::input_diagnostic_summary&>;
     { recording.keyboard } -> std::same_as<input::normalized_input_replay_keyboard_summary&>;
+    { recording.ime } -> std::same_as<input::normalized_input_replay_ime_summary&>;
     { recording.final_state } -> std::same_as<input::normalized_input_replay_end_state&>;
 };
 
@@ -228,17 +230,82 @@ concept NormalizedInputReplayKeyboardSummaryInterface = requires(T summary) {
 };
 
 template <typename T>
+concept NormalizedInputReplayImePhaseCountsInterface = requires(T counts) {
+    { counts.composition_start } -> std::same_as<std::size_t&>;
+    { counts.preedit_update } -> std::same_as<std::size_t&>;
+    { counts.commit } -> std::same_as<std::size_t&>;
+    { counts.cancel } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
+concept NormalizedInputReplayImeTimelineEntryInterface = requires(T entry) {
+    { entry.phase } -> std::same_as<input::normalized_input_replay_ime_timeline_phase&>;
+    { entry.timestamp_ms } -> std::same_as<std::int64_t&>;
+    { entry.emits_input_event } -> std::same_as<bool&>;
+    { entry.event_index } -> std::same_as<std::size_t&>;
+    { entry.target_id } -> std::same_as<std::string&>;
+    { entry.utf8_text } -> std::same_as<std::string&>;
+    { entry.committed_text } -> std::same_as<std::string&>;
+    { entry.composition } -> std::same_as<input::ime_composition_state&>;
+    { entry.text_byte_count } -> std::same_as<std::size_t&>;
+    { entry.text_byte_count_before } -> std::same_as<std::size_t&>;
+    { entry.text_byte_count_after } -> std::same_as<std::size_t&>;
+    { entry.caret_before } -> std::same_as<input::text_range&>;
+    { entry.caret_after } -> std::same_as<input::text_range&>;
+    { entry.had_selection_before } -> std::same_as<bool&>;
+    { entry.has_selection_after } -> std::same_as<bool&>;
+    { entry.selection_before } -> std::same_as<input::text_range&>;
+    { entry.selection_after } -> std::same_as<input::text_range&>;
+    { entry.preedit_text_valid } -> std::same_as<bool&>;
+    { entry.preedit_range_valid } -> std::same_as<bool&>;
+    { entry.stale_preedit_cleared_after } -> std::same_as<bool&>;
+    { entry.committed_text_after } -> std::same_as<std::string&>;
+    { entry.display_text_after } -> std::same_as<std::string&>;
+    { entry.preedit_text_after } -> std::same_as<std::string&>;
+};
+
+template <typename T>
+concept NormalizedInputReplayImeSummaryInterface = requires(T summary) {
+    { summary.timeline } -> std::same_as<std::vector<input::normalized_input_replay_ime_timeline_entry>&>;
+    { summary.phases } -> std::same_as<input::normalized_input_replay_ime_phase_counts&>;
+    { summary.total } -> std::same_as<std::size_t&>;
+    { summary.emitted_input_event_routes } -> std::same_as<std::size_t&>;
+    { summary.diagnostic_only_routes } -> std::same_as<std::size_t&>;
+    { summary.all_preedit_text_valid } -> std::same_as<bool&>;
+    { summary.all_preedit_ranges_valid } -> std::same_as<bool&>;
+    { summary.stale_preedit_cleared } -> std::same_as<bool&>;
+    { summary.final_committed_text } -> std::same_as<std::string&>;
+    { summary.final_display_text } -> std::same_as<std::string&>;
+    { summary.final_preedit_text } -> std::same_as<std::string&>;
+    { summary.final_caret } -> std::same_as<input::text_range&>;
+    { summary.final_has_selection } -> std::same_as<bool&>;
+    { summary.final_selection } -> std::same_as<input::text_range&>;
+    { summary.final_preedit_clean } -> std::same_as<bool&>;
+};
+
+template <typename T>
 concept NormalizedInputReplayFunctions = requires(
     input::input_engine& engine,
     const input::normalized_input_replay_action& action,
     std::span<const input::normalized_input_replay_step> steps,
     std::span<const input::action_route_policy_diagnostic> routes,
+    std::span<const input::input_event> events,
     const input::keyboard_chord_diagnostic& keyboard,
+    const input::ime_composition_state& composition,
+    const input::normalized_input_replay_end_state& end_state,
     input::normalized_input_replay_keyboard_summary& keyboard_target,
     const input::normalized_input_replay_keyboard_summary& keyboard_source,
+    input::normalized_input_replay_ime_summary& ime_target,
+    const input::normalized_input_replay_ime_summary& ime_source,
     const input::normalized_input_replay_options& options) {
     { input::pointer_capture_snapshot_clean(input::pointer_capture_snapshot{}) } -> std::same_as<bool>;
     { input::keyboard_chord_present(keyboard) } -> std::same_as<bool>;
+    { input::normalized_input_replay_preedit_text_valid(composition) } -> std::same_as<bool>;
+    { input::normalized_input_replay_composition_range_valid(composition) } -> std::same_as<bool>;
+    { input::summarize_normalized_input_replay_ime_routes(routes, events, end_state) }
+        -> std::same_as<input::normalized_input_replay_ime_summary>;
+    { input::accumulate_normalized_input_replay_ime_summary(ime_target, ime_source) }
+        -> std::same_as<void>;
     { input::summarize_normalized_input_replay_keyboard_routes(routes) }
         -> std::same_as<input::normalized_input_replay_keyboard_summary>;
     { input::accumulate_normalized_input_replay_keyboard_summary(keyboard_target, keyboard_source) }
@@ -474,6 +541,9 @@ static_assert(NormalizedInputReplayKeyboardModifierCountsInterface<
 static_assert(NormalizedInputReplayKeyboardRepeatPolicyCountsInterface<
     input::normalized_input_replay_keyboard_repeat_policy_counts>);
 static_assert(NormalizedInputReplayKeyboardSummaryInterface<input::normalized_input_replay_keyboard_summary>);
+static_assert(NormalizedInputReplayImePhaseCountsInterface<input::normalized_input_replay_ime_phase_counts>);
+static_assert(NormalizedInputReplayImeTimelineEntryInterface<input::normalized_input_replay_ime_timeline_entry>);
+static_assert(NormalizedInputReplayImeSummaryInterface<input::normalized_input_replay_ime_summary>);
 static_assert(NormalizedInputReplayFunctions<void>);
 static_assert(std::is_default_constructible_v<input::platform_input_translation_request>);
 static_assert(std::is_default_constructible_v<input::platform_input_translation_result>);
@@ -488,6 +558,9 @@ static_assert(std::is_default_constructible_v<input::normalized_input_replay_key
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_keyboard_modifier_counts>);
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_keyboard_repeat_policy_counts>);
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_keyboard_summary>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_ime_phase_counts>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_ime_timeline_entry>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_ime_summary>);
 static_assert(std::is_default_constructible_v<input::keyboard_modifier_state>);
 static_assert(std::is_default_constructible_v<input::keyboard_chord_diagnostic>);
 static_assert(!std::is_polymorphic_v<input::platform_input_translation_request>);
@@ -498,6 +571,7 @@ static_assert(!std::is_polymorphic_v<input::normalized_input_replay_step>);
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_batch>);
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_recording>);
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_keyboard_summary>);
+static_assert(!std::is_polymorphic_v<input::normalized_input_replay_ime_summary>);
 static_assert(std::is_same_v<
     decltype(input::platform_input_translation_result{}.event),
     std::optional<raw_platform_input_event>>);
@@ -534,6 +608,12 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     decltype(input::normalized_input_replay_recording{}.keyboard),
     input::normalized_input_replay_keyboard_summary>);
+static_assert(std::is_same_v<
+    decltype(input::normalized_input_replay_batch{}.ime),
+    input::normalized_input_replay_ime_summary>);
+static_assert(std::is_same_v<
+    decltype(input::normalized_input_replay_recording{}.ime),
+    input::normalized_input_replay_ime_summary>);
 static_assert(TextInputModelInterface<input::text_input_model>);
 
 constexpr input::text_range text_range_contract{
@@ -610,6 +690,49 @@ constexpr input::normalized_input_replay_keyboard_repeat_policy_counts replay_ke
 static_assert(replay_keyboard_repeat_contract.not_repeat == 5);
 static_assert(replay_keyboard_repeat_contract.allowed == 6);
 static_assert(replay_keyboard_repeat_contract.ignored == 7);
+
+constexpr input::normalized_input_replay_ime_phase_counts replay_ime_phases_contract{
+    .composition_start = 1,
+    .preedit_update = 2,
+    .commit = 3,
+    .cancel = 4,
+};
+static_assert(replay_ime_phases_contract.composition_start == 1);
+static_assert(replay_ime_phases_contract.preedit_update == 2);
+static_assert(replay_ime_phases_contract.commit == 3);
+static_assert(replay_ime_phases_contract.cancel == 4);
+
+constexpr input::normalized_input_replay_ime_timeline_entry replay_ime_entry_contract{
+    .phase = input::normalized_input_replay_ime_timeline_phase::commit,
+    .timestamp_ms = 80,
+    .emits_input_event = true,
+    .event_index = 1,
+    .target_id = "answer",
+    .utf8_text = "a",
+    .committed_text = "a",
+    .composition = input::ime_composition_state{},
+    .text_byte_count = 1,
+    .text_byte_count_before = 0,
+    .text_byte_count_after = 1,
+    .caret_before = input::text_range{},
+    .caret_after = input::text_range{.start_byte = 1, .end_byte = 1},
+    .had_selection_before = false,
+    .has_selection_after = false,
+    .selection_before = input::text_range{},
+    .selection_after = input::text_range{},
+    .preedit_text_valid = true,
+    .preedit_range_valid = true,
+    .stale_preedit_cleared_after = true,
+    .committed_text_after = "a",
+    .display_text_after = "a",
+    .preedit_text_after = "",
+};
+static_assert(replay_ime_entry_contract.phase == input::normalized_input_replay_ime_timeline_phase::commit);
+static_assert(replay_ime_entry_contract.timestamp_ms == 80);
+static_assert(replay_ime_entry_contract.emits_input_event);
+static_assert(replay_ime_entry_contract.text_byte_count_after == 1);
+static_assert(replay_ime_entry_contract.preedit_text_valid);
+static_assert(replay_ime_entry_contract.stale_preedit_cleared_after);
 
 static_assert(std::is_default_constructible_v<input::ime_event>);
 static_assert(std::is_same_v<decltype(input::ime_event{}.composition), input::ime_composition_state>);

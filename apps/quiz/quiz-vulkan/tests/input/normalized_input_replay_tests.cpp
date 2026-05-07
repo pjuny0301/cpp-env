@@ -409,6 +409,149 @@ void test_keyboard_shortcut_replay_summarizes_chords_and_final_state()
     require(recording.final_state.preedit_clean, "keyboard replay final state has clean preedit");
 }
 
+void test_ime_replay_timeline_records_composition_lifecycle()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    const std::string initial = std::string("A") + utf8(u8"한") + "B";
+    const std::array steps{
+        step("text-initial", text(800, initial)),
+        step("home", key(810, "Home")),
+        step("select-first", key(820, "ArrowRight", false, raw_platform_key_phase::down, false, true)),
+        step("composition-start", ime(raw_platform_ime_phase::composition_start, 830)),
+        step("preedit-jamo", ime(raw_platform_ime_phase::preedit_update, 840, utf8(u8"ㅎ"))),
+        step("preedit-syllable", ime(raw_platform_ime_phase::preedit_update, 850, utf8(u8"하"))),
+        step("commit", ime(raw_platform_ime_phase::commit, 860, utf8(u8"가"))),
+        step("second-composition-start", ime(raw_platform_ime_phase::composition_start, 870)),
+        step("second-preedit", ime(raw_platform_ime_phase::preedit_update, 880, "x")),
+        step("focus-lost", focus(raw_platform_focus_phase::lost, 890)),
+    };
+
+    const normalized_input_replay_recording recording = replay_normalized_input_fixture(
+        engine,
+        steps,
+        normalized_input_replay_options{.initial_focus_target_id = "answer"});
+
+    const normalized_input_replay_ime_summary& ime_summary = recording.ime;
+    require(ime_summary.total == 7, "ime replay timeline counts all ime route entries");
+    require(ime_summary.timeline.size() == 7, "ime replay timeline stores all ime route entries");
+    require(ime_summary.phases.composition_start == 2, "ime replay timeline counts composition starts");
+    require(ime_summary.phases.preedit_update == 3, "ime replay timeline counts preedit updates");
+    require(ime_summary.phases.commit == 1, "ime replay timeline counts commits");
+    require(ime_summary.phases.cancel == 1, "ime replay timeline counts cancels");
+    require(ime_summary.emitted_input_event_routes == 5, "ime replay timeline counts emitted ime routes");
+    require(ime_summary.diagnostic_only_routes == 2, "ime replay timeline counts diagnostic-only starts");
+    require(ime_summary.all_preedit_text_valid, "ime replay timeline validates all preedit text");
+    require(ime_summary.all_preedit_ranges_valid, "ime replay timeline validates all preedit ranges");
+    require(ime_summary.stale_preedit_cleared, "ime replay timeline records stale preedit cleared");
+    require(ime_summary.final_committed_text == std::string(utf8(u8"가")) + utf8(u8"한") + "B",
+        "ime replay timeline records final committed text");
+    require(ime_summary.final_display_text == ime_summary.final_committed_text,
+        "ime replay timeline records final display text");
+    require(ime_summary.final_preedit_text.empty(), "ime replay timeline records empty final preedit");
+    require(ime_summary.final_preedit_clean, "ime replay timeline records clean final preedit");
+    require(!ime_summary.final_has_selection, "ime replay timeline records no final selection");
+    require_range(ime_summary.final_caret, 3, 3, "ime replay timeline records final caret");
+
+    const normalized_input_replay_ime_timeline_entry& start = ime_summary.timeline[0];
+    require(start.phase == normalized_input_replay_ime_timeline_phase::composition_start,
+        "ime replay timeline first entry is composition start");
+    require(!start.emits_input_event, "ime replay composition start is diagnostic-only");
+    require(start.target_id == "answer", "ime replay composition start preserves target id");
+    require(start.composition.active, "ime replay composition start records active composition");
+    require(start.composition.preedit_text.empty(), "ime replay composition start records empty preedit");
+    require_range(start.composition.replacement_range, 0, 1,
+        "ime replay composition start records selected replacement range");
+    require_range(start.composition.preedit_range, 0, 0,
+        "ime replay composition start records collapsed preedit range");
+    require(start.had_selection_before, "ime replay composition start records selected state before");
+    require(start.has_selection_after, "ime replay composition start keeps replacement selection after");
+    require_range(start.selection_before, 0, 1, "ime replay composition start records selection before");
+    require_range(start.selection_after, 0, 1, "ime replay composition start records selection after");
+    require(start.preedit_text_valid, "ime replay composition start preedit is valid");
+    require(start.preedit_range_valid, "ime replay composition start preedit range is valid");
+
+    const normalized_input_replay_ime_timeline_entry& first_preedit = ime_summary.timeline[1];
+    require(first_preedit.phase == normalized_input_replay_ime_timeline_phase::preedit_update,
+        "ime replay second entry is preedit update");
+    require(first_preedit.emits_input_event, "ime replay preedit emits ime event");
+    require(first_preedit.utf8_text == utf8(u8"ㅎ"), "ime replay preedit records emitted utf8 text");
+    require(first_preedit.composition.preedit_text == utf8(u8"ㅎ"),
+        "ime replay preedit records composition preedit text");
+    require_range(first_preedit.composition.preedit_range, 0, std::string(utf8(u8"ㅎ")).size(),
+        "ime replay preedit records preedit range");
+    require_range(first_preedit.caret_after,
+        std::string(utf8(u8"ㅎ")).size(),
+        std::string(utf8(u8"ㅎ")).size(),
+        "ime replay preedit records display caret after update");
+    require(first_preedit.display_text_after == std::string(utf8(u8"ㅎ")) + utf8(u8"한") + "B",
+        "ime replay preedit batch records display text with preedit");
+
+    const normalized_input_replay_ime_timeline_entry& commit = ime_summary.timeline[3];
+    require(commit.phase == normalized_input_replay_ime_timeline_phase::commit,
+        "ime replay fourth entry is commit");
+    require(commit.emits_input_event, "ime replay commit emits ime event");
+    require(commit.utf8_text == utf8(u8"가"), "ime replay commit records emitted commit text");
+    require(commit.committed_text == utf8(u8"가"), "ime replay commit records committed text payload");
+    require(commit.composition.preedit_text == utf8(u8"하"),
+        "ime replay commit records previous preedit snapshot");
+    require(commit.text_byte_count_before == initial.size(),
+        "ime replay commit records committed text bytes before replacement");
+    require(commit.text_byte_count_after == std::string(utf8(u8"가")).size()
+            + std::string(utf8(u8"한")).size() + 1,
+        "ime replay commit records committed text bytes after replacement");
+    require(commit.stale_preedit_cleared_after, "ime replay commit clears stale preedit after route");
+    require(commit.committed_text_after == std::string(utf8(u8"가")) + utf8(u8"한") + "B",
+        "ime replay commit records committed text after route");
+    require(commit.preedit_text_after.empty(), "ime replay commit records cleared preedit after route");
+
+    const normalized_input_replay_ime_timeline_entry& cancel = ime_summary.timeline[6];
+    require(cancel.phase == normalized_input_replay_ime_timeline_phase::cancel,
+        "ime replay final ime entry is focus-loss cancel");
+    require(cancel.emits_input_event, "ime replay focus loss cancel emits ime event");
+    require(cancel.composition.active, "ime replay focus loss cancel records active pre-cancel composition");
+    require(cancel.composition.preedit_text == "x", "ime replay focus loss cancel records stale preedit text");
+    require(cancel.stale_preedit_cleared_after, "ime replay focus loss cancel clears stale preedit");
+    require(cancel.preedit_text_after.empty(), "ime replay focus loss cancel records empty preedit after route");
+    require(recording.final_state.text == ime_summary.final_committed_text,
+        "ime replay final state matches timeline final committed text");
+    require(!recording.final_state.has_text_focus, "ime replay focus loss clears final focus");
+    require(recording.final_state.preedit_clean, "ime replay final state clears stale preedit");
+}
+
+void test_ime_replay_timeline_flags_invalid_preedit_text()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    const std::string invalid_preedit = std::string("\xC3(", 2);
+    const std::array steps{
+        step("invalid-preedit", ime(raw_platform_ime_phase::preedit_update, 900, invalid_preedit)),
+        step("cancel", ime(raw_platform_ime_phase::cancel, 910)),
+    };
+
+    const normalized_input_replay_recording recording = replay_normalized_input_fixture(
+        engine,
+        steps,
+        normalized_input_replay_options{.initial_focus_target_id = "answer"});
+
+    require(recording.ime.total == 2, "invalid ime replay records preedit and cancel entries");
+    require(!recording.ime.all_preedit_text_valid, "invalid ime replay flags invalid preedit text");
+    require(recording.ime.all_preedit_ranges_valid, "invalid ime replay keeps byte ranges internally valid");
+    require(recording.ime.stale_preedit_cleared, "invalid ime replay clears stale invalid preedit");
+    require(!recording.ime.timeline[0].preedit_text_valid,
+        "invalid ime replay preedit entry records invalid text");
+    require(!recording.ime.timeline[1].preedit_text_valid,
+        "invalid ime replay cancel entry records invalid stale preedit snapshot");
+    require(recording.ime.timeline[1].stale_preedit_cleared_after,
+        "invalid ime replay cancel clears stale preedit after route");
+    require(recording.final_state.preedit_clean, "invalid ime replay final state has clean preedit");
+    require(recording.final_state.text.empty(), "invalid ime replay final committed text remains empty");
+}
+
 } // namespace
 
 int main()
@@ -417,6 +560,8 @@ int main()
     test_focus_loss_and_ime_cancel_replay_clean_preedit();
     test_pointer_cancel_and_release_replay_have_no_stale_capture();
     test_keyboard_shortcut_replay_summarizes_chords_and_final_state();
+    test_ime_replay_timeline_records_composition_lifecycle();
+    test_ime_replay_timeline_flags_invalid_preedit_text();
 
     std::cout << "normalized_input_replay_tests passed\n";
     return 0;

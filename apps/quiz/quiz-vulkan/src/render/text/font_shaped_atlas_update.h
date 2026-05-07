@@ -51,6 +51,20 @@ struct render_text_shaped_atlas_update_trace_request {
     glyph_atlas_key cache_key;
     bool cache_key_matches_resolved_glyph_id = false;
     bool has_cache_key = false;
+    render_text_font_backend_library shaping_font_backend_library =
+        render_text_font_backend_library::deterministic_fake;
+    std::string shaping_font_backend_label;
+    render_text_font_backend_capability_status shaping_font_backend_capability_status =
+        render_text_font_backend_capability_status::unavailable;
+    bool shaping_font_backend_used_deterministic_fallback = false;
+    bool shaping_font_backend_fallback_only = false;
+    render_text_font_backend_library raster_font_backend_library =
+        render_text_font_backend_library::deterministic_fake;
+    std::string raster_font_backend_label;
+    render_text_font_backend_capability_status raster_font_backend_capability_status =
+        render_text_font_backend_capability_status::unavailable;
+    bool raster_font_backend_used_deterministic_fallback = false;
+    bool raster_font_backend_fallback_only = false;
     render_text_font_rasterizer_status rasterizer_status =
         render_text_font_rasterizer_status::missing_font_source;
     bool raster_payload_matches_cache_key = false;
@@ -85,6 +99,20 @@ struct render_text_shaped_atlas_update_trace_snapshot {
     glyph_atlas_key cache_key;
     bool cache_key_matches_resolved_glyph_id = false;
     bool has_cache_key = false;
+    render_text_font_backend_library shaping_font_backend_library =
+        render_text_font_backend_library::deterministic_fake;
+    std::string shaping_font_backend_label;
+    render_text_font_backend_capability_status shaping_font_backend_capability_status =
+        render_text_font_backend_capability_status::unavailable;
+    bool shaping_font_backend_used_deterministic_fallback = false;
+    bool shaping_font_backend_fallback_only = false;
+    render_text_font_backend_library raster_font_backend_library =
+        render_text_font_backend_library::deterministic_fake;
+    std::string raster_font_backend_label;
+    render_text_font_backend_capability_status raster_font_backend_capability_status =
+        render_text_font_backend_capability_status::unavailable;
+    bool raster_font_backend_used_deterministic_fallback = false;
+    bool raster_font_backend_fallback_only = false;
     render_text_font_rasterizer_status rasterizer_status =
         render_text_font_rasterizer_status::missing_font_source;
     bool raster_payload_matches_cache_key = false;
@@ -174,6 +202,18 @@ inline render_text_shaped_atlas_update_trace_snapshot make_render_text_shaped_at
         .cache_key = request.cache_key,
         .cache_key_matches_resolved_glyph_id = request.cache_key_matches_resolved_glyph_id,
         .has_cache_key = request.has_cache_key,
+        .shaping_font_backend_library = request.shaping_font_backend_library,
+        .shaping_font_backend_label = request.shaping_font_backend_label,
+        .shaping_font_backend_capability_status = request.shaping_font_backend_capability_status,
+        .shaping_font_backend_used_deterministic_fallback =
+            request.shaping_font_backend_used_deterministic_fallback,
+        .shaping_font_backend_fallback_only = request.shaping_font_backend_fallback_only,
+        .raster_font_backend_library = request.raster_font_backend_library,
+        .raster_font_backend_label = request.raster_font_backend_label,
+        .raster_font_backend_capability_status = request.raster_font_backend_capability_status,
+        .raster_font_backend_used_deterministic_fallback =
+            request.raster_font_backend_used_deterministic_fallback,
+        .raster_font_backend_fallback_only = request.raster_font_backend_fallback_only,
         .rasterizer_status = request.rasterizer_status,
         .raster_payload_matches_cache_key = request.raster_payload_matches_cache_key,
         .glyph_id_from_selection = request.glyph_id_from_selection,

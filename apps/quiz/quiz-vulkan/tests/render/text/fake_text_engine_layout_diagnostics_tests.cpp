@@ -550,6 +550,22 @@ void test_fake_text_engine_records_fallback_only_backend_capability_for_latin_ha
     require(layout.glyphs[0].glyph_id == U'A', "fallback-only backend keeps Latin glyph id");
     require(layout.glyphs[1].glyph_id == 0xd55cU, "fallback-only backend keeps Hangul glyph id");
     require(diagnostics.has_font_backend_capability(), "fallback-only layout records backend capability");
+    require(diagnostics.has_font_backend_selection(), "fallback-only layout records backend selection");
+    require(
+        diagnostics.font_backend_shaping_selection.status == render_text_font_backend_selection_status::fallback_selected,
+        "default shaping selection records deterministic fallback");
+    require(
+        diagnostics.font_backend_shaping_selection.selected.library
+            == render_text_font_backend_library::deterministic_fake,
+        "default shaping selection identifies deterministic fake backend");
+    require(
+        diagnostics.font_backend_rasterization_selection.status
+            == render_text_font_backend_selection_status::fallback_selected,
+        "default raster selection records deterministic fallback");
+    require(
+        diagnostics.font_backend_unicode_selection.status
+            == render_text_font_backend_selection_status::fallback_selected,
+        "default unicode selection records deterministic fallback");
     require(
         diagnostics.font_backend_capability.status == render_text_font_backend_capability_status::fallback_only,
         "default fake engine records fallback-only backend mode");
@@ -565,6 +581,35 @@ void test_fake_text_engine_records_fallback_only_backend_capability_for_latin_ha
     require(diagnostics.shaped_glyphs.size() == 2U, "fallback-only backend still records shaped glyphs");
     require(diagnostics.shaped_glyphs[0].glyph_supported, "fallback-only Latin glyph remains supported");
     require(diagnostics.shaped_glyphs[1].glyph_supported, "fallback-only Hangul glyph remains supported");
+    require(diagnostics.has_font_backend_run_selections(), "fallback-only layout records run backend selection");
+    require(diagnostics.font_backend_run_selections.size() == 1U, "single run records one backend selection");
+    require(
+        diagnostics.font_backend_run_selections.front().shaping.library
+            == render_text_font_backend_library::deterministic_fake,
+        "run shaping selection records deterministic fake backend");
+    require(
+        diagnostics.font_backend_run_selections.front().rasterization.library
+            == render_text_font_backend_library::deterministic_fake,
+        "run raster selection records deterministic fake backend");
+    require(
+        diagnostics.font_backend_run_selections.front().unicode_processing.library
+            == render_text_font_backend_library::deterministic_fake,
+        "run unicode selection records deterministic fake backend");
+
+    require(
+        diagnostics.glyph_font_resolutions.front().font_backend_library
+            == render_text_font_backend_library::deterministic_fake,
+        "glyph font resolution records fallback shaping backend");
+    require(
+        diagnostics.glyph_font_resolutions.front().font_backend_used_deterministic_fallback,
+        "glyph font resolution records deterministic fallback");
+    require(
+        diagnostics.glyph_cache_readiness.front().font_backend_library
+            == render_text_font_backend_library::deterministic_fake,
+        "glyph cache readiness records fallback shaping backend");
+    require(
+        diagnostics.glyph_cache_readiness.front().font_backend_used_deterministic_fallback,
+        "glyph cache readiness records deterministic fallback");
 
     require(diagnostics.rasterized_glyph_atlas_payloads.size() == 2U, "fallback-only backend rasterizes supported glyphs");
     for (const render_text_rasterized_glyph_atlas_payload_snapshot& payload :
@@ -574,10 +619,118 @@ void test_fake_text_engine_records_fallback_only_backend_capability_for_latin_ha
             "raster payload records fallback-only backend mode");
         require(payload.font_backend_fallback_only, "raster payload records fallback-only backend flag");
         require(
+            payload.font_backend_library == render_text_font_backend_library::deterministic_fake,
+            "raster payload records deterministic fake raster backend");
+        require(
+            payload.font_backend_used_deterministic_fallback,
+            "raster payload records deterministic raster fallback");
+        require(
             payload.font_backend_supports_rasterization,
             "raster payload records fake rasterization capability");
         require(payload.uses_deterministic_rasterizer, "raster payload records deterministic fake rasterizer use");
     }
+    require(
+        diagnostics.shaped_atlas_update_traces.front().shaping_font_backend_library
+            == render_text_font_backend_library::deterministic_fake,
+        "atlas trace records fallback shaping backend");
+    require(
+        diagnostics.shaped_atlas_update_traces.front().raster_font_backend_library
+            == render_text_font_backend_library::deterministic_fake,
+        "atlas trace records fallback raster backend");
+}
+
+void test_fake_text_engine_carries_injected_backend_selection_to_layout_diagnostics()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    engine.set_font_backend_selection_candidates({
+        make_render_text_harfbuzz_backend_candidate(true),
+        make_render_text_freetype_backend_candidate(true),
+        make_render_text_utf8proc_backend_candidate(true),
+        make_render_text_deterministic_fake_backend_candidate(),
+    });
+
+    const render_text_layout layout = engine.layout_text(make_single_run_request("A"));
+    const fake_text_engine_diagnostics& diagnostics = engine.last_diagnostics();
+
+    require(layout.glyphs.size() == 1U, "injected selection fixture lays out one Latin glyph");
+    require(diagnostics.has_font_backend_selection(), "injected selection reaches top-level diagnostics");
+    require(
+        diagnostics.font_backend_capability.status == render_text_font_backend_capability_status::available,
+        "injected real candidates drive an available capability snapshot");
+    require(
+        diagnostics.font_backend_shaping_selection.status == render_text_font_backend_selection_status::selected,
+        "HarfBuzz is selected for shaping-capable requests");
+    require(
+        diagnostics.font_backend_shaping_selection.selected.library == render_text_font_backend_library::harfbuzz,
+        "shaping selection records HarfBuzz");
+    require(
+        diagnostics.font_backend_rasterization_selection.status
+            == render_text_font_backend_selection_status::selected,
+        "FreeType is selected for raster-capable requests");
+    require(
+        diagnostics.font_backend_rasterization_selection.selected.library
+            == render_text_font_backend_library::freetype,
+        "raster selection records FreeType");
+    require(
+        diagnostics.font_backend_unicode_selection.status == render_text_font_backend_selection_status::selected,
+        "utf8proc is selected for unicode-capable requests");
+    require(
+        diagnostics.font_backend_unicode_selection.selected.library == render_text_font_backend_library::utf8proc,
+        "unicode selection records utf8proc");
+
+    require(diagnostics.font_backend_run_selections.size() == 1U, "run selection is recorded for one run");
+    const fake_text_engine_font_backend_run_selection_snapshot& run_selection =
+        diagnostics.font_backend_run_selections.front();
+    require(run_selection.shaping.library == render_text_font_backend_library::harfbuzz, "run records HarfBuzz");
+    require(run_selection.rasterization.library == render_text_font_backend_library::freetype, "run records FreeType");
+    require(
+        run_selection.unicode_processing.library == render_text_font_backend_library::utf8proc,
+        "run records utf8proc");
+    require(!run_selection.shaping.used_deterministic_fallback, "run shaping is not marked as fake fallback");
+    require(!run_selection.rasterization.used_deterministic_fallback, "run raster is not marked as fake fallback");
+
+    const render_text_glyph_font_resolution_snapshot& glyph_resolution =
+        diagnostics.glyph_font_resolutions.front();
+    require(
+        glyph_resolution.font_backend_library == render_text_font_backend_library::harfbuzz,
+        "glyph font resolution records selected shaping backend");
+    require(glyph_resolution.font_backend_label == "HarfBuzz", "glyph font resolution records backend label");
+    require(
+        glyph_resolution.font_backend_capability_status == render_text_font_backend_capability_status::available,
+        "glyph font resolution records selected backend capability");
+    require(
+        !glyph_resolution.font_backend_used_deterministic_fallback,
+        "glyph font resolution does not claim deterministic fallback");
+
+    const render_text_glyph_cache_readiness_snapshot& readiness = diagnostics.glyph_cache_readiness.front();
+    require(readiness.font_backend_library == render_text_font_backend_library::harfbuzz, "cache readiness records HarfBuzz");
+    require(readiness.font_backend_label == "HarfBuzz", "cache readiness records shaping label");
+    require(
+        readiness.font_backend_capability_status == render_text_font_backend_capability_status::available,
+        "cache readiness records shaping capability");
+    require(!readiness.font_backend_used_deterministic_fallback, "cache readiness is not fake fallback");
+
+    const render_text_rasterized_glyph_atlas_payload_snapshot& payload =
+        diagnostics.rasterized_glyph_atlas_payloads.front();
+    require(payload.font_backend_library == render_text_font_backend_library::freetype, "atlas payload records FreeType");
+    require(payload.font_backend_label == "FreeType", "atlas payload records raster backend label");
+    require(
+        payload.font_backend_capability_status == render_text_font_backend_capability_status::available,
+        "atlas payload records available capability");
+    require(!payload.font_backend_used_deterministic_fallback, "atlas payload is not marked as fake fallback");
+    require(payload.uses_deterministic_rasterizer, "fake engine still uses deterministic rasterizer implementation");
+
+    const render_text_shaped_atlas_update_trace_snapshot& trace = diagnostics.shaped_atlas_update_traces.front();
+    require(
+        trace.shaping_font_backend_library == render_text_font_backend_library::harfbuzz,
+        "atlas trace carries shaping backend selection");
+    require(
+        trace.raster_font_backend_library == render_text_font_backend_library::freetype,
+        "atlas trace carries raster backend selection");
+    require(trace.shaping_font_backend_label == "HarfBuzz", "atlas trace carries shaping backend label");
+    require(trace.raster_font_backend_label == "FreeType", "atlas trace carries raster backend label");
 }
 
 void test_fake_text_engine_records_unavailable_backend_capability()
@@ -1293,6 +1446,7 @@ int main()
     test_fake_line_break_policy_keeps_combining_clusters_caret_safe();
     test_fake_text_engine_records_rasterized_atlas_payloads_for_cacheable_glyphs();
     test_fake_text_engine_records_fallback_only_backend_capability_for_latin_hangul();
+    test_fake_text_engine_carries_injected_backend_selection_to_layout_diagnostics();
     test_fake_text_engine_records_unavailable_backend_capability();
     test_fake_text_engine_keeps_complex_script_on_fallback_until_backend_supports_it();
     test_fake_text_engine_uses_default_deterministic_shaping_without_adapter();

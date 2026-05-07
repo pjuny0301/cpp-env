@@ -1,7 +1,8 @@
 #pragma once
 
-#include "render/text/font_backend_adapter.h"
 #include "render/text/font_backend_capabilities.h"
+#include "render/text/font_backend_adapter.h"
+#include "render/text/font_backend_selection.h"
 #include "render/text/font_rasterizer.h"
 #include "render/text/font_glyph_id_resolver.h"
 #include "render/text/font_resolver.h"
@@ -50,6 +51,29 @@ struct fake_text_engine_font_backend_adapter_policy_snapshot {
     std::size_t fatal_failure_count = 0;
 };
 
+struct fake_text_engine_font_backend_selection_snapshot {
+    render_text_font_backend_selection_purpose purpose =
+        render_text_font_backend_selection_purpose::shaping;
+    render_text_font_backend_library library =
+        render_text_font_backend_library::deterministic_fake;
+    std::string label;
+    render_text_font_backend_selection_status selection_status =
+        render_text_font_backend_selection_status::unavailable;
+    render_text_font_backend_capability_status capability_status =
+        render_text_font_backend_capability_status::unavailable;
+    bool used_deterministic_fallback = false;
+    bool fallback_only = false;
+    bool selected_real_backend = false;
+};
+
+struct fake_text_engine_font_backend_run_selection_snapshot {
+    std::size_t run_index = 0;
+    render_style_id style_token;
+    fake_text_engine_font_backend_selection_snapshot shaping;
+    fake_text_engine_font_backend_selection_snapshot rasterization;
+    fake_text_engine_font_backend_selection_snapshot unicode_processing;
+};
+
 struct fake_text_engine_diagnostics {
     std::vector<fake_text_engine_style_fallback> style_fallbacks;
     std::vector<fake_text_engine_font_fallback> font_fallbacks;
@@ -68,6 +92,10 @@ struct fake_text_engine_diagnostics {
     std::vector<render_text_font_source_bytes_snapshot> font_source_bytes;
     render_text_font_source_bytes_policy_snapshot font_source_bytes_policy;
     render_text_font_backend_capability_snapshot font_backend_capability;
+    render_text_font_backend_selection_result font_backend_shaping_selection;
+    render_text_font_backend_selection_result font_backend_rasterization_selection;
+    render_text_font_backend_selection_result font_backend_unicode_selection;
+    std::vector<fake_text_engine_font_backend_run_selection_snapshot> font_backend_run_selections;
     render_text_font_backend_shaping_capability font_backend_shaping_capability;
     bool font_backend_uses_deterministic_shaping = true;
     bool font_backend_uses_deterministic_rasterizer = true;
@@ -183,6 +211,18 @@ struct fake_text_engine_diagnostics {
     {
         return !font_backend_capability.components.empty()
             || !font_backend_capability.diagnostic.empty();
+    }
+
+    bool has_font_backend_selection() const
+    {
+        return font_backend_shaping_selection.has_selection
+            || font_backend_rasterization_selection.has_selection
+            || font_backend_unicode_selection.has_selection;
+    }
+
+    bool has_font_backend_run_selections() const
+    {
+        return !font_backend_run_selections.empty();
     }
 
     bool has_font_backend_adapter_diagnostics() const
@@ -321,6 +361,9 @@ public:
     void set_font_backend_adapter_functions(
         render_text_font_backend_adapter_functions functions);
     void clear_font_backend_adapter_functions();
+    void set_font_backend_selection_candidates(
+        std::vector<render_text_font_backend_candidate> candidates);
+    void clear_font_backend_selection_candidates();
     std::vector<fake_text_engine_caret> caret_positions(const render_text_request& request) const;
     std::vector<render_rect> selection_rects(
         const render_text_request& request,
@@ -338,6 +381,7 @@ private:
     mutable fake_text_engine_diagnostics diagnostics_;
     deterministic_fake_font_resolver font_resolver_;
     std::vector<render_text_font_backend_component> font_backend_capability_components_;
+    std::vector<render_text_font_backend_candidate> font_backend_selection_candidates_;
     std::optional<render_text_font_backend_adapter_functions> font_backend_adapter_functions_;
     render_text_font_backend_capability_probe_request font_backend_capability_request_{
         .required_features = {

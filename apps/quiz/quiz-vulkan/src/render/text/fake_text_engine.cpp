@@ -62,17 +62,169 @@ struct font_source_bytes_cache_access_result {
     bool inserted = false;
 };
 
-render_text_font_backend_capability_snapshot probe_fake_text_engine_font_backend_capability(
-    const std::vector<render_text_font_backend_component>& components,
-    const render_text_font_backend_capability_probe_request& request)
+struct fake_text_engine_backend_selection_context {
+    std::vector<render_text_font_backend_candidate> candidates;
+    render_text_font_backend_selection_result shaping;
+    render_text_font_backend_selection_result rasterization;
+    render_text_font_backend_selection_result unicode_processing;
+    render_text_font_backend_capability_snapshot capability;
+};
+
+render_text_font_backend_candidate render_text_font_backend_candidate_for_component(
+    const render_text_font_backend_component& component)
 {
-    if (components.empty()) {
-        const deterministic_fake_font_backend_capability_probe probe;
-        return probe.probe(request);
+    render_text_font_backend_candidate candidate;
+    switch (component.library) {
+    case render_text_font_backend_library::deterministic_fake:
+        candidate = make_render_text_deterministic_fake_backend_candidate();
+        break;
+    case render_text_font_backend_library::freetype:
+        candidate = make_render_text_freetype_backend_candidate(component.available);
+        break;
+    case render_text_font_backend_library::harfbuzz:
+        candidate = make_render_text_harfbuzz_backend_candidate(component.available);
+        break;
+    case render_text_font_backend_library::utf8proc:
+        candidate = make_render_text_utf8proc_backend_candidate(component.available);
+        break;
+    case render_text_font_backend_library::directwrite:
+        candidate = render_text_font_backend_candidate{
+            .library = render_text_font_backend_library::directwrite,
+            .label = component.name.empty() ? "DirectWrite" : component.name,
+            .version = component.version,
+            .license = "platform SDK",
+            .include_hint = "platform text backend",
+            .library_hint = "platform-provided text backend",
+            .features = component.features,
+            .available = component.available,
+            .fallback_only = component.fallback_only,
+            .diagnostic = component.diagnostic,
+        };
+        break;
     }
 
-    const deterministic_fake_font_backend_capability_probe probe{components};
-    return probe.probe(request);
+    candidate.library = component.library;
+    if (!component.name.empty()) {
+        candidate.label = component.name;
+    }
+    candidate.version = component.version;
+    candidate.features = component.features;
+    candidate.available = component.available;
+    candidate.fallback_only = component.fallback_only;
+    candidate.diagnostic = component.diagnostic;
+    return candidate;
+}
+
+std::vector<render_text_font_backend_candidate> fake_text_engine_backend_candidates_for(
+    const std::vector<render_text_font_backend_component>& components,
+    const std::vector<render_text_font_backend_candidate>& explicit_candidates)
+{
+    if (!explicit_candidates.empty()) {
+        return explicit_candidates;
+    }
+
+    if (components.empty()) {
+        return make_render_text_known_font_backend_candidates(false);
+    }
+
+    std::vector<render_text_font_backend_candidate> candidates;
+    candidates.reserve(components.size());
+    for (const render_text_font_backend_component& component : components) {
+        candidates.push_back(render_text_font_backend_candidate_for_component(component));
+    }
+    return candidates;
+}
+
+render_text_font_backend_capability_snapshot fake_text_engine_font_backend_capability_for_candidates(
+    const std::vector<render_text_font_backend_candidate>& candidates,
+    const render_text_font_backend_capability_probe_request& request)
+{
+    std::vector<render_text_font_backend_component> components;
+    components.reserve(candidates.size());
+    for (const render_text_font_backend_candidate& candidate : candidates) {
+        components.push_back(candidate.component());
+    }
+    return make_render_text_font_backend_capability_snapshot(std::move(components), request);
+}
+
+render_text_font_backend_selection_result fake_text_engine_select_backend(
+    const render_text_font_backend_selection_purpose purpose,
+    const std::vector<render_text_font_backend_candidate>& candidates,
+    const bool allow_deterministic_fallback)
+{
+    return select_render_text_font_backend(render_text_font_backend_selection_request{
+        .purpose = purpose,
+        .candidates = candidates,
+        .allow_deterministic_fallback = allow_deterministic_fallback,
+    });
+}
+
+fake_text_engine_backend_selection_context select_fake_text_engine_font_backends(
+    const std::vector<render_text_font_backend_component>& components,
+    const std::vector<render_text_font_backend_candidate>& explicit_candidates,
+    const render_text_font_backend_capability_probe_request& capability_request)
+{
+    fake_text_engine_backend_selection_context context;
+    context.candidates = fake_text_engine_backend_candidates_for(components, explicit_candidates);
+    const bool allow_deterministic_fallback = components.empty() || !explicit_candidates.empty();
+    context.shaping = fake_text_engine_select_backend(
+        render_text_font_backend_selection_purpose::shaping,
+        context.candidates,
+        allow_deterministic_fallback);
+    context.rasterization = fake_text_engine_select_backend(
+        render_text_font_backend_selection_purpose::rasterization,
+        context.candidates,
+        allow_deterministic_fallback);
+    context.unicode_processing = fake_text_engine_select_backend(
+        render_text_font_backend_selection_purpose::unicode_processing,
+        context.candidates,
+        allow_deterministic_fallback);
+    context.capability = fake_text_engine_font_backend_capability_for_candidates(
+        context.candidates,
+        capability_request);
+    return context;
+}
+
+fake_text_engine_font_backend_selection_snapshot fake_text_engine_font_backend_selection_snapshot_for(
+    const render_text_font_backend_selection_result& selection)
+{
+    return fake_text_engine_font_backend_selection_snapshot{
+        .purpose = selection.purpose,
+        .library = selection.has_selection
+            ? selection.selected.library
+            : render_text_font_backend_library::deterministic_fake,
+        .label = selection.has_selection ? selection.selected.label : std::string{},
+        .selection_status = selection.status,
+        .capability_status = selection.capability.status,
+        .used_deterministic_fallback = selection.used_deterministic_fallback,
+        .fallback_only = selection.capability.fallback_only,
+        .selected_real_backend = selection.selected_real_backend(),
+    };
+}
+
+void record_font_backend_selection(
+    fake_text_engine_diagnostics& diagnostics,
+    const fake_text_engine_backend_selection_context& context)
+{
+    diagnostics.font_backend_shaping_selection = context.shaping;
+    diagnostics.font_backend_rasterization_selection = context.rasterization;
+    diagnostics.font_backend_unicode_selection = context.unicode_processing;
+}
+
+void record_font_backend_run_selection(
+    fake_text_engine_diagnostics& diagnostics,
+    const std::size_t run_index,
+    const render_style_id& style_token,
+    const fake_text_engine_backend_selection_context& context)
+{
+    diagnostics.font_backend_run_selections.push_back(
+        fake_text_engine_font_backend_run_selection_snapshot{
+            .run_index = run_index,
+            .style_token = style_token,
+            .shaping = fake_text_engine_font_backend_selection_snapshot_for(context.shaping),
+            .rasterization = fake_text_engine_font_backend_selection_snapshot_for(context.rasterization),
+            .unicode_processing = fake_text_engine_font_backend_selection_snapshot_for(context.unicode_processing),
+        });
 }
 
 void record_font_backend_capability(
@@ -320,6 +472,7 @@ void record_glyph_font_resolution(
     const std::size_t run_index,
     const utf8_text_codepoint& scalar,
     const font_face_resolution& resolution,
+    const render_text_font_backend_selection_result& shaping_selection,
     const bool cacheable)
 {
     const font_face_id requested_face_id =
@@ -336,6 +489,15 @@ void record_glyph_font_resolution(
         .used_codepoint_fallback = resolution.used_fallback,
         .glyph_supported = resolution.glyph_supported,
         .cacheable = cacheable,
+        .font_backend_library = shaping_selection.has_selection
+            ? shaping_selection.selected.library
+            : render_text_font_backend_library::deterministic_fake,
+        .font_backend_label = shaping_selection.has_selection
+            ? shaping_selection.selected.label
+            : std::string{},
+        .font_backend_capability_status = shaping_selection.capability.status,
+        .font_backend_used_deterministic_fallback = shaping_selection.used_deterministic_fallback,
+        .font_backend_fallback_only = shaping_selection.capability.fallback_only,
     });
 
     ++diagnostics.font_resolution_policy.glyph_request_count;
@@ -593,7 +755,7 @@ std::vector<shaped_glyph> shape_request(
     const deterministic_fake_font_resolver& font_resolver,
     fake_text_engine_diagnostics& diagnostics,
     std::vector<std::string>& source_cache_entries,
-    const render_text_font_backend_capability_snapshot& font_backend_capability,
+    const fake_text_engine_backend_selection_context& backend_selection,
     const render_text_font_backend_adapter_functions* adapter_functions)
 {
     std::vector<shaped_glyph> glyphs;
@@ -610,6 +772,7 @@ std::vector<shaped_glyph> shape_request(
                 .fallback_style_token = request.style_catalog.fallback_style.id,
             });
         }
+        record_font_backend_run_selection(diagnostics, run_index, run.style_token, backend_selection);
         const font_resolver_result font_resolution = font_resolver.resolve(style);
         record_font_face_selection(diagnostics, run_index, run.style_token, font_resolution);
         record_font_source_resolution(
@@ -664,7 +827,13 @@ std::vector<shaped_glyph> shape_request(
             const bool cacheable = glyph_id_resolution.glyph_supported && advance > 0.0f && line_height > 0.0f;
             font_face_resolution glyph_resolution_for_diagnostics = glyph_resolution;
             glyph_resolution_for_diagnostics.glyph_supported = glyph_id_resolution.glyph_supported;
-            record_glyph_font_resolution(diagnostics, run_index, scalar, glyph_resolution_for_diagnostics, cacheable);
+            record_glyph_font_resolution(
+                diagnostics,
+                run_index,
+                scalar,
+                glyph_resolution_for_diagnostics,
+                backend_selection.shaping,
+                cacheable);
 
             render_text_font_shaping_codepoint_selection shaping_selection =
                 font_glyph_id_resolution_to_shaping_selection(glyph_id_resolution);
@@ -684,15 +853,17 @@ std::vector<shaped_glyph> shape_request(
         };
         shaping_request = apply_render_text_font_backend_capability(
             std::move(shaping_request),
-            font_backend_capability);
+            backend_selection.capability);
 
         render_text_font_shaping_result shaped_run;
         if (adapter_functions != nullptr) {
             const function_table_font_backend_adapter adapter{*adapter_functions};
             const render_text_real_font_shaping_adapter_result adapter_result = adapter.shape(
                 render_text_real_font_shaping_adapter_request{
-                    .capability = font_backend_capability,
-                    .library = render_text_font_backend_library::harfbuzz,
+                    .capability = backend_selection.capability,
+                    .library = backend_selection.shaping.has_selection
+                        ? backend_selection.shaping.selected.library
+                        : render_text_font_backend_library::harfbuzz,
                     .run_index = shaping_request.run_index,
                     .style_token = shaping_request.style_token,
                     .style = shaping_request.style,
@@ -732,6 +903,16 @@ std::vector<shaped_glyph> shape_request(
                 .glyph_id_from_selection = glyph.glyph_id_from_selection,
                 .glyph_id_matches_codepoint = glyph.glyph_id_matches_codepoint,
                 .glyph_id_offset = glyph.glyph_id_offset,
+                .font_backend_library = backend_selection.shaping.has_selection
+                    ? backend_selection.shaping.selected.library
+                    : render_text_font_backend_library::deterministic_fake,
+                .font_backend_label = backend_selection.shaping.has_selection
+                    ? backend_selection.shaping.selected.label
+                    : std::string{},
+                .font_backend_capability_status = backend_selection.shaping.capability.status,
+                .font_backend_used_deterministic_fallback =
+                    backend_selection.shaping.used_deterministic_fallback,
+                .font_backend_fallback_only = backend_selection.shaping.capability.fallback_only,
                 .cacheable = cacheable,
             });
         }
@@ -808,6 +989,11 @@ std::vector<laid_out_glyph_cluster> collect_glyph_cluster_layouts(
                     .glyph_id_from_selection = glyph.glyph_id_from_selection,
                     .glyph_id_matches_codepoint = glyph.glyph_id_matches_codepoint,
                     .glyph_id_offset = glyph.glyph_id_offset,
+                    .font_backend_library = glyph.font_backend_library,
+                    .font_backend_label = glyph.font_backend_label,
+                    .font_backend_capability_status = glyph.font_backend_capability_status,
+                    .font_backend_used_deterministic_fallback = glyph.font_backend_used_deterministic_fallback,
+                    .font_backend_fallback_only = glyph.font_backend_fallback_only,
                     .cacheable = glyph.cacheable,
                 };
                 has_active_cluster = true;
@@ -1164,6 +1350,11 @@ void record_glyph_cache_readiness_diagnostics(
             .glyph_id_from_selection = cluster.glyph_id_from_selection,
             .glyph_id_matches_codepoint = cluster.glyph_id_matches_codepoint,
             .glyph_id_offset = cluster.glyph_id_offset,
+            .font_backend_library = cluster.font_backend_library,
+            .font_backend_label = cluster.font_backend_label,
+            .font_backend_capability_status = cluster.font_backend_capability_status,
+            .font_backend_used_deterministic_fallback = cluster.font_backend_used_deterministic_fallback,
+            .font_backend_fallback_only = cluster.font_backend_fallback_only,
             .cacheable = cacheable,
             .has_atlas_slot = cluster.atlas_slot.has_value(),
         });
@@ -1288,7 +1479,8 @@ void record_rasterized_glyph_atlas_payload_diagnostics(
     fake_text_engine_diagnostics& diagnostics,
     const std::vector<laid_out_glyph_cluster>& clusters,
     const font_face_catalog& catalog,
-    const render_text_font_backend_capability_snapshot& font_backend_capability)
+    const render_text_font_backend_capability_snapshot& font_backend_capability,
+    const render_text_font_backend_selection_result& rasterization_selection)
 {
     diagnostics.rasterized_glyph_atlas_payloads.clear();
     diagnostics.rasterized_glyph_atlas_payloads.reserve(clusters.size());
@@ -1321,6 +1513,14 @@ void record_rasterized_glyph_atlas_payload_diagnostics(
                     .used_fallback_glyph_id = cluster.used_fallback_glyph_id,
                     .glyph_id_offset = cluster.glyph_id_offset,
                     .font_backend_capability_status = font_backend_capability.status,
+                    .font_backend_library = rasterization_selection.has_selection
+                        ? rasterization_selection.selected.library
+                        : render_text_font_backend_library::deterministic_fake,
+                    .font_backend_label = rasterization_selection.has_selection
+                        ? rasterization_selection.selected.label
+                        : std::string{},
+                    .font_backend_used_deterministic_fallback =
+                        rasterization_selection.used_deterministic_fallback,
                     .font_backend_fallback_only = font_backend_capability.fallback_only,
                     .font_backend_supports_rasterization =
                         font_backend_capability.supports_feature(
@@ -1356,6 +1556,14 @@ void record_rasterized_glyph_atlas_payload_diagnostics(
                     .used_fallback_glyph_id = cluster.used_fallback_glyph_id,
                     .glyph_id_offset = cluster.glyph_id_offset,
                     .font_backend_capability_status = font_backend_capability.status,
+                    .font_backend_library = rasterization_selection.has_selection
+                        ? rasterization_selection.selected.library
+                        : render_text_font_backend_library::deterministic_fake,
+                    .font_backend_label = rasterization_selection.has_selection
+                        ? rasterization_selection.selected.label
+                        : std::string{},
+                    .font_backend_used_deterministic_fallback =
+                        rasterization_selection.used_deterministic_fallback,
                     .font_backend_fallback_only = font_backend_capability.fallback_only,
                     .font_backend_supports_rasterization =
                         font_backend_capability.supports_feature(
@@ -1404,6 +1612,14 @@ void record_rasterized_glyph_atlas_payload_diagnostics(
                 .used_fallback_glyph_id = cluster.used_fallback_glyph_id,
                 .glyph_id_offset = cluster.glyph_id_offset,
                 .font_backend_capability_status = font_backend_capability.status,
+                .font_backend_library = rasterization_selection.has_selection
+                    ? rasterization_selection.selected.library
+                    : render_text_font_backend_library::deterministic_fake,
+                .font_backend_label = rasterization_selection.has_selection
+                    ? rasterization_selection.selected.label
+                    : std::string{},
+                .font_backend_used_deterministic_fallback =
+                    rasterization_selection.used_deterministic_fallback,
                 .font_backend_fallback_only = font_backend_capability.fallback_only,
                 .font_backend_supports_rasterization =
                     font_backend_capability.supports_feature(
@@ -1519,6 +1735,22 @@ void record_shaped_atlas_update_trace_diagnostics(
             .cache_key = readiness.cache_key,
             .cache_key_matches_resolved_glyph_id = readiness.cache_key.glyph_id == readiness.glyph_id,
             .has_cache_key = readiness_has_cache_key(readiness),
+            .shaping_font_backend_library = readiness.font_backend_library,
+            .shaping_font_backend_label = readiness.font_backend_label,
+            .shaping_font_backend_capability_status = readiness.font_backend_capability_status,
+            .shaping_font_backend_used_deterministic_fallback =
+                readiness.font_backend_used_deterministic_fallback,
+            .shaping_font_backend_fallback_only = readiness.font_backend_fallback_only,
+            .raster_font_backend_library = payload == nullptr
+                ? render_text_font_backend_library::deterministic_fake
+                : payload->font_backend_library,
+            .raster_font_backend_label = payload == nullptr ? std::string{} : payload->font_backend_label,
+            .raster_font_backend_capability_status = payload == nullptr
+                ? render_text_font_backend_capability_status::unavailable
+                : payload->font_backend_capability_status,
+            .raster_font_backend_used_deterministic_fallback =
+                payload != nullptr && payload->font_backend_used_deterministic_fallback,
+            .raster_font_backend_fallback_only = payload != nullptr && payload->font_backend_fallback_only,
             .rasterizer_status = payload == nullptr
                 ? render_text_font_rasterizer_status::missing_font_source
                 : payload->status,
@@ -1672,7 +1904,7 @@ void update_atlas_for_clusters(
     glyph_atlas_cache& atlas_cache,
     std::vector<glyph_atlas_key>& glyph_cache_policy_entries,
     const font_face_catalog& catalog,
-    const render_text_font_backend_capability_snapshot& font_backend_capability,
+    const fake_text_engine_backend_selection_context& backend_selection,
     fake_text_engine_diagnostics& diagnostics,
     std::vector<render_text_atlas_update>& atlas_updates)
 {
@@ -1759,7 +1991,8 @@ void update_atlas_for_clusters(
         diagnostics,
         clusters,
         catalog,
-        font_backend_capability);
+        backend_selection.capability,
+        backend_selection.rasterization);
 
     const std::vector<render_text_atlas_page> pages = atlas_cache.pages();
     std::vector<render_text_atlas_update> dirty_updates = atlas_cache.consume_dirty_page_updates();
@@ -1799,21 +2032,23 @@ const glyph_atlas_slot* atlas_slot_for_visible_glyph(
 render_text_measure fake_text_engine::measure_text(const render_text_request& request) const
 {
     diagnostics_ = {};
-    const render_text_font_backend_capability_snapshot font_backend_capability =
-        probe_fake_text_engine_font_backend_capability(
+    const fake_text_engine_backend_selection_context backend_selection =
+        select_fake_text_engine_font_backends(
             font_backend_capability_components_,
+            font_backend_selection_candidates_,
             font_backend_capability_request_);
     record_font_backend_capability(
         diagnostics_,
-        font_backend_capability,
+        backend_selection.capability,
         font_backend_adapter_functions_.has_value());
+    record_font_backend_selection(diagnostics_, backend_selection);
     const std::vector<shaped_glyph> glyphs =
         shape_request(
             request,
             font_resolver_,
             diagnostics_,
             font_source_bytes_cache_entries_,
-            font_backend_capability,
+            backend_selection,
             font_backend_adapter_functions_ ? &*font_backend_adapter_functions_ : nullptr);
     return measure_lines(break_lines(request, glyphs, &diagnostics_));
 }
@@ -1821,21 +2056,23 @@ render_text_measure fake_text_engine::measure_text(const render_text_request& re
 render_text_layout fake_text_engine::layout_text(const render_text_request& request) const
 {
     diagnostics_ = {};
-    const render_text_font_backend_capability_snapshot font_backend_capability =
-        probe_fake_text_engine_font_backend_capability(
+    const fake_text_engine_backend_selection_context backend_selection =
+        select_fake_text_engine_font_backends(
             font_backend_capability_components_,
+            font_backend_selection_candidates_,
             font_backend_capability_request_);
     record_font_backend_capability(
         diagnostics_,
-        font_backend_capability,
+        backend_selection.capability,
         font_backend_adapter_functions_.has_value());
+    record_font_backend_selection(diagnostics_, backend_selection);
     const std::vector<shaped_glyph> shaped_glyphs =
         shape_request(
             request,
             font_resolver_,
             diagnostics_,
             font_source_bytes_cache_entries_,
-            font_backend_capability,
+            backend_selection,
             font_backend_adapter_functions_ ? &*font_backend_adapter_functions_ : nullptr);
     const std::vector<laid_out_line> lines = break_lines(request, shaped_glyphs, &diagnostics_);
     std::vector<laid_out_glyph_cluster> cluster_layouts =
@@ -1847,7 +2084,7 @@ render_text_layout fake_text_engine::layout_text(const render_text_request& requ
         glyph_atlas_cache_,
         glyph_cache_policy_entries_,
         font_resolver_.catalog(),
-        font_backend_capability,
+        backend_selection,
         diagnostics_,
         atlas_updates_);
 
@@ -1889,21 +2126,23 @@ render_text_layout fake_text_engine::layout_text(const render_text_request& requ
 std::vector<fake_text_engine_caret> fake_text_engine::caret_positions(const render_text_request& request) const
 {
     diagnostics_ = {};
-    const render_text_font_backend_capability_snapshot font_backend_capability =
-        probe_fake_text_engine_font_backend_capability(
+    const fake_text_engine_backend_selection_context backend_selection =
+        select_fake_text_engine_font_backends(
             font_backend_capability_components_,
+            font_backend_selection_candidates_,
             font_backend_capability_request_);
     record_font_backend_capability(
         diagnostics_,
-        font_backend_capability,
+        backend_selection.capability,
         font_backend_adapter_functions_.has_value());
+    record_font_backend_selection(diagnostics_, backend_selection);
     const std::vector<shaped_glyph> shaped_glyphs =
         shape_request(
             request,
             font_resolver_,
             diagnostics_,
             font_source_bytes_cache_entries_,
-            font_backend_capability,
+            backend_selection,
             font_backend_adapter_functions_ ? &*font_backend_adapter_functions_ : nullptr);
     const std::vector<laid_out_line> lines = break_lines(request, shaped_glyphs, &diagnostics_);
     const std::vector<laid_out_glyph_cluster> cluster_layouts =
@@ -1946,21 +2185,23 @@ std::vector<render_rect> fake_text_engine::selection_rects(
         return {};
     }
 
-    const render_text_font_backend_capability_snapshot font_backend_capability =
-        probe_fake_text_engine_font_backend_capability(
+    const fake_text_engine_backend_selection_context backend_selection =
+        select_fake_text_engine_font_backends(
             font_backend_capability_components_,
+            font_backend_selection_candidates_,
             font_backend_capability_request_);
     record_font_backend_capability(
         diagnostics_,
-        font_backend_capability,
+        backend_selection.capability,
         font_backend_adapter_functions_.has_value());
+    record_font_backend_selection(diagnostics_, backend_selection);
     const std::vector<shaped_glyph> shaped_glyphs =
         shape_request(
             request,
             font_resolver_,
             diagnostics_,
             font_source_bytes_cache_entries_,
-            font_backend_capability,
+            backend_selection,
             font_backend_adapter_functions_ ? &*font_backend_adapter_functions_ : nullptr);
     const std::vector<laid_out_line> lines = break_lines(request, shaped_glyphs, &diagnostics_);
     const std::vector<laid_out_glyph_cluster> cluster_layouts =
@@ -2018,6 +2259,17 @@ void fake_text_engine::set_font_backend_adapter_functions(
 void fake_text_engine::clear_font_backend_adapter_functions()
 {
     font_backend_adapter_functions_.reset();
+}
+
+void fake_text_engine::set_font_backend_selection_candidates(
+    std::vector<render_text_font_backend_candidate> candidates)
+{
+    font_backend_selection_candidates_ = std::move(candidates);
+}
+
+void fake_text_engine::clear_font_backend_selection_candidates()
+{
+    font_backend_selection_candidates_.clear();
 }
 
 } // namespace quiz_vulkan::render

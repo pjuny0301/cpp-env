@@ -2,6 +2,7 @@
 #include "render/text/fake_text_engine.h"
 #include "render/text/font_cmap_inspector.h"
 #include "render/text/font_coverage_run_segmentation.h"
+#include "render/text/font_rasterizer.h"
 #include "render/text/font_sfnt_inspector.h"
 #include "render/text/font_source_bytes_loader.h"
 #include "render/text/font_source_resolver.h"
@@ -90,6 +91,16 @@ concept FontUnicodeCoverageResolverContract = requires(
 
 static_assert(FontUnicodeCoverageResolverContract<render::font_unicode_coverage_resolver_interface>);
 static_assert(FontUnicodeCoverageResolverContract<render::basic_font_unicode_coverage_resolver>);
+
+template <typename T>
+concept FontRasterizerContract = requires(
+    const T& rasterizer,
+    const render::render_text_font_rasterize_request& request) {
+    { rasterizer.rasterize(request) } -> std::same_as<render::render_text_font_rasterize_result>;
+};
+
+static_assert(FontRasterizerContract<render::font_rasterizer_interface>);
+static_assert(FontRasterizerContract<render::deterministic_fake_font_rasterizer>);
 
 static_assert(requires(render::font_resolver_result result) {
     { result.resolved_face_id } -> std::same_as<render::font_face_id&>;
@@ -506,6 +517,74 @@ static_assert(requires(
         -> std::same_as<render::font_face_descriptor>;
     { catalog_adapter.coverage_for(coverage) } -> std::same_as<std::vector<render::font_codepoint_range>>;
     { catalog_adapter.apply_to_descriptor(descriptor, coverage) } -> std::same_as<render::font_face_descriptor>;
+});
+
+static_assert(requires(
+    render::render_text_font_glyph_bitmap bitmap,
+    render::render_text_font_glyph_metrics metrics,
+    render::render_text_font_rasterize_request raster_request,
+    render::render_text_font_rasterize_result raster_result,
+    render::render_text_font_atlas_glyph_payload payload,
+    render::render_text_font_rasterizer_status raster_status,
+    render::font_face_descriptor descriptor,
+    render::glyph_atlas_key key,
+    render::render_text_font_source_bytes_load_result load_result,
+    std::span<const std::byte> bytes,
+    std::uint32_t codepoint,
+    std::uint32_t pixel_size) {
+    { render::render_text_font_rasterizer_status_name(raster_status) } -> std::same_as<std::string>;
+    { bitmap.width } -> std::same_as<std::size_t&>;
+    { bitmap.height } -> std::same_as<std::size_t&>;
+    { bitmap.row_stride } -> std::same_as<std::size_t&>;
+    { bitmap.alpha } -> std::same_as<std::vector<unsigned char>&>;
+    { bitmap.empty() } -> std::same_as<bool>;
+    { metrics.advance_x } -> std::same_as<float&>;
+    { metrics.advance_y } -> std::same_as<float&>;
+    { metrics.bearing_x } -> std::same_as<float&>;
+    { metrics.bearing_y } -> std::same_as<float&>;
+    { metrics.ascender } -> std::same_as<float&>;
+    { metrics.descender } -> std::same_as<float&>;
+    { metrics.bitmap_width } -> std::same_as<std::size_t&>;
+    { metrics.bitmap_height } -> std::same_as<std::size_t&>;
+    { raster_request.face } -> std::same_as<render::font_face_descriptor&>;
+    { raster_request.key } -> std::same_as<render::glyph_atlas_key&>;
+    { raster_request.codepoint } -> std::same_as<std::uint32_t&>;
+    { raster_request.pixel_size } -> std::same_as<std::uint32_t&>;
+    { raster_request.font_bytes } -> std::same_as<std::span<const std::byte>&>;
+    { raster_request.font_bytes_status } -> std::same_as<render::render_text_font_source_bytes_load_status&>;
+    { raster_request.source_label } -> std::same_as<std::string&>;
+    { raster_result.status } -> std::same_as<render::render_text_font_rasterizer_status&>;
+    { raster_result.key } -> std::same_as<render::glyph_atlas_key&>;
+    { raster_result.face_id } -> std::same_as<render::font_face_id&>;
+    { raster_result.glyph_id } -> std::same_as<std::uint32_t&>;
+    { raster_result.codepoint } -> std::same_as<std::uint32_t&>;
+    { raster_result.pixel_size } -> std::same_as<std::uint32_t&>;
+    { raster_result.metrics } -> std::same_as<render::render_text_font_glyph_metrics&>;
+    { raster_result.bitmap } -> std::same_as<render::render_text_font_glyph_bitmap&>;
+    { raster_result.source_label } -> std::same_as<std::string&>;
+    { raster_result.diagnostic } -> std::same_as<std::string&>;
+    { raster_result.ok() } -> std::same_as<bool>;
+    { raster_result.has_bitmap() } -> std::same_as<bool>;
+    { payload.key } -> std::same_as<render::glyph_atlas_key&>;
+    { payload.metrics } -> std::same_as<render::render_text_font_glyph_metrics&>;
+    { payload.width } -> std::same_as<std::size_t&>;
+    { payload.height } -> std::same_as<std::size_t&>;
+    { payload.alpha } -> std::same_as<std::vector<unsigned char>&>;
+    { payload.rgba } -> std::same_as<std::vector<unsigned char>&>;
+    { payload.upload_ready } -> std::same_as<bool&>;
+    { render::font_rasterizer_atlas_key_for(descriptor, codepoint, pixel_size) }
+        -> std::same_as<render::glyph_atlas_key>;
+    { render::font_rasterizer_source_label_for(descriptor) } -> std::same_as<std::string>;
+    { render::make_font_rasterize_request(descriptor, key, codepoint, bytes) }
+        -> std::same_as<render::render_text_font_rasterize_request>;
+    { render::make_font_rasterize_request(descriptor, codepoint, pixel_size, bytes) }
+        -> std::same_as<render::render_text_font_rasterize_request>;
+    { render::make_font_rasterize_request(descriptor, load_result, codepoint, pixel_size) }
+        -> std::same_as<render::render_text_font_rasterize_request>;
+    { render::font_rasterizer_missing_status_for(load_result.status) }
+        -> std::same_as<render::render_text_font_rasterizer_status>;
+    { render::make_font_rasterizer_atlas_payload(raster_result) }
+        -> std::same_as<render::render_text_font_atlas_glyph_payload>;
 });
 
 static_assert(requires(render::render_text_glyph_font_resolution_snapshot glyph) {

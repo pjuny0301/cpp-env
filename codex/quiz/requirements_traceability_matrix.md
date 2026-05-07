@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: image decoder capability manifest pipeline diagnostics를 통합하고 Windows MinGW focused image CTest 4/4 확인.
+- `6170c74`: image texture pipeline diagnostics에 decoder capability manifest, selected decoder, fallback reason, cache reuse, placeholder outcome을 연결해 image engine 내부에서 texture request 처리 경로를 추적 가능하게 보강.
 - current: Vulkan command packet execution diagnostics를 통합하고 Windows MinGW focused Vulkan CTest 4/4 및 `ctest -N` 83개 확인.
 - `1cbc4cf`: Vulkan backend에 command packet execution result/event diagnostics를 추가해 frame pipeline/resource binding/command recorder/packet bridge prerequisites가 충족될 때만 execution complete로 기록되도록 보강.
 - current: text backend selection diagnostics, image decoder capability manifest diagnostics, input diagnostic summary counts를 통합하고 Windows MinGW focused text/image/input CTest 9/9 확인.

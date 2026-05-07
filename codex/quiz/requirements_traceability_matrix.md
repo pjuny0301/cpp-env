@@ -6,6 +6,7 @@
 
 최근 baseline 통합 증거:
 
+- current: Windows MinGW full CTest 81/81 통과로 Vulkan frame handoff 포함 baseline 기준선 갱신.
 - current: Vulkan frame pipeline handoff를 통합하고 Windows MinGW focused Vulkan CTest 5/5 및 `ctest -N` 81개 확인.
 - `2656970`: Vulkan backend adapter에 loader/instance/device/swapchain/render-pass/pipeline/resource-binding/command-recording/submit/present readiness를 묶는 frame pipeline handoff와 fallback diagnostics tests 추가.
 - current: font backend selection layer, optional third-party image decoder adapter, input IME/focus/caret hardening을 통합하고 Windows MinGW focused text/image/input/architecture CTest 8/8 및 `ctest -N` 80개 확인.

@@ -208,8 +208,22 @@ void test_filesystem_pipeline_reads_ppm_fixture_and_reuses_cache()
     require(snapshot.entries[0].source_bytes_status == render_image_source_bytes_load_status::loaded, "snapshot records loaded source bytes");
     require(snapshot.entries[0].encoded_byte_count == fixture_bytes.size(), "snapshot records fixture byte count");
     require(snapshot.entries[0].texture_status == render_image_texture_status::ready, "snapshot records ready texture");
+    require(snapshot.entries[0].selected_decoder_id == "ppm_image_decoder", "snapshot records selected decoder");
+    require(!snapshot.entries[0].cache_reused, "first snapshot records no cache reuse");
+    require(!snapshot.entries[0].placeholder_texture, "first snapshot records no placeholder outcome");
+    require(
+        snapshot.entries[0].decoder_capability_manifest.candidates.empty(),
+        "direct PPM decoder snapshot has no chain candidate list");
+    require(
+        snapshot.entries[0].decoder_capability_manifest.terminal_decoder_id == "ppm_image_decoder",
+        "snapshot records PPM terminal decoder");
     require(snapshot.entries[0].upload_count_after == 1, "snapshot records first upload");
     require(snapshot.entries[1].cache_hit, "snapshot records repeat cache hit");
+    require(snapshot.entries[1].cache_reused, "repeat snapshot records explicit cache reuse");
+    require(snapshot.entries[1].selected_decoder_id == "ppm_image_decoder", "repeat snapshot preserves selected decoder");
+    require(
+        snapshot.entries[1].decoder_capability_manifest.terminal_decoder_id == "ppm_image_decoder",
+        "repeat snapshot preserves decoder manifest terminal id from cache");
     require(snapshot.entries[1].upload_count_before == 1, "repeat snapshot observes previous upload");
     require(snapshot.entries[1].upload_count_after == 1, "repeat snapshot records unchanged upload count");
     require(snapshot.upload_snapshot.upload_count == 1, "pipeline upload snapshot records one upload");
@@ -374,6 +388,18 @@ void test_pipeline_uses_optional_third_party_decoder_through_interface()
     require(snapshot.cache_snapshot.texture_count == 1, "third-party pipeline snapshot records cached texture");
     require(snapshot.entries[0].decode_metadata.decoder_id == "fake_stb_decoder", "pipeline entry records third-party decoder");
     require(snapshot.entries[0].decoder_diagnostics[0].decoder_id == "fake_stb_decoder", "pipeline entry records adapter diagnostic");
+    require(snapshot.entries[0].selected_decoder_id == "fake_stb_decoder", "pipeline entry records selected third-party decoder");
+    require(!snapshot.entries[0].cache_reused, "third-party first acquire records no cache reuse");
+    require(!snapshot.entries[0].placeholder_texture, "third-party acquire records no placeholder");
+    require(
+        snapshot.entries[0].decoder_capability_manifest.used_third_party_adapter,
+        "pipeline entry capability manifest records adapter use");
+    require(
+        !snapshot.entries[0].decoder_capability_manifest.fallback_used,
+        "pipeline entry capability manifest records no fallback");
+    require(
+        snapshot.entries[0].decoder_capability_manifest.terminal_decoder_id == "fake_stb_decoder",
+        "pipeline entry capability manifest records adapter terminal decoder");
 }
 
 void test_optional_adapter_failure_falls_back_before_texture_upload()
@@ -420,6 +446,17 @@ void test_optional_adapter_failure_falls_back_before_texture_upload()
     require(snapshot.entries[0].upload_count_before == 0, "fallback upload happens after decode path");
     require(snapshot.entries[0].upload_count_after == 1, "fallback upload count increments once");
     require(snapshot.entries[0].decode_metadata.decoder_id == "ppm_image_decoder", "fallback entry records standard decoder");
+    require(snapshot.entries[0].selected_decoder_id == "ppm_image_decoder", "fallback entry records selected decoder");
+    require(
+        snapshot.entries[0].decoder_capability_manifest.used_third_party_adapter,
+        "fallback entry manifest records adapter candidate");
+    require(snapshot.entries[0].decoder_capability_manifest.fallback_used, "fallback entry manifest records fallback");
+    require(
+        snapshot.entries[0].decoder_capability_manifest.terminal_decoder_id == "ppm_image_decoder",
+        "fallback entry manifest records terminal PPM decoder");
+    require(
+        snapshot.entries[0].decoder_fallback_reason.find("failed") != std::string::npos,
+        "fallback entry records adapter failure reason");
 }
 
 void test_unavailable_optional_adapter_keeps_diagnostics_without_upload()
@@ -463,7 +500,60 @@ void test_unavailable_optional_adapter_keeps_diagnostics_without_upload()
     require(snapshot.decode_failure_count == 1, "unavailable adapter snapshot counts decode failure");
     require(snapshot.upload_snapshot.upload_count == 0, "unavailable adapter snapshot records no upload");
     require(snapshot.entries[0].decoder_diagnostics[0].decoder_id == "fake_stb_decoder", "snapshot keeps adapter diagnostic");
+    require(
+        snapshot.entries[0].decoder_capability_manifest.used_third_party_adapter,
+        "unavailable adapter snapshot manifest records adapter");
+    require(snapshot.entries[0].decoder_capability_manifest.fallback_used, "unavailable adapter snapshot manifest records fallback");
+    require(
+        snapshot.entries[0].decoder_capability_manifest.terminal_decoder_id == "unsupported_terminal",
+        "unavailable adapter snapshot manifest records unsupported terminal");
+    require(
+        snapshot.entries[0].decoder_fallback_reason.find("unavailable") != std::string::npos,
+        "unavailable adapter snapshot records fallback reason");
     require(snapshot.entries[0].upload_count_after == 0, "snapshot records no upload after unavailable adapter");
+}
+
+void test_pipeline_decoder_manifest_reports_placeholder_outcome()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes("asset://textures/bad.ppm", make_short_ppm_2x1_fixture_bytes());
+    ppm_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    cache.set_placeholder_texture_policy(fake_image_texture_placeholder_policy{
+        .enabled = true,
+        .width = 2,
+        .height = 2,
+    });
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
+
+    const render_image_texture_pipeline_result result = pipeline.acquire_texture(
+        render_image_texture_pipeline_request{.uri = "asset://textures/bad.ppm"});
+
+    require(result.ok(), "decode failure can produce placeholder through image texture pipeline");
+    require(is_fake_image_texture_placeholder_key(result.texture.key), "placeholder result uses placeholder key");
+    require(result.texture.decode_metadata.decoder_id == "fake_image_texture_placeholder_policy", "placeholder records policy decoder");
+
+    const fake_image_texture_pipeline_snapshot snapshot = pipeline.diagnostic_snapshot();
+    require(snapshot.ready_count == 1, "placeholder pipeline snapshot records ready fallback");
+    require(snapshot.decode_failure_count == 0, "placeholder pipeline snapshot does not record terminal decode failure");
+    require(snapshot.entries[0].placeholder_texture, "placeholder entry records placeholder outcome");
+    require(
+        snapshot.entries[0].placeholder_outcome.find("placeholder") != std::string::npos,
+        "placeholder entry records placeholder diagnostic");
+    require(
+        snapshot.entries[0].selected_decoder_id == "fake_image_texture_placeholder_policy",
+        "placeholder entry records selected placeholder decoder");
+    require(
+        !snapshot.entries[0].decoder_capability_manifest.used_third_party_adapter,
+        "placeholder entry capability manifest does not report adapter use");
+    require(
+        snapshot.entries[0].decoder_capability_manifest.terminal_decoder_id == "fake_image_texture_placeholder_policy",
+        "placeholder entry capability manifest records placeholder policy terminal id");
+    require(snapshot.entries[0].cache_reused == false, "first placeholder entry is not cache reuse");
 }
 
 } // namespace
@@ -477,5 +567,6 @@ int main()
     test_pipeline_uses_optional_third_party_decoder_through_interface();
     test_optional_adapter_failure_falls_back_before_texture_upload();
     test_unavailable_optional_adapter_keeps_diagnostics_without_upload();
+    test_pipeline_decoder_manifest_reports_placeholder_outcome();
     return 0;
 }

@@ -3,6 +3,7 @@
 #include "render/image/image_resolver.h"
 #include "render/image/image_source_bytes_loader.h"
 #include "render/image/image_texture_cache.h"
+#include "render/image/third_party_image_decoder_adapter.h"
 #include "render/render_draw_list.h"
 
 #include <cstddef>
@@ -50,9 +51,15 @@ struct fake_image_texture_pipeline_entry_snapshot {
     render_image_texture_key texture_key;
     render_image_texture_handle texture;
     bool cache_hit = false;
+    bool cache_reused = false;
+    bool placeholder_texture = false;
     std::size_t encoded_byte_count = 0;
     render_image_decode_metadata decode_metadata;
     std::vector<render_image_decoder_diagnostic> decoder_diagnostics;
+    render_image_decoder_capability_manifest decoder_capability_manifest;
+    std::string selected_decoder_id;
+    std::string decoder_fallback_reason;
+    std::string placeholder_outcome;
     std::size_t upload_count_before = 0;
     std::size_t upload_count_after = 0;
     std::size_t failed_upload_count_before = 0;
@@ -124,6 +131,64 @@ inline render_image_texture_pipeline_status pipeline_status_for_texture_result(
     }
 
     return render_image_texture_pipeline_status::upload_failed;
+}
+
+inline render_image_decode_status decode_status_for_texture_pipeline_result(
+    const render_image_texture_pipeline_result& result)
+{
+    if (!result.texture.decoder_diagnostics.empty()) {
+        return result.texture.decoder_diagnostics.back().status;
+    }
+    if (result.status == render_image_texture_pipeline_status::ready) {
+        return render_image_decode_status::decoded;
+    }
+    if (result.status == render_image_texture_pipeline_status::decode_failed) {
+        return result.texture.decode_metadata.format_detection.detected_format == render_image_encoded_format::unknown
+            ? render_image_decode_status::unsupported_format
+            : render_image_decode_status::invalid_data;
+    }
+    if (result.status == render_image_texture_pipeline_status::source_load_failed) {
+        return result.source_bytes.encoded_bytes.empty()
+            ? render_image_decode_status::empty_input
+            : render_image_decode_status::invalid_data;
+    }
+    return render_image_decode_status::unsupported_format;
+}
+
+inline render_image_decoder_capability_manifest make_render_image_texture_pipeline_decoder_capability_manifest(
+    const render_image_texture_pipeline_result& result)
+{
+    return make_render_image_decoder_capability_manifest(
+        render_image_decode_request{
+            .source = result.resolve.source,
+            .encoded_bytes = result.source_bytes.encoded_bytes,
+        },
+        render_image_decode_result{
+            .status = decode_status_for_texture_pipeline_result(result),
+            .image = {},
+            .diagnostic = result.texture.diagnostic.empty()
+                ? result.diagnostic
+                : result.texture.diagnostic,
+            .metadata = result.texture.decode_metadata,
+            .decoder_diagnostics = result.texture.decoder_diagnostics,
+        });
+}
+
+inline std::string render_image_texture_pipeline_decoder_fallback_reason(
+    const render_image_decoder_capability_manifest& manifest)
+{
+    if (!manifest.used_third_party_adapter || !manifest.fallback_used || manifest.candidates.empty()) {
+        return {};
+    }
+
+    const render_image_decoder_capability_candidate_snapshot& adapter = manifest.candidates.front();
+    if (adapter.kind != render_image_decoder_capability_candidate_kind::third_party_adapter) {
+        return {};
+    }
+    if (!adapter.diagnostic.empty()) {
+        return adapter.diagnostic;
+    }
+    return adapter.status_name;
 }
 
 class image_texture_pipeline_interface {
@@ -260,6 +325,25 @@ private:
         render_image_texture_pipeline_result result)
     {
         const fake_image_texture_upload_snapshot upload_after = current_upload_snapshot();
+        const bool placeholder_texture = is_fake_image_texture_placeholder_key(result.texture.key);
+        const render_image_decoder_capability_manifest decoder_capability_manifest = placeholder_texture
+            ? render_image_decoder_capability_manifest{
+                .format_detection = result.texture.decode_metadata.format_detection,
+                .candidates = {},
+                .used_third_party_adapter = false,
+                .fallback_used = false,
+                .decoded = result.ok(),
+                .terminal_decoder_id = result.texture.decode_metadata.decoder_id,
+                .terminal_kind = render_image_decoder_capability_candidate_kind::unsupported_terminal,
+                .terminal_kind_name = render_image_decoder_capability_candidate_kind_name(
+                    render_image_decoder_capability_candidate_kind::unsupported_terminal),
+                .terminal_status = render_image_decoder_capability_candidate_status::decoded,
+                .terminal_status_name = render_image_decoder_capability_candidate_status_name(
+                    render_image_decoder_capability_candidate_status::decoded),
+                .terminal_decode_status = render_image_decode_status::decoded,
+                .diagnostic = result.texture.diagnostic,
+            }
+            : make_render_image_texture_pipeline_decoder_capability_manifest(result);
         entries_.push_back(fake_image_texture_pipeline_entry_snapshot{
             .sequence = next_sequence_++,
             .request = request,
@@ -271,9 +355,16 @@ private:
             .texture_key = result.texture.key,
             .texture = result.texture.texture,
             .cache_hit = result.texture.cache_hit,
+            .cache_reused = result.texture.cache_hit,
+            .placeholder_texture = placeholder_texture,
             .encoded_byte_count = result.source_bytes.encoded_bytes.size(),
             .decode_metadata = result.texture.decode_metadata,
             .decoder_diagnostics = result.texture.decoder_diagnostics,
+            .decoder_capability_manifest = decoder_capability_manifest,
+            .selected_decoder_id = result.texture.decode_metadata.decoder_id,
+            .decoder_fallback_reason = render_image_texture_pipeline_decoder_fallback_reason(
+                decoder_capability_manifest),
+            .placeholder_outcome = placeholder_texture ? result.texture.diagnostic : std::string{},
             .upload_count_before = upload_before.upload_count,
             .upload_count_after = upload_after.upload_count,
             .failed_upload_count_before = upload_before.failed_upload_count,

@@ -199,6 +199,10 @@ static_assert(requires(
     render::render_image_format_detection_summary format_detection,
     render::render_image_decode_size_validation size_validation,
     render::render_image_decoder_diagnostic diagnostic,
+    render::render_image_decoder_capability_candidate_kind decoder_capability_kind,
+    render::render_image_decoder_capability_candidate_status decoder_capability_status,
+    render::render_image_decoder_capability_candidate_snapshot decoder_capability_candidate,
+    render::render_image_decoder_capability_manifest decoder_capability_manifest,
     render::render_image_decode_result decode_result,
     render::render_image_texture_result texture_result,
     render::render_image_source_bytes_load_request bytes_request,
@@ -626,7 +630,52 @@ static_assert(requires(
         -> std::same_as<render::render_image_texture_pipeline_request>;
     { render::pipeline_status_for_texture_result(render::render_image_texture_status::ready) }
         -> std::same_as<render::render_image_texture_pipeline_status>;
+    { render::decode_status_for_texture_pipeline_result(pipeline_result) }
+        -> std::same_as<render::render_image_decode_status>;
+    { render::make_render_image_texture_pipeline_decoder_capability_manifest(pipeline_result) }
+        -> std::same_as<render::render_image_decoder_capability_manifest>;
+    { render::render_image_texture_pipeline_decoder_fallback_reason(decoder_capability_manifest) }
+        -> std::same_as<std::string>;
+    { render::render_image_decoder_capability_candidate_kind_name(decoder_capability_kind) }
+        -> std::same_as<std::string>;
+    { render::render_image_decoder_capability_candidate_status_name(decoder_capability_status) }
+        -> std::same_as<std::string>;
+    { render::make_render_image_decoder_capability_manifest(request, decode_result) }
+        -> std::same_as<render::render_image_decoder_capability_manifest>;
+    { decoder_capability_candidate.candidate_index } -> std::same_as<std::size_t&>;
+    { decoder_capability_candidate.candidate_order } -> std::same_as<std::size_t&>;
+    { decoder_capability_candidate.kind }
+        -> std::same_as<render::render_image_decoder_capability_candidate_kind&>;
+    { decoder_capability_candidate.kind_name } -> std::same_as<std::string&>;
+    { decoder_capability_candidate.decoder_id } -> std::same_as<std::string&>;
+    { decoder_capability_candidate.status }
+        -> std::same_as<render::render_image_decoder_capability_candidate_status&>;
+    { decoder_capability_candidate.status_name } -> std::same_as<std::string&>;
+    { decoder_capability_candidate.decode_status } -> std::same_as<render::render_image_decode_status&>;
+    { decoder_capability_candidate.support_checked } -> std::same_as<bool&>;
+    { decoder_capability_candidate.supported } -> std::same_as<bool&>;
+    { decoder_capability_candidate.decode_attempted } -> std::same_as<bool&>;
+    { decoder_capability_candidate.terminal_candidate } -> std::same_as<bool&>;
+    { decoder_capability_candidate.diagnostic } -> std::same_as<std::string&>;
+    { decoder_capability_manifest.format_detection }
+        -> std::same_as<render::render_image_format_detection_summary&>;
+    { decoder_capability_manifest.candidates }
+        -> std::same_as<std::vector<render::render_image_decoder_capability_candidate_snapshot>&>;
+    { decoder_capability_manifest.used_third_party_adapter } -> std::same_as<bool&>;
+    { decoder_capability_manifest.fallback_used } -> std::same_as<bool&>;
+    { decoder_capability_manifest.decoded } -> std::same_as<bool&>;
+    { decoder_capability_manifest.terminal_decoder_id } -> std::same_as<std::string&>;
+    { decoder_capability_manifest.terminal_kind }
+        -> std::same_as<render::render_image_decoder_capability_candidate_kind&>;
+    { decoder_capability_manifest.terminal_kind_name } -> std::same_as<std::string&>;
+    { decoder_capability_manifest.terminal_status }
+        -> std::same_as<render::render_image_decoder_capability_candidate_status&>;
+    { decoder_capability_manifest.terminal_status_name } -> std::same_as<std::string&>;
+    { decoder_capability_manifest.terminal_decode_status } -> std::same_as<render::render_image_decode_status&>;
+    { decoder_capability_manifest.diagnostic } -> std::same_as<std::string&>;
     pipeline_status;
+    decoder_capability_kind;
+    decoder_capability_status;
     { pipeline_entry.sequence } -> std::same_as<std::size_t&>;
     { pipeline_entry.request } -> std::same_as<render::render_image_texture_pipeline_request&>;
     { pipeline_entry.status } -> std::same_as<render::render_image_texture_pipeline_status&>;
@@ -637,9 +686,16 @@ static_assert(requires(
     { pipeline_entry.texture_key } -> std::same_as<render::render_image_texture_key&>;
     { pipeline_entry.texture } -> std::same_as<render::render_image_texture_handle&>;
     { pipeline_entry.cache_hit } -> std::same_as<bool&>;
+    { pipeline_entry.cache_reused } -> std::same_as<bool&>;
+    { pipeline_entry.placeholder_texture } -> std::same_as<bool&>;
     { pipeline_entry.encoded_byte_count } -> std::same_as<std::size_t&>;
     { pipeline_entry.decode_metadata } -> std::same_as<render::render_image_decode_metadata&>;
     { pipeline_entry.decoder_diagnostics } -> std::same_as<std::vector<render::render_image_decoder_diagnostic>&>;
+    { pipeline_entry.decoder_capability_manifest }
+        -> std::same_as<render::render_image_decoder_capability_manifest&>;
+    { pipeline_entry.selected_decoder_id } -> std::same_as<std::string&>;
+    { pipeline_entry.decoder_fallback_reason } -> std::same_as<std::string&>;
+    { pipeline_entry.placeholder_outcome } -> std::same_as<std::string&>;
     { pipeline_entry.upload_count_before } -> std::same_as<std::size_t&>;
     { pipeline_entry.upload_count_after } -> std::same_as<std::size_t&>;
     { pipeline_entry.failed_upload_count_before } -> std::same_as<std::size_t&>;

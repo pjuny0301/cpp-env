@@ -311,6 +311,7 @@ target_sources(
         BASE_DIRS src
         FILES
             src/render/vulkan/vulkan_backend_adapter.h
+            src/render/vulkan/vulkan_backend_command_recording.h
             src/render/vulkan/vulkan_backend_device.h
             src/render/vulkan/vulkan_backend_frame_lifecycle.h
             src/render/vulkan/vulkan_backend_instance.h

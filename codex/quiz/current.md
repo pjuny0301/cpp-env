@@ -34,6 +34,7 @@ Last updated: 2026-05-09
 - Scene/UI modifiers emit actions only; app/domain services own state changes.
 - Renderer layers must not own quiz, domain, UI, input, or audio state.
 - Architecture boundary tests now lock the intended direction: layout does not depend on UI/render, UI does not depend on Vulkan backend, scene layout data does not depend on render, Vulkan backend does not depend on scene/UI/app/domain, and asset/text engine core files do not depend on upper layers except explicit bridge adapters.
+- Scene core is also locked against app/domain/input/audio/assets/platform includes so `scene_layout_data` remains a renderer-agnostic data contract instead of a domain or platform state owner.
 - Architecture boundary tests also reject host-specific source paths such as `/mnt/c/aa`, `C:/aa`, and direct `build/external/lib/cpp/desktop` references in app source. External libraries are selected through engine metadata/adapters, not hard-coded checkout paths.
 - Engine workers own only their engine folders. App/runtime, top-level CMake, and aggregate contract wiring stay with the integrator unless explicitly assigned.
 - Large file splitting is allowed when it improves module cohesion, worker ownership, reviewability, or conflict isolation. Do not split files only because they exceed a line-count threshold, and do not move stable public interfaces without explicit integrator approval.

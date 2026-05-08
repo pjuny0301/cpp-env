@@ -6,6 +6,7 @@
 
 최근 baseline 통합 증거:
 
+- current: scene core architecture boundary를 강화하고 Windows MinGW architecture boundary CTest 1/1 통과 확인.
 - current: normalized input replay diff header split을 통합하고 public input FILE_SET 등록, Windows MinGW focused replay CTest 1/1 및 interface compile target build 확인.
 - `345e768`: normalized input replay diff diagnostics를 별도 public input header로 분리해 `normalized_input_replay.h` 토큰 부담을 줄임.
 - current: text frame snapshot header split을 통합하고 Windows MinGW focused text CTest 3/3 및 interface compile target build 확인.

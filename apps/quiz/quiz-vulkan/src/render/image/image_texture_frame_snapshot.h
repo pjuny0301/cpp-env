@@ -1050,4 +1050,436 @@ inline render_image_texture_frame_binding_plan make_render_image_texture_frame_b
         diff_render_image_texture_frame_snapshots(before, after));
 }
 
+enum class render_image_texture_frame_binding_plan_diff_entry_status {
+    unchanged,
+    added,
+    removed,
+    changed,
+};
+
+inline std::string render_image_texture_frame_binding_plan_diff_entry_status_name(
+    render_image_texture_frame_binding_plan_diff_entry_status status)
+{
+    switch (status) {
+    case render_image_texture_frame_binding_plan_diff_entry_status::unchanged:
+        return "unchanged";
+    case render_image_texture_frame_binding_plan_diff_entry_status::added:
+        return "added";
+    case render_image_texture_frame_binding_plan_diff_entry_status::removed:
+        return "removed";
+    case render_image_texture_frame_binding_plan_diff_entry_status::changed:
+        return "changed";
+    }
+
+    return "unknown";
+}
+
+struct render_image_texture_frame_binding_packet_diff {
+    std::size_t request_index = 0;
+    render_image_texture_frame_binding_plan_diff_entry_status status =
+        render_image_texture_frame_binding_plan_diff_entry_status::unchanged;
+    std::string status_name;
+    std::string before_render_image_uri;
+    std::string after_render_image_uri;
+    std::string before_normalized_uri;
+    std::string after_normalized_uri;
+    render_image_cache_key before_cache_key;
+    render_image_cache_key after_cache_key;
+    std::string before_sampler_key;
+    std::string after_sampler_key;
+    std::string before_stable_texture_cache_key;
+    std::string after_stable_texture_cache_key;
+    render_image_texture_id before_texture_id = 0;
+    render_image_texture_id after_texture_id = 0;
+    render_image_revision before_texture_revision = 0;
+    render_image_revision after_texture_revision = 0;
+    render_image_texture_frame_binding_packet_status before_packet_status =
+        render_image_texture_frame_binding_packet_status::failed;
+    render_image_texture_frame_binding_packet_status after_packet_status =
+        render_image_texture_frame_binding_packet_status::failed;
+    bool before_renderer_handoff_ready = false;
+    bool after_renderer_handoff_ready = false;
+    bool before_placeholder_texture = false;
+    bool after_placeholder_texture = false;
+    bool before_failed = false;
+    bool after_failed = false;
+    bool before_residency_budget_pressure = false;
+    bool after_residency_budget_pressure = false;
+    render_image_texture_residency_budget_pressure_status before_residency_pressure_status =
+        render_image_texture_residency_budget_pressure_status::within_budget;
+    render_image_texture_residency_budget_pressure_status after_residency_pressure_status =
+        render_image_texture_residency_budget_pressure_status::within_budget;
+    bool texture_binding_added = false;
+    bool texture_binding_removed = false;
+    bool texture_binding_changed = false;
+    bool readiness_changed = false;
+    bool readiness_regressed = false;
+    bool readiness_recovered = false;
+    bool placeholder_changed = false;
+    bool failure_changed = false;
+    bool sampler_policy_changed = false;
+    bool source_uri_changed = false;
+    bool stable_uri_changed = false;
+    bool cache_key_changed = false;
+    bool stable_texture_cache_key_changed = false;
+    bool residency_pressure_changed = false;
+    bool regression = false;
+    std::string diagnostic;
+
+    bool changed() const
+    {
+        return status != render_image_texture_frame_binding_plan_diff_entry_status::unchanged;
+    }
+
+    bool ok() const
+    {
+        return !regression;
+    }
+};
+
+struct render_image_texture_frame_binding_plan_diff {
+    std::size_t before_request_count = 0;
+    std::size_t after_request_count = 0;
+    std::size_t before_packet_count = 0;
+    std::size_t after_packet_count = 0;
+    std::size_t unchanged_packet_count = 0;
+    std::size_t added_packet_count = 0;
+    std::size_t removed_packet_count = 0;
+    std::size_t changed_packet_count = 0;
+    std::size_t texture_binding_added_count = 0;
+    std::size_t texture_binding_removed_count = 0;
+    std::size_t texture_binding_changed_count = 0;
+    std::size_t readiness_changed_count = 0;
+    std::size_t readiness_regressed_count = 0;
+    std::size_t readiness_recovered_count = 0;
+    std::size_t placeholder_delta_count = 0;
+    std::size_t failure_delta_count = 0;
+    std::size_t sampler_policy_changed_count = 0;
+    std::size_t source_uri_changed_count = 0;
+    std::size_t stable_uri_changed_count = 0;
+    std::size_t cache_key_changed_count = 0;
+    std::size_t stable_texture_cache_key_changed_count = 0;
+    std::size_t residency_pressure_delta_count = 0;
+    std::size_t before_bindable_packet_count = 0;
+    std::size_t after_bindable_packet_count = 0;
+    std::size_t before_ready_packet_count = 0;
+    std::size_t after_ready_packet_count = 0;
+    std::size_t before_placeholder_packet_count = 0;
+    std::size_t after_placeholder_packet_count = 0;
+    std::size_t before_failed_packet_count = 0;
+    std::size_t after_failed_packet_count = 0;
+    bool before_renderer_handoff_ready = false;
+    bool after_renderer_handoff_ready = false;
+    bool before_residency_budget_pressure = false;
+    bool after_residency_budget_pressure = false;
+    render_image_texture_residency_budget_pressure_status before_residency_pressure_status =
+        render_image_texture_residency_budget_pressure_status::within_budget;
+    render_image_texture_residency_budget_pressure_status after_residency_pressure_status =
+        render_image_texture_residency_budget_pressure_status::within_budget;
+    bool renderer_handoff_regressed = false;
+    bool renderer_handoff_recovered = false;
+    bool failure_count_regressed = false;
+    bool failure_count_recovered = false;
+    bool placeholder_count_regressed = false;
+    bool placeholder_count_recovered = false;
+    bool residency_pressure_regressed = false;
+    bool residency_pressure_recovered = false;
+    bool has_changes = false;
+    bool has_regression = false;
+    std::string readiness_summary;
+    std::string regression_summary;
+    std::vector<render_image_texture_frame_binding_packet_diff> entries;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return !has_regression;
+    }
+};
+
+inline const render_image_texture_frame_binding_packet* render_image_texture_frame_binding_packet_for_request_index(
+    const render_image_texture_frame_binding_plan& plan,
+    std::size_t request_index)
+{
+    for (const render_image_texture_frame_binding_packet& packet : plan.packets) {
+        if (packet.request_index == request_index) {
+            return &packet;
+        }
+    }
+    return nullptr;
+}
+
+inline render_image_texture_frame_binding_packet_diff make_render_image_texture_frame_binding_packet_diff(
+    const render_image_texture_frame_binding_packet* before_packet,
+    const render_image_texture_frame_binding_packet* after_packet,
+    std::size_t request_index)
+{
+    render_image_texture_frame_binding_packet_diff diff{
+        .request_index = request_index,
+    };
+
+    if (before_packet != nullptr) {
+        diff.before_render_image_uri = before_packet->render_image_uri;
+        diff.before_normalized_uri = before_packet->normalized_uri;
+        diff.before_cache_key = before_packet->cache_key;
+        diff.before_sampler_key = before_packet->sampler_key;
+        diff.before_stable_texture_cache_key = before_packet->stable_texture_cache_key;
+        diff.before_texture_id = before_packet->texture_id;
+        diff.before_texture_revision = before_packet->texture_revision;
+        diff.before_packet_status = before_packet->status;
+        diff.before_renderer_handoff_ready = before_packet->renderer_handoff_ready;
+        diff.before_placeholder_texture = before_packet->placeholder_texture;
+        diff.before_failed = before_packet->failed;
+        diff.before_residency_budget_pressure = before_packet->residency_budget_pressure;
+        diff.before_residency_pressure_status = before_packet->residency_pressure_status;
+    }
+
+    if (after_packet != nullptr) {
+        diff.after_render_image_uri = after_packet->render_image_uri;
+        diff.after_normalized_uri = after_packet->normalized_uri;
+        diff.after_cache_key = after_packet->cache_key;
+        diff.after_sampler_key = after_packet->sampler_key;
+        diff.after_stable_texture_cache_key = after_packet->stable_texture_cache_key;
+        diff.after_texture_id = after_packet->texture_id;
+        diff.after_texture_revision = after_packet->texture_revision;
+        diff.after_packet_status = after_packet->status;
+        diff.after_renderer_handoff_ready = after_packet->renderer_handoff_ready;
+        diff.after_placeholder_texture = after_packet->placeholder_texture;
+        diff.after_failed = after_packet->failed;
+        diff.after_residency_budget_pressure = after_packet->residency_budget_pressure;
+        diff.after_residency_pressure_status = after_packet->residency_pressure_status;
+    }
+
+    if (before_packet == nullptr && after_packet != nullptr) {
+        diff.status = render_image_texture_frame_binding_plan_diff_entry_status::added;
+        diff.texture_binding_added = after_packet->texture_id != 0;
+        diff.readiness_changed = after_packet->renderer_handoff_ready;
+        diff.placeholder_changed = after_packet->placeholder_texture;
+        diff.failure_changed = after_packet->failed;
+        diff.residency_pressure_changed = after_packet->residency_budget_pressure;
+        diff.regression = after_packet->failed || after_packet->placeholder_texture
+            || after_packet->residency_budget_pressure;
+    } else if (before_packet != nullptr && after_packet == nullptr) {
+        diff.status = render_image_texture_frame_binding_plan_diff_entry_status::removed;
+        diff.texture_binding_removed = before_packet->texture_id != 0;
+        diff.readiness_changed = before_packet->renderer_handoff_ready;
+        diff.readiness_regressed = before_packet->renderer_handoff_ready;
+        diff.placeholder_changed = before_packet->placeholder_texture;
+        diff.failure_changed = before_packet->failed;
+        diff.residency_pressure_changed = before_packet->residency_budget_pressure;
+        diff.regression = before_packet->renderer_handoff_ready;
+    } else if (before_packet != nullptr && after_packet != nullptr) {
+        diff.texture_binding_added = before_packet->texture_id == 0 && after_packet->texture_id != 0;
+        diff.texture_binding_removed = before_packet->texture_id != 0 && after_packet->texture_id == 0;
+        diff.texture_binding_changed = before_packet->texture_id != 0 && after_packet->texture_id != 0
+            && (before_packet->texture_id != after_packet->texture_id
+                || before_packet->texture_revision != after_packet->texture_revision);
+        diff.readiness_changed =
+            before_packet->renderer_handoff_ready != after_packet->renderer_handoff_ready;
+        diff.readiness_regressed =
+            before_packet->renderer_handoff_ready && !after_packet->renderer_handoff_ready;
+        diff.readiness_recovered =
+            !before_packet->renderer_handoff_ready && after_packet->renderer_handoff_ready;
+        diff.placeholder_changed =
+            before_packet->placeholder_texture != after_packet->placeholder_texture;
+        diff.failure_changed = before_packet->failed != after_packet->failed;
+        diff.sampler_policy_changed = before_packet->sampler_key != after_packet->sampler_key
+            || !(before_packet->sampler == after_packet->sampler);
+        diff.source_uri_changed = before_packet->render_image_uri != after_packet->render_image_uri;
+        diff.stable_uri_changed = before_packet->normalized_uri != after_packet->normalized_uri;
+        diff.cache_key_changed = before_packet->cache_key != after_packet->cache_key;
+        diff.stable_texture_cache_key_changed =
+            before_packet->stable_texture_cache_key != after_packet->stable_texture_cache_key;
+        diff.residency_pressure_changed =
+            before_packet->residency_pressure_status != after_packet->residency_pressure_status
+            || before_packet->residency_budget_pressure != after_packet->residency_budget_pressure;
+        diff.regression = diff.readiness_regressed
+            || (!before_packet->placeholder_texture && after_packet->placeholder_texture)
+            || (!before_packet->failed && after_packet->failed)
+            || render_image_texture_frame_pressure_rank(after_packet->residency_pressure_status)
+                > render_image_texture_frame_pressure_rank(before_packet->residency_pressure_status);
+        if (diff.texture_binding_added || diff.texture_binding_removed || diff.texture_binding_changed
+            || diff.readiness_changed || diff.placeholder_changed || diff.failure_changed
+            || diff.sampler_policy_changed || diff.source_uri_changed || diff.stable_uri_changed
+            || diff.cache_key_changed || diff.stable_texture_cache_key_changed
+            || diff.residency_pressure_changed
+            || before_packet->status != after_packet->status) {
+            diff.status = render_image_texture_frame_binding_plan_diff_entry_status::changed;
+        }
+    }
+
+    diff.status_name = render_image_texture_frame_binding_plan_diff_entry_status_name(diff.status);
+    diff.diagnostic = diff.status == render_image_texture_frame_binding_plan_diff_entry_status::unchanged
+        ? "image texture frame binding packet unchanged"
+        : (diff.regression
+            ? "image texture frame binding packet changed with regression"
+            : "image texture frame binding packet changed");
+    return diff;
+}
+
+inline render_image_texture_frame_binding_plan_diff diff_render_image_texture_frame_binding_plans(
+    const render_image_texture_frame_binding_plan& before,
+    const render_image_texture_frame_binding_plan& after)
+{
+    render_image_texture_frame_binding_plan_diff diff{
+        .before_request_count = before.request_count,
+        .after_request_count = after.request_count,
+        .before_packet_count = before.packet_count,
+        .after_packet_count = after.packet_count,
+        .before_bindable_packet_count = before.bindable_packet_count,
+        .after_bindable_packet_count = after.bindable_packet_count,
+        .before_ready_packet_count = before.ready_packet_count,
+        .after_ready_packet_count = after.ready_packet_count,
+        .before_placeholder_packet_count = before.placeholder_packet_count,
+        .after_placeholder_packet_count = after.placeholder_packet_count,
+        .before_failed_packet_count = before.failed_packet_count,
+        .after_failed_packet_count = after.failed_packet_count,
+        .before_renderer_handoff_ready = before.renderer_handoff_ready,
+        .after_renderer_handoff_ready = after.renderer_handoff_ready,
+        .before_residency_budget_pressure = before.residency_budget_pressure,
+        .after_residency_budget_pressure = after.residency_budget_pressure,
+        .before_residency_pressure_status = before.residency_pressure_status,
+        .after_residency_pressure_status = after.residency_pressure_status,
+    };
+
+    std::map<std::size_t, bool> request_indices;
+    for (const render_image_texture_frame_binding_packet& packet : before.packets) {
+        request_indices.emplace(packet.request_index, true);
+    }
+    for (const render_image_texture_frame_binding_packet& packet : after.packets) {
+        request_indices.emplace(packet.request_index, true);
+    }
+
+    for (const auto& [request_index, _] : request_indices) {
+        const render_image_texture_frame_binding_packet* before_packet =
+            render_image_texture_frame_binding_packet_for_request_index(before, request_index);
+        const render_image_texture_frame_binding_packet* after_packet =
+            render_image_texture_frame_binding_packet_for_request_index(after, request_index);
+        render_image_texture_frame_binding_packet_diff entry_diff =
+            make_render_image_texture_frame_binding_packet_diff(before_packet, after_packet, request_index);
+
+        switch (entry_diff.status) {
+        case render_image_texture_frame_binding_plan_diff_entry_status::unchanged:
+            ++diff.unchanged_packet_count;
+            break;
+        case render_image_texture_frame_binding_plan_diff_entry_status::added:
+            ++diff.added_packet_count;
+            break;
+        case render_image_texture_frame_binding_plan_diff_entry_status::removed:
+            ++diff.removed_packet_count;
+            break;
+        case render_image_texture_frame_binding_plan_diff_entry_status::changed:
+            ++diff.changed_packet_count;
+            break;
+        }
+
+        if (entry_diff.texture_binding_added) {
+            ++diff.texture_binding_added_count;
+        }
+        if (entry_diff.texture_binding_removed) {
+            ++diff.texture_binding_removed_count;
+        }
+        if (entry_diff.texture_binding_changed) {
+            ++diff.texture_binding_changed_count;
+        }
+        if (entry_diff.readiness_changed) {
+            ++diff.readiness_changed_count;
+        }
+        if (entry_diff.readiness_regressed) {
+            ++diff.readiness_regressed_count;
+        }
+        if (entry_diff.readiness_recovered) {
+            ++diff.readiness_recovered_count;
+        }
+        if (entry_diff.placeholder_changed) {
+            ++diff.placeholder_delta_count;
+        }
+        if (entry_diff.failure_changed) {
+            ++diff.failure_delta_count;
+        }
+        if (entry_diff.sampler_policy_changed) {
+            ++diff.sampler_policy_changed_count;
+        }
+        if (entry_diff.source_uri_changed) {
+            ++diff.source_uri_changed_count;
+        }
+        if (entry_diff.stable_uri_changed) {
+            ++diff.stable_uri_changed_count;
+        }
+        if (entry_diff.cache_key_changed) {
+            ++diff.cache_key_changed_count;
+        }
+        if (entry_diff.stable_texture_cache_key_changed) {
+            ++diff.stable_texture_cache_key_changed_count;
+        }
+        if (entry_diff.residency_pressure_changed) {
+            ++diff.residency_pressure_delta_count;
+        }
+        if (entry_diff.regression) {
+            diff.has_regression = true;
+        }
+
+        diff.entries.push_back(std::move(entry_diff));
+    }
+
+    diff.renderer_handoff_regressed = before.renderer_handoff_ready && !after.renderer_handoff_ready;
+    diff.renderer_handoff_recovered = !before.renderer_handoff_ready && after.renderer_handoff_ready;
+    diff.failure_count_regressed = after.failed_packet_count > before.failed_packet_count;
+    diff.failure_count_recovered = after.failed_packet_count < before.failed_packet_count;
+    diff.placeholder_count_regressed = after.placeholder_packet_count > before.placeholder_packet_count;
+    diff.placeholder_count_recovered = after.placeholder_packet_count < before.placeholder_packet_count;
+    diff.residency_pressure_regressed =
+        render_image_texture_frame_pressure_rank(after.residency_pressure_status)
+        > render_image_texture_frame_pressure_rank(before.residency_pressure_status);
+    diff.residency_pressure_recovered =
+        render_image_texture_frame_pressure_rank(after.residency_pressure_status)
+        < render_image_texture_frame_pressure_rank(before.residency_pressure_status);
+    diff.has_changes = diff.added_packet_count != 0 || diff.removed_packet_count != 0
+        || diff.changed_packet_count != 0 || before.renderer_handoff_ready != after.renderer_handoff_ready
+        || before.failed_packet_count != after.failed_packet_count
+        || before.placeholder_packet_count != after.placeholder_packet_count
+        || before.residency_pressure_status != after.residency_pressure_status;
+    diff.has_regression = diff.has_regression || diff.renderer_handoff_regressed
+        || diff.failure_count_regressed || diff.placeholder_count_regressed
+        || diff.residency_pressure_regressed;
+
+    if (diff.readiness_regressed_count != 0 || diff.renderer_handoff_regressed) {
+        append_render_image_texture_frame_regression_reason(diff.regression_summary, "binding readiness regressed");
+    }
+    if (diff.failure_count_regressed) {
+        append_render_image_texture_frame_regression_reason(diff.regression_summary, "binding failures increased");
+    }
+    if (diff.placeholder_count_regressed) {
+        append_render_image_texture_frame_regression_reason(diff.regression_summary, "placeholder bindings increased");
+    }
+    if (diff.residency_pressure_regressed) {
+        append_render_image_texture_frame_regression_reason(diff.regression_summary, "binding residency pressure increased");
+    }
+    if (diff.has_regression && diff.regression_summary.empty()) {
+        diff.regression_summary = "binding packets regressed";
+    }
+    if (diff.regression_summary.empty()) {
+        diff.regression_summary = diff.has_changes
+            ? "image texture frame binding plan diff has changes without regressions"
+            : "image texture frame binding plan diff has no changes";
+    }
+
+    if (diff.readiness_regressed_count != 0) {
+        diff.readiness_summary = "image texture frame binding readiness regressed";
+    } else if (diff.readiness_recovered_count != 0) {
+        diff.readiness_summary = "image texture frame binding readiness recovered";
+    } else if (diff.readiness_changed_count != 0) {
+        diff.readiness_summary = "image texture frame binding readiness changed";
+    } else {
+        diff.readiness_summary = "image texture frame binding readiness unchanged";
+    }
+
+    diff.diagnostic = diff.has_regression
+        ? "image texture frame binding plan diff reports regressions"
+        : (diff.has_changes
+            ? "image texture frame binding plan diff reports changes"
+            : "image texture frame binding plan diff is unchanged");
+    return diff;
+}
+
 } // namespace quiz_vulkan::render

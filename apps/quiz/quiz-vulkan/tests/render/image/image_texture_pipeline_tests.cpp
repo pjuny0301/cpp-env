@@ -64,6 +64,10 @@ static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_textu
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_frame_binding_plan>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_binding_packet>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_binding_plan>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_frame_binding_packet_diff>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_frame_binding_plan_diff>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_binding_packet_diff>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_binding_plan_diff>);
 
 void require(bool condition, const char* message)
 {
@@ -1891,6 +1895,247 @@ void test_texture_frame_binding_plan_reports_frame_deltas_and_failures()
         "removed binding packet status name is stable");
 }
 
+void test_texture_frame_binding_plan_diff_reports_unchanged_bindings()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes("asset://textures/card.ppm", make_ppm_2x1_fixture_bytes());
+    ppm_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
+
+    const render_image_texture_batch_plan plan = plan_render_image_texture_batch(std::vector<render_image_ref>{
+        render_image_ref{.uri = "asset://textures/card.ppm"},
+        render_image_ref{.uri = "asset://textures/card.ppm"},
+    });
+    const render_image_texture_batch_execution_diagnostics execution =
+        execute_render_image_texture_batch_plan(plan, pipeline);
+    const render_image_texture_frame_snapshot frame =
+        make_render_image_texture_frame_snapshot(plan, execution);
+    const render_image_texture_frame_binding_plan binding_plan =
+        make_render_image_texture_frame_binding_plan(frame);
+    const render_image_texture_frame_binding_plan_diff diff =
+        diff_render_image_texture_frame_binding_plans(binding_plan, binding_plan);
+
+    require(diff.ok(), "unchanged binding plan diff is ok");
+    require(!diff.has_changes, "unchanged binding plan diff records no changes");
+    require(!diff.has_regression, "unchanged binding plan diff records no regressions");
+    require(diff.before_request_count == 2, "unchanged binding diff records before request count");
+    require(diff.after_request_count == 2, "unchanged binding diff records after request count");
+    require(diff.before_packet_count == 2, "unchanged binding diff records before packet count");
+    require(diff.after_packet_count == 2, "unchanged binding diff records after packet count");
+    require(diff.unchanged_packet_count == 2, "unchanged binding diff counts unchanged packets");
+    require(diff.added_packet_count == 0, "unchanged binding diff records no added packets");
+    require(diff.removed_packet_count == 0, "unchanged binding diff records no removed packets");
+    require(diff.changed_packet_count == 0, "unchanged binding diff records no changed packets");
+    require(diff.texture_binding_added_count == 0, "unchanged binding diff records no added texture bindings");
+    require(diff.texture_binding_removed_count == 0, "unchanged binding diff records no removed texture bindings");
+    require(diff.texture_binding_changed_count == 0, "unchanged binding diff records no changed texture bindings");
+    require(diff.readiness_changed_count == 0, "unchanged binding diff records no readiness delta");
+    require(diff.placeholder_delta_count == 0, "unchanged binding diff records no placeholder delta");
+    require(diff.failure_delta_count == 0, "unchanged binding diff records no failure delta");
+    require(diff.sampler_policy_changed_count == 0, "unchanged binding diff records no sampler delta");
+    require(diff.source_uri_changed_count == 0, "unchanged binding diff records no source uri delta");
+    require(diff.stable_uri_changed_count == 0, "unchanged binding diff records no stable uri delta");
+    require(diff.cache_key_changed_count == 0, "unchanged binding diff records no cache key delta");
+    require(diff.stable_texture_cache_key_changed_count == 0, "unchanged binding diff records no stable texture key delta");
+    require(diff.residency_pressure_delta_count == 0, "unchanged binding diff records no pressure delta");
+    require(diff.before_bindable_packet_count == 2, "unchanged binding diff records before bindable count");
+    require(diff.after_bindable_packet_count == 2, "unchanged binding diff records after bindable count");
+    require(diff.before_renderer_handoff_ready, "unchanged binding diff records before handoff ready");
+    require(diff.after_renderer_handoff_ready, "unchanged binding diff records after handoff ready");
+    require(
+        diff.readiness_summary == "image texture frame binding readiness unchanged",
+        "unchanged binding diff readiness summary is stable");
+    require(
+        diff.regression_summary == "image texture frame binding plan diff has no changes",
+        "unchanged binding diff regression summary is stable");
+    require(
+        diff.diagnostic == "image texture frame binding plan diff is unchanged",
+        "unchanged binding diff diagnostic is stable");
+    require(diff.entries.size() == 2, "unchanged binding diff keeps packet entries");
+
+    const render_image_texture_frame_binding_packet_diff& first = diff.entries[0];
+    require(
+        first.status == render_image_texture_frame_binding_plan_diff_entry_status::unchanged,
+        "unchanged binding packet diff status is stable");
+    require(first.status_name == "unchanged", "unchanged binding packet status name is stable");
+    require(first.before_texture_id == binding_plan.packets[0].texture_id, "unchanged packet diff records before id");
+    require(first.after_texture_id == binding_plan.packets[0].texture_id, "unchanged packet diff records after id");
+    require(!first.changed(), "unchanged packet changed helper is false");
+    require(first.ok(), "unchanged packet ok helper is true");
+    require(
+        render_image_texture_frame_binding_plan_diff_entry_status_name(
+            render_image_texture_frame_binding_plan_diff_entry_status::changed)
+            == "changed",
+        "binding plan diff status name is stable");
+}
+
+void test_texture_frame_binding_plan_diff_reports_binding_deltas()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_image_texture_placeholder_policy placeholder_policy{
+        .enabled = true,
+        .width = 2,
+        .height = 2,
+    };
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes("asset://textures/card.ppm", make_ppm_2x1_fixture_bytes());
+    loader.set_source_bytes("asset://textures/bad.ppm", make_short_ppm_2x1_fixture_bytes());
+    ppm_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    cache.set_placeholder_texture_policy(placeholder_policy);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
+
+    render_image_sampler_policy nearest_sampler;
+    nearest_sampler.min_filter = render_image_filter::nearest;
+    nearest_sampler.mag_filter = render_image_filter::nearest;
+
+    const render_image_texture_batch_plan ready_plan = plan_render_image_texture_batch(std::vector<render_image_ref>{
+        render_image_ref{.uri = "asset://textures/card.ppm"},
+        render_image_ref{.uri = "asset://textures/card.ppm", .sampler = nearest_sampler},
+    });
+    const render_image_texture_batch_execution_diagnostics ready_execution =
+        execute_render_image_texture_batch_plan(ready_plan, pipeline);
+    const render_image_texture_frame_snapshot ready_frame =
+        make_render_image_texture_frame_snapshot(ready_plan, ready_execution);
+    const render_image_texture_frame_binding_plan ready_binding_plan =
+        make_render_image_texture_frame_binding_plan(ready_frame);
+
+    const render_image_texture_batch_plan partial_plan = plan_render_image_texture_batch(
+        std::vector<render_image_ref>{
+            render_image_ref{.uri = "asset://textures/card.ppm", .sampler = nearest_sampler},
+            render_image_ref{.uri = "   "},
+            render_image_ref{.uri = "asset://textures/bad.ppm"},
+        },
+        render_image_texture_batch_plan_options{.placeholder_policy = placeholder_policy});
+    const render_image_texture_batch_execution_diagnostics partial_execution =
+        execute_render_image_texture_batch_plan(partial_plan, pipeline);
+    const render_image_texture_frame_snapshot partial_frame =
+        make_render_image_texture_frame_snapshot(partial_plan, partial_execution);
+    const render_image_texture_frame_binding_plan partial_binding_plan =
+        make_render_image_texture_frame_binding_plan(partial_frame);
+
+    const render_image_texture_frame_binding_plan_diff growth_diff =
+        diff_render_image_texture_frame_binding_plans(ready_binding_plan, partial_binding_plan);
+
+    require(!growth_diff.ok(), "growth binding diff records regressions");
+    require(growth_diff.has_changes, "growth binding diff records changes");
+    require(growth_diff.has_regression, "growth binding diff records regression");
+    require(growth_diff.before_request_count == 2, "growth binding diff records before request count");
+    require(growth_diff.after_request_count == 3, "growth binding diff records after request count");
+    require(growth_diff.before_packet_count == 2, "growth binding diff records before packet count");
+    require(growth_diff.after_packet_count == 3, "growth binding diff records after packet count");
+    require(growth_diff.unchanged_packet_count == 0, "growth binding diff records no unchanged packets");
+    require(growth_diff.added_packet_count == 1, "growth binding diff counts added packet");
+    require(growth_diff.removed_packet_count == 0, "growth binding diff records no removed packet");
+    require(growth_diff.changed_packet_count == 2, "growth binding diff counts changed packets");
+    require(growth_diff.texture_binding_added_count == 1, "growth binding diff counts added texture binding");
+    require(growth_diff.texture_binding_removed_count == 1, "growth binding diff counts removed texture binding");
+    require(growth_diff.texture_binding_changed_count == 1, "growth binding diff counts changed texture binding");
+    require(growth_diff.readiness_changed_count == 2, "growth binding diff counts readiness changes");
+    require(growth_diff.readiness_regressed_count == 1, "growth binding diff counts readiness regression");
+    require(growth_diff.readiness_recovered_count == 0, "growth binding diff records no readiness recovery");
+    require(growth_diff.placeholder_delta_count == 1, "growth binding diff counts placeholder delta");
+    require(growth_diff.failure_delta_count == 1, "growth binding diff counts failure delta");
+    require(growth_diff.sampler_policy_changed_count == 2, "growth binding diff counts sampler policy changes");
+    require(growth_diff.source_uri_changed_count == 1, "growth binding diff counts source uri change");
+    require(growth_diff.stable_uri_changed_count == 1, "growth binding diff counts stable uri change");
+    require(growth_diff.cache_key_changed_count == 1, "growth binding diff counts cache key change");
+    require(growth_diff.stable_texture_cache_key_changed_count == 2, "growth binding diff counts stable texture key changes");
+    require(growth_diff.residency_pressure_delta_count == 0, "growth binding diff records no pressure delta");
+    require(growth_diff.before_bindable_packet_count == 2, "growth binding diff records before bindable packets");
+    require(growth_diff.after_bindable_packet_count == 2, "growth binding diff records after bindable packets");
+    require(growth_diff.before_ready_packet_count == 2, "growth binding diff records before ready packets");
+    require(growth_diff.after_ready_packet_count == 1, "growth binding diff records after ready packets");
+    require(growth_diff.after_placeholder_packet_count == 1, "growth binding diff records after placeholder packets");
+    require(growth_diff.after_failed_packet_count == 1, "growth binding diff records after failed packets");
+    require(growth_diff.before_renderer_handoff_ready, "growth binding diff records before handoff ready");
+    require(!growth_diff.after_renderer_handoff_ready, "growth binding diff records after handoff not ready");
+    require(growth_diff.renderer_handoff_regressed, "growth binding diff records handoff regression");
+    require(growth_diff.failure_count_regressed, "growth binding diff records failure count regression");
+    require(growth_diff.placeholder_count_regressed, "growth binding diff records placeholder count regression");
+    require(
+        growth_diff.readiness_summary == "image texture frame binding readiness regressed",
+        "growth binding diff readiness summary is stable");
+    require(
+        growth_diff.regression_summary
+            == "binding readiness regressed; binding failures increased; placeholder bindings increased",
+        "growth binding diff regression summary is stable");
+    require(
+        growth_diff.diagnostic == "image texture frame binding plan diff reports regressions",
+        "growth binding diff diagnostic is stable");
+    require(growth_diff.entries.size() == 3, "growth binding diff records packet entries");
+
+    const render_image_texture_frame_binding_packet_diff& sampler_change = growth_diff.entries[0];
+    require(
+        sampler_change.status == render_image_texture_frame_binding_plan_diff_entry_status::changed,
+        "sampler binding diff entry records changed status");
+    require(sampler_change.texture_binding_changed, "sampler binding diff records texture binding change");
+    require(sampler_change.sampler_policy_changed, "sampler binding diff records sampler policy change");
+    require(!sampler_change.cache_key_changed, "sampler binding diff keeps cache key");
+    require(!sampler_change.stable_uri_changed, "sampler binding diff keeps stable uri");
+    require(!sampler_change.readiness_regressed, "sampler binding diff does not regress readiness");
+    require(sampler_change.ok(), "sampler binding diff has no regression without pressure");
+
+    const render_image_texture_frame_binding_packet_diff& failed_change = growth_diff.entries[1];
+    require(
+        failed_change.status == render_image_texture_frame_binding_plan_diff_entry_status::changed,
+        "failed binding diff entry records changed status");
+    require(failed_change.texture_binding_removed, "failed binding diff records removed texture binding");
+    require(failed_change.readiness_regressed, "failed binding diff records readiness regression");
+    require(failed_change.failure_changed, "failed binding diff records failure delta");
+    require(failed_change.sampler_policy_changed, "failed binding diff records sampler delta");
+    require(failed_change.source_uri_changed, "failed binding diff records source uri delta");
+    require(failed_change.stable_uri_changed, "failed binding diff records stable uri delta");
+    require(failed_change.cache_key_changed, "failed binding diff records cache key delta");
+    require(failed_change.regression, "failed binding diff records regression");
+
+    const render_image_texture_frame_binding_packet_diff& added_placeholder = growth_diff.entries[2];
+    require(
+        added_placeholder.status == render_image_texture_frame_binding_plan_diff_entry_status::added,
+        "added binding diff entry records added status");
+    require(added_placeholder.texture_binding_added, "added binding diff records texture binding added");
+    require(added_placeholder.placeholder_changed, "added binding diff records placeholder delta");
+    require(added_placeholder.readiness_changed, "added binding diff records readiness delta");
+    require(!added_placeholder.sampler_policy_changed, "added binding diff does not count sampler as changed");
+    require(!added_placeholder.cache_key_changed, "added binding diff does not count cache key as changed");
+    require(added_placeholder.regression, "added placeholder binding diff records placeholder regression");
+
+    const render_image_texture_frame_binding_plan_diff shrink_diff =
+        diff_render_image_texture_frame_binding_plans(partial_binding_plan, ready_binding_plan);
+    require(shrink_diff.has_changes, "shrink binding diff records changes");
+    require(shrink_diff.has_regression, "shrink binding diff records removed ready binding regression");
+    require(shrink_diff.removed_packet_count == 1, "shrink binding diff counts removed packet");
+    require(shrink_diff.added_packet_count == 0, "shrink binding diff records no added packets");
+    require(shrink_diff.changed_packet_count == 2, "shrink binding diff counts changed packets");
+    require(shrink_diff.texture_binding_removed_count == 1, "shrink binding diff counts removed texture binding");
+    require(shrink_diff.texture_binding_added_count == 1, "shrink binding diff counts recovered texture binding");
+    require(shrink_diff.readiness_changed_count == 2, "shrink binding diff counts readiness changes");
+    require(shrink_diff.readiness_regressed_count == 1, "shrink binding diff counts removed readiness regression");
+    require(shrink_diff.readiness_recovered_count == 1, "shrink binding diff counts readiness recovery");
+    require(shrink_diff.failure_count_recovered, "shrink binding diff records failure count recovery");
+    require(shrink_diff.placeholder_count_recovered, "shrink binding diff records placeholder count recovery");
+    require(
+        shrink_diff.diagnostic == "image texture frame binding plan diff reports regressions",
+        "shrink binding diff diagnostic reports removed ready regression");
+
+    const render_image_texture_frame_binding_packet_diff& removed_packet = shrink_diff.entries[2];
+    require(
+        removed_packet.status == render_image_texture_frame_binding_plan_diff_entry_status::removed,
+        "removed binding diff entry records removed status");
+    require(removed_packet.texture_binding_removed, "removed binding diff records removed texture binding");
+    require(removed_packet.placeholder_changed, "removed binding diff records placeholder delta");
+    require(removed_packet.readiness_regressed, "removed binding diff records readiness regression");
+    require(removed_packet.before_render_image_uri == "asset://textures/bad.ppm", "removed binding diff records source uri");
+}
+
 } // namespace
 
 int main()
@@ -1921,5 +2166,7 @@ int main()
     test_texture_frame_snapshot_diff_reports_regressions_and_deltas();
     test_texture_frame_binding_plan_maps_renderer_handoff_packets();
     test_texture_frame_binding_plan_reports_frame_deltas_and_failures();
+    test_texture_frame_binding_plan_diff_reports_unchanged_bindings();
+    test_texture_frame_binding_plan_diff_reports_binding_deltas();
     return 0;
 }

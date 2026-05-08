@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: platform shell pointer lifecycle/wheel/key/focus bridge를 통합하고 Windows MinGW app input CTest 1/1 및 interface compile target build 확인.
+- `23cefb6`: app/platform 경계가 legacy synthetic tap 외에 pointer down/move/up/cancel, wheel, key, focus 이벤트를 raw input engine 경로로 넘기도록 보강.
 - current: text frame snapshot diagnostics를 통합하고 Windows MinGW focused text CTest 3/3 확인.
 - `90e3f43`: text engine에 request batch, fallback-chain, atlas materialization, upload bridge IDs, consumed atlas update IDs를 묶는 renderer-agnostic frame snapshot diagnostics를 추가.
 - current: Vulkan native function table diagnostics를 통합하고 CMake public FILE_SET 등록, Windows MinGW focused Vulkan CTest 3/3 및 `ctest -N` 89개 확인.

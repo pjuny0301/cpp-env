@@ -52,6 +52,10 @@ static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_textu
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_handle_map_diagnostics>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_handle_map_entry>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_handle_map_diagnostics>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_frame_entry_snapshot>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_frame_snapshot>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_entry_snapshot>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_snapshot>);
 
 void require(bool condition, const char* message)
 {
@@ -1259,6 +1263,202 @@ void test_texture_handle_map_records_missing_and_placeholder_entries()
         "placeholder entry records placeholder diagnostic");
 }
 
+void test_texture_frame_snapshot_combines_public_frame_diagnostics()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes("asset://textures/card.ppm", make_ppm_2x1_fixture_bytes());
+    ppm_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
+
+    render_image_sampler_policy nearest_sampler;
+    nearest_sampler.min_filter = render_image_filter::nearest;
+    nearest_sampler.mag_filter = render_image_filter::nearest;
+
+    const render_image_texture_batch_plan plan = plan_render_image_texture_batch(std::vector<render_image_ref>{
+        render_image_ref{.uri = "asset://textures/card.ppm"},
+        render_image_ref{.uri = "asset://textures/card.ppm"},
+        render_image_ref{.uri = "asset://textures/card.ppm", .sampler = nearest_sampler},
+    });
+    const render_image_texture_batch_execution_diagnostics execution = execute_render_image_texture_batch_plan(
+        plan,
+        pipeline,
+        render_image_texture_residency_budget_plan_options{
+            .max_resident_texture_count = 1,
+        });
+    const render_image_texture_handle_map_diagnostics handle_map =
+        make_render_image_texture_handle_map_diagnostics(plan, execution);
+    const render_image_texture_frame_snapshot frame =
+        make_render_image_texture_frame_snapshot(plan, execution, handle_map);
+
+    require(frame.ok(), "texture frame snapshot is ready when plan execution and handle map are ready");
+    require(frame.status == render_image_texture_frame_snapshot_status::ready, "texture frame snapshot status is ready");
+    require(frame.status_name == "ready", "texture frame snapshot status name is stable");
+    require(frame.request_count == 3, "texture frame snapshot records request count");
+    require(frame.planned_request_count == 3, "texture frame snapshot records planned requests");
+    require(frame.invalid_request_count == 0, "texture frame snapshot records no invalid requests");
+    require(frame.executed_request_count == 3, "texture frame snapshot records executed requests");
+    require(frame.skipped_request_count == 0, "texture frame snapshot records skipped requests");
+    require(frame.ready_count == 3, "texture frame snapshot records ready requests");
+    require(frame.failure_count == 0, "texture frame snapshot records no execution failures");
+    require(frame.mapped_texture_count == 3, "texture frame snapshot records mapped textures");
+    require(frame.missing_texture_count == 0, "texture frame snapshot records no missing textures");
+    require(frame.placeholder_texture_count == 0, "texture frame snapshot records no placeholders");
+    require(frame.cache_reused_count == 1, "texture frame snapshot records cache reuse");
+    require(frame.unique_source_key_count == 1, "texture frame snapshot records unique source keys");
+    require(frame.unique_texture_cache_key_count == 2, "texture frame snapshot records sampler-separated texture keys");
+    require(frame.unique_texture_id_count == 2, "texture frame snapshot records unique public texture ids");
+    require(frame.unique_resident_texture_count == 2, "texture frame snapshot carries resident texture count");
+    require(frame.unique_resident_pixel_count == 4, "texture frame snapshot carries resident pixel count");
+    require(frame.unique_resident_rgba8_byte_count == 16, "texture frame snapshot carries resident byte estimate");
+    require(frame.eviction_candidate_count == 3, "texture frame snapshot carries eviction candidate count");
+    require(frame.retry_candidate_count == 0, "texture frame snapshot carries retry candidate count");
+    require(frame.plan_ready, "texture frame snapshot records plan readiness");
+    require(frame.execution_ready, "texture frame snapshot records execution readiness");
+    require(frame.handle_map_ready, "texture frame snapshot records handle map readiness");
+    require(frame.renderer_handoff_ready, "texture frame snapshot records renderer handoff readiness");
+    require(frame.residency_budget_diagnostics_available, "texture frame snapshot records residency diagnostics availability");
+    require(frame.residency_budget_pressure, "texture frame snapshot records residency pressure");
+    require(!frame.pixel_budget_pressure, "texture frame snapshot records no pixel pressure");
+    require(frame.texture_budget_pressure, "texture frame snapshot records texture pressure");
+    require(
+        frame.residency_pressure_status
+            == render_image_texture_residency_budget_pressure_status::over_texture_budget,
+        "texture frame snapshot records residency pressure status");
+    require(frame.residency_pressure_status_name == "over_texture_budget", "texture frame pressure status name is stable");
+    require(
+        frame.diagnostic == "image texture frame snapshot ready with residency budget pressure",
+        "texture frame snapshot ready diagnostic is stable");
+    require(frame.entries.size() == 3, "texture frame snapshot records compact entries");
+
+    const render_image_texture_frame_entry_snapshot& first = frame.entries[0];
+    require(first.ok(), "first frame entry is renderer-handoff ready");
+    require(first.request_index == 0, "first frame entry records request index");
+    require(first.plan_status == render_image_texture_batch_plan_entry_status::planned, "first frame entry records plan status");
+    require(first.execution_status == render_image_texture_batch_execution_entry_status::ready, "first frame entry records execution status");
+    require(first.pipeline_status == render_image_texture_pipeline_status::ready, "first frame entry records pipeline status");
+    require(first.source_bytes_status == render_image_source_bytes_load_status::loaded, "first frame entry records source load status");
+    require(first.texture_status == render_image_texture_status::ready, "first frame entry records texture status");
+    require(first.handle_status == render_image_texture_handle_map_entry_status::mapped, "first frame entry records handle status");
+    require(first.render_image_uri == "asset://textures/card.ppm", "first frame entry preserves render image uri");
+    require(first.normalized_uri == "asset://textures/card.ppm", "first frame entry records normalized uri");
+    require(first.cache_key == "asset://textures/card.ppm", "first frame entry records cache key");
+    require(first.source_kind == render_image_source_kind::asset_uri, "first frame entry records source kind");
+    require(first.texture_id == handle_map.entries[0].texture_id, "first frame entry records texture id");
+    require(first.texture_revision == handle_map.entries[0].texture_revision, "first frame entry records texture revision");
+    require(first.texture_width == 2, "first frame entry records texture width");
+    require(first.texture_height == 1, "first frame entry records texture height");
+    require(first.planned, "first frame entry records planned");
+    require(first.executed, "first frame entry records executed");
+    require(first.ready, "first frame entry records ready");
+    require(first.mapped, "first frame entry records mapped");
+    require(first.renderer_handoff_ready, "first frame entry records renderer handoff readiness");
+    require(!first.placeholder_texture, "first frame entry records non-placeholder");
+    require(!first.cache_reused, "first frame entry records first acquire as non-reuse");
+    require(!first.expected_cache_reuse, "first frame entry records no reuse expectation");
+    require(first.sampler_policy.valid, "first frame entry exposes sampler policy");
+    require(first.stable_texture_cache_key == handle_map.entries[0].stable_texture_cache_key, "first frame entry records stable key");
+    require(first.residency_budget_pressure, "first frame entry records pressure");
+    require(first.residency_pressure_status_name == "over_texture_budget", "first frame entry records pressure name");
+
+    const render_image_texture_frame_entry_snapshot& second = frame.entries[1];
+    require(second.ok(), "second frame entry is renderer-handoff ready");
+    require(second.texture_id == first.texture_id, "second frame entry records reused texture id");
+    require(second.cache_reused, "second frame entry records cache reuse");
+    require(second.expected_cache_reuse, "second frame entry records expected cache reuse");
+    require(second.stable_texture_cache_key == first.stable_texture_cache_key, "second frame entry records same stable key");
+
+    const render_image_texture_frame_entry_snapshot& third = frame.entries[2];
+    require(third.ok(), "third frame entry is renderer-handoff ready");
+    require(third.texture_id != first.texture_id, "third frame entry records sampler-separated texture id");
+    require(third.sampler_policy.uses_nearest_filtering, "third frame entry records nearest sampler");
+    require(third.stable_texture_cache_key != first.stable_texture_cache_key, "third frame entry records sampler-separated key");
+}
+
+void test_texture_frame_snapshot_records_partial_placeholder_frame()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_image_texture_placeholder_policy placeholder_policy{
+        .enabled = true,
+        .width = 2,
+        .height = 2,
+    };
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes("asset://textures/bad.ppm", make_short_ppm_2x1_fixture_bytes());
+    ppm_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    cache.set_placeholder_texture_policy(placeholder_policy);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
+
+    const render_image_texture_batch_plan plan = plan_render_image_texture_batch(
+        std::vector<render_image_ref>{
+            render_image_ref{.uri = "   "},
+            render_image_ref{.uri = "asset://textures/bad.ppm"},
+        },
+        render_image_texture_batch_plan_options{.placeholder_policy = placeholder_policy});
+    const render_image_texture_batch_execution_diagnostics execution =
+        execute_render_image_texture_batch_plan(plan, pipeline);
+    const render_image_texture_frame_snapshot frame =
+        make_render_image_texture_frame_snapshot(plan, execution);
+
+    require(!frame.ok(), "partial texture frame snapshot is not ok");
+    require(frame.status == render_image_texture_frame_snapshot_status::partial, "partial frame snapshot status is partial");
+    require(frame.status_name == "partial", "partial frame snapshot status name is stable");
+    require(frame.request_count == 2, "partial frame snapshot records request count");
+    require(frame.planned_request_count == 1, "partial frame snapshot records planned count");
+    require(frame.invalid_request_count == 1, "partial frame snapshot records invalid count");
+    require(frame.executed_request_count == 1, "partial frame snapshot records executed count");
+    require(frame.skipped_request_count == 1, "partial frame snapshot records skipped count");
+    require(frame.ready_count == 1, "partial frame snapshot records ready placeholder count");
+    require(frame.failure_count == 1, "partial frame snapshot records skipped failure count");
+    require(frame.mapped_texture_count == 1, "partial frame snapshot records mapped placeholder");
+    require(frame.missing_texture_count == 1, "partial frame snapshot records missing skipped request");
+    require(frame.placeholder_texture_count == 1, "partial frame snapshot records placeholder count");
+    require(frame.unique_texture_id_count == 1, "partial frame snapshot records one public texture id");
+    require(frame.unique_resident_texture_count == 1, "partial frame snapshot records one resident texture");
+    require(frame.unique_resident_pixel_count == 4, "partial frame snapshot records placeholder pixels");
+    require(frame.eviction_candidate_count == 1, "partial frame snapshot records placeholder eviction candidate");
+    require(frame.retry_candidate_count == 0, "partial frame snapshot records no retry candidate");
+    require(!frame.plan_ready, "partial frame snapshot records plan not ready");
+    require(!frame.execution_ready, "partial frame snapshot records execution not ready");
+    require(!frame.handle_map_ready, "partial frame snapshot records handle map not ready");
+    require(!frame.renderer_handoff_ready, "partial frame snapshot records missing handoff");
+    require(!frame.residency_budget_pressure, "partial frame snapshot records no pressure");
+    require(
+        frame.diagnostic == "image texture frame snapshot is partial",
+        "partial frame snapshot diagnostic is stable");
+    require(frame.entries.size() == 2, "partial frame snapshot records entries");
+
+    const render_image_texture_frame_entry_snapshot& skipped = frame.entries[0];
+    require(!skipped.ok(), "skipped frame entry is not renderer-handoff ready");
+    require(!skipped.planned, "skipped frame entry records unplanned request");
+    require(!skipped.executed, "skipped frame entry records not executed");
+    require(!skipped.ready, "skipped frame entry records not ready");
+    require(!skipped.mapped, "skipped frame entry records not mapped");
+    require(skipped.texture_id == 0, "skipped frame entry has no texture id");
+    require(skipped.handle_status == render_image_texture_handle_map_entry_status::skipped_invalid_request, "skipped frame entry records handle status");
+    require(skipped.diagnostic.find("empty") != std::string::npos, "skipped frame entry keeps invalid diagnostic");
+
+    const render_image_texture_frame_entry_snapshot& placeholder = frame.entries[1];
+    require(placeholder.ok(), "placeholder frame entry is renderer-handoff ready");
+    require(placeholder.planned, "placeholder frame entry records planned");
+    require(placeholder.executed, "placeholder frame entry records executed");
+    require(placeholder.ready, "placeholder frame entry records ready");
+    require(placeholder.mapped, "placeholder frame entry records mapped");
+    require(placeholder.placeholder_texture, "placeholder frame entry records placeholder");
+    require(placeholder.texture_id != 0, "placeholder frame entry exposes texture id");
+    require(placeholder.cache_key == "asset://textures/bad.ppm", "placeholder frame entry keeps requested cache key");
+    require(is_fake_image_texture_placeholder_key(placeholder.texture_key), "placeholder frame entry records placeholder texture key");
+    require(placeholder.texture_key.source_key != placeholder.cache_key, "placeholder frame entry separates placeholder key from source key");
+}
+
 } // namespace
 
 int main()
@@ -1283,5 +1483,7 @@ int main()
     test_residency_budget_plan_marks_retry_and_placeholder_candidates();
     test_texture_handle_map_records_renderer_handoff_mapping();
     test_texture_handle_map_records_missing_and_placeholder_entries();
+    test_texture_frame_snapshot_combines_public_frame_diagnostics();
+    test_texture_frame_snapshot_records_partial_placeholder_frame();
     return 0;
 }

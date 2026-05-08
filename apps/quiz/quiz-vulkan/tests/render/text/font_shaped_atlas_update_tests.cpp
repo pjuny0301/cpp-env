@@ -251,6 +251,47 @@ quiz_vulkan::render::render_text_font_fallback_chain_plan_snapshot frame_snapsho
     return plan_render_text_font_fallback_chains(fallback_request, catalog);
 }
 
+quiz_vulkan::render::render_text_frame_snapshot frame_snapshot_for_materializations(
+    std::vector<quiz_vulkan::render::render_text_glyph_atlas_materialization_snapshot> materializations,
+    const bool consumed = false)
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_request request = frame_snapshot_text_request();
+    render_text_glyph_atlas_materialization_policy_snapshot materialization_policy;
+    std::vector<render_text_glyph_atlas_materialization_snapshot> policy_materializations;
+    policy_materializations.reserve(materializations.size());
+    for (render_text_glyph_atlas_materialization_snapshot materialization : materializations) {
+        append_render_text_glyph_atlas_materialization(
+            policy_materializations,
+            materialization_policy,
+            std::move(materialization));
+    }
+
+    const render_text_request_batch_plan_snapshot batch_plan =
+        plan_render_text_request_batch({
+            make_render_text_request_batch_item(request, policy_materializations, "frame-source", "node-1"),
+        });
+    render_text_frame_snapshot snapshot =
+        make_render_text_frame_snapshot(render_text_frame_snapshot_request{
+            .frame_id = "frame-1",
+            .source_label = "frame-source",
+            .batch_plan = batch_plan,
+            .fallback_chain_plan = frame_snapshot_fallback_plan(request),
+            .materializations = policy_materializations,
+            .materialization_policy = materialization_policy,
+            .atlas_upload_bridge = bridge_render_text_atlas_upload_requests(batch_plan),
+        });
+
+    if (consumed) {
+        snapshot = render_text_frame_snapshot_with_consumed_atlas_updates(
+            snapshot,
+            snapshot.queued_atlas_upload_request_ids,
+            snapshot.queued_atlas_upload_request_ids.size());
+    }
+    return snapshot;
+}
+
 void test_trace_reports_upload_ready_payload_queued()
 {
     using namespace quiz_vulkan::render;
@@ -725,6 +766,101 @@ void test_text_frame_snapshot_reports_consumed_upload_id_mismatch()
     require(!mismatch.policy.all_queued_uploads_consumed, "mismatched frame does not claim consumed uploads");
 }
 
+void test_text_frame_snapshot_diff_reports_readiness_and_consumed_id_transition()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_frame_snapshot pending =
+        frame_snapshot_for_materializations({upload_ready_materialization()});
+    const render_text_frame_snapshot ready =
+        render_text_frame_snapshot_with_consumed_atlas_updates(
+            pending,
+            pending.queued_atlas_upload_request_ids,
+            pending.queued_atlas_upload_request_ids.size());
+
+    const render_text_frame_snapshot_diff diff =
+        diff_render_text_frame_snapshots(pending, ready);
+
+    require(
+        diff.previous_status == render_text_frame_snapshot_status::pending_atlas_updates,
+        "diff records previous frame status");
+    require(diff.current_status == render_text_frame_snapshot_status::ready, "diff records current frame status");
+    require(!diff.previous_ready_for_renderer, "diff records previous readiness");
+    require(diff.current_ready_for_renderer, "diff records current readiness");
+    require(diff.policy.status_changed, "diff records status transition");
+    require(diff.policy.readiness_changed, "diff records readiness transition");
+    require(diff.policy.layout_request_count_delta == 0, "diff records zero layout count delta");
+    require(diff.policy.total_upload_rgba_bytes_delta == 0, "diff records stable upload byte count");
+    require(diff.added_atlas_upload_request_ids.empty(), "ready transition does not add atlas upload ids");
+    require(diff.removed_atlas_upload_request_ids.empty(), "ready transition does not remove atlas upload ids");
+    require(diff.changed_atlas_upload_request_ids.size() == 1U, "ready transition changes upload consumed state");
+    require(
+        diff.changed_atlas_upload_request_ids.front() == pending.queued_atlas_upload_request_ids.front(),
+        "changed upload id matches queued id");
+    require(
+        diff.added_consumed_atlas_upload_request_ids == pending.queued_atlas_upload_request_ids,
+        "diff records consumed upload id added");
+    require(!diff.has_regression(), "ready transition has no regression");
+    require(diff.ok(), "ready transition diff is ok");
+}
+
+void test_text_frame_snapshot_diff_reports_added_removed_ids_byte_delta_and_regression()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_frame_snapshot previous =
+        frame_snapshot_for_materializations({upload_ready_materialization()}, true);
+
+    render_text_glyph_atlas_materialization_snapshot larger =
+        upload_ready_materialization(glyph_atlas_key{
+            .face_id = 9,
+            .glyph_id = U'B',
+            .pixel_size = 20,
+        });
+    larger.atlas_update_rgba_bytes += 16U;
+
+    render_text_frame_snapshot current =
+        frame_snapshot_for_materializations({larger}, true);
+    current.status = render_text_frame_snapshot_status::font_fallback_incomplete;
+    current.fallback_chain_policy.missing_glyph_count = 2U;
+    current.fallback_chain_policy.invalid_utf8_count = 1U;
+    current.policy.fallback_chain_missing_glyph_count = 2U;
+    current.policy.fallback_chain_invalid_utf8_count = 1U;
+
+    const render_text_frame_snapshot_diff diff =
+        diff_render_text_frame_snapshots(previous, current);
+
+    require(diff.has_atlas_upload_id_changes(), "diff records atlas upload id changes");
+    require(diff.added_atlas_upload_request_ids.size() == 1U, "diff records added atlas upload id");
+    require(diff.removed_atlas_upload_request_ids.size() == 1U, "diff records removed atlas upload id");
+    require(diff.changed_atlas_upload_request_ids.empty(), "different upload ids are not reported as changed");
+    require(diff.added_queued_atlas_upload_request_ids == current.queued_atlas_upload_request_ids, "queued id added");
+    require(diff.removed_queued_atlas_upload_request_ids == previous.queued_atlas_upload_request_ids, "queued id removed");
+    require(
+        diff.removed_consumed_atlas_upload_request_ids == previous.consumed_atlas_upload_request_ids,
+        "consumed id removed");
+    require(
+        diff.added_consumed_atlas_upload_request_ids == current.consumed_atlas_upload_request_ids,
+        "consumed id added");
+    require(diff.policy.missing_glyph_count_delta == 2, "diff records missing glyph delta");
+    require(diff.policy.invalid_utf8_count_delta == 1, "diff records invalid UTF-8 delta");
+    require(diff.policy.total_upload_rgba_bytes_delta == 16, "diff records total upload byte delta");
+    require(diff.policy.added_atlas_upload_request_id_count == 1U, "policy counts added upload id");
+    require(diff.policy.removed_atlas_upload_request_id_count == 1U, "policy counts removed upload id");
+    require(diff.policy.added_queued_upload_request_id_count == 1U, "policy counts added queued id");
+    require(diff.policy.added_consumed_upload_request_id_count == 1U, "policy counts added consumed id");
+    require(diff.policy.removed_consumed_upload_request_id_count == 1U, "policy counts removed consumed id");
+    require(diff.has_queue_or_consume_id_deltas(), "diff records queue/consume id deltas");
+    require(diff.has_regression(), "diff records regression");
+    require(!diff.ok(), "regression diff is not ok");
+    require(diff.regression.readiness_regressed, "diff records readiness regression");
+    require(diff.regression.fallback_regressed, "diff records fallback regression");
+    require(
+        diff.regression.status == render_text_frame_snapshot_regression_status::readiness_regressed,
+        "readiness regression is the primary regression status");
+    require(diff.regression.issue_count == 2U, "diff counts readiness and fallback regression issues");
+}
+
 } // namespace
 
 int main()
@@ -740,5 +876,7 @@ int main()
     test_atlas_upload_bridge_suppresses_duplicates_and_skips_non_uploadable_work();
     test_text_frame_snapshot_combines_planning_fallback_materialization_and_upload_ids();
     test_text_frame_snapshot_reports_consumed_upload_id_mismatch();
+    test_text_frame_snapshot_diff_reports_readiness_and_consumed_id_transition();
+    test_text_frame_snapshot_diff_reports_added_removed_ids_byte_delta_and_regression();
     return 0;
 }

@@ -1306,6 +1306,347 @@ inline render_text_frame_snapshot render_text_frame_snapshot_with_consumed_atlas
     return snapshot;
 }
 
+enum class render_text_frame_snapshot_regression_status {
+    none,
+    readiness_regressed,
+    fallback_regressed,
+    atlas_upload_regressed,
+    consumption_regressed,
+};
+
+inline std::string render_text_frame_snapshot_regression_status_name(
+    const render_text_frame_snapshot_regression_status status)
+{
+    switch (status) {
+    case render_text_frame_snapshot_regression_status::none:
+        return "none";
+    case render_text_frame_snapshot_regression_status::readiness_regressed:
+        return "readiness_regressed";
+    case render_text_frame_snapshot_regression_status::fallback_regressed:
+        return "fallback_regressed";
+    case render_text_frame_snapshot_regression_status::atlas_upload_regressed:
+        return "atlas_upload_regressed";
+    case render_text_frame_snapshot_regression_status::consumption_regressed:
+        return "consumption_regressed";
+    }
+
+    return "unknown";
+}
+
+struct render_text_frame_snapshot_regression_summary {
+    render_text_frame_snapshot_regression_status status =
+        render_text_frame_snapshot_regression_status::none;
+    bool regressed = false;
+    bool readiness_regressed = false;
+    bool fallback_regressed = false;
+    bool atlas_upload_regressed = false;
+    bool consumption_regressed = false;
+    std::size_t issue_count = 0;
+    std::string diagnostic;
+};
+
+struct render_text_frame_snapshot_diff_policy {
+    bool status_changed = false;
+    bool readiness_changed = false;
+    std::ptrdiff_t layout_request_count_delta = 0;
+    std::ptrdiff_t fallback_chain_run_count_delta = 0;
+    std::ptrdiff_t fallback_codepoint_count_delta = 0;
+    std::ptrdiff_t missing_glyph_count_delta = 0;
+    std::ptrdiff_t invalid_utf8_count_delta = 0;
+    std::ptrdiff_t atlas_upload_request_count_delta = 0;
+    std::ptrdiff_t queued_upload_request_id_count_delta = 0;
+    std::ptrdiff_t consumed_upload_request_id_count_delta = 0;
+    std::ptrdiff_t total_upload_rgba_bytes_delta = 0;
+    std::size_t added_atlas_upload_request_id_count = 0;
+    std::size_t removed_atlas_upload_request_id_count = 0;
+    std::size_t changed_atlas_upload_request_id_count = 0;
+    std::size_t added_queued_upload_request_id_count = 0;
+    std::size_t removed_queued_upload_request_id_count = 0;
+    std::size_t added_consumed_upload_request_id_count = 0;
+    std::size_t removed_consumed_upload_request_id_count = 0;
+};
+
+struct render_text_frame_snapshot_diff {
+    render_text_frame_snapshot_status previous_status =
+        render_text_frame_snapshot_status::pending_atlas_updates;
+    render_text_frame_snapshot_status current_status =
+        render_text_frame_snapshot_status::pending_atlas_updates;
+    bool previous_ready_for_renderer = false;
+    bool current_ready_for_renderer = false;
+    render_text_frame_snapshot_diff_policy policy;
+    std::vector<std::string> added_atlas_upload_request_ids;
+    std::vector<std::string> removed_atlas_upload_request_ids;
+    std::vector<std::string> changed_atlas_upload_request_ids;
+    std::vector<std::string> added_queued_atlas_upload_request_ids;
+    std::vector<std::string> removed_queued_atlas_upload_request_ids;
+    std::vector<std::string> added_consumed_atlas_upload_request_ids;
+    std::vector<std::string> removed_consumed_atlas_upload_request_ids;
+    render_text_frame_snapshot_regression_summary regression;
+    std::string diagnostic;
+
+    bool has_atlas_upload_id_changes() const
+    {
+        return !added_atlas_upload_request_ids.empty()
+            || !removed_atlas_upload_request_ids.empty()
+            || !changed_atlas_upload_request_ids.empty();
+    }
+
+    bool has_queue_or_consume_id_deltas() const
+    {
+        return !added_queued_atlas_upload_request_ids.empty()
+            || !removed_queued_atlas_upload_request_ids.empty()
+            || !added_consumed_atlas_upload_request_ids.empty()
+            || !removed_consumed_atlas_upload_request_ids.empty();
+    }
+
+    bool has_regression() const
+    {
+        return regression.regressed;
+    }
+
+    bool ok() const
+    {
+        return !has_regression();
+    }
+};
+
+inline std::ptrdiff_t render_text_frame_snapshot_count_delta(
+    const std::size_t previous,
+    const std::size_t current)
+{
+    if (current >= previous) {
+        return static_cast<std::ptrdiff_t>(current - previous);
+    }
+    return -static_cast<std::ptrdiff_t>(previous - current);
+}
+
+inline std::vector<std::string> render_text_frame_snapshot_id_delta_added(
+    const std::vector<std::string>& previous,
+    const std::vector<std::string>& current)
+{
+    std::vector<std::string> added;
+    added.reserve(current.size());
+    for (const std::string& id : current) {
+        if (!render_text_atlas_upload_request_contains_id(previous, id)) {
+            render_text_atlas_upload_request_append_unique_id(added, id);
+        }
+    }
+    return added;
+}
+
+inline std::vector<std::string> render_text_frame_snapshot_id_delta_removed(
+    const std::vector<std::string>& previous,
+    const std::vector<std::string>& current)
+{
+    return render_text_frame_snapshot_id_delta_added(current, previous);
+}
+
+inline const render_text_frame_atlas_upload_snapshot* render_text_frame_snapshot_find_atlas_upload(
+    const std::vector<render_text_frame_atlas_upload_snapshot>& uploads,
+    const std::string& request_id)
+{
+    const auto match = std::find_if(
+        uploads.begin(),
+        uploads.end(),
+        [&](const render_text_frame_atlas_upload_snapshot& upload) {
+            return upload.request_id == request_id;
+        });
+    return match == uploads.end() ? nullptr : &*match;
+}
+
+inline bool render_text_frame_snapshot_rects_equal(
+    const render_rect& lhs,
+    const render_rect& rhs)
+{
+    return lhs.x == rhs.x
+        && lhs.y == rhs.y
+        && lhs.width == rhs.width
+        && lhs.height == rhs.height;
+}
+
+inline bool render_text_frame_snapshot_pages_equal(
+    const render_text_atlas_page& lhs,
+    const render_text_atlas_page& rhs)
+{
+    return lhs.id == rhs.id
+        && lhs.revision == rhs.revision
+        && lhs.width == rhs.width
+        && lhs.height == rhs.height;
+}
+
+inline bool render_text_frame_atlas_upload_snapshots_equal(
+    const render_text_frame_atlas_upload_snapshot& lhs,
+    const render_text_frame_atlas_upload_snapshot& rhs)
+{
+    return lhs.status == rhs.status
+        && lhs.cache_key == rhs.cache_key
+        && lhs.resolved_glyph_id == rhs.resolved_glyph_id
+        && lhs.resolved_face_id == rhs.resolved_face_id
+        && render_text_frame_snapshot_pages_equal(lhs.page, rhs.page)
+        && render_text_frame_snapshot_rects_equal(lhs.updated_bounds, rhs.updated_bounds)
+        && lhs.upload_rgba_bytes == rhs.upload_rgba_bytes
+        && lhs.has_upload_request == rhs.has_upload_request
+        && lhs.queued == rhs.queued
+        && lhs.consumed == rhs.consumed
+        && lhs.stable_request_id == rhs.stable_request_id;
+}
+
+inline std::vector<std::string> render_text_frame_snapshot_changed_atlas_upload_request_ids(
+    const render_text_frame_snapshot& previous,
+    const render_text_frame_snapshot& current)
+{
+    std::vector<std::string> changed;
+    changed.reserve(current.atlas_uploads.size());
+    for (const render_text_frame_atlas_upload_snapshot& current_upload : current.atlas_uploads) {
+        const render_text_frame_atlas_upload_snapshot* previous_upload =
+            render_text_frame_snapshot_find_atlas_upload(previous.atlas_uploads, current_upload.request_id);
+        if (previous_upload != nullptr
+            && !render_text_frame_atlas_upload_snapshots_equal(*previous_upload, current_upload)) {
+            render_text_atlas_upload_request_append_unique_id(changed, current_upload.request_id);
+        }
+    }
+    return changed;
+}
+
+inline render_text_frame_snapshot_regression_summary make_render_text_frame_snapshot_regression_summary(
+    const render_text_frame_snapshot& previous,
+    const render_text_frame_snapshot& current)
+{
+    render_text_frame_snapshot_regression_summary summary;
+    summary.readiness_regressed = previous.ready_for_renderer() && !current.ready_for_renderer();
+    summary.fallback_regressed =
+        current.fallback_chain_policy.missing_glyph_count
+            > previous.fallback_chain_policy.missing_glyph_count
+        || current.fallback_chain_policy.invalid_utf8_count
+            > previous.fallback_chain_policy.invalid_utf8_count;
+    summary.atlas_upload_regressed =
+        current.atlas_upload_policy.skipped_materialization_count
+            > previous.atlas_upload_policy.skipped_materialization_count
+        || current.atlas_upload_policy.payload_byte_count_mismatch_count
+            > previous.atlas_upload_policy.payload_byte_count_mismatch_count
+        || (current.status == render_text_frame_snapshot_status::atlas_upload_incomplete
+            && previous.status != render_text_frame_snapshot_status::atlas_upload_incomplete);
+    summary.consumption_regressed =
+        (previous.policy.all_queued_uploads_consumed && !current.policy.all_queued_uploads_consumed)
+        || (current.status == render_text_frame_snapshot_status::consumed_update_mismatch
+            && previous.status != render_text_frame_snapshot_status::consumed_update_mismatch);
+
+    if (summary.readiness_regressed) {
+        summary.status = render_text_frame_snapshot_regression_status::readiness_regressed;
+        ++summary.issue_count;
+    }
+    if (summary.fallback_regressed) {
+        if (summary.status == render_text_frame_snapshot_regression_status::none) {
+            summary.status = render_text_frame_snapshot_regression_status::fallback_regressed;
+        }
+        ++summary.issue_count;
+    }
+    if (summary.atlas_upload_regressed) {
+        if (summary.status == render_text_frame_snapshot_regression_status::none) {
+            summary.status = render_text_frame_snapshot_regression_status::atlas_upload_regressed;
+        }
+        ++summary.issue_count;
+    }
+    if (summary.consumption_regressed) {
+        if (summary.status == render_text_frame_snapshot_regression_status::none) {
+            summary.status = render_text_frame_snapshot_regression_status::consumption_regressed;
+        }
+        ++summary.issue_count;
+    }
+
+    summary.regressed = summary.issue_count > 0U;
+    summary.diagnostic = summary.regressed
+        ? "text frame snapshot diff detected renderer handoff regression(s)"
+        : "text frame snapshot diff has no renderer handoff regressions";
+    return summary;
+}
+
+inline render_text_frame_snapshot_diff diff_render_text_frame_snapshots(
+    const render_text_frame_snapshot& previous,
+    const render_text_frame_snapshot& current)
+{
+    render_text_frame_snapshot_diff diff{
+        .previous_status = previous.status,
+        .current_status = current.status,
+        .previous_ready_for_renderer = previous.ready_for_renderer(),
+        .current_ready_for_renderer = current.ready_for_renderer(),
+    };
+
+    diff.added_atlas_upload_request_ids.reserve(current.atlas_uploads.size());
+    for (const render_text_frame_atlas_upload_snapshot& upload : current.atlas_uploads) {
+        if (render_text_frame_snapshot_find_atlas_upload(previous.atlas_uploads, upload.request_id) == nullptr) {
+            render_text_atlas_upload_request_append_unique_id(diff.added_atlas_upload_request_ids, upload.request_id);
+        }
+    }
+
+    diff.removed_atlas_upload_request_ids.reserve(previous.atlas_uploads.size());
+    for (const render_text_frame_atlas_upload_snapshot& upload : previous.atlas_uploads) {
+        if (render_text_frame_snapshot_find_atlas_upload(current.atlas_uploads, upload.request_id) == nullptr) {
+            render_text_atlas_upload_request_append_unique_id(diff.removed_atlas_upload_request_ids, upload.request_id);
+        }
+    }
+    diff.changed_atlas_upload_request_ids =
+        render_text_frame_snapshot_changed_atlas_upload_request_ids(previous, current);
+
+    diff.added_queued_atlas_upload_request_ids = render_text_frame_snapshot_id_delta_added(
+        previous.queued_atlas_upload_request_ids,
+        current.queued_atlas_upload_request_ids);
+    diff.removed_queued_atlas_upload_request_ids = render_text_frame_snapshot_id_delta_removed(
+        previous.queued_atlas_upload_request_ids,
+        current.queued_atlas_upload_request_ids);
+    diff.added_consumed_atlas_upload_request_ids = render_text_frame_snapshot_id_delta_added(
+        previous.consumed_atlas_upload_request_ids,
+        current.consumed_atlas_upload_request_ids);
+    diff.removed_consumed_atlas_upload_request_ids = render_text_frame_snapshot_id_delta_removed(
+        previous.consumed_atlas_upload_request_ids,
+        current.consumed_atlas_upload_request_ids);
+
+    diff.policy = render_text_frame_snapshot_diff_policy{
+        .status_changed = previous.status != current.status,
+        .readiness_changed = diff.previous_ready_for_renderer != diff.current_ready_for_renderer,
+        .layout_request_count_delta = render_text_frame_snapshot_count_delta(
+            previous.policy.layout_request_count,
+            current.policy.layout_request_count),
+        .fallback_chain_run_count_delta = render_text_frame_snapshot_count_delta(
+            previous.policy.fallback_chain_run_count,
+            current.policy.fallback_chain_run_count),
+        .fallback_codepoint_count_delta = render_text_frame_snapshot_count_delta(
+            previous.fallback_chain_policy.fallback_codepoint_count,
+            current.fallback_chain_policy.fallback_codepoint_count),
+        .missing_glyph_count_delta = render_text_frame_snapshot_count_delta(
+            previous.policy.fallback_chain_missing_glyph_count,
+            current.policy.fallback_chain_missing_glyph_count),
+        .invalid_utf8_count_delta = render_text_frame_snapshot_count_delta(
+            previous.policy.fallback_chain_invalid_utf8_count,
+            current.policy.fallback_chain_invalid_utf8_count),
+        .atlas_upload_request_count_delta = render_text_frame_snapshot_count_delta(
+            previous.policy.upload_request_count,
+            current.policy.upload_request_count),
+        .queued_upload_request_id_count_delta = render_text_frame_snapshot_count_delta(
+            previous.policy.queued_upload_request_id_count,
+            current.policy.queued_upload_request_id_count),
+        .consumed_upload_request_id_count_delta = render_text_frame_snapshot_count_delta(
+            previous.policy.consumed_upload_request_id_count,
+            current.policy.consumed_upload_request_id_count),
+        .total_upload_rgba_bytes_delta = render_text_frame_snapshot_count_delta(
+            previous.policy.total_upload_rgba_bytes,
+            current.policy.total_upload_rgba_bytes),
+        .added_atlas_upload_request_id_count = diff.added_atlas_upload_request_ids.size(),
+        .removed_atlas_upload_request_id_count = diff.removed_atlas_upload_request_ids.size(),
+        .changed_atlas_upload_request_id_count = diff.changed_atlas_upload_request_ids.size(),
+        .added_queued_upload_request_id_count = diff.added_queued_atlas_upload_request_ids.size(),
+        .removed_queued_upload_request_id_count = diff.removed_queued_atlas_upload_request_ids.size(),
+        .added_consumed_upload_request_id_count = diff.added_consumed_atlas_upload_request_ids.size(),
+        .removed_consumed_upload_request_id_count = diff.removed_consumed_atlas_upload_request_ids.size(),
+    };
+
+    diff.regression = make_render_text_frame_snapshot_regression_summary(previous, current);
+    diff.diagnostic = diff.has_regression()
+        ? "text frame snapshot diff found renderer handoff regression(s)"
+        : "text frame snapshot diff is renderer-agnostic and regression-free";
+    return diff;
+}
+
 enum class render_text_shaped_atlas_update_trace_status {
     upload_ready_payload_queued,
     clean_atlas_page_reused,

@@ -1664,6 +1664,10 @@ static_assert(requires(
     render::render_text_frame_snapshot_policy frame_policy,
     render::render_text_frame_snapshot_request frame_request,
     render::render_text_frame_snapshot frame_snapshot,
+    render::render_text_frame_snapshot_regression_status frame_regression_status,
+    render::render_text_frame_snapshot_regression_summary frame_regression,
+    render::render_text_frame_snapshot_diff_policy frame_diff_policy,
+    render::render_text_frame_snapshot_diff frame_diff,
     render::render_text_glyph_atlas_materialization_snapshot snapshot,
     render::render_text_request request,
     render::render_draw_command draw_command,
@@ -1914,6 +1918,72 @@ static_assert(requires(
         -> std::same_as<render::render_text_frame_snapshot>;
     { render::render_text_frame_snapshot_with_consumed_atlas_updates(frame_snapshot, stable_request_ids, std::size_t{}) }
         -> std::same_as<render::render_text_frame_snapshot>;
+    { render::render_text_frame_snapshot_regression_status_name(frame_regression_status) }
+        -> std::same_as<std::string>;
+    { frame_regression.status } -> std::same_as<render::render_text_frame_snapshot_regression_status&>;
+    { frame_regression.regressed } -> std::same_as<bool&>;
+    { frame_regression.readiness_regressed } -> std::same_as<bool&>;
+    { frame_regression.fallback_regressed } -> std::same_as<bool&>;
+    { frame_regression.atlas_upload_regressed } -> std::same_as<bool&>;
+    { frame_regression.consumption_regressed } -> std::same_as<bool&>;
+    { frame_regression.issue_count } -> std::same_as<std::size_t&>;
+    { frame_regression.diagnostic } -> std::same_as<std::string&>;
+    { frame_diff_policy.status_changed } -> std::same_as<bool&>;
+    { frame_diff_policy.readiness_changed } -> std::same_as<bool&>;
+    { frame_diff_policy.layout_request_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { frame_diff_policy.fallback_chain_run_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { frame_diff_policy.fallback_codepoint_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { frame_diff_policy.missing_glyph_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { frame_diff_policy.invalid_utf8_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { frame_diff_policy.atlas_upload_request_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { frame_diff_policy.queued_upload_request_id_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { frame_diff_policy.consumed_upload_request_id_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { frame_diff_policy.total_upload_rgba_bytes_delta } -> std::same_as<std::ptrdiff_t&>;
+    { frame_diff_policy.added_atlas_upload_request_id_count } -> std::same_as<std::size_t&>;
+    { frame_diff_policy.removed_atlas_upload_request_id_count } -> std::same_as<std::size_t&>;
+    { frame_diff_policy.changed_atlas_upload_request_id_count } -> std::same_as<std::size_t&>;
+    { frame_diff_policy.added_queued_upload_request_id_count } -> std::same_as<std::size_t&>;
+    { frame_diff_policy.removed_queued_upload_request_id_count } -> std::same_as<std::size_t&>;
+    { frame_diff_policy.added_consumed_upload_request_id_count } -> std::same_as<std::size_t&>;
+    { frame_diff_policy.removed_consumed_upload_request_id_count } -> std::same_as<std::size_t&>;
+    { frame_diff.previous_status } -> std::same_as<render::render_text_frame_snapshot_status&>;
+    { frame_diff.current_status } -> std::same_as<render::render_text_frame_snapshot_status&>;
+    { frame_diff.previous_ready_for_renderer } -> std::same_as<bool&>;
+    { frame_diff.current_ready_for_renderer } -> std::same_as<bool&>;
+    { frame_diff.policy } -> std::same_as<render::render_text_frame_snapshot_diff_policy&>;
+    { frame_diff.added_atlas_upload_request_ids } -> std::same_as<std::vector<std::string>&>;
+    { frame_diff.removed_atlas_upload_request_ids } -> std::same_as<std::vector<std::string>&>;
+    { frame_diff.changed_atlas_upload_request_ids } -> std::same_as<std::vector<std::string>&>;
+    { frame_diff.added_queued_atlas_upload_request_ids } -> std::same_as<std::vector<std::string>&>;
+    { frame_diff.removed_queued_atlas_upload_request_ids } -> std::same_as<std::vector<std::string>&>;
+    { frame_diff.added_consumed_atlas_upload_request_ids } -> std::same_as<std::vector<std::string>&>;
+    { frame_diff.removed_consumed_atlas_upload_request_ids } -> std::same_as<std::vector<std::string>&>;
+    { frame_diff.regression } -> std::same_as<render::render_text_frame_snapshot_regression_summary&>;
+    { frame_diff.diagnostic } -> std::same_as<std::string&>;
+    { frame_diff.has_atlas_upload_id_changes() } -> std::same_as<bool>;
+    { frame_diff.has_queue_or_consume_id_deltas() } -> std::same_as<bool>;
+    { frame_diff.has_regression() } -> std::same_as<bool>;
+    { frame_diff.ok() } -> std::same_as<bool>;
+    { render::render_text_frame_snapshot_count_delta(std::size_t{}, std::size_t{}) }
+        -> std::same_as<std::ptrdiff_t>;
+    { render::render_text_frame_snapshot_id_delta_added(stable_request_ids, stable_request_ids) }
+        -> std::same_as<std::vector<std::string>>;
+    { render::render_text_frame_snapshot_id_delta_removed(stable_request_ids, stable_request_ids) }
+        -> std::same_as<std::vector<std::string>>;
+    { render::render_text_frame_snapshot_find_atlas_upload(frame_snapshot.atlas_uploads, style_key_text) }
+        -> std::same_as<const render::render_text_frame_atlas_upload_snapshot*>;
+    { render::render_text_frame_snapshot_rects_equal(frame_upload.updated_bounds, frame_upload.updated_bounds) }
+        -> std::same_as<bool>;
+    { render::render_text_frame_snapshot_pages_equal(frame_upload.page, frame_upload.page) }
+        -> std::same_as<bool>;
+    { render::render_text_frame_atlas_upload_snapshots_equal(frame_upload, frame_upload) }
+        -> std::same_as<bool>;
+    { render::render_text_frame_snapshot_changed_atlas_upload_request_ids(frame_snapshot, frame_snapshot) }
+        -> std::same_as<std::vector<std::string>>;
+    { render::make_render_text_frame_snapshot_regression_summary(frame_snapshot, frame_snapshot) }
+        -> std::same_as<render::render_text_frame_snapshot_regression_summary>;
+    { render::diff_render_text_frame_snapshots(frame_snapshot, frame_snapshot) }
+        -> std::same_as<render::render_text_frame_snapshot_diff>;
     { render::render_text_atlas_upload_request_rect_key(atlas_request.atlas_update_bounds) }
         -> std::same_as<std::string>;
     { render::render_text_atlas_upload_request_stable_id_for(atlas_request) }

@@ -56,6 +56,10 @@ static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_textu
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_frame_snapshot>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_entry_snapshot>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_snapshot>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_frame_entry_diff>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_frame_snapshot_diff>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_entry_diff>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_snapshot_diff>);
 
 void require(bool condition, const char* message)
 {
@@ -1459,6 +1463,199 @@ void test_texture_frame_snapshot_records_partial_placeholder_frame()
     require(placeholder.texture_key.source_key != placeholder.cache_key, "placeholder frame entry separates placeholder key from source key");
 }
 
+void test_texture_frame_snapshot_diff_reports_unchanged_frame()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes("asset://textures/card.ppm", make_ppm_2x1_fixture_bytes());
+    ppm_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
+
+    const render_image_texture_batch_plan plan = plan_render_image_texture_batch(std::vector<render_image_ref>{
+        render_image_ref{.uri = "asset://textures/card.ppm"},
+        render_image_ref{.uri = "asset://textures/card.ppm"},
+    });
+    const render_image_texture_batch_execution_diagnostics execution =
+        execute_render_image_texture_batch_plan(plan, pipeline);
+    const render_image_texture_frame_snapshot frame =
+        make_render_image_texture_frame_snapshot(plan, execution);
+    const render_image_texture_frame_snapshot_diff diff =
+        diff_render_image_texture_frame_snapshots(frame, frame);
+
+    require(diff.ok(), "unchanged frame diff is ok");
+    require(!diff.has_changes, "unchanged frame diff records no changes");
+    require(!diff.has_regression, "unchanged frame diff records no regressions");
+    require(diff.before_request_count == 2, "unchanged frame diff records before request count");
+    require(diff.after_request_count == 2, "unchanged frame diff records after request count");
+    require(diff.unchanged_entry_count == 2, "unchanged frame diff counts unchanged entries");
+    require(diff.added_entry_count == 0, "unchanged frame diff records no added entries");
+    require(diff.removed_entry_count == 0, "unchanged frame diff records no removed entries");
+    require(diff.changed_entry_count == 0, "unchanged frame diff records no changed entries");
+    require(diff.texture_handle_added_count == 0, "unchanged frame diff records no added handles");
+    require(diff.texture_handle_removed_count == 0, "unchanged frame diff records no removed handles");
+    require(diff.texture_handle_changed_count == 0, "unchanged frame diff records no changed handles");
+    require(diff.cache_key_changed_count == 0, "unchanged frame diff records no cache key changes");
+    require(diff.sampler_changed_count == 0, "unchanged frame diff records no sampler changes");
+    require(diff.placeholder_delta_count == 0, "unchanged frame diff records no placeholder delta");
+    require(diff.failure_delta_count == 0, "unchanged frame diff records no failure delta");
+    require(diff.request_success_delta_count == 0, "unchanged frame diff records no success delta");
+    require(diff.residency_pressure_delta_count == 0, "unchanged frame diff records no pressure delta");
+    require(
+        diff.regression_summary == "image texture frame snapshot diff has no changes",
+        "unchanged frame diff regression summary is stable");
+    require(
+        diff.diagnostic == "image texture frame snapshot diff is unchanged",
+        "unchanged frame diff diagnostic is stable");
+    require(diff.entries.size() == 2, "unchanged frame diff keeps per-request entries");
+    require(
+        diff.entries[0].status == render_image_texture_frame_snapshot_diff_entry_status::unchanged,
+        "unchanged frame diff entry status is stable");
+    require(diff.entries[0].status_name == "unchanged", "unchanged frame diff entry status name is stable");
+    require(!diff.entries[0].changed(), "unchanged frame diff entry changed helper is false");
+    require(diff.entries[0].ok(), "unchanged frame diff entry ok helper is true");
+}
+
+void test_texture_frame_snapshot_diff_reports_regressions_and_deltas()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_image_texture_placeholder_policy placeholder_policy{
+        .enabled = true,
+        .width = 2,
+        .height = 2,
+    };
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes("asset://textures/card.ppm", make_ppm_2x1_fixture_bytes());
+    loader.set_source_bytes("asset://textures/bad.ppm", make_short_ppm_2x1_fixture_bytes());
+    ppm_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    cache.set_placeholder_texture_policy(placeholder_policy);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
+
+    render_image_sampler_policy nearest_sampler;
+    nearest_sampler.min_filter = render_image_filter::nearest;
+    nearest_sampler.mag_filter = render_image_filter::nearest;
+
+    const render_image_texture_batch_plan before_plan = plan_render_image_texture_batch(std::vector<render_image_ref>{
+        render_image_ref{.uri = "asset://textures/card.ppm"},
+        render_image_ref{.uri = "asset://textures/card.ppm", .sampler = nearest_sampler},
+    });
+    const render_image_texture_batch_execution_diagnostics before_execution =
+        execute_render_image_texture_batch_plan(before_plan, pipeline);
+    const render_image_texture_frame_snapshot before_frame =
+        make_render_image_texture_frame_snapshot(before_plan, before_execution);
+
+    const render_image_texture_batch_plan after_plan = plan_render_image_texture_batch(
+        std::vector<render_image_ref>{
+            render_image_ref{.uri = "asset://textures/card.ppm", .sampler = nearest_sampler},
+            render_image_ref{.uri = "   "},
+            render_image_ref{.uri = "asset://textures/bad.ppm"},
+        },
+        render_image_texture_batch_plan_options{.placeholder_policy = placeholder_policy});
+    const render_image_texture_batch_execution_diagnostics after_execution = execute_render_image_texture_batch_plan(
+        after_plan,
+        pipeline,
+        render_image_texture_residency_budget_plan_options{
+            .max_resident_pixel_count = 1,
+        });
+    const render_image_texture_frame_snapshot after_frame =
+        make_render_image_texture_frame_snapshot(after_plan, after_execution);
+    const render_image_texture_frame_snapshot_diff diff =
+        diff_render_image_texture_frame_snapshots(before_frame, after_frame);
+
+    require(!diff.ok(), "regressing frame diff is not ok");
+    require(diff.has_changes, "regressing frame diff records changes");
+    require(diff.has_regression, "regressing frame diff records regression");
+    require(diff.before_request_count == 2, "regressing frame diff records before request count");
+    require(diff.after_request_count == 3, "regressing frame diff records after request count");
+    require(diff.unchanged_entry_count == 0, "regressing frame diff records no unchanged entries");
+    require(diff.added_entry_count == 1, "regressing frame diff records added request");
+    require(diff.removed_entry_count == 0, "regressing frame diff records no removed request");
+    require(diff.changed_entry_count == 2, "regressing frame diff records changed requests");
+    require(diff.texture_handle_added_count == 1, "regressing frame diff records added texture handle");
+    require(diff.texture_handle_removed_count == 1, "regressing frame diff records removed texture handle");
+    require(diff.texture_handle_changed_count == 1, "regressing frame diff records changed texture handle");
+    require(diff.cache_key_changed_count == 1, "regressing frame diff records cache key changes");
+    require(diff.sampler_changed_count == 2, "regressing frame diff records sampler changes");
+    require(diff.placeholder_delta_count == 1, "regressing frame diff records placeholder delta");
+    require(diff.failure_delta_count == 1, "regressing frame diff records failure status delta");
+    require(diff.request_success_delta_count == 2, "regressing frame diff records success deltas");
+    require(diff.residency_pressure_delta_count == 3, "regressing frame diff records pressure deltas");
+    require(diff.before_ready_count == 2, "regressing frame diff records before ready count");
+    require(diff.after_ready_count == 2, "regressing frame diff records after ready count");
+    require(diff.before_failure_count == 0, "regressing frame diff records before failure count");
+    require(diff.after_failure_count == 1, "regressing frame diff records after failure count");
+    require(diff.before_placeholder_texture_count == 0, "regressing frame diff records before placeholder count");
+    require(diff.after_placeholder_texture_count == 1, "regressing frame diff records after placeholder count");
+    require(diff.before_missing_texture_count == 0, "regressing frame diff records before missing count");
+    require(diff.after_missing_texture_count == 1, "regressing frame diff records after missing count");
+    require(diff.before_renderer_handoff_ready, "regressing frame diff records before handoff ready");
+    require(!diff.after_renderer_handoff_ready, "regressing frame diff records after handoff not ready");
+    require(!diff.before_residency_budget_pressure, "regressing frame diff records before no pressure");
+    require(diff.after_residency_budget_pressure, "regressing frame diff records after pressure");
+    require(diff.renderer_handoff_regressed, "regressing frame diff records handoff regression");
+    require(!diff.renderer_handoff_recovered, "regressing frame diff records no handoff recovery");
+    require(!diff.request_success_regressed, "regressing frame diff records no ready-count regression");
+    require(diff.failure_count_regressed, "regressing frame diff records failure regression");
+    require(diff.missing_texture_regressed, "regressing frame diff records missing texture regression");
+    require(diff.placeholder_regressed, "regressing frame diff records placeholder regression");
+    require(diff.residency_pressure_regressed, "regressing frame diff records pressure regression");
+    require(
+        diff.after_residency_pressure_status == render_image_texture_residency_budget_pressure_status::over_pixel_budget,
+        "regressing frame diff records after pressure status");
+    require(
+        diff.regression_summary
+            == "renderer handoff regressed; failures increased; missing textures increased; "
+               "placeholder textures increased; residency pressure increased",
+        "regressing frame diff regression summary is concise and stable");
+    require(
+        diff.diagnostic == "image texture frame snapshot diff reports regressions",
+        "regressing frame diff diagnostic is stable");
+    require(diff.entries.size() == 3, "regressing frame diff records per-request entries");
+
+    const render_image_texture_frame_entry_diff& sampler_change = diff.entries[0];
+    require(
+        sampler_change.status == render_image_texture_frame_snapshot_diff_entry_status::changed,
+        "sampler change entry records changed status");
+    require(sampler_change.status_name == "changed", "sampler change status name is stable");
+    require(sampler_change.texture_handle_changed, "sampler change entry records changed texture handle");
+    require(!sampler_change.texture_handle_removed, "sampler change entry records no removed texture handle");
+    require(!sampler_change.cache_key_changed, "sampler change entry keeps cache key");
+    require(sampler_change.sampler_changed, "sampler change entry records sampler change");
+    require(sampler_change.stable_texture_cache_key_changed, "sampler change entry records stable texture key change");
+    require(sampler_change.residency_pressure_changed, "sampler change entry records pressure delta");
+    require(sampler_change.regression, "sampler change entry records pressure regression");
+    require(!sampler_change.ok(), "sampler change entry ok reflects regression");
+
+    const render_image_texture_frame_entry_diff& failure_change = diff.entries[1];
+    require(
+        failure_change.status == render_image_texture_frame_snapshot_diff_entry_status::changed,
+        "failure change entry records changed status");
+    require(failure_change.texture_handle_removed, "failure change entry records removed texture handle");
+    require(failure_change.cache_key_changed, "failure change entry records cache key change");
+    require(failure_change.sampler_changed, "failure change entry records sampler change");
+    require(failure_change.request_success_changed, "failure change entry records success delta");
+    require(failure_change.failure_status_changed, "failure change entry records failure status delta");
+    require(failure_change.regression, "failure change entry records regression");
+
+    const render_image_texture_frame_entry_diff& added_placeholder = diff.entries[2];
+    require(
+        added_placeholder.status == render_image_texture_frame_snapshot_diff_entry_status::added,
+        "added placeholder entry records added status");
+    require(added_placeholder.texture_handle_added, "added placeholder entry records added texture handle");
+    require(added_placeholder.after_texture_id != 0, "added placeholder entry records after texture id");
+    require(added_placeholder.placeholder_changed, "added placeholder entry records placeholder delta");
+    require(added_placeholder.request_success_changed, "added placeholder entry records success delta");
+    require(added_placeholder.residency_pressure_changed, "added placeholder entry records pressure delta");
+    require(added_placeholder.regression, "added placeholder entry records placeholder pressure regression");
+}
+
 } // namespace
 
 int main()
@@ -1485,5 +1682,7 @@ int main()
     test_texture_handle_map_records_missing_and_placeholder_entries();
     test_texture_frame_snapshot_combines_public_frame_diagnostics();
     test_texture_frame_snapshot_records_partial_placeholder_frame();
+    test_texture_frame_snapshot_diff_reports_unchanged_frame();
+    test_texture_frame_snapshot_diff_reports_regressions_and_deltas();
     return 0;
 }

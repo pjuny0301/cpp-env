@@ -249,6 +249,9 @@ static_assert(requires(
     render::render_image_texture_frame_snapshot_status texture_frame_status,
     render::render_image_texture_frame_entry_snapshot texture_frame_entry,
     render::render_image_texture_frame_snapshot texture_frame,
+    render::render_image_texture_frame_snapshot_diff_entry_status texture_frame_diff_entry_status,
+    render::render_image_texture_frame_entry_diff texture_frame_entry_diff,
+    render::render_image_texture_frame_snapshot_diff texture_frame_diff,
     render::fake_image_texture_pipeline_entry_snapshot pipeline_entry,
     render::fake_image_texture_pipeline_snapshot pipeline_snapshot,
     render::standard_image_texture_pipeline_decode_snapshot standard_pipeline_decoder_snapshot,
@@ -705,6 +708,16 @@ static_assert(requires(
         -> std::same_as<render::render_image_texture_frame_snapshot>;
     { render::make_render_image_texture_frame_snapshot(batch_plan, batch_execution) }
         -> std::same_as<render::render_image_texture_frame_snapshot>;
+    { render::render_image_texture_frame_snapshot_diff_entry_status_name(texture_frame_diff_entry_status) }
+        -> std::same_as<std::string>;
+    { render::render_image_texture_frame_entry_for_request_index(texture_frame, std::size_t{}) }
+        -> std::same_as<const render::render_image_texture_frame_entry_snapshot*>;
+    { render::render_image_texture_frame_pressure_rank(residency_budget_pressure_status) }
+        -> std::same_as<std::size_t>;
+    { render::make_render_image_texture_frame_entry_diff(&texture_frame_entry, &texture_frame_entry, std::size_t{}) }
+        -> std::same_as<render::render_image_texture_frame_entry_diff>;
+    { render::diff_render_image_texture_frame_snapshots(texture_frame, texture_frame) }
+        -> std::same_as<render::render_image_texture_frame_snapshot_diff>;
     { render::render_image_decoder_capability_candidate_kind_name(decoder_capability_kind) }
         -> std::same_as<std::string>;
     { render::render_image_decoder_capability_candidate_status_name(decoder_capability_status) }
@@ -748,6 +761,7 @@ static_assert(requires(
     residency_budget_pressure_status;
     texture_handle_map_status;
     texture_frame_status;
+    texture_frame_diff_entry_status;
     decoder_capability_kind;
     decoder_capability_status;
     { batch_plan_options.placeholder_policy } -> std::same_as<render::fake_image_texture_placeholder_policy&>;
@@ -1051,6 +1065,101 @@ static_assert(requires(
     { texture_frame.entries } -> std::same_as<std::vector<render::render_image_texture_frame_entry_snapshot>&>;
     { texture_frame.diagnostic } -> std::same_as<std::string&>;
     { texture_frame.ok() } -> std::same_as<bool>;
+    { texture_frame_entry_diff.request_index } -> std::same_as<std::size_t&>;
+    { texture_frame_entry_diff.status }
+        -> std::same_as<render::render_image_texture_frame_snapshot_diff_entry_status&>;
+    { texture_frame_entry_diff.status_name } -> std::same_as<std::string&>;
+    { texture_frame_entry_diff.before_render_image_uri } -> std::same_as<std::string&>;
+    { texture_frame_entry_diff.after_render_image_uri } -> std::same_as<std::string&>;
+    { texture_frame_entry_diff.before_cache_key } -> std::same_as<render::render_image_cache_key&>;
+    { texture_frame_entry_diff.after_cache_key } -> std::same_as<render::render_image_cache_key&>;
+    { texture_frame_entry_diff.before_sampler } -> std::same_as<render::render_image_sampler_policy&>;
+    { texture_frame_entry_diff.after_sampler } -> std::same_as<render::render_image_sampler_policy&>;
+    { texture_frame_entry_diff.before_stable_texture_cache_key } -> std::same_as<std::string&>;
+    { texture_frame_entry_diff.after_stable_texture_cache_key } -> std::same_as<std::string&>;
+    { texture_frame_entry_diff.before_texture_id } -> std::same_as<render::render_image_texture_id&>;
+    { texture_frame_entry_diff.after_texture_id } -> std::same_as<render::render_image_texture_id&>;
+    { texture_frame_entry_diff.before_texture_revision } -> std::same_as<render::render_image_revision&>;
+    { texture_frame_entry_diff.after_texture_revision } -> std::same_as<render::render_image_revision&>;
+    { texture_frame_entry_diff.before_ready } -> std::same_as<bool&>;
+    { texture_frame_entry_diff.after_ready } -> std::same_as<bool&>;
+    { texture_frame_entry_diff.before_renderer_handoff_ready } -> std::same_as<bool&>;
+    { texture_frame_entry_diff.after_renderer_handoff_ready } -> std::same_as<bool&>;
+    { texture_frame_entry_diff.before_placeholder_texture } -> std::same_as<bool&>;
+    { texture_frame_entry_diff.after_placeholder_texture } -> std::same_as<bool&>;
+    { texture_frame_entry_diff.before_residency_budget_pressure } -> std::same_as<bool&>;
+    { texture_frame_entry_diff.after_residency_budget_pressure } -> std::same_as<bool&>;
+    { texture_frame_entry_diff.before_execution_status }
+        -> std::same_as<render::render_image_texture_batch_execution_entry_status&>;
+    { texture_frame_entry_diff.after_execution_status }
+        -> std::same_as<render::render_image_texture_batch_execution_entry_status&>;
+    { texture_frame_entry_diff.before_residency_pressure_status }
+        -> std::same_as<render::render_image_texture_residency_budget_pressure_status&>;
+    { texture_frame_entry_diff.after_residency_pressure_status }
+        -> std::same_as<render::render_image_texture_residency_budget_pressure_status&>;
+    { texture_frame_entry_diff.texture_handle_added } -> std::same_as<bool&>;
+    { texture_frame_entry_diff.texture_handle_removed } -> std::same_as<bool&>;
+    { texture_frame_entry_diff.texture_handle_changed } -> std::same_as<bool&>;
+    { texture_frame_entry_diff.cache_key_changed } -> std::same_as<bool&>;
+    { texture_frame_entry_diff.sampler_changed } -> std::same_as<bool&>;
+    { texture_frame_entry_diff.stable_texture_cache_key_changed } -> std::same_as<bool&>;
+    { texture_frame_entry_diff.placeholder_changed } -> std::same_as<bool&>;
+    { texture_frame_entry_diff.request_success_changed } -> std::same_as<bool&>;
+    { texture_frame_entry_diff.failure_status_changed } -> std::same_as<bool&>;
+    { texture_frame_entry_diff.residency_pressure_changed } -> std::same_as<bool&>;
+    { texture_frame_entry_diff.regression } -> std::same_as<bool&>;
+    { texture_frame_entry_diff.diagnostic } -> std::same_as<std::string&>;
+    { texture_frame_entry_diff.changed() } -> std::same_as<bool>;
+    { texture_frame_entry_diff.ok() } -> std::same_as<bool>;
+    { texture_frame_diff.before_request_count } -> std::same_as<std::size_t&>;
+    { texture_frame_diff.after_request_count } -> std::same_as<std::size_t&>;
+    { texture_frame_diff.unchanged_entry_count } -> std::same_as<std::size_t&>;
+    { texture_frame_diff.added_entry_count } -> std::same_as<std::size_t&>;
+    { texture_frame_diff.removed_entry_count } -> std::same_as<std::size_t&>;
+    { texture_frame_diff.changed_entry_count } -> std::same_as<std::size_t&>;
+    { texture_frame_diff.texture_handle_added_count } -> std::same_as<std::size_t&>;
+    { texture_frame_diff.texture_handle_removed_count } -> std::same_as<std::size_t&>;
+    { texture_frame_diff.texture_handle_changed_count } -> std::same_as<std::size_t&>;
+    { texture_frame_diff.cache_key_changed_count } -> std::same_as<std::size_t&>;
+    { texture_frame_diff.sampler_changed_count } -> std::same_as<std::size_t&>;
+    { texture_frame_diff.placeholder_delta_count } -> std::same_as<std::size_t&>;
+    { texture_frame_diff.failure_delta_count } -> std::same_as<std::size_t&>;
+    { texture_frame_diff.request_success_delta_count } -> std::same_as<std::size_t&>;
+    { texture_frame_diff.residency_pressure_delta_count } -> std::same_as<std::size_t&>;
+    { texture_frame_diff.before_ready_count } -> std::same_as<std::size_t&>;
+    { texture_frame_diff.after_ready_count } -> std::same_as<std::size_t&>;
+    { texture_frame_diff.before_failure_count } -> std::same_as<std::size_t&>;
+    { texture_frame_diff.after_failure_count } -> std::same_as<std::size_t&>;
+    { texture_frame_diff.before_placeholder_texture_count } -> std::same_as<std::size_t&>;
+    { texture_frame_diff.after_placeholder_texture_count } -> std::same_as<std::size_t&>;
+    { texture_frame_diff.before_missing_texture_count } -> std::same_as<std::size_t&>;
+    { texture_frame_diff.after_missing_texture_count } -> std::same_as<std::size_t&>;
+    { texture_frame_diff.before_renderer_handoff_ready } -> std::same_as<bool&>;
+    { texture_frame_diff.after_renderer_handoff_ready } -> std::same_as<bool&>;
+    { texture_frame_diff.before_residency_budget_pressure } -> std::same_as<bool&>;
+    { texture_frame_diff.after_residency_budget_pressure } -> std::same_as<bool&>;
+    { texture_frame_diff.before_residency_pressure_status }
+        -> std::same_as<render::render_image_texture_residency_budget_pressure_status&>;
+    { texture_frame_diff.after_residency_pressure_status }
+        -> std::same_as<render::render_image_texture_residency_budget_pressure_status&>;
+    { texture_frame_diff.renderer_handoff_regressed } -> std::same_as<bool&>;
+    { texture_frame_diff.renderer_handoff_recovered } -> std::same_as<bool&>;
+    { texture_frame_diff.request_success_regressed } -> std::same_as<bool&>;
+    { texture_frame_diff.request_success_recovered } -> std::same_as<bool&>;
+    { texture_frame_diff.failure_count_regressed } -> std::same_as<bool&>;
+    { texture_frame_diff.failure_count_recovered } -> std::same_as<bool&>;
+    { texture_frame_diff.missing_texture_regressed } -> std::same_as<bool&>;
+    { texture_frame_diff.missing_texture_recovered } -> std::same_as<bool&>;
+    { texture_frame_diff.placeholder_regressed } -> std::same_as<bool&>;
+    { texture_frame_diff.placeholder_recovered } -> std::same_as<bool&>;
+    { texture_frame_diff.residency_pressure_regressed } -> std::same_as<bool&>;
+    { texture_frame_diff.residency_pressure_recovered } -> std::same_as<bool&>;
+    { texture_frame_diff.has_changes } -> std::same_as<bool&>;
+    { texture_frame_diff.has_regression } -> std::same_as<bool&>;
+    { texture_frame_diff.regression_summary } -> std::same_as<std::string&>;
+    { texture_frame_diff.entries } -> std::same_as<std::vector<render::render_image_texture_frame_entry_diff>&>;
+    { texture_frame_diff.diagnostic } -> std::same_as<std::string&>;
+    { texture_frame_diff.ok() } -> std::same_as<bool>;
     { pipeline_entry.sequence } -> std::same_as<std::size_t&>;
     { pipeline_entry.request } -> std::same_as<render::render_image_texture_pipeline_request&>;
     { pipeline_entry.status } -> std::same_as<render::render_image_texture_pipeline_status&>;
@@ -1334,6 +1443,8 @@ static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_handle_map_diagnostics>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_entry_snapshot>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_snapshot>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_entry_diff>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_snapshot_diff>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_manifest_texture_entry_snapshot>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_manifest_texture_pipeline_snapshot>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_batch_plan_entry>);
@@ -1347,6 +1458,8 @@ static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_textur
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_handle_map_diagnostics>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_entry_snapshot>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_snapshot>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_entry_diff>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_snapshot_diff>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_manifest_texture_entry_snapshot>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_manifest_texture_pipeline_snapshot>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_batch_plan_entry>);
@@ -1360,11 +1473,14 @@ static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_handle_map_diagnostics>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_entry_snapshot>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_snapshot>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_entry_diff>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_snapshot_diff>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_manifest_texture_pipeline_snapshot>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_batch_plan>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_batch_execution_diagnostics>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_residency_budget_plan>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_handle_map_diagnostics>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_snapshot>);
+static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_snapshot_diff>);
 
 } // namespace

@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: pointer replay timeline diagnostics를 통합하고 Windows MinGW focused input CTest 5/5 확인.
+- `ba8bc04`: normalized input replay에 pointer/touch gesture timeline, wheel deltas, pointer capture lifecycle, multipointer ids, final capture state를 추가.
 - current: text atlas upload request bridge를 통합하고 Windows MinGW focused text CTest 1/1 확인.
 - `2f60e89`: text engine에 atlas upload request bridge diagnostics를 추가해 text batch planning/materialization 결과를 stable request id와 `render_text_atlas_update`-style upload request로 연결.
 - current: Vulkan present-completion planning diagnostics를 통합하고 Windows MinGW focused Vulkan CTest 4/4 및 `ctest -N` 88개 확인.

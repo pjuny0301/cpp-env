@@ -3625,6 +3625,9 @@ static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_command_buffer_record_result_status::operation_plan_unavailable),
     render::vulkan_backend::vulkan_command_buffer_record_result_status>);
 static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_command_buffer_record_result_status::native_entrypoint_unavailable),
+    render::vulkan_backend::vulkan_command_buffer_record_result_status>);
+static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_command_buffer_record_result_status::command_buffer_unavailable),
     render::vulkan_backend::vulkan_command_buffer_record_result_status>);
 static_assert(std::same_as<
@@ -3675,6 +3678,11 @@ static_assert(requires(render::vulkan_backend::vulkan_command_buffer_record_resu
     { result.command_buffer } -> std::same_as<render::vulkan_backend::vulkan_command_buffer_id&>;
     { result.operation_plan_checked } -> std::same_as<bool&>;
     { result.operation_plan_ready } -> std::same_as<bool&>;
+    { result.native_function_table_checked } -> std::same_as<bool&>;
+    { result.native_command_buffer_recording_ready } -> std::same_as<bool&>;
+    { result.native_function_table_status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_table_status&>;
+    { result.missing_native_symbol_name } -> std::same_as<std::string&>;
     { result.begin_attempted } -> std::same_as<bool&>;
     { result.begin_completed } -> std::same_as<bool&>;
     { result.end_attempted } -> std::same_as<bool&>;
@@ -3694,6 +3702,7 @@ static_assert(requires(render::vulkan_backend::vulkan_command_buffer_record_resu
     { result.text_operation_count } -> std::same_as<std::size_t&>;
     { result.image_operation_count } -> std::same_as<std::size_t&>;
     { result.debug_bounds_operation_count } -> std::same_as<std::size_t&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
     { result.events }
         -> std::same_as<std::vector<render::vulkan_backend::vulkan_command_buffer_record_event>&>;
     { result.completed() } -> std::same_as<bool>;
@@ -3727,6 +3736,18 @@ static_assert(std::default_initializable<
 static_assert(std::constructible_from<
     render::vulkan_backend::fake_vulkan_command_buffer_operation_recorder,
     render::vulkan_backend::fake_vulkan_command_buffer_operation_recorder_options>);
+static_assert(requires(
+    render::vulkan_backend::vulkan_command_buffer_operation_recorder_interface& recorder,
+    render::vulkan_backend::vulkan_command_buffer_id command_buffer,
+    render::vulkan_backend::vulkan_command_recorder_operation_plan operation_plan,
+    render::vulkan_backend::vulkan_native_function_table_diagnostics native_functions) {
+    { render::vulkan_backend::record_vulkan_command_buffer_operations(
+        recorder,
+        command_buffer,
+        operation_plan,
+        native_functions) }
+        -> std::same_as<render::vulkan_backend::vulkan_command_buffer_record_result>;
+});
 
 static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_submit_batch_plan_status::not_checked),
@@ -3736,6 +3757,9 @@ static_assert(std::same_as<
     render::vulkan_backend::vulkan_submit_batch_plan_status>);
 static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_submit_batch_plan_status::command_buffer_recording_unavailable),
+    render::vulkan_backend::vulkan_submit_batch_plan_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_submit_batch_plan_status::native_queue_submit_unavailable),
     render::vulkan_backend::vulkan_submit_batch_plan_status>);
 static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_submit_batch_plan_status::command_submit_unavailable),
@@ -3783,6 +3807,9 @@ static_assert(std::same_as<
     render::vulkan_backend::vulkan_present_completion_plan_status>);
 static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_present_completion_plan_status::submit_batch_unavailable),
+    render::vulkan_backend::vulkan_present_completion_plan_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_present_completion_plan_status::native_queue_present_unavailable),
     render::vulkan_backend::vulkan_present_completion_plan_status>);
 static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_present_completion_plan_status::present_request_unavailable),
@@ -3876,6 +3903,11 @@ static_assert(requires(render::vulkan_backend::vulkan_submit_batch_plan_result p
     { plan.fallback_reason } -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
     { plan.command_buffer_recording_checked } -> std::same_as<bool&>;
     { plan.command_buffer_recording_ready } -> std::same_as<bool&>;
+    { plan.native_function_table_checked } -> std::same_as<bool&>;
+    { plan.native_queue_submit_ready } -> std::same_as<bool&>;
+    { plan.native_function_table_status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_table_status&>;
+    { plan.missing_native_symbol_name } -> std::same_as<std::string&>;
     { plan.command_submit_readiness_checked } -> std::same_as<bool&>;
     { plan.command_submit_readiness_ready } -> std::same_as<bool&>;
     { plan.command_buffer_available } -> std::same_as<bool&>;
@@ -3941,6 +3973,11 @@ static_assert(requires(render::vulkan_backend::vulkan_present_completion_plan_re
     { plan.fallback_reason } -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
     { plan.submit_batch_checked } -> std::same_as<bool&>;
     { plan.submit_batch_ready } -> std::same_as<bool&>;
+    { plan.native_function_table_checked } -> std::same_as<bool&>;
+    { plan.native_queue_present_ready } -> std::same_as<bool&>;
+    { plan.native_function_table_status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_table_status&>;
+    { plan.missing_native_symbol_name } -> std::same_as<std::string&>;
     { plan.queue_present_adapter_checked } -> std::same_as<bool&>;
     { plan.queue_present_adapter_ready } -> std::same_as<bool&>;
     { plan.present_request_ready } -> std::same_as<bool&>;
@@ -4153,13 +4190,29 @@ static_assert(requires(
         render::vulkan_backend::vulkan_command_packet_bridge_result{},
         render::vulkan_backend::vulkan_command_packet_execution_result{}) }
         -> std::same_as<render::vulkan_backend::vulkan_command_recorder_operation_plan>;
+    { render::vulkan_backend::record_vulkan_command_buffer_operations(
+        *static_cast<render::vulkan_backend::vulkan_command_buffer_operation_recorder_interface*>(nullptr),
+        render::vulkan_backend::vulkan_command_buffer_id{},
+        render::vulkan_backend::vulkan_command_recorder_operation_plan{},
+        render::vulkan_backend::vulkan_native_function_table_diagnostics{}) }
+        -> std::same_as<render::vulkan_backend::vulkan_command_buffer_record_result>;
     { render::vulkan_backend::build_vulkan_submit_batch_plan(
         render::vulkan_backend::vulkan_command_buffer_record_result{},
         render::vulkan_backend::vulkan_command_submit_readiness_result{}) }
         -> std::same_as<render::vulkan_backend::vulkan_submit_batch_plan_result>;
+    { render::vulkan_backend::build_vulkan_submit_batch_plan(
+        render::vulkan_backend::vulkan_command_buffer_record_result{},
+        render::vulkan_backend::vulkan_command_submit_readiness_result{},
+        render::vulkan_backend::vulkan_native_function_table_diagnostics{}) }
+        -> std::same_as<render::vulkan_backend::vulkan_submit_batch_plan_result>;
     { render::vulkan_backend::build_vulkan_present_completion_plan(
         render::vulkan_backend::vulkan_submit_batch_plan_result{},
         render::vulkan_backend::vulkan_queue_submit_present_result{}) }
+        -> std::same_as<render::vulkan_backend::vulkan_present_completion_plan_result>;
+    { render::vulkan_backend::build_vulkan_present_completion_plan(
+        render::vulkan_backend::vulkan_submit_batch_plan_result{},
+        render::vulkan_backend::vulkan_queue_submit_present_result{},
+        render::vulkan_backend::vulkan_native_function_table_diagnostics{}) }
         -> std::same_as<render::vulkan_backend::vulkan_present_completion_plan_result>;
 });
 

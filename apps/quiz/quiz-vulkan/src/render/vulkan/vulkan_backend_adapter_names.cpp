@@ -272,6 +272,8 @@ std::string_view command_buffer_record_result_status_name(
         return "recorded";
     case vulkan_command_buffer_record_result_status::operation_plan_unavailable:
         return "operation_plan_unavailable";
+    case vulkan_command_buffer_record_result_status::native_entrypoint_unavailable:
+        return "native_entrypoint_unavailable";
     case vulkan_command_buffer_record_result_status::command_buffer_unavailable:
         return "command_buffer_unavailable";
     case vulkan_command_buffer_record_result_status::begin_failed:
@@ -309,6 +311,8 @@ std::string_view submit_batch_plan_status_name(vulkan_submit_batch_plan_status s
         return "ready";
     case vulkan_submit_batch_plan_status::command_buffer_recording_unavailable:
         return "command_buffer_recording_unavailable";
+    case vulkan_submit_batch_plan_status::native_queue_submit_unavailable:
+        return "native_queue_submit_unavailable";
     case vulkan_submit_batch_plan_status::command_submit_unavailable:
         return "command_submit_unavailable";
     case vulkan_submit_batch_plan_status::command_buffer_unavailable:
@@ -353,6 +357,8 @@ std::string_view present_completion_plan_status_name(
         return "ready";
     case vulkan_present_completion_plan_status::submit_batch_unavailable:
         return "submit_batch_unavailable";
+    case vulkan_present_completion_plan_status::native_queue_present_unavailable:
+        return "native_queue_present_unavailable";
     case vulkan_present_completion_plan_status::present_request_unavailable:
         return "present_request_unavailable";
     case vulkan_present_completion_plan_status::present_adapter_unavailable:

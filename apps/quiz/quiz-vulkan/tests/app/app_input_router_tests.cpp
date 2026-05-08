@@ -97,6 +97,12 @@ const Payload* payload_if(const quiz_vulkan::app_input_route_result& result)
     return std::get_if<Payload>(&result.action->payload);
 }
 
+template <typename Payload>
+const Payload* raw_payload_if(const quiz_vulkan::raw_platform_input_event& event)
+{
+    return std::get_if<Payload>(&event);
+}
+
 std::vector<quiz_vulkan::input::input_event> normalize_through_engine(
     quiz_vulkan::input::input_engine& engine,
     const quiz_vulkan::platform_input_event& platform_event)
@@ -108,6 +114,95 @@ std::vector<quiz_vulkan::input::input_event> normalize_through_engine(
         events.insert(events.end(), normalized.begin(), normalized.end());
     }
     return events;
+}
+
+void test_platform_pointer_lifecycle_normalizes_without_synthetic_tap()
+{
+    using namespace quiz_vulkan;
+
+    const std::vector<raw_platform_input_event> down_events = normalize_platform_input_event(
+        platform_input_event{
+            .type = platform_input_event_type::pointer_down,
+            .x = 12.0f,
+            .y = 24.0f,
+            .pointer_id = 7,
+            .pointer_button = raw_platform_pointer_button::secondary,
+        },
+        100);
+    require(down_events.size() == 1, "pointer down normalizes to one raw pointer event");
+    const auto* down = raw_payload_if<raw_platform_pointer_event>(down_events.front());
+    require(down != nullptr, "pointer down produces raw pointer payload");
+    require(down->phase == raw_platform_pointer_phase::down, "pointer down preserves down phase");
+    require(down->pointer_id == 7, "pointer down preserves pointer id");
+    require(down->button == raw_platform_pointer_button::secondary, "pointer down preserves button");
+
+    const std::vector<raw_platform_input_event> move_events = normalize_platform_input_event(
+        platform_input_event{
+            .type = platform_input_event_type::pointer_move,
+            .x = 30.0f,
+            .y = 32.0f,
+            .pointer_id = 7,
+        },
+        120);
+    const auto* move = raw_payload_if<raw_platform_pointer_event>(move_events.front());
+    require(move != nullptr, "pointer move produces raw pointer payload");
+    require(move->phase == raw_platform_pointer_phase::move, "pointer move preserves move phase");
+
+    const std::vector<raw_platform_input_event> up_events = normalize_platform_input_event(
+        platform_input_event{
+            .type = platform_input_event_type::pointer_up,
+            .x = 34.0f,
+            .y = 36.0f,
+            .pointer_id = 7,
+        },
+        160);
+    const auto* up = raw_payload_if<raw_platform_pointer_event>(up_events.front());
+    require(up != nullptr, "pointer up produces raw pointer payload");
+    require(up->phase == raw_platform_pointer_phase::up, "pointer up preserves up phase");
+}
+
+void test_platform_wheel_and_key_events_normalize_to_raw_input()
+{
+    using namespace quiz_vulkan;
+
+    const std::vector<raw_platform_input_event> wheel_events = normalize_platform_input_event(
+        platform_input_event{
+            .type = platform_input_event_type::mouse_wheel,
+            .x = 10.0f,
+            .y = 20.0f,
+            .delta_x = 1.0f,
+            .delta_y = -2.0f,
+            .scroll_unit = raw_platform_scroll_delta_unit::lines,
+        },
+        200);
+    require(wheel_events.size() == 1, "wheel normalizes to one raw scroll event");
+    const auto* wheel = raw_payload_if<raw_platform_scroll_event>(wheel_events.front());
+    require(wheel != nullptr, "wheel produces raw scroll payload");
+    require(wheel->delta_y == -2.0f, "wheel preserves y delta");
+    require(wheel->unit == raw_platform_scroll_delta_unit::lines, "wheel preserves delta unit");
+
+    input::input_engine engine;
+    const std::vector<input::input_event> scroll_events = engine.process_raw_event(wheel_events.front());
+    require(scroll_events.size() == 1, "wheel reaches input engine as one scroll event");
+    require(std::get_if<input::scroll_event>(&scroll_events.front()) != nullptr,
+        "wheel reaches input engine as scroll payload");
+
+    const std::vector<raw_platform_input_event> key_events = normalize_platform_input_event(
+        platform_input_event{
+            .type = platform_input_event_type::key_down,
+            .key_code = 46,
+            .logical_key = "Delete",
+            .shift = true,
+            .repeat = true,
+        },
+        220);
+    require(key_events.size() == 1, "key down normalizes to one raw key event");
+    const auto* key = raw_payload_if<raw_platform_key_event>(key_events.front());
+    require(key != nullptr, "key down produces raw key payload");
+    require(key->phase == raw_platform_key_phase::down, "key down preserves down phase");
+    require(key->logical_key == "Delete", "key down preserves logical key");
+    require(key->shift, "key down preserves shift modifier");
+    require(key->repeat, "key down preserves repeat flag");
 }
 
 void test_legacy_pointer_normalizes_to_tap_route()
@@ -278,6 +373,8 @@ void test_route_errors_stay_in_app_layer()
 
 int main()
 {
+    test_platform_pointer_lifecycle_normalizes_without_synthetic_tap();
+    test_platform_wheel_and_key_events_normalize_to_raw_input();
     test_legacy_pointer_normalizes_to_tap_route();
     test_text_focus_and_commit_route();
     test_submit_key_routes_committed_text();

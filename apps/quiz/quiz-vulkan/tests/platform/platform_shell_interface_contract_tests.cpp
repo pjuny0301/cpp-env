@@ -3,6 +3,7 @@
 
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -44,7 +45,40 @@ static_assert(requires(platform_input_event event) {
     { event.x } -> std::same_as<float&>;
     { event.y } -> std::same_as<float&>;
     { event.text } -> std::same_as<std::string&>;
+    { event.pointer_id } -> std::same_as<std::int32_t&>;
+    { event.pointer_button } -> std::same_as<raw_platform_pointer_button&>;
+    { event.delta_x } -> std::same_as<float&>;
+    { event.delta_y } -> std::same_as<float&>;
+    { event.scroll_unit } -> std::same_as<raw_platform_scroll_delta_unit&>;
+    { event.key_code } -> std::same_as<std::int32_t&>;
+    { event.logical_key } -> std::same_as<std::string&>;
+    { event.alt } -> std::same_as<bool&>;
+    { event.ctrl } -> std::same_as<bool&>;
+    { event.shift } -> std::same_as<bool&>;
+    { event.meta } -> std::same_as<bool&>;
+    { event.repeat } -> std::same_as<bool&>;
 });
+
+constexpr platform_input_event pointer_move_contract{
+    .type = platform_input_event_type::pointer_move,
+    .x = 10.0f,
+    .y = 20.0f,
+    .pointer_id = 2,
+    .pointer_button = raw_platform_pointer_button::primary,
+};
+static_assert(pointer_move_contract.type == platform_input_event_type::pointer_move);
+static_assert(pointer_move_contract.pointer_id == 2);
+
+constexpr platform_input_event wheel_contract{
+    .type = platform_input_event_type::mouse_wheel,
+    .delta_y = -1.0f,
+    .scroll_unit = raw_platform_scroll_delta_unit::lines,
+};
+static_assert(wheel_contract.scroll_unit == raw_platform_scroll_delta_unit::lines);
+
+static_assert(platform_input_event_type::pointer_down != platform_input_event_type::pointer_up);
+static_assert(platform_input_event_type::key_down != platform_input_event_type::key_up);
+static_assert(platform_input_event_type::focus_gained != platform_input_event_type::focus_lost);
 
 constexpr raw_platform_scroll_event platform_raw_scroll_contract{
     .timestamp_ms = 12,

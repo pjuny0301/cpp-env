@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -95,19 +96,141 @@ platform_client_size client_size_for_window(HWND window_handle, platform_client_
     };
 }
 
+float client_x_from_lparam(LPARAM l_param)
+{
+    return static_cast<float>(static_cast<short>(LOWORD(l_param)));
+}
+
+float client_y_from_lparam(LPARAM l_param)
+{
+    return static_cast<float>(static_cast<short>(HIWORD(l_param)));
+}
+
+POINT client_point_from_screen_lparam(HWND window_handle, LPARAM l_param)
+{
+    POINT point{
+        static_cast<LONG>(static_cast<short>(LOWORD(l_param))),
+        static_cast<LONG>(static_cast<short>(HIWORD(l_param))),
+    };
+    if (window_handle != nullptr) {
+        ScreenToClient(window_handle, &point);
+    }
+    return point;
+}
+
+bool virtual_key_down(int virtual_key)
+{
+    return (GetKeyState(virtual_key) & 0x8000) != 0;
+}
+
+std::string logical_key_for_virtual_key(WPARAM virtual_key)
+{
+    switch (virtual_key) {
+    case VK_TAB:
+        return "Tab";
+    case VK_ESCAPE:
+        return "Escape";
+    case VK_LEFT:
+        return "ArrowLeft";
+    case VK_RIGHT:
+        return "ArrowRight";
+    case VK_HOME:
+        return "Home";
+    case VK_END:
+        return "End";
+    case VK_DELETE:
+        return "Delete";
+    case 0x41:
+        return "KeyA";
+    default:
+        return {};
+    }
+}
+
 class windows_platform_shell final : public platform_shell {
 public:
     LRESULT handle_message(HWND window_handle, UINT message, WPARAM w_param, LPARAM l_param)
     {
         switch (message) {
+        case WM_LBUTTONDOWN:
+            left_button_down_ = true;
+            SetCapture(window_handle);
+            push_pointer_event(
+                platform_input_event_type::pointer_down,
+                client_x_from_lparam(l_param),
+                client_y_from_lparam(l_param));
+            return 0;
+        case WM_MOUSEMOVE:
+            if (left_button_down_ || (w_param & MK_LBUTTON) != 0) {
+                push_pointer_event(
+                    platform_input_event_type::pointer_move,
+                    client_x_from_lparam(l_param),
+                    client_y_from_lparam(l_param));
+                return 0;
+            }
+            return DefWindowProcW(window_handle, message, w_param, l_param);
         case WM_LBUTTONUP: {
-            const auto x = static_cast<float>(static_cast<short>(LOWORD(l_param)));
-            const auto y = static_cast<float>(static_cast<short>(HIWORD(l_param)));
-            input_events_.push_back(platform_input_event{platform_input_event_type::pointer_press, x, y, {}});
+            left_button_down_ = false;
+            push_pointer_event(
+                platform_input_event_type::pointer_up,
+                client_x_from_lparam(l_param),
+                client_y_from_lparam(l_param));
+            if (GetCapture() == window_handle) {
+                ReleaseCapture();
+            }
             return 0;
         }
+        case WM_MOUSEWHEEL: {
+            const POINT point = client_point_from_screen_lparam(window_handle, l_param);
+            input_events_.push_back(platform_input_event{
+                .type = platform_input_event_type::mouse_wheel,
+                .x = static_cast<float>(point.x),
+                .y = static_cast<float>(point.y),
+                .text = {},
+                .delta_y = static_cast<float>(GET_WHEEL_DELTA_WPARAM(w_param)) / static_cast<float>(WHEEL_DELTA),
+                .scroll_unit = raw_platform_scroll_delta_unit::lines,
+                .logical_key = {},
+            });
+            return 0;
+        }
+        case WM_CAPTURECHANGED:
+            if (left_button_down_ && reinterpret_cast<HWND>(l_param) != window_handle) {
+                left_button_down_ = false;
+                push_pointer_event(platform_input_event_type::pointer_cancel, 0.0f, 0.0f);
+            }
+            return DefWindowProcW(window_handle, message, w_param, l_param);
+        case WM_KEYDOWN:
+        case WM_SYSKEYDOWN:
+            if (handle_key_input(platform_input_event_type::key_down, w_param, l_param)) {
+                return 0;
+            }
+            return DefWindowProcW(window_handle, message, w_param, l_param);
+        case WM_KEYUP:
+        case WM_SYSKEYUP:
+            if (handle_key_input(platform_input_event_type::key_up, w_param, l_param)) {
+                return 0;
+            }
+            return DefWindowProcW(window_handle, message, w_param, l_param);
         case WM_CHAR:
             handle_character_input(static_cast<wchar_t>(w_param));
+            return 0;
+        case WM_SETFOCUS:
+            input_events_.push_back(platform_input_event{
+                .type = platform_input_event_type::focus_gained,
+                .text = {},
+                .logical_key = {},
+            });
+            return 0;
+        case WM_KILLFOCUS:
+            input_events_.push_back(platform_input_event{
+                .type = platform_input_event_type::focus_lost,
+                .text = {},
+                .logical_key = {},
+            });
+            if (left_button_down_) {
+                left_button_down_ = false;
+                push_pointer_event(platform_input_event_type::pointer_cancel, 0.0f, 0.0f);
+            }
             return 0;
         case WM_PAINT:
             paint_framebuffer(window_handle);
@@ -259,12 +382,49 @@ public:
     }
 
 private:
+    void push_pointer_event(platform_input_event_type type, float x, float y)
+    {
+        input_events_.push_back(platform_input_event{
+            .type = type,
+            .x = x,
+            .y = y,
+            .text = {},
+            .pointer_id = 0,
+            .pointer_button = raw_platform_pointer_button::primary,
+            .logical_key = {},
+        });
+    }
+
+    bool handle_key_input(platform_input_event_type type, WPARAM virtual_key, LPARAM l_param)
+    {
+        std::string logical_key = logical_key_for_virtual_key(virtual_key);
+        if (logical_key.empty()) {
+            return false;
+        }
+
+        input_events_.push_back(platform_input_event{
+            .type = type,
+            .text = {},
+            .key_code = static_cast<std::int32_t>(virtual_key),
+            .logical_key = std::move(logical_key),
+            .alt = virtual_key_down(VK_MENU),
+            .ctrl = virtual_key_down(VK_CONTROL),
+            .shift = virtual_key_down(VK_SHIFT),
+            .meta = virtual_key_down(VK_LWIN) || virtual_key_down(VK_RWIN),
+            .repeat = type == platform_input_event_type::key_down && (l_param & (1L << 30)) != 0,
+        });
+        return true;
+    }
+
     void push_text_event(std::wstring_view text)
     {
         std::string utf8_text = narrow_utf16(text);
         if (!utf8_text.empty()) {
-            input_events_.push_back(
-                platform_input_event{platform_input_event_type::text_input, 0.0f, 0.0f, std::move(utf8_text)});
+            input_events_.push_back(platform_input_event{
+                .type = platform_input_event_type::text_input,
+                .text = std::move(utf8_text),
+                .logical_key = {},
+            });
         }
     }
 
@@ -272,13 +432,21 @@ private:
     {
         if (code_unit == L'\b') {
             pending_high_surrogate_ = 0;
-            input_events_.push_back(platform_input_event{platform_input_event_type::text_backspace, 0.0f, 0.0f, {}});
+            input_events_.push_back(platform_input_event{
+                .type = platform_input_event_type::text_backspace,
+                .text = {},
+                .logical_key = {},
+            });
             return;
         }
 
         if (code_unit == L'\r' || code_unit == L'\n') {
             pending_high_surrogate_ = 0;
-            input_events_.push_back(platform_input_event{platform_input_event_type::text_submit, 0.0f, 0.0f, {}});
+            input_events_.push_back(platform_input_event{
+                .type = platform_input_event_type::text_submit,
+                .text = {},
+                .logical_key = {},
+            });
             return;
         }
 
@@ -355,6 +523,7 @@ private:
     std::size_t framebuffer_height_ = 0;
     std::vector<unsigned char> framebuffer_bgra_;
     wchar_t pending_high_surrogate_ = 0;
+    bool left_button_down_ = false;
 };
 
 LRESULT CALLBACK window_proc(HWND window_handle, UINT message, WPARAM w_param, LPARAM l_param)

@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: image texture handle-map diagnostics를 통합하고 Windows MinGW focused image CTest 3/3 확인.
+- `6201935`: image engine에 texture handle-map diagnostics를 추가해 request index, uri/cache key, acquired texture id, placeholder flag, sampler policy, residency pressure를 renderer handoff용 public map으로 노출.
 - current: pointer replay timeline diagnostics를 통합하고 Windows MinGW focused input CTest 5/5 확인.
 - `ba8bc04`: normalized input replay에 pointer/touch gesture timeline, wheel deltas, pointer capture lifecycle, multipointer ids, final capture state를 추가.
 - current: text atlas upload request bridge를 통합하고 Windows MinGW focused text CTest 1/1 확인.

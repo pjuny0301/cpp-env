@@ -181,6 +181,40 @@ void test_native_readiness_status_names_are_stable()
         "present completion native queue present status name is stable");
 }
 
+void test_native_entrypoint_readiness_snapshots_are_stage_specific()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_function_table_diagnostics native_functions =
+        make_native_functions({"vkQueueSubmit"});
+    const vulkan_backend::vulkan_native_entrypoint_readiness_snapshot recording =
+        vulkan_backend::summarize_vulkan_command_buffer_recording_native_readiness(
+            native_functions);
+    const vulkan_backend::vulkan_native_entrypoint_readiness_snapshot submit =
+        vulkan_backend::summarize_vulkan_queue_submit_native_readiness(native_functions);
+    const vulkan_backend::vulkan_native_entrypoint_readiness_snapshot present =
+        vulkan_backend::summarize_vulkan_queue_present_native_readiness(native_functions);
+
+    require(recording.function_table_checked, "recording snapshot records checked native table");
+    require(recording.entrypoint_ready, "recording snapshot remains ready when submit is missing");
+    require(!recording.blocks_fake_execution(), "recording snapshot does not block fake path");
+    require(recording.missing_symbol_name.empty(), "recording snapshot omits unrelated missing symbol");
+
+    require(submit.function_table_checked, "submit snapshot records checked native table");
+    require(!submit.entrypoint_ready, "submit snapshot is not ready when submit symbol is missing");
+    require(submit.blocks_fake_execution(), "submit snapshot blocks fake path");
+    require(submit.missing_symbol_name == "vkQueueSubmit", "submit snapshot stores missing symbol");
+    require(
+        submit.function_table_status
+            == vulkan_backend::vulkan_native_function_table_status::missing_queue_submit_symbol,
+        "submit snapshot stores native function table status");
+
+    require(present.function_table_checked, "present snapshot records checked native table");
+    require(present.entrypoint_ready, "present snapshot remains ready when submit is missing");
+    require(!present.blocks_fake_execution(), "present snapshot does not block fake path");
+    require(present.missing_symbol_name.empty(), "present snapshot omits unrelated missing symbol");
+}
+
 void test_native_command_recording_symbols_gate_fake_recorder()
 {
     namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
@@ -323,6 +357,7 @@ void test_ready_native_symbols_preserve_fake_planning_paths()
 int main()
 {
     test_native_readiness_status_names_are_stable();
+    test_native_entrypoint_readiness_snapshots_are_stage_specific();
     test_native_command_recording_symbols_gate_fake_recorder();
     test_native_queue_submit_symbols_gate_submit_batch_planning();
     test_native_queue_present_symbols_gate_present_completion_planning();

@@ -653,6 +653,37 @@ static_assert(requires(render::vulkan_backend::vulkan_native_function_table_diag
     { diagnostics.blocked() } -> std::same_as<bool>;
 });
 
+static_assert(requires(
+    render::vulkan_backend::vulkan_native_entrypoint_readiness_snapshot snapshot) {
+    { snapshot.function_table_checked } -> std::same_as<bool&>;
+    { snapshot.entrypoint_ready } -> std::same_as<bool&>;
+    { snapshot.function_table_status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_table_status&>;
+    { snapshot.missing_symbol_name } -> std::same_as<std::string&>;
+    { snapshot.diagnostic } -> std::same_as<std::string&>;
+    { snapshot.blocks_fake_execution() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    render::vulkan_backend::vulkan_native_function_table_diagnostics diagnostics,
+    render::vulkan_backend::vulkan_native_entrypoint_stage stage) {
+    { render::vulkan_backend::native_entrypoint_ready_for_stage(diagnostics, stage) }
+        -> std::same_as<bool>;
+    { render::vulkan_backend::summarize_vulkan_native_entrypoint_readiness(
+        diagnostics,
+        stage) } -> std::same_as<
+        render::vulkan_backend::vulkan_native_entrypoint_readiness_snapshot>;
+    { render::vulkan_backend::summarize_vulkan_command_buffer_recording_native_readiness(
+        diagnostics) } -> std::same_as<
+        render::vulkan_backend::vulkan_native_entrypoint_readiness_snapshot>;
+    { render::vulkan_backend::summarize_vulkan_queue_submit_native_readiness(diagnostics) }
+        -> std::same_as<
+            render::vulkan_backend::vulkan_native_entrypoint_readiness_snapshot>;
+    { render::vulkan_backend::summarize_vulkan_queue_present_native_readiness(diagnostics) }
+        -> std::same_as<
+            render::vulkan_backend::vulkan_native_entrypoint_readiness_snapshot>;
+});
+
 static_assert(requires(render::vulkan_backend::vulkan_instance_handle handle) {
     { handle.value } -> std::same_as<std::uintptr_t&>;
     { handle.valid() } -> std::same_as<bool>;

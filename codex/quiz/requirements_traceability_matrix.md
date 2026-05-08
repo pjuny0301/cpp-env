@@ -6,6 +6,9 @@
 
 최근 baseline 통합 증거:
 
+- current: input routing diagnostics header split과 Vulkan native readiness helper split을 통합하고 public FILE_SET 등록, Windows MinGW focused input/Vulkan CTest 17/17 및 interface compile target build 확인.
+- `73755f8`: input route diagnostics를 별도 public input header로 분리해 `input_engine.h` 토큰 부담을 줄임.
+- `7dbfb76`: Vulkan native readiness threading helper를 별도 public renderer header로 분리해 backend adapter surface를 축소.
 - current: image frame binding plan diagnostics를 통합하고 Windows MinGW focused image texture pipeline CTest 1/1 및 interface compile target build 확인.
 - `cc58697`: image texture frame snapshot을 renderer-facing texture binding packet readiness와 frame delta data로 변환하는 data-only binding plan diagnostics를 추가.
 - current: text frame draw plan diagnostics를 통합하고 public render FILE_SET 등록, Windows MinGW focused atlas-update CTest 1/1 및 interface compile target build 확인.

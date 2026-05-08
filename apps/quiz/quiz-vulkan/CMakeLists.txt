@@ -206,6 +206,7 @@ target_sources(
             src/core/input/gesture_recognizer.h
             src/core/input/input_engine.h
             src/core/input/input_event.h
+            src/core/input/input_routing_diagnostics.h
             src/core/input/normalized_input_replay.h
             src/core/input/normalized_input_replay_diff.h
             src/core/input/platform_input_engine_adapter.h
@@ -337,6 +338,7 @@ target_sources(
             src/render/vulkan/vulkan_backend_graphics_pipeline.h
             src/render/vulkan/vulkan_backend_instance.h
             src/render/vulkan/vulkan_backend_loader.h
+            src/render/vulkan/vulkan_backend_native_readiness.h
             src/render/vulkan/vulkan_backend_native_symbols.h
             src/render/vulkan/vulkan_backend_pipeline_layout.h
             src/render/vulkan/vulkan_backend_queue_submit.h

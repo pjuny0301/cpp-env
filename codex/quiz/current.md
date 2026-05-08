@@ -38,6 +38,7 @@ Last updated: 2026-05-08
 - Engine workers own only their engine folders. App/runtime, top-level CMake, and aggregate contract wiring stay with the integrator unless explicitly assigned.
 - Large file splitting is allowed when it improves module cohesion, worker ownership, reviewability, or conflict isolation. Do not split files only because they exceed a line-count threshold, and do not move stable public interfaces without explicit integrator approval.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
+- Latest integration note: `33f64bb` adds Vulkan native function table diagnostics with opaque entrypoint availability for command-buffer recording, queue submit, and present paths through injectable fake/system symbol resolvers.
 - Latest integration note: `09ea764` and `004e70c` add focus/caret replay timeline diagnostics and image texture frame snapshot diagnostics, giving input and image engines compact per-frame/replay handoff views without app or Vulkan coupling.
 - Latest integration note: `5c4d0d9` threads atlas upload bridge IDs through fake text engine layout/consume diagnostics so queued atlas updates and consumed upload request IDs can be matched without renderer/Vulkan coupling.
 - Latest integration note: `6201935` adds image texture handle-map diagnostics after batch execution, exposing stable request-index/cache-key to texture-id mappings, sampler policy, placeholder flags, and residency pressure for renderer handoff without Vulkan/cache internals.
@@ -65,7 +66,7 @@ Last updated: 2026-05-08
 - Latest integration note: `2656970` adds a Vulkan frame pipeline handoff summary/result that composes loader, instance, device, swapchain, render pass, pipeline, resource binding, command recording, submit, present, and fallback readiness without scene/UI/app/domain coupling.
 - Latest integration note: text/image/input worker commits added font backend selection metadata, optional third-party image decoder adapter boundary, and IME/focus/caret hardening; CMake render contract FILE_SET registration was handled by the integrator.
 - Latest integration note: `15d77ce` reports app scene modifier errors in `app_render_report`; `0a721e2` blocks host/external source paths in architecture tests; `7505a63` tracks native dependency manifest/README while ignoring downloaded source directories.
-- Latest verification: Windows MinGW full CTest passed 88/88 after `09ea764`, `004e70c`, and `5c4d0d9`; focused input/image CTest passed 4/4 after `09ea764` and `004e70c`; focused text CTest passed 2/2 after `5c4d0d9`; focused Vulkan CTest passed 4/4 after `85dd390`. Current `ctest -N` reports 88 tests.
+- Latest verification: Windows MinGW focused Vulkan CTest passed 3/3 after `33f64bb`; latest full CTest passed 88/88 after `09ea764`, `004e70c`, and `5c4d0d9`; focused input/image CTest passed 4/4 after `09ea764` and `004e70c`; focused text CTest passed 2/2 after `5c4d0d9`. Current `ctest -N` reports 89 tests.
 
 ## Verification commands
 

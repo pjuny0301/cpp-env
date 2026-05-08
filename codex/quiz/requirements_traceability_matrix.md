@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: Vulkan native function table diagnostics를 통합하고 CMake public FILE_SET 등록, Windows MinGW focused Vulkan CTest 3/3 및 `ctest -N` 89개 확인.
+- `33f64bb`: Vulkan backend에 native function-table diagnostics와 fake/system symbol resolver를 추가해 command buffer recording, queue submit, queue present entrypoint availability를 opaque pointer availability로 추적.
 - current: Windows MinGW full CTest 88/88 통과로 text/image/input/Vulkan 누적 통합 기준선 갱신.
 - current: focus/caret replay timeline diagnostics와 image texture frame snapshot diagnostics를 통합하고 Windows MinGW focused input/image CTest 4/4 확인.
 - `004e70c`: image engine에 texture frame snapshot diagnostics를 추가해 batch plan/execution/residency/handle-map 결과를 immutable public renderer handoff view로 합성.

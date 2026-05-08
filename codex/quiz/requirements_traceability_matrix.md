@@ -1,11 +1,13 @@
 # Quiz 요구사항 추적 매트릭스
 
-마지막 갱신: 2026-05-08
+마지막 갱신: 2026-05-09
 
 이 문서는 요구사항 번호를 실행 순서가 아니라 추적 ID로 관리한다. 실제 구현 순서는 `big_plan.md`의 의존관계 기반 단계가 기준이며, 각 행은 루트 구현 문서, 하위 프로젝트 문서, 현재 C++/문서 증거를 연결한다.
 
 최근 baseline 통합 증거:
 
+- current: text frame snapshot diagnostics를 통합하고 Windows MinGW focused text CTest 3/3 확인.
+- `90e3f43`: text engine에 request batch, fallback-chain, atlas materialization, upload bridge IDs, consumed atlas update IDs를 묶는 renderer-agnostic frame snapshot diagnostics를 추가.
 - current: Vulkan native function table diagnostics를 통합하고 CMake public FILE_SET 등록, Windows MinGW focused Vulkan CTest 3/3 및 `ctest -N` 89개 확인.
 - `33f64bb`: Vulkan backend에 native function-table diagnostics와 fake/system symbol resolver를 추가해 command buffer recording, queue submit, queue present entrypoint availability를 opaque pointer availability로 추적.
 - current: Windows MinGW full CTest 88/88 통과로 text/image/input/Vulkan 누적 통합 기준선 갱신.

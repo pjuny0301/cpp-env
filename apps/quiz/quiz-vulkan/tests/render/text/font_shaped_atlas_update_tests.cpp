@@ -293,6 +293,20 @@ quiz_vulkan::render::render_text_frame_snapshot frame_snapshot_for_materializati
     return snapshot;
 }
 
+quiz_vulkan::render::render_text_frame_draw_plan_snapshot draw_plan_for_materializations(
+    std::vector<quiz_vulkan::render::render_text_glyph_atlas_materialization_snapshot> materializations,
+    const bool consumed = true)
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_frame_snapshot frame =
+        frame_snapshot_for_materializations(materializations, consumed);
+    return plan_render_text_frame_draw_packets(render_text_frame_draw_plan_request{
+        .frame = frame,
+        .materializations = std::move(materializations),
+    });
+}
+
 void test_trace_reports_upload_ready_payload_queued()
 {
     using namespace quiz_vulkan::render;
@@ -982,6 +996,177 @@ void test_text_frame_draw_plan_reports_missing_page_extent()
     require(plan.policy.missing_page_extent_count == 1U, "policy counts missing page extent");
 }
 
+void test_text_frame_draw_plan_diff_reports_unchanged_packet_set()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_glyph_atlas_materialization_snapshot materialization =
+        upload_ready_materialization();
+    materialization.run_index = 0U;
+
+    const render_text_frame_draw_plan_snapshot previous =
+        draw_plan_for_materializations({materialization});
+    const render_text_frame_draw_plan_snapshot current =
+        draw_plan_for_materializations({materialization});
+    const render_text_frame_draw_plan_diff diff =
+        diff_render_text_frame_draw_plans(previous, current);
+
+    require(diff.ok(), "unchanged draw plan diff is ok");
+    require(!diff.has_packet_changes(), "unchanged draw plan has no packet changes");
+    require(!diff.has_readiness_or_fallback_changes(), "unchanged draw plan has no readiness changes");
+    require(!diff.has_page_revision_changes(), "unchanged draw plan has no page revision changes");
+    require(!diff.has_stable_key_deltas(), "unchanged draw plan has no stable key deltas");
+    require(diff.policy.packet_count_delta == 0, "unchanged draw plan has zero packet delta");
+    require(diff.policy.stable_glyph_key_count_delta == 0, "unchanged draw plan has zero glyph key delta");
+    require(diff.policy.stable_style_key_count_delta == 0, "unchanged draw plan has zero style key delta");
+    require(diff.policy.stable_run_key_count_delta == 0, "unchanged draw plan has zero run key delta");
+}
+
+void test_text_frame_draw_plan_diff_reports_page_revision_changes_as_changed_packets()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_glyph_atlas_materialization_snapshot previous_materialization =
+        upload_ready_materialization();
+    previous_materialization.run_index = 0U;
+    render_text_glyph_atlas_materialization_snapshot current_materialization =
+        previous_materialization;
+    current_materialization.page.revision = previous_materialization.page.revision + 1U;
+
+    const render_text_frame_draw_plan_snapshot previous =
+        draw_plan_for_materializations({previous_materialization});
+    const render_text_frame_draw_plan_snapshot current =
+        draw_plan_for_materializations({current_materialization});
+    const render_text_frame_draw_plan_diff diff =
+        diff_render_text_frame_draw_plans(previous, current);
+
+    require(diff.ok(), "page revision change does not regress readiness");
+    require(diff.has_packet_changes(), "page revision change records a changed packet");
+    require(diff.has_page_revision_changes(), "page revision change is reported explicitly");
+    require(diff.added_packet_ids.empty(), "page revision change does not add logical packet");
+    require(diff.removed_packet_ids.empty(), "page revision change does not remove logical packet");
+    require(diff.changed_packet_ids.size() == 1U, "page revision change counts changed packet");
+    require(diff.page_revision_changed_packet_ids == diff.changed_packet_ids, "page revision packet id is changed id");
+    require(diff.policy.page_revision_changed_packet_count == 1U, "policy counts page revision change");
+    require(diff.policy.stable_glyph_key_count_delta == 0, "page revision keeps stable glyph count");
+    require(diff.policy.stable_style_key_count_delta == 0, "page revision keeps stable style count");
+    require(diff.policy.stable_run_key_count_delta == 0, "page revision keeps stable run count");
+}
+
+void test_text_frame_draw_plan_diff_reports_readiness_and_fallback_changes()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_glyph_atlas_materialization_snapshot materialization =
+        upload_ready_materialization();
+    materialization.run_index = 0U;
+    const render_text_frame_draw_plan_snapshot previous =
+        draw_plan_for_materializations({materialization});
+
+    render_text_frame_snapshot fallback_frame =
+        frame_snapshot_for_materializations({materialization}, true);
+    fallback_frame.status = render_text_frame_snapshot_status::font_fallback_incomplete;
+    const render_text_frame_draw_plan_snapshot current =
+        plan_render_text_frame_draw_packets(render_text_frame_draw_plan_request{
+            .frame = fallback_frame,
+            .materializations = {materialization},
+        });
+
+    const render_text_frame_draw_plan_diff diff =
+        diff_render_text_frame_draw_plans(previous, current);
+
+    require(!diff.ok(), "readiness regression is not ok");
+    require(diff.has_readiness_or_fallback_changes(), "diff records readiness or fallback changes");
+    require(diff.policy.frame_status_changed, "policy records frame status change");
+    require(diff.policy.frame_readiness_changed, "policy records frame readiness change");
+    require(diff.policy.frame_readiness_regressed, "policy records frame readiness regression");
+    require(diff.policy.draw_ready_count_delta == -1, "policy records draw-ready loss");
+    require(diff.policy.fallback_incomplete_count_delta == 1, "policy records fallback packet delta");
+    require(diff.readiness_changed_packet_ids.size() == 1U, "diff records readiness packet id");
+    require(diff.fallback_changed_packet_ids.size() == 1U, "diff records fallback packet id");
+    require(diff.policy.readiness_changed_packet_count == 1U, "policy counts readiness packet changes");
+    require(diff.policy.fallback_changed_packet_count == 1U, "policy counts fallback packet changes");
+}
+
+void test_text_frame_draw_plan_diff_reports_added_removed_and_stable_glyph_deltas()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_glyph_atlas_materialization_snapshot a = upload_ready_materialization();
+    a.run_index = 0U;
+    render_text_glyph_atlas_materialization_snapshot b =
+        upload_ready_materialization(glyph_atlas_key{
+            .face_id = 7,
+            .glyph_id = U'B',
+            .pixel_size = 20,
+        });
+    b.run_index = 0U;
+
+    const render_text_frame_draw_plan_snapshot previous =
+        draw_plan_for_materializations({a});
+    const render_text_frame_draw_plan_snapshot current =
+        draw_plan_for_materializations({a, b});
+
+    const render_text_frame_draw_plan_diff added =
+        diff_render_text_frame_draw_plans(previous, current);
+    require(added.has_packet_changes(), "added glyph records packet changes");
+    require(added.added_packet_ids.size() == 1U, "diff records added packet id");
+    require(added.removed_packet_ids.empty(), "added glyph has no removed packet");
+    require(added.policy.packet_count_delta == 1, "policy records packet count delta");
+    require(added.policy.stable_glyph_key_count_delta == 1, "policy records stable glyph count delta");
+    require(added.policy.stable_style_key_count_delta == 0, "policy keeps style count stable");
+    require(added.policy.stable_run_key_count_delta == 0, "policy keeps run count stable for same run");
+
+    const render_text_frame_draw_plan_diff removed =
+        diff_render_text_frame_draw_plans(current, previous);
+    require(removed.removed_packet_ids.size() == 1U, "reverse diff records removed packet id");
+    require(removed.policy.packet_count_delta == -1, "reverse diff records negative packet delta");
+    require(removed.policy.stable_glyph_key_count_delta == -1, "reverse diff records negative glyph delta");
+}
+
+void test_text_frame_draw_plan_diff_reports_stable_glyph_style_and_run_changes()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_glyph_atlas_materialization_snapshot a = upload_ready_materialization();
+    a.run_index = 0U;
+    render_text_glyph_atlas_materialization_snapshot b =
+        upload_ready_materialization(glyph_atlas_key{
+            .face_id = 7,
+            .glyph_id = U'B',
+            .pixel_size = 20,
+        });
+    b.run_index = 0U;
+
+    const render_text_frame_draw_plan_snapshot previous =
+        draw_plan_for_materializations({a});
+    const render_text_frame_draw_plan_snapshot glyph_changed =
+        draw_plan_for_materializations({b});
+    const render_text_frame_draw_plan_diff glyph_diff =
+        diff_render_text_frame_draw_plans(previous, glyph_changed);
+    require(glyph_diff.policy.stable_glyph_key_count_delta == 0, "glyph replacement keeps glyph key count");
+    require(
+        glyph_diff.policy.stable_glyph_changed_packet_count == 1U,
+        "glyph replacement counts stable glyph change");
+    require(!glyph_diff.stable_glyph_changed_packet_ids.empty(), "glyph replacement exposes packet id");
+
+    render_text_frame_draw_plan_snapshot style_run_changed = previous;
+    style_run_changed.packets.front().requested_style_token = "headline";
+    style_run_changed.packets.front().resolved_style_id = "headline";
+    style_run_changed.packets.front().run_index = 2U;
+    const render_text_frame_draw_plan_diff style_run_diff =
+        diff_render_text_frame_draw_plans(previous, style_run_changed);
+
+    require(style_run_diff.has_stable_key_deltas(), "style/run change reports stable key deltas");
+    require(
+        style_run_diff.policy.stable_style_changed_packet_count == 1U,
+        "style replacement counts stable style change");
+    require(
+        style_run_diff.policy.stable_run_changed_packet_count == 1U,
+        "run replacement counts stable run change");
+    require(style_run_diff.changed_packet_ids.size() == 1U, "style/run change is a changed packet");
+}
+
 } // namespace
 
 int main()
@@ -1002,5 +1187,10 @@ int main()
     test_text_frame_draw_plan_produces_ready_glyph_packet_with_uv_bounds();
     test_text_frame_draw_plan_reports_pending_and_fallback_blockers();
     test_text_frame_draw_plan_reports_missing_page_extent();
+    test_text_frame_draw_plan_diff_reports_unchanged_packet_set();
+    test_text_frame_draw_plan_diff_reports_page_revision_changes_as_changed_packets();
+    test_text_frame_draw_plan_diff_reports_readiness_and_fallback_changes();
+    test_text_frame_draw_plan_diff_reports_added_removed_and_stable_glyph_deltas();
+    test_text_frame_draw_plan_diff_reports_stable_glyph_style_and_run_changes();
     return 0;
 }

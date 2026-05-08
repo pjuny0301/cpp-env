@@ -1676,6 +1676,8 @@ static_assert(requires(
     render::render_text_frame_draw_plan_policy draw_policy,
     render::render_text_frame_draw_plan_request draw_request,
     render::render_text_frame_draw_plan_snapshot draw_plan,
+    render::render_text_frame_draw_plan_diff_policy draw_diff_policy,
+    render::render_text_frame_draw_plan_diff draw_diff,
     render::render_text_glyph_atlas_materialization_snapshot snapshot,
     render::render_text_request request,
     render::render_draw_command draw_command,
@@ -2085,6 +2087,72 @@ static_assert(requires(
         -> std::same_as<void>;
     { render::plan_render_text_frame_draw_packets(draw_request) }
         -> std::same_as<render::render_text_frame_draw_plan_snapshot>;
+    { draw_diff_policy.frame_status_changed } -> std::same_as<bool&>;
+    { draw_diff_policy.frame_readiness_changed } -> std::same_as<bool&>;
+    { draw_diff_policy.frame_readiness_regressed } -> std::same_as<bool&>;
+    { draw_diff_policy.materialization_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { draw_diff_policy.packet_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { draw_diff_policy.draw_ready_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { draw_diff_policy.skipped_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { draw_diff_policy.fallback_incomplete_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { draw_diff_policy.deterministic_fallback_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { draw_diff_policy.real_backend_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { draw_diff_policy.upload_consumed_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { draw_diff_policy.stable_glyph_key_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { draw_diff_policy.stable_style_key_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { draw_diff_policy.stable_run_key_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { draw_diff_policy.stable_glyph_changed_packet_count } -> std::same_as<std::size_t&>;
+    { draw_diff_policy.stable_style_changed_packet_count } -> std::same_as<std::size_t&>;
+    { draw_diff_policy.stable_run_changed_packet_count } -> std::same_as<std::size_t&>;
+    { draw_diff_policy.added_packet_count } -> std::same_as<std::size_t&>;
+    { draw_diff_policy.removed_packet_count } -> std::same_as<std::size_t&>;
+    { draw_diff_policy.changed_packet_count } -> std::same_as<std::size_t&>;
+    { draw_diff_policy.readiness_changed_packet_count } -> std::same_as<std::size_t&>;
+    { draw_diff_policy.fallback_changed_packet_count } -> std::same_as<std::size_t&>;
+    { draw_diff_policy.page_revision_changed_packet_count } -> std::same_as<std::size_t&>;
+    { draw_diff.previous_frame_id } -> std::same_as<std::string&>;
+    { draw_diff.current_frame_id } -> std::same_as<std::string&>;
+    { draw_diff.previous_frame_status } -> std::same_as<render::render_text_frame_snapshot_status&>;
+    { draw_diff.current_frame_status } -> std::same_as<render::render_text_frame_snapshot_status&>;
+    { draw_diff.previous_ready_for_renderer } -> std::same_as<bool&>;
+    { draw_diff.current_ready_for_renderer } -> std::same_as<bool&>;
+    { draw_diff.policy } -> std::same_as<render::render_text_frame_draw_plan_diff_policy&>;
+    { draw_diff.added_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { draw_diff.removed_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { draw_diff.changed_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { draw_diff.readiness_changed_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { draw_diff.fallback_changed_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { draw_diff.page_revision_changed_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { draw_diff.stable_glyph_changed_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { draw_diff.stable_style_changed_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { draw_diff.stable_run_changed_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { draw_diff.diagnostic } -> std::same_as<std::string&>;
+    { draw_diff.has_packet_changes() } -> std::same_as<bool>;
+    { draw_diff.has_readiness_or_fallback_changes() } -> std::same_as<bool>;
+    { draw_diff.has_page_revision_changes() } -> std::same_as<bool>;
+    { draw_diff.has_stable_key_deltas() } -> std::same_as<bool>;
+    { draw_diff.ok() } -> std::same_as<bool>;
+    { render::render_text_frame_draw_packet_diff_key_for(draw_packet) } -> std::same_as<std::string>;
+    { render::render_text_frame_draw_packet_slot_key_for(draw_packet) } -> std::same_as<std::string>;
+    { render::render_text_frame_draw_packet_glyph_key_for(draw_packet) } -> std::same_as<std::string>;
+    { render::render_text_frame_draw_packet_style_key_for(draw_packet) } -> std::same_as<std::string>;
+    { render::render_text_frame_draw_packet_run_key_for(draw_packet) } -> std::same_as<std::string>;
+    { render::render_text_frame_draw_plan_find_packet(draw_plan.packets, style_key_text) }
+        -> std::same_as<const render::render_text_frame_draw_packet_snapshot*>;
+    { render::render_text_frame_draw_plan_find_packet_by_slot(draw_plan.packets, style_key_text) }
+        -> std::same_as<const render::render_text_frame_draw_packet_snapshot*>;
+    { render::render_text_frame_draw_uv_rects_equal(draw_uv, draw_uv) } -> std::same_as<bool>;
+    { render::render_text_frame_draw_packets_equal(draw_packet, draw_packet) } -> std::same_as<bool>;
+    { render::render_text_frame_draw_append_unique_nonempty(stable_request_ids, style_key_text) }
+        -> std::same_as<void>;
+    { render::render_text_frame_draw_plan_stable_glyph_keys(draw_plan) }
+        -> std::same_as<std::vector<std::string>>;
+    { render::render_text_frame_draw_plan_stable_style_keys(draw_plan) }
+        -> std::same_as<std::vector<std::string>>;
+    { render::render_text_frame_draw_plan_stable_run_keys(draw_plan) }
+        -> std::same_as<std::vector<std::string>>;
+    { render::diff_render_text_frame_draw_plans(draw_plan, draw_plan) }
+        -> std::same_as<render::render_text_frame_draw_plan_diff>;
     { render::render_text_atlas_upload_request_rect_key(atlas_request.atlas_update_bounds) }
         -> std::same_as<std::string>;
     { render::render_text_atlas_upload_request_stable_id_for(atlas_request) }

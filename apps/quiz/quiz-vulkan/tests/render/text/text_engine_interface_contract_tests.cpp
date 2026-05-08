@@ -8,6 +8,7 @@
 #include "render/text/font_glyph_id_resolver.h"
 #include "render/text/font_rasterizer.h"
 #include "render/text/text_frame_snapshot.h"
+#include "render/text/text_frame_draw_plan.h"
 #include "render/text/font_shaped_atlas_update.h"
 #include "render/text/font_shaping_backend.h"
 #include "render/text/font_sfnt_inspector.h"
@@ -1669,6 +1670,12 @@ static_assert(requires(
     render::render_text_frame_snapshot_regression_summary frame_regression,
     render::render_text_frame_snapshot_diff_policy frame_diff_policy,
     render::render_text_frame_snapshot_diff frame_diff,
+    render::render_text_frame_draw_packet_status draw_packet_status,
+    render::render_text_frame_draw_uv_rect draw_uv,
+    render::render_text_frame_draw_packet_snapshot draw_packet,
+    render::render_text_frame_draw_plan_policy draw_policy,
+    render::render_text_frame_draw_plan_request draw_request,
+    render::render_text_frame_draw_plan_snapshot draw_plan,
     render::render_text_glyph_atlas_materialization_snapshot snapshot,
     render::render_text_request request,
     render::render_draw_command draw_command,
@@ -1895,6 +1902,7 @@ static_assert(requires(
     { frame_snapshot.policy } -> std::same_as<render::render_text_frame_snapshot_policy&>;
     { frame_snapshot.layout_requests }
         -> std::same_as<std::vector<render::render_text_batch_layout_request_snapshot>&>;
+    { frame_snapshot.style_keys } -> std::same_as<std::vector<render::render_text_batch_normalized_style_key>&>;
     { frame_snapshot.selected_face_order } -> std::same_as<std::vector<render::font_face_id>&>;
     { frame_snapshot.missing_glyphs }
         -> std::same_as<std::vector<render::render_text_font_fallback_chain_missing_glyph_snapshot>&>;
@@ -1985,6 +1993,98 @@ static_assert(requires(
         -> std::same_as<render::render_text_frame_snapshot_regression_summary>;
     { render::diff_render_text_frame_snapshots(frame_snapshot, frame_snapshot) }
         -> std::same_as<render::render_text_frame_snapshot_diff>;
+    { render::render_text_frame_draw_packet_status_name(draw_packet_status) } -> std::same_as<std::string>;
+    { draw_uv.u0 } -> std::same_as<float&>;
+    { draw_uv.v0 } -> std::same_as<float&>;
+    { draw_uv.u1 } -> std::same_as<float&>;
+    { draw_uv.v1 } -> std::same_as<float&>;
+    { draw_uv.valid } -> std::same_as<bool&>;
+    { draw_packet.packet_id } -> std::same_as<std::string&>;
+    { draw_packet.frame_id } -> std::same_as<std::string&>;
+    { draw_packet.source_label } -> std::same_as<std::string&>;
+    { draw_packet.atlas_upload_request_id } -> std::same_as<std::string&>;
+    { draw_packet.status } -> std::same_as<render::render_text_frame_draw_packet_status&>;
+    { draw_packet.item_index } -> std::same_as<std::size_t&>;
+    { draw_packet.materialization_index } -> std::same_as<std::size_t&>;
+    { draw_packet.run_index } -> std::same_as<std::size_t&>;
+    { draw_packet.requested_style_token } -> std::same_as<render::render_style_id&>;
+    { draw_packet.resolved_style_id } -> std::same_as<render::render_style_id&>;
+    { draw_packet.cluster_byte_offset } -> std::same_as<std::size_t&>;
+    { draw_packet.cluster_byte_count } -> std::same_as<std::size_t&>;
+    { draw_packet.cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { draw_packet.resolved_glyph_id } -> std::same_as<std::uint32_t&>;
+    { draw_packet.resolved_face_id } -> std::same_as<render::font_face_id&>;
+    { draw_packet.page_id } -> std::same_as<render::render_text_atlas_page_id&>;
+    { draw_packet.page_revision } -> std::same_as<render::render_text_revision&>;
+    { draw_packet.page_width } -> std::same_as<std::size_t&>;
+    { draw_packet.page_height } -> std::same_as<std::size_t&>;
+    { draw_packet.layout_bounds } -> std::same_as<render::render_rect&>;
+    { draw_packet.has_layout_bounds } -> std::same_as<bool&>;
+    { draw_packet.atlas_bounds } -> std::same_as<render::render_rect&>;
+    { draw_packet.has_atlas_bounds } -> std::same_as<bool&>;
+    { draw_packet.uv_bounds } -> std::same_as<render::render_text_frame_draw_uv_rect&>;
+    { draw_packet.frame_ready_for_renderer } -> std::same_as<bool&>;
+    { draw_packet.fallback_incomplete } -> std::same_as<bool&>;
+    { draw_packet.used_deterministic_fallback } -> std::same_as<bool&>;
+    { draw_packet.used_real_backend } -> std::same_as<bool&>;
+    { draw_packet.glyph_supported } -> std::same_as<bool&>;
+    { draw_packet.stable_cache_key } -> std::same_as<bool&>;
+    { draw_packet.upload_consumed } -> std::same_as<bool&>;
+    { draw_packet.diagnostic } -> std::same_as<std::string&>;
+    { draw_packet.drawable() } -> std::same_as<bool>;
+    { draw_policy.materialization_count } -> std::same_as<std::size_t&>;
+    { draw_policy.packet_count } -> std::same_as<std::size_t&>;
+    { draw_policy.draw_ready_count } -> std::same_as<std::size_t&>;
+    { draw_policy.skipped_count } -> std::same_as<std::size_t&>;
+    { draw_policy.frame_not_ready_count } -> std::same_as<std::size_t&>;
+    { draw_policy.fallback_incomplete_count } -> std::same_as<std::size_t&>;
+    { draw_policy.missing_cache_key_count } -> std::same_as<std::size_t&>;
+    { draw_policy.missing_layout_bounds_count } -> std::same_as<std::size_t&>;
+    { draw_policy.missing_atlas_bounds_count } -> std::same_as<std::size_t&>;
+    { draw_policy.missing_page_extent_count } -> std::same_as<std::size_t&>;
+    { draw_policy.deterministic_fallback_count } -> std::same_as<std::size_t&>;
+    { draw_policy.real_backend_count } -> std::same_as<std::size_t&>;
+    { draw_policy.upload_consumed_count } -> std::same_as<std::size_t&>;
+    { draw_request.frame } -> std::same_as<render::render_text_frame_snapshot&>;
+    { draw_request.materializations }
+        -> std::same_as<std::vector<render::render_text_glyph_atlas_materialization_snapshot>&>;
+    { draw_request.item_index } -> std::same_as<std::size_t&>;
+    { draw_plan.frame_id } -> std::same_as<std::string&>;
+    { draw_plan.source_label } -> std::same_as<std::string&>;
+    { draw_plan.frame_status } -> std::same_as<render::render_text_frame_snapshot_status&>;
+    { draw_plan.frame_ready_for_renderer } -> std::same_as<bool&>;
+    { draw_plan.policy } -> std::same_as<render::render_text_frame_draw_plan_policy&>;
+    { draw_plan.packets } -> std::same_as<std::vector<render::render_text_frame_draw_packet_snapshot>&>;
+    { draw_plan.diagnostic } -> std::same_as<std::string&>;
+    { draw_plan.ok() } -> std::same_as<bool>;
+    { draw_plan.has_draw_packets() } -> std::same_as<bool>;
+    { render::render_text_frame_draw_uv_rect_for(frame_upload.updated_bounds, frame_upload.page) }
+        -> std::same_as<render::render_text_frame_draw_uv_rect>;
+    { render::render_text_frame_draw_layout_request_for(frame_snapshot, std::size_t{}) }
+        -> std::same_as<const render::render_text_batch_layout_request_snapshot*>;
+    { render::render_text_frame_draw_style_key_for(frame_snapshot, std::size_t{}, std::size_t{}) }
+        -> std::same_as<const render::render_text_batch_normalized_style_key*>;
+    { render::render_text_frame_draw_atlas_upload_for(
+        frame_snapshot,
+        std::size_t{},
+        std::size_t{},
+        draw_packet.cache_key) } -> std::same_as<const render::render_text_frame_atlas_upload_snapshot*>;
+    { render::render_text_frame_draw_packet_stable_id_for(
+        frame_snapshot,
+        std::size_t{},
+        std::size_t{},
+        draw_packet.cache_key,
+        frame_upload.page) } -> std::same_as<std::string>;
+    { render::render_text_frame_draw_materialization_uses_deterministic_fallback(snapshot) }
+        -> std::same_as<bool>;
+    { render::render_text_frame_draw_packet_status_for(frame_snapshot, snapshot, bool{}, draw_uv) }
+        -> std::same_as<render::render_text_frame_draw_packet_status>;
+    { render::make_render_text_frame_draw_packet(frame_snapshot, snapshot, std::size_t{}, std::size_t{}) }
+        -> std::same_as<render::render_text_frame_draw_packet_snapshot>;
+    { render::append_render_text_frame_draw_packet(draw_plan.packets, draw_policy, draw_packet) }
+        -> std::same_as<void>;
+    { render::plan_render_text_frame_draw_packets(draw_request) }
+        -> std::same_as<render::render_text_frame_draw_plan_snapshot>;
     { render::render_text_atlas_upload_request_rect_key(atlas_request.atlas_update_bounds) }
         -> std::same_as<std::string>;
     { render::render_text_atlas_upload_request_stable_id_for(atlas_request) }

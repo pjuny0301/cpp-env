@@ -99,6 +99,7 @@ struct render_text_frame_snapshot {
     render_text_atlas_upload_request_policy_snapshot atlas_upload_policy;
     render_text_frame_snapshot_policy policy;
     std::vector<render_text_batch_layout_request_snapshot> layout_requests;
+    std::vector<render_text_batch_normalized_style_key> style_keys;
     std::vector<font_face_id> selected_face_order;
     std::vector<render_text_font_fallback_chain_missing_glyph_snapshot> missing_glyphs;
     std::vector<render_text_frame_atlas_upload_snapshot> atlas_uploads;
@@ -230,6 +231,7 @@ inline render_text_frame_snapshot make_render_text_frame_snapshot(
         .materialization_policy = request.materialization_policy,
         .atlas_upload_policy = request.atlas_upload_bridge.policy,
         .layout_requests = std::move(request.batch_plan.layout_requests),
+        .style_keys = std::move(request.batch_plan.style_keys),
         .selected_face_order = std::move(request.fallback_chain_plan.deterministic_selected_face_order),
         .missing_glyphs = std::move(request.fallback_chain_plan.missing_glyphs),
         .queued_atlas_upload_request_ids = std::move(request.queued_atlas_upload_request_ids),

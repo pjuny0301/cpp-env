@@ -1,4 +1,5 @@
 #include "render/text/font_shaped_atlas_update.h"
+#include "render/text/text_frame_draw_plan.h"
 
 #include <cassert>
 #include <cstddef>
@@ -861,6 +862,126 @@ void test_text_frame_snapshot_diff_reports_added_removed_ids_byte_delta_and_regr
     require(diff.regression.issue_count == 2U, "diff counts readiness and fallback regression issues");
 }
 
+void test_text_frame_draw_plan_produces_ready_glyph_packet_with_uv_bounds()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_glyph_atlas_materialization_snapshot materialization =
+        upload_ready_materialization();
+    materialization.run_index = 0U;
+    const render_text_frame_snapshot frame =
+        frame_snapshot_for_materializations({materialization}, true);
+
+    const render_text_frame_draw_plan_snapshot plan =
+        plan_render_text_frame_draw_packets(render_text_frame_draw_plan_request{
+            .frame = frame,
+            .materializations = {materialization},
+        });
+    const render_text_frame_draw_plan_snapshot repeated_plan =
+        plan_render_text_frame_draw_packets(render_text_frame_draw_plan_request{
+            .frame = frame,
+            .materializations = {materialization},
+        });
+
+    require(plan.ok(), "ready frame draw plan is ok");
+    require(plan.has_draw_packets(), "ready frame draw plan emits packet diagnostics");
+    require(plan.policy.materialization_count == 1U, "draw plan counts materializations");
+    require(plan.policy.packet_count == 1U, "draw plan counts packets");
+    require(plan.policy.draw_ready_count == 1U, "draw plan counts draw-ready packet");
+    require(plan.policy.deterministic_fallback_count == 1U, "draw plan preserves fallback backend status");
+
+    const render_text_frame_draw_packet_snapshot& packet = plan.packets.front();
+    require(packet.drawable(), "ready packet reports drawable");
+    require(packet.status == render_text_frame_draw_packet_status::draw_ready, "packet status is draw-ready");
+    require(packet.frame_ready_for_renderer, "packet records frame readiness");
+    require(packet.cache_key == materialization.cache_key, "packet preserves glyph cache key");
+    require(packet.resolved_glyph_id == materialization.resolved_glyph_id, "packet preserves resolved glyph id");
+    require(packet.page_id == materialization.page.id, "packet preserves atlas page id");
+    require(packet.page_revision == materialization.page.revision, "packet preserves atlas revision");
+    require(packet.requested_style_token == "body", "packet resolves requested style token");
+    require(packet.resolved_style_id == "body", "packet resolves style id");
+    require(packet.run_index == 0U, "packet preserves run index");
+    require(packet.has_layout_bounds, "packet exposes layout bounds");
+    require(packet.layout_bounds.x == materialization.layout_bounds.x, "packet preserves layout bounds");
+    require(packet.has_atlas_bounds, "packet exposes atlas bounds");
+    require(packet.atlas_bounds.x == materialization.atlas_bounds.x, "packet preserves atlas bounds");
+    require(packet.uv_bounds.valid, "packet derives UV bounds from atlas page size");
+    require(packet.uv_bounds.u0 == materialization.atlas_bounds.x / 64.0f, "packet derives u0");
+    require(packet.uv_bounds.u1 == materialization.atlas_bounds.right() / 64.0f, "packet derives u1");
+    require(packet.upload_consumed, "packet records consumed upload id");
+    require(packet.stable_cache_key, "packet reports stable cache key");
+    require(
+        repeated_plan.packets.front().packet_id == packet.packet_id,
+        "draw packet stable id repeats for identical inputs");
+}
+
+void test_text_frame_draw_plan_reports_pending_and_fallback_blockers()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_glyph_atlas_materialization_snapshot materialization =
+        upload_ready_materialization();
+    materialization.run_index = 0U;
+
+    const render_text_frame_snapshot pending_frame =
+        frame_snapshot_for_materializations({materialization});
+    const render_text_frame_draw_plan_snapshot pending_plan =
+        plan_render_text_frame_draw_packets(render_text_frame_draw_plan_request{
+            .frame = pending_frame,
+            .materializations = {materialization},
+        });
+
+    require(!pending_plan.ok(), "pending frame draw plan is not ready");
+    require(
+        pending_plan.packets.front().status == render_text_frame_draw_packet_status::frame_not_ready,
+        "pending frame blocks draw packet");
+    require(pending_plan.policy.frame_not_ready_count == 1U, "policy counts frame-not-ready packet");
+
+    render_text_frame_snapshot fallback_frame =
+        frame_snapshot_for_materializations({materialization}, true);
+    fallback_frame.status = render_text_frame_snapshot_status::font_fallback_incomplete;
+    const render_text_frame_draw_plan_snapshot fallback_plan =
+        plan_render_text_frame_draw_packets(render_text_frame_draw_plan_request{
+            .frame = fallback_frame,
+            .materializations = {materialization},
+        });
+
+    require(!fallback_plan.ok(), "fallback-incomplete frame draw plan is not ready");
+    require(
+        fallback_plan.packets.front().status == render_text_frame_draw_packet_status::fallback_incomplete,
+        "fallback incomplete frame blocks draw packet");
+    require(fallback_plan.packets.front().fallback_incomplete, "packet records fallback incomplete status");
+    require(
+        fallback_plan.policy.fallback_incomplete_count == 1U,
+        "policy counts fallback-incomplete packet");
+}
+
+void test_text_frame_draw_plan_reports_missing_page_extent()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_glyph_atlas_materialization_snapshot materialization =
+        upload_ready_materialization();
+    materialization.run_index = 0U;
+    materialization.page.width = 0U;
+    materialization.page.height = 0U;
+
+    const render_text_frame_snapshot frame =
+        frame_snapshot_for_materializations({materialization}, true);
+    const render_text_frame_draw_plan_snapshot plan =
+        plan_render_text_frame_draw_packets(render_text_frame_draw_plan_request{
+            .frame = frame,
+            .materializations = {materialization},
+        });
+
+    require(!plan.ok(), "missing page extent draw plan is not ready");
+    require(
+        plan.packets.front().status == render_text_frame_draw_packet_status::missing_page_extent,
+        "draw plan reports missing page extent when UVs cannot be derived");
+    require(!plan.packets.front().uv_bounds.valid, "missing page extent leaves UV bounds invalid");
+    require(plan.policy.missing_page_extent_count == 1U, "policy counts missing page extent");
+}
+
 } // namespace
 
 int main()
@@ -878,5 +999,8 @@ int main()
     test_text_frame_snapshot_reports_consumed_upload_id_mismatch();
     test_text_frame_snapshot_diff_reports_readiness_and_consumed_id_transition();
     test_text_frame_snapshot_diff_reports_added_removed_ids_byte_delta_and_regression();
+    test_text_frame_draw_plan_produces_ready_glyph_packet_with_uv_bounds();
+    test_text_frame_draw_plan_reports_pending_and_fallback_blockers();
+    test_text_frame_draw_plan_reports_missing_page_extent();
     return 0;
 }

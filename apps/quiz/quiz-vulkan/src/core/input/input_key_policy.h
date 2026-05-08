@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/input/input_engine.h"
+#include "core/input/input_routing_diagnostics.h"
 
 namespace quiz_vulkan::input::detail {
 

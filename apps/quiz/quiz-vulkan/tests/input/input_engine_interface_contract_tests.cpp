@@ -1,4 +1,5 @@
 #include "core/input/gesture_recognizer.h"
+#include "core/input/input_routing_diagnostics.h"
 #include "core/input/input_engine.h"
 #include "core/input/normalized_input_replay_diff.h"
 #include "core/input/normalized_input_replay.h"
@@ -852,6 +853,23 @@ concept KeyboardChordDiagnosticInterface = requires(T chord) {
 };
 
 template <typename T>
+concept InputRoutingDiagnosticFunctions = requires(
+    input::input_diagnostic_summary& target,
+    const input::input_diagnostic_summary& source,
+    input::input_event_summary_kind event_kind,
+    input::action_route_policy_kind route_kind,
+    const input::pointer_capture_snapshot& capture,
+    const input::input_routing_diagnostics& diagnostics,
+    const input::text_input_model& text) {
+    { input::count_input_diagnostic_normalized_event(target, event_kind) } -> std::same_as<void>;
+    { input::count_input_diagnostic_route(target, route_kind) } -> std::same_as<void>;
+    { input::input_diagnostic_pointer_capture_has_state(capture) } -> std::same_as<bool>;
+    { input::summarize_input_routing_diagnostics(diagnostics, text) }
+        -> std::same_as<input::input_diagnostic_summary>;
+    { input::accumulate_input_diagnostic_summary(target, source) } -> std::same_as<void>;
+};
+
+template <typename T>
 concept ImeCompositionStateInterface = requires(T state) {
     { state.active } -> std::same_as<bool&>;
     { state.preedit_text } -> std::same_as<std::string&>;
@@ -910,6 +928,7 @@ static_assert(NormalizedInputEventKindCountsInterface<input::normalized_input_ev
 static_assert(InputRouteKindCountsInterface<input::input_route_kind_counts>);
 static_assert(InputDiagnosticSummaryInterface<input::input_diagnostic_summary>);
 static_assert(InputRoutingDiagnosticsInterface<input::input_routing_diagnostics>);
+static_assert(InputRoutingDiagnosticFunctions<void>);
 static_assert(GestureRecognizerInterface<input::gesture_recognizer>);
 static_assert(PlatformInputTranslatorInterface<input::platform_input_translator>);
 static_assert(PlatformMouseSampleInterface<input::platform_mouse_sample>);

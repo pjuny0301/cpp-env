@@ -1,5 +1,6 @@
 #include "core/input/gesture_recognizer.h"
 #include "core/input/input_engine.h"
+#include "core/input/normalized_input_replay_diff.h"
 #include "core/input/normalized_input_replay.h"
 #include "core/input/platform_input_engine_adapter.h"
 #include "core/input/platform_input_translator.h"

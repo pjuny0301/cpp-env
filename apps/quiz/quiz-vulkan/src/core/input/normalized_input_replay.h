@@ -235,6 +235,68 @@ struct normalized_input_replay_pointer_summary {
     bool final_capture_clean = true;
 };
 
+enum class normalized_input_replay_focus_timeline_kind {
+    focus_gain,
+    focus_loss,
+    focus_traversal_next,
+    focus_traversal_previous,
+    caret_moved,
+    selection_changed,
+};
+
+struct normalized_input_replay_focus_timeline_counts {
+    std::size_t focus_gain = 0;
+    std::size_t focus_loss = 0;
+    std::size_t focus_traversal_next = 0;
+    std::size_t focus_traversal_previous = 0;
+    std::size_t caret_moved = 0;
+    std::size_t selection_changed = 0;
+};
+
+struct normalized_input_replay_focus_timeline_entry {
+    normalized_input_replay_focus_timeline_kind kind =
+        normalized_input_replay_focus_timeline_kind::caret_moved;
+    std::int64_t timestamp_ms = 0;
+    bool emits_input_event = false;
+    std::size_t event_index = 0;
+    std::string target_id;
+    std::string target_id_before;
+    std::string target_id_after;
+    bool had_focus_before = false;
+    bool has_focus_after = false;
+    bool target_changed = false;
+    std::size_t text_byte_count_before = 0;
+    std::size_t text_byte_count_after = 0;
+    text_range caret_before;
+    text_range caret_after;
+    bool caret_changed = false;
+    bool had_selection_before = false;
+    bool has_selection_after = false;
+    text_range selection_before;
+    text_range selection_after;
+    bool selection_changed = false;
+    keyboard_chord_diagnostic keyboard;
+    bool focus_clean_after = true;
+};
+
+struct normalized_input_replay_focus_summary {
+    std::vector<normalized_input_replay_focus_timeline_entry> timeline;
+    normalized_input_replay_focus_timeline_counts kinds;
+    std::size_t total = 0;
+    std::size_t emitted_input_event_routes = 0;
+    std::size_t diagnostic_only_routes = 0;
+    std::size_t target_transition_count = 0;
+    std::size_t caret_transition_count = 0;
+    std::size_t selection_transition_count = 0;
+    bool final_has_focus = false;
+    std::string final_focus_id;
+    std::size_t final_text_byte_count = 0;
+    text_range final_caret;
+    bool final_has_selection = false;
+    text_range final_selection;
+    bool final_focus_clean = true;
+};
+
 struct normalized_input_replay_end_state {
     pointer_capture_snapshot pointer_capture;
     bool has_text_focus = false;
@@ -259,6 +321,7 @@ struct normalized_input_replay_batch {
     normalized_input_replay_keyboard_summary keyboard;
     normalized_input_replay_ime_summary ime;
     normalized_input_replay_pointer_summary pointer;
+    normalized_input_replay_focus_summary focus;
     normalized_input_replay_end_state end_state;
 };
 
@@ -268,6 +331,7 @@ struct normalized_input_replay_recording {
     normalized_input_replay_keyboard_summary keyboard;
     normalized_input_replay_ime_summary ime;
     normalized_input_replay_pointer_summary pointer;
+    normalized_input_replay_focus_summary focus;
     normalized_input_replay_end_state final_state;
 };
 
@@ -1075,6 +1139,267 @@ inline void accumulate_normalized_input_replay_pointer_summary(
     return summary;
 }
 
+[[nodiscard]] inline text_range normalized_input_replay_caret_range_for_offset(std::size_t offset)
+{
+    return text_range{
+        .start_byte = offset,
+        .end_byte = offset,
+    };
+}
+
+[[nodiscard]] inline bool normalized_input_replay_same_text_range(text_range lhs, text_range rhs)
+{
+    return lhs.start_byte == rhs.start_byte && lhs.end_byte == rhs.end_byte;
+}
+
+[[nodiscard]] inline bool normalized_input_replay_focus_route_kind(action_route_policy_kind kind)
+{
+    return kind == action_route_policy_kind::focus_loss
+        || kind == action_route_policy_kind::focus_traversal_next
+        || kind == action_route_policy_kind::focus_traversal_previous
+        || kind == action_route_policy_kind::caret_moved
+        || kind == action_route_policy_kind::selection_changed;
+}
+
+[[nodiscard]] inline bool normalized_input_replay_focus_event_kind(text_event_kind kind)
+{
+    return kind == text_event_kind::focus_gained;
+}
+
+[[nodiscard]] inline normalized_input_replay_focus_timeline_kind normalized_input_replay_focus_kind_for_route(
+    action_route_policy_kind kind)
+{
+    switch (kind) {
+    case action_route_policy_kind::focus_loss:
+        return normalized_input_replay_focus_timeline_kind::focus_loss;
+    case action_route_policy_kind::focus_traversal_next:
+        return normalized_input_replay_focus_timeline_kind::focus_traversal_next;
+    case action_route_policy_kind::focus_traversal_previous:
+        return normalized_input_replay_focus_timeline_kind::focus_traversal_previous;
+    case action_route_policy_kind::caret_moved:
+        return normalized_input_replay_focus_timeline_kind::caret_moved;
+    case action_route_policy_kind::selection_changed:
+        return normalized_input_replay_focus_timeline_kind::selection_changed;
+    case action_route_policy_kind::pointer_capture_reset:
+    case action_route_policy_kind::pointer_capture_arbitration:
+    case action_route_policy_kind::wheel_summary:
+    case action_route_policy_kind::gesture_route_snapshot:
+    case action_route_policy_kind::text_commit_boundary:
+    case action_route_policy_kind::text_backspace_boundary:
+    case action_route_policy_kind::text_delete_forward_boundary:
+    case action_route_policy_kind::text_submit_boundary:
+    case action_route_policy_kind::keyboard_cancel_intent:
+    case action_route_policy_kind::ime_preedit:
+    case action_route_policy_kind::ime_commit:
+    case action_route_policy_kind::ime_cancel:
+    case action_route_policy_kind::ime_composition_start:
+        return normalized_input_replay_focus_timeline_kind::caret_moved;
+    }
+
+    return normalized_input_replay_focus_timeline_kind::caret_moved;
+}
+
+[[nodiscard]] inline normalized_input_replay_focus_timeline_kind normalized_input_replay_focus_kind_for_event(
+    text_event_kind kind)
+{
+    switch (kind) {
+    case text_event_kind::focus_gained:
+        return normalized_input_replay_focus_timeline_kind::focus_gain;
+    case text_event_kind::focus_lost:
+        return normalized_input_replay_focus_timeline_kind::focus_loss;
+    case text_event_kind::caret_moved:
+        return normalized_input_replay_focus_timeline_kind::caret_moved;
+    case text_event_kind::selection_changed:
+        return normalized_input_replay_focus_timeline_kind::selection_changed;
+    case text_event_kind::commit:
+    case text_event_kind::backspace:
+    case text_event_kind::delete_forward:
+    case text_event_kind::submit:
+    case text_event_kind::cancel:
+        return normalized_input_replay_focus_timeline_kind::caret_moved;
+    }
+
+    return normalized_input_replay_focus_timeline_kind::caret_moved;
+}
+
+inline void count_normalized_input_replay_focus_kind(
+    normalized_input_replay_focus_timeline_counts& counts,
+    normalized_input_replay_focus_timeline_kind kind)
+{
+    switch (kind) {
+    case normalized_input_replay_focus_timeline_kind::focus_gain:
+        ++counts.focus_gain;
+        return;
+    case normalized_input_replay_focus_timeline_kind::focus_loss:
+        ++counts.focus_loss;
+        return;
+    case normalized_input_replay_focus_timeline_kind::focus_traversal_next:
+        ++counts.focus_traversal_next;
+        return;
+    case normalized_input_replay_focus_timeline_kind::focus_traversal_previous:
+        ++counts.focus_traversal_previous;
+        return;
+    case normalized_input_replay_focus_timeline_kind::caret_moved:
+        ++counts.caret_moved;
+        return;
+    case normalized_input_replay_focus_timeline_kind::selection_changed:
+        ++counts.selection_changed;
+        return;
+    }
+}
+
+inline void apply_normalized_input_replay_focus_entry_state(
+    normalized_input_replay_focus_timeline_entry& entry,
+    const normalized_input_replay_end_state& before_state,
+    const normalized_input_replay_end_state& end_state)
+{
+    entry.target_id_before = before_state.focus_id;
+    entry.target_id_after = end_state.focus_id;
+    entry.had_focus_before = before_state.has_text_focus;
+    entry.has_focus_after = end_state.has_text_focus;
+    entry.target_changed = entry.target_id_before != entry.target_id_after
+        || entry.had_focus_before != entry.has_focus_after;
+    entry.focus_clean_after = end_state.focus_clean;
+}
+
+inline void finish_normalized_input_replay_focus_entry(
+    normalized_input_replay_focus_timeline_entry& entry)
+{
+    entry.caret_changed = !normalized_input_replay_same_text_range(entry.caret_before, entry.caret_after);
+    entry.selection_changed = entry.had_selection_before != entry.has_selection_after
+        || !normalized_input_replay_same_text_range(entry.selection_before, entry.selection_after);
+}
+
+inline void apply_normalized_input_replay_focus_final_state(
+    normalized_input_replay_focus_summary& summary,
+    const normalized_input_replay_end_state& end_state)
+{
+    summary.final_has_focus = end_state.has_text_focus;
+    summary.final_focus_id = end_state.focus_id;
+    summary.final_text_byte_count = end_state.text.size();
+    summary.final_caret = normalized_input_replay_caret_range_for_offset(end_state.caret_byte_offset);
+    summary.final_has_selection = end_state.has_selection;
+    summary.final_selection = end_state.selection;
+    summary.final_focus_clean = end_state.focus_clean;
+}
+
+inline void add_normalized_input_replay_focus_entry(
+    normalized_input_replay_focus_summary& summary,
+    normalized_input_replay_focus_timeline_entry entry)
+{
+    ++summary.total;
+    if (entry.emits_input_event) {
+        ++summary.emitted_input_event_routes;
+    } else {
+        ++summary.diagnostic_only_routes;
+    }
+    if (entry.target_changed) {
+        ++summary.target_transition_count;
+    }
+    if (entry.caret_changed) {
+        ++summary.caret_transition_count;
+    }
+    if (entry.selection_changed) {
+        ++summary.selection_transition_count;
+    }
+    count_normalized_input_replay_focus_kind(summary.kinds, entry.kind);
+    summary.timeline.push_back(std::move(entry));
+}
+
+inline void accumulate_normalized_input_replay_focus_summary(
+    normalized_input_replay_focus_summary& target,
+    const normalized_input_replay_focus_summary& source)
+{
+    target.timeline.insert(target.timeline.end(), source.timeline.begin(), source.timeline.end());
+    target.kinds.focus_gain += source.kinds.focus_gain;
+    target.kinds.focus_loss += source.kinds.focus_loss;
+    target.kinds.focus_traversal_next += source.kinds.focus_traversal_next;
+    target.kinds.focus_traversal_previous += source.kinds.focus_traversal_previous;
+    target.kinds.caret_moved += source.kinds.caret_moved;
+    target.kinds.selection_changed += source.kinds.selection_changed;
+    target.total += source.total;
+    target.emitted_input_event_routes += source.emitted_input_event_routes;
+    target.diagnostic_only_routes += source.diagnostic_only_routes;
+    target.target_transition_count += source.target_transition_count;
+    target.caret_transition_count += source.caret_transition_count;
+    target.selection_transition_count += source.selection_transition_count;
+    target.final_has_focus = source.final_has_focus;
+    target.final_focus_id = source.final_focus_id;
+    target.final_text_byte_count = source.final_text_byte_count;
+    target.final_caret = source.final_caret;
+    target.final_has_selection = source.final_has_selection;
+    target.final_selection = source.final_selection;
+    target.final_focus_clean = source.final_focus_clean;
+}
+
+[[nodiscard]] inline normalized_input_replay_focus_summary summarize_normalized_input_replay_focus_routes(
+    std::span<const action_route_policy_diagnostic> routes,
+    std::span<const input_event> events,
+    const normalized_input_replay_end_state& before_state,
+    const normalized_input_replay_end_state& end_state)
+{
+    normalized_input_replay_focus_summary summary;
+    apply_normalized_input_replay_focus_final_state(summary, end_state);
+
+    for (std::size_t index = 0; index < events.size(); ++index) {
+        if (!std::holds_alternative<text_event>(events[index])) {
+            continue;
+        }
+
+        const text_event& event = std::get<text_event>(events[index]);
+        if (!normalized_input_replay_focus_event_kind(event.kind)) {
+            continue;
+        }
+
+        normalized_input_replay_focus_timeline_entry entry{
+            .kind = normalized_input_replay_focus_kind_for_event(event.kind),
+            .timestamp_ms = event.timestamp_ms,
+            .emits_input_event = true,
+            .event_index = index,
+            .target_id = event.target_id,
+            .text_byte_count_before = before_state.text.size(),
+            .text_byte_count_after = end_state.text.size(),
+            .caret_before = normalized_input_replay_caret_range_for_offset(before_state.caret_byte_offset),
+            .caret_after = normalized_input_replay_caret_range_for_offset(end_state.caret_byte_offset),
+            .had_selection_before = before_state.has_selection,
+            .has_selection_after = end_state.has_selection,
+            .selection_before = before_state.selection,
+            .selection_after = end_state.selection,
+        };
+        apply_normalized_input_replay_focus_entry_state(entry, before_state, end_state);
+        finish_normalized_input_replay_focus_entry(entry);
+        add_normalized_input_replay_focus_entry(summary, std::move(entry));
+    }
+
+    for (const action_route_policy_diagnostic& route : routes) {
+        if (!normalized_input_replay_focus_route_kind(route.kind)) {
+            continue;
+        }
+
+        normalized_input_replay_focus_timeline_entry entry{
+            .kind = normalized_input_replay_focus_kind_for_route(route.kind),
+            .timestamp_ms = route.timestamp_ms,
+            .emits_input_event = route.emits_input_event,
+            .event_index = route.event_index,
+            .target_id = route.target_id,
+            .text_byte_count_before = route.text_byte_count_before,
+            .text_byte_count_after = route.text_byte_count_after,
+            .caret_before = route.caret_before,
+            .caret_after = route.caret_after,
+            .had_selection_before = route.had_selection_before,
+            .has_selection_after = route.has_selection_after,
+            .selection_before = route.selection_before,
+            .selection_after = route.selection_after,
+            .keyboard = route.keyboard,
+        };
+        apply_normalized_input_replay_focus_entry_state(entry, before_state, end_state);
+        finish_normalized_input_replay_focus_entry(entry);
+        add_normalized_input_replay_focus_entry(summary, std::move(entry));
+    }
+
+    return summary;
+}
+
 [[nodiscard]] inline normalized_input_replay_end_state capture_normalized_input_replay_end_state(
     const input_engine& engine)
 {
@@ -1105,6 +1430,8 @@ inline void accumulate_normalized_input_replay_pointer_summary(
     std::string label,
     const normalized_input_replay_action& action)
 {
+    const normalized_input_replay_end_state before_state =
+        capture_normalized_input_replay_end_state(engine);
     std::vector<input_event> events = std::visit(
         [&engine](const auto& replay_action) -> std::vector<input_event> {
             using action_type = std::decay_t<decltype(replay_action)>;
@@ -1124,6 +1451,12 @@ inline void accumulate_normalized_input_replay_pointer_summary(
         summarize_normalized_input_replay_ime_routes(diagnostics.action_routes, events, end_state);
     normalized_input_replay_pointer_summary pointer =
         summarize_normalized_input_replay_pointer_routes(diagnostics.action_routes, end_state);
+    normalized_input_replay_focus_summary focus =
+        summarize_normalized_input_replay_focus_routes(
+            diagnostics.action_routes,
+            events,
+            before_state,
+            end_state);
     return normalized_input_replay_batch{
         .label = std::move(label),
         .input_events = std::move(events),
@@ -1132,6 +1465,7 @@ inline void accumulate_normalized_input_replay_pointer_summary(
         .keyboard = summarize_normalized_input_replay_keyboard_routes(diagnostics.action_routes),
         .ime = std::move(ime),
         .pointer = std::move(pointer),
+        .focus = std::move(focus),
         .end_state = std::move(end_state),
     };
 }
@@ -1154,6 +1488,7 @@ inline void accumulate_normalized_input_replay_pointer_summary(
         accumulate_normalized_input_replay_keyboard_summary(recording.keyboard, batch.keyboard);
         accumulate_normalized_input_replay_ime_summary(recording.ime, batch.ime);
         accumulate_normalized_input_replay_pointer_summary(recording.pointer, batch.pointer);
+        accumulate_normalized_input_replay_focus_summary(recording.focus, batch.focus);
         recording.final_state = batch.end_state;
         recording.batches.push_back(std::move(batch));
     }
@@ -1165,6 +1500,11 @@ inline void accumulate_normalized_input_replay_pointer_summary(
             recording.final_state);
         recording.pointer = summarize_normalized_input_replay_pointer_routes(
             std::span<const action_route_policy_diagnostic>{},
+            recording.final_state);
+        recording.focus = summarize_normalized_input_replay_focus_routes(
+            std::span<const action_route_policy_diagnostic>{},
+            std::span<const input_event>{},
+            recording.final_state,
             recording.final_state);
     }
     return recording;

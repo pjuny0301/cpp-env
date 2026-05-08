@@ -574,6 +574,155 @@ void test_ime_replay_timeline_flags_invalid_preedit_text()
     require(recording.final_state.text.empty(), "invalid ime replay final committed text remains empty");
 }
 
+void test_focus_caret_replay_timeline_records_navigation_and_final_state()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    const std::string initial = std::string("A") + utf8(u8"한") + "B";
+    const std::array steps{
+        step("text-initial", text(950, initial)),
+        step("focus-gained", focus(raw_platform_focus_phase::gained, 960)),
+        step("home", key(970, "Home")),
+        step("arrow-right", key(980, "ArrowRight")),
+        step("end", key(990, "End")),
+        step("shift-arrow-left", key(1000, "ArrowLeft", false, raw_platform_key_phase::down, false, true)),
+        step("tab", key(1010, "Tab")),
+        step("shift-tab", key(1020, "Tab", false, raw_platform_key_phase::down, false, true)),
+        step("focus-lost", focus(raw_platform_focus_phase::lost, 1030)),
+    };
+
+    const normalized_input_replay_recording recording = replay_normalized_input_fixture(
+        engine,
+        steps,
+        normalized_input_replay_options{.initial_focus_target_id = "answer"});
+
+    const normalized_input_replay_focus_summary& focus_summary = recording.focus;
+    require(focus_summary.total == 8, "focus replay timeline counts focus and caret routes");
+    require(focus_summary.timeline.size() == 8, "focus replay timeline stores all focus entries");
+    require(focus_summary.kinds.focus_gain == 1, "focus replay timeline counts focus gain");
+    require(focus_summary.kinds.focus_loss == 1, "focus replay timeline counts focus loss");
+    require(focus_summary.kinds.focus_traversal_next == 1,
+        "focus replay timeline counts next traversal");
+    require(focus_summary.kinds.focus_traversal_previous == 1,
+        "focus replay timeline counts previous traversal");
+    require(focus_summary.kinds.caret_moved == 3, "focus replay timeline counts caret moves");
+    require(focus_summary.kinds.selection_changed == 1,
+        "focus replay timeline counts selection movement");
+    require(focus_summary.emitted_input_event_routes == 6,
+        "focus replay timeline counts emitted focus/caret events");
+    require(focus_summary.diagnostic_only_routes == 2,
+        "focus replay timeline counts diagnostic-only traversal routes");
+    require(focus_summary.target_transition_count == 1,
+        "focus replay timeline counts target transition on focus loss only");
+    require(focus_summary.caret_transition_count == 4,
+        "focus replay timeline counts caret movement transitions");
+    require(focus_summary.selection_transition_count == 2,
+        "focus replay timeline counts selection set and clear transitions");
+    require(!focus_summary.final_has_focus, "focus replay timeline records final focus cleared");
+    require(focus_summary.final_focus_id.empty(), "focus replay timeline records empty final focus id");
+    require(focus_summary.final_text_byte_count == initial.size(),
+        "focus replay timeline records final text byte count");
+    require_range(focus_summary.final_caret, 4, 4, "focus replay timeline records final caret");
+    require(!focus_summary.final_has_selection, "focus replay timeline records final selection cleared");
+    require_range(focus_summary.final_selection, 0, 0, "focus replay timeline records empty final selection");
+    require(focus_summary.final_focus_clean, "focus replay timeline records clean final focus");
+
+    const normalized_input_replay_focus_timeline_entry& gain = focus_summary.timeline[0];
+    require(gain.kind == normalized_input_replay_focus_timeline_kind::focus_gain,
+        "focus replay first entry records focus gain");
+    require(gain.emits_input_event, "focus replay focus gain is emitted event");
+    require(gain.target_id == "answer", "focus replay focus gain records target");
+    require(gain.target_id_before == "answer", "focus replay focus gain records target before");
+    require(gain.target_id_after == "answer", "focus replay focus gain records target after");
+    require(gain.had_focus_before, "focus replay focus gain records prior text focus");
+    require(gain.has_focus_after, "focus replay focus gain records focus after");
+    require(!gain.target_changed, "focus replay focus gain keeps target id stable");
+    require_range(gain.caret_before, initial.size(), initial.size(),
+        "focus replay focus gain records caret before");
+    require_range(gain.caret_after, initial.size(), initial.size(),
+        "focus replay focus gain records caret after");
+
+    const normalized_input_replay_focus_timeline_entry& home = focus_summary.timeline[1];
+    require(home.kind == normalized_input_replay_focus_timeline_kind::caret_moved,
+        "focus replay home records caret movement");
+    require(home.keyboard.logical_key == "Home", "focus replay home records logical key");
+    require(home.keyboard.intent == keyboard_shortcut_intent::caret_home,
+        "focus replay home records caret-home intent");
+    require_range(home.caret_before, initial.size(), initial.size(),
+        "focus replay home records caret before");
+    require_range(home.caret_after, 0, 0, "focus replay home records caret after");
+    require(home.caret_changed, "focus replay home flags caret transition");
+
+    const normalized_input_replay_focus_timeline_entry& right = focus_summary.timeline[2];
+    require(right.keyboard.logical_key == "ArrowRight", "focus replay right records logical key");
+    require(right.keyboard.intent == keyboard_shortcut_intent::caret_next,
+        "focus replay right records caret-next intent");
+    require_range(right.caret_before, 0, 0, "focus replay right records caret before");
+    require_range(right.caret_after, 1, 1, "focus replay right records ASCII boundary after");
+
+    const normalized_input_replay_focus_timeline_entry& end = focus_summary.timeline[3];
+    require(end.keyboard.logical_key == "End", "focus replay end records logical key");
+    require(end.keyboard.intent == keyboard_shortcut_intent::caret_end,
+        "focus replay end records caret-end intent");
+    require_range(end.caret_before, 1, 1, "focus replay end records caret before");
+    require_range(end.caret_after, initial.size(), initial.size(),
+        "focus replay end records caret after");
+
+    const normalized_input_replay_focus_timeline_entry& selection = focus_summary.timeline[4];
+    require(selection.kind == normalized_input_replay_focus_timeline_kind::selection_changed,
+        "focus replay shift arrow records selection movement");
+    require(selection.keyboard.logical_key == "ArrowLeft",
+        "focus replay shift arrow records logical key");
+    require(selection.keyboard.modifiers.shift, "focus replay shift arrow records shift modifier");
+    require(selection.keyboard.intent == keyboard_shortcut_intent::selection_previous,
+        "focus replay shift arrow records selection previous intent");
+    require_range(selection.caret_before, initial.size(), initial.size(),
+        "focus replay selection records caret before");
+    require_range(selection.caret_after, 4, 4, "focus replay selection records caret after");
+    require(!selection.had_selection_before, "focus replay selection records no selection before");
+    require(selection.has_selection_after, "focus replay selection records selection after");
+    require_range(selection.selection_after, 4, initial.size(),
+        "focus replay selection records selected byte range");
+    require(selection.selection_changed, "focus replay selection flags selection transition");
+
+    const normalized_input_replay_focus_timeline_entry& traversal_next = focus_summary.timeline[5];
+    require(traversal_next.kind == normalized_input_replay_focus_timeline_kind::focus_traversal_next,
+        "focus replay tab records next traversal");
+    require(!traversal_next.emits_input_event, "focus replay tab is diagnostic-only");
+    require(traversal_next.keyboard.logical_key == "Tab", "focus replay tab records logical key");
+    require(traversal_next.keyboard.intent == keyboard_shortcut_intent::focus_traversal_next,
+        "focus replay tab records next intent");
+    require(!traversal_next.target_changed, "focus replay tab does not mutate target id");
+
+    const normalized_input_replay_focus_timeline_entry& traversal_previous = focus_summary.timeline[6];
+    require(traversal_previous.kind == normalized_input_replay_focus_timeline_kind::focus_traversal_previous,
+        "focus replay shift tab records previous traversal");
+    require(!traversal_previous.emits_input_event, "focus replay shift tab is diagnostic-only");
+    require(traversal_previous.keyboard.modifiers.shift, "focus replay shift tab records shift modifier");
+    require(traversal_previous.keyboard.intent == keyboard_shortcut_intent::focus_traversal_previous,
+        "focus replay shift tab records previous intent");
+
+    const normalized_input_replay_focus_timeline_entry& loss = focus_summary.timeline[7];
+    require(loss.kind == normalized_input_replay_focus_timeline_kind::focus_loss,
+        "focus replay final entry records focus loss");
+    require(loss.emits_input_event, "focus replay focus loss emits focus-lost event");
+    require(loss.target_id == "answer", "focus replay focus loss records previous target");
+    require(loss.target_id_before == "answer", "focus replay focus loss records target before");
+    require(loss.target_id_after.empty(), "focus replay focus loss records empty target after");
+    require(loss.had_focus_before, "focus replay focus loss records focus before");
+    require(!loss.has_focus_after, "focus replay focus loss records focus cleared");
+    require(loss.target_changed, "focus replay focus loss flags target transition");
+    require(loss.has_selection_after == false, "focus replay focus loss clears selection");
+    require(loss.selection_changed, "focus replay focus loss flags selection clear");
+    require(loss.focus_clean_after, "focus replay focus loss ends clean");
+    require(recording.final_state.focus_id == focus_summary.final_focus_id,
+        "focus replay final state matches focus summary id");
+    require(recording.final_state.caret_byte_offset == focus_summary.final_caret.start_byte,
+        "focus replay final state matches focus summary caret");
+}
+
 void test_pointer_replay_timeline_records_gestures_capture_and_wheel()
 {
     using namespace quiz_vulkan;
@@ -717,6 +866,7 @@ int main()
     test_keyboard_shortcut_replay_summarizes_chords_and_final_state();
     test_ime_replay_timeline_records_composition_lifecycle();
     test_ime_replay_timeline_flags_invalid_preedit_text();
+    test_focus_caret_replay_timeline_records_navigation_and_final_state();
     test_pointer_replay_timeline_records_gestures_capture_and_wheel();
 
     std::cout << "normalized_input_replay_tests passed\n";

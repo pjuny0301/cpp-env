@@ -166,6 +166,7 @@ concept NormalizedInputReplayBatchInterface = requires(T batch) {
     { batch.keyboard } -> std::same_as<input::normalized_input_replay_keyboard_summary&>;
     { batch.ime } -> std::same_as<input::normalized_input_replay_ime_summary&>;
     { batch.pointer } -> std::same_as<input::normalized_input_replay_pointer_summary&>;
+    { batch.focus } -> std::same_as<input::normalized_input_replay_focus_summary&>;
     { batch.end_state } -> std::same_as<input::normalized_input_replay_end_state&>;
 };
 
@@ -176,6 +177,7 @@ concept NormalizedInputReplayRecordingInterface = requires(T recording) {
     { recording.keyboard } -> std::same_as<input::normalized_input_replay_keyboard_summary&>;
     { recording.ime } -> std::same_as<input::normalized_input_replay_ime_summary&>;
     { recording.pointer } -> std::same_as<input::normalized_input_replay_pointer_summary&>;
+    { recording.focus } -> std::same_as<input::normalized_input_replay_focus_summary&>;
     { recording.final_state } -> std::same_as<input::normalized_input_replay_end_state&>;
 };
 
@@ -381,6 +383,61 @@ concept NormalizedInputReplayPointerSummaryInterface = requires(T summary) {
 };
 
 template <typename T>
+concept NormalizedInputReplayFocusTimelineCountsInterface = requires(T counts) {
+    { counts.focus_gain } -> std::same_as<std::size_t&>;
+    { counts.focus_loss } -> std::same_as<std::size_t&>;
+    { counts.focus_traversal_next } -> std::same_as<std::size_t&>;
+    { counts.focus_traversal_previous } -> std::same_as<std::size_t&>;
+    { counts.caret_moved } -> std::same_as<std::size_t&>;
+    { counts.selection_changed } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
+concept NormalizedInputReplayFocusTimelineEntryInterface = requires(T entry) {
+    { entry.kind } -> std::same_as<input::normalized_input_replay_focus_timeline_kind&>;
+    { entry.timestamp_ms } -> std::same_as<std::int64_t&>;
+    { entry.emits_input_event } -> std::same_as<bool&>;
+    { entry.event_index } -> std::same_as<std::size_t&>;
+    { entry.target_id } -> std::same_as<std::string&>;
+    { entry.target_id_before } -> std::same_as<std::string&>;
+    { entry.target_id_after } -> std::same_as<std::string&>;
+    { entry.had_focus_before } -> std::same_as<bool&>;
+    { entry.has_focus_after } -> std::same_as<bool&>;
+    { entry.target_changed } -> std::same_as<bool&>;
+    { entry.text_byte_count_before } -> std::same_as<std::size_t&>;
+    { entry.text_byte_count_after } -> std::same_as<std::size_t&>;
+    { entry.caret_before } -> std::same_as<input::text_range&>;
+    { entry.caret_after } -> std::same_as<input::text_range&>;
+    { entry.caret_changed } -> std::same_as<bool&>;
+    { entry.had_selection_before } -> std::same_as<bool&>;
+    { entry.has_selection_after } -> std::same_as<bool&>;
+    { entry.selection_before } -> std::same_as<input::text_range&>;
+    { entry.selection_after } -> std::same_as<input::text_range&>;
+    { entry.selection_changed } -> std::same_as<bool&>;
+    { entry.keyboard } -> std::same_as<input::keyboard_chord_diagnostic&>;
+    { entry.focus_clean_after } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept NormalizedInputReplayFocusSummaryInterface = requires(T summary) {
+    { summary.timeline } -> std::same_as<std::vector<input::normalized_input_replay_focus_timeline_entry>&>;
+    { summary.kinds } -> std::same_as<input::normalized_input_replay_focus_timeline_counts&>;
+    { summary.total } -> std::same_as<std::size_t&>;
+    { summary.emitted_input_event_routes } -> std::same_as<std::size_t&>;
+    { summary.diagnostic_only_routes } -> std::same_as<std::size_t&>;
+    { summary.target_transition_count } -> std::same_as<std::size_t&>;
+    { summary.caret_transition_count } -> std::same_as<std::size_t&>;
+    { summary.selection_transition_count } -> std::same_as<std::size_t&>;
+    { summary.final_has_focus } -> std::same_as<bool&>;
+    { summary.final_focus_id } -> std::same_as<std::string&>;
+    { summary.final_text_byte_count } -> std::same_as<std::size_t&>;
+    { summary.final_caret } -> std::same_as<input::text_range&>;
+    { summary.final_has_selection } -> std::same_as<bool&>;
+    { summary.final_selection } -> std::same_as<input::text_range&>;
+    { summary.final_focus_clean } -> std::same_as<bool&>;
+};
+
+template <typename T>
 concept NormalizedInputReplayFunctions = requires(
     input::input_engine& engine,
     const input::normalized_input_replay_action& action,
@@ -389,8 +446,10 @@ concept NormalizedInputReplayFunctions = requires(
     std::span<const input::input_event> events,
     const input::action_route_policy_diagnostic& route,
     input::action_route_policy_kind route_kind,
+    input::action_route_policy_kind focus_route_kind,
     input::gesture_kind gesture_kind,
     input::input_event_summary_kind event_summary_kind,
+    input::text_event_kind text_event_kind,
     const input::gesture_policy_snapshot& gesture_policy,
     const input::pointer_capture_snapshot& pointer_capture_before,
     const input::pointer_capture_snapshot& pointer_capture_after,
@@ -403,11 +462,23 @@ concept NormalizedInputReplayFunctions = requires(
     const input::normalized_input_replay_ime_summary& ime_source,
     input::normalized_input_replay_pointer_summary& pointer_target,
     const input::normalized_input_replay_pointer_summary& pointer_source,
+    input::normalized_input_replay_focus_summary& focus_target,
+    const input::normalized_input_replay_focus_summary& focus_source,
     const input::normalized_input_replay_options& options) {
     { input::pointer_capture_snapshot_clean(input::pointer_capture_snapshot{}) } -> std::same_as<bool>;
     { input::keyboard_chord_present(keyboard) } -> std::same_as<bool>;
     { input::normalized_input_replay_preedit_text_valid(composition) } -> std::same_as<bool>;
     { input::normalized_input_replay_composition_range_valid(composition) } -> std::same_as<bool>;
+    { input::normalized_input_replay_caret_range_for_offset(std::size_t{}) }
+        -> std::same_as<input::text_range>;
+    { input::normalized_input_replay_same_text_range(input::text_range{}, input::text_range{}) }
+        -> std::same_as<bool>;
+    { input::normalized_input_replay_focus_route_kind(focus_route_kind) } -> std::same_as<bool>;
+    { input::normalized_input_replay_focus_event_kind(text_event_kind) } -> std::same_as<bool>;
+    { input::normalized_input_replay_focus_kind_for_route(focus_route_kind) }
+        -> std::same_as<input::normalized_input_replay_focus_timeline_kind>;
+    { input::normalized_input_replay_focus_kind_for_event(text_event_kind) }
+        -> std::same_as<input::normalized_input_replay_focus_timeline_kind>;
     { input::normalized_input_replay_pointer_route_kind(route_kind) } -> std::same_as<bool>;
     { input::normalized_input_replay_pointer_kind_for_gesture(gesture_kind) }
         -> std::same_as<input::normalized_input_replay_pointer_timeline_kind>;
@@ -427,6 +498,10 @@ concept NormalizedInputReplayFunctions = requires(
     { input::summarize_normalized_input_replay_pointer_routes(routes, end_state) }
         -> std::same_as<input::normalized_input_replay_pointer_summary>;
     { input::accumulate_normalized_input_replay_pointer_summary(pointer_target, pointer_source) }
+        -> std::same_as<void>;
+    { input::summarize_normalized_input_replay_focus_routes(routes, events, end_state, end_state) }
+        -> std::same_as<input::normalized_input_replay_focus_summary>;
+    { input::accumulate_normalized_input_replay_focus_summary(focus_target, focus_source) }
         -> std::same_as<void>;
     { input::summarize_normalized_input_replay_keyboard_routes(routes) }
         -> std::same_as<input::normalized_input_replay_keyboard_summary>;
@@ -677,6 +752,11 @@ static_assert(NormalizedInputReplayPointerDecisionCountsInterface<
 static_assert(NormalizedInputReplayPointerTimelineEntryInterface<
     input::normalized_input_replay_pointer_timeline_entry>);
 static_assert(NormalizedInputReplayPointerSummaryInterface<input::normalized_input_replay_pointer_summary>);
+static_assert(NormalizedInputReplayFocusTimelineCountsInterface<
+    input::normalized_input_replay_focus_timeline_counts>);
+static_assert(NormalizedInputReplayFocusTimelineEntryInterface<
+    input::normalized_input_replay_focus_timeline_entry>);
+static_assert(NormalizedInputReplayFocusSummaryInterface<input::normalized_input_replay_focus_summary>);
 static_assert(NormalizedInputReplayFunctions<void>);
 static_assert(std::is_default_constructible_v<input::platform_input_translation_request>);
 static_assert(std::is_default_constructible_v<input::platform_input_translation_result>);
@@ -700,6 +780,9 @@ static_assert(std::is_default_constructible_v<input::normalized_input_replay_poi
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_pointer_decision_counts>);
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_pointer_timeline_entry>);
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_pointer_summary>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_focus_timeline_counts>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_focus_timeline_entry>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_focus_summary>);
 static_assert(std::is_default_constructible_v<input::keyboard_modifier_state>);
 static_assert(std::is_default_constructible_v<input::keyboard_chord_diagnostic>);
 static_assert(!std::is_polymorphic_v<input::platform_input_translation_request>);
@@ -712,6 +795,7 @@ static_assert(!std::is_polymorphic_v<input::normalized_input_replay_recording>);
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_keyboard_summary>);
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_ime_summary>);
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_pointer_summary>);
+static_assert(!std::is_polymorphic_v<input::normalized_input_replay_focus_summary>);
 static_assert(std::is_same_v<
     decltype(input::platform_input_translation_result{}.event),
     std::optional<raw_platform_input_event>>);
@@ -760,6 +844,12 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     decltype(input::normalized_input_replay_recording{}.pointer),
     input::normalized_input_replay_pointer_summary>);
+static_assert(std::is_same_v<
+    decltype(input::normalized_input_replay_batch{}.focus),
+    input::normalized_input_replay_focus_summary>);
+static_assert(std::is_same_v<
+    decltype(input::normalized_input_replay_recording{}.focus),
+    input::normalized_input_replay_focus_summary>);
 static_assert(TextInputModelInterface<input::text_input_model>);
 
 constexpr input::text_range text_range_contract{
@@ -965,6 +1055,55 @@ static_assert(replay_pointer_entry_contract.contact == input::pointer_contact_ki
 static_assert(replay_pointer_entry_contract.capture_after.lifecycle == input::pointer_capture_lifecycle::captured);
 static_assert(replay_pointer_entry_contract.capture_changed);
 static_assert(replay_pointer_entry_contract.delta_x == 9.0f);
+
+constexpr input::normalized_input_replay_focus_timeline_counts replay_focus_counts_contract{
+    .focus_gain = 1,
+    .focus_loss = 2,
+    .focus_traversal_next = 3,
+    .caret_moved = 4,
+    .selection_changed = 5,
+};
+static_assert(replay_focus_counts_contract.focus_gain == 1);
+static_assert(replay_focus_counts_contract.focus_traversal_next == 3);
+static_assert(replay_focus_counts_contract.caret_moved == 4);
+static_assert(replay_focus_counts_contract.selection_changed == 5);
+
+constexpr input::normalized_input_replay_focus_timeline_entry replay_focus_entry_contract{
+    .kind = input::normalized_input_replay_focus_timeline_kind::selection_changed,
+    .timestamp_ms = 100,
+    .emits_input_event = true,
+    .event_index = 0,
+    .target_id = "answer",
+    .target_id_before = "answer",
+    .target_id_after = "answer",
+    .had_focus_before = true,
+    .has_focus_after = true,
+    .target_changed = false,
+    .text_byte_count_before = 5,
+    .text_byte_count_after = 5,
+    .caret_before = input::text_range{.start_byte = 1, .end_byte = 1},
+    .caret_after = input::text_range{.start_byte = 4, .end_byte = 4},
+    .caret_changed = true,
+    .had_selection_before = false,
+    .has_selection_after = true,
+    .selection_before = input::text_range{},
+    .selection_after = input::text_range{.start_byte = 1, .end_byte = 4},
+    .selection_changed = true,
+    .keyboard = input::keyboard_chord_diagnostic{
+        .logical_key = "ArrowRight",
+        .modifiers = input::keyboard_modifier_state{
+            .shift = true,
+        },
+        .intent = input::keyboard_shortcut_intent::selection_next,
+    },
+    .focus_clean_after = true,
+};
+static_assert(replay_focus_entry_contract.kind
+    == input::normalized_input_replay_focus_timeline_kind::selection_changed);
+static_assert(replay_focus_entry_contract.target_id == "answer");
+static_assert(replay_focus_entry_contract.caret_changed);
+static_assert(replay_focus_entry_contract.selection_changed);
+static_assert(replay_focus_entry_contract.keyboard.modifiers.shift);
 
 static_assert(std::is_default_constructible_v<input::ime_event>);
 static_assert(std::is_same_v<decltype(input::ime_event{}.composition), input::ime_composition_state>);

@@ -6,6 +6,9 @@
 
 최근 baseline 통합 증거:
 
+- current: text frame snapshot header split을 통합하고 Windows MinGW focused text CTest 3/3 및 interface compile target build 확인.
+- `11dec3e`: 새 public `text_frame_snapshot.h`를 render contract FILE_SET에 등록.
+- `7644763`: text frame snapshot/diff diagnostics를 별도 public text header로 분리해 `font_shaped_atlas_update.h` 토큰 부담을 줄임.
 - current: image frame snapshot header split과 Vulkan native readiness threading을 통합하고 Windows MinGW focused image/Vulkan CTest 9/9 및 `ctest -N` 90개 확인.
 - `95f24d9`: 새 public `image_texture_frame_snapshot.h`를 render contract FILE_SET에 등록.
 - `c656cfb`: Vulkan backend native function-table readiness를 command recording, submit, present, renderer summary diagnostics에 data-only로 연결.

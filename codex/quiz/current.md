@@ -38,6 +38,7 @@ Last updated: 2026-05-09
 - Engine workers own only their engine folders. App/runtime, top-level CMake, and aggregate contract wiring stay with the integrator unless explicitly assigned.
 - Large file splitting is allowed when it improves module cohesion, worker ownership, reviewability, or conflict isolation. Do not split files only because they exceed a line-count threshold, and do not move stable public interfaces without explicit integrator approval.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
+- Latest integration note: `345e768` splits normalized input replay diff diagnostics into `normalized_input_replay_diff.h`; the integrator registered both replay public headers in the input contract FILE_SET and verified the interface compile target plus focused replay CTest.
 - Latest integration note: `7644763` splits text frame snapshot diagnostics into `text_frame_snapshot.h`, and `11dec3e` registers that public header in the render contract FILE_SET.
 - Latest integration note: `ef48ce4` splits image texture frame snapshot diagnostics into `image_texture_frame_snapshot.h`, and `95f24d9` registers that public header in the render contract FILE_SET.
 - Latest integration note: `c656cfb` threads Vulkan native function-table readiness through command-buffer recording, submit-batch planning, present-completion planning, and renderer/backend summary diagnostics without calling real Vulkan APIs.

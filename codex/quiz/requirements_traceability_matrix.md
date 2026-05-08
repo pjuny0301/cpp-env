@@ -6,6 +6,9 @@
 
 최근 baseline 통합 증거:
 
+- current: text/image frame snapshot diff diagnostics를 통합하고 Windows MinGW focused text/image CTest 5/5 및 interface compile target build 확인.
+- `155398b`: image engine에 public texture frame snapshot diff diagnostics를 추가해 handle/cache/sampler/placeholder/residency/request delta를 비교.
+- `56f201b`: text engine에 public frame snapshot diff diagnostics를 추가해 readiness/fallback/layout/upload/queued-consumed ID delta를 비교.
 - current: held pointer update-time routing을 app loop에 연결하고 Windows MinGW app smoke CTest 2/2 및 app/interface build 확인.
 - `e340728`: app loop가 `input_engine.update_time()`에서 나온 long-press 등 held gesture 이벤트를 기존 app input router로 dispatch하도록 보강.
 - current: platform shell pointer lifecycle/wheel/key/focus bridge를 통합하고 Windows MinGW app input CTest 1/1 및 interface compile target build 확인.

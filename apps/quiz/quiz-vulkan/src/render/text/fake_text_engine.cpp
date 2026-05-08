@@ -252,6 +252,33 @@ void record_font_fallback_chain_plan(
     diagnostics.font_fallback_chain_diagnostic = std::move(plan.diagnostic);
 }
 
+void record_atlas_upload_request_bridge(
+    fake_text_engine_diagnostics& diagnostics,
+    const render_text_request& request)
+{
+    render_text_request request_copy = request;
+    render_text_request_batch_plan_snapshot batch_plan =
+        plan_render_text_request_batch({
+            make_render_text_request_batch_item(
+                std::move(request_copy),
+                diagnostics.glyph_atlas_materializations,
+                "fake_text_engine",
+                "fake_text_engine"),
+        });
+
+    diagnostics.atlas_upload_request_bridge =
+        bridge_render_text_atlas_upload_requests(batch_plan);
+    diagnostics.queued_atlas_upload_request_ids.clear();
+    diagnostics.queued_atlas_upload_request_ids.reserve(
+        diagnostics.atlas_upload_request_bridge.upload_requests.size());
+    for (const render_text_atlas_upload_request_snapshot& upload_request :
+         diagnostics.atlas_upload_request_bridge.requests) {
+        if (upload_request.has_upload_request) {
+            diagnostics.queued_atlas_upload_request_ids.push_back(upload_request.request_id);
+        }
+    }
+}
+
 void record_font_backend_capability(
     fake_text_engine_diagnostics& diagnostics,
     const render_text_font_backend_capability_snapshot& capability,
@@ -2200,6 +2227,11 @@ render_text_layout fake_text_engine::layout_text(const render_text_request& requ
         backend_selection,
         diagnostics_,
         atlas_updates_);
+    record_atlas_upload_request_bridge(diagnostics_, request);
+    atlas_update_request_ids_.insert(
+        atlas_update_request_ids_.end(),
+        diagnostics_.queued_atlas_upload_request_ids.begin(),
+        diagnostics_.queued_atlas_upload_request_ids.end());
 
     render_text_layout layout;
     layout.measure = measure_lines(lines);
@@ -2343,7 +2375,10 @@ std::vector<render_rect> fake_text_engine::selection_rects(
 
 std::vector<render_text_atlas_update> fake_text_engine::consume_atlas_updates()
 {
-    return std::exchange(atlas_updates_, {});
+    std::vector<render_text_atlas_update> updates = std::exchange(atlas_updates_, {});
+    diagnostics_.consumed_atlas_update_count = updates.size();
+    diagnostics_.consumed_atlas_upload_request_ids = std::exchange(atlas_update_request_ids_, {});
+    return updates;
 }
 
 const fake_text_engine_diagnostics& fake_text_engine::last_diagnostics() const

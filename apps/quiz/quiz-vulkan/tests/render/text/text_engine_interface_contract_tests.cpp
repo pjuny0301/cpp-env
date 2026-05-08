@@ -251,6 +251,11 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
         -> std::same_as<std::vector<render::render_text_glyph_atlas_materialization_snapshot>&>;
     { diagnostics.glyph_atlas_materialization_policy }
         -> std::same_as<render::render_text_glyph_atlas_materialization_policy_snapshot&>;
+    { diagnostics.atlas_upload_request_bridge }
+        -> std::same_as<render::render_text_atlas_upload_request_bridge_snapshot&>;
+    { diagnostics.queued_atlas_upload_request_ids } -> std::same_as<std::vector<std::string>&>;
+    { diagnostics.consumed_atlas_upload_request_ids } -> std::same_as<std::vector<std::string>&>;
+    { diagnostics.consumed_atlas_update_count } -> std::same_as<std::size_t&>;
     { diagnostics.shaped_atlas_update_traces }
         -> std::same_as<std::vector<render::render_text_shaped_atlas_update_trace_snapshot>&>;
     { diagnostics.shaped_atlas_update_trace_policy }
@@ -291,6 +296,9 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.has_rasterized_glyph_atlas_payload_policy() } -> std::same_as<bool>;
     { diagnostics.has_glyph_atlas_materializations() } -> std::same_as<bool>;
     { diagnostics.has_glyph_atlas_materialization_policy() } -> std::same_as<bool>;
+    { diagnostics.has_atlas_upload_request_bridge() } -> std::same_as<bool>;
+    { diagnostics.has_queued_atlas_upload_request_ids() } -> std::same_as<bool>;
+    { diagnostics.has_consumed_atlas_upload_request_ids() } -> std::same_as<bool>;
     { diagnostics.has_shaped_atlas_update_traces() } -> std::same_as<bool>;
     { diagnostics.has_shaped_atlas_update_trace_policy() } -> std::same_as<bool>;
     { diagnostics.has_line_breaks() } -> std::same_as<bool>;

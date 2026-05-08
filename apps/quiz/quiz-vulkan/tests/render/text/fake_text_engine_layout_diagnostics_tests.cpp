@@ -697,6 +697,44 @@ void test_fake_text_engine_records_rasterized_atlas_payloads_for_cacheable_glyph
     require(
         diagnostics.glyph_atlas_materialization_policy.queued_atlas_update_bytes > 0U,
         "materialization policy counts queued atlas update bytes");
+    require(diagnostics.has_atlas_upload_request_bridge(), "layout records atlas upload bridge diagnostics");
+    require(
+        diagnostics.atlas_upload_request_bridge.has_upload_requests(),
+        "atlas upload bridge exposes render_text_atlas_update-style requests");
+    require(
+        diagnostics.atlas_upload_request_bridge.policy.upload_request_count == 1U,
+        "atlas upload bridge policy counts queued request");
+    require(
+        diagnostics.atlas_upload_request_bridge.upload_requests.size() == 1U,
+        "atlas upload bridge emits one upload request");
+    require(
+        diagnostics.atlas_upload_request_bridge.requests.front().status
+            == render_text_atlas_upload_request_status::upload_ready,
+        "atlas upload bridge marks cacheable glyph upload-ready");
+    require(
+        diagnostics.atlas_upload_request_bridge.requests.front().cache_key == materialization.cache_key,
+        "atlas upload bridge preserves materialization cache key");
+    require(
+        diagnostics.atlas_upload_request_bridge.upload_requests.front().page.id == materialization.page.id,
+        "atlas upload bridge preserves atlas page id");
+    require(
+        diagnostics.atlas_upload_request_bridge.upload_requests.front().updated_bounds.x
+            == materialization.atlas_update_bounds.x,
+        "atlas upload bridge preserves atlas update bounds");
+    require(
+        diagnostics.has_queued_atlas_upload_request_ids(),
+        "layout queues stable atlas upload request ids");
+    require(
+        diagnostics.queued_atlas_upload_request_ids.size() == 1U,
+        "layout queues one atlas upload request id");
+    require(
+        diagnostics.queued_atlas_upload_request_ids.front()
+            == diagnostics.atlas_upload_request_bridge.requests.front().request_id,
+        "queued atlas upload id matches bridge request id");
+
+    const std::string queued_upload_request_id = diagnostics.queued_atlas_upload_request_ids.front();
+    const render_text_atlas_page_id queued_page_id =
+        diagnostics.atlas_upload_request_bridge.upload_requests.front().page.id;
     require(diagnostics.shaped_atlas_update_traces.size() == 1, "one cacheable glyph produces one shaped atlas trace");
     const render_text_shaped_atlas_update_trace_snapshot& trace = diagnostics.shaped_atlas_update_traces.front();
     require(
@@ -720,6 +758,22 @@ void test_fake_text_engine_records_rasterized_atlas_payloads_for_cacheable_glyph
     require(
         diagnostics.shaped_atlas_update_trace_policy.traced_shaped_glyph_count == 1,
         "trace policy counts shaped glyph id");
+
+    const std::vector<render_text_atlas_update> consumed_updates = engine.consume_atlas_updates();
+    require(consumed_updates.size() == 1U, "consume returns queued atlas update");
+    require(consumed_updates.front().page.id == queued_page_id, "consumed update page matches bridge page");
+    require(
+        engine.last_diagnostics().consumed_atlas_update_count == consumed_updates.size(),
+        "consume records returned atlas update count");
+    require(
+        engine.last_diagnostics().has_consumed_atlas_upload_request_ids(),
+        "consume records consumed atlas upload request ids");
+    require(
+        engine.last_diagnostics().consumed_atlas_upload_request_ids.size() == consumed_updates.size(),
+        "consume records one id per returned atlas update");
+    require(
+        engine.last_diagnostics().consumed_atlas_upload_request_ids.front() == queued_upload_request_id,
+        "consumed atlas upload id matches queued bridge id");
 }
 
 void test_fake_text_engine_records_fallback_only_backend_capability_for_latin_hangul()

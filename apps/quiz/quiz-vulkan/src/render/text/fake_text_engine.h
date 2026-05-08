@@ -129,6 +129,10 @@ struct fake_text_engine_diagnostics {
     render_text_rasterized_glyph_atlas_payload_policy_snapshot rasterized_glyph_atlas_payload_policy;
     std::vector<render_text_glyph_atlas_materialization_snapshot> glyph_atlas_materializations;
     render_text_glyph_atlas_materialization_policy_snapshot glyph_atlas_materialization_policy;
+    render_text_atlas_upload_request_bridge_snapshot atlas_upload_request_bridge;
+    std::vector<std::string> queued_atlas_upload_request_ids;
+    std::vector<std::string> consumed_atlas_upload_request_ids;
+    std::size_t consumed_atlas_update_count = 0;
     std::vector<render_text_shaped_atlas_update_trace_snapshot> shaped_atlas_update_traces;
     render_text_shaped_atlas_update_trace_policy_snapshot shaped_atlas_update_trace_policy;
     std::vector<render_text_glyph_cache_face_snapshot> glyph_cache_faces;
@@ -315,6 +319,21 @@ struct fake_text_engine_diagnostics {
         return glyph_atlas_materialization_policy.request_count > 0;
     }
 
+    bool has_atlas_upload_request_bridge() const
+    {
+        return !atlas_upload_request_bridge.requests.empty();
+    }
+
+    bool has_queued_atlas_upload_request_ids() const
+    {
+        return !queued_atlas_upload_request_ids.empty();
+    }
+
+    bool has_consumed_atlas_upload_request_ids() const
+    {
+        return !consumed_atlas_upload_request_ids.empty();
+    }
+
     bool has_shaped_atlas_update_traces() const
     {
         return !shaped_atlas_update_traces.empty();
@@ -412,6 +431,7 @@ private:
     mutable std::vector<glyph_atlas_key> glyph_cache_policy_entries_;
     mutable std::vector<std::string> font_source_bytes_cache_entries_;
     mutable std::vector<render_text_atlas_update> atlas_updates_;
+    mutable std::vector<std::string> atlas_update_request_ids_;
     mutable fake_text_engine_diagnostics diagnostics_;
     deterministic_fake_font_resolver font_resolver_;
     std::vector<render_text_font_backend_component> font_backend_capability_components_;

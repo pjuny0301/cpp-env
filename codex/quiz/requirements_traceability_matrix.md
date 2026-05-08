@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: image frame binding plan diagnostics를 통합하고 Windows MinGW focused image texture pipeline CTest 1/1 및 interface compile target build 확인.
+- `cc58697`: image texture frame snapshot을 renderer-facing texture binding packet readiness와 frame delta data로 변환하는 data-only binding plan diagnostics를 추가.
 - current: text frame draw plan diagnostics를 통합하고 public render FILE_SET 등록, Windows MinGW focused atlas-update CTest 1/1 및 interface compile target build 확인.
 - `db49c0d`: text frame snapshot과 atlas/page/update metadata를 renderer-facing glyph packet readiness data로 변환하는 data-only draw plan diagnostics를 추가.
 - current: scene core architecture boundary를 강화하고 Windows MinGW architecture boundary CTest 1/1 통과 확인.

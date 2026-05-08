@@ -277,6 +277,26 @@ void record_atlas_upload_request_bridge(
             diagnostics.queued_atlas_upload_request_ids.push_back(upload_request.request_id);
         }
     }
+
+    render_text_font_fallback_chain_plan_snapshot fallback_chain_plan{
+        .runs = diagnostics.font_fallback_chain_runs,
+        .missing_glyphs = diagnostics.font_fallback_chain_missing_glyphs,
+        .deterministic_selected_face_order = diagnostics.font_fallback_chain_selected_face_order,
+        .shaping_selection = diagnostics.font_fallback_chain_shaping_selection,
+        .policy = diagnostics.font_fallback_chain_policy,
+        .diagnostic = diagnostics.font_fallback_chain_diagnostic,
+    };
+    diagnostics.text_frame_snapshot =
+        make_render_text_frame_snapshot(render_text_frame_snapshot_request{
+            .frame_id = "fake_text_engine:layout",
+            .source_label = "fake_text_engine",
+            .batch_plan = std::move(batch_plan),
+            .fallback_chain_plan = std::move(fallback_chain_plan),
+            .materializations = diagnostics.glyph_atlas_materializations,
+            .materialization_policy = diagnostics.glyph_atlas_materialization_policy,
+            .atlas_upload_bridge = diagnostics.atlas_upload_request_bridge,
+            .queued_atlas_upload_request_ids = diagnostics.queued_atlas_upload_request_ids,
+        });
 }
 
 void record_font_backend_capability(
@@ -2378,6 +2398,10 @@ std::vector<render_text_atlas_update> fake_text_engine::consume_atlas_updates()
     std::vector<render_text_atlas_update> updates = std::exchange(atlas_updates_, {});
     diagnostics_.consumed_atlas_update_count = updates.size();
     diagnostics_.consumed_atlas_upload_request_ids = std::exchange(atlas_update_request_ids_, {});
+    diagnostics_.text_frame_snapshot = render_text_frame_snapshot_with_consumed_atlas_updates(
+        std::move(diagnostics_.text_frame_snapshot),
+        diagnostics_.consumed_atlas_upload_request_ids,
+        updates.size());
     return updates;
 }
 

@@ -218,6 +218,39 @@ quiz_vulkan::render::render_text_style_catalog batch_style_catalog()
     return catalog;
 }
 
+quiz_vulkan::render::render_text_request frame_snapshot_text_request()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "A", .style_token = "body"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 100.0f, 40.0f};
+    request.style_catalog = batch_style_catalog();
+    return request;
+}
+
+quiz_vulkan::render::render_text_font_fallback_chain_plan_snapshot frame_snapshot_fallback_plan(
+    quiz_vulkan::render::render_text_request request)
+{
+    using namespace quiz_vulkan::render;
+
+    font_face_catalog catalog;
+    catalog.add_face(font_face_descriptor{
+        .id = 7,
+        .family = "Quiz Sans",
+        .source_uri = "fonts/quiz-sans.ttf",
+        .coverage = {font_codepoint_range{.first = U'A', .last = U'Z'}},
+        .weight = 500,
+    });
+
+    render_text_font_fallback_chain_plan_request fallback_request;
+    fallback_request.items.push_back(
+        make_render_text_font_fallback_chain_plan_item(std::move(request), "frame-source"));
+    return plan_render_text_font_fallback_chains(fallback_request, catalog);
+}
+
 void test_trace_reports_upload_ready_payload_queued()
 {
     using namespace quiz_vulkan::render;
@@ -586,6 +619,112 @@ void test_atlas_upload_bridge_suppresses_duplicates_and_skips_non_uploadable_wor
         "byte mismatch does not upload");
 }
 
+void test_text_frame_snapshot_combines_planning_fallback_materialization_and_upload_ids()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_request request = frame_snapshot_text_request();
+    std::vector<render_text_glyph_atlas_materialization_snapshot> materializations;
+    render_text_glyph_atlas_materialization_policy_snapshot materialization_policy;
+    append_render_text_glyph_atlas_materialization(
+        materializations,
+        materialization_policy,
+        upload_ready_materialization());
+
+    const render_text_request_batch_plan_snapshot batch_plan =
+        plan_render_text_request_batch({
+            make_render_text_request_batch_item(request, materializations, "frame-source", "node-1"),
+        });
+    const render_text_atlas_upload_request_bridge_snapshot bridge =
+        bridge_render_text_atlas_upload_requests(batch_plan);
+
+    const render_text_frame_snapshot pending =
+        make_render_text_frame_snapshot(render_text_frame_snapshot_request{
+            .frame_id = "frame-1",
+            .source_label = "frame-source",
+            .batch_plan = batch_plan,
+            .fallback_chain_plan = frame_snapshot_fallback_plan(request),
+            .materializations = materializations,
+            .materialization_policy = materialization_policy,
+            .atlas_upload_bridge = bridge,
+        });
+
+    require(
+        pending.status == render_text_frame_snapshot_status::pending_atlas_updates,
+        "frame snapshot remains pending before atlas updates are consumed");
+    require(pending.ok(), "pending frame snapshot has no planning errors");
+    require(!pending.ready_for_renderer(), "pending frame snapshot is not ready for renderer handoff");
+    require(pending.has_atlas_uploads(), "frame snapshot records compact atlas upload entries");
+    require(pending.batch_policy.layout_request_count == 1U, "frame snapshot preserves batch layout count");
+    require(pending.fallback_chain_policy.run_count == 1U, "frame snapshot preserves fallback-chain run count");
+    require(pending.materialization_policy.request_count == 1U, "frame snapshot preserves materialization policy");
+    require(pending.atlas_upload_policy.upload_request_count == 1U, "frame snapshot preserves upload policy");
+    require(pending.policy.selected_face_count == 1U, "frame snapshot preserves selected fallback face order");
+    require(pending.policy.queued_upload_request_id_count == 1U, "frame snapshot derives queued upload ids");
+    require(
+        pending.queued_atlas_upload_request_ids.front() == bridge.requests.front().request_id,
+        "frame snapshot queued id matches atlas upload bridge id");
+    require(pending.atlas_uploads.front().queued, "frame snapshot upload is marked queued");
+    require(!pending.atlas_uploads.front().consumed, "frame snapshot upload is not consumed yet");
+    require(
+        pending.atlas_uploads.front().cache_key == materializations.front().cache_key,
+        "frame snapshot upload preserves materialization cache key");
+
+    const render_text_frame_snapshot ready =
+        render_text_frame_snapshot_with_consumed_atlas_updates(
+            pending,
+            pending.queued_atlas_upload_request_ids,
+            pending.queued_atlas_upload_request_ids.size());
+
+    require(ready.status == render_text_frame_snapshot_status::ready, "matching consumed ids make frame ready");
+    require(ready.ready_for_renderer(), "ready frame snapshot reports renderer readiness");
+    require(ready.policy.all_queued_uploads_consumed, "ready frame marks all uploads consumed");
+    require(
+        ready.consumed_atlas_upload_request_ids == pending.queued_atlas_upload_request_ids,
+        "ready frame preserves consumed upload ids");
+    require(ready.atlas_uploads.front().consumed, "ready frame marks upload consumed");
+}
+
+void test_text_frame_snapshot_reports_consumed_upload_id_mismatch()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_request request = frame_snapshot_text_request();
+    std::vector<render_text_glyph_atlas_materialization_snapshot> materializations;
+    render_text_glyph_atlas_materialization_policy_snapshot materialization_policy;
+    append_render_text_glyph_atlas_materialization(
+        materializations,
+        materialization_policy,
+        upload_ready_materialization());
+
+    const render_text_request_batch_plan_snapshot batch_plan =
+        plan_render_text_request_batch({
+            make_render_text_request_batch_item(request, materializations, "frame-source", "node-1"),
+        });
+    const render_text_frame_snapshot pending =
+        make_render_text_frame_snapshot(render_text_frame_snapshot_request{
+            .frame_id = "frame-1",
+            .source_label = "frame-source",
+            .batch_plan = batch_plan,
+            .fallback_chain_plan = frame_snapshot_fallback_plan(request),
+            .materializations = materializations,
+            .materialization_policy = materialization_policy,
+            .atlas_upload_bridge = bridge_render_text_atlas_upload_requests(batch_plan),
+        });
+
+    const render_text_frame_snapshot mismatch =
+        render_text_frame_snapshot_with_consumed_atlas_updates(
+            pending,
+            {"text-atlas-upload:v1:wrong"},
+            1U);
+
+    require(
+        mismatch.status == render_text_frame_snapshot_status::consumed_update_mismatch,
+        "frame snapshot detects consumed upload ids that do not match queued bridge ids");
+    require(!mismatch.ok(), "mismatched consumed ids are not ok for renderer handoff");
+    require(!mismatch.policy.all_queued_uploads_consumed, "mismatched frame does not claim consumed uploads");
+}
+
 } // namespace
 
 int main()
@@ -599,5 +738,7 @@ int main()
     test_batch_plan_reports_fallback_real_backend_and_skipped_materializations();
     test_atlas_upload_bridge_produces_stable_render_text_atlas_updates();
     test_atlas_upload_bridge_suppresses_duplicates_and_skips_non_uploadable_work();
+    test_text_frame_snapshot_combines_planning_fallback_materialization_and_upload_ids();
+    test_text_frame_snapshot_reports_consumed_upload_id_mismatch();
     return 0;
 }

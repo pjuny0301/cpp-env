@@ -256,6 +256,7 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.queued_atlas_upload_request_ids } -> std::same_as<std::vector<std::string>&>;
     { diagnostics.consumed_atlas_upload_request_ids } -> std::same_as<std::vector<std::string>&>;
     { diagnostics.consumed_atlas_update_count } -> std::same_as<std::size_t&>;
+    { diagnostics.text_frame_snapshot } -> std::same_as<render::render_text_frame_snapshot&>;
     { diagnostics.shaped_atlas_update_traces }
         -> std::same_as<std::vector<render::render_text_shaped_atlas_update_trace_snapshot>&>;
     { diagnostics.shaped_atlas_update_trace_policy }
@@ -299,6 +300,7 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.has_atlas_upload_request_bridge() } -> std::same_as<bool>;
     { diagnostics.has_queued_atlas_upload_request_ids() } -> std::same_as<bool>;
     { diagnostics.has_consumed_atlas_upload_request_ids() } -> std::same_as<bool>;
+    { diagnostics.has_text_frame_snapshot() } -> std::same_as<bool>;
     { diagnostics.has_shaped_atlas_update_traces() } -> std::same_as<bool>;
     { diagnostics.has_shaped_atlas_update_trace_policy() } -> std::same_as<bool>;
     { diagnostics.has_line_breaks() } -> std::same_as<bool>;
@@ -1657,6 +1659,11 @@ static_assert(requires(
     render::render_text_atlas_upload_request_snapshot upload_request,
     render::render_text_atlas_upload_request_policy_snapshot upload_policy,
     render::render_text_atlas_upload_request_bridge_snapshot upload_bridge,
+    render::render_text_frame_snapshot_status frame_status,
+    render::render_text_frame_atlas_upload_snapshot frame_upload,
+    render::render_text_frame_snapshot_policy frame_policy,
+    render::render_text_frame_snapshot_request frame_request,
+    render::render_text_frame_snapshot frame_snapshot,
     render::render_text_glyph_atlas_materialization_snapshot snapshot,
     render::render_text_request request,
     render::render_draw_command draw_command,
@@ -1829,6 +1836,84 @@ static_assert(requires(
     { upload_bridge.diagnostic } -> std::same_as<std::string&>;
     { upload_bridge.has_upload_requests() } -> std::same_as<bool>;
     { upload_bridge.ok() } -> std::same_as<bool>;
+    { render::render_text_frame_snapshot_status_name(frame_status) } -> std::same_as<std::string>;
+    { frame_upload.request_id } -> std::same_as<std::string&>;
+    { frame_upload.status } -> std::same_as<render::render_text_atlas_upload_request_status&>;
+    { frame_upload.batch_atlas_request_index } -> std::same_as<std::size_t&>;
+    { frame_upload.item_index } -> std::same_as<std::size_t&>;
+    { frame_upload.materialization_index } -> std::same_as<std::size_t&>;
+    { frame_upload.cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { frame_upload.resolved_glyph_id } -> std::same_as<std::uint32_t&>;
+    { frame_upload.resolved_face_id } -> std::same_as<render::font_face_id&>;
+    { frame_upload.page } -> std::same_as<render::render_text_atlas_page&>;
+    { frame_upload.updated_bounds } -> std::same_as<render::render_rect&>;
+    { frame_upload.upload_rgba_bytes } -> std::same_as<std::size_t&>;
+    { frame_upload.has_upload_request } -> std::same_as<bool&>;
+    { frame_upload.queued } -> std::same_as<bool&>;
+    { frame_upload.consumed } -> std::same_as<bool&>;
+    { frame_upload.stable_request_id } -> std::same_as<bool&>;
+    { frame_upload.diagnostic } -> std::same_as<std::string&>;
+    { frame_policy.layout_request_count } -> std::same_as<std::size_t&>;
+    { frame_policy.fallback_chain_run_count } -> std::same_as<std::size_t&>;
+    { frame_policy.fallback_chain_missing_glyph_count } -> std::same_as<std::size_t&>;
+    { frame_policy.fallback_chain_invalid_utf8_count } -> std::same_as<std::size_t&>;
+    { frame_policy.selected_face_count } -> std::same_as<std::size_t&>;
+    { frame_policy.materialization_count } -> std::same_as<std::size_t&>;
+    { frame_policy.upload_request_count } -> std::same_as<std::size_t&>;
+    { frame_policy.queued_upload_request_id_count } -> std::same_as<std::size_t&>;
+    { frame_policy.consumed_upload_request_id_count } -> std::same_as<std::size_t&>;
+    { frame_policy.consumed_atlas_update_count } -> std::same_as<std::size_t&>;
+    { frame_policy.total_upload_rgba_bytes } -> std::same_as<std::size_t&>;
+    { frame_policy.all_queued_uploads_consumed } -> std::same_as<bool&>;
+    { frame_policy.deterministic_fallback_used } -> std::same_as<bool&>;
+    { frame_request.frame_id } -> std::same_as<std::string&>;
+    { frame_request.source_label } -> std::same_as<std::string&>;
+    { frame_request.batch_plan } -> std::same_as<render::render_text_request_batch_plan_snapshot&>;
+    { frame_request.fallback_chain_plan } -> std::same_as<render::render_text_font_fallback_chain_plan_snapshot&>;
+    { frame_request.materializations }
+        -> std::same_as<std::vector<render::render_text_glyph_atlas_materialization_snapshot>&>;
+    { frame_request.materialization_policy }
+        -> std::same_as<render::render_text_glyph_atlas_materialization_policy_snapshot&>;
+    { frame_request.atlas_upload_bridge } -> std::same_as<render::render_text_atlas_upload_request_bridge_snapshot&>;
+    { frame_request.queued_atlas_upload_request_ids } -> std::same_as<std::vector<std::string>&>;
+    { frame_request.consumed_atlas_upload_request_ids } -> std::same_as<std::vector<std::string>&>;
+    { frame_request.consumed_atlas_update_count } -> std::same_as<std::size_t&>;
+    { frame_snapshot.status } -> std::same_as<render::render_text_frame_snapshot_status&>;
+    { frame_snapshot.frame_id } -> std::same_as<std::string&>;
+    { frame_snapshot.source_label } -> std::same_as<std::string&>;
+    { frame_snapshot.batch_policy } -> std::same_as<render::render_text_request_batch_plan_policy_snapshot&>;
+    { frame_snapshot.fallback_chain_policy }
+        -> std::same_as<render::render_text_font_fallback_chain_plan_policy_snapshot&>;
+    { frame_snapshot.materialization_policy }
+        -> std::same_as<render::render_text_glyph_atlas_materialization_policy_snapshot&>;
+    { frame_snapshot.atlas_upload_policy } -> std::same_as<render::render_text_atlas_upload_request_policy_snapshot&>;
+    { frame_snapshot.policy } -> std::same_as<render::render_text_frame_snapshot_policy&>;
+    { frame_snapshot.layout_requests }
+        -> std::same_as<std::vector<render::render_text_batch_layout_request_snapshot>&>;
+    { frame_snapshot.selected_face_order } -> std::same_as<std::vector<render::font_face_id>&>;
+    { frame_snapshot.missing_glyphs }
+        -> std::same_as<std::vector<render::render_text_font_fallback_chain_missing_glyph_snapshot>&>;
+    { frame_snapshot.atlas_uploads } -> std::same_as<std::vector<render::render_text_frame_atlas_upload_snapshot>&>;
+    { frame_snapshot.queued_atlas_upload_request_ids } -> std::same_as<std::vector<std::string>&>;
+    { frame_snapshot.consumed_atlas_upload_request_ids } -> std::same_as<std::vector<std::string>&>;
+    { frame_snapshot.diagnostic } -> std::same_as<std::string&>;
+    { frame_snapshot.ok() } -> std::same_as<bool>;
+    { frame_snapshot.ready_for_renderer() } -> std::same_as<bool>;
+    { frame_snapshot.has_atlas_uploads() } -> std::same_as<bool>;
+    { render::render_text_frame_upload_ready_request_ids(upload_bridge) } -> std::same_as<std::vector<std::string>>;
+    { render::render_text_frame_snapshot_ids_match(stable_request_ids, stable_request_ids) } -> std::same_as<bool>;
+    { render::render_text_frame_snapshot_status_for(
+        frame_request.fallback_chain_plan.policy,
+        upload_bridge,
+        stable_request_ids,
+        stable_request_ids,
+        std::size_t{}) } -> std::same_as<render::render_text_frame_snapshot_status>;
+    { render::make_render_text_frame_atlas_upload_snapshot(upload_request, stable_request_ids, stable_request_ids) }
+        -> std::same_as<render::render_text_frame_atlas_upload_snapshot>;
+    { render::make_render_text_frame_snapshot(frame_request) }
+        -> std::same_as<render::render_text_frame_snapshot>;
+    { render::render_text_frame_snapshot_with_consumed_atlas_updates(frame_snapshot, stable_request_ids, std::size_t{}) }
+        -> std::same_as<render::render_text_frame_snapshot>;
     { render::render_text_atlas_upload_request_rect_key(atlas_request.atlas_update_bounds) }
         -> std::same_as<std::string>;
     { render::render_text_atlas_upload_request_stable_id_for(atlas_request) }

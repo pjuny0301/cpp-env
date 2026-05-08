@@ -731,6 +731,25 @@ void test_fake_text_engine_records_rasterized_atlas_payloads_for_cacheable_glyph
         diagnostics.queued_atlas_upload_request_ids.front()
             == diagnostics.atlas_upload_request_bridge.requests.front().request_id,
         "queued atlas upload id matches bridge request id");
+    require(diagnostics.has_text_frame_snapshot(), "layout records compact text frame snapshot");
+    require(
+        diagnostics.text_frame_snapshot.status == render_text_frame_snapshot_status::pending_atlas_updates,
+        "text frame snapshot is pending before consume_atlas_updates");
+    require(diagnostics.text_frame_snapshot.ok(), "pending text frame snapshot has no planning errors");
+    require(
+        diagnostics.text_frame_snapshot.policy.layout_request_count == 1U,
+        "text frame snapshot carries batch layout request count");
+    require(
+        diagnostics.text_frame_snapshot.policy.materialization_count == 1U,
+        "text frame snapshot carries materialization count");
+    require(
+        diagnostics.text_frame_snapshot.queued_atlas_upload_request_ids
+            == diagnostics.queued_atlas_upload_request_ids,
+        "text frame snapshot carries queued upload ids");
+    require(
+        diagnostics.text_frame_snapshot.atlas_uploads.front().request_id
+            == diagnostics.queued_atlas_upload_request_ids.front(),
+        "text frame snapshot upload entry matches queued id");
 
     const std::string queued_upload_request_id = diagnostics.queued_atlas_upload_request_ids.front();
     const render_text_atlas_page_id queued_page_id =
@@ -774,6 +793,19 @@ void test_fake_text_engine_records_rasterized_atlas_payloads_for_cacheable_glyph
     require(
         engine.last_diagnostics().consumed_atlas_upload_request_ids.front() == queued_upload_request_id,
         "consumed atlas upload id matches queued bridge id");
+    require(
+        engine.last_diagnostics().text_frame_snapshot.status == render_text_frame_snapshot_status::ready,
+        "consume marks text frame snapshot ready");
+    require(
+        engine.last_diagnostics().text_frame_snapshot.ready_for_renderer(),
+        "consumed text frame snapshot reports renderer readiness");
+    require(
+        engine.last_diagnostics().text_frame_snapshot.consumed_atlas_upload_request_ids.front()
+            == queued_upload_request_id,
+        "consumed text frame snapshot carries matching upload id");
+    require(
+        engine.last_diagnostics().text_frame_snapshot.atlas_uploads.front().consumed,
+        "consumed text frame snapshot marks upload entry consumed");
 }
 
 void test_fake_text_engine_records_fallback_only_backend_capability_for_latin_hangul()

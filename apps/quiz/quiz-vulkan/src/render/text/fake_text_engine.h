@@ -133,6 +133,7 @@ struct fake_text_engine_diagnostics {
     std::vector<std::string> queued_atlas_upload_request_ids;
     std::vector<std::string> consumed_atlas_upload_request_ids;
     std::size_t consumed_atlas_update_count = 0;
+    render_text_frame_snapshot text_frame_snapshot;
     std::vector<render_text_shaped_atlas_update_trace_snapshot> shaped_atlas_update_traces;
     render_text_shaped_atlas_update_trace_policy_snapshot shaped_atlas_update_trace_policy;
     std::vector<render_text_glyph_cache_face_snapshot> glyph_cache_faces;
@@ -332,6 +333,13 @@ struct fake_text_engine_diagnostics {
     bool has_consumed_atlas_upload_request_ids() const
     {
         return !consumed_atlas_upload_request_ids.empty();
+    }
+
+    bool has_text_frame_snapshot() const
+    {
+        return !text_frame_snapshot.frame_id.empty()
+            || text_frame_snapshot.policy.layout_request_count > 0U
+            || text_frame_snapshot.policy.upload_request_count > 0U;
     }
 
     bool has_shaped_atlas_update_traces() const

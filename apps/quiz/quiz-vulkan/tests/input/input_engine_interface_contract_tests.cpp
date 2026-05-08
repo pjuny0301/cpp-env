@@ -438,6 +438,175 @@ concept NormalizedInputReplayFocusSummaryInterface = requires(T summary) {
 };
 
 template <typename T>
+concept NormalizedInputReplayCountDeltaInterface = requires(T delta) {
+    { delta.before_count } -> std::same_as<std::size_t&>;
+    { delta.after_count } -> std::same_as<std::size_t&>;
+    { delta.delta } -> std::same_as<std::int64_t&>;
+    { delta.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept NormalizedInputReplayBoolDeltaInterface = requires(T delta) {
+    { delta.before_value } -> std::same_as<bool&>;
+    { delta.after_value } -> std::same_as<bool&>;
+    { delta.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept NormalizedInputReplayRangeDeltaInterface = requires(T delta) {
+    { delta.before_range } -> std::same_as<input::text_range&>;
+    { delta.after_range } -> std::same_as<input::text_range&>;
+    { delta.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept NormalizedInputReplayStringDeltaInterface = requires(T delta) {
+    { delta.before_value } -> std::same_as<std::string&>;
+    { delta.after_value } -> std::same_as<std::string&>;
+    { delta.byte_delta } -> std::same_as<std::int64_t&>;
+    { delta.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept NormalizedInputReplayPointerCaptureDeltaInterface = requires(T delta) {
+    { delta.before_capture } -> std::same_as<input::pointer_capture_snapshot&>;
+    { delta.after_capture } -> std::same_as<input::pointer_capture_snapshot&>;
+    { delta.before_clean } -> std::same_as<bool&>;
+    { delta.after_clean } -> std::same_as<bool&>;
+    { delta.changed } -> std::same_as<bool&>;
+    { delta.clean_changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept NormalizedInputReplayFinalStateDiffInterface = requires(T diff) {
+    { diff.has_focus } -> std::same_as<input::normalized_input_replay_bool_delta&>;
+    { diff.focus_id } -> std::same_as<input::normalized_input_replay_string_delta&>;
+    { diff.text } -> std::same_as<input::normalized_input_replay_string_delta&>;
+    { diff.display_text } -> std::same_as<input::normalized_input_replay_string_delta&>;
+    { diff.preedit_text } -> std::same_as<input::normalized_input_replay_string_delta&>;
+    { diff.caret } -> std::same_as<input::normalized_input_replay_range_delta&>;
+    { diff.has_selection } -> std::same_as<input::normalized_input_replay_bool_delta&>;
+    { diff.selection } -> std::same_as<input::normalized_input_replay_range_delta&>;
+    { diff.focus_clean } -> std::same_as<input::normalized_input_replay_bool_delta&>;
+    { diff.preedit_clean } -> std::same_as<input::normalized_input_replay_bool_delta&>;
+    { diff.pointer_capture } -> std::same_as<input::normalized_input_replay_pointer_capture_delta&>;
+    { diff.focus_changed } -> std::same_as<bool&>;
+    { diff.caret_changed } -> std::same_as<bool&>;
+    { diff.selection_changed } -> std::same_as<bool&>;
+    { diff.text_changed } -> std::same_as<bool&>;
+    { diff.display_text_changed } -> std::same_as<bool&>;
+    { diff.preedit_changed } -> std::same_as<bool&>;
+    { diff.pointer_capture_changed } -> std::same_as<bool&>;
+    { diff.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept NormalizedInputReplayKeyboardDiffInterface = requires(T diff) {
+    { diff.chord_count } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { diff.total } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { diff.emitted_input_event_routes } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { diff.diagnostic_only_routes } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { diff.intents } -> std::same_as<input::normalized_input_replay_keyboard_intent_count_deltas&>;
+    { diff.modifiers } -> std::same_as<input::normalized_input_replay_keyboard_modifier_count_deltas&>;
+    { diff.repeat_policies }
+        -> std::same_as<input::normalized_input_replay_keyboard_repeat_policy_count_deltas&>;
+    { diff.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept NormalizedInputReplayPointerDiffInterface = requires(T diff) {
+    { diff.timeline_entries } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { diff.total } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { diff.emitted_input_event_routes } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { diff.diagnostic_only_routes } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { diff.capture_transition_count } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { diff.wheel_routes } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { diff.pointer_id_count } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { diff.mouse_pointer_id_count } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { diff.touch_pointer_id_count } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { diff.kinds } -> std::same_as<input::normalized_input_replay_pointer_timeline_count_deltas&>;
+    { diff.saw_multipointer_touch } -> std::same_as<input::normalized_input_replay_bool_delta&>;
+    { diff.final_capture } -> std::same_as<input::normalized_input_replay_pointer_capture_delta&>;
+    { diff.timeline_changed } -> std::same_as<bool&>;
+    { diff.capture_changed } -> std::same_as<bool&>;
+    { diff.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept NormalizedInputReplayImeDiffInterface = requires(T diff) {
+    { diff.timeline_entries } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { diff.total } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { diff.emitted_input_event_routes } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { diff.diagnostic_only_routes } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { diff.phases } -> std::same_as<input::normalized_input_replay_ime_phase_count_deltas&>;
+    { diff.all_preedit_text_valid } -> std::same_as<input::normalized_input_replay_bool_delta&>;
+    { diff.all_preedit_ranges_valid } -> std::same_as<input::normalized_input_replay_bool_delta&>;
+    { diff.stale_preedit_cleared } -> std::same_as<input::normalized_input_replay_bool_delta&>;
+    { diff.final_committed_text } -> std::same_as<input::normalized_input_replay_string_delta&>;
+    { diff.final_display_text } -> std::same_as<input::normalized_input_replay_string_delta&>;
+    { diff.final_preedit_text } -> std::same_as<input::normalized_input_replay_string_delta&>;
+    { diff.final_caret } -> std::same_as<input::normalized_input_replay_range_delta&>;
+    { diff.final_has_selection } -> std::same_as<input::normalized_input_replay_bool_delta&>;
+    { diff.final_selection } -> std::same_as<input::normalized_input_replay_range_delta&>;
+    { diff.final_preedit_clean } -> std::same_as<input::normalized_input_replay_bool_delta&>;
+    { diff.timeline_changed } -> std::same_as<bool&>;
+    { diff.final_text_changed } -> std::same_as<bool&>;
+    { diff.final_preedit_changed } -> std::same_as<bool&>;
+    { diff.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept NormalizedInputReplayFocusDiffInterface = requires(T diff) {
+    { diff.timeline_entries } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { diff.total } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { diff.emitted_input_event_routes } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { diff.diagnostic_only_routes } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { diff.target_transition_count } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { diff.caret_transition_count } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { diff.selection_transition_count } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { diff.kinds } -> std::same_as<input::normalized_input_replay_focus_timeline_count_deltas&>;
+    { diff.final_has_focus } -> std::same_as<input::normalized_input_replay_bool_delta&>;
+    { diff.final_focus_id } -> std::same_as<input::normalized_input_replay_string_delta&>;
+    { diff.final_text_byte_count } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { diff.final_caret } -> std::same_as<input::normalized_input_replay_range_delta&>;
+    { diff.final_has_selection } -> std::same_as<input::normalized_input_replay_bool_delta&>;
+    { diff.final_selection } -> std::same_as<input::normalized_input_replay_range_delta&>;
+    { diff.final_focus_clean } -> std::same_as<input::normalized_input_replay_bool_delta&>;
+    { diff.timeline_changed } -> std::same_as<bool&>;
+    { diff.final_focus_changed } -> std::same_as<bool&>;
+    { diff.final_caret_changed } -> std::same_as<bool&>;
+    { diff.final_selection_changed } -> std::same_as<bool&>;
+    { diff.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept NormalizedInputReplayRegressionSummaryInterface = requires(T summary) {
+    { summary.batch_count } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { summary.normalized_event_count } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { summary.route_count } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { summary.final_state_changed } -> std::same_as<bool&>;
+    { summary.focus_caret_selection_changed } -> std::same_as<bool&>;
+    { summary.pointer_capture_changed } -> std::same_as<bool&>;
+    { summary.pointer_timeline_changed } -> std::same_as<bool&>;
+    { summary.ime_timeline_changed } -> std::same_as<bool&>;
+    { summary.keyboard_changed } -> std::same_as<bool&>;
+    { summary.text_or_preedit_changed } -> std::same_as<bool&>;
+    { summary.focus_timeline_changed } -> std::same_as<bool&>;
+    { summary.changed_category_count } -> std::same_as<std::size_t&>;
+    { summary.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept NormalizedInputReplayDiffInterface = requires(T diff) {
+    { diff.final_state } -> std::same_as<input::normalized_input_replay_final_state_diff&>;
+    { diff.keyboard } -> std::same_as<input::normalized_input_replay_keyboard_diff&>;
+    { diff.pointer } -> std::same_as<input::normalized_input_replay_pointer_diff&>;
+    { diff.ime } -> std::same_as<input::normalized_input_replay_ime_diff&>;
+    { diff.focus } -> std::same_as<input::normalized_input_replay_focus_diff&>;
+    { diff.regression } -> std::same_as<input::normalized_input_replay_regression_summary&>;
+};
+
+template <typename T>
 concept NormalizedInputReplayFunctions = requires(
     input::input_engine& engine,
     const input::normalized_input_replay_action& action,
@@ -464,11 +633,25 @@ concept NormalizedInputReplayFunctions = requires(
     const input::normalized_input_replay_pointer_summary& pointer_source,
     input::normalized_input_replay_focus_summary& focus_target,
     const input::normalized_input_replay_focus_summary& focus_source,
+    const input::normalized_input_replay_recording& before_recording,
+    const input::normalized_input_replay_recording& after_recording,
     const input::normalized_input_replay_options& options) {
     { input::pointer_capture_snapshot_clean(input::pointer_capture_snapshot{}) } -> std::same_as<bool>;
     { input::keyboard_chord_present(keyboard) } -> std::same_as<bool>;
     { input::normalized_input_replay_preedit_text_valid(composition) } -> std::same_as<bool>;
     { input::normalized_input_replay_composition_range_valid(composition) } -> std::same_as<bool>;
+    { input::normalized_input_replay_size_delta(std::size_t{}, std::size_t{}) } -> std::same_as<std::int64_t>;
+    { input::normalized_input_replay_diff_count(std::size_t{}, std::size_t{}) }
+        -> std::same_as<input::normalized_input_replay_count_delta>;
+    { input::normalized_input_replay_diff_bool(false, true) }
+        -> std::same_as<input::normalized_input_replay_bool_delta>;
+    { input::normalized_input_replay_diff_range(input::text_range{}, input::text_range{}) }
+        -> std::same_as<input::normalized_input_replay_range_delta>;
+    { input::normalized_input_replay_diff_string(std::string{}, std::string{}) }
+        -> std::same_as<input::normalized_input_replay_string_delta>;
+    { input::normalized_input_replay_diff_pointer_capture(
+        input::pointer_capture_snapshot{},
+        input::pointer_capture_snapshot{}) } -> std::same_as<input::normalized_input_replay_pointer_capture_delta>;
     { input::normalized_input_replay_caret_range_for_offset(std::size_t{}) }
         -> std::same_as<input::text_range>;
     { input::normalized_input_replay_same_text_range(input::text_range{}, input::text_range{}) }
@@ -503,6 +686,18 @@ concept NormalizedInputReplayFunctions = requires(
         -> std::same_as<input::normalized_input_replay_focus_summary>;
     { input::accumulate_normalized_input_replay_focus_summary(focus_target, focus_source) }
         -> std::same_as<void>;
+    { input::diff_normalized_input_replay_final_state(end_state, end_state) }
+        -> std::same_as<input::normalized_input_replay_final_state_diff>;
+    { input::diff_normalized_input_replay_keyboard(keyboard_source, keyboard_source) }
+        -> std::same_as<input::normalized_input_replay_keyboard_diff>;
+    { input::diff_normalized_input_replay_pointer(pointer_source, pointer_source) }
+        -> std::same_as<input::normalized_input_replay_pointer_diff>;
+    { input::diff_normalized_input_replay_ime(ime_source, ime_source) }
+        -> std::same_as<input::normalized_input_replay_ime_diff>;
+    { input::diff_normalized_input_replay_focus(focus_source, focus_source) }
+        -> std::same_as<input::normalized_input_replay_focus_diff>;
+    { input::diff_normalized_input_replay_recordings(before_recording, after_recording) }
+        -> std::same_as<input::normalized_input_replay_diff>;
     { input::summarize_normalized_input_replay_keyboard_routes(routes) }
         -> std::same_as<input::normalized_input_replay_keyboard_summary>;
     { input::accumulate_normalized_input_replay_keyboard_summary(keyboard_target, keyboard_source) }
@@ -757,6 +952,21 @@ static_assert(NormalizedInputReplayFocusTimelineCountsInterface<
 static_assert(NormalizedInputReplayFocusTimelineEntryInterface<
     input::normalized_input_replay_focus_timeline_entry>);
 static_assert(NormalizedInputReplayFocusSummaryInterface<input::normalized_input_replay_focus_summary>);
+static_assert(NormalizedInputReplayCountDeltaInterface<input::normalized_input_replay_count_delta>);
+static_assert(NormalizedInputReplayBoolDeltaInterface<input::normalized_input_replay_bool_delta>);
+static_assert(NormalizedInputReplayRangeDeltaInterface<input::normalized_input_replay_range_delta>);
+static_assert(NormalizedInputReplayStringDeltaInterface<input::normalized_input_replay_string_delta>);
+static_assert(NormalizedInputReplayPointerCaptureDeltaInterface<
+    input::normalized_input_replay_pointer_capture_delta>);
+static_assert(NormalizedInputReplayFinalStateDiffInterface<
+    input::normalized_input_replay_final_state_diff>);
+static_assert(NormalizedInputReplayKeyboardDiffInterface<input::normalized_input_replay_keyboard_diff>);
+static_assert(NormalizedInputReplayPointerDiffInterface<input::normalized_input_replay_pointer_diff>);
+static_assert(NormalizedInputReplayImeDiffInterface<input::normalized_input_replay_ime_diff>);
+static_assert(NormalizedInputReplayFocusDiffInterface<input::normalized_input_replay_focus_diff>);
+static_assert(NormalizedInputReplayRegressionSummaryInterface<
+    input::normalized_input_replay_regression_summary>);
+static_assert(NormalizedInputReplayDiffInterface<input::normalized_input_replay_diff>);
 static_assert(NormalizedInputReplayFunctions<void>);
 static_assert(std::is_default_constructible_v<input::platform_input_translation_request>);
 static_assert(std::is_default_constructible_v<input::platform_input_translation_result>);
@@ -783,6 +993,25 @@ static_assert(std::is_default_constructible_v<input::normalized_input_replay_poi
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_focus_timeline_counts>);
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_focus_timeline_entry>);
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_focus_summary>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_count_delta>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_bool_delta>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_range_delta>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_string_delta>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_pointer_capture_delta>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_final_state_diff>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_keyboard_intent_count_deltas>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_keyboard_modifier_count_deltas>);
+static_assert(std::is_default_constructible_v<
+    input::normalized_input_replay_keyboard_repeat_policy_count_deltas>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_keyboard_diff>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_pointer_timeline_count_deltas>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_pointer_diff>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_ime_phase_count_deltas>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_ime_diff>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_focus_timeline_count_deltas>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_focus_diff>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_regression_summary>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_diff>);
 static_assert(std::is_default_constructible_v<input::keyboard_modifier_state>);
 static_assert(std::is_default_constructible_v<input::keyboard_chord_diagnostic>);
 static_assert(!std::is_polymorphic_v<input::platform_input_translation_request>);
@@ -796,6 +1025,7 @@ static_assert(!std::is_polymorphic_v<input::normalized_input_replay_keyboard_sum
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_ime_summary>);
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_pointer_summary>);
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_focus_summary>);
+static_assert(!std::is_polymorphic_v<input::normalized_input_replay_diff>);
 static_assert(std::is_same_v<
     decltype(input::platform_input_translation_result{}.event),
     std::optional<raw_platform_input_event>>);

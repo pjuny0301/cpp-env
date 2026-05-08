@@ -723,6 +723,206 @@ void test_focus_caret_replay_timeline_records_navigation_and_final_state()
         "focus replay final state matches focus summary caret");
 }
 
+void test_replay_diff_diagnostics_compare_recordings_without_semantics()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    const std::string before_text = std::string("A") + utf8(u8"한") + "B";
+    input_engine before_engine;
+    const std::array before_steps{
+        step("before-text", text(1200, before_text)),
+        step("before-focus-lost", focus(raw_platform_focus_phase::lost, 1210)),
+    };
+    const normalized_input_replay_recording before_recording = replay_normalized_input_fixture(
+        before_engine,
+        before_steps,
+        normalized_input_replay_options{.initial_focus_target_id = "answer"});
+
+    const std::string after_text = before_text + "C";
+    input_engine after_engine;
+    const std::array after_steps{
+        step("after-text", text(1300, after_text)),
+        step("after-home", key(1310, "Home")),
+        step("after-arrow-right", key(1320, "ArrowRight")),
+        step("after-ime-preedit", ime(raw_platform_ime_phase::preedit_update, 1330, utf8(u8"ㅎ"))),
+        step("after-tab", key(1340, "Tab")),
+        step("after-drag-down", pointer(raw_platform_pointer_phase::down, 1350, 0.0f, 0.0f, raw_platform_pointer_button::primary, 77)),
+        step("after-drag-move", pointer(raw_platform_pointer_phase::move, 1360, 12.0f, 0.0f, raw_platform_pointer_button::primary, 77)),
+    };
+    const normalized_input_replay_recording after_recording = replay_normalized_input_fixture(
+        after_engine,
+        after_steps,
+        normalized_input_replay_options{.initial_focus_target_id = "answer"});
+
+    const normalized_input_replay_diff diff =
+        diff_normalized_input_replay_recordings(before_recording, after_recording);
+
+    require(diff.regression.changed, "replay diff summary marks changed recordings");
+    require(diff.regression.changed_category_count == 8,
+        "replay diff summary counts semantic-free changed categories");
+    require(diff.regression.batch_count.delta == 5, "replay diff summary records batch delta");
+    require(diff.regression.normalized_event_count.delta == 1,
+        "replay diff summary records normalized event delta");
+    require(diff.regression.route_count.delta == 5, "replay diff summary records route delta");
+    require(diff.regression.final_state_changed, "replay diff summary records final state change");
+    require(diff.regression.focus_caret_selection_changed,
+        "replay diff summary records focus/caret change");
+    require(diff.regression.pointer_capture_changed,
+        "replay diff summary records pointer capture change");
+    require(diff.regression.pointer_timeline_changed,
+        "replay diff summary records pointer timeline change");
+    require(diff.regression.ime_timeline_changed, "replay diff summary records ime timeline change");
+    require(diff.regression.keyboard_changed, "replay diff summary records keyboard changes");
+    require(diff.regression.text_or_preedit_changed,
+        "replay diff summary records text and preedit changes");
+    require(diff.regression.focus_timeline_changed, "replay diff summary records focus timeline change");
+
+    require(diff.final_state.changed, "replay diff final state changed");
+    require(diff.final_state.focus_changed, "replay diff final focus changed");
+    require(diff.final_state.has_focus.before_value == false,
+        "replay diff final focus before is false");
+    require(diff.final_state.has_focus.after_value == true,
+        "replay diff final focus after is true");
+    require(diff.final_state.focus_id.before_value.empty(),
+        "replay diff final focus id before is empty");
+    require(diff.final_state.focus_id.after_value == "answer",
+        "replay diff final focus id after is target");
+    require(diff.final_state.caret_changed, "replay diff final caret changed");
+    require_range(diff.final_state.caret.before_range, before_text.size(), before_text.size(),
+        "replay diff final caret before");
+    require_range(diff.final_state.caret.after_range, 1, 1, "replay diff final caret after");
+    require(diff.final_state.text_changed, "replay diff final text changed");
+    require(diff.final_state.text.byte_delta == 1, "replay diff final text byte delta");
+    require(diff.final_state.display_text_changed, "replay diff final display text changed");
+    require(diff.final_state.preedit_changed, "replay diff final preedit changed");
+    require(diff.final_state.preedit_text.before_value.empty(),
+        "replay diff preedit before is empty");
+    require(diff.final_state.preedit_text.after_value == utf8(u8"ㅎ"),
+        "replay diff preedit after is recorded");
+    require(diff.final_state.preedit_clean.before_value,
+        "replay diff preedit clean before is true");
+    require(!diff.final_state.preedit_clean.after_value,
+        "replay diff preedit clean after is false");
+    require(diff.final_state.pointer_capture_changed,
+        "replay diff final pointer capture changed");
+    require(diff.final_state.pointer_capture.before_capture.lifecycle == pointer_capture_lifecycle::idle,
+        "replay diff pointer capture before is idle");
+    require(diff.final_state.pointer_capture.after_capture.lifecycle == pointer_capture_lifecycle::captured,
+        "replay diff pointer capture after is captured");
+    require(diff.final_state.pointer_capture.before_clean,
+        "replay diff pointer capture before is clean");
+    require(!diff.final_state.pointer_capture.after_clean,
+        "replay diff pointer capture after is active");
+    require(!diff.final_state.selection_changed,
+        "replay diff primary comparison has no final selection change");
+
+    require(diff.keyboard.changed, "replay diff keyboard counts changed");
+    require(diff.keyboard.chord_count.delta == 3, "replay diff keyboard chord count delta");
+    require(diff.keyboard.intents.caret_home.delta == 1,
+        "replay diff keyboard caret-home delta");
+    require(diff.keyboard.intents.caret_next.delta == 1,
+        "replay diff keyboard caret-next delta");
+    require(diff.keyboard.intents.focus_traversal_next.delta == 1,
+        "replay diff keyboard focus traversal delta");
+    require(diff.keyboard.modifiers.unmodified.delta == 3,
+        "replay diff keyboard unmodified modifier delta");
+    require(diff.keyboard.repeat_policies.not_repeat.delta == 3,
+        "replay diff keyboard repeat policy delta");
+
+    require(diff.pointer.changed, "replay diff pointer summary changed");
+    require(diff.pointer.timeline_changed, "replay diff pointer timeline changed");
+    require(diff.pointer.capture_changed, "replay diff pointer capture summary changed");
+    require(diff.pointer.timeline_entries.delta == 2, "replay diff pointer timeline delta");
+    require(diff.pointer.kinds.pointer_capture_arbitration.delta == 1,
+        "replay diff pointer capture arbitration delta");
+    require(diff.pointer.kinds.drag_start.delta == 1,
+        "replay diff pointer drag start delta");
+    require(diff.pointer.capture_transition_count.delta == 2,
+        "replay diff pointer capture transition delta");
+    require(diff.pointer.pointer_id_count.delta == 1,
+        "replay diff pointer id count delta");
+    require(diff.pointer.final_capture.after_capture.pointer_id == 77,
+        "replay diff pointer capture records pointer id");
+
+    require(diff.ime.changed, "replay diff ime summary changed");
+    require(diff.ime.timeline_changed, "replay diff ime timeline changed");
+    require(diff.ime.timeline_entries.delta == 1, "replay diff ime timeline delta");
+    require(diff.ime.phases.preedit_update.delta == 1,
+        "replay diff ime preedit phase delta");
+    require(diff.ime.final_preedit_changed,
+        "replay diff ime final preedit changed");
+    require(diff.ime.final_preedit_text.after_value == utf8(u8"ㅎ"),
+        "replay diff ime final preedit after");
+    require(diff.ime.final_preedit_clean.before_value,
+        "replay diff ime final preedit clean before");
+    require(!diff.ime.final_preedit_clean.after_value,
+        "replay diff ime final preedit clean after");
+
+    require(diff.focus.changed, "replay diff focus summary changed");
+    require(diff.focus.timeline_changed, "replay diff focus timeline changed");
+    require(diff.focus.timeline_entries.delta == 2, "replay diff focus timeline delta");
+    require(diff.focus.kinds.focus_loss.delta == -1,
+        "replay diff focus loss delta");
+    require(diff.focus.kinds.focus_traversal_next.delta == 1,
+        "replay diff focus traversal next delta");
+    require(diff.focus.kinds.caret_moved.delta == 2,
+        "replay diff focus caret moved delta");
+    require(diff.focus.final_focus_changed, "replay diff focus final focus changed");
+    require(diff.focus.final_caret_changed, "replay diff focus final caret changed");
+    require(!diff.focus.final_selection_changed,
+        "replay diff primary focus final selection unchanged");
+
+    const normalized_input_replay_diff stable_diff =
+        diff_normalized_input_replay_recordings(after_recording, after_recording);
+    require(!stable_diff.regression.changed, "replay diff self comparison is unchanged");
+    require(stable_diff.regression.changed_category_count == 0,
+        "replay diff self comparison has no changed categories");
+    require(!stable_diff.final_state.changed, "replay diff self final state unchanged");
+    require(!stable_diff.keyboard.changed, "replay diff self keyboard unchanged");
+    require(!stable_diff.pointer.changed, "replay diff self pointer unchanged");
+    require(!stable_diff.ime.changed, "replay diff self ime unchanged");
+    require(!stable_diff.focus.changed, "replay diff self focus unchanged");
+
+    input_engine selection_before_engine;
+    const std::array selection_before_steps{
+        step("selection-before-text", text(1400, "AB")),
+        step("selection-before-home", key(1410, "Home")),
+    };
+    const normalized_input_replay_recording selection_before = replay_normalized_input_fixture(
+        selection_before_engine,
+        selection_before_steps,
+        normalized_input_replay_options{.initial_focus_target_id = "answer"});
+
+    input_engine selection_after_engine;
+    const std::array selection_after_steps{
+        step("selection-after-text", text(1500, "AB")),
+        step("selection-after-home", key(1510, "Home")),
+        step("selection-after-shift-right", key(1520, "ArrowRight", false, raw_platform_key_phase::down, false, true)),
+    };
+    const normalized_input_replay_recording selection_after = replay_normalized_input_fixture(
+        selection_after_engine,
+        selection_after_steps,
+        normalized_input_replay_options{.initial_focus_target_id = "answer"});
+
+    const normalized_input_replay_diff selection_diff =
+        diff_normalized_input_replay_recordings(selection_before, selection_after);
+    require(selection_diff.final_state.selection_changed,
+        "replay diff final selection changed");
+    require(!selection_diff.final_state.has_selection.before_value,
+        "replay diff final selection before absent");
+    require(selection_diff.final_state.has_selection.after_value,
+        "replay diff final selection after present");
+    require_range(selection_diff.final_state.selection.after_range, 0, 1,
+        "replay diff final selection range after");
+    require(selection_diff.focus.final_selection_changed,
+        "replay diff focus final selection changed");
+    require(selection_diff.keyboard.intents.selection_next.delta == 1,
+        "replay diff keyboard selection-next delta");
+    require(selection_diff.regression.focus_caret_selection_changed,
+        "replay diff regression records focus caret selection category");
+}
+
 void test_pointer_replay_timeline_records_gestures_capture_and_wheel()
 {
     using namespace quiz_vulkan;
@@ -867,6 +1067,7 @@ int main()
     test_ime_replay_timeline_records_composition_lifecycle();
     test_ime_replay_timeline_flags_invalid_preedit_text();
     test_focus_caret_replay_timeline_records_navigation_and_final_state();
+    test_replay_diff_diagnostics_compare_recordings_without_semantics();
     test_pointer_replay_timeline_records_gestures_capture_and_wheel();
 
     std::cout << "normalized_input_replay_tests passed\n";

@@ -98,6 +98,13 @@ void sync_text_focus(input::input_engine& input_engine, const scene::placed_scen
     }
 }
 
+bool dispatch_normalized_input_events(
+    app_state& quiz_state,
+    const std::vector<input::input_event>& input_events,
+    const scene::placed_scene& placed_scene,
+    input::input_engine& input_engine,
+    platform_shell& shell);
+
 bool dispatch_platform_input(
     app_state& quiz_state,
     const platform_input_event& event,
@@ -110,32 +117,50 @@ bool dispatch_platform_input(
 
     const std::vector<raw_platform_input_event> raw_events = normalize_platform_input_event(event, now_ms());
     for (const raw_platform_input_event& raw_event : raw_events) {
-        for (const input::input_event& input_event : input_engine.process_raw_event(raw_event)) {
-            const app_input_route_result route_result = route_normalized_input_event(
-                input_event,
-                placed_scene,
-                input_engine.text_model().text());
+        should_render = dispatch_normalized_input_events(
+            quiz_state,
+            input_engine.process_raw_event(raw_event),
+            placed_scene,
+            input_engine,
+            shell) || should_render;
+    }
 
-            if (!route_result.handled) {
-                continue;
-            }
-            if (!route_result.ok()) {
-                shell.show_message("input action rejected: " + route_result.error);
-                continue;
-            }
+    return should_render;
+}
 
-            should_render = route_result.needs_render || should_render;
-            if (!route_result.action.has_value()) {
-                shell.show_message("typed answer: " + input_engine.text_model().display_text());
-                continue;
-            }
+bool dispatch_normalized_input_events(
+    app_state& quiz_state,
+    const std::vector<input::input_event>& input_events,
+    const scene::placed_scene& placed_scene,
+    input::input_engine& input_engine,
+    platform_shell& shell)
+{
+    bool should_render = false;
+    for (const input::input_event& input_event : input_events) {
+        const app_input_route_result route_result = route_normalized_input_event(
+            input_event,
+            placed_scene,
+            input_engine.text_model().text());
 
-            quiz_state.dispatch(*route_result.action, now_ms());
-            if (route_result.clear_text_after_action) {
-                input_engine.reset();
-            }
-            shell.show_message("input action: " + std::string(domain::to_string(domain::type_of(*route_result.action))));
+        if (!route_result.handled) {
+            continue;
         }
+        if (!route_result.ok()) {
+            shell.show_message("input action rejected: " + route_result.error);
+            continue;
+        }
+
+        should_render = route_result.needs_render || should_render;
+        if (!route_result.action.has_value()) {
+            shell.show_message("typed answer: " + input_engine.text_model().display_text());
+            continue;
+        }
+
+        quiz_state.dispatch(*route_result.action, now_ms());
+        if (route_result.clear_text_after_action) {
+            input_engine.reset();
+        }
+        shell.show_message("input action: " + std::string(domain::to_string(domain::type_of(*route_result.action))));
     }
 
     return should_render;
@@ -189,6 +214,13 @@ int app::run()
                 input_engine,
                 *shell_) || should_render;
         }
+        sync_text_focus(input_engine, latest_frame.placed_scene);
+        should_render = dispatch_normalized_input_events(
+            quiz_state,
+            input_engine.update_time(now_ms()),
+            latest_frame.placed_scene,
+            input_engine,
+            *shell_) || should_render;
         if (should_render) {
             latest_frame = render_and_report(
                 render_pipeline,

@@ -205,6 +205,33 @@ void test_platform_wheel_and_key_events_normalize_to_raw_input()
     require(key->repeat, "key down preserves repeat flag");
 }
 
+void test_pointer_hold_update_time_routes_long_press()
+{
+    using namespace quiz_vulkan;
+
+    input::input_engine engine;
+    const std::vector<raw_platform_input_event> down_events = normalize_platform_input_event(
+        platform_input_event{
+            .type = platform_input_event_type::pointer_down,
+            .x = 16.0f,
+            .y = 24.0f,
+        },
+        1000);
+    require(down_events.size() == 1, "hold starts with one pointer down");
+    require(engine.process_raw_event(down_events.front()).empty(), "pointer down alone emits no gesture");
+
+    const std::vector<input::input_event> held_events = engine.update_time(1700);
+    require(held_events.size() == 1, "time update emits long press while pointer is held");
+    const auto* long_press = std::get_if<input::gesture_event>(&held_events.front());
+    require(long_press != nullptr, "held pointer produces gesture payload");
+    require(long_press->kind == input::gesture_kind::long_press, "held pointer produces long press");
+
+    const app_input_route_result result = route_normalized_input_event(held_events.front(), {}, {});
+    require(result.ok(), "held long press route succeeds");
+    require(payload_if<domain::mark_question_unknown_action>(result) != nullptr,
+        "held long press routes mark unknown");
+}
+
 void test_legacy_pointer_normalizes_to_tap_route()
 {
     using namespace quiz_vulkan;
@@ -375,6 +402,7 @@ int main()
 {
     test_platform_pointer_lifecycle_normalizes_without_synthetic_tap();
     test_platform_wheel_and_key_events_normalize_to_raw_input();
+    test_pointer_hold_update_time_routes_long_press();
     test_legacy_pointer_normalizes_to_tap_route();
     test_text_focus_and_commit_route();
     test_submit_key_routes_committed_text();

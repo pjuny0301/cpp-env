@@ -6,6 +6,10 @@
 
 최근 baseline 통합 증거:
 
+- current: image frame snapshot header split과 Vulkan native readiness threading을 통합하고 Windows MinGW focused image/Vulkan CTest 9/9 및 `ctest -N` 90개 확인.
+- `95f24d9`: 새 public `image_texture_frame_snapshot.h`를 render contract FILE_SET에 등록.
+- `c656cfb`: Vulkan backend native function-table readiness를 command recording, submit, present, renderer summary diagnostics에 data-only로 연결.
+- `ef48ce4`: image texture frame snapshot/diff diagnostics를 별도 public image header로 분리해 `image_texture_pipeline.h` 토큰 부담을 줄임.
 - current: normalized input replay diff diagnostics를 통합하고 Windows MinGW focused normalized input CTest 1/1 및 interface compile target build 확인.
 - `f4b32aa`: input core에 replay-to-replay diff diagnostics를 추가해 focus/caret/selection/text/preedit, pointer capture, gesture/IME timeline, keyboard count delta를 semantic-free로 비교.
 - current: Windows MinGW full CTest 89/89 통과로 app input lifecycle, held gesture routing, text/image frame snapshot diff 누적 기준선 갱신.

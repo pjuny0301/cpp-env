@@ -38,6 +38,8 @@ Last updated: 2026-05-09
 - Engine workers own only their engine folders. App/runtime, top-level CMake, and aggregate contract wiring stay with the integrator unless explicitly assigned.
 - Large file splitting is allowed when it improves module cohesion, worker ownership, reviewability, or conflict isolation. Do not split files only because they exceed a line-count threshold, and do not move stable public interfaces without explicit integrator approval.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
+- Latest integration note: `ef48ce4` splits image texture frame snapshot diagnostics into `image_texture_frame_snapshot.h`, and `95f24d9` registers that public header in the render contract FILE_SET.
+- Latest integration note: `c656cfb` threads Vulkan native function-table readiness through command-buffer recording, submit-batch planning, present-completion planning, and renderer/backend summary diagnostics without calling real Vulkan APIs.
 - Latest integration note: `f4b32aa` adds normalized input replay diff diagnostics for final focus/caret/selection/text/preedit state, pointer capture, gesture timeline, IME timeline, keyboard intent counts, and semantic-free regression summaries.
 - Latest integration note: `56f201b` and `155398b` add text frame snapshot diff diagnostics and image texture frame snapshot diff diagnostics, giving renderer handoff reviews added/removed/changed upload or texture handle deltas without exposing engine internals.
 - Latest integration note: `e340728` routes `input_engine.update_time()` through the app loop, so held pointer gestures such as long press can emit before release and travel through the same app input router as raw platform events.
@@ -71,7 +73,7 @@ Last updated: 2026-05-09
 - Latest integration note: `2656970` adds a Vulkan frame pipeline handoff summary/result that composes loader, instance, device, swapchain, render pass, pipeline, resource binding, command recording, submit, present, and fallback readiness without scene/UI/app/domain coupling.
 - Latest integration note: text/image/input worker commits added font backend selection metadata, optional third-party image decoder adapter boundary, and IME/focus/caret hardening; CMake render contract FILE_SET registration was handled by the integrator.
 - Latest integration note: `15d77ce` reports app scene modifier errors in `app_render_report`; `0a721e2` blocks host/external source paths in architecture tests; `7505a63` tracks native dependency manifest/README while ignoring downloaded source directories.
-- Latest verification: Windows MinGW focused normalized input replay CTest passed 1/1 after `f4b32aa`; latest full CTest passed 89/89 after app input lifecycle, held-gesture routing, and text/image frame snapshot diff integrations. Current `ctest -N` reports 89 tests.
+- Latest verification: Windows MinGW focused image/Vulkan CTest passed 9/9 after `ef48ce4`, `c656cfb`, and `95f24d9`; focused normalized input replay CTest passed 1/1 after `f4b32aa`; latest full CTest passed 89/89. Current `ctest -N` reports 90 tests.
 
 ## Verification commands
 

@@ -65,7 +65,7 @@ Last updated: 2026-05-08
 - Latest integration note: `2656970` adds a Vulkan frame pipeline handoff summary/result that composes loader, instance, device, swapchain, render pass, pipeline, resource binding, command recording, submit, present, and fallback readiness without scene/UI/app/domain coupling.
 - Latest integration note: text/image/input worker commits added font backend selection metadata, optional third-party image decoder adapter boundary, and IME/focus/caret hardening; CMake render contract FILE_SET registration was handled by the integrator.
 - Latest integration note: `15d77ce` reports app scene modifier errors in `app_render_report`; `0a721e2` blocks host/external source paths in architecture tests; `7505a63` tracks native dependency manifest/README while ignoring downloaded source directories.
-- Latest verification: Windows MinGW focused input/image CTest passed 4/4 after `09ea764` and `004e70c`; focused text CTest passed 2/2 after `5c4d0d9`; focused Vulkan CTest passed 4/4 after `85dd390`. Most recent full CTest passed 81/81 after `2656970`; current `ctest -N` reports 88 tests.
+- Latest verification: Windows MinGW full CTest passed 88/88 after `09ea764`, `004e70c`, and `5c4d0d9`; focused input/image CTest passed 4/4 after `09ea764` and `004e70c`; focused text CTest passed 2/2 after `5c4d0d9`; focused Vulkan CTest passed 4/4 after `85dd390`. Current `ctest -N` reports 88 tests.
 
 ## Verification commands
 

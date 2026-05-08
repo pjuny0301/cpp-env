@@ -6,6 +6,7 @@
 
 최근 baseline 통합 증거:
 
+- current: Windows MinGW full CTest 88/88 통과로 text/image/input/Vulkan 누적 통합 기준선 갱신.
 - current: focus/caret replay timeline diagnostics와 image texture frame snapshot diagnostics를 통합하고 Windows MinGW focused input/image CTest 4/4 확인.
 - `004e70c`: image engine에 texture frame snapshot diagnostics를 추가해 batch plan/execution/residency/handle-map 결과를 immutable public renderer handoff view로 합성.
 - `09ea764`: normalized input replay에 focus/caret navigation timeline, text target transitions, caret/selection movement, final focus/caret state를 추가.

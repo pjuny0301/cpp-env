@@ -673,4 +673,381 @@ inline render_image_texture_frame_snapshot_diff diff_render_image_texture_frame_
     return diff;
 }
 
+enum class render_image_texture_frame_binding_packet_status {
+    ready,
+    placeholder,
+    failed,
+    removed,
+};
+
+inline std::string render_image_texture_frame_binding_packet_status_name(
+    render_image_texture_frame_binding_packet_status status)
+{
+    switch (status) {
+    case render_image_texture_frame_binding_packet_status::ready:
+        return "ready";
+    case render_image_texture_frame_binding_packet_status::placeholder:
+        return "placeholder";
+    case render_image_texture_frame_binding_packet_status::failed:
+        return "failed";
+    case render_image_texture_frame_binding_packet_status::removed:
+        return "removed";
+    }
+
+    return "unknown";
+}
+
+struct render_image_texture_frame_binding_packet {
+    std::size_t sequence = 0;
+    std::size_t request_index = 0;
+    render_image_texture_frame_binding_packet_status status =
+        render_image_texture_frame_binding_packet_status::failed;
+    std::string status_name;
+    std::string render_image_uri;
+    std::string normalized_uri;
+    render_image_cache_key cache_key;
+    render_image_source_kind source_kind = render_image_source_kind::unsupported;
+    render_image_sampler_policy sampler;
+    render_image_sampler_policy_diagnostic sampler_policy;
+    std::string sampler_key;
+    render_image_texture_key texture_key;
+    std::string stable_texture_cache_key;
+    render_image_texture_id texture_id = 0;
+    render_image_revision texture_revision = 0;
+    std::size_t texture_width = 0;
+    std::size_t texture_height = 0;
+    render_image_texture_batch_execution_entry_status execution_status =
+        render_image_texture_batch_execution_entry_status::skipped_invalid_request;
+    render_image_texture_pipeline_status pipeline_status =
+        render_image_texture_pipeline_status::resolve_failed;
+    render_image_texture_status texture_status = render_image_texture_status::missing_source;
+    render_image_texture_handle_map_entry_status handle_status =
+        render_image_texture_handle_map_entry_status::missing_execution;
+    bool has_texture = false;
+    bool renderer_handoff_ready = false;
+    bool placeholder_texture = false;
+    bool failed = true;
+    bool removed = false;
+    bool cache_reused = false;
+    bool expected_cache_reuse = false;
+    bool residency_budget_pressure = false;
+    render_image_texture_residency_budget_pressure_status residency_pressure_status =
+        render_image_texture_residency_budget_pressure_status::within_budget;
+    std::string residency_pressure_status_name;
+    bool added_in_frame = false;
+    bool removed_from_frame = false;
+    bool changed_in_frame = false;
+    bool unchanged_in_frame = false;
+    bool readiness_changed = false;
+    bool readiness_regressed = false;
+    bool readiness_recovered = false;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return status == render_image_texture_frame_binding_packet_status::ready
+            || status == render_image_texture_frame_binding_packet_status::placeholder;
+    }
+};
+
+struct render_image_texture_frame_binding_plan {
+    std::size_t request_count = 0;
+    std::size_t current_packet_count = 0;
+    std::size_t packet_count = 0;
+    std::size_t bindable_packet_count = 0;
+    std::size_t ready_packet_count = 0;
+    std::size_t placeholder_packet_count = 0;
+    std::size_t failed_packet_count = 0;
+    std::size_t removed_packet_count = 0;
+    std::size_t added_packet_count = 0;
+    std::size_t changed_packet_count = 0;
+    std::size_t unchanged_packet_count = 0;
+    std::size_t readiness_changed_count = 0;
+    std::size_t readiness_regressed_count = 0;
+    std::size_t readiness_recovered_count = 0;
+    std::size_t residency_pressure_packet_count = 0;
+    bool renderer_handoff_ready = false;
+    bool residency_budget_pressure = false;
+    render_image_texture_residency_budget_pressure_status residency_pressure_status =
+        render_image_texture_residency_budget_pressure_status::within_budget;
+    std::string residency_pressure_status_name;
+    std::vector<render_image_texture_frame_binding_packet> packets;
+    std::string readiness_summary;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return renderer_handoff_ready;
+    }
+};
+
+inline render_image_texture_frame_binding_packet_status render_image_texture_frame_binding_packet_status_for(
+    const render_image_texture_frame_entry_snapshot& entry)
+{
+    if (!entry.renderer_handoff_ready || entry.texture_id == 0) {
+        return render_image_texture_frame_binding_packet_status::failed;
+    }
+    if (entry.placeholder_texture) {
+        return render_image_texture_frame_binding_packet_status::placeholder;
+    }
+    return render_image_texture_frame_binding_packet_status::ready;
+}
+
+inline const render_image_texture_frame_entry_diff* render_image_texture_frame_diff_entry_for_request_index(
+    const render_image_texture_frame_snapshot_diff& diff,
+    std::size_t request_index)
+{
+    for (const render_image_texture_frame_entry_diff& entry : diff.entries) {
+        if (entry.request_index == request_index) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
+inline render_image_texture_frame_binding_packet make_render_image_texture_frame_binding_packet(
+    const render_image_texture_frame_entry_snapshot& entry)
+{
+    render_image_texture_frame_binding_packet packet{
+        .sequence = entry.sequence,
+        .request_index = entry.request_index,
+        .status = render_image_texture_frame_binding_packet_status_for(entry),
+        .render_image_uri = entry.render_image_uri,
+        .normalized_uri = entry.normalized_uri,
+        .cache_key = entry.cache_key,
+        .source_kind = entry.source_kind,
+        .sampler = entry.sampler,
+        .sampler_policy = entry.sampler_policy,
+        .texture_key = entry.texture_key,
+        .stable_texture_cache_key = entry.stable_texture_cache_key,
+        .texture_id = entry.texture_id,
+        .texture_revision = entry.texture_revision,
+        .texture_width = entry.texture_width,
+        .texture_height = entry.texture_height,
+        .execution_status = entry.execution_status,
+        .pipeline_status = entry.pipeline_status,
+        .texture_status = entry.texture_status,
+        .handle_status = entry.handle_status,
+        .has_texture = entry.texture_id != 0,
+        .renderer_handoff_ready = entry.renderer_handoff_ready,
+        .placeholder_texture = entry.placeholder_texture,
+        .failed = !entry.renderer_handoff_ready || entry.texture_id == 0,
+        .removed = false,
+        .cache_reused = entry.cache_reused,
+        .expected_cache_reuse = entry.expected_cache_reuse,
+        .residency_budget_pressure = entry.residency_budget_pressure,
+        .residency_pressure_status = entry.residency_pressure_status,
+        .residency_pressure_status_name = entry.residency_pressure_status_name,
+        .diagnostic = entry.diagnostic,
+    };
+    packet.status_name = render_image_texture_frame_binding_packet_status_name(packet.status);
+    packet.sampler_key = packet.sampler_policy.stable_key_fragment.empty()
+        ? render_image_sampler_policy_stable_fragment(packet.sampler)
+        : packet.sampler_policy.stable_key_fragment;
+    if (packet.diagnostic.empty()) {
+        packet.diagnostic = packet.status == render_image_texture_frame_binding_packet_status::ready
+            ? "image texture binding packet is ready"
+            : (packet.status == render_image_texture_frame_binding_packet_status::placeholder
+                ? "image texture binding packet uses placeholder texture"
+                : "image texture binding packet is unavailable for renderer handoff");
+    }
+    return packet;
+}
+
+inline render_image_texture_frame_binding_packet make_render_image_texture_frame_removed_binding_packet(
+    const render_image_texture_frame_entry_diff& diff)
+{
+    render_image_sampler_policy_diagnostic sampler_policy =
+        make_render_image_sampler_policy_diagnostic(diff.before_sampler);
+    render_image_texture_frame_binding_packet packet{
+        .request_index = diff.request_index,
+        .status = render_image_texture_frame_binding_packet_status::removed,
+        .render_image_uri = diff.before_render_image_uri,
+        .cache_key = diff.before_cache_key,
+        .sampler = diff.before_sampler,
+        .sampler_policy = sampler_policy,
+        .sampler_key = sampler_policy.stable_key_fragment,
+        .texture_key = render_image_texture_key{
+            .source_key = diff.before_cache_key,
+            .sampler = diff.before_sampler,
+        },
+        .stable_texture_cache_key = diff.before_stable_texture_cache_key,
+        .texture_id = diff.before_texture_id,
+        .texture_revision = diff.before_texture_revision,
+        .execution_status = diff.before_execution_status,
+        .has_texture = diff.before_texture_id != 0,
+        .renderer_handoff_ready = false,
+        .placeholder_texture = diff.before_placeholder_texture,
+        .failed = false,
+        .removed = true,
+        .residency_budget_pressure = diff.before_residency_budget_pressure,
+        .residency_pressure_status = diff.before_residency_pressure_status,
+        .residency_pressure_status_name =
+            render_image_texture_residency_budget_pressure_status_name(diff.before_residency_pressure_status),
+        .removed_from_frame = true,
+        .readiness_changed = diff.request_success_changed,
+        .readiness_regressed = diff.before_renderer_handoff_ready,
+        .diagnostic = "image texture binding packet was removed from frame",
+    };
+    packet.status_name = render_image_texture_frame_binding_packet_status_name(packet.status);
+    return packet;
+}
+
+inline void count_render_image_texture_frame_binding_packet(
+    render_image_texture_frame_binding_plan& plan,
+    const render_image_texture_frame_binding_packet& packet)
+{
+    ++plan.packet_count;
+    switch (packet.status) {
+    case render_image_texture_frame_binding_packet_status::ready:
+        ++plan.bindable_packet_count;
+        ++plan.ready_packet_count;
+        break;
+    case render_image_texture_frame_binding_packet_status::placeholder:
+        ++plan.bindable_packet_count;
+        ++plan.placeholder_packet_count;
+        break;
+    case render_image_texture_frame_binding_packet_status::failed:
+        ++plan.failed_packet_count;
+        break;
+    case render_image_texture_frame_binding_packet_status::removed:
+        ++plan.removed_packet_count;
+        break;
+    }
+    if (packet.added_in_frame) {
+        ++plan.added_packet_count;
+    }
+    if (packet.changed_in_frame) {
+        ++plan.changed_packet_count;
+    }
+    if (packet.unchanged_in_frame) {
+        ++plan.unchanged_packet_count;
+    }
+    if (packet.readiness_changed) {
+        ++plan.readiness_changed_count;
+    }
+    if (packet.readiness_regressed) {
+        ++plan.readiness_regressed_count;
+    }
+    if (packet.readiness_recovered) {
+        ++plan.readiness_recovered_count;
+    }
+    if (packet.residency_budget_pressure) {
+        ++plan.residency_pressure_packet_count;
+    }
+}
+
+inline void finalize_render_image_texture_frame_binding_plan(
+    render_image_texture_frame_binding_plan& plan)
+{
+    if (plan.packet_count == 0) {
+        plan.readiness_summary = "image texture frame binding plan has no texture bindings";
+    } else if (plan.readiness_regressed_count != 0) {
+        plan.readiness_summary = "image texture frame binding readiness regressed";
+    } else if (plan.readiness_recovered_count != 0) {
+        plan.readiness_summary = "image texture frame binding readiness recovered";
+    } else if (plan.added_packet_count != 0 || plan.removed_packet_count != 0 || plan.changed_packet_count != 0) {
+        plan.readiness_summary = "image texture frame binding packets changed";
+    } else {
+        plan.readiness_summary = "image texture frame binding packets unchanged";
+    }
+
+    if (plan.packet_count == 0) {
+        plan.diagnostic = "image texture frame binding plan has no texture bindings";
+    } else if (plan.failed_packet_count != 0) {
+        plan.diagnostic = "image texture frame binding plan contains failed bindings";
+    } else if (plan.residency_budget_pressure) {
+        plan.diagnostic = "image texture frame binding plan ready with residency budget pressure";
+    } else if (plan.placeholder_packet_count != 0) {
+        plan.diagnostic = "image texture frame binding plan ready with placeholder bindings";
+    } else if (plan.added_packet_count != 0 || plan.removed_packet_count != 0 || plan.changed_packet_count != 0) {
+        plan.diagnostic = "image texture frame binding plan ready with frame delta";
+    } else {
+        plan.diagnostic = "image texture frame binding plan ready";
+    }
+}
+
+inline render_image_texture_frame_binding_plan make_render_image_texture_frame_binding_plan(
+    const render_image_texture_frame_snapshot& frame)
+{
+    render_image_texture_frame_binding_plan plan{
+        .request_count = frame.request_count,
+        .current_packet_count = frame.entries.size(),
+        .renderer_handoff_ready = frame.renderer_handoff_ready,
+        .residency_budget_pressure = frame.residency_budget_pressure,
+        .residency_pressure_status = frame.residency_pressure_status,
+        .residency_pressure_status_name = frame.residency_pressure_status_name,
+    };
+
+    for (const render_image_texture_frame_entry_snapshot& entry : frame.entries) {
+        render_image_texture_frame_binding_packet packet =
+            make_render_image_texture_frame_binding_packet(entry);
+        packet.unchanged_in_frame = true;
+        count_render_image_texture_frame_binding_packet(plan, packet);
+        plan.packets.push_back(std::move(packet));
+    }
+
+    finalize_render_image_texture_frame_binding_plan(plan);
+    return plan;
+}
+
+inline render_image_texture_frame_binding_plan make_render_image_texture_frame_binding_plan(
+    const render_image_texture_frame_snapshot& frame,
+    const render_image_texture_frame_snapshot_diff& diff)
+{
+    render_image_texture_frame_binding_plan plan{
+        .request_count = frame.request_count,
+        .current_packet_count = frame.entries.size(),
+        .renderer_handoff_ready = frame.renderer_handoff_ready,
+        .residency_budget_pressure = frame.residency_budget_pressure,
+        .residency_pressure_status = frame.residency_pressure_status,
+        .residency_pressure_status_name = frame.residency_pressure_status_name,
+    };
+
+    for (const render_image_texture_frame_entry_snapshot& entry : frame.entries) {
+        render_image_texture_frame_binding_packet packet =
+            make_render_image_texture_frame_binding_packet(entry);
+        if (const render_image_texture_frame_entry_diff* entry_diff =
+                render_image_texture_frame_diff_entry_for_request_index(diff, entry.request_index);
+            entry_diff != nullptr) {
+            packet.added_in_frame =
+                entry_diff->status == render_image_texture_frame_snapshot_diff_entry_status::added;
+            packet.changed_in_frame =
+                entry_diff->status == render_image_texture_frame_snapshot_diff_entry_status::changed;
+            packet.unchanged_in_frame =
+                entry_diff->status == render_image_texture_frame_snapshot_diff_entry_status::unchanged;
+            packet.readiness_changed = entry_diff->request_success_changed;
+            packet.readiness_regressed =
+                entry_diff->before_renderer_handoff_ready && !entry_diff->after_renderer_handoff_ready;
+            packet.readiness_recovered =
+                entry_diff->status != render_image_texture_frame_snapshot_diff_entry_status::added
+                && !entry_diff->before_renderer_handoff_ready && entry_diff->after_renderer_handoff_ready;
+        }
+        count_render_image_texture_frame_binding_packet(plan, packet);
+        plan.packets.push_back(std::move(packet));
+    }
+
+    for (const render_image_texture_frame_entry_diff& entry_diff : diff.entries) {
+        if (entry_diff.status != render_image_texture_frame_snapshot_diff_entry_status::removed) {
+            continue;
+        }
+        render_image_texture_frame_binding_packet packet =
+            make_render_image_texture_frame_removed_binding_packet(entry_diff);
+        count_render_image_texture_frame_binding_packet(plan, packet);
+        plan.packets.push_back(std::move(packet));
+    }
+
+    finalize_render_image_texture_frame_binding_plan(plan);
+    return plan;
+}
+
+inline render_image_texture_frame_binding_plan make_render_image_texture_frame_binding_plan(
+    const render_image_texture_frame_snapshot& before,
+    const render_image_texture_frame_snapshot& after)
+{
+    return make_render_image_texture_frame_binding_plan(
+        after,
+        diff_render_image_texture_frame_snapshots(before, after));
+}
+
 } // namespace quiz_vulkan::render

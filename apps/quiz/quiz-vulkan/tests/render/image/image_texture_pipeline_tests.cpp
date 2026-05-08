@@ -60,6 +60,10 @@ static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_textu
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_frame_snapshot_diff>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_entry_diff>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_snapshot_diff>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_frame_binding_packet>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_frame_binding_plan>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_binding_packet>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_binding_plan>);
 
 void require(bool condition, const char* message)
 {
@@ -1656,6 +1660,237 @@ void test_texture_frame_snapshot_diff_reports_regressions_and_deltas()
     require(added_placeholder.regression, "added placeholder entry records placeholder pressure regression");
 }
 
+void test_texture_frame_binding_plan_maps_renderer_handoff_packets()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes("asset://textures/card.ppm", make_ppm_2x1_fixture_bytes());
+    ppm_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
+
+    render_image_sampler_policy nearest_sampler;
+    nearest_sampler.min_filter = render_image_filter::nearest;
+    nearest_sampler.mag_filter = render_image_filter::nearest;
+
+    const render_image_texture_batch_plan plan = plan_render_image_texture_batch(std::vector<render_image_ref>{
+        render_image_ref{.uri = "asset://textures/card.ppm"},
+        render_image_ref{.uri = "asset://textures/card.ppm"},
+        render_image_ref{.uri = "asset://textures/card.ppm", .sampler = nearest_sampler},
+    });
+    const render_image_texture_batch_execution_diagnostics execution = execute_render_image_texture_batch_plan(
+        plan,
+        pipeline,
+        render_image_texture_residency_budget_plan_options{
+            .max_resident_texture_count = 1,
+        });
+    const render_image_texture_frame_snapshot frame =
+        make_render_image_texture_frame_snapshot(plan, execution);
+    const render_image_texture_frame_binding_plan binding_plan =
+        make_render_image_texture_frame_binding_plan(frame);
+
+    require(binding_plan.ok(), "frame binding plan is ready when frame handoff is ready");
+    require(binding_plan.request_count == 3, "frame binding plan records request count");
+    require(binding_plan.current_packet_count == 3, "frame binding plan records current packet count");
+    require(binding_plan.packet_count == 3, "frame binding plan records packet count");
+    require(binding_plan.bindable_packet_count == 3, "frame binding plan counts bindable packets");
+    require(binding_plan.ready_packet_count == 3, "frame binding plan counts ready packets");
+    require(binding_plan.placeholder_packet_count == 0, "frame binding plan records no placeholders");
+    require(binding_plan.failed_packet_count == 0, "frame binding plan records no failed bindings");
+    require(binding_plan.removed_packet_count == 0, "frame binding plan records no removed bindings");
+    require(binding_plan.added_packet_count == 0, "frame binding plan records no added frame delta");
+    require(binding_plan.changed_packet_count == 0, "frame binding plan records no changed frame delta");
+    require(binding_plan.unchanged_packet_count == 3, "frame binding plan records unchanged packet delta");
+    require(binding_plan.readiness_changed_count == 0, "frame binding plan records no readiness delta");
+    require(binding_plan.readiness_regressed_count == 0, "frame binding plan records no readiness regression");
+    require(binding_plan.readiness_recovered_count == 0, "frame binding plan records no readiness recovery");
+    require(binding_plan.residency_pressure_packet_count == 3, "frame binding plan counts residency pressure packets");
+    require(binding_plan.renderer_handoff_ready, "frame binding plan records renderer handoff readiness");
+    require(binding_plan.residency_budget_pressure, "frame binding plan records residency pressure");
+    require(
+        binding_plan.residency_pressure_status
+            == render_image_texture_residency_budget_pressure_status::over_texture_budget,
+        "frame binding plan records residency pressure status");
+    require(
+        binding_plan.residency_pressure_status_name == "over_texture_budget",
+        "frame binding plan records pressure status name");
+    require(
+        binding_plan.readiness_summary == "image texture frame binding packets unchanged",
+        "frame binding plan records stable unchanged summary");
+    require(
+        binding_plan.diagnostic == "image texture frame binding plan ready with residency budget pressure",
+        "frame binding plan ready diagnostic is stable");
+    require(binding_plan.packets.size() == 3, "frame binding plan exposes binding packets");
+
+    const render_image_texture_frame_binding_packet& first = binding_plan.packets[0];
+    require(first.ok(), "first binding packet is bindable");
+    require(first.status == render_image_texture_frame_binding_packet_status::ready, "first packet status is ready");
+    require(first.status_name == "ready", "first packet status name is stable");
+    require(first.request_index == 0, "first packet records request index");
+    require(first.render_image_uri == "asset://textures/card.ppm", "first packet records source uri");
+    require(first.normalized_uri == "asset://textures/card.ppm", "first packet records normalized source uri");
+    require(first.cache_key == "asset://textures/card.ppm", "first packet records cache key");
+    require(first.source_kind == render_image_source_kind::asset_uri, "first packet records source kind");
+    require(first.sampler_key == frame.entries[0].sampler_policy.stable_key_fragment, "first packet records sampler key");
+    require(first.texture_id == frame.entries[0].texture_id, "first packet records public texture id");
+    require(first.texture_revision == frame.entries[0].texture_revision, "first packet records texture revision");
+    require(first.texture_width == 2, "first packet records width");
+    require(first.texture_height == 1, "first packet records height");
+    require(first.has_texture, "first packet records texture availability");
+    require(first.renderer_handoff_ready, "first packet records handoff readiness");
+    require(!first.placeholder_texture, "first packet records non-placeholder state");
+    require(!first.failed, "first packet records non-failed state");
+    require(!first.removed, "first packet records non-removed state");
+    require(!first.cache_reused, "first packet records first acquire as not reused");
+    require(!first.expected_cache_reuse, "first packet records no reuse expectation");
+    require(first.residency_budget_pressure, "first packet records residency pressure");
+    require(first.residency_pressure_status_name == "over_texture_budget", "first packet records pressure name");
+    require(!first.added_in_frame, "first packet records no added delta");
+    require(!first.changed_in_frame, "first packet records no changed delta");
+    require(first.unchanged_in_frame, "first packet records unchanged delta");
+
+    const render_image_texture_frame_binding_packet& second = binding_plan.packets[1];
+    require(second.texture_id == first.texture_id, "second packet records reused texture id");
+    require(second.cache_reused, "second packet records cache reuse");
+    require(second.expected_cache_reuse, "second packet records expected cache reuse");
+    require(second.stable_texture_cache_key == first.stable_texture_cache_key, "second packet shares stable key");
+
+    const render_image_texture_frame_binding_packet& third = binding_plan.packets[2];
+    require(third.texture_id != first.texture_id, "third packet records sampler-separated texture id");
+    require(third.sampler_policy.uses_nearest_filtering, "third packet records nearest sampler");
+    require(third.sampler_key != first.sampler_key, "third packet records sampler-separated sampler key");
+    require(third.stable_texture_cache_key != first.stable_texture_cache_key, "third packet records sampler-separated stable key");
+}
+
+void test_texture_frame_binding_plan_reports_frame_deltas_and_failures()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_image_texture_placeholder_policy placeholder_policy{
+        .enabled = true,
+        .width = 2,
+        .height = 2,
+    };
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes("asset://textures/card.ppm", make_ppm_2x1_fixture_bytes());
+    loader.set_source_bytes("asset://textures/bad.ppm", make_short_ppm_2x1_fixture_bytes());
+    ppm_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    cache.set_placeholder_texture_policy(placeholder_policy);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
+
+    render_image_sampler_policy nearest_sampler;
+    nearest_sampler.min_filter = render_image_filter::nearest;
+    nearest_sampler.mag_filter = render_image_filter::nearest;
+
+    const render_image_texture_batch_plan ready_plan = plan_render_image_texture_batch(std::vector<render_image_ref>{
+        render_image_ref{.uri = "asset://textures/card.ppm"},
+        render_image_ref{.uri = "asset://textures/card.ppm", .sampler = nearest_sampler},
+    });
+    const render_image_texture_batch_execution_diagnostics ready_execution =
+        execute_render_image_texture_batch_plan(ready_plan, pipeline);
+    const render_image_texture_frame_snapshot ready_frame =
+        make_render_image_texture_frame_snapshot(ready_plan, ready_execution);
+
+    const render_image_texture_batch_plan partial_plan = plan_render_image_texture_batch(
+        std::vector<render_image_ref>{
+            render_image_ref{.uri = "asset://textures/card.ppm", .sampler = nearest_sampler},
+            render_image_ref{.uri = "   "},
+            render_image_ref{.uri = "asset://textures/bad.ppm"},
+        },
+        render_image_texture_batch_plan_options{.placeholder_policy = placeholder_policy});
+    const render_image_texture_batch_execution_diagnostics partial_execution =
+        execute_render_image_texture_batch_plan(partial_plan, pipeline);
+    const render_image_texture_frame_snapshot partial_frame =
+        make_render_image_texture_frame_snapshot(partial_plan, partial_execution);
+    const render_image_texture_frame_binding_plan growth_plan =
+        make_render_image_texture_frame_binding_plan(ready_frame, partial_frame);
+
+    require(!growth_plan.ok(), "growth frame binding plan reports missing current binding");
+    require(growth_plan.request_count == 3, "growth binding plan records current request count");
+    require(growth_plan.current_packet_count == 3, "growth binding plan records current packets");
+    require(growth_plan.packet_count == 3, "growth binding plan records current packets");
+    require(growth_plan.bindable_packet_count == 2, "growth binding plan counts ready and placeholder bindable packets");
+    require(growth_plan.ready_packet_count == 1, "growth binding plan counts one real ready packet");
+    require(growth_plan.placeholder_packet_count == 1, "growth binding plan counts placeholder packet");
+    require(growth_plan.failed_packet_count == 1, "growth binding plan counts failed packet");
+    require(growth_plan.added_packet_count == 1, "growth binding plan counts added packet");
+    require(growth_plan.changed_packet_count == 2, "growth binding plan counts changed packets");
+    require(growth_plan.removed_packet_count == 0, "growth binding plan records no removed packet");
+    require(growth_plan.readiness_changed_count == 2, "growth binding plan counts readiness changes");
+    require(growth_plan.readiness_regressed_count == 1, "growth binding plan counts readiness regression");
+    require(growth_plan.readiness_recovered_count == 0, "growth binding plan does not treat added packets as recovery");
+    require(
+        growth_plan.readiness_summary == "image texture frame binding readiness regressed",
+        "growth binding plan readiness summary is stable");
+    require(
+        growth_plan.diagnostic == "image texture frame binding plan contains failed bindings",
+        "growth binding plan failure diagnostic is stable");
+
+    const render_image_texture_frame_binding_packet& changed_ready = growth_plan.packets[0];
+    require(changed_ready.status == render_image_texture_frame_binding_packet_status::ready, "changed ready packet is ready");
+    require(changed_ready.changed_in_frame, "changed ready packet records frame delta");
+    require(!changed_ready.readiness_regressed, "changed ready packet does not regress readiness");
+
+    const render_image_texture_frame_binding_packet& failed_packet = growth_plan.packets[1];
+    require(failed_packet.status == render_image_texture_frame_binding_packet_status::failed, "failed packet status is stable");
+    require(failed_packet.status_name == "failed", "failed packet status name is stable");
+    require(failed_packet.failed, "failed packet records failed state");
+    require(!failed_packet.has_texture, "failed packet has no texture id");
+    require(failed_packet.changed_in_frame, "failed packet records changed frame delta");
+    require(failed_packet.readiness_regressed, "failed packet records readiness regression");
+    require(failed_packet.render_image_uri == "   ", "failed packet preserves invalid source uri");
+
+    const render_image_texture_frame_binding_packet& added_placeholder = growth_plan.packets[2];
+    require(
+        added_placeholder.status == render_image_texture_frame_binding_packet_status::placeholder,
+        "added placeholder packet status is stable");
+    require(added_placeholder.status_name == "placeholder", "added placeholder status name is stable");
+    require(added_placeholder.ok(), "added placeholder packet remains bindable");
+    require(added_placeholder.added_in_frame, "added placeholder packet records added delta");
+    require(added_placeholder.placeholder_texture, "added placeholder packet records placeholder state");
+    require(!added_placeholder.failed, "added placeholder packet is not failed");
+    require(added_placeholder.cache_key == "asset://textures/bad.ppm", "added placeholder packet records source cache key");
+
+    const render_image_texture_frame_binding_plan shrink_plan =
+        make_render_image_texture_frame_binding_plan(partial_frame, ready_frame);
+    require(shrink_plan.ok(), "shrink binding plan is renderer-ready for current frame");
+    require(shrink_plan.request_count == 2, "shrink binding plan records current request count");
+    require(shrink_plan.current_packet_count == 2, "shrink binding plan records current packet count");
+    require(shrink_plan.packet_count == 3, "shrink binding plan keeps removed packet diagnostics");
+    require(shrink_plan.ready_packet_count == 2, "shrink binding plan counts current ready packets");
+    require(shrink_plan.failed_packet_count == 0, "shrink binding plan records no failed current packets");
+    require(shrink_plan.removed_packet_count == 1, "shrink binding plan counts removed packet");
+    require(shrink_plan.changed_packet_count == 2, "shrink binding plan counts changed current packets");
+    require(shrink_plan.readiness_changed_count == 2, "shrink binding plan counts readiness changes");
+    require(shrink_plan.readiness_regressed_count == 1, "shrink binding plan counts removed ready packet regression");
+    require(shrink_plan.readiness_recovered_count == 1, "shrink binding plan counts recovered current packet");
+    require(
+        shrink_plan.diagnostic == "image texture frame binding plan ready with frame delta",
+        "shrink binding plan delta diagnostic is stable");
+
+    const render_image_texture_frame_binding_packet& removed_packet = shrink_plan.packets[2];
+    require(removed_packet.status == render_image_texture_frame_binding_packet_status::removed, "removed packet status is stable");
+    require(removed_packet.status_name == "removed", "removed packet status name is stable");
+    require(!removed_packet.ok(), "removed packet is not bindable");
+    require(removed_packet.removed, "removed packet records removed state");
+    require(removed_packet.removed_from_frame, "removed packet records removed frame delta");
+    require(removed_packet.has_texture, "removed packet records previous texture id");
+    require(removed_packet.placeholder_texture, "removed packet preserves previous placeholder state");
+    require(removed_packet.readiness_regressed, "removed packet records readiness regression");
+    require(removed_packet.render_image_uri == "asset://textures/bad.ppm", "removed packet records previous source uri");
+    require(removed_packet.texture_key.source_key == removed_packet.cache_key, "removed packet records previous texture key");
+    require(
+        render_image_texture_frame_binding_packet_status_name(render_image_texture_frame_binding_packet_status::removed)
+            == "removed",
+        "removed binding packet status name is stable");
+}
+
 } // namespace
 
 int main()
@@ -1684,5 +1919,7 @@ int main()
     test_texture_frame_snapshot_records_partial_placeholder_frame();
     test_texture_frame_snapshot_diff_reports_unchanged_frame();
     test_texture_frame_snapshot_diff_reports_regressions_and_deltas();
+    test_texture_frame_binding_plan_maps_renderer_handoff_packets();
+    test_texture_frame_binding_plan_reports_frame_deltas_and_failures();
     return 0;
 }

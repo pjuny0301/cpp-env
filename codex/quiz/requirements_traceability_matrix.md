@@ -6,6 +6,7 @@
 
 최근 baseline 통합 증거:
 
+- current: Windows MinGW full CTest 89/89 통과로 app input lifecycle, held gesture routing, text/image frame snapshot diff 누적 기준선 갱신.
 - current: text/image frame snapshot diff diagnostics를 통합하고 Windows MinGW focused text/image CTest 5/5 및 interface compile target build 확인.
 - `155398b`: image engine에 public texture frame snapshot diff diagnostics를 추가해 handle/cache/sampler/placeholder/residency/request delta를 비교.
 - `56f201b`: text engine에 public frame snapshot diff diagnostics를 추가해 readiness/fallback/layout/upload/queued-consumed ID delta를 비교.

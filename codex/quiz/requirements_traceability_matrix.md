@@ -6,6 +6,9 @@
 
 최근 baseline 통합 증거:
 
+- current: focus/caret replay timeline diagnostics와 image texture frame snapshot diagnostics를 통합하고 Windows MinGW focused input/image CTest 4/4 확인.
+- `004e70c`: image engine에 texture frame snapshot diagnostics를 추가해 batch plan/execution/residency/handle-map 결과를 immutable public renderer handoff view로 합성.
+- `09ea764`: normalized input replay에 focus/caret navigation timeline, text target transitions, caret/selection movement, final focus/caret state를 추가.
 - current: text atlas upload bridge consume diagnostics를 통합하고 Windows MinGW focused text CTest 2/2 확인.
 - `5c4d0d9`: fake text engine에 atlas upload bridge queued/consumed request ids를 연결해 layout_text/consume_atlas_updates 사이의 text-owned upload handoff를 검증.
 - current: image texture handle-map diagnostics를 통합하고 Windows MinGW focused image CTest 3/3 확인.

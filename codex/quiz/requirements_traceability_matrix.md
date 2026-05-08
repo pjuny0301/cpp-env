@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: text atlas upload bridge consume diagnostics를 통합하고 Windows MinGW focused text CTest 2/2 확인.
+- `5c4d0d9`: fake text engine에 atlas upload bridge queued/consumed request ids를 연결해 layout_text/consume_atlas_updates 사이의 text-owned upload handoff를 검증.
 - current: image texture handle-map diagnostics를 통합하고 Windows MinGW focused image CTest 3/3 확인.
 - `6201935`: image engine에 texture handle-map diagnostics를 추가해 request index, uri/cache key, acquired texture id, placeholder flag, sampler policy, residency pressure를 renderer handoff용 public map으로 노출.
 - current: pointer replay timeline diagnostics를 통합하고 Windows MinGW focused input CTest 5/5 확인.

@@ -5,6 +5,7 @@
 #include "render/vulkan/vulkan_backend_graphics_pipeline.h"
 #include "render/vulkan/vulkan_backend_instance.h"
 #include "render/vulkan/vulkan_backend_loader.h"
+#include "render/vulkan/vulkan_backend_native_symbols.h"
 #include "render/vulkan/vulkan_backend_queue_submit.h"
 #include "render/vulkan/vulkan_backend_render_pass.h"
 #include "render/vulkan/vulkan_backend_pipeline_layout.h"
@@ -417,6 +418,44 @@ static_assert(requires(render::vulkan_backend::vulkan_loader_readiness_status st
     { render::vulkan_backend::loader_readiness_status_name(status) } -> std::same_as<std::string_view>;
 });
 
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_entrypoint_stage::command_buffer_recording),
+    render::vulkan_backend::vulkan_native_entrypoint_stage>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_entrypoint_stage::queue_submit),
+    render::vulkan_backend::vulkan_native_entrypoint_stage>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_entrypoint_stage::queue_present),
+    render::vulkan_backend::vulkan_native_entrypoint_stage>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_function_table_status::not_checked),
+    render::vulkan_backend::vulkan_native_function_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_function_table_status::ready),
+    render::vulkan_backend::vulkan_native_function_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_function_table_status::loader_unavailable),
+    render::vulkan_backend::vulkan_native_function_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_function_table_status::missing_command_buffer_recording_symbol),
+    render::vulkan_backend::vulkan_native_function_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_function_table_status::missing_queue_submit_symbol),
+    render::vulkan_backend::vulkan_native_function_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_function_table_status::missing_queue_present_symbol),
+    render::vulkan_backend::vulkan_native_function_table_status>);
+
+static_assert(requires(
+    render::vulkan_backend::vulkan_native_entrypoint_stage stage,
+    render::vulkan_backend::vulkan_native_function_table_status status) {
+    { render::vulkan_backend::native_entrypoint_stage_name(stage) }
+        -> std::same_as<std::string_view>;
+    { render::vulkan_backend::native_function_table_status_name(status) }
+        -> std::same_as<std::string_view>;
+});
+
 static_assert(requires(render::vulkan_backend::vulkan_instance_create_status status) {
     { render::vulkan_backend::instance_create_status_name(status) } -> std::same_as<std::string_view>;
     { render::vulkan_backend::vulkan_validation_layer_name() } -> std::same_as<std::string_view>;
@@ -561,6 +600,57 @@ static_assert(requires(render::vulkan_backend::vulkan_loader_readiness_state rea
     { readiness.required_symbol_name } -> std::same_as<std::string&>;
     { readiness.attempted_library_count } -> std::same_as<std::size_t&>;
     { readiness.ready_for_instance() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_function_pointer pointer) {
+    { pointer.value } -> std::same_as<std::uintptr_t&>;
+    { pointer.valid() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_entrypoint_symbol_request request) {
+    { request.stage } -> std::same_as<render::vulkan_backend::vulkan_native_entrypoint_stage&>;
+    { request.name } -> std::same_as<std::string&>;
+    { request.required } -> std::same_as<bool&>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_function_table_request request) {
+    { request.symbols }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_entrypoint_symbol_request>&>;
+    { request.include_default_backend_entrypoints } -> std::same_as<bool&>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_entrypoint_symbol_diagnostics symbol) {
+    { symbol.stage } -> std::same_as<render::vulkan_backend::vulkan_native_entrypoint_stage&>;
+    { symbol.name } -> std::same_as<std::string&>;
+    { symbol.required } -> std::same_as<bool&>;
+    { symbol.pointer } -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { symbol.available } -> std::same_as<bool&>;
+    { symbol.completed() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_function_table_diagnostics diagnostics) {
+    { diagnostics.checked } -> std::same_as<bool&>;
+    { diagnostics.status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_table_status&>;
+    { diagnostics.fallback_reason }
+        -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
+    { diagnostics.loader } -> std::same_as<render::vulkan_backend::vulkan_loader_readiness_state&>;
+    { diagnostics.loader_ready } -> std::same_as<bool&>;
+    { diagnostics.command_buffer_recording_ready } -> std::same_as<bool&>;
+    { diagnostics.queue_submit_ready } -> std::same_as<bool&>;
+    { diagnostics.queue_present_ready } -> std::same_as<bool&>;
+    { diagnostics.requested_symbol_count } -> std::same_as<std::size_t&>;
+    { diagnostics.required_symbol_count } -> std::same_as<std::size_t&>;
+    { diagnostics.available_symbol_count } -> std::same_as<std::size_t&>;
+    { diagnostics.missing_required_symbol_count } -> std::same_as<std::size_t&>;
+    { diagnostics.missing_symbol_stage }
+        -> std::same_as<render::vulkan_backend::vulkan_native_entrypoint_stage&>;
+    { diagnostics.missing_symbol_name } -> std::same_as<std::string&>;
+    { diagnostics.symbols }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_entrypoint_symbol_diagnostics>&>;
+    { diagnostics.diagnostic } -> std::same_as<std::string&>;
+    { diagnostics.ready_for_backend_path() } -> std::same_as<bool>;
+    { diagnostics.blocked() } -> std::same_as<bool>;
 });
 
 static_assert(requires(render::vulkan_backend::vulkan_instance_handle handle) {
@@ -871,6 +961,25 @@ static_assert(requires(render::vulkan_backend::fake_vulkan_loader_options option
     { options.required_symbol_available } -> std::same_as<bool&>;
 });
 
+static_assert(requires(render::vulkan_backend::fake_vulkan_native_symbol_resolver_options options) {
+    { options.default_available } -> std::same_as<bool&>;
+    { options.available_symbols } -> std::same_as<std::vector<std::string>&>;
+    { options.missing_symbols } -> std::same_as<std::vector<std::string>&>;
+    { options.pointer_base } -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+});
+
+static_assert(requires(render::vulkan_backend::fake_vulkan_native_symbol_resolver_state state) {
+    { state.resolve_call_count } -> std::same_as<std::size_t&>;
+    { state.requested_symbols } -> std::same_as<std::vector<std::string>&>;
+    { state.resolved_symbols } -> std::same_as<std::vector<std::string>&>;
+    { state.missing_symbols } -> std::same_as<std::vector<std::string>&>;
+});
+
+static_assert(requires(render::vulkan_backend::system_vulkan_native_symbol_resolver_options options) {
+    { options.candidate_library_names } -> std::same_as<std::vector<std::string>&>;
+    { options.use_default_library_names } -> std::same_as<bool&>;
+});
+
 static_assert(requires(render::vulkan_backend::fake_vulkan_instance_factory_options options) {
     { options.supported_instance_extensions } -> std::same_as<std::vector<std::string>&>;
     { options.supported_layers } -> std::same_as<std::vector<std::string>&>;
@@ -1012,6 +1121,30 @@ static_assert(requires(render::vulkan_backend::fake_vulkan_queue_submit_adapter 
         -> std::same_as<const render::vulkan_backend::fake_vulkan_queue_submit_adapter_state&>;
 });
 
+static_assert(std::default_initializable<render::vulkan_backend::fake_vulkan_native_symbol_resolver>);
+static_assert(std::constructible_from<
+    render::vulkan_backend::fake_vulkan_native_symbol_resolver,
+    render::vulkan_backend::fake_vulkan_native_symbol_resolver_options>);
+static_assert(requires(
+    render::vulkan_backend::fake_vulkan_native_symbol_resolver fake,
+    std::string_view symbol_name) {
+    { fake.resolve_symbol(symbol_name) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer>;
+    { fake.state() }
+        -> std::same_as<const render::vulkan_backend::fake_vulkan_native_symbol_resolver_state&>;
+});
+
+static_assert(std::default_initializable<render::vulkan_backend::system_vulkan_native_symbol_resolver>);
+static_assert(std::constructible_from<
+    render::vulkan_backend::system_vulkan_native_symbol_resolver,
+    render::vulkan_backend::system_vulkan_native_symbol_resolver_options>);
+static_assert(requires(
+    render::vulkan_backend::system_vulkan_native_symbol_resolver resolver,
+    std::string_view symbol_name) {
+    { resolver.resolve_symbol(symbol_name) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer>;
+});
+
 static_assert(std::default_initializable<render::vulkan_backend::fake_vulkan_shader_module_factory>);
 static_assert(std::constructible_from<
     render::vulkan_backend::fake_vulkan_shader_module_factory,
@@ -1056,6 +1189,18 @@ static_assert(requires(
     const render::vulkan_backend::vulkan_loader_probe_result& probe_result) {
     { render::vulkan_backend::make_vulkan_loader_readiness_state(probe_result) }
         -> std::same_as<render::vulkan_backend::vulkan_loader_readiness_state>;
+});
+
+static_assert(requires(
+    render::vulkan_backend::vulkan_native_symbol_resolver_interface& resolver,
+    const render::vulkan_backend::vulkan_loader_readiness_state& loader,
+    const render::vulkan_backend::vulkan_native_function_table_request& request) {
+    { render::vulkan_backend::default_vulkan_native_backend_entrypoints() }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_entrypoint_symbol_request>>;
+    { render::vulkan_backend::collect_vulkan_native_function_table(
+        resolver,
+        loader,
+        request) } -> std::same_as<render::vulkan_backend::vulkan_native_function_table_diagnostics>;
 });
 
 static_assert(requires(

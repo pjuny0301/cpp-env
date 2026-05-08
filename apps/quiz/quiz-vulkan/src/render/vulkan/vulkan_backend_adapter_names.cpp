@@ -45,6 +45,41 @@ std::string_view fallback_reason_name(vulkan_backend_fallback_reason reason)
     return "unknown";
 }
 
+std::string_view native_entrypoint_stage_name(vulkan_native_entrypoint_stage stage)
+{
+    switch (stage) {
+    case vulkan_native_entrypoint_stage::command_buffer_recording:
+        return "command_buffer_recording";
+    case vulkan_native_entrypoint_stage::queue_submit:
+        return "queue_submit";
+    case vulkan_native_entrypoint_stage::queue_present:
+        return "queue_present";
+    }
+
+    return "unknown";
+}
+
+std::string_view native_function_table_status_name(
+    vulkan_native_function_table_status status)
+{
+    switch (status) {
+    case vulkan_native_function_table_status::not_checked:
+        return "not_checked";
+    case vulkan_native_function_table_status::ready:
+        return "ready";
+    case vulkan_native_function_table_status::loader_unavailable:
+        return "loader_unavailable";
+    case vulkan_native_function_table_status::missing_command_buffer_recording_symbol:
+        return "missing_command_buffer_recording_symbol";
+    case vulkan_native_function_table_status::missing_queue_submit_symbol:
+        return "missing_queue_submit_symbol";
+    case vulkan_native_function_table_status::missing_queue_present_symbol:
+        return "missing_queue_present_symbol";
+    }
+
+    return "unknown";
+}
+
 std::string_view frame_stage_name(vulkan_backend_frame_stage stage)
 {
     switch (stage) {

@@ -184,17 +184,28 @@ public:
 
     bool has_symbol(const std::string& symbol_name) const
     {
+        return resolve_symbol(symbol_name).valid();
+    }
+
+    vulkan_native_function_pointer resolve_symbol(const std::string& symbol_name) const
+    {
         if (handle_ == nullptr) {
-            return false;
+            return {};
         }
 
 #if defined(_WIN32)
-        return ::GetProcAddress(handle_, symbol_name.c_str()) != nullptr;
+        return vulkan_native_function_pointer{
+            .value = reinterpret_cast<std::uintptr_t>(
+                ::GetProcAddress(handle_, symbol_name.c_str())),
+        };
 #elif defined(__APPLE__) || defined(__unix__) || defined(__linux__)
-        return ::dlsym(handle_, symbol_name.c_str()) != nullptr;
+        return vulkan_native_function_pointer{
+            .value = reinterpret_cast<std::uintptr_t>(
+                ::dlsym(handle_, symbol_name.c_str())),
+        };
 #else
         static_cast<void>(symbol_name);
-        return false;
+        return {};
 #endif
     }
 
@@ -207,6 +218,111 @@ private:
     void* handle_ = nullptr;
 #endif
 };
+
+bool contains_symbol_name(
+    const std::vector<std::string>& symbols,
+    std::string_view symbol_name)
+{
+    return std::find(symbols.begin(), symbols.end(), std::string{symbol_name})
+        != symbols.end();
+}
+
+vulkan_backend_fallback_reason fallback_for_native_stage(
+    vulkan_native_entrypoint_stage stage)
+{
+    switch (stage) {
+    case vulkan_native_entrypoint_stage::command_buffer_recording:
+        return vulkan_backend_fallback_reason::record_commands_failed;
+    case vulkan_native_entrypoint_stage::queue_submit:
+        return vulkan_backend_fallback_reason::submit_frame_failed;
+    case vulkan_native_entrypoint_stage::queue_present:
+        return vulkan_backend_fallback_reason::present_frame_failed;
+    }
+
+    return vulkan_backend_fallback_reason::not_requested;
+}
+
+vulkan_native_function_table_status missing_status_for_native_stage(
+    vulkan_native_entrypoint_stage stage)
+{
+    switch (stage) {
+    case vulkan_native_entrypoint_stage::command_buffer_recording:
+        return vulkan_native_function_table_status::missing_command_buffer_recording_symbol;
+    case vulkan_native_entrypoint_stage::queue_submit:
+        return vulkan_native_function_table_status::missing_queue_submit_symbol;
+    case vulkan_native_entrypoint_stage::queue_present:
+        return vulkan_native_function_table_status::missing_queue_present_symbol;
+    }
+
+    return vulkan_native_function_table_status::not_checked;
+}
+
+bool required_native_stage_ready(
+    const std::vector<vulkan_native_entrypoint_symbol_diagnostics>& symbols,
+    vulkan_native_entrypoint_stage stage)
+{
+    bool has_required_symbol = false;
+    for (const vulkan_native_entrypoint_symbol_diagnostics& symbol : symbols) {
+        if (symbol.stage != stage || !symbol.required) {
+            continue;
+        }
+
+        has_required_symbol = true;
+        if (!symbol.completed()) {
+            return false;
+        }
+    }
+
+    return has_required_symbol;
+}
+
+void record_native_symbol_diagnostics(
+    vulkan_native_function_table_diagnostics& diagnostics,
+    const vulkan_native_entrypoint_symbol_request& request,
+    vulkan_native_function_pointer pointer)
+{
+    diagnostics.symbols.push_back(vulkan_native_entrypoint_symbol_diagnostics{
+        .stage = request.stage,
+        .name = request.name,
+        .required = request.required,
+        .pointer = pointer,
+        .available = pointer.valid(),
+    });
+    diagnostics.requested_symbol_count = diagnostics.symbols.size();
+    if (request.required) {
+        ++diagnostics.required_symbol_count;
+    }
+    if (pointer.valid()) {
+        ++diagnostics.available_symbol_count;
+    } else if (request.required) {
+        ++diagnostics.missing_required_symbol_count;
+    }
+}
+
+std::vector<vulkan_native_entrypoint_symbol_request> make_native_symbol_requests(
+    const vulkan_native_function_table_request& request)
+{
+    std::vector<vulkan_native_entrypoint_symbol_request> symbols;
+    if (request.include_default_backend_entrypoints) {
+        symbols = default_vulkan_native_backend_entrypoints();
+    }
+    symbols.insert(symbols.end(), request.symbols.begin(), request.symbols.end());
+    return symbols;
+}
+
+std::vector<std::string> native_symbol_candidate_libraries(
+    const system_vulkan_native_symbol_resolver_options& options)
+{
+    std::vector<std::string> candidate_names;
+    if (options.use_default_library_names) {
+        candidate_names = default_vulkan_loader_library_names();
+    }
+    candidate_names.insert(
+        candidate_names.end(),
+        options.candidate_library_names.begin(),
+        options.candidate_library_names.end());
+    return candidate_names;
+}
 
 bool has_visible_area(const render_rect& rect)
 {
@@ -1442,6 +1558,216 @@ vulkan_loader_readiness_state make_vulkan_loader_readiness_state(
         .required_symbol_name = probe_result.required_symbol_name,
         .attempted_library_count = probe_result.attempted_library_count,
     };
+}
+
+bool vulkan_native_function_table_diagnostics::ready_for_backend_path() const
+{
+    return checked && status == vulkan_native_function_table_status::ready
+        && fallback_reason == vulkan_backend_fallback_reason::none
+        && loader_ready && command_buffer_recording_ready
+        && queue_submit_ready && queue_present_ready
+        && missing_required_symbol_count == 0;
+}
+
+bool vulkan_native_function_table_diagnostics::blocked() const
+{
+    return checked && status != vulkan_native_function_table_status::ready;
+}
+
+fake_vulkan_native_symbol_resolver::fake_vulkan_native_symbol_resolver()
+    : fake_vulkan_native_symbol_resolver(fake_vulkan_native_symbol_resolver_options{})
+{
+}
+
+fake_vulkan_native_symbol_resolver::fake_vulkan_native_symbol_resolver(
+    fake_vulkan_native_symbol_resolver_options options)
+    : options_(std::move(options))
+{
+}
+
+vulkan_native_function_pointer fake_vulkan_native_symbol_resolver::resolve_symbol(
+    std::string_view symbol_name)
+{
+    ++state_.resolve_call_count;
+    state_.requested_symbols.push_back(std::string{symbol_name});
+
+    const bool explicitly_missing =
+        contains_symbol_name(options_.missing_symbols, symbol_name);
+    const bool explicitly_available =
+        contains_symbol_name(options_.available_symbols, symbol_name);
+    const bool available =
+        !explicitly_missing && (options_.default_available || explicitly_available);
+
+    if (!available) {
+        state_.missing_symbols.push_back(std::string{symbol_name});
+        return {};
+    }
+
+    state_.resolved_symbols.push_back(std::string{symbol_name});
+    const std::uintptr_t base =
+        options_.pointer_base.valid() ? options_.pointer_base.value : 1000;
+    return vulkan_native_function_pointer{
+        .value = base + state_.resolve_call_count,
+    };
+}
+
+const fake_vulkan_native_symbol_resolver_state&
+fake_vulkan_native_symbol_resolver::state() const
+{
+    return state_;
+}
+
+system_vulkan_native_symbol_resolver::system_vulkan_native_symbol_resolver()
+    : system_vulkan_native_symbol_resolver(system_vulkan_native_symbol_resolver_options{})
+{
+}
+
+system_vulkan_native_symbol_resolver::system_vulkan_native_symbol_resolver(
+    system_vulkan_native_symbol_resolver_options options)
+    : options_(std::move(options))
+{
+}
+
+vulkan_native_function_pointer system_vulkan_native_symbol_resolver::resolve_symbol(
+    std::string_view symbol_name)
+{
+    for (const std::string& candidate_library : native_symbol_candidate_libraries(options_)) {
+        native_loader_library library(candidate_library);
+        if (!library.valid()) {
+            continue;
+        }
+
+        const vulkan_native_function_pointer pointer =
+            library.resolve_symbol(std::string{symbol_name});
+        if (pointer.valid()) {
+            return pointer;
+        }
+    }
+
+    return {};
+}
+
+std::vector<vulkan_native_entrypoint_symbol_request>
+default_vulkan_native_backend_entrypoints()
+{
+    return {
+        vulkan_native_entrypoint_symbol_request{
+            .stage = vulkan_native_entrypoint_stage::command_buffer_recording,
+            .name = "vkBeginCommandBuffer",
+            .required = true,
+        },
+        vulkan_native_entrypoint_symbol_request{
+            .stage = vulkan_native_entrypoint_stage::command_buffer_recording,
+            .name = "vkCmdBeginRenderPass",
+            .required = true,
+        },
+        vulkan_native_entrypoint_symbol_request{
+            .stage = vulkan_native_entrypoint_stage::command_buffer_recording,
+            .name = "vkCmdBindPipeline",
+            .required = true,
+        },
+        vulkan_native_entrypoint_symbol_request{
+            .stage = vulkan_native_entrypoint_stage::command_buffer_recording,
+            .name = "vkCmdBindDescriptorSets",
+            .required = true,
+        },
+        vulkan_native_entrypoint_symbol_request{
+            .stage = vulkan_native_entrypoint_stage::command_buffer_recording,
+            .name = "vkCmdSetViewport",
+            .required = true,
+        },
+        vulkan_native_entrypoint_symbol_request{
+            .stage = vulkan_native_entrypoint_stage::command_buffer_recording,
+            .name = "vkCmdSetScissor",
+            .required = true,
+        },
+        vulkan_native_entrypoint_symbol_request{
+            .stage = vulkan_native_entrypoint_stage::command_buffer_recording,
+            .name = "vkCmdDraw",
+            .required = true,
+        },
+        vulkan_native_entrypoint_symbol_request{
+            .stage = vulkan_native_entrypoint_stage::command_buffer_recording,
+            .name = "vkCmdEndRenderPass",
+            .required = true,
+        },
+        vulkan_native_entrypoint_symbol_request{
+            .stage = vulkan_native_entrypoint_stage::command_buffer_recording,
+            .name = "vkEndCommandBuffer",
+            .required = true,
+        },
+        vulkan_native_entrypoint_symbol_request{
+            .stage = vulkan_native_entrypoint_stage::queue_submit,
+            .name = "vkQueueSubmit",
+            .required = true,
+        },
+        vulkan_native_entrypoint_symbol_request{
+            .stage = vulkan_native_entrypoint_stage::queue_present,
+            .name = "vkQueuePresentKHR",
+            .required = true,
+        },
+    };
+}
+
+vulkan_native_function_table_diagnostics collect_vulkan_native_function_table(
+    vulkan_native_symbol_resolver_interface& resolver,
+    const vulkan_loader_readiness_state& loader,
+    const vulkan_native_function_table_request& request)
+{
+    vulkan_native_function_table_diagnostics diagnostics;
+    diagnostics.checked = true;
+    diagnostics.status = vulkan_native_function_table_status::not_checked;
+    diagnostics.fallback_reason = vulkan_backend_fallback_reason::not_requested;
+    diagnostics.loader = loader;
+    diagnostics.loader_ready = loader.ready_for_instance();
+
+    if (!diagnostics.loader_ready) {
+        diagnostics.status = vulkan_native_function_table_status::loader_unavailable;
+        diagnostics.fallback_reason = vulkan_backend_fallback_reason::instance_unavailable;
+        diagnostics.diagnostic =
+            "Vulkan loader is unavailable for native function table collection";
+        return diagnostics;
+    }
+
+    for (const vulkan_native_entrypoint_symbol_request& symbol_request :
+         make_native_symbol_requests(request)) {
+        record_native_symbol_diagnostics(
+            diagnostics,
+            symbol_request,
+            resolver.resolve_symbol(symbol_request.name));
+    }
+
+    diagnostics.command_buffer_recording_ready = required_native_stage_ready(
+        diagnostics.symbols,
+        vulkan_native_entrypoint_stage::command_buffer_recording);
+    diagnostics.queue_submit_ready = required_native_stage_ready(
+        diagnostics.symbols,
+        vulkan_native_entrypoint_stage::queue_submit);
+    diagnostics.queue_present_ready = required_native_stage_ready(
+        diagnostics.symbols,
+        vulkan_native_entrypoint_stage::queue_present);
+
+    for (const vulkan_native_entrypoint_symbol_diagnostics& symbol :
+         diagnostics.symbols) {
+        if (symbol.completed()) {
+            continue;
+        }
+
+        diagnostics.status = missing_status_for_native_stage(symbol.stage);
+        diagnostics.fallback_reason = fallback_for_native_stage(symbol.stage);
+        diagnostics.missing_symbol_stage = symbol.stage;
+        diagnostics.missing_symbol_name = symbol.name;
+        diagnostics.diagnostic =
+            "Missing native Vulkan entrypoint for "
+            + std::string{native_entrypoint_stage_name(symbol.stage)} + ": "
+            + symbol.name;
+        return diagnostics;
+    }
+
+    diagnostics.status = vulkan_native_function_table_status::ready;
+    diagnostics.fallback_reason = vulkan_backend_fallback_reason::none;
+    diagnostics.diagnostic = "Native Vulkan backend function table is ready";
+    return diagnostics;
 }
 
 vulkan_backend_lifecycle_readiness apply_vulkan_loader_readiness_to_lifecycle(

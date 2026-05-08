@@ -169,6 +169,7 @@ target_sources(
             src/render/text/font_source_resolver.h
             src/render/text/font_unicode_coverage.h
             src/render/text/glyph_run.h
+            src/render/text/text_frame_draw_plan.h
             src/render/text/text_frame_snapshot.h
             src/render/text/text_engine.h
             src/render/text/utf8_line_break.h

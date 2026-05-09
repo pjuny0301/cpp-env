@@ -39,6 +39,7 @@ Last updated: 2026-05-09
 - Engine workers own only their engine folders. App/runtime, top-level CMake, and aggregate contract wiring stay with the integrator unless explicitly assigned.
 - Large file splitting is allowed when it improves module cohesion, worker ownership, reviewability, or conflict isolation. Do not split files only because they exceed a line-count threshold, and do not move stable public interfaces without explicit integrator approval.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
+- Latest integration note: `5597b54` threads Vulkan SDK readiness diagnostics through native function-table, command recording, submit, present, and frame handoff summaries, while preserving default fake-path behavior unless checked SDK data is supplied.
 - Latest integration note: `dd3d5ca` threads stb/external decoder selection diagnostics into image decoder chain and texture pipeline snapshots so internal decoder, adapter-ready, and fallback states are visible per texture request.
 - Latest integration note: `d786fa8` adds text input presentation diff helpers so focus/target/display text/caret/selection/preedit/submit/clean-flag and byte-count changes can be reviewed without UI/app/domain coupling.
 - Latest integration note: `4bfecb0` threads external font backend dependency/capability probe results into fake text engine layout diagnostics, distinguishing fake-only, adapter-ready, and fallback states without linking external libraries.

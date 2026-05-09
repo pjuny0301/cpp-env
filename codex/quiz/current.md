@@ -39,6 +39,8 @@ Last updated: 2026-05-09
 - Engine workers own only their engine folders. App/runtime, top-level CMake, and aggregate contract wiring stay with the integrator unless explicitly assigned.
 - Large file splitting is allowed when it improves module cohesion, worker ownership, reviewability, or conflict isolation. Do not split files only because they exceed a line-count threshold, and do not move stable public interfaces without explicit integrator approval.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
+- Latest integration note: `0c044e5` adds a Vulkan SDK/header capability boundary for future native backend wiring, modeling API version, header availability, and function/extension readiness without including Vulkan headers yet.
+- Latest integration note: `47763c0` adds a text input presentation snapshot read model for focus, caret, selection, preedit, submit, and byte-count state without UI/app/domain coupling.
 - Latest integration note: `4bfc2ee` adds stb image adapter selection diagnostics for future `stb_image` routing while preserving the current internal decoder chain and avoiding hard-coded external paths.
 - Latest integration note: `6b2507f` adds external font backend dependency probes for future FreeType/HarfBuzz/utf8proc wiring without linking or including those libraries yet.
 - Latest integration note: `93b294d` adds Vulkan swapchain image acquire planning diagnostics after swapchain/frame lifecycle readiness and before command recording, modeling timeout/out-of-date/suboptimal/error gates without real Vulkan calls.

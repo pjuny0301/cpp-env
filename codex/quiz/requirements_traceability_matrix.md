@@ -6,6 +6,9 @@
 
 최근 baseline 통합 증거:
 
+- current: text input presentation snapshot과 Vulkan SDK capability boundary를 통합하고 public FILE_SET 등록, Windows MinGW focused input/Vulkan CTest 4/4 및 interface compile target build 확인.
+- `0c044e5`: future native Vulkan backend wiring을 위한 SDK/header/API version/function readiness capability boundary를 추가.
+- `47763c0`: input-owned text input presentation snapshot을 추가해 focus/caret/selection/preedit/submit read model을 UI/app/domain coupling 없이 제공.
 - current: external font backend dependency probe와 stb image adapter selection diagnostics를 통합하고 public render FILE_SET 등록, Windows MinGW focused text/image CTest 3/3 및 interface compile target build 확인.
 - `4bfc2ee`: future `stb_image` routing을 위한 external image decoder capability/selection diagnostics를 추가.
 - `6b2507f`: future FreeType/HarfBuzz/utf8proc wiring을 위한 external font backend dependency/capability probe를 추가.

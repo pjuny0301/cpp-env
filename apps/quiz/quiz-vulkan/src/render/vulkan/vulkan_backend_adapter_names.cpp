@@ -135,6 +135,26 @@ std::string_view sdk_adapter_fallback_status_name(
     return "unknown";
 }
 
+std::string_view sdk_native_path_status_name(vulkan_sdk_native_path_status status)
+{
+    switch (status) {
+    case vulkan_sdk_native_path_status::not_checked:
+        return "not_checked";
+    case vulkan_sdk_native_path_status::ready:
+        return "ready";
+    case vulkan_sdk_native_path_status::sdk_missing:
+        return "sdk_missing";
+    case vulkan_sdk_native_path_status::version_mismatch:
+        return "version_mismatch";
+    case vulkan_sdk_native_path_status::extension_missing:
+        return "extension_missing";
+    case vulkan_sdk_native_path_status::function_table_blocked:
+        return "function_table_blocked";
+    }
+
+    return "unknown";
+}
+
 std::string_view frame_stage_name(vulkan_backend_frame_stage stage)
 {
     switch (stage) {

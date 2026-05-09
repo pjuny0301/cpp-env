@@ -94,6 +94,17 @@ enum class vulkan_sdk_adapter_fallback_status {
 std::string_view sdk_adapter_fallback_status_name(
     vulkan_sdk_adapter_fallback_status status);
 
+enum class vulkan_sdk_native_path_status {
+    not_checked,
+    ready,
+    sdk_missing,
+    version_mismatch,
+    extension_missing,
+    function_table_blocked,
+};
+
+std::string_view sdk_native_path_status_name(vulkan_sdk_native_path_status status);
+
 struct vulkan_sdk_header_manifest {
     bool headers_available = false;
     vulkan_sdk_api_version api_version;
@@ -209,6 +220,8 @@ struct vulkan_sdk_capability_result {
     std::string missing_required_extension;
     std::string diagnostic;
 
+    vulkan_sdk_native_path_status native_path_status() const;
+
     bool adapter_ready() const
     {
         return checked && status == vulkan_sdk_capability_status::ready
@@ -223,6 +236,99 @@ struct vulkan_sdk_capability_result {
         return checked && !adapter_ready();
     }
 };
+
+inline vulkan_sdk_native_path_status sdk_native_path_status_for(
+    const vulkan_sdk_capability_result& result)
+{
+    if (!result.checked) {
+        return vulkan_sdk_native_path_status::not_checked;
+    }
+    if (result.adapter_ready()) {
+        return vulkan_sdk_native_path_status::ready;
+    }
+
+    switch (result.status) {
+    case vulkan_sdk_capability_status::not_checked:
+        return vulkan_sdk_native_path_status::not_checked;
+    case vulkan_sdk_capability_status::ready:
+        return vulkan_sdk_native_path_status::ready;
+    case vulkan_sdk_capability_status::headers_unavailable:
+        return vulkan_sdk_native_path_status::sdk_missing;
+    case vulkan_sdk_capability_status::api_version_unavailable:
+    case vulkan_sdk_capability_status::api_version_too_old:
+        return vulkan_sdk_native_path_status::version_mismatch;
+    case vulkan_sdk_capability_status::missing_required_extension:
+        return vulkan_sdk_native_path_status::extension_missing;
+    case vulkan_sdk_capability_status::native_function_table_unavailable:
+        return vulkan_sdk_native_path_status::function_table_blocked;
+    }
+
+    return vulkan_sdk_native_path_status::not_checked;
+}
+
+inline vulkan_sdk_native_path_status
+vulkan_sdk_capability_result::native_path_status() const
+{
+    return sdk_native_path_status_for(*this);
+}
+
+struct vulkan_sdk_native_path_readiness {
+    bool checked = false;
+    vulkan_sdk_native_path_status status = vulkan_sdk_native_path_status::not_checked;
+    bool sdk_capability_checked = false;
+    bool sdk_adapter_ready = false;
+    vulkan_sdk_capability_status sdk_capability_status =
+        vulkan_sdk_capability_status::not_checked;
+    vulkan_sdk_adapter_fallback_status sdk_adapter_fallback_status =
+        vulkan_sdk_adapter_fallback_status::none;
+    bool headers_available = false;
+    bool api_version_compatible = false;
+    bool required_extensions_ready = false;
+    bool native_function_table_required = false;
+    bool native_function_table_ready = false;
+    vulkan_native_function_table_status native_function_table_status =
+        vulkan_native_function_table_status::not_checked;
+    std::string missing_required_extension;
+    std::string missing_native_symbol_name;
+    std::string diagnostic;
+
+    bool ready() const
+    {
+        return checked && status == vulkan_sdk_native_path_status::ready
+            && sdk_adapter_ready;
+    }
+
+    bool blocked() const
+    {
+        return checked && status != vulkan_sdk_native_path_status::ready;
+    }
+};
+
+inline vulkan_sdk_native_path_readiness summarize_vulkan_sdk_native_path_readiness(
+    const vulkan_sdk_capability_result& result)
+{
+    if (!result.checked) {
+        return vulkan_sdk_native_path_readiness{};
+    }
+
+    return vulkan_sdk_native_path_readiness{
+        .checked = true,
+        .status = result.native_path_status(),
+        .sdk_capability_checked = result.checked,
+        .sdk_adapter_ready = result.adapter_ready(),
+        .sdk_capability_status = result.status,
+        .sdk_adapter_fallback_status = result.fallback_status,
+        .headers_available = result.headers_available,
+        .api_version_compatible = result.api_version_compatible,
+        .required_extensions_ready = result.required_extensions_ready,
+        .native_function_table_required = result.native_function_table_required,
+        .native_function_table_ready = result.native_function_table_ready,
+        .native_function_table_status = result.native_functions.status,
+        .missing_required_extension = result.missing_required_extension,
+        .missing_native_symbol_name = result.native_functions.missing_symbol_name,
+        .diagnostic = result.diagnostic,
+    };
+}
 
 inline std::vector<std::string> default_vulkan_sdk_backend_extensions()
 {

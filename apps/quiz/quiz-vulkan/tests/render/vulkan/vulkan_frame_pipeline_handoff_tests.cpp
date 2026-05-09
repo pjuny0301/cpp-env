@@ -269,6 +269,47 @@ quiz_vulkan::render::vulkan_backend::vulkan_render_pass_create_result make_ready
     };
 }
 
+quiz_vulkan::render::vulkan_backend::vulkan_sdk_capability_result make_ready_sdk_capabilities()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    return vulkan_backend::vulkan_sdk_capability_result{
+        .checked = true,
+        .status = vulkan_backend::vulkan_sdk_capability_status::ready,
+        .fallback_status = vulkan_backend::vulkan_sdk_adapter_fallback_status::none,
+        .minimum_api_version = vulkan_backend::vulkan_sdk_api_version_1_3(),
+        .headers_available = true,
+        .api_version_available = true,
+        .api_version_compatible = true,
+        .required_extensions_ready = true,
+        .native_function_table_required = true,
+        .native_function_table_ready = true,
+        .required_extension_count = 2,
+        .available_required_extension_count = 2,
+        .diagnostic = "fake Vulkan SDK path ready",
+    };
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_sdk_capability_result make_missing_sdk_capabilities()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    return vulkan_backend::vulkan_sdk_capability_result{
+        .checked = true,
+        .status = vulkan_backend::vulkan_sdk_capability_status::headers_unavailable,
+        .fallback_status = vulkan_backend::vulkan_sdk_adapter_fallback_status::headers_unavailable,
+        .minimum_api_version = vulkan_backend::vulkan_sdk_api_version_1_3(),
+        .headers_available = false,
+        .api_version_available = false,
+        .api_version_compatible = false,
+        .required_extensions_ready = false,
+        .native_function_table_required = true,
+        .native_function_table_ready = false,
+        .required_extension_count = 2,
+        .diagnostic = "fake Vulkan SDK path missing",
+    };
+}
+
 void require_handoff_fallback(
     const quiz_vulkan::render::vulkan_backend::vulkan_backend_frame_pipeline_handoff& handoff,
     quiz_vulkan::render::vulkan_backend::vulkan_backend_fallback_reason reason,
@@ -662,6 +703,54 @@ void test_vulkan_frame_pipeline_handoff_accepts_draw_list_render_data()
     require(device.calls[5] == "present", "backend presents frame last");
 }
 
+void test_vulkan_frame_pipeline_handoff_reports_sdk_native_path_summary()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_vulkan_backend_device device(vulkan_backend::vulkan_surface_extent{.width = 64, .height = 64});
+    const vulkan_backend::vulkan_backend_frame_result result =
+        vulkan_backend::submit_vulkan_backend_frame(
+            device,
+            make_quad_draw_list(),
+            render_rect{0.0f, 0.0f, 64.0f, 64.0f});
+    require(result.completed(), "baseline frame completes before SDK summary is applied");
+
+    const vulkan_backend::vulkan_backend_frame_result sdk_ready =
+        vulkan_backend::apply_vulkan_sdk_capability_result_to_frame(
+            result,
+            make_ready_sdk_capabilities());
+    require(sdk_ready.completed(), "ready SDK summary keeps frame completed");
+    require(
+        sdk_ready.pipeline_handoff.sdk_native_path_checked,
+        "handoff records checked SDK native path");
+    require(sdk_ready.pipeline_handoff.sdk_adapter_ready, "handoff records SDK adapter ready");
+    require(
+        sdk_ready.pipeline_handoff.sdk_native_path_status
+            == vulkan_backend::vulkan_sdk_native_path_status::ready,
+        "handoff records SDK-ready native-path status");
+
+    const vulkan_backend::vulkan_backend_frame_result sdk_missing =
+        vulkan_backend::apply_vulkan_sdk_capability_result_to_frame(
+            result,
+            make_missing_sdk_capabilities());
+    require(!sdk_missing.completed(), "missing SDK summary prevents native-ready frame completion");
+    require(
+        sdk_missing.pipeline_handoff.sdk_native_path_checked,
+        "handoff records missing SDK native-path check");
+    require(!sdk_missing.pipeline_handoff.sdk_adapter_ready, "handoff records SDK adapter unavailable");
+    require(
+        sdk_missing.pipeline_handoff.sdk_native_path_status
+            == vulkan_backend::vulkan_sdk_native_path_status::sdk_missing,
+        "handoff records SDK-missing native-path status");
+    require(
+        sdk_missing.pipeline_handoff.sdk_capability_status
+            == vulkan_backend::vulkan_sdk_capability_status::headers_unavailable,
+        "handoff records SDK missing-header capability status");
+    require(
+        sdk_missing.pipeline_handoff.sdk_diagnostic == "fake Vulkan SDK path missing",
+        "handoff records SDK missing diagnostic");
+}
+
 } // namespace
 
 int main()
@@ -672,5 +761,6 @@ int main()
     test_vulkan_frame_pipeline_handoff_requires_pipeline_before_resource_binding();
     test_vulkan_frame_pipeline_handoff_requires_resource_binding_before_command_recording();
     test_vulkan_frame_pipeline_handoff_accepts_draw_list_render_data();
+    test_vulkan_frame_pipeline_handoff_reports_sdk_native_path_summary();
     return 0;
 }

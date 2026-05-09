@@ -1551,6 +1551,15 @@ struct vulkan_command_buffer_record_result {
     vulkan_native_function_table_status native_function_table_status =
         vulkan_native_function_table_status::not_checked;
     std::string missing_native_symbol_name;
+    bool sdk_native_path_checked = false;
+    bool sdk_adapter_ready = false;
+    vulkan_sdk_native_path_status sdk_native_path_status =
+        vulkan_sdk_native_path_status::not_checked;
+    vulkan_sdk_capability_status sdk_capability_status =
+        vulkan_sdk_capability_status::not_checked;
+    vulkan_sdk_adapter_fallback_status sdk_adapter_fallback_status =
+        vulkan_sdk_adapter_fallback_status::none;
+    std::string sdk_diagnostic;
     bool begin_attempted = false;
     bool begin_completed = false;
     bool end_attempted = false;
@@ -1580,6 +1589,7 @@ struct vulkan_command_buffer_record_result {
             && command_buffer.valid()
             && operation_plan_checked && operation_plan_ready
             && (!native_function_table_checked || native_command_buffer_recording_ready)
+            && (!sdk_native_path_checked || sdk_adapter_ready)
             && begin_attempted && begin_completed && end_attempted && end_completed
             && !has_failed_operation
             && attempted_operation_count == planned_operation_count
@@ -1632,7 +1642,8 @@ vulkan_command_buffer_record_result record_vulkan_command_buffer_operations(
     vulkan_command_buffer_operation_recorder_interface& recorder,
     vulkan_command_buffer_id command_buffer,
     const vulkan_command_recorder_operation_plan& operation_plan,
-    const vulkan_native_function_table_diagnostics& native_functions = {});
+    const vulkan_native_function_table_diagnostics& native_functions = {},
+    const vulkan_sdk_capability_result& sdk_capabilities = {});
 
 enum class vulkan_submit_batch_plan_status {
     not_checked,
@@ -1714,6 +1725,15 @@ struct vulkan_submit_batch_plan_result {
     vulkan_native_function_table_status native_function_table_status =
         vulkan_native_function_table_status::not_checked;
     std::string missing_native_symbol_name;
+    bool sdk_native_path_checked = false;
+    bool sdk_adapter_ready = false;
+    vulkan_sdk_native_path_status sdk_native_path_status =
+        vulkan_sdk_native_path_status::not_checked;
+    vulkan_sdk_capability_status sdk_capability_status =
+        vulkan_sdk_capability_status::not_checked;
+    vulkan_sdk_adapter_fallback_status sdk_adapter_fallback_status =
+        vulkan_sdk_adapter_fallback_status::none;
+    std::string sdk_diagnostic;
     bool command_submit_readiness_checked = false;
     bool command_submit_readiness_ready = false;
     bool command_buffer_available = false;
@@ -1744,6 +1764,7 @@ struct vulkan_submit_batch_plan_result {
             && fallback_reason == vulkan_backend_fallback_reason::none
             && command_buffer_recording_ready
             && (!native_function_table_checked || native_queue_submit_ready)
+            && (!sdk_native_path_checked || sdk_adapter_ready)
             && command_submit_readiness_ready
             && command_buffer_available && sync_primitives_available
             && submit_queue_available && present_target_available
@@ -1842,6 +1863,15 @@ struct vulkan_present_completion_plan_result {
     vulkan_native_function_table_status native_function_table_status =
         vulkan_native_function_table_status::not_checked;
     std::string missing_native_symbol_name;
+    bool sdk_native_path_checked = false;
+    bool sdk_adapter_ready = false;
+    vulkan_sdk_native_path_status sdk_native_path_status =
+        vulkan_sdk_native_path_status::not_checked;
+    vulkan_sdk_capability_status sdk_capability_status =
+        vulkan_sdk_capability_status::not_checked;
+    vulkan_sdk_adapter_fallback_status sdk_adapter_fallback_status =
+        vulkan_sdk_adapter_fallback_status::none;
+    std::string sdk_diagnostic;
     bool queue_present_adapter_checked = false;
     bool queue_present_adapter_ready = false;
     bool present_request_ready = false;
@@ -1863,6 +1893,7 @@ struct vulkan_present_completion_plan_result {
             && fallback_reason == vulkan_backend_fallback_reason::none
             && submit_batch_ready
             && (!native_function_table_checked || native_queue_present_ready)
+            && (!sdk_native_path_checked || sdk_adapter_ready)
             && queue_present_adapter_ready
             && present_request_ready && present_result_ready
             && frame_completion_ready && request.completed()
@@ -1962,6 +1993,22 @@ struct vulkan_backend_frame_pipeline_handoff {
     bool command_buffer_recording_checked = false;
     bool command_buffer_recording_completed = false;
     bool command_buffer_ready_for_submit = false;
+    bool native_function_table_checked = false;
+    bool native_command_buffer_recording_ready = false;
+    bool native_queue_submit_ready = false;
+    bool native_queue_present_ready = false;
+    vulkan_native_function_table_status native_function_table_status =
+        vulkan_native_function_table_status::not_checked;
+    std::string missing_native_symbol_name;
+    bool sdk_native_path_checked = false;
+    bool sdk_adapter_ready = false;
+    vulkan_sdk_native_path_status sdk_native_path_status =
+        vulkan_sdk_native_path_status::not_checked;
+    vulkan_sdk_capability_status sdk_capability_status =
+        vulkan_sdk_capability_status::not_checked;
+    vulkan_sdk_adapter_fallback_status sdk_adapter_fallback_status =
+        vulkan_sdk_adapter_fallback_status::none;
+    std::string sdk_diagnostic;
     bool submit_batch_planning_checked = false;
     bool submit_batch_planning_completed = false;
     bool submit_batch_ready_for_queue = false;
@@ -1999,6 +2046,10 @@ struct vulkan_backend_frame_pipeline_handoff {
             && command_packets_completed && command_packet_execution_completed
             && command_recorder_operations_completed
             && command_buffer_recording_completed && command_buffer_ready_for_submit
+            && (!native_function_table_checked
+                || (native_command_buffer_recording_ready && native_queue_submit_ready
+                    && native_queue_present_ready))
+            && (!sdk_native_path_checked || sdk_adapter_ready)
             && submit_batch_planning_completed && submit_batch_ready_for_queue
             && present_completion_planning_completed && frame_completion_ready
             && command_recorder_lifecycle_ready && command_recorder_gate_allowed
@@ -2063,6 +2114,7 @@ struct vulkan_backend_frame_result {
     vulkan_command_buffer_record_result command_buffer_recording;
     vulkan_submit_batch_plan_result submit_batch_plan;
     vulkan_present_completion_plan_result present_completion_plan;
+    vulkan_sdk_capability_result sdk_capabilities;
     vulkan_backend_command_recorder_state command_recorder;
     vulkan_command_submit_readiness_result command_submit;
     vulkan_queue_submit_present_result queue_submit;
@@ -2106,6 +2158,7 @@ struct vulkan_backend_frame_result {
             && command_buffer_recording.completed()
             && submit_batch_plan.completed()
             && present_completion_plan.completed()
+            && (!sdk_capabilities.checked || sdk_capabilities.adapter_ready())
             && command_recorder.completed()
             && command_recorder.gate.completed()
             && resource_bindings.completed()
@@ -2191,12 +2244,18 @@ vulkan_command_recorder_operation_plan build_vulkan_command_recorder_operation_p
 vulkan_submit_batch_plan_result build_vulkan_submit_batch_plan(
     const vulkan_command_buffer_record_result& command_buffer_recording,
     const vulkan_command_submit_readiness_result& command_submit,
-    const vulkan_native_function_table_diagnostics& native_functions = {});
+    const vulkan_native_function_table_diagnostics& native_functions = {},
+    const vulkan_sdk_capability_result& sdk_capabilities = {});
 
 vulkan_present_completion_plan_result build_vulkan_present_completion_plan(
     const vulkan_submit_batch_plan_result& submit_batch,
     const vulkan_queue_submit_present_result& queue_present,
-    const vulkan_native_function_table_diagnostics& native_functions = {});
+    const vulkan_native_function_table_diagnostics& native_functions = {},
+    const vulkan_sdk_capability_result& sdk_capabilities = {});
+
+vulkan_backend_frame_result apply_vulkan_sdk_capability_result_to_frame(
+    vulkan_backend_frame_result frame,
+    vulkan_sdk_capability_result sdk_capabilities);
 
 vulkan_backend_frame_pipeline_handoff summarize_vulkan_frame_pipeline_handoff(
     const vulkan_backend_frame_result& frame);

@@ -86,6 +86,11 @@ void test_sdk_capability_names_and_versions_are_stable()
             vulkan_backend::vulkan_sdk_adapter_fallback_status::extension_unavailable)
             == std::string_view{"extension_unavailable"},
         "SDK adapter fallback status name for extension unavailable is stable");
+    require(
+        vulkan_backend::sdk_native_path_status_name(
+            vulkan_backend::vulkan_sdk_native_path_status::function_table_blocked)
+            == std::string_view{"function_table_blocked"},
+        "SDK native path status name for function table blocked is stable");
 
     const vulkan_backend::vulkan_sdk_api_version api_1_4 =
         vulkan_backend::vulkan_sdk_api_version_1_4();
@@ -96,6 +101,79 @@ void test_sdk_capability_names_and_versions_are_stable()
     require(
         !vulkan_backend::vulkan_sdk_api_version_1_3().supports(api_1_4),
         "Vulkan SDK API version 1.3 does not support 1.4");
+}
+
+void test_sdk_native_path_readiness_summarizes_capability_states()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::fake_vulkan_sdk_header_probe ready_probe(
+        vulkan_backend::fake_vulkan_sdk_header_probe_options{
+            .manifest = make_ready_manifest(),
+        });
+    const vulkan_backend::vulkan_sdk_capability_result ready =
+        vulkan_backend::collect_vulkan_sdk_capabilities(
+            ready_probe,
+            make_native_functions());
+    const vulkan_backend::vulkan_sdk_native_path_readiness ready_path =
+        vulkan_backend::summarize_vulkan_sdk_native_path_readiness(ready);
+    require(ready_path.ready(), "ready SDK capability summarizes as native-path ready");
+    require(
+        ready_path.status == vulkan_backend::vulkan_sdk_native_path_status::ready,
+        "ready SDK capability maps to ready native-path status");
+
+    vulkan_backend::fake_vulkan_sdk_header_probe missing_probe(
+        vulkan_backend::fake_vulkan_sdk_header_probe_options{
+            .manifest = vulkan_backend::vulkan_sdk_header_manifest{
+                .headers_available = false,
+                .diagnostic = "fake Vulkan headers missing",
+            },
+        });
+    const vulkan_backend::vulkan_sdk_capability_result missing =
+        vulkan_backend::collect_vulkan_sdk_capabilities(
+            missing_probe,
+            make_native_functions());
+    const vulkan_backend::vulkan_sdk_native_path_readiness missing_path =
+        vulkan_backend::summarize_vulkan_sdk_native_path_readiness(missing);
+    require(missing_path.blocked(), "missing SDK capability summarizes as blocked");
+    require(
+        missing_path.status == vulkan_backend::vulkan_sdk_native_path_status::sdk_missing,
+        "missing SDK headers map to SDK-missing native-path status");
+
+    vulkan_backend::fake_vulkan_sdk_header_probe version_probe(
+        vulkan_backend::fake_vulkan_sdk_header_probe_options{
+            .manifest = make_ready_manifest(),
+        });
+    const vulkan_backend::vulkan_sdk_capability_result version_mismatch =
+        vulkan_backend::collect_vulkan_sdk_capabilities(
+            version_probe,
+            make_native_functions(),
+            vulkan_backend::vulkan_sdk_capability_request{
+                .minimum_api_version = vulkan_backend::make_vulkan_sdk_api_version(2, 0),
+            });
+    const vulkan_backend::vulkan_sdk_native_path_readiness version_path =
+        vulkan_backend::summarize_vulkan_sdk_native_path_readiness(version_mismatch);
+    require(
+        version_path.status == vulkan_backend::vulkan_sdk_native_path_status::version_mismatch,
+        "old SDK headers map to version-mismatch native-path status");
+
+    vulkan_backend::fake_vulkan_sdk_header_probe function_table_probe(
+        vulkan_backend::fake_vulkan_sdk_header_probe_options{
+            .manifest = make_ready_manifest(),
+        });
+    const vulkan_backend::vulkan_sdk_capability_result function_table_blocked =
+        vulkan_backend::collect_vulkan_sdk_capabilities(
+            function_table_probe,
+            make_native_functions("vkQueueSubmit"));
+    const vulkan_backend::vulkan_sdk_native_path_readiness function_table_path =
+        vulkan_backend::summarize_vulkan_sdk_native_path_readiness(function_table_blocked);
+    require(
+        function_table_path.status
+            == vulkan_backend::vulkan_sdk_native_path_status::function_table_blocked,
+        "missing native entrypoint maps to function-table-blocked native-path status");
+    require(
+        function_table_path.missing_native_symbol_name == "vkQueueSubmit",
+        "SDK native-path summary records missing native symbol");
 }
 
 void test_sdk_capability_reports_adapter_ready_when_headers_and_native_symbols_match()
@@ -257,6 +335,7 @@ void test_sdk_capability_blocks_on_missing_native_function_table()
 int main()
 {
     test_sdk_capability_names_and_versions_are_stable();
+    test_sdk_native_path_readiness_summarizes_capability_states();
     test_sdk_capability_reports_adapter_ready_when_headers_and_native_symbols_match();
     test_sdk_capability_blocks_when_headers_are_missing();
     test_sdk_capability_blocks_on_api_version_mismatch();

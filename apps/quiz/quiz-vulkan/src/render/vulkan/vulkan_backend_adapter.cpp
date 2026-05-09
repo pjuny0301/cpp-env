@@ -812,6 +812,19 @@ void block_present_completion(
     plan.diagnostic = std::move(diagnostic);
 }
 
+template <typename T>
+void apply_sdk_native_path_readiness(
+    T& result,
+    const vulkan_sdk_native_path_readiness& sdk_native_path)
+{
+    result.sdk_native_path_checked = sdk_native_path.checked;
+    result.sdk_adapter_ready = sdk_native_path.ready();
+    result.sdk_native_path_status = sdk_native_path.status;
+    result.sdk_capability_status = sdk_native_path.sdk_capability_status;
+    result.sdk_adapter_fallback_status = sdk_native_path.sdk_adapter_fallback_status;
+    result.sdk_diagnostic = sdk_native_path.diagnostic;
+}
+
 const vulkan_batch_resource_binding_snapshot* find_binding_snapshot_for_batch(
     const vulkan_backend_resource_binding_state& resource_bindings,
     const vulkan_draw_batch& batch,
@@ -2210,6 +2223,12 @@ fake_vulkan_command_buffer_operation_recorder::record_operations(
         .native_command_buffer_recording_ready = true,
         .native_function_table_status = vulkan_native_function_table_status::not_checked,
         .missing_native_symbol_name = {},
+        .sdk_native_path_checked = false,
+        .sdk_adapter_ready = false,
+        .sdk_native_path_status = vulkan_sdk_native_path_status::not_checked,
+        .sdk_capability_status = vulkan_sdk_capability_status::not_checked,
+        .sdk_adapter_fallback_status = vulkan_sdk_adapter_fallback_status::none,
+        .sdk_diagnostic = {},
         .planned_operation_count = operation_plan.operation_count,
         .diagnostic = {},
         .events = {},
@@ -2305,10 +2324,13 @@ vulkan_command_buffer_record_result record_vulkan_command_buffer_operations(
     vulkan_command_buffer_operation_recorder_interface& recorder,
     vulkan_command_buffer_id command_buffer,
     const vulkan_command_recorder_operation_plan& operation_plan,
-    const vulkan_native_function_table_diagnostics& native_functions)
+    const vulkan_native_function_table_diagnostics& native_functions,
+    const vulkan_sdk_capability_result& sdk_capabilities)
 {
     const vulkan_native_entrypoint_readiness_snapshot native_readiness =
-        summarize_vulkan_command_buffer_recording_native_readiness(native_functions);
+        summarize_vulkan_command_buffer_recording_native_readiness(
+            native_functions,
+            sdk_capabilities);
 
     if (!native_readiness.blocks_fake_execution()) {
         vulkan_command_buffer_record_result result =
@@ -2317,14 +2339,17 @@ vulkan_command_buffer_record_result record_vulkan_command_buffer_operations(
         result.native_command_buffer_recording_ready = native_readiness.entrypoint_ready;
         result.native_function_table_status = native_readiness.function_table_status;
         result.missing_native_symbol_name = native_readiness.missing_symbol_name;
+        apply_sdk_native_path_readiness(result, native_readiness.sdk_native_path);
         return result;
     }
 
-    return vulkan_command_buffer_record_result{
+    vulkan_command_buffer_record_result result{
         .checked = true,
         .status = vulkan_command_buffer_record_result_status::native_entrypoint_unavailable,
         .fallback_reason = fallback_or(
-            native_functions.fallback_reason,
+            native_readiness.function_table_checked && !native_readiness.entrypoint_ready
+                ? native_functions.fallback_reason
+                : vulkan_backend_fallback_reason::not_requested,
             vulkan_backend_fallback_reason::record_commands_failed),
         .command_buffer = command_buffer,
         .operation_plan_checked = operation_plan.checked,
@@ -2333,12 +2358,20 @@ vulkan_command_buffer_record_result record_vulkan_command_buffer_operations(
         .native_command_buffer_recording_ready = false,
         .native_function_table_status = native_readiness.function_table_status,
         .missing_native_symbol_name = native_readiness.missing_symbol_name,
+        .sdk_native_path_checked = false,
+        .sdk_adapter_ready = false,
+        .sdk_native_path_status = vulkan_sdk_native_path_status::not_checked,
+        .sdk_capability_status = vulkan_sdk_capability_status::not_checked,
+        .sdk_adapter_fallback_status = vulkan_sdk_adapter_fallback_status::none,
+        .sdk_diagnostic = {},
         .planned_operation_count = operation_plan.operation_count,
         .diagnostic = native_readiness.diagnostic.empty()
             ? "Vulkan native command buffer recording entrypoint is unavailable"
             : native_readiness.diagnostic,
         .events = {},
     };
+    apply_sdk_native_path_readiness(result, native_readiness.sdk_native_path);
+    return result;
 }
 
 const vulkan_command_buffer_record_result&
@@ -2350,10 +2383,13 @@ fake_vulkan_command_buffer_operation_recorder::record_result() const
 vulkan_submit_batch_plan_result build_vulkan_submit_batch_plan(
     const vulkan_command_buffer_record_result& command_buffer_recording,
     const vulkan_command_submit_readiness_result& command_submit,
-    const vulkan_native_function_table_diagnostics& native_functions)
+    const vulkan_native_function_table_diagnostics& native_functions,
+    const vulkan_sdk_capability_result& sdk_capabilities)
 {
     const vulkan_native_entrypoint_readiness_snapshot native_submit_readiness =
-        summarize_vulkan_queue_submit_native_readiness(native_functions);
+        summarize_vulkan_queue_submit_native_readiness(
+            native_functions,
+            sdk_capabilities);
     vulkan_submit_batch_plan_result plan{
         .checked = true,
         .status = vulkan_submit_batch_plan_status::not_checked,
@@ -2364,6 +2400,12 @@ vulkan_submit_batch_plan_result build_vulkan_submit_batch_plan(
         .native_queue_submit_ready = native_submit_readiness.entrypoint_ready,
         .native_function_table_status = native_submit_readiness.function_table_status,
         .missing_native_symbol_name = native_submit_readiness.missing_symbol_name,
+        .sdk_native_path_checked = false,
+        .sdk_adapter_ready = false,
+        .sdk_native_path_status = vulkan_sdk_native_path_status::not_checked,
+        .sdk_capability_status = vulkan_sdk_capability_status::not_checked,
+        .sdk_adapter_fallback_status = vulkan_sdk_adapter_fallback_status::none,
+        .sdk_diagnostic = {},
         .command_submit_readiness_checked = command_submit.checked,
         .command_submit_readiness_ready =
             command_submit.checked ? command_submit.ready_for_submit() : true,
@@ -2379,6 +2421,7 @@ vulkan_submit_batch_plan_result build_vulkan_submit_batch_plan(
         .present_intents = {},
         .diagnostic = {},
     };
+    apply_sdk_native_path_readiness(plan, native_submit_readiness.sdk_native_path);
 
     if (!command_buffer_recording.completed()) {
         plan.status = vulkan_submit_batch_plan_status::command_buffer_recording_unavailable;
@@ -2393,7 +2436,10 @@ vulkan_submit_batch_plan_result build_vulkan_submit_batch_plan(
     if (native_submit_readiness.blocks_fake_execution()) {
         plan.status = vulkan_submit_batch_plan_status::native_queue_submit_unavailable;
         plan.fallback_reason = fallback_or(
-            native_functions.fallback_reason,
+            native_submit_readiness.function_table_checked
+                    && !native_submit_readiness.entrypoint_ready
+                ? native_functions.fallback_reason
+                : vulkan_backend_fallback_reason::not_requested,
             vulkan_backend_fallback_reason::submit_frame_failed);
         plan.diagnostic = native_submit_readiness.diagnostic.empty()
             ? "Vulkan native queue submit entrypoint is unavailable for submit planning"
@@ -2490,10 +2536,13 @@ vulkan_submit_batch_plan_result build_vulkan_submit_batch_plan(
 vulkan_present_completion_plan_result build_vulkan_present_completion_plan(
     const vulkan_submit_batch_plan_result& submit_batch,
     const vulkan_queue_submit_present_result& queue_present,
-    const vulkan_native_function_table_diagnostics& native_functions)
+    const vulkan_native_function_table_diagnostics& native_functions,
+    const vulkan_sdk_capability_result& sdk_capabilities)
 {
     const vulkan_native_entrypoint_readiness_snapshot native_present_readiness =
-        summarize_vulkan_queue_present_native_readiness(native_functions);
+        summarize_vulkan_queue_present_native_readiness(
+            native_functions,
+            sdk_capabilities);
     vulkan_present_completion_plan_result plan{
         .checked = true,
         .status = vulkan_present_completion_plan_status::not_checked,
@@ -2505,6 +2554,12 @@ vulkan_present_completion_plan_result build_vulkan_present_completion_plan(
         .native_queue_present_ready = native_present_readiness.entrypoint_ready,
         .native_function_table_status = native_present_readiness.function_table_status,
         .missing_native_symbol_name = native_present_readiness.missing_symbol_name,
+        .sdk_native_path_checked = false,
+        .sdk_adapter_ready = false,
+        .sdk_native_path_status = vulkan_sdk_native_path_status::not_checked,
+        .sdk_capability_status = vulkan_sdk_capability_status::not_checked,
+        .sdk_adapter_fallback_status = vulkan_sdk_adapter_fallback_status::none,
+        .sdk_diagnostic = {},
         .queue_present_adapter_checked = queue_present.checked,
         .queue_present_adapter_ready = !queue_present.checked || queue_present.completed(),
         .submit_batch_count = submit_batch.submit_batch_count,
@@ -2517,6 +2572,7 @@ vulkan_present_completion_plan_result build_vulkan_present_completion_plan(
             : deterministic_present_result_summary(),
         .diagnostic = {},
     };
+    apply_sdk_native_path_readiness(plan, native_present_readiness.sdk_native_path);
 
     if (!submit_batch.completed()) {
         vulkan_backend_fallback_reason fallback = submit_batch.fallback_reason;
@@ -2545,7 +2601,10 @@ vulkan_present_completion_plan_result build_vulkan_present_completion_plan(
             vulkan_present_completion_plan_status::native_queue_present_unavailable,
             vulkan_frame_completion_status::present_unavailable,
             fallback_or(
-                native_functions.fallback_reason,
+                native_present_readiness.function_table_checked
+                        && !native_present_readiness.entrypoint_ready
+                    ? native_functions.fallback_reason
+                    : vulkan_backend_fallback_reason::not_requested,
                 vulkan_backend_fallback_reason::present_frame_failed),
             native_present_readiness.diagnostic.empty()
                 ? "Vulkan native queue present entrypoint is unavailable for present planning"
@@ -2681,6 +2740,48 @@ vulkan_present_completion_plan_result build_vulkan_present_completion_plan(
     return plan;
 }
 
+vulkan_native_function_table_status native_function_table_status_from_frame(
+    const vulkan_backend_frame_result& frame)
+{
+    if (frame.command_buffer_recording.native_function_table_checked
+        && !frame.command_buffer_recording.native_command_buffer_recording_ready) {
+        return frame.command_buffer_recording.native_function_table_status;
+    }
+    if (frame.submit_batch_plan.native_function_table_checked
+        && !frame.submit_batch_plan.native_queue_submit_ready) {
+        return frame.submit_batch_plan.native_function_table_status;
+    }
+    if (frame.present_completion_plan.native_function_table_checked
+        && !frame.present_completion_plan.native_queue_present_ready) {
+        return frame.present_completion_plan.native_function_table_status;
+    }
+    if (frame.command_buffer_recording.native_function_table_checked
+        || frame.submit_batch_plan.native_function_table_checked
+        || frame.present_completion_plan.native_function_table_checked) {
+        return vulkan_native_function_table_status::ready;
+    }
+
+    return vulkan_native_function_table_status::not_checked;
+}
+
+std::string missing_native_symbol_from_frame(const vulkan_backend_frame_result& frame)
+{
+    if (frame.command_buffer_recording.native_function_table_checked
+        && !frame.command_buffer_recording.native_command_buffer_recording_ready) {
+        return frame.command_buffer_recording.missing_native_symbol_name;
+    }
+    if (frame.submit_batch_plan.native_function_table_checked
+        && !frame.submit_batch_plan.native_queue_submit_ready) {
+        return frame.submit_batch_plan.missing_native_symbol_name;
+    }
+    if (frame.present_completion_plan.native_function_table_checked
+        && !frame.present_completion_plan.native_queue_present_ready) {
+        return frame.present_completion_plan.missing_native_symbol_name;
+    }
+
+    return {};
+}
+
 vulkan_backend_frame_pipeline_handoff summarize_vulkan_frame_pipeline_handoff(
     const vulkan_backend_frame_result& frame)
 {
@@ -2708,6 +2809,21 @@ vulkan_backend_frame_pipeline_handoff summarize_vulkan_frame_pipeline_handoff(
     const bool command_buffer_recording_completed =
         frame.command_buffer_recording.completed();
     const bool command_buffer_ready_for_submit = command_buffer_recording_completed;
+    const bool native_function_table_checked =
+        frame.command_buffer_recording.native_function_table_checked
+        || frame.submit_batch_plan.native_function_table_checked
+        || frame.present_completion_plan.native_function_table_checked;
+    const bool native_command_buffer_recording_ready =
+        !frame.command_buffer_recording.native_function_table_checked
+        || frame.command_buffer_recording.native_command_buffer_recording_ready;
+    const bool native_queue_submit_ready =
+        !frame.submit_batch_plan.native_function_table_checked
+        || frame.submit_batch_plan.native_queue_submit_ready;
+    const bool native_queue_present_ready =
+        !frame.present_completion_plan.native_function_table_checked
+        || frame.present_completion_plan.native_queue_present_ready;
+    const vulkan_sdk_native_path_readiness sdk_native_path =
+        summarize_vulkan_sdk_native_path_readiness(frame.sdk_capabilities);
     const bool submit_batch_planning_completed = frame.submit_batch_plan.completed();
     const bool submit_batch_ready_for_queue =
         submit_batch_planning_completed && frame.submit_batch_plan.submit_ready;
@@ -2779,6 +2895,18 @@ vulkan_backend_frame_pipeline_handoff summarize_vulkan_frame_pipeline_handoff(
         .command_buffer_recording_checked = frame.command_buffer_recording.checked,
         .command_buffer_recording_completed = command_buffer_recording_completed,
         .command_buffer_ready_for_submit = command_buffer_ready_for_submit,
+        .native_function_table_checked = native_function_table_checked,
+        .native_command_buffer_recording_ready = native_command_buffer_recording_ready,
+        .native_queue_submit_ready = native_queue_submit_ready,
+        .native_queue_present_ready = native_queue_present_ready,
+        .native_function_table_status = native_function_table_status_from_frame(frame),
+        .missing_native_symbol_name = missing_native_symbol_from_frame(frame),
+        .sdk_native_path_checked = sdk_native_path.checked,
+        .sdk_adapter_ready = sdk_native_path.ready(),
+        .sdk_native_path_status = sdk_native_path.status,
+        .sdk_capability_status = sdk_native_path.sdk_capability_status,
+        .sdk_adapter_fallback_status = sdk_native_path.sdk_adapter_fallback_status,
+        .sdk_diagnostic = sdk_native_path.diagnostic,
         .submit_batch_planning_checked = frame.submit_batch_plan.checked,
         .submit_batch_planning_completed = submit_batch_planning_completed,
         .submit_batch_ready_for_queue = submit_batch_ready_for_queue,
@@ -2815,8 +2943,21 @@ vulkan_backend_frame_result apply_vulkan_queue_submit_adapter_result_to_frame(
     frame.queue_submit = std::move(queue_submit);
     if (frame.submit_batch_plan.checked) {
         frame.present_completion_plan =
-            build_vulkan_present_completion_plan(frame.submit_batch_plan, frame.queue_submit);
+            build_vulkan_present_completion_plan(
+                frame.submit_batch_plan,
+                frame.queue_submit,
+                {},
+                frame.sdk_capabilities);
     }
+    frame.pipeline_handoff = summarize_vulkan_frame_pipeline_handoff(frame);
+    return frame;
+}
+
+vulkan_backend_frame_result apply_vulkan_sdk_capability_result_to_frame(
+    vulkan_backend_frame_result frame,
+    vulkan_sdk_capability_result sdk_capabilities)
+{
+    frame.sdk_capabilities = std::move(sdk_capabilities);
     frame.pipeline_handoff = summarize_vulkan_frame_pipeline_handoff(frame);
     return frame;
 }

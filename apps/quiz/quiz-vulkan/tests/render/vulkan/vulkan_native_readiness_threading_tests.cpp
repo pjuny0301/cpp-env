@@ -49,6 +49,43 @@ make_native_functions(std::vector<std::string> missing_symbols = {})
         make_ready_loader());
 }
 
+quiz_vulkan::render::vulkan_backend::vulkan_sdk_header_manifest make_ready_sdk_manifest()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    return vulkan_backend::vulkan_sdk_header_manifest{
+        .headers_available = true,
+        .api_version = vulkan_backend::vulkan_sdk_api_version_1_4(),
+        .header_version = 341,
+        .sdk_tag = "vulkan-sdk-1.4.341.0",
+        .source_label = "fake-manifest",
+        .supported_extensions = {
+            "VK_KHR_surface",
+            "VK_KHR_swapchain",
+        },
+        .diagnostic = "fake Vulkan headers available",
+    };
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_sdk_capability_result make_sdk_capabilities(
+    const quiz_vulkan::render::vulkan_backend::vulkan_native_function_table_diagnostics&
+        native_functions,
+    quiz_vulkan::render::vulkan_backend::vulkan_sdk_header_manifest manifest =
+        make_ready_sdk_manifest(),
+    quiz_vulkan::render::vulkan_backend::vulkan_sdk_capability_request request = {})
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::fake_vulkan_sdk_header_probe probe(
+        vulkan_backend::fake_vulkan_sdk_header_probe_options{
+            .manifest = std::move(manifest),
+        });
+    return vulkan_backend::collect_vulkan_sdk_capabilities(
+        probe,
+        native_functions,
+        request);
+}
+
 quiz_vulkan::render::vulkan_backend::vulkan_command_recorder_operation_plan
 make_ready_operation_plan()
 {
@@ -215,6 +252,49 @@ void test_native_entrypoint_readiness_snapshots_are_stage_specific()
     require(present.missing_symbol_name.empty(), "present snapshot omits unrelated missing symbol");
 }
 
+void test_sdk_capability_threads_into_native_entrypoint_readiness()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_function_table_diagnostics native_functions =
+        make_native_functions();
+    const vulkan_backend::vulkan_sdk_capability_result sdk_capabilities =
+        make_sdk_capabilities(native_functions);
+    const vulkan_backend::vulkan_native_entrypoint_readiness_snapshot recording =
+        vulkan_backend::summarize_vulkan_command_buffer_recording_native_readiness(
+            native_functions,
+            sdk_capabilities);
+
+    require(recording.function_table_checked, "SDK-aware native readiness records checked table");
+    require(recording.entrypoint_ready, "SDK-aware native readiness keeps entrypoint ready");
+    require(recording.native_path_ready(), "SDK-aware native readiness reports native path ready");
+    require(recording.sdk_native_path.checked, "SDK-aware native readiness records SDK check");
+    require(recording.sdk_native_path.ready(), "SDK-aware native readiness records SDK ready");
+    require(
+        recording.sdk_native_path.status == vulkan_backend::vulkan_sdk_native_path_status::ready,
+        "SDK-aware native readiness stores ready SDK native-path status");
+
+    vulkan_backend::vulkan_sdk_header_manifest missing_manifest;
+    missing_manifest.headers_available = false;
+    missing_manifest.diagnostic = "fake Vulkan headers missing";
+    const vulkan_backend::vulkan_sdk_capability_result missing_sdk =
+        make_sdk_capabilities(native_functions, missing_manifest);
+    const vulkan_backend::vulkan_native_entrypoint_readiness_snapshot blocked =
+        vulkan_backend::summarize_vulkan_command_buffer_recording_native_readiness(
+            native_functions,
+            missing_sdk);
+
+    require(!blocked.native_path_ready(), "missing SDK blocks SDK-aware native path");
+    require(blocked.blocks_fake_execution(), "missing SDK blocks fake native execution gate");
+    require(
+        blocked.sdk_native_path.status
+            == vulkan_backend::vulkan_sdk_native_path_status::sdk_missing,
+        "SDK-aware native readiness stores SDK-missing status");
+    require(
+        blocked.diagnostic == "fake Vulkan headers missing",
+        "SDK-aware native readiness reports SDK diagnostic when headers are missing");
+}
+
 void test_native_command_recording_symbols_gate_fake_recorder()
 {
     namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
@@ -250,6 +330,49 @@ void test_native_command_recording_symbols_gate_fake_recorder()
         "native command buffer gate stops before fake recorder execution");
 }
 
+void test_sdk_missing_gates_command_recording_before_fake_recorder()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_function_table_diagnostics native_functions =
+        make_native_functions();
+    vulkan_backend::vulkan_sdk_header_manifest missing_manifest;
+    missing_manifest.headers_available = false;
+    missing_manifest.diagnostic = "fake Vulkan headers missing";
+    const vulkan_backend::vulkan_sdk_capability_result missing_sdk =
+        make_sdk_capabilities(native_functions, missing_manifest);
+    vulkan_backend::fake_vulkan_command_buffer_operation_recorder recorder;
+    const vulkan_backend::vulkan_command_buffer_record_result result =
+        vulkan_backend::record_vulkan_command_buffer_operations(
+            recorder,
+            vulkan_backend::vulkan_command_buffer_id{.value = 42},
+            make_ready_operation_plan(),
+            native_functions,
+            missing_sdk);
+
+    require(result.failed(), "missing SDK gates command buffer recording");
+    require(
+        result.status
+            == vulkan_backend::vulkan_command_buffer_record_result_status::native_entrypoint_unavailable,
+        "missing SDK maps to native entrypoint unavailable before command recording");
+    require(result.sdk_native_path_checked, "command recording records SDK native-path check");
+    require(!result.sdk_adapter_ready, "command recording records SDK adapter not ready");
+    require(
+        result.sdk_native_path_status
+            == vulkan_backend::vulkan_sdk_native_path_status::sdk_missing,
+        "command recording records SDK-missing native-path status");
+    require(
+        result.sdk_capability_status
+            == vulkan_backend::vulkan_sdk_capability_status::headers_unavailable,
+        "command recording records SDK header capability failure");
+    require(
+        result.diagnostic == "fake Vulkan headers missing",
+        "command recording reports SDK diagnostic");
+    require(
+        !recorder.record_result().checked,
+        "missing SDK gate stops before fake command buffer recorder");
+}
+
 void test_native_queue_submit_symbols_gate_submit_batch_planning()
 {
     namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
@@ -278,6 +401,43 @@ void test_native_queue_submit_symbols_gate_submit_batch_planning()
     require(plan.missing_native_symbol_name == "vkQueueSubmit", "submit plan stores missing native symbol");
     require(plan.submit_batches.empty(), "native submit gate stops before submit batch records");
     require(!plan.submit_ready, "native submit gate does not mark submit ready");
+}
+
+void test_sdk_version_mismatch_gates_submit_batch_planning()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_function_table_diagnostics native_functions =
+        make_native_functions();
+    const vulkan_backend::vulkan_sdk_capability_result version_mismatch =
+        make_sdk_capabilities(
+            native_functions,
+            make_ready_sdk_manifest(),
+            vulkan_backend::vulkan_sdk_capability_request{
+                .minimum_api_version = vulkan_backend::make_vulkan_sdk_api_version(2, 0),
+            });
+    const vulkan_backend::vulkan_submit_batch_plan_result plan =
+        vulkan_backend::build_vulkan_submit_batch_plan(
+            make_recorded_command_buffer(native_functions),
+            make_ready_submit_readiness(),
+            native_functions,
+            version_mismatch);
+
+    require(plan.blocked(), "SDK version mismatch blocks submit batch planning");
+    require(
+        plan.status
+            == vulkan_backend::vulkan_submit_batch_plan_status::native_queue_submit_unavailable,
+        "SDK version mismatch maps to native queue submit unavailable");
+    require(plan.sdk_native_path_checked, "submit plan records SDK native-path check");
+    require(
+        plan.sdk_native_path_status
+            == vulkan_backend::vulkan_sdk_native_path_status::version_mismatch,
+        "submit plan records SDK version-mismatch status");
+    require(
+        plan.sdk_capability_status
+            == vulkan_backend::vulkan_sdk_capability_status::api_version_too_old,
+        "submit plan records SDK API version capability failure");
+    require(plan.submit_batches.empty(), "SDK gate stops before submit batch records");
 }
 
 void test_native_queue_present_symbols_gate_present_completion_planning()
@@ -315,41 +475,89 @@ void test_native_queue_present_symbols_gate_present_completion_planning()
     require(!plan.present_result_ready, "native present gate stops before present result readiness");
 }
 
+void test_sdk_function_table_block_threads_into_present_completion_planning()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_function_table_diagnostics ready_native =
+        make_native_functions();
+    const vulkan_backend::vulkan_native_function_table_diagnostics missing_present =
+        make_native_functions({"vkQueuePresentKHR"});
+    const vulkan_backend::vulkan_sdk_capability_result function_table_blocked =
+        make_sdk_capabilities(missing_present);
+    const vulkan_backend::vulkan_present_completion_plan_result plan =
+        vulkan_backend::build_vulkan_present_completion_plan(
+            make_ready_submit_batch(ready_native),
+            vulkan_backend::vulkan_queue_submit_present_result{},
+            missing_present,
+            function_table_blocked);
+
+    require(plan.blocked(), "SDK function-table block gates present completion planning");
+    require(
+        plan.status
+            == vulkan_backend::vulkan_present_completion_plan_status::native_queue_present_unavailable,
+        "SDK function-table block maps to native queue present unavailable");
+    require(plan.sdk_native_path_checked, "present plan records SDK native-path check");
+    require(
+        plan.sdk_native_path_status
+            == vulkan_backend::vulkan_sdk_native_path_status::function_table_blocked,
+        "present plan records SDK function-table-blocked status");
+    require(
+        plan.sdk_capability_status
+            == vulkan_backend::vulkan_sdk_capability_status::native_function_table_unavailable,
+        "present plan records SDK native function table capability failure");
+    require(
+        plan.missing_native_symbol_name == "vkQueuePresentKHR",
+        "present plan keeps native missing symbol");
+    require(
+        plan.sdk_diagnostic.find("vkQueuePresentKHR") != std::string::npos,
+        "present plan SDK diagnostic names missing native symbol");
+}
+
 void test_ready_native_symbols_preserve_fake_planning_paths()
 {
     namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
 
     const vulkan_backend::vulkan_native_function_table_diagnostics native_functions =
         make_native_functions();
+    const vulkan_backend::vulkan_sdk_capability_result sdk_capabilities =
+        make_sdk_capabilities(native_functions);
     vulkan_backend::fake_vulkan_command_buffer_operation_recorder recorder;
     const vulkan_backend::vulkan_command_buffer_record_result recording =
         vulkan_backend::record_vulkan_command_buffer_operations(
             recorder,
             vulkan_backend::vulkan_command_buffer_id{.value = 42},
             make_ready_operation_plan(),
-            native_functions);
+            native_functions,
+            sdk_capabilities);
     require(recording.completed(), "ready native symbols allow fake command recording path");
     require(recording.native_function_table_checked, "ready recording stores checked native table");
     require(recording.native_command_buffer_recording_ready, "ready recording stores native command stage");
+    require(recording.sdk_native_path_checked, "ready recording stores checked SDK native path");
+    require(recording.sdk_adapter_ready, "ready recording stores ready SDK adapter");
     require(recorder.record_result().checked, "ready native symbols call fake recorder");
 
     const vulkan_backend::vulkan_submit_batch_plan_result submit_plan =
         vulkan_backend::build_vulkan_submit_batch_plan(
             recording,
             make_ready_submit_readiness(),
-            native_functions);
+            native_functions,
+            sdk_capabilities);
     require(submit_plan.completed(), "ready native symbols allow submit batch planning");
     require(submit_plan.native_function_table_checked, "submit plan stores checked native table");
     require(submit_plan.native_queue_submit_ready, "submit plan stores ready native queue submit");
+    require(submit_plan.sdk_adapter_ready, "submit plan stores ready SDK adapter");
 
     const vulkan_backend::vulkan_present_completion_plan_result present_plan =
         vulkan_backend::build_vulkan_present_completion_plan(
             submit_plan,
             vulkan_backend::vulkan_queue_submit_present_result{},
-            native_functions);
+            native_functions,
+            sdk_capabilities);
     require(present_plan.completed(), "ready native symbols allow present completion planning");
     require(present_plan.native_function_table_checked, "present plan stores checked native table");
     require(present_plan.native_queue_present_ready, "present plan stores ready native queue present");
+    require(present_plan.sdk_adapter_ready, "present plan stores ready SDK adapter");
 }
 
 } // namespace
@@ -358,9 +566,13 @@ int main()
 {
     test_native_readiness_status_names_are_stable();
     test_native_entrypoint_readiness_snapshots_are_stage_specific();
+    test_sdk_capability_threads_into_native_entrypoint_readiness();
     test_native_command_recording_symbols_gate_fake_recorder();
+    test_sdk_missing_gates_command_recording_before_fake_recorder();
     test_native_queue_submit_symbols_gate_submit_batch_planning();
+    test_sdk_version_mismatch_gates_submit_batch_planning();
     test_native_queue_present_symbols_gate_present_completion_planning();
+    test_sdk_function_table_block_threads_into_present_completion_planning();
     test_ready_native_symbols_preserve_fake_planning_paths();
     return 0;
 }

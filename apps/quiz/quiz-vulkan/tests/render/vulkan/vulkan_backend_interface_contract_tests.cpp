@@ -511,12 +511,32 @@ static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_sdk_adapter_fallback_status::native_function_table_unavailable),
     render::vulkan_backend::vulkan_sdk_adapter_fallback_status>);
 
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_sdk_native_path_status::not_checked),
+    render::vulkan_backend::vulkan_sdk_native_path_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_sdk_native_path_status::ready),
+    render::vulkan_backend::vulkan_sdk_native_path_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_sdk_native_path_status::sdk_missing),
+    render::vulkan_backend::vulkan_sdk_native_path_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_sdk_native_path_status::version_mismatch),
+    render::vulkan_backend::vulkan_sdk_native_path_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_sdk_native_path_status::extension_missing),
+    render::vulkan_backend::vulkan_sdk_native_path_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_sdk_native_path_status::function_table_blocked),
+    render::vulkan_backend::vulkan_sdk_native_path_status>);
+
 static_assert(requires(
     render::vulkan_backend::vulkan_native_entrypoint_stage stage,
     render::vulkan_backend::vulkan_native_function_table_status status,
     render::vulkan_backend::vulkan_sdk_header_probe_status sdk_header_status,
     render::vulkan_backend::vulkan_sdk_capability_status sdk_capability_status,
-    render::vulkan_backend::vulkan_sdk_adapter_fallback_status sdk_fallback_status) {
+    render::vulkan_backend::vulkan_sdk_adapter_fallback_status sdk_fallback_status,
+    render::vulkan_backend::vulkan_sdk_native_path_status sdk_native_path_status) {
     { render::vulkan_backend::native_entrypoint_stage_name(stage) }
         -> std::same_as<std::string_view>;
     { render::vulkan_backend::native_function_table_status_name(status) }
@@ -526,6 +546,8 @@ static_assert(requires(
     { render::vulkan_backend::sdk_capability_status_name(sdk_capability_status) }
         -> std::same_as<std::string_view>;
     { render::vulkan_backend::sdk_adapter_fallback_status_name(sdk_fallback_status) }
+        -> std::same_as<std::string_view>;
+    { render::vulkan_backend::sdk_native_path_status_name(sdk_native_path_status) }
         -> std::same_as<std::string_view>;
 });
 
@@ -809,6 +831,8 @@ static_assert(requires(render::vulkan_backend::vulkan_sdk_capability_result resu
     { result.available_required_extension_count } -> std::same_as<std::size_t&>;
     { result.missing_required_extension } -> std::same_as<std::string&>;
     { result.diagnostic } -> std::same_as<std::string&>;
+    { result.native_path_status() }
+        -> std::same_as<render::vulkan_backend::vulkan_sdk_native_path_status>;
     { result.adapter_ready() } -> std::same_as<bool>;
     { result.blocked() } -> std::same_as<bool>;
 });
@@ -827,6 +851,36 @@ static_assert(requires(
         request) } -> std::same_as<render::vulkan_backend::vulkan_sdk_capability_result>;
 });
 
+static_assert(requires(render::vulkan_backend::vulkan_sdk_native_path_readiness readiness) {
+    { readiness.checked } -> std::same_as<bool&>;
+    { readiness.status } -> std::same_as<render::vulkan_backend::vulkan_sdk_native_path_status&>;
+    { readiness.sdk_capability_checked } -> std::same_as<bool&>;
+    { readiness.sdk_adapter_ready } -> std::same_as<bool&>;
+    { readiness.sdk_capability_status }
+        -> std::same_as<render::vulkan_backend::vulkan_sdk_capability_status&>;
+    { readiness.sdk_adapter_fallback_status }
+        -> std::same_as<render::vulkan_backend::vulkan_sdk_adapter_fallback_status&>;
+    { readiness.headers_available } -> std::same_as<bool&>;
+    { readiness.api_version_compatible } -> std::same_as<bool&>;
+    { readiness.required_extensions_ready } -> std::same_as<bool&>;
+    { readiness.native_function_table_required } -> std::same_as<bool&>;
+    { readiness.native_function_table_ready } -> std::same_as<bool&>;
+    { readiness.native_function_table_status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_table_status&>;
+    { readiness.missing_required_extension } -> std::same_as<std::string&>;
+    { readiness.missing_native_symbol_name } -> std::same_as<std::string&>;
+    { readiness.diagnostic } -> std::same_as<std::string&>;
+    { readiness.ready() } -> std::same_as<bool>;
+    { readiness.blocked() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_sdk_capability_result result) {
+    { render::vulkan_backend::sdk_native_path_status_for(result) }
+        -> std::same_as<render::vulkan_backend::vulkan_sdk_native_path_status>;
+    { render::vulkan_backend::summarize_vulkan_sdk_native_path_readiness(result) }
+        -> std::same_as<render::vulkan_backend::vulkan_sdk_native_path_readiness>;
+});
+
 static_assert(requires(
     render::vulkan_backend::vulkan_native_entrypoint_readiness_snapshot snapshot) {
     { snapshot.function_table_checked } -> std::same_as<bool&>;
@@ -835,27 +889,48 @@ static_assert(requires(
         -> std::same_as<render::vulkan_backend::vulkan_native_function_table_status&>;
     { snapshot.missing_symbol_name } -> std::same_as<std::string&>;
     { snapshot.diagnostic } -> std::same_as<std::string&>;
+    { snapshot.sdk_native_path }
+        -> std::same_as<render::vulkan_backend::vulkan_sdk_native_path_readiness&>;
     { snapshot.blocks_fake_execution() } -> std::same_as<bool>;
+    { snapshot.native_path_ready() } -> std::same_as<bool>;
 });
 
 static_assert(requires(
     render::vulkan_backend::vulkan_native_function_table_diagnostics diagnostics,
-    render::vulkan_backend::vulkan_native_entrypoint_stage stage) {
+    render::vulkan_backend::vulkan_native_entrypoint_stage stage,
+    render::vulkan_backend::vulkan_sdk_capability_result sdk_capabilities) {
     { render::vulkan_backend::native_entrypoint_ready_for_stage(diagnostics, stage) }
         -> std::same_as<bool>;
     { render::vulkan_backend::summarize_vulkan_native_entrypoint_readiness(
         diagnostics,
         stage) } -> std::same_as<
         render::vulkan_backend::vulkan_native_entrypoint_readiness_snapshot>;
+    { render::vulkan_backend::summarize_vulkan_native_entrypoint_readiness(
+        diagnostics,
+        stage,
+        sdk_capabilities) } -> std::same_as<
+        render::vulkan_backend::vulkan_native_entrypoint_readiness_snapshot>;
     { render::vulkan_backend::summarize_vulkan_command_buffer_recording_native_readiness(
         diagnostics) } -> std::same_as<
+        render::vulkan_backend::vulkan_native_entrypoint_readiness_snapshot>;
+    { render::vulkan_backend::summarize_vulkan_command_buffer_recording_native_readiness(
+        diagnostics,
+        sdk_capabilities) } -> std::same_as<
         render::vulkan_backend::vulkan_native_entrypoint_readiness_snapshot>;
     { render::vulkan_backend::summarize_vulkan_queue_submit_native_readiness(diagnostics) }
         -> std::same_as<
             render::vulkan_backend::vulkan_native_entrypoint_readiness_snapshot>;
+    { render::vulkan_backend::summarize_vulkan_queue_submit_native_readiness(
+        diagnostics,
+        sdk_capabilities) } -> std::same_as<
+        render::vulkan_backend::vulkan_native_entrypoint_readiness_snapshot>;
     { render::vulkan_backend::summarize_vulkan_queue_present_native_readiness(diagnostics) }
         -> std::same_as<
             render::vulkan_backend::vulkan_native_entrypoint_readiness_snapshot>;
+    { render::vulkan_backend::summarize_vulkan_queue_present_native_readiness(
+        diagnostics,
+        sdk_capabilities) } -> std::same_as<
+        render::vulkan_backend::vulkan_native_entrypoint_readiness_snapshot>;
 });
 
 static_assert(requires(render::vulkan_backend::vulkan_instance_handle handle) {
@@ -3983,6 +4058,15 @@ static_assert(requires(render::vulkan_backend::vulkan_command_buffer_record_resu
     { result.native_function_table_status }
         -> std::same_as<render::vulkan_backend::vulkan_native_function_table_status&>;
     { result.missing_native_symbol_name } -> std::same_as<std::string&>;
+    { result.sdk_native_path_checked } -> std::same_as<bool&>;
+    { result.sdk_adapter_ready } -> std::same_as<bool&>;
+    { result.sdk_native_path_status }
+        -> std::same_as<render::vulkan_backend::vulkan_sdk_native_path_status&>;
+    { result.sdk_capability_status }
+        -> std::same_as<render::vulkan_backend::vulkan_sdk_capability_status&>;
+    { result.sdk_adapter_fallback_status }
+        -> std::same_as<render::vulkan_backend::vulkan_sdk_adapter_fallback_status&>;
+    { result.sdk_diagnostic } -> std::same_as<std::string&>;
     { result.begin_attempted } -> std::same_as<bool&>;
     { result.begin_completed } -> std::same_as<bool&>;
     { result.end_attempted } -> std::same_as<bool&>;
@@ -4040,12 +4124,20 @@ static_assert(requires(
     render::vulkan_backend::vulkan_command_buffer_operation_recorder_interface& recorder,
     render::vulkan_backend::vulkan_command_buffer_id command_buffer,
     render::vulkan_backend::vulkan_command_recorder_operation_plan operation_plan,
-    render::vulkan_backend::vulkan_native_function_table_diagnostics native_functions) {
+    render::vulkan_backend::vulkan_native_function_table_diagnostics native_functions,
+    render::vulkan_backend::vulkan_sdk_capability_result sdk_capabilities) {
     { render::vulkan_backend::record_vulkan_command_buffer_operations(
         recorder,
         command_buffer,
         operation_plan,
         native_functions) }
+        -> std::same_as<render::vulkan_backend::vulkan_command_buffer_record_result>;
+    { render::vulkan_backend::record_vulkan_command_buffer_operations(
+        recorder,
+        command_buffer,
+        operation_plan,
+        native_functions,
+        sdk_capabilities) }
         -> std::same_as<render::vulkan_backend::vulkan_command_buffer_record_result>;
 });
 
@@ -4208,6 +4300,15 @@ static_assert(requires(render::vulkan_backend::vulkan_submit_batch_plan_result p
     { plan.native_function_table_status }
         -> std::same_as<render::vulkan_backend::vulkan_native_function_table_status&>;
     { plan.missing_native_symbol_name } -> std::same_as<std::string&>;
+    { plan.sdk_native_path_checked } -> std::same_as<bool&>;
+    { plan.sdk_adapter_ready } -> std::same_as<bool&>;
+    { plan.sdk_native_path_status }
+        -> std::same_as<render::vulkan_backend::vulkan_sdk_native_path_status&>;
+    { plan.sdk_capability_status }
+        -> std::same_as<render::vulkan_backend::vulkan_sdk_capability_status&>;
+    { plan.sdk_adapter_fallback_status }
+        -> std::same_as<render::vulkan_backend::vulkan_sdk_adapter_fallback_status&>;
+    { plan.sdk_diagnostic } -> std::same_as<std::string&>;
     { plan.command_submit_readiness_checked } -> std::same_as<bool&>;
     { plan.command_submit_readiness_ready } -> std::same_as<bool&>;
     { plan.command_buffer_available } -> std::same_as<bool&>;
@@ -4278,6 +4379,15 @@ static_assert(requires(render::vulkan_backend::vulkan_present_completion_plan_re
     { plan.native_function_table_status }
         -> std::same_as<render::vulkan_backend::vulkan_native_function_table_status&>;
     { plan.missing_native_symbol_name } -> std::same_as<std::string&>;
+    { plan.sdk_native_path_checked } -> std::same_as<bool&>;
+    { plan.sdk_adapter_ready } -> std::same_as<bool&>;
+    { plan.sdk_native_path_status }
+        -> std::same_as<render::vulkan_backend::vulkan_sdk_native_path_status&>;
+    { plan.sdk_capability_status }
+        -> std::same_as<render::vulkan_backend::vulkan_sdk_capability_status&>;
+    { plan.sdk_adapter_fallback_status }
+        -> std::same_as<render::vulkan_backend::vulkan_sdk_adapter_fallback_status&>;
+    { plan.sdk_diagnostic } -> std::same_as<std::string&>;
     { plan.queue_present_adapter_checked } -> std::same_as<bool&>;
     { plan.queue_present_adapter_ready } -> std::same_as<bool&>;
     { plan.present_request_ready } -> std::same_as<bool&>;
@@ -4375,6 +4485,22 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_frame_pipeline_han
     { handoff.command_buffer_recording_checked } -> std::same_as<bool&>;
     { handoff.command_buffer_recording_completed } -> std::same_as<bool&>;
     { handoff.command_buffer_ready_for_submit } -> std::same_as<bool&>;
+    { handoff.native_function_table_checked } -> std::same_as<bool&>;
+    { handoff.native_command_buffer_recording_ready } -> std::same_as<bool&>;
+    { handoff.native_queue_submit_ready } -> std::same_as<bool&>;
+    { handoff.native_queue_present_ready } -> std::same_as<bool&>;
+    { handoff.native_function_table_status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_table_status&>;
+    { handoff.missing_native_symbol_name } -> std::same_as<std::string&>;
+    { handoff.sdk_native_path_checked } -> std::same_as<bool&>;
+    { handoff.sdk_adapter_ready } -> std::same_as<bool&>;
+    { handoff.sdk_native_path_status }
+        -> std::same_as<render::vulkan_backend::vulkan_sdk_native_path_status&>;
+    { handoff.sdk_capability_status }
+        -> std::same_as<render::vulkan_backend::vulkan_sdk_capability_status&>;
+    { handoff.sdk_adapter_fallback_status }
+        -> std::same_as<render::vulkan_backend::vulkan_sdk_adapter_fallback_status&>;
+    { handoff.sdk_diagnostic } -> std::same_as<std::string&>;
     { handoff.submit_batch_planning_checked } -> std::same_as<bool&>;
     { handoff.submit_batch_planning_completed } -> std::same_as<bool&>;
     { handoff.submit_batch_ready_for_queue } -> std::same_as<bool&>;
@@ -4433,6 +4559,8 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_frame_result resul
         -> std::same_as<render::vulkan_backend::vulkan_submit_batch_plan_result&>;
     { result.present_completion_plan }
         -> std::same_as<render::vulkan_backend::vulkan_present_completion_plan_result&>;
+    { result.sdk_capabilities }
+        -> std::same_as<render::vulkan_backend::vulkan_sdk_capability_result&>;
     { result.command_recorder } -> std::same_as<render::vulkan_backend::vulkan_backend_command_recorder_state&>;
     { result.command_submit }
         -> std::same_as<render::vulkan_backend::vulkan_command_submit_readiness_result&>;
@@ -4466,7 +4594,8 @@ static_assert(requires(
     render::vulkan_backend::vulkan_pipeline_cache_interface& pipeline_cache,
     render::vulkan_backend::vulkan_command_recorder_interface& command_recorder,
     const render::render_draw_list& draw_list,
-    render::render_rect viewport) {
+    render::render_rect viewport,
+    render::vulkan_backend::vulkan_sdk_capability_result sdk_capabilities) {
     { render::vulkan_backend::submit_vulkan_backend_frame(device, draw_list, viewport) }
         -> std::same_as<render::vulkan_backend::vulkan_backend_frame_result>;
     { render::vulkan_backend::submit_vulkan_backend_frame(device, command_recorder, draw_list, viewport) }
@@ -4498,6 +4627,13 @@ static_assert(requires(
         render::vulkan_backend::vulkan_command_recorder_operation_plan{},
         render::vulkan_backend::vulkan_native_function_table_diagnostics{}) }
         -> std::same_as<render::vulkan_backend::vulkan_command_buffer_record_result>;
+    { render::vulkan_backend::record_vulkan_command_buffer_operations(
+        *static_cast<render::vulkan_backend::vulkan_command_buffer_operation_recorder_interface*>(nullptr),
+        render::vulkan_backend::vulkan_command_buffer_id{},
+        render::vulkan_backend::vulkan_command_recorder_operation_plan{},
+        render::vulkan_backend::vulkan_native_function_table_diagnostics{},
+        sdk_capabilities) }
+        -> std::same_as<render::vulkan_backend::vulkan_command_buffer_record_result>;
     { render::vulkan_backend::build_vulkan_submit_batch_plan(
         render::vulkan_backend::vulkan_command_buffer_record_result{},
         render::vulkan_backend::vulkan_command_submit_readiness_result{}) }
@@ -4506,6 +4642,12 @@ static_assert(requires(
         render::vulkan_backend::vulkan_command_buffer_record_result{},
         render::vulkan_backend::vulkan_command_submit_readiness_result{},
         render::vulkan_backend::vulkan_native_function_table_diagnostics{}) }
+        -> std::same_as<render::vulkan_backend::vulkan_submit_batch_plan_result>;
+    { render::vulkan_backend::build_vulkan_submit_batch_plan(
+        render::vulkan_backend::vulkan_command_buffer_record_result{},
+        render::vulkan_backend::vulkan_command_submit_readiness_result{},
+        render::vulkan_backend::vulkan_native_function_table_diagnostics{},
+        sdk_capabilities) }
         -> std::same_as<render::vulkan_backend::vulkan_submit_batch_plan_result>;
     { render::vulkan_backend::build_vulkan_present_completion_plan(
         render::vulkan_backend::vulkan_submit_batch_plan_result{},
@@ -4516,16 +4658,26 @@ static_assert(requires(
         render::vulkan_backend::vulkan_queue_submit_present_result{},
         render::vulkan_backend::vulkan_native_function_table_diagnostics{}) }
         -> std::same_as<render::vulkan_backend::vulkan_present_completion_plan_result>;
+    { render::vulkan_backend::build_vulkan_present_completion_plan(
+        render::vulkan_backend::vulkan_submit_batch_plan_result{},
+        render::vulkan_backend::vulkan_queue_submit_present_result{},
+        render::vulkan_backend::vulkan_native_function_table_diagnostics{},
+        sdk_capabilities) }
+        -> std::same_as<render::vulkan_backend::vulkan_present_completion_plan_result>;
 });
 
 static_assert(requires(
     render::vulkan_backend::vulkan_backend_frame_result frame,
-    render::vulkan_backend::vulkan_queue_submit_present_result queue_submit) {
+    render::vulkan_backend::vulkan_queue_submit_present_result queue_submit,
+    render::vulkan_backend::vulkan_sdk_capability_result sdk_capabilities) {
     { render::vulkan_backend::summarize_vulkan_queue_submit_adapter_result(queue_submit) }
         -> std::same_as<render::vulkan_backend::vulkan_backend_queue_submit_adapter_summary>;
     { render::vulkan_backend::apply_vulkan_queue_submit_adapter_result_to_frame(
         frame,
         queue_submit) } -> std::same_as<render::vulkan_backend::vulkan_backend_frame_result>;
+    { render::vulkan_backend::apply_vulkan_sdk_capability_result_to_frame(
+        frame,
+        sdk_capabilities) } -> std::same_as<render::vulkan_backend::vulkan_backend_frame_result>;
     { render::vulkan_backend::summarize_vulkan_frame_pipeline_handoff(frame) }
         -> std::same_as<render::vulkan_backend::vulkan_backend_frame_pipeline_handoff>;
 });

@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: Vulkan swapchain recreate policy diagnostics integrated; Windows MinGW focused Vulkan CTest 4/4 and interface compile target build confirmed.
+- `2dd9601`: acquire/present out-of-date, suboptimal, timeout, and fatal paths are classified into keep-rendering, recreate-now, recreate-after-frame, skip-submit, or fatal policy decisions.
 - current: font backend probe diff and external decoder selection diff diagnostics integrated; Windows MinGW focused text/image CTest 7/7 and interface compile target build confirmed.
 - `9a5af92`: image pipeline snapshots can compare internal decoder, adapter-ready, missing dependency, version mismatch, placeholder, and fallback transitions without real `stb_image` coupling.
 - `cb0b2c1`: text layout/backend snapshots can compare fake-only, adapter-ready, unavailable, mismatch, and fallback font backend probe transitions without linking external font libraries.

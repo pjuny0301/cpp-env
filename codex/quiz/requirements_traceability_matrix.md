@@ -6,6 +6,9 @@
 
 최근 baseline 통합 증거:
 
+- current: font backend probe diff and external decoder selection diff diagnostics integrated; Windows MinGW focused text/image CTest 7/7 and interface compile target build confirmed.
+- `9a5af92`: image pipeline snapshots can compare internal decoder, adapter-ready, missing dependency, version mismatch, placeholder, and fallback transitions without real `stb_image` coupling.
+- `cb0b2c1`: text layout/backend snapshots can compare fake-only, adapter-ready, unavailable, mismatch, and fallback font backend probe transitions without linking external font libraries.
 - current: normalized input replay diagnostics now include text input presentation snapshots; Windows MinGW focused normalized input replay CTest 1/1 and interface compile target build confirmed.
 - `ff7a822`: replay fixtures expose focus/target/display text/caret/selection/preedit/submit read-model state and diff evidence without UI/app/domain coupling.
 - current: Vulkan SDK readiness threading을 통합하고 Windows MinGW focused Vulkan CTest 5/5 및 interface compile target build 확인.

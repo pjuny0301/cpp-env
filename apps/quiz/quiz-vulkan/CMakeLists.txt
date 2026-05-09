@@ -138,6 +138,7 @@ target_sources(
             src/render/image/image_texture_cache.h
             src/render/image/image_texture_cache_snapshot.h
             src/render/image/image_texture_diagnostics.h
+            src/render/image/image_texture_frame_snapshot.h
             src/render/image/image_texture_pipeline.h
             src/render/image/image_texture_placeholder_policy.h
             src/render/image/image_texture_upload.h
@@ -150,8 +151,12 @@ target_sources(
             src/render/image/png_image_unfilter_boundary.h
             src/render/image/png_image_zlib_inflater.h
             src/render/image/standard_image_decoder_chain.h
+            src/render/image/third_party_image_decoder_adapter.h
             src/render/render_draw_list.h
+            src/render/text/font_backend_adapter.h
             src/render/text/font_backend_capabilities.h
+            src/render/text/font_backend_dependency.h
+            src/render/text/font_backend_selection.h
             src/render/text/font_coverage_run_segmentation.h
             src/render/text/font_cmap_inspector.h
             src/render/text/font_glyph_atlas.h
@@ -165,6 +170,8 @@ target_sources(
             src/render/text/font_source_resolver.h
             src/render/text/font_unicode_coverage.h
             src/render/text/glyph_run.h
+            src/render/text/text_frame_draw_plan.h
+            src/render/text/text_frame_snapshot.h
             src/render/text/text_engine.h
             src/render/text/utf8_line_break.h
             src/render/text/utf8_text_run.h
@@ -200,8 +207,12 @@ target_sources(
             src/core/input/gesture_recognizer.h
             src/core/input/input_engine.h
             src/core/input/input_event.h
+            src/core/input/input_routing_diagnostics.h
+            src/core/input/normalized_input_replay.h
+            src/core/input/normalized_input_replay_diff.h
             src/core/input/platform_input_engine_adapter.h
             src/core/input/platform_input_translator.h
+            src/core/input/text_input_presentation.h
             src/core/input/text_input_model.h
             src/core/input/text_input_types.h
 )
@@ -326,11 +337,15 @@ target_sources(
             src/render/vulkan/vulkan_backend_command_submit.h
             src/render/vulkan/vulkan_backend_device.h
             src/render/vulkan/vulkan_backend_frame_lifecycle.h
+            src/render/vulkan/vulkan_backend_graphics_pipeline.h
             src/render/vulkan/vulkan_backend_instance.h
             src/render/vulkan/vulkan_backend_loader.h
+            src/render/vulkan/vulkan_backend_native_readiness.h
+            src/render/vulkan/vulkan_backend_native_symbols.h
             src/render/vulkan/vulkan_backend_pipeline_layout.h
             src/render/vulkan/vulkan_backend_queue_submit.h
             src/render/vulkan/vulkan_backend_render_pass.h
+            src/render/vulkan/vulkan_backend_sdk.h
             src/render/vulkan/vulkan_backend_shader_module.h
             src/render/vulkan/vulkan_backend_swapchain.h
             src/render/vulkan/vulkan_frame_plan.h

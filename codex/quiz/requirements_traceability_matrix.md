@@ -1,11 +1,144 @@
 # Quiz 요구사항 추적 매트릭스
 
-마지막 갱신: 2026-05-07
+마지막 갱신: 2026-05-09
 
 이 문서는 요구사항 번호를 실행 순서가 아니라 추적 ID로 관리한다. 실제 구현 순서는 `big_plan.md`의 의존관계 기반 단계가 기준이며, 각 행은 루트 구현 문서, 하위 프로젝트 문서, 현재 C++/문서 증거를 연결한다.
 
 최근 baseline 통합 증거:
 
+- current: font backend probe diff and external decoder selection diff diagnostics integrated; Windows MinGW focused text/image CTest 7/7 and interface compile target build confirmed.
+- `9a5af92`: image pipeline snapshots can compare internal decoder, adapter-ready, missing dependency, version mismatch, placeholder, and fallback transitions without real `stb_image` coupling.
+- `cb0b2c1`: text layout/backend snapshots can compare fake-only, adapter-ready, unavailable, mismatch, and fallback font backend probe transitions without linking external font libraries.
+- current: normalized input replay diagnostics now include text input presentation snapshots; Windows MinGW focused normalized input replay CTest 1/1 and interface compile target build confirmed.
+- `ff7a822`: replay fixtures expose focus/target/display text/caret/selection/preedit/submit read-model state and diff evidence without UI/app/domain coupling.
+- current: Vulkan SDK readiness threading을 통합하고 Windows MinGW focused Vulkan CTest 5/5 및 interface compile target build 확인.
+- `5597b54`: SDK capability 상태를 native function-table, command recording, submit, present, frame handoff summaries에 연결.
+- current: stb/external image decoder selection diagnostics를 image decoder chain/texture pipeline snapshots에 연결하고 Windows MinGW focused image CTest 5/5 및 interface compile target build 확인.
+- `dd3d5ca`: texture request별 internal decoder/adapter-ready/fallback state를 image pipeline diagnostics에 노출.
+- current: text input presentation diff helpers를 통합하고 Windows MinGW focused input keyboard/text CTest 1/1 및 interface compile target build 확인.
+- `d786fa8`: text input presentation snapshot diff helper를 추가해 UI/app/domain coupling 없이 input read-model 변화량을 비교.
+- current: external font backend probe diagnostics를 fake text engine layout diagnostics에 연결하고 Windows MinGW focused text CTest 3/3 및 interface compile target build 확인.
+- `4bfecb0`: fake text layout diagnostics가 fake-only/adapter-ready/external fallback 상태를 font backend dependency probe 결과로 보고하도록 보강.
+- current: text input presentation snapshot과 Vulkan SDK capability boundary를 통합하고 public FILE_SET 등록, Windows MinGW focused input/Vulkan CTest 4/4 및 interface compile target build 확인.
+- `0c044e5`: future native Vulkan backend wiring을 위한 SDK/header/API version/function readiness capability boundary를 추가.
+- `47763c0`: input-owned text input presentation snapshot을 추가해 focus/caret/selection/preedit/submit read model을 UI/app/domain coupling 없이 제공.
+- current: external font backend dependency probe와 stb image adapter selection diagnostics를 통합하고 public render FILE_SET 등록, Windows MinGW focused text/image CTest 3/3 및 interface compile target build 확인.
+- `4bfc2ee`: future `stb_image` routing을 위한 external image decoder capability/selection diagnostics를 추가.
+- `6b2507f`: future FreeType/HarfBuzz/utf8proc wiring을 위한 external font backend dependency/capability probe를 추가.
+- current: Vulkan swapchain image acquire planning diagnostics를 통합하고 Windows MinGW focused Vulkan CTest 3/3 및 interface compile target build 확인.
+- `93b294d`: swapchain/frame lifecycle 뒤, command recording 앞의 acquire readiness plan/result/status를 추가해 future `vkAcquireNextImageKHR` gate를 data-only로 추적.
+- current: input routing diagnostics diff helpers를 통합하고 Windows MinGW focused input gesture diagnostics CTest 1/1 및 interface compile target build 확인.
+- `9696ac1`: input routing diagnostics diff helpers를 추가해 normalized event/action route/pointer capture/keyboard/text/focus/IME deltas를 app/domain semantics 없이 비교.
+- current: text/image frame plan diff diagnostics를 통합하고 Windows MinGW focused text/image CTest 2/2 및 interface compile target build 확인.
+- `9e20085`: image binding plan diff diagnostics를 추가해 texture binding packet readiness/placeholder/sampler/residency/cache-key delta를 비교.
+- `53336e4`: text frame draw plan diff diagnostics를 추가해 glyph packet readiness/fallback/page/style/run delta를 비교.
+- current: input routing diagnostics header split과 Vulkan native readiness helper split을 통합하고 public FILE_SET 등록, Windows MinGW focused input/Vulkan CTest 17/17 및 interface compile target build 확인.
+- `73755f8`: input route diagnostics를 별도 public input header로 분리해 `input_engine.h` 토큰 부담을 줄임.
+- `7dbfb76`: Vulkan native readiness threading helper를 별도 public renderer header로 분리해 backend adapter surface를 축소.
+- current: image frame binding plan diagnostics를 통합하고 Windows MinGW focused image texture pipeline CTest 1/1 및 interface compile target build 확인.
+- `cc58697`: image texture frame snapshot을 renderer-facing texture binding packet readiness와 frame delta data로 변환하는 data-only binding plan diagnostics를 추가.
+- current: text frame draw plan diagnostics를 통합하고 public render FILE_SET 등록, Windows MinGW focused atlas-update CTest 1/1 및 interface compile target build 확인.
+- `db49c0d`: text frame snapshot과 atlas/page/update metadata를 renderer-facing glyph packet readiness data로 변환하는 data-only draw plan diagnostics를 추가.
+- current: scene core architecture boundary를 강화하고 Windows MinGW architecture boundary CTest 1/1 통과 확인.
+- current: normalized input replay diff header split을 통합하고 public input FILE_SET 등록, Windows MinGW focused replay CTest 1/1 및 interface compile target build 확인.
+- `345e768`: normalized input replay diff diagnostics를 별도 public input header로 분리해 `normalized_input_replay.h` 토큰 부담을 줄임.
+- current: text frame snapshot header split을 통합하고 Windows MinGW focused text CTest 3/3 및 interface compile target build 확인.
+- `11dec3e`: 새 public `text_frame_snapshot.h`를 render contract FILE_SET에 등록.
+- `7644763`: text frame snapshot/diff diagnostics를 별도 public text header로 분리해 `font_shaped_atlas_update.h` 토큰 부담을 줄임.
+- current: image frame snapshot header split과 Vulkan native readiness threading을 통합하고 Windows MinGW focused image/Vulkan CTest 9/9 및 `ctest -N` 90개 확인.
+- `95f24d9`: 새 public `image_texture_frame_snapshot.h`를 render contract FILE_SET에 등록.
+- `c656cfb`: Vulkan backend native function-table readiness를 command recording, submit, present, renderer summary diagnostics에 data-only로 연결.
+- `ef48ce4`: image texture frame snapshot/diff diagnostics를 별도 public image header로 분리해 `image_texture_pipeline.h` 토큰 부담을 줄임.
+- current: normalized input replay diff diagnostics를 통합하고 Windows MinGW focused normalized input CTest 1/1 및 interface compile target build 확인.
+- `f4b32aa`: input core에 replay-to-replay diff diagnostics를 추가해 focus/caret/selection/text/preedit, pointer capture, gesture/IME timeline, keyboard count delta를 semantic-free로 비교.
+- current: Windows MinGW full CTest 89/89 통과로 app input lifecycle, held gesture routing, text/image frame snapshot diff 누적 기준선 갱신.
+- current: text/image frame snapshot diff diagnostics를 통합하고 Windows MinGW focused text/image CTest 5/5 및 interface compile target build 확인.
+- `155398b`: image engine에 public texture frame snapshot diff diagnostics를 추가해 handle/cache/sampler/placeholder/residency/request delta를 비교.
+- `56f201b`: text engine에 public frame snapshot diff diagnostics를 추가해 readiness/fallback/layout/upload/queued-consumed ID delta를 비교.
+- current: held pointer update-time routing을 app loop에 연결하고 Windows MinGW app smoke CTest 2/2 및 app/interface build 확인.
+- `e340728`: app loop가 `input_engine.update_time()`에서 나온 long-press 등 held gesture 이벤트를 기존 app input router로 dispatch하도록 보강.
+- current: platform shell pointer lifecycle/wheel/key/focus bridge를 통합하고 Windows MinGW app input CTest 1/1 및 interface compile target build 확인.
+- `23cefb6`: app/platform 경계가 legacy synthetic tap 외에 pointer down/move/up/cancel, wheel, key, focus 이벤트를 raw input engine 경로로 넘기도록 보강.
+- current: text frame snapshot diagnostics를 통합하고 Windows MinGW focused text CTest 3/3 확인.
+- `90e3f43`: text engine에 request batch, fallback-chain, atlas materialization, upload bridge IDs, consumed atlas update IDs를 묶는 renderer-agnostic frame snapshot diagnostics를 추가.
+- current: Vulkan native function table diagnostics를 통합하고 CMake public FILE_SET 등록, Windows MinGW focused Vulkan CTest 3/3 및 `ctest -N` 89개 확인.
+- `33f64bb`: Vulkan backend에 native function-table diagnostics와 fake/system symbol resolver를 추가해 command buffer recording, queue submit, queue present entrypoint availability를 opaque pointer availability로 추적.
+- current: Windows MinGW full CTest 88/88 통과로 text/image/input/Vulkan 누적 통합 기준선 갱신.
+- current: focus/caret replay timeline diagnostics와 image texture frame snapshot diagnostics를 통합하고 Windows MinGW focused input/image CTest 4/4 확인.
+- `004e70c`: image engine에 texture frame snapshot diagnostics를 추가해 batch plan/execution/residency/handle-map 결과를 immutable public renderer handoff view로 합성.
+- `09ea764`: normalized input replay에 focus/caret navigation timeline, text target transitions, caret/selection movement, final focus/caret state를 추가.
+- current: text atlas upload bridge consume diagnostics를 통합하고 Windows MinGW focused text CTest 2/2 확인.
+- `5c4d0d9`: fake text engine에 atlas upload bridge queued/consumed request ids를 연결해 layout_text/consume_atlas_updates 사이의 text-owned upload handoff를 검증.
+- current: image texture handle-map diagnostics를 통합하고 Windows MinGW focused image CTest 3/3 확인.
+- `6201935`: image engine에 texture handle-map diagnostics를 추가해 request index, uri/cache key, acquired texture id, placeholder flag, sampler policy, residency pressure를 renderer handoff용 public map으로 노출.
+- current: pointer replay timeline diagnostics를 통합하고 Windows MinGW focused input CTest 5/5 확인.
+- `ba8bc04`: normalized input replay에 pointer/touch gesture timeline, wheel deltas, pointer capture lifecycle, multipointer ids, final capture state를 추가.
+- current: text atlas upload request bridge를 통합하고 Windows MinGW focused text CTest 1/1 확인.
+- `2f60e89`: text engine에 atlas upload request bridge diagnostics를 추가해 text batch planning/materialization 결과를 stable request id와 `render_text_atlas_update`-style upload request로 연결.
+- current: Vulkan present-completion planning diagnostics를 통합하고 Windows MinGW focused Vulkan CTest 4/4 및 `ctest -N` 88개 확인.
+- `85dd390`: Vulkan backend에 present-completion plan/result diagnostics를 추가해 submit batch result, queue present readiness, frame completion status를 real `vkQueuePresentKHR` 호출 전 data-only로 추적.
+- current: text helper fallback-chain diagnostics와 image residency execution summary를 통합하고 Windows MinGW focused text/image CTest 4/4 확인.
+- `f61ffe2`: image batch execution diagnostics에 residency budget summary를 연결해 pipeline request success와 memory-budget pressure를 분리해 보고.
+- `ada6db8`: fake text helper paths(caret/selection)에 fallback-chain diagnostics를 확장해 layout_text 외 helper 호출에서도 mixed-script fallback metadata를 노출.
+- current: IME replay timeline diagnostics를 통합하고 Windows MinGW focused input CTest 3/3 확인.
+- `4afdd42`: normalized input replay에 IME composition timeline, preedit validity, caret/selection snapshots, stale-preedit clearing, final committed text state를 추가.
+- current: fallback-chain layout diagnostics와 image texture residency budget diagnostics를 통합하고 Windows MinGW focused text/image CTest 3/3 확인.
+- `67d0552`: image engine에 texture residency/budget planner를 추가해 visible/pinned/preload/eviction/retry candidates와 RGBA8-estimated budget pressure를 public batch execution data로 추적.
+- `7004837`: fake text engine layout diagnostics에 fallback-chain snapshots를 연결해 backend selection, glyph-id, atlas materialization, line-layout diagnostics와 같은 layout_text 경로에서 mixed-script fallback을 확인.
+- current: keyboard replay diagnostics summaries를 통합하고 Windows MinGW focused input CTest 3/3 확인.
+- `e50a2b0`: input replay diagnostics에 shortcut intent counts, modifier/repeat policy, final text/focus/preedit state summaries를 연결해 replayed key sequence를 app/domain action 없이 검증.
+- current: Vulkan submit-batch planning diagnostics를 통합하고 Windows MinGW focused Vulkan CTest 5/5 및 `ctest -N` 87개 확인.
+- `6bd7973`: Vulkan backend에 submit-batch plan/result diagnostics를 추가해 recorded command buffers, wait/signal/present intent, queue submit/present prerequisites를 real queue submission 전 data-only로 추적.
+- current: image texture batch execution diagnostics와 keyboard shortcut route diagnostics를 통합하고 Windows MinGW focused image/input CTest 13/13 확인.
+- `7f3710b`: input core에 semantic-free keyboard shortcut/chord route diagnostics를 추가해 modifier/repeat policy, Tab/Enter/Escape/arrow/backspace/delete intent를 app/domain action 없이 추적.
+- `85f4b86`: image engine에 image texture batch execution diagnostics를 추가해 batch plan을 pipeline interface로 실행하고 per-request status, cache reuse, placeholder fallback, aggregate success/failure counts를 추적.
+- current: font fallback chain planning diagnostics를 통합하고 Windows MinGW focused text CTest 1/1 확인.
+- `fb8e404`: text engine에 mixed-script font fallback chain planner를 추가해 per-run fallback face order, missing glyph summary, selected coverage/font metadata를 shaping 전 data-only로 추적.
+- current: image texture batch planning diagnostics를 통합하고 Windows MinGW focused image CTest 2/2 확인.
+- `38466be`: image engine에 image texture batch planning diagnostics를 추가해 render image refs, normalized texture/sampler keys, source/texture dedupe, placeholder fallback intent, invalid request reasons를 cache/uploader 내부 노출 없이 추적.
+- current: Vulkan command-buffer recording diagnostics를 통합하고 Windows MinGW focused Vulkan CTest 5/5 및 `ctest -N` 86개 확인.
+- `9c8e7ed`: Vulkan backend에 command-buffer recording result/event diagnostics를 추가해 approved recorder operation이 submit/present 전 data-only command-buffer record 상태로 추적되도록 보강.
+- current: text request batch planning diagnostics를 통합하고 Windows MinGW focused text CTest 3/3 확인.
+- `94569e6`: text engine에 text request batch planning diagnostics를 추가해 layout/text request, normalized font/style keys, glyph atlas materialization dedupe, planned update summaries를 renderer upload 전 data-only로 추적.
+- current: normalized input replay diagnostics를 통합하고 Windows MinGW focused input CTest 11/11 및 `ctest -N` 85개 확인.
+- `5335929`: input core에 normalized input replay recorder/replayer를 추가해 pointer/touch/wheel/text/IME fixture batch와 focus/preedit/pointer-capture end state를 app/domain/renderer 없이 검증.
+- current: Vulkan command recorder operation plan diagnostics를 통합하고 Windows MinGW focused Vulkan CTest 5/5 및 `ctest -N` 84개 확인.
+- `da544dc`: Vulkan backend에 command packet execution 뒤의 recorder operation plan/result/event diagnostics를 추가해 rect/text/image/debug packet을 real Vulkan 호출 전 data-only operation summary로 추적.
+- current: glyph atlas materialization diagnostics를 통합하고 Windows MinGW focused text CTest 2/2 확인.
+- `6ac0d43`: fake text engine diagnostics에 glyph atlas materialization request/summary를 추가해 shaped glyph/layout output과 backend selection metadata가 renderer/Vulkan upload 전 단계까지 추적되도록 보강.
+- current: image decoder capability manifest pipeline diagnostics를 통합하고 Windows MinGW focused image CTest 4/4 확인.
+- `6170c74`: image texture pipeline diagnostics에 decoder capability manifest, selected decoder, fallback reason, cache reuse, placeholder outcome을 연결해 image engine 내부에서 texture request 처리 경로를 추적 가능하게 보강.
+- current: Vulkan command packet execution diagnostics를 통합하고 Windows MinGW focused Vulkan CTest 4/4 및 `ctest -N` 83개 확인.
+- `1cbc4cf`: Vulkan backend에 command packet execution result/event diagnostics를 추가해 frame pipeline/resource binding/command recorder/packet bridge prerequisites가 충족될 때만 execution complete로 기록되도록 보강.
+- current: text backend selection diagnostics, image decoder capability manifest diagnostics, input diagnostic summary counts를 통합하고 Windows MinGW focused text/image/input CTest 9/9 확인.
+- `4f54fac`: input engine/platform adapter diagnostics에 normalized event kind counts, route kind counts, summary snapshots를 추가해 worker-owned input history를 app 밖에서 검증 가능하게 보강.
+- `9bd7bff`: standard/third-party image decoder path에 capability manifest diagnostics를 추가해 BMP/PPM/PNG/unsupported/fallback 후보 상태를 data-only로 추적.
+- `83e0e1d`: text fake layout diagnostics에 selected backend metadata를 연결해 FreeType/HarfBuzz/utf8proc 후보 선택 상태가 glyph/layout 출력까지 보존되는지 검증.
+- current: Vulkan command packet bridge를 통합하고 Windows MinGW focused Vulkan CTest 3/3 확인.
+- `81514a6`: Vulkan backend에 draw-list batch를 command packet diagnostics로 변환하는 bridge, packet category counts, pipeline/resource prerequisite fallback tests 추가.
+- current: input gesture/focus diagnostics와 optional decoder pipeline integration을 통합하고 Windows MinGW focused input CTest 6/6, focused image CTest 3/3 확인.
+- `77ecf32`: optional third-party image decoder adapter를 `image_texture_pipeline` 경계로 연결해 fake decoder upload/cache diagnostics, adapter failure fallback, unavailable adapter diagnostics tests 추가.
+- `5b080c8`: input engine에 wheel/touch cancel/focus traversal/pointer capture release-restart route diagnostics tests와 input-owned policy fields 추가.
+- current: Windows MinGW full CTest 81/81 통과로 Vulkan frame handoff 포함 baseline 기준선 갱신.
+- current: Vulkan frame pipeline handoff를 통합하고 Windows MinGW focused Vulkan CTest 5/5 및 `ctest -N` 81개 확인.
+- `2656970`: Vulkan backend adapter에 loader/instance/device/swapchain/render-pass/pipeline/resource-binding/command-recording/submit/present readiness를 묶는 frame pipeline handoff와 fallback diagnostics tests 추가.
+- current: font backend selection layer, optional third-party image decoder adapter, input IME/focus/caret hardening을 통합하고 Windows MinGW focused text/image/input/architecture CTest 8/8 및 `ctest -N` 80개 확인.
+- `bad1552`: input engine/text input model에 IME composition_start/restart diagnostics, focus/caret/selection stale-preedit clearing, invalid IME UTF-8 rejection tests 추가.
+- `c662239`: image engine에 optional third-party decoder adapter boundary, fake backend, standard decoder fallback, host-path/include guard tests 추가.
+- `45fec4e`: text engine에 FreeType/HarfBuzz/utf8proc 후보를 logical metadata와 capability/fallback selection으로 표현하는 font backend selection layer 추가.
+- `15d77ce`: app render frame report에 scene modifier error count/first error를 추가해 modifier stack failure가 조용히 사라지지 않도록 보강.
+- `0a721e2`: architecture boundary test에 host-specific source path와 direct `build/external/lib/cpp/desktop` reference 차단 규칙 추가.
+- `7505a63`: native desktop dependency manifest/README를 추적하고, FreeType/HarfBuzz/Vulkan/stb/miniaudio 등 다운로드된 대용량 source snapshots는 `build/external/lib/cpp/desktop/*/` ignore 규칙으로 Git 커밋 대상에서 분리.
+- current: fake text backend-adapter injection, Vulkan pipeline readiness summary, image manifest boundary hardening을 통합하고 Windows MinGW focused text/Vulkan/image CTest 13/13 및 `ctest -N` 79개 확인.
+- `96e5f31`: image manifest texture pipeline boundary tests를 강화해 manifest-owned snapshots와 include/dependency guard를 고정.
+- `ae37ddf`: Vulkan shader/layout/graphics pipeline readiness를 함께 볼 수 있는 pipeline readiness summary와 tests 추가.
+- `418f58c`: fake text engine에 optional font backend adapter injection path와 adapter outcome diagnostics tests 추가.
+- current: platform input boundary contract tests를 통합하고 Windows MinGW focused input CTest 10/10 및 `ctest -N` 78개 확인.
+- `e5042ec`: input translator/adapter path가 renderer picking, app actions, domain semantics를 노출하지 않는 boundary contract tests 추가.
+- current: real font backend adapter와 Vulkan graphics pipeline readiness headers를 CMake public FILE_SET에 등록하고 Windows MinGW focused text/Vulkan CTest 5/5 및 `ctest -N` 77개 확인.
+- `3b32db2`: Vulkan graphics pipeline readiness boundary, shader/layout prerequisite validation, vertex/raster/blend/depth state diagnostics tests 추가.
+- `0287ddb`: text engine에 HarfBuzz/FreeType/DirectWrite-style backend adapter boundary와 fake adapter diagnostics tests 추가.
+- current: Windows MinGW full CTest 76/76 통과. 현재 `ctest -N` 76개 확인.
 - current: platform input engine adapter header를 CMake public FILE_SET에 등록하고 image manifest diagnostics와 함께 Windows MinGW focused input/image CTest 13/13 및 `ctest -N` 76개 확인.
 - `f879a62`: image manifest texture pipeline에 source resolution, normalized key, cache/revision, placeholder, decode/upload status diagnostics 추가.
 - `3db2baf`: translated platform input을 input_engine/gesture/text handling에 공급하는 input-only adapter와 tests 추가.
@@ -171,7 +304,7 @@
 - `5965a4b`: Vulkan swapchain policy/pipeline compatibility/shader binding/fallback diagnostics 추가.
 - `244d5b7`: input multipointer touch-like arbitration diagnostics 추가.
 - `94a922f`: asset manifest integrity diagnostics 추가.
-- 기준 검증 예시: 2026-05-07 Windows MinGW focused image CTest 2/2, focused Vulkan CTest 2/2, focused text/image CTest 6/6, focused text/image/Vulkan CTest 7/7, 최근 full CTest 60/60 통과. 현재 `ctest -N`이 70개 테스트를 보고한다. 권위 있는 테스트 목록은 항상 실행 시점의 `ctest -N`으로 확인한다.
+- 기준 검증 예시: 2026-05-07 Windows MinGW focused image CTest 2/2, focused Vulkan CTest 2/2, focused text/image CTest 6/6, focused input/image CTest 13/13, 최근 full CTest 76/76 통과. 현재 `ctest -N`이 76개 테스트를 보고한다. 권위 있는 테스트 목록은 항상 실행 시점의 `ctest -N`으로 확인한다.
 - 기준 검증은 고정 개수로 적지 않는다. 현재 전체 테스트 수는 `ctest -N`이 권위이며, handoff에는 실행한 focused target만 기록한다.
 
 상태 기준:

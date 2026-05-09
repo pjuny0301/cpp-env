@@ -1,6 +1,9 @@
 #pragma once
 
+#include "platform/platform_input_event.h"
+
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -31,9 +34,18 @@ enum class platform_shell_status {
 
 enum class platform_input_event_type {
     pointer_press,
+    pointer_down,
+    pointer_move,
+    pointer_up,
+    pointer_cancel,
     text_input,
     text_backspace,
     text_submit,
+    key_down,
+    key_up,
+    focus_gained,
+    focus_lost,
+    mouse_wheel,
 };
 
 struct platform_input_event {
@@ -41,6 +53,18 @@ struct platform_input_event {
     float x = 0.0f;
     float y = 0.0f;
     std::string text;
+    std::int32_t pointer_id = 0;
+    raw_platform_pointer_button pointer_button = raw_platform_pointer_button::primary;
+    float delta_x = 0.0f;
+    float delta_y = 0.0f;
+    raw_platform_scroll_delta_unit scroll_unit = raw_platform_scroll_delta_unit::pixels;
+    std::int32_t key_code = 0;
+    std::string logical_key;
+    bool alt = false;
+    bool ctrl = false;
+    bool shift = false;
+    bool meta = false;
+    bool repeat = false;
 };
 
 class platform_shell {

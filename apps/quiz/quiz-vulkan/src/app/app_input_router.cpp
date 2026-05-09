@@ -19,11 +19,29 @@ raw_platform_pointer_event raw_pointer(
 {
     return raw_platform_pointer_event{
         .timestamp_ms = timestamp_ms,
-        .pointer_id = legacy_pointer_id,
+        .pointer_id = event.pointer_id,
         .phase = phase,
-        .button = raw_platform_pointer_button::primary,
+        .button = event.pointer_button,
         .x = event.x,
         .y = event.y,
+    };
+}
+
+raw_platform_key_event raw_key(
+    const platform_input_event& event,
+    std::int64_t timestamp_ms,
+    raw_platform_key_phase phase)
+{
+    return raw_platform_key_event{
+        .timestamp_ms = timestamp_ms,
+        .phase = phase,
+        .key_code = event.key_code,
+        .logical_key = event.logical_key,
+        .alt = event.alt,
+        .ctrl = event.ctrl,
+        .shift = event.shift,
+        .meta = event.meta,
+        .repeat = event.repeat,
     };
 }
 
@@ -195,9 +213,31 @@ std::vector<raw_platform_input_event> normalize_platform_input_event(
     switch (event.type) {
     case platform_input_event_type::pointer_press:
         return {
-            raw_pointer(event, timestamp_ms, raw_platform_pointer_phase::down),
-            raw_pointer(event, timestamp_ms, raw_platform_pointer_phase::up),
+            raw_platform_pointer_event{
+                .timestamp_ms = timestamp_ms,
+                .pointer_id = legacy_pointer_id,
+                .phase = raw_platform_pointer_phase::down,
+                .button = raw_platform_pointer_button::primary,
+                .x = event.x,
+                .y = event.y,
+            },
+            raw_platform_pointer_event{
+                .timestamp_ms = timestamp_ms,
+                .pointer_id = legacy_pointer_id,
+                .phase = raw_platform_pointer_phase::up,
+                .button = raw_platform_pointer_button::primary,
+                .x = event.x,
+                .y = event.y,
+            },
         };
+    case platform_input_event_type::pointer_down:
+        return {raw_pointer(event, timestamp_ms, raw_platform_pointer_phase::down)};
+    case platform_input_event_type::pointer_move:
+        return {raw_pointer(event, timestamp_ms, raw_platform_pointer_phase::move)};
+    case platform_input_event_type::pointer_up:
+        return {raw_pointer(event, timestamp_ms, raw_platform_pointer_phase::up)};
+    case platform_input_event_type::pointer_cancel:
+        return {raw_pointer(event, timestamp_ms, raw_platform_pointer_phase::cancel)};
     case platform_input_event_type::text_input:
         return {raw_platform_text_event{
             .timestamp_ms = timestamp_ms,
@@ -216,6 +256,29 @@ std::vector<raw_platform_input_event> normalize_platform_input_event(
             .phase = raw_platform_key_phase::down,
             .key_code = 13,
             .logical_key = "Enter",
+        }};
+    case platform_input_event_type::key_down:
+        return {raw_key(event, timestamp_ms, raw_platform_key_phase::down)};
+    case platform_input_event_type::key_up:
+        return {raw_key(event, timestamp_ms, raw_platform_key_phase::up)};
+    case platform_input_event_type::focus_gained:
+        return {raw_platform_focus_event{
+            .timestamp_ms = timestamp_ms,
+            .phase = raw_platform_focus_phase::gained,
+        }};
+    case platform_input_event_type::focus_lost:
+        return {raw_platform_focus_event{
+            .timestamp_ms = timestamp_ms,
+            .phase = raw_platform_focus_phase::lost,
+        }};
+    case platform_input_event_type::mouse_wheel:
+        return {raw_platform_scroll_event{
+            .timestamp_ms = timestamp_ms,
+            .x = event.x,
+            .y = event.y,
+            .delta_x = event.delta_x,
+            .delta_y = event.delta_y,
+            .unit = event.scroll_unit,
         }};
     }
 

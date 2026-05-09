@@ -1,5 +1,6 @@
 #pragma once
 
+#include "render/text/font_backend_capabilities.h"
 #include "render/text/font_source_resolver.h"
 #include "render/text/text_engine.h"
 #include "render/text/utf8_line_break.h"
@@ -184,6 +185,13 @@ struct render_text_glyph_font_resolution_snapshot {
     bool used_codepoint_fallback = false;
     bool glyph_supported = true;
     bool cacheable = true;
+    render_text_font_backend_library font_backend_library =
+        render_text_font_backend_library::deterministic_fake;
+    std::string font_backend_label;
+    render_text_font_backend_capability_status font_backend_capability_status =
+        render_text_font_backend_capability_status::unavailable;
+    bool font_backend_used_deterministic_fallback = false;
+    bool font_backend_fallback_only = false;
 };
 
 struct render_text_font_resolution_policy_snapshot {
@@ -330,6 +338,13 @@ struct render_text_glyph_cache_readiness_snapshot {
     bool glyph_id_from_selection = false;
     bool glyph_id_matches_codepoint = false;
     std::uint32_t glyph_id_offset = 0;
+    render_text_font_backend_library font_backend_library =
+        render_text_font_backend_library::deterministic_fake;
+    std::string font_backend_label;
+    render_text_font_backend_capability_status font_backend_capability_status =
+        render_text_font_backend_capability_status::unavailable;
+    bool font_backend_used_deterministic_fallback = false;
+    bool font_backend_fallback_only = false;
     bool cacheable = true;
     bool has_atlas_slot = false;
 };

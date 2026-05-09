@@ -104,7 +104,9 @@ struct normalized_input_event_summary {
 enum class text_event_kind {
     commit,
     backspace,
+    delete_forward,
     submit,
+    cancel,
     focus_gained,
     focus_lost,
     caret_moved,

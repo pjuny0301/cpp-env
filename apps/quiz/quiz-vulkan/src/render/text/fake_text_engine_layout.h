@@ -32,6 +32,13 @@ struct shaped_glyph {
     bool glyph_id_from_selection = false;
     bool glyph_id_matches_codepoint = false;
     std::uint32_t glyph_id_offset = 0;
+    render_text_font_backend_library font_backend_library =
+        render_text_font_backend_library::deterministic_fake;
+    std::string font_backend_label;
+    render_text_font_backend_capability_status font_backend_capability_status =
+        render_text_font_backend_capability_status::unavailable;
+    bool font_backend_used_deterministic_fallback = false;
+    bool font_backend_fallback_only = false;
     bool cacheable = true;
 };
 
@@ -56,6 +63,13 @@ struct laid_out_glyph_cluster {
     bool glyph_id_from_selection = false;
     bool glyph_id_matches_codepoint = false;
     std::uint32_t glyph_id_offset = 0;
+    render_text_font_backend_library font_backend_library =
+        render_text_font_backend_library::deterministic_fake;
+    std::string font_backend_label;
+    render_text_font_backend_capability_status font_backend_capability_status =
+        render_text_font_backend_capability_status::unavailable;
+    bool font_backend_used_deterministic_fallback = false;
+    bool font_backend_fallback_only = false;
     bool cacheable = true;
     std::optional<glyph_atlas_slot> atlas_slot;
 };

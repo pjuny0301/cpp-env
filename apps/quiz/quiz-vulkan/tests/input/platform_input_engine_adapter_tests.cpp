@@ -267,6 +267,145 @@ void test_rejected_translation_result_has_no_engine_side_effects()
         "rejected dispatch result snapshots unchanged action routes");
 }
 
+void test_batch_dispatch_preserves_order_and_skips_rejected_items()
+{
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    engine.focus_text_target("answer");
+    platform_input_translator translator;
+    const std::array requests{
+        request(platform_character_sample{
+            .timestamp_ms = 600,
+            .utf8_text = "A",
+        }),
+        request(platform_character_sample{
+            .timestamp_ms = 610,
+            .utf8_text = std::string("\xC0\xAF", 2),
+        }),
+        request(platform_key_sample{
+            .timestamp_ms = 620,
+            .phase = platform_key_sample_phase::down,
+            .key_code = 8,
+            .logical_key = "Backspace",
+        }),
+        request(platform_wheel_sample{
+            .timestamp_ms = 630,
+            .x = 10.0f,
+            .y = 12.0f,
+            .delta_x = 0.0f,
+            .delta_y = -1.0f,
+            .unit = platform_scroll_delta_unit::lines,
+        }),
+    };
+
+    const platform_input_dispatch_batch_result batch =
+        translate_and_dispatch_platform_input_batch(engine, translator, requests);
+    require(batch.items.size() == 4, "mixed batch records one result per request");
+
+    require_dispatched(batch.items[0], platform_input_source_kind::character, "mixed batch character dispatches");
+    require(batch.items[0].input_events.size() == 1, "mixed batch character emits one event");
+    const text_event& commit = require_event<text_event>(batch.items[0].input_events, 0);
+    require(commit.kind == text_event_kind::commit, "mixed batch first item is text commit");
+    require(commit.utf8_text == "A", "mixed batch first item preserves commit text");
+
+    require(!batch.items[1].dispatched_to_engine, "mixed batch rejected item is not dispatched");
+    require(!batch.items[1].translation.event.has_value(), "mixed batch rejected item has no raw event");
+    require(batch.items[1].translation.diagnostic.source == platform_input_source_kind::character,
+        "mixed batch rejected item preserves source");
+    require(batch.items[1].translation.diagnostic.status == platform_input_translation_status::rejected,
+        "mixed batch rejected item records rejected status");
+    require(batch.items[1].translation.diagnostic.rejection_reason == platform_input_rejection_reason::invalid_utf8,
+        "mixed batch rejected item records invalid utf8");
+    require(batch.items[1].input_events.empty(), "mixed batch rejected item emits no input events");
+    require(batch.items[1].routing_diagnostics.action_routes.size() == 1,
+        "mixed batch rejected item snapshots previous route count");
+
+    require_dispatched(batch.items[2], platform_input_source_kind::key, "mixed batch key dispatches after reject");
+    require(batch.items[2].input_events.size() == 1, "mixed batch key emits one event");
+    const text_event& backspace = require_event<text_event>(batch.items[2].input_events, 0);
+    require(backspace.kind == text_event_kind::backspace, "mixed batch third item is backspace");
+    require(engine.text_model().text().empty(), "mixed batch rejected item does not alter text before backspace");
+
+    require_dispatched(batch.items[3], platform_input_source_kind::wheel, "mixed batch wheel dispatches last");
+    require(batch.items[3].input_events.size() == 1, "mixed batch wheel emits one event");
+    const scroll_event& wheel = require_event<scroll_event>(batch.items[3].input_events, 0);
+    require(wheel.timestamp_ms == 630, "mixed batch wheel preserves timestamp order");
+    require(wheel.line_delta_y == -1.0f, "mixed batch wheel preserves line delta");
+    require(batch.items[3].routing_diagnostics.normalized_events.back().kind == input_event_summary_kind::wheel,
+        "mixed batch wheel records normalized wheel last");
+}
+
+void test_mixed_batch_summarizes_normalized_routes_and_clean_final_state()
+{
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    engine.focus_text_target("answer");
+    platform_input_translator translator;
+    const std::array requests{
+        request(platform_mouse_sample{
+            .timestamp_ms = 700,
+            .pointer_id = 21,
+            .phase = platform_pointer_sample_phase::down,
+            .button = platform_mouse_button::primary,
+            .x = 2.0f,
+            .y = 4.0f,
+        }),
+        request(platform_mouse_sample{
+            .timestamp_ms = 730,
+            .pointer_id = 21,
+            .phase = platform_pointer_sample_phase::up,
+            .button = platform_mouse_button::primary,
+            .x = 3.0f,
+            .y = 5.0f,
+        }),
+        request(platform_wheel_sample{
+            .timestamp_ms = 740,
+            .x = 20.0f,
+            .y = 30.0f,
+            .delta_x = 0.0f,
+            .delta_y = -2.0f,
+            .unit = platform_scroll_delta_unit::lines,
+        }),
+        request(platform_character_sample{
+            .timestamp_ms = 750,
+            .utf8_text = "x",
+        }),
+        request(platform_ime_composition_sample{
+            .timestamp_ms = 760,
+            .phase = platform_ime_sample_phase::preedit_update,
+            .utf8_text = utf8(u8"ㅎ"),
+        }),
+        request(platform_ime_composition_sample{
+            .timestamp_ms = 770,
+            .phase = platform_ime_sample_phase::commit,
+            .utf8_text = utf8(u8"한"),
+        }),
+    };
+
+    const platform_input_dispatch_batch_result batch =
+        translate_and_dispatch_platform_input_batch(engine, translator, requests);
+    require(batch.items.size() == 6, "summary mixed batch records all dispatch results");
+    require(engine.text_model().text() == std::string("x") + utf8(u8"한"),
+        "summary mixed batch commits text and ime once");
+
+    const input_diagnostic_summary& summary = batch.summary;
+    require(summary.normalized_event_count == 2, "summary mixed batch counts normalized events");
+    require(summary.normalized_events.tap == 1, "summary mixed batch counts tap");
+    require(summary.normalized_events.wheel == 1, "summary mixed batch counts wheel");
+    require(summary.normalized_events.swipe_left == 0, "summary mixed batch leaves absent swipe count zero");
+    require(summary.routes.pointer == 2, "summary mixed batch counts pointer routes");
+    require(summary.routes.wheel == 1, "summary mixed batch counts wheel routes");
+    require(summary.routes.text == 1, "summary mixed batch counts text routes");
+    require(summary.routes.ime == 2, "summary mixed batch counts ime routes");
+    require(summary.routes.focus == 0, "summary mixed batch has no focus routes");
+    require(summary.routes.total == 6, "summary mixed batch counts all accepted routes");
+    require(summary.pointer_capture_ended_cleanly, "summary mixed batch ends with no pointer capture");
+    require(summary.focus_ended_cleanly, "summary mixed batch leaves focus state clean");
+    require(summary.preedit_ended_cleanly, "summary mixed batch clears preedit after ime commit");
+}
+
 } // namespace
 
 int main()
@@ -276,6 +415,8 @@ int main()
     test_key_and_char_batch_dispatch_text_input_path();
     test_ime_batch_dispatches_existing_ime_path();
     test_rejected_translation_result_has_no_engine_side_effects();
+    test_batch_dispatch_preserves_order_and_skips_rejected_items();
+    test_mixed_batch_summarizes_normalized_routes_and_clean_final_state();
 
     std::cout << "platform_input_engine_adapter_tests passed\n";
     return 0;

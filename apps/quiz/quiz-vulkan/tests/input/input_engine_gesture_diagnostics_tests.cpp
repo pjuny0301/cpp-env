@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
+#include <string>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -89,6 +91,45 @@ quiz_vulkan::raw_platform_input_event platform_scroll(
     };
 }
 
+quiz_vulkan::raw_platform_input_event text(std::int64_t timestamp_ms, std::string value)
+{
+    return quiz_vulkan::raw_platform_text_event{
+        .timestamp_ms = timestamp_ms,
+        .utf8_text = std::move(value),
+    };
+}
+
+quiz_vulkan::raw_platform_input_event key(
+    std::int64_t timestamp_ms,
+    std::string logical_key,
+    bool repeat = false,
+    quiz_vulkan::raw_platform_key_phase phase = quiz_vulkan::raw_platform_key_phase::down,
+    bool ctrl = false,
+    bool shift = false)
+{
+    return quiz_vulkan::raw_platform_key_event{
+        .timestamp_ms = timestamp_ms,
+        .phase = phase,
+        .key_code = 0,
+        .logical_key = std::move(logical_key),
+        .ctrl = ctrl,
+        .shift = shift,
+        .repeat = repeat,
+    };
+}
+
+quiz_vulkan::raw_platform_input_event ime(
+    quiz_vulkan::raw_platform_ime_phase phase,
+    std::int64_t timestamp_ms,
+    std::string value)
+{
+    return quiz_vulkan::raw_platform_ime_event{
+        .timestamp_ms = timestamp_ms,
+        .phase = phase,
+        .utf8_text = std::move(value),
+    };
+}
+
 quiz_vulkan::input::raw_scroll_event scroll(
     std::int64_t timestamp_ms,
     float x,
@@ -105,6 +146,22 @@ quiz_vulkan::input::raw_scroll_event scroll(
         .delta_y = delta_y,
         .unit = unit,
     };
+}
+
+void append_diagnostics(
+    quiz_vulkan::input::input_routing_diagnostics& target,
+    const quiz_vulkan::input::input_routing_diagnostics& source)
+{
+    target.normalized_events.insert(
+        target.normalized_events.end(),
+        source.normalized_events.begin(),
+        source.normalized_events.end());
+    target.action_routes.insert(
+        target.action_routes.end(),
+        source.action_routes.begin(),
+        source.action_routes.end());
+    target.pointer_capture = source.pointer_capture;
+    quiz_vulkan::input::accumulate_input_diagnostic_summary(target.summary, source.summary);
 }
 
 void require_swipe_parity(
@@ -499,6 +556,284 @@ void test_touch_drag_cancel_diagnostics_keep_pointer_id_consistent()
         "touch drag cancel reset records idle pointer after");
 }
 
+void test_wheel_after_touch_cancel_has_idle_capture_context()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    require(engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::down,
+                100,
+                0.0f,
+                0.0f,
+                raw_platform_pointer_button::none,
+                41))
+                .empty(),
+        "wheel after cancel touch down emits no event");
+    require(engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::move,
+                120,
+                10.0f,
+                0.0f,
+                raw_platform_pointer_button::none,
+                41))
+                .size() == 1,
+        "wheel after cancel touch drag captures pointer");
+
+    std::vector<input_event> events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::cancel,
+        140,
+        12.0f,
+        0.0f,
+        raw_platform_pointer_button::none,
+        41));
+    require(events.size() == 1, "wheel after cancel touch cancel emits drag cancel");
+    require(engine.routing_diagnostics().action_routes.size() == 2,
+        "wheel after cancel touch cancel emits route and reset policies");
+    const action_route_policy_diagnostic& cancel_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "wheel after cancel gesture route is emitted");
+    require(cancel_policy.pointer_contact == pointer_contact_kind::touch_like,
+        "wheel after cancel gesture route records touch contact");
+    require(cancel_policy.pointer_decision == pointer_arbitration_decision::canceled,
+        "wheel after cancel gesture route records canceled decision");
+    require(cancel_policy.tracked_pointer_count_before == 1,
+        "wheel after cancel gesture route records tracked pointer before");
+    require(cancel_policy.tracked_pointer_count_after == 0,
+        "wheel after cancel gesture route records no tracked pointer after");
+    const action_route_policy_diagnostic& reset_policy = require_policy(
+        engine.routing_diagnostics(),
+        1,
+        action_route_policy_kind::pointer_capture_reset,
+        "wheel after cancel reset route is emitted");
+    require(reset_policy.pointer_contact == pointer_contact_kind::touch_like,
+        "wheel after cancel reset route records touch contact");
+    require(reset_policy.tracked_pointer_count_before == 1,
+        "wheel after cancel reset route records tracked pointer before");
+    require(reset_policy.tracked_pointer_count_after == 0,
+        "wheel after cancel reset route records no tracked pointer after");
+    require_capture_snapshot(
+        engine.routing_diagnostics().pointer_capture,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "wheel after cancel leaves diagnostics idle after cancel");
+    const input_diagnostic_summary& cancel_summary = engine.routing_diagnostics().summary;
+    require(cancel_summary.normalized_event_count == 1, "wheel after cancel summary counts drag cancel event");
+    require(cancel_summary.normalized_events.drag_cancel == 1, "wheel after cancel summary counts drag cancel kind");
+    require(cancel_summary.routes.pointer == 2, "wheel after cancel summary counts gesture and reset routes");
+    require(cancel_summary.routes.total == 2, "wheel after cancel summary counts all cancel routes");
+    require(cancel_summary.pointer_capture_ended_cleanly, "wheel after cancel summary clears capture");
+    require(cancel_summary.focus_ended_cleanly, "wheel after cancel summary leaves focus clean");
+    require(cancel_summary.preedit_ended_cleanly, "wheel after cancel summary leaves preedit clean");
+
+    events = engine.process_scroll_event(scroll(
+        160,
+        20.0f,
+        30.0f,
+        0.0f,
+        -2.0f,
+        scroll_delta_unit::lines));
+    require(events.size() == 1, "wheel after cancel emits one wheel event");
+    const action_route_policy_diagnostic& wheel_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::wheel_summary,
+        "wheel after cancel emits wheel summary policy");
+    require(wheel_policy.normalized_event.kind == input_event_summary_kind::wheel,
+        "wheel after cancel policy carries wheel summary");
+    require(wheel_policy.pointer_decision == pointer_arbitration_decision::none,
+        "wheel after cancel policy has no pointer arbitration");
+    require(wheel_policy.pointer_contact == pointer_contact_kind::unknown,
+        "wheel after cancel policy has no pointer contact semantics");
+    require(wheel_policy.tracked_pointer_count_before == 0,
+        "wheel after cancel policy records no tracked pointers before");
+    require(wheel_policy.tracked_pointer_count_after == 0,
+        "wheel after cancel policy records no tracked pointers after");
+    require_capture_snapshot(
+        wheel_policy.pointer_capture_before,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "wheel after cancel policy records idle capture before");
+    require_capture_snapshot(
+        wheel_policy.pointer_capture_after,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "wheel after cancel policy records idle capture after");
+    require_capture_snapshot(
+        engine.routing_diagnostics().pointer_capture,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "wheel after cancel leaves engine capture idle");
+    const input_diagnostic_summary& wheel_summary = engine.routing_diagnostics().summary;
+    require(wheel_summary.normalized_event_count == 1, "wheel after cancel summary counts wheel event");
+    require(wheel_summary.normalized_events.wheel == 1, "wheel after cancel summary counts wheel kind");
+    require(wheel_summary.routes.wheel == 1, "wheel after cancel summary counts wheel route");
+    require(wheel_summary.routes.pointer == 0, "wheel after cancel summary has no pointer route");
+    require(wheel_summary.routes.total == 1, "wheel after cancel summary counts one route");
+    require(wheel_summary.pointer_capture_ended_cleanly, "wheel after cancel summary keeps capture clean");
+    require(wheel_summary.focus_ended_cleanly, "wheel after cancel summary keeps focus clean");
+    require(wheel_summary.preedit_ended_cleanly, "wheel after cancel summary keeps preedit clean");
+}
+
+void require_release_restart_parity(
+    quiz_vulkan::raw_platform_pointer_button button,
+    quiz_vulkan::input::pointer_contact_kind contact,
+    std::int32_t pointer_id)
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine release_engine;
+    require(release_engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::down,
+                100,
+                0.0f,
+                0.0f,
+                button,
+                pointer_id))
+                .empty(),
+        "release parity down emits no event");
+    require(release_engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::move,
+                120,
+                9.0f,
+                0.0f,
+                button,
+                pointer_id))
+                .size() == 1,
+        "release parity move captures pointer");
+    std::vector<input_event> events = release_engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::up,
+        140,
+        14.0f,
+        0.0f,
+        button,
+        pointer_id));
+    require(events.size() == 1, "release parity up emits drag end");
+    const gesture_event& end = require_event<gesture_event>(events, 0);
+    require(end.kind == gesture_kind::drag_end, "release parity emits drag end");
+    require(end.pointer_id == pointer_id, "release parity event preserves pointer id");
+    const action_route_policy_diagnostic& release_policy = require_policy(
+        release_engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "release parity route is emitted");
+    require(release_policy.pointer_decision == pointer_arbitration_decision::released,
+        "release parity records released decision");
+    require(release_policy.pointer_contact == contact, "release parity records contact kind");
+    require(release_policy.pointer_id == pointer_id, "release parity route records pointer id");
+    require(release_policy.tracked_pointer_count_before == 1,
+        "release parity route records one tracked pointer before");
+    require(release_policy.tracked_pointer_count_after == 0,
+        "release parity route records no tracked pointer after");
+    require_capture_snapshot(
+        release_policy.pointer_capture_before,
+        pointer_capture_lifecycle::captured,
+        true,
+        pointer_id,
+        1,
+        "release parity records captured pointer before");
+    require_capture_snapshot(
+        release_policy.pointer_capture_after,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "release parity records idle pointer after");
+    const input_diagnostic_summary& release_summary = release_engine.routing_diagnostics().summary;
+    require(release_summary.normalized_event_count == 1, "release parity summary counts drag end event");
+    require(release_summary.normalized_events.drag_end == 1, "release parity summary counts drag end kind");
+    require(release_summary.routes.pointer == 1, "release parity summary counts pointer route");
+    require(release_summary.routes.total == 1, "release parity summary counts one route");
+    require(release_summary.pointer_capture_ended_cleanly, "release parity summary clears pointer capture");
+    require(release_summary.preedit_ended_cleanly, "release parity summary has clean preedit");
+
+    input_engine restart_engine;
+    require(restart_engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::down,
+                200,
+                0.0f,
+                0.0f,
+                button,
+                pointer_id))
+                .empty(),
+        "restart parity down emits no event");
+    require(restart_engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::move,
+                220,
+                10.0f,
+                0.0f,
+                button,
+                pointer_id))
+                .size() == 1,
+        "restart parity move captures pointer");
+    events = restart_engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::down,
+        240,
+        2.0f,
+        2.0f,
+        button,
+        pointer_id));
+    require(events.size() == 1, "restart parity repeated down emits drag cancel");
+    const gesture_event& cancel = require_event<gesture_event>(events, 0);
+    require(cancel.kind == gesture_kind::drag_cancel, "restart parity emits drag cancel");
+    require(cancel.pointer_id == pointer_id, "restart parity event preserves pointer id");
+    const action_route_policy_diagnostic& restart_policy = require_policy(
+        restart_engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "restart parity route is emitted");
+    require(restart_policy.pointer_decision == pointer_arbitration_decision::restarted,
+        "restart parity records restarted decision");
+    require(restart_policy.pointer_contact == contact, "restart parity records contact kind");
+    require(restart_policy.pointer_id == pointer_id, "restart parity route records pointer id");
+    require(restart_policy.tracked_pointer_count_before == 1,
+        "restart parity route records one tracked pointer before");
+    require(restart_policy.tracked_pointer_count_after == 1,
+        "restart parity route records replacement tracked pointer after");
+    require(restart_policy.normalized_event.kind == input_event_summary_kind::drag_cancel,
+        "restart parity route carries normalized drag cancel");
+    require(restart_policy.gesture_policy.decision == gesture_policy_decision::drag_canceled,
+        "restart parity route records drag canceled classifier decision");
+    require_capture_snapshot(
+        restart_policy.pointer_capture_before,
+        pointer_capture_lifecycle::captured,
+        true,
+        pointer_id,
+        1,
+        "restart parity records captured pointer before");
+    require_capture_snapshot(
+        restart_policy.pointer_capture_after,
+        pointer_capture_lifecycle::tracking,
+        false,
+        pointer_id,
+        1,
+        "restart parity records replacement tracking after");
+}
+
+void test_pointer_capture_release_and_restart_are_deterministic_for_mouse_and_touch()
+{
+    require_release_restart_parity(
+        quiz_vulkan::raw_platform_pointer_button::primary,
+        quiz_vulkan::input::pointer_contact_kind::mouse_like,
+        51);
+    require_release_restart_parity(
+        quiz_vulkan::raw_platform_pointer_button::none,
+        quiz_vulkan::input::pointer_contact_kind::touch_like,
+        52);
+}
+
 void test_long_press_timing_and_policy_order_are_deterministic()
 {
     using namespace quiz_vulkan;
@@ -716,6 +1051,133 @@ void test_wheel_delta_normalization_updates_summaries_and_action_routes()
         "raw zero wheel emits no stale action route");
 }
 
+void test_routing_diagnostics_diff_reports_semantic_free_route_deltas()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine before_engine;
+    before_engine.focus_text_target("answer");
+    require(before_engine.process_raw_event(text(100, "a")).size() == 1,
+        "routing diff before emits text commit");
+    input_routing_diagnostics before;
+    append_diagnostics(before, before_engine.routing_diagnostics());
+
+    input_engine after_engine;
+    after_engine.focus_text_target("answer");
+    require(after_engine.process_raw_event(platform_scroll(
+                200,
+                8.0f,
+                9.0f,
+                0.0f,
+                -12.0f,
+                raw_platform_scroll_delta_unit::pixels))
+                .size() == 1,
+        "routing diff after emits wheel");
+    input_routing_diagnostics after;
+    append_diagnostics(after, after_engine.routing_diagnostics());
+
+    require(after_engine.process_raw_event(key(210, "Tab")).empty(),
+        "routing diff after tab is diagnostic-only");
+    append_diagnostics(after, after_engine.routing_diagnostics());
+
+    require(after_engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 220, "pre")).size() == 1,
+        "routing diff after emits ime preedit");
+    append_diagnostics(after, after_engine.routing_diagnostics());
+
+    require(after_engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::down,
+                230,
+                3.0f,
+                4.0f,
+                raw_platform_pointer_button::primary,
+                50))
+                .empty(),
+        "routing diff after pointer down is diagnostic-only");
+    append_diagnostics(after, after_engine.routing_diagnostics());
+
+    const input_routing_diagnostics_diff diff = diff_input_routing_diagnostics(before, after);
+    require(diff.changed, "routing diff marks changed snapshots");
+    require(diff.normalized_events_changed, "routing diff reports normalized event change");
+    require(diff.action_routes_changed, "routing diff reports action route change");
+    require(diff.keyboard_routes_changed, "routing diff reports keyboard route change");
+    require(diff.pointer_capture_changed, "routing diff reports pointer capture change");
+    require(diff.clean_state_changed, "routing diff reports clean state change");
+
+    require(diff.normalized_event_count.delta == 1,
+        "routing diff records normalized event count delta");
+    require(diff.normalized_event_summary_count.delta == 1,
+        "routing diff records normalized summary vector delta");
+    require(diff.normalized_events.wheel.delta == 1,
+        "routing diff records wheel normalized event delta");
+
+    require(diff.action_route_count.delta == 3,
+        "routing diff records action route vector delta");
+    require(diff.routes.total.delta == 3, "routing diff records total route delta");
+    require(diff.routes.text.delta == -1, "routing diff records text route delta");
+    require(diff.routes.focus.delta == 1, "routing diff records focus route delta");
+    require(diff.routes.ime.delta == 1, "routing diff records ime route delta");
+    require(diff.routes.pointer.delta == 1, "routing diff records pointer route delta");
+    require(diff.routes.wheel.delta == 1, "routing diff records wheel route delta");
+
+    require(diff.action_routes.text_commit_boundary.delta == -1,
+        "routing diff records text commit route delta");
+    require(diff.action_routes.wheel_summary.delta == 1,
+        "routing diff records wheel action route delta");
+    require(diff.action_routes.focus_traversal_next.delta == 1,
+        "routing diff records focus traversal action route delta");
+    require(diff.action_routes.ime_preedit.delta == 1,
+        "routing diff records ime preedit action route delta");
+    require(diff.action_routes.pointer_capture_arbitration.delta == 1,
+        "routing diff records pointer arbitration action route delta");
+
+    require(diff.keyboard_routes.total.delta == 1,
+        "routing diff records keyboard route total delta");
+    require(diff.keyboard_routes.diagnostic_only_routes.delta == 1,
+        "routing diff records keyboard diagnostic-only route delta");
+    require(diff.keyboard_routes.intents.focus_traversal_next.delta == 1,
+        "routing diff records keyboard focus traversal intent delta");
+    require(diff.keyboard_routes.repeat_policies.not_repeat.delta == 1,
+        "routing diff records keyboard repeat policy delta");
+
+    require(!diff.pointer_capture.before_has_state,
+        "routing diff before pointer capture is idle");
+    require(diff.pointer_capture.after_has_state,
+        "routing diff after pointer capture has tracked state");
+    require(diff.pointer_capture.tracked_pointer_count.delta == 1,
+        "routing diff records tracked pointer count delta");
+    require(diff.pointer_capture.pointer_id_changed,
+        "routing diff records pointer id change");
+    require(diff.pointer_capture.after_capture.pointer_id == 50,
+        "routing diff records final pointer id");
+    require(diff.pointer_capture.after_capture.lifecycle == pointer_capture_lifecycle::tracking,
+        "routing diff records final pointer lifecycle");
+
+    require(diff.pointer_capture_ended_cleanly.before_value,
+        "routing diff before pointer capture ended cleanly");
+    require(!diff.pointer_capture_ended_cleanly.after_value,
+        "routing diff after pointer capture remains tracked");
+    require(diff.focus_ended_cleanly.before_value && diff.focus_ended_cleanly.after_value,
+        "routing diff keeps focus clean state semantic-free");
+    require(diff.preedit_ended_cleanly.before_value,
+        "routing diff before preedit ended cleanly");
+    require(!diff.preedit_ended_cleanly.after_value,
+        "routing diff after preedit remains active");
+
+    const input_routing_diagnostics_diff stable_diff = diff_input_routing_diagnostics(after, after);
+    require(!stable_diff.changed, "routing diff self comparison is unchanged");
+    require(!stable_diff.normalized_events_changed,
+        "routing diff self comparison has no normalized event changes");
+    require(!stable_diff.action_routes_changed,
+        "routing diff self comparison has no action route changes");
+    require(!stable_diff.keyboard_routes_changed,
+        "routing diff self comparison has no keyboard route changes");
+    require(!stable_diff.pointer_capture_changed,
+        "routing diff self comparison has no pointer capture changes");
+    require(!stable_diff.clean_state_changed,
+        "routing diff self comparison has no clean state changes");
+}
+
 } // namespace
 
 int main()
@@ -723,8 +1185,11 @@ int main()
     test_mouse_and_touch_swipe_classifier_diagnostics_match();
     test_custom_swipe_threshold_rejections_are_diagnostic_only();
     test_touch_drag_cancel_diagnostics_keep_pointer_id_consistent();
+    test_wheel_after_touch_cancel_has_idle_capture_context();
+    test_pointer_capture_release_and_restart_are_deterministic_for_mouse_and_touch();
     test_long_press_timing_and_policy_order_are_deterministic();
     test_wheel_delta_normalization_updates_summaries_and_action_routes();
+    test_routing_diagnostics_diff_reports_semantic_free_route_deltas();
 
     std::cout << "input_engine_gesture_diagnostics_tests passed\n";
     return 0;

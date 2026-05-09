@@ -133,6 +133,8 @@ action_route_policy_diagnostic make_policy(
     diagnostic.timestamp_ms = timestamp_ms;
     diagnostic.pointer_capture_before = pointer_capture_before;
     diagnostic.pointer_capture_after = pointer_capture_after;
+    diagnostic.tracked_pointer_count_before = pointer_capture_before.tracked_pointer_count;
+    diagnostic.tracked_pointer_count_after = pointer_capture_after.tracked_pointer_count;
     return diagnostic;
 }
 
@@ -202,6 +204,11 @@ const std::string& input_engine::text_focus_id() const
 const text_input_model& input_engine::text_model() const
 {
     return text_;
+}
+
+text_input_presentation_snapshot input_engine::text_presentation_snapshot() const
+{
+    return make_text_input_presentation_snapshot(text_, diagnostics_);
 }
 
 const input_routing_diagnostics& input_engine::routing_diagnostics() const
@@ -455,9 +462,20 @@ std::vector<input_event> input_engine::process_ime_event(const raw_platform_ime_
                 gestures_.capture_snapshot());
             policy.composition = initial_composition;
             append_policy(std::move(policy));
-        } else {
-            text_.set_preedit("");
         }
+
+        const auto composition_start_before = detail::capture_text_edit(text_);
+        text_.set_preedit("");
+        action_route_policy_diagnostic start_policy = detail::make_text_state_policy(
+            action_route_policy_kind::ime_composition_start,
+            event.timestamp_ms,
+            target_id,
+            composition_start_before,
+            detail::capture_text_edit(text_),
+            diagnostics_.pointer_capture,
+            gestures_.capture_snapshot());
+        start_policy.composition = text_.ime_composition();
+        append_policy(std::move(start_policy));
         finish_route_diagnostics();
         return events;
     }
@@ -562,19 +580,24 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
     const std::string target_id = text_.focus_id();
     const auto edit_before = detail::capture_text_edit(text_);
     const pointer_capture_snapshot pointer_capture = gestures_.capture_snapshot();
+    const keyboard_shortcut_intent keyboard_intent = detail::shortcut_intent(event);
+    const keyboard_repeat_policy repeat_policy = detail::repeat_policy_for(event, keyboard_intent);
     const auto append_state_policy =
-        [this, &event, &target_id, &edit_before, pointer_capture](action_route_policy_kind kind) {
-            append_policy(detail::make_text_state_policy(
+        [this, &event, &target_id, &edit_before, pointer_capture, keyboard_intent, repeat_policy](
+            action_route_policy_kind kind) {
+            action_route_policy_diagnostic policy = detail::make_text_state_policy(
                 kind,
                 event.timestamp_ms,
                 target_id,
                 edit_before,
                 detail::capture_text_edit(text_),
                 diagnostics_.pointer_capture,
-                pointer_capture));
+                pointer_capture);
+            detail::apply_keyboard_chord(policy, event, keyboard_intent, repeat_policy);
+            append_policy(std::move(policy));
         };
     const auto emit_text_policy =
-        [this, &events, &event, &target_id, &edit_before, pointer_capture](
+        [this, &events, &event, &target_id, &edit_before, pointer_capture, keyboard_intent, repeat_policy](
             text_event_kind event_kind,
             action_route_policy_kind policy_kind) {
             const std::size_t event_index = events.size();
@@ -584,7 +607,7 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
                 .target_id = target_id,
                 .utf8_text = {},
             });
-            append_policy(detail::make_text_event_policy(
+            action_route_policy_diagnostic policy = detail::make_text_event_policy(
                 policy_kind,
                 event.timestamp_ms,
                 event_index,
@@ -592,13 +615,21 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
                 edit_before,
                 detail::capture_text_edit(text_),
                 diagnostics_.pointer_capture,
-                pointer_capture));
+                pointer_capture);
+            detail::apply_keyboard_chord(policy, event, keyboard_intent, repeat_policy);
+            append_policy(std::move(policy));
         };
 
+    if (detail::is_ignored_repeat(repeat_policy)) {
+        append_state_policy(detail::route_policy_kind_for_shortcut(event, keyboard_intent));
+        finish_route_diagnostics();
+        return events;
+    }
+
     if (ime_composing_ || text_.ime_composition().active) {
-        if (detail::is_keyboard_navigation_key(event)) {
+        if (detail::is_keyboard_navigation_key(event) || detail::is_escape_key(event)) {
             action_route_policy_diagnostic policy = detail::make_text_state_policy(
-                detail::navigation_policy_kind(event),
+                detail::route_policy_kind_for_shortcut(event, keyboard_intent),
                 event.timestamp_ms,
                 target_id,
                 edit_before,
@@ -606,6 +637,7 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
                 diagnostics_.pointer_capture,
                 pointer_capture);
             policy.composition = text_.ime_composition();
+            detail::apply_keyboard_chord(policy, event, keyboard_intent, repeat_policy);
             append_policy(std::move(policy));
         }
         finish_route_diagnostics();
@@ -693,19 +725,46 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
                 edit_after,
                 diagnostics_.pointer_capture,
                 gestures_.capture_snapshot());
+            detail::apply_keyboard_chord(policy, event, keyboard_intent, repeat_policy);
             policy.text_byte_count = detail::removed_text_byte_count(edit_before, edit_after);
             append_policy(std::move(policy));
+        } else {
+            append_state_policy(action_route_policy_kind::text_backspace_boundary);
+        }
+        finish_route_diagnostics();
+        return events;
+    }
+
+    if (detail::is_delete_key(event)) {
+        if (text_.delete_forward()) {
+            const std::size_t event_index = events.size();
+            events.emplace_back(text_event{
+                .kind = text_event_kind::delete_forward,
+                .timestamp_ms = event.timestamp_ms,
+                .target_id = target_id,
+                .utf8_text = {},
+            });
+            const auto edit_after = detail::capture_text_edit(text_);
+            action_route_policy_diagnostic policy = detail::make_text_event_policy(
+                action_route_policy_kind::text_delete_forward_boundary,
+                event.timestamp_ms,
+                event_index,
+                target_id,
+                edit_before,
+                edit_after,
+                diagnostics_.pointer_capture,
+                gestures_.capture_snapshot());
+            detail::apply_keyboard_chord(policy, event, keyboard_intent, repeat_policy);
+            policy.text_byte_count = detail::removed_text_byte_count(edit_before, edit_after);
+            append_policy(std::move(policy));
+        } else {
+            append_state_policy(action_route_policy_kind::text_delete_forward_boundary);
         }
         finish_route_diagnostics();
         return events;
     }
 
     if (detail::is_submit_key(event)) {
-        if (event.repeat) {
-            finish_route_diagnostics();
-            return events;
-        }
-
         const std::string submitted_text = text_.text();
         if (text_.submit()) {
             const std::size_t event_index = events.size();
@@ -724,9 +783,35 @@ std::vector<input_event> input_engine::process_key_event(const raw_platform_key_
                 detail::capture_text_edit(text_),
                 diagnostics_.pointer_capture,
                 gestures_.capture_snapshot());
+            detail::apply_keyboard_chord(policy, event, keyboard_intent, repeat_policy);
             policy.text_byte_count = submitted_text.size();
             append_policy(std::move(policy));
         }
+        finish_route_diagnostics();
+        return events;
+    }
+
+    if (detail::is_escape_key(event)) {
+        const std::size_t event_index = events.size();
+        events.emplace_back(text_event{
+            .kind = text_event_kind::cancel,
+            .timestamp_ms = event.timestamp_ms,
+            .target_id = target_id,
+            .utf8_text = {},
+        });
+        action_route_policy_diagnostic policy = detail::make_text_event_policy(
+            action_route_policy_kind::keyboard_cancel_intent,
+            event.timestamp_ms,
+            event_index,
+            target_id,
+            edit_before,
+            detail::capture_text_edit(text_),
+            diagnostics_.pointer_capture,
+            gestures_.capture_snapshot());
+        detail::apply_keyboard_chord(policy, event, keyboard_intent, repeat_policy);
+        append_policy(std::move(policy));
+        finish_route_diagnostics();
+        return events;
     }
 
     finish_route_diagnostics();
@@ -821,11 +906,13 @@ void input_engine::begin_route_diagnostics()
     diagnostics_.normalized_events.clear();
     diagnostics_.action_routes.clear();
     diagnostics_.pointer_capture = gestures_.capture_snapshot();
+    diagnostics_.summary = input_diagnostic_summary{};
 }
 
 void input_engine::finish_route_diagnostics()
 {
     diagnostics_.pointer_capture = gestures_.capture_snapshot();
+    diagnostics_.summary = summarize_input_routing_diagnostics(diagnostics_, text_);
 }
 
 void input_engine::append_gestures(

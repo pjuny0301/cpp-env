@@ -133,6 +133,10 @@ struct render_text_rasterized_glyph_atlas_payload_snapshot {
     std::uint32_t glyph_id_offset = 0;
     render_text_font_backend_capability_status font_backend_capability_status =
         render_text_font_backend_capability_status::unavailable;
+    render_text_font_backend_library font_backend_library =
+        render_text_font_backend_library::deterministic_fake;
+    std::string font_backend_label;
+    bool font_backend_used_deterministic_fallback = false;
     bool font_backend_fallback_only = false;
     bool font_backend_supports_rasterization = false;
     bool uses_deterministic_rasterizer = true;

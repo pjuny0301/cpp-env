@@ -150,12 +150,40 @@ struct render_image_decoder_diagnostic {
     std::string diagnostic;
 };
 
+struct render_image_external_decoder_selection_snapshot {
+    bool diagnostics_available = false;
+    std::string decoder_id;
+    std::string dependency_name;
+    std::string dependency_status_name;
+    std::string selection_status_name;
+    render_image_encoded_format detected_format = render_image_encoded_format::unknown;
+    std::string detected_format_name;
+    bool dependency_available = false;
+    bool dependency_capability_ready = false;
+    bool format_supported_by_dependency = false;
+    bool internal_decoder_available = false;
+    bool prefer_internal_decoder = false;
+    bool ready_for_external_decode = false;
+    bool fallback_to_standard_decoder_chain = false;
+    bool used_internal_decoder = false;
+    bool used_third_party_adapter = false;
+    bool fallback_due_to_missing_dependency = false;
+    bool fallback_due_to_mismatched_capability = false;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return diagnostics_available;
+    }
+};
+
 struct render_image_decode_result {
     render_image_decode_status status = render_image_decode_status::empty_input;
     render_decoded_image image;
     std::string diagnostic;
     render_image_decode_metadata metadata;
     std::vector<render_image_decoder_diagnostic> decoder_diagnostics;
+    render_image_external_decoder_selection_snapshot external_decoder_selection;
 
     bool ok() const
     {

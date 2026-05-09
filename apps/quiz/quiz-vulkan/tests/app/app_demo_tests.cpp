@@ -28,6 +28,8 @@ int main()
     app_render_frame deck_frame = render_app_frame(state.snapshot());
     const app_render_report& deck_report = deck_frame.report;
     assert(deck_report.screen_id == "deck_list");
+    assert(deck_report.modifier_error_count == 0);
+    assert(deck_report.first_modifier_error.empty());
     assert(deck_report.node_count > 0);
     assert(deck_report.frame_summary.nonblank());
     assert(deck_report.frame_stats.text_count > 0);
@@ -41,6 +43,7 @@ int main()
     app_render_frame active_frame = render_app_frame(state.snapshot());
     const app_render_report& active_report = active_frame.report;
     assert(active_report.screen_id == "quiz_active");
+    assert(active_report.modifier_error_count == 0);
     assert(active_report.input_region_count > 0);
     assert(active_report.frame_stats.draw_call_count > 0);
     assert(active_report.frame_summary.nonblank());

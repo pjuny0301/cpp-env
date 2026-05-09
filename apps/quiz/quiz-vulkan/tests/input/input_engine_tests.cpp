@@ -1566,6 +1566,16 @@ void test_focus_loss_cancels_composition_and_pointer_state()
     require(focus_policy.target_id == "answer", "focus loss policy preserves target id");
     require(focus_policy.text_byte_count_before == 0, "focus loss policy records before text byte count");
     require(focus_policy.text_byte_count_after == 0, "focus loss policy records after text byte count");
+    const input_diagnostic_summary& focus_summary = engine.routing_diagnostics().summary;
+    require(focus_summary.normalized_event_count == 0, "focus loss summary emits no normalized events");
+    require(focus_summary.routes.pointer == 1, "focus loss summary counts pointer reset route");
+    require(focus_summary.routes.ime == 1, "focus loss summary counts ime cancel route");
+    require(focus_summary.routes.focus == 1, "focus loss summary counts focus loss route");
+    require(focus_summary.routes.text == 0, "focus loss summary counts no text edit route");
+    require(focus_summary.routes.total == 3, "focus loss summary counts all focus loss routes");
+    require(focus_summary.pointer_capture_ended_cleanly, "focus loss summary clears pointer capture");
+    require(focus_summary.focus_ended_cleanly, "focus loss summary clears focus state cleanly");
+    require(focus_summary.preedit_ended_cleanly, "focus loss summary clears preedit cleanly");
 
     events = engine.process_raw_event(pointer(raw_platform_pointer_phase::up, 130, 0.0f, 0.0f));
     require(events.empty(), "focus loss resets pending pointer state");

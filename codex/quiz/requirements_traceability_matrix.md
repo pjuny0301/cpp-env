@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: external font backend probe diagnostics를 fake text engine layout diagnostics에 연결하고 Windows MinGW focused text CTest 3/3 및 interface compile target build 확인.
+- `4bfecb0`: fake text layout diagnostics가 fake-only/adapter-ready/external fallback 상태를 font backend dependency probe 결과로 보고하도록 보강.
 - current: text input presentation snapshot과 Vulkan SDK capability boundary를 통합하고 public FILE_SET 등록, Windows MinGW focused input/Vulkan CTest 4/4 및 interface compile target build 확인.
 - `0c044e5`: future native Vulkan backend wiring을 위한 SDK/header/API version/function readiness capability boundary를 추가.
 - `47763c0`: input-owned text input presentation snapshot을 추가해 focus/caret/selection/preedit/submit read model을 UI/app/domain coupling 없이 제공.

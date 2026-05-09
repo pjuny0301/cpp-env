@@ -39,6 +39,7 @@ Last updated: 2026-05-09
 - Engine workers own only their engine folders. App/runtime, top-level CMake, and aggregate contract wiring stay with the integrator unless explicitly assigned.
 - Large file splitting is allowed when it improves module cohesion, worker ownership, reviewability, or conflict isolation. Do not split files only because they exceed a line-count threshold, and do not move stable public interfaces without explicit integrator approval.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
+- Latest integration note: `93b294d` adds Vulkan swapchain image acquire planning diagnostics after swapchain/frame lifecycle readiness and before command recording, modeling timeout/out-of-date/suboptimal/error gates without real Vulkan calls.
 - Latest integration note: `9696ac1` adds input routing diagnostics diff helpers for comparing semantic-free normalized event, route, keyboard, focus, IME, pointer-capture, and text-edit deltas.
 - Latest integration note: `9e20085` adds image binding plan diff diagnostics for renderer-facing texture binding packet deltas without exposing image cache/uploader internals.
 - Latest integration note: `53336e4` adds text frame draw plan diff diagnostics for renderer-facing glyph packet deltas without Vulkan/domain coupling.

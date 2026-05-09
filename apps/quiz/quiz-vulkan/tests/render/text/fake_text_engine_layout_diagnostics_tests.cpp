@@ -122,6 +122,18 @@ const quiz_vulkan::render::render_text_font_fallback_chain_entry_snapshot* find_
     return nullptr;
 }
 
+bool contains_backend_library(
+    const std::vector<quiz_vulkan::render::render_text_font_backend_library>& libraries,
+    const quiz_vulkan::render::render_text_font_backend_library library)
+{
+    for (const quiz_vulkan::render::render_text_font_backend_library candidate : libraries) {
+        if (candidate == library) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void configure_mixed_script_fallback_chain_engine(quiz_vulkan::render::fake_text_engine& engine)
 {
     using namespace quiz_vulkan::render;
@@ -852,19 +864,31 @@ void test_fake_text_engine_records_fallback_only_backend_capability_for_latin_ha
     require(diagnostics.shaped_glyphs[0].glyph_supported, "fallback-only Latin glyph remains supported");
     require(diagnostics.shaped_glyphs[1].glyph_supported, "fallback-only Hangul glyph remains supported");
     require(diagnostics.has_font_backend_run_selections(), "fallback-only layout records run backend selection");
-    require(diagnostics.font_backend_run_selections.size() == 1U, "single run records one backend selection");
     require(
-        diagnostics.font_backend_run_selections.front().shaping.library
-            == render_text_font_backend_library::deterministic_fake,
+        !diagnostics.has_font_backend_dependency_probe(),
+        "default fake-only layout does not require external dependency probing");
+    require(diagnostics.font_backend_run_selections.size() == 1U, "single run records one backend selection");
+    const fake_text_engine_font_backend_run_selection_snapshot& run_selection =
+        diagnostics.font_backend_run_selections.front();
+    require(
+        run_selection.shaping.library == render_text_font_backend_library::deterministic_fake,
         "run shaping selection records deterministic fake backend");
     require(
-        diagnostics.font_backend_run_selections.front().rasterization.library
-            == render_text_font_backend_library::deterministic_fake,
+        run_selection.rasterization.library == render_text_font_backend_library::deterministic_fake,
         "run raster selection records deterministic fake backend");
     require(
-        diagnostics.font_backend_run_selections.front().unicode_processing.library
-            == render_text_font_backend_library::deterministic_fake,
+        run_selection.unicode_processing.library == render_text_font_backend_library::deterministic_fake,
         "run unicode selection records deterministic fake backend");
+    require(run_selection.shaping.fake_only, "run shaping snapshot records fake-only path");
+    require(!run_selection.shaping.dependency_probe_configured, "run shaping snapshot records no external probe");
+    require(
+        run_selection.shaping.dependency_status
+            == render_text_font_backend_adapter_readiness_status::fallback_ready,
+        "run shaping snapshot has fallback-ready deterministic path");
+    require(
+        run_selection.shaping.dependency_fallback_reason
+            == render_text_font_backend_adapter_readiness_status::missing_dependency,
+        "run shaping snapshot keeps a stable fallback reason enum");
 
     require(
         diagnostics.glyph_font_resolutions.front().font_backend_library
@@ -907,6 +931,207 @@ void test_fake_text_engine_records_fallback_only_backend_capability_for_latin_ha
         diagnostics.shaped_atlas_update_traces.front().raster_font_backend_library
             == render_text_font_backend_library::deterministic_fake,
         "atlas trace records fallback raster backend");
+}
+
+void test_fake_text_engine_dependency_probe_reports_missing_real_backend_fallback()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    engine.set_font_backend_dependency_manifest(
+        make_render_text_known_external_font_backend_manifest(false, false, false));
+
+    const render_text_layout layout = engine.layout_text(make_single_run_request("A"));
+    const fake_text_engine_diagnostics& diagnostics = engine.last_diagnostics();
+
+    require(layout.glyphs.size() == 1U, "missing real backend manifest keeps deterministic layout");
+    require(diagnostics.has_font_backend_dependency_probe(), "dependency manifest records probe diagnostics");
+    require(diagnostics.font_backend_dependency_policy.configured, "dependency policy records configured manifest");
+    require(diagnostics.font_backend_dependency_policy.fake_only, "missing manifest keeps fake-only path selected");
+    require(diagnostics.font_backend_dependency_policy.probe_count == 3U, "dependency probe checks three backend purposes");
+    require(
+        diagnostics.font_backend_dependency_policy.fallback_ready_count == 3U,
+        "each backend purpose falls back deterministically");
+    require(
+        diagnostics.font_backend_dependency_policy.missing_dependency_count == 3U,
+        "missing dependency reason is counted per backend purpose");
+    require(
+        diagnostics.font_backend_shaping_dependency.status
+            == render_text_font_backend_adapter_readiness_status::fallback_ready,
+        "shaping dependency remains fallback ready");
+    require(
+        diagnostics.font_backend_shaping_dependency.fallback_reason
+            == render_text_font_backend_adapter_readiness_status::missing_dependency,
+        "shaping dependency records missing HarfBuzz source");
+    require(
+        contains_backend_library(
+            diagnostics.font_backend_shaping_dependency.missing_dependencies,
+            render_text_font_backend_library::harfbuzz),
+        "shaping dependency identifies HarfBuzz as missing");
+    require(
+        diagnostics.font_backend_rasterization_dependency.fallback_reason
+            == render_text_font_backend_adapter_readiness_status::missing_dependency,
+        "raster dependency records missing FreeType source");
+    require(
+        contains_backend_library(
+            diagnostics.font_backend_rasterization_dependency.missing_dependencies,
+            render_text_font_backend_library::freetype),
+        "raster dependency identifies FreeType as missing");
+    require(
+        diagnostics.font_backend_unicode_dependency.fallback_reason
+            == render_text_font_backend_adapter_readiness_status::missing_dependency,
+        "unicode dependency records missing utf8proc source");
+    require(
+        contains_backend_library(
+            diagnostics.font_backend_unicode_dependency.missing_dependencies,
+            render_text_font_backend_library::utf8proc),
+        "unicode dependency identifies utf8proc as missing");
+
+    const fake_text_engine_font_backend_run_selection_snapshot& run_selection =
+        diagnostics.font_backend_run_selections.front();
+    require(run_selection.shaping.dependency_probe_configured, "run shaping records dependency probe");
+    require(run_selection.shaping.fake_only, "run shaping records fake fallback selection");
+    require(run_selection.shaping.dependency_fallback_ready, "run shaping records fallback-ready dependency path");
+    require(
+        run_selection.shaping.dependency_fallback_reason
+            == render_text_font_backend_adapter_readiness_status::missing_dependency,
+        "run shaping records missing dependency fallback reason");
+}
+
+void test_fake_text_engine_dependency_probe_reports_adapter_unavailable_fallback()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    engine.set_font_backend_dependency_manifest(
+        make_render_text_known_external_font_backend_manifest(true, false, false));
+
+    const render_text_layout layout = engine.layout_text(make_single_run_request("A"));
+    const fake_text_engine_diagnostics& diagnostics = engine.last_diagnostics();
+
+    require(layout.glyphs.size() == 1U, "unlinked adapter manifest keeps deterministic layout");
+    require(diagnostics.has_font_backend_dependency_probe(), "unlinked manifest records probe diagnostics");
+    require(diagnostics.font_backend_dependency_policy.fake_only, "unlinked adapter keeps fake path selected");
+    require(
+        diagnostics.font_backend_dependency_policy.adapter_unavailable_count == 3U,
+        "adapter unavailable reason is counted per backend purpose");
+    require(
+        diagnostics.font_backend_shaping_dependency.fallback_reason
+            == render_text_font_backend_adapter_readiness_status::adapter_unavailable,
+        "shaping dependency records unavailable adapter symbols");
+    require(
+        contains_backend_library(
+            diagnostics.font_backend_shaping_dependency.adapter_unavailable_dependencies,
+            render_text_font_backend_library::harfbuzz),
+        "shaping dependency identifies HarfBuzz adapter unavailable");
+    require(
+        diagnostics.font_backend_rasterization_dependency.fallback_reason
+            == render_text_font_backend_adapter_readiness_status::adapter_unavailable,
+        "raster dependency records unavailable FreeType adapter symbols");
+    require(
+        diagnostics.font_backend_unicode_dependency.fallback_reason
+            == render_text_font_backend_adapter_readiness_status::adapter_unavailable,
+        "unicode dependency records unavailable utf8proc adapter symbols");
+}
+
+void test_fake_text_engine_dependency_probe_reports_version_mismatch_fallback()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    engine.set_font_backend_dependency_manifest(
+        make_render_text_known_external_font_backend_manifest(true, true, true));
+    engine.set_font_backend_capability_probe_request(render_text_font_backend_capability_probe_request{
+        .minimum_versions = {
+            render_text_font_backend_minimum_version{
+                .library = render_text_font_backend_library::harfbuzz,
+                .version = render_text_font_backend_version{.major = 99, .minor = 0, .patch = 0},
+            },
+        },
+    });
+
+    const render_text_layout layout = engine.layout_text(make_single_run_request("A"));
+    const fake_text_engine_diagnostics& diagnostics = engine.last_diagnostics();
+
+    require(layout.glyphs.size() == 1U, "version mismatch manifest keeps deterministic fallback layout");
+    require(diagnostics.has_font_backend_dependency_probe(), "version mismatch records dependency probe");
+    require(diagnostics.font_backend_dependency_policy.fake_only, "version mismatch falls back to fake path");
+    require(
+        diagnostics.font_backend_dependency_policy.version_mismatch_count > 0U,
+        "version mismatch reason is counted");
+    require(
+        diagnostics.font_backend_shaping_dependency.fallback_reason
+            == render_text_font_backend_adapter_readiness_status::version_mismatch,
+        "shaping dependency records HarfBuzz version mismatch");
+    require(
+        diagnostics.font_backend_shaping_dependency.requested_capability.status
+            == render_text_font_backend_capability_status::version_mismatch,
+        "shaping dependency preserves capability mismatch status");
+
+    const fake_text_engine_font_backend_run_selection_snapshot& run_selection =
+        diagnostics.font_backend_run_selections.front();
+    require(run_selection.shaping.fake_only, "run shaping records version-mismatch fallback");
+    require(
+        run_selection.shaping.dependency_fallback_reason
+            == render_text_font_backend_adapter_readiness_status::version_mismatch,
+        "run shaping exposes version-mismatch fallback reason");
+}
+
+void test_fake_text_engine_dependency_probe_reports_adapter_ready_selection()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    engine.set_font_backend_dependency_manifest(
+        make_render_text_known_external_font_backend_manifest(true, true, true));
+
+    const render_text_layout layout = engine.layout_text(make_single_run_request("\xd8\xa7"));
+    const fake_text_engine_diagnostics& diagnostics = engine.last_diagnostics();
+
+    require(layout.glyphs.size() == 1U, "adapter-ready dependency manifest supports complex script layout");
+    require(diagnostics.has_font_backend_dependency_probe(), "adapter-ready manifest records dependency probe");
+    require(!diagnostics.font_backend_dependency_policy.fake_only, "adapter-ready manifest leaves fake-only path");
+    require(diagnostics.font_backend_dependency_policy.adapter_ready, "dependency policy records adapter-ready path");
+    require(
+        diagnostics.font_backend_dependency_policy.adapter_ready_count == 3U,
+        "all three backend purposes are adapter ready");
+    require(
+        diagnostics.font_backend_dependency_policy.fallback_ready_count == 0U,
+        "adapter-ready manifest does not need deterministic fallback");
+    require(
+        diagnostics.font_backend_shaping_dependency.status
+            == render_text_font_backend_adapter_readiness_status::adapter_ready,
+        "shaping dependency reports adapter ready");
+    require(
+        diagnostics.font_backend_shaping_selection.selected.library == render_text_font_backend_library::harfbuzz,
+        "adapter-ready selection chooses HarfBuzz shaping");
+    require(
+        diagnostics.font_backend_rasterization_selection.selected.library == render_text_font_backend_library::freetype,
+        "adapter-ready selection chooses FreeType rasterization");
+    require(
+        diagnostics.font_backend_unicode_selection.selected.library == render_text_font_backend_library::utf8proc,
+        "adapter-ready selection chooses utf8proc unicode processing");
+
+    const fake_text_engine_font_backend_run_selection_snapshot& run_selection =
+        diagnostics.font_backend_run_selections.front();
+    require(run_selection.shaping.dependency_probe_configured, "run shaping records configured probe");
+    require(run_selection.shaping.dependency_adapter_ready, "run shaping records adapter-ready dependency path");
+    require(!run_selection.shaping.fake_only, "run shaping is not fake-only when HarfBuzz is ready");
+    require(
+        run_selection.shaping.dependency_status
+            == render_text_font_backend_adapter_readiness_status::adapter_ready,
+        "run shaping exposes adapter-ready status");
+    require(
+        run_selection.rasterization.dependency_status
+            == render_text_font_backend_adapter_readiness_status::adapter_ready,
+        "run rasterization exposes adapter-ready status");
+    require(
+        run_selection.unicode_processing.dependency_status
+            == render_text_font_backend_adapter_readiness_status::adapter_ready,
+        "run unicode exposes adapter-ready status");
+    require(
+        !diagnostics.font_backend_uses_adapter_shaping,
+        "dependency readiness does not imply a linked real adapter function table");
 }
 
 void test_fake_text_engine_carries_injected_backend_selection_to_layout_diagnostics()
@@ -2002,6 +2227,10 @@ int main()
     test_fake_line_break_policy_keeps_combining_clusters_caret_safe();
     test_fake_text_engine_records_rasterized_atlas_payloads_for_cacheable_glyphs();
     test_fake_text_engine_records_fallback_only_backend_capability_for_latin_hangul();
+    test_fake_text_engine_dependency_probe_reports_missing_real_backend_fallback();
+    test_fake_text_engine_dependency_probe_reports_adapter_unavailable_fallback();
+    test_fake_text_engine_dependency_probe_reports_version_mismatch_fallback();
+    test_fake_text_engine_dependency_probe_reports_adapter_ready_selection();
     test_fake_text_engine_carries_injected_backend_selection_to_layout_diagnostics();
     test_fake_text_engine_records_font_fallback_chain_for_mixed_script_layout();
     test_fake_text_engine_records_font_fallback_chain_for_mixed_script_carets();

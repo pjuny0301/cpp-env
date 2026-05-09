@@ -68,6 +68,10 @@ struct fake_text_engine_backend_selection_context {
     render_text_font_backend_selection_result rasterization;
     render_text_font_backend_selection_result unicode_processing;
     render_text_font_backend_capability_snapshot capability;
+    std::optional<render_text_external_font_backend_probe_result> shaping_dependency;
+    std::optional<render_text_external_font_backend_probe_result> rasterization_dependency;
+    std::optional<render_text_external_font_backend_probe_result> unicode_dependency;
+    bool dependency_manifest_configured = false;
 };
 
 render_text_font_backend_candidate render_text_font_backend_candidate_for_component(
@@ -159,12 +163,56 @@ render_text_font_backend_selection_result fake_text_engine_select_backend(
     });
 }
 
+render_text_external_font_backend_probe_request fake_text_engine_dependency_probe_request_for(
+    const render_text_font_backend_selection_purpose purpose,
+    const render_text_font_backend_capability_probe_request& capability_request,
+    const bool allow_deterministic_fallback)
+{
+    return render_text_external_font_backend_probe_request{
+        .purpose = purpose,
+        .minimum_versions = capability_request.minimum_versions,
+        .allow_deterministic_fallback = allow_deterministic_fallback,
+    };
+}
+
 fake_text_engine_backend_selection_context select_fake_text_engine_font_backends(
     const std::vector<render_text_font_backend_component>& components,
     const std::vector<render_text_font_backend_candidate>& explicit_candidates,
-    const render_text_font_backend_capability_probe_request& capability_request)
+    const render_text_font_backend_capability_probe_request& capability_request,
+    const std::optional<render_text_external_font_backend_manifest>& dependency_manifest)
 {
     fake_text_engine_backend_selection_context context;
+    if (dependency_manifest.has_value()) {
+        context.dependency_manifest_configured = true;
+        context.candidates = render_text_external_font_backend_candidates(
+            dependency_manifest->dependencies);
+
+        const manifest_font_backend_dependency_probe probe(*dependency_manifest);
+        const bool allow_deterministic_fallback =
+            dependency_manifest->allow_deterministic_fallback;
+        context.shaping_dependency = probe.probe(
+            fake_text_engine_dependency_probe_request_for(
+                render_text_font_backend_selection_purpose::shaping,
+                capability_request,
+                allow_deterministic_fallback));
+        context.rasterization_dependency = probe.probe(
+            fake_text_engine_dependency_probe_request_for(
+                render_text_font_backend_selection_purpose::rasterization,
+                capability_request,
+                allow_deterministic_fallback));
+        context.unicode_dependency = probe.probe(
+            fake_text_engine_dependency_probe_request_for(
+                render_text_font_backend_selection_purpose::unicode_processing,
+                capability_request,
+                allow_deterministic_fallback));
+
+        context.shaping = context.shaping_dependency->selection;
+        context.rasterization = context.rasterization_dependency->selection;
+        context.unicode_processing = context.unicode_dependency->selection;
+        context.capability = context.shaping.capability;
+        return context;
+    }
+
     context.candidates = fake_text_engine_backend_candidates_for(components, explicit_candidates);
     const bool allow_deterministic_fallback = components.empty() || !explicit_candidates.empty();
     context.shaping = fake_text_engine_select_backend(
@@ -186,8 +234,23 @@ fake_text_engine_backend_selection_context select_fake_text_engine_font_backends
 }
 
 fake_text_engine_font_backend_selection_snapshot fake_text_engine_font_backend_selection_snapshot_for(
-    const render_text_font_backend_selection_result& selection)
+    const render_text_font_backend_selection_result& selection,
+    const std::optional<render_text_external_font_backend_probe_result>& dependency)
 {
+    const bool selected_fake =
+        selection.has_selection
+        && selection.selected.library == render_text_font_backend_library::deterministic_fake;
+    const render_text_font_backend_adapter_readiness_status dependency_status =
+        dependency.has_value()
+            ? dependency->status
+            : (selection.selected_real_backend()
+                    ? render_text_font_backend_adapter_readiness_status::adapter_ready
+                    : render_text_font_backend_adapter_readiness_status::fallback_ready);
+    const render_text_font_backend_adapter_readiness_status dependency_fallback_reason =
+        dependency.has_value()
+            ? dependency->fallback_reason
+            : render_text_font_backend_adapter_readiness_status::missing_dependency;
+
     return fake_text_engine_font_backend_selection_snapshot{
         .purpose = selection.purpose,
         .library = selection.has_selection
@@ -199,6 +262,17 @@ fake_text_engine_font_backend_selection_snapshot fake_text_engine_font_backend_s
         .used_deterministic_fallback = selection.used_deterministic_fallback,
         .fallback_only = selection.capability.fallback_only,
         .selected_real_backend = selection.selected_real_backend(),
+        .dependency_probe_configured = dependency.has_value(),
+        .dependency_status = dependency_status,
+        .dependency_fallback_reason = dependency_fallback_reason,
+        .dependency_adapter_ready = dependency.has_value()
+            ? dependency->adapter_ready
+            : selection.selected_real_backend(),
+        .dependency_fallback_ready = dependency.has_value()
+            ? dependency->fallback_ready
+            : selection.used_deterministic_fallback,
+        .fake_only = selected_fake,
+        .dependency_diagnostic = dependency.has_value() ? dependency->diagnostic : std::string{},
     };
 }
 
@@ -211,6 +285,84 @@ void record_font_backend_selection(
     diagnostics.font_backend_unicode_selection = context.unicode_processing;
 }
 
+void count_font_backend_dependency_readiness_status(
+    fake_text_engine_font_backend_dependency_policy_snapshot& policy,
+    const render_text_font_backend_adapter_readiness_status status)
+{
+    switch (status) {
+    case render_text_font_backend_adapter_readiness_status::adapter_ready:
+        ++policy.adapter_ready_count;
+        break;
+    case render_text_font_backend_adapter_readiness_status::fallback_ready:
+        ++policy.fallback_ready_count;
+        break;
+    case render_text_font_backend_adapter_readiness_status::missing_dependency:
+        ++policy.missing_dependency_count;
+        break;
+    case render_text_font_backend_adapter_readiness_status::adapter_unavailable:
+        ++policy.adapter_unavailable_count;
+        break;
+    case render_text_font_backend_adapter_readiness_status::version_mismatch:
+        ++policy.version_mismatch_count;
+        break;
+    case render_text_font_backend_adapter_readiness_status::unsupported_feature:
+        ++policy.unsupported_feature_count;
+        break;
+    }
+}
+
+void count_font_backend_dependency_probe_result(
+    fake_text_engine_font_backend_dependency_policy_snapshot& policy,
+    const render_text_external_font_backend_probe_result& result)
+{
+    ++policy.probe_count;
+    count_font_backend_dependency_readiness_status(policy, result.status);
+    if (result.status == render_text_font_backend_adapter_readiness_status::fallback_ready) {
+        count_font_backend_dependency_readiness_status(policy, result.fallback_reason);
+    }
+}
+
+void record_font_backend_dependency_probe(
+    fake_text_engine_diagnostics& diagnostics,
+    const fake_text_engine_backend_selection_context& context)
+{
+    diagnostics.font_backend_dependency_policy.configured =
+        context.dependency_manifest_configured;
+    if (!context.dependency_manifest_configured
+        || !context.shaping_dependency.has_value()
+        || !context.rasterization_dependency.has_value()
+        || !context.unicode_dependency.has_value()) {
+        diagnostics.font_backend_dependency_policy.fake_only =
+            context.shaping.has_selection
+            && context.shaping.selected.library
+                == render_text_font_backend_library::deterministic_fake;
+        return;
+    }
+
+    diagnostics.font_backend_shaping_dependency = *context.shaping_dependency;
+    diagnostics.font_backend_rasterization_dependency = *context.rasterization_dependency;
+    diagnostics.font_backend_unicode_dependency = *context.unicode_dependency;
+
+    count_font_backend_dependency_probe_result(
+        diagnostics.font_backend_dependency_policy,
+        *context.shaping_dependency);
+    count_font_backend_dependency_probe_result(
+        diagnostics.font_backend_dependency_policy,
+        *context.rasterization_dependency);
+    count_font_backend_dependency_probe_result(
+        diagnostics.font_backend_dependency_policy,
+        *context.unicode_dependency);
+
+    diagnostics.font_backend_dependency_policy.adapter_ready =
+        diagnostics.font_backend_dependency_policy.adapter_ready_count > 0;
+    diagnostics.font_backend_dependency_policy.fallback_ready =
+        diagnostics.font_backend_dependency_policy.fallback_ready_count > 0;
+    diagnostics.font_backend_dependency_policy.fake_only =
+        context.shaping.used_deterministic_fallback
+        && context.rasterization.used_deterministic_fallback
+        && context.unicode_processing.used_deterministic_fallback;
+}
+
 void record_font_backend_run_selection(
     fake_text_engine_diagnostics& diagnostics,
     const std::size_t run_index,
@@ -221,9 +373,15 @@ void record_font_backend_run_selection(
         fake_text_engine_font_backend_run_selection_snapshot{
             .run_index = run_index,
             .style_token = style_token,
-            .shaping = fake_text_engine_font_backend_selection_snapshot_for(context.shaping),
-            .rasterization = fake_text_engine_font_backend_selection_snapshot_for(context.rasterization),
-            .unicode_processing = fake_text_engine_font_backend_selection_snapshot_for(context.unicode_processing),
+            .shaping = fake_text_engine_font_backend_selection_snapshot_for(
+                context.shaping,
+                context.shaping_dependency),
+            .rasterization = fake_text_engine_font_backend_selection_snapshot_for(
+                context.rasterization,
+                context.rasterization_dependency),
+            .unicode_processing = fake_text_engine_font_backend_selection_snapshot_for(
+                context.unicode_processing,
+                context.unicode_dependency),
         });
 }
 
@@ -2186,12 +2344,14 @@ render_text_measure fake_text_engine::measure_text(const render_text_request& re
         select_fake_text_engine_font_backends(
             font_backend_capability_components_,
             font_backend_selection_candidates_,
-            font_backend_capability_request_);
+            font_backend_capability_request_,
+            font_backend_dependency_manifest_);
     record_font_backend_capability(
         diagnostics_,
         backend_selection.capability,
         font_backend_adapter_functions_.has_value());
     record_font_backend_selection(diagnostics_, backend_selection);
+    record_font_backend_dependency_probe(diagnostics_, backend_selection);
     record_font_fallback_chain_plan(
         diagnostics_,
         request,
@@ -2215,12 +2375,14 @@ render_text_layout fake_text_engine::layout_text(const render_text_request& requ
         select_fake_text_engine_font_backends(
             font_backend_capability_components_,
             font_backend_selection_candidates_,
-            font_backend_capability_request_);
+            font_backend_capability_request_,
+            font_backend_dependency_manifest_);
     record_font_backend_capability(
         diagnostics_,
         backend_selection.capability,
         font_backend_adapter_functions_.has_value());
     record_font_backend_selection(diagnostics_, backend_selection);
+    record_font_backend_dependency_probe(diagnostics_, backend_selection);
     record_font_fallback_chain_plan(
         diagnostics_,
         request,
@@ -2295,12 +2457,14 @@ std::vector<fake_text_engine_caret> fake_text_engine::caret_positions(const rend
         select_fake_text_engine_font_backends(
             font_backend_capability_components_,
             font_backend_selection_candidates_,
-            font_backend_capability_request_);
+            font_backend_capability_request_,
+            font_backend_dependency_manifest_);
     record_font_backend_capability(
         diagnostics_,
         backend_selection.capability,
         font_backend_adapter_functions_.has_value());
     record_font_backend_selection(diagnostics_, backend_selection);
+    record_font_backend_dependency_probe(diagnostics_, backend_selection);
     record_font_fallback_chain_plan(
         diagnostics_,
         request,
@@ -2359,12 +2523,14 @@ std::vector<render_rect> fake_text_engine::selection_rects(
         select_fake_text_engine_font_backends(
             font_backend_capability_components_,
             font_backend_selection_candidates_,
-            font_backend_capability_request_);
+            font_backend_capability_request_,
+            font_backend_dependency_manifest_);
     record_font_backend_capability(
         diagnostics_,
         backend_selection.capability,
         font_backend_adapter_functions_.has_value());
     record_font_backend_selection(diagnostics_, backend_selection);
+    record_font_backend_dependency_probe(diagnostics_, backend_selection);
     record_font_fallback_chain_plan(
         diagnostics_,
         request,
@@ -2452,6 +2618,17 @@ void fake_text_engine::set_font_backend_selection_candidates(
 void fake_text_engine::clear_font_backend_selection_candidates()
 {
     font_backend_selection_candidates_.clear();
+}
+
+void fake_text_engine::set_font_backend_dependency_manifest(
+    render_text_external_font_backend_manifest manifest)
+{
+    font_backend_dependency_manifest_ = std::move(manifest);
+}
+
+void fake_text_engine::clear_font_backend_dependency_manifest()
+{
+    font_backend_dependency_manifest_.reset();
 }
 
 } // namespace quiz_vulkan::render

@@ -359,11 +359,11 @@ inline render_text_font_backend_adapter_readiness_status render_text_external_fo
     if (!capability.version_mismatches.empty()) {
         return render_text_font_backend_adapter_readiness_status::version_mismatch;
     }
-    if (!capability.missing_features.empty()) {
-        return render_text_font_backend_adapter_readiness_status::unsupported_feature;
-    }
     if (!adapter_unavailable_dependencies.empty()) {
         return render_text_font_backend_adapter_readiness_status::adapter_unavailable;
+    }
+    if (!capability.missing_features.empty()) {
+        return render_text_font_backend_adapter_readiness_status::unsupported_feature;
     }
     return render_text_font_backend_adapter_readiness_status::missing_dependency;
 }

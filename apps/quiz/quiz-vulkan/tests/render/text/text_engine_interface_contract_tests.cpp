@@ -212,6 +212,12 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
         -> std::same_as<render::render_text_font_backend_selection_result&>;
     { diagnostics.font_backend_unicode_selection }
         -> std::same_as<render::render_text_font_backend_selection_result&>;
+    { diagnostics.font_backend_shaping_dependency }
+        -> std::same_as<render::render_text_external_font_backend_probe_result&>;
+    { diagnostics.font_backend_rasterization_dependency }
+        -> std::same_as<render::render_text_external_font_backend_probe_result&>;
+    { diagnostics.font_backend_unicode_dependency }
+        -> std::same_as<render::render_text_external_font_backend_probe_result&>;
     { diagnostics.font_backend_run_selections }
         -> std::same_as<std::vector<render::fake_text_engine_font_backend_run_selection_snapshot>&>;
     { diagnostics.font_fallback_chain_runs }
@@ -234,6 +240,8 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
         -> std::same_as<std::vector<render::render_text_font_backend_adapter_diagnostic>&>;
     { diagnostics.font_backend_adapter_policy }
         -> std::same_as<render::fake_text_engine_font_backend_adapter_policy_snapshot&>;
+    { diagnostics.font_backend_dependency_policy }
+        -> std::same_as<render::fake_text_engine_font_backend_dependency_policy_snapshot&>;
     { diagnostics.shaped_glyphs } -> std::same_as<std::vector<render::render_text_shaped_glyph>&>;
     { diagnostics.font_shaping_diagnostics }
         -> std::same_as<std::vector<render::render_text_font_shaping_diagnostic>&>;
@@ -299,6 +307,7 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.has_font_fallback_chain_policy() } -> std::same_as<bool>;
     { diagnostics.has_font_backend_adapter_diagnostics() } -> std::same_as<bool>;
     { diagnostics.has_font_backend_adapter_policy() } -> std::same_as<bool>;
+    { diagnostics.has_font_backend_dependency_probe() } -> std::same_as<bool>;
     { diagnostics.has_shaped_glyphs() } -> std::same_as<bool>;
     { diagnostics.has_font_shaping_diagnostics() } -> std::same_as<bool>;
     { diagnostics.has_font_shaping_policy() } -> std::same_as<bool>;
@@ -593,6 +602,9 @@ static_assert(requires(render::fake_text_engine& engine, render::font_face_descr
     { engine.set_font_backend_selection_candidates(
         std::vector<render::render_text_font_backend_candidate>{}) } -> std::same_as<void>;
     { engine.clear_font_backend_selection_candidates() } -> std::same_as<void>;
+    { engine.set_font_backend_dependency_manifest(
+        render::render_text_external_font_backend_manifest{}) } -> std::same_as<void>;
+    { engine.clear_font_backend_dependency_manifest() } -> std::same_as<void>;
 });
 
 static_assert(requires(render::fake_text_engine_font_backend_adapter_policy_snapshot policy) {
@@ -608,6 +620,20 @@ static_assert(requires(render::fake_text_engine_font_backend_adapter_policy_snap
     { policy.fatal_failure_count } -> std::same_as<std::size_t&>;
 });
 
+static_assert(requires(render::fake_text_engine_font_backend_dependency_policy_snapshot policy) {
+    { policy.configured } -> std::same_as<bool&>;
+    { policy.fake_only } -> std::same_as<bool&>;
+    { policy.adapter_ready } -> std::same_as<bool&>;
+    { policy.fallback_ready } -> std::same_as<bool&>;
+    { policy.probe_count } -> std::same_as<std::size_t&>;
+    { policy.adapter_ready_count } -> std::same_as<std::size_t&>;
+    { policy.fallback_ready_count } -> std::same_as<std::size_t&>;
+    { policy.missing_dependency_count } -> std::same_as<std::size_t&>;
+    { policy.adapter_unavailable_count } -> std::same_as<std::size_t&>;
+    { policy.version_mismatch_count } -> std::same_as<std::size_t&>;
+    { policy.unsupported_feature_count } -> std::same_as<std::size_t&>;
+});
+
 static_assert(requires(
     render::fake_text_engine_font_backend_selection_snapshot selection,
     render::fake_text_engine_font_backend_run_selection_snapshot run_selection) {
@@ -619,6 +645,15 @@ static_assert(requires(
     { selection.used_deterministic_fallback } -> std::same_as<bool&>;
     { selection.fallback_only } -> std::same_as<bool&>;
     { selection.selected_real_backend } -> std::same_as<bool&>;
+    { selection.dependency_probe_configured } -> std::same_as<bool&>;
+    { selection.dependency_status }
+        -> std::same_as<render::render_text_font_backend_adapter_readiness_status&>;
+    { selection.dependency_fallback_reason }
+        -> std::same_as<render::render_text_font_backend_adapter_readiness_status&>;
+    { selection.dependency_adapter_ready } -> std::same_as<bool&>;
+    { selection.dependency_fallback_ready } -> std::same_as<bool&>;
+    { selection.fake_only } -> std::same_as<bool&>;
+    { selection.dependency_diagnostic } -> std::same_as<std::string&>;
     { run_selection.run_index } -> std::same_as<std::size_t&>;
     { run_selection.style_token } -> std::same_as<render::render_style_id&>;
     { run_selection.shaping } -> std::same_as<render::fake_text_engine_font_backend_selection_snapshot&>;

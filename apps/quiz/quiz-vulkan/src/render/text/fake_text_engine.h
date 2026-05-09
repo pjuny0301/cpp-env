@@ -2,6 +2,7 @@
 
 #include "render/text/font_backend_capabilities.h"
 #include "render/text/font_backend_adapter.h"
+#include "render/text/font_backend_dependency.h"
 #include "render/text/font_backend_selection.h"
 #include "render/text/font_coverage_run_segmentation.h"
 #include "render/text/font_rasterizer.h"
@@ -52,6 +53,20 @@ struct fake_text_engine_font_backend_adapter_policy_snapshot {
     std::size_t fatal_failure_count = 0;
 };
 
+struct fake_text_engine_font_backend_dependency_policy_snapshot {
+    bool configured = false;
+    bool fake_only = true;
+    bool adapter_ready = false;
+    bool fallback_ready = false;
+    std::size_t probe_count = 0;
+    std::size_t adapter_ready_count = 0;
+    std::size_t fallback_ready_count = 0;
+    std::size_t missing_dependency_count = 0;
+    std::size_t adapter_unavailable_count = 0;
+    std::size_t version_mismatch_count = 0;
+    std::size_t unsupported_feature_count = 0;
+};
+
 struct fake_text_engine_font_backend_selection_snapshot {
     render_text_font_backend_selection_purpose purpose =
         render_text_font_backend_selection_purpose::shaping;
@@ -65,6 +80,15 @@ struct fake_text_engine_font_backend_selection_snapshot {
     bool used_deterministic_fallback = false;
     bool fallback_only = false;
     bool selected_real_backend = false;
+    bool dependency_probe_configured = false;
+    render_text_font_backend_adapter_readiness_status dependency_status =
+        render_text_font_backend_adapter_readiness_status::fallback_ready;
+    render_text_font_backend_adapter_readiness_status dependency_fallback_reason =
+        render_text_font_backend_adapter_readiness_status::missing_dependency;
+    bool dependency_adapter_ready = false;
+    bool dependency_fallback_ready = false;
+    bool fake_only = false;
+    std::string dependency_diagnostic;
 };
 
 struct fake_text_engine_font_backend_run_selection_snapshot {
@@ -96,6 +120,9 @@ struct fake_text_engine_diagnostics {
     render_text_font_backend_selection_result font_backend_shaping_selection;
     render_text_font_backend_selection_result font_backend_rasterization_selection;
     render_text_font_backend_selection_result font_backend_unicode_selection;
+    render_text_external_font_backend_probe_result font_backend_shaping_dependency;
+    render_text_external_font_backend_probe_result font_backend_rasterization_dependency;
+    render_text_external_font_backend_probe_result font_backend_unicode_dependency;
     std::vector<fake_text_engine_font_backend_run_selection_snapshot> font_backend_run_selections;
     std::vector<render_text_font_fallback_chain_run_snapshot> font_fallback_chain_runs;
     std::vector<render_text_font_fallback_chain_missing_glyph_snapshot> font_fallback_chain_missing_glyphs;
@@ -109,6 +136,7 @@ struct fake_text_engine_diagnostics {
     bool font_backend_uses_adapter_shaping = false;
     std::vector<render_text_font_backend_adapter_diagnostic> font_backend_adapter_diagnostics;
     fake_text_engine_font_backend_adapter_policy_snapshot font_backend_adapter_policy;
+    fake_text_engine_font_backend_dependency_policy_snapshot font_backend_dependency_policy;
     std::vector<render_text_shaped_glyph> shaped_glyphs;
     std::vector<render_text_font_shaping_diagnostic> font_shaping_diagnostics;
     render_text_font_shaping_policy_snapshot font_shaping_policy;
@@ -263,6 +291,12 @@ struct fake_text_engine_diagnostics {
     {
         return font_backend_adapter_policy.configured
             || font_backend_adapter_policy.shaping_request_count > 0;
+    }
+
+    bool has_font_backend_dependency_probe() const
+    {
+        return font_backend_dependency_policy.configured
+            || font_backend_dependency_policy.probe_count > 0;
     }
 
     bool has_shaped_glyphs() const
@@ -425,6 +459,9 @@ public:
     void set_font_backend_selection_candidates(
         std::vector<render_text_font_backend_candidate> candidates);
     void clear_font_backend_selection_candidates();
+    void set_font_backend_dependency_manifest(
+        render_text_external_font_backend_manifest manifest);
+    void clear_font_backend_dependency_manifest();
     std::vector<fake_text_engine_caret> caret_positions(const render_text_request& request) const;
     std::vector<render_rect> selection_rects(
         const render_text_request& request,
@@ -444,6 +481,7 @@ private:
     deterministic_fake_font_resolver font_resolver_;
     std::vector<render_text_font_backend_component> font_backend_capability_components_;
     std::vector<render_text_font_backend_candidate> font_backend_selection_candidates_;
+    std::optional<render_text_external_font_backend_manifest> font_backend_dependency_manifest_;
     std::optional<render_text_font_backend_adapter_functions> font_backend_adapter_functions_;
     render_text_font_backend_capability_probe_request font_backend_capability_request_{
         .required_features = {

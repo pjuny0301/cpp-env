@@ -80,6 +80,61 @@ std::string_view native_function_table_status_name(
     return "unknown";
 }
 
+std::string_view sdk_header_probe_status_name(vulkan_sdk_header_probe_status status)
+{
+    switch (status) {
+    case vulkan_sdk_header_probe_status::not_checked:
+        return "not_checked";
+    case vulkan_sdk_header_probe_status::available:
+        return "available";
+    case vulkan_sdk_header_probe_status::unavailable:
+        return "unavailable";
+    }
+
+    return "unknown";
+}
+
+std::string_view sdk_capability_status_name(vulkan_sdk_capability_status status)
+{
+    switch (status) {
+    case vulkan_sdk_capability_status::not_checked:
+        return "not_checked";
+    case vulkan_sdk_capability_status::ready:
+        return "ready";
+    case vulkan_sdk_capability_status::headers_unavailable:
+        return "headers_unavailable";
+    case vulkan_sdk_capability_status::api_version_unavailable:
+        return "api_version_unavailable";
+    case vulkan_sdk_capability_status::api_version_too_old:
+        return "api_version_too_old";
+    case vulkan_sdk_capability_status::missing_required_extension:
+        return "missing_required_extension";
+    case vulkan_sdk_capability_status::native_function_table_unavailable:
+        return "native_function_table_unavailable";
+    }
+
+    return "unknown";
+}
+
+std::string_view sdk_adapter_fallback_status_name(
+    vulkan_sdk_adapter_fallback_status status)
+{
+    switch (status) {
+    case vulkan_sdk_adapter_fallback_status::none:
+        return "none";
+    case vulkan_sdk_adapter_fallback_status::headers_unavailable:
+        return "headers_unavailable";
+    case vulkan_sdk_adapter_fallback_status::api_version_unavailable:
+        return "api_version_unavailable";
+    case vulkan_sdk_adapter_fallback_status::extension_unavailable:
+        return "extension_unavailable";
+    case vulkan_sdk_adapter_fallback_status::native_function_table_unavailable:
+        return "native_function_table_unavailable";
+    }
+
+    return "unknown";
+}
+
 std::string_view frame_stage_name(vulkan_backend_frame_stage stage)
 {
     switch (stage) {

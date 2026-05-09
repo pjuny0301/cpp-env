@@ -767,6 +767,135 @@ void test_text_input_presentation_snapshot_exposes_read_model()
         "presentation direct text model snapshot preserves submit availability");
 }
 
+void test_text_input_presentation_diff_reports_review_deltas()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    const text_input_presentation_snapshot initial_snapshot = engine.text_presentation_snapshot();
+
+    engine.focus_text_target("answer");
+    const std::string base = std::string("A") + utf8(u8"한") + "B";
+    const std::string preedit = utf8(u8"ㅎ");
+    require(engine.process_raw_event(text(100, base)).size() == 1,
+        "presentation diff commit emits text event");
+    require(engine.process_raw_event(key(110, "Home")).size() == 1,
+        "presentation diff home emits caret event");
+    require(engine.process_raw_event(key(120, "ArrowRight", false, raw_platform_key_phase::down, false, true))
+                .size() == 1,
+        "presentation diff shift right emits selection event");
+    require(engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 130, preedit)).size() == 1,
+        "presentation diff preedit emits ime event");
+
+    const text_input_presentation_snapshot preedit_snapshot = engine.text_presentation_snapshot();
+    const text_input_presentation_diff preedit_diff =
+        diff_text_input_presentation_snapshots(initial_snapshot, preedit_snapshot);
+    require(preedit_diff.changed, "presentation diff reports changed snapshot");
+    require(preedit_diff.focus_changed, "presentation diff reports focus change");
+    require(!preedit_diff.has_focus.before_value && preedit_diff.has_focus.after_value,
+        "presentation diff records focus bool values");
+    require(preedit_diff.target_changed, "presentation diff reports target id change");
+    require(preedit_diff.target_id.after_value == "answer",
+        "presentation diff records target id after value");
+    require(preedit_diff.committed_text_changed, "presentation diff reports committed text change");
+    require(preedit_diff.committed_text.byte_delta == static_cast<std::int64_t>(base.size()),
+        "presentation diff records committed text byte delta");
+    require(preedit_diff.display_text_changed, "presentation diff reports display text change");
+    require(preedit_diff.display_text.after_value == preedit + utf8(u8"한") + "B",
+        "presentation diff records display text after value");
+    require(preedit_diff.caret_changed, "presentation diff reports caret change");
+    require(preedit_diff.caret_byte_offset.after_count == 1,
+        "presentation diff records committed caret byte offset");
+    require_range(preedit_diff.caret_range.after_range,
+        preedit.size(),
+        preedit.size(),
+        "presentation diff records display caret range");
+    require(preedit_diff.selection_changed, "presentation diff reports selection change");
+    require(preedit_diff.has_selection.changed && preedit_diff.has_selection.after_value,
+        "presentation diff records active selection flag");
+    require_range(preedit_diff.selection_range.after_range, 0, 1,
+        "presentation diff records selection range");
+    require(preedit_diff.preedit_changed, "presentation diff reports preedit change");
+    require(preedit_diff.has_preedit.changed && preedit_diff.has_preedit.after_value,
+        "presentation diff records active preedit flag");
+    require(preedit_diff.preedit_text.after_value == preedit,
+        "presentation diff records preedit text after value");
+    require(preedit_diff.preedit_text.byte_delta == static_cast<std::int64_t>(preedit.size()),
+        "presentation diff records preedit byte delta");
+    require_range(preedit_diff.preedit_range.after_range,
+        0,
+        preedit.size(),
+        "presentation diff records preedit range");
+    require(!preedit_diff.submit_changed, "presentation diff leaves submit unchanged before submit");
+    require(preedit_diff.clean_flags_changed, "presentation diff reports clean flag change");
+    require(preedit_diff.preedit_clean.before_value && !preedit_diff.preedit_clean.after_value,
+        "presentation diff records preedit clean flag values");
+    require(preedit_diff.byte_counts_changed, "presentation diff reports byte count change");
+    require(preedit_diff.byte_counts.committed_text_bytes.after_count == base.size(),
+        "presentation diff records committed byte count after value");
+    require(preedit_diff.byte_counts.display_text_bytes.after_count
+                == preedit.size() + std::string(utf8(u8"한")).size() + 1,
+        "presentation diff records display byte count after value");
+    require(preedit_diff.byte_counts.preedit_text_bytes.after_count == preedit.size(),
+        "presentation diff records preedit byte count after value");
+    require(preedit_diff.byte_counts.selected_text_bytes.after_count == 1,
+        "presentation diff records selected byte count after value");
+    require(preedit_diff.byte_counts.caret_byte_offset.after_count == 1,
+        "presentation diff records caret byte count after value");
+    require(preedit_diff.route_byte_diagnostics_changed,
+        "presentation diff reports route diagnostics change");
+    require(preedit_diff.route_byte_diagnostics.available.changed
+            && preedit_diff.route_byte_diagnostics.available.after_value,
+        "presentation diff records route diagnostics availability");
+    require(preedit_diff.route_byte_diagnostics.text_byte_count.after_count == preedit.size(),
+        "presentation diff records route byte count after value");
+    require(preedit_diff.route_byte_diagnostics.text_byte_delta.after_value == 0,
+        "presentation diff records route byte delta after value");
+
+    require(engine.process_raw_event(ime(raw_platform_ime_phase::cancel, 140)).size() == 1,
+        "presentation diff cancel emits ime event");
+    require(engine.process_raw_event(key(150, "Enter")).size() == 1,
+        "presentation diff submit emits text event");
+
+    const text_input_presentation_snapshot submit_snapshot = engine.text_presentation_snapshot();
+    const text_input_presentation_diff submit_diff =
+        diff_text_input_presentation_snapshots(preedit_snapshot, submit_snapshot);
+    require(submit_diff.changed, "presentation submit diff reports changed snapshot");
+    require(submit_diff.submit_changed, "presentation submit diff reports submit availability change");
+    require(!submit_diff.has_submit_text.before_value && submit_diff.has_submit_text.after_value,
+        "presentation submit diff records submit availability values");
+    require(submit_diff.committed_text_changed, "presentation submit diff reports committed clear");
+    require(submit_diff.committed_text.after_value.empty(),
+        "presentation submit diff records cleared committed text");
+    require(submit_diff.committed_text.byte_delta == -static_cast<std::int64_t>(base.size()),
+        "presentation submit diff records committed negative byte delta");
+    require(submit_diff.display_text_changed, "presentation submit diff reports display clear");
+    require(submit_diff.display_text.after_value.empty(),
+        "presentation submit diff records cleared display text");
+    require(submit_diff.preedit_changed, "presentation submit diff reports preedit clear");
+    require(submit_diff.has_preedit.before_value && !submit_diff.has_preedit.after_value,
+        "presentation submit diff records preedit flag clear");
+    require(submit_diff.clean_flags_changed, "presentation submit diff reports clean flag change");
+    require(!submit_diff.preedit_clean.before_value && submit_diff.preedit_clean.after_value,
+        "presentation submit diff records clean preedit after submit");
+    require(submit_diff.byte_counts.committed_text_bytes.after_count == 0,
+        "presentation submit diff records empty committed byte count");
+    require(submit_diff.byte_counts.display_text_bytes.after_count == 0,
+        "presentation submit diff records empty display byte count");
+    require(submit_diff.byte_counts.preedit_text_bytes.after_count == 0,
+        "presentation submit diff records empty preedit byte count");
+    require(submit_diff.route_byte_diagnostics.text_byte_delta.changed,
+        "presentation submit diff reports route byte delta change");
+    require(submit_diff.route_byte_diagnostics.text_byte_delta.after_value
+                == -static_cast<std::int64_t>(base.size()),
+        "presentation submit diff records submit route negative byte delta");
+
+    const text_input_presentation_diff stable_diff =
+        diff_text_input_presentation_snapshots(submit_snapshot, submit_snapshot);
+    require(!stable_diff.changed, "presentation diff self comparison is stable");
+}
+
 } // namespace
 
 int main()
@@ -777,6 +906,7 @@ int main()
     test_keyboard_focus_traversal_diagnostics();
     test_keyboard_cancel_intent_diagnostics();
     test_text_input_presentation_snapshot_exposes_read_model();
+    test_text_input_presentation_diff_reports_review_deltas();
 
     std::cout << "input_engine_keyboard_text_tests passed\n";
     return 0;

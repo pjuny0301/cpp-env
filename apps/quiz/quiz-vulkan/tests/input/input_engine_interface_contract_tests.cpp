@@ -1181,15 +1181,129 @@ concept TextInputPresentationSnapshotInterface = requires(T snapshot) {
 };
 
 template <typename T>
+concept TextInputPresentationCountDeltaInterface = requires(T delta) {
+    { delta.before_count } -> std::same_as<std::size_t&>;
+    { delta.after_count } -> std::same_as<std::size_t&>;
+    { delta.delta } -> std::same_as<std::int64_t&>;
+    { delta.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept TextInputPresentationBoolDeltaInterface = requires(T delta) {
+    { delta.before_value } -> std::same_as<bool&>;
+    { delta.after_value } -> std::same_as<bool&>;
+    { delta.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept TextInputPresentationIntDeltaInterface = requires(T delta) {
+    { delta.before_value } -> std::same_as<std::int64_t&>;
+    { delta.after_value } -> std::same_as<std::int64_t&>;
+    { delta.delta } -> std::same_as<std::int64_t&>;
+    { delta.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept TextInputPresentationRangeDeltaInterface = requires(T delta) {
+    { delta.before_range } -> std::same_as<input::text_range&>;
+    { delta.after_range } -> std::same_as<input::text_range&>;
+    { delta.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept TextInputPresentationStringDeltaInterface = requires(T delta) {
+    { delta.before_value } -> std::same_as<std::string&>;
+    { delta.after_value } -> std::same_as<std::string&>;
+    { delta.byte_delta } -> std::same_as<std::int64_t&>;
+    { delta.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept TextInputPresentationByteCountDeltasInterface = requires(T deltas) {
+    { deltas.committed_text_bytes } -> std::same_as<input::text_input_presentation_count_delta&>;
+    { deltas.display_text_bytes } -> std::same_as<input::text_input_presentation_count_delta&>;
+    { deltas.preedit_text_bytes } -> std::same_as<input::text_input_presentation_count_delta&>;
+    { deltas.selected_text_bytes } -> std::same_as<input::text_input_presentation_count_delta&>;
+    { deltas.preedit_range_bytes } -> std::same_as<input::text_input_presentation_count_delta&>;
+    { deltas.caret_byte_offset } -> std::same_as<input::text_input_presentation_count_delta&>;
+    { deltas.preedit_anchor_byte_offset } -> std::same_as<input::text_input_presentation_count_delta&>;
+    { deltas.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept TextInputPresentationRouteByteDiagnosticsDiffInterface = requires(T diff) {
+    { diff.available } -> std::same_as<input::text_input_presentation_bool_delta&>;
+    { diff.text_byte_count } -> std::same_as<input::text_input_presentation_count_delta&>;
+    { diff.text_byte_count_before } -> std::same_as<input::text_input_presentation_count_delta&>;
+    { diff.text_byte_count_after } -> std::same_as<input::text_input_presentation_count_delta&>;
+    { diff.text_byte_delta } -> std::same_as<input::text_input_presentation_int_delta&>;
+    { diff.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept TextInputPresentationDiffInterface = requires(T diff) {
+    { diff.has_focus } -> std::same_as<input::text_input_presentation_bool_delta&>;
+    { diff.target_id } -> std::same_as<input::text_input_presentation_string_delta&>;
+    { diff.committed_text } -> std::same_as<input::text_input_presentation_string_delta&>;
+    { diff.display_text } -> std::same_as<input::text_input_presentation_string_delta&>;
+    { diff.caret_byte_offset } -> std::same_as<input::text_input_presentation_count_delta&>;
+    { diff.caret_range } -> std::same_as<input::text_input_presentation_range_delta&>;
+    { diff.has_selection } -> std::same_as<input::text_input_presentation_bool_delta&>;
+    { diff.selection_range } -> std::same_as<input::text_input_presentation_range_delta&>;
+    { diff.has_preedit } -> std::same_as<input::text_input_presentation_bool_delta&>;
+    { diff.preedit_text } -> std::same_as<input::text_input_presentation_string_delta&>;
+    { diff.preedit_range } -> std::same_as<input::text_input_presentation_range_delta&>;
+    { diff.preedit_anchor_byte_offset } -> std::same_as<input::text_input_presentation_count_delta&>;
+    { diff.has_submit_text } -> std::same_as<input::text_input_presentation_bool_delta&>;
+    { diff.focus_clean } -> std::same_as<input::text_input_presentation_bool_delta&>;
+    { diff.preedit_clean } -> std::same_as<input::text_input_presentation_bool_delta&>;
+    { diff.byte_counts } -> std::same_as<input::text_input_presentation_byte_count_deltas&>;
+    { diff.route_byte_diagnostics }
+        -> std::same_as<input::text_input_presentation_route_byte_diagnostics_diff&>;
+    { diff.focus_changed } -> std::same_as<bool&>;
+    { diff.target_changed } -> std::same_as<bool&>;
+    { diff.committed_text_changed } -> std::same_as<bool&>;
+    { diff.display_text_changed } -> std::same_as<bool&>;
+    { diff.caret_changed } -> std::same_as<bool&>;
+    { diff.selection_changed } -> std::same_as<bool&>;
+    { diff.preedit_changed } -> std::same_as<bool&>;
+    { diff.submit_changed } -> std::same_as<bool&>;
+    { diff.clean_flags_changed } -> std::same_as<bool&>;
+    { diff.byte_counts_changed } -> std::same_as<bool&>;
+    { diff.route_byte_diagnostics_changed } -> std::same_as<bool&>;
+    { diff.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
 concept TextInputPresentationFunctions = requires(
     const input::text_input_model& model,
     const input::input_routing_diagnostics& diagnostics,
     const input::action_route_policy_diagnostic& route,
     input::action_route_policy_kind route_kind,
-    input::text_range range) {
+    input::text_range range,
+    const input::text_input_presentation_byte_counts& byte_counts,
+    const input::text_input_presentation_route_byte_diagnostics& route_byte_diagnostics,
+    const input::text_input_presentation_snapshot& snapshot) {
     { input::text_input_presentation_range_byte_count(range) } -> std::same_as<std::size_t>;
     { input::text_input_presentation_size_delta(std::size_t{}, std::size_t{}) }
         -> std::same_as<std::int64_t>;
+    { input::diff_text_input_presentation_count(std::size_t{}, std::size_t{}) }
+        -> std::same_as<input::text_input_presentation_count_delta>;
+    { input::diff_text_input_presentation_bool(bool{}, bool{}) }
+        -> std::same_as<input::text_input_presentation_bool_delta>;
+    { input::diff_text_input_presentation_int(std::int64_t{}, std::int64_t{}) }
+        -> std::same_as<input::text_input_presentation_int_delta>;
+    { input::text_input_presentation_ranges_equal(range, range) } -> std::same_as<bool>;
+    { input::diff_text_input_presentation_range(range, range) }
+        -> std::same_as<input::text_input_presentation_range_delta>;
+    { input::diff_text_input_presentation_string(std::string{}, std::string{}) }
+        -> std::same_as<input::text_input_presentation_string_delta>;
+    { input::diff_text_input_presentation_byte_counts(byte_counts, byte_counts) }
+        -> std::same_as<input::text_input_presentation_byte_count_deltas>;
+    { input::diff_text_input_presentation_route_byte_diagnostics(
+        route_byte_diagnostics,
+        route_byte_diagnostics) }
+        -> std::same_as<input::text_input_presentation_route_byte_diagnostics_diff>;
     { input::text_input_presentation_route_has_text_byte_diagnostics(route_kind) }
         -> std::same_as<bool>;
     { input::make_text_input_presentation_route_byte_diagnostics(route) }
@@ -1200,6 +1314,8 @@ concept TextInputPresentationFunctions = requires(
         -> std::same_as<input::text_input_presentation_snapshot>;
     { input::make_text_input_presentation_snapshot(model, diagnostics) }
         -> std::same_as<input::text_input_presentation_snapshot>;
+    { input::diff_text_input_presentation_snapshots(snapshot, snapshot) }
+        -> std::same_as<input::text_input_presentation_diff>;
 };
 
 static_assert(ImeCompositionStateInterface<input::ime_composition_state>);
@@ -1352,6 +1468,14 @@ static_assert(std::is_default_constructible_v<input::input_routing_diagnostics_d
 static_assert(std::is_default_constructible_v<input::text_input_presentation_byte_counts>);
 static_assert(std::is_default_constructible_v<input::text_input_presentation_route_byte_diagnostics>);
 static_assert(std::is_default_constructible_v<input::text_input_presentation_snapshot>);
+static_assert(std::is_default_constructible_v<input::text_input_presentation_count_delta>);
+static_assert(std::is_default_constructible_v<input::text_input_presentation_bool_delta>);
+static_assert(std::is_default_constructible_v<input::text_input_presentation_int_delta>);
+static_assert(std::is_default_constructible_v<input::text_input_presentation_range_delta>);
+static_assert(std::is_default_constructible_v<input::text_input_presentation_string_delta>);
+static_assert(std::is_default_constructible_v<input::text_input_presentation_byte_count_deltas>);
+static_assert(std::is_default_constructible_v<input::text_input_presentation_route_byte_diagnostics_diff>);
+static_assert(std::is_default_constructible_v<input::text_input_presentation_diff>);
 static_assert(std::is_default_constructible_v<input::keyboard_modifier_state>);
 static_assert(std::is_default_constructible_v<input::keyboard_chord_diagnostic>);
 static_assert(!std::is_polymorphic_v<input::platform_input_translation_request>);
@@ -1368,6 +1492,7 @@ static_assert(!std::is_polymorphic_v<input::normalized_input_replay_focus_summar
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_diff>);
 static_assert(!std::is_polymorphic_v<input::input_routing_diagnostics_diff>);
 static_assert(!std::is_polymorphic_v<input::text_input_presentation_snapshot>);
+static_assert(!std::is_polymorphic_v<input::text_input_presentation_diff>);
 static_assert(std::is_same_v<
     decltype(input::platform_input_translation_result{}.event),
     std::optional<raw_platform_input_event>>);
@@ -1427,6 +1552,15 @@ static_assert(TextInputPresentationByteCountsInterface<input::text_input_present
 static_assert(TextInputPresentationRouteByteDiagnosticsInterface<
     input::text_input_presentation_route_byte_diagnostics>);
 static_assert(TextInputPresentationSnapshotInterface<input::text_input_presentation_snapshot>);
+static_assert(TextInputPresentationCountDeltaInterface<input::text_input_presentation_count_delta>);
+static_assert(TextInputPresentationBoolDeltaInterface<input::text_input_presentation_bool_delta>);
+static_assert(TextInputPresentationIntDeltaInterface<input::text_input_presentation_int_delta>);
+static_assert(TextInputPresentationRangeDeltaInterface<input::text_input_presentation_range_delta>);
+static_assert(TextInputPresentationStringDeltaInterface<input::text_input_presentation_string_delta>);
+static_assert(TextInputPresentationByteCountDeltasInterface<input::text_input_presentation_byte_count_deltas>);
+static_assert(TextInputPresentationRouteByteDiagnosticsDiffInterface<
+    input::text_input_presentation_route_byte_diagnostics_diff>);
+static_assert(TextInputPresentationDiffInterface<input::text_input_presentation_diff>);
 static_assert(TextInputPresentationFunctions<void>);
 
 constexpr input::text_range text_range_contract{

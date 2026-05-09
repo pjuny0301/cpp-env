@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: stb/external image decoder selection diagnostics를 image decoder chain/texture pipeline snapshots에 연결하고 Windows MinGW focused image CTest 5/5 및 interface compile target build 확인.
+- `dd3d5ca`: texture request별 internal decoder/adapter-ready/fallback state를 image pipeline diagnostics에 노출.
 - current: text input presentation diff helpers를 통합하고 Windows MinGW focused input keyboard/text CTest 1/1 및 interface compile target build 확인.
 - `d786fa8`: text input presentation snapshot diff helper를 추가해 UI/app/domain coupling 없이 input read-model 변화량을 비교.
 - current: external font backend probe diagnostics를 fake text engine layout diagnostics에 연결하고 Windows MinGW focused text CTest 3/3 및 interface compile target build 확인.

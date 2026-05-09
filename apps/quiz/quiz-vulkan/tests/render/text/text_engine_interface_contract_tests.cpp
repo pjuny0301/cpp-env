@@ -2,6 +2,7 @@
 #include "render/text/fake_text_engine.h"
 #include "render/text/font_backend_adapter.h"
 #include "render/text/font_backend_capabilities.h"
+#include "render/text/font_backend_dependency.h"
 #include "render/text/font_backend_selection.h"
 #include "render/text/font_cmap_inspector.h"
 #include "render/text/font_coverage_run_segmentation.h"
@@ -131,6 +132,16 @@ concept FontBackendCapabilityProbeContract = requires(
 
 static_assert(FontBackendCapabilityProbeContract<render::font_backend_capability_probe_interface>);
 static_assert(FontBackendCapabilityProbeContract<render::deterministic_fake_font_backend_capability_probe>);
+
+template <typename T>
+concept FontBackendDependencyProbeContract = requires(
+    const T& probe,
+    const render::render_text_external_font_backend_probe_request& request) {
+    { probe.probe(request) } -> std::same_as<render::render_text_external_font_backend_probe_result>;
+};
+
+static_assert(FontBackendDependencyProbeContract<render::font_backend_dependency_probe_interface>);
+static_assert(FontBackendDependencyProbeContract<render::manifest_font_backend_dependency_probe>);
 
 template <typename T>
 concept FontBackendAdapterContract = requires(
@@ -473,6 +484,100 @@ static_assert(requires(
         -> std::same_as<render::render_text_font_backend_selection_result>;
     { render::select_render_text_font_backend(request) }
         -> std::same_as<render::render_text_font_backend_selection_result>;
+});
+
+static_assert(requires(
+    render::render_text_font_backend_selection_purpose purpose,
+    render::render_text_font_backend_adapter_readiness_status readiness_status,
+    render::render_text_external_font_backend_dependency dependency,
+    render::render_text_external_font_backend_manifest manifest,
+    render::render_text_external_font_backend_probe_request request,
+    render::render_text_external_font_backend_probe_result result,
+    render::render_text_font_backend_candidate candidate,
+    render::render_text_font_backend_capability_snapshot capability,
+    std::vector<render::render_text_external_font_backend_dependency> dependencies,
+    std::vector<render::render_text_font_backend_library> libraries,
+    std::string hint) {
+    { render::render_text_font_backend_adapter_readiness_status_name(readiness_status) }
+        -> std::same_as<std::string>;
+    { render::render_text_external_font_backend_hint_uses_absolute_or_host_path(hint) }
+        -> std::same_as<bool>;
+    { dependency.library } -> std::same_as<render::render_text_font_backend_library&>;
+    { dependency.label } -> std::same_as<std::string&>;
+    { dependency.version } -> std::same_as<render::render_text_font_backend_version&>;
+    { dependency.license } -> std::same_as<std::string&>;
+    { dependency.source_hint } -> std::same_as<std::string&>;
+    { dependency.include_hint } -> std::same_as<std::string&>;
+    { dependency.library_hint } -> std::same_as<std::string&>;
+    { dependency.features } -> std::same_as<std::vector<render::render_text_font_backend_feature>&>;
+    { dependency.source_available } -> std::same_as<bool&>;
+    { dependency.build_linked } -> std::same_as<bool&>;
+    { dependency.adapter_symbols_available } -> std::same_as<bool&>;
+    { dependency.fallback_only } -> std::same_as<bool&>;
+    { dependency.diagnostic } -> std::same_as<std::string&>;
+    { dependency.supports_feature(render::render_text_font_backend_feature::glyph_shaping) }
+        -> std::same_as<bool>;
+    { dependency.adapter_ready() } -> std::same_as<bool>;
+    { dependency.metadata_is_portable() } -> std::same_as<bool>;
+    { dependency.candidate() } -> std::same_as<render::render_text_font_backend_candidate>;
+    { dependency.component() } -> std::same_as<render::render_text_font_backend_component>;
+    { manifest.label } -> std::same_as<std::string&>;
+    { manifest.dependencies } -> std::same_as<std::vector<render::render_text_external_font_backend_dependency>&>;
+    { manifest.allow_deterministic_fallback } -> std::same_as<bool&>;
+    { manifest.empty() } -> std::same_as<bool>;
+    { request.purpose } -> std::same_as<render::render_text_font_backend_selection_purpose&>;
+    { request.required_libraries } -> std::same_as<std::vector<render::render_text_font_backend_library>&>;
+    { request.required_features } -> std::same_as<std::vector<render::render_text_font_backend_feature>&>;
+    { request.minimum_versions } -> std::same_as<std::vector<render::render_text_font_backend_minimum_version>&>;
+    { request.allow_deterministic_fallback } -> std::same_as<bool&>;
+    { result.status } -> std::same_as<render::render_text_font_backend_adapter_readiness_status&>;
+    { result.fallback_reason } -> std::same_as<render::render_text_font_backend_adapter_readiness_status&>;
+    { result.purpose } -> std::same_as<render::render_text_font_backend_selection_purpose&>;
+    { result.manifest_label } -> std::same_as<std::string&>;
+    { result.requested_capability } -> std::same_as<render::render_text_font_backend_capability_snapshot&>;
+    { result.selection } -> std::same_as<render::render_text_font_backend_selection_result&>;
+    { result.adapter_functions } -> std::same_as<render::render_text_font_backend_adapter_functions&>;
+    { result.dependencies } -> std::same_as<std::vector<render::render_text_external_font_backend_dependency>&>;
+    { result.missing_dependencies } -> std::same_as<std::vector<render::render_text_font_backend_library>&>;
+    { result.adapter_unavailable_dependencies }
+        -> std::same_as<std::vector<render::render_text_font_backend_library>&>;
+    { result.adapter_ready } -> std::same_as<bool&>;
+    { result.fallback_ready } -> std::same_as<bool&>;
+    { result.can_attempt_real_backend } -> std::same_as<bool&>;
+    { result.used_deterministic_fallback } -> std::same_as<bool&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.ok() } -> std::same_as<bool>;
+    { result.selected_real_backend() } -> std::same_as<bool>;
+    { render::render_text_external_font_backend_dependency_from_candidate(candidate, bool{}, bool{}, bool{}) }
+        -> std::same_as<render::render_text_external_font_backend_dependency>;
+    { render::make_render_text_harfbuzz_external_dependency() }
+        -> std::same_as<render::render_text_external_font_backend_dependency>;
+    { render::make_render_text_freetype_external_dependency() }
+        -> std::same_as<render::render_text_external_font_backend_dependency>;
+    { render::make_render_text_utf8proc_external_dependency() }
+        -> std::same_as<render::render_text_external_font_backend_dependency>;
+    { render::make_render_text_deterministic_fake_external_dependency() }
+        -> std::same_as<render::render_text_external_font_backend_dependency>;
+    { render::make_render_text_known_external_font_backend_manifest() }
+        -> std::same_as<render::render_text_external_font_backend_manifest>;
+    { render::render_text_external_font_backend_default_libraries_for(purpose) }
+        -> std::same_as<std::vector<render::render_text_font_backend_library>>;
+    { render::find_render_text_external_font_backend_dependency(dependencies, render::render_text_font_backend_library::harfbuzz) }
+        -> std::same_as<const render::render_text_external_font_backend_dependency*>;
+    { render::missing_render_text_external_font_backend_dependencies(dependencies, libraries) }
+        -> std::same_as<std::vector<render::render_text_font_backend_library>>;
+    { render::unavailable_render_text_external_font_backend_adapters(dependencies, libraries) }
+        -> std::same_as<std::vector<render::render_text_font_backend_library>>;
+    { render::render_text_external_font_backend_components(dependencies) }
+        -> std::same_as<std::vector<render::render_text_font_backend_component>>;
+    { render::render_text_external_font_backend_candidates(dependencies) }
+        -> std::same_as<std::vector<render::render_text_font_backend_candidate>>;
+    { render::render_text_external_font_backend_failure_status_for(capability, libraries, libraries) }
+        -> std::same_as<render::render_text_font_backend_adapter_readiness_status>;
+    { render::render_text_external_font_backend_readiness_status_for(result.selection, capability, libraries, libraries) }
+        -> std::same_as<render::render_text_font_backend_adapter_readiness_status>;
+    { render::render_text_external_font_backend_probe_diagnostic_for(readiness_status, readiness_status) }
+        -> std::same_as<std::string>;
 });
 
 static_assert(requires(render::fake_text_engine& engine, render::font_face_descriptor descriptor) {

@@ -1,5 +1,6 @@
 #include "render/text/font_backend_adapter.h"
 #include "render/text/font_backend_capabilities.h"
+#include "render/text/font_backend_dependency.h"
 #include "render/text/font_backend_selection.h"
 #include "render/text/font_shaping_backend.h"
 
@@ -713,6 +714,228 @@ void test_font_backend_selection_header_keeps_text_boundary()
     }
 }
 
+void test_external_backend_dependency_probe_reports_adapter_ready_stack()
+{
+    using namespace quiz_vulkan::render;
+
+    const manifest_font_backend_dependency_probe probe(
+        make_render_text_known_external_font_backend_manifest(true, true, true));
+    const render_text_external_font_backend_probe_result shaping = probe.probe(
+        render_text_external_font_backend_probe_request{
+            .purpose = render_text_font_backend_selection_purpose::shaping,
+            .minimum_versions = {
+                render_text_font_backend_minimum_version{
+                    .library = render_text_font_backend_library::harfbuzz,
+                    .version = render_text_font_backend_version{.major = 14, .minor = 0, .patch = 0},
+                },
+            },
+        });
+
+    require(shaping.ok(), "adapter-ready shaping dependency probe is ok");
+    require(
+        shaping.status == render_text_font_backend_adapter_readiness_status::adapter_ready,
+        "available HarfBuzz dependency reports adapter-ready status");
+    require(shaping.adapter_ready, "available dependency marks adapter ready");
+    require(shaping.can_attempt_real_backend, "available dependency can attempt real backend");
+    require(!shaping.fallback_ready, "available dependency does not select fallback");
+    require(!shaping.used_deterministic_fallback, "available dependency does not use deterministic fallback");
+    require(shaping.requested_capability.ok(), "available dependency exposes requested capability");
+    require(shaping.selection.selected_real_backend(), "available dependency selects a real backend");
+    require(
+        shaping.selection.selected.library == render_text_font_backend_library::harfbuzz,
+        "shaping dependency selects HarfBuzz");
+    require(shaping.adapter_functions.shape != nullptr, "shaping dependency exposes adapter shape hook");
+    require(shaping.missing_dependencies.empty(), "available dependency has no missing libraries");
+    require(shaping.adapter_unavailable_dependencies.empty(), "available dependency has adapter symbols");
+
+    const render_text_external_font_backend_probe_result raster = probe.probe(
+        render_text_external_font_backend_probe_request{
+            .purpose = render_text_font_backend_selection_purpose::rasterization,
+        });
+    require(
+        raster.selection.selected.library == render_text_font_backend_library::freetype,
+        "raster dependency selects FreeType");
+    require(raster.adapter_functions.rasterize != nullptr, "raster dependency exposes adapter raster hook");
+
+    const render_text_external_font_backend_probe_result unicode = probe.probe(
+        render_text_external_font_backend_probe_request{
+            .purpose = render_text_font_backend_selection_purpose::unicode_processing,
+        });
+    require(
+        unicode.selection.selected.library == render_text_font_backend_library::utf8proc,
+        "unicode dependency selects utf8proc");
+}
+
+void test_external_backend_dependency_probe_reports_missing_dependency_and_fallback()
+{
+    using namespace quiz_vulkan::render;
+
+    const manifest_font_backend_dependency_probe probe(
+        make_render_text_known_external_font_backend_manifest(false, false, false));
+    const render_text_external_font_backend_probe_result fallback = probe.probe(
+        render_text_external_font_backend_probe_request{
+            .purpose = render_text_font_backend_selection_purpose::shaping,
+        });
+
+    require(fallback.ok(), "missing real backend still has deterministic fallback");
+    require(
+        fallback.status == render_text_font_backend_adapter_readiness_status::fallback_ready,
+        "missing real backend reports fallback-ready status");
+    require(
+        fallback.fallback_reason == render_text_font_backend_adapter_readiness_status::missing_dependency,
+        "missing real backend records missing dependency reason");
+    require(fallback.fallback_ready, "missing real backend marks fallback ready");
+    require(fallback.used_deterministic_fallback, "missing real backend uses deterministic fallback");
+    require(
+        fallback.selection.selected.library == render_text_font_backend_library::deterministic_fake,
+        "missing real backend selects deterministic fake");
+    require(fallback.missing_dependencies.size() == 1U, "missing dependency list names required library");
+    require(
+        fallback.missing_dependencies.front() == render_text_font_backend_library::harfbuzz,
+        "missing dependency list names HarfBuzz for shaping");
+
+    const render_text_external_font_backend_probe_result blocked = probe.probe(
+        render_text_external_font_backend_probe_request{
+            .purpose = render_text_font_backend_selection_purpose::shaping,
+            .allow_deterministic_fallback = false,
+        });
+    require(!blocked.ok(), "missing real backend without fallback is not ok");
+    require(
+        blocked.status == render_text_font_backend_adapter_readiness_status::missing_dependency,
+        "missing real backend without fallback reports missing dependency");
+    require(!blocked.fallback_ready, "missing real backend without fallback does not claim fallback readiness");
+}
+
+void test_external_backend_dependency_probe_reports_unlinked_adapter_fallback()
+{
+    using namespace quiz_vulkan::render;
+
+    const manifest_font_backend_dependency_probe probe(
+        make_render_text_known_external_font_backend_manifest(true, false, false));
+    const render_text_external_font_backend_probe_result result = probe.probe(
+        render_text_external_font_backend_probe_request{
+            .purpose = render_text_font_backend_selection_purpose::rasterization,
+        });
+
+    require(result.ok(), "unlinked FreeType dependency can still fall back");
+    require(
+        result.status == render_text_font_backend_adapter_readiness_status::fallback_ready,
+        "unlinked FreeType dependency reports fallback-ready status");
+    require(
+        result.fallback_reason == render_text_font_backend_adapter_readiness_status::adapter_unavailable,
+        "unlinked FreeType dependency records adapter-unavailable reason");
+    require(result.missing_dependencies.empty(), "unlinked dependency source is not missing");
+    require(
+        result.adapter_unavailable_dependencies.size() == 1U,
+        "unlinked dependency records adapter-unavailable library");
+    require(
+        result.adapter_unavailable_dependencies.front() == render_text_font_backend_library::freetype,
+        "unlinked dependency records FreeType adapter gap");
+    require(!result.adapter_ready, "unlinked dependency is not adapter ready");
+    require(result.fallback_ready, "unlinked dependency leaves fallback ready");
+}
+
+void test_external_backend_dependency_probe_reports_version_and_feature_mismatch()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_external_font_backend_manifest old_manifest =
+        make_render_text_known_external_font_backend_manifest(true, true, true);
+    bool updated_harfbuzz = false;
+    for (render_text_external_font_backend_dependency& dependency : old_manifest.dependencies) {
+        if (dependency.library == render_text_font_backend_library::harfbuzz) {
+            dependency.version = render_text_font_backend_version{.major = 13, .minor = 0, .patch = 0};
+            updated_harfbuzz = true;
+        }
+    }
+    require(updated_harfbuzz, "test manifest includes HarfBuzz");
+
+    const manifest_font_backend_dependency_probe old_probe(std::move(old_manifest));
+    const render_text_external_font_backend_probe_result version_mismatch = old_probe.probe(
+        render_text_external_font_backend_probe_request{
+            .purpose = render_text_font_backend_selection_purpose::shaping,
+            .minimum_versions = {
+                render_text_font_backend_minimum_version{
+                    .library = render_text_font_backend_library::harfbuzz,
+                    .version = render_text_font_backend_version{.major = 14, .minor = 0, .patch = 0},
+                },
+            },
+        });
+    require(version_mismatch.ok(), "version mismatch can select deterministic fallback");
+    require(
+        version_mismatch.status == render_text_font_backend_adapter_readiness_status::fallback_ready,
+        "version mismatch reports fallback-ready status");
+    require(
+        version_mismatch.fallback_reason == render_text_font_backend_adapter_readiness_status::version_mismatch,
+        "version mismatch records fallback reason");
+    require(
+        version_mismatch.requested_capability.status
+            == render_text_font_backend_capability_status::version_mismatch,
+        "version mismatch preserves requested capability status");
+    require(version_mismatch.used_deterministic_fallback, "version mismatch uses deterministic fallback");
+
+    const manifest_font_backend_dependency_probe feature_probe(
+        make_render_text_known_external_font_backend_manifest(true, true, true));
+    const render_text_external_font_backend_probe_result unsupported = feature_probe.probe(
+        render_text_external_font_backend_probe_request{
+            .purpose = render_text_font_backend_selection_purpose::shaping,
+            .required_libraries = {
+                render_text_font_backend_library::harfbuzz,
+            },
+            .required_features = {
+                render_text_font_backend_feature::variable_fonts,
+            },
+        });
+    require(unsupported.ok(), "unsupported real feature can select deterministic fallback");
+    require(
+        unsupported.fallback_reason == render_text_font_backend_adapter_readiness_status::unsupported_feature,
+        "unsupported feature records fallback reason");
+    require(
+        unsupported.requested_capability.status
+            == render_text_font_backend_capability_status::unsupported_feature,
+        "unsupported feature preserves requested capability status");
+}
+
+void test_external_backend_dependency_metadata_and_header_stay_text_owned()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_external_font_backend_manifest manifest =
+        make_render_text_known_external_font_backend_manifest(true, true, true);
+    require(!manifest.empty(), "known external dependency manifest has entries");
+    for (const render_text_external_font_backend_dependency& dependency : manifest.dependencies) {
+        require(dependency.metadata_is_portable(), "external dependency metadata uses relative logical hints");
+        require(dependency.source_hint.find("build/external") == std::string::npos, "source hint avoids build path");
+        require(dependency.include_hint.find("build/external") == std::string::npos, "include hint avoids build path");
+        require(dependency.library_hint.find("build/external") == std::string::npos, "library hint avoids build path");
+    }
+
+    render_text_external_font_backend_dependency bad_dependency =
+        make_render_text_harfbuzz_external_dependency(true, true, true);
+    bad_dependency.source_hint = "/absolute/desktop/harfbuzz-14.2.0";
+    require(!bad_dependency.metadata_is_portable(), "absolute dependency source hints are rejected");
+    require(
+        render_text_external_font_backend_hint_uses_absolute_or_host_path(bad_dependency.source_hint),
+        "absolute dependency source hint is detected");
+
+    const std::string header = read_text_owned_header("font_backend_dependency.h");
+    const std::array<const char*, 10> forbidden_tokens = {
+        "render/vulkan",
+        "render/image",
+        "src/app",
+        "app/",
+        "domain/",
+        "ui/",
+        "input/",
+        "platform/",
+        "build/external",
+        "#include <hb",
+    };
+    for (const char* token : forbidden_tokens) {
+        require(header.find(token) == std::string::npos, "font backend dependency header stays text-owned");
+    }
+}
+
 void test_fake_backend_shapes_successful_latin_hangul_and_non_bmp_run()
 {
     using namespace quiz_vulkan::render;
@@ -1088,6 +1311,11 @@ int main()
     test_font_backend_selection_uses_deterministic_fake_when_real_capabilities_are_unavailable();
     test_font_backend_selection_metadata_uses_logical_relative_hints();
     test_font_backend_selection_header_keeps_text_boundary();
+    test_external_backend_dependency_probe_reports_adapter_ready_stack();
+    test_external_backend_dependency_probe_reports_missing_dependency_and_fallback();
+    test_external_backend_dependency_probe_reports_unlinked_adapter_fallback();
+    test_external_backend_dependency_probe_reports_version_and_feature_mismatch();
+    test_external_backend_dependency_metadata_and_header_stay_text_owned();
     test_fake_backend_shapes_successful_latin_hangul_and_non_bmp_run();
     test_fake_backend_reports_backend_unavailable();
     test_fake_backend_reports_unsupported_script_and_fallback_glyph_id();

@@ -45,12 +45,17 @@ public:
             };
         }
 
+        const bool image_ready =
+            acquire_status == quiz_vulkan::render::vulkan_backend::vulkan_swapchain_acquire_status::acquired
+            || acquire_status == quiz_vulkan::render::vulkan_backend::vulkan_swapchain_acquire_status::suboptimal;
+
         return quiz_vulkan::render::vulkan_backend::vulkan_swapchain_acquire_result{
-            .status = quiz_vulkan::render::vulkan_backend::vulkan_swapchain_acquire_status::acquired,
+            .status = acquire_status,
             .image = quiz_vulkan::render::vulkan_backend::vulkan_swapchain_image_state{
-                .id = next_image_id,
-                .available = true,
-                .acquired = true,
+                .id = image_ready ? next_image_id
+                                  : quiz_vulkan::render::vulkan_backend::vulkan_swapchain_image_id{},
+                .available = image_ready,
+                .acquired = image_ready,
                 .presented = false,
             },
         };
@@ -76,7 +81,7 @@ public:
         presented_image_id = image_id;
         return quiz_vulkan::render::vulkan_backend::vulkan_swapchain_present_result{
             .status = present_image_succeeds
-                ? quiz_vulkan::render::vulkan_backend::vulkan_swapchain_present_status::presented
+                ? present_image_status
                 : quiz_vulkan::render::vulkan_backend::vulkan_swapchain_present_status::failed,
             .image_id = image_id,
         };
@@ -95,6 +100,10 @@ public:
     bool present_image_succeeds = true;
     bool present_frame_succeeds = true;
     quiz_vulkan::render::vulkan_backend::vulkan_swapchain_image_id next_image_id{.value = 7};
+    quiz_vulkan::render::vulkan_backend::vulkan_swapchain_acquire_status acquire_status =
+        quiz_vulkan::render::vulkan_backend::vulkan_swapchain_acquire_status::acquired;
+    quiz_vulkan::render::vulkan_backend::vulkan_swapchain_present_status present_image_status =
+        quiz_vulkan::render::vulkan_backend::vulkan_swapchain_present_status::presented;
     quiz_vulkan::render::vulkan_backend::vulkan_backend_lifecycle_readiness lifecycle{
         .instance_ready = true,
         .device_ready = true,
@@ -677,6 +686,12 @@ void test_vulkan_frame_pipeline_handoff_accepts_draw_list_render_data()
     require(
         result.swapchain_image_acquire_plan.selected_image_index == device.next_image_id.value,
         "swapchain image acquire plan records selected image index");
+    require(handoff.swapchain_recreate_policy_checked, "handoff checks swapchain recreate policy");
+    require(handoff.swapchain_keep_rendering, "handoff records keep-rendering swapchain policy");
+    require(!handoff.swapchain_recreate_immediately, "handoff does not request immediate recreate");
+    require(!handoff.swapchain_recreate_after_frame, "handoff does not request after-frame recreate");
+    require(!handoff.swapchain_skip_submit, "handoff does not skip submit for ready swapchain");
+    require(!handoff.swapchain_fatal_error, "handoff does not surface fatal swapchain error");
     require(handoff.command_buffer_recording_checked, "handoff checks command buffer recording result");
     require(handoff.command_buffer_recording_completed, "handoff requires completed command buffer recording result");
     require(handoff.command_buffer_ready_for_submit, "handoff exposes command buffer readiness before submit");
@@ -701,6 +716,66 @@ void test_vulkan_frame_pipeline_handoff_accepts_draw_list_render_data()
     require(device.calls[3] == "submit", "backend submits after recording");
     require(device.calls[4] == "present_image", "backend presents image after submit");
     require(device.calls[5] == "present", "backend presents frame last");
+}
+
+void test_vulkan_frame_pipeline_handoff_reports_swapchain_recreate_policy()
+{
+    using namespace quiz_vulkan::render;
+
+    {
+        fake_vulkan_backend_device device(vulkan_backend::vulkan_surface_extent{.width = 64, .height = 64});
+        device.acquire_status = vulkan_backend::vulkan_swapchain_acquire_status::suboptimal;
+        const vulkan_backend::vulkan_backend_frame_result result =
+            vulkan_backend::submit_vulkan_backend_frame(
+                device,
+                make_quad_draw_list(),
+                render_rect{0.0f, 0.0f, 64.0f, 64.0f});
+        require(result.completed(), "suboptimal acquire still completes the frame");
+        require(
+            result.pipeline_handoff.swapchain_recreate_policy_checked,
+            "handoff records checked recreate policy for suboptimal acquire");
+        require(
+            result.pipeline_handoff.swapchain_recreate_after_frame,
+            "handoff records after-frame recreate for suboptimal acquire");
+        require(
+            !result.pipeline_handoff.swapchain_skip_submit,
+            "suboptimal acquire does not skip submit");
+    }
+
+    {
+        fake_vulkan_backend_device device(vulkan_backend::vulkan_surface_extent{.width = 64, .height = 64});
+        device.acquire_status = vulkan_backend::vulkan_swapchain_acquire_status::out_of_date;
+        const vulkan_backend::vulkan_backend_frame_result result =
+            vulkan_backend::submit_vulkan_backend_frame(
+                device,
+                make_quad_draw_list(),
+                render_rect{0.0f, 0.0f, 64.0f, 64.0f});
+        require(
+            result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::acquire_image_failed,
+            "out-of-date acquire still falls back at acquire gate");
+        require(
+            result.pipeline_handoff.swapchain_recreate_policy_checked,
+            "handoff records checked recreate policy for out-of-date acquire");
+        require(
+            result.pipeline_handoff.swapchain_recreate_immediately,
+            "handoff records immediate recreate for out-of-date acquire");
+        require(result.pipeline_handoff.swapchain_skip_submit, "out-of-date acquire skips submit");
+    }
+
+    {
+        fake_vulkan_backend_device device(vulkan_backend::vulkan_surface_extent{.width = 64, .height = 64});
+        device.present_image_status = vulkan_backend::vulkan_swapchain_present_status::suboptimal;
+        const vulkan_backend::vulkan_backend_frame_result result =
+            vulkan_backend::submit_vulkan_backend_frame(
+                device,
+                make_quad_draw_list(),
+                render_rect{0.0f, 0.0f, 64.0f, 64.0f});
+        require(result.completed(), "suboptimal present still completes the frame");
+        require(
+            result.pipeline_handoff.swapchain_recreate_after_frame,
+            "handoff records after-frame recreate for suboptimal present");
+        require(!result.pipeline_handoff.swapchain_fatal_error, "suboptimal present is not fatal");
+    }
 }
 
 void test_vulkan_frame_pipeline_handoff_reports_sdk_native_path_summary()
@@ -761,6 +836,7 @@ int main()
     test_vulkan_frame_pipeline_handoff_requires_pipeline_before_resource_binding();
     test_vulkan_frame_pipeline_handoff_requires_resource_binding_before_command_recording();
     test_vulkan_frame_pipeline_handoff_accepts_draw_list_render_data();
+    test_vulkan_frame_pipeline_handoff_reports_swapchain_recreate_policy();
     test_vulkan_frame_pipeline_handoff_reports_sdk_native_path_summary();
     return 0;
 }

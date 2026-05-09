@@ -1854,8 +1854,36 @@ static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_swapchain_present_status::presented),
     render::vulkan_backend::vulkan_swapchain_present_status>);
 static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_present_status::out_of_date),
+    render::vulkan_backend::vulkan_swapchain_present_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_present_status::suboptimal),
+    render::vulkan_backend::vulkan_swapchain_present_status>);
+static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_swapchain_present_status::failed),
     render::vulkan_backend::vulkan_swapchain_present_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_present_status::error),
+    render::vulkan_backend::vulkan_swapchain_present_status>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_recreate_policy_action::not_checked),
+    render::vulkan_backend::vulkan_swapchain_recreate_policy_action>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_recreate_policy_action::keep_rendering),
+    render::vulkan_backend::vulkan_swapchain_recreate_policy_action>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_recreate_policy_action::recreate_immediately),
+    render::vulkan_backend::vulkan_swapchain_recreate_policy_action>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_recreate_policy_action::recreate_after_frame),
+    render::vulkan_backend::vulkan_swapchain_recreate_policy_action>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_recreate_policy_action::skip_submit),
+    render::vulkan_backend::vulkan_swapchain_recreate_policy_action>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_recreate_policy_action::fatal_error),
+    render::vulkan_backend::vulkan_swapchain_recreate_policy_action>);
 
 static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_swapchain_present_mode::immediate),
@@ -1874,12 +1902,15 @@ static_assert(requires(
     render::vulkan_backend::vulkan_swapchain_acquire_status acquire_status,
     render::vulkan_backend::vulkan_swapchain_image_acquire_plan_status acquire_plan_status,
     render::vulkan_backend::vulkan_swapchain_present_status present_status,
-    render::vulkan_backend::vulkan_swapchain_present_mode present_mode) {
+    render::vulkan_backend::vulkan_swapchain_present_mode present_mode,
+    render::vulkan_backend::vulkan_swapchain_recreate_policy_action recreate_action) {
     { render::vulkan_backend::swapchain_acquire_status_name(acquire_status) } -> std::same_as<std::string_view>;
     { render::vulkan_backend::swapchain_image_acquire_plan_status_name(acquire_plan_status) }
         -> std::same_as<std::string_view>;
     { render::vulkan_backend::swapchain_present_status_name(present_status) } -> std::same_as<std::string_view>;
     { render::vulkan_backend::swapchain_present_mode_name(present_mode) } -> std::same_as<std::string_view>;
+    { render::vulkan_backend::swapchain_recreate_policy_action_name(recreate_action) }
+        -> std::same_as<std::string_view>;
 });
 
 static_assert(requires(render::vulkan_backend::vulkan_swapchain_acquire_result acquire) {
@@ -1935,6 +1966,47 @@ static_assert(requires(render::vulkan_backend::vulkan_swapchain_present_result p
     { present.status } -> std::same_as<render::vulkan_backend::vulkan_swapchain_present_status&>;
     { present.image_id } -> std::same_as<render::vulkan_backend::vulkan_swapchain_image_id&>;
     { present.completed() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_swapchain_recreate_policy_result policy) {
+    { policy.checked } -> std::same_as<bool&>;
+    { policy.action }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_recreate_policy_action&>;
+    { policy.acquire_plan_checked } -> std::same_as<bool&>;
+    { policy.acquire_plan_status }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_image_acquire_plan_status&>;
+    { policy.acquire_status } -> std::same_as<render::vulkan_backend::vulkan_swapchain_acquire_status&>;
+    { policy.present_checked } -> std::same_as<bool&>;
+    { policy.present_status } -> std::same_as<render::vulkan_backend::vulkan_swapchain_present_status&>;
+    { policy.acquired_image_ready } -> std::same_as<bool&>;
+    { policy.acquire_out_of_date } -> std::same_as<bool&>;
+    { policy.acquire_suboptimal } -> std::same_as<bool&>;
+    { policy.acquire_timed_out } -> std::same_as<bool&>;
+    { policy.acquire_error } -> std::same_as<bool&>;
+    { policy.present_out_of_date } -> std::same_as<bool&>;
+    { policy.present_suboptimal } -> std::same_as<bool&>;
+    { policy.present_error } -> std::same_as<bool&>;
+    { policy.should_keep_rendering } -> std::same_as<bool&>;
+    { policy.should_recreate_immediately } -> std::same_as<bool&>;
+    { policy.should_recreate_after_frame } -> std::same_as<bool&>;
+    { policy.should_skip_submit } -> std::same_as<bool&>;
+    { policy.fatal } -> std::same_as<bool&>;
+    { policy.diagnostic } -> std::same_as<std::string&>;
+    { policy.keep_rendering() } -> std::same_as<bool>;
+    { policy.recreate_immediately() } -> std::same_as<bool>;
+    { policy.recreate_after_frame() } -> std::same_as<bool>;
+    { policy.skip_submit() } -> std::same_as<bool>;
+    { policy.fatal_error() } -> std::same_as<bool>;
+    { policy.allows_frame_progress() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    render::vulkan_backend::vulkan_swapchain_image_acquire_plan_result acquire,
+    render::vulkan_backend::vulkan_swapchain_present_result present) {
+    { render::vulkan_backend::evaluate_vulkan_swapchain_recreate_policy(acquire) }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_recreate_policy_result>;
+    { render::vulkan_backend::evaluate_vulkan_swapchain_recreate_policy(acquire, present) }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_recreate_policy_result>;
 });
 
 static_assert(requires(render::vulkan_backend::vulkan_backend_swapchain_lifecycle_state swapchain) {
@@ -4461,6 +4533,14 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_frame_pipeline_han
     { handoff.instance_ready } -> std::same_as<bool&>;
     { handoff.device_ready } -> std::same_as<bool&>;
     { handoff.swapchain_ready } -> std::same_as<bool&>;
+    { handoff.swapchain_recreate_policy_checked } -> std::same_as<bool&>;
+    { handoff.swapchain_recreate_action }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_recreate_policy_action&>;
+    { handoff.swapchain_keep_rendering } -> std::same_as<bool&>;
+    { handoff.swapchain_recreate_immediately } -> std::same_as<bool&>;
+    { handoff.swapchain_recreate_after_frame } -> std::same_as<bool&>;
+    { handoff.swapchain_skip_submit } -> std::same_as<bool&>;
+    { handoff.swapchain_fatal_error } -> std::same_as<bool&>;
     { handoff.render_pass_ready } -> std::same_as<bool&>;
     { handoff.surface_ready } -> std::same_as<bool&>;
     { handoff.frame_plan_ready } -> std::same_as<bool&>;
@@ -4538,6 +4618,8 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_frame_result resul
     { result.swapchain_policy } -> std::same_as<render::vulkan_backend::vulkan_backend_swapchain_policy_state&>;
     { result.swapchain_image_acquire_plan }
         -> std::same_as<render::vulkan_backend::vulkan_swapchain_image_acquire_plan_result&>;
+    { result.swapchain_recreate_policy }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_recreate_policy_result&>;
     { result.frame_sync } -> std::same_as<render::vulkan_backend::vulkan_backend_frame_sync_state&>;
     { result.frame_resources }
         -> std::same_as<render::vulkan_backend::vulkan_backend_frame_resource_lifetime_state&>;

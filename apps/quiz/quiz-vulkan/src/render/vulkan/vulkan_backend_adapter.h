@@ -1969,6 +1969,14 @@ struct vulkan_backend_frame_pipeline_handoff {
     bool instance_ready = false;
     bool device_ready = false;
     bool swapchain_ready = false;
+    bool swapchain_recreate_policy_checked = false;
+    vulkan_swapchain_recreate_policy_action swapchain_recreate_action =
+        vulkan_swapchain_recreate_policy_action::not_checked;
+    bool swapchain_keep_rendering = false;
+    bool swapchain_recreate_immediately = false;
+    bool swapchain_recreate_after_frame = false;
+    bool swapchain_skip_submit = false;
+    bool swapchain_fatal_error = false;
     bool render_pass_ready = false;
     bool surface_ready = false;
     bool frame_plan_ready = false;
@@ -2041,6 +2049,10 @@ struct vulkan_backend_frame_pipeline_handoff {
         return checked && status == vulkan_backend_frame_pipeline_handoff_status::ready
             && fallback_reason == vulkan_backend_fallback_reason::none
             && loader_ready && instance_ready && device_ready && swapchain_ready
+            && (!swapchain_recreate_policy_checked
+                || swapchain_keep_rendering || swapchain_recreate_after_frame)
+            && !swapchain_recreate_immediately && !swapchain_skip_submit
+            && !swapchain_fatal_error
             && render_pass_ready && surface_ready && frame_plan_ready && pipeline_completed
             && resource_bindings_completed && resource_registry_completed
             && command_packets_completed && command_packet_execution_completed
@@ -2101,6 +2113,7 @@ struct vulkan_backend_frame_result {
     vulkan_backend_swapchain_lifecycle_state swapchain;
     vulkan_backend_swapchain_policy_state swapchain_policy;
     vulkan_swapchain_image_acquire_plan_result swapchain_image_acquire_plan;
+    vulkan_swapchain_recreate_policy_result swapchain_recreate_policy;
     vulkan_backend_frame_sync_state frame_sync;
     vulkan_backend_frame_resource_lifetime_state frame_resources;
     vulkan_backend_frame_lifecycle_policy_state lifecycle_policy;
@@ -2144,6 +2157,8 @@ struct vulkan_backend_frame_result {
             && frame_submitted && frame_presented && swapchain.completed()
             && swapchain_policy.completed()
             && swapchain_image_acquire_plan.ready_for_command_recording()
+            && (!swapchain_recreate_policy.checked
+                || swapchain_recreate_policy.allows_frame_progress())
             && frame_sync.completed()
             && frame_resources.completed()
             && lifecycle_policy.completed()

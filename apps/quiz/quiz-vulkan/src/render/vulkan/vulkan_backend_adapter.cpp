@@ -2864,6 +2864,15 @@ vulkan_backend_frame_pipeline_handoff summarize_vulkan_frame_pipeline_handoff(
         .instance_ready = frame.lifecycle.effective_instance_ready(),
         .device_ready = frame.lifecycle.effective_device_ready(),
         .swapchain_ready = frame.lifecycle.effective_swapchain_ready(),
+        .swapchain_recreate_policy_checked = frame.swapchain_recreate_policy.checked,
+        .swapchain_recreate_action = frame.swapchain_recreate_policy.action,
+        .swapchain_keep_rendering = frame.swapchain_recreate_policy.should_keep_rendering,
+        .swapchain_recreate_immediately =
+            frame.swapchain_recreate_policy.should_recreate_immediately,
+        .swapchain_recreate_after_frame =
+            frame.swapchain_recreate_policy.should_recreate_after_frame,
+        .swapchain_skip_submit = frame.swapchain_recreate_policy.should_skip_submit,
+        .swapchain_fatal_error = frame.swapchain_recreate_policy.fatal,
         .render_pass_ready = frame.lifecycle.effective_render_pass_ready(),
         .surface_ready = frame.surface_ready,
         .frame_plan_ready = reached_frame_stage(
@@ -3369,6 +3378,8 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
         },
         result.swapchain.acquire);
     mark_acquire_policy_result(result.present_policy, result.swapchain.acquire);
+    result.swapchain_recreate_policy = evaluate_vulkan_swapchain_recreate_policy(
+        result.swapchain_image_acquire_plan);
     complete_signal(
         result.frame_sync.acquire_signal_image_available_semaphore,
         result.swapchain_image_acquire_plan.ready_for_command_recording());
@@ -3536,6 +3547,9 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     mark_present_policy_image_requested(result.present_policy, result.swapchain.acquire.image.id);
     result.swapchain.present = device.present_image(result.swapchain.acquire.image.id);
     mark_present_policy_image_result(result.present_policy, result.swapchain.present);
+    result.swapchain_recreate_policy = evaluate_vulkan_swapchain_recreate_policy(
+        result.swapchain_image_acquire_plan,
+        result.swapchain.present);
     complete_wait(
         result.frame_sync.present_wait_render_finished_semaphore,
         result.swapchain.present.completed());

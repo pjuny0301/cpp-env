@@ -578,8 +578,35 @@ std::string_view swapchain_present_status_name(vulkan_swapchain_present_status s
         return "not_requested";
     case vulkan_swapchain_present_status::presented:
         return "presented";
+    case vulkan_swapchain_present_status::out_of_date:
+        return "out_of_date";
+    case vulkan_swapchain_present_status::suboptimal:
+        return "suboptimal";
     case vulkan_swapchain_present_status::failed:
         return "failed";
+    case vulkan_swapchain_present_status::error:
+        return "error";
+    }
+
+    return "unknown";
+}
+
+std::string_view swapchain_recreate_policy_action_name(
+    vulkan_swapchain_recreate_policy_action action)
+{
+    switch (action) {
+    case vulkan_swapchain_recreate_policy_action::not_checked:
+        return "not_checked";
+    case vulkan_swapchain_recreate_policy_action::keep_rendering:
+        return "keep_rendering";
+    case vulkan_swapchain_recreate_policy_action::recreate_immediately:
+        return "recreate_immediately";
+    case vulkan_swapchain_recreate_policy_action::recreate_after_frame:
+        return "recreate_after_frame";
+    case vulkan_swapchain_recreate_policy_action::skip_submit:
+        return "skip_submit";
+    case vulkan_swapchain_recreate_policy_action::fatal_error:
+        return "fatal_error";
     }
 
     return "unknown";

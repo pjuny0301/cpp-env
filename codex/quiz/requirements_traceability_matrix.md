@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: input routing diagnostics diff helpers를 통합하고 Windows MinGW focused input gesture diagnostics CTest 1/1 및 interface compile target build 확인.
+- `9696ac1`: input routing diagnostics diff helpers를 추가해 normalized event/action route/pointer capture/keyboard/text/focus/IME deltas를 app/domain semantics 없이 비교.
 - current: text/image frame plan diff diagnostics를 통합하고 Windows MinGW focused text/image CTest 2/2 및 interface compile target build 확인.
 - `9e20085`: image binding plan diff diagnostics를 추가해 texture binding packet readiness/placeholder/sampler/residency/cache-key delta를 비교.
 - `53336e4`: text frame draw plan diff diagnostics를 추가해 glyph packet readiness/fallback/page/style/run delta를 비교.

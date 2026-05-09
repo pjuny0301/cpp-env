@@ -158,6 +158,7 @@ concept NormalizedInputReplayEndStateInterface = requires(T state) {
     { state.pointer_capture_clean } -> std::same_as<bool&>;
     { state.focus_clean } -> std::same_as<bool&>;
     { state.preedit_clean } -> std::same_as<bool&>;
+    { state.text_presentation } -> std::same_as<input::text_input_presentation_snapshot&>;
 };
 
 template <typename T>
@@ -171,6 +172,7 @@ concept NormalizedInputReplayBatchInterface = requires(T batch) {
     { batch.pointer } -> std::same_as<input::normalized_input_replay_pointer_summary&>;
     { batch.focus } -> std::same_as<input::normalized_input_replay_focus_summary&>;
     { batch.end_state } -> std::same_as<input::normalized_input_replay_end_state&>;
+    { batch.text_presentation_diff } -> std::same_as<input::text_input_presentation_diff&>;
 };
 
 template <typename T>
@@ -493,6 +495,7 @@ concept NormalizedInputReplayFinalStateDiffInterface = requires(T diff) {
     { diff.focus_clean } -> std::same_as<input::normalized_input_replay_bool_delta&>;
     { diff.preedit_clean } -> std::same_as<input::normalized_input_replay_bool_delta&>;
     { diff.pointer_capture } -> std::same_as<input::normalized_input_replay_pointer_capture_delta&>;
+    { diff.text_presentation } -> std::same_as<input::text_input_presentation_diff&>;
     { diff.focus_changed } -> std::same_as<bool&>;
     { diff.caret_changed } -> std::same_as<bool&>;
     { diff.selection_changed } -> std::same_as<bool&>;
@@ -500,6 +503,7 @@ concept NormalizedInputReplayFinalStateDiffInterface = requires(T diff) {
     { diff.display_text_changed } -> std::same_as<bool&>;
     { diff.preedit_changed } -> std::same_as<bool&>;
     { diff.pointer_capture_changed } -> std::same_as<bool&>;
+    { diff.text_presentation_changed } -> std::same_as<bool&>;
     { diff.changed } -> std::same_as<bool&>;
 };
 
@@ -1547,6 +1551,12 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     decltype(input::normalized_input_replay_recording{}.focus),
     input::normalized_input_replay_focus_summary>);
+static_assert(std::is_same_v<
+    decltype(input::normalized_input_replay_batch{}.end_state.text_presentation),
+    input::text_input_presentation_snapshot>);
+static_assert(std::is_same_v<
+    decltype(input::normalized_input_replay_batch{}.text_presentation_diff),
+    input::text_input_presentation_diff>);
 static_assert(TextInputModelInterface<input::text_input_model>);
 static_assert(TextInputPresentationByteCountsInterface<input::text_input_presentation_byte_counts>);
 static_assert(TextInputPresentationRouteByteDiagnosticsInterface<

@@ -56,6 +56,7 @@ struct normalized_input_replay_final_state_diff {
     normalized_input_replay_bool_delta focus_clean;
     normalized_input_replay_bool_delta preedit_clean;
     normalized_input_replay_pointer_capture_delta pointer_capture;
+    text_input_presentation_diff text_presentation;
     bool focus_changed = false;
     bool caret_changed = false;
     bool selection_changed = false;
@@ -63,6 +64,7 @@ struct normalized_input_replay_final_state_diff {
     bool display_text_changed = false;
     bool preedit_changed = false;
     bool pointer_capture_changed = false;
+    bool text_presentation_changed = false;
     bool changed = false;
 };
 
@@ -642,21 +644,36 @@ struct normalized_input_replay_diff {
         .focus_clean = normalized_input_replay_diff_bool(before.focus_clean, after.focus_clean),
         .preedit_clean = normalized_input_replay_diff_bool(before.preedit_clean, after.preedit_clean),
         .pointer_capture = normalized_input_replay_diff_pointer_capture(before.pointer_capture, after.pointer_capture),
+        .text_presentation =
+            diff_text_input_presentation_snapshots(before.text_presentation, after.text_presentation),
     };
-    diff.focus_changed = diff.has_focus.changed || diff.focus_id.changed || diff.focus_clean.changed;
-    diff.caret_changed = diff.caret.changed;
-    diff.selection_changed = diff.has_selection.changed || diff.selection.changed;
-    diff.text_changed = diff.text.changed;
-    diff.display_text_changed = diff.display_text.changed;
-    diff.preedit_changed = diff.preedit_text.changed || diff.preedit_clean.changed;
+    diff.focus_changed =
+        diff.has_focus.changed
+        || diff.focus_id.changed
+        || diff.focus_clean.changed
+        || diff.text_presentation.focus_changed;
+    diff.caret_changed = diff.caret.changed || diff.text_presentation.caret_changed;
+    diff.selection_changed =
+        diff.has_selection.changed
+        || diff.selection.changed
+        || diff.text_presentation.selection_changed;
+    diff.text_changed = diff.text.changed || diff.text_presentation.committed_text_changed;
+    diff.display_text_changed =
+        diff.display_text.changed || diff.text_presentation.display_text_changed;
+    diff.preedit_changed =
+        diff.preedit_text.changed
+        || diff.preedit_clean.changed
+        || diff.text_presentation.preedit_changed;
     diff.pointer_capture_changed = diff.pointer_capture.changed || diff.pointer_capture.clean_changed;
+    diff.text_presentation_changed = diff.text_presentation.changed;
     diff.changed = diff.focus_changed
         || diff.caret_changed
         || diff.selection_changed
         || diff.text_changed
         || diff.display_text_changed
         || diff.preedit_changed
-        || diff.pointer_capture_changed;
+        || diff.pointer_capture_changed
+        || diff.text_presentation_changed;
     return diff;
 }
 
@@ -699,6 +716,7 @@ inline void normalized_input_replay_count_regression_category(
         .text_or_preedit_changed = final_state.text_changed
             || final_state.display_text_changed
             || final_state.preedit_changed
+            || final_state.text_presentation_changed
             || ime.final_text_changed
             || ime.final_preedit_changed,
         .focus_timeline_changed = focus.timeline_changed,

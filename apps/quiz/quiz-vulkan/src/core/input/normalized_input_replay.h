@@ -311,6 +311,7 @@ struct normalized_input_replay_end_state {
     bool pointer_capture_clean = true;
     bool focus_clean = true;
     bool preedit_clean = true;
+    text_input_presentation_snapshot text_presentation;
 };
 
 struct normalized_input_replay_batch {
@@ -323,6 +324,7 @@ struct normalized_input_replay_batch {
     normalized_input_replay_pointer_summary pointer;
     normalized_input_replay_focus_summary focus;
     normalized_input_replay_end_state end_state;
+    text_input_presentation_diff text_presentation_diff;
 };
 
 struct normalized_input_replay_recording {
@@ -1414,6 +1416,7 @@ inline void accumulate_normalized_input_replay_focus_summary(
         .caret_byte_offset = text.caret_byte_offset(),
         .preedit_text = text.preedit_text(),
         .composition = text.ime_composition(),
+        .text_presentation = engine.text_presentation_snapshot(),
     };
     if (const auto selection = text.selection_range()) {
         state.has_selection = true;
@@ -1457,6 +1460,10 @@ inline void accumulate_normalized_input_replay_focus_summary(
             events,
             before_state,
             end_state);
+    const text_input_presentation_diff text_presentation_diff =
+        diff_text_input_presentation_snapshots(
+            before_state.text_presentation,
+            end_state.text_presentation);
     return normalized_input_replay_batch{
         .label = std::move(label),
         .input_events = std::move(events),
@@ -1467,6 +1474,7 @@ inline void accumulate_normalized_input_replay_focus_summary(
         .pointer = std::move(pointer),
         .focus = std::move(focus),
         .end_state = std::move(end_state),
+        .text_presentation_diff = text_presentation_diff,
     };
 }
 

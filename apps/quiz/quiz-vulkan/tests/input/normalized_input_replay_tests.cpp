@@ -197,6 +197,22 @@ void test_mixed_fixture_records_stable_summary_counts()
         "mixed replay preedit batch counts ime route");
     require(!recording.batches[5].end_state.preedit_clean,
         "mixed replay preedit batch records unclean preedit end state");
+    require(recording.batches[5].end_state.text_presentation.has_preedit,
+        "mixed replay preedit batch exposes presentation preedit");
+    require(recording.batches[5].end_state.text_presentation.display_text == utf8(u8"ㅎ"),
+        "mixed replay preedit batch exposes presentation display text");
+    require(recording.batches[5].text_presentation_diff.preedit_changed,
+        "mixed replay preedit batch exposes presentation preedit diff");
+    require(recording.batches[5].text_presentation_diff.display_text_changed,
+        "mixed replay preedit batch exposes presentation display text diff");
+    require(recording.batches[5].text_presentation_diff.route_byte_diagnostics.available.after_value,
+        "mixed replay preedit batch exposes presentation route diagnostics");
+    require(recording.batches[6].end_state.text_presentation.committed_text == utf8(u8"한"),
+        "mixed replay ime commit batch exposes presentation committed text");
+    require(!recording.batches[6].end_state.text_presentation.has_preedit,
+        "mixed replay ime commit batch exposes cleared presentation preedit");
+    require(recording.batches[6].text_presentation_diff.committed_text_changed,
+        "mixed replay ime commit batch exposes presentation committed text diff");
 
     const input_diagnostic_summary& summary = recording.summary;
     require(summary.normalized_event_count == 2, "mixed replay aggregate counts normalized events");
@@ -217,6 +233,15 @@ void test_mixed_fixture_records_stable_summary_counts()
     require(recording.final_state.focus_id == "answer", "mixed replay final state preserves focus id");
     require(recording.final_state.text == utf8(u8"한"), "mixed replay final state records committed text");
     require(recording.final_state.display_text == utf8(u8"한"), "mixed replay final state records display text");
+    require(recording.final_state.text_presentation.target_id == "answer",
+        "mixed replay final state exposes presentation target id");
+    require(recording.final_state.text_presentation.committed_text == utf8(u8"한"),
+        "mixed replay final state exposes presentation committed text");
+    require(recording.final_state.text_presentation.display_text == utf8(u8"한"),
+        "mixed replay final state exposes presentation display text");
+    require(recording.final_state.text_presentation.byte_counts.committed_text_bytes
+                == std::string(utf8(u8"한")).size(),
+        "mixed replay final state exposes presentation byte counts");
     require(recording.final_state.preedit_clean, "mixed replay final state clears preedit");
     require(engine.text_model().text() == utf8(u8"한"), "mixed replay leaves committed ime text once");
 }
@@ -796,6 +821,33 @@ void test_replay_diff_diagnostics_compare_recordings_without_semantics()
     require(diff.final_state.text.byte_delta == 1, "replay diff final text byte delta");
     require(diff.final_state.display_text_changed, "replay diff final display text changed");
     require(diff.final_state.preedit_changed, "replay diff final preedit changed");
+    require(diff.final_state.text_presentation_changed,
+        "replay diff final presentation snapshot changed");
+    require(diff.final_state.text_presentation.target_changed,
+        "replay diff presentation target changed");
+    require(diff.final_state.text_presentation.target_id.before_value.empty(),
+        "replay diff presentation target before is empty");
+    require(diff.final_state.text_presentation.target_id.after_value == "answer",
+        "replay diff presentation target after is recorded");
+    require(diff.final_state.text_presentation.committed_text_changed,
+        "replay diff presentation committed text changed");
+    require(diff.final_state.text_presentation.committed_text.byte_delta == 1,
+        "replay diff presentation committed text byte delta");
+    require(diff.final_state.text_presentation.display_text_changed,
+        "replay diff presentation display text changed");
+    require(diff.final_state.text_presentation.preedit_changed,
+        "replay diff presentation preedit changed");
+    require(diff.final_state.text_presentation.preedit_text.after_value == utf8(u8"ㅎ"),
+        "replay diff presentation preedit after is recorded");
+    require(diff.final_state.text_presentation.caret_changed,
+        "replay diff presentation caret changed");
+    require_range(diff.final_state.text_presentation.caret_range.after_range,
+        1 + std::string(utf8(u8"ㅎ")).size(),
+        1 + std::string(utf8(u8"ㅎ")).size(),
+        "replay diff presentation display caret after");
+    require(diff.final_state.text_presentation.byte_counts.preedit_text_bytes.after_count
+                == std::string(utf8(u8"ㅎ")).size(),
+        "replay diff presentation preedit byte count after");
     require(diff.final_state.preedit_text.before_value.empty(),
         "replay diff preedit before is empty");
     require(diff.final_state.preedit_text.after_value == utf8(u8"ㅎ"),
@@ -879,6 +931,8 @@ void test_replay_diff_diagnostics_compare_recordings_without_semantics()
     require(stable_diff.regression.changed_category_count == 0,
         "replay diff self comparison has no changed categories");
     require(!stable_diff.final_state.changed, "replay diff self final state unchanged");
+    require(!stable_diff.final_state.text_presentation_changed,
+        "replay diff self presentation unchanged");
     require(!stable_diff.keyboard.changed, "replay diff self keyboard unchanged");
     require(!stable_diff.pointer.changed, "replay diff self pointer unchanged");
     require(!stable_diff.ime.changed, "replay diff self ime unchanged");
@@ -915,6 +969,10 @@ void test_replay_diff_diagnostics_compare_recordings_without_semantics()
         "replay diff final selection after present");
     require_range(selection_diff.final_state.selection.after_range, 0, 1,
         "replay diff final selection range after");
+    require(selection_diff.final_state.text_presentation.selection_changed,
+        "replay diff presentation final selection changed");
+    require_range(selection_diff.final_state.text_presentation.selection_range.after_range, 0, 1,
+        "replay diff presentation final selection range after");
     require(selection_diff.focus.final_selection_changed,
         "replay diff focus final selection changed");
     require(selection_diff.keyboard.intents.selection_next.delta == 1,

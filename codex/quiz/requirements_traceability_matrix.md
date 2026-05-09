@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: normalized input replay diagnostics now include text input presentation snapshots; Windows MinGW focused normalized input replay CTest 1/1 and interface compile target build confirmed.
+- `ff7a822`: replay fixtures expose focus/target/display text/caret/selection/preedit/submit read-model state and diff evidence without UI/app/domain coupling.
 - current: Vulkan SDK readiness threading을 통합하고 Windows MinGW focused Vulkan CTest 5/5 및 interface compile target build 확인.
 - `5597b54`: SDK capability 상태를 native function-table, command recording, submit, present, frame handoff summaries에 연결.
 - current: stb/external image decoder selection diagnostics를 image decoder chain/texture pipeline snapshots에 연결하고 Windows MinGW focused image CTest 5/5 및 interface compile target build 확인.

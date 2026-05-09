@@ -39,6 +39,8 @@ Last updated: 2026-05-09
 - Engine workers own only their engine folders. App/runtime, top-level CMake, and aggregate contract wiring stay with the integrator unless explicitly assigned.
 - Large file splitting is allowed when it improves module cohesion, worker ownership, reviewability, or conflict isolation. Do not split files only because they exceed a line-count threshold, and do not move stable public interfaces without explicit integrator approval.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
+- Latest integration note: `9e20085` adds image binding plan diff diagnostics for renderer-facing texture binding packet deltas without exposing image cache/uploader internals.
+- Latest integration note: `53336e4` adds text frame draw plan diff diagnostics for renderer-facing glyph packet deltas without Vulkan/domain coupling.
 - Latest integration note: `73755f8` splits input routing diagnostics into `input_routing_diagnostics.h`, keeping `input_engine.h` as the preserved include surface while reducing the engine header payload.
 - Latest integration note: `7dbfb76` splits Vulkan native readiness helpers into `vulkan_backend_native_readiness.h`, keeping `vulkan_backend_adapter.h` as the preserved include surface while isolating data-only readiness threading logic.
 - Latest integration note: `cc58697` adds image frame binding plan diagnostics that turn public image texture frame snapshots into renderer-facing texture binding packet readiness and frame delta data without Vulkan/cache/uploader internals.

@@ -6,6 +6,9 @@
 
 최근 baseline 통합 증거:
 
+- current: text/image frame plan diff diagnostics를 통합하고 Windows MinGW focused text/image CTest 2/2 및 interface compile target build 확인.
+- `9e20085`: image binding plan diff diagnostics를 추가해 texture binding packet readiness/placeholder/sampler/residency/cache-key delta를 비교.
+- `53336e4`: text frame draw plan diff diagnostics를 추가해 glyph packet readiness/fallback/page/style/run delta를 비교.
 - current: input routing diagnostics header split과 Vulkan native readiness helper split을 통합하고 public FILE_SET 등록, Windows MinGW focused input/Vulkan CTest 17/17 및 interface compile target build 확인.
 - `73755f8`: input route diagnostics를 별도 public input header로 분리해 `input_engine.h` 토큰 부담을 줄임.
 - `7dbfb76`: Vulkan native readiness threading helper를 별도 public renderer header로 분리해 backend adapter surface를 축소.

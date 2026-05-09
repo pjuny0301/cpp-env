@@ -155,6 +155,7 @@ target_sources(
             src/render/render_draw_list.h
             src/render/text/font_backend_adapter.h
             src/render/text/font_backend_capabilities.h
+            src/render/text/font_backend_dependency.h
             src/render/text/font_backend_selection.h
             src/render/text/font_coverage_run_segmentation.h
             src/render/text/font_cmap_inspector.h

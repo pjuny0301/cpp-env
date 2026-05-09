@@ -6,6 +6,9 @@
 
 최근 baseline 통합 증거:
 
+- current: external font backend dependency probe와 stb image adapter selection diagnostics를 통합하고 public render FILE_SET 등록, Windows MinGW focused text/image CTest 3/3 및 interface compile target build 확인.
+- `4bfc2ee`: future `stb_image` routing을 위한 external image decoder capability/selection diagnostics를 추가.
+- `6b2507f`: future FreeType/HarfBuzz/utf8proc wiring을 위한 external font backend dependency/capability probe를 추가.
 - current: Vulkan swapchain image acquire planning diagnostics를 통합하고 Windows MinGW focused Vulkan CTest 3/3 및 interface compile target build 확인.
 - `93b294d`: swapchain/frame lifecycle 뒤, command recording 앞의 acquire readiness plan/result/status를 추가해 future `vkAcquireNextImageKHR` gate를 data-only로 추적.
 - current: input routing diagnostics diff helpers를 통합하고 Windows MinGW focused input gesture diagnostics CTest 1/1 및 interface compile target build 확인.

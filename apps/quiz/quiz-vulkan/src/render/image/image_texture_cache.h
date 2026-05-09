@@ -36,6 +36,7 @@ struct render_image_texture_result {
     std::string diagnostic;
     render_image_decode_metadata decode_metadata;
     std::vector<render_image_decoder_diagnostic> decoder_diagnostics;
+    render_image_external_decoder_selection_snapshot external_decoder_selection;
 
     bool ok() const
     {
@@ -140,6 +141,7 @@ public:
                 .diagnostic = {},
                 .decode_metadata = existing->second.decode_metadata,
                 .decoder_diagnostics = existing->second.decoder_diagnostics,
+                .external_decoder_selection = existing->second.external_decoder_selection,
             };
         }
 
@@ -169,7 +171,8 @@ public:
                 return acquire_placeholder_texture(
                     request,
                     fake_image_texture_placeholder_reason::decode_failed,
-                    decoded.diagnostic);
+                    decoded.diagnostic,
+                    decoded.external_decoder_selection);
             }
             return render_image_texture_result{
                 .status = render_image_texture_status::decode_failed,
@@ -179,6 +182,7 @@ public:
                 .diagnostic = decoded.diagnostic,
                 .decode_metadata = decoded.metadata,
                 .decoder_diagnostics = decoded.decoder_diagnostics,
+                .external_decoder_selection = decoded.external_decoder_selection,
             };
         }
 
@@ -187,7 +191,8 @@ public:
                 return acquire_placeholder_texture(
                     request,
                     fake_image_texture_placeholder_reason::upload_failed,
-                    "decoded image is empty");
+                    "decoded image is empty",
+                    decoded.external_decoder_selection);
             }
             return render_image_texture_result{
                 .status = render_image_texture_status::upload_failed,
@@ -197,6 +202,7 @@ public:
                 .diagnostic = "decoded image is empty",
                 .decode_metadata = decoded.metadata,
                 .decoder_diagnostics = decoded.decoder_diagnostics,
+                .external_decoder_selection = decoded.external_decoder_selection,
             };
         }
 
@@ -205,7 +211,8 @@ public:
                 return acquire_placeholder_texture(
                     request,
                     fake_image_texture_placeholder_reason::upload_failed,
-                    "decoded image pixel payload size does not match dimensions and format");
+                    "decoded image pixel payload size does not match dimensions and format",
+                    decoded.external_decoder_selection);
             }
             return render_image_texture_result{
                 .status = render_image_texture_status::upload_failed,
@@ -215,6 +222,7 @@ public:
                 .diagnostic = "decoded image pixel payload size does not match dimensions and format",
                 .decode_metadata = decoded.metadata,
                 .decoder_diagnostics = decoded.decoder_diagnostics,
+                .external_decoder_selection = decoded.external_decoder_selection,
             };
         }
 
@@ -230,7 +238,8 @@ public:
                 return acquire_placeholder_texture(
                     request,
                     fake_image_texture_placeholder_reason::upload_failed,
-                    uploaded.diagnostic);
+                    uploaded.diagnostic,
+                    decoded.external_decoder_selection);
             }
             return render_image_texture_result{
                 .status = render_image_texture_status::upload_failed,
@@ -240,6 +249,7 @@ public:
                 .diagnostic = uploaded.diagnostic,
                 .decode_metadata = decoded.metadata,
                 .decoder_diagnostics = decoded.decoder_diagnostics,
+                .external_decoder_selection = decoded.external_decoder_selection,
             };
         }
 
@@ -254,6 +264,7 @@ public:
                 .texture = handle,
                 .decode_metadata = decoded.metadata,
                 .decoder_diagnostics = decoded.decoder_diagnostics,
+                .external_decoder_selection = decoded.external_decoder_selection,
                 .upload_readiness = upload_readiness,
                 .upload_generation_id = uploaded.generation_id,
                 .pixel_count = pixel_count,
@@ -272,6 +283,7 @@ public:
             .diagnostic = {},
             .decode_metadata = decoded.metadata,
             .decoder_diagnostics = decoded.decoder_diagnostics,
+            .external_decoder_selection = decoded.external_decoder_selection,
         };
     }
 
@@ -498,6 +510,7 @@ private:
         render_image_texture_handle texture;
         render_image_decode_metadata decode_metadata;
         std::vector<render_image_decoder_diagnostic> decoder_diagnostics;
+        render_image_external_decoder_selection_snapshot external_decoder_selection;
         render_image_upload_readiness_snapshot upload_readiness;
         std::uint64_t upload_generation_id = 0;
         std::size_t pixel_count = 0;
@@ -556,7 +569,8 @@ private:
     render_image_texture_result acquire_placeholder_texture(
         const render_image_texture_request& request,
         fake_image_texture_placeholder_reason reason,
-        std::string cause)
+        std::string cause,
+        render_image_external_decoder_selection_snapshot external_decoder_selection = {})
     {
         ++placeholder_policy_request_count_;
 
@@ -592,6 +606,7 @@ private:
                 .diagnostic = diagnostic,
                 .decode_metadata = existing->second.decode_metadata,
                 .decoder_diagnostics = existing->second.decoder_diagnostics,
+                .external_decoder_selection = existing->second.external_decoder_selection,
             };
         }
 
@@ -631,6 +646,7 @@ private:
                 .diagnostic = "placeholder texture policy produced an invalid placeholder image",
                 .decode_metadata = metadata,
                 .decoder_diagnostics = decoder_diagnostics,
+                .external_decoder_selection = external_decoder_selection,
             };
         }
 
@@ -662,6 +678,7 @@ private:
                 .diagnostic = uploaded.diagnostic,
                 .decode_metadata = metadata,
                 .decoder_diagnostics = decoder_diagnostics,
+                .external_decoder_selection = external_decoder_selection,
             };
         }
 
@@ -673,6 +690,7 @@ private:
                 .texture = uploaded.texture,
                 .decode_metadata = metadata,
                 .decoder_diagnostics = decoder_diagnostics,
+                .external_decoder_selection = external_decoder_selection,
                 .upload_readiness = upload_readiness,
                 .upload_generation_id = uploaded.generation_id,
                 .pixel_count = uploaded.pixel_count,
@@ -708,6 +726,7 @@ private:
             .diagnostic = diagnostic,
             .decode_metadata = metadata,
             .decoder_diagnostics = decoder_diagnostics,
+            .external_decoder_selection = std::move(external_decoder_selection),
         };
     }
 

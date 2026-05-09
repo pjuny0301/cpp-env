@@ -205,6 +205,7 @@ struct render_image_decoder_capability_candidate_snapshot {
 struct render_image_decoder_capability_manifest {
     render_image_format_detection_summary format_detection;
     std::vector<render_image_decoder_capability_candidate_snapshot> candidates;
+    render_image_external_decoder_selection_snapshot external_decoder_selection;
     bool used_third_party_adapter = false;
     bool fallback_used = false;
     bool decoded = false;
@@ -311,6 +312,7 @@ inline render_image_decoder_capability_manifest make_render_image_decoder_capabi
     render_image_decoder_capability_manifest manifest{
         .format_detection = detect_render_image_format(request),
         .candidates = {},
+        .external_decoder_selection = result.external_decoder_selection,
         .used_third_party_adapter = false,
         .fallback_used = false,
         .decoded = result.ok(),
@@ -701,6 +703,35 @@ inline stb_image_decoder_adapter_selection_result select_stb_image_decoder_adapt
     return select_stb_image_decoder_adapter(request, probe.probe_dependency());
 }
 
+inline render_image_external_decoder_selection_snapshot make_render_image_external_decoder_selection_snapshot(
+    const stb_image_decoder_adapter_selection_result& selection)
+{
+    return render_image_external_decoder_selection_snapshot{
+        .diagnostics_available = true,
+        .decoder_id = selection.decoder_id,
+        .dependency_name = "stb_image",
+        .dependency_status_name = selection.dependency_status_name,
+        .selection_status_name = selection.status_name,
+        .detected_format = selection.detected_format,
+        .detected_format_name = selection.detected_format_name,
+        .dependency_available = selection.dependency_available,
+        .dependency_capability_ready = selection.dependency_capability_ready,
+        .format_supported_by_dependency = selection.format_supported_by_dependency,
+        .internal_decoder_available = selection.internal_decoder_available,
+        .prefer_internal_decoder = selection.prefer_internal_decoder,
+        .ready_for_external_decode = selection.ready_for_external_decode,
+        .fallback_to_standard_decoder_chain = selection.fallback_to_standard_decoder_chain,
+        .used_internal_decoder =
+            selection.status == stb_image_decoder_adapter_selection_status::fallback_internal_decoder_preferred,
+        .used_third_party_adapter = selection.ready_for_external_decode,
+        .fallback_due_to_missing_dependency =
+            selection.status == stb_image_decoder_adapter_selection_status::fallback_missing_dependency,
+        .fallback_due_to_mismatched_capability =
+            selection.status == stb_image_decoder_adapter_selection_status::fallback_mismatched_capability,
+        .diagnostic = selection.diagnostic,
+    };
+}
+
 inline third_party_image_decoder_capability make_third_party_image_decoder_capability_from_stb_selection(
     const render_image_decode_request& request,
     const stb_image_decoder_adapter_selection_result& selection)
@@ -917,6 +948,22 @@ public:
     {
     }
 
+    optional_third_party_image_decoder_chain(
+        const third_party_image_decoder_backend_interface& backend,
+        const stb_image_decoder_dependency_probe_interface& stb_probe)
+        : adapter_(backend)
+        , stb_probe_(&stb_probe)
+    {
+    }
+
+    optional_third_party_image_decoder_chain(
+        const third_party_image_decoder_backend_interface* backend,
+        const stb_image_decoder_dependency_probe_interface* stb_probe)
+        : adapter_(backend)
+        , stb_probe_(stb_probe)
+    {
+    }
+
     bool supports(const render_image_decode_request& request) const override
     {
         return adapter_.has_backend() || fallback_.supports(request);
@@ -928,11 +975,20 @@ public:
             return fallback_.decode(request);
         }
 
-        const third_party_image_decoder_capability capability = adapter_.inspect(request);
+        const stb_image_decoder_adapter_selection_result stb_selection = stb_probe_ == nullptr
+            ? stb_image_decoder_adapter_selection_result{}
+            : select_stb_image_decoder_adapter(request, *stb_probe_);
+        const render_image_external_decoder_selection_snapshot external_selection = stb_probe_ == nullptr
+            ? render_image_external_decoder_selection_snapshot{}
+            : make_render_image_external_decoder_selection_snapshot(stb_selection);
+        const third_party_image_decoder_capability capability = stb_probe_ == nullptr
+            ? adapter_.inspect(request)
+            : make_third_party_image_decoder_capability_from_stb_selection(request, stb_selection);
         render_image_decoder_diagnostic adapter_diagnostic =
             make_third_party_image_decoder_adapter_diagnostic(request, capability, 0);
         if (!capability.supports_decode()) {
             render_image_decode_result fallback_result = fallback_.decode(request);
+            fallback_result.external_decoder_selection = external_selection;
             reindex_render_image_decoder_diagnostics(
                 request,
                 fallback_result.decoder_diagnostics,
@@ -945,6 +1001,7 @@ public:
 
         render_image_decode_result adapter_result =
             adapter_.decode_with_capability(request, capability);
+        adapter_result.external_decoder_selection = external_selection;
         adapter_diagnostic.decode_attempted = true;
         adapter_diagnostic.status = adapter_result.status;
         adapter_diagnostic.decode_diagnostic = adapter_result.diagnostic.empty()
@@ -962,6 +1019,7 @@ public:
         }
 
         render_image_decode_result fallback_result = fallback_.decode(request);
+        fallback_result.external_decoder_selection = external_selection;
         reindex_render_image_decoder_diagnostics(
             request,
             fallback_result.decoder_diagnostics,
@@ -979,6 +1037,7 @@ public:
 
 private:
     third_party_image_decoder_adapter adapter_;
+    const stb_image_decoder_dependency_probe_interface* stb_probe_ = nullptr;
     standard_image_decoder_chain fallback_;
 };
 

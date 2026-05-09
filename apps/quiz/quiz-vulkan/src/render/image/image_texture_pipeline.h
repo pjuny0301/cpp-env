@@ -327,6 +327,7 @@ struct fake_image_texture_pipeline_entry_snapshot {
     std::size_t encoded_byte_count = 0;
     render_image_decode_metadata decode_metadata;
     std::vector<render_image_decoder_diagnostic> decoder_diagnostics;
+    render_image_external_decoder_selection_snapshot external_decoder_selection;
     render_image_decoder_capability_manifest decoder_capability_manifest;
     std::string selected_decoder_id;
     std::string decoder_fallback_reason;
@@ -442,6 +443,7 @@ inline render_image_decoder_capability_manifest make_render_image_texture_pipeli
                 : result.texture.diagnostic,
             .metadata = result.texture.decode_metadata,
             .decoder_diagnostics = result.texture.decoder_diagnostics,
+            .external_decoder_selection = result.texture.external_decoder_selection,
         });
 }
 
@@ -1361,6 +1363,7 @@ private:
             ? render_image_decoder_capability_manifest{
                 .format_detection = result.texture.decode_metadata.format_detection,
                 .candidates = {},
+                .external_decoder_selection = result.texture.external_decoder_selection,
                 .used_third_party_adapter = false,
                 .fallback_used = false,
                 .decoded = result.ok(),
@@ -1391,6 +1394,7 @@ private:
             .encoded_byte_count = result.source_bytes.encoded_bytes.size(),
             .decode_metadata = result.texture.decode_metadata,
             .decoder_diagnostics = result.texture.decoder_diagnostics,
+            .external_decoder_selection = result.texture.external_decoder_selection,
             .decoder_capability_manifest = decoder_capability_manifest,
             .selected_decoder_id = result.texture.decode_metadata.decoder_id,
             .decoder_fallback_reason = render_image_texture_pipeline_decoder_fallback_reason(

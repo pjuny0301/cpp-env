@@ -28,10 +28,12 @@ concept HasFakeUploadSnapshotField = requires(T value) {
 
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_decoder_capability_manifest>);
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_decoder_capability_candidate_snapshot>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_external_decoder_selection_snapshot>);
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::stb_image_decoder_dependency_manifest>);
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::stb_image_decoder_adapter_selection_result>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_decoder_capability_manifest>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_decoder_capability_candidate_snapshot>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_external_decoder_selection_snapshot>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::stb_image_decoder_dependency_manifest>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::stb_image_decoder_adapter_selection_result>);
 

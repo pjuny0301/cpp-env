@@ -9,6 +9,7 @@
 #include <cassert>
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -89,6 +90,25 @@ void append_byte(std::vector<std::byte>& bytes, unsigned char value)
     bytes.push_back(std::byte{value});
 }
 
+void append_u16_le(std::vector<std::byte>& bytes, std::uint16_t value)
+{
+    append_byte(bytes, static_cast<unsigned char>(value & 0xffu));
+    append_byte(bytes, static_cast<unsigned char>((value >> 8u) & 0xffu));
+}
+
+void append_u32_le(std::vector<std::byte>& bytes, std::uint32_t value)
+{
+    append_byte(bytes, static_cast<unsigned char>(value & 0xffu));
+    append_byte(bytes, static_cast<unsigned char>((value >> 8u) & 0xffu));
+    append_byte(bytes, static_cast<unsigned char>((value >> 16u) & 0xffu));
+    append_byte(bytes, static_cast<unsigned char>((value >> 24u) & 0xffu));
+}
+
+void append_i32_le(std::vector<std::byte>& bytes, std::int32_t value)
+{
+    append_u32_le(bytes, static_cast<std::uint32_t>(value));
+}
+
 std::vector<std::byte> make_ppm_2x1_fixture_bytes()
 {
     std::vector<std::byte> bytes;
@@ -119,6 +139,35 @@ std::vector<std::byte> make_jpeg_signature_bytes()
     append_byte(bytes, 0xd8);
     append_byte(bytes, 0xff);
     append_byte(bytes, 0xd9);
+    return bytes;
+}
+
+std::vector<std::byte> make_bmp_24_bit_1x1_fixture_bytes()
+{
+    std::vector<std::byte> bytes;
+    append_byte(bytes, 'B');
+    append_byte(bytes, 'M');
+    append_u32_le(bytes, 58u);
+    append_u16_le(bytes, 0u);
+    append_u16_le(bytes, 0u);
+    append_u32_le(bytes, 54u);
+
+    append_u32_le(bytes, 40u);
+    append_i32_le(bytes, 1);
+    append_i32_le(bytes, 1);
+    append_u16_le(bytes, 1u);
+    append_u16_le(bytes, 24u);
+    append_u32_le(bytes, 0u);
+    append_u32_le(bytes, 4u);
+    append_i32_le(bytes, 2835);
+    append_i32_le(bytes, 2835);
+    append_u32_le(bytes, 0u);
+    append_u32_le(bytes, 0u);
+
+    append_byte(bytes, 30u);
+    append_byte(bytes, 20u);
+    append_byte(bytes, 10u);
+    append_byte(bytes, 0u);
     return bytes;
 }
 
@@ -387,7 +436,9 @@ void test_pipeline_uses_optional_third_party_decoder_through_interface()
     backend.set_decoder_id("fake_stb_decoder");
     backend.set_supported_formats({render_image_encoded_format::jpeg});
     backend.set_decoded_image(make_rgba_1x1_image(9, 8, 7, 6));
-    optional_third_party_image_decoder_chain decoder(backend);
+    fake_stb_image_decoder_dependency_probe probe;
+    probe.set_available("fake_stb_decoder");
+    optional_third_party_image_decoder_chain decoder(backend, probe);
 
     const normalizing_image_resolver resolver;
     fake_image_source_bytes_loader loader;
@@ -411,9 +462,18 @@ void test_pipeline_uses_optional_third_party_decoder_through_interface()
     require(result.texture.decoder_diagnostics.size() == 1, "third-party pipeline records adapter diagnostic");
     require(result.texture.decoder_diagnostics[0].decoder_id == "fake_stb_decoder", "adapter diagnostic records decoder id");
     require(result.texture.decoder_diagnostics[0].decode_attempted, "adapter diagnostic records decode attempt");
+    require(result.texture.external_decoder_selection.diagnostics_available, "third-party pipeline exposes stb selection diagnostics");
+    require(result.texture.external_decoder_selection.decoder_id == "fake_stb_decoder", "stb selection records decoder id");
+    require(result.texture.external_decoder_selection.selection_status_name == "ready", "stb selection records ready status");
+    require(result.texture.external_decoder_selection.dependency_status_name == "available", "stb selection records available dependency");
+    require(result.texture.external_decoder_selection.detected_format == render_image_encoded_format::jpeg, "stb selection records JPEG format");
+    require(result.texture.external_decoder_selection.ready_for_external_decode, "stb selection records external decode readiness");
+    require(result.texture.external_decoder_selection.used_third_party_adapter, "stb selection records adapter route");
+    require(!result.texture.external_decoder_selection.fallback_to_standard_decoder_chain, "stb selection records no fallback for ready adapter");
     require(uploader.upload_requests.size() == 1, "third-party pipeline uploads decoded texture once");
     require(cache.cached_texture_count() == 1, "third-party pipeline caches decoded texture");
     require(backend.decode_requests.size() == 1, "third-party backend is called once");
+    require(probe.probe_count == 1, "third-party pipeline probes stb dependency once");
 
     const fake_image_texture_pipeline_snapshot snapshot = pipeline.diagnostic_snapshot();
     require(snapshot.acquire_count == 1, "third-party pipeline snapshot records acquire");
@@ -422,6 +482,12 @@ void test_pipeline_uses_optional_third_party_decoder_through_interface()
     require(snapshot.cache_snapshot.texture_count == 1, "third-party pipeline snapshot records cached texture");
     require(snapshot.entries[0].decode_metadata.decoder_id == "fake_stb_decoder", "pipeline entry records third-party decoder");
     require(snapshot.entries[0].decoder_diagnostics[0].decoder_id == "fake_stb_decoder", "pipeline entry records adapter diagnostic");
+    require(
+        snapshot.entries[0].external_decoder_selection.used_third_party_adapter,
+        "pipeline entry records adapter-ready stb selection");
+    require(
+        snapshot.entries[0].decoder_capability_manifest.external_decoder_selection.used_third_party_adapter,
+        "pipeline entry capability manifest carries adapter-ready stb selection");
     require(snapshot.entries[0].selected_decoder_id == "fake_stb_decoder", "pipeline entry records selected third-party decoder");
     require(!snapshot.entries[0].cache_reused, "third-party first acquire records no cache reuse");
     require(!snapshot.entries[0].placeholder_texture, "third-party acquire records no placeholder");
@@ -545,6 +611,180 @@ void test_unavailable_optional_adapter_keeps_diagnostics_without_upload()
         snapshot.entries[0].decoder_fallback_reason.find("unavailable") != std::string::npos,
         "unavailable adapter snapshot records fallback reason");
     require(snapshot.entries[0].upload_count_after == 0, "snapshot records no upload after unavailable adapter");
+}
+
+void test_stb_selection_preserves_internal_bmp_decoder_diagnostics()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_third_party_image_decoder_backend backend;
+    backend.set_decoder_id("fake_stb_decoder");
+    backend.set_supported_formats({render_image_encoded_format::bmp});
+    backend.set_decoded_image(make_rgba_1x1_image(1, 2, 3, 4));
+    fake_stb_image_decoder_dependency_probe probe;
+    probe.set_available("fake_stb_decoder");
+    optional_third_party_image_decoder_chain decoder(backend, probe);
+
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes("asset://textures/card.bmp", make_bmp_24_bit_1x1_fixture_bytes());
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
+
+    const render_image_texture_pipeline_result result = pipeline.acquire_texture(
+        render_image_texture_pipeline_request{.uri = "asset://textures/card.bmp"});
+
+    require(result.ok(), "internal BMP fallback succeeds through optional decoder chain");
+    require(result.texture.decode_metadata.decoder_id == "bmp_image_decoder", "internal BMP decoder remains selected");
+    require(result.texture.decode_metadata.width == 1, "internal BMP decode records width");
+    require(result.texture.decode_metadata.height == 1, "internal BMP decode records height");
+    require(result.texture.external_decoder_selection.diagnostics_available, "BMP path exposes stb selection diagnostics");
+    require(
+        result.texture.external_decoder_selection.selection_status_name == "fallback_internal_decoder_preferred",
+        "BMP path records internal decoder preference");
+    require(result.texture.external_decoder_selection.used_internal_decoder, "BMP path records internal decoder use");
+    require(!result.texture.external_decoder_selection.used_third_party_adapter, "BMP path does not report adapter use");
+    require(result.texture.external_decoder_selection.fallback_to_standard_decoder_chain, "BMP path records standard fallback");
+    require(result.texture.external_decoder_selection.prefer_internal_decoder, "BMP path records matrix preference");
+    require(result.texture.external_decoder_selection.internal_decoder_available, "BMP path records internal availability");
+    require(
+        result.texture.external_decoder_selection.detected_format == render_image_encoded_format::bmp,
+        "BMP path records detected format");
+    require(backend.decode_requests.empty(), "internal BMP path does not call third-party backend");
+    require(uploader.upload_requests.size() == 1, "internal BMP path uploads decoded texture");
+    require(probe.probe_count == 1, "internal BMP path probes stb dependency once");
+
+    const fake_image_texture_pipeline_snapshot snapshot = pipeline.diagnostic_snapshot();
+    require(snapshot.entries[0].selected_decoder_id == "bmp_image_decoder", "pipeline entry records BMP decoder");
+    require(
+        snapshot.entries[0].external_decoder_selection.used_internal_decoder,
+        "pipeline entry carries internal decoder selection");
+    require(
+        snapshot.entries[0].decoder_capability_manifest.external_decoder_selection.used_internal_decoder,
+        "capability manifest carries internal decoder selection");
+    require(
+        snapshot.entries[0].decoder_capability_manifest.terminal_decoder_id == "bmp_image_decoder",
+        "capability manifest records BMP terminal decoder");
+    require(snapshot.entries[0].decoder_capability_manifest.fallback_used, "capability manifest records adapter fallback");
+}
+
+void test_stb_selection_missing_and_mismatched_fallback_diagnostics_reach_pipeline()
+{
+    using namespace quiz_vulkan::render;
+
+    auto acquire_jpeg_with_probe =
+        [](fake_stb_image_decoder_dependency_probe& probe) {
+            fake_third_party_image_decoder_backend backend;
+            backend.set_decoder_id("fake_stb_decoder");
+            backend.set_supported_formats({render_image_encoded_format::jpeg});
+            backend.set_decoded_image(make_rgba_1x1_image(1, 2, 3, 4));
+            optional_third_party_image_decoder_chain decoder(backend, probe);
+
+            const normalizing_image_resolver resolver;
+            fake_image_source_bytes_loader loader;
+            loader.set_source_bytes("asset://textures/card.jpg", make_jpeg_signature_bytes());
+            fake_image_texture_uploader uploader;
+            fake_image_texture_cache cache(decoder, uploader);
+            fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
+
+            const render_image_texture_pipeline_result result = pipeline.acquire_texture(
+                render_image_texture_pipeline_request{.uri = "asset://textures/card.jpg"});
+            const fake_image_texture_pipeline_snapshot snapshot = pipeline.diagnostic_snapshot();
+
+            require(!result.ok(), "unready stb path falls back to standard chain and fails unsupported JPEG");
+            require(result.status == render_image_texture_pipeline_status::decode_failed, "unready stb path reports decode failure");
+            require(result.texture.external_decoder_selection.diagnostics_available, "unready stb path exposes selection diagnostics");
+            require(
+                result.texture.external_decoder_selection.fallback_to_standard_decoder_chain,
+                "unready stb path records standard fallback");
+            require(!result.texture.external_decoder_selection.used_third_party_adapter, "unready stb path does not report adapter use");
+            require(result.texture.decoder_diagnostics.size() == 4, "unready stb path records adapter plus standard candidates");
+            require(result.texture.decoder_diagnostics[0].decoder_id == "fake_stb_decoder", "unready stb diagnostic records adapter first");
+            require(!result.texture.decoder_diagnostics[0].decode_attempted, "unready stb path does not attempt adapter decode");
+            require(uploader.upload_requests.empty(), "unready stb path does not upload");
+            require(backend.decode_requests.empty(), "unready stb path does not call third-party backend");
+            require(snapshot.entries[0].decoder_capability_manifest.fallback_used, "unready stb manifest records fallback");
+            require(
+                snapshot.entries[0].decoder_capability_manifest.external_decoder_selection.selection_status_name
+                    == result.texture.external_decoder_selection.selection_status_name,
+                "unready stb manifest carries selection status");
+            require(
+                snapshot.entries[0].decoder_capability_manifest.terminal_decoder_id == "unsupported_terminal",
+                "unready stb manifest records unsupported terminal");
+            return result;
+        };
+
+    fake_stb_image_decoder_dependency_probe missing_probe;
+    missing_probe.set_missing("fake_stb_decoder");
+    const render_image_texture_pipeline_result missing_result = acquire_jpeg_with_probe(missing_probe);
+    require(missing_probe.probe_count == 1, "missing stb path probes dependency once");
+    require(
+        missing_result.texture.external_decoder_selection.selection_status_name == "fallback_missing_dependency",
+        "missing stb path records missing dependency fallback");
+    require(
+        missing_result.texture.external_decoder_selection.fallback_due_to_missing_dependency,
+        "missing stb path records missing dependency flag");
+    require(
+        missing_result.texture.external_decoder_selection.diagnostic.find("missing") != std::string::npos,
+        "missing stb path records missing diagnostic");
+
+    fake_stb_image_decoder_dependency_probe mismatched_probe;
+    mismatched_probe.set_mismatched("fake_stb_decoder");
+    const render_image_texture_pipeline_result mismatched_result = acquire_jpeg_with_probe(mismatched_probe);
+    require(mismatched_probe.probe_count == 1, "mismatched stb path probes dependency once");
+    require(
+        mismatched_result.texture.external_decoder_selection.selection_status_name == "fallback_mismatched_capability",
+        "mismatched stb path records mismatched capability fallback");
+    require(
+        mismatched_result.texture.external_decoder_selection.fallback_due_to_mismatched_capability,
+        "mismatched stb path records mismatched capability flag");
+    require(
+        mismatched_result.texture.external_decoder_selection.diagnostic.find("capabilities") != std::string::npos,
+        "mismatched stb path records capability diagnostic");
+}
+
+void test_stb_selection_survives_placeholder_fallback()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_third_party_image_decoder_backend backend;
+    backend.set_decoder_id("fake_stb_decoder");
+    backend.set_supported_formats({render_image_encoded_format::jpeg});
+    fake_stb_image_decoder_dependency_probe probe;
+    probe.set_missing("fake_stb_decoder");
+    optional_third_party_image_decoder_chain decoder(backend, probe);
+
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes("asset://textures/card.jpg", make_jpeg_signature_bytes());
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    cache.set_placeholder_texture_policy(fake_image_texture_placeholder_policy{
+        .enabled = true,
+        .width = 2,
+        .height = 2,
+    });
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
+
+    const render_image_texture_pipeline_result result = pipeline.acquire_texture(
+        render_image_texture_pipeline_request{.uri = "asset://textures/card.jpg"});
+
+    require(result.ok(), "missing stb dependency can still return placeholder fallback");
+    require(is_fake_image_texture_placeholder_key(result.texture.key), "missing stb placeholder path returns placeholder key");
+    require(result.texture.external_decoder_selection.diagnostics_available, "placeholder preserves external selection diagnostics");
+    require(
+        result.texture.external_decoder_selection.fallback_due_to_missing_dependency,
+        "placeholder preserves missing dependency fallback flag");
+
+    const fake_image_texture_pipeline_snapshot snapshot = pipeline.diagnostic_snapshot();
+    require(snapshot.entries[0].placeholder_texture, "placeholder snapshot records placeholder texture");
+    require(
+        snapshot.entries[0].external_decoder_selection.fallback_due_to_missing_dependency,
+        "placeholder snapshot carries missing dependency fallback flag");
+    require(
+        snapshot.entries[0].decoder_capability_manifest.external_decoder_selection.fallback_due_to_missing_dependency,
+        "placeholder manifest carries missing dependency fallback flag");
 }
 
 void test_pipeline_decoder_manifest_reports_placeholder_outcome()
@@ -2147,6 +2387,9 @@ int main()
     test_pipeline_uses_optional_third_party_decoder_through_interface();
     test_optional_adapter_failure_falls_back_before_texture_upload();
     test_unavailable_optional_adapter_keeps_diagnostics_without_upload();
+    test_stb_selection_preserves_internal_bmp_decoder_diagnostics();
+    test_stb_selection_missing_and_mismatched_fallback_diagnostics_reach_pipeline();
+    test_stb_selection_survives_placeholder_fallback();
     test_pipeline_decoder_manifest_reports_placeholder_outcome();
     test_batch_plan_normalizes_and_deduplicates_texture_requests();
     test_batch_plan_reports_invalid_request_reasons();

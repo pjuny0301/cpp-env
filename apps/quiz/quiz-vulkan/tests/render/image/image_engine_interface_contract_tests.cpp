@@ -206,6 +206,7 @@ static_assert(requires(
     render::render_image_format_detection_summary format_detection,
     render::render_image_decode_size_validation size_validation,
     render::render_image_decoder_diagnostic diagnostic,
+    render::render_image_external_decoder_selection_snapshot external_decoder_selection,
     render::render_image_decoder_capability_candidate_kind decoder_capability_kind,
     render::render_image_decoder_capability_candidate_status decoder_capability_status,
     render::render_image_decoder_capability_candidate_snapshot decoder_capability_candidate,
@@ -385,6 +386,8 @@ static_assert(requires(
         -> std::same_as<render::stb_image_decoder_adapter_selection_result>;
     { render::select_stb_image_decoder_adapter(request, stb_probe_interface) }
         -> std::same_as<render::stb_image_decoder_adapter_selection_result>;
+    { render::make_render_image_external_decoder_selection_snapshot(stb_selection) }
+        -> std::same_as<render::render_image_external_decoder_selection_snapshot>;
     { render::make_third_party_image_decoder_capability_from_stb_selection(request, stb_selection) }
         -> std::same_as<render::third_party_image_decoder_capability>;
     { png_header.width } -> std::same_as<std::size_t&>;
@@ -507,10 +510,34 @@ static_assert(requires(
     { diagnostic.support_diagnostic } -> std::same_as<std::string&>;
     { diagnostic.decode_diagnostic } -> std::same_as<std::string&>;
     { diagnostic.diagnostic } -> std::same_as<std::string&>;
+    { external_decoder_selection.diagnostics_available } -> std::same_as<bool&>;
+    { external_decoder_selection.decoder_id } -> std::same_as<std::string&>;
+    { external_decoder_selection.dependency_name } -> std::same_as<std::string&>;
+    { external_decoder_selection.dependency_status_name } -> std::same_as<std::string&>;
+    { external_decoder_selection.selection_status_name } -> std::same_as<std::string&>;
+    { external_decoder_selection.detected_format } -> std::same_as<render::render_image_encoded_format&>;
+    { external_decoder_selection.detected_format_name } -> std::same_as<std::string&>;
+    { external_decoder_selection.dependency_available } -> std::same_as<bool&>;
+    { external_decoder_selection.dependency_capability_ready } -> std::same_as<bool&>;
+    { external_decoder_selection.format_supported_by_dependency } -> std::same_as<bool&>;
+    { external_decoder_selection.internal_decoder_available } -> std::same_as<bool&>;
+    { external_decoder_selection.prefer_internal_decoder } -> std::same_as<bool&>;
+    { external_decoder_selection.ready_for_external_decode } -> std::same_as<bool&>;
+    { external_decoder_selection.fallback_to_standard_decoder_chain } -> std::same_as<bool&>;
+    { external_decoder_selection.used_internal_decoder } -> std::same_as<bool&>;
+    { external_decoder_selection.used_third_party_adapter } -> std::same_as<bool&>;
+    { external_decoder_selection.fallback_due_to_missing_dependency } -> std::same_as<bool&>;
+    { external_decoder_selection.fallback_due_to_mismatched_capability } -> std::same_as<bool&>;
+    { external_decoder_selection.diagnostic } -> std::same_as<std::string&>;
+    { external_decoder_selection.ok() } -> std::same_as<bool>;
     { decode_result.metadata } -> std::same_as<render::render_image_decode_metadata&>;
     { decode_result.decoder_diagnostics } -> std::same_as<std::vector<render::render_image_decoder_diagnostic>&>;
+    { decode_result.external_decoder_selection }
+        -> std::same_as<render::render_image_external_decoder_selection_snapshot&>;
     { texture_result.decode_metadata } -> std::same_as<render::render_image_decode_metadata&>;
     { texture_result.decoder_diagnostics } -> std::same_as<std::vector<render::render_image_decoder_diagnostic>&>;
+    { texture_result.external_decoder_selection }
+        -> std::same_as<render::render_image_external_decoder_selection_snapshot&>;
     { render::make_render_image_decode_metadata("decoder", request) } -> std::same_as<render::render_image_decode_metadata>;
     { render::make_render_image_decode_metadata("decoder", request, image) }
         -> std::same_as<render::render_image_decode_metadata>;
@@ -809,6 +836,8 @@ static_assert(requires(
         -> std::same_as<render::render_image_format_detection_summary&>;
     { decoder_capability_manifest.candidates }
         -> std::same_as<std::vector<render::render_image_decoder_capability_candidate_snapshot>&>;
+    { decoder_capability_manifest.external_decoder_selection }
+        -> std::same_as<render::render_image_external_decoder_selection_snapshot&>;
     { decoder_capability_manifest.used_third_party_adapter } -> std::same_as<bool&>;
     { decoder_capability_manifest.fallback_used } -> std::same_as<bool&>;
     { decoder_capability_manifest.decoded } -> std::same_as<bool&>;
@@ -1470,6 +1499,8 @@ static_assert(requires(
     { pipeline_entry.encoded_byte_count } -> std::same_as<std::size_t&>;
     { pipeline_entry.decode_metadata } -> std::same_as<render::render_image_decode_metadata&>;
     { pipeline_entry.decoder_diagnostics } -> std::same_as<std::vector<render::render_image_decoder_diagnostic>&>;
+    { pipeline_entry.external_decoder_selection }
+        -> std::same_as<render::render_image_external_decoder_selection_snapshot&>;
     { pipeline_entry.decoder_capability_manifest }
         -> std::same_as<render::render_image_decoder_capability_manifest&>;
     { pipeline_entry.selected_decoder_id } -> std::same_as<std::string&>;
@@ -1744,6 +1775,7 @@ static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_binding_plan>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_binding_packet_diff>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_binding_plan_diff>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_external_decoder_selection_snapshot>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::stb_image_decoder_dependency_manifest>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::stb_image_decoder_adapter_selection_result>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_manifest_texture_entry_snapshot>);
@@ -1765,6 +1797,7 @@ static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_textur
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_binding_plan>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_binding_packet_diff>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_binding_plan_diff>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_external_decoder_selection_snapshot>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::stb_image_decoder_dependency_manifest>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::stb_image_decoder_adapter_selection_result>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_manifest_texture_entry_snapshot>);
@@ -1786,6 +1819,7 @@ static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_binding_plan>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_binding_packet_diff>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_binding_plan_diff>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_external_decoder_selection_snapshot>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::stb_image_decoder_dependency_manifest>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::stb_image_decoder_adapter_selection_result>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_manifest_texture_pipeline_snapshot>);

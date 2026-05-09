@@ -369,6 +369,546 @@ struct standard_image_texture_pipeline_snapshot {
     standard_image_texture_pipeline_decode_snapshot decoder;
 };
 
+enum class render_image_external_decoder_selection_diff_state {
+    none,
+    internal_decoder,
+    adapter_ready,
+    missing_dependency_fallback,
+    version_mismatch_fallback,
+    standard_fallback,
+    placeholder,
+};
+
+inline std::string render_image_external_decoder_selection_diff_state_name(
+    render_image_external_decoder_selection_diff_state state)
+{
+    switch (state) {
+    case render_image_external_decoder_selection_diff_state::none:
+        return "none";
+    case render_image_external_decoder_selection_diff_state::internal_decoder:
+        return "internal_decoder";
+    case render_image_external_decoder_selection_diff_state::adapter_ready:
+        return "adapter_ready";
+    case render_image_external_decoder_selection_diff_state::missing_dependency_fallback:
+        return "missing_dependency_fallback";
+    case render_image_external_decoder_selection_diff_state::version_mismatch_fallback:
+        return "version_mismatch_fallback";
+    case render_image_external_decoder_selection_diff_state::standard_fallback:
+        return "standard_fallback";
+    case render_image_external_decoder_selection_diff_state::placeholder:
+        return "placeholder";
+    }
+
+    return "unknown";
+}
+
+inline render_image_external_decoder_selection_diff_state render_image_external_decoder_selection_diff_state_for(
+    const render_image_external_decoder_selection_snapshot& selection,
+    bool placeholder_texture)
+{
+    if (placeholder_texture) {
+        return render_image_external_decoder_selection_diff_state::placeholder;
+    }
+    if (selection.used_third_party_adapter || selection.ready_for_external_decode) {
+        return render_image_external_decoder_selection_diff_state::adapter_ready;
+    }
+    if (selection.fallback_due_to_missing_dependency) {
+        return render_image_external_decoder_selection_diff_state::missing_dependency_fallback;
+    }
+    if (selection.fallback_due_to_mismatched_capability) {
+        return render_image_external_decoder_selection_diff_state::version_mismatch_fallback;
+    }
+    if (selection.used_internal_decoder) {
+        return render_image_external_decoder_selection_diff_state::internal_decoder;
+    }
+    if (selection.fallback_to_standard_decoder_chain) {
+        return render_image_external_decoder_selection_diff_state::standard_fallback;
+    }
+    return render_image_external_decoder_selection_diff_state::none;
+}
+
+inline bool render_image_external_decoder_selection_state_is_fallback(
+    render_image_external_decoder_selection_diff_state state)
+{
+    return state == render_image_external_decoder_selection_diff_state::missing_dependency_fallback
+        || state == render_image_external_decoder_selection_diff_state::version_mismatch_fallback
+        || state == render_image_external_decoder_selection_diff_state::standard_fallback
+        || state == render_image_external_decoder_selection_diff_state::placeholder;
+}
+
+inline std::size_t render_image_external_decoder_selection_state_severity(
+    render_image_external_decoder_selection_diff_state state)
+{
+    switch (state) {
+    case render_image_external_decoder_selection_diff_state::none:
+    case render_image_external_decoder_selection_diff_state::internal_decoder:
+    case render_image_external_decoder_selection_diff_state::adapter_ready:
+        return 0;
+    case render_image_external_decoder_selection_diff_state::standard_fallback:
+        return 1;
+    case render_image_external_decoder_selection_diff_state::missing_dependency_fallback:
+    case render_image_external_decoder_selection_diff_state::version_mismatch_fallback:
+        return 2;
+    case render_image_external_decoder_selection_diff_state::placeholder:
+        return 3;
+    }
+
+    return 0;
+}
+
+enum class render_image_external_decoder_selection_diff_entry_status {
+    unchanged,
+    added,
+    removed,
+    changed,
+};
+
+inline std::string render_image_external_decoder_selection_diff_entry_status_name(
+    render_image_external_decoder_selection_diff_entry_status status)
+{
+    switch (status) {
+    case render_image_external_decoder_selection_diff_entry_status::unchanged:
+        return "unchanged";
+    case render_image_external_decoder_selection_diff_entry_status::added:
+        return "added";
+    case render_image_external_decoder_selection_diff_entry_status::removed:
+        return "removed";
+    case render_image_external_decoder_selection_diff_entry_status::changed:
+        return "changed";
+    }
+
+    return "unknown";
+}
+
+struct render_image_external_decoder_selection_entry_diff {
+    std::size_t sequence = 0;
+    render_image_external_decoder_selection_diff_entry_status status =
+        render_image_external_decoder_selection_diff_entry_status::unchanged;
+    std::string status_name;
+    render_image_external_decoder_selection_diff_state before_state =
+        render_image_external_decoder_selection_diff_state::none;
+    render_image_external_decoder_selection_diff_state after_state =
+        render_image_external_decoder_selection_diff_state::none;
+    std::string before_state_name;
+    std::string after_state_name;
+    std::string before_request_uri;
+    std::string after_request_uri;
+    std::string before_selected_decoder_id;
+    std::string after_selected_decoder_id;
+    std::string before_adapter_decoder_id;
+    std::string after_adapter_decoder_id;
+    std::string before_dependency_status_name;
+    std::string after_dependency_status_name;
+    std::string before_selection_status_name;
+    std::string after_selection_status_name;
+    render_image_encoded_format before_detected_format = render_image_encoded_format::unknown;
+    render_image_encoded_format after_detected_format = render_image_encoded_format::unknown;
+    bool before_diagnostics_available = false;
+    bool after_diagnostics_available = false;
+    bool before_placeholder_texture = false;
+    bool after_placeholder_texture = false;
+    bool before_used_internal_decoder = false;
+    bool after_used_internal_decoder = false;
+    bool before_used_third_party_adapter = false;
+    bool after_used_third_party_adapter = false;
+    bool before_ready_for_external_decode = false;
+    bool after_ready_for_external_decode = false;
+    bool before_fallback_to_standard_decoder_chain = false;
+    bool after_fallback_to_standard_decoder_chain = false;
+    bool before_missing_dependency_fallback = false;
+    bool after_missing_dependency_fallback = false;
+    bool before_version_mismatch_fallback = false;
+    bool after_version_mismatch_fallback = false;
+    std::string before_diagnostic;
+    std::string after_diagnostic;
+    bool state_changed = false;
+    bool selected_decoder_changed = false;
+    bool adapter_decoder_changed = false;
+    bool dependency_status_changed = false;
+    bool selection_status_changed = false;
+    bool detected_format_changed = false;
+    bool diagnostics_availability_changed = false;
+    bool placeholder_changed = false;
+    bool internal_decoder_changed = false;
+    bool adapter_readiness_changed = false;
+    bool fallback_changed = false;
+    bool missing_dependency_changed = false;
+    bool version_mismatch_changed = false;
+    bool diagnostic_changed = false;
+    bool regression = false;
+    bool recovery = false;
+    std::string diagnostic;
+
+    bool changed() const
+    {
+        return status != render_image_external_decoder_selection_diff_entry_status::unchanged;
+    }
+
+    bool ok() const
+    {
+        return !regression;
+    }
+};
+
+struct render_image_external_decoder_selection_snapshot_diff {
+    std::size_t before_entry_count = 0;
+    std::size_t after_entry_count = 0;
+    std::size_t unchanged_entry_count = 0;
+    std::size_t added_entry_count = 0;
+    std::size_t removed_entry_count = 0;
+    std::size_t changed_entry_count = 0;
+    std::size_t before_internal_decoder_count = 0;
+    std::size_t after_internal_decoder_count = 0;
+    std::size_t before_adapter_ready_count = 0;
+    std::size_t after_adapter_ready_count = 0;
+    std::size_t before_missing_dependency_fallback_count = 0;
+    std::size_t after_missing_dependency_fallback_count = 0;
+    std::size_t before_version_mismatch_fallback_count = 0;
+    std::size_t after_version_mismatch_fallback_count = 0;
+    std::size_t before_placeholder_count = 0;
+    std::size_t after_placeholder_count = 0;
+    std::size_t before_fallback_count = 0;
+    std::size_t after_fallback_count = 0;
+    std::size_t state_changed_count = 0;
+    std::size_t selected_decoder_changed_count = 0;
+    std::size_t dependency_status_changed_count = 0;
+    std::size_t selection_status_changed_count = 0;
+    std::size_t adapter_readiness_changed_count = 0;
+    std::size_t fallback_changed_count = 0;
+    std::size_t placeholder_changed_count = 0;
+    std::size_t diagnostic_changed_count = 0;
+    bool adapter_ready_regressed = false;
+    bool adapter_ready_recovered = false;
+    bool fallback_regressed = false;
+    bool fallback_recovered = false;
+    bool placeholder_regressed = false;
+    bool placeholder_recovered = false;
+    bool has_changes = false;
+    bool has_regression = false;
+    bool has_recovery = false;
+    std::string regression_summary;
+    std::vector<render_image_external_decoder_selection_entry_diff> entries;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return !has_regression;
+    }
+};
+
+inline const fake_image_texture_pipeline_entry_snapshot* fake_image_texture_pipeline_entry_for_sequence(
+    const fake_image_texture_pipeline_snapshot& snapshot,
+    std::size_t sequence)
+{
+    for (const fake_image_texture_pipeline_entry_snapshot& entry : snapshot.entries) {
+        if (entry.sequence == sequence) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
+inline void count_render_image_external_decoder_selection_state(
+    const fake_image_texture_pipeline_entry_snapshot& entry,
+    bool before,
+    render_image_external_decoder_selection_snapshot_diff& diff)
+{
+    const render_image_external_decoder_selection_diff_state state =
+        render_image_external_decoder_selection_diff_state_for(
+            entry.external_decoder_selection,
+            entry.placeholder_texture);
+    if (before) {
+        if (entry.external_decoder_selection.used_internal_decoder) {
+            ++diff.before_internal_decoder_count;
+        }
+        if (entry.external_decoder_selection.used_third_party_adapter
+            || entry.external_decoder_selection.ready_for_external_decode) {
+            ++diff.before_adapter_ready_count;
+        }
+        if (entry.external_decoder_selection.fallback_due_to_missing_dependency) {
+            ++diff.before_missing_dependency_fallback_count;
+        }
+        if (entry.external_decoder_selection.fallback_due_to_mismatched_capability) {
+            ++diff.before_version_mismatch_fallback_count;
+        }
+        if (entry.placeholder_texture) {
+            ++diff.before_placeholder_count;
+        }
+        if (render_image_external_decoder_selection_state_is_fallback(state)
+            || entry.external_decoder_selection.fallback_to_standard_decoder_chain) {
+            ++diff.before_fallback_count;
+        }
+    } else {
+        if (entry.external_decoder_selection.used_internal_decoder) {
+            ++diff.after_internal_decoder_count;
+        }
+        if (entry.external_decoder_selection.used_third_party_adapter
+            || entry.external_decoder_selection.ready_for_external_decode) {
+            ++diff.after_adapter_ready_count;
+        }
+        if (entry.external_decoder_selection.fallback_due_to_missing_dependency) {
+            ++diff.after_missing_dependency_fallback_count;
+        }
+        if (entry.external_decoder_selection.fallback_due_to_mismatched_capability) {
+            ++diff.after_version_mismatch_fallback_count;
+        }
+        if (entry.placeholder_texture) {
+            ++diff.after_placeholder_count;
+        }
+        if (render_image_external_decoder_selection_state_is_fallback(state)
+            || entry.external_decoder_selection.fallback_to_standard_decoder_chain) {
+            ++diff.after_fallback_count;
+        }
+    }
+}
+
+inline render_image_external_decoder_selection_entry_diff make_render_image_external_decoder_selection_entry_diff(
+    const fake_image_texture_pipeline_entry_snapshot* before_entry,
+    const fake_image_texture_pipeline_entry_snapshot* after_entry,
+    std::size_t sequence)
+{
+    render_image_external_decoder_selection_entry_diff diff{
+        .sequence = sequence,
+    };
+
+    if (before_entry != nullptr) {
+        const render_image_external_decoder_selection_snapshot& selection =
+            before_entry->external_decoder_selection;
+        diff.before_state = render_image_external_decoder_selection_diff_state_for(
+            selection,
+            before_entry->placeholder_texture);
+        diff.before_request_uri = before_entry->request.uri;
+        diff.before_selected_decoder_id = before_entry->selected_decoder_id;
+        diff.before_adapter_decoder_id = selection.decoder_id;
+        diff.before_dependency_status_name = selection.dependency_status_name;
+        diff.before_selection_status_name = selection.selection_status_name;
+        diff.before_detected_format = selection.detected_format;
+        diff.before_diagnostics_available = selection.diagnostics_available;
+        diff.before_placeholder_texture = before_entry->placeholder_texture;
+        diff.before_used_internal_decoder = selection.used_internal_decoder;
+        diff.before_used_third_party_adapter = selection.used_third_party_adapter;
+        diff.before_ready_for_external_decode = selection.ready_for_external_decode;
+        diff.before_fallback_to_standard_decoder_chain = selection.fallback_to_standard_decoder_chain;
+        diff.before_missing_dependency_fallback = selection.fallback_due_to_missing_dependency;
+        diff.before_version_mismatch_fallback = selection.fallback_due_to_mismatched_capability;
+        diff.before_diagnostic = selection.diagnostic;
+    }
+
+    if (after_entry != nullptr) {
+        const render_image_external_decoder_selection_snapshot& selection =
+            after_entry->external_decoder_selection;
+        diff.after_state = render_image_external_decoder_selection_diff_state_for(
+            selection,
+            after_entry->placeholder_texture);
+        diff.after_request_uri = after_entry->request.uri;
+        diff.after_selected_decoder_id = after_entry->selected_decoder_id;
+        diff.after_adapter_decoder_id = selection.decoder_id;
+        diff.after_dependency_status_name = selection.dependency_status_name;
+        diff.after_selection_status_name = selection.selection_status_name;
+        diff.after_detected_format = selection.detected_format;
+        diff.after_diagnostics_available = selection.diagnostics_available;
+        diff.after_placeholder_texture = after_entry->placeholder_texture;
+        diff.after_used_internal_decoder = selection.used_internal_decoder;
+        diff.after_used_third_party_adapter = selection.used_third_party_adapter;
+        diff.after_ready_for_external_decode = selection.ready_for_external_decode;
+        diff.after_fallback_to_standard_decoder_chain = selection.fallback_to_standard_decoder_chain;
+        diff.after_missing_dependency_fallback = selection.fallback_due_to_missing_dependency;
+        diff.after_version_mismatch_fallback = selection.fallback_due_to_mismatched_capability;
+        diff.after_diagnostic = selection.diagnostic;
+    }
+
+    if (before_entry == nullptr && after_entry != nullptr) {
+        diff.status = render_image_external_decoder_selection_diff_entry_status::added;
+        diff.state_changed = diff.after_state != render_image_external_decoder_selection_diff_state::none;
+    } else if (before_entry != nullptr && after_entry == nullptr) {
+        diff.status = render_image_external_decoder_selection_diff_entry_status::removed;
+        diff.state_changed = diff.before_state != render_image_external_decoder_selection_diff_state::none;
+    } else if (before_entry != nullptr && after_entry != nullptr) {
+        diff.state_changed = diff.before_state != diff.after_state;
+        diff.selected_decoder_changed = diff.before_selected_decoder_id != diff.after_selected_decoder_id;
+        diff.adapter_decoder_changed = diff.before_adapter_decoder_id != diff.after_adapter_decoder_id;
+        diff.dependency_status_changed =
+            diff.before_dependency_status_name != diff.after_dependency_status_name;
+        diff.selection_status_changed = diff.before_selection_status_name != diff.after_selection_status_name;
+        diff.detected_format_changed = diff.before_detected_format != diff.after_detected_format;
+        diff.diagnostics_availability_changed =
+            diff.before_diagnostics_available != diff.after_diagnostics_available;
+        diff.placeholder_changed = diff.before_placeholder_texture != diff.after_placeholder_texture;
+        diff.internal_decoder_changed = diff.before_used_internal_decoder != diff.after_used_internal_decoder;
+        diff.adapter_readiness_changed =
+            diff.before_ready_for_external_decode != diff.after_ready_for_external_decode
+            || diff.before_used_third_party_adapter != diff.after_used_third_party_adapter;
+        diff.fallback_changed =
+            diff.before_fallback_to_standard_decoder_chain != diff.after_fallback_to_standard_decoder_chain;
+        diff.missing_dependency_changed =
+            diff.before_missing_dependency_fallback != diff.after_missing_dependency_fallback;
+        diff.version_mismatch_changed =
+            diff.before_version_mismatch_fallback != diff.after_version_mismatch_fallback;
+        diff.diagnostic_changed = diff.before_diagnostic != diff.after_diagnostic;
+        if (diff.state_changed || diff.selected_decoder_changed || diff.adapter_decoder_changed
+            || diff.dependency_status_changed || diff.selection_status_changed
+            || diff.detected_format_changed || diff.diagnostics_availability_changed
+            || diff.placeholder_changed || diff.internal_decoder_changed || diff.adapter_readiness_changed
+            || diff.fallback_changed || diff.missing_dependency_changed || diff.version_mismatch_changed
+            || diff.diagnostic_changed) {
+            diff.status = render_image_external_decoder_selection_diff_entry_status::changed;
+        }
+    }
+
+    const std::size_t before_severity =
+        render_image_external_decoder_selection_state_severity(diff.before_state);
+    const std::size_t after_severity =
+        render_image_external_decoder_selection_state_severity(diff.after_state);
+    diff.regression = after_severity > before_severity;
+    diff.recovery = after_severity < before_severity;
+    diff.before_state_name = render_image_external_decoder_selection_diff_state_name(diff.before_state);
+    diff.after_state_name = render_image_external_decoder_selection_diff_state_name(diff.after_state);
+    diff.status_name = render_image_external_decoder_selection_diff_entry_status_name(diff.status);
+    diff.diagnostic = diff.status == render_image_external_decoder_selection_diff_entry_status::unchanged
+        ? "external decoder selection unchanged"
+        : (diff.regression
+            ? "external decoder selection changed with fallback regression"
+            : (diff.recovery
+                ? "external decoder selection changed with fallback recovery"
+                : "external decoder selection changed"));
+    return diff;
+}
+
+inline void append_render_image_external_decoder_selection_regression_reason(
+    std::string& summary,
+    std::string_view reason)
+{
+    if (!summary.empty()) {
+        summary += "; ";
+    }
+    summary += reason;
+}
+
+inline render_image_external_decoder_selection_snapshot_diff
+diff_render_image_external_decoder_selection_snapshots(
+    const fake_image_texture_pipeline_snapshot& before,
+    const fake_image_texture_pipeline_snapshot& after)
+{
+    render_image_external_decoder_selection_snapshot_diff diff{
+        .before_entry_count = before.entries.size(),
+        .after_entry_count = after.entries.size(),
+    };
+
+    std::map<std::size_t, bool> sequences;
+    for (const fake_image_texture_pipeline_entry_snapshot& entry : before.entries) {
+        sequences.emplace(entry.sequence, true);
+        count_render_image_external_decoder_selection_state(entry, true, diff);
+    }
+    for (const fake_image_texture_pipeline_entry_snapshot& entry : after.entries) {
+        sequences.emplace(entry.sequence, true);
+        count_render_image_external_decoder_selection_state(entry, false, diff);
+    }
+
+    for (const auto& [sequence, _] : sequences) {
+        const fake_image_texture_pipeline_entry_snapshot* before_entry =
+            fake_image_texture_pipeline_entry_for_sequence(before, sequence);
+        const fake_image_texture_pipeline_entry_snapshot* after_entry =
+            fake_image_texture_pipeline_entry_for_sequence(after, sequence);
+        render_image_external_decoder_selection_entry_diff entry_diff =
+            make_render_image_external_decoder_selection_entry_diff(before_entry, after_entry, sequence);
+
+        switch (entry_diff.status) {
+        case render_image_external_decoder_selection_diff_entry_status::unchanged:
+            ++diff.unchanged_entry_count;
+            break;
+        case render_image_external_decoder_selection_diff_entry_status::added:
+            ++diff.added_entry_count;
+            break;
+        case render_image_external_decoder_selection_diff_entry_status::removed:
+            ++diff.removed_entry_count;
+            break;
+        case render_image_external_decoder_selection_diff_entry_status::changed:
+            ++diff.changed_entry_count;
+            break;
+        }
+
+        if (entry_diff.state_changed) {
+            ++diff.state_changed_count;
+        }
+        if (entry_diff.selected_decoder_changed) {
+            ++diff.selected_decoder_changed_count;
+        }
+        if (entry_diff.dependency_status_changed) {
+            ++diff.dependency_status_changed_count;
+        }
+        if (entry_diff.selection_status_changed) {
+            ++diff.selection_status_changed_count;
+        }
+        if (entry_diff.adapter_readiness_changed) {
+            ++diff.adapter_readiness_changed_count;
+        }
+        if (entry_diff.fallback_changed) {
+            ++diff.fallback_changed_count;
+        }
+        if (entry_diff.placeholder_changed) {
+            ++diff.placeholder_changed_count;
+        }
+        if (entry_diff.diagnostic_changed) {
+            ++diff.diagnostic_changed_count;
+        }
+        if (entry_diff.regression) {
+            diff.has_regression = true;
+        }
+        if (entry_diff.recovery) {
+            diff.has_recovery = true;
+        }
+
+        diff.entries.push_back(std::move(entry_diff));
+    }
+
+    const std::size_t before_non_internal_fallback_count =
+        diff.before_fallback_count >= diff.before_internal_decoder_count
+            ? diff.before_fallback_count - diff.before_internal_decoder_count
+            : 0;
+    const std::size_t after_non_internal_fallback_count =
+        diff.after_fallback_count >= diff.after_internal_decoder_count
+            ? diff.after_fallback_count - diff.after_internal_decoder_count
+            : 0;
+    diff.adapter_ready_regressed = diff.after_adapter_ready_count < diff.before_adapter_ready_count
+        && after_non_internal_fallback_count > before_non_internal_fallback_count;
+    diff.adapter_ready_recovered = diff.after_adapter_ready_count > diff.before_adapter_ready_count;
+    diff.fallback_regressed = after_non_internal_fallback_count > before_non_internal_fallback_count;
+    diff.fallback_recovered = after_non_internal_fallback_count < before_non_internal_fallback_count;
+    diff.placeholder_regressed = diff.after_placeholder_count > diff.before_placeholder_count;
+    diff.placeholder_recovered = diff.after_placeholder_count < diff.before_placeholder_count;
+    diff.has_changes = diff.added_entry_count != 0 || diff.removed_entry_count != 0
+        || diff.changed_entry_count != 0;
+    diff.has_regression = diff.has_regression || diff.adapter_ready_regressed
+        || diff.fallback_regressed || diff.placeholder_regressed;
+    diff.has_recovery = diff.has_recovery || diff.adapter_ready_recovered
+        || diff.fallback_recovered || diff.placeholder_recovered;
+
+    if (diff.adapter_ready_regressed) {
+        append_render_image_external_decoder_selection_regression_reason(
+            diff.regression_summary,
+            "adapter-ready decoder selections decreased");
+    }
+    if (diff.fallback_regressed) {
+        append_render_image_external_decoder_selection_regression_reason(
+            diff.regression_summary,
+            "external decoder fallback selections increased");
+    }
+    if (diff.placeholder_regressed) {
+        append_render_image_external_decoder_selection_regression_reason(
+            diff.regression_summary,
+            "placeholder texture fallbacks increased");
+    }
+
+    diff.diagnostic = !diff.has_changes
+        ? "external decoder selection diff unchanged"
+        : (diff.has_regression
+            ? "external decoder selection diff reports fallback regressions"
+            : (diff.has_recovery
+                ? "external decoder selection diff reports fallback recoveries"
+                : "external decoder selection diff reports changes"));
+    return diff;
+}
+
 inline render_image_texture_pipeline_request make_render_image_texture_pipeline_request(
     std::string uri,
     render_image_sampler_policy sampler = {})

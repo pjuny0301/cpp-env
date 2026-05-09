@@ -207,6 +207,10 @@ static_assert(requires(
     render::render_image_decode_size_validation size_validation,
     render::render_image_decoder_diagnostic diagnostic,
     render::render_image_external_decoder_selection_snapshot external_decoder_selection,
+    render::render_image_external_decoder_selection_diff_state external_selection_diff_state,
+    render::render_image_external_decoder_selection_diff_entry_status external_selection_diff_entry_status,
+    render::render_image_external_decoder_selection_entry_diff external_selection_entry_diff,
+    render::render_image_external_decoder_selection_snapshot_diff external_selection_diff,
     render::render_image_decoder_capability_candidate_kind decoder_capability_kind,
     render::render_image_decoder_capability_candidate_status decoder_capability_status,
     render::render_image_decoder_capability_candidate_snapshot decoder_capability_candidate,
@@ -388,6 +392,20 @@ static_assert(requires(
         -> std::same_as<render::stb_image_decoder_adapter_selection_result>;
     { render::make_render_image_external_decoder_selection_snapshot(stb_selection) }
         -> std::same_as<render::render_image_external_decoder_selection_snapshot>;
+    { render::render_image_external_decoder_selection_diff_state_name(external_selection_diff_state) }
+        -> std::same_as<std::string>;
+    { render::render_image_external_decoder_selection_diff_state_for(external_decoder_selection, bool{}) }
+        -> std::same_as<render::render_image_external_decoder_selection_diff_state>;
+    { render::render_image_external_decoder_selection_state_is_fallback(external_selection_diff_state) }
+        -> std::same_as<bool>;
+    { render::render_image_external_decoder_selection_state_severity(external_selection_diff_state) }
+        -> std::same_as<std::size_t>;
+    { render::render_image_external_decoder_selection_diff_entry_status_name(external_selection_diff_entry_status) }
+        -> std::same_as<std::string>;
+    { render::fake_image_texture_pipeline_entry_for_sequence(pipeline_snapshot, std::size_t{}) }
+        -> std::same_as<const render::fake_image_texture_pipeline_entry_snapshot*>;
+    { render::diff_render_image_external_decoder_selection_snapshots(pipeline_snapshot, pipeline_snapshot) }
+        -> std::same_as<render::render_image_external_decoder_selection_snapshot_diff>;
     { render::make_third_party_image_decoder_capability_from_stb_selection(request, stb_selection) }
         -> std::same_as<render::third_party_image_decoder_capability>;
     { png_header.width } -> std::same_as<std::size_t&>;
@@ -530,6 +548,101 @@ static_assert(requires(
     { external_decoder_selection.fallback_due_to_mismatched_capability } -> std::same_as<bool&>;
     { external_decoder_selection.diagnostic } -> std::same_as<std::string&>;
     { external_decoder_selection.ok() } -> std::same_as<bool>;
+    { external_selection_entry_diff.sequence } -> std::same_as<std::size_t&>;
+    { external_selection_entry_diff.status }
+        -> std::same_as<render::render_image_external_decoder_selection_diff_entry_status&>;
+    { external_selection_entry_diff.status_name } -> std::same_as<std::string&>;
+    { external_selection_entry_diff.before_state }
+        -> std::same_as<render::render_image_external_decoder_selection_diff_state&>;
+    { external_selection_entry_diff.after_state }
+        -> std::same_as<render::render_image_external_decoder_selection_diff_state&>;
+    { external_selection_entry_diff.before_state_name } -> std::same_as<std::string&>;
+    { external_selection_entry_diff.after_state_name } -> std::same_as<std::string&>;
+    { external_selection_entry_diff.before_request_uri } -> std::same_as<std::string&>;
+    { external_selection_entry_diff.after_request_uri } -> std::same_as<std::string&>;
+    { external_selection_entry_diff.before_selected_decoder_id } -> std::same_as<std::string&>;
+    { external_selection_entry_diff.after_selected_decoder_id } -> std::same_as<std::string&>;
+    { external_selection_entry_diff.before_adapter_decoder_id } -> std::same_as<std::string&>;
+    { external_selection_entry_diff.after_adapter_decoder_id } -> std::same_as<std::string&>;
+    { external_selection_entry_diff.before_dependency_status_name } -> std::same_as<std::string&>;
+    { external_selection_entry_diff.after_dependency_status_name } -> std::same_as<std::string&>;
+    { external_selection_entry_diff.before_selection_status_name } -> std::same_as<std::string&>;
+    { external_selection_entry_diff.after_selection_status_name } -> std::same_as<std::string&>;
+    { external_selection_entry_diff.before_detected_format } -> std::same_as<render::render_image_encoded_format&>;
+    { external_selection_entry_diff.after_detected_format } -> std::same_as<render::render_image_encoded_format&>;
+    { external_selection_entry_diff.before_diagnostics_available } -> std::same_as<bool&>;
+    { external_selection_entry_diff.after_diagnostics_available } -> std::same_as<bool&>;
+    { external_selection_entry_diff.before_placeholder_texture } -> std::same_as<bool&>;
+    { external_selection_entry_diff.after_placeholder_texture } -> std::same_as<bool&>;
+    { external_selection_entry_diff.before_used_internal_decoder } -> std::same_as<bool&>;
+    { external_selection_entry_diff.after_used_internal_decoder } -> std::same_as<bool&>;
+    { external_selection_entry_diff.before_used_third_party_adapter } -> std::same_as<bool&>;
+    { external_selection_entry_diff.after_used_third_party_adapter } -> std::same_as<bool&>;
+    { external_selection_entry_diff.before_ready_for_external_decode } -> std::same_as<bool&>;
+    { external_selection_entry_diff.after_ready_for_external_decode } -> std::same_as<bool&>;
+    { external_selection_entry_diff.before_fallback_to_standard_decoder_chain } -> std::same_as<bool&>;
+    { external_selection_entry_diff.after_fallback_to_standard_decoder_chain } -> std::same_as<bool&>;
+    { external_selection_entry_diff.before_missing_dependency_fallback } -> std::same_as<bool&>;
+    { external_selection_entry_diff.after_missing_dependency_fallback } -> std::same_as<bool&>;
+    { external_selection_entry_diff.before_version_mismatch_fallback } -> std::same_as<bool&>;
+    { external_selection_entry_diff.after_version_mismatch_fallback } -> std::same_as<bool&>;
+    { external_selection_entry_diff.before_diagnostic } -> std::same_as<std::string&>;
+    { external_selection_entry_diff.after_diagnostic } -> std::same_as<std::string&>;
+    { external_selection_entry_diff.state_changed } -> std::same_as<bool&>;
+    { external_selection_entry_diff.selected_decoder_changed } -> std::same_as<bool&>;
+    { external_selection_entry_diff.dependency_status_changed } -> std::same_as<bool&>;
+    { external_selection_entry_diff.selection_status_changed } -> std::same_as<bool&>;
+    { external_selection_entry_diff.placeholder_changed } -> std::same_as<bool&>;
+    { external_selection_entry_diff.adapter_readiness_changed } -> std::same_as<bool&>;
+    { external_selection_entry_diff.fallback_changed } -> std::same_as<bool&>;
+    { external_selection_entry_diff.missing_dependency_changed } -> std::same_as<bool&>;
+    { external_selection_entry_diff.version_mismatch_changed } -> std::same_as<bool&>;
+    { external_selection_entry_diff.diagnostic_changed } -> std::same_as<bool&>;
+    { external_selection_entry_diff.regression } -> std::same_as<bool&>;
+    { external_selection_entry_diff.recovery } -> std::same_as<bool&>;
+    { external_selection_entry_diff.diagnostic } -> std::same_as<std::string&>;
+    { external_selection_entry_diff.changed() } -> std::same_as<bool>;
+    { external_selection_entry_diff.ok() } -> std::same_as<bool>;
+    { external_selection_diff.before_entry_count } -> std::same_as<std::size_t&>;
+    { external_selection_diff.after_entry_count } -> std::same_as<std::size_t&>;
+    { external_selection_diff.unchanged_entry_count } -> std::same_as<std::size_t&>;
+    { external_selection_diff.added_entry_count } -> std::same_as<std::size_t&>;
+    { external_selection_diff.removed_entry_count } -> std::same_as<std::size_t&>;
+    { external_selection_diff.changed_entry_count } -> std::same_as<std::size_t&>;
+    { external_selection_diff.before_internal_decoder_count } -> std::same_as<std::size_t&>;
+    { external_selection_diff.after_internal_decoder_count } -> std::same_as<std::size_t&>;
+    { external_selection_diff.before_adapter_ready_count } -> std::same_as<std::size_t&>;
+    { external_selection_diff.after_adapter_ready_count } -> std::same_as<std::size_t&>;
+    { external_selection_diff.before_missing_dependency_fallback_count } -> std::same_as<std::size_t&>;
+    { external_selection_diff.after_missing_dependency_fallback_count } -> std::same_as<std::size_t&>;
+    { external_selection_diff.before_version_mismatch_fallback_count } -> std::same_as<std::size_t&>;
+    { external_selection_diff.after_version_mismatch_fallback_count } -> std::same_as<std::size_t&>;
+    { external_selection_diff.before_placeholder_count } -> std::same_as<std::size_t&>;
+    { external_selection_diff.after_placeholder_count } -> std::same_as<std::size_t&>;
+    { external_selection_diff.before_fallback_count } -> std::same_as<std::size_t&>;
+    { external_selection_diff.after_fallback_count } -> std::same_as<std::size_t&>;
+    { external_selection_diff.state_changed_count } -> std::same_as<std::size_t&>;
+    { external_selection_diff.selected_decoder_changed_count } -> std::same_as<std::size_t&>;
+    { external_selection_diff.dependency_status_changed_count } -> std::same_as<std::size_t&>;
+    { external_selection_diff.selection_status_changed_count } -> std::same_as<std::size_t&>;
+    { external_selection_diff.adapter_readiness_changed_count } -> std::same_as<std::size_t&>;
+    { external_selection_diff.fallback_changed_count } -> std::same_as<std::size_t&>;
+    { external_selection_diff.placeholder_changed_count } -> std::same_as<std::size_t&>;
+    { external_selection_diff.diagnostic_changed_count } -> std::same_as<std::size_t&>;
+    { external_selection_diff.adapter_ready_regressed } -> std::same_as<bool&>;
+    { external_selection_diff.adapter_ready_recovered } -> std::same_as<bool&>;
+    { external_selection_diff.fallback_regressed } -> std::same_as<bool&>;
+    { external_selection_diff.fallback_recovered } -> std::same_as<bool&>;
+    { external_selection_diff.placeholder_regressed } -> std::same_as<bool&>;
+    { external_selection_diff.placeholder_recovered } -> std::same_as<bool&>;
+    { external_selection_diff.has_changes } -> std::same_as<bool&>;
+    { external_selection_diff.has_regression } -> std::same_as<bool&>;
+    { external_selection_diff.has_recovery } -> std::same_as<bool&>;
+    { external_selection_diff.regression_summary } -> std::same_as<std::string&>;
+    { external_selection_diff.entries }
+        -> std::same_as<std::vector<render::render_image_external_decoder_selection_entry_diff>&>;
+    { external_selection_diff.diagnostic } -> std::same_as<std::string&>;
+    { external_selection_diff.ok() } -> std::same_as<bool>;
     { decode_result.metadata } -> std::same_as<render::render_image_decode_metadata&>;
     { decode_result.decoder_diagnostics } -> std::same_as<std::vector<render::render_image_decoder_diagnostic>&>;
     { decode_result.external_decoder_selection }
@@ -912,6 +1025,8 @@ static_assert(requires(
     decoder_capability_status;
     stb_dependency_status;
     stb_selection_status;
+    external_selection_diff_state;
+    external_selection_diff_entry_status;
     { batch_plan_options.placeholder_policy } -> std::same_as<render::fake_image_texture_placeholder_policy&>;
     { batch_plan_options.reject_parent_path_segments } -> std::same_as<bool&>;
     { batch_plan_entry.request_index } -> std::same_as<std::size_t&>;
@@ -1776,6 +1891,8 @@ static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_binding_packet_diff>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_binding_plan_diff>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_external_decoder_selection_snapshot>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_external_decoder_selection_entry_diff>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_external_decoder_selection_snapshot_diff>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::stb_image_decoder_dependency_manifest>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::stb_image_decoder_adapter_selection_result>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_manifest_texture_entry_snapshot>);
@@ -1798,6 +1915,8 @@ static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_textur
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_binding_packet_diff>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_binding_plan_diff>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_external_decoder_selection_snapshot>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_external_decoder_selection_entry_diff>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_external_decoder_selection_snapshot_diff>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::stb_image_decoder_dependency_manifest>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::stb_image_decoder_adapter_selection_result>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_manifest_texture_entry_snapshot>);
@@ -1820,6 +1939,8 @@ static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_binding_packet_diff>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_binding_plan_diff>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_external_decoder_selection_snapshot>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_external_decoder_selection_entry_diff>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_external_decoder_selection_snapshot_diff>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::stb_image_decoder_dependency_manifest>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::stb_image_decoder_adapter_selection_result>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_manifest_texture_pipeline_snapshot>);

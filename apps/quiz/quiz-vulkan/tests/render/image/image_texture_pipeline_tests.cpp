@@ -17,6 +17,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -69,6 +70,10 @@ static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_textu
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_frame_binding_plan_diff>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_binding_packet_diff>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_binding_plan_diff>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_external_decoder_selection_entry_diff>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_external_decoder_selection_snapshot_diff>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_external_decoder_selection_entry_diff>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_external_decoder_selection_snapshot_diff>);
 
 void require(bool condition, const char* message)
 {
@@ -218,6 +223,47 @@ void write_bytes(const std::filesystem::path& path, const std::vector<std::byte>
             static_cast<std::streamsize>(bytes.size()));
     }
     require(file.good(), "image pipeline fixture bytes can be written");
+}
+
+quiz_vulkan::render::fake_image_texture_pipeline_snapshot make_optional_stb_pipeline_snapshot(
+    std::string uri,
+    const std::vector<std::byte>& encoded_bytes,
+    quiz_vulkan::render::stb_image_decoder_dependency_manifest manifest,
+    bool enable_placeholder = false)
+{
+    using namespace quiz_vulkan::render;
+
+    fake_third_party_image_decoder_backend backend;
+    backend.set_decoder_id("fake_stb_decoder");
+    backend.set_supported_formats({
+        render_image_encoded_format::jpeg,
+        render_image_encoded_format::bmp,
+        render_image_encoded_format::ppm,
+        render_image_encoded_format::png,
+    });
+    backend.set_decoded_image(make_rgba_1x1_image(9, 8, 7, 6));
+
+    fake_stb_image_decoder_dependency_probe probe;
+    probe.set_manifest(std::move(manifest));
+    optional_third_party_image_decoder_chain decoder(backend, probe);
+
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes(uri, encoded_bytes);
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    if (enable_placeholder) {
+        cache.set_placeholder_texture_policy(fake_image_texture_placeholder_policy{
+            .enabled = true,
+            .width = 2,
+            .height = 2,
+        });
+    }
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
+    const render_image_texture_pipeline_result result = pipeline.acquire_texture(
+        render_image_texture_pipeline_request{.uri = std::move(uri)});
+    (void)result;
+    return pipeline.diagnostic_snapshot();
 }
 
 void test_filesystem_pipeline_reads_ppm_fixture_and_reuses_cache()
@@ -785,6 +831,145 @@ void test_stb_selection_survives_placeholder_fallback()
     require(
         snapshot.entries[0].decoder_capability_manifest.external_decoder_selection.fallback_due_to_missing_dependency,
         "placeholder manifest carries missing dependency fallback flag");
+}
+
+void test_external_decoder_selection_diff_reports_adapter_internal_and_placeholder_states()
+{
+    using namespace quiz_vulkan::render;
+
+    const fake_image_texture_pipeline_snapshot adapter_snapshot = make_optional_stb_pipeline_snapshot(
+        "asset://textures/card.jpg",
+        make_jpeg_signature_bytes(),
+        make_available_stb_image_decoder_dependency_manifest("fake_stb_decoder"));
+    const fake_image_texture_pipeline_snapshot internal_snapshot = make_optional_stb_pipeline_snapshot(
+        "asset://textures/card.bmp",
+        make_bmp_24_bit_1x1_fixture_bytes(),
+        make_available_stb_image_decoder_dependency_manifest("fake_stb_decoder"));
+
+    const render_image_external_decoder_selection_snapshot_diff internal_diff =
+        diff_render_image_external_decoder_selection_snapshots(adapter_snapshot, internal_snapshot);
+
+    require(internal_diff.has_changes, "external selection diff detects adapter to internal change");
+    require(!internal_diff.has_regression, "adapter to internal decoder change is not a fallback regression");
+    require(internal_diff.before_adapter_ready_count == 1, "external selection diff counts adapter-ready before");
+    require(internal_diff.after_adapter_ready_count == 0, "external selection diff counts no adapter-ready after");
+    require(internal_diff.before_internal_decoder_count == 0, "external selection diff counts no internal before");
+    require(internal_diff.after_internal_decoder_count == 1, "external selection diff counts internal after");
+    require(internal_diff.before_fallback_count == 0, "external selection diff counts no fallback before");
+    require(internal_diff.after_fallback_count == 1, "external selection diff counts internal standard fallback after");
+    require(internal_diff.changed_entry_count == 1, "external selection diff records one changed entry");
+    require(internal_diff.state_changed_count == 1, "external selection diff counts state change");
+    require(internal_diff.selected_decoder_changed_count == 1, "external selection diff counts selected decoder change");
+    require(internal_diff.selection_status_changed_count == 1, "external selection diff counts selection status change");
+    require(
+        internal_diff.diagnostic == "external decoder selection diff reports changes",
+        "external selection diff reports neutral changes");
+
+    const render_image_external_decoder_selection_entry_diff& internal_entry = internal_diff.entries[0];
+    require(
+        internal_entry.before_state == render_image_external_decoder_selection_diff_state::adapter_ready,
+        "external selection entry records adapter-ready before state");
+    require(
+        internal_entry.after_state == render_image_external_decoder_selection_diff_state::internal_decoder,
+        "external selection entry records internal decoder after state");
+    require(internal_entry.before_state_name == "adapter_ready", "adapter-ready state name is stable");
+    require(internal_entry.after_state_name == "internal_decoder", "internal decoder state name is stable");
+    require(internal_entry.before_selected_decoder_id == "fake_stb_decoder", "entry records before adapter decoder");
+    require(internal_entry.after_selected_decoder_id == "bmp_image_decoder", "entry records after BMP decoder");
+    require(internal_entry.before_ready_for_external_decode, "entry records before adapter readiness");
+    require(internal_entry.after_used_internal_decoder, "entry records after internal decoder flag");
+    require(!internal_entry.regression, "internal decoder route is not a severity regression");
+
+    const fake_image_texture_pipeline_snapshot placeholder_snapshot = make_optional_stb_pipeline_snapshot(
+        "asset://textures/card.jpg",
+        make_jpeg_signature_bytes(),
+        make_missing_stb_image_decoder_dependency_manifest("fake_stb_decoder"),
+        true);
+    const render_image_external_decoder_selection_snapshot_diff placeholder_diff =
+        diff_render_image_external_decoder_selection_snapshots(adapter_snapshot, placeholder_snapshot);
+
+    require(placeholder_diff.has_regression, "adapter to placeholder diff records fallback regression");
+    require(placeholder_diff.placeholder_regressed, "adapter to placeholder diff records placeholder regression");
+    require(placeholder_diff.fallback_regressed, "adapter to placeholder diff records fallback increase");
+    require(placeholder_diff.after_placeholder_count == 1, "adapter to placeholder diff counts placeholder after");
+    require(
+        placeholder_diff.after_missing_dependency_fallback_count == 1,
+        "adapter to placeholder diff preserves missing dependency flag");
+    require(placeholder_diff.placeholder_changed_count == 1, "adapter to placeholder diff counts placeholder delta");
+    require(
+        placeholder_diff.regression_summary
+            == "adapter-ready decoder selections decreased; external decoder fallback selections increased; placeholder texture fallbacks increased",
+        "adapter to placeholder diff summarizes fallback regression");
+
+    const render_image_external_decoder_selection_entry_diff& placeholder_entry =
+        placeholder_diff.entries[0];
+    require(
+        placeholder_entry.after_state == render_image_external_decoder_selection_diff_state::placeholder,
+        "external selection entry records placeholder after state");
+    require(placeholder_entry.after_state_name == "placeholder", "placeholder state name is stable");
+    require(placeholder_entry.after_placeholder_texture, "external selection entry records placeholder flag");
+    require(placeholder_entry.after_missing_dependency_fallback, "external selection entry records missing dependency flag");
+    require(placeholder_entry.regression, "external selection entry records placeholder regression");
+    require(
+        placeholder_entry.diagnostic == "external decoder selection changed with fallback regression",
+        "external selection entry diagnostic names fallback regression");
+}
+
+void test_external_decoder_selection_diff_reports_missing_and_version_mismatch_fallbacks()
+{
+    using namespace quiz_vulkan::render;
+
+    const fake_image_texture_pipeline_snapshot missing_snapshot = make_optional_stb_pipeline_snapshot(
+        "asset://textures/card.jpg",
+        make_jpeg_signature_bytes(),
+        make_missing_stb_image_decoder_dependency_manifest("fake_stb_decoder"));
+    const fake_image_texture_pipeline_snapshot version_mismatch_snapshot = make_optional_stb_pipeline_snapshot(
+        "asset://textures/card.jpg",
+        make_jpeg_signature_bytes(),
+        make_mismatched_stb_image_decoder_dependency_manifest(
+            "fake_stb_decoder",
+            "stb_image dependency version mismatch; falling back to standard image decoders"));
+
+    const render_image_external_decoder_selection_snapshot_diff diff =
+        diff_render_image_external_decoder_selection_snapshots(missing_snapshot, version_mismatch_snapshot);
+
+    require(diff.has_changes, "external selection diff detects missing to version mismatch change");
+    require(!diff.has_regression, "missing to version mismatch keeps the same fallback severity");
+    require(diff.before_missing_dependency_fallback_count == 1, "external selection diff counts missing before");
+    require(diff.after_missing_dependency_fallback_count == 0, "external selection diff counts no missing after");
+    require(diff.before_version_mismatch_fallback_count == 0, "external selection diff counts no version mismatch before");
+    require(diff.after_version_mismatch_fallback_count == 1, "external selection diff counts version mismatch after");
+    require(diff.before_fallback_count == 1, "external selection diff counts fallback before");
+    require(diff.after_fallback_count == 1, "external selection diff counts fallback after");
+    require(diff.changed_entry_count == 1, "external selection diff records one changed fallback entry");
+    require(diff.dependency_status_changed_count == 1, "external selection diff counts dependency status change");
+    require(diff.selection_status_changed_count == 1, "external selection diff counts selection status change");
+    require(diff.diagnostic_changed_count == 1, "external selection diff counts diagnostic change");
+    require(
+        diff.diagnostic == "external decoder selection diff reports changes",
+        "missing to version mismatch diff reports neutral changes");
+
+    const render_image_external_decoder_selection_entry_diff& entry = diff.entries[0];
+    require(
+        entry.before_state == render_image_external_decoder_selection_diff_state::missing_dependency_fallback,
+        "external selection entry records missing fallback before");
+    require(
+        entry.after_state == render_image_external_decoder_selection_diff_state::version_mismatch_fallback,
+        "external selection entry records version mismatch fallback after");
+    require(entry.before_state_name == "missing_dependency_fallback", "missing fallback state name is stable");
+    require(entry.after_state_name == "version_mismatch_fallback", "version mismatch state name is stable");
+    require(entry.before_dependency_status_name == "missing", "entry records missing dependency status before");
+    require(
+        entry.after_dependency_status_name == "mismatched_capability",
+        "entry records mismatched dependency status after");
+    require(entry.before_selection_status_name == "fallback_missing_dependency", "entry records missing selection before");
+    require(
+        entry.after_selection_status_name == "fallback_mismatched_capability",
+        "entry records version mismatch selection after");
+    require(entry.before_missing_dependency_fallback, "entry records missing dependency fallback before");
+    require(entry.after_version_mismatch_fallback, "entry records version mismatch fallback after");
+    require(entry.after_diagnostic.find("version mismatch") != std::string::npos, "entry preserves version mismatch diagnostic");
+    require(!entry.regression, "version mismatch fallback is not worse than missing dependency fallback");
 }
 
 void test_pipeline_decoder_manifest_reports_placeholder_outcome()
@@ -2390,6 +2575,8 @@ int main()
     test_stb_selection_preserves_internal_bmp_decoder_diagnostics();
     test_stb_selection_missing_and_mismatched_fallback_diagnostics_reach_pipeline();
     test_stb_selection_survives_placeholder_fallback();
+    test_external_decoder_selection_diff_reports_adapter_internal_and_placeholder_states();
+    test_external_decoder_selection_diff_reports_missing_and_version_mismatch_fallbacks();
     test_pipeline_decoder_manifest_reports_placeholder_outcome();
     test_batch_plan_normalizes_and_deduplicates_texture_requests();
     test_batch_plan_reports_invalid_request_reasons();

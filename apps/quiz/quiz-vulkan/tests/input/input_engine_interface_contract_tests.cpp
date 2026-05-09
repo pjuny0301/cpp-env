@@ -804,6 +804,101 @@ concept InputDiagnosticSummaryInterface = requires(T summary) {
 };
 
 template <typename T>
+concept InputRoutingCountDeltaInterface = requires(T delta) {
+    { delta.before_count } -> std::same_as<std::size_t&>;
+    { delta.after_count } -> std::same_as<std::size_t&>;
+    { delta.delta } -> std::same_as<std::int64_t&>;
+    { delta.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept InputRoutingBoolDeltaInterface = requires(T delta) {
+    { delta.before_value } -> std::same_as<bool&>;
+    { delta.after_value } -> std::same_as<bool&>;
+    { delta.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept InputRoutingPointerCaptureDeltaInterface = requires(T delta) {
+    { delta.before_capture } -> std::same_as<input::pointer_capture_snapshot&>;
+    { delta.after_capture } -> std::same_as<input::pointer_capture_snapshot&>;
+    { delta.before_has_state } -> std::same_as<bool&>;
+    { delta.after_has_state } -> std::same_as<bool&>;
+    { delta.active } -> std::same_as<input::input_routing_bool_delta&>;
+    { delta.tracked_pointer_count } -> std::same_as<input::input_routing_count_delta&>;
+    { delta.lifecycle_changed } -> std::same_as<bool&>;
+    { delta.pointer_id_changed } -> std::same_as<bool&>;
+    { delta.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept NormalizedInputEventKindCountDeltasInterface = requires(T deltas) {
+    { deltas.tap } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.long_press } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.swipe_left } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.swipe_right } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.drag_start } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.drag_update } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.drag_end } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.drag_cancel } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.wheel } -> std::same_as<input::input_routing_count_delta&>;
+};
+
+template <typename T>
+concept InputRouteKindCountDeltasInterface = requires(T deltas) {
+    { deltas.pointer } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.text } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.ime } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.focus } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.wheel } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.total } -> std::same_as<input::input_routing_count_delta&>;
+};
+
+template <typename T>
+concept ActionRoutePolicyKindCountsInterface = requires(T counts) {
+    { counts.pointer_capture_reset } -> std::same_as<std::size_t&>;
+    { counts.pointer_capture_arbitration } -> std::same_as<std::size_t&>;
+    { counts.wheel_summary } -> std::same_as<std::size_t&>;
+    { counts.gesture_route_snapshot } -> std::same_as<std::size_t&>;
+    { counts.text_commit_boundary } -> std::same_as<std::size_t&>;
+    { counts.text_backspace_boundary } -> std::same_as<std::size_t&>;
+    { counts.text_delete_forward_boundary } -> std::same_as<std::size_t&>;
+    { counts.caret_moved } -> std::same_as<std::size_t&>;
+    { counts.selection_changed } -> std::same_as<std::size_t&>;
+    { counts.focus_traversal_next } -> std::same_as<std::size_t&>;
+    { counts.focus_traversal_previous } -> std::same_as<std::size_t&>;
+    { counts.text_submit_boundary } -> std::same_as<std::size_t&>;
+    { counts.keyboard_cancel_intent } -> std::same_as<std::size_t&>;
+    { counts.focus_loss } -> std::same_as<std::size_t&>;
+    { counts.ime_preedit } -> std::same_as<std::size_t&>;
+    { counts.ime_commit } -> std::same_as<std::size_t&>;
+    { counts.ime_cancel } -> std::same_as<std::size_t&>;
+    { counts.ime_composition_start } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
+concept ActionRoutePolicyKindCountDeltasInterface = requires(T deltas) {
+    { deltas.pointer_capture_reset } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.pointer_capture_arbitration } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.wheel_summary } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.gesture_route_snapshot } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.text_commit_boundary } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.text_backspace_boundary } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.text_delete_forward_boundary } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.caret_moved } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.selection_changed } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.focus_traversal_next } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.focus_traversal_previous } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.text_submit_boundary } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.keyboard_cancel_intent } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.focus_loss } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.ime_preedit } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.ime_commit } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.ime_cancel } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.ime_composition_start } -> std::same_as<input::input_routing_count_delta&>;
+};
+
+template <typename T>
 concept ActionRoutePolicyDiagnosticInterface = requires(T diagnostic) {
     { diagnostic.kind } -> std::same_as<input::action_route_policy_kind&>;
     { diagnostic.timestamp_ms } -> std::same_as<std::int64_t&>;
@@ -853,13 +948,107 @@ concept KeyboardChordDiagnosticInterface = requires(T chord) {
 };
 
 template <typename T>
+concept InputRoutingKeyboardIntentCountsInterface = requires(T counts) {
+    { counts.none } -> std::same_as<std::size_t&>;
+    { counts.focus_traversal_next } -> std::same_as<std::size_t&>;
+    { counts.focus_traversal_previous } -> std::same_as<std::size_t&>;
+    { counts.submit } -> std::same_as<std::size_t&>;
+    { counts.cancel } -> std::same_as<std::size_t&>;
+    { counts.caret_previous } -> std::same_as<std::size_t&>;
+    { counts.caret_next } -> std::same_as<std::size_t&>;
+    { counts.caret_home } -> std::same_as<std::size_t&>;
+    { counts.caret_end } -> std::same_as<std::size_t&>;
+    { counts.selection_previous } -> std::same_as<std::size_t&>;
+    { counts.selection_next } -> std::same_as<std::size_t&>;
+    { counts.select_all } -> std::same_as<std::size_t&>;
+    { counts.delete_backward } -> std::same_as<std::size_t&>;
+    { counts.delete_forward } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
+concept InputRoutingKeyboardRepeatPolicyCountsInterface = requires(T counts) {
+    { counts.not_repeat } -> std::same_as<std::size_t&>;
+    { counts.allowed } -> std::same_as<std::size_t&>;
+    { counts.ignored } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
+concept InputRoutingKeyboardRouteCountsInterface = requires(T counts) {
+    { counts.intents } -> std::same_as<input::input_routing_keyboard_intent_counts&>;
+    { counts.repeat_policies } -> std::same_as<input::input_routing_keyboard_repeat_policy_counts&>;
+    { counts.total } -> std::same_as<std::size_t&>;
+    { counts.emitted_input_event_routes } -> std::same_as<std::size_t&>;
+    { counts.diagnostic_only_routes } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
+concept InputRoutingKeyboardIntentCountDeltasInterface = requires(T deltas) {
+    { deltas.none } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.focus_traversal_next } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.focus_traversal_previous } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.submit } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.cancel } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.caret_previous } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.caret_next } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.caret_home } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.caret_end } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.selection_previous } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.selection_next } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.select_all } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.delete_backward } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.delete_forward } -> std::same_as<input::input_routing_count_delta&>;
+};
+
+template <typename T>
+concept InputRoutingKeyboardRepeatPolicyCountDeltasInterface = requires(T deltas) {
+    { deltas.not_repeat } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.allowed } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.ignored } -> std::same_as<input::input_routing_count_delta&>;
+};
+
+template <typename T>
+concept InputRoutingKeyboardRouteCountDeltasInterface = requires(T deltas) {
+    { deltas.intents } -> std::same_as<input::input_routing_keyboard_intent_count_deltas&>;
+    { deltas.repeat_policies } -> std::same_as<input::input_routing_keyboard_repeat_policy_count_deltas&>;
+    { deltas.total } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.emitted_input_event_routes } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.diagnostic_only_routes } -> std::same_as<input::input_routing_count_delta&>;
+    { deltas.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept InputRoutingDiagnosticsDiffInterface = requires(T diff) {
+    { diff.normalized_event_count } -> std::same_as<input::input_routing_count_delta&>;
+    { diff.normalized_event_summary_count } -> std::same_as<input::input_routing_count_delta&>;
+    { diff.action_route_count } -> std::same_as<input::input_routing_count_delta&>;
+    { diff.normalized_events } -> std::same_as<input::normalized_input_event_kind_count_deltas&>;
+    { diff.routes } -> std::same_as<input::input_route_kind_count_deltas&>;
+    { diff.action_routes } -> std::same_as<input::action_route_policy_kind_count_deltas&>;
+    { diff.keyboard_routes } -> std::same_as<input::input_routing_keyboard_route_count_deltas&>;
+    { diff.pointer_capture } -> std::same_as<input::input_routing_pointer_capture_delta&>;
+    { diff.pointer_capture_ended_cleanly } -> std::same_as<input::input_routing_bool_delta&>;
+    { diff.focus_ended_cleanly } -> std::same_as<input::input_routing_bool_delta&>;
+    { diff.preedit_ended_cleanly } -> std::same_as<input::input_routing_bool_delta&>;
+    { diff.normalized_events_changed } -> std::same_as<bool&>;
+    { diff.action_routes_changed } -> std::same_as<bool&>;
+    { diff.keyboard_routes_changed } -> std::same_as<bool&>;
+    { diff.pointer_capture_changed } -> std::same_as<bool&>;
+    { diff.clean_state_changed } -> std::same_as<bool&>;
+    { diff.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
 concept InputRoutingDiagnosticFunctions = requires(
     input::input_diagnostic_summary& target,
     const input::input_diagnostic_summary& source,
     input::input_event_summary_kind event_kind,
     input::action_route_policy_kind route_kind,
+    input::action_route_policy_kind_counts& action_route_counts,
+    input::input_routing_keyboard_intent_counts& keyboard_intents,
+    input::input_routing_keyboard_repeat_policy_counts& keyboard_repeat_policies,
     const input::pointer_capture_snapshot& capture,
     const input::input_routing_diagnostics& diagnostics,
+    const input::keyboard_chord_diagnostic& keyboard,
     const input::text_input_model& text) {
     { input::count_input_diagnostic_normalized_event(target, event_kind) } -> std::same_as<void>;
     { input::count_input_diagnostic_route(target, route_kind) } -> std::same_as<void>;
@@ -867,6 +1056,38 @@ concept InputRoutingDiagnosticFunctions = requires(
     { input::summarize_input_routing_diagnostics(diagnostics, text) }
         -> std::same_as<input::input_diagnostic_summary>;
     { input::accumulate_input_diagnostic_summary(target, source) } -> std::same_as<void>;
+    { input::input_routing_size_delta(std::size_t{}, std::size_t{}) } -> std::same_as<std::int64_t>;
+    { input::diff_input_routing_count(std::size_t{}, std::size_t{}) }
+        -> std::same_as<input::input_routing_count_delta>;
+    { input::diff_input_routing_bool(false, true) } -> std::same_as<input::input_routing_bool_delta>;
+    { input::input_routing_keyboard_chord_present(keyboard) } -> std::same_as<bool>;
+    { input::count_input_routing_action_route_policy_kind(action_route_counts, route_kind) }
+        -> std::same_as<void>;
+    { input::summarize_input_routing_action_route_policy_kinds(diagnostics) }
+        -> std::same_as<input::action_route_policy_kind_counts>;
+    { input::count_input_routing_keyboard_intent(keyboard_intents, input::keyboard_shortcut_intent{}) }
+        -> std::same_as<void>;
+    { input::count_input_routing_keyboard_repeat_policy(
+        keyboard_repeat_policies,
+        input::keyboard_repeat_policy{}) } -> std::same_as<void>;
+    { input::summarize_input_routing_keyboard_routes(diagnostics) }
+        -> std::same_as<input::input_routing_keyboard_route_counts>;
+    { input::diff_input_routing_pointer_capture(capture, capture) }
+        -> std::same_as<input::input_routing_pointer_capture_delta>;
+    { input::diff_normalized_input_event_kind_counts(
+        input::normalized_input_event_kind_counts{},
+        input::normalized_input_event_kind_counts{}) } -> std::same_as<input::normalized_input_event_kind_count_deltas>;
+    { input::diff_input_route_kind_counts(input::input_route_kind_counts{}, input::input_route_kind_counts{}) }
+        -> std::same_as<input::input_route_kind_count_deltas>;
+    { input::diff_action_route_policy_kind_counts(
+        input::action_route_policy_kind_counts{},
+        input::action_route_policy_kind_counts{}) } -> std::same_as<input::action_route_policy_kind_count_deltas>;
+    { input::diff_input_routing_keyboard_route_counts(
+        input::input_routing_keyboard_route_counts{},
+        input::input_routing_keyboard_route_counts{}) }
+        -> std::same_as<input::input_routing_keyboard_route_count_deltas>;
+    { input::diff_input_routing_diagnostics(diagnostics, diagnostics) }
+        -> std::same_as<input::input_routing_diagnostics_diff>;
 };
 
 template <typename T>
@@ -928,6 +1149,23 @@ static_assert(NormalizedInputEventKindCountsInterface<input::normalized_input_ev
 static_assert(InputRouteKindCountsInterface<input::input_route_kind_counts>);
 static_assert(InputDiagnosticSummaryInterface<input::input_diagnostic_summary>);
 static_assert(InputRoutingDiagnosticsInterface<input::input_routing_diagnostics>);
+static_assert(InputRoutingCountDeltaInterface<input::input_routing_count_delta>);
+static_assert(InputRoutingBoolDeltaInterface<input::input_routing_bool_delta>);
+static_assert(InputRoutingPointerCaptureDeltaInterface<input::input_routing_pointer_capture_delta>);
+static_assert(NormalizedInputEventKindCountDeltasInterface<input::normalized_input_event_kind_count_deltas>);
+static_assert(InputRouteKindCountDeltasInterface<input::input_route_kind_count_deltas>);
+static_assert(ActionRoutePolicyKindCountsInterface<input::action_route_policy_kind_counts>);
+static_assert(ActionRoutePolicyKindCountDeltasInterface<input::action_route_policy_kind_count_deltas>);
+static_assert(InputRoutingKeyboardIntentCountsInterface<input::input_routing_keyboard_intent_counts>);
+static_assert(InputRoutingKeyboardRepeatPolicyCountsInterface<
+    input::input_routing_keyboard_repeat_policy_counts>);
+static_assert(InputRoutingKeyboardRouteCountsInterface<input::input_routing_keyboard_route_counts>);
+static_assert(InputRoutingKeyboardIntentCountDeltasInterface<input::input_routing_keyboard_intent_count_deltas>);
+static_assert(InputRoutingKeyboardRepeatPolicyCountDeltasInterface<
+    input::input_routing_keyboard_repeat_policy_count_deltas>);
+static_assert(InputRoutingKeyboardRouteCountDeltasInterface<
+    input::input_routing_keyboard_route_count_deltas>);
+static_assert(InputRoutingDiagnosticsDiffInterface<input::input_routing_diagnostics_diff>);
 static_assert(InputRoutingDiagnosticFunctions<void>);
 static_assert(GestureRecognizerInterface<input::gesture_recognizer>);
 static_assert(PlatformInputTranslatorInterface<input::platform_input_translator>);
@@ -1032,6 +1270,20 @@ static_assert(std::is_default_constructible_v<input::normalized_input_replay_foc
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_focus_diff>);
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_regression_summary>);
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_diff>);
+static_assert(std::is_default_constructible_v<input::input_routing_count_delta>);
+static_assert(std::is_default_constructible_v<input::input_routing_bool_delta>);
+static_assert(std::is_default_constructible_v<input::input_routing_pointer_capture_delta>);
+static_assert(std::is_default_constructible_v<input::normalized_input_event_kind_count_deltas>);
+static_assert(std::is_default_constructible_v<input::input_route_kind_count_deltas>);
+static_assert(std::is_default_constructible_v<input::action_route_policy_kind_counts>);
+static_assert(std::is_default_constructible_v<input::action_route_policy_kind_count_deltas>);
+static_assert(std::is_default_constructible_v<input::input_routing_keyboard_intent_counts>);
+static_assert(std::is_default_constructible_v<input::input_routing_keyboard_repeat_policy_counts>);
+static_assert(std::is_default_constructible_v<input::input_routing_keyboard_route_counts>);
+static_assert(std::is_default_constructible_v<input::input_routing_keyboard_intent_count_deltas>);
+static_assert(std::is_default_constructible_v<input::input_routing_keyboard_repeat_policy_count_deltas>);
+static_assert(std::is_default_constructible_v<input::input_routing_keyboard_route_count_deltas>);
+static_assert(std::is_default_constructible_v<input::input_routing_diagnostics_diff>);
 static_assert(std::is_default_constructible_v<input::keyboard_modifier_state>);
 static_assert(std::is_default_constructible_v<input::keyboard_chord_diagnostic>);
 static_assert(!std::is_polymorphic_v<input::platform_input_translation_request>);
@@ -1046,6 +1298,7 @@ static_assert(!std::is_polymorphic_v<input::normalized_input_replay_ime_summary>
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_pointer_summary>);
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_focus_summary>);
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_diff>);
+static_assert(!std::is_polymorphic_v<input::input_routing_diagnostics_diff>);
 static_assert(std::is_same_v<
     decltype(input::platform_input_translation_result{}.event),
     std::optional<raw_platform_input_event>>);

@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
+#include <string>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -89,6 +91,45 @@ quiz_vulkan::raw_platform_input_event platform_scroll(
     };
 }
 
+quiz_vulkan::raw_platform_input_event text(std::int64_t timestamp_ms, std::string value)
+{
+    return quiz_vulkan::raw_platform_text_event{
+        .timestamp_ms = timestamp_ms,
+        .utf8_text = std::move(value),
+    };
+}
+
+quiz_vulkan::raw_platform_input_event key(
+    std::int64_t timestamp_ms,
+    std::string logical_key,
+    bool repeat = false,
+    quiz_vulkan::raw_platform_key_phase phase = quiz_vulkan::raw_platform_key_phase::down,
+    bool ctrl = false,
+    bool shift = false)
+{
+    return quiz_vulkan::raw_platform_key_event{
+        .timestamp_ms = timestamp_ms,
+        .phase = phase,
+        .key_code = 0,
+        .logical_key = std::move(logical_key),
+        .ctrl = ctrl,
+        .shift = shift,
+        .repeat = repeat,
+    };
+}
+
+quiz_vulkan::raw_platform_input_event ime(
+    quiz_vulkan::raw_platform_ime_phase phase,
+    std::int64_t timestamp_ms,
+    std::string value)
+{
+    return quiz_vulkan::raw_platform_ime_event{
+        .timestamp_ms = timestamp_ms,
+        .phase = phase,
+        .utf8_text = std::move(value),
+    };
+}
+
 quiz_vulkan::input::raw_scroll_event scroll(
     std::int64_t timestamp_ms,
     float x,
@@ -105,6 +146,22 @@ quiz_vulkan::input::raw_scroll_event scroll(
         .delta_y = delta_y,
         .unit = unit,
     };
+}
+
+void append_diagnostics(
+    quiz_vulkan::input::input_routing_diagnostics& target,
+    const quiz_vulkan::input::input_routing_diagnostics& source)
+{
+    target.normalized_events.insert(
+        target.normalized_events.end(),
+        source.normalized_events.begin(),
+        source.normalized_events.end());
+    target.action_routes.insert(
+        target.action_routes.end(),
+        source.action_routes.begin(),
+        source.action_routes.end());
+    target.pointer_capture = source.pointer_capture;
+    quiz_vulkan::input::accumulate_input_diagnostic_summary(target.summary, source.summary);
 }
 
 void require_swipe_parity(
@@ -994,6 +1051,133 @@ void test_wheel_delta_normalization_updates_summaries_and_action_routes()
         "raw zero wheel emits no stale action route");
 }
 
+void test_routing_diagnostics_diff_reports_semantic_free_route_deltas()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine before_engine;
+    before_engine.focus_text_target("answer");
+    require(before_engine.process_raw_event(text(100, "a")).size() == 1,
+        "routing diff before emits text commit");
+    input_routing_diagnostics before;
+    append_diagnostics(before, before_engine.routing_diagnostics());
+
+    input_engine after_engine;
+    after_engine.focus_text_target("answer");
+    require(after_engine.process_raw_event(platform_scroll(
+                200,
+                8.0f,
+                9.0f,
+                0.0f,
+                -12.0f,
+                raw_platform_scroll_delta_unit::pixels))
+                .size() == 1,
+        "routing diff after emits wheel");
+    input_routing_diagnostics after;
+    append_diagnostics(after, after_engine.routing_diagnostics());
+
+    require(after_engine.process_raw_event(key(210, "Tab")).empty(),
+        "routing diff after tab is diagnostic-only");
+    append_diagnostics(after, after_engine.routing_diagnostics());
+
+    require(after_engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 220, "pre")).size() == 1,
+        "routing diff after emits ime preedit");
+    append_diagnostics(after, after_engine.routing_diagnostics());
+
+    require(after_engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::down,
+                230,
+                3.0f,
+                4.0f,
+                raw_platform_pointer_button::primary,
+                50))
+                .empty(),
+        "routing diff after pointer down is diagnostic-only");
+    append_diagnostics(after, after_engine.routing_diagnostics());
+
+    const input_routing_diagnostics_diff diff = diff_input_routing_diagnostics(before, after);
+    require(diff.changed, "routing diff marks changed snapshots");
+    require(diff.normalized_events_changed, "routing diff reports normalized event change");
+    require(diff.action_routes_changed, "routing diff reports action route change");
+    require(diff.keyboard_routes_changed, "routing diff reports keyboard route change");
+    require(diff.pointer_capture_changed, "routing diff reports pointer capture change");
+    require(diff.clean_state_changed, "routing diff reports clean state change");
+
+    require(diff.normalized_event_count.delta == 1,
+        "routing diff records normalized event count delta");
+    require(diff.normalized_event_summary_count.delta == 1,
+        "routing diff records normalized summary vector delta");
+    require(diff.normalized_events.wheel.delta == 1,
+        "routing diff records wheel normalized event delta");
+
+    require(diff.action_route_count.delta == 3,
+        "routing diff records action route vector delta");
+    require(diff.routes.total.delta == 3, "routing diff records total route delta");
+    require(diff.routes.text.delta == -1, "routing diff records text route delta");
+    require(diff.routes.focus.delta == 1, "routing diff records focus route delta");
+    require(diff.routes.ime.delta == 1, "routing diff records ime route delta");
+    require(diff.routes.pointer.delta == 1, "routing diff records pointer route delta");
+    require(diff.routes.wheel.delta == 1, "routing diff records wheel route delta");
+
+    require(diff.action_routes.text_commit_boundary.delta == -1,
+        "routing diff records text commit route delta");
+    require(diff.action_routes.wheel_summary.delta == 1,
+        "routing diff records wheel action route delta");
+    require(diff.action_routes.focus_traversal_next.delta == 1,
+        "routing diff records focus traversal action route delta");
+    require(diff.action_routes.ime_preedit.delta == 1,
+        "routing diff records ime preedit action route delta");
+    require(diff.action_routes.pointer_capture_arbitration.delta == 1,
+        "routing diff records pointer arbitration action route delta");
+
+    require(diff.keyboard_routes.total.delta == 1,
+        "routing diff records keyboard route total delta");
+    require(diff.keyboard_routes.diagnostic_only_routes.delta == 1,
+        "routing diff records keyboard diagnostic-only route delta");
+    require(diff.keyboard_routes.intents.focus_traversal_next.delta == 1,
+        "routing diff records keyboard focus traversal intent delta");
+    require(diff.keyboard_routes.repeat_policies.not_repeat.delta == 1,
+        "routing diff records keyboard repeat policy delta");
+
+    require(!diff.pointer_capture.before_has_state,
+        "routing diff before pointer capture is idle");
+    require(diff.pointer_capture.after_has_state,
+        "routing diff after pointer capture has tracked state");
+    require(diff.pointer_capture.tracked_pointer_count.delta == 1,
+        "routing diff records tracked pointer count delta");
+    require(diff.pointer_capture.pointer_id_changed,
+        "routing diff records pointer id change");
+    require(diff.pointer_capture.after_capture.pointer_id == 50,
+        "routing diff records final pointer id");
+    require(diff.pointer_capture.after_capture.lifecycle == pointer_capture_lifecycle::tracking,
+        "routing diff records final pointer lifecycle");
+
+    require(diff.pointer_capture_ended_cleanly.before_value,
+        "routing diff before pointer capture ended cleanly");
+    require(!diff.pointer_capture_ended_cleanly.after_value,
+        "routing diff after pointer capture remains tracked");
+    require(diff.focus_ended_cleanly.before_value && diff.focus_ended_cleanly.after_value,
+        "routing diff keeps focus clean state semantic-free");
+    require(diff.preedit_ended_cleanly.before_value,
+        "routing diff before preedit ended cleanly");
+    require(!diff.preedit_ended_cleanly.after_value,
+        "routing diff after preedit remains active");
+
+    const input_routing_diagnostics_diff stable_diff = diff_input_routing_diagnostics(after, after);
+    require(!stable_diff.changed, "routing diff self comparison is unchanged");
+    require(!stable_diff.normalized_events_changed,
+        "routing diff self comparison has no normalized event changes");
+    require(!stable_diff.action_routes_changed,
+        "routing diff self comparison has no action route changes");
+    require(!stable_diff.keyboard_routes_changed,
+        "routing diff self comparison has no keyboard route changes");
+    require(!stable_diff.pointer_capture_changed,
+        "routing diff self comparison has no pointer capture changes");
+    require(!stable_diff.clean_state_changed,
+        "routing diff self comparison has no clean state changes");
+}
+
 } // namespace
 
 int main()
@@ -1005,6 +1189,7 @@ int main()
     test_pointer_capture_release_and_restart_are_deterministic_for_mouse_and_touch();
     test_long_press_timing_and_policy_order_are_deterministic();
     test_wheel_delta_normalization_updates_summaries_and_action_routes();
+    test_routing_diagnostics_diff_reports_semantic_free_route_deltas();
 
     std::cout << "input_engine_gesture_diagnostics_tests passed\n";
     return 0;

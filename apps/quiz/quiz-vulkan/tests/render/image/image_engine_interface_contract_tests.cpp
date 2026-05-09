@@ -75,6 +75,11 @@ concept PngImageInflaterInterface = requires(
 };
 
 template <typename T>
+concept StbImageDecoderDependencyProbeInterface = requires(const T& probe) {
+    { probe.probe_dependency() } -> std::same_as<render::stb_image_decoder_dependency_manifest>;
+};
+
+template <typename T>
 concept ExposesFakeImageTextureCacheSnapshot = requires(T value) {
     { value.cache_snapshot } -> std::same_as<render::fake_image_texture_cache_snapshot&>;
 };
@@ -118,6 +123,8 @@ static_assert(ImageManifestSourceResolverInterface<render::fake_image_manifest_s
 static_assert(PngImageInflaterInterface<render::png_image_inflater_interface>);
 static_assert(PngImageInflaterInterface<render::fake_png_image_inflater>);
 static_assert(PngImageInflaterInterface<render::png_image_zlib_inflater>);
+static_assert(StbImageDecoderDependencyProbeInterface<render::stb_image_decoder_dependency_probe_interface>);
+static_assert(StbImageDecoderDependencyProbeInterface<render::fake_stb_image_decoder_dependency_probe>);
 
 static_assert(requires(render::render_image_ref image) {
     { image.sampler } -> std::same_as<render::render_image_sampler_policy&>;
@@ -203,6 +210,13 @@ static_assert(requires(
     render::render_image_decoder_capability_candidate_status decoder_capability_status,
     render::render_image_decoder_capability_candidate_snapshot decoder_capability_candidate,
     render::render_image_decoder_capability_manifest decoder_capability_manifest,
+    render::stb_image_decoder_dependency_status stb_dependency_status,
+    render::stb_image_decoder_adapter_selection_status stb_selection_status,
+    render::stb_image_decoder_format_matrix_entry stb_format_matrix_entry,
+    render::stb_image_decoder_dependency_manifest stb_dependency_manifest,
+    render::stb_image_decoder_adapter_selection_result stb_selection,
+    render::fake_stb_image_decoder_dependency_probe stb_probe,
+    const render::stb_image_decoder_dependency_probe_interface& stb_probe_interface,
     render::render_image_decode_result decode_result,
     render::render_image_texture_result texture_result,
     render::render_image_source_bytes_load_request bytes_request,
@@ -352,6 +366,27 @@ static_assert(requires(
     { standard_decoder_chain.decoder_count() } -> std::same_as<std::size_t>;
     { standard_decoder_chain.supports(request) } -> std::same_as<bool>;
     { standard_decoder_chain.decode(request) } -> std::same_as<render::render_image_decode_result>;
+    { render::stb_image_decoder_dependency_status_name(stb_dependency_status) } -> std::same_as<std::string>;
+    { render::stb_image_decoder_adapter_selection_status_name(stb_selection_status) } -> std::same_as<std::string>;
+    { render::make_stb_image_decoder_format_matrix_entry(encoded_format, bool{}, bool{}, bool{}) }
+        -> std::same_as<render::stb_image_decoder_format_matrix_entry>;
+    { render::make_default_stb_image_decoder_format_matrix() }
+        -> std::same_as<std::vector<render::stb_image_decoder_format_matrix_entry>>;
+    { render::stb_image_decoder_format_matrix_entry_for(
+        stb_dependency_manifest.supported_format_matrix, encoded_format) }
+        -> std::same_as<const render::stb_image_decoder_format_matrix_entry*>;
+    { render::make_missing_stb_image_decoder_dependency_manifest("decoder") }
+        -> std::same_as<render::stb_image_decoder_dependency_manifest>;
+    { render::make_available_stb_image_decoder_dependency_manifest("decoder") }
+        -> std::same_as<render::stb_image_decoder_dependency_manifest>;
+    { render::make_mismatched_stb_image_decoder_dependency_manifest("decoder") }
+        -> std::same_as<render::stb_image_decoder_dependency_manifest>;
+    { render::select_stb_image_decoder_adapter(request, stb_dependency_manifest) }
+        -> std::same_as<render::stb_image_decoder_adapter_selection_result>;
+    { render::select_stb_image_decoder_adapter(request, stb_probe_interface) }
+        -> std::same_as<render::stb_image_decoder_adapter_selection_result>;
+    { render::make_third_party_image_decoder_capability_from_stb_selection(request, stb_selection) }
+        -> std::same_as<render::third_party_image_decoder_capability>;
     { png_header.width } -> std::same_as<std::size_t&>;
     { png_header.height } -> std::same_as<std::size_t&>;
     { png_header.bit_depth } -> std::same_as<std::uint8_t&>;
@@ -786,6 +821,55 @@ static_assert(requires(
     { decoder_capability_manifest.terminal_status_name } -> std::same_as<std::string&>;
     { decoder_capability_manifest.terminal_decode_status } -> std::same_as<render::render_image_decode_status&>;
     { decoder_capability_manifest.diagnostic } -> std::same_as<std::string&>;
+    { stb_format_matrix_entry.format } -> std::same_as<render::render_image_encoded_format&>;
+    { stb_format_matrix_entry.format_name } -> std::same_as<std::string&>;
+    { stb_format_matrix_entry.mime_type } -> std::same_as<std::string&>;
+    { stb_format_matrix_entry.dependency_supports } -> std::same_as<bool&>;
+    { stb_format_matrix_entry.internal_decoder_available } -> std::same_as<bool&>;
+    { stb_format_matrix_entry.prefer_internal_decoder } -> std::same_as<bool&>;
+    { stb_format_matrix_entry.external_decode_enabled } -> std::same_as<bool&>;
+    { stb_format_matrix_entry.diagnostic } -> std::same_as<std::string&>;
+    { stb_format_matrix_entry.route_to_external() } -> std::same_as<bool>;
+    { stb_dependency_manifest.status } -> std::same_as<render::stb_image_decoder_dependency_status&>;
+    { stb_dependency_manifest.status_name } -> std::same_as<std::string&>;
+    { stb_dependency_manifest.decoder_id } -> std::same_as<std::string&>;
+    { stb_dependency_manifest.dependency_name } -> std::same_as<std::string&>;
+    { stb_dependency_manifest.dependency_version } -> std::same_as<std::string&>;
+    { stb_dependency_manifest.memory_decode_available } -> std::same_as<bool&>;
+    { stb_dependency_manifest.info_probe_available } -> std::same_as<bool&>;
+    { stb_dependency_manifest.forced_rgba8_decode_available } -> std::same_as<bool&>;
+    { stb_dependency_manifest.supported_format_matrix }
+        -> std::same_as<std::vector<render::stb_image_decoder_format_matrix_entry>&>;
+    { stb_dependency_manifest.diagnostic } -> std::same_as<std::string&>;
+    { stb_dependency_manifest.dependency_available() } -> std::same_as<bool>;
+    { stb_dependency_manifest.capability_ready() } -> std::same_as<bool>;
+    { stb_dependency_manifest.ok() } -> std::same_as<bool>;
+    { stb_selection.status } -> std::same_as<render::stb_image_decoder_adapter_selection_status&>;
+    { stb_selection.status_name } -> std::same_as<std::string&>;
+    { stb_selection.decoder_id } -> std::same_as<std::string&>;
+    { stb_selection.format_detection } -> std::same_as<render::render_image_format_detection_summary&>;
+    { stb_selection.detected_format } -> std::same_as<render::render_image_encoded_format&>;
+    { stb_selection.detected_format_name } -> std::same_as<std::string&>;
+    { stb_selection.dependency_status } -> std::same_as<render::stb_image_decoder_dependency_status&>;
+    { stb_selection.dependency_status_name } -> std::same_as<std::string&>;
+    { stb_selection.dependency_available } -> std::same_as<bool&>;
+    { stb_selection.dependency_capability_ready } -> std::same_as<bool&>;
+    { stb_selection.format_supported_by_dependency } -> std::same_as<bool&>;
+    { stb_selection.internal_decoder_available } -> std::same_as<bool&>;
+    { stb_selection.prefer_internal_decoder } -> std::same_as<bool&>;
+    { stb_selection.external_decode_enabled } -> std::same_as<bool&>;
+    { stb_selection.ready_for_external_decode } -> std::same_as<bool&>;
+    { stb_selection.fallback_to_standard_decoder_chain } -> std::same_as<bool&>;
+    { stb_selection.supported_format_matrix }
+        -> std::same_as<std::vector<render::stb_image_decoder_format_matrix_entry>&>;
+    { stb_selection.diagnostic } -> std::same_as<std::string&>;
+    { stb_selection.ok() } -> std::same_as<bool>;
+    { stb_probe.set_manifest(stb_dependency_manifest) } -> std::same_as<void>;
+    { stb_probe.set_missing("decoder") } -> std::same_as<void>;
+    { stb_probe.set_available("decoder") } -> std::same_as<void>;
+    { stb_probe.set_mismatched("decoder") } -> std::same_as<void>;
+    { stb_probe.probe_dependency() } -> std::same_as<render::stb_image_decoder_dependency_manifest>;
+    { stb_probe.probe_count } -> std::same_as<std::size_t&>;
     pipeline_status;
     batch_plan_entry_status;
     batch_execution_entry_status;
@@ -797,6 +881,8 @@ static_assert(requires(
     texture_frame_binding_diff_entry_status;
     decoder_capability_kind;
     decoder_capability_status;
+    stb_dependency_status;
+    stb_selection_status;
     { batch_plan_options.placeholder_policy } -> std::same_as<render::fake_image_texture_placeholder_policy&>;
     { batch_plan_options.reject_parent_path_segments } -> std::same_as<bool&>;
     { batch_plan_entry.request_index } -> std::same_as<std::size_t&>;
@@ -1658,6 +1744,8 @@ static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_binding_plan>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_binding_packet_diff>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_binding_plan_diff>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::stb_image_decoder_dependency_manifest>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::stb_image_decoder_adapter_selection_result>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_manifest_texture_entry_snapshot>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_manifest_texture_pipeline_snapshot>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_batch_plan_entry>);
@@ -1677,6 +1765,8 @@ static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_textur
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_binding_plan>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_binding_packet_diff>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_binding_plan_diff>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::stb_image_decoder_dependency_manifest>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::stb_image_decoder_adapter_selection_result>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_manifest_texture_entry_snapshot>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_manifest_texture_pipeline_snapshot>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_batch_plan_entry>);
@@ -1696,6 +1786,8 @@ static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_binding_plan>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_binding_packet_diff>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_binding_plan_diff>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::stb_image_decoder_dependency_manifest>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::stb_image_decoder_adapter_selection_result>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_manifest_texture_pipeline_snapshot>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_batch_plan>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_batch_execution_diagnostics>);

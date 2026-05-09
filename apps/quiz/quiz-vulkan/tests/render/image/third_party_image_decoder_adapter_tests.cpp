@@ -28,8 +28,12 @@ concept HasFakeUploadSnapshotField = requires(T value) {
 
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_decoder_capability_manifest>);
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_decoder_capability_candidate_snapshot>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::stb_image_decoder_dependency_manifest>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::stb_image_decoder_adapter_selection_result>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_decoder_capability_manifest>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_decoder_capability_candidate_snapshot>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::stb_image_decoder_dependency_manifest>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::stb_image_decoder_adapter_selection_result>);
 
 void require(bool condition, const char* message)
 {
@@ -57,6 +61,16 @@ std::vector<std::byte> make_bytes(std::initializer_list<unsigned char> values)
 std::vector<std::byte> make_jpeg_signature_bytes()
 {
     return make_bytes({0xff, 0xd8, 0xff, 0xd9});
+}
+
+std::vector<std::byte> make_png_signature_bytes()
+{
+    return make_bytes({0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a});
+}
+
+std::vector<std::byte> make_bmp_signature_bytes()
+{
+    return make_bytes({'B', 'M', 0x00, 0x00});
 }
 
 std::vector<std::byte> make_ppm_bytes()
@@ -125,6 +139,21 @@ void require_candidate(
     require(candidate.terminal_candidate == terminal, "capability manifest candidate records terminal flag");
 }
 
+void require_stb_selection_status(
+    const quiz_vulkan::render::stb_image_decoder_adapter_selection_result& selection,
+    quiz_vulkan::render::stb_image_decoder_adapter_selection_status status,
+    bool ready,
+    bool fallback)
+{
+    require(selection.status == status, "stb selection records expected status");
+    require(
+        selection.status_name == quiz_vulkan::render::stb_image_decoder_adapter_selection_status_name(status),
+        "stb selection status name is stable");
+    require(selection.ready_for_external_decode == ready, "stb selection ready flag is expected");
+    require(selection.fallback_to_standard_decoder_chain == fallback, "stb selection fallback flag is expected");
+    require(selection.ok() == ready, "stb selection ok helper matches ready state");
+}
+
 std::filesystem::path locate_source_file(
     std::string_view app_relative_path,
     std::string_view project_relative_path)
@@ -186,6 +215,191 @@ void test_adapter_decodes_matching_format_and_sets_metadata()
     require(result.image.pixels == make_bytes({1, 2, 3, 4}), "third-party adapter preserves pixels");
     require(backend.inspect_requests.size() >= 2, "fake backend records capability inspections");
     require(backend.decode_requests.size() == 1, "fake backend records decode attempt");
+}
+
+void test_stb_dependency_selection_missing_falls_back()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_stb_image_decoder_dependency_probe probe;
+    probe.set_missing("fake_stb_image_decoder");
+    const render_image_decode_request request =
+        make_decode_request("textures/card.jpg", make_jpeg_signature_bytes());
+
+    const stb_image_decoder_adapter_selection_result selection =
+        select_stb_image_decoder_adapter(request, probe);
+    const third_party_image_decoder_capability capability =
+        make_third_party_image_decoder_capability_from_stb_selection(request, selection);
+
+    require(probe.probe_count == 1, "fake stb probe records dependency inspection");
+    require_stb_selection_status(
+        selection,
+        stb_image_decoder_adapter_selection_status::fallback_missing_dependency,
+        false,
+        true);
+    require(selection.decoder_id == "fake_stb_image_decoder", "missing stb selection records decoder id");
+    require(selection.detected_format == render_image_encoded_format::jpeg, "missing stb selection detects JPEG");
+    require(selection.detected_format_name == "jpeg", "missing stb selection records format name");
+    require(selection.dependency_status == stb_image_decoder_dependency_status::missing, "missing stb status is stable");
+    require(selection.dependency_status_name == "missing", "missing stb status name is stable");
+    require(!selection.dependency_available, "missing stb selection records dependency unavailable");
+    require(!selection.dependency_capability_ready, "missing stb selection records capability unavailable");
+    require(!selection.format_supported_by_dependency, "missing stb selection avoids format support claim");
+    require(selection.supported_format_matrix.size() == 4, "missing stb selection still exposes default format matrix");
+    require(
+        selection.diagnostic == "stb_image dependency is missing; falling back to standard image decoders",
+        "missing stb selection diagnostic is stable");
+    require(capability.status == third_party_image_decoder_adapter_status::unavailable, "missing stb capability is unavailable");
+    require(capability.decoder_id == "fake_stb_image_decoder", "missing stb capability preserves decoder id");
+    require(!capability.supports_decode(), "missing stb capability does not support decode");
+}
+
+void test_stb_dependency_selection_ready_for_jpeg()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_stb_image_decoder_dependency_probe probe;
+    probe.set_available("fake_stb_image_decoder");
+    const render_image_decode_request request =
+        make_decode_request("textures/card.jpg", make_jpeg_signature_bytes());
+
+    const stb_image_decoder_adapter_selection_result selection =
+        select_stb_image_decoder_adapter(request, probe);
+    const third_party_image_decoder_capability capability =
+        make_third_party_image_decoder_capability_from_stb_selection(request, selection);
+    const stb_image_decoder_format_matrix_entry* jpeg_entry =
+        stb_image_decoder_format_matrix_entry_for(
+            selection.supported_format_matrix,
+            render_image_encoded_format::jpeg);
+
+    require_stb_selection_status(
+        selection,
+        stb_image_decoder_adapter_selection_status::ready,
+        true,
+        false);
+    require(selection.dependency_status == stb_image_decoder_dependency_status::available, "ready stb selection records dependency available");
+    require(selection.dependency_available, "ready stb selection records dependency available flag");
+    require(selection.dependency_capability_ready, "ready stb selection records complete capabilities");
+    require(selection.format_supported_by_dependency, "ready stb selection records format support");
+    require(!selection.internal_decoder_available, "ready JPEG selection has no internal decoder ownership");
+    require(!selection.prefer_internal_decoder, "ready JPEG selection does not prefer internal decoder");
+    require(selection.external_decode_enabled, "ready JPEG selection enables external decode");
+    require(
+        selection.diagnostic == "stb_image adapter selected for external jpeg decode",
+        "ready stb selection diagnostic is stable");
+    require(jpeg_entry != nullptr, "ready stb selection exposes JPEG matrix entry");
+    require(jpeg_entry->route_to_external(), "ready JPEG matrix entry routes externally");
+    require(jpeg_entry->format_name == "jpeg", "ready JPEG matrix entry records format name");
+    require(jpeg_entry->mime_type == "image/jpeg", "ready JPEG matrix entry records MIME type");
+    require(capability.status == third_party_image_decoder_adapter_status::supported, "ready stb capability is supported");
+    require(capability.supports_decode(), "ready stb capability supports decode");
+}
+
+void test_stb_dependency_selection_preserves_internal_decoders()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_stb_image_decoder_dependency_probe probe;
+    probe.set_available("fake_stb_image_decoder");
+
+    const stb_image_decoder_adapter_selection_result png_selection =
+        select_stb_image_decoder_adapter(
+            make_decode_request("textures/card.png", make_png_signature_bytes()),
+            probe);
+    require_stb_selection_status(
+        png_selection,
+        stb_image_decoder_adapter_selection_status::fallback_internal_decoder_preferred,
+        false,
+        true);
+    require(png_selection.detected_format == render_image_encoded_format::png, "PNG selection detects PNG");
+    require(png_selection.format_supported_by_dependency, "PNG selection records stb support");
+    require(png_selection.internal_decoder_available, "PNG selection records internal decoder ownership");
+    require(png_selection.prefer_internal_decoder, "PNG selection preserves internal decoder");
+    require(!png_selection.external_decode_enabled, "PNG selection keeps external route disabled");
+    require(
+        png_selection.diagnostic == "stb_image adapter preserves internal png decoder",
+        "PNG internal preservation diagnostic is stable");
+
+    const stb_image_decoder_adapter_selection_result bmp_selection =
+        select_stb_image_decoder_adapter(
+            make_decode_request("textures/card.bmp", make_bmp_signature_bytes()),
+            probe);
+    require_stb_selection_status(
+        bmp_selection,
+        stb_image_decoder_adapter_selection_status::fallback_internal_decoder_preferred,
+        false,
+        true);
+    require(bmp_selection.detected_format == render_image_encoded_format::bmp, "BMP selection detects BMP");
+    require(bmp_selection.format_supported_by_dependency, "BMP selection records stb support");
+    require(bmp_selection.prefer_internal_decoder, "BMP selection preserves internal decoder");
+}
+
+void test_stb_dependency_selection_mismatched_capability_falls_back()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_stb_image_decoder_dependency_probe probe;
+    probe.set_mismatched("fake_stb_image_decoder");
+    const render_image_decode_request request =
+        make_decode_request("textures/card.jpg", make_jpeg_signature_bytes());
+
+    const stb_image_decoder_adapter_selection_result selection =
+        select_stb_image_decoder_adapter(request, probe);
+    const third_party_image_decoder_capability capability =
+        make_third_party_image_decoder_capability_from_stb_selection(request, selection);
+
+    require_stb_selection_status(
+        selection,
+        stb_image_decoder_adapter_selection_status::fallback_mismatched_capability,
+        false,
+        true);
+    require(selection.dependency_available, "mismatched stb selection records dependency present");
+    require(!selection.dependency_capability_ready, "mismatched stb selection records incomplete capability");
+    require(
+        selection.dependency_status == stb_image_decoder_dependency_status::mismatched_capability,
+        "mismatched stb selection records dependency status");
+    require(
+        selection.diagnostic == "stb_image dependency is missing required decode capabilities",
+        "mismatched stb selection diagnostic is stable");
+    require(capability.status == third_party_image_decoder_adapter_status::unsupported_format, "mismatched stb capability is unsupported");
+    require(!capability.supports_decode(), "mismatched stb capability does not support decode");
+}
+
+void test_stb_dependency_selection_respects_supported_format_matrix()
+{
+    using namespace quiz_vulkan::render;
+
+    std::vector<stb_image_decoder_format_matrix_entry> matrix = make_default_stb_image_decoder_format_matrix();
+    matrix[0] = make_stb_image_decoder_format_matrix_entry(
+        render_image_encoded_format::jpeg,
+        false,
+        false,
+        false);
+
+    fake_stb_image_decoder_dependency_probe probe;
+    probe.set_available("fake_stb_image_decoder", std::move(matrix));
+    const render_image_decode_request request =
+        make_decode_request("textures/card.jpg", make_jpeg_signature_bytes());
+
+    const stb_image_decoder_adapter_selection_result selection =
+        select_stb_image_decoder_adapter(request, probe);
+    const stb_image_decoder_format_matrix_entry* jpeg_entry =
+        stb_image_decoder_format_matrix_entry_for(
+            selection.supported_format_matrix,
+            render_image_encoded_format::jpeg);
+
+    require_stb_selection_status(
+        selection,
+        stb_image_decoder_adapter_selection_status::fallback_unsupported_format,
+        false,
+        true);
+    require(jpeg_entry != nullptr, "unsupported matrix exposes JPEG entry");
+    require(!jpeg_entry->dependency_supports, "unsupported matrix records no JPEG support");
+    require(!jpeg_entry->route_to_external(), "unsupported matrix does not route externally");
+    require(!selection.format_supported_by_dependency, "unsupported matrix selection records no format support");
+    require(
+        selection.diagnostic == "stb_image dependency does not support detected image format",
+        "unsupported matrix selection diagnostic is stable");
 }
 
 void test_optional_chain_decodes_with_adapter_before_standard_candidates()
@@ -456,6 +670,11 @@ void test_third_party_adapter_header_stays_image_owned()
 int main()
 {
     test_adapter_decodes_matching_format_and_sets_metadata();
+    test_stb_dependency_selection_missing_falls_back();
+    test_stb_dependency_selection_ready_for_jpeg();
+    test_stb_dependency_selection_preserves_internal_decoders();
+    test_stb_dependency_selection_mismatched_capability_falls_back();
+    test_stb_dependency_selection_respects_supported_format_matrix();
     test_optional_chain_decodes_with_adapter_before_standard_candidates();
     test_adapter_failure_falls_back_to_standard_decoder_chain();
     test_unsupported_adapter_falls_back_to_standard_decoder_chain();

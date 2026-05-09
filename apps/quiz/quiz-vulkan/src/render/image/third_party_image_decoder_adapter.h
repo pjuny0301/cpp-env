@@ -378,6 +378,399 @@ inline render_image_decoder_capability_manifest make_render_image_decoder_capabi
     return manifest;
 }
 
+enum class stb_image_decoder_dependency_status {
+    missing,
+    available,
+    mismatched_capability,
+};
+
+inline std::string stb_image_decoder_dependency_status_name(
+    stb_image_decoder_dependency_status status)
+{
+    switch (status) {
+    case stb_image_decoder_dependency_status::missing:
+        return "missing";
+    case stb_image_decoder_dependency_status::available:
+        return "available";
+    case stb_image_decoder_dependency_status::mismatched_capability:
+        return "mismatched_capability";
+    }
+
+    return "unknown";
+}
+
+enum class stb_image_decoder_adapter_selection_status {
+    ready,
+    fallback_missing_dependency,
+    fallback_mismatched_capability,
+    fallback_internal_decoder_preferred,
+    fallback_unsupported_format,
+};
+
+inline std::string stb_image_decoder_adapter_selection_status_name(
+    stb_image_decoder_adapter_selection_status status)
+{
+    switch (status) {
+    case stb_image_decoder_adapter_selection_status::ready:
+        return "ready";
+    case stb_image_decoder_adapter_selection_status::fallback_missing_dependency:
+        return "fallback_missing_dependency";
+    case stb_image_decoder_adapter_selection_status::fallback_mismatched_capability:
+        return "fallback_mismatched_capability";
+    case stb_image_decoder_adapter_selection_status::fallback_internal_decoder_preferred:
+        return "fallback_internal_decoder_preferred";
+    case stb_image_decoder_adapter_selection_status::fallback_unsupported_format:
+        return "fallback_unsupported_format";
+    }
+
+    return "unknown";
+}
+
+struct stb_image_decoder_format_matrix_entry {
+    render_image_encoded_format format = render_image_encoded_format::unknown;
+    std::string format_name;
+    std::string mime_type;
+    bool dependency_supports = false;
+    bool internal_decoder_available = false;
+    bool prefer_internal_decoder = false;
+    bool external_decode_enabled = false;
+    std::string diagnostic;
+
+    bool route_to_external() const
+    {
+        return dependency_supports && external_decode_enabled && !prefer_internal_decoder;
+    }
+};
+
+inline stb_image_decoder_format_matrix_entry make_stb_image_decoder_format_matrix_entry(
+    render_image_encoded_format format,
+    bool dependency_supports,
+    bool internal_decoder_available,
+    bool prefer_internal_decoder)
+{
+    stb_image_decoder_format_matrix_entry entry{
+        .format = format,
+        .format_name = render_image_encoded_format_name(format),
+        .mime_type = render_image_encoded_format_mime_type(format),
+        .dependency_supports = dependency_supports,
+        .internal_decoder_available = internal_decoder_available,
+        .prefer_internal_decoder = prefer_internal_decoder,
+        .external_decode_enabled = dependency_supports && !prefer_internal_decoder,
+    };
+    if (!entry.dependency_supports) {
+        entry.diagnostic = "stb_image matrix entry is not supported by dependency";
+    } else if (entry.prefer_internal_decoder) {
+        entry.diagnostic = "stb_image matrix entry preserves existing internal decoder";
+    } else {
+        entry.diagnostic = "stb_image matrix entry routes to external decoder";
+    }
+    return entry;
+}
+
+inline std::vector<stb_image_decoder_format_matrix_entry> make_default_stb_image_decoder_format_matrix()
+{
+    return {
+        make_stb_image_decoder_format_matrix_entry(
+            render_image_encoded_format::jpeg,
+            true,
+            false,
+            false),
+        make_stb_image_decoder_format_matrix_entry(
+            render_image_encoded_format::png,
+            true,
+            true,
+            true),
+        make_stb_image_decoder_format_matrix_entry(
+            render_image_encoded_format::bmp,
+            true,
+            true,
+            true),
+        make_stb_image_decoder_format_matrix_entry(
+            render_image_encoded_format::ppm,
+            true,
+            true,
+            true),
+    };
+}
+
+inline const stb_image_decoder_format_matrix_entry* stb_image_decoder_format_matrix_entry_for(
+    const std::vector<stb_image_decoder_format_matrix_entry>& matrix,
+    render_image_encoded_format format)
+{
+    for (const stb_image_decoder_format_matrix_entry& entry : matrix) {
+        if (entry.format == format) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
+struct stb_image_decoder_dependency_manifest {
+    stb_image_decoder_dependency_status status = stb_image_decoder_dependency_status::missing;
+    std::string status_name = stb_image_decoder_dependency_status_name(
+        stb_image_decoder_dependency_status::missing);
+    std::string decoder_id = "stb_image_decoder";
+    std::string dependency_name = "stb_image";
+    std::string dependency_version;
+    bool memory_decode_available = false;
+    bool info_probe_available = false;
+    bool forced_rgba8_decode_available = false;
+    std::vector<stb_image_decoder_format_matrix_entry> supported_format_matrix;
+    std::string diagnostic = "stb_image dependency is not available";
+
+    bool dependency_available() const
+    {
+        return status != stb_image_decoder_dependency_status::missing;
+    }
+
+    bool capability_ready() const
+    {
+        return status == stb_image_decoder_dependency_status::available
+            && memory_decode_available
+            && info_probe_available
+            && forced_rgba8_decode_available;
+    }
+
+    bool ok() const
+    {
+        return capability_ready();
+    }
+};
+
+class stb_image_decoder_dependency_probe_interface {
+public:
+    virtual ~stb_image_decoder_dependency_probe_interface() = default;
+
+    virtual stb_image_decoder_dependency_manifest probe_dependency() const = 0;
+};
+
+inline stb_image_decoder_dependency_manifest make_missing_stb_image_decoder_dependency_manifest(
+    std::string decoder_id = "stb_image_decoder")
+{
+    return stb_image_decoder_dependency_manifest{
+        .status = stb_image_decoder_dependency_status::missing,
+        .status_name = stb_image_decoder_dependency_status_name(stb_image_decoder_dependency_status::missing),
+        .decoder_id = std::move(decoder_id),
+        .dependency_name = "stb_image",
+        .dependency_version = {},
+        .memory_decode_available = false,
+        .info_probe_available = false,
+        .forced_rgba8_decode_available = false,
+        .supported_format_matrix = make_default_stb_image_decoder_format_matrix(),
+        .diagnostic = "stb_image dependency is not available",
+    };
+}
+
+inline stb_image_decoder_dependency_manifest make_available_stb_image_decoder_dependency_manifest(
+    std::string decoder_id = "stb_image_decoder",
+    std::string dependency_version = {},
+    std::vector<stb_image_decoder_format_matrix_entry> supported_format_matrix =
+        make_default_stb_image_decoder_format_matrix())
+{
+    return stb_image_decoder_dependency_manifest{
+        .status = stb_image_decoder_dependency_status::available,
+        .status_name = stb_image_decoder_dependency_status_name(stb_image_decoder_dependency_status::available),
+        .decoder_id = std::move(decoder_id),
+        .dependency_name = "stb_image",
+        .dependency_version = std::move(dependency_version),
+        .memory_decode_available = true,
+        .info_probe_available = true,
+        .forced_rgba8_decode_available = true,
+        .supported_format_matrix = std::move(supported_format_matrix),
+        .diagnostic = "stb_image dependency is available for injected decode backend",
+    };
+}
+
+inline stb_image_decoder_dependency_manifest make_mismatched_stb_image_decoder_dependency_manifest(
+    std::string decoder_id = "stb_image_decoder",
+    std::string diagnostic = "stb_image dependency is missing required decode capabilities")
+{
+    return stb_image_decoder_dependency_manifest{
+        .status = stb_image_decoder_dependency_status::mismatched_capability,
+        .status_name = stb_image_decoder_dependency_status_name(
+            stb_image_decoder_dependency_status::mismatched_capability),
+        .decoder_id = std::move(decoder_id),
+        .dependency_name = "stb_image",
+        .dependency_version = {},
+        .memory_decode_available = true,
+        .info_probe_available = true,
+        .forced_rgba8_decode_available = false,
+        .supported_format_matrix = make_default_stb_image_decoder_format_matrix(),
+        .diagnostic = std::move(diagnostic),
+    };
+}
+
+struct stb_image_decoder_adapter_selection_result {
+    stb_image_decoder_adapter_selection_status status =
+        stb_image_decoder_adapter_selection_status::fallback_missing_dependency;
+    std::string status_name = stb_image_decoder_adapter_selection_status_name(
+        stb_image_decoder_adapter_selection_status::fallback_missing_dependency);
+    std::string decoder_id = "stb_image_decoder";
+    render_image_format_detection_summary format_detection;
+    render_image_encoded_format detected_format = render_image_encoded_format::unknown;
+    std::string detected_format_name = render_image_encoded_format_name(render_image_encoded_format::unknown);
+    stb_image_decoder_dependency_status dependency_status = stb_image_decoder_dependency_status::missing;
+    std::string dependency_status_name = stb_image_decoder_dependency_status_name(
+        stb_image_decoder_dependency_status::missing);
+    bool dependency_available = false;
+    bool dependency_capability_ready = false;
+    bool format_supported_by_dependency = false;
+    bool internal_decoder_available = false;
+    bool prefer_internal_decoder = false;
+    bool external_decode_enabled = false;
+    bool ready_for_external_decode = false;
+    bool fallback_to_standard_decoder_chain = true;
+    std::vector<stb_image_decoder_format_matrix_entry> supported_format_matrix;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return ready_for_external_decode;
+    }
+};
+
+inline stb_image_decoder_adapter_selection_result select_stb_image_decoder_adapter(
+    const render_image_decode_request& request,
+    const stb_image_decoder_dependency_manifest& dependency)
+{
+    const render_image_format_detection_summary format_detection = detect_render_image_format(request);
+    stb_image_decoder_adapter_selection_result selection{
+        .decoder_id = dependency.decoder_id.empty() ? "stb_image_decoder" : dependency.decoder_id,
+        .format_detection = format_detection,
+        .detected_format = format_detection.detected_format,
+        .detected_format_name = render_image_encoded_format_name(format_detection.detected_format),
+        .dependency_status = dependency.status,
+        .dependency_status_name = dependency.status_name.empty()
+            ? stb_image_decoder_dependency_status_name(dependency.status)
+            : dependency.status_name,
+        .dependency_available = dependency.dependency_available(),
+        .dependency_capability_ready = dependency.capability_ready(),
+        .supported_format_matrix = dependency.supported_format_matrix,
+    };
+
+    if (!dependency.dependency_available()) {
+        selection.status = stb_image_decoder_adapter_selection_status::fallback_missing_dependency;
+        selection.diagnostic = "stb_image dependency is missing; falling back to standard image decoders";
+    } else if (!dependency.capability_ready()) {
+        selection.status = stb_image_decoder_adapter_selection_status::fallback_mismatched_capability;
+        selection.diagnostic = dependency.diagnostic.empty()
+            ? "stb_image dependency capabilities are incomplete; falling back to standard image decoders"
+            : dependency.diagnostic;
+    } else if (const stb_image_decoder_format_matrix_entry* matrix_entry =
+                   stb_image_decoder_format_matrix_entry_for(
+                       dependency.supported_format_matrix,
+                       format_detection.detected_format);
+               matrix_entry != nullptr && matrix_entry->dependency_supports) {
+        selection.format_supported_by_dependency = matrix_entry->dependency_supports;
+        selection.internal_decoder_available = matrix_entry->internal_decoder_available;
+        selection.prefer_internal_decoder = matrix_entry->prefer_internal_decoder;
+        selection.external_decode_enabled = matrix_entry->external_decode_enabled;
+        if (matrix_entry->prefer_internal_decoder) {
+            selection.status = stb_image_decoder_adapter_selection_status::fallback_internal_decoder_preferred;
+            selection.diagnostic = "stb_image adapter preserves internal "
+                + render_image_encoded_format_name(format_detection.detected_format)
+                + " decoder";
+        } else if (matrix_entry->route_to_external()) {
+            selection.status = stb_image_decoder_adapter_selection_status::ready;
+            selection.ready_for_external_decode = true;
+            selection.fallback_to_standard_decoder_chain = false;
+            selection.diagnostic = "stb_image adapter selected for external "
+                + render_image_encoded_format_name(format_detection.detected_format)
+                + " decode";
+        } else {
+            selection.status = stb_image_decoder_adapter_selection_status::fallback_unsupported_format;
+            selection.diagnostic = "stb_image adapter has disabled external route for detected format";
+        }
+    } else {
+        selection.status = stb_image_decoder_adapter_selection_status::fallback_unsupported_format;
+        selection.diagnostic = "stb_image dependency does not support detected image format";
+    }
+
+    selection.status_name = stb_image_decoder_adapter_selection_status_name(selection.status);
+    selection.fallback_to_standard_decoder_chain = !selection.ready_for_external_decode;
+    if (selection.diagnostic.empty()) {
+        selection.diagnostic = selection.status_name;
+    }
+    return selection;
+}
+
+inline stb_image_decoder_adapter_selection_result select_stb_image_decoder_adapter(
+    const render_image_decode_request& request,
+    const stb_image_decoder_dependency_probe_interface& probe)
+{
+    return select_stb_image_decoder_adapter(request, probe.probe_dependency());
+}
+
+inline third_party_image_decoder_capability make_third_party_image_decoder_capability_from_stb_selection(
+    const render_image_decode_request& request,
+    const stb_image_decoder_adapter_selection_result& selection)
+{
+    if (selection.ready_for_external_decode) {
+        return make_supported_third_party_image_decoder_capability(
+            request,
+            selection.decoder_id,
+            selection.diagnostic);
+    }
+    if (!selection.dependency_available) {
+        third_party_image_decoder_capability capability = make_unavailable_third_party_image_decoder_capability(
+            request,
+            selection.decoder_id);
+        capability.diagnostic = selection.diagnostic.empty()
+            ? capability.diagnostic
+            : selection.diagnostic;
+        return capability;
+    }
+    return make_unsupported_third_party_image_decoder_capability(
+        request,
+        selection.decoder_id,
+        selection.diagnostic);
+}
+
+class fake_stb_image_decoder_dependency_probe final : public stb_image_decoder_dependency_probe_interface {
+public:
+    fake_stb_image_decoder_dependency_probe()
+        : manifest_(make_missing_stb_image_decoder_dependency_manifest())
+    {
+    }
+
+    void set_manifest(stb_image_decoder_dependency_manifest manifest)
+    {
+        manifest_ = std::move(manifest);
+    }
+
+    void set_missing(std::string decoder_id = "fake_stb_image_decoder")
+    {
+        manifest_ = make_missing_stb_image_decoder_dependency_manifest(std::move(decoder_id));
+    }
+
+    void set_available(
+        std::string decoder_id = "fake_stb_image_decoder",
+        std::vector<stb_image_decoder_format_matrix_entry> supported_format_matrix =
+            make_default_stb_image_decoder_format_matrix())
+    {
+        manifest_ = make_available_stb_image_decoder_dependency_manifest(
+            std::move(decoder_id),
+            "fake-stb-image",
+            std::move(supported_format_matrix));
+    }
+
+    void set_mismatched(std::string decoder_id = "fake_stb_image_decoder")
+    {
+        manifest_ = make_mismatched_stb_image_decoder_dependency_manifest(std::move(decoder_id));
+    }
+
+    stb_image_decoder_dependency_manifest probe_dependency() const override
+    {
+        ++probe_count;
+        return manifest_;
+    }
+
+    mutable std::size_t probe_count = 0;
+
+private:
+    stb_image_decoder_dependency_manifest manifest_;
+};
+
 class third_party_image_decoder_adapter final : public image_decoder_interface {
 public:
     third_party_image_decoder_adapter() = default;

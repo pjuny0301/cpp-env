@@ -502,9 +502,13 @@ static_assert(requires(
     render::render_text_external_font_backend_manifest manifest,
     render::render_text_external_font_backend_probe_request request,
     render::render_text_external_font_backend_probe_result result,
+    render::render_text_external_font_backend_probe_state_snapshot probe_state,
+    render::render_text_external_font_backend_probe_diff_snapshot probe_diff,
+    render::render_text_external_font_backend_probe_diff_summary_snapshot probe_diff_summary,
     render::render_text_font_backend_candidate candidate,
     render::render_text_font_backend_capability_snapshot capability,
     std::vector<render::render_text_external_font_backend_dependency> dependencies,
+    std::vector<render::render_text_external_font_backend_probe_result> probe_results,
     std::vector<render::render_text_font_backend_library> libraries,
     std::string hint) {
     { render::render_text_font_backend_adapter_readiness_status_name(readiness_status) }
@@ -557,6 +561,63 @@ static_assert(requires(
     { result.diagnostic } -> std::same_as<std::string&>;
     { result.ok() } -> std::same_as<bool>;
     { result.selected_real_backend() } -> std::same_as<bool>;
+    { probe_state.purpose } -> std::same_as<render::render_text_font_backend_selection_purpose&>;
+    { probe_state.status } -> std::same_as<render::render_text_font_backend_adapter_readiness_status&>;
+    { probe_state.fallback_reason } -> std::same_as<render::render_text_font_backend_adapter_readiness_status&>;
+    { probe_state.selection_status } -> std::same_as<render::render_text_font_backend_selection_status&>;
+    { probe_state.capability_status } -> std::same_as<render::render_text_font_backend_capability_status&>;
+    { probe_state.selected_library } -> std::same_as<render::render_text_font_backend_library&>;
+    { probe_state.selected_label } -> std::same_as<std::string&>;
+    { probe_state.fake_only } -> std::same_as<bool&>;
+    { probe_state.adapter_ready } -> std::same_as<bool&>;
+    { probe_state.fallback_ready } -> std::same_as<bool&>;
+    { probe_state.unavailable } -> std::same_as<bool&>;
+    { probe_state.mismatch } -> std::same_as<bool&>;
+    { probe_state.selected_real_backend } -> std::same_as<bool&>;
+    { probe_state.can_attempt_real_backend } -> std::same_as<bool&>;
+    { probe_state.used_deterministic_fallback } -> std::same_as<bool&>;
+    { probe_state.dependency_count } -> std::same_as<std::size_t&>;
+    { probe_state.missing_dependency_count } -> std::same_as<std::size_t&>;
+    { probe_state.adapter_unavailable_count } -> std::same_as<std::size_t&>;
+    { probe_state.version_mismatch_count } -> std::same_as<std::size_t&>;
+    { probe_state.missing_feature_count } -> std::same_as<std::size_t&>;
+    { probe_state.diagnostic } -> std::same_as<std::string&>;
+    { probe_diff.purpose } -> std::same_as<render::render_text_font_backend_selection_purpose&>;
+    { probe_diff.before } -> std::same_as<render::render_text_external_font_backend_probe_state_snapshot&>;
+    { probe_diff.after } -> std::same_as<render::render_text_external_font_backend_probe_state_snapshot&>;
+    { probe_diff.has_changes } -> std::same_as<bool&>;
+    { probe_diff.readiness_changed } -> std::same_as<bool&>;
+    { probe_diff.fallback_reason_changed } -> std::same_as<bool&>;
+    { probe_diff.selected_backend_changed } -> std::same_as<bool&>;
+    { probe_diff.capability_status_changed } -> std::same_as<bool&>;
+    { probe_diff.fake_only_changed } -> std::same_as<bool&>;
+    { probe_diff.adapter_ready_changed } -> std::same_as<bool&>;
+    { probe_diff.unavailable_changed } -> std::same_as<bool&>;
+    { probe_diff.mismatch_changed } -> std::same_as<bool&>;
+    { probe_diff.dependency_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { probe_diff.missing_dependency_delta } -> std::same_as<std::ptrdiff_t&>;
+    { probe_diff.adapter_unavailable_delta } -> std::same_as<std::ptrdiff_t&>;
+    { probe_diff.version_mismatch_delta } -> std::same_as<std::ptrdiff_t&>;
+    { probe_diff.missing_feature_delta } -> std::same_as<std::ptrdiff_t&>;
+    { probe_diff.summary } -> std::same_as<std::string&>;
+    { probe_diff.became_fake_only() } -> std::same_as<bool>;
+    { probe_diff.became_adapter_ready() } -> std::same_as<bool>;
+    { probe_diff.became_unavailable() } -> std::same_as<bool>;
+    { probe_diff.became_mismatch() } -> std::same_as<bool>;
+    { probe_diff_summary.diffs }
+        -> std::same_as<std::vector<render::render_text_external_font_backend_probe_diff_snapshot>&>;
+    { probe_diff_summary.changed_count } -> std::same_as<std::size_t&>;
+    { probe_diff_summary.adapter_ready_transition_count } -> std::same_as<std::size_t&>;
+    { probe_diff_summary.fake_only_transition_count } -> std::same_as<std::size_t&>;
+    { probe_diff_summary.unavailable_transition_count } -> std::same_as<std::size_t&>;
+    { probe_diff_summary.mismatch_transition_count } -> std::same_as<std::size_t&>;
+    { probe_diff_summary.selected_backend_change_count } -> std::same_as<std::size_t&>;
+    { probe_diff_summary.total_missing_dependency_delta } -> std::same_as<std::ptrdiff_t&>;
+    { probe_diff_summary.total_adapter_unavailable_delta } -> std::same_as<std::ptrdiff_t&>;
+    { probe_diff_summary.total_version_mismatch_delta } -> std::same_as<std::ptrdiff_t&>;
+    { probe_diff_summary.total_missing_feature_delta } -> std::same_as<std::ptrdiff_t&>;
+    { probe_diff_summary.summary } -> std::same_as<std::string&>;
+    { probe_diff_summary.has_changes() } -> std::same_as<bool>;
     { render::render_text_external_font_backend_dependency_from_candidate(candidate, bool{}, bool{}, bool{}) }
         -> std::same_as<render::render_text_external_font_backend_dependency>;
     { render::make_render_text_harfbuzz_external_dependency() }
@@ -587,6 +648,21 @@ static_assert(requires(
         -> std::same_as<render::render_text_font_backend_adapter_readiness_status>;
     { render::render_text_external_font_backend_probe_diagnostic_for(readiness_status, readiness_status) }
         -> std::same_as<std::string>;
+    { render::render_text_external_font_backend_probe_result_is_mismatch(result) } -> std::same_as<bool>;
+    { render::render_text_external_font_backend_probe_result_is_unavailable(result) } -> std::same_as<bool>;
+    { render::make_render_text_external_font_backend_probe_state_snapshot(result) }
+        -> std::same_as<render::render_text_external_font_backend_probe_state_snapshot>;
+    { render::render_text_external_font_backend_probe_state_label(probe_state) } -> std::same_as<std::string>;
+    { render::render_text_external_font_backend_probe_diff_summary_for(probe_state, probe_state) }
+        -> std::same_as<std::string>;
+    { render::diff_render_text_external_font_backend_probe_result(result, result) }
+        -> std::same_as<render::render_text_external_font_backend_probe_diff_snapshot>;
+    { render::find_render_text_external_font_backend_probe_result(probe_results, purpose) }
+        -> std::same_as<const render::render_text_external_font_backend_probe_result*>;
+    { render::make_render_text_external_font_backend_empty_probe_result(purpose) }
+        -> std::same_as<render::render_text_external_font_backend_probe_result>;
+    { render::diff_render_text_external_font_backend_probe_results(probe_results, probe_results) }
+        -> std::same_as<render::render_text_external_font_backend_probe_diff_summary_snapshot>;
 });
 
 static_assert(requires(render::fake_text_engine& engine, render::font_face_descriptor descriptor) {

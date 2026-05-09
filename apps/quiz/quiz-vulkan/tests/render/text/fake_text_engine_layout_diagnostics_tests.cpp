@@ -134,6 +134,16 @@ bool contains_backend_library(
     return false;
 }
 
+std::vector<quiz_vulkan::render::render_text_external_font_backend_probe_result> dependency_probe_results_for(
+    const quiz_vulkan::render::fake_text_engine_diagnostics& diagnostics)
+{
+    return {
+        diagnostics.font_backend_shaping_dependency,
+        diagnostics.font_backend_rasterization_dependency,
+        diagnostics.font_backend_unicode_dependency,
+    };
+}
+
 void configure_mixed_script_fallback_chain_engine(quiz_vulkan::render::fake_text_engine& engine)
 {
     using namespace quiz_vulkan::render;
@@ -1132,6 +1142,49 @@ void test_fake_text_engine_dependency_probe_reports_adapter_ready_selection()
     require(
         !diagnostics.font_backend_uses_adapter_shaping,
         "dependency readiness does not imply a linked real adapter function table");
+}
+
+void test_fake_text_engine_dependency_probe_diff_compares_layout_snapshots()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine fallback_engine;
+    fallback_engine.set_font_backend_dependency_manifest(
+        make_render_text_known_external_font_backend_manifest(false, false, false));
+    (void)fallback_engine.layout_text(make_single_run_request("A"));
+    const fake_text_engine_diagnostics fallback_diagnostics = fallback_engine.last_diagnostics();
+
+    fake_text_engine ready_engine;
+    ready_engine.set_font_backend_dependency_manifest(
+        make_render_text_known_external_font_backend_manifest(true, true, true));
+    (void)ready_engine.layout_text(make_single_run_request("A"));
+    const fake_text_engine_diagnostics ready_diagnostics = ready_engine.last_diagnostics();
+
+    const render_text_external_font_backend_probe_diff_summary_snapshot summary =
+        diff_render_text_external_font_backend_probe_results(
+            dependency_probe_results_for(fallback_diagnostics),
+            dependency_probe_results_for(ready_diagnostics));
+
+    require(summary.has_changes(), "layout snapshot backend probe diff records changed stack");
+    require(summary.changed_count == 3U, "layout snapshot backend probe diff compares all backend purposes");
+    require(
+        summary.adapter_ready_transition_count == 3U,
+        "layout snapshot backend probe diff records adapter-ready transitions");
+    require(
+        summary.total_missing_dependency_delta == -3,
+        "layout snapshot backend probe diff records missing dependency reduction");
+    require(
+        summary.diffs.front().before.fake_only,
+        "layout snapshot backend probe diff records before fake-only shaping");
+    require(
+        summary.diffs.front().before.unavailable,
+        "layout snapshot backend probe diff records before unavailable shaping backend");
+    require(
+        summary.diffs.front().after.adapter_ready,
+        "layout snapshot backend probe diff records after adapter-ready shaping backend");
+    require(
+        summary.diffs.front().after.selected_library == render_text_font_backend_library::harfbuzz,
+        "layout snapshot backend probe diff records after HarfBuzz shaping selection");
 }
 
 void test_fake_text_engine_carries_injected_backend_selection_to_layout_diagnostics()
@@ -2231,6 +2284,7 @@ int main()
     test_fake_text_engine_dependency_probe_reports_adapter_unavailable_fallback();
     test_fake_text_engine_dependency_probe_reports_version_mismatch_fallback();
     test_fake_text_engine_dependency_probe_reports_adapter_ready_selection();
+    test_fake_text_engine_dependency_probe_diff_compares_layout_snapshots();
     test_fake_text_engine_carries_injected_backend_selection_to_layout_diagnostics();
     test_fake_text_engine_records_font_fallback_chain_for_mixed_script_layout();
     test_fake_text_engine_records_font_fallback_chain_for_mixed_script_carets();

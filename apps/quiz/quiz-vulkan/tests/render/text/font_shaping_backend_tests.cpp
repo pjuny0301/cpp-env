@@ -47,6 +47,30 @@ std::string read_text_owned_header(const std::string& header_name)
         std::istreambuf_iterator<char>{});
 }
 
+std::vector<quiz_vulkan::render::render_text_external_font_backend_probe_result>
+probe_external_backend_stack(
+    quiz_vulkan::render::render_text_external_font_backend_manifest manifest,
+    std::vector<quiz_vulkan::render::render_text_font_backend_minimum_version> minimum_versions = {})
+{
+    using namespace quiz_vulkan::render;
+
+    const manifest_font_backend_dependency_probe probe(std::move(manifest));
+    return {
+        probe.probe(render_text_external_font_backend_probe_request{
+            .purpose = render_text_font_backend_selection_purpose::shaping,
+            .minimum_versions = minimum_versions,
+        }),
+        probe.probe(render_text_external_font_backend_probe_request{
+            .purpose = render_text_font_backend_selection_purpose::rasterization,
+            .minimum_versions = minimum_versions,
+        }),
+        probe.probe(render_text_external_font_backend_probe_request{
+            .purpose = render_text_font_backend_selection_purpose::unicode_processing,
+            .minimum_versions = minimum_versions,
+        }),
+    };
+}
+
 quiz_vulkan::render::render_text_style shaping_style()
 {
     return quiz_vulkan::render::render_text_style{
@@ -936,6 +960,133 @@ void test_external_backend_dependency_metadata_and_header_stay_text_owned()
     }
 }
 
+void test_external_backend_dependency_probe_diff_reports_fake_to_adapter_ready()
+{
+    using namespace quiz_vulkan::render;
+
+    const manifest_font_backend_dependency_probe fake_probe(
+        make_render_text_known_external_font_backend_manifest(false, false, false));
+    const manifest_font_backend_dependency_probe ready_probe(
+        make_render_text_known_external_font_backend_manifest(true, true, true));
+
+    const render_text_external_font_backend_probe_diff_snapshot diff =
+        diff_render_text_external_font_backend_probe_result(
+            fake_probe.probe(render_text_external_font_backend_probe_request{
+                .purpose = render_text_font_backend_selection_purpose::shaping,
+            }),
+            ready_probe.probe(render_text_external_font_backend_probe_request{
+                .purpose = render_text_font_backend_selection_purpose::shaping,
+            }));
+
+    require(diff.has_changes, "fake-to-ready backend probe diff records changes");
+    require(diff.before.fake_only, "diff before state records fake-only fallback");
+    require(diff.before.unavailable, "diff before state records unavailable real dependency");
+    require(diff.after.adapter_ready, "diff after state records adapter-ready backend");
+    require(diff.became_adapter_ready(), "diff records adapter-ready transition");
+    require(diff.fake_only_changed, "diff records fake-only state change");
+    require(diff.unavailable_changed, "diff records unavailable state change");
+    require(diff.selected_backend_changed, "diff records selected backend change");
+    require(diff.missing_dependency_delta == -1, "diff records one fewer missing dependency");
+    require(
+        diff.after.selected_library == render_text_font_backend_library::harfbuzz,
+        "diff after state records selected HarfBuzz backend");
+    require(
+        diff.summary.find("fake-only unavailable fallback -> adapter-ready") != std::string::npos,
+        "diff summary names fake-to-ready transition");
+}
+
+void test_external_backend_dependency_probe_diff_reports_unavailable_to_mismatch()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_external_font_backend_manifest old_manifest =
+        make_render_text_known_external_font_backend_manifest(true, true, true);
+    for (render_text_external_font_backend_dependency& dependency : old_manifest.dependencies) {
+        if (dependency.library == render_text_font_backend_library::harfbuzz) {
+            dependency.version = render_text_font_backend_version{.major = 13, .minor = 0, .patch = 0};
+        }
+    }
+
+    const manifest_font_backend_dependency_probe unavailable_probe(
+        make_render_text_known_external_font_backend_manifest(true, false, false));
+    const manifest_font_backend_dependency_probe mismatch_probe(std::move(old_manifest));
+
+    const render_text_external_font_backend_probe_diff_snapshot diff =
+        diff_render_text_external_font_backend_probe_result(
+            unavailable_probe.probe(render_text_external_font_backend_probe_request{
+                .purpose = render_text_font_backend_selection_purpose::shaping,
+            }),
+            mismatch_probe.probe(render_text_external_font_backend_probe_request{
+                .purpose = render_text_font_backend_selection_purpose::shaping,
+                .minimum_versions = {
+                    render_text_font_backend_minimum_version{
+                        .library = render_text_font_backend_library::harfbuzz,
+                        .version = render_text_font_backend_version{.major = 14, .minor = 0, .patch = 0},
+                    },
+                },
+            }));
+
+    require(diff.has_changes, "unavailable-to-mismatch backend probe diff records changes");
+    require(diff.before.unavailable, "diff before state records unavailable adapter");
+    require(!diff.before.mismatch, "diff before state is not a mismatch");
+    require(diff.after.mismatch, "diff after state records version mismatch");
+    require(diff.became_mismatch(), "diff records mismatch transition");
+    require(diff.unavailable_changed, "diff records unavailable state change");
+    require(diff.fallback_reason_changed, "diff records fallback reason change");
+    require(diff.adapter_unavailable_delta == -1, "diff records one fewer adapter-unavailable dependency");
+    require(diff.version_mismatch_delta == 1, "diff records one new version mismatch");
+}
+
+void test_external_backend_dependency_probe_diff_summary_compares_backend_snapshots()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::vector<render_text_external_font_backend_probe_result> fake_only =
+        probe_external_backend_stack(make_render_text_known_external_font_backend_manifest(false, false, false));
+    const std::vector<render_text_external_font_backend_probe_result> adapter_ready =
+        probe_external_backend_stack(make_render_text_known_external_font_backend_manifest(true, true, true));
+
+    const render_text_external_font_backend_probe_diff_summary_snapshot summary =
+        diff_render_text_external_font_backend_probe_results(fake_only, adapter_ready);
+
+    require(summary.has_changes(), "backend probe diff summary records changed stack");
+    require(summary.diffs.size() == 3U, "backend probe diff summary compares three purposes");
+    require(summary.changed_count == 3U, "backend probe diff summary counts three changed purposes");
+    require(
+        summary.adapter_ready_transition_count == 3U,
+        "backend probe diff summary counts adapter-ready transitions");
+    require(
+        summary.fake_only_transition_count == 0U,
+        "backend probe diff summary does not count fake-only transitions for ready stack");
+    require(
+        summary.selected_backend_change_count == 3U,
+        "backend probe diff summary counts selected backend changes");
+    require(
+        summary.total_missing_dependency_delta == -3,
+        "backend probe diff summary aggregates missing dependency delta");
+    require(
+        summary.summary == "external font backend probe diff: 3 changed of 3 purposes",
+        "backend probe diff summary is deterministic");
+}
+
+void test_external_backend_dependency_probe_diff_summary_reports_unchanged_state()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::vector<render_text_external_font_backend_probe_result> adapter_ready =
+        probe_external_backend_stack(make_render_text_known_external_font_backend_manifest(true, true, true));
+    const render_text_external_font_backend_probe_diff_summary_snapshot summary =
+        diff_render_text_external_font_backend_probe_results(adapter_ready, adapter_ready);
+
+    require(!summary.has_changes(), "unchanged backend probe diff summary reports no changes");
+    require(summary.changed_count == 0U, "unchanged backend probe diff summary has zero changed purposes");
+    require(summary.adapter_ready_transition_count == 0U, "unchanged backend probe diff has no ready transition");
+    for (const render_text_external_font_backend_probe_diff_snapshot& diff : summary.diffs) {
+        require(!diff.has_changes, "unchanged backend probe purpose diff has no changes");
+        require(!diff.became_adapter_ready(), "unchanged backend probe purpose diff has no ready transition");
+    }
+}
+
 void test_fake_backend_shapes_successful_latin_hangul_and_non_bmp_run()
 {
     using namespace quiz_vulkan::render;
@@ -1316,6 +1467,10 @@ int main()
     test_external_backend_dependency_probe_reports_unlinked_adapter_fallback();
     test_external_backend_dependency_probe_reports_version_and_feature_mismatch();
     test_external_backend_dependency_metadata_and_header_stay_text_owned();
+    test_external_backend_dependency_probe_diff_reports_fake_to_adapter_ready();
+    test_external_backend_dependency_probe_diff_reports_unavailable_to_mismatch();
+    test_external_backend_dependency_probe_diff_summary_compares_backend_snapshots();
+    test_external_backend_dependency_probe_diff_summary_reports_unchanged_state();
     test_fake_backend_shapes_successful_latin_hangul_and_non_bmp_run();
     test_fake_backend_reports_backend_unavailable();
     test_fake_backend_reports_unsupported_script_and_fallback_glyph_id();

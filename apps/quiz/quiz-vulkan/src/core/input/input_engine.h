@@ -4,6 +4,7 @@
 #include "core/input/input_event.h"
 #include "core/input/input_routing_diagnostics.h"
 #include "core/input/text_input_model.h"
+#include "core/input/text_input_presentation.h"
 #include "platform/platform_input_event.h"
 
 #include <cstdint>
@@ -22,6 +23,7 @@ public:
     [[nodiscard]] bool has_text_focus() const;
     [[nodiscard]] const std::string& text_focus_id() const;
     [[nodiscard]] const text_input_model& text_model() const;
+    [[nodiscard]] text_input_presentation_snapshot text_presentation_snapshot() const;
     [[nodiscard]] const input_routing_diagnostics& routing_diagnostics() const;
 
     [[nodiscard]] std::vector<input_event> process_raw_event(const raw_platform_input_event& event);

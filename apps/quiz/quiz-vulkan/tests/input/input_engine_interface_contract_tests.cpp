@@ -6,6 +6,7 @@
 #include "core/input/platform_input_engine_adapter.h"
 #include "core/input/platform_input_translator.h"
 #include "core/input/text_input_model.h"
+#include "core/input/text_input_presentation.h"
 #include "platform/platform_input_event.h"
 
 #include <concepts>
@@ -1137,6 +1138,70 @@ concept TextInputModelInterface = requires(
     { model.consume_submit_text() } -> std::same_as<std::optional<std::string>>;
 };
 
+template <typename T>
+concept TextInputPresentationByteCountsInterface = requires(T counts) {
+    { counts.committed_text_bytes } -> std::same_as<std::size_t&>;
+    { counts.display_text_bytes } -> std::same_as<std::size_t&>;
+    { counts.preedit_text_bytes } -> std::same_as<std::size_t&>;
+    { counts.selected_text_bytes } -> std::same_as<std::size_t&>;
+    { counts.preedit_range_bytes } -> std::same_as<std::size_t&>;
+    { counts.caret_byte_offset } -> std::same_as<std::size_t&>;
+    { counts.preedit_anchor_byte_offset } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
+concept TextInputPresentationRouteByteDiagnosticsInterface = requires(T diagnostics) {
+    { diagnostics.available } -> std::same_as<bool&>;
+    { diagnostics.text_byte_count } -> std::same_as<std::size_t&>;
+    { diagnostics.text_byte_count_before } -> std::same_as<std::size_t&>;
+    { diagnostics.text_byte_count_after } -> std::same_as<std::size_t&>;
+    { diagnostics.text_byte_delta } -> std::same_as<std::int64_t&>;
+};
+
+template <typename T>
+concept TextInputPresentationSnapshotInterface = requires(T snapshot) {
+    { snapshot.has_focus } -> std::same_as<bool&>;
+    { snapshot.target_id } -> std::same_as<std::string&>;
+    { snapshot.committed_text } -> std::same_as<std::string&>;
+    { snapshot.display_text } -> std::same_as<std::string&>;
+    { snapshot.caret_byte_offset } -> std::same_as<std::size_t&>;
+    { snapshot.caret_range } -> std::same_as<input::text_range&>;
+    { snapshot.has_selection } -> std::same_as<bool&>;
+    { snapshot.selection_range } -> std::same_as<input::text_range&>;
+    { snapshot.has_preedit } -> std::same_as<bool&>;
+    { snapshot.preedit_text } -> std::same_as<std::string&>;
+    { snapshot.preedit_range } -> std::same_as<input::text_range&>;
+    { snapshot.preedit_anchor_byte_offset } -> std::same_as<std::size_t&>;
+    { snapshot.has_submit_text } -> std::same_as<bool&>;
+    { snapshot.focus_clean } -> std::same_as<bool&>;
+    { snapshot.preedit_clean } -> std::same_as<bool&>;
+    { snapshot.byte_counts } -> std::same_as<input::text_input_presentation_byte_counts&>;
+    { snapshot.route_byte_diagnostics }
+        -> std::same_as<input::text_input_presentation_route_byte_diagnostics&>;
+};
+
+template <typename T>
+concept TextInputPresentationFunctions = requires(
+    const input::text_input_model& model,
+    const input::input_routing_diagnostics& diagnostics,
+    const input::action_route_policy_diagnostic& route,
+    input::action_route_policy_kind route_kind,
+    input::text_range range) {
+    { input::text_input_presentation_range_byte_count(range) } -> std::same_as<std::size_t>;
+    { input::text_input_presentation_size_delta(std::size_t{}, std::size_t{}) }
+        -> std::same_as<std::int64_t>;
+    { input::text_input_presentation_route_has_text_byte_diagnostics(route_kind) }
+        -> std::same_as<bool>;
+    { input::make_text_input_presentation_route_byte_diagnostics(route) }
+        -> std::same_as<input::text_input_presentation_route_byte_diagnostics>;
+    { input::find_text_input_presentation_route_byte_diagnostics(diagnostics) }
+        -> std::same_as<input::text_input_presentation_route_byte_diagnostics>;
+    { input::make_text_input_presentation_snapshot(model) }
+        -> std::same_as<input::text_input_presentation_snapshot>;
+    { input::make_text_input_presentation_snapshot(model, diagnostics) }
+        -> std::same_as<input::text_input_presentation_snapshot>;
+};
+
 static_assert(ImeCompositionStateInterface<input::ime_composition_state>);
 static_assert(std::is_default_constructible_v<input::ime_composition_state>);
 static_assert(PointerCaptureSnapshotInterface<input::pointer_capture_snapshot>);
@@ -1284,6 +1349,9 @@ static_assert(std::is_default_constructible_v<input::input_routing_keyboard_inte
 static_assert(std::is_default_constructible_v<input::input_routing_keyboard_repeat_policy_count_deltas>);
 static_assert(std::is_default_constructible_v<input::input_routing_keyboard_route_count_deltas>);
 static_assert(std::is_default_constructible_v<input::input_routing_diagnostics_diff>);
+static_assert(std::is_default_constructible_v<input::text_input_presentation_byte_counts>);
+static_assert(std::is_default_constructible_v<input::text_input_presentation_route_byte_diagnostics>);
+static_assert(std::is_default_constructible_v<input::text_input_presentation_snapshot>);
 static_assert(std::is_default_constructible_v<input::keyboard_modifier_state>);
 static_assert(std::is_default_constructible_v<input::keyboard_chord_diagnostic>);
 static_assert(!std::is_polymorphic_v<input::platform_input_translation_request>);
@@ -1299,6 +1367,7 @@ static_assert(!std::is_polymorphic_v<input::normalized_input_replay_pointer_summ
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_focus_summary>);
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_diff>);
 static_assert(!std::is_polymorphic_v<input::input_routing_diagnostics_diff>);
+static_assert(!std::is_polymorphic_v<input::text_input_presentation_snapshot>);
 static_assert(std::is_same_v<
     decltype(input::platform_input_translation_result{}.event),
     std::optional<raw_platform_input_event>>);
@@ -1354,6 +1423,11 @@ static_assert(std::is_same_v<
     decltype(input::normalized_input_replay_recording{}.focus),
     input::normalized_input_replay_focus_summary>);
 static_assert(TextInputModelInterface<input::text_input_model>);
+static_assert(TextInputPresentationByteCountsInterface<input::text_input_presentation_byte_counts>);
+static_assert(TextInputPresentationRouteByteDiagnosticsInterface<
+    input::text_input_presentation_route_byte_diagnostics>);
+static_assert(TextInputPresentationSnapshotInterface<input::text_input_presentation_snapshot>);
+static_assert(TextInputPresentationFunctions<void>);
 
 constexpr input::text_range text_range_contract{
     .start_byte = 3,
@@ -1877,6 +1951,7 @@ concept InputEngineInterface = requires(
     { engine.has_text_focus() } -> std::same_as<bool>;
     { engine.text_focus_id() } -> std::same_as<const std::string&>;
     { engine.text_model() } -> std::same_as<const input::text_input_model&>;
+    { engine.text_presentation_snapshot() } -> std::same_as<input::text_input_presentation_snapshot>;
     { engine.routing_diagnostics() } -> std::same_as<const input::input_routing_diagnostics&>;
     { engine.process_raw_event(event) } -> std::same_as<std::vector<input::input_event>>;
     { engine.process_scroll_event(scroll) } -> std::same_as<std::vector<input::input_event>>;

@@ -206,6 +206,11 @@ const text_input_model& input_engine::text_model() const
     return text_;
 }
 
+text_input_presentation_snapshot input_engine::text_presentation_snapshot() const
+{
+    return make_text_input_presentation_snapshot(text_, diagnostics_);
+}
+
 const input_routing_diagnostics& input_engine::routing_diagnostics() const
 {
     return diagnostics_;

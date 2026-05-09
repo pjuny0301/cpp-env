@@ -88,6 +88,18 @@ quiz_vulkan::raw_platform_input_event key(
     };
 }
 
+quiz_vulkan::raw_platform_input_event ime(
+    quiz_vulkan::raw_platform_ime_phase phase,
+    std::int64_t timestamp_ms,
+    std::string value = {})
+{
+    return quiz_vulkan::raw_platform_ime_event{
+        .timestamp_ms = timestamp_ms,
+        .phase = phase,
+        .utf8_text = std::move(value),
+    };
+}
+
 quiz_vulkan::raw_platform_input_event key_code(
     std::int64_t timestamp_ms,
     std::int32_t code,
@@ -650,6 +662,111 @@ void test_keyboard_cancel_intent_diagnostics()
     require(engine.text_model().text() == "draft", "repeat escape leaves text unchanged");
 }
 
+void test_text_input_presentation_snapshot_exposes_read_model()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    text_input_presentation_snapshot snapshot = engine.text_presentation_snapshot();
+    require(!snapshot.has_focus, "presentation default has no focus");
+    require(snapshot.target_id.empty(), "presentation default target id is empty");
+    require(snapshot.committed_text.empty(), "presentation default committed text is empty");
+    require(snapshot.display_text.empty(), "presentation default display text is empty");
+    require_range(snapshot.caret_range, 0, 0, "presentation default caret range is collapsed");
+    require(!snapshot.has_selection, "presentation default has no selection");
+    require(!snapshot.has_preedit, "presentation default has no preedit");
+    require(snapshot.focus_clean, "presentation default focus is clean");
+    require(snapshot.preedit_clean, "presentation default preedit is clean");
+    require(!snapshot.route_byte_diagnostics.available,
+        "presentation default has no route byte diagnostics");
+
+    engine.focus_text_target("answer");
+    const std::string base = std::string("A") + utf8(u8"한") + "B";
+    require(engine.process_raw_event(text(100, base)).size() == 1,
+        "presentation commit emits text event");
+    require(engine.process_raw_event(key(110, "Home")).size() == 1,
+        "presentation home emits caret event");
+    require(engine.process_raw_event(key(120, "ArrowRight", false, raw_platform_key_phase::down, false, true))
+                .size() == 1,
+        "presentation shift right emits selection event");
+
+    const std::string preedit = utf8(u8"ㅎ");
+    require(engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 130, preedit)).size() == 1,
+        "presentation preedit emits ime event");
+
+    snapshot = engine.text_presentation_snapshot();
+    require(snapshot.has_focus, "presentation focused snapshot has focus");
+    require(snapshot.target_id == "answer", "presentation focused snapshot records target id");
+    require(snapshot.committed_text == base, "presentation records committed text");
+    require(snapshot.display_text == preedit + utf8(u8"한") + "B",
+        "presentation records display text with preedit replacement");
+    require(snapshot.caret_byte_offset == 1, "presentation records committed caret byte offset");
+    require_range(snapshot.caret_range, preedit.size(), preedit.size(),
+        "presentation records display caret range after preedit");
+    require(snapshot.has_selection, "presentation records active selection");
+    require_range(snapshot.selection_range, 0, 1, "presentation records selection range");
+    require(snapshot.has_preedit, "presentation records active preedit");
+    require(snapshot.preedit_text == preedit, "presentation records preedit text");
+    require_range(snapshot.preedit_range, 0, preedit.size(), "presentation records preedit range");
+    require(snapshot.preedit_anchor_byte_offset == 0, "presentation records preedit anchor");
+    require(!snapshot.has_submit_text, "presentation has no pending submit before submit");
+    require(snapshot.focus_clean, "presentation focused state is clean");
+    require(!snapshot.preedit_clean, "presentation active preedit is not clean");
+    require(snapshot.byte_counts.committed_text_bytes == base.size(),
+        "presentation records committed byte count");
+    require(snapshot.byte_counts.display_text_bytes == preedit.size() + std::string(utf8(u8"한")).size() + 1,
+        "presentation records display byte count");
+    require(snapshot.byte_counts.preedit_text_bytes == preedit.size(),
+        "presentation records preedit byte count");
+    require(snapshot.byte_counts.selected_text_bytes == 1,
+        "presentation records selected byte count");
+    require(snapshot.byte_counts.preedit_range_bytes == preedit.size(),
+        "presentation records preedit range byte count");
+    require(snapshot.byte_counts.caret_byte_offset == 1,
+        "presentation byte diagnostics records committed caret offset");
+    require(snapshot.byte_counts.preedit_anchor_byte_offset == 0,
+        "presentation byte diagnostics records preedit anchor");
+    require(snapshot.route_byte_diagnostics.available,
+        "presentation records engine route byte diagnostics");
+    require(snapshot.route_byte_diagnostics.text_byte_count == preedit.size(),
+        "presentation records route text byte count");
+    require(snapshot.route_byte_diagnostics.text_byte_count_before == base.size(),
+        "presentation records route before byte count");
+    require(snapshot.route_byte_diagnostics.text_byte_count_after == base.size(),
+        "presentation records route after byte count");
+    require(snapshot.route_byte_diagnostics.text_byte_delta == 0,
+        "presentation records route byte delta");
+
+    require(engine.process_raw_event(ime(raw_platform_ime_phase::cancel, 140)).size() == 1,
+        "presentation cancel emits ime cancel event");
+    require(engine.process_raw_event(key(150, "Enter")).size() == 1,
+        "presentation submit emits submit event");
+    snapshot = engine.text_presentation_snapshot();
+    require(snapshot.has_submit_text, "presentation records pending submit text");
+    require(snapshot.committed_text.empty(), "presentation submit clears committed text");
+    require(snapshot.display_text.empty(), "presentation submit clears display text");
+    require(!snapshot.has_preedit, "presentation submit clears preedit");
+    require(snapshot.preedit_clean, "presentation submit preedit state is clean");
+    require(snapshot.byte_counts.committed_text_bytes == 0,
+        "presentation submit records empty committed byte count");
+    require(snapshot.route_byte_diagnostics.available,
+        "presentation submit keeps route byte diagnostics");
+    require(snapshot.route_byte_diagnostics.text_byte_count_before == base.size(),
+        "presentation submit route records before byte count");
+    require(snapshot.route_byte_diagnostics.text_byte_count_after == 0,
+        "presentation submit route records after byte count");
+    require(snapshot.route_byte_diagnostics.text_byte_delta == -static_cast<std::int64_t>(base.size()),
+        "presentation submit route records negative byte delta");
+
+    text_input_presentation_snapshot direct_snapshot =
+        make_text_input_presentation_snapshot(engine.text_model());
+    require(!direct_snapshot.route_byte_diagnostics.available,
+        "presentation direct text model snapshot has no engine route diagnostics");
+    require(direct_snapshot.has_submit_text,
+        "presentation direct text model snapshot preserves submit availability");
+}
+
 } // namespace
 
 int main()
@@ -659,6 +776,7 @@ int main()
     test_text_keyboard_navigation_and_selection();
     test_keyboard_focus_traversal_diagnostics();
     test_keyboard_cancel_intent_diagnostics();
+    test_text_input_presentation_snapshot_exposes_read_model();
 
     std::cout << "input_engine_keyboard_text_tests passed\n";
     return 0;

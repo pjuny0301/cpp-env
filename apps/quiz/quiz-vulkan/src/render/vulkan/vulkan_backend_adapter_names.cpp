@@ -448,8 +448,49 @@ std::string_view swapchain_acquire_status_name(vulkan_swapchain_acquire_status s
         return "acquired";
     case vulkan_swapchain_acquire_status::backpressured:
         return "backpressured";
+    case vulkan_swapchain_acquire_status::timeout:
+        return "timeout";
+    case vulkan_swapchain_acquire_status::out_of_date:
+        return "out_of_date";
+    case vulkan_swapchain_acquire_status::suboptimal:
+        return "suboptimal";
     case vulkan_swapchain_acquire_status::failed:
         return "failed";
+    case vulkan_swapchain_acquire_status::error:
+        return "error";
+    }
+
+    return "unknown";
+}
+
+std::string_view swapchain_image_acquire_plan_status_name(
+    vulkan_swapchain_image_acquire_plan_status status)
+{
+    switch (status) {
+    case vulkan_swapchain_image_acquire_plan_status::not_checked:
+        return "not_checked";
+    case vulkan_swapchain_image_acquire_plan_status::not_requested:
+        return "not_requested";
+    case vulkan_swapchain_image_acquire_plan_status::ready:
+        return "ready";
+    case vulkan_swapchain_image_acquire_plan_status::lifecycle_unavailable:
+        return "lifecycle_unavailable";
+    case vulkan_swapchain_image_acquire_plan_status::swapchain_unavailable:
+        return "swapchain_unavailable";
+    case vulkan_swapchain_image_acquire_plan_status::sync_unavailable:
+        return "sync_unavailable";
+    case vulkan_swapchain_image_acquire_plan_status::no_images_available:
+        return "no_images_available";
+    case vulkan_swapchain_image_acquire_plan_status::backpressured:
+        return "backpressured";
+    case vulkan_swapchain_image_acquire_plan_status::timeout:
+        return "timeout";
+    case vulkan_swapchain_image_acquire_plan_status::out_of_date:
+        return "out_of_date";
+    case vulkan_swapchain_image_acquire_plan_status::suboptimal:
+        return "suboptimal";
+    case vulkan_swapchain_image_acquire_plan_status::error:
+        return "error";
     }
 
     return "unknown";

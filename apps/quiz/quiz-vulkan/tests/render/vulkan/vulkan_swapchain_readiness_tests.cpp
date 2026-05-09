@@ -127,6 +127,41 @@ quiz_vulkan::render::vulkan_backend::fake_vulkan_swapchain_factory make_swapchai
         });
 }
 
+quiz_vulkan::render::vulkan_backend::vulkan_swapchain_image_acquire_request
+make_ready_acquire_request()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    return vulkan_backend::vulkan_swapchain_image_acquire_request{
+        .requested = true,
+        .lifecycle_ready = true,
+        .swapchain_ready = true,
+        .swapchain = vulkan_backend::vulkan_swapchain_handle{.value = 90},
+        .image_count = 3,
+        .timeout_nanoseconds = 0,
+        .image_available_semaphore_ready = true,
+        .fence_ready = true,
+        .allow_suboptimal = true,
+    };
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_swapchain_acquire_result make_acquired_image(
+    quiz_vulkan::render::vulkan_backend::vulkan_swapchain_acquire_status status =
+        quiz_vulkan::render::vulkan_backend::vulkan_swapchain_acquire_status::acquired)
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    return vulkan_backend::vulkan_swapchain_acquire_result{
+        .status = status,
+        .image = vulkan_backend::vulkan_swapchain_image_state{
+            .id = vulkan_backend::vulkan_swapchain_image_id{.value = 2},
+            .available = true,
+            .acquired = true,
+            .presented = false,
+        },
+    };
+}
+
 void test_swapchain_factory_marks_ready_device_swapchain_ready()
 {
     namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
@@ -255,6 +290,136 @@ void test_swapchain_factory_falls_back_to_fifo_present_mode()
     require(result.fallback_to_fifo, "fallback-present-mode swapchain records fifo fallback");
 }
 
+void test_swapchain_image_acquire_plan_accepts_ready_image()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_swapchain_image_acquire_plan_result plan =
+        vulkan_backend::build_vulkan_swapchain_image_acquire_plan(
+            make_ready_acquire_request(),
+            make_acquired_image());
+
+    require(plan.checked, "swapchain image acquire plan is checked");
+    require(
+        plan.status == vulkan_backend::vulkan_swapchain_image_acquire_plan_status::ready,
+        "swapchain image acquire plan reports ready");
+    require(plan.ready_for_command_recording(), "acquired swapchain image reaches command recording gate");
+    require(!plan.blocked(), "acquired swapchain image does not block command recording");
+    require(plan.selected_image_index == 2, "swapchain image acquire plan stores selected image index");
+    require(plan.image_id.value == 2, "swapchain image acquire plan stores selected image id");
+    require(plan.sync_primitives_ready, "swapchain image acquire plan records sync readiness");
+}
+
+void test_swapchain_image_acquire_plan_reports_readiness_gates()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::vulkan_swapchain_image_acquire_request lifecycle_unavailable =
+        make_ready_acquire_request();
+    lifecycle_unavailable.lifecycle_ready = false;
+    const vulkan_backend::vulkan_swapchain_image_acquire_plan_result lifecycle_plan =
+        vulkan_backend::build_vulkan_swapchain_image_acquire_plan(
+            lifecycle_unavailable,
+            make_acquired_image());
+    require(
+        lifecycle_plan.status
+            == vulkan_backend::vulkan_swapchain_image_acquire_plan_status::lifecycle_unavailable,
+        "swapchain image acquire plan blocks when lifecycle is unavailable");
+
+    vulkan_backend::vulkan_swapchain_image_acquire_request swapchain_unavailable =
+        make_ready_acquire_request();
+    swapchain_unavailable.swapchain_ready = false;
+    const vulkan_backend::vulkan_swapchain_image_acquire_plan_result swapchain_plan =
+        vulkan_backend::build_vulkan_swapchain_image_acquire_plan(
+            swapchain_unavailable,
+            make_acquired_image());
+    require(
+        swapchain_plan.status
+            == vulkan_backend::vulkan_swapchain_image_acquire_plan_status::swapchain_unavailable,
+        "swapchain image acquire plan blocks when swapchain is unavailable");
+
+    vulkan_backend::vulkan_swapchain_image_acquire_request sync_unavailable =
+        make_ready_acquire_request();
+    sync_unavailable.fence_ready = false;
+    const vulkan_backend::vulkan_swapchain_image_acquire_plan_result sync_plan =
+        vulkan_backend::build_vulkan_swapchain_image_acquire_plan(
+            sync_unavailable,
+            make_acquired_image());
+    require(
+        sync_plan.status
+            == vulkan_backend::vulkan_swapchain_image_acquire_plan_status::sync_unavailable,
+        "swapchain image acquire plan blocks when acquire sync is unavailable");
+
+    vulkan_backend::vulkan_swapchain_image_acquire_request no_images =
+        make_ready_acquire_request();
+    no_images.image_count = 0;
+    const vulkan_backend::vulkan_swapchain_image_acquire_plan_result no_images_plan =
+        vulkan_backend::build_vulkan_swapchain_image_acquire_plan(
+            no_images,
+            make_acquired_image());
+    require(
+        no_images_plan.status
+            == vulkan_backend::vulkan_swapchain_image_acquire_plan_status::no_images_available,
+        "swapchain image acquire plan blocks when no images are available");
+}
+
+void test_swapchain_image_acquire_plan_models_timeout_out_of_date_suboptimal_and_error()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_swapchain_image_acquire_plan_result timeout =
+        vulkan_backend::build_vulkan_swapchain_image_acquire_plan(
+            make_ready_acquire_request(),
+            vulkan_backend::vulkan_swapchain_acquire_result{
+                .status = vulkan_backend::vulkan_swapchain_acquire_status::timeout,
+                .image = {},
+            });
+    require(
+        timeout.status == vulkan_backend::vulkan_swapchain_image_acquire_plan_status::timeout,
+        "swapchain image acquire plan reports timeout");
+    require(timeout.timed_out, "swapchain image acquire plan records timeout flag");
+    require(timeout.blocked(), "timed-out swapchain image acquire blocks command recording");
+
+    const vulkan_backend::vulkan_swapchain_image_acquire_plan_result out_of_date =
+        vulkan_backend::build_vulkan_swapchain_image_acquire_plan(
+            make_ready_acquire_request(),
+            vulkan_backend::vulkan_swapchain_acquire_result{
+                .status = vulkan_backend::vulkan_swapchain_acquire_status::out_of_date,
+                .image = {},
+            });
+    require(
+        out_of_date.status
+            == vulkan_backend::vulkan_swapchain_image_acquire_plan_status::out_of_date,
+        "swapchain image acquire plan reports out-of-date swapchain");
+    require(out_of_date.out_of_date, "swapchain image acquire plan records out-of-date flag");
+    require(out_of_date.blocked(), "out-of-date swapchain image acquire blocks command recording");
+
+    const vulkan_backend::vulkan_swapchain_image_acquire_plan_result suboptimal =
+        vulkan_backend::build_vulkan_swapchain_image_acquire_plan(
+            make_ready_acquire_request(),
+            make_acquired_image(vulkan_backend::vulkan_swapchain_acquire_status::suboptimal));
+    require(
+        suboptimal.status == vulkan_backend::vulkan_swapchain_image_acquire_plan_status::suboptimal,
+        "swapchain image acquire plan reports suboptimal status");
+    require(suboptimal.suboptimal, "swapchain image acquire plan records suboptimal flag");
+    require(
+        suboptimal.ready_for_command_recording(),
+        "suboptimal swapchain image acquire can still proceed with a recordable image");
+
+    const vulkan_backend::vulkan_swapchain_image_acquire_plan_result error =
+        vulkan_backend::build_vulkan_swapchain_image_acquire_plan(
+            make_ready_acquire_request(),
+            vulkan_backend::vulkan_swapchain_acquire_result{
+                .status = vulkan_backend::vulkan_swapchain_acquire_status::error,
+                .image = {},
+            });
+    require(
+        error.status == vulkan_backend::vulkan_swapchain_image_acquire_plan_status::error,
+        "swapchain image acquire plan reports error status");
+    require(error.error, "swapchain image acquire plan records error flag");
+    require(error.blocked(), "errored swapchain image acquire blocks command recording");
+}
+
 void test_lifecycle_fallback_moves_to_swapchain_only_after_device_is_ready()
 {
     namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
@@ -343,6 +508,41 @@ void test_vulkan_swapchain_create_status_names_are_stable()
             vulkan_backend::vulkan_swapchain_create_status::creation_failed)
             == std::string_view{"creation_failed"},
         "swapchain create status name for creation failed is stable");
+    require(
+        vulkan_backend::swapchain_acquire_status_name(
+            vulkan_backend::vulkan_swapchain_acquire_status::timeout)
+            == std::string_view{"timeout"},
+        "swapchain acquire status name for timeout is stable");
+    require(
+        vulkan_backend::swapchain_acquire_status_name(
+            vulkan_backend::vulkan_swapchain_acquire_status::out_of_date)
+            == std::string_view{"out_of_date"},
+        "swapchain acquire status name for out of date is stable");
+    require(
+        vulkan_backend::swapchain_acquire_status_name(
+            vulkan_backend::vulkan_swapchain_acquire_status::suboptimal)
+            == std::string_view{"suboptimal"},
+        "swapchain acquire status name for suboptimal is stable");
+    require(
+        vulkan_backend::swapchain_acquire_status_name(
+            vulkan_backend::vulkan_swapchain_acquire_status::error)
+            == std::string_view{"error"},
+        "swapchain acquire status name for error is stable");
+    require(
+        vulkan_backend::swapchain_image_acquire_plan_status_name(
+            vulkan_backend::vulkan_swapchain_image_acquire_plan_status::ready)
+            == std::string_view{"ready"},
+        "swapchain image acquire plan status name for ready is stable");
+    require(
+        vulkan_backend::swapchain_image_acquire_plan_status_name(
+            vulkan_backend::vulkan_swapchain_image_acquire_plan_status::out_of_date)
+            == std::string_view{"out_of_date"},
+        "swapchain image acquire plan status name for out of date is stable");
+    require(
+        vulkan_backend::swapchain_image_acquire_plan_status_name(
+            vulkan_backend::vulkan_swapchain_image_acquire_plan_status::suboptimal)
+            == std::string_view{"suboptimal"},
+        "swapchain image acquire plan status name for suboptimal is stable");
 }
 
 } // namespace
@@ -353,6 +553,9 @@ int main()
     test_swapchain_factory_maps_unavailable_device_to_swapchain_unavailable();
     test_swapchain_factory_reports_invalid_extent();
     test_swapchain_factory_falls_back_to_fifo_present_mode();
+    test_swapchain_image_acquire_plan_accepts_ready_image();
+    test_swapchain_image_acquire_plan_reports_readiness_gates();
+    test_swapchain_image_acquire_plan_models_timeout_out_of_date_suboptimal_and_error();
     test_lifecycle_fallback_moves_to_swapchain_only_after_device_is_ready();
     test_vulkan_swapchain_create_status_names_are_stable();
     return 0;

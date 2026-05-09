@@ -626,6 +626,16 @@ void test_vulkan_frame_pipeline_handoff_accepts_draw_list_render_data()
     require(handoff.command_packet_execution_completed, "handoff requires completed packet execution before command recording");
     require(handoff.command_recorder_operations_checked, "handoff checks command recorder operation plan");
     require(handoff.command_recorder_operations_completed, "handoff requires completed recorder operation plan");
+    require(
+        result.swapchain_image_acquire_plan.ready_for_command_recording(),
+        "swapchain image acquire plan reaches command recording gate");
+    require(
+        result.swapchain_image_acquire_plan.status
+            == vulkan_backend::vulkan_swapchain_image_acquire_plan_status::ready,
+        "swapchain image acquire plan reports ready before command recording");
+    require(
+        result.swapchain_image_acquire_plan.selected_image_index == device.next_image_id.value,
+        "swapchain image acquire plan records selected image index");
     require(handoff.command_buffer_recording_checked, "handoff checks command buffer recording result");
     require(handoff.command_buffer_recording_completed, "handoff requires completed command buffer recording result");
     require(handoff.command_buffer_ready_for_submit, "handoff exposes command buffer readiness before submit");

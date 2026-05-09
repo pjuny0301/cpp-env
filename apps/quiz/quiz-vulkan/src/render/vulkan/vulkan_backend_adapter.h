@@ -2048,6 +2048,7 @@ struct vulkan_backend_frame_result {
     vulkan_backend_lifecycle_readiness lifecycle;
     vulkan_backend_swapchain_lifecycle_state swapchain;
     vulkan_backend_swapchain_policy_state swapchain_policy;
+    vulkan_swapchain_image_acquire_plan_result swapchain_image_acquire_plan;
     vulkan_backend_frame_sync_state frame_sync;
     vulkan_backend_frame_resource_lifetime_state frame_resources;
     vulkan_backend_frame_lifecycle_policy_state lifecycle_policy;
@@ -2089,6 +2090,7 @@ struct vulkan_backend_frame_result {
             && lifecycle_ready && surface_ready && frame_begun && commands_recorded
             && frame_submitted && frame_presented && swapchain.completed()
             && swapchain_policy.completed()
+            && swapchain_image_acquire_plan.ready_for_command_recording()
             && frame_sync.completed()
             && frame_resources.completed()
             && lifecycle_policy.completed()

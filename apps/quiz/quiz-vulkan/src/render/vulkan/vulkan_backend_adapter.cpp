@@ -956,6 +956,7 @@ void mark_acquire_policy_result(
 
     const bool backpressured =
         acquire.status == vulkan_swapchain_acquire_status::backpressured
+        || acquire.status == vulkan_swapchain_acquire_status::timeout
         || (acquire.status == vulkan_swapchain_acquire_status::acquired
             && !acquire.image.ready_for_recording());
     state.acquire.backpressured = backpressured;
@@ -1050,6 +1051,36 @@ vulkan_backend_swapchain_policy_state make_swapchain_policy_state(vulkan_surface
             .fallback_to_fifo = false,
         },
     };
+}
+
+std::size_t infer_swapchain_image_count_for_acquire(
+    const vulkan_backend_lifecycle_readiness& lifecycle,
+    const vulkan_swapchain_acquire_result& acquire)
+{
+    std::size_t image_count = lifecycle.swapchain.checked
+        ? lifecycle.swapchain.min_image_count
+        : 0U;
+    if (image_count == 0 && lifecycle.effective_swapchain_ready()) {
+        image_count = 2;
+    }
+    if (acquire.image.id.value >= image_count) {
+        image_count = acquire.image.id.value + 1;
+    }
+
+    return image_count;
+}
+
+vulkan_swapchain_handle swapchain_handle_for_acquire(
+    const vulkan_backend_lifecycle_readiness& lifecycle)
+{
+    if (lifecycle.swapchain.checked) {
+        return lifecycle.swapchain.handle;
+    }
+    if (lifecycle.effective_swapchain_ready()) {
+        return vulkan_swapchain_handle{.value = 1};
+    }
+
+    return {};
 }
 
 bool ensure_frame_plan_pipelines(
@@ -3180,12 +3211,30 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     result.swapchain.acquire_requested = true;
     mark_acquire_policy_requested(result.present_policy);
     result.swapchain.acquire = device.acquire_next_image(result.surface);
+    result.swapchain_image_acquire_plan = build_vulkan_swapchain_image_acquire_plan(
+        vulkan_swapchain_image_acquire_request{
+            .requested = true,
+            .lifecycle_ready = result.lifecycle.ready_for_frame(),
+            .swapchain_ready = result.lifecycle.effective_swapchain_ready(),
+            .swapchain = swapchain_handle_for_acquire(result.lifecycle),
+            .image_count = infer_swapchain_image_count_for_acquire(
+                result.lifecycle,
+                result.swapchain.acquire),
+            .timeout_nanoseconds = 0,
+            .image_available_semaphore_ready =
+                result.frame_sync.acquire_signal_image_available_semaphore.token.valid(),
+            .fence_ready = result.frame_sync.acquire_signal_fence.token.valid(),
+            .allow_suboptimal = true,
+        },
+        result.swapchain.acquire);
     mark_acquire_policy_result(result.present_policy, result.swapchain.acquire);
     complete_signal(
         result.frame_sync.acquire_signal_image_available_semaphore,
-        result.swapchain.acquire.completed());
-    complete_signal(result.frame_sync.acquire_signal_fence, result.swapchain.acquire.completed());
-    if (!result.swapchain.acquire.completed()) {
+        result.swapchain_image_acquire_plan.ready_for_command_recording());
+    complete_signal(
+        result.frame_sync.acquire_signal_fence,
+        result.swapchain_image_acquire_plan.ready_for_command_recording());
+    if (!result.swapchain_image_acquire_plan.ready_for_command_recording()) {
         fail_frame_lifecycle(
             vulkan_frame_lifecycle_step::acquire,
             vulkan_backend_fallback_reason::acquire_image_failed);

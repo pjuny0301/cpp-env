@@ -42,10 +42,32 @@ enum class vulkan_swapchain_acquire_status {
     not_requested,
     acquired,
     backpressured,
+    timeout,
+    out_of_date,
+    suboptimal,
     failed,
+    error,
 };
 
 std::string_view swapchain_acquire_status_name(vulkan_swapchain_acquire_status status);
+
+enum class vulkan_swapchain_image_acquire_plan_status {
+    not_checked,
+    not_requested,
+    ready,
+    lifecycle_unavailable,
+    swapchain_unavailable,
+    sync_unavailable,
+    no_images_available,
+    backpressured,
+    timeout,
+    out_of_date,
+    suboptimal,
+    error,
+};
+
+std::string_view swapchain_image_acquire_plan_status_name(
+    vulkan_swapchain_image_acquire_plan_status status);
 
 enum class vulkan_swapchain_present_status {
     not_requested,
@@ -64,13 +86,71 @@ enum class vulkan_swapchain_present_mode {
 
 std::string_view swapchain_present_mode_name(vulkan_swapchain_present_mode mode);
 
+struct vulkan_swapchain_handle {
+    std::uintptr_t value = 0;
+
+    bool valid() const
+    {
+        return value != 0;
+    }
+};
+
 struct vulkan_swapchain_acquire_result {
     vulkan_swapchain_acquire_status status = vulkan_swapchain_acquire_status::not_requested;
     vulkan_swapchain_image_state image;
 
     bool completed() const
     {
-        return status == vulkan_swapchain_acquire_status::acquired && image.ready_for_recording();
+        return (status == vulkan_swapchain_acquire_status::acquired
+                || status == vulkan_swapchain_acquire_status::suboptimal)
+            && image.ready_for_recording();
+    }
+};
+
+struct vulkan_swapchain_image_acquire_request {
+    bool requested = false;
+    bool lifecycle_ready = false;
+    bool swapchain_ready = false;
+    vulkan_swapchain_handle swapchain;
+    std::size_t image_count = 0;
+    std::uint64_t timeout_nanoseconds = 0;
+    bool image_available_semaphore_ready = false;
+    bool fence_ready = false;
+    bool allow_suboptimal = true;
+};
+
+struct vulkan_swapchain_image_acquire_plan_result {
+    bool checked = false;
+    vulkan_swapchain_image_acquire_plan_status status =
+        vulkan_swapchain_image_acquire_plan_status::not_checked;
+    vulkan_swapchain_image_acquire_request request;
+    vulkan_swapchain_acquire_status acquire_status =
+        vulkan_swapchain_acquire_status::not_requested;
+    std::size_t selected_image_index = 0;
+    vulkan_swapchain_image_id image_id;
+    bool lifecycle_ready = false;
+    bool swapchain_ready = false;
+    bool sync_primitives_ready = false;
+    bool acquire_requested = false;
+    bool acquire_completed = false;
+    bool image_available = false;
+    bool image_acquired = false;
+    bool timed_out = false;
+    bool out_of_date = false;
+    bool suboptimal = false;
+    bool error = false;
+    std::string diagnostic;
+
+    bool ready_for_command_recording() const
+    {
+        return checked && acquire_completed && image_available && image_acquired
+            && (status == vulkan_swapchain_image_acquire_plan_status::ready
+                || status == vulkan_swapchain_image_acquire_plan_status::suboptimal);
+    }
+
+    bool blocked() const
+    {
+        return checked && !ready_for_command_recording();
     }
 };
 
@@ -149,15 +229,6 @@ struct vulkan_swapchain_create_request {
     vulkan_surface_extent requested_extent;
     vulkan_swapchain_present_mode requested_present_mode = vulkan_swapchain_present_mode::fifo;
     std::size_t min_image_count = 2;
-};
-
-struct vulkan_swapchain_handle {
-    std::uintptr_t value = 0;
-
-    bool valid() const
-    {
-        return value != 0;
-    }
 };
 
 enum class vulkan_swapchain_create_status {
@@ -305,7 +376,123 @@ inline vulkan_swapchain_create_result make_swapchain_create_result(
     };
 }
 
+inline std::size_t selected_image_index_for(
+    const vulkan_swapchain_image_acquire_request& request,
+    const vulkan_swapchain_acquire_result& acquire)
+{
+    static_cast<void>(request);
+    return acquire.image.id.value;
+}
+
 } // namespace swapchain_detail
+
+inline vulkan_swapchain_image_acquire_plan_result build_vulkan_swapchain_image_acquire_plan(
+    const vulkan_swapchain_image_acquire_request& request,
+    const vulkan_swapchain_acquire_result& acquire)
+{
+    vulkan_swapchain_image_acquire_plan_result result{
+        .checked = true,
+        .status = vulkan_swapchain_image_acquire_plan_status::not_checked,
+        .request = request,
+        .acquire_status = acquire.status,
+        .selected_image_index = swapchain_detail::selected_image_index_for(request, acquire),
+        .image_id = acquire.image.id,
+        .lifecycle_ready = request.lifecycle_ready,
+        .swapchain_ready = request.swapchain_ready,
+        .sync_primitives_ready =
+            request.image_available_semaphore_ready && request.fence_ready,
+        .acquire_requested = request.requested,
+        .acquire_completed = false,
+        .image_available = acquire.image.available,
+        .image_acquired = acquire.image.acquired,
+        .timed_out = false,
+        .out_of_date = false,
+        .suboptimal = false,
+        .error = false,
+        .diagnostic = {},
+    };
+
+    if (!request.requested) {
+        result.status = vulkan_swapchain_image_acquire_plan_status::not_requested;
+        result.diagnostic = "Vulkan swapchain image acquire was not requested";
+        return result;
+    }
+    if (!request.lifecycle_ready) {
+        result.status = vulkan_swapchain_image_acquire_plan_status::lifecycle_unavailable;
+        result.diagnostic = "Vulkan frame lifecycle is not ready for image acquire";
+        return result;
+    }
+    if (!request.swapchain_ready) {
+        result.status = vulkan_swapchain_image_acquire_plan_status::swapchain_unavailable;
+        result.diagnostic = "Vulkan swapchain is not ready for image acquire";
+        return result;
+    }
+    if (!result.sync_primitives_ready) {
+        result.status = vulkan_swapchain_image_acquire_plan_status::sync_unavailable;
+        result.diagnostic = "Vulkan acquire sync primitives are unavailable";
+        return result;
+    }
+    if (request.image_count == 0) {
+        result.status = vulkan_swapchain_image_acquire_plan_status::no_images_available;
+        result.diagnostic = "Vulkan swapchain has no images available for acquire";
+        return result;
+    }
+
+    switch (acquire.status) {
+    case vulkan_swapchain_acquire_status::not_requested:
+        result.status = vulkan_swapchain_image_acquire_plan_status::not_requested;
+        result.diagnostic = "Vulkan swapchain image acquire result was not requested";
+        return result;
+    case vulkan_swapchain_acquire_status::acquired:
+        if (!acquire.completed()) {
+            result.status = vulkan_swapchain_image_acquire_plan_status::backpressured;
+            result.diagnostic = "Vulkan swapchain image acquire did not produce a recordable image";
+            return result;
+        }
+        result.status = vulkan_swapchain_image_acquire_plan_status::ready;
+        result.acquire_completed = true;
+        result.diagnostic = "Vulkan swapchain image acquire is ready for command recording";
+        return result;
+    case vulkan_swapchain_acquire_status::backpressured:
+        result.status = vulkan_swapchain_image_acquire_plan_status::backpressured;
+        result.diagnostic = "Vulkan swapchain image acquire is backpressured";
+        return result;
+    case vulkan_swapchain_acquire_status::timeout:
+        result.status = vulkan_swapchain_image_acquire_plan_status::timeout;
+        result.timed_out = true;
+        result.diagnostic = "Vulkan swapchain image acquire timed out";
+        return result;
+    case vulkan_swapchain_acquire_status::out_of_date:
+        result.status = vulkan_swapchain_image_acquire_plan_status::out_of_date;
+        result.out_of_date = true;
+        result.diagnostic = "Vulkan swapchain image acquire found an out-of-date swapchain";
+        return result;
+    case vulkan_swapchain_acquire_status::suboptimal:
+        result.suboptimal = true;
+        if (!request.allow_suboptimal || !acquire.completed()) {
+            result.status = vulkan_swapchain_image_acquire_plan_status::suboptimal;
+            result.diagnostic =
+                "Vulkan swapchain image acquire returned suboptimal without a usable image";
+            return result;
+        }
+        result.status = vulkan_swapchain_image_acquire_plan_status::suboptimal;
+        result.acquire_completed = true;
+        result.diagnostic =
+            "Vulkan swapchain image acquire returned suboptimal with a recordable image";
+        return result;
+    case vulkan_swapchain_acquire_status::failed:
+    case vulkan_swapchain_acquire_status::error:
+        result.status = vulkan_swapchain_image_acquire_plan_status::error;
+        result.error = true;
+        result.diagnostic = "Vulkan swapchain image acquire failed";
+        return result;
+    }
+
+    result.status = vulkan_swapchain_image_acquire_plan_status::error;
+    result.error = true;
+    result.diagnostic = "Vulkan swapchain image acquire returned an unknown status";
+    return result;
+}
 
 inline fake_vulkan_swapchain_factory::fake_vulkan_swapchain_factory()
     : fake_vulkan_swapchain_factory(fake_vulkan_swapchain_factory_options{})

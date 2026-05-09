@@ -1546,8 +1546,57 @@ static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_swapchain_acquire_status::backpressured),
     render::vulkan_backend::vulkan_swapchain_acquire_status>);
 static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_acquire_status::timeout),
+    render::vulkan_backend::vulkan_swapchain_acquire_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_acquire_status::out_of_date),
+    render::vulkan_backend::vulkan_swapchain_acquire_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_acquire_status::suboptimal),
+    render::vulkan_backend::vulkan_swapchain_acquire_status>);
+static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_swapchain_acquire_status::failed),
     render::vulkan_backend::vulkan_swapchain_acquire_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_acquire_status::error),
+    render::vulkan_backend::vulkan_swapchain_acquire_status>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_image_acquire_plan_status::not_checked),
+    render::vulkan_backend::vulkan_swapchain_image_acquire_plan_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_image_acquire_plan_status::not_requested),
+    render::vulkan_backend::vulkan_swapchain_image_acquire_plan_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_image_acquire_plan_status::ready),
+    render::vulkan_backend::vulkan_swapchain_image_acquire_plan_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_image_acquire_plan_status::lifecycle_unavailable),
+    render::vulkan_backend::vulkan_swapchain_image_acquire_plan_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_image_acquire_plan_status::swapchain_unavailable),
+    render::vulkan_backend::vulkan_swapchain_image_acquire_plan_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_image_acquire_plan_status::sync_unavailable),
+    render::vulkan_backend::vulkan_swapchain_image_acquire_plan_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_image_acquire_plan_status::no_images_available),
+    render::vulkan_backend::vulkan_swapchain_image_acquire_plan_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_image_acquire_plan_status::backpressured),
+    render::vulkan_backend::vulkan_swapchain_image_acquire_plan_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_image_acquire_plan_status::timeout),
+    render::vulkan_backend::vulkan_swapchain_image_acquire_plan_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_image_acquire_plan_status::out_of_date),
+    render::vulkan_backend::vulkan_swapchain_image_acquire_plan_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_image_acquire_plan_status::suboptimal),
+    render::vulkan_backend::vulkan_swapchain_image_acquire_plan_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_image_acquire_plan_status::error),
+    render::vulkan_backend::vulkan_swapchain_image_acquire_plan_status>);
 
 static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_swapchain_present_status::not_requested),
@@ -1574,9 +1623,12 @@ static_assert(std::same_as<
 
 static_assert(requires(
     render::vulkan_backend::vulkan_swapchain_acquire_status acquire_status,
+    render::vulkan_backend::vulkan_swapchain_image_acquire_plan_status acquire_plan_status,
     render::vulkan_backend::vulkan_swapchain_present_status present_status,
     render::vulkan_backend::vulkan_swapchain_present_mode present_mode) {
     { render::vulkan_backend::swapchain_acquire_status_name(acquire_status) } -> std::same_as<std::string_view>;
+    { render::vulkan_backend::swapchain_image_acquire_plan_status_name(acquire_plan_status) }
+        -> std::same_as<std::string_view>;
     { render::vulkan_backend::swapchain_present_status_name(present_status) } -> std::same_as<std::string_view>;
     { render::vulkan_backend::swapchain_present_mode_name(present_mode) } -> std::same_as<std::string_view>;
 });
@@ -1585,6 +1637,49 @@ static_assert(requires(render::vulkan_backend::vulkan_swapchain_acquire_result a
     { acquire.status } -> std::same_as<render::vulkan_backend::vulkan_swapchain_acquire_status&>;
     { acquire.image } -> std::same_as<render::vulkan_backend::vulkan_swapchain_image_state&>;
     { acquire.completed() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_swapchain_image_acquire_request request) {
+    { request.requested } -> std::same_as<bool&>;
+    { request.lifecycle_ready } -> std::same_as<bool&>;
+    { request.swapchain_ready } -> std::same_as<bool&>;
+    { request.swapchain } -> std::same_as<render::vulkan_backend::vulkan_swapchain_handle&>;
+    { request.image_count } -> std::same_as<std::size_t&>;
+    { request.timeout_nanoseconds } -> std::same_as<std::uint64_t&>;
+    { request.image_available_semaphore_ready } -> std::same_as<bool&>;
+    { request.fence_ready } -> std::same_as<bool&>;
+    { request.allow_suboptimal } -> std::same_as<bool&>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_swapchain_image_acquire_plan_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.status }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_image_acquire_plan_status&>;
+    { result.request } -> std::same_as<render::vulkan_backend::vulkan_swapchain_image_acquire_request&>;
+    { result.acquire_status } -> std::same_as<render::vulkan_backend::vulkan_swapchain_acquire_status&>;
+    { result.selected_image_index } -> std::same_as<std::size_t&>;
+    { result.image_id } -> std::same_as<render::vulkan_backend::vulkan_swapchain_image_id&>;
+    { result.lifecycle_ready } -> std::same_as<bool&>;
+    { result.swapchain_ready } -> std::same_as<bool&>;
+    { result.sync_primitives_ready } -> std::same_as<bool&>;
+    { result.acquire_requested } -> std::same_as<bool&>;
+    { result.acquire_completed } -> std::same_as<bool&>;
+    { result.image_available } -> std::same_as<bool&>;
+    { result.image_acquired } -> std::same_as<bool&>;
+    { result.timed_out } -> std::same_as<bool&>;
+    { result.out_of_date } -> std::same_as<bool&>;
+    { result.suboptimal } -> std::same_as<bool&>;
+    { result.error } -> std::same_as<bool&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.ready_for_command_recording() } -> std::same_as<bool>;
+    { result.blocked() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    render::vulkan_backend::vulkan_swapchain_image_acquire_request request,
+    render::vulkan_backend::vulkan_swapchain_acquire_result acquire) {
+    { render::vulkan_backend::build_vulkan_swapchain_image_acquire_plan(request, acquire) }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_image_acquire_plan_result>;
 });
 
 static_assert(requires(render::vulkan_backend::vulkan_swapchain_present_result present) {
@@ -4141,6 +4236,8 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_frame_result resul
     { result.lifecycle } -> std::same_as<render::vulkan_backend::vulkan_backend_lifecycle_readiness&>;
     { result.swapchain } -> std::same_as<render::vulkan_backend::vulkan_backend_swapchain_lifecycle_state&>;
     { result.swapchain_policy } -> std::same_as<render::vulkan_backend::vulkan_backend_swapchain_policy_state&>;
+    { result.swapchain_image_acquire_plan }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_image_acquire_plan_result&>;
     { result.frame_sync } -> std::same_as<render::vulkan_backend::vulkan_backend_frame_sync_state&>;
     { result.frame_resources }
         -> std::same_as<render::vulkan_backend::vulkan_backend_frame_resource_lifetime_state&>;

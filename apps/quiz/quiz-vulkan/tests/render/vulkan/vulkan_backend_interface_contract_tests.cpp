@@ -1898,12 +1898,90 @@ static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_swapchain_present_mode::fifo_relaxed),
     render::vulkan_backend::vulkan_swapchain_present_mode>);
 
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_image_format::undefined),
+    render::vulkan_backend::vulkan_swapchain_image_format>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_image_format::rgba8_unorm),
+    render::vulkan_backend::vulkan_swapchain_image_format>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_image_format::bgra8_unorm),
+    render::vulkan_backend::vulkan_swapchain_image_format>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_color_space::srgb_nonlinear),
+    render::vulkan_backend::vulkan_swapchain_color_space>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_color_space::display_p3_nonlinear),
+    render::vulkan_backend::vulkan_swapchain_color_space>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_surface_transform::identity),
+    render::vulkan_backend::vulkan_swapchain_surface_transform>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_surface_transform::rotate_90),
+    render::vulkan_backend::vulkan_swapchain_surface_transform>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_surface_transform::rotate_180),
+    render::vulkan_backend::vulkan_swapchain_surface_transform>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_surface_transform::rotate_270),
+    render::vulkan_backend::vulkan_swapchain_surface_transform>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_composite_alpha::opaque),
+    render::vulkan_backend::vulkan_swapchain_composite_alpha>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_composite_alpha::pre_multiplied),
+    render::vulkan_backend::vulkan_swapchain_composite_alpha>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_composite_alpha::post_multiplied),
+    render::vulkan_backend::vulkan_swapchain_composite_alpha>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_composite_alpha::inherit),
+    render::vulkan_backend::vulkan_swapchain_composite_alpha>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_image_sharing_mode::exclusive),
+    render::vulkan_backend::vulkan_swapchain_image_sharing_mode>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_image_sharing_mode::concurrent),
+    render::vulkan_backend::vulkan_swapchain_image_sharing_mode>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_create_plan_status::not_checked),
+    render::vulkan_backend::vulkan_swapchain_create_plan_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_create_plan_status::ready),
+    render::vulkan_backend::vulkan_swapchain_create_plan_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_create_plan_status::missing_surface_format),
+    render::vulkan_backend::vulkan_swapchain_create_plan_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_create_plan_status::missing_present_mode),
+    render::vulkan_backend::vulkan_swapchain_create_plan_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_create_plan_status::unsupported_zero_extent),
+    render::vulkan_backend::vulkan_swapchain_create_plan_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_create_plan_status::missing_transform),
+    render::vulkan_backend::vulkan_swapchain_create_plan_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_swapchain_create_plan_status::missing_composite_alpha),
+    render::vulkan_backend::vulkan_swapchain_create_plan_status>);
+
 static_assert(requires(
     render::vulkan_backend::vulkan_swapchain_acquire_status acquire_status,
     render::vulkan_backend::vulkan_swapchain_image_acquire_plan_status acquire_plan_status,
     render::vulkan_backend::vulkan_swapchain_present_status present_status,
     render::vulkan_backend::vulkan_swapchain_present_mode present_mode,
-    render::vulkan_backend::vulkan_swapchain_recreate_policy_action recreate_action) {
+    render::vulkan_backend::vulkan_swapchain_recreate_policy_action recreate_action,
+    render::vulkan_backend::vulkan_swapchain_image_format image_format,
+    render::vulkan_backend::vulkan_swapchain_color_space color_space,
+    render::vulkan_backend::vulkan_swapchain_surface_transform transform,
+    render::vulkan_backend::vulkan_swapchain_composite_alpha composite_alpha,
+    render::vulkan_backend::vulkan_swapchain_image_sharing_mode sharing_mode,
+    render::vulkan_backend::vulkan_swapchain_create_plan_status create_plan_status) {
     { render::vulkan_backend::swapchain_acquire_status_name(acquire_status) } -> std::same_as<std::string_view>;
     { render::vulkan_backend::swapchain_image_acquire_plan_status_name(acquire_plan_status) }
         -> std::same_as<std::string_view>;
@@ -1911,6 +1989,127 @@ static_assert(requires(
     { render::vulkan_backend::swapchain_present_mode_name(present_mode) } -> std::same_as<std::string_view>;
     { render::vulkan_backend::swapchain_recreate_policy_action_name(recreate_action) }
         -> std::same_as<std::string_view>;
+    { render::vulkan_backend::swapchain_image_format_name(image_format) }
+        -> std::same_as<std::string_view>;
+    { render::vulkan_backend::swapchain_color_space_name(color_space) }
+        -> std::same_as<std::string_view>;
+    { render::vulkan_backend::swapchain_surface_transform_name(transform) }
+        -> std::same_as<std::string_view>;
+    { render::vulkan_backend::swapchain_composite_alpha_name(composite_alpha) }
+        -> std::same_as<std::string_view>;
+    { render::vulkan_backend::swapchain_image_sharing_mode_name(sharing_mode) }
+        -> std::same_as<std::string_view>;
+    { render::vulkan_backend::swapchain_create_plan_status_name(create_plan_status) }
+        -> std::same_as<std::string_view>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_swapchain_surface_format surface_format) {
+    { surface_format.format } -> std::same_as<render::vulkan_backend::vulkan_swapchain_image_format&>;
+    { surface_format.color_space } -> std::same_as<render::vulkan_backend::vulkan_swapchain_color_space&>;
+    { surface_format.valid() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_swapchain_surface_capabilities_snapshot capabilities) {
+    { capabilities.checked } -> std::same_as<bool&>;
+    { capabilities.min_image_count } -> std::same_as<std::size_t&>;
+    { capabilities.max_image_count } -> std::same_as<std::size_t&>;
+    { capabilities.current_extent } -> std::same_as<render::vulkan_backend::vulkan_surface_extent&>;
+    { capabilities.min_extent } -> std::same_as<render::vulkan_backend::vulkan_surface_extent&>;
+    { capabilities.max_extent } -> std::same_as<render::vulkan_backend::vulkan_surface_extent&>;
+    { capabilities.supported_transforms }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_swapchain_surface_transform>&>;
+    { capabilities.current_transform }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_surface_transform&>;
+    { capabilities.supported_composite_alpha }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_swapchain_composite_alpha>&>;
+    { capabilities.surface_formats }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_swapchain_surface_format>&>;
+    { capabilities.present_modes }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_swapchain_present_mode>&>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_swapchain_create_plan_intent intent) {
+    { intent.desired_vsync } -> std::same_as<bool&>;
+    { intent.desired_extent } -> std::same_as<render::vulkan_backend::vulkan_surface_extent&>;
+    { intent.desired_image_count } -> std::same_as<std::size_t&>;
+    { intent.desired_surface_format }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_surface_format&>;
+    { intent.desired_transform }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_surface_transform&>;
+    { intent.desired_composite_alpha }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_composite_alpha&>;
+    { intent.graphics_queue_family_available } -> std::same_as<bool&>;
+    { intent.present_queue_family_available } -> std::same_as<bool&>;
+    { intent.graphics_queue_family_index } -> std::same_as<std::size_t&>;
+    { intent.present_queue_family_index } -> std::same_as<std::size_t&>;
+});
+
+static_assert(requires(
+    render::vulkan_backend::vulkan_swapchain_recreate_compatibility_snapshot compatibility) {
+    { compatibility.checked } -> std::same_as<bool&>;
+    { compatibility.previous_extent } -> std::same_as<render::vulkan_backend::vulkan_surface_extent&>;
+    { compatibility.previous_image_count } -> std::same_as<std::size_t&>;
+    { compatibility.previous_surface_format }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_surface_format&>;
+    { compatibility.previous_present_mode }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_present_mode&>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_swapchain_create_plan_request request) {
+    { request.capabilities }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_surface_capabilities_snapshot&>;
+    { request.intent } -> std::same_as<render::vulkan_backend::vulkan_swapchain_create_plan_intent&>;
+    { request.recreate_reference }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_recreate_compatibility_snapshot&>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_swapchain_create_plan_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.status } -> std::same_as<render::vulkan_backend::vulkan_swapchain_create_plan_status&>;
+    { result.capabilities }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_surface_capabilities_snapshot&>;
+    { result.intent } -> std::same_as<render::vulkan_backend::vulkan_swapchain_create_plan_intent&>;
+    { result.selected_surface_format }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_surface_format&>;
+    { result.selected_present_mode }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_present_mode&>;
+    { result.selected_image_count } -> std::same_as<std::size_t&>;
+    { result.selected_extent } -> std::same_as<render::vulkan_backend::vulkan_surface_extent&>;
+    { result.selected_transform }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_surface_transform&>;
+    { result.selected_composite_alpha }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_composite_alpha&>;
+    { result.selected_sharing_mode }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_image_sharing_mode&>;
+    { result.capabilities_checked } -> std::same_as<bool&>;
+    { result.desired_format_supported } -> std::same_as<bool&>;
+    { result.fallback_format_selected } -> std::same_as<bool&>;
+    { result.desired_present_mode_supported } -> std::same_as<bool&>;
+    { result.fallback_present_mode_selected } -> std::same_as<bool&>;
+    { result.extent_clamped } -> std::same_as<bool&>;
+    { result.image_count_clamped } -> std::same_as<bool&>;
+    { result.min_image_count_clamped } -> std::same_as<bool&>;
+    { result.max_image_count_clamped } -> std::same_as<bool&>;
+    { result.zero_extent_unsupported } -> std::same_as<bool&>;
+    { result.transform_supported } -> std::same_as<bool&>;
+    { result.fallback_transform_selected } -> std::same_as<bool&>;
+    { result.composite_alpha_supported } -> std::same_as<bool&>;
+    { result.fallback_composite_alpha_selected } -> std::same_as<bool&>;
+    { result.sharing_concurrent } -> std::same_as<bool&>;
+    { result.recreate_reference_checked } -> std::same_as<bool&>;
+    { result.recreate_compatible } -> std::same_as<bool&>;
+    { result.recreate_extent_compatible } -> std::same_as<bool&>;
+    { result.recreate_format_compatible } -> std::same_as<bool&>;
+    { result.recreate_present_mode_compatible } -> std::same_as<bool&>;
+    { result.recreate_image_count_compatible } -> std::same_as<bool&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.ready_for_create() } -> std::same_as<bool>;
+    { result.blocked() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_swapchain_create_plan_request request) {
+    { render::vulkan_backend::build_vulkan_swapchain_create_plan(request) }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_create_plan_result>;
 });
 
 static_assert(requires(render::vulkan_backend::vulkan_swapchain_acquire_result acquire) {

@@ -89,6 +89,120 @@ enum class vulkan_swapchain_present_mode {
 
 std::string_view swapchain_present_mode_name(vulkan_swapchain_present_mode mode);
 
+enum class vulkan_swapchain_image_format {
+    undefined,
+    rgba8_unorm,
+    bgra8_unorm,
+};
+
+inline std::string_view swapchain_image_format_name(vulkan_swapchain_image_format format)
+{
+    switch (format) {
+    case vulkan_swapchain_image_format::undefined:
+        return "undefined";
+    case vulkan_swapchain_image_format::rgba8_unorm:
+        return "rgba8_unorm";
+    case vulkan_swapchain_image_format::bgra8_unorm:
+        return "bgra8_unorm";
+    }
+
+    return "unknown";
+}
+
+enum class vulkan_swapchain_color_space {
+    srgb_nonlinear,
+    display_p3_nonlinear,
+};
+
+inline std::string_view swapchain_color_space_name(vulkan_swapchain_color_space color_space)
+{
+    switch (color_space) {
+    case vulkan_swapchain_color_space::srgb_nonlinear:
+        return "srgb_nonlinear";
+    case vulkan_swapchain_color_space::display_p3_nonlinear:
+        return "display_p3_nonlinear";
+    }
+
+    return "unknown";
+}
+
+enum class vulkan_swapchain_surface_transform {
+    identity,
+    rotate_90,
+    rotate_180,
+    rotate_270,
+};
+
+inline std::string_view swapchain_surface_transform_name(
+    vulkan_swapchain_surface_transform transform)
+{
+    switch (transform) {
+    case vulkan_swapchain_surface_transform::identity:
+        return "identity";
+    case vulkan_swapchain_surface_transform::rotate_90:
+        return "rotate_90";
+    case vulkan_swapchain_surface_transform::rotate_180:
+        return "rotate_180";
+    case vulkan_swapchain_surface_transform::rotate_270:
+        return "rotate_270";
+    }
+
+    return "unknown";
+}
+
+enum class vulkan_swapchain_composite_alpha {
+    opaque,
+    pre_multiplied,
+    post_multiplied,
+    inherit,
+};
+
+inline std::string_view swapchain_composite_alpha_name(
+    vulkan_swapchain_composite_alpha alpha)
+{
+    switch (alpha) {
+    case vulkan_swapchain_composite_alpha::opaque:
+        return "opaque";
+    case vulkan_swapchain_composite_alpha::pre_multiplied:
+        return "pre_multiplied";
+    case vulkan_swapchain_composite_alpha::post_multiplied:
+        return "post_multiplied";
+    case vulkan_swapchain_composite_alpha::inherit:
+        return "inherit";
+    }
+
+    return "unknown";
+}
+
+enum class vulkan_swapchain_image_sharing_mode {
+    exclusive,
+    concurrent,
+};
+
+inline std::string_view swapchain_image_sharing_mode_name(
+    vulkan_swapchain_image_sharing_mode mode)
+{
+    switch (mode) {
+    case vulkan_swapchain_image_sharing_mode::exclusive:
+        return "exclusive";
+    case vulkan_swapchain_image_sharing_mode::concurrent:
+        return "concurrent";
+    }
+
+    return "unknown";
+}
+
+struct vulkan_swapchain_surface_format {
+    vulkan_swapchain_image_format format = vulkan_swapchain_image_format::bgra8_unorm;
+    vulkan_swapchain_color_space color_space =
+        vulkan_swapchain_color_space::srgb_nonlinear;
+
+    bool valid() const
+    {
+        return format != vulkan_swapchain_image_format::undefined;
+    }
+};
+
 struct vulkan_swapchain_handle {
     std::uintptr_t value = 0;
 
@@ -304,6 +418,145 @@ struct vulkan_backend_swapchain_policy_state {
     }
 };
 
+struct vulkan_swapchain_surface_capabilities_snapshot {
+    bool checked = true;
+    std::size_t min_image_count = 2;
+    std::size_t max_image_count = 0;
+    vulkan_surface_extent current_extent;
+    vulkan_surface_extent min_extent{.width = 1, .height = 1};
+    vulkan_surface_extent max_extent{.width = 4096, .height = 4096};
+    std::vector<vulkan_swapchain_surface_transform> supported_transforms{
+        vulkan_swapchain_surface_transform::identity,
+    };
+    vulkan_swapchain_surface_transform current_transform =
+        vulkan_swapchain_surface_transform::identity;
+    std::vector<vulkan_swapchain_composite_alpha> supported_composite_alpha{
+        vulkan_swapchain_composite_alpha::opaque,
+    };
+    std::vector<vulkan_swapchain_surface_format> surface_formats{
+        vulkan_swapchain_surface_format{},
+    };
+    std::vector<vulkan_swapchain_present_mode> present_modes{
+        vulkan_swapchain_present_mode::fifo,
+    };
+};
+
+struct vulkan_swapchain_create_plan_intent {
+    bool desired_vsync = true;
+    vulkan_surface_extent desired_extent{.width = 1, .height = 1};
+    std::size_t desired_image_count = 2;
+    vulkan_swapchain_surface_format desired_surface_format;
+    vulkan_swapchain_surface_transform desired_transform =
+        vulkan_swapchain_surface_transform::identity;
+    vulkan_swapchain_composite_alpha desired_composite_alpha =
+        vulkan_swapchain_composite_alpha::opaque;
+    bool graphics_queue_family_available = true;
+    bool present_queue_family_available = true;
+    std::size_t graphics_queue_family_index = 0;
+    std::size_t present_queue_family_index = 0;
+};
+
+struct vulkan_swapchain_recreate_compatibility_snapshot {
+    bool checked = false;
+    vulkan_surface_extent previous_extent;
+    std::size_t previous_image_count = 0;
+    vulkan_swapchain_surface_format previous_surface_format;
+    vulkan_swapchain_present_mode previous_present_mode =
+        vulkan_swapchain_present_mode::fifo;
+};
+
+struct vulkan_swapchain_create_plan_request {
+    vulkan_swapchain_surface_capabilities_snapshot capabilities;
+    vulkan_swapchain_create_plan_intent intent;
+    vulkan_swapchain_recreate_compatibility_snapshot recreate_reference;
+};
+
+enum class vulkan_swapchain_create_plan_status {
+    not_checked,
+    ready,
+    missing_surface_format,
+    missing_present_mode,
+    unsupported_zero_extent,
+    missing_transform,
+    missing_composite_alpha,
+};
+
+inline std::string_view swapchain_create_plan_status_name(
+    vulkan_swapchain_create_plan_status status)
+{
+    switch (status) {
+    case vulkan_swapchain_create_plan_status::not_checked:
+        return "not_checked";
+    case vulkan_swapchain_create_plan_status::ready:
+        return "ready";
+    case vulkan_swapchain_create_plan_status::missing_surface_format:
+        return "missing_surface_format";
+    case vulkan_swapchain_create_plan_status::missing_present_mode:
+        return "missing_present_mode";
+    case vulkan_swapchain_create_plan_status::unsupported_zero_extent:
+        return "unsupported_zero_extent";
+    case vulkan_swapchain_create_plan_status::missing_transform:
+        return "missing_transform";
+    case vulkan_swapchain_create_plan_status::missing_composite_alpha:
+        return "missing_composite_alpha";
+    }
+
+    return "unknown";
+}
+
+struct vulkan_swapchain_create_plan_result {
+    bool checked = false;
+    vulkan_swapchain_create_plan_status status =
+        vulkan_swapchain_create_plan_status::not_checked;
+    vulkan_swapchain_surface_capabilities_snapshot capabilities;
+    vulkan_swapchain_create_plan_intent intent;
+    vulkan_swapchain_surface_format selected_surface_format;
+    vulkan_swapchain_present_mode selected_present_mode =
+        vulkan_swapchain_present_mode::fifo;
+    std::size_t selected_image_count = 0;
+    vulkan_surface_extent selected_extent;
+    vulkan_swapchain_surface_transform selected_transform =
+        vulkan_swapchain_surface_transform::identity;
+    vulkan_swapchain_composite_alpha selected_composite_alpha =
+        vulkan_swapchain_composite_alpha::opaque;
+    vulkan_swapchain_image_sharing_mode selected_sharing_mode =
+        vulkan_swapchain_image_sharing_mode::exclusive;
+    bool capabilities_checked = false;
+    bool desired_format_supported = false;
+    bool fallback_format_selected = false;
+    bool desired_present_mode_supported = false;
+    bool fallback_present_mode_selected = false;
+    bool extent_clamped = false;
+    bool image_count_clamped = false;
+    bool min_image_count_clamped = false;
+    bool max_image_count_clamped = false;
+    bool zero_extent_unsupported = false;
+    bool transform_supported = false;
+    bool fallback_transform_selected = false;
+    bool composite_alpha_supported = false;
+    bool fallback_composite_alpha_selected = false;
+    bool sharing_concurrent = false;
+    bool recreate_reference_checked = false;
+    bool recreate_compatible = true;
+    bool recreate_extent_compatible = true;
+    bool recreate_format_compatible = true;
+    bool recreate_present_mode_compatible = true;
+    bool recreate_image_count_compatible = true;
+    std::string diagnostic;
+
+    bool ready_for_create() const
+    {
+        return checked && status == vulkan_swapchain_create_plan_status::ready
+            && selected_surface_format.valid() && selected_extent.valid()
+            && selected_image_count > 0;
+    }
+
+    bool blocked() const
+    {
+        return checked && !ready_for_create();
+    }
+};
+
 struct vulkan_swapchain_create_request {
     vulkan_surface_extent requested_extent;
     vulkan_swapchain_present_mode requested_present_mode = vulkan_swapchain_present_mode::fifo;
@@ -404,6 +657,36 @@ inline bool contains_present_mode(
     return std::find(modes.begin(), modes.end(), mode) != modes.end();
 }
 
+inline bool same_surface_format(
+    vulkan_swapchain_surface_format left,
+    vulkan_swapchain_surface_format right)
+{
+    return left.format == right.format && left.color_space == right.color_space;
+}
+
+inline bool contains_surface_format(
+    const std::vector<vulkan_swapchain_surface_format>& formats,
+    vulkan_swapchain_surface_format format)
+{
+    return std::find_if(
+        formats.begin(),
+        formats.end(),
+        [format](vulkan_swapchain_surface_format candidate) {
+            return candidate.valid() && same_surface_format(candidate, format);
+        }) != formats.end();
+}
+
+template <typename T>
+inline bool contains_value(const std::vector<T>& values, T value)
+{
+    return std::find(values.begin(), values.end(), value) != values.end();
+}
+
+inline bool same_extent(vulkan_surface_extent left, vulkan_surface_extent right)
+{
+    return left.width == right.width && left.height == right.height;
+}
+
 inline bool contains_queue_capability(
     const std::vector<vulkan_device_queue_selection>& queues,
     vulkan_device_queue_capability capability)
@@ -435,6 +718,18 @@ inline vulkan_surface_extent clamp_extent(
     };
 }
 
+inline std::size_t clamp_image_count(
+    std::size_t desired,
+    std::size_t minimum,
+    std::size_t maximum)
+{
+    std::size_t selected = std::max(desired, minimum);
+    if (maximum > 0) {
+        selected = std::min(selected, maximum);
+    }
+    return selected;
+}
+
 inline vulkan_swapchain_create_result make_swapchain_create_result(
     const vulkan_device_create_result& device_result,
     const vulkan_swapchain_create_request& request)
@@ -464,6 +759,192 @@ inline std::size_t selected_image_index_for(
 }
 
 } // namespace swapchain_detail
+
+inline vulkan_swapchain_create_plan_result build_vulkan_swapchain_create_plan(
+    const vulkan_swapchain_create_plan_request& request)
+{
+    const vulkan_swapchain_surface_capabilities_snapshot& capabilities =
+        request.capabilities;
+    const vulkan_swapchain_create_plan_intent& intent = request.intent;
+
+    vulkan_swapchain_create_plan_result result{
+        .checked = true,
+        .status = vulkan_swapchain_create_plan_status::not_checked,
+        .capabilities = capabilities,
+        .intent = intent,
+        .selected_surface_format = {},
+        .selected_present_mode = vulkan_swapchain_present_mode::fifo,
+        .selected_image_count = 0,
+        .selected_extent = {},
+        .selected_transform = vulkan_swapchain_surface_transform::identity,
+        .selected_composite_alpha = vulkan_swapchain_composite_alpha::opaque,
+        .selected_sharing_mode = vulkan_swapchain_image_sharing_mode::exclusive,
+        .capabilities_checked = capabilities.checked,
+        .recreate_reference_checked = request.recreate_reference.checked,
+        .diagnostic = {},
+    };
+
+    if (capabilities.surface_formats.empty()) {
+        result.status = vulkan_swapchain_create_plan_status::missing_surface_format;
+        result.diagnostic = "Vulkan swapchain create plan has no supported surface formats";
+        return result;
+    }
+
+    if (swapchain_detail::contains_surface_format(
+            capabilities.surface_formats,
+            intent.desired_surface_format)) {
+        result.selected_surface_format = intent.desired_surface_format;
+        result.desired_format_supported = true;
+    } else {
+        const auto fallback = std::find_if(
+            capabilities.surface_formats.begin(),
+            capabilities.surface_formats.end(),
+            [](vulkan_swapchain_surface_format candidate) {
+                return candidate.valid();
+            });
+        if (fallback == capabilities.surface_formats.end()) {
+            result.status = vulkan_swapchain_create_plan_status::missing_surface_format;
+            result.diagnostic =
+                "Vulkan swapchain create plan has no usable surface format";
+            return result;
+        }
+        result.selected_surface_format = *fallback;
+        result.fallback_format_selected = true;
+    }
+
+    if (capabilities.present_modes.empty()) {
+        result.status = vulkan_swapchain_create_plan_status::missing_present_mode;
+        result.diagnostic = "Vulkan swapchain create plan has no supported present modes";
+        return result;
+    }
+
+    const std::vector<vulkan_swapchain_present_mode> present_mode_candidates =
+        intent.desired_vsync
+        ? std::vector<vulkan_swapchain_present_mode>{
+              vulkan_swapchain_present_mode::fifo,
+              vulkan_swapchain_present_mode::fifo_relaxed,
+              vulkan_swapchain_present_mode::mailbox,
+              vulkan_swapchain_present_mode::immediate,
+          }
+        : std::vector<vulkan_swapchain_present_mode>{
+              vulkan_swapchain_present_mode::mailbox,
+              vulkan_swapchain_present_mode::immediate,
+              vulkan_swapchain_present_mode::fifo,
+              vulkan_swapchain_present_mode::fifo_relaxed,
+          };
+    const vulkan_swapchain_present_mode desired_present_mode =
+        present_mode_candidates.front();
+    for (vulkan_swapchain_present_mode candidate : present_mode_candidates) {
+        if (swapchain_detail::contains_present_mode(capabilities.present_modes, candidate)) {
+            result.selected_present_mode = candidate;
+            result.desired_present_mode_supported = candidate == desired_present_mode;
+            result.fallback_present_mode_selected = candidate != desired_present_mode;
+            break;
+        }
+    }
+    if (!result.desired_present_mode_supported && !result.fallback_present_mode_selected) {
+        result.selected_present_mode = capabilities.present_modes.front();
+        result.fallback_present_mode_selected = result.selected_present_mode != desired_present_mode;
+    }
+
+    result.selected_extent = capabilities.current_extent.valid()
+        ? capabilities.current_extent
+        : swapchain_detail::clamp_extent(
+              intent.desired_extent,
+              capabilities.min_extent,
+              capabilities.max_extent);
+    result.extent_clamped =
+        !capabilities.current_extent.valid()
+        && !swapchain_detail::same_extent(result.selected_extent, intent.desired_extent);
+    if (!result.selected_extent.valid()) {
+        result.status = vulkan_swapchain_create_plan_status::unsupported_zero_extent;
+        result.zero_extent_unsupported = true;
+        result.diagnostic = "Vulkan swapchain create plan selected an unsupported zero extent";
+        return result;
+    }
+
+    result.selected_image_count = swapchain_detail::clamp_image_count(
+        intent.desired_image_count,
+        capabilities.min_image_count,
+        capabilities.max_image_count);
+    result.min_image_count_clamped =
+        intent.desired_image_count < capabilities.min_image_count;
+    result.max_image_count_clamped =
+        capabilities.max_image_count > 0
+        && intent.desired_image_count > capabilities.max_image_count;
+    result.image_count_clamped =
+        result.min_image_count_clamped || result.max_image_count_clamped;
+
+    if (capabilities.supported_transforms.empty()) {
+        result.status = vulkan_swapchain_create_plan_status::missing_transform;
+        result.diagnostic = "Vulkan swapchain create plan has no supported surface transforms";
+        return result;
+    }
+    if (swapchain_detail::contains_value(
+            capabilities.supported_transforms,
+            intent.desired_transform)) {
+        result.selected_transform = intent.desired_transform;
+        result.transform_supported = true;
+    } else if (swapchain_detail::contains_value(
+                   capabilities.supported_transforms,
+                   capabilities.current_transform)) {
+        result.selected_transform = capabilities.current_transform;
+        result.fallback_transform_selected = true;
+    } else {
+        result.selected_transform = capabilities.supported_transforms.front();
+        result.fallback_transform_selected = true;
+    }
+
+    if (capabilities.supported_composite_alpha.empty()) {
+        result.status = vulkan_swapchain_create_plan_status::missing_composite_alpha;
+        result.diagnostic = "Vulkan swapchain create plan has no supported composite alpha";
+        return result;
+    }
+    if (swapchain_detail::contains_value(
+            capabilities.supported_composite_alpha,
+            intent.desired_composite_alpha)) {
+        result.selected_composite_alpha = intent.desired_composite_alpha;
+        result.composite_alpha_supported = true;
+    } else if (swapchain_detail::contains_value(
+                   capabilities.supported_composite_alpha,
+                   vulkan_swapchain_composite_alpha::opaque)) {
+        result.selected_composite_alpha = vulkan_swapchain_composite_alpha::opaque;
+        result.fallback_composite_alpha_selected = true;
+    } else {
+        result.selected_composite_alpha = capabilities.supported_composite_alpha.front();
+        result.fallback_composite_alpha_selected = true;
+    }
+
+    result.sharing_concurrent =
+        intent.graphics_queue_family_available && intent.present_queue_family_available
+        && intent.graphics_queue_family_index != intent.present_queue_family_index;
+    result.selected_sharing_mode = result.sharing_concurrent
+        ? vulkan_swapchain_image_sharing_mode::concurrent
+        : vulkan_swapchain_image_sharing_mode::exclusive;
+
+    if (request.recreate_reference.checked) {
+        result.recreate_extent_compatible = swapchain_detail::same_extent(
+            result.selected_extent,
+            request.recreate_reference.previous_extent);
+        result.recreate_format_compatible = swapchain_detail::same_surface_format(
+            result.selected_surface_format,
+            request.recreate_reference.previous_surface_format);
+        result.recreate_present_mode_compatible =
+            result.selected_present_mode == request.recreate_reference.previous_present_mode;
+        result.recreate_image_count_compatible =
+            result.selected_image_count == request.recreate_reference.previous_image_count;
+        result.recreate_compatible =
+            result.recreate_extent_compatible && result.recreate_format_compatible
+            && result.recreate_present_mode_compatible
+            && result.recreate_image_count_compatible;
+    }
+
+    result.status = vulkan_swapchain_create_plan_status::ready;
+    result.diagnostic = result.recreate_compatible
+        ? "Vulkan swapchain create plan is ready"
+        : "Vulkan swapchain create plan is ready but changes recreate compatibility";
+    return result;
+}
 
 inline vulkan_swapchain_image_acquire_plan_result build_vulkan_swapchain_image_acquire_plan(
     const vulkan_swapchain_image_acquire_request& request,

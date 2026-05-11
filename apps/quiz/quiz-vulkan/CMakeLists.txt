@@ -79,8 +79,15 @@ target_sources(
         FILE_SET HEADERS
         BASE_DIRS src
         FILES
+            src/assets/asset_bytes_provider.h
+            src/assets/asset_manifest.h
+            src/assets/asset_manifest_version_policy.h
+            src/assets/asset_pack_index.h
+            src/assets/asset_pack_validation.h
             src/assets/asset_path_policy.h
             src/assets/asset_resolver.h
+            src/assets/asset_runtime_catalog.h
+            src/assets/asset_runtime_resolver_policy.h
 )
 target_compile_features(quiz_vulkan_asset_contract INTERFACE cxx_std_23)
 target_include_directories(quiz_vulkan_asset_contract INTERFACE src)
@@ -209,7 +216,10 @@ target_sources(
             src/core/input/gesture_recognizer.h
             src/core/input/input_engine.h
             src/core/input/input_event.h
+            src/core/input/input_key_policy.h
+            src/core/input/input_pointer_policy.h
             src/core/input/input_routing_diagnostics.h
+            src/core/input/input_text_route_policy.h
             src/core/input/normalized_input_replay.h
             src/core/input/normalized_input_replay_diff.h
             src/core/input/platform_input_engine_adapter.h

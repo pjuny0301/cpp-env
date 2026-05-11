@@ -6,6 +6,7 @@
 
 최근 baseline 통합 증거:
 
+- current: CMake public FILE_SET registration now covers all current render text/image/Vulkan, input, and asset headers; Windows MinGW focused asset/input CTest 4/4 and interface compile target build confirmed.
 - current: text edit transaction diagnostics header split integrated with public FILE_SET registration; Windows MinGW focused text input model CTest 1/1 and interface compile target build confirmed.
 - `eee4fcd`: text edit transaction diagnostics now live in `text_edit_transaction_diagnostics.h` while `text_input_model.h` preserves the text model include surface.
 - current: glyph atlas page plan header split and Vulkan native swapchain create operation plan integrated; Windows MinGW focused text/Vulkan CTest 2/2 and interface compile target build confirmed.

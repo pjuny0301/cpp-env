@@ -120,7 +120,10 @@ int main()
                 "#include <core/domain/",
                 "#include \"core/input/",
                 "#include <core/input/",
+                "#include \"platform/",
+                "#include <platform/",
                 "domain::",
+                "platform::",
             },
         },
         boundary_rule{

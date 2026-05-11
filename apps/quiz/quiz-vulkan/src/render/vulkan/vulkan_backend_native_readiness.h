@@ -37,6 +37,14 @@ inline bool native_entrypoint_ready_for_stage(
         return diagnostics.command_buffer_recording_ready;
     case vulkan_native_entrypoint_stage::queue_submit:
         return diagnostics.queue_submit_ready;
+    case vulkan_native_entrypoint_stage::swapchain_create:
+        return diagnostics.swapchain_create_ready;
+    case vulkan_native_entrypoint_stage::swapchain_destroy:
+        return diagnostics.swapchain_destroy_ready;
+    case vulkan_native_entrypoint_stage::swapchain_images:
+        return diagnostics.swapchain_images_ready;
+    case vulkan_native_entrypoint_stage::swapchain_acquire:
+        return diagnostics.swapchain_acquire_ready;
     case vulkan_native_entrypoint_stage::queue_present:
         return diagnostics.queue_present_ready;
     }
@@ -86,6 +94,50 @@ summarize_vulkan_queue_submit_native_readiness(
     return summarize_vulkan_native_entrypoint_readiness(
         diagnostics,
         vulkan_native_entrypoint_stage::queue_submit,
+        sdk_capabilities);
+}
+
+inline vulkan_native_entrypoint_readiness_snapshot
+summarize_vulkan_swapchain_create_native_readiness(
+    const vulkan_native_function_table_diagnostics& diagnostics,
+    const vulkan_sdk_capability_result& sdk_capabilities = {})
+{
+    return summarize_vulkan_native_entrypoint_readiness(
+        diagnostics,
+        vulkan_native_entrypoint_stage::swapchain_create,
+        sdk_capabilities);
+}
+
+inline vulkan_native_entrypoint_readiness_snapshot
+summarize_vulkan_swapchain_destroy_native_readiness(
+    const vulkan_native_function_table_diagnostics& diagnostics,
+    const vulkan_sdk_capability_result& sdk_capabilities = {})
+{
+    return summarize_vulkan_native_entrypoint_readiness(
+        diagnostics,
+        vulkan_native_entrypoint_stage::swapchain_destroy,
+        sdk_capabilities);
+}
+
+inline vulkan_native_entrypoint_readiness_snapshot
+summarize_vulkan_swapchain_images_native_readiness(
+    const vulkan_native_function_table_diagnostics& diagnostics,
+    const vulkan_sdk_capability_result& sdk_capabilities = {})
+{
+    return summarize_vulkan_native_entrypoint_readiness(
+        diagnostics,
+        vulkan_native_entrypoint_stage::swapchain_images,
+        sdk_capabilities);
+}
+
+inline vulkan_native_entrypoint_readiness_snapshot
+summarize_vulkan_swapchain_acquire_native_readiness(
+    const vulkan_native_function_table_diagnostics& diagnostics,
+    const vulkan_sdk_capability_result& sdk_capabilities = {})
+{
+    return summarize_vulkan_native_entrypoint_readiness(
+        diagnostics,
+        vulkan_native_entrypoint_stage::swapchain_acquire,
         sdk_capabilities);
 }
 

@@ -190,6 +190,73 @@ quiz_vulkan::render::render_text_glyph_atlas_materialization_snapshot mismatched
         });
 }
 
+quiz_vulkan::render::render_text_glyph_atlas_materialization_snapshot unsupported_materialization(
+    quiz_vulkan::render::glyph_atlas_key key)
+{
+    using namespace quiz_vulkan::render;
+
+    return make_render_text_glyph_atlas_materialization(
+        render_text_glyph_atlas_materialization_request{
+            .cluster_index = 7,
+            .run_index = 2,
+            .cluster_byte_offset = 10,
+            .cluster_byte_count = 1,
+            .codepoint = key.glyph_id,
+            .shaped_glyph_ids = {key.glyph_id},
+            .resolved_glyph_id = key.glyph_id,
+            .resolved_face_id = key.face_id,
+            .cache_key = key,
+            .has_cache_key = true,
+            .glyph_supported = false,
+        });
+}
+
+quiz_vulkan::render::render_text_glyph_atlas_materialization_snapshot missing_cache_key_materialization()
+{
+    using namespace quiz_vulkan::render;
+
+    return make_render_text_glyph_atlas_materialization(
+        render_text_glyph_atlas_materialization_request{
+            .cluster_index = 8,
+            .run_index = 2,
+            .cluster_byte_offset = 12,
+            .cluster_byte_count = 2,
+            .codepoint = 0x0301U,
+            .shaped_glyph_ids = {0x0301U},
+            .resolved_glyph_id = 0x0301U,
+            .resolved_face_id = 7,
+            .glyph_supported = true,
+        });
+}
+
+quiz_vulkan::render::render_text_glyph_atlas_materialization_snapshot real_backend_materialization(
+    quiz_vulkan::render::glyph_atlas_key key)
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_glyph_atlas_materialization_snapshot materialization =
+        upload_ready_materialization(key);
+    materialization.shaping_font_backend_library = render_text_font_backend_library::harfbuzz;
+    materialization.shaping_font_backend_label = "HarfBuzz";
+    materialization.shaping_font_backend_capability_status =
+        render_text_font_backend_capability_status::available;
+    materialization.shaping_font_backend_used_deterministic_fallback = false;
+    materialization.shaping_font_backend_fallback_only = false;
+    materialization.raster_font_backend_library = render_text_font_backend_library::freetype;
+    materialization.raster_font_backend_label = "FreeType";
+    materialization.raster_font_backend_capability_status =
+        render_text_font_backend_capability_status::available;
+    materialization.raster_font_backend_used_deterministic_fallback = false;
+    materialization.raster_font_backend_fallback_only = false;
+    return materialization;
+}
+
+quiz_vulkan::render::render_text_glyph_atlas_materialization_policy_snapshot materialization_policy_for(
+    const std::vector<quiz_vulkan::render::render_text_glyph_atlas_materialization_snapshot>& materializations)
+{
+    return quiz_vulkan::render::summarize_render_text_glyph_atlas_materialization_policy(materializations);
+}
+
 quiz_vulkan::render::render_text_style_catalog batch_style_catalog()
 {
     using namespace quiz_vulkan::render;
@@ -547,6 +614,291 @@ void test_batch_plan_reports_fallback_real_backend_and_skipped_materializations(
     require(plan.atlas_update_requests[0].used_deterministic_fallback, "first request records fallback backend");
     require(plan.atlas_update_requests[1].used_real_backend, "second request records real backend metadata");
     require(plan.atlas_update_requests[2].skipped, "third request records skipped materialization");
+}
+
+void test_glyph_atlas_materialization_diff_reports_stable_key_changes()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_glyph_atlas_materialization_snapshot upload_ready =
+        upload_ready_materialization();
+    render_text_glyph_atlas_materialization_snapshot clean_reuse = upload_ready;
+    clean_reuse.status = render_text_glyph_atlas_materialization_status::materialized_clean_reuse;
+    clean_reuse.has_atlas_update = false;
+    clean_reuse.atlas_update_rgba_bytes = 0U;
+    clean_reuse.queued = false;
+    clean_reuse.clean_reuse = true;
+
+    const render_text_glyph_atlas_materialization_diff_snapshot diff =
+        diff_render_text_glyph_atlas_materializations(&upload_ready, &clean_reuse);
+
+    require(
+        diff.diff_status == render_text_glyph_atlas_materialization_diff_status::changed,
+        "materialization diff reports changed status for stable cache key");
+    require(diff.key.has_cache_key, "materialization diff prefers cache key identity");
+    require(diff.key.stable_id == "cache:7:65:20", "materialization diff stable id uses cache key");
+    require(diff.status_changed, "materialization diff records status change");
+    require(diff.upload_ready_changed, "materialization diff records upload-ready transition");
+    require(diff.clean_reuse_changed, "materialization diff records clean-reuse transition");
+    require(diff.became_clean_reuse, "materialization diff records clean-reuse arrival");
+    require(diff.stopped_upload_ready, "materialization diff records upload-ready exit");
+    require(diff.atlas_update_rgba_bytes_delta == -16384, "materialization diff records upload byte delta");
+
+    const render_text_glyph_atlas_materialization_snapshot missing =
+        missing_cache_key_materialization();
+    const render_text_glyph_atlas_materialization_diff_key missing_key =
+        render_text_glyph_atlas_materialization_diff_key_for(missing);
+    require(!missing_key.has_cache_key, "missing-cache diff key records no cache key");
+    require(
+        missing_key.stable_id == "run:2:cluster:8:bytes:12:2:glyph:769:face:7",
+        "missing-cache diff key falls back to run and cluster identity");
+}
+
+void test_glyph_atlas_materialization_policy_diff_reports_byte_and_status_deltas()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::vector<render_text_glyph_atlas_materialization_snapshot> before = {
+        upload_ready_materialization(),
+        clean_reuse_materialization(),
+    };
+    std::vector<render_text_glyph_atlas_materialization_snapshot> after = {
+        upload_ready_materialization(),
+        mismatched_materialization(),
+        missing_cache_key_materialization(),
+    };
+    after.front().payload_rgba_bytes = 512U;
+
+    const render_text_glyph_atlas_materialization_policy_diff_snapshot diff =
+        diff_render_text_glyph_atlas_materialization_policies(
+            materialization_policy_for(before),
+            materialization_policy_for(after));
+
+    require(diff.has_changes, "materialization policy diff records changed policy");
+    require(diff.request_count_delta == 1, "materialization policy diff counts request delta");
+    require(diff.materialized_count_delta == -1, "materialization policy diff counts materialized delta");
+    require(diff.upload_ready_count_delta == 0, "materialization policy diff keeps upload-ready count stable");
+    require(diff.clean_reuse_count_delta == -1, "materialization policy diff counts clean-reuse loss");
+    require(diff.skipped_count_delta == 2, "materialization policy diff counts skipped increase");
+    require(diff.missing_cache_key_count_delta == 1, "materialization policy diff counts missing-cache increase");
+    require(
+        diff.payload_byte_count_mismatch_count_delta == 1,
+        "materialization policy diff counts payload mismatch increase");
+    require(diff.total_rgba_bytes_delta == 204, "materialization policy diff records total RGBA delta");
+    require(
+        diff.summary == "glyph atlas materialization policy diff: 2 -> 3 requests",
+        "materialization policy diff summary is stable");
+}
+
+void test_glyph_atlas_materialization_batch_diff_reports_regressions_recoveries_and_backend_transitions()
+{
+    using namespace quiz_vulkan::render;
+
+    const glyph_atlas_key unsupported_key{
+        .face_id = 7,
+        .glyph_id = U'E',
+        .pixel_size = 20,
+    };
+    const glyph_atlas_key mismatch_key{
+        .face_id = 7,
+        .glyph_id = U'D',
+        .pixel_size = 20,
+    };
+    const glyph_atlas_key added_key{
+        .face_id = 9,
+        .glyph_id = U'B',
+        .pixel_size = 20,
+    };
+
+    std::vector<render_text_glyph_atlas_materialization_snapshot> before = {
+        upload_ready_materialization(),
+        unsupported_materialization(unsupported_key),
+        mismatched_materialization(),
+        clean_reuse_materialization(),
+    };
+    before[2].cache_key = mismatch_key;
+    before[2].resolved_glyph_id = mismatch_key.glyph_id;
+    before[2].resolved_face_id = mismatch_key.face_id;
+
+    render_text_glyph_atlas_materialization_snapshot real_a =
+        real_backend_materialization(key_for_a());
+    real_a.payload_alpha_bytes = 128U;
+    real_a.payload_rgba_bytes = 512U;
+
+    std::vector<render_text_glyph_atlas_materialization_snapshot> after = {
+        real_a,
+        upload_ready_materialization(unsupported_key),
+        upload_ready_materialization(mismatch_key),
+        missing_cache_key_materialization(),
+        upload_ready_materialization(added_key),
+    };
+
+    const render_text_glyph_atlas_materialization_batch_diff_snapshot diff =
+        diff_render_text_glyph_atlas_materialization_batches(before, after);
+
+    require(diff.has_changes(), "materialization batch diff reports changed batch");
+    require(diff.added_count == 2U, "materialization batch diff counts added entries");
+    require(diff.removed_count == 1U, "materialization batch diff counts removed entries");
+    require(diff.changed_count == 3U, "materialization batch diff counts changed entries");
+    require(diff.upload_ready_transition_count == 3U, "materialization batch diff counts upload transitions");
+    require(diff.clean_reuse_transition_count == 1U, "materialization batch diff counts clean-reuse transitions");
+    require(diff.skipped_regression_count == 1U, "materialization batch diff counts skipped regression");
+    require(diff.skipped_recovery_count == 2U, "materialization batch diff counts skipped recoveries");
+    require(
+        diff.unsupported_glyph_recovery_count == 1U,
+        "materialization batch diff counts unsupported glyph recovery");
+    require(
+        diff.missing_cache_key_regression_count == 1U,
+        "materialization batch diff counts missing-cache regression");
+    require(
+        diff.payload_byte_count_mismatch_recovery_count == 1U,
+        "materialization batch diff counts payload mismatch recovery");
+    require(
+        diff.deterministic_fallback_to_real_backend_count == 1U,
+        "materialization batch diff counts fallback-to-real backend transition");
+    require(diff.policy_diff.request_count_delta == 1, "batch diff carries policy request delta");
+    require(
+        diff.policy_diff.missing_cache_key_count_delta == 1,
+        "batch diff carries policy missing-cache delta");
+    require(
+        diff.policy_diff.unsupported_glyph_count_delta == -1,
+        "batch diff carries policy unsupported recovery delta");
+    require(
+        diff.policy_diff.payload_byte_count_mismatch_count_delta == -1,
+        "batch diff carries policy payload mismatch recovery delta");
+    require(
+        diff.summary == "glyph atlas materialization batch diff: 2 added, 1 removed, 3 changed",
+        "materialization batch diff summary is stable");
+}
+
+void test_glyph_atlas_page_plan_reports_selection_reuse_and_upload_totals()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_glyph_atlas_materialization_snapshot first =
+        upload_ready_materialization();
+    render_text_glyph_atlas_materialization_snapshot second =
+        upload_ready_materialization(glyph_atlas_key{
+            .face_id = 7,
+            .glyph_id = U'B',
+            .pixel_size = 20,
+        });
+    second.page = first.page;
+    second.atlas_bounds = render_rect{12.0f, 2.0f, 8.0f, 8.0f};
+    second.atlas_update_bounds = render_rect{12.0f, 2.0f, 8.0f, 8.0f};
+
+    const render_text_glyph_atlas_materialization_snapshot clean =
+        clean_reuse_materialization();
+    const render_text_atlas_update pending_update{
+        .page = render_text_atlas_page{
+            .id = 9,
+            .revision = 1,
+            .width = 64,
+            .height = 64,
+        },
+        .updated_bounds = render_rect{0.0f, 0.0f, 2.0f, 4.0f},
+        .rgba = std::vector<unsigned char>(32U, 0xffU),
+    };
+
+    const render_text_glyph_atlas_page_plan_snapshot plan =
+        plan_render_text_glyph_atlas_pages(render_text_glyph_atlas_page_plan_request{
+            .materializations = {first, second, clean},
+            .pending_updates = {pending_update},
+            .constraints = render_text_glyph_atlas_page_plan_constraints{
+                .width = 64,
+                .height = 64,
+                .padding = 1,
+            },
+        });
+
+    require(plan.ok(), "page plan succeeds for placed materializations");
+    require(plan.entries.size() == 3U, "page plan records every materialization entry");
+    require(plan.policy.page_count == 2U, "page plan includes pending-update and materialization pages");
+    require(plan.policy.allocated_new_page_count == 1U, "page plan records first materialization page allocation");
+    require(plan.policy.selected_existing_page_count == 1U, "page plan records existing page selection");
+    require(plan.policy.reused_placement_count == 1U, "page plan records clean placement reuse");
+    require(plan.policy.pending_update_count == 1U, "page plan counts pending atlas updates");
+    require(plan.policy.pending_update_rgba_bytes == 32U, "page plan totals pending update bytes");
+    require(
+        plan.policy.materialization_upload_rgba_bytes == (64U * 64U * 4U * 2U),
+        "page plan totals upload-ready materialization bytes");
+    require(
+        plan.policy.total_upload_rgba_bytes == (64U * 64U * 4U * 2U) + 32U,
+        "page plan combines materialization and pending update bytes");
+    require(
+        plan.entries[0].status == render_text_glyph_atlas_page_plan_status::allocated_new_page,
+        "first materialization allocates a page in the diagnostic plan");
+    require(
+        plan.entries[1].status == render_text_glyph_atlas_page_plan_status::selected_existing_page,
+        "second materialization selects an existing page");
+    require(
+        plan.entries[2].status == render_text_glyph_atlas_page_plan_status::reused_existing_placement,
+        "clean reuse materialization reports reused placement");
+    require(plan.policy.estimated_occupancy > 0.0f, "page plan estimates nonzero occupancy");
+    require(plan.policy.estimated_fragmentation < 1.0f, "page plan estimates non-full fragmentation");
+}
+
+void test_glyph_atlas_page_plan_reports_overflow_and_eviction_hint()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_glyph_atlas_materialization_snapshot first =
+        upload_ready_materialization();
+    render_text_glyph_atlas_materialization_snapshot oversized =
+        upload_ready_materialization(glyph_atlas_key{
+            .face_id = 7,
+            .glyph_id = U'Z',
+            .pixel_size = 20,
+        });
+    oversized.has_atlas_placement = false;
+    oversized.page = render_text_atlas_page{};
+    oversized.atlas_bounds = render_rect{};
+    oversized.atlas_update_bounds = render_rect{0.0f, 0.0f, 32.0f, 32.0f};
+
+    const render_text_glyph_atlas_page_plan_snapshot plan =
+        plan_render_text_glyph_atlas_pages(render_text_glyph_atlas_page_plan_request{
+            .materializations = {first, oversized},
+            .constraints = render_text_glyph_atlas_page_plan_constraints{
+                .width = 16,
+                .height = 16,
+                .padding = 1,
+                .max_pages = 1,
+            },
+        });
+
+    require(!plan.ok(), "page plan reports overflow as not ok");
+    require(plan.has_overflow(), "page plan exposes overflow flag");
+    require(plan.policy.overflow_count == 1U, "page plan counts overflow");
+    require(plan.policy.eviction_candidate_count == 1U, "page plan counts eviction hint");
+    require(plan.entries[1].overflow, "oversized entry records overflow");
+    require(plan.entries[1].has_eviction_candidate, "oversized entry exposes eviction candidate");
+    require(!plan.pages.empty() && plan.pages.front().overflow, "page plan marks an overflow-related page");
+    require(
+        plan.entries[1].eviction_candidate_key == key_for_a(),
+        "overflow eviction candidate uses deterministic first placed glyph");
+}
+
+void test_glyph_atlas_page_plan_skips_unsupported_materializations()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_glyph_atlas_materialization_snapshot unsupported =
+        unsupported_materialization(glyph_atlas_key{
+            .face_id = 7,
+            .glyph_id = U'?',
+            .pixel_size = 20,
+        });
+    const render_text_glyph_atlas_page_plan_snapshot plan =
+        plan_render_text_glyph_atlas_pages({unsupported});
+
+    require(plan.ok(), "unsupported materialization skip is not page overflow");
+    require(plan.entries.size() == 1U, "page plan records skipped entry");
+    require(
+        plan.entries.front().status == render_text_glyph_atlas_page_plan_status::skipped_materialization,
+        "unsupported materialization is skipped by page planner");
+    require(plan.policy.skipped_count == 1U, "page plan counts skipped materialization");
+    require(plan.policy.page_count == 0U, "skipped materialization does not claim atlas page");
+    require(plan.policy.total_upload_rgba_bytes == 0U, "skipped materialization does not claim upload bytes");
 }
 
 void test_atlas_upload_bridge_produces_stable_render_text_atlas_updates()
@@ -1178,6 +1530,12 @@ int main()
     test_batch_plan_normalizes_style_keys_and_layout_requests();
     test_batch_plan_deduplicates_glyph_atlas_materialization_work();
     test_batch_plan_reports_fallback_real_backend_and_skipped_materializations();
+    test_glyph_atlas_materialization_diff_reports_stable_key_changes();
+    test_glyph_atlas_materialization_policy_diff_reports_byte_and_status_deltas();
+    test_glyph_atlas_materialization_batch_diff_reports_regressions_recoveries_and_backend_transitions();
+    test_glyph_atlas_page_plan_reports_selection_reuse_and_upload_totals();
+    test_glyph_atlas_page_plan_reports_overflow_and_eviction_hint();
+    test_glyph_atlas_page_plan_skips_unsupported_materializations();
     test_atlas_upload_bridge_produces_stable_render_text_atlas_updates();
     test_atlas_upload_bridge_suppresses_duplicates_and_skips_non_uploadable_work();
     test_text_frame_snapshot_combines_planning_fallback_materialization_and_upload_ids();

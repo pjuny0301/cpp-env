@@ -39,6 +39,20 @@ Last updated: 2026-05-09
 - Engine workers own only their engine folders. App/runtime, top-level CMake, and aggregate contract wiring stay with the integrator unless explicitly assigned.
 - Large file splitting is allowed when it improves module cohesion, worker ownership, reviewability, or conflict isolation. Do not split files only because they exceed a line-count threshold, and do not move stable public interfaces without explicit integrator approval.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
+- Latest integration note: `3230bfc` splits glyph atlas page planning into `font_glyph_atlas_page_plan.h`, and the integrator registers that public header in the render contract FILE_SET.
+- Latest integration note: `03214fc` adds a data-only native swapchain create operation plan that composes swapchain create-plan results with native entrypoint readiness and reports blockers before `vkCreateSwapchainKHR`.
+- Latest integration note: `fe95a1e` adds text edit transaction diagnostics for before/after text, display, caret, selection, preedit, byte deltas, UTF-8 boundary safety, replacement flags, IME transitions, and invalid-edit evidence.
+- Latest integration note: `eeba461` splits fake image upload snapshot diff diagnostics into `image_texture_upload_snapshot_diff.h`, and the integrator registers that public header in the render contract FILE_SET.
+- Latest integration note: `18c5121` adds glyph atlas page planning diagnostics for page selection, reused placements, synthesized placements, occupancy, overflow, eviction hints, and upload byte totals before renderer/Vulkan upload.
+- Latest integration note: `6208a65` extends Vulkan native function-table readiness to swapchain extension symbols for create, destroy, image enumeration, acquire, and present paths, including required extension and per-entrypoint readiness summaries.
+- Latest integration note: `a4a2513` threads gesture policy route diagnostics into normalized input replay diffs, so replay comparisons report gesture threshold, decision, suppression, and recovery changes alongside pointer/keyboard/IME/focus deltas.
+- Latest integration note: `a065d36` adds fake image upload snapshot diff diagnostics for upload queue/result changes, mipmap byte deltas, retry transitions, queue-depth regressions, invalid/overflow/unsupported plan changes, and texture handle changes.
+- Latest integration note: `90ad12e` adds input gesture policy route diff diagnostics for threshold, decision, emitted-kind, direction, pointer/contact/phase, suppression, and recovery deltas without app/domain dispatch.
+- Latest integration note: `e3bdf20` adds image mipmap upload planning diagnostics with per-level dimensions, byte estimates, overflow/invalid/unsupported/no-mipmap states, and fake uploader snapshot propagation.
+- Latest integration note: `594b795` adds glyph atlas materialization diff diagnostics for upload-ready, clean-reuse, skipped, payload-byte, unsupported, missing-cache, and backend fallback transitions across text atlas batches.
+- Latest integration note: `ef986fe` adds Vulkan swapchain create-plan diagnostics for surface format, present mode, image count, extent, transform, alpha, sharing mode, and recreate compatibility decisions before real Vulkan swapchain creation.
+- Latest integration note: render/layout/UI architecture checks now also reject direct platform includes and `platform::` usage, keeping platform shell ownership outside renderer and layout layers.
+- Latest integration note: `2dd9601` adds Vulkan swapchain recreate policy diagnostics that classify acquire/present out-of-date, suboptimal, timeout, and fatal paths into keep-rendering, recreate-now, recreate-after-frame, skip-submit, or fatal decisions.
 - Latest integration note: `9a5af92` adds external decoder selection diff diagnostics for image pipeline snapshots, comparing internal decoder, adapter-ready, missing dependency, version mismatch, placeholder, and fallback transitions without real `stb_image` coupling.
 - Latest integration note: `cb0b2c1` adds font backend probe diff diagnostics for fake-only, adapter-ready, unavailable, mismatch, and fallback transitions across text layout/backend snapshots without linking external font libraries.
 - Latest integration note: `ff7a822` threads text input presentation snapshots into normalized input replay diagnostics, so fixture replays expose focus/caret/selection/preedit/submit read-model state with diff evidence outside UI/app/domain coupling.
@@ -95,7 +109,7 @@ Last updated: 2026-05-09
 - Latest integration note: `2656970` adds a Vulkan frame pipeline handoff summary/result that composes loader, instance, device, swapchain, render pass, pipeline, resource binding, command recording, submit, present, and fallback readiness without scene/UI/app/domain coupling.
 - Latest integration note: text/image/input worker commits added font backend selection metadata, optional third-party image decoder adapter boundary, and IME/focus/caret hardening; CMake render contract FILE_SET registration was handled by the integrator.
 - Latest integration note: `15d77ce` reports app scene modifier errors in `app_render_report`; `0a721e2` blocks host/external source paths in architecture tests; `7505a63` tracks native dependency manifest/README while ignoring downloaded source directories.
-- Latest verification: Windows MinGW focused text CTest passed 3/3 after `7644763` and `11dec3e`; focused image/Vulkan CTest passed 9/9 after `ef48ce4`, `c656cfb`, and `95f24d9`; latest full CTest passed 89/89. Current `ctest -N` reports 90 tests.
+- Latest verification: Windows MinGW focused text/image/input/Vulkan/architecture checks have passed for the latest integrations; latest full CTest passed 89/89. Current `ctest -N` reports 93 tests.
 
 ## Verification commands
 

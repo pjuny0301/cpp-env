@@ -164,6 +164,139 @@ struct render_text_glyph_atlas_materialization_policy_snapshot {
     std::size_t queued_atlas_update_bytes = 0;
 };
 
+enum class render_text_glyph_atlas_materialization_diff_status {
+    unchanged,
+    added,
+    removed,
+    changed,
+};
+
+inline std::string render_text_glyph_atlas_materialization_diff_status_name(
+    const render_text_glyph_atlas_materialization_diff_status status)
+{
+    switch (status) {
+    case render_text_glyph_atlas_materialization_diff_status::unchanged:
+        return "unchanged";
+    case render_text_glyph_atlas_materialization_diff_status::added:
+        return "added";
+    case render_text_glyph_atlas_materialization_diff_status::removed:
+        return "removed";
+    case render_text_glyph_atlas_materialization_diff_status::changed:
+        return "changed";
+    }
+
+    return "unknown";
+}
+
+struct render_text_glyph_atlas_materialization_diff_key {
+    std::string stable_id;
+    glyph_atlas_key cache_key;
+    bool has_cache_key = false;
+    std::size_t run_index = 0;
+    std::size_t cluster_index = 0;
+    std::size_t cluster_byte_offset = 0;
+    std::size_t cluster_byte_count = 0;
+    std::uint32_t resolved_glyph_id = 0;
+    font_face_id resolved_face_id = 0;
+
+    friend bool operator==(
+        const render_text_glyph_atlas_materialization_diff_key& left,
+        const render_text_glyph_atlas_materialization_diff_key& right)
+    {
+        return left.stable_id == right.stable_id;
+    }
+};
+
+struct render_text_glyph_atlas_materialization_policy_diff_snapshot {
+    render_text_glyph_atlas_materialization_policy_snapshot before;
+    render_text_glyph_atlas_materialization_policy_snapshot after;
+    std::ptrdiff_t request_count_delta = 0;
+    std::ptrdiff_t materialized_count_delta = 0;
+    std::ptrdiff_t upload_ready_count_delta = 0;
+    std::ptrdiff_t clean_reuse_count_delta = 0;
+    std::ptrdiff_t skipped_count_delta = 0;
+    std::ptrdiff_t missing_cache_key_count_delta = 0;
+    std::ptrdiff_t skipped_raster_payload_count_delta = 0;
+    std::ptrdiff_t unsupported_glyph_count_delta = 0;
+    std::ptrdiff_t payload_byte_count_mismatch_count_delta = 0;
+    std::ptrdiff_t deterministic_fallback_count_delta = 0;
+    std::ptrdiff_t real_backend_count_delta = 0;
+    std::ptrdiff_t shaped_glyph_count_delta = 0;
+    std::ptrdiff_t total_alpha_bytes_delta = 0;
+    std::ptrdiff_t total_rgba_bytes_delta = 0;
+    std::ptrdiff_t queued_atlas_update_bytes_delta = 0;
+    bool has_changes = false;
+    std::string summary;
+};
+
+struct render_text_glyph_atlas_materialization_diff_snapshot {
+    render_text_glyph_atlas_materialization_diff_status diff_status =
+        render_text_glyph_atlas_materialization_diff_status::unchanged;
+    render_text_glyph_atlas_materialization_diff_key key;
+    render_text_glyph_atlas_materialization_snapshot before;
+    render_text_glyph_atlas_materialization_snapshot after;
+    bool has_before = false;
+    bool has_after = false;
+    bool materialization_changed = false;
+    bool status_changed = false;
+    bool upload_ready_changed = false;
+    bool clean_reuse_changed = false;
+    bool skipped_changed = false;
+    bool payload_byte_count_changed = false;
+    bool atlas_update_byte_count_changed = false;
+    bool deterministic_fallback_changed = false;
+    bool real_backend_changed = false;
+    bool backend_path_changed = false;
+    bool became_upload_ready = false;
+    bool stopped_upload_ready = false;
+    bool became_clean_reuse = false;
+    bool stopped_clean_reuse = false;
+    bool became_skipped = false;
+    bool recovered_from_skipped = false;
+    bool unsupported_glyph_regression = false;
+    bool unsupported_glyph_recovery = false;
+    bool missing_cache_key_regression = false;
+    bool missing_cache_key_recovery = false;
+    bool payload_byte_count_mismatch_regression = false;
+    bool payload_byte_count_mismatch_recovery = false;
+    bool deterministic_fallback_to_real_backend = false;
+    bool real_backend_to_deterministic_fallback = false;
+    std::ptrdiff_t payload_alpha_bytes_delta = 0;
+    std::ptrdiff_t payload_rgba_bytes_delta = 0;
+    std::ptrdiff_t atlas_update_rgba_bytes_delta = 0;
+    std::string summary;
+};
+
+struct render_text_glyph_atlas_materialization_batch_diff_snapshot {
+    std::vector<render_text_glyph_atlas_materialization_diff_snapshot> entries;
+    render_text_glyph_atlas_materialization_policy_diff_snapshot policy_diff;
+    std::size_t added_count = 0;
+    std::size_t removed_count = 0;
+    std::size_t changed_count = 0;
+    std::size_t unchanged_count = 0;
+    std::size_t upload_ready_transition_count = 0;
+    std::size_t clean_reuse_transition_count = 0;
+    std::size_t skipped_regression_count = 0;
+    std::size_t skipped_recovery_count = 0;
+    std::size_t unsupported_glyph_regression_count = 0;
+    std::size_t unsupported_glyph_recovery_count = 0;
+    std::size_t missing_cache_key_regression_count = 0;
+    std::size_t missing_cache_key_recovery_count = 0;
+    std::size_t payload_byte_count_mismatch_regression_count = 0;
+    std::size_t payload_byte_count_mismatch_recovery_count = 0;
+    std::size_t deterministic_fallback_to_real_backend_count = 0;
+    std::size_t real_backend_to_deterministic_fallback_count = 0;
+    std::ptrdiff_t total_payload_alpha_bytes_delta = 0;
+    std::ptrdiff_t total_payload_rgba_bytes_delta = 0;
+    std::ptrdiff_t total_atlas_update_rgba_bytes_delta = 0;
+    std::string summary;
+
+    bool has_changes() const
+    {
+        return added_count > 0 || removed_count > 0 || changed_count > 0 || policy_diff.has_changes;
+    }
+};
+
 inline render_text_glyph_atlas_materialization_snapshot make_render_text_glyph_atlas_materialization(
     render_text_glyph_atlas_materialization_request request)
 {
@@ -293,6 +426,532 @@ inline void append_render_text_glyph_atlas_materialization(
 
     snapshots.push_back(std::move(snapshot));
 }
+
+inline std::ptrdiff_t render_text_glyph_atlas_materialization_delta(
+    const std::size_t before,
+    const std::size_t after)
+{
+    return static_cast<std::ptrdiff_t>(after) - static_cast<std::ptrdiff_t>(before);
+}
+
+inline bool render_text_glyph_atlas_materialization_rect_equal(
+    const render_rect& before,
+    const render_rect& after)
+{
+    return before.x == after.x
+        && before.y == after.y
+        && before.width == after.width
+        && before.height == after.height;
+}
+
+inline bool render_text_glyph_atlas_materialization_is_upload_ready(
+    const render_text_glyph_atlas_materialization_snapshot& snapshot)
+{
+    return snapshot.status == render_text_glyph_atlas_materialization_status::materialized_upload_ready;
+}
+
+inline bool render_text_glyph_atlas_materialization_is_clean_reuse(
+    const render_text_glyph_atlas_materialization_snapshot& snapshot)
+{
+    return snapshot.status == render_text_glyph_atlas_materialization_status::materialized_clean_reuse;
+}
+
+inline bool render_text_glyph_atlas_materialization_is_skipped(
+    const render_text_glyph_atlas_materialization_snapshot& snapshot)
+{
+    return snapshot.status == render_text_glyph_atlas_materialization_status::skipped_missing_cache_key
+        || snapshot.status == render_text_glyph_atlas_materialization_status::skipped_raster_payload
+        || snapshot.status == render_text_glyph_atlas_materialization_status::skipped_unsupported_glyph
+        || snapshot.status == render_text_glyph_atlas_materialization_status::payload_byte_count_mismatch;
+}
+
+inline bool render_text_glyph_atlas_materialization_is_missing_cache_key(
+    const render_text_glyph_atlas_materialization_snapshot& snapshot)
+{
+    return snapshot.status == render_text_glyph_atlas_materialization_status::skipped_missing_cache_key;
+}
+
+inline bool render_text_glyph_atlas_materialization_is_unsupported_glyph(
+    const render_text_glyph_atlas_materialization_snapshot& snapshot)
+{
+    return snapshot.status == render_text_glyph_atlas_materialization_status::skipped_unsupported_glyph;
+}
+
+inline bool render_text_glyph_atlas_materialization_has_payload_byte_count_mismatch(
+    const render_text_glyph_atlas_materialization_snapshot& snapshot)
+{
+    return snapshot.status == render_text_glyph_atlas_materialization_status::payload_byte_count_mismatch
+        || !snapshot.payload_byte_count_matches;
+}
+
+inline bool render_text_glyph_atlas_materialization_uses_deterministic_fallback(
+    const render_text_glyph_atlas_materialization_snapshot& materialization)
+{
+    return materialization.shaping_font_backend_used_deterministic_fallback
+        || materialization.raster_font_backend_used_deterministic_fallback
+        || materialization.shaping_font_backend_fallback_only
+        || materialization.raster_font_backend_fallback_only;
+}
+
+inline bool render_text_glyph_atlas_materialization_uses_real_backend(
+    const render_text_glyph_atlas_materialization_snapshot& materialization)
+{
+    return materialization.shaping_font_backend_library != render_text_font_backend_library::deterministic_fake
+        || materialization.raster_font_backend_library != render_text_font_backend_library::deterministic_fake;
+}
+
+inline std::string render_text_glyph_atlas_materialization_stable_id_for(
+    const render_text_glyph_atlas_materialization_snapshot& materialization)
+{
+    if (materialization.has_cache_key) {
+        return "cache:"
+            + std::to_string(materialization.cache_key.face_id)
+            + ":"
+            + std::to_string(materialization.cache_key.glyph_id)
+            + ":"
+            + std::to_string(materialization.cache_key.pixel_size);
+    }
+
+    return "run:"
+        + std::to_string(materialization.run_index)
+        + ":cluster:"
+        + std::to_string(materialization.cluster_index)
+        + ":bytes:"
+        + std::to_string(materialization.cluster_byte_offset)
+        + ":"
+        + std::to_string(materialization.cluster_byte_count)
+        + ":glyph:"
+        + std::to_string(materialization.resolved_glyph_id)
+        + ":face:"
+        + std::to_string(materialization.resolved_face_id);
+}
+
+inline render_text_glyph_atlas_materialization_diff_key render_text_glyph_atlas_materialization_diff_key_for(
+    const render_text_glyph_atlas_materialization_snapshot& materialization)
+{
+    return render_text_glyph_atlas_materialization_diff_key{
+        .stable_id = render_text_glyph_atlas_materialization_stable_id_for(materialization),
+        .cache_key = materialization.cache_key,
+        .has_cache_key = materialization.has_cache_key,
+        .run_index = materialization.run_index,
+        .cluster_index = materialization.cluster_index,
+        .cluster_byte_offset = materialization.cluster_byte_offset,
+        .cluster_byte_count = materialization.cluster_byte_count,
+        .resolved_glyph_id = materialization.resolved_glyph_id,
+        .resolved_face_id = materialization.resolved_face_id,
+    };
+}
+
+inline bool render_text_glyph_atlas_materialization_relevant_fields_equal(
+    const render_text_glyph_atlas_materialization_snapshot& before,
+    const render_text_glyph_atlas_materialization_snapshot& after)
+{
+    return before.status == after.status
+        && before.cluster_index == after.cluster_index
+        && before.run_index == after.run_index
+        && before.cluster_byte_offset == after.cluster_byte_offset
+        && before.cluster_byte_count == after.cluster_byte_count
+        && before.codepoint == after.codepoint
+        && before.shaped_glyph_ids == after.shaped_glyph_ids
+        && before.resolved_glyph_id == after.resolved_glyph_id
+        && before.resolved_face_id == after.resolved_face_id
+        && before.cache_key == after.cache_key
+        && before.has_cache_key == after.has_cache_key
+        && before.glyph_supported == after.glyph_supported
+        && before.glyph_id_from_selection == after.glyph_id_from_selection
+        && before.glyph_id_matches_codepoint == after.glyph_id_matches_codepoint
+        && before.used_fallback_glyph_id == after.used_fallback_glyph_id
+        && before.glyph_id_offset == after.glyph_id_offset
+        && render_text_glyph_atlas_materialization_rect_equal(before.layout_bounds, after.layout_bounds)
+        && before.has_layout_bounds == after.has_layout_bounds
+        && before.shaping_font_backend_library == after.shaping_font_backend_library
+        && before.shaping_font_backend_label == after.shaping_font_backend_label
+        && before.shaping_font_backend_capability_status == after.shaping_font_backend_capability_status
+        && before.shaping_font_backend_used_deterministic_fallback
+            == after.shaping_font_backend_used_deterministic_fallback
+        && before.shaping_font_backend_fallback_only == after.shaping_font_backend_fallback_only
+        && before.raster_font_backend_library == after.raster_font_backend_library
+        && before.raster_font_backend_label == after.raster_font_backend_label
+        && before.raster_font_backend_capability_status == after.raster_font_backend_capability_status
+        && before.raster_font_backend_used_deterministic_fallback
+            == after.raster_font_backend_used_deterministic_fallback
+        && before.raster_font_backend_fallback_only == after.raster_font_backend_fallback_only
+        && before.rasterizer_status == after.rasterizer_status
+        && before.raster_payload_matches_cache_key == after.raster_payload_matches_cache_key
+        && before.rasterized_payload_skipped == after.rasterized_payload_skipped
+        && before.payload_upload_ready == after.payload_upload_ready
+        && before.payload_alpha_bytes == after.payload_alpha_bytes
+        && before.payload_rgba_bytes == after.payload_rgba_bytes
+        && before.expected_payload_rgba_bytes == after.expected_payload_rgba_bytes
+        && before.payload_byte_count_matches == after.payload_byte_count_matches
+        && before.has_atlas_placement == after.has_atlas_placement
+        && before.page.id == after.page.id
+        && before.page.revision == after.page.revision
+        && before.page.width == after.page.width
+        && before.page.height == after.page.height
+        && render_text_glyph_atlas_materialization_rect_equal(before.atlas_bounds, after.atlas_bounds)
+        && before.has_atlas_update == after.has_atlas_update
+        && render_text_glyph_atlas_materialization_rect_equal(
+            before.atlas_update_bounds,
+            after.atlas_update_bounds)
+        && before.atlas_update_rgba_bytes == after.atlas_update_rgba_bytes
+        && before.materialized == after.materialized
+        && before.queued == after.queued
+        && before.clean_reuse == after.clean_reuse;
+}
+
+inline std::string render_text_glyph_atlas_materialization_diff_summary_for(
+    const render_text_glyph_atlas_materialization_diff_status status,
+    const render_text_glyph_atlas_materialization_diff_key& key)
+{
+    return "glyph atlas materialization "
+        + render_text_glyph_atlas_materialization_diff_status_name(status)
+        + " for "
+        + key.stable_id;
+}
+
+inline render_text_glyph_atlas_materialization_diff_snapshot diff_render_text_glyph_atlas_materializations(
+    const render_text_glyph_atlas_materialization_snapshot* before,
+    const render_text_glyph_atlas_materialization_snapshot* after)
+{
+    const bool has_before = before != nullptr;
+    const bool has_after = after != nullptr;
+    const render_text_glyph_atlas_materialization_snapshot before_value =
+        has_before ? *before : render_text_glyph_atlas_materialization_snapshot{};
+    const render_text_glyph_atlas_materialization_snapshot after_value =
+        has_after ? *after : render_text_glyph_atlas_materialization_snapshot{};
+    const render_text_glyph_atlas_materialization_diff_key key =
+        has_after
+            ? render_text_glyph_atlas_materialization_diff_key_for(after_value)
+            : render_text_glyph_atlas_materialization_diff_key_for(before_value);
+
+    const bool upload_ready_before = has_before
+        && render_text_glyph_atlas_materialization_is_upload_ready(before_value);
+    const bool upload_ready_after = has_after
+        && render_text_glyph_atlas_materialization_is_upload_ready(after_value);
+    const bool clean_reuse_before = has_before
+        && render_text_glyph_atlas_materialization_is_clean_reuse(before_value);
+    const bool clean_reuse_after = has_after
+        && render_text_glyph_atlas_materialization_is_clean_reuse(after_value);
+    const bool skipped_before = has_before
+        && render_text_glyph_atlas_materialization_is_skipped(before_value);
+    const bool skipped_after = has_after
+        && render_text_glyph_atlas_materialization_is_skipped(after_value);
+    const bool unsupported_before = has_before
+        && render_text_glyph_atlas_materialization_is_unsupported_glyph(before_value);
+    const bool unsupported_after = has_after
+        && render_text_glyph_atlas_materialization_is_unsupported_glyph(after_value);
+    const bool missing_cache_before = has_before
+        && render_text_glyph_atlas_materialization_is_missing_cache_key(before_value);
+    const bool missing_cache_after = has_after
+        && render_text_glyph_atlas_materialization_is_missing_cache_key(after_value);
+    const bool payload_mismatch_before = has_before
+        && render_text_glyph_atlas_materialization_has_payload_byte_count_mismatch(before_value);
+    const bool payload_mismatch_after = has_after
+        && render_text_glyph_atlas_materialization_has_payload_byte_count_mismatch(after_value);
+    const bool deterministic_before = has_before
+        && render_text_glyph_atlas_materialization_uses_deterministic_fallback(before_value);
+    const bool deterministic_after = has_after
+        && render_text_glyph_atlas_materialization_uses_deterministic_fallback(after_value);
+    const bool real_before = has_before
+        && render_text_glyph_atlas_materialization_uses_real_backend(before_value);
+    const bool real_after = has_after
+        && render_text_glyph_atlas_materialization_uses_real_backend(after_value);
+
+    render_text_glyph_atlas_materialization_diff_status status =
+        render_text_glyph_atlas_materialization_diff_status::unchanged;
+    if (!has_before && has_after) {
+        status = render_text_glyph_atlas_materialization_diff_status::added;
+    } else if (has_before && !has_after) {
+        status = render_text_glyph_atlas_materialization_diff_status::removed;
+    } else if (
+        has_before
+        && has_after
+        && !render_text_glyph_atlas_materialization_relevant_fields_equal(before_value, after_value)) {
+        status = render_text_glyph_atlas_materialization_diff_status::changed;
+    }
+
+    return render_text_glyph_atlas_materialization_diff_snapshot{
+        .diff_status = status,
+        .key = key,
+        .before = before_value,
+        .after = after_value,
+        .has_before = has_before,
+        .has_after = has_after,
+        .materialization_changed = status != render_text_glyph_atlas_materialization_diff_status::unchanged,
+        .status_changed = !has_before || !has_after || before_value.status != after_value.status,
+        .upload_ready_changed = upload_ready_before != upload_ready_after,
+        .clean_reuse_changed = clean_reuse_before != clean_reuse_after,
+        .skipped_changed = skipped_before != skipped_after,
+        .payload_byte_count_changed =
+            !has_before || !has_after || before_value.payload_rgba_bytes != after_value.payload_rgba_bytes,
+        .atlas_update_byte_count_changed =
+            !has_before || !has_after || before_value.atlas_update_rgba_bytes != after_value.atlas_update_rgba_bytes,
+        .deterministic_fallback_changed = deterministic_before != deterministic_after,
+        .real_backend_changed = real_before != real_after,
+        .backend_path_changed = deterministic_before != deterministic_after || real_before != real_after,
+        .became_upload_ready = !upload_ready_before && upload_ready_after,
+        .stopped_upload_ready = upload_ready_before && !upload_ready_after,
+        .became_clean_reuse = !clean_reuse_before && clean_reuse_after,
+        .stopped_clean_reuse = clean_reuse_before && !clean_reuse_after,
+        .became_skipped = !skipped_before && skipped_after,
+        .recovered_from_skipped = skipped_before && !skipped_after,
+        .unsupported_glyph_regression = !unsupported_before && unsupported_after,
+        .unsupported_glyph_recovery = unsupported_before && !unsupported_after,
+        .missing_cache_key_regression = !missing_cache_before && missing_cache_after,
+        .missing_cache_key_recovery = missing_cache_before && !missing_cache_after,
+        .payload_byte_count_mismatch_regression = !payload_mismatch_before && payload_mismatch_after,
+        .payload_byte_count_mismatch_recovery = payload_mismatch_before && !payload_mismatch_after,
+        .deterministic_fallback_to_real_backend =
+            deterministic_before && real_after && !deterministic_after,
+        .real_backend_to_deterministic_fallback =
+            real_before && deterministic_after && !real_after,
+        .payload_alpha_bytes_delta = render_text_glyph_atlas_materialization_delta(
+            before_value.payload_alpha_bytes,
+            after_value.payload_alpha_bytes),
+        .payload_rgba_bytes_delta = render_text_glyph_atlas_materialization_delta(
+            before_value.payload_rgba_bytes,
+            after_value.payload_rgba_bytes),
+        .atlas_update_rgba_bytes_delta = render_text_glyph_atlas_materialization_delta(
+            before_value.atlas_update_rgba_bytes,
+            after_value.atlas_update_rgba_bytes),
+        .summary = render_text_glyph_atlas_materialization_diff_summary_for(status, key),
+    };
+}
+
+inline render_text_glyph_atlas_materialization_policy_snapshot
+summarize_render_text_glyph_atlas_materialization_policy(
+    const std::vector<render_text_glyph_atlas_materialization_snapshot>& materializations)
+{
+    std::vector<render_text_glyph_atlas_materialization_snapshot> ignored;
+    render_text_glyph_atlas_materialization_policy_snapshot policy;
+    ignored.reserve(materializations.size());
+    for (render_text_glyph_atlas_materialization_snapshot materialization : materializations) {
+        append_render_text_glyph_atlas_materialization(ignored, policy, std::move(materialization));
+    }
+    return policy;
+}
+
+inline render_text_glyph_atlas_materialization_policy_diff_snapshot
+diff_render_text_glyph_atlas_materialization_policies(
+    const render_text_glyph_atlas_materialization_policy_snapshot& before,
+    const render_text_glyph_atlas_materialization_policy_snapshot& after)
+{
+    render_text_glyph_atlas_materialization_policy_diff_snapshot diff{
+        .before = before,
+        .after = after,
+        .request_count_delta = render_text_glyph_atlas_materialization_delta(
+            before.request_count,
+            after.request_count),
+        .materialized_count_delta = render_text_glyph_atlas_materialization_delta(
+            before.materialized_count,
+            after.materialized_count),
+        .upload_ready_count_delta = render_text_glyph_atlas_materialization_delta(
+            before.upload_ready_count,
+            after.upload_ready_count),
+        .clean_reuse_count_delta = render_text_glyph_atlas_materialization_delta(
+            before.clean_reuse_count,
+            after.clean_reuse_count),
+        .skipped_count_delta = render_text_glyph_atlas_materialization_delta(
+            before.skipped_count,
+            after.skipped_count),
+        .missing_cache_key_count_delta = render_text_glyph_atlas_materialization_delta(
+            before.missing_cache_key_count,
+            after.missing_cache_key_count),
+        .skipped_raster_payload_count_delta = render_text_glyph_atlas_materialization_delta(
+            before.skipped_raster_payload_count,
+            after.skipped_raster_payload_count),
+        .unsupported_glyph_count_delta = render_text_glyph_atlas_materialization_delta(
+            before.unsupported_glyph_count,
+            after.unsupported_glyph_count),
+        .payload_byte_count_mismatch_count_delta = render_text_glyph_atlas_materialization_delta(
+            before.payload_byte_count_mismatch_count,
+            after.payload_byte_count_mismatch_count),
+        .deterministic_fallback_count_delta = render_text_glyph_atlas_materialization_delta(
+            before.deterministic_fallback_count,
+            after.deterministic_fallback_count),
+        .real_backend_count_delta = render_text_glyph_atlas_materialization_delta(
+            before.real_backend_count,
+            after.real_backend_count),
+        .shaped_glyph_count_delta = render_text_glyph_atlas_materialization_delta(
+            before.shaped_glyph_count,
+            after.shaped_glyph_count),
+        .total_alpha_bytes_delta = render_text_glyph_atlas_materialization_delta(
+            before.total_alpha_bytes,
+            after.total_alpha_bytes),
+        .total_rgba_bytes_delta = render_text_glyph_atlas_materialization_delta(
+            before.total_rgba_bytes,
+            after.total_rgba_bytes),
+        .queued_atlas_update_bytes_delta = render_text_glyph_atlas_materialization_delta(
+            before.queued_atlas_update_bytes,
+            after.queued_atlas_update_bytes),
+    };
+    diff.has_changes =
+        diff.request_count_delta != 0
+        || diff.materialized_count_delta != 0
+        || diff.upload_ready_count_delta != 0
+        || diff.clean_reuse_count_delta != 0
+        || diff.skipped_count_delta != 0
+        || diff.missing_cache_key_count_delta != 0
+        || diff.skipped_raster_payload_count_delta != 0
+        || diff.unsupported_glyph_count_delta != 0
+        || diff.payload_byte_count_mismatch_count_delta != 0
+        || diff.deterministic_fallback_count_delta != 0
+        || diff.real_backend_count_delta != 0
+        || diff.shaped_glyph_count_delta != 0
+        || diff.total_alpha_bytes_delta != 0
+        || diff.total_rgba_bytes_delta != 0
+        || diff.queued_atlas_update_bytes_delta != 0;
+    diff.summary = "glyph atlas materialization policy diff: "
+        + std::to_string(before.request_count)
+        + " -> "
+        + std::to_string(after.request_count)
+        + " requests";
+    return diff;
+}
+
+inline const render_text_glyph_atlas_materialization_snapshot*
+find_render_text_glyph_atlas_materialization_by_diff_key(
+    const std::vector<render_text_glyph_atlas_materialization_snapshot>& materializations,
+    const render_text_glyph_atlas_materialization_diff_key& key,
+    const std::vector<bool>& used)
+{
+    for (std::size_t index = 0; index < materializations.size(); ++index) {
+        if (used[index]) {
+            continue;
+        }
+        if (render_text_glyph_atlas_materialization_diff_key_for(materializations[index]) == key) {
+            return &materializations[index];
+        }
+    }
+    return nullptr;
+}
+
+inline std::size_t render_text_glyph_atlas_materialization_index_for(
+    const std::vector<render_text_glyph_atlas_materialization_snapshot>& materializations,
+    const render_text_glyph_atlas_materialization_snapshot* materialization)
+{
+    return static_cast<std::size_t>(materialization - materializations.data());
+}
+
+inline render_text_glyph_atlas_materialization_batch_diff_snapshot
+diff_render_text_glyph_atlas_materialization_batches(
+    const std::vector<render_text_glyph_atlas_materialization_snapshot>& before,
+    const render_text_glyph_atlas_materialization_policy_snapshot& before_policy,
+    const std::vector<render_text_glyph_atlas_materialization_snapshot>& after,
+    const render_text_glyph_atlas_materialization_policy_snapshot& after_policy)
+{
+    render_text_glyph_atlas_materialization_batch_diff_snapshot diff;
+    diff.policy_diff = diff_render_text_glyph_atlas_materialization_policies(before_policy, after_policy);
+
+    std::vector<bool> used_after(after.size(), false);
+    diff.entries.reserve(before.size() + after.size());
+    for (const render_text_glyph_atlas_materialization_snapshot& before_materialization : before) {
+        const render_text_glyph_atlas_materialization_diff_key key =
+            render_text_glyph_atlas_materialization_diff_key_for(before_materialization);
+        const render_text_glyph_atlas_materialization_snapshot* after_materialization =
+            find_render_text_glyph_atlas_materialization_by_diff_key(after, key, used_after);
+        if (after_materialization != nullptr) {
+            const std::size_t after_index =
+                render_text_glyph_atlas_materialization_index_for(after, after_materialization);
+            used_after[after_index] = true;
+        }
+        diff.entries.push_back(diff_render_text_glyph_atlas_materializations(
+            &before_materialization,
+            after_materialization));
+    }
+    for (std::size_t after_index = 0; after_index < after.size(); ++after_index) {
+        if (used_after[after_index]) {
+            continue;
+        }
+        diff.entries.push_back(diff_render_text_glyph_atlas_materializations(nullptr, &after[after_index]));
+    }
+
+    for (const render_text_glyph_atlas_materialization_diff_snapshot& entry : diff.entries) {
+        switch (entry.diff_status) {
+        case render_text_glyph_atlas_materialization_diff_status::unchanged:
+            ++diff.unchanged_count;
+            break;
+        case render_text_glyph_atlas_materialization_diff_status::added:
+            ++diff.added_count;
+            break;
+        case render_text_glyph_atlas_materialization_diff_status::removed:
+            ++diff.removed_count;
+            break;
+        case render_text_glyph_atlas_materialization_diff_status::changed:
+            ++diff.changed_count;
+            break;
+        }
+
+        if (entry.upload_ready_changed) {
+            ++diff.upload_ready_transition_count;
+        }
+        if (entry.clean_reuse_changed) {
+            ++diff.clean_reuse_transition_count;
+        }
+        if (entry.became_skipped) {
+            ++diff.skipped_regression_count;
+        }
+        if (entry.recovered_from_skipped) {
+            ++diff.skipped_recovery_count;
+        }
+        if (entry.unsupported_glyph_regression) {
+            ++diff.unsupported_glyph_regression_count;
+        }
+        if (entry.unsupported_glyph_recovery) {
+            ++diff.unsupported_glyph_recovery_count;
+        }
+        if (entry.missing_cache_key_regression) {
+            ++diff.missing_cache_key_regression_count;
+        }
+        if (entry.missing_cache_key_recovery) {
+            ++diff.missing_cache_key_recovery_count;
+        }
+        if (entry.payload_byte_count_mismatch_regression) {
+            ++diff.payload_byte_count_mismatch_regression_count;
+        }
+        if (entry.payload_byte_count_mismatch_recovery) {
+            ++diff.payload_byte_count_mismatch_recovery_count;
+        }
+        if (entry.deterministic_fallback_to_real_backend) {
+            ++diff.deterministic_fallback_to_real_backend_count;
+        }
+        if (entry.real_backend_to_deterministic_fallback) {
+            ++diff.real_backend_to_deterministic_fallback_count;
+        }
+        diff.total_payload_alpha_bytes_delta += entry.payload_alpha_bytes_delta;
+        diff.total_payload_rgba_bytes_delta += entry.payload_rgba_bytes_delta;
+        diff.total_atlas_update_rgba_bytes_delta += entry.atlas_update_rgba_bytes_delta;
+    }
+    diff.summary = "glyph atlas materialization batch diff: "
+        + std::to_string(diff.added_count)
+        + " added, "
+        + std::to_string(diff.removed_count)
+        + " removed, "
+        + std::to_string(diff.changed_count)
+        + " changed";
+    return diff;
+}
+
+inline render_text_glyph_atlas_materialization_batch_diff_snapshot
+diff_render_text_glyph_atlas_materialization_batches(
+    const std::vector<render_text_glyph_atlas_materialization_snapshot>& before,
+    const std::vector<render_text_glyph_atlas_materialization_snapshot>& after)
+{
+    return diff_render_text_glyph_atlas_materialization_batches(
+        before,
+        summarize_render_text_glyph_atlas_materialization_policy(before),
+        after,
+        summarize_render_text_glyph_atlas_materialization_policy(after));
+}
+
+} // namespace quiz_vulkan::render
+
+#define QUIZ_VULKAN_RENDER_TEXT_FONT_GLYPH_ATLAS_PAGE_PLAN_HAVE_MATERIALIZATION
+#include "render/text/font_glyph_atlas_page_plan.h"
+#undef QUIZ_VULKAN_RENDER_TEXT_FONT_GLYPH_ATLAS_PAGE_PLAN_HAVE_MATERIALIZATION
+
+namespace quiz_vulkan::render {
 
 struct render_text_batch_ref {
     render_node_id node_id;
@@ -582,17 +1241,13 @@ inline std::size_t render_text_batch_find_or_append_unique_materialization_work(
 inline bool render_text_batch_materialization_uses_deterministic_fallback(
     const render_text_glyph_atlas_materialization_snapshot& materialization)
 {
-    return materialization.shaping_font_backend_used_deterministic_fallback
-        || materialization.raster_font_backend_used_deterministic_fallback
-        || materialization.shaping_font_backend_fallback_only
-        || materialization.raster_font_backend_fallback_only;
+    return render_text_glyph_atlas_materialization_uses_deterministic_fallback(materialization);
 }
 
 inline bool render_text_batch_materialization_uses_real_backend(
     const render_text_glyph_atlas_materialization_snapshot& materialization)
 {
-    return materialization.shaping_font_backend_library != render_text_font_backend_library::deterministic_fake
-        || materialization.raster_font_backend_library != render_text_font_backend_library::deterministic_fake;
+    return render_text_glyph_atlas_materialization_uses_real_backend(materialization);
 }
 
 inline render_text_request_batch_plan_snapshot plan_render_text_request_batch(

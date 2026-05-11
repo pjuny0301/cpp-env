@@ -52,6 +52,14 @@ std::string_view native_entrypoint_stage_name(vulkan_native_entrypoint_stage sta
         return "command_buffer_recording";
     case vulkan_native_entrypoint_stage::queue_submit:
         return "queue_submit";
+    case vulkan_native_entrypoint_stage::swapchain_create:
+        return "swapchain_create";
+    case vulkan_native_entrypoint_stage::swapchain_destroy:
+        return "swapchain_destroy";
+    case vulkan_native_entrypoint_stage::swapchain_images:
+        return "swapchain_images";
+    case vulkan_native_entrypoint_stage::swapchain_acquire:
+        return "swapchain_acquire";
     case vulkan_native_entrypoint_stage::queue_present:
         return "queue_present";
     }
@@ -69,10 +77,20 @@ std::string_view native_function_table_status_name(
         return "ready";
     case vulkan_native_function_table_status::loader_unavailable:
         return "loader_unavailable";
+    case vulkan_native_function_table_status::required_extension_unavailable:
+        return "required_extension_unavailable";
     case vulkan_native_function_table_status::missing_command_buffer_recording_symbol:
         return "missing_command_buffer_recording_symbol";
     case vulkan_native_function_table_status::missing_queue_submit_symbol:
         return "missing_queue_submit_symbol";
+    case vulkan_native_function_table_status::missing_swapchain_create_symbol:
+        return "missing_swapchain_create_symbol";
+    case vulkan_native_function_table_status::missing_swapchain_destroy_symbol:
+        return "missing_swapchain_destroy_symbol";
+    case vulkan_native_function_table_status::missing_swapchain_images_symbol:
+        return "missing_swapchain_images_symbol";
+    case vulkan_native_function_table_status::missing_swapchain_acquire_symbol:
+        return "missing_swapchain_acquire_symbol";
     case vulkan_native_function_table_status::missing_queue_present_symbol:
         return "missing_queue_present_symbol";
     }
@@ -578,8 +596,35 @@ std::string_view swapchain_present_status_name(vulkan_swapchain_present_status s
         return "not_requested";
     case vulkan_swapchain_present_status::presented:
         return "presented";
+    case vulkan_swapchain_present_status::out_of_date:
+        return "out_of_date";
+    case vulkan_swapchain_present_status::suboptimal:
+        return "suboptimal";
     case vulkan_swapchain_present_status::failed:
         return "failed";
+    case vulkan_swapchain_present_status::error:
+        return "error";
+    }
+
+    return "unknown";
+}
+
+std::string_view swapchain_recreate_policy_action_name(
+    vulkan_swapchain_recreate_policy_action action)
+{
+    switch (action) {
+    case vulkan_swapchain_recreate_policy_action::not_checked:
+        return "not_checked";
+    case vulkan_swapchain_recreate_policy_action::keep_rendering:
+        return "keep_rendering";
+    case vulkan_swapchain_recreate_policy_action::recreate_immediately:
+        return "recreate_immediately";
+    case vulkan_swapchain_recreate_policy_action::recreate_after_frame:
+        return "recreate_after_frame";
+    case vulkan_swapchain_recreate_policy_action::skip_submit:
+        return "skip_submit";
+    case vulkan_swapchain_recreate_policy_action::fatal_error:
+        return "fatal_error";
     }
 
     return "unknown";

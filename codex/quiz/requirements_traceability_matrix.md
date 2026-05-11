@@ -6,6 +6,30 @@
 
 최근 baseline 통합 증거:
 
+- current: glyph atlas page plan header split and Vulkan native swapchain create operation plan integrated; Windows MinGW focused text/Vulkan CTest 2/2 and interface compile target build confirmed.
+- `3230bfc`: glyph atlas page planning now lives in `font_glyph_atlas_page_plan.h` while `font_shaped_atlas_update.h` preserves the existing include surface.
+- `03214fc`: native swapchain create operation planning composes create-plan results with entrypoint readiness and reports blockers before `vkCreateSwapchainKHR`.
+- current: text edit transaction diagnostics integrated; Windows MinGW focused text input model CTest 1/1 and interface compile target build confirmed.
+- `fe95a1e`: input text model operations now expose before/after text, display, caret, selection, preedit, byte deltas, UTF-8 safety, replacement flags, IME transitions, and invalid-edit evidence.
+- current: fake image upload snapshot diff header split integrated with public FILE_SET registration; Windows MinGW focused image CTest 1/1 and interface compile target build confirmed.
+- `eeba461`: image upload snapshot diff diagnostics now live in `image_texture_upload_snapshot_diff.h` while `image_texture_upload.h` preserves the existing include surface.
+- current: glyph atlas page planning diagnostics integrated; Windows MinGW focused text CTest 1/1 and interface compile target build confirmed.
+- `18c5121`: text atlas page plans now report page selection, reused placements, synthesized placements, occupancy, overflow, eviction hints, and upload byte totals before renderer/Vulkan upload.
+- current: Vulkan swapchain native function readiness integrated; Windows MinGW focused Vulkan CTest 3/3 and interface compile target build confirmed.
+- `6208a65`: native function-table readiness now covers swapchain create, destroy, image enumeration, acquire, and present extension symbols with required extension and per-entrypoint summaries.
+- current: normalized input replay gesture-policy diff integration completed; Windows MinGW focused normalized input replay CTest 1/1 and interface compile target build confirmed.
+- `a4a2513`: replay comparisons now report gesture threshold, decision, suppression, and recovery changes alongside pointer/keyboard/IME/focus deltas.
+- current: fake image upload snapshot diff diagnostics integrated; Windows MinGW focused image CTest 1/1 and interface compile target build confirmed.
+- `a065d36`: image upload snapshots can compare queue/result changes, mipmap byte deltas, retry transitions, queue-depth regressions, invalid/overflow/unsupported plan changes, and texture handle changes.
+- current: text glyph atlas materialization diff, image mipmap upload plan, and input gesture policy route diff diagnostics integrated; Windows MinGW focused text/image/input CTest 3/3 and interface compile target build confirmed.
+- `90ad12e`: input routing diagnostics compare gesture thresholds, decisions, emitted kinds, directions, pointer/contact/phase mismatches, suppressions, and recoveries without domain dispatch.
+- `e3bdf20`: image upload diagnostics now include mipmap upload plans with per-level dimensions, byte estimates, overflow/invalid/unsupported/no-mipmap states, and fake uploader snapshots.
+- `594b795`: text atlas batches can diff upload-ready, clean-reuse, skipped, payload-byte, unsupported, missing-cache, and backend fallback materialization transitions.
+- current: Vulkan swapchain create-plan diagnostics integrated; Windows MinGW focused Vulkan CTest 3/3 and interface compile target build confirmed.
+- `ef986fe`: surface format, present mode, image count, extent, transform, alpha, sharing mode, and recreate compatibility decisions are modeled before real Vulkan swapchain creation.
+- current: render/layout/UI architecture boundary now rejects direct platform includes and `platform::` usage; Windows MinGW architecture boundary CTest 1/1 passed.
+- current: Vulkan swapchain recreate policy diagnostics integrated; Windows MinGW focused Vulkan CTest 4/4 and interface compile target build confirmed.
+- `2dd9601`: acquire/present out-of-date, suboptimal, timeout, and fatal paths are classified into keep-rendering, recreate-now, recreate-after-frame, skip-submit, or fatal policy decisions.
 - current: font backend probe diff and external decoder selection diff diagnostics integrated; Windows MinGW focused text/image CTest 7/7 and interface compile target build confirmed.
 - `9a5af92`: image pipeline snapshots can compare internal decoder, adapter-ready, missing dependency, version mismatch, placeholder, and fallback transitions without real `stb_image` coupling.
 - `cb0b2c1`: text layout/backend snapshots can compare fake-only, adapter-ready, unavailable, mismatch, and fallback font backend probe transitions without linking external font libraries.
@@ -304,7 +328,7 @@
 - `5965a4b`: Vulkan swapchain policy/pipeline compatibility/shader binding/fallback diagnostics 추가.
 - `244d5b7`: input multipointer touch-like arbitration diagnostics 추가.
 - `94a922f`: asset manifest integrity diagnostics 추가.
-- 기준 검증 예시: 2026-05-07 Windows MinGW focused image CTest 2/2, focused Vulkan CTest 2/2, focused text/image CTest 6/6, focused input/image CTest 13/13, 최근 full CTest 76/76 통과. 현재 `ctest -N`이 76개 테스트를 보고한다. 권위 있는 테스트 목록은 항상 실행 시점의 `ctest -N`으로 확인한다.
+- 기준 검증 예시: Windows MinGW focused text/image/input/Vulkan/architecture CTest는 최신 통합별로 실행한다. 현재 `ctest -N`이 93개 테스트를 보고한다. 권위 있는 테스트 목록은 항상 실행 시점의 `ctest -N`으로 확인한다.
 - 기준 검증은 고정 개수로 적지 않는다. 현재 전체 테스트 수는 `ctest -N`이 권위이며, handoff에는 실행한 focused target만 기록한다.
 
 상태 기준:

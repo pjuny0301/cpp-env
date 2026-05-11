@@ -4,6 +4,7 @@
 #include "render/image/image_source_bytes_loader.h"
 #include "render/image/image_texture_cache.h"
 #include "render/image/image_texture_pipeline.h"
+#include "render/image/image_texture_upload_snapshot_diff.h"
 #include "render/render_draw_list.h"
 
 #include <concepts>
@@ -234,6 +235,9 @@ static_assert(requires(
     render::render_image_texture_upload_request upload_request,
     render::render_image_texture_upload_result upload_result,
     render::render_image_texture_upload_status upload_status,
+    render::render_image_texture_mipmap_upload_plan_status mipmap_upload_plan_status,
+    render::render_image_texture_mipmap_level_upload_plan mipmap_level_upload_plan,
+    render::render_image_texture_mipmap_upload_plan mipmap_upload_plan,
     render::render_image_sampler_policy_diagnostic sampler_policy,
     render::render_image_texture_key_diagnostic texture_key_diagnostic,
     render::render_image_texture_color_space texture_color_space,
@@ -246,6 +250,9 @@ static_assert(requires(
     render::fake_image_texture_upload_snapshot_entry upload_entry,
     render::fake_image_texture_upload_queue_entry_snapshot upload_queue_entry,
     render::fake_image_texture_upload_snapshot upload_snapshot,
+    render::fake_image_texture_upload_snapshot_diff_entry_status upload_snapshot_diff_entry_status,
+    render::fake_image_texture_upload_snapshot_entry_diff upload_snapshot_entry_diff,
+    render::fake_image_texture_upload_snapshot_diff upload_snapshot_diff,
     const render::fake_image_texture_uploader& uploader,
     render::render_image_texture_pipeline_request pipeline_request,
     render::render_image_texture_pipeline_result pipeline_result,
@@ -684,6 +691,41 @@ static_assert(requires(
     { render::is_retryable_render_image_texture_upload_status(upload_status) } -> std::same_as<bool>;
     { render::fake_image_texture_upload_retry_backoff_sequence_delta(std::size_t{}) }
         -> std::same_as<std::size_t>;
+    { render::render_image_texture_mipmap_upload_plan_status_name(mipmap_upload_plan_status) }
+        -> std::same_as<std::string>;
+    { render::checked_render_image_texture_mipmap_upload_size(
+        std::size_t{}, std::size_t{}, mipmap_upload_plan.total_staging_byte_count) }
+        -> std::same_as<bool>;
+    { render::append_render_image_texture_mipmap_level_upload_plan(
+        mipmap_upload_plan, std::size_t{}, std::size_t{}, std::size_t{}) }
+        -> std::same_as<bool>;
+    { render::make_render_image_texture_mipmap_upload_plan(image, upload_request.sampler) }
+        -> std::same_as<render::render_image_texture_mipmap_upload_plan>;
+    { mipmap_level_upload_plan.level } -> std::same_as<std::size_t&>;
+    { mipmap_level_upload_plan.width } -> std::same_as<std::size_t&>;
+    { mipmap_level_upload_plan.height } -> std::same_as<std::size_t&>;
+    { mipmap_level_upload_plan.pixel_count } -> std::same_as<std::size_t&>;
+    { mipmap_level_upload_plan.byte_count } -> std::same_as<std::size_t&>;
+    { mipmap_level_upload_plan.staging_byte_offset } -> std::same_as<std::size_t&>;
+    { mipmap_upload_plan.status } -> std::same_as<render::render_image_texture_mipmap_upload_plan_status&>;
+    { mipmap_upload_plan.status_name } -> std::same_as<std::string&>;
+    { mipmap_upload_plan.mipmap_mode } -> std::same_as<render::render_image_mipmap_mode&>;
+    { mipmap_upload_plan.mipmap_mode_name } -> std::same_as<std::string&>;
+    { mipmap_upload_plan.pixel_format } -> std::same_as<render::render_image_pixel_format&>;
+    { mipmap_upload_plan.bytes_per_pixel } -> std::same_as<std::size_t&>;
+    { mipmap_upload_plan.base_width } -> std::same_as<std::size_t&>;
+    { mipmap_upload_plan.base_height } -> std::same_as<std::size_t&>;
+    { mipmap_upload_plan.mipmaps_requested } -> std::same_as<bool&>;
+    { mipmap_upload_plan.upload_plannable } -> std::same_as<bool&>;
+    { mipmap_upload_plan.requested_mip_level_count } -> std::same_as<std::size_t&>;
+    { mipmap_upload_plan.generated_mip_level_count } -> std::same_as<std::size_t&>;
+    { mipmap_upload_plan.total_pixel_count } -> std::same_as<std::size_t&>;
+    { mipmap_upload_plan.total_staging_byte_count } -> std::same_as<std::size_t&>;
+    { mipmap_upload_plan.total_upload_byte_count } -> std::same_as<std::size_t&>;
+    { mipmap_upload_plan.levels }
+        -> std::same_as<std::vector<render::render_image_texture_mipmap_level_upload_plan>&>;
+    { mipmap_upload_plan.diagnostic } -> std::same_as<std::string&>;
+    { mipmap_upload_plan.ok() } -> std::same_as<bool>;
     { upload_retry_snapshot.generation_id }
         -> std::same_as<render::fake_image_texture_upload_generation_id&>;
     { upload_retry_snapshot.key } -> std::same_as<render::render_image_texture_key&>;
@@ -707,6 +749,7 @@ static_assert(requires(
     { upload_result.pixel_byte_count } -> std::same_as<std::size_t&>;
     { upload_result.decoded_byte_count } -> std::same_as<std::size_t&>;
     { upload_result.staging_byte_count } -> std::same_as<std::size_t&>;
+    { upload_result.mipmap_upload_plan } -> std::same_as<render::render_image_texture_mipmap_upload_plan&>;
     { upload_result.diagnostic } -> std::same_as<std::string&>;
     { upload_result.ok() } -> std::same_as<bool>;
     { sampler_policy.sampler } -> std::same_as<render::render_image_sampler_policy&>;
@@ -757,6 +800,8 @@ static_assert(requires(
     { upload_request_snapshot.pixel_byte_count } -> std::same_as<std::size_t&>;
     { upload_request_snapshot.decoded_byte_count } -> std::same_as<std::size_t&>;
     { upload_request_snapshot.staging_byte_count } -> std::same_as<std::size_t&>;
+    { upload_request_snapshot.mipmap_upload_plan }
+        -> std::same_as<render::render_image_texture_mipmap_upload_plan&>;
     { upload_request_snapshot.attempt_count_for_key } -> std::same_as<std::size_t&>;
     { upload_result_snapshot.generation_id } -> std::same_as<render::fake_image_texture_upload_generation_id&>;
     { upload_result_snapshot.status } -> std::same_as<render::render_image_texture_upload_status&>;
@@ -767,6 +812,8 @@ static_assert(requires(
     { upload_result_snapshot.pixel_byte_count } -> std::same_as<std::size_t&>;
     { upload_result_snapshot.decoded_byte_count } -> std::same_as<std::size_t&>;
     { upload_result_snapshot.staging_byte_count } -> std::same_as<std::size_t&>;
+    { upload_result_snapshot.mipmap_upload_plan }
+        -> std::same_as<render::render_image_texture_mipmap_upload_plan&>;
     { upload_result_snapshot.diagnostic } -> std::same_as<std::string&>;
     { upload_result_snapshot.retry } -> std::same_as<render::fake_image_texture_upload_retry_snapshot&>;
     { upload_entry.generation_id } -> std::same_as<render::fake_image_texture_upload_generation_id&>;
@@ -780,6 +827,7 @@ static_assert(requires(
     { upload_entry.pixel_byte_count } -> std::same_as<std::size_t&>;
     { upload_entry.decoded_byte_count } -> std::same_as<std::size_t&>;
     { upload_entry.staging_byte_count } -> std::same_as<std::size_t&>;
+    { upload_entry.mipmap_upload_plan } -> std::same_as<render::render_image_texture_mipmap_upload_plan&>;
     { upload_entry.diagnostic } -> std::same_as<std::string&>;
     { upload_entry.retry } -> std::same_as<render::fake_image_texture_upload_retry_snapshot&>;
     { upload_queue_entry.enqueue_sequence } -> std::same_as<std::size_t&>;
@@ -789,6 +837,8 @@ static_assert(requires(
     { upload_queue_entry.key } -> std::same_as<render::render_image_texture_key&>;
     { upload_queue_entry.texture } -> std::same_as<render::render_image_texture_handle&>;
     { upload_queue_entry.staging_byte_count } -> std::same_as<std::size_t&>;
+    { upload_queue_entry.mipmap_upload_plan }
+        -> std::same_as<render::render_image_texture_mipmap_upload_plan&>;
     { upload_queue_entry.queue_depth_before_enqueue } -> std::same_as<std::size_t&>;
     { upload_queue_entry.queue_depth_after_enqueue } -> std::same_as<std::size_t&>;
     { upload_queue_entry.queue_depth_after_completion } -> std::same_as<std::size_t&>;
@@ -816,6 +866,188 @@ static_assert(requires(
     { upload_snapshot.completed_without_retry_count } -> std::same_as<std::size_t&>;
     { upload_snapshot.retry_snapshots }
         -> std::same_as<std::vector<render::fake_image_texture_upload_retry_snapshot>&>;
+    { render::fake_image_texture_upload_snapshot_diff_entry_status_name(upload_snapshot_diff_entry_status) }
+        -> std::same_as<std::string>;
+    { render::fake_image_texture_upload_snapshot_size_delta(std::size_t{}, std::size_t{}) }
+        -> std::same_as<std::int64_t>;
+    { render::fake_image_texture_upload_texture_handle_equal(upload_result.texture, upload_result.texture) }
+        -> std::same_as<bool>;
+    { render::fake_image_texture_upload_mipmap_level_plan_equal(
+        mipmap_level_upload_plan, mipmap_level_upload_plan) }
+        -> std::same_as<bool>;
+    { render::fake_image_texture_upload_mipmap_plan_equal(mipmap_upload_plan, mipmap_upload_plan) }
+        -> std::same_as<bool>;
+    { render::fake_image_texture_upload_retry_snapshot_equal(upload_retry_snapshot, upload_retry_snapshot) }
+        -> std::same_as<bool>;
+    { render::fake_image_texture_upload_request_snapshot_equal(
+        upload_request_snapshot, upload_request_snapshot) }
+        -> std::same_as<bool>;
+    { render::fake_image_texture_upload_result_snapshot_equal(
+        upload_result_snapshot, upload_result_snapshot) }
+        -> std::same_as<bool>;
+    { render::fake_image_texture_upload_queue_snapshot_equal(upload_queue_entry, upload_queue_entry) }
+        -> std::same_as<bool>;
+    { render::fake_image_texture_upload_request_snapshot_for_generation(
+        upload_snapshot, upload_generation_id) }
+        -> std::same_as<const render::fake_image_texture_upload_request_snapshot*>;
+    { render::fake_image_texture_upload_result_snapshot_for_generation(upload_snapshot, upload_generation_id) }
+        -> std::same_as<const render::fake_image_texture_upload_result_snapshot*>;
+    { render::fake_image_texture_upload_queue_snapshot_for_generation(upload_snapshot, upload_generation_id) }
+        -> std::same_as<const render::fake_image_texture_upload_queue_entry_snapshot*>;
+    { render::fake_image_texture_upload_entry_for_generation(upload_snapshot, upload_generation_id) }
+        -> std::same_as<const render::fake_image_texture_upload_snapshot_entry*>;
+    { render::fake_image_texture_upload_retry_eligibility_is_retryable(upload_retry_eligibility) }
+        -> std::same_as<bool>;
+    { render::fake_image_texture_upload_retry_eligibility_is_nonretryable(upload_retry_eligibility) }
+        -> std::same_as<bool>;
+    { render::fake_image_texture_mipmap_upload_plan_status_is_invalid(mipmap_upload_plan_status) }
+        -> std::same_as<bool>;
+    { render::fake_image_texture_mipmap_upload_plan_status_is_overflow(mipmap_upload_plan_status) }
+        -> std::same_as<bool>;
+    { render::fake_image_texture_mipmap_upload_plan_status_is_unsupported(mipmap_upload_plan_status) }
+        -> std::same_as<bool>;
+    { render::fake_image_texture_upload_queue_depth_pressure(&upload_queue_entry) }
+        -> std::same_as<std::size_t>;
+    { render::fake_image_texture_upload_snapshot_mip_level_count(upload_snapshot) }
+        -> std::same_as<std::size_t>;
+    { render::fake_image_texture_upload_snapshot_mipmap_byte_count(upload_snapshot) }
+        -> std::same_as<std::size_t>;
+    { render::make_fake_image_texture_upload_snapshot_entry_diff(
+        &upload_request_snapshot,
+        &upload_request_snapshot,
+        &upload_result_snapshot,
+        &upload_result_snapshot,
+        &upload_queue_entry,
+        &upload_queue_entry,
+        upload_generation_id) } -> std::same_as<render::fake_image_texture_upload_snapshot_entry_diff>;
+    { render::diff_fake_image_texture_upload_snapshots(upload_snapshot, upload_snapshot) }
+        -> std::same_as<render::fake_image_texture_upload_snapshot_diff>;
+    { upload_snapshot_entry_diff.generation_id }
+        -> std::same_as<render::fake_image_texture_upload_generation_id&>;
+    { upload_snapshot_entry_diff.status }
+        -> std::same_as<render::fake_image_texture_upload_snapshot_diff_entry_status&>;
+    { upload_snapshot_entry_diff.status_name } -> std::same_as<std::string&>;
+    { upload_snapshot_entry_diff.before_present } -> std::same_as<bool&>;
+    { upload_snapshot_entry_diff.after_present } -> std::same_as<bool&>;
+    { upload_snapshot_entry_diff.before_request_present } -> std::same_as<bool&>;
+    { upload_snapshot_entry_diff.after_request_present } -> std::same_as<bool&>;
+    { upload_snapshot_entry_diff.before_result_present } -> std::same_as<bool&>;
+    { upload_snapshot_entry_diff.after_result_present } -> std::same_as<bool&>;
+    { upload_snapshot_entry_diff.before_queue_present } -> std::same_as<bool&>;
+    { upload_snapshot_entry_diff.after_queue_present } -> std::same_as<bool&>;
+    { upload_snapshot_entry_diff.before_key } -> std::same_as<render::render_image_texture_key&>;
+    { upload_snapshot_entry_diff.after_key } -> std::same_as<render::render_image_texture_key&>;
+    { upload_snapshot_entry_diff.before_upload_status }
+        -> std::same_as<render::render_image_texture_upload_status&>;
+    { upload_snapshot_entry_diff.after_upload_status }
+        -> std::same_as<render::render_image_texture_upload_status&>;
+    { upload_snapshot_entry_diff.before_retry_eligibility }
+        -> std::same_as<render::fake_image_texture_upload_retry_eligibility&>;
+    { upload_snapshot_entry_diff.after_retry_eligibility }
+        -> std::same_as<render::fake_image_texture_upload_retry_eligibility&>;
+    { upload_snapshot_entry_diff.before_texture } -> std::same_as<render::render_image_texture_handle&>;
+    { upload_snapshot_entry_diff.after_texture } -> std::same_as<render::render_image_texture_handle&>;
+    { upload_snapshot_entry_diff.before_staging_byte_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_entry_diff.after_staging_byte_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_entry_diff.staging_byte_delta } -> std::same_as<std::int64_t&>;
+    { upload_snapshot_entry_diff.before_mip_level_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_entry_diff.after_mip_level_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_entry_diff.mip_level_count_delta } -> std::same_as<std::int64_t&>;
+    { upload_snapshot_entry_diff.before_mipmap_byte_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_entry_diff.after_mipmap_byte_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_entry_diff.mipmap_byte_delta } -> std::same_as<std::int64_t&>;
+    { upload_snapshot_entry_diff.before_mipmap_plan_status }
+        -> std::same_as<render::render_image_texture_mipmap_upload_plan_status&>;
+    { upload_snapshot_entry_diff.after_mipmap_plan_status }
+        -> std::same_as<render::render_image_texture_mipmap_upload_plan_status&>;
+    { upload_snapshot_entry_diff.before_queue_depth_after_enqueue } -> std::same_as<std::size_t&>;
+    { upload_snapshot_entry_diff.after_queue_depth_after_enqueue } -> std::same_as<std::size_t&>;
+    { upload_snapshot_entry_diff.before_queue_depth_after_completion } -> std::same_as<std::size_t&>;
+    { upload_snapshot_entry_diff.after_queue_depth_after_completion } -> std::same_as<std::size_t&>;
+    { upload_snapshot_entry_diff.request_snapshot_changed } -> std::same_as<bool&>;
+    { upload_snapshot_entry_diff.result_snapshot_changed } -> std::same_as<bool&>;
+    { upload_snapshot_entry_diff.queue_snapshot_changed } -> std::same_as<bool&>;
+    { upload_snapshot_entry_diff.retryability_changed } -> std::same_as<bool&>;
+    { upload_snapshot_entry_diff.retryable_to_nonretryable } -> std::same_as<bool&>;
+    { upload_snapshot_entry_diff.nonretryable_to_retryable } -> std::same_as<bool&>;
+    { upload_snapshot_entry_diff.queue_depth_regressed } -> std::same_as<bool&>;
+    { upload_snapshot_entry_diff.queue_depth_recovered } -> std::same_as<bool&>;
+    { upload_snapshot_entry_diff.mipmap_plan_status_changed } -> std::same_as<bool&>;
+    { upload_snapshot_entry_diff.invalid_plan_transition } -> std::same_as<bool&>;
+    { upload_snapshot_entry_diff.invalid_plan_regression } -> std::same_as<bool&>;
+    { upload_snapshot_entry_diff.invalid_plan_recovery } -> std::same_as<bool&>;
+    { upload_snapshot_entry_diff.overflow_plan_transition } -> std::same_as<bool&>;
+    { upload_snapshot_entry_diff.overflow_plan_regression } -> std::same_as<bool&>;
+    { upload_snapshot_entry_diff.overflow_plan_recovery } -> std::same_as<bool&>;
+    { upload_snapshot_entry_diff.unsupported_plan_transition } -> std::same_as<bool&>;
+    { upload_snapshot_entry_diff.unsupported_plan_regression } -> std::same_as<bool&>;
+    { upload_snapshot_entry_diff.unsupported_plan_recovery } -> std::same_as<bool&>;
+    { upload_snapshot_entry_diff.texture_handle_added } -> std::same_as<bool&>;
+    { upload_snapshot_entry_diff.texture_handle_removed } -> std::same_as<bool&>;
+    { upload_snapshot_entry_diff.texture_handle_changed } -> std::same_as<bool&>;
+    { upload_snapshot_entry_diff.regression } -> std::same_as<bool&>;
+    { upload_snapshot_entry_diff.diagnostic } -> std::same_as<std::string&>;
+    { upload_snapshot_entry_diff.changed() } -> std::same_as<bool>;
+    { upload_snapshot_entry_diff.ok() } -> std::same_as<bool>;
+    { upload_snapshot_diff.before_upload_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.after_upload_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.before_request_snapshot_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.after_request_snapshot_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.before_result_snapshot_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.after_result_snapshot_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.before_queue_snapshot_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.after_queue_snapshot_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.unchanged_upload_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.added_upload_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.removed_upload_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.changed_upload_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.request_snapshot_added_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.request_snapshot_removed_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.request_snapshot_changed_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.result_snapshot_added_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.result_snapshot_removed_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.result_snapshot_changed_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.queue_snapshot_added_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.queue_snapshot_removed_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.queue_snapshot_changed_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.before_staged_byte_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.after_staged_byte_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.staged_byte_delta } -> std::same_as<std::int64_t&>;
+    { upload_snapshot_diff.before_attempted_staging_byte_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.after_attempted_staging_byte_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.attempted_staging_byte_delta } -> std::same_as<std::int64_t&>;
+    { upload_snapshot_diff.before_mip_level_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.after_mip_level_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.mip_level_count_delta } -> std::same_as<std::int64_t&>;
+    { upload_snapshot_diff.before_mipmap_byte_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.after_mipmap_byte_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.mipmap_byte_delta } -> std::same_as<std::int64_t&>;
+    { upload_snapshot_diff.retryability_changed_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.retryable_to_nonretryable_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.nonretryable_to_retryable_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.queue_depth_regression_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.queue_depth_recovery_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.mipmap_plan_status_changed_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.invalid_plan_transition_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.invalid_plan_regression_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.invalid_plan_recovery_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.overflow_plan_transition_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.overflow_plan_regression_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.overflow_plan_recovery_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.unsupported_plan_transition_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.unsupported_plan_regression_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.unsupported_plan_recovery_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.texture_handle_added_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.texture_handle_removed_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.texture_handle_changed_count } -> std::same_as<std::size_t&>;
+    { upload_snapshot_diff.has_changes } -> std::same_as<bool&>;
+    { upload_snapshot_diff.has_regression } -> std::same_as<bool&>;
+    { upload_snapshot_diff.has_recovery } -> std::same_as<bool&>;
+    { upload_snapshot_diff.regression_summary } -> std::same_as<std::string&>;
+    { upload_snapshot_diff.entries }
+        -> std::same_as<std::vector<render::fake_image_texture_upload_snapshot_entry_diff>&>;
+    { upload_snapshot_diff.diagnostic } -> std::same_as<std::string&>;
+    { upload_snapshot_diff.ok() } -> std::same_as<bool>;
     { uploader.diagnostic_snapshot() } -> std::same_as<render::fake_image_texture_upload_snapshot>;
     upload_generation_id;
     upload_status;

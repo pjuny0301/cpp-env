@@ -74,6 +74,7 @@ struct gesture_policy_snapshot {
     float swipe_min_dx = 0.0f;
     float swipe_max_dy = 0.0f;
     std::int64_t swipe_max_duration_ms = 0;
+    std::int64_t long_press_min_duration_ms = 0;
     float tap_slop = 0.0f;
     float drag_start_slop = 0.0f;
     bool emitted_input_event = false;

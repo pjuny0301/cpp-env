@@ -164,6 +164,23 @@ void append_diagnostics(
     quiz_vulkan::input::accumulate_input_diagnostic_summary(target.summary, source.summary);
 }
 
+quiz_vulkan::input::action_route_policy_diagnostic gesture_policy_route(
+    quiz_vulkan::input::gesture_policy_snapshot policy,
+    quiz_vulkan::input::pointer_contact_kind contact,
+    quiz_vulkan::input::pointer_phase phase,
+    std::int32_t pointer_id)
+{
+    return quiz_vulkan::input::action_route_policy_diagnostic{
+        .kind = quiz_vulkan::input::action_route_policy_kind::gesture_route_snapshot,
+        .timestamp_ms = policy.timestamp_ms,
+        .emits_input_event = policy.emitted_input_event,
+        .gesture_policy = policy,
+        .pointer_event_phase = phase,
+        .pointer_contact = contact,
+        .pointer_id = pointer_id,
+    };
+}
+
 void require_swipe_parity(
     quiz_vulkan::raw_platform_pointer_button button,
     quiz_vulkan::input::pointer_contact_kind contact,
@@ -1178,6 +1195,223 @@ void test_routing_diagnostics_diff_reports_semantic_free_route_deltas()
         "routing diff self comparison has no clean state changes");
 }
 
+void test_gesture_policy_route_diff_counts_threshold_and_policy_changes()
+{
+    using namespace quiz_vulkan::input;
+
+    input_routing_diagnostics before;
+    before.action_routes.push_back(gesture_policy_route(
+        gesture_policy_snapshot{
+            .decision = gesture_policy_decision::swipe_accepted,
+            .direction = gesture_direction::right,
+            .phase = pointer_phase::up,
+            .timestamp_ms = 100,
+            .duration_ms = 240,
+            .pointer_id = 10,
+            .delta_x = 70.0f,
+            .delta_y = 4.0f,
+            .swipe_min_dx = 60.0f,
+            .swipe_max_dy = 40.0f,
+            .swipe_max_duration_ms = 800,
+            .long_press_min_duration_ms = 600,
+            .tap_slop = 8.0f,
+            .drag_start_slop = 8.0f,
+            .emitted_input_event = true,
+            .emitted_kind = gesture_kind::swipe_right,
+        },
+        pointer_contact_kind::touch_like,
+        pointer_phase::up,
+        10));
+    before.action_routes.push_back(gesture_policy_route(
+        gesture_policy_snapshot{
+            .decision = gesture_policy_decision::release_suppressed,
+            .direction = gesture_direction::none,
+            .phase = pointer_phase::up,
+            .timestamp_ms = 200,
+            .duration_ms = 100,
+            .pointer_id = 11,
+            .swipe_min_dx = 60.0f,
+            .swipe_max_dy = 40.0f,
+            .swipe_max_duration_ms = 800,
+            .long_press_min_duration_ms = 600,
+            .tap_slop = 8.0f,
+            .drag_start_slop = 8.0f,
+            .emitted_input_event = false,
+            .emitted_kind = gesture_kind::tap,
+        },
+        pointer_contact_kind::mouse_like,
+        pointer_phase::up,
+        11));
+    before.action_routes.push_back(gesture_policy_route(
+        gesture_policy_snapshot{
+            .decision = gesture_policy_decision::long_press_accepted,
+            .direction = gesture_direction::none,
+            .phase = pointer_phase::move,
+            .timestamp_ms = 300,
+            .duration_ms = 600,
+            .pointer_id = 12,
+            .swipe_min_dx = 60.0f,
+            .swipe_max_dy = 40.0f,
+            .swipe_max_duration_ms = 800,
+            .long_press_min_duration_ms = 600,
+            .tap_slop = 8.0f,
+            .drag_start_slop = 8.0f,
+            .emitted_input_event = true,
+            .emitted_kind = gesture_kind::long_press,
+        },
+        pointer_contact_kind::touch_like,
+        pointer_phase::move,
+        12));
+
+    input_routing_diagnostics after;
+    after.action_routes.push_back(gesture_policy_route(
+        gesture_policy_snapshot{
+            .decision = gesture_policy_decision::swipe_rejected_distance,
+            .direction = gesture_direction::left,
+            .phase = pointer_phase::up,
+            .timestamp_ms = 100,
+            .duration_ms = 240,
+            .pointer_id = 10,
+            .delta_x = -70.0f,
+            .delta_y = 4.0f,
+            .swipe_min_dx = 80.0f,
+            .swipe_max_dy = 30.0f,
+            .swipe_max_duration_ms = 700,
+            .long_press_min_duration_ms = 600,
+            .tap_slop = 8.0f,
+            .drag_start_slop = 8.0f,
+            .emitted_input_event = false,
+            .emitted_kind = gesture_kind::tap,
+        },
+        pointer_contact_kind::touch_like,
+        pointer_phase::up,
+        10));
+    after.action_routes.push_back(gesture_policy_route(
+        gesture_policy_snapshot{
+            .decision = gesture_policy_decision::drag_started,
+            .direction = gesture_direction::right,
+            .phase = pointer_phase::move,
+            .timestamp_ms = 200,
+            .duration_ms = 100,
+            .pointer_id = 12,
+            .delta_x = 7.0f,
+            .swipe_min_dx = 60.0f,
+            .swipe_max_dy = 40.0f,
+            .swipe_max_duration_ms = 800,
+            .long_press_min_duration_ms = 600,
+            .tap_slop = 8.0f,
+            .drag_start_slop = 6.0f,
+            .emitted_input_event = true,
+            .emitted_kind = gesture_kind::drag_start,
+        },
+        pointer_contact_kind::touch_like,
+        pointer_phase::move,
+        12));
+    after.action_routes.push_back(gesture_policy_route(
+        gesture_policy_snapshot{
+            .decision = gesture_policy_decision::long_press_accepted,
+            .direction = gesture_direction::none,
+            .phase = pointer_phase::move,
+            .timestamp_ms = 300,
+            .duration_ms = 700,
+            .pointer_id = 12,
+            .swipe_min_dx = 60.0f,
+            .swipe_max_dy = 40.0f,
+            .swipe_max_duration_ms = 800,
+            .long_press_min_duration_ms = 700,
+            .tap_slop = 8.0f,
+            .drag_start_slop = 8.0f,
+            .emitted_input_event = true,
+            .emitted_kind = gesture_kind::long_press,
+        },
+        pointer_contact_kind::touch_like,
+        pointer_phase::move,
+        12));
+
+    const input_routing_gesture_policy_diff policy_diff =
+        diff_input_routing_gesture_policies(before, after);
+    require(policy_diff.changed, "gesture policy diff marks changed snapshots");
+    require(policy_diff.route_count.delta == 0, "gesture policy diff keeps route count stable");
+    require(policy_diff.compared_route_count == 3, "gesture policy diff compares matching gesture routes");
+    require(policy_diff.unpaired_before_route_count == 0,
+        "gesture policy diff has no unpaired before routes");
+    require(policy_diff.unpaired_after_route_count == 0,
+        "gesture policy diff has no unpaired after routes");
+    require(policy_diff.threshold_change_count == 5,
+        "gesture policy diff counts changed threshold fields");
+    require(policy_diff.decision_change_count == 2,
+        "gesture policy diff counts decision changes");
+    require(policy_diff.emitted_kind_change_count == 2,
+        "gesture policy diff counts emitted kind changes");
+    require(policy_diff.direction_change_count == 2,
+        "gesture policy diff counts direction changes");
+    require(policy_diff.accepted_to_suppressed_regression_count == 1,
+        "gesture policy diff counts accepted-to-suppressed regression");
+    require(policy_diff.suppressed_to_accepted_recovery_count == 1,
+        "gesture policy diff counts suppressed-to-accepted recovery");
+    require(policy_diff.swipe_threshold_tightening_count == 3,
+        "gesture policy diff counts swipe threshold tightening");
+    require(policy_diff.swipe_threshold_loosening_count == 0,
+        "gesture policy diff counts no swipe loosening");
+    require(policy_diff.long_press_threshold_tightening_count == 1,
+        "gesture policy diff counts long press threshold tightening");
+    require(policy_diff.long_press_threshold_loosening_count == 0,
+        "gesture policy diff counts no long press loosening");
+    require(policy_diff.drag_threshold_tightening_count == 0,
+        "gesture policy diff counts no drag tightening");
+    require(policy_diff.drag_threshold_loosening_count == 1,
+        "gesture policy diff counts drag threshold loosening");
+    require(policy_diff.pointer_mismatch_count == 1,
+        "gesture policy diff counts pointer mismatch");
+    require(policy_diff.contact_mismatch_count == 1,
+        "gesture policy diff counts contact mismatch");
+    require(policy_diff.phase_mismatch_count == 1,
+        "gesture policy diff counts phase mismatch");
+
+    const input_routing_gesture_policy_route_diff& swipe = policy_diff.routes[0];
+    require(swipe.accepted_to_suppressed,
+        "gesture policy route diff records accepted-to-suppressed swipe");
+    require(swipe.thresholds.swipe_min_dx.tightened,
+        "gesture policy route diff records min dx tightening");
+    require(swipe.thresholds.swipe_max_dy.tightened,
+        "gesture policy route diff records max dy tightening");
+    require(swipe.thresholds.swipe_max_duration_ms.tightened,
+        "gesture policy route diff records duration tightening");
+
+    const input_routing_gesture_policy_route_diff& drag = policy_diff.routes[1];
+    require(drag.suppressed_to_accepted,
+        "gesture policy route diff records suppressed-to-accepted drag");
+    require(drag.thresholds.drag_start_slop.loosened,
+        "gesture policy route diff records drag threshold loosening");
+    require(drag.pointer_mismatch, "gesture policy route diff records pointer mismatch");
+    require(drag.contact_mismatch, "gesture policy route diff records contact mismatch");
+    require(drag.phase_mismatch, "gesture policy route diff records phase mismatch");
+
+    const input_routing_gesture_policy_route_diff& long_press = policy_diff.routes[2];
+    require(long_press.thresholds.long_press_min_duration_ms.tightened,
+        "gesture policy route diff records long press tightening");
+    require(!long_press.decision_changed,
+        "gesture policy route diff leaves stable long press decision unchanged");
+
+    const input_routing_diagnostics_diff diagnostics_diff =
+        diff_input_routing_diagnostics(before, after);
+    require(diagnostics_diff.gesture_policy_changed,
+        "routing diff reports gesture policy change");
+    require(diagnostics_diff.action_routes_changed,
+        "routing diff treats gesture policy change as action route change");
+    require(diagnostics_diff.gesture_policies.threshold_change_count == 5,
+        "routing diff exposes gesture policy threshold count");
+    require(diagnostics_diff.gesture_policies.accepted_to_suppressed_regression_count == 1,
+        "routing diff exposes gesture policy regression count");
+    require(diagnostics_diff.changed, "routing diff changes when gesture policy changes");
+
+    const input_routing_diagnostics_diff stable_diff = diff_input_routing_diagnostics(after, after);
+    require(!stable_diff.gesture_policy_changed,
+        "routing diff self comparison has no gesture policy changes");
+    require(!stable_diff.gesture_policies.changed,
+        "gesture policy diff self comparison is unchanged");
+}
+
 } // namespace
 
 int main()
@@ -1190,6 +1424,7 @@ int main()
     test_long_press_timing_and_policy_order_are_deterministic();
     test_wheel_delta_normalization_updates_summaries_and_action_routes();
     test_routing_diagnostics_diff_reports_semantic_free_route_deltas();
+    test_gesture_policy_route_diff_counts_threshold_and_policy_changes();
 
     std::cout << "input_engine_gesture_diagnostics_tests passed\n";
     return 0;

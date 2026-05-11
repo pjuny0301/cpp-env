@@ -650,6 +650,192 @@ void test_caret_and_selection_movement_clear_stale_preedit()
     require(model.caret_byte_offset() == 0, "left edge keeps caret at start");
 }
 
+void test_text_edit_transaction_diagnostics_for_selection_replacement()
+{
+    using namespace quiz_vulkan::input;
+
+    text_input_model model;
+    model.focus("answer");
+
+    const std::string initial = std::string("A") + utf8(u8"한") + "B";
+    require(model.commit_utf8(initial), "transaction replacement initial text commits");
+    require(model.set_selection({.start_byte = 1, .end_byte = 4}),
+        "transaction replacement selects utf8 codepoint");
+
+    require(model.commit_utf8("x"), "transaction replacement commit succeeds");
+    const text_edit_transaction_diagnostics& transaction = model.last_transaction_diagnostics();
+
+    require(transaction.operation == text_edit_transaction_operation::commit_utf8,
+        "transaction replacement records commit operation");
+    require(transaction.accepted, "transaction replacement is accepted");
+    require(!transaction.rejected, "transaction replacement is not rejected");
+    require(transaction.rejection_reason == text_edit_transaction_rejection_reason::none,
+        "transaction replacement has no rejection reason");
+    require(transaction.before.text == initial, "transaction replacement records before text");
+    require(transaction.after.text == "AxB", "transaction replacement records after text");
+    require(transaction.before.display_text == initial, "transaction replacement records before display");
+    require(transaction.after.display_text == "AxB", "transaction replacement records after display");
+    require(transaction.before.has_selection, "transaction replacement records before selection");
+    require_range(transaction.before.selection, 1, 4, "transaction replacement records selection range");
+    require(!transaction.after.has_selection, "transaction replacement records cleared selection");
+    require(transaction.after.caret_byte_offset == 2, "transaction replacement records after caret");
+    require(transaction.bytes.committed_text_bytes_before == initial.size(),
+        "transaction replacement records before committed bytes");
+    require(transaction.bytes.committed_text_bytes_after == 3,
+        "transaction replacement records after committed bytes");
+    require(transaction.bytes.committed_byte_delta == -2,
+        "transaction replacement records committed byte delta");
+    require(transaction.bytes.inserted_byte_count == 1,
+        "transaction replacement records inserted byte count");
+    require(transaction.bytes.deleted_byte_count == std::string(utf8(u8"한")).size(),
+        "transaction replacement records deleted byte count");
+    require(transaction.bytes.replaced_byte_count == std::string(utf8(u8"한")).size(),
+        "transaction replacement records replaced byte count");
+    require(transaction.text_changed, "transaction replacement flags text change");
+    require(transaction.display_text_changed, "transaction replacement flags display change");
+    require(transaction.caret_changed, "transaction replacement flags caret change");
+    require(transaction.selection_changed, "transaction replacement flags selection change");
+    require(transaction.selection_was_active, "transaction replacement records active selection");
+    require(transaction.selection_replaced_committed_text,
+        "transaction replacement flags committed selection replacement");
+    require(transaction.selection_cleared, "transaction replacement flags selection clear");
+    require(transaction.utf8_boundary_safe, "transaction replacement remains utf8 boundary safe");
+    require(!transaction.invalid_edit_rejected, "transaction replacement has no invalid rejection");
+}
+
+void test_text_edit_transaction_diagnostics_for_utf8_backspace_and_rejections()
+{
+    using namespace quiz_vulkan::input;
+
+    text_input_model unfocused_model;
+    require(!unfocused_model.commit_utf8("x"), "transaction unfocused commit is rejected");
+    text_edit_transaction_diagnostics rejected = unfocused_model.last_transaction_diagnostics();
+    require(rejected.operation == text_edit_transaction_operation::commit_utf8,
+        "transaction unfocused commit records operation");
+    require(rejected.rejected, "transaction unfocused commit records rejection");
+    require(rejected.rejection_reason == text_edit_transaction_rejection_reason::not_focused,
+        "transaction unfocused commit records not-focused reason");
+    require(rejected.invalid_edit_rejected, "transaction unfocused commit records invalid edit evidence");
+    require(!rejected.changed, "transaction unfocused commit has no mutation");
+
+    text_input_model model;
+    model.focus("answer");
+    require(!model.commit_utf8(""), "transaction empty commit is rejected");
+    rejected = model.last_transaction_diagnostics();
+    require(rejected.rejection_reason == text_edit_transaction_rejection_reason::empty_text,
+        "transaction empty commit records empty text reason");
+    require(rejected.invalid_edit_rejected, "transaction empty commit records invalid edit evidence");
+
+    const std::string initial = std::string("A") + utf8(u8"한");
+    require(model.commit_utf8(initial), "transaction utf8 backspace initial commit succeeds");
+    require(model.backspace(), "transaction utf8 backspace succeeds");
+    const text_edit_transaction_diagnostics& backspace = model.last_transaction_diagnostics();
+    require(backspace.operation == text_edit_transaction_operation::backspace,
+        "transaction utf8 backspace records operation");
+    require(backspace.accepted, "transaction utf8 backspace is accepted");
+    require(backspace.before.text == initial, "transaction utf8 backspace records before text");
+    require(backspace.after.text == "A", "transaction utf8 backspace records after text");
+    require(backspace.bytes.deleted_byte_count == std::string(utf8(u8"한")).size(),
+        "transaction utf8 backspace records whole codepoint deletion");
+    require(backspace.bytes.inserted_byte_count == 0,
+        "transaction utf8 backspace records no insertion");
+    require(backspace.bytes.replaced_byte_count == 0,
+        "transaction utf8 backspace records no replacement");
+    require(backspace.before.caret_byte_offset == initial.size(),
+        "transaction utf8 backspace records before caret");
+    require(backspace.after.caret_byte_offset == 1,
+        "transaction utf8 backspace records after caret");
+    require(backspace.utf8_boundary_safe, "transaction utf8 backspace stays on utf8 boundaries");
+
+    require(model.backspace(), "transaction ascii backspace succeeds");
+    require(!model.backspace(), "transaction empty backspace is rejected");
+    rejected = model.last_transaction_diagnostics();
+    require(rejected.operation == text_edit_transaction_operation::backspace,
+        "transaction empty backspace records operation");
+    require(rejected.rejection_reason == text_edit_transaction_rejection_reason::no_text_before_caret,
+        "transaction empty backspace records caret-boundary reason");
+    require(rejected.invalid_edit_rejected, "transaction empty backspace records invalid edit evidence");
+    require(!rejected.changed, "transaction empty backspace has no mutation");
+}
+
+void test_text_edit_transaction_diagnostics_for_ime_transitions()
+{
+    using namespace quiz_vulkan::input;
+
+    text_input_model model;
+    model.focus("answer");
+    const std::string initial = std::string("A") + utf8(u8"한") + "B";
+    require(model.commit_utf8(initial), "transaction ime initial text commits");
+    require(model.set_selection({.start_byte = 1, .end_byte = 4}),
+        "transaction ime selects replacement range");
+
+    const std::string preedit = utf8(u8"ㅎ");
+    require(model.set_preedit(preedit), "transaction ime preedit starts");
+    text_edit_transaction_diagnostics transaction = model.last_transaction_diagnostics();
+    require(transaction.operation == text_edit_transaction_operation::set_preedit,
+        "transaction ime preedit records operation");
+    require(transaction.ime_preedit_started, "transaction ime preedit records start transition");
+    require(transaction.before.preedit_text.empty(), "transaction ime preedit records empty before preedit");
+    require(transaction.after.preedit_text == preedit, "transaction ime preedit records after preedit");
+    require(transaction.before.text == initial, "transaction ime preedit preserves before committed text");
+    require(transaction.after.text == initial, "transaction ime preedit preserves committed text");
+    require(transaction.selection_was_active, "transaction ime preedit records active selection");
+    require(transaction.selection_replaced_display_text,
+        "transaction ime preedit flags display selection replacement");
+    require(transaction.bytes.committed_byte_delta == 0,
+        "transaction ime preedit records no committed byte delta");
+    require(transaction.display_text_changed, "transaction ime preedit flags display change");
+    require(transaction.utf8_boundary_safe, "transaction ime preedit remains utf8 boundary safe");
+
+    const std::string updated_preedit = utf8(u8"하");
+    require(model.set_preedit(updated_preedit), "transaction ime preedit updates");
+    transaction = model.last_transaction_diagnostics();
+    require(transaction.ime_preedit_updated, "transaction ime preedit records update transition");
+    require(transaction.before.preedit_text == preedit, "transaction ime update records previous preedit");
+    require(transaction.after.preedit_text == updated_preedit, "transaction ime update records new preedit");
+
+    const std::string committed = utf8(u8"각");
+    require(model.commit_ime(committed), "transaction ime commit succeeds");
+    transaction = model.last_transaction_diagnostics();
+    require(transaction.operation == text_edit_transaction_operation::commit_ime,
+        "transaction ime commit records operation");
+    require(transaction.ime_committed, "transaction ime commit records commit transition");
+    require(transaction.ime_preedit_cleared, "transaction ime commit records preedit clear");
+    require(transaction.selection_replaced_committed_text,
+        "transaction ime commit flags committed selection replacement");
+    require(transaction.selection_cleared, "transaction ime commit clears selection");
+    require(transaction.bytes.inserted_byte_count == committed.size(),
+        "transaction ime commit records inserted committed bytes");
+    require(transaction.bytes.deleted_byte_count == std::string(utf8(u8"한")).size(),
+        "transaction ime commit records deleted replacement bytes");
+    require(transaction.bytes.replaced_byte_count == std::string(utf8(u8"한")).size(),
+        "transaction ime commit records replaced bytes");
+    require(transaction.after.text == std::string("A") + committed + "B",
+        "transaction ime commit records after committed text");
+    require(!transaction.after.has_preedit, "transaction ime commit records cleared preedit");
+
+    require(model.set_preedit("draft"), "transaction ime empty commit prepares preedit");
+    require(!model.commit_ime(""), "transaction ime empty commit rejects");
+    transaction = model.last_transaction_diagnostics();
+    require(transaction.rejected, "transaction ime empty commit records rejection");
+    require(transaction.rejection_reason == text_edit_transaction_rejection_reason::empty_ime_commit,
+        "transaction ime empty commit records rejection reason");
+    require(transaction.invalid_edit_rejected, "transaction ime empty commit records invalid evidence");
+    require(transaction.ime_preedit_cleared, "transaction ime empty commit clears stale preedit");
+    require(!transaction.ime_committed, "transaction ime empty commit does not record commit");
+    require(transaction.before.preedit_text == "draft", "transaction ime empty commit records before preedit");
+    require(transaction.after.preedit_text.empty(), "transaction ime empty commit records cleared preedit");
+
+    require(model.set_preedit("draft"), "transaction ime cancel prepares preedit");
+    require(model.cancel_ime(), "transaction ime cancel succeeds");
+    transaction = model.last_transaction_diagnostics();
+    require(transaction.operation == text_edit_transaction_operation::cancel_ime,
+        "transaction ime cancel records operation");
+    require(transaction.ime_canceled, "transaction ime cancel records cancel transition");
+    require(transaction.ime_preedit_cleared, "transaction ime cancel records preedit clear");
+    require(transaction.text_changed == false, "transaction ime cancel preserves committed text");
+}
+
 void test_clear_focus_ignores_text()
 {
     quiz_vulkan::input::text_input_model model;
@@ -723,6 +909,9 @@ int main()
     test_ime_commit_edges();
     test_empty_preedit_edges();
     test_caret_and_selection_movement_clear_stale_preedit();
+    test_text_edit_transaction_diagnostics_for_selection_replacement();
+    test_text_edit_transaction_diagnostics_for_utf8_backspace_and_rejections();
+    test_text_edit_transaction_diagnostics_for_ime_transitions();
     test_clear_focus_ignores_text();
     test_submit_consumes_buffer();
     test_submit_excludes_preedit();

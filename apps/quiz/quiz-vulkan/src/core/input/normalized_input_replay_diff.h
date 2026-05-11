@@ -212,6 +212,7 @@ struct normalized_input_replay_regression_summary {
     bool focus_caret_selection_changed = false;
     bool pointer_capture_changed = false;
     bool pointer_timeline_changed = false;
+    bool gesture_policy_changed = false;
     bool ime_timeline_changed = false;
     bool keyboard_changed = false;
     bool text_or_preedit_changed = false;
@@ -224,6 +225,7 @@ struct normalized_input_replay_diff {
     normalized_input_replay_final_state_diff final_state;
     normalized_input_replay_keyboard_diff keyboard;
     normalized_input_replay_pointer_diff pointer;
+    input_routing_gesture_policy_diff gesture_policies;
     normalized_input_replay_ime_diff ime;
     normalized_input_replay_focus_diff focus;
     normalized_input_replay_regression_summary regression;
@@ -692,6 +694,7 @@ inline void normalized_input_replay_count_regression_category(
     const normalized_input_replay_final_state_diff& final_state,
     const normalized_input_replay_keyboard_diff& keyboard,
     const normalized_input_replay_pointer_diff& pointer,
+    const input_routing_gesture_policy_diff& gesture_policies,
     const normalized_input_replay_ime_diff& ime,
     const normalized_input_replay_focus_diff& focus)
 {
@@ -711,6 +714,7 @@ inline void normalized_input_replay_count_regression_category(
             || focus.final_selection_changed,
         .pointer_capture_changed = final_state.pointer_capture_changed || pointer.capture_changed,
         .pointer_timeline_changed = pointer.timeline_changed,
+        .gesture_policy_changed = gesture_policies.changed,
         .ime_timeline_changed = ime.timeline_changed,
         .keyboard_changed = keyboard.changed,
         .text_or_preedit_changed = final_state.text_changed
@@ -730,6 +734,9 @@ inline void normalized_input_replay_count_regression_category(
         summary.changed_category_count);
     normalized_input_replay_count_regression_category(
         summary.pointer_timeline_changed,
+        summary.changed_category_count);
+    normalized_input_replay_count_regression_category(
+        summary.gesture_policy_changed,
         summary.changed_category_count);
     normalized_input_replay_count_regression_category(summary.ime_timeline_changed, summary.changed_category_count);
     normalized_input_replay_count_regression_category(summary.keyboard_changed, summary.changed_category_count);
@@ -752,6 +759,9 @@ inline void normalized_input_replay_count_regression_category(
         .final_state = diff_normalized_input_replay_final_state(before.final_state, after.final_state),
         .keyboard = diff_normalized_input_replay_keyboard(before.keyboard, after.keyboard),
         .pointer = diff_normalized_input_replay_pointer(before.pointer, after.pointer),
+        .gesture_policies = diff_input_routing_gesture_policies(
+            normalized_input_replay_gesture_policy_diagnostics(before.gesture_policies),
+            normalized_input_replay_gesture_policy_diagnostics(after.gesture_policies)),
         .ime = diff_normalized_input_replay_ime(before.ime, after.ime),
         .focus = diff_normalized_input_replay_focus(before.focus, after.focus),
     };
@@ -761,6 +771,7 @@ inline void normalized_input_replay_count_regression_category(
         diff.final_state,
         diff.keyboard,
         diff.pointer,
+        diff.gesture_policies,
         diff.ime,
         diff.focus);
     return diff;

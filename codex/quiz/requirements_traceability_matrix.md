@@ -6,6 +6,7 @@
 
 최근 baseline 통합 증거:
 
+- current: render/layout/UI architecture boundary now rejects direct platform includes and `platform::` usage; Windows MinGW architecture boundary CTest 1/1 passed.
 - current: Vulkan swapchain recreate policy diagnostics integrated; Windows MinGW focused Vulkan CTest 4/4 and interface compile target build confirmed.
 - `2dd9601`: acquire/present out-of-date, suboptimal, timeout, and fatal paths are classified into keep-rendering, recreate-now, recreate-after-frame, skip-submit, or fatal policy decisions.
 - current: font backend probe diff and external decoder selection diff diagnostics integrated; Windows MinGW focused text/image CTest 7/7 and interface compile target build confirmed.

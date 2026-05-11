@@ -1996,6 +1996,131 @@ static_assert(requires(
 });
 
 static_assert(requires(
+    render::render_text_glyph_atlas_page_plan_status status,
+    render::render_text_glyph_atlas_page_plan_constraints constraints,
+    render::render_text_glyph_atlas_page_plan_entry_snapshot entry,
+    render::render_text_glyph_atlas_page_plan_page_snapshot page,
+    render::render_text_glyph_atlas_page_plan_policy_snapshot policy,
+    render::render_text_glyph_atlas_page_plan_request request,
+    render::render_text_glyph_atlas_page_plan_snapshot snapshot,
+    render::glyph_atlas_page_config config,
+    render::render_rect rect,
+    render::render_text_atlas_update atlas_update,
+    std::vector<render::glyph_atlas_key> atlas_keys,
+    std::vector<render::render_text_glyph_atlas_materialization_snapshot> materializations) {
+    { render::render_text_glyph_atlas_page_plan_status_name(status) } -> std::same_as<std::string>;
+    { constraints.width } -> std::same_as<std::size_t&>;
+    { constraints.height } -> std::same_as<std::size_t&>;
+    { constraints.padding } -> std::same_as<std::size_t&>;
+    { constraints.max_pages } -> std::same_as<std::size_t&>;
+    { constraints.has_page_extent() } -> std::same_as<bool>;
+    { entry.materialization_index } -> std::same_as<std::size_t&>;
+    { entry.materialization_id } -> std::same_as<std::string&>;
+    { entry.run_index } -> std::same_as<std::size_t&>;
+    { entry.cluster_index } -> std::same_as<std::size_t&>;
+    { entry.cluster_byte_offset } -> std::same_as<std::size_t&>;
+    { entry.cluster_byte_count } -> std::same_as<std::size_t&>;
+    { entry.cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { entry.has_cache_key } -> std::same_as<bool&>;
+    { entry.materialization_status }
+        -> std::same_as<render::render_text_glyph_atlas_materialization_status&>;
+    { entry.status } -> std::same_as<render::render_text_glyph_atlas_page_plan_status&>;
+    { entry.page } -> std::same_as<render::render_text_atlas_page&>;
+    { entry.atlas_bounds } -> std::same_as<render::render_rect&>;
+    { entry.has_atlas_bounds } -> std::same_as<bool&>;
+    { entry.page_index } -> std::same_as<std::size_t&>;
+    { entry.glyph_width } -> std::same_as<std::size_t&>;
+    { entry.glyph_height } -> std::same_as<std::size_t&>;
+    { entry.padded_width } -> std::same_as<std::size_t&>;
+    { entry.padded_height } -> std::same_as<std::size_t&>;
+    { entry.placed_area } -> std::same_as<std::size_t&>;
+    { entry.page_capacity } -> std::same_as<std::size_t&>;
+    { entry.page_used_area_before } -> std::same_as<std::size_t&>;
+    { entry.page_used_area_after } -> std::same_as<std::size_t&>;
+    { entry.estimated_occupancy_before } -> std::same_as<float&>;
+    { entry.estimated_occupancy_after } -> std::same_as<float&>;
+    { entry.estimated_fragmentation_before } -> std::same_as<float&>;
+    { entry.estimated_fragmentation_after } -> std::same_as<float&>;
+    { entry.upload_rgba_bytes } -> std::same_as<std::size_t&>;
+    { entry.selected_existing_page } -> std::same_as<bool&>;
+    { entry.allocated_new_page } -> std::same_as<bool&>;
+    { entry.reused_existing_placement } -> std::same_as<bool&>;
+    { entry.skipped } -> std::same_as<bool&>;
+    { entry.overflow } -> std::same_as<bool&>;
+    { entry.upload_ready } -> std::same_as<bool&>;
+    { entry.clean_reuse } -> std::same_as<bool&>;
+    { entry.eviction_candidate_key } -> std::same_as<render::glyph_atlas_key&>;
+    { entry.has_eviction_candidate } -> std::same_as<bool&>;
+    { entry.diagnostic } -> std::same_as<std::string&>;
+    { page.page } -> std::same_as<render::render_text_atlas_page&>;
+    { page.allocated_by_plan } -> std::same_as<bool&>;
+    { page.referenced_by_pending_update } -> std::same_as<bool&>;
+    { page.materialization_count } -> std::same_as<std::size_t&>;
+    { page.upload_ready_count } -> std::same_as<std::size_t&>;
+    { page.clean_reuse_count } -> std::same_as<std::size_t&>;
+    { page.reused_placement_count } -> std::same_as<std::size_t&>;
+    { page.pending_update_count } -> std::same_as<std::size_t&>;
+    { page.page_capacity } -> std::same_as<std::size_t&>;
+    { page.used_area } -> std::same_as<std::size_t&>;
+    { page.available_area } -> std::same_as<std::size_t&>;
+    { page.upload_rgba_bytes } -> std::same_as<std::size_t&>;
+    { page.pending_update_rgba_bytes } -> std::same_as<std::size_t&>;
+    { page.estimated_occupancy } -> std::same_as<float&>;
+    { page.estimated_fragmentation } -> std::same_as<float&>;
+    { page.overflow } -> std::same_as<bool&>;
+    { page.eviction_candidate_key } -> std::same_as<render::glyph_atlas_key&>;
+    { page.has_eviction_candidate } -> std::same_as<bool&>;
+    { policy.materialization_count } -> std::same_as<std::size_t&>;
+    { policy.planned_entry_count } -> std::same_as<std::size_t&>;
+    { policy.skipped_count } -> std::same_as<std::size_t&>;
+    { policy.overflow_count } -> std::same_as<std::size_t&>;
+    { policy.allocated_new_page_count } -> std::same_as<std::size_t&>;
+    { policy.selected_existing_page_count } -> std::same_as<std::size_t&>;
+    { policy.reused_placement_count } -> std::same_as<std::size_t&>;
+    { policy.pending_update_count } -> std::same_as<std::size_t&>;
+    { policy.page_count } -> std::same_as<std::size_t&>;
+    { policy.eviction_candidate_count } -> std::same_as<std::size_t&>;
+    { policy.materialization_upload_rgba_bytes } -> std::same_as<std::size_t&>;
+    { policy.pending_update_rgba_bytes } -> std::same_as<std::size_t&>;
+    { policy.total_upload_rgba_bytes } -> std::same_as<std::size_t&>;
+    { policy.total_page_capacity } -> std::same_as<std::size_t&>;
+    { policy.total_used_area } -> std::same_as<std::size_t&>;
+    { policy.total_available_area } -> std::same_as<std::size_t&>;
+    { policy.estimated_occupancy } -> std::same_as<float&>;
+    { policy.estimated_fragmentation } -> std::same_as<float&>;
+    { policy.has_overflow } -> std::same_as<bool&>;
+    { policy.has_eviction_candidates } -> std::same_as<bool&>;
+    { policy.diagnostic } -> std::same_as<std::string&>;
+    { request.materializations }
+        -> std::same_as<std::vector<render::render_text_glyph_atlas_materialization_snapshot>&>;
+    { request.pending_updates } -> std::same_as<std::vector<render::render_text_atlas_update>&>;
+    { request.constraints } -> std::same_as<render::render_text_glyph_atlas_page_plan_constraints&>;
+    { snapshot.entries }
+        -> std::same_as<std::vector<render::render_text_glyph_atlas_page_plan_entry_snapshot>&>;
+    { snapshot.pages }
+        -> std::same_as<std::vector<render::render_text_glyph_atlas_page_plan_page_snapshot>&>;
+    { snapshot.policy } -> std::same_as<render::render_text_glyph_atlas_page_plan_policy_snapshot&>;
+    { snapshot.ok() } -> std::same_as<bool>;
+    { snapshot.has_overflow() } -> std::same_as<bool>;
+    { snapshot.has_eviction_candidates() } -> std::same_as<bool>;
+    { render::render_text_glyph_atlas_page_plan_constraints_for(config) }
+        -> std::same_as<render::render_text_glyph_atlas_page_plan_constraints>;
+    { render::render_text_glyph_atlas_page_plan_rect_dimension_for(float{}, std::size_t{}) }
+        -> std::same_as<std::size_t>;
+    { render::render_text_glyph_atlas_page_plan_rect_area(rect) } -> std::same_as<std::size_t>;
+    { render::render_text_glyph_atlas_page_plan_ratio(std::size_t{}, std::size_t{}) }
+        -> std::same_as<float>;
+    { render::render_text_glyph_atlas_page_plan_pending_update_bytes(atlas_update) }
+        -> std::same_as<std::size_t>;
+    { render::render_text_glyph_atlas_page_plan_key_exists(atlas_keys, entry.cache_key) }
+        -> std::same_as<bool>;
+    { render::plan_render_text_glyph_atlas_pages(request) }
+        -> std::same_as<render::render_text_glyph_atlas_page_plan_snapshot>;
+    { render::plan_render_text_glyph_atlas_pages(materializations, config) }
+        -> std::same_as<render::render_text_glyph_atlas_page_plan_snapshot>;
+});
+
+static_assert(requires(
     render::render_text_batch_ref text_ref,
     render::render_text_request_batch_item item,
     render::render_text_batch_normalized_style_key style_key,

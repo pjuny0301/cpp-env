@@ -1,5 +1,6 @@
 #include "render/image/image_texture_cache.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdio>
@@ -46,12 +47,219 @@ quiz_vulkan::render::render_decoded_image make_rgba_4x4_decoded_image()
     return image;
 }
 
+quiz_vulkan::render::render_image_sampler_policy make_mipmapped_sampler()
+{
+    quiz_vulkan::render::render_image_sampler_policy sampler;
+    sampler.mipmap_mode = quiz_vulkan::render::render_image_mipmap_mode::linear;
+    return sampler;
+}
+
+quiz_vulkan::render::render_image_texture_mipmap_upload_plan make_mipmap_plan_with_status(
+    quiz_vulkan::render::render_image_texture_mipmap_upload_plan_status status,
+    std::size_t level_count = 0,
+    std::size_t byte_count = 0)
+{
+    using namespace quiz_vulkan::render;
+
+    render_image_texture_mipmap_upload_plan plan{
+        .status = status,
+        .status_name = render_image_texture_mipmap_upload_plan_status_name(status),
+        .mipmap_mode = render_image_mipmap_mode::linear,
+        .mipmap_mode_name = render_image_mipmap_mode_name(render_image_mipmap_mode::linear),
+        .pixel_format = render_image_pixel_format::rgba8_srgb,
+        .bytes_per_pixel = 4,
+        .base_width = 1,
+        .base_height = 1,
+        .mipmaps_requested = true,
+        .upload_plannable = status == render_image_texture_mipmap_upload_plan_status::ready,
+        .requested_mip_level_count = level_count,
+        .generated_mip_level_count = level_count,
+        .total_pixel_count = level_count,
+        .total_staging_byte_count = byte_count,
+        .total_upload_byte_count = byte_count,
+        .levels = {},
+        .diagnostic = render_image_texture_mipmap_upload_plan_status_name(status),
+    };
+
+    std::size_t offset = 0;
+    const std::size_t per_level_byte_count = level_count == 0 ? 0 : byte_count / level_count;
+    for (std::size_t level = 0; level < level_count; ++level) {
+        plan.levels.push_back(render_image_texture_mipmap_level_upload_plan{
+            .level = level,
+            .width = 1,
+            .height = 1,
+            .pixel_count = 1,
+            .byte_count = per_level_byte_count,
+            .staging_byte_offset = offset,
+        });
+        offset += per_level_byte_count;
+    }
+    return plan;
+}
+
+void set_upload_snapshot_plan_for_generation(
+    quiz_vulkan::render::fake_image_texture_upload_snapshot& snapshot,
+    quiz_vulkan::render::fake_image_texture_upload_generation_id generation_id,
+    const quiz_vulkan::render::render_image_texture_mipmap_upload_plan& plan)
+{
+    for (quiz_vulkan::render::fake_image_texture_upload_request_snapshot& request : snapshot.request_snapshots) {
+        if (request.generation_id == generation_id) {
+            request.mipmap_upload_plan = plan;
+            request.staging_byte_count = plan.total_staging_byte_count;
+        }
+    }
+    for (quiz_vulkan::render::fake_image_texture_upload_result_snapshot& result : snapshot.result_snapshots) {
+        if (result.generation_id == generation_id) {
+            result.mipmap_upload_plan = plan;
+            result.staging_byte_count = plan.total_staging_byte_count;
+        }
+    }
+    for (quiz_vulkan::render::fake_image_texture_upload_queue_entry_snapshot& queue_entry : snapshot.queue_entries) {
+        if (queue_entry.generation_id == generation_id) {
+            queue_entry.mipmap_upload_plan = plan;
+            queue_entry.staging_byte_count = plan.total_staging_byte_count;
+        }
+    }
+    for (quiz_vulkan::render::fake_image_texture_upload_snapshot_entry& entry : snapshot.entries) {
+        if (entry.generation_id == generation_id) {
+            entry.mipmap_upload_plan = plan;
+            entry.staging_byte_count = plan.total_staging_byte_count;
+            entry.request.mipmap_upload_plan = plan;
+            entry.request.staging_byte_count = plan.total_staging_byte_count;
+            entry.result.mipmap_upload_plan = plan;
+            entry.result.staging_byte_count = plan.total_staging_byte_count;
+        }
+    }
+}
+
+void set_upload_snapshot_status_for_generation(
+    quiz_vulkan::render::fake_image_texture_upload_snapshot& snapshot,
+    quiz_vulkan::render::fake_image_texture_upload_generation_id generation_id,
+    quiz_vulkan::render::render_image_texture_upload_status status,
+    quiz_vulkan::render::fake_image_texture_upload_retry_eligibility eligibility)
+{
+    for (quiz_vulkan::render::fake_image_texture_upload_result_snapshot& result : snapshot.result_snapshots) {
+        if (result.generation_id == generation_id) {
+            result.status = status;
+            result.retry.status = status;
+            result.retry.eligibility = eligibility;
+            result.diagnostic = "mutated upload status";
+        }
+    }
+    for (quiz_vulkan::render::fake_image_texture_upload_queue_entry_snapshot& queue_entry : snapshot.queue_entries) {
+        if (queue_entry.generation_id == generation_id) {
+            queue_entry.status = status;
+            queue_entry.retry.status = status;
+            queue_entry.retry.eligibility = eligibility;
+            queue_entry.diagnostic = "mutated upload status";
+        }
+    }
+    for (quiz_vulkan::render::fake_image_texture_upload_retry_snapshot& retry : snapshot.retry_snapshots) {
+        if (retry.generation_id == generation_id) {
+            retry.status = status;
+            retry.eligibility = eligibility;
+            retry.diagnostic = "mutated retry status";
+        }
+    }
+    for (quiz_vulkan::render::fake_image_texture_upload_snapshot_entry& entry : snapshot.entries) {
+        if (entry.generation_id == generation_id) {
+            entry.status = status;
+            entry.retry.status = status;
+            entry.retry.eligibility = eligibility;
+            entry.result.status = status;
+            entry.result.retry.status = status;
+            entry.result.retry.eligibility = eligibility;
+            entry.diagnostic = "mutated upload status";
+            entry.result.diagnostic = "mutated upload status";
+        }
+    }
+}
+
+void set_upload_snapshot_texture_for_generation(
+    quiz_vulkan::render::fake_image_texture_upload_snapshot& snapshot,
+    quiz_vulkan::render::fake_image_texture_upload_generation_id generation_id,
+    quiz_vulkan::render::render_image_texture_handle texture)
+{
+    for (quiz_vulkan::render::fake_image_texture_upload_result_snapshot& result : snapshot.result_snapshots) {
+        if (result.generation_id == generation_id) {
+            result.texture = texture;
+        }
+    }
+    for (quiz_vulkan::render::fake_image_texture_upload_queue_entry_snapshot& queue_entry : snapshot.queue_entries) {
+        if (queue_entry.generation_id == generation_id) {
+            queue_entry.texture = texture;
+        }
+    }
+    for (quiz_vulkan::render::fake_image_texture_upload_snapshot_entry& entry : snapshot.entries) {
+        if (entry.generation_id == generation_id) {
+            entry.texture = texture;
+            entry.result.texture = texture;
+        }
+    }
+}
+
+void set_upload_snapshot_queue_depth_for_generation(
+    quiz_vulkan::render::fake_image_texture_upload_snapshot& snapshot,
+    quiz_vulkan::render::fake_image_texture_upload_generation_id generation_id,
+    std::size_t queue_depth_after_enqueue,
+    std::size_t queue_depth_after_completion)
+{
+    for (quiz_vulkan::render::fake_image_texture_upload_request_snapshot& request : snapshot.request_snapshots) {
+        if (request.generation_id == generation_id) {
+            request.queue_depth_before_enqueue = queue_depth_after_enqueue == 0 ? 0 : queue_depth_after_enqueue - 1;
+            request.queue_depth_after_enqueue = queue_depth_after_enqueue;
+        }
+    }
+    for (quiz_vulkan::render::fake_image_texture_upload_result_snapshot& result : snapshot.result_snapshots) {
+        if (result.generation_id == generation_id) {
+            result.queue_depth_after_completion = queue_depth_after_completion;
+        }
+    }
+    for (quiz_vulkan::render::fake_image_texture_upload_queue_entry_snapshot& queue_entry : snapshot.queue_entries) {
+        if (queue_entry.generation_id == generation_id) {
+            queue_entry.queue_depth_before_enqueue = queue_depth_after_enqueue == 0 ? 0 : queue_depth_after_enqueue - 1;
+            queue_entry.queue_depth_after_enqueue = queue_depth_after_enqueue;
+            queue_entry.queue_depth_after_completion = queue_depth_after_completion;
+        }
+    }
+    for (quiz_vulkan::render::fake_image_texture_upload_snapshot_entry& entry : snapshot.entries) {
+        if (entry.generation_id == generation_id) {
+            entry.request.queue_depth_before_enqueue = queue_depth_after_enqueue == 0 ? 0 : queue_depth_after_enqueue - 1;
+            entry.request.queue_depth_after_enqueue = queue_depth_after_enqueue;
+            entry.result.queue_depth_after_completion = queue_depth_after_completion;
+        }
+    }
+}
+
+void remove_upload_snapshot_generation(
+    quiz_vulkan::render::fake_image_texture_upload_snapshot& snapshot,
+    quiz_vulkan::render::fake_image_texture_upload_generation_id generation_id)
+{
+    const auto matches_generation = [generation_id](const auto& value) {
+        return value.generation_id == generation_id;
+    };
+    snapshot.request_snapshots.erase(
+        std::remove_if(snapshot.request_snapshots.begin(), snapshot.request_snapshots.end(), matches_generation),
+        snapshot.request_snapshots.end());
+    snapshot.result_snapshots.erase(
+        std::remove_if(snapshot.result_snapshots.begin(), snapshot.result_snapshots.end(), matches_generation),
+        snapshot.result_snapshots.end());
+    snapshot.queue_entries.erase(
+        std::remove_if(snapshot.queue_entries.begin(), snapshot.queue_entries.end(), matches_generation),
+        snapshot.queue_entries.end());
+    snapshot.retry_snapshots.erase(
+        std::remove_if(snapshot.retry_snapshots.begin(), snapshot.retry_snapshots.end(), matches_generation),
+        snapshot.retry_snapshots.end());
+    snapshot.entries.erase(
+        std::remove_if(snapshot.entries.begin(), snapshot.entries.end(), matches_generation),
+        snapshot.entries.end());
+}
+
 void test_mipmap_upload_plan_calculates_levels_and_failure_states()
 {
     using namespace quiz_vulkan::render;
 
-    render_image_sampler_policy mipmapped_sampler;
-    mipmapped_sampler.mipmap_mode = render_image_mipmap_mode::linear;
+    const render_image_sampler_policy mipmapped_sampler = make_mipmapped_sampler();
 
     const render_image_texture_mipmap_upload_plan mipmapped_plan =
         make_render_image_texture_mipmap_upload_plan(make_rgba_4x4_decoded_image(), mipmapped_sampler);
@@ -447,6 +655,200 @@ void test_texture_uploader_reports_retry_eligibility_and_backoff()
         "upload entry carries retry summary");
 }
 
+void test_texture_upload_snapshot_diff_reports_added_uploads_and_byte_deltas()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_image_texture_uploader uploader;
+    const fake_image_texture_upload_snapshot before = uploader.diagnostic_snapshot();
+
+    const render_image_texture_key base_key{
+        .source_key = "textures/diff-base.ppm",
+        .sampler = render_image_sampler_policy{},
+    };
+    const render_image_sampler_policy mipmapped_sampler = make_mipmapped_sampler();
+    const render_image_texture_key mipmapped_key{
+        .source_key = "textures/diff-mips.ppm",
+        .sampler = mipmapped_sampler,
+    };
+    uploader.upload(render_image_texture_upload_request{
+        .key = base_key,
+        .sampler = render_image_sampler_policy{},
+        .image = make_rgba_2x1_decoded_image(),
+    });
+    uploader.upload(render_image_texture_upload_request{
+        .key = mipmapped_key,
+        .sampler = mipmapped_sampler,
+        .image = make_rgba_4x4_decoded_image(),
+    });
+
+    const fake_image_texture_upload_snapshot after = uploader.diagnostic_snapshot();
+    const fake_image_texture_upload_snapshot_diff diff =
+        diff_fake_image_texture_upload_snapshots(before, after);
+
+    require(diff.ok(), "upload snapshot diff treats added successful uploads as non-regressive");
+    require(diff.has_changes, "upload snapshot diff reports added uploads as changes");
+    require(!diff.has_regression, "upload snapshot diff has no regression for successful added uploads");
+    require(diff.before_upload_count == 0, "upload snapshot diff records before upload count");
+    require(diff.after_upload_count == 2, "upload snapshot diff records after upload count");
+    require(diff.added_upload_count == 2, "upload snapshot diff counts added uploads");
+    require(diff.removed_upload_count == 0, "upload snapshot diff reports no removed uploads");
+    require(diff.changed_upload_count == 0, "upload snapshot diff reports no changed uploads");
+    require(diff.request_snapshot_added_count == 2, "upload snapshot diff counts added request snapshots");
+    require(diff.result_snapshot_added_count == 2, "upload snapshot diff counts added result snapshots");
+    require(diff.queue_snapshot_added_count == 2, "upload snapshot diff counts added queue snapshots");
+    require(diff.staged_byte_delta == 92, "upload snapshot diff reports staged byte delta");
+    require(diff.attempted_staging_byte_delta == 92, "upload snapshot diff reports attempted staging byte delta");
+    require(diff.before_mip_level_count == 0, "upload snapshot diff records before mip levels");
+    require(diff.after_mip_level_count == 4, "upload snapshot diff records after mip levels");
+    require(diff.mip_level_count_delta == 4, "upload snapshot diff reports mip level delta");
+    require(diff.mipmap_byte_delta == 92, "upload snapshot diff reports mipmap byte delta");
+    require(diff.texture_handle_added_count == 2, "upload snapshot diff counts added texture handles");
+    require(diff.entries.size() == 2, "upload snapshot diff emits one entry per added generation");
+    require(
+        diff.entries[0].status == fake_image_texture_upload_snapshot_diff_entry_status::added,
+        "upload snapshot diff entry reports added status");
+    require(diff.entries[1].mip_level_count_delta == 3, "upload snapshot diff entry reports mip level delta");
+    require(
+        fake_image_texture_upload_snapshot_diff_entry_status_name(
+            fake_image_texture_upload_snapshot_diff_entry_status::changed)
+            == "changed",
+        "upload snapshot diff status name is stable");
+}
+
+void test_texture_upload_snapshot_diff_reports_changed_transitions_and_regressions()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_image_texture_key valid_key{
+        .source_key = "textures/diff-transition.ppm",
+        .sampler = render_image_sampler_policy{},
+    };
+    const render_image_sampler_policy mipmapped_sampler = make_mipmapped_sampler();
+    const render_image_texture_key mipmapped_key{
+        .source_key = "textures/diff-transition-mips.ppm",
+        .sampler = mipmapped_sampler,
+    };
+
+    fake_image_texture_uploader uploader;
+    uploader.upload(render_image_texture_upload_request{
+        .key = valid_key,
+        .sampler = render_image_sampler_policy{},
+        .image = make_rgba_2x1_decoded_image(),
+    });
+
+    render_decoded_image invalid_payload = make_rgba_2x1_decoded_image();
+    invalid_payload.pixels.pop_back();
+    uploader.upload(render_image_texture_upload_request{
+        .key = valid_key,
+        .sampler = render_image_sampler_policy{},
+        .image = invalid_payload,
+    });
+    uploader.upload(render_image_texture_upload_request{
+        .key = render_image_texture_key{.source_key = {}, .sampler = render_image_sampler_policy{}},
+        .sampler = render_image_sampler_policy{},
+        .image = make_rgba_2x1_decoded_image(),
+    });
+    uploader.upload(render_image_texture_upload_request{
+        .key = mipmapped_key,
+        .sampler = mipmapped_sampler,
+        .image = make_rgba_4x4_decoded_image(),
+    });
+
+    const fake_image_texture_upload_snapshot before = uploader.diagnostic_snapshot();
+    fake_image_texture_upload_snapshot after = before;
+
+    set_upload_snapshot_plan_for_generation(
+        after,
+        1,
+        make_mipmap_plan_with_status(render_image_texture_mipmap_upload_plan_status::overflow));
+    set_upload_snapshot_texture_for_generation(
+        after,
+        1,
+        render_image_texture_handle{.id = 99, .revision = 2, .width = 2, .height = 1});
+    set_upload_snapshot_queue_depth_for_generation(after, 1, 4, 1);
+
+    set_upload_snapshot_plan_for_generation(
+        after,
+        2,
+        make_mipmap_plan_with_status(render_image_texture_mipmap_upload_plan_status::unsupported_format));
+    set_upload_snapshot_status_for_generation(
+        after,
+        2,
+        render_image_texture_upload_status::unsupported_format,
+        fake_image_texture_upload_retry_eligibility::ineligible);
+
+    set_upload_snapshot_plan_for_generation(
+        after,
+        3,
+        make_mipmap_plan_with_status(render_image_texture_mipmap_upload_plan_status::invalid_image));
+    set_upload_snapshot_status_for_generation(
+        after,
+        3,
+        render_image_texture_upload_status::invalid_image,
+        fake_image_texture_upload_retry_eligibility::eligible);
+    set_upload_snapshot_queue_depth_for_generation(after, 3, 0, 0);
+
+    remove_upload_snapshot_generation(after, 4);
+    after.upload_count = 3;
+    after.enqueued_upload_count = 3;
+    after.completed_upload_count = 3;
+    after.staged_byte_count = 8;
+    after.attempted_staging_byte_count = 8;
+
+    const fake_image_texture_upload_snapshot_diff diff =
+        diff_fake_image_texture_upload_snapshots(before, after);
+
+    require(!diff.ok(), "upload snapshot diff reports transition regressions");
+    require(diff.has_changes, "upload snapshot diff reports changed transitions");
+    require(diff.has_regression, "upload snapshot diff reports regressions");
+    require(diff.has_recovery, "upload snapshot diff reports recoveries");
+    require(diff.before_upload_count == 4, "upload snapshot diff records before count for transitions");
+    require(diff.after_upload_count == 3, "upload snapshot diff records after count for transitions");
+    require(diff.changed_upload_count == 3, "upload snapshot diff counts changed uploads");
+    require(diff.removed_upload_count == 1, "upload snapshot diff counts removed uploads");
+    require(diff.request_snapshot_changed_count == 3, "upload snapshot diff counts changed request snapshots");
+    require(diff.request_snapshot_removed_count == 1, "upload snapshot diff counts removed request snapshots");
+    require(diff.result_snapshot_changed_count == 3, "upload snapshot diff counts changed result snapshots");
+    require(diff.result_snapshot_removed_count == 1, "upload snapshot diff counts removed result snapshots");
+    require(diff.queue_snapshot_changed_count == 3, "upload snapshot diff counts changed queue snapshots");
+    require(diff.queue_snapshot_removed_count == 1, "upload snapshot diff counts removed queue snapshots");
+    require(diff.staged_byte_delta == -84, "upload snapshot diff reports staged byte reduction");
+    require(diff.mipmap_byte_delta == -108, "upload snapshot diff reports mipmap byte reduction");
+    require(diff.retryability_changed_count == 2, "upload snapshot diff counts retryability changes");
+    require(
+        diff.retryable_to_nonretryable_count == 1,
+        "upload snapshot diff counts retryable to nonretryable transition");
+    require(
+        diff.nonretryable_to_retryable_count == 1,
+        "upload snapshot diff counts nonretryable to retryable transition");
+    require(diff.queue_depth_regression_count == 1, "upload snapshot diff counts queue depth regression");
+    require(diff.queue_depth_recovery_count == 1, "upload snapshot diff counts queue depth recoveries");
+    require(diff.mipmap_plan_status_changed_count == 3, "upload snapshot diff counts mipmap plan changes");
+    require(diff.invalid_plan_transition_count == 1, "upload snapshot diff counts invalid plan transition");
+    require(diff.invalid_plan_regression_count == 1, "upload snapshot diff counts invalid plan regression");
+    require(diff.overflow_plan_transition_count == 1, "upload snapshot diff counts overflow plan transition");
+    require(diff.overflow_plan_regression_count == 1, "upload snapshot diff counts overflow plan regression");
+    require(diff.unsupported_plan_transition_count == 1, "upload snapshot diff counts unsupported plan transition");
+    require(
+        diff.unsupported_plan_regression_count == 1,
+        "upload snapshot diff counts unsupported plan regression");
+    require(diff.texture_handle_changed_count == 1, "upload snapshot diff counts texture handle changes");
+    require(diff.texture_handle_removed_count == 1, "upload snapshot diff counts texture handle removals");
+    require(!diff.regression_summary.empty(), "upload snapshot diff includes regression summary");
+
+    const fake_image_texture_upload_snapshot_entry_diff* generation_one = nullptr;
+    for (const fake_image_texture_upload_snapshot_entry_diff& entry : diff.entries) {
+        if (entry.generation_id == 1) {
+            generation_one = &entry;
+        }
+    }
+    require(generation_one != nullptr, "upload snapshot diff exposes changed entry by generation");
+    require(generation_one->texture_handle_changed, "upload snapshot diff entry records texture handle change");
+    require(generation_one->queue_depth_regressed, "upload snapshot diff entry records queue depth regression");
+    require(generation_one->overflow_plan_regression, "upload snapshot diff entry records overflow plan regression");
+}
+
 void test_texture_uploader_rejects_invalid_inputs()
 {
     using namespace quiz_vulkan::render;
@@ -556,6 +958,8 @@ int main()
     test_texture_uploader_records_mipmap_upload_plan();
     test_texture_uploader_reports_deterministic_queue_lifecycle();
     test_texture_uploader_reports_retry_eligibility_and_backoff();
+    test_texture_upload_snapshot_diff_reports_added_uploads_and_byte_deltas();
+    test_texture_upload_snapshot_diff_reports_changed_transitions_and_regressions();
     test_texture_uploader_rejects_invalid_inputs();
     return 0;
 }

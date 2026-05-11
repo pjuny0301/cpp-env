@@ -39,6 +39,9 @@ Last updated: 2026-05-09
 - Engine workers own only their engine folders. App/runtime, top-level CMake, and aggregate contract wiring stay with the integrator unless explicitly assigned.
 - Large file splitting is allowed when it improves module cohesion, worker ownership, reviewability, or conflict isolation. Do not split files only because they exceed a line-count threshold, and do not move stable public interfaces without explicit integrator approval.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
+- Latest integration note: `90ad12e` adds input gesture policy route diff diagnostics for threshold, decision, emitted-kind, direction, pointer/contact/phase, suppression, and recovery deltas without app/domain dispatch.
+- Latest integration note: `e3bdf20` adds image mipmap upload planning diagnostics with per-level dimensions, byte estimates, overflow/invalid/unsupported/no-mipmap states, and fake uploader snapshot propagation.
+- Latest integration note: `594b795` adds glyph atlas materialization diff diagnostics for upload-ready, clean-reuse, skipped, payload-byte, unsupported, missing-cache, and backend fallback transitions across text atlas batches.
 - Latest integration note: `ef986fe` adds Vulkan swapchain create-plan diagnostics for surface format, present mode, image count, extent, transform, alpha, sharing mode, and recreate compatibility decisions before real Vulkan swapchain creation.
 - Latest integration note: render/layout/UI architecture checks now also reject direct platform includes and `platform::` usage, keeping platform shell ownership outside renderer and layout layers.
 - Latest integration note: `2dd9601` adds Vulkan swapchain recreate policy diagnostics that classify acquire/present out-of-date, suboptimal, timeout, and fatal paths into keep-rendering, recreate-now, recreate-after-frame, skip-submit, or fatal decisions.

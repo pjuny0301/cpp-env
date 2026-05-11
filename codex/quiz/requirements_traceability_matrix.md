@@ -6,6 +6,10 @@
 
 최근 baseline 통합 증거:
 
+- current: text glyph atlas materialization diff, image mipmap upload plan, and input gesture policy route diff diagnostics integrated; Windows MinGW focused text/image/input CTest 3/3 and interface compile target build confirmed.
+- `90ad12e`: input routing diagnostics compare gesture thresholds, decisions, emitted kinds, directions, pointer/contact/phase mismatches, suppressions, and recoveries without domain dispatch.
+- `e3bdf20`: image upload diagnostics now include mipmap upload plans with per-level dimensions, byte estimates, overflow/invalid/unsupported/no-mipmap states, and fake uploader snapshots.
+- `594b795`: text atlas batches can diff upload-ready, clean-reuse, skipped, payload-byte, unsupported, missing-cache, and backend fallback materialization transitions.
 - current: Vulkan swapchain create-plan diagnostics integrated; Windows MinGW focused Vulkan CTest 3/3 and interface compile target build confirmed.
 - `ef986fe`: surface format, present mode, image count, extent, transform, alpha, sharing mode, and recreate compatibility decisions are modeled before real Vulkan swapchain creation.
 - current: render/layout/UI architecture boundary now rejects direct platform includes and `platform::` usage; Windows MinGW architecture boundary CTest 1/1 passed.

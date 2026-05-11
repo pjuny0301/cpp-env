@@ -5,6 +5,7 @@
 #include "core/input/normalized_input_replay.h"
 #include "core/input/platform_input_engine_adapter.h"
 #include "core/input/platform_input_translator.h"
+#include "core/input/text_edit_transaction_diagnostics.h"
 #include "core/input/text_input_model.h"
 #include "core/input/text_input_presentation.h"
 #include "platform/platform_input_event.h"

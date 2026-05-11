@@ -39,6 +39,8 @@ Last updated: 2026-05-09
 - Engine workers own only their engine folders. App/runtime, top-level CMake, and aggregate contract wiring stay with the integrator unless explicitly assigned.
 - Large file splitting is allowed when it improves module cohesion, worker ownership, reviewability, or conflict isolation. Do not split files only because they exceed a line-count threshold, and do not move stable public interfaces without explicit integrator approval.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
+- Latest integration note: `3230bfc` splits glyph atlas page planning into `font_glyph_atlas_page_plan.h`, and the integrator registers that public header in the render contract FILE_SET.
+- Latest integration note: `03214fc` adds a data-only native swapchain create operation plan that composes swapchain create-plan results with native entrypoint readiness and reports blockers before `vkCreateSwapchainKHR`.
 - Latest integration note: `fe95a1e` adds text edit transaction diagnostics for before/after text, display, caret, selection, preedit, byte deltas, UTF-8 boundary safety, replacement flags, IME transitions, and invalid-edit evidence.
 - Latest integration note: `eeba461` splits fake image upload snapshot diff diagnostics into `image_texture_upload_snapshot_diff.h`, and the integrator registers that public header in the render contract FILE_SET.
 - Latest integration note: `18c5121` adds glyph atlas page planning diagnostics for page selection, reused placements, synthesized placements, occupancy, overflow, eviction hints, and upload byte totals before renderer/Vulkan upload.

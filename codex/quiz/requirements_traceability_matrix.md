@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: text edit transaction diagnostics header split integrated with public FILE_SET registration; Windows MinGW focused text input model CTest 1/1 and interface compile target build confirmed.
+- `eee4fcd`: text edit transaction diagnostics now live in `text_edit_transaction_diagnostics.h` while `text_input_model.h` preserves the text model include surface.
 - current: glyph atlas page plan header split and Vulkan native swapchain create operation plan integrated; Windows MinGW focused text/Vulkan CTest 2/2 and interface compile target build confirmed.
 - `3230bfc`: glyph atlas page planning now lives in `font_glyph_atlas_page_plan.h` while `font_shaped_atlas_update.h` preserves the existing include surface.
 - `03214fc`: native swapchain create operation planning composes create-plan results with entrypoint readiness and reports blockers before `vkCreateSwapchainKHR`.

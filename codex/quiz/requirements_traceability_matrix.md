@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: Vulkan swapchain native function readiness integrated; Windows MinGW focused Vulkan CTest 3/3 and interface compile target build confirmed.
+- `6208a65`: native function-table readiness now covers swapchain create, destroy, image enumeration, acquire, and present extension symbols with required extension and per-entrypoint summaries.
 - current: normalized input replay gesture-policy diff integration completed; Windows MinGW focused normalized input replay CTest 1/1 and interface compile target build confirmed.
 - `a4a2513`: replay comparisons now report gesture threshold, decision, suppression, and recovery changes alongside pointer/keyboard/IME/focus deltas.
 - current: fake image upload snapshot diff diagnostics integrated; Windows MinGW focused image CTest 1/1 and interface compile target build confirmed.

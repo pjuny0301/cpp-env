@@ -39,6 +39,7 @@ Last updated: 2026-05-09
 - Engine workers own only their engine folders. App/runtime, top-level CMake, and aggregate contract wiring stay with the integrator unless explicitly assigned.
 - Large file splitting is allowed when it improves module cohesion, worker ownership, reviewability, or conflict isolation. Do not split files only because they exceed a line-count threshold, and do not move stable public interfaces without explicit integrator approval.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
+- Latest integration note: `ef986fe` adds Vulkan swapchain create-plan diagnostics for surface format, present mode, image count, extent, transform, alpha, sharing mode, and recreate compatibility decisions before real Vulkan swapchain creation.
 - Latest integration note: render/layout/UI architecture checks now also reject direct platform includes and `platform::` usage, keeping platform shell ownership outside renderer and layout layers.
 - Latest integration note: `2dd9601` adds Vulkan swapchain recreate policy diagnostics that classify acquire/present out-of-date, suboptimal, timeout, and fatal paths into keep-rendering, recreate-now, recreate-after-frame, skip-submit, or fatal decisions.
 - Latest integration note: `9a5af92` adds external decoder selection diff diagnostics for image pipeline snapshots, comparing internal decoder, adapter-ready, missing dependency, version mismatch, placeholder, and fallback transitions without real `stb_image` coupling.

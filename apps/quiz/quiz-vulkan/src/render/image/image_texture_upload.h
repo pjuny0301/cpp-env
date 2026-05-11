@@ -331,6 +331,7 @@ struct fake_image_texture_upload_snapshot {
 } // namespace quiz_vulkan::render
 
 #include "render/image/image_texture_upload_snapshot_diff.h"
+#include "render/image/image_texture_upload_operation_plan.h"
 
 namespace quiz_vulkan::render {
 

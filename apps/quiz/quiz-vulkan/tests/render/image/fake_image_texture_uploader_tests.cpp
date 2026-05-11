@@ -1,10 +1,11 @@
-#include "render/image/image_texture_upload_snapshot_diff.h"
+#include "render/image/image_texture_upload_operation_plan.h"
 
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdio>
 #include <limits>
+#include <string>
 
 namespace {
 
@@ -241,6 +242,27 @@ void remove_upload_snapshot_generation(
     snapshot.request_snapshots.erase(
         std::remove_if(snapshot.request_snapshots.begin(), snapshot.request_snapshots.end(), matches_generation),
         snapshot.request_snapshots.end());
+    snapshot.result_snapshots.erase(
+        std::remove_if(snapshot.result_snapshots.begin(), snapshot.result_snapshots.end(), matches_generation),
+        snapshot.result_snapshots.end());
+    snapshot.queue_entries.erase(
+        std::remove_if(snapshot.queue_entries.begin(), snapshot.queue_entries.end(), matches_generation),
+        snapshot.queue_entries.end());
+    snapshot.retry_snapshots.erase(
+        std::remove_if(snapshot.retry_snapshots.begin(), snapshot.retry_snapshots.end(), matches_generation),
+        snapshot.retry_snapshots.end());
+    snapshot.entries.erase(
+        std::remove_if(snapshot.entries.begin(), snapshot.entries.end(), matches_generation),
+        snapshot.entries.end());
+}
+
+void remove_upload_result_and_queue_for_generation(
+    quiz_vulkan::render::fake_image_texture_upload_snapshot& snapshot,
+    quiz_vulkan::render::fake_image_texture_upload_generation_id generation_id)
+{
+    const auto matches_generation = [generation_id](const auto& value) {
+        return value.generation_id == generation_id;
+    };
     snapshot.result_snapshots.erase(
         std::remove_if(snapshot.result_snapshots.begin(), snapshot.result_snapshots.end(), matches_generation),
         snapshot.result_snapshots.end());
@@ -655,6 +677,175 @@ void test_texture_uploader_reports_retry_eligibility_and_backoff()
         "upload entry carries retry summary");
 }
 
+void test_texture_upload_operation_plan_reports_ready_placeholder_and_retryable_packets()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_image_texture_key base_key{
+        .source_key = "textures/operation-base.ppm",
+        .sampler = render_image_sampler_policy{},
+    };
+    const render_image_sampler_policy mipmapped_sampler = make_mipmapped_sampler();
+    const render_image_texture_key mipmapped_key{
+        .source_key = "textures/operation-mips.ppm",
+        .sampler = mipmapped_sampler,
+    };
+    const render_image_texture_key placeholder_key = make_fake_image_texture_placeholder_key(
+        fake_image_texture_placeholder_policy{},
+        fake_image_texture_placeholder_reason::decode_failed,
+        mipmapped_key);
+
+    fake_image_texture_uploader uploader;
+    const render_image_texture_upload_result uploaded = uploader.upload(render_image_texture_upload_request{
+        .key = base_key,
+        .sampler = render_image_sampler_policy{},
+        .image = make_rgba_2x1_decoded_image(),
+    });
+    const render_image_texture_upload_result placeholder = uploader.upload(render_image_texture_upload_request{
+        .key = placeholder_key,
+        .sampler = mipmapped_sampler,
+        .image = make_rgba_4x4_decoded_image(),
+    });
+
+    render_decoded_image invalid_payload = make_rgba_2x1_decoded_image();
+    invalid_payload.pixels.pop_back();
+    const render_image_texture_upload_result failed = uploader.upload(render_image_texture_upload_request{
+        .key = base_key,
+        .sampler = render_image_sampler_policy{},
+        .image = invalid_payload,
+    });
+
+    require(uploaded.ok(), "operation plan starts from successful base upload");
+    require(placeholder.ok(), "operation plan includes successful placeholder upload");
+    require(!failed.ok(), "operation plan includes retryable failure");
+
+    const render_image_texture_upload_operation_plan plan =
+        plan_render_image_texture_upload_operations(uploader.diagnostic_snapshot());
+
+    require(!plan.ok(), "operation plan is blocked when any upload packet failed");
+    require(plan.upload_count == 3, "operation plan records source upload count");
+    require(plan.packet_count == 3, "operation plan emits one packet per generation");
+    require(plan.ready_packet_count == 2, "operation plan counts ready packets");
+    require(plan.placeholder_packet_count == 1, "operation plan counts placeholder packets");
+    require(plan.fallback_packet_count == 1, "operation plan counts fallback packets");
+    require(plan.blocked_packet_count == 1, "operation plan counts blocked packets");
+    require(plan.retryable_blocked_packet_count == 1, "operation plan counts retryable blockers");
+    require(plan.nonretryable_blocked_packet_count == 0, "operation plan reports no nonretryable blockers");
+    require(plan.total_staging_byte_count == 92, "operation plan sums successful staging bytes");
+    require(plan.total_mip_level_count == 5, "operation plan sums planned mip levels");
+    require(plan.total_mipmap_byte_count == 100, "operation plan preserves planned mip bytes");
+    require(plan.has_blockers, "operation plan exposes blocker flag");
+    require(plan.blocker_summary.find("invalid_image") != std::string::npos, "operation plan carries blocker reason");
+
+    const render_image_texture_upload_operation_packet& base_packet = plan.packets[0];
+    require(base_packet.ok(), "base upload packet is ready");
+    require(base_packet.status == render_image_texture_upload_operation_packet_status::ready, "base packet status is ready");
+    require(base_packet.status_name == "ready", "operation packet ready status name is stable");
+    require(base_packet.upload_status_name == "uploaded", "operation packet upload status name is stable");
+    require(base_packet.texture_key == base_key, "operation packet records texture key");
+    require(base_packet.texture.id == uploaded.texture.id, "operation packet records texture handle id");
+    require(base_packet.generation_id == 1, "operation packet records generation id");
+    require(base_packet.staging_byte_count == 8, "operation packet records base staging bytes");
+    require(base_packet.mip_level_count == 1, "operation packet records base mip level count");
+    require(!base_packet.placeholder_texture, "base upload packet is not placeholder");
+    require(base_packet.ready_for_upload, "base upload packet is ready for backend upload");
+    require(!base_packet.blocked, "base upload packet is not blocked");
+
+    const render_image_texture_upload_operation_packet& placeholder_packet = plan.packets[1];
+    require(placeholder_packet.ok(), "placeholder upload packet is backend-ready");
+    require(
+        placeholder_packet.status == render_image_texture_upload_operation_packet_status::placeholder_ready,
+        "placeholder packet reports placeholder-ready status");
+    require(placeholder_packet.status_name == "placeholder_ready", "placeholder status name is stable");
+    require(placeholder_packet.placeholder_texture, "placeholder packet is flagged as placeholder");
+    require(placeholder_packet.fallback_texture, "placeholder packet is flagged as fallback");
+    require(placeholder_packet.texture.id == placeholder.texture.id, "placeholder packet records texture handle");
+    require(placeholder_packet.sampler == mipmapped_sampler, "placeholder packet preserves sampler policy");
+    require(placeholder_packet.mip_level_count == 3, "placeholder packet records mipmapped level count");
+    require(placeholder_packet.staging_byte_count == 84, "placeholder packet records mipmapped staging bytes");
+    require(
+        placeholder_packet.readiness_summary == "placeholder texture upload packet is ready",
+        "placeholder packet has stable readiness summary");
+
+    const render_image_texture_upload_operation_packet& failed_packet = plan.packets[2];
+    require(!failed_packet.ok(), "failed upload packet is blocked");
+    require(
+        failed_packet.status == render_image_texture_upload_operation_packet_status::blocked_retryable,
+        "failed upload packet reports retryable blocker");
+    require(failed_packet.status_name == "blocked_retryable", "retryable blocker status name is stable");
+    require(failed_packet.retryable, "failed upload packet carries retryable flag");
+    require(failed_packet.retry_eligibility_name == "eligible", "failed upload packet carries retry eligibility name");
+    require(failed_packet.attempt_count_for_key == 2, "failed upload packet carries key attempt count");
+    require(failed_packet.failed_attempt_count_for_key == 1, "failed upload packet carries failed attempt count");
+    require(
+        failed_packet.retry_after_queue_sequence_delta == 1,
+        "failed upload packet carries retry backoff sequence delta");
+    require(failed_packet.blocked, "failed upload packet is blocked");
+    require(!failed_packet.has_texture_handle, "failed upload packet has no texture handle");
+    require(
+        failed_packet.blocker_summary == "upload failed but can retry: invalid_image",
+        "failed upload packet has stable blocker summary");
+}
+
+void test_texture_upload_operation_plan_reports_invalid_mipmap_and_missing_snapshot_blockers()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_image_texture_key valid_key{
+        .source_key = "textures/operation-invalid-plan.ppm",
+        .sampler = render_image_sampler_policy{},
+    };
+    fake_image_texture_uploader uploader;
+    const render_image_texture_upload_result uploaded = uploader.upload(render_image_texture_upload_request{
+        .key = valid_key,
+        .sampler = render_image_sampler_policy{},
+        .image = make_rgba_2x1_decoded_image(),
+    });
+    require(uploaded.ok(), "invalid mipmap operation test starts with successful upload");
+
+    fake_image_texture_upload_snapshot snapshot = uploader.diagnostic_snapshot();
+    set_upload_snapshot_plan_for_generation(
+        snapshot,
+        uploaded.generation_id,
+        make_mipmap_plan_with_status(render_image_texture_mipmap_upload_plan_status::overflow, 1, 4));
+
+    const render_image_texture_upload_operation_plan invalid_plan =
+        plan_render_image_texture_upload_operations(snapshot);
+
+    require(!invalid_plan.ok(), "operation plan blocks uploaded packet with invalid mipmap plan");
+    require(invalid_plan.packet_count == 1, "invalid mipmap operation plan has one packet");
+    require(invalid_plan.blocked_packet_count == 1, "invalid mipmap operation plan counts blocker");
+    require(invalid_plan.invalid_mipmap_plan_packet_count == 1, "invalid mipmap operation plan counts invalid plan");
+    require(invalid_plan.overflow_mipmap_plan_packet_count == 1, "invalid mipmap operation plan counts overflow");
+    require(
+        invalid_plan.packets[0].status
+            == render_image_texture_upload_operation_packet_status::blocked_invalid_mipmap_plan,
+        "invalid mipmap packet reports mipmap blocker status");
+    require(
+        invalid_plan.packets[0].blocker_summary == "mipmap upload plan is not plannable: overflow",
+        "invalid mipmap packet has stable blocker summary");
+
+    remove_upload_result_and_queue_for_generation(snapshot, uploaded.generation_id);
+    const render_image_texture_upload_operation_plan missing_snapshot_plan =
+        plan_render_image_texture_upload_operations(snapshot);
+
+    require(!missing_snapshot_plan.ok(), "operation plan blocks request with missing result and queue snapshots");
+    require(missing_snapshot_plan.packet_count == 1, "missing snapshot operation plan keeps request generation");
+    require(missing_snapshot_plan.missing_snapshot_packet_count == 1, "missing snapshot operation plan counts missing snapshots");
+    require(
+        missing_snapshot_plan.packets[0].status
+            == render_image_texture_upload_operation_packet_status::blocked_missing_snapshot,
+        "missing snapshot packet status is stable");
+    require(
+        missing_snapshot_plan.packets[0].blocker_summary == "upload result and queue snapshots are missing",
+        "missing snapshot packet has stable blocker summary");
+    require(
+        render_image_texture_upload_operation_packet_status_name(
+            render_image_texture_upload_operation_packet_status::blocked_missing_texture_handle)
+            == "blocked_missing_texture_handle",
+        "operation packet status helper names missing handle status");
+}
+
 void test_texture_upload_snapshot_diff_reports_added_uploads_and_byte_deltas()
 {
     using namespace quiz_vulkan::render;
@@ -958,6 +1149,8 @@ int main()
     test_texture_uploader_records_mipmap_upload_plan();
     test_texture_uploader_reports_deterministic_queue_lifecycle();
     test_texture_uploader_reports_retry_eligibility_and_backoff();
+    test_texture_upload_operation_plan_reports_ready_placeholder_and_retryable_packets();
+    test_texture_upload_operation_plan_reports_invalid_mipmap_and_missing_snapshot_blockers();
     test_texture_upload_snapshot_diff_reports_added_uploads_and_byte_deltas();
     test_texture_upload_snapshot_diff_reports_changed_transitions_and_regressions();
     test_texture_uploader_rejects_invalid_inputs();

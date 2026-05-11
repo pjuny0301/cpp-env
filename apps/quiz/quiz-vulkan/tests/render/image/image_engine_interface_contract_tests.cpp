@@ -4,6 +4,7 @@
 #include "render/image/image_source_bytes_loader.h"
 #include "render/image/image_texture_cache.h"
 #include "render/image/image_texture_pipeline.h"
+#include "render/image/image_texture_upload_operation_plan.h"
 #include "render/image/image_texture_upload_snapshot_diff.h"
 #include "render/render_draw_list.h"
 
@@ -253,6 +254,9 @@ static_assert(requires(
     render::fake_image_texture_upload_snapshot_diff_entry_status upload_snapshot_diff_entry_status,
     render::fake_image_texture_upload_snapshot_entry_diff upload_snapshot_entry_diff,
     render::fake_image_texture_upload_snapshot_diff upload_snapshot_diff,
+    render::render_image_texture_upload_operation_packet_status upload_operation_status,
+    render::render_image_texture_upload_operation_packet upload_operation_packet,
+    render::render_image_texture_upload_operation_plan upload_operation_plan,
     const render::fake_image_texture_uploader& uploader,
     render::render_image_texture_pipeline_request pipeline_request,
     render::render_image_texture_pipeline_result pipeline_result,
@@ -1048,6 +1052,89 @@ static_assert(requires(
         -> std::same_as<std::vector<render::fake_image_texture_upload_snapshot_entry_diff>&>;
     { upload_snapshot_diff.diagnostic } -> std::same_as<std::string&>;
     { upload_snapshot_diff.ok() } -> std::same_as<bool>;
+    { render::render_image_texture_upload_operation_packet_status_name(upload_operation_status) }
+        -> std::same_as<std::string>;
+    { render::render_image_texture_upload_operation_upload_status_name(upload_status) }
+        -> std::same_as<std::string>;
+    { render::append_render_image_texture_upload_operation_blocker(
+        upload_operation_plan.blocker_summary, std::string{}) } -> std::same_as<void>;
+    { render::render_image_texture_upload_operation_plan_for(
+        &upload_request_snapshot, &upload_result_snapshot, &upload_queue_entry) }
+        -> std::same_as<const render::render_image_texture_mipmap_upload_plan&>;
+    { render::render_image_texture_upload_operation_key_for(
+        &upload_request_snapshot, &upload_result_snapshot, &upload_queue_entry) }
+        -> std::same_as<render::render_image_texture_key>;
+    { render::render_image_texture_upload_operation_sampler_for(
+        &upload_request_snapshot, &upload_result_snapshot) }
+        -> std::same_as<render::render_image_sampler_policy>;
+    { render::make_render_image_texture_upload_operation_packet(
+        &upload_request_snapshot,
+        &upload_result_snapshot,
+        &upload_queue_entry,
+        upload_generation_id,
+        std::size_t{}) } -> std::same_as<render::render_image_texture_upload_operation_packet>;
+    { render::plan_render_image_texture_upload_operations(upload_snapshot) }
+        -> std::same_as<render::render_image_texture_upload_operation_plan>;
+    { upload_operation_packet.packet_index } -> std::same_as<std::size_t&>;
+    { upload_operation_packet.generation_id } -> std::same_as<std::uint64_t&>;
+    { upload_operation_packet.status }
+        -> std::same_as<render::render_image_texture_upload_operation_packet_status&>;
+    { upload_operation_packet.status_name } -> std::same_as<std::string&>;
+    { upload_operation_packet.upload_status } -> std::same_as<render::render_image_texture_upload_status&>;
+    { upload_operation_packet.upload_status_name } -> std::same_as<std::string&>;
+    { upload_operation_packet.texture_key } -> std::same_as<render::render_image_texture_key&>;
+    { upload_operation_packet.texture } -> std::same_as<render::render_image_texture_handle&>;
+    { upload_operation_packet.sampler } -> std::same_as<render::render_image_sampler_policy&>;
+    { upload_operation_packet.mipmap_upload_plan }
+        -> std::same_as<render::render_image_texture_mipmap_upload_plan&>;
+    { upload_operation_packet.staging_byte_count } -> std::same_as<std::size_t&>;
+    { upload_operation_packet.mip_level_count } -> std::same_as<std::size_t&>;
+    { upload_operation_packet.mipmap_byte_count } -> std::same_as<std::size_t&>;
+    { upload_operation_packet.retry_eligibility_name } -> std::same_as<std::string&>;
+    { upload_operation_packet.attempt_count_for_key } -> std::same_as<std::size_t&>;
+    { upload_operation_packet.failed_attempt_count_for_key } -> std::same_as<std::size_t&>;
+    { upload_operation_packet.retry_after_queue_sequence_delta } -> std::same_as<std::size_t&>;
+    { upload_operation_packet.next_retry_sequence } -> std::same_as<std::size_t&>;
+    { upload_operation_packet.request_snapshot_present } -> std::same_as<bool&>;
+    { upload_operation_packet.result_snapshot_present } -> std::same_as<bool&>;
+    { upload_operation_packet.queue_snapshot_present } -> std::same_as<bool&>;
+    { upload_operation_packet.has_texture_handle } -> std::same_as<bool&>;
+    { upload_operation_packet.placeholder_texture } -> std::same_as<bool&>;
+    { upload_operation_packet.fallback_texture } -> std::same_as<bool&>;
+    { upload_operation_packet.retryable } -> std::same_as<bool&>;
+    { upload_operation_packet.nonretryable_failure } -> std::same_as<bool&>;
+    { upload_operation_packet.ready_for_upload } -> std::same_as<bool&>;
+    { upload_operation_packet.blocked } -> std::same_as<bool&>;
+    { upload_operation_packet.readiness_summary } -> std::same_as<std::string&>;
+    { upload_operation_packet.blocker_summary } -> std::same_as<std::string&>;
+    { upload_operation_packet.diagnostic } -> std::same_as<std::string&>;
+    { upload_operation_packet.ok() } -> std::same_as<bool>;
+    { upload_operation_plan.upload_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.request_snapshot_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.result_snapshot_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.queue_snapshot_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.packet_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.ready_packet_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.placeholder_packet_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.fallback_packet_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.blocked_packet_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.retryable_blocked_packet_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.nonretryable_blocked_packet_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.invalid_mipmap_plan_packet_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.overflow_mipmap_plan_packet_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.unsupported_mipmap_plan_packet_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.missing_snapshot_packet_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.missing_texture_handle_packet_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.total_staging_byte_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.total_mip_level_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.total_mipmap_byte_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.all_packets_ready } -> std::same_as<bool&>;
+    { upload_operation_plan.has_blockers } -> std::same_as<bool&>;
+    { upload_operation_plan.blocker_summary } -> std::same_as<std::string&>;
+    { upload_operation_plan.packets }
+        -> std::same_as<std::vector<render::render_image_texture_upload_operation_packet>&>;
+    { upload_operation_plan.diagnostic } -> std::same_as<std::string&>;
+    { upload_operation_plan.ok() } -> std::same_as<bool>;
     { uploader.diagnostic_snapshot() } -> std::same_as<render::fake_image_texture_upload_snapshot>;
     upload_generation_id;
     upload_status;

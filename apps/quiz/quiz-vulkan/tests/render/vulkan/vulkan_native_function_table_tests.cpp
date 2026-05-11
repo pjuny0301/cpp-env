@@ -48,6 +48,16 @@ void test_native_function_table_names_are_stable()
         "native entrypoint stage name for queue submit is stable");
     require(
         vulkan_backend::native_entrypoint_stage_name(
+            vulkan_backend::vulkan_native_entrypoint_stage::swapchain_create)
+            == std::string_view{"swapchain_create"},
+        "native entrypoint stage name for swapchain create is stable");
+    require(
+        vulkan_backend::native_entrypoint_stage_name(
+            vulkan_backend::vulkan_native_entrypoint_stage::swapchain_acquire)
+            == std::string_view{"swapchain_acquire"},
+        "native entrypoint stage name for swapchain acquire is stable");
+    require(
+        vulkan_backend::native_entrypoint_stage_name(
             vulkan_backend::vulkan_native_entrypoint_stage::queue_present)
             == std::string_view{"queue_present"},
         "native entrypoint stage name for queue present is stable");
@@ -56,6 +66,21 @@ void test_native_function_table_names_are_stable()
             vulkan_backend::vulkan_native_function_table_status::ready)
             == std::string_view{"ready"},
         "native function table status name for ready is stable");
+    require(
+        vulkan_backend::native_function_table_status_name(
+            vulkan_backend::vulkan_native_function_table_status::required_extension_unavailable)
+            == std::string_view{"required_extension_unavailable"},
+        "native function table status name for missing extension is stable");
+    require(
+        vulkan_backend::native_function_table_status_name(
+            vulkan_backend::vulkan_native_function_table_status::missing_swapchain_create_symbol)
+            == std::string_view{"missing_swapchain_create_symbol"},
+        "native function table status name for missing swapchain create is stable");
+    require(
+        vulkan_backend::native_function_table_status_name(
+            vulkan_backend::vulkan_native_function_table_status::missing_swapchain_acquire_symbol)
+            == std::string_view{"missing_swapchain_acquire_symbol"},
+        "native function table status name for missing swapchain acquire is stable");
     require(
         vulkan_backend::native_function_table_status_name(
             vulkan_backend::vulkan_native_function_table_status::missing_queue_present_symbol)
@@ -87,20 +112,46 @@ void test_native_function_table_collects_default_backend_entrypoints()
         diagnostics.command_buffer_recording_ready,
         "native function table records command buffer recording symbols ready");
     require(diagnostics.queue_submit_ready, "native function table records queue submit symbol ready");
+    require(diagnostics.swapchain_create_ready, "native function table records swapchain create ready");
+    require(diagnostics.swapchain_destroy_ready, "native function table records swapchain destroy ready");
+    require(diagnostics.swapchain_images_ready, "native function table records swapchain images ready");
+    require(diagnostics.swapchain_acquire_ready, "native function table records swapchain acquire ready");
     require(diagnostics.queue_present_ready, "native function table records queue present symbol ready");
-    require(diagnostics.requested_symbol_count == 11, "native function table requests default backend symbols");
-    require(diagnostics.required_symbol_count == 11, "native function table counts required symbols");
-    require(diagnostics.available_symbol_count == 11, "native function table counts available symbols");
+    require(diagnostics.required_extensions_ready, "native function table has no default extension gate");
+    require(diagnostics.required_extension_count == 0, "native function table does not force extension checks");
+    require(diagnostics.requested_symbol_count == 15, "native function table requests default backend symbols");
+    require(diagnostics.required_symbol_count == 15, "native function table counts required symbols");
+    require(diagnostics.available_symbol_count == 15, "native function table counts available symbols");
     require(diagnostics.missing_required_symbol_count == 0, "native function table has no missing symbols");
     require(
-        resolver.state().resolve_call_count == 11,
+        resolver.state().resolve_call_count == 15,
         "fake resolver is called once per default native symbol");
     require(
         diagnostics.symbols.front().name == "vkBeginCommandBuffer",
         "native function table preserves stable command recording symbol order");
     require(
+        diagnostics.symbols[10].name == "vkCreateSwapchainKHR",
+        "native function table preserves stable swapchain symbol order");
+    require(
+        diagnostics.symbols[13].name == "vkAcquireNextImageKHR",
+        "native function table preserves stable acquire symbol order");
+    require(
         diagnostics.symbols.back().name == "vkQueuePresentKHR",
         "native function table preserves stable queue present symbol order");
+    const vulkan_backend::vulkan_native_swapchain_entrypoint_readiness swapchain =
+        vulkan_backend::summarize_vulkan_native_swapchain_entrypoints(diagnostics);
+    require(swapchain.ready_for_swapchain_path(), "swapchain native summary is ready");
+    require(swapchain.ready_for_swapchain_create(), "swapchain create summary is ready");
+    require(swapchain.ready_for_swapchain_acquire(), "swapchain acquire summary is ready");
+    require(swapchain.ready_for_swapchain_present(), "swapchain present summary is ready");
+    require(
+        vulkan_backend::summarize_vulkan_swapchain_create_native_readiness(diagnostics)
+            .entrypoint_ready,
+        "swapchain create native entrypoint snapshot is ready");
+    require(
+        vulkan_backend::summarize_vulkan_swapchain_acquire_native_readiness(diagnostics)
+            .entrypoint_ready,
+        "swapchain acquire native entrypoint snapshot is ready");
     for (const vulkan_backend::vulkan_native_entrypoint_symbol_diagnostics& symbol :
          diagnostics.symbols) {
         require(symbol.completed(), "each default native symbol completes");
@@ -168,7 +219,136 @@ void test_native_function_table_maps_missing_command_recording_symbol()
         "native function table records missing command symbol name");
     require(!diagnostics.command_buffer_recording_ready, "command recording symbols are not ready");
     require(diagnostics.queue_submit_ready, "queue submit symbol remains ready");
+    require(diagnostics.swapchain_create_ready, "swapchain create symbol remains ready");
+    require(diagnostics.swapchain_acquire_ready, "swapchain acquire symbol remains ready");
     require(diagnostics.queue_present_ready, "queue present symbol remains ready");
+}
+
+void test_native_function_table_checks_required_swapchain_extension()
+{
+    using namespace quiz_vulkan::render;
+
+    {
+        vulkan_backend::fake_vulkan_native_symbol_resolver resolver;
+        const vulkan_backend::vulkan_native_function_table_diagnostics diagnostics =
+            vulkan_backend::collect_vulkan_native_function_table(
+                resolver,
+                make_ready_loader(),
+                vulkan_backend::vulkan_native_function_table_request{
+                    .available_extensions = {"VK_KHR_swapchain"},
+                    .include_default_swapchain_extension = true,
+                });
+
+        require(diagnostics.ready_for_backend_path(), "available swapchain extension keeps native table ready");
+        require(diagnostics.required_extensions_ready, "native table records required extension readiness");
+        require(diagnostics.required_extension_count == 1, "native table counts required swapchain extension");
+        require(
+            diagnostics.available_required_extension_count == 1,
+            "native table counts available swapchain extension");
+    }
+
+    {
+        vulkan_backend::fake_vulkan_native_symbol_resolver resolver;
+        const vulkan_backend::vulkan_native_function_table_diagnostics diagnostics =
+            vulkan_backend::collect_vulkan_native_function_table(
+                resolver,
+                make_ready_loader(),
+                vulkan_backend::vulkan_native_function_table_request{
+                    .include_default_swapchain_extension = true,
+                });
+
+        require(diagnostics.blocked(), "missing swapchain extension blocks native table");
+        require(
+            diagnostics.status
+                == vulkan_backend::vulkan_native_function_table_status::required_extension_unavailable,
+            "native table reports unavailable required extension");
+        require(
+            diagnostics.fallback_reason
+                == vulkan_backend::vulkan_backend_fallback_reason::swapchain_unavailable,
+            "native table maps missing swapchain extension to swapchain fallback");
+        require(
+            diagnostics.missing_required_extension == "VK_KHR_swapchain",
+            "native table records missing swapchain extension");
+        require(
+            resolver.state().resolve_call_count == 0,
+            "native table does not resolve swapchain symbols when required extension is absent");
+
+        const vulkan_backend::vulkan_native_swapchain_entrypoint_readiness swapchain =
+            vulkan_backend::summarize_vulkan_native_swapchain_entrypoints(diagnostics);
+        require(swapchain.blocked(), "swapchain native summary blocks on missing extension");
+        require(
+            swapchain.missing_required_extension == "VK_KHR_swapchain",
+            "swapchain native summary records missing extension");
+    }
+}
+
+void test_native_function_table_maps_missing_swapchain_symbols()
+{
+    using namespace quiz_vulkan::render;
+
+    {
+        vulkan_backend::fake_vulkan_native_symbol_resolver resolver(
+            vulkan_backend::fake_vulkan_native_symbol_resolver_options{
+                .missing_symbols = {"vkCreateSwapchainKHR"},
+            });
+        const vulkan_backend::vulkan_native_function_table_diagnostics diagnostics =
+            vulkan_backend::collect_vulkan_native_function_table(
+                resolver,
+                make_ready_loader());
+
+        require(
+            diagnostics.status
+                == vulkan_backend::vulkan_native_function_table_status::missing_swapchain_create_symbol,
+            "native function table maps missing swapchain create symbol");
+        require(
+            diagnostics.fallback_reason
+                == vulkan_backend::vulkan_backend_fallback_reason::swapchain_unavailable,
+            "native function table maps missing swapchain create to swapchain fallback");
+        require(!diagnostics.swapchain_create_ready, "swapchain create symbol is not ready");
+        const vulkan_backend::vulkan_native_swapchain_entrypoint_readiness swapchain =
+            vulkan_backend::summarize_vulkan_native_swapchain_entrypoints(diagnostics);
+        require(!swapchain.ready_for_swapchain_create(), "swapchain create summary is blocked");
+        require(
+            swapchain.missing_symbol_name == "vkCreateSwapchainKHR",
+            "swapchain summary records missing create symbol");
+    }
+
+    {
+        vulkan_backend::fake_vulkan_native_symbol_resolver resolver(
+            vulkan_backend::fake_vulkan_native_symbol_resolver_options{
+                .missing_symbols = {"vkAcquireNextImageKHR"},
+            });
+        const vulkan_backend::vulkan_native_function_table_diagnostics diagnostics =
+            vulkan_backend::collect_vulkan_native_function_table(
+                resolver,
+                make_ready_loader());
+
+        require(
+            diagnostics.status
+                == vulkan_backend::vulkan_native_function_table_status::missing_swapchain_acquire_symbol,
+            "native function table maps missing swapchain acquire symbol");
+        require(
+            diagnostics.fallback_reason
+                == vulkan_backend::vulkan_backend_fallback_reason::acquire_image_failed,
+            "native function table maps missing swapchain acquire to acquire fallback");
+        require(!diagnostics.swapchain_acquire_ready, "swapchain acquire symbol is not ready");
+        const vulkan_backend::vulkan_native_swapchain_entrypoint_readiness swapchain =
+            vulkan_backend::summarize_vulkan_native_swapchain_entrypoints(diagnostics);
+        require(
+            swapchain.ready_for_swapchain_create(),
+            "missing acquire symbol still leaves create summary ready");
+        require(!swapchain.ready_for_swapchain_acquire(), "swapchain acquire summary is blocked");
+        require(
+            vulkan_backend::summarize_vulkan_swapchain_create_native_readiness(diagnostics)
+                .entrypoint_ready,
+            "missing acquire keeps create entrypoint snapshot ready");
+        const vulkan_backend::vulkan_native_entrypoint_readiness_snapshot acquire_snapshot =
+            vulkan_backend::summarize_vulkan_swapchain_acquire_native_readiness(diagnostics);
+        require(!acquire_snapshot.entrypoint_ready, "missing acquire blocks acquire snapshot");
+        require(
+            acquire_snapshot.missing_symbol_name == "vkAcquireNextImageKHR",
+            "acquire snapshot records missing acquire symbol");
+    }
 }
 
 void test_native_function_table_maps_missing_queue_symbols()
@@ -245,8 +425,8 @@ void test_native_function_table_allows_missing_optional_custom_symbol()
         diagnostics.status == vulkan_backend::vulkan_native_function_table_status::ready,
         "native function table permits missing optional custom symbol");
     require(diagnostics.ready_for_backend_path(), "optional missing symbol does not block backend path");
-    require(diagnostics.requested_symbol_count == 12, "native function table includes optional symbol");
-    require(diagnostics.available_symbol_count == 11, "native function table counts optional missing symbol");
+    require(diagnostics.requested_symbol_count == 16, "native function table includes optional symbol");
+    require(diagnostics.available_symbol_count == 15, "native function table counts optional missing symbol");
     require(
         diagnostics.missing_required_symbol_count == 0,
         "native function table does not count optional missing as required");
@@ -262,6 +442,8 @@ int main()
     test_native_function_table_collects_default_backend_entrypoints();
     test_native_function_table_blocks_when_loader_is_unavailable();
     test_native_function_table_maps_missing_command_recording_symbol();
+    test_native_function_table_checks_required_swapchain_extension();
+    test_native_function_table_maps_missing_swapchain_symbols();
     test_native_function_table_maps_missing_queue_symbols();
     test_native_function_table_allows_missing_optional_custom_symbol();
     return 0;

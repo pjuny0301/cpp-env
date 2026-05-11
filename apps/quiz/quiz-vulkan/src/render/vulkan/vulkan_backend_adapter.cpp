@@ -246,6 +246,12 @@ vulkan_backend_fallback_reason fallback_for_native_stage(
         return vulkan_backend_fallback_reason::record_commands_failed;
     case vulkan_native_entrypoint_stage::queue_submit:
         return vulkan_backend_fallback_reason::submit_frame_failed;
+    case vulkan_native_entrypoint_stage::swapchain_create:
+    case vulkan_native_entrypoint_stage::swapchain_destroy:
+    case vulkan_native_entrypoint_stage::swapchain_images:
+        return vulkan_backend_fallback_reason::swapchain_unavailable;
+    case vulkan_native_entrypoint_stage::swapchain_acquire:
+        return vulkan_backend_fallback_reason::acquire_image_failed;
     case vulkan_native_entrypoint_stage::queue_present:
         return vulkan_backend_fallback_reason::present_frame_failed;
     }
@@ -261,6 +267,14 @@ vulkan_native_function_table_status missing_status_for_native_stage(
         return vulkan_native_function_table_status::missing_command_buffer_recording_symbol;
     case vulkan_native_entrypoint_stage::queue_submit:
         return vulkan_native_function_table_status::missing_queue_submit_symbol;
+    case vulkan_native_entrypoint_stage::swapchain_create:
+        return vulkan_native_function_table_status::missing_swapchain_create_symbol;
+    case vulkan_native_entrypoint_stage::swapchain_destroy:
+        return vulkan_native_function_table_status::missing_swapchain_destroy_symbol;
+    case vulkan_native_entrypoint_stage::swapchain_images:
+        return vulkan_native_function_table_status::missing_swapchain_images_symbol;
+    case vulkan_native_entrypoint_stage::swapchain_acquire:
+        return vulkan_native_function_table_status::missing_swapchain_acquire_symbol;
     case vulkan_native_entrypoint_stage::queue_present:
         return vulkan_native_function_table_status::missing_queue_present_symbol;
     }
@@ -319,6 +333,21 @@ std::vector<vulkan_native_entrypoint_symbol_request> make_native_symbol_requests
     }
     symbols.insert(symbols.end(), request.symbols.begin(), request.symbols.end());
     return symbols;
+}
+
+std::vector<std::string> make_native_required_extensions(
+    const vulkan_native_function_table_request& request)
+{
+    std::vector<std::string> extensions;
+    if (request.include_default_swapchain_extension) {
+        extensions = default_vulkan_native_swapchain_extensions();
+    }
+    for (const std::string& extension : request.required_extensions) {
+        if (std::find(extensions.begin(), extensions.end(), extension) == extensions.end()) {
+            extensions.push_back(extension);
+        }
+    }
+    return extensions;
 }
 
 std::vector<std::string> native_symbol_candidate_libraries(
@@ -1619,14 +1648,44 @@ bool vulkan_native_function_table_diagnostics::ready_for_backend_path() const
 {
     return checked && status == vulkan_native_function_table_status::ready
         && fallback_reason == vulkan_backend_fallback_reason::none
-        && loader_ready && command_buffer_recording_ready
-        && queue_submit_ready && queue_present_ready
+        && loader_ready && required_extensions_ready
+        && command_buffer_recording_ready && queue_submit_ready
+        && swapchain_create_ready && swapchain_destroy_ready
+        && swapchain_images_ready && swapchain_acquire_ready && queue_present_ready
         && missing_required_symbol_count == 0;
 }
 
 bool vulkan_native_function_table_diagnostics::blocked() const
 {
     return checked && status != vulkan_native_function_table_status::ready;
+}
+
+bool vulkan_native_swapchain_entrypoint_readiness::ready_for_swapchain_create() const
+{
+    return checked && function_table_checked && required_extensions_ready
+        && create_swapchain_ready && destroy_swapchain_ready
+        && get_swapchain_images_ready;
+}
+
+bool vulkan_native_swapchain_entrypoint_readiness::ready_for_swapchain_acquire() const
+{
+    return ready_for_swapchain_create() && acquire_next_image_ready;
+}
+
+bool vulkan_native_swapchain_entrypoint_readiness::ready_for_swapchain_present() const
+{
+    return ready_for_swapchain_acquire() && queue_present_ready;
+}
+
+bool vulkan_native_swapchain_entrypoint_readiness::ready_for_swapchain_path() const
+{
+    return ready_for_swapchain_present()
+        && function_table_status == vulkan_native_function_table_status::ready;
+}
+
+bool vulkan_native_swapchain_entrypoint_readiness::blocked() const
+{
+    return checked && !ready_for_swapchain_path();
 }
 
 fake_vulkan_native_symbol_resolver::fake_vulkan_native_symbol_resolver()
@@ -1703,9 +1762,41 @@ vulkan_native_function_pointer system_vulkan_native_symbol_resolver::resolve_sym
 }
 
 std::vector<vulkan_native_entrypoint_symbol_request>
-default_vulkan_native_backend_entrypoints()
+default_vulkan_native_swapchain_entrypoints()
 {
     return {
+        vulkan_native_entrypoint_symbol_request{
+            .stage = vulkan_native_entrypoint_stage::swapchain_create,
+            .name = "vkCreateSwapchainKHR",
+            .required = true,
+        },
+        vulkan_native_entrypoint_symbol_request{
+            .stage = vulkan_native_entrypoint_stage::swapchain_destroy,
+            .name = "vkDestroySwapchainKHR",
+            .required = true,
+        },
+        vulkan_native_entrypoint_symbol_request{
+            .stage = vulkan_native_entrypoint_stage::swapchain_images,
+            .name = "vkGetSwapchainImagesKHR",
+            .required = true,
+        },
+        vulkan_native_entrypoint_symbol_request{
+            .stage = vulkan_native_entrypoint_stage::swapchain_acquire,
+            .name = "vkAcquireNextImageKHR",
+            .required = true,
+        },
+    };
+}
+
+std::vector<std::string> default_vulkan_native_swapchain_extensions()
+{
+    return {"VK_KHR_swapchain"};
+}
+
+std::vector<vulkan_native_entrypoint_symbol_request>
+default_vulkan_native_backend_entrypoints()
+{
+    std::vector<vulkan_native_entrypoint_symbol_request> entrypoints{
         vulkan_native_entrypoint_symbol_request{
             .stage = vulkan_native_entrypoint_stage::command_buffer_recording,
             .name = "vkBeginCommandBuffer",
@@ -1756,12 +1847,19 @@ default_vulkan_native_backend_entrypoints()
             .name = "vkQueueSubmit",
             .required = true,
         },
-        vulkan_native_entrypoint_symbol_request{
-            .stage = vulkan_native_entrypoint_stage::queue_present,
-            .name = "vkQueuePresentKHR",
-            .required = true,
-        },
     };
+    const std::vector<vulkan_native_entrypoint_symbol_request> swapchain_entrypoints =
+        default_vulkan_native_swapchain_entrypoints();
+    entrypoints.insert(
+        entrypoints.end(),
+        swapchain_entrypoints.begin(),
+        swapchain_entrypoints.end());
+    entrypoints.push_back(vulkan_native_entrypoint_symbol_request{
+        .stage = vulkan_native_entrypoint_stage::queue_present,
+        .name = "vkQueuePresentKHR",
+        .required = true,
+    });
+    return entrypoints;
 }
 
 vulkan_native_function_table_diagnostics collect_vulkan_native_function_table(
@@ -1784,6 +1882,26 @@ vulkan_native_function_table_diagnostics collect_vulkan_native_function_table(
         return diagnostics;
     }
 
+    const std::vector<std::string> required_extensions =
+        make_native_required_extensions(request);
+    diagnostics.required_extension_count = required_extensions.size();
+    diagnostics.required_extensions_ready = required_extensions.empty();
+    for (const std::string& required_extension : required_extensions) {
+        if (!contains_symbol_name(request.available_extensions, required_extension)) {
+            diagnostics.status =
+                vulkan_native_function_table_status::required_extension_unavailable;
+            diagnostics.fallback_reason = vulkan_backend_fallback_reason::swapchain_unavailable;
+            diagnostics.missing_required_extension = required_extension;
+            diagnostics.diagnostic =
+                "Native Vulkan function table is missing required extension: "
+                + required_extension;
+            return diagnostics;
+        }
+        ++diagnostics.available_required_extension_count;
+    }
+    diagnostics.required_extensions_ready =
+        diagnostics.available_required_extension_count == diagnostics.required_extension_count;
+
     for (const vulkan_native_entrypoint_symbol_request& symbol_request :
          make_native_symbol_requests(request)) {
         record_native_symbol_diagnostics(
@@ -1798,6 +1916,18 @@ vulkan_native_function_table_diagnostics collect_vulkan_native_function_table(
     diagnostics.queue_submit_ready = required_native_stage_ready(
         diagnostics.symbols,
         vulkan_native_entrypoint_stage::queue_submit);
+    diagnostics.swapchain_create_ready = required_native_stage_ready(
+        diagnostics.symbols,
+        vulkan_native_entrypoint_stage::swapchain_create);
+    diagnostics.swapchain_destroy_ready = required_native_stage_ready(
+        diagnostics.symbols,
+        vulkan_native_entrypoint_stage::swapchain_destroy);
+    diagnostics.swapchain_images_ready = required_native_stage_ready(
+        diagnostics.symbols,
+        vulkan_native_entrypoint_stage::swapchain_images);
+    diagnostics.swapchain_acquire_ready = required_native_stage_ready(
+        diagnostics.symbols,
+        vulkan_native_entrypoint_stage::swapchain_acquire);
     diagnostics.queue_present_ready = required_native_stage_ready(
         diagnostics.symbols,
         vulkan_native_entrypoint_stage::queue_present);
@@ -1823,6 +1953,33 @@ vulkan_native_function_table_diagnostics collect_vulkan_native_function_table(
     diagnostics.fallback_reason = vulkan_backend_fallback_reason::none;
     diagnostics.diagnostic = "Native Vulkan backend function table is ready";
     return diagnostics;
+}
+
+vulkan_native_swapchain_entrypoint_readiness summarize_vulkan_native_swapchain_entrypoints(
+    const vulkan_native_function_table_diagnostics& diagnostics)
+{
+    if (!diagnostics.checked) {
+        return vulkan_native_swapchain_entrypoint_readiness{};
+    }
+
+    return vulkan_native_swapchain_entrypoint_readiness{
+        .checked = true,
+        .function_table_checked = diagnostics.checked,
+        .required_extensions_ready = diagnostics.required_extensions_ready,
+        .create_swapchain_ready = diagnostics.swapchain_create_ready,
+        .destroy_swapchain_ready = diagnostics.swapchain_destroy_ready,
+        .get_swapchain_images_ready = diagnostics.swapchain_images_ready,
+        .acquire_next_image_ready = diagnostics.swapchain_acquire_ready,
+        .queue_present_ready = diagnostics.queue_present_ready,
+        .function_table_status = diagnostics.status,
+        .fallback_reason = diagnostics.fallback_reason,
+        .required_extension_count = diagnostics.required_extension_count,
+        .available_required_extension_count =
+            diagnostics.available_required_extension_count,
+        .missing_required_extension = diagnostics.missing_required_extension,
+        .missing_symbol_name = diagnostics.missing_symbol_name,
+        .diagnostic = diagnostics.diagnostic,
+    };
 }
 
 vulkan_backend_lifecycle_readiness apply_vulkan_loader_readiness_to_lifecycle(

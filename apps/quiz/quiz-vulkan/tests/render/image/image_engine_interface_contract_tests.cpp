@@ -4,6 +4,7 @@
 #include "render/image/image_source_bytes_loader.h"
 #include "render/image/image_texture_cache.h"
 #include "render/image/image_texture_pipeline.h"
+#include "render/image/image_texture_upload_snapshot_diff.h"
 #include "render/render_draw_list.h"
 
 #include <concepts>

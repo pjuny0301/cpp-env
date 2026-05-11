@@ -1,4 +1,4 @@
-#include "render/image/image_texture_cache.h"
+#include "render/image/image_texture_upload_snapshot_diff.h"
 
 #include <algorithm>
 #include <cassert>

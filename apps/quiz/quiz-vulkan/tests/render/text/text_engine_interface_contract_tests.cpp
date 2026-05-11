@@ -8,6 +8,7 @@
 #include "render/text/font_coverage_run_segmentation.h"
 #include "render/text/font_glyph_id_resolver.h"
 #include "render/text/font_glyph_atlas_page_plan.h"
+#include "render/text/font_glyph_atlas_upload_operation_plan.h"
 #include "render/text/font_rasterizer.h"
 #include "render/text/text_frame_snapshot.h"
 #include "render/text/text_frame_draw_plan.h"
@@ -2119,6 +2120,128 @@ static_assert(requires(
         -> std::same_as<render::render_text_glyph_atlas_page_plan_snapshot>;
     { render::plan_render_text_glyph_atlas_pages(materializations, config) }
         -> std::same_as<render::render_text_glyph_atlas_page_plan_snapshot>;
+});
+
+static_assert(requires(
+    render::render_text_glyph_atlas_upload_operation_status status,
+    render::render_text_glyph_atlas_upload_operation_packet packet,
+    render::render_text_glyph_atlas_upload_operation_page_summary page,
+    render::render_text_glyph_atlas_upload_operation_policy_snapshot policy,
+    render::render_text_glyph_atlas_upload_operation_plan_request request,
+    render::render_text_glyph_atlas_upload_operation_plan_snapshot plan,
+    render::render_text_glyph_atlas_page_plan_entry_snapshot page_entry,
+    render::render_text_glyph_atlas_materialization_snapshot materialization,
+    const render::render_text_glyph_atlas_materialization_snapshot* materialization_ptr,
+    std::vector<render::render_text_glyph_atlas_materialization_snapshot> materializations,
+    std::vector<render::render_text_glyph_atlas_upload_operation_page_summary> pages,
+    render::render_text_atlas_page atlas_page,
+    render::glyph_atlas_key cache_key,
+    render::render_rect rect,
+    std::size_t operation_index,
+    std::size_t page_plan_entry_index) {
+    { render::render_text_glyph_atlas_upload_operation_status_name(status) } -> std::same_as<std::string>;
+    { packet.operation_id } -> std::same_as<std::string&>;
+    { packet.stable_page_id } -> std::same_as<std::string&>;
+    { packet.operation_index } -> std::same_as<std::size_t&>;
+    { packet.page_plan_entry_index } -> std::same_as<std::size_t&>;
+    { packet.materialization_index } -> std::same_as<std::size_t&>;
+    { packet.materialization_id } -> std::same_as<std::string&>;
+    { packet.run_index } -> std::same_as<std::size_t&>;
+    { packet.cluster_index } -> std::same_as<std::size_t&>;
+    { packet.cluster_byte_offset } -> std::same_as<std::size_t&>;
+    { packet.cluster_byte_count } -> std::same_as<std::size_t&>;
+    { packet.status } -> std::same_as<render::render_text_glyph_atlas_upload_operation_status&>;
+    { packet.page_plan_status } -> std::same_as<render::render_text_glyph_atlas_page_plan_status&>;
+    { packet.materialization_status }
+        -> std::same_as<render::render_text_glyph_atlas_materialization_status&>;
+    { packet.cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { packet.has_cache_key } -> std::same_as<bool&>;
+    { packet.page } -> std::same_as<render::render_text_atlas_page&>;
+    { packet.page_id } -> std::same_as<render::render_text_atlas_page_id&>;
+    { packet.atlas_bounds } -> std::same_as<render::render_rect&>;
+    { packet.has_atlas_bounds } -> std::same_as<bool&>;
+    { packet.update_bounds } -> std::same_as<render::render_rect&>;
+    { packet.has_update_bounds } -> std::same_as<bool&>;
+    { packet.rgba_byte_count } -> std::same_as<std::size_t&>;
+    { packet.dirty_upload } -> std::same_as<bool&>;
+    { packet.clean_reuse } -> std::same_as<bool&>;
+    { packet.skipped } -> std::same_as<bool&>;
+    { packet.blocked } -> std::same_as<bool&>;
+    { packet.overflow } -> std::same_as<bool&>;
+    { packet.payload_byte_count_mismatch } -> std::same_as<bool&>;
+    { packet.blocker_reason } -> std::same_as<std::string&>;
+    { packet.diagnostic } -> std::same_as<std::string&>;
+    { packet.uploadable() } -> std::same_as<bool>;
+    { page.stable_page_id } -> std::same_as<std::string&>;
+    { page.page } -> std::same_as<render::render_text_atlas_page&>;
+    { page.page_id } -> std::same_as<render::render_text_atlas_page_id&>;
+    { page.operation_count } -> std::same_as<std::size_t&>;
+    { page.upload_ready_count } -> std::same_as<std::size_t&>;
+    { page.clean_reuse_count } -> std::same_as<std::size_t&>;
+    { page.blocked_count } -> std::same_as<std::size_t&>;
+    { page.overflow_count } -> std::same_as<std::size_t&>;
+    { page.upload_rgba_bytes } -> std::same_as<std::size_t&>;
+    { page.dirty } -> std::same_as<bool&>;
+    { page.clean_reuse } -> std::same_as<bool&>;
+    { page.has_blockers } -> std::same_as<bool&>;
+    { page.overflow } -> std::same_as<bool&>;
+    { policy.page_plan_entry_count } -> std::same_as<std::size_t&>;
+    { policy.materialization_count } -> std::same_as<std::size_t&>;
+    { policy.operation_count } -> std::same_as<std::size_t&>;
+    { policy.upload_ready_count } -> std::same_as<std::size_t&>;
+    { policy.clean_reuse_count } -> std::same_as<std::size_t&>;
+    { policy.skipped_count } -> std::same_as<std::size_t&>;
+    { policy.blocked_count } -> std::same_as<std::size_t&>;
+    { policy.overflow_count } -> std::same_as<std::size_t&>;
+    { policy.payload_byte_count_mismatch_count } -> std::same_as<std::size_t&>;
+    { policy.dirty_page_count } -> std::same_as<std::size_t&>;
+    { policy.clean_reuse_page_count } -> std::same_as<std::size_t&>;
+    { policy.blocked_page_count } -> std::same_as<std::size_t&>;
+    { policy.page_count } -> std::same_as<std::size_t&>;
+    { policy.total_upload_rgba_bytes } -> std::same_as<std::size_t&>;
+    { policy.has_uploads } -> std::same_as<bool&>;
+    { policy.has_blockers } -> std::same_as<bool&>;
+    { policy.has_overflow } -> std::same_as<bool&>;
+    { policy.diagnostic } -> std::same_as<std::string&>;
+    { request.page_plan } -> std::same_as<render::render_text_glyph_atlas_page_plan_snapshot&>;
+    { request.materializations }
+        -> std::same_as<std::vector<render::render_text_glyph_atlas_materialization_snapshot>&>;
+    { request.emit_clean_reuse_operations } -> std::same_as<bool&>;
+    { request.emit_blocked_operations } -> std::same_as<bool&>;
+    { plan.operations }
+        -> std::same_as<std::vector<render::render_text_glyph_atlas_upload_operation_packet>&>;
+    { plan.pages }
+        -> std::same_as<std::vector<render::render_text_glyph_atlas_upload_operation_page_summary>&>;
+    { plan.policy } -> std::same_as<render::render_text_glyph_atlas_upload_operation_policy_snapshot&>;
+    { plan.ok() } -> std::same_as<bool>;
+    { plan.has_uploads() } -> std::same_as<bool>;
+    { plan.has_blockers() } -> std::same_as<bool>;
+    { render::render_text_glyph_atlas_upload_operation_stable_page_id_for(atlas_page) }
+        -> std::same_as<std::string>;
+    { render::render_text_glyph_atlas_upload_operation_cache_key_id_for(cache_key) }
+        -> std::same_as<std::string>;
+    { render::render_text_glyph_atlas_upload_operation_stable_id_for(page_entry) }
+        -> std::same_as<std::string>;
+    { render::render_text_glyph_atlas_upload_operation_materialization_for(materializations, page_entry) }
+        -> std::same_as<const render::render_text_glyph_atlas_materialization_snapshot*>;
+    { render::render_text_glyph_atlas_upload_operation_has_positive_rect(rect) } -> std::same_as<bool>;
+    { render::render_text_glyph_atlas_upload_operation_status_for(page_entry, materialization_ptr) }
+        -> std::same_as<render::render_text_glyph_atlas_upload_operation_status>;
+    { render::render_text_glyph_atlas_upload_operation_blocker_reason_for(status) }
+        -> std::same_as<std::string>;
+    { render::make_render_text_glyph_atlas_upload_operation(
+        page_entry,
+        materialization_ptr,
+        operation_index,
+        page_plan_entry_index) } -> std::same_as<render::render_text_glyph_atlas_upload_operation_packet>;
+    { render::render_text_glyph_atlas_upload_operation_find_page_summary(pages, atlas_page.id) }
+        -> std::same_as<render::render_text_glyph_atlas_upload_operation_page_summary*>;
+    { render::append_render_text_glyph_atlas_upload_operation(plan, packet) } -> std::same_as<void>;
+    { render::summarize_render_text_glyph_atlas_upload_operation_pages(plan) } -> std::same_as<void>;
+    { render::plan_render_text_glyph_atlas_upload_operations(request) }
+        -> std::same_as<render::render_text_glyph_atlas_upload_operation_plan_snapshot>;
+    { render::plan_render_text_glyph_atlas_upload_operations(request.page_plan, materializations) }
+        -> std::same_as<render::render_text_glyph_atlas_upload_operation_plan_snapshot>;
 });
 
 static_assert(requires(

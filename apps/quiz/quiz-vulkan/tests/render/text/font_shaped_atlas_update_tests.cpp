@@ -901,6 +901,150 @@ void test_glyph_atlas_page_plan_skips_unsupported_materializations()
     require(plan.policy.total_upload_rgba_bytes == 0U, "skipped materialization does not claim upload bytes");
 }
 
+void test_glyph_atlas_upload_operation_plan_emits_upload_and_clean_reuse_packets()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_glyph_atlas_materialization_snapshot upload =
+        upload_ready_materialization();
+    const render_text_glyph_atlas_materialization_snapshot clean =
+        clean_reuse_materialization();
+    const std::vector<render_text_glyph_atlas_materialization_snapshot> materializations = {
+        upload,
+        clean,
+    };
+    const render_text_glyph_atlas_page_plan_snapshot page_plan =
+        plan_render_text_glyph_atlas_pages(materializations);
+
+    const render_text_glyph_atlas_upload_operation_plan_snapshot upload_plan =
+        plan_render_text_glyph_atlas_upload_operations(page_plan, materializations);
+
+    require(upload_plan.operations.size() == 2U, "upload operation plan records upload and reuse packets");
+    require(upload_plan.has_uploads(), "upload operation plan reports pending uploads");
+    require(upload_plan.ok(), "upload operation plan with clean reuse has no blockers");
+    require(upload_plan.policy.upload_ready_count == 1U, "upload operation plan counts upload packet");
+    require(upload_plan.policy.clean_reuse_count == 1U, "upload operation plan counts clean reuse packet");
+    require(upload_plan.policy.blocked_count == 0U, "upload operation plan has no blockers");
+    require(
+        upload_plan.policy.total_upload_rgba_bytes == upload.atlas_update_rgba_bytes,
+        "upload operation plan totals upload-ready RGBA bytes");
+    require(upload_plan.policy.dirty_page_count == 1U, "upload operation plan counts dirty page");
+    require(upload_plan.policy.clean_reuse_page_count == 1U, "upload operation plan counts clean reuse page");
+
+    const render_text_glyph_atlas_upload_operation_packet& packet =
+        upload_plan.operations.front();
+    require(
+        packet.status == render_text_glyph_atlas_upload_operation_status::upload_ready,
+        "first operation is upload-ready");
+    require(packet.uploadable(), "upload-ready packet reports uploadable");
+    require(packet.dirty_upload, "upload-ready packet marks dirty upload");
+    require(packet.page_id == upload.page.id, "upload-ready packet exposes stable page id");
+    require(packet.stable_page_id == "page:2", "upload-ready packet exposes stable page label");
+    require(packet.cache_key == upload.cache_key, "upload-ready packet preserves cache key");
+    require(packet.has_update_bounds, "upload-ready packet exposes update bounds");
+    require(
+        packet.update_bounds.x == upload.atlas_update_bounds.x,
+        "upload-ready packet preserves update rect");
+    require(
+        packet.rgba_byte_count == upload.atlas_update_rgba_bytes,
+        "upload-ready packet preserves RGBA byte count");
+
+    const render_text_glyph_atlas_upload_operation_packet& clean_packet =
+        upload_plan.operations.back();
+    require(
+        clean_packet.status == render_text_glyph_atlas_upload_operation_status::clean_reuse,
+        "second operation is clean reuse");
+    require(clean_packet.clean_reuse, "clean reuse packet marks clean reuse");
+    require(!clean_packet.dirty_upload, "clean reuse packet is not dirty");
+    require(clean_packet.rgba_byte_count == 0U, "clean reuse packet has no upload bytes");
+}
+
+void test_glyph_atlas_upload_operation_plan_reports_overflow_and_missing_cache_blockers()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_glyph_atlas_materialization_snapshot first =
+        upload_ready_materialization();
+    render_text_glyph_atlas_materialization_snapshot oversized =
+        upload_ready_materialization(glyph_atlas_key{
+            .face_id = 7,
+            .glyph_id = U'Z',
+            .pixel_size = 20,
+        });
+    oversized.has_atlas_placement = false;
+    oversized.page = render_text_atlas_page{};
+    oversized.atlas_bounds = render_rect{};
+    oversized.atlas_update_bounds = render_rect{0.0f, 0.0f, 32.0f, 32.0f};
+
+    const std::vector<render_text_glyph_atlas_materialization_snapshot> materializations = {
+        first,
+        oversized,
+        missing_cache_key_materialization(),
+    };
+    const render_text_glyph_atlas_page_plan_snapshot page_plan =
+        plan_render_text_glyph_atlas_pages(render_text_glyph_atlas_page_plan_request{
+            .materializations = materializations,
+            .constraints = render_text_glyph_atlas_page_plan_constraints{
+                .width = 16,
+                .height = 16,
+                .padding = 1,
+                .max_pages = 1,
+            },
+        });
+
+    const render_text_glyph_atlas_upload_operation_plan_snapshot upload_plan =
+        plan_render_text_glyph_atlas_upload_operations(page_plan, materializations);
+
+    require(!upload_plan.ok(), "upload operation plan with blockers is not ok");
+    require(upload_plan.has_blockers(), "upload operation plan exposes blockers");
+    require(upload_plan.policy.upload_ready_count == 1U, "upload operation plan keeps uploadable packet");
+    require(upload_plan.policy.blocked_count == 2U, "upload operation plan counts blockers");
+    require(upload_plan.policy.overflow_count == 1U, "upload operation plan counts overflow blocker");
+    require(upload_plan.policy.skipped_count == 1U, "upload operation plan counts skipped blocker");
+    require(upload_plan.policy.blocked_page_count == 1U, "upload operation plan counts blocked page");
+
+    require(
+        upload_plan.operations[1].status == render_text_glyph_atlas_upload_operation_status::blocked_overflow,
+        "oversized operation reports overflow blocker");
+    require(upload_plan.operations[1].overflow, "oversized operation marks overflow");
+    require(
+        upload_plan.operations[1].blocker_reason == "atlas page overflow",
+        "oversized operation explains overflow blocker");
+    require(
+        upload_plan.operations[2].status
+            == render_text_glyph_atlas_upload_operation_status::blocked_missing_cache_key,
+        "missing-cache operation reports missing cache key blocker");
+    require(!upload_plan.operations[2].has_cache_key, "missing-cache operation preserves cache-key flag");
+}
+
+void test_glyph_atlas_upload_operation_plan_reports_payload_mismatch_blocker()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_glyph_atlas_materialization_snapshot mismatch =
+        mismatched_materialization();
+    const std::vector<render_text_glyph_atlas_materialization_snapshot> materializations = {
+        mismatch,
+    };
+    const render_text_glyph_atlas_page_plan_snapshot page_plan =
+        plan_render_text_glyph_atlas_pages(materializations);
+
+    const render_text_glyph_atlas_upload_operation_plan_snapshot upload_plan =
+        plan_render_text_glyph_atlas_upload_operations(page_plan, materializations);
+
+    require(upload_plan.operations.size() == 1U, "mismatch creates one diagnostic operation");
+    require(!upload_plan.ok(), "payload mismatch blocks upload operation plan");
+    require(
+        upload_plan.operations.front().status
+            == render_text_glyph_atlas_upload_operation_status::blocked_payload_byte_count_mismatch,
+        "payload mismatch operation reports byte-count blocker");
+    require(
+        upload_plan.operations.front().payload_byte_count_mismatch,
+        "payload mismatch operation marks byte-count mismatch");
+    require(upload_plan.policy.payload_byte_count_mismatch_count == 1U, "policy counts payload mismatch");
+    require(upload_plan.policy.total_upload_rgba_bytes == 0U, "blocked payload mismatch does not claim bytes");
+}
+
 void test_atlas_upload_bridge_produces_stable_render_text_atlas_updates()
 {
     using namespace quiz_vulkan::render;
@@ -1536,6 +1680,9 @@ int main()
     test_glyph_atlas_page_plan_reports_selection_reuse_and_upload_totals();
     test_glyph_atlas_page_plan_reports_overflow_and_eviction_hint();
     test_glyph_atlas_page_plan_skips_unsupported_materializations();
+    test_glyph_atlas_upload_operation_plan_emits_upload_and_clean_reuse_packets();
+    test_glyph_atlas_upload_operation_plan_reports_overflow_and_missing_cache_blockers();
+    test_glyph_atlas_upload_operation_plan_reports_payload_mismatch_blocker();
     test_atlas_upload_bridge_produces_stable_render_text_atlas_updates();
     test_atlas_upload_bridge_suppresses_duplicates_and_skips_non_uploadable_work();
     test_text_frame_snapshot_combines_planning_fallback_materialization_and_upload_ids();

@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: fake image upload snapshot diff diagnostics integrated; Windows MinGW focused image CTest 1/1 and interface compile target build confirmed.
+- `a065d36`: image upload snapshots can compare queue/result changes, mipmap byte deltas, retry transitions, queue-depth regressions, invalid/overflow/unsupported plan changes, and texture handle changes.
 - current: text glyph atlas materialization diff, image mipmap upload plan, and input gesture policy route diff diagnostics integrated; Windows MinGW focused text/image/input CTest 3/3 and interface compile target build confirmed.
 - `90ad12e`: input routing diagnostics compare gesture thresholds, decisions, emitted kinds, directions, pointer/contact/phase mismatches, suppressions, and recoveries without domain dispatch.
 - `e3bdf20`: image upload diagnostics now include mipmap upload plans with per-level dimensions, byte estimates, overflow/invalid/unsupported/no-mipmap states, and fake uploader snapshots.

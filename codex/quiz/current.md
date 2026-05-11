@@ -39,6 +39,7 @@ Last updated: 2026-05-09
 - Engine workers own only their engine folders. App/runtime, top-level CMake, and aggregate contract wiring stay with the integrator unless explicitly assigned.
 - Large file splitting is allowed when it improves module cohesion, worker ownership, reviewability, or conflict isolation. Do not split files only because they exceed a line-count threshold, and do not move stable public interfaces without explicit integrator approval.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
+- Latest integration note: `a065d36` adds fake image upload snapshot diff diagnostics for upload queue/result changes, mipmap byte deltas, retry transitions, queue-depth regressions, invalid/overflow/unsupported plan changes, and texture handle changes.
 - Latest integration note: `90ad12e` adds input gesture policy route diff diagnostics for threshold, decision, emitted-kind, direction, pointer/contact/phase, suppression, and recovery deltas without app/domain dispatch.
 - Latest integration note: `e3bdf20` adds image mipmap upload planning diagnostics with per-level dimensions, byte estimates, overflow/invalid/unsupported/no-mipmap states, and fake uploader snapshot propagation.
 - Latest integration note: `594b795` adds glyph atlas materialization diff diagnostics for upload-ready, clean-reuse, skipped, payload-byte, unsupported, missing-cache, and backend fallback transitions across text atlas batches.

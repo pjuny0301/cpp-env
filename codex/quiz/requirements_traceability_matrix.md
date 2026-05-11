@@ -313,7 +313,7 @@
 - `5965a4b`: Vulkan swapchain policy/pipeline compatibility/shader binding/fallback diagnostics 추가.
 - `244d5b7`: input multipointer touch-like arbitration diagnostics 추가.
 - `94a922f`: asset manifest integrity diagnostics 추가.
-- 기준 검증 예시: 2026-05-07 Windows MinGW focused image CTest 2/2, focused Vulkan CTest 2/2, focused text/image CTest 6/6, focused input/image CTest 13/13, 최근 full CTest 76/76 통과. 현재 `ctest -N`이 76개 테스트를 보고한다. 권위 있는 테스트 목록은 항상 실행 시점의 `ctest -N`으로 확인한다.
+- 기준 검증 예시: Windows MinGW focused text/image/input/Vulkan/architecture CTest는 최신 통합별로 실행한다. 현재 `ctest -N`이 93개 테스트를 보고한다. 권위 있는 테스트 목록은 항상 실행 시점의 `ctest -N`으로 확인한다.
 - 기준 검증은 고정 개수로 적지 않는다. 현재 전체 테스트 수는 `ctest -N`이 권위이며, handoff에는 실행한 focused target만 기록한다.
 
 상태 기준:

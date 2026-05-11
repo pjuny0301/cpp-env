@@ -170,6 +170,7 @@ concept NormalizedInputReplayBatchInterface = requires(T batch) {
     { batch.keyboard } -> std::same_as<input::normalized_input_replay_keyboard_summary&>;
     { batch.ime } -> std::same_as<input::normalized_input_replay_ime_summary&>;
     { batch.pointer } -> std::same_as<input::normalized_input_replay_pointer_summary&>;
+    { batch.gesture_policies } -> std::same_as<input::normalized_input_replay_gesture_policy_summary&>;
     { batch.focus } -> std::same_as<input::normalized_input_replay_focus_summary&>;
     { batch.end_state } -> std::same_as<input::normalized_input_replay_end_state&>;
     { batch.text_presentation_diff } -> std::same_as<input::text_input_presentation_diff&>;
@@ -182,6 +183,7 @@ concept NormalizedInputReplayRecordingInterface = requires(T recording) {
     { recording.keyboard } -> std::same_as<input::normalized_input_replay_keyboard_summary&>;
     { recording.ime } -> std::same_as<input::normalized_input_replay_ime_summary&>;
     { recording.pointer } -> std::same_as<input::normalized_input_replay_pointer_summary&>;
+    { recording.gesture_policies } -> std::same_as<input::normalized_input_replay_gesture_policy_summary&>;
     { recording.focus } -> std::same_as<input::normalized_input_replay_focus_summary&>;
     { recording.final_state } -> std::same_as<input::normalized_input_replay_end_state&>;
 };
@@ -233,6 +235,14 @@ concept NormalizedInputReplayKeyboardSummaryInterface = requires(T summary) {
     { summary.modifiers } -> std::same_as<input::normalized_input_replay_keyboard_modifier_counts&>;
     { summary.repeat_policies }
         -> std::same_as<input::normalized_input_replay_keyboard_repeat_policy_counts&>;
+    { summary.total } -> std::same_as<std::size_t&>;
+    { summary.emitted_input_event_routes } -> std::same_as<std::size_t&>;
+    { summary.diagnostic_only_routes } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
+concept NormalizedInputReplayGesturePolicySummaryInterface = requires(T summary) {
+    { summary.routes } -> std::same_as<std::vector<input::action_route_policy_diagnostic>&>;
     { summary.total } -> std::same_as<std::size_t&>;
     { summary.emitted_input_event_routes } -> std::same_as<std::size_t&>;
     { summary.diagnostic_only_routes } -> std::same_as<std::size_t&>;
@@ -595,6 +605,7 @@ concept NormalizedInputReplayRegressionSummaryInterface = requires(T summary) {
     { summary.focus_caret_selection_changed } -> std::same_as<bool&>;
     { summary.pointer_capture_changed } -> std::same_as<bool&>;
     { summary.pointer_timeline_changed } -> std::same_as<bool&>;
+    { summary.gesture_policy_changed } -> std::same_as<bool&>;
     { summary.ime_timeline_changed } -> std::same_as<bool&>;
     { summary.keyboard_changed } -> std::same_as<bool&>;
     { summary.text_or_preedit_changed } -> std::same_as<bool&>;
@@ -608,6 +619,7 @@ concept NormalizedInputReplayDiffInterface = requires(T diff) {
     { diff.final_state } -> std::same_as<input::normalized_input_replay_final_state_diff&>;
     { diff.keyboard } -> std::same_as<input::normalized_input_replay_keyboard_diff&>;
     { diff.pointer } -> std::same_as<input::normalized_input_replay_pointer_diff&>;
+    { diff.gesture_policies } -> std::same_as<input::input_routing_gesture_policy_diff&>;
     { diff.ime } -> std::same_as<input::normalized_input_replay_ime_diff&>;
     { diff.focus } -> std::same_as<input::normalized_input_replay_focus_diff&>;
     { diff.regression } -> std::same_as<input::normalized_input_replay_regression_summary&>;
@@ -638,6 +650,8 @@ concept NormalizedInputReplayFunctions = requires(
     const input::normalized_input_replay_ime_summary& ime_source,
     input::normalized_input_replay_pointer_summary& pointer_target,
     const input::normalized_input_replay_pointer_summary& pointer_source,
+    input::normalized_input_replay_gesture_policy_summary& gesture_policy_target,
+    const input::normalized_input_replay_gesture_policy_summary& gesture_policy_source,
     input::normalized_input_replay_focus_summary& focus_target,
     const input::normalized_input_replay_focus_summary& focus_source,
     const input::normalized_input_replay_recording& before_recording,
@@ -689,6 +703,13 @@ concept NormalizedInputReplayFunctions = requires(
         -> std::same_as<input::normalized_input_replay_pointer_summary>;
     { input::accumulate_normalized_input_replay_pointer_summary(pointer_target, pointer_source) }
         -> std::same_as<void>;
+    { input::summarize_normalized_input_replay_gesture_policy_routes(routes) }
+        -> std::same_as<input::normalized_input_replay_gesture_policy_summary>;
+    { input::accumulate_normalized_input_replay_gesture_policy_summary(
+        gesture_policy_target,
+        gesture_policy_source) } -> std::same_as<void>;
+    { input::normalized_input_replay_gesture_policy_diagnostics(gesture_policy_source) }
+        -> std::same_as<input::input_routing_diagnostics>;
     { input::summarize_normalized_input_replay_focus_routes(routes, events, end_state, end_state) }
         -> std::same_as<input::normalized_input_replay_focus_summary>;
     { input::accumulate_normalized_input_replay_focus_summary(focus_target, focus_source) }
@@ -1492,6 +1513,8 @@ static_assert(NormalizedInputReplayKeyboardModifierCountsInterface<
 static_assert(NormalizedInputReplayKeyboardRepeatPolicyCountsInterface<
     input::normalized_input_replay_keyboard_repeat_policy_counts>);
 static_assert(NormalizedInputReplayKeyboardSummaryInterface<input::normalized_input_replay_keyboard_summary>);
+static_assert(NormalizedInputReplayGesturePolicySummaryInterface<
+    input::normalized_input_replay_gesture_policy_summary>);
 static_assert(NormalizedInputReplayImePhaseCountsInterface<input::normalized_input_replay_ime_phase_counts>);
 static_assert(NormalizedInputReplayImeTimelineEntryInterface<input::normalized_input_replay_ime_timeline_entry>);
 static_assert(NormalizedInputReplayImeSummaryInterface<input::normalized_input_replay_ime_summary>);
@@ -1540,6 +1563,7 @@ static_assert(std::is_default_constructible_v<input::normalized_input_replay_key
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_keyboard_modifier_counts>);
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_keyboard_repeat_policy_counts>);
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_keyboard_summary>);
+static_assert(std::is_default_constructible_v<input::normalized_input_replay_gesture_policy_summary>);
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_ime_phase_counts>);
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_ime_timeline_entry>);
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_ime_summary>);
@@ -1611,6 +1635,7 @@ static_assert(!std::is_polymorphic_v<input::normalized_input_replay_step>);
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_batch>);
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_recording>);
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_keyboard_summary>);
+static_assert(!std::is_polymorphic_v<input::normalized_input_replay_gesture_policy_summary>);
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_ime_summary>);
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_pointer_summary>);
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_focus_summary>);
@@ -1667,6 +1692,12 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     decltype(input::normalized_input_replay_recording{}.pointer),
     input::normalized_input_replay_pointer_summary>);
+static_assert(std::is_same_v<
+    decltype(input::normalized_input_replay_batch{}.gesture_policies),
+    input::normalized_input_replay_gesture_policy_summary>);
+static_assert(std::is_same_v<
+    decltype(input::normalized_input_replay_recording{}.gesture_policies),
+    input::normalized_input_replay_gesture_policy_summary>);
 static_assert(std::is_same_v<
     decltype(input::normalized_input_replay_batch{}.focus),
     input::normalized_input_replay_focus_summary>);

@@ -73,6 +73,13 @@ struct normalized_input_replay_keyboard_summary {
     std::size_t diagnostic_only_routes = 0;
 };
 
+struct normalized_input_replay_gesture_policy_summary {
+    std::vector<action_route_policy_diagnostic> routes;
+    std::size_t total = 0;
+    std::size_t emitted_input_event_routes = 0;
+    std::size_t diagnostic_only_routes = 0;
+};
+
 enum class normalized_input_replay_ime_timeline_phase {
     composition_start,
     preedit_update,
@@ -322,6 +329,7 @@ struct normalized_input_replay_batch {
     normalized_input_replay_keyboard_summary keyboard;
     normalized_input_replay_ime_summary ime;
     normalized_input_replay_pointer_summary pointer;
+    normalized_input_replay_gesture_policy_summary gesture_policies;
     normalized_input_replay_focus_summary focus;
     normalized_input_replay_end_state end_state;
     text_input_presentation_diff text_presentation_diff;
@@ -333,6 +341,7 @@ struct normalized_input_replay_recording {
     normalized_input_replay_keyboard_summary keyboard;
     normalized_input_replay_ime_summary ime;
     normalized_input_replay_pointer_summary pointer;
+    normalized_input_replay_gesture_policy_summary gesture_policies;
     normalized_input_replay_focus_summary focus;
     normalized_input_replay_end_state final_state;
 };
@@ -491,6 +500,45 @@ inline void accumulate_normalized_input_replay_keyboard_summary(
         count_keyboard_repeat_policy(summary.repeat_policies, route.keyboard.repeat_policy);
     }
     return summary;
+}
+
+inline void accumulate_normalized_input_replay_gesture_policy_summary(
+    normalized_input_replay_gesture_policy_summary& target,
+    const normalized_input_replay_gesture_policy_summary& source)
+{
+    target.routes.insert(target.routes.end(), source.routes.begin(), source.routes.end());
+    target.total += source.total;
+    target.emitted_input_event_routes += source.emitted_input_event_routes;
+    target.diagnostic_only_routes += source.diagnostic_only_routes;
+}
+
+[[nodiscard]] inline normalized_input_replay_gesture_policy_summary
+summarize_normalized_input_replay_gesture_policy_routes(
+    std::span<const action_route_policy_diagnostic> routes)
+{
+    normalized_input_replay_gesture_policy_summary summary;
+    for (const action_route_policy_diagnostic& route : routes) {
+        if (!input_routing_route_has_gesture_policy(route)) {
+            continue;
+        }
+
+        summary.routes.push_back(route);
+        ++summary.total;
+        if (route.emits_input_event) {
+            ++summary.emitted_input_event_routes;
+        } else {
+            ++summary.diagnostic_only_routes;
+        }
+    }
+    return summary;
+}
+
+[[nodiscard]] inline input_routing_diagnostics normalized_input_replay_gesture_policy_diagnostics(
+    const normalized_input_replay_gesture_policy_summary& summary)
+{
+    input_routing_diagnostics diagnostics;
+    diagnostics.action_routes = summary.routes;
+    return diagnostics;
 }
 
 [[nodiscard]] inline bool pointer_capture_snapshot_clean(const pointer_capture_snapshot& snapshot)
@@ -1460,6 +1508,8 @@ inline void accumulate_normalized_input_replay_focus_summary(
             events,
             before_state,
             end_state);
+    normalized_input_replay_gesture_policy_summary gesture_policies =
+        summarize_normalized_input_replay_gesture_policy_routes(diagnostics.action_routes);
     const text_input_presentation_diff text_presentation_diff =
         diff_text_input_presentation_snapshots(
             before_state.text_presentation,
@@ -1472,6 +1522,7 @@ inline void accumulate_normalized_input_replay_focus_summary(
         .keyboard = summarize_normalized_input_replay_keyboard_routes(diagnostics.action_routes),
         .ime = std::move(ime),
         .pointer = std::move(pointer),
+        .gesture_policies = std::move(gesture_policies),
         .focus = std::move(focus),
         .end_state = std::move(end_state),
         .text_presentation_diff = text_presentation_diff,
@@ -1496,6 +1547,9 @@ inline void accumulate_normalized_input_replay_focus_summary(
         accumulate_normalized_input_replay_keyboard_summary(recording.keyboard, batch.keyboard);
         accumulate_normalized_input_replay_ime_summary(recording.ime, batch.ime);
         accumulate_normalized_input_replay_pointer_summary(recording.pointer, batch.pointer);
+        accumulate_normalized_input_replay_gesture_policy_summary(
+            recording.gesture_policies,
+            batch.gesture_policies);
         accumulate_normalized_input_replay_focus_summary(recording.focus, batch.focus);
         recording.final_state = batch.end_state;
         recording.batches.push_back(std::move(batch));

@@ -784,7 +784,7 @@ void test_replay_diff_diagnostics_compare_recordings_without_semantics()
         diff_normalized_input_replay_recordings(before_recording, after_recording);
 
     require(diff.regression.changed, "replay diff summary marks changed recordings");
-    require(diff.regression.changed_category_count == 8,
+    require(diff.regression.changed_category_count == 9,
         "replay diff summary counts semantic-free changed categories");
     require(diff.regression.batch_count.delta == 5, "replay diff summary records batch delta");
     require(diff.regression.normalized_event_count.delta == 1,
@@ -797,6 +797,8 @@ void test_replay_diff_diagnostics_compare_recordings_without_semantics()
         "replay diff summary records pointer capture change");
     require(diff.regression.pointer_timeline_changed,
         "replay diff summary records pointer timeline change");
+    require(diff.regression.gesture_policy_changed,
+        "replay diff summary records gesture policy changes");
     require(diff.regression.ime_timeline_changed, "replay diff summary records ime timeline change");
     require(diff.regression.keyboard_changed, "replay diff summary records keyboard changes");
     require(diff.regression.text_or_preedit_changed,
@@ -897,6 +899,12 @@ void test_replay_diff_diagnostics_compare_recordings_without_semantics()
     require(diff.pointer.final_capture.after_capture.pointer_id == 77,
         "replay diff pointer capture records pointer id");
 
+    require(diff.gesture_policies.changed, "replay diff gesture policies changed");
+    require(diff.gesture_policies.route_count.delta == 2,
+        "replay diff gesture policy route count delta");
+    require(diff.gesture_policies.unpaired_after_route_count == 2,
+        "replay diff gesture policy records unpaired after routes");
+
     require(diff.ime.changed, "replay diff ime summary changed");
     require(diff.ime.timeline_changed, "replay diff ime timeline changed");
     require(diff.ime.timeline_entries.delta == 1, "replay diff ime timeline delta");
@@ -935,6 +943,9 @@ void test_replay_diff_diagnostics_compare_recordings_without_semantics()
         "replay diff self presentation unchanged");
     require(!stable_diff.keyboard.changed, "replay diff self keyboard unchanged");
     require(!stable_diff.pointer.changed, "replay diff self pointer unchanged");
+    require(!stable_diff.gesture_policies.changed, "replay diff self gesture policy unchanged");
+    require(!stable_diff.regression.gesture_policy_changed,
+        "replay diff self regression has no gesture policy category");
     require(!stable_diff.ime.changed, "replay diff self ime unchanged");
     require(!stable_diff.focus.changed, "replay diff self focus unchanged");
 
@@ -981,6 +992,112 @@ void test_replay_diff_diagnostics_compare_recordings_without_semantics()
         "replay diff regression records focus caret selection category");
 }
 
+void test_replay_diff_threads_gesture_policy_route_diagnostics()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    const gesture_thresholds before_thresholds{
+        .swipe_min_dx = 60.0f,
+        .swipe_max_dy = 20.0f,
+        .swipe_max_duration_ms = 300,
+        .long_press_min_duration_ms = 600,
+        .tap_slop = 8.0f,
+        .drag_start_slop = 8.0f,
+    };
+    const gesture_thresholds after_thresholds{
+        .swipe_min_dx = 80.0f,
+        .swipe_max_dy = 40.0f,
+        .swipe_max_duration_ms = 800,
+        .long_press_min_duration_ms = 700,
+        .tap_slop = 8.0f,
+        .drag_start_slop = 6.0f,
+    };
+
+    input_engine before_engine{before_thresholds};
+    input_engine after_engine{after_thresholds};
+    const std::array steps{
+        step("accepted-before-down", pointer(raw_platform_pointer_phase::down, 1000, 0.0f, 0.0f, raw_platform_pointer_button::none, 101)),
+        step("accepted-before-up", pointer(raw_platform_pointer_phase::up, 1100, 70.0f, 10.0f, raw_platform_pointer_button::none, 101)),
+        step("recovered-after-down", pointer(raw_platform_pointer_phase::down, 2000, 0.0f, 0.0f, raw_platform_pointer_button::none, 102)),
+        step("recovered-after-up", pointer(raw_platform_pointer_phase::up, 2500, 90.0f, 30.0f, raw_platform_pointer_button::none, 102)),
+        step("long-press-down", pointer(raw_platform_pointer_phase::down, 3000, 0.0f, 0.0f, raw_platform_pointer_button::none, 103)),
+        time_step("long-press-time", 3750),
+        step("long-press-up", pointer(raw_platform_pointer_phase::up, 3760, 0.0f, 0.0f, raw_platform_pointer_button::none, 103)),
+        step("drag-down", pointer(raw_platform_pointer_phase::down, 4000, 0.0f, 0.0f, raw_platform_pointer_button::primary, 104)),
+        step("drag-move", pointer(raw_platform_pointer_phase::move, 4020, 9.0f, 0.0f, raw_platform_pointer_button::primary, 104)),
+        step("drag-up", pointer(raw_platform_pointer_phase::up, 4040, 10.0f, 0.0f, raw_platform_pointer_button::primary, 104)),
+    };
+
+    const normalized_input_replay_recording before_recording =
+        replay_normalized_input_fixture(before_engine, steps);
+    const normalized_input_replay_recording after_recording =
+        replay_normalized_input_fixture(after_engine, steps);
+
+    require(before_recording.gesture_policies.total == before_recording.gesture_policies.routes.size(),
+        "gesture policy replay before stores one route per summary entry");
+    require(after_recording.gesture_policies.total == after_recording.gesture_policies.routes.size(),
+        "gesture policy replay after stores one route per summary entry");
+    require(before_recording.gesture_policies.total > 0,
+        "gesture policy replay records routed gesture policies");
+    const input_routing_diagnostics replay_diagnostics =
+        normalized_input_replay_gesture_policy_diagnostics(before_recording.gesture_policies);
+    require(replay_diagnostics.action_routes.size() == before_recording.gesture_policies.routes.size(),
+        "gesture policy replay exposes reusable routing diagnostics");
+
+    const normalized_input_replay_diff diff =
+        diff_normalized_input_replay_recordings(before_recording, after_recording);
+
+    require(diff.gesture_policies.changed,
+        "replay diff reports gesture policy route diagnostics");
+    require(diff.regression.gesture_policy_changed,
+        "replay diff regression summary reports gesture policy category");
+    require(diff.gesture_policies.route_count.delta == 0,
+        "replay diff gesture policy compares stable route counts");
+    require(diff.gesture_policies.compared_route_count == before_recording.gesture_policies.routes.size(),
+        "replay diff gesture policy compares every routed policy");
+    require(diff.gesture_policies.threshold_change_count > 0,
+        "replay diff gesture policy reports threshold deltas");
+    require(diff.gesture_policies.decision_change_count >= 2,
+        "replay diff gesture policy reports decision deltas");
+    require(diff.gesture_policies.emitted_kind_change_count >= 2,
+        "replay diff gesture policy reports emitted kind deltas");
+    require(diff.gesture_policies.accepted_to_suppressed_regression_count >= 1,
+        "replay diff gesture policy reports accepted-to-suppressed regression");
+    require(diff.gesture_policies.suppressed_to_accepted_recovery_count >= 1,
+        "replay diff gesture policy reports suppressed-to-accepted recovery");
+    require(diff.gesture_policies.swipe_threshold_tightening_count > 0,
+        "replay diff gesture policy reports swipe tightening");
+    require(diff.gesture_policies.swipe_threshold_loosening_count > 0,
+        "replay diff gesture policy reports swipe loosening");
+    require(diff.gesture_policies.long_press_threshold_tightening_count > 0,
+        "replay diff gesture policy reports long-press tightening");
+    require(diff.gesture_policies.drag_threshold_loosening_count > 0,
+        "replay diff gesture policy reports drag loosening");
+    require(diff.gesture_policies.pointer_mismatch_count == 0,
+        "replay diff gesture policy keeps pointer ids paired");
+    require(diff.gesture_policies.contact_mismatch_count == 0,
+        "replay diff gesture policy keeps contacts paired");
+    require(diff.gesture_policies.phase_mismatch_count == 0,
+        "replay diff gesture policy keeps phases paired");
+
+    bool saw_regression_route = false;
+    bool saw_recovery_route = false;
+    for (const input_routing_gesture_policy_route_diff& route : diff.gesture_policies.routes) {
+        saw_regression_route = saw_regression_route || route.accepted_to_suppressed;
+        saw_recovery_route = saw_recovery_route || route.suppressed_to_accepted;
+    }
+    require(saw_regression_route, "replay diff gesture policy preserves regression route evidence");
+    require(saw_recovery_route, "replay diff gesture policy preserves recovery route evidence");
+
+    const normalized_input_replay_diff stable_diff =
+        diff_normalized_input_replay_recordings(after_recording, after_recording);
+    require(!stable_diff.gesture_policies.changed,
+        "replay diff gesture policy self comparison is unchanged");
+    require(!stable_diff.regression.gesture_policy_changed,
+        "replay diff regression self comparison has no gesture policy category");
+}
+
 void test_pointer_replay_timeline_records_gestures_capture_and_wheel()
 {
     using namespace quiz_vulkan;
@@ -1014,6 +1131,10 @@ void test_pointer_replay_timeline_records_gestures_capture_and_wheel()
     require(recording.batches.size() == steps.size(), "pointer replay records one batch per step");
     require(recording.pointer.timeline.size() == recording.pointer.total,
         "pointer replay aggregate stores one timeline entry per pointer route");
+    require(recording.gesture_policies.total == recording.gesture_policies.routes.size(),
+        "pointer replay aggregate stores gesture policy route evidence");
+    require(recording.gesture_policies.total > 0,
+        "pointer replay aggregate records gesture policy routes");
     require(recording.pointer.kinds.pointer_capture_arbitration >= 6,
         "pointer replay timeline counts capture arbitration entries");
     require(recording.pointer.kinds.pointer_capture_reset >= 1,
@@ -1126,6 +1247,7 @@ int main()
     test_ime_replay_timeline_flags_invalid_preedit_text();
     test_focus_caret_replay_timeline_records_navigation_and_final_state();
     test_replay_diff_diagnostics_compare_recordings_without_semantics();
+    test_replay_diff_threads_gesture_policy_route_diagnostics();
     test_pointer_replay_timeline_records_gestures_capture_and_wheel();
 
     std::cout << "normalized_input_replay_tests passed\n";

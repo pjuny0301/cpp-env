@@ -19,6 +19,197 @@ struct render_image_texture_upload_request {
     render_decoded_image image;
 };
 
+enum class render_image_texture_mipmap_upload_plan_status {
+    ready,
+    no_mipmaps_requested,
+    invalid_sampler,
+    invalid_image,
+    unsupported_format,
+    overflow,
+};
+
+inline std::string render_image_texture_mipmap_upload_plan_status_name(
+    render_image_texture_mipmap_upload_plan_status status)
+{
+    switch (status) {
+    case render_image_texture_mipmap_upload_plan_status::ready:
+        return "ready";
+    case render_image_texture_mipmap_upload_plan_status::no_mipmaps_requested:
+        return "no_mipmaps_requested";
+    case render_image_texture_mipmap_upload_plan_status::invalid_sampler:
+        return "invalid_sampler";
+    case render_image_texture_mipmap_upload_plan_status::invalid_image:
+        return "invalid_image";
+    case render_image_texture_mipmap_upload_plan_status::unsupported_format:
+        return "unsupported_format";
+    case render_image_texture_mipmap_upload_plan_status::overflow:
+        return "overflow";
+    }
+
+    return "unknown";
+}
+
+struct render_image_texture_mipmap_level_upload_plan {
+    std::size_t level = 0;
+    std::size_t width = 0;
+    std::size_t height = 0;
+    std::size_t pixel_count = 0;
+    std::size_t byte_count = 0;
+    std::size_t staging_byte_offset = 0;
+};
+
+struct render_image_texture_mipmap_upload_plan {
+    render_image_texture_mipmap_upload_plan_status status =
+        render_image_texture_mipmap_upload_plan_status::invalid_image;
+    std::string status_name = render_image_texture_mipmap_upload_plan_status_name(
+        render_image_texture_mipmap_upload_plan_status::invalid_image);
+    render_image_mipmap_mode mipmap_mode = render_image_mipmap_mode::none;
+    std::string mipmap_mode_name = render_image_mipmap_mode_name(render_image_mipmap_mode::none);
+    render_image_pixel_format pixel_format = render_image_pixel_format::rgba8_srgb;
+    std::size_t bytes_per_pixel = 0;
+    std::size_t base_width = 0;
+    std::size_t base_height = 0;
+    bool mipmaps_requested = false;
+    bool upload_plannable = false;
+    std::size_t requested_mip_level_count = 0;
+    std::size_t generated_mip_level_count = 0;
+    std::size_t total_pixel_count = 0;
+    std::size_t total_staging_byte_count = 0;
+    std::size_t total_upload_byte_count = 0;
+    std::vector<render_image_texture_mipmap_level_upload_plan> levels;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return upload_plannable;
+    }
+};
+
+inline bool checked_render_image_texture_mipmap_upload_size(
+    std::size_t left,
+    std::size_t right,
+    std::size_t& output)
+{
+    if (left == 0 || right == 0) {
+        output = 0;
+        return true;
+    }
+
+    constexpr std::size_t max_size = std::numeric_limits<std::size_t>::max();
+    if (left > max_size / right) {
+        output = 0;
+        return false;
+    }
+    output = left * right;
+    return true;
+}
+
+inline bool append_render_image_texture_mipmap_level_upload_plan(
+    render_image_texture_mipmap_upload_plan& plan,
+    std::size_t level,
+    std::size_t width,
+    std::size_t height)
+{
+    std::size_t pixel_count = 0;
+    if (!checked_render_image_texture_mipmap_upload_size(width, height, pixel_count)) {
+        return false;
+    }
+
+    std::size_t byte_count = 0;
+    if (!checked_render_image_texture_mipmap_upload_size(pixel_count, plan.bytes_per_pixel, byte_count)) {
+        return false;
+    }
+
+    constexpr std::size_t max_size = std::numeric_limits<std::size_t>::max();
+    if (plan.total_staging_byte_count > max_size - byte_count
+        || plan.total_upload_byte_count > max_size - byte_count
+        || plan.total_pixel_count > max_size - pixel_count) {
+        return false;
+    }
+
+    plan.levels.push_back(render_image_texture_mipmap_level_upload_plan{
+        .level = level,
+        .width = width,
+        .height = height,
+        .pixel_count = pixel_count,
+        .byte_count = byte_count,
+        .staging_byte_offset = plan.total_staging_byte_count,
+    });
+    plan.total_pixel_count += pixel_count;
+    plan.total_staging_byte_count += byte_count;
+    plan.total_upload_byte_count += byte_count;
+    return true;
+}
+
+inline render_image_texture_mipmap_upload_plan make_render_image_texture_mipmap_upload_plan(
+    const render_decoded_image& image,
+    const render_image_sampler_policy& sampler)
+{
+    render_image_texture_mipmap_upload_plan plan{
+        .mipmap_mode = sampler.mipmap_mode,
+        .mipmap_mode_name = render_image_mipmap_mode_name(sampler.mipmap_mode),
+        .pixel_format = image.pixel_format,
+        .bytes_per_pixel = render_image_pixel_format_byte_count(image.pixel_format),
+        .base_width = image.width,
+        .base_height = image.height,
+        .mipmaps_requested = sampler.mipmap_mode != render_image_mipmap_mode::none,
+    };
+
+    if (!is_valid_render_image_mipmap_mode(sampler.mipmap_mode)) {
+        plan.status = render_image_texture_mipmap_upload_plan_status::invalid_sampler;
+        plan.status_name = render_image_texture_mipmap_upload_plan_status_name(plan.status);
+        plan.diagnostic = "image texture mipmap upload plan has invalid mipmap sampler mode";
+        return plan;
+    }
+
+    if (image.width == 0 || image.height == 0) {
+        plan.status = render_image_texture_mipmap_upload_plan_status::invalid_image;
+        plan.status_name = render_image_texture_mipmap_upload_plan_status_name(plan.status);
+        plan.diagnostic = "image texture mipmap upload plan requires non-zero image dimensions";
+        return plan;
+    }
+
+    if (plan.bytes_per_pixel == 0) {
+        plan.status = render_image_texture_mipmap_upload_plan_status::unsupported_format;
+        plan.status_name = render_image_texture_mipmap_upload_plan_status_name(plan.status);
+        plan.diagnostic = "image texture mipmap upload plan pixel format is unsupported";
+        return plan;
+    }
+
+    std::size_t width = image.width;
+    std::size_t height = image.height;
+    std::size_t level = 0;
+    while (true) {
+        if (!append_render_image_texture_mipmap_level_upload_plan(plan, level, width, height)) {
+            plan.status = render_image_texture_mipmap_upload_plan_status::overflow;
+            plan.status_name = render_image_texture_mipmap_upload_plan_status_name(plan.status);
+            plan.upload_plannable = false;
+            plan.diagnostic = "image texture mipmap upload plan byte count overflowed";
+            return plan;
+        }
+
+        if (!plan.mipmaps_requested || (width == 1 && height == 1)) {
+            break;
+        }
+
+        width = width > 1 ? width / 2 : 1;
+        height = height > 1 ? height / 2 : 1;
+        ++level;
+    }
+
+    plan.requested_mip_level_count = plan.levels.size();
+    plan.generated_mip_level_count = plan.levels.size();
+    plan.status = plan.mipmaps_requested
+        ? render_image_texture_mipmap_upload_plan_status::ready
+        : render_image_texture_mipmap_upload_plan_status::no_mipmaps_requested;
+    plan.status_name = render_image_texture_mipmap_upload_plan_status_name(plan.status);
+    plan.upload_plannable = true;
+    plan.diagnostic = plan.mipmaps_requested
+        ? "image texture mipmap upload plan is ready"
+        : "image texture mipmap upload plan uses base level only";
+    return plan;
+}
+
 struct render_image_texture_upload_result {
     render_image_texture_upload_status status = render_image_texture_upload_status::invalid_image;
     std::uint64_t generation_id = 0;
@@ -29,6 +220,7 @@ struct render_image_texture_upload_result {
     std::size_t pixel_byte_count = 0;
     std::size_t decoded_byte_count = 0;
     std::size_t staging_byte_count = 0;
+    render_image_texture_mipmap_upload_plan mipmap_upload_plan;
     std::string diagnostic;
 
     bool ok() const
@@ -56,6 +248,7 @@ struct fake_image_texture_upload_request_snapshot {
     std::size_t pixel_byte_count = 0;
     std::size_t decoded_byte_count = 0;
     std::size_t staging_byte_count = 0;
+    render_image_texture_mipmap_upload_plan mipmap_upload_plan;
     std::size_t enqueue_sequence = 0;
     std::size_t queue_depth_before_enqueue = 0;
     std::size_t queue_depth_after_enqueue = 0;
@@ -72,6 +265,7 @@ struct fake_image_texture_upload_result_snapshot {
     std::size_t pixel_byte_count = 0;
     std::size_t decoded_byte_count = 0;
     std::size_t staging_byte_count = 0;
+    render_image_texture_mipmap_upload_plan mipmap_upload_plan;
     std::string diagnostic;
     std::size_t completion_sequence = 0;
     std::size_t queue_depth_after_completion = 0;
@@ -90,6 +284,7 @@ struct fake_image_texture_upload_snapshot_entry {
     std::size_t pixel_byte_count = 0;
     std::size_t decoded_byte_count = 0;
     std::size_t staging_byte_count = 0;
+    render_image_texture_mipmap_upload_plan mipmap_upload_plan;
     std::string diagnostic;
     fake_image_texture_upload_retry_snapshot retry;
 };
@@ -103,6 +298,7 @@ struct fake_image_texture_upload_queue_entry_snapshot {
     render_image_texture_handle texture;
     bool completed = false;
     std::size_t staging_byte_count = 0;
+    render_image_texture_mipmap_upload_plan mipmap_upload_plan;
     std::size_t queue_depth_before_enqueue = 0;
     std::size_t queue_depth_after_enqueue = 0;
     std::size_t queue_depth_after_completion = 0;
@@ -147,13 +343,16 @@ public:
         const std::size_t attempt_count_for_key = ++upload_attempt_count_by_key_[request.key];
         const std::size_t pixel_byte_count = expected_render_decoded_image_byte_count(request.image);
         const std::size_t decoded_byte_count = request.image.pixels.size();
+        const render_image_texture_mipmap_upload_plan mipmap_upload_plan =
+            make_render_image_texture_mipmap_upload_plan(request.image, request.sampler);
         std::size_t pixel_count = 0;
         if (request.image.width != 0 && request.image.height != 0
             && request.image.width <= std::numeric_limits<std::size_t>::max() / request.image.height) {
             pixel_count = request.image.width * request.image.height;
         }
         const std::size_t staging_byte_count = has_valid_render_decoded_image_payload(request.image)
-            ? decoded_byte_count
+                && mipmap_upload_plan.upload_plannable
+            ? mipmap_upload_plan.total_staging_byte_count
             : 0;
 
         upload_request_snapshots.push_back(fake_image_texture_upload_request_snapshot{
@@ -167,6 +366,7 @@ public:
             .pixel_byte_count = pixel_byte_count,
             .decoded_byte_count = decoded_byte_count,
             .staging_byte_count = staging_byte_count,
+            .mipmap_upload_plan = mipmap_upload_plan,
             .enqueue_sequence = enqueue_sequence,
             .queue_depth_before_enqueue = queue_depth_before_enqueue,
             .queue_depth_after_enqueue = queue_depth_after_enqueue,
@@ -184,6 +384,7 @@ public:
                 .pixel_byte_count = pixel_byte_count,
                 .decoded_byte_count = decoded_byte_count,
                 .staging_byte_count = staging_byte_count,
+                .mipmap_upload_plan = mipmap_upload_plan,
                 .diagnostic = "image texture upload key is empty or contains control characters",
             },
                 enqueue_sequence,
@@ -202,6 +403,7 @@ public:
                 .pixel_byte_count = pixel_byte_count,
                 .decoded_byte_count = decoded_byte_count,
                 .staging_byte_count = staging_byte_count,
+                .mipmap_upload_plan = mipmap_upload_plan,
                 .diagnostic = "image texture upload sampler policy is invalid or does not match the texture key",
             },
                 enqueue_sequence,
@@ -220,6 +422,7 @@ public:
                 .pixel_byte_count = pixel_byte_count,
                 .decoded_byte_count = decoded_byte_count,
                 .staging_byte_count = staging_byte_count,
+                .mipmap_upload_plan = mipmap_upload_plan,
                 .diagnostic = "image texture upload pixel format is unsupported",
             },
                 enqueue_sequence,
@@ -238,6 +441,7 @@ public:
                 .pixel_byte_count = pixel_byte_count,
                 .decoded_byte_count = decoded_byte_count,
                 .staging_byte_count = staging_byte_count,
+                .mipmap_upload_plan = mipmap_upload_plan,
                 .diagnostic = "image texture upload payload size does not match dimensions and format",
             },
                 enqueue_sequence,
@@ -260,6 +464,7 @@ public:
             .pixel_byte_count = pixel_byte_count,
             .decoded_byte_count = decoded_byte_count,
             .staging_byte_count = staging_byte_count,
+            .mipmap_upload_plan = mipmap_upload_plan,
             .diagnostic = {},
         },
             enqueue_sequence,
@@ -306,6 +511,7 @@ public:
                 .pixel_byte_count = result.pixel_byte_count,
                 .decoded_byte_count = result.decoded_byte_count,
                 .staging_byte_count = result.staging_byte_count,
+                .mipmap_upload_plan = result.mipmap_upload_plan,
                 .diagnostic = result.diagnostic,
                 .retry = upload_result_snapshots[index].retry,
             });
@@ -355,6 +561,7 @@ private:
             .pixel_byte_count = result.pixel_byte_count,
             .decoded_byte_count = result.decoded_byte_count,
             .staging_byte_count = result.staging_byte_count,
+            .mipmap_upload_plan = result.mipmap_upload_plan,
             .diagnostic = result.diagnostic,
             .completion_sequence = completion_sequence,
             .queue_depth_after_completion = queue_depth_after_completion,
@@ -369,6 +576,7 @@ private:
             .texture = result.texture,
             .completed = true,
             .staging_byte_count = result.staging_byte_count,
+            .mipmap_upload_plan = result.mipmap_upload_plan,
             .queue_depth_before_enqueue = queue_depth_after_enqueue == 0 ? 0 : queue_depth_after_enqueue - 1,
             .queue_depth_after_enqueue = queue_depth_after_enqueue,
             .queue_depth_after_completion = queue_depth_after_completion,

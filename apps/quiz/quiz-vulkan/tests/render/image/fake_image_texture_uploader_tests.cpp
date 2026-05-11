@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdio>
+#include <limits>
 
 namespace {
 
@@ -33,6 +34,115 @@ quiz_vulkan::render::render_decoded_image make_rgba_2x1_decoded_image()
     };
 }
 
+quiz_vulkan::render::render_decoded_image make_rgba_4x4_decoded_image()
+{
+    quiz_vulkan::render::render_decoded_image image{
+        .width = 4,
+        .height = 4,
+        .pixel_format = quiz_vulkan::render::render_image_pixel_format::rgba8_srgb,
+        .pixels = {},
+    };
+    image.pixels.resize(64, std::byte{0xff});
+    return image;
+}
+
+void test_mipmap_upload_plan_calculates_levels_and_failure_states()
+{
+    using namespace quiz_vulkan::render;
+
+    render_image_sampler_policy mipmapped_sampler;
+    mipmapped_sampler.mipmap_mode = render_image_mipmap_mode::linear;
+
+    const render_image_texture_mipmap_upload_plan mipmapped_plan =
+        make_render_image_texture_mipmap_upload_plan(make_rgba_4x4_decoded_image(), mipmapped_sampler);
+
+    require(mipmapped_plan.ok(), "mipmap upload plan accepts valid mipmapped image");
+    require(
+        mipmapped_plan.status == render_image_texture_mipmap_upload_plan_status::ready,
+        "mipmap upload plan reports ready status");
+    require(mipmapped_plan.status_name == "ready", "mipmap upload plan ready status name is stable");
+    require(mipmapped_plan.mipmap_mode == render_image_mipmap_mode::linear, "mipmap upload plan records mode");
+    require(mipmapped_plan.mipmap_mode_name == "linear", "mipmap upload plan records mode name");
+    require(mipmapped_plan.mipmaps_requested, "mipmap upload plan records requested mipmaps");
+    require(mipmapped_plan.bytes_per_pixel == 4, "mipmap upload plan records RGBA8 byte size");
+    require(mipmapped_plan.base_width == 4, "mipmap upload plan records base width");
+    require(mipmapped_plan.base_height == 4, "mipmap upload plan records base height");
+    require(mipmapped_plan.requested_mip_level_count == 3, "mipmap upload plan requests full chain");
+    require(mipmapped_plan.generated_mip_level_count == 3, "mipmap upload plan generates full chain");
+    require(mipmapped_plan.total_pixel_count == 21, "mipmap upload plan sums all level pixels");
+    require(mipmapped_plan.total_staging_byte_count == 84, "mipmap upload plan sums staging bytes");
+    require(mipmapped_plan.total_upload_byte_count == 84, "mipmap upload plan sums upload bytes");
+    require(mipmapped_plan.levels.size() == 3, "mipmap upload plan exposes per-level diagnostics");
+    require(mipmapped_plan.levels[0].level == 0, "mipmap upload plan level zero index is stable");
+    require(mipmapped_plan.levels[0].width == 4, "mipmap upload plan level zero width");
+    require(mipmapped_plan.levels[0].height == 4, "mipmap upload plan level zero height");
+    require(mipmapped_plan.levels[0].pixel_count == 16, "mipmap upload plan level zero pixels");
+    require(mipmapped_plan.levels[0].byte_count == 64, "mipmap upload plan level zero bytes");
+    require(mipmapped_plan.levels[0].staging_byte_offset == 0, "mipmap upload plan level zero offset");
+    require(mipmapped_plan.levels[1].width == 2, "mipmap upload plan halves level width");
+    require(mipmapped_plan.levels[1].height == 2, "mipmap upload plan halves level height");
+    require(mipmapped_plan.levels[1].staging_byte_offset == 64, "mipmap upload plan level one offset");
+    require(mipmapped_plan.levels[2].width == 1, "mipmap upload plan terminal width is one");
+    require(mipmapped_plan.levels[2].height == 1, "mipmap upload plan terminal height is one");
+    require(mipmapped_plan.levels[2].staging_byte_offset == 80, "mipmap upload plan terminal offset");
+
+    const render_image_texture_mipmap_upload_plan base_plan =
+        make_render_image_texture_mipmap_upload_plan(make_rgba_2x1_decoded_image(), render_image_sampler_policy{});
+    require(base_plan.ok(), "base-only mipmap upload plan is plannable");
+    require(
+        base_plan.status == render_image_texture_mipmap_upload_plan_status::no_mipmaps_requested,
+        "base-only mipmap upload plan reports no-mipmap state");
+    require(base_plan.status_name == "no_mipmaps_requested", "base-only mipmap status name is stable");
+    require(!base_plan.mipmaps_requested, "base-only mipmap upload plan records no mipmaps requested");
+    require(base_plan.levels.size() == 1, "base-only mipmap upload plan exposes one level");
+    require(base_plan.total_staging_byte_count == 8, "base-only mipmap upload plan estimates base bytes");
+
+    render_image_sampler_policy invalid_mipmap_sampler;
+    invalid_mipmap_sampler.mipmap_mode = static_cast<render_image_mipmap_mode>(99);
+    const render_image_texture_mipmap_upload_plan invalid_sampler_plan =
+        make_render_image_texture_mipmap_upload_plan(make_rgba_2x1_decoded_image(), invalid_mipmap_sampler);
+    require(!invalid_sampler_plan.ok(), "mipmap upload plan rejects invalid mipmap mode");
+    require(
+        invalid_sampler_plan.status == render_image_texture_mipmap_upload_plan_status::invalid_sampler,
+        "mipmap upload plan reports invalid sampler status");
+
+    render_decoded_image empty_image = make_rgba_2x1_decoded_image();
+    empty_image.width = 0;
+    const render_image_texture_mipmap_upload_plan invalid_image_plan =
+        make_render_image_texture_mipmap_upload_plan(empty_image, render_image_sampler_policy{});
+    require(!invalid_image_plan.ok(), "mipmap upload plan rejects invalid dimensions");
+    require(
+        invalid_image_plan.status == render_image_texture_mipmap_upload_plan_status::invalid_image,
+        "mipmap upload plan reports invalid image status");
+
+    render_decoded_image unsupported_format = make_rgba_2x1_decoded_image();
+    unsupported_format.pixel_format = static_cast<render_image_pixel_format>(99);
+    const render_image_texture_mipmap_upload_plan unsupported_plan =
+        make_render_image_texture_mipmap_upload_plan(unsupported_format, render_image_sampler_policy{});
+    require(!unsupported_plan.ok(), "mipmap upload plan rejects unsupported pixel formats");
+    require(
+        unsupported_plan.status == render_image_texture_mipmap_upload_plan_status::unsupported_format,
+        "mipmap upload plan reports unsupported format status");
+
+    render_decoded_image overflow_image{
+        .width = std::numeric_limits<std::size_t>::max() / 4 + 1,
+        .height = 2,
+        .pixel_format = render_image_pixel_format::rgba8_srgb,
+        .pixels = {},
+    };
+    const render_image_texture_mipmap_upload_plan overflow_plan =
+        make_render_image_texture_mipmap_upload_plan(overflow_image, render_image_sampler_policy{});
+    require(!overflow_plan.ok(), "mipmap upload plan rejects byte count overflow");
+    require(
+        overflow_plan.status == render_image_texture_mipmap_upload_plan_status::overflow,
+        "mipmap upload plan reports overflow status");
+    require(overflow_plan.status_name == "overflow", "mipmap upload plan overflow status name is stable");
+    require(
+        render_image_texture_mipmap_upload_plan_status_name(
+            render_image_texture_mipmap_upload_plan_status::ready) == "ready",
+        "mipmap upload plan status helper is stable");
+}
+
 void test_texture_uploader_uploads_valid_decoded_image()
 {
     using namespace quiz_vulkan::render;
@@ -60,18 +170,30 @@ void test_texture_uploader_uploads_valid_decoded_image()
     require(uploaded.pixel_byte_count == 8, "texture uploader reports expected pixel bytes");
     require(uploaded.decoded_byte_count == 8, "texture uploader reports decoded byte count");
     require(uploaded.staging_byte_count == 8, "texture uploader reports staging byte count");
+    require(
+        uploaded.mipmap_upload_plan.status == render_image_texture_mipmap_upload_plan_status::no_mipmaps_requested,
+        "texture uploader result records no-mipmap plan");
+    require(uploaded.mipmap_upload_plan.levels.size() == 1, "texture uploader result records base mip level");
+    require(uploaded.mipmap_upload_plan.total_staging_byte_count == 8, "texture uploader result records planned staging bytes");
     require(uploader.upload_requests.size() == 1, "texture uploader records upload request");
     require(uploader.upload_request_snapshots.size() == 1, "texture uploader records request snapshot");
     require(uploader.upload_result_snapshots.size() == 1, "texture uploader records result snapshot");
     require(uploader.upload_request_snapshots[0].generation_id == 1, "request snapshot records generation id");
     require(uploader.upload_request_snapshots[0].sampler == render_image_sampler_policy{}, "request snapshot records sampler");
     require(uploader.upload_request_snapshots[0].staging_byte_count == 8, "request snapshot records staging bytes");
+    require(
+        uploader.upload_request_snapshots[0].mipmap_upload_plan.status
+            == render_image_texture_mipmap_upload_plan_status::no_mipmaps_requested,
+        "request snapshot records mipmap plan");
     require(uploader.upload_request_snapshots[0].enqueue_sequence == 1, "request snapshot records enqueue sequence");
     require(uploader.upload_request_snapshots[0].queue_depth_before_enqueue == 0, "request snapshot records queue depth before enqueue");
     require(uploader.upload_request_snapshots[0].queue_depth_after_enqueue == 1, "request snapshot records queue depth after enqueue");
     require(uploader.upload_result_snapshots[0].generation_id == 1, "result snapshot records generation id");
     require(uploader.upload_result_snapshots[0].status == render_image_texture_upload_status::uploaded, "result snapshot records status");
     require(uploader.upload_result_snapshots[0].staging_byte_count == 8, "result snapshot records staging bytes");
+    require(
+        uploader.upload_result_snapshots[0].mipmap_upload_plan.total_upload_byte_count == 8,
+        "result snapshot records mipmap upload bytes");
     require(uploader.upload_result_snapshots[0].completion_sequence == 2, "result snapshot records completion sequence");
     require(uploader.upload_result_snapshots[0].queue_depth_after_completion == 0, "result snapshot records queue depth after completion");
 
@@ -98,14 +220,58 @@ void test_texture_uploader_uploads_valid_decoded_image()
     require(snapshot.queue_entries[0].status == render_image_texture_upload_status::uploaded, "texture uploader queue entry records status");
     require(snapshot.queue_entries[0].queue_depth_after_enqueue == 1, "texture uploader queue entry records enqueue depth");
     require(snapshot.queue_entries[0].queue_depth_after_completion == 0, "texture uploader queue entry records completion depth");
+    require(
+        snapshot.queue_entries[0].mipmap_upload_plan.generated_mip_level_count == 1,
+        "queue entry records mipmap plan");
     require(snapshot.entries[0].generation_id == 1, "texture uploader snapshot records generation id");
     require(snapshot.entries[0].key == key, "texture uploader snapshot records key");
     require(snapshot.entries[0].sampler == render_image_sampler_policy{}, "texture uploader snapshot records sampler");
     require(snapshot.entries[0].texture.id == uploaded.texture.id, "texture uploader snapshot records handle");
     require(snapshot.entries[0].status == render_image_texture_upload_status::uploaded, "snapshot records status");
     require(snapshot.entries[0].staging_byte_count == 8, "texture uploader snapshot records staging bytes");
+    require(
+        snapshot.entries[0].mipmap_upload_plan.total_staging_byte_count == 8,
+        "texture uploader snapshot entry records mipmap staging bytes");
     require(snapshot.entries[0].request.generation_id == 1, "entry request snapshot records generation id");
     require(snapshot.entries[0].result.texture.id == uploaded.texture.id, "entry result snapshot records handle");
+}
+
+void test_texture_uploader_records_mipmap_upload_plan()
+{
+    using namespace quiz_vulkan::render;
+
+    render_image_sampler_policy mipmapped_sampler;
+    mipmapped_sampler.mipmap_mode = render_image_mipmap_mode::linear;
+    const render_image_texture_key key{
+        .source_key = "textures/upload-mips.ppm",
+        .sampler = mipmapped_sampler,
+    };
+    fake_image_texture_uploader uploader;
+    const render_image_texture_upload_result uploaded = uploader.upload(render_image_texture_upload_request{
+        .key = key,
+        .sampler = mipmapped_sampler,
+        .image = make_rgba_4x4_decoded_image(),
+    });
+
+    require(uploaded.ok(), "texture uploader accepts mipmapped sampler upload");
+    require(uploaded.pixel_count == 16, "mipmapped upload result records base pixel count");
+    require(uploaded.pixel_byte_count == 64, "mipmapped upload result records base pixel bytes");
+    require(uploaded.decoded_byte_count == 64, "mipmapped upload result records decoded source bytes");
+    require(uploaded.staging_byte_count == 84, "mipmapped upload result records planned staging bytes");
+    require(
+        uploaded.mipmap_upload_plan.status == render_image_texture_mipmap_upload_plan_status::ready,
+        "mipmapped upload result records ready plan");
+    require(uploaded.mipmap_upload_plan.requested_mip_level_count == 3, "mipmapped upload result records level count");
+    require(uploaded.mipmap_upload_plan.total_staging_byte_count == 84, "mipmapped upload result records total staging bytes");
+    require(uploaded.mipmap_upload_plan.levels[2].byte_count == 4, "mipmapped upload result records terminal level bytes");
+
+    const fake_image_texture_upload_snapshot snapshot = uploader.diagnostic_snapshot();
+    require(snapshot.staged_byte_count == 84, "mipmapped upload snapshot records staged bytes");
+    require(snapshot.attempted_staging_byte_count == 84, "mipmapped upload snapshot records attempted staging bytes");
+    require(snapshot.request_snapshots[0].mipmap_upload_plan.generated_mip_level_count == 3, "request snapshot records mip levels");
+    require(snapshot.result_snapshots[0].mipmap_upload_plan.total_upload_byte_count == 84, "result snapshot records mip upload bytes");
+    require(snapshot.queue_entries[0].mipmap_upload_plan.levels[1].byte_count == 16, "queue snapshot records mip level bytes");
+    require(snapshot.entries[0].mipmap_upload_plan.mipmap_mode == render_image_mipmap_mode::linear, "entry snapshot records mipmap mode");
 }
 
 void test_texture_uploader_reports_deterministic_queue_lifecycle()
@@ -385,7 +551,9 @@ void test_texture_uploader_rejects_invalid_inputs()
 
 int main()
 {
+    test_mipmap_upload_plan_calculates_levels_and_failure_states();
     test_texture_uploader_uploads_valid_decoded_image();
+    test_texture_uploader_records_mipmap_upload_plan();
     test_texture_uploader_reports_deterministic_queue_lifecycle();
     test_texture_uploader_reports_retry_eligibility_and_backoff();
     test_texture_uploader_rejects_invalid_inputs();

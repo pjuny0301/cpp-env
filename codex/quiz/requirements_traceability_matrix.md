@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: normalized input replay gesture-policy diff integration completed; Windows MinGW focused normalized input replay CTest 1/1 and interface compile target build confirmed.
+- `a4a2513`: replay comparisons now report gesture threshold, decision, suppression, and recovery changes alongside pointer/keyboard/IME/focus deltas.
 - current: fake image upload snapshot diff diagnostics integrated; Windows MinGW focused image CTest 1/1 and interface compile target build confirmed.
 - `a065d36`: image upload snapshots can compare queue/result changes, mipmap byte deltas, retry transitions, queue-depth regressions, invalid/overflow/unsupported plan changes, and texture handle changes.
 - current: text glyph atlas materialization diff, image mipmap upload plan, and input gesture policy route diff diagnostics integrated; Windows MinGW focused text/image/input CTest 3/3 and interface compile target build confirmed.

@@ -1253,6 +1253,8 @@ concept TextInputModelInterface = requires(
     { model.preedit_range() } -> std::same_as<std::optional<input::text_range>>;
     { model.selection_range() } -> std::same_as<std::optional<input::text_range>>;
     { model.ime_composition() } -> std::same_as<input::ime_composition_state>;
+    { model.last_transaction_diagnostics() }
+        -> std::same_as<const input::text_edit_transaction_diagnostics&>;
     { model.move_caret_to_start() } -> std::same_as<bool>;
     { model.move_caret_to_end() } -> std::same_as<bool>;
     { model.move_caret_left() } -> std::same_as<bool>;
@@ -1271,6 +1273,67 @@ concept TextInputModelInterface = requires(
     { model.submit() } -> std::same_as<bool>;
     { model.has_submit_text() } -> std::same_as<bool>;
     { model.consume_submit_text() } -> std::same_as<std::optional<std::string>>;
+};
+
+template <typename T>
+concept TextEditTransactionSnapshotInterface = requires(T snapshot) {
+    { snapshot.has_focus } -> std::same_as<bool&>;
+    { snapshot.target_id } -> std::same_as<std::string&>;
+    { snapshot.text } -> std::same_as<std::string&>;
+    { snapshot.display_text } -> std::same_as<std::string&>;
+    { snapshot.caret_byte_offset } -> std::same_as<std::size_t&>;
+    { snapshot.caret_range } -> std::same_as<input::text_range&>;
+    { snapshot.has_selection } -> std::same_as<bool&>;
+    { snapshot.selection } -> std::same_as<input::text_range&>;
+    { snapshot.has_preedit } -> std::same_as<bool&>;
+    { snapshot.preedit_text } -> std::same_as<std::string&>;
+    { snapshot.preedit_range } -> std::same_as<input::text_range&>;
+    { snapshot.preedit_anchor_byte_offset } -> std::same_as<std::size_t&>;
+    { snapshot.composition } -> std::same_as<input::ime_composition_state&>;
+};
+
+template <typename T>
+concept TextEditTransactionByteDiagnosticsInterface = requires(T bytes) {
+    { bytes.committed_text_bytes_before } -> std::same_as<std::size_t&>;
+    { bytes.committed_text_bytes_after } -> std::same_as<std::size_t&>;
+    { bytes.display_text_bytes_before } -> std::same_as<std::size_t&>;
+    { bytes.display_text_bytes_after } -> std::same_as<std::size_t&>;
+    { bytes.committed_byte_delta } -> std::same_as<std::int64_t&>;
+    { bytes.display_byte_delta } -> std::same_as<std::int64_t&>;
+    { bytes.inserted_byte_count } -> std::same_as<std::size_t&>;
+    { bytes.deleted_byte_count } -> std::same_as<std::size_t&>;
+    { bytes.replaced_byte_count } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
+concept TextEditTransactionDiagnosticsInterface = requires(T diagnostics) {
+    { diagnostics.operation } -> std::same_as<input::text_edit_transaction_operation&>;
+    { diagnostics.accepted } -> std::same_as<bool&>;
+    { diagnostics.rejected } -> std::same_as<bool&>;
+    { diagnostics.rejection_reason } -> std::same_as<input::text_edit_transaction_rejection_reason&>;
+    { diagnostics.before } -> std::same_as<input::text_edit_transaction_snapshot&>;
+    { diagnostics.after } -> std::same_as<input::text_edit_transaction_snapshot&>;
+    { diagnostics.bytes } -> std::same_as<input::text_edit_transaction_byte_diagnostics&>;
+    { diagnostics.text_changed } -> std::same_as<bool&>;
+    { diagnostics.display_text_changed } -> std::same_as<bool&>;
+    { diagnostics.caret_changed } -> std::same_as<bool&>;
+    { diagnostics.selection_changed } -> std::same_as<bool&>;
+    { diagnostics.preedit_changed } -> std::same_as<bool&>;
+    { diagnostics.before_utf8_boundary_safe } -> std::same_as<bool&>;
+    { diagnostics.after_utf8_boundary_safe } -> std::same_as<bool&>;
+    { diagnostics.utf8_boundary_safe } -> std::same_as<bool&>;
+    { diagnostics.selection_was_active } -> std::same_as<bool&>;
+    { diagnostics.selection_replaced_committed_text } -> std::same_as<bool&>;
+    { diagnostics.selection_replaced_display_text } -> std::same_as<bool&>;
+    { diagnostics.selection_deleted } -> std::same_as<bool&>;
+    { diagnostics.selection_cleared } -> std::same_as<bool&>;
+    { diagnostics.ime_preedit_started } -> std::same_as<bool&>;
+    { diagnostics.ime_preedit_updated } -> std::same_as<bool&>;
+    { diagnostics.ime_preedit_cleared } -> std::same_as<bool&>;
+    { diagnostics.ime_committed } -> std::same_as<bool&>;
+    { diagnostics.ime_canceled } -> std::same_as<bool&>;
+    { diagnostics.invalid_edit_rejected } -> std::same_as<bool&>;
+    { diagnostics.changed } -> std::same_as<bool&>;
 };
 
 template <typename T>
@@ -1614,6 +1677,9 @@ static_assert(std::is_default_constructible_v<input::input_routing_keyboard_inte
 static_assert(std::is_default_constructible_v<input::input_routing_keyboard_repeat_policy_count_deltas>);
 static_assert(std::is_default_constructible_v<input::input_routing_keyboard_route_count_deltas>);
 static_assert(std::is_default_constructible_v<input::input_routing_diagnostics_diff>);
+static_assert(std::is_default_constructible_v<input::text_edit_transaction_snapshot>);
+static_assert(std::is_default_constructible_v<input::text_edit_transaction_byte_diagnostics>);
+static_assert(std::is_default_constructible_v<input::text_edit_transaction_diagnostics>);
 static_assert(std::is_default_constructible_v<input::text_input_presentation_byte_counts>);
 static_assert(std::is_default_constructible_v<input::text_input_presentation_route_byte_diagnostics>);
 static_assert(std::is_default_constructible_v<input::text_input_presentation_snapshot>);
@@ -1642,6 +1708,9 @@ static_assert(!std::is_polymorphic_v<input::normalized_input_replay_focus_summar
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_diff>);
 static_assert(!std::is_polymorphic_v<input::input_routing_diagnostics_diff>);
 static_assert(!std::is_polymorphic_v<input::input_routing_gesture_policy_diff>);
+static_assert(!std::is_polymorphic_v<input::text_edit_transaction_snapshot>);
+static_assert(!std::is_polymorphic_v<input::text_edit_transaction_byte_diagnostics>);
+static_assert(!std::is_polymorphic_v<input::text_edit_transaction_diagnostics>);
 static_assert(!std::is_polymorphic_v<input::text_input_presentation_snapshot>);
 static_assert(!std::is_polymorphic_v<input::text_input_presentation_diff>);
 static_assert(std::is_same_v<
@@ -1711,6 +1780,9 @@ static_assert(std::is_same_v<
     decltype(input::normalized_input_replay_batch{}.text_presentation_diff),
     input::text_input_presentation_diff>);
 static_assert(TextInputModelInterface<input::text_input_model>);
+static_assert(TextEditTransactionSnapshotInterface<input::text_edit_transaction_snapshot>);
+static_assert(TextEditTransactionByteDiagnosticsInterface<input::text_edit_transaction_byte_diagnostics>);
+static_assert(TextEditTransactionDiagnosticsInterface<input::text_edit_transaction_diagnostics>);
 static_assert(TextInputPresentationByteCountsInterface<input::text_input_presentation_byte_counts>);
 static_assert(TextInputPresentationRouteByteDiagnosticsInterface<
     input::text_input_presentation_route_byte_diagnostics>);

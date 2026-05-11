@@ -124,6 +124,28 @@ make_ready_native_swapchain_create_operation_request()
     };
 }
 
+quiz_vulkan::render::vulkan_backend::vulkan_native_swapchain_create_operation_result
+make_ready_native_swapchain_create_operation()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    return vulkan_backend::build_vulkan_native_swapchain_create_operation_plan(
+        make_ready_native_swapchain_create_operation_request());
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_native_swapchain_images_operation_request
+make_ready_native_swapchain_images_operation_request()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    return vulkan_backend::vulkan_native_swapchain_images_operation_request{
+        .create_operation = make_ready_native_swapchain_create_operation(),
+        .native_entrypoints = make_ready_native_swapchain_entrypoints(),
+        .swapchain = vulkan_backend::vulkan_swapchain_handle{.value = 123},
+        .image_handle_base = vulkan_backend::vulkan_native_function_pointer{.value = 5000},
+    };
+}
+
 void test_swapchain_create_plan_selects_requested_supported_values()
 {
     namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
@@ -517,6 +539,135 @@ void test_native_swapchain_create_operation_blocks_native_extension_and_symbols(
         "native operation blocks missing get-images symbol");
 }
 
+void test_native_swapchain_images_operation_reports_ready_operation_summary()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_swapchain_images_operation_result operation =
+        vulkan_backend::build_vulkan_native_swapchain_images_operation_plan(
+            make_ready_native_swapchain_images_operation_request());
+
+    require(operation.checked, "native swapchain images operation is checked");
+    require(operation.can_call_vk_get_swapchain_images(), "native images operation can call Vulkan");
+    require(!operation.blocked(), "ready native images operation is not blocked");
+    require(
+        operation.status == vulkan_backend::vulkan_native_swapchain_images_operation_status::ready,
+        "native images operation status is ready");
+    require(operation.create_operation_checked, "native images operation records create check");
+    require(operation.create_operation_ready, "native images operation records ready create operation");
+    require(operation.native_entrypoints_checked, "native images operation records native check");
+    require(operation.required_extensions_ready, "native images operation records extension readiness");
+    require(operation.get_images_symbol_ready, "native images operation records image symbol readiness");
+    require(operation.device_valid, "native images operation records valid device");
+    require(operation.swapchain_valid, "native images operation records valid swapchain");
+    require(operation.vk_get_swapchain_images_callable, "native images operation exposes call gate");
+    require(operation.expected_image_count == 3, "native images operation preserves expected count");
+    require(operation.enumerated_image_count == 3, "native images operation enumerates expected count");
+    require(operation.images.size() == 3, "native images operation stores selected images");
+    require(operation.images[0].image_id.value == 1, "native images operation assigns first image id");
+    require(operation.images[0].handle.value == 5001, "native images operation assigns first opaque handle");
+    require(operation.images[2].image_id.value == 3, "native images operation assigns last image id");
+    require(operation.images[2].handle.value == 5003, "native images operation assigns last opaque handle");
+    require(operation.images[0].valid(), "native images operation image binding is valid");
+    require(operation.operation.ready_for_frame_lifecycle_setup(), "native images summary is frame-ready");
+    require(
+        operation.operation.entrypoint_name == "vkGetSwapchainImagesKHR",
+        "native images summary names the stable entrypoint");
+    require(
+        operation.operation.selected_extent.width == 1280,
+        "native images summary preserves selected width");
+    require(
+        operation.operation.selected_present_mode
+            == vulkan_backend::vulkan_swapchain_present_mode::mailbox,
+        "native images summary preserves selected present mode");
+}
+
+void test_native_swapchain_images_operation_blocks_create_and_swapchain_prerequisites()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::vulkan_native_swapchain_images_operation_request request =
+        make_ready_native_swapchain_images_operation_request();
+    request.create_operation = {};
+    const vulkan_backend::vulkan_native_swapchain_images_operation_result missing_create =
+        vulkan_backend::build_vulkan_native_swapchain_images_operation_plan(request);
+    require(
+        missing_create.status
+            == vulkan_backend::vulkan_native_swapchain_images_operation_status::create_operation_unavailable,
+        "native images operation blocks unchecked create operation");
+    require(missing_create.blocked(), "unchecked create operation reports blocked");
+
+    request = make_ready_native_swapchain_images_operation_request();
+    request.create_operation.device = {};
+    request.create_operation.device_valid = false;
+    const vulkan_backend::vulkan_native_swapchain_images_operation_result invalid_device =
+        vulkan_backend::build_vulkan_native_swapchain_images_operation_plan(request);
+    require(
+        invalid_device.status
+            == vulkan_backend::vulkan_native_swapchain_images_operation_status::invalid_device,
+        "native images operation blocks invalid device");
+    require(!invalid_device.device_valid, "native images operation records invalid device");
+
+    request = make_ready_native_swapchain_images_operation_request();
+    request.swapchain = {};
+    const vulkan_backend::vulkan_native_swapchain_images_operation_result missing_swapchain =
+        vulkan_backend::build_vulkan_native_swapchain_images_operation_plan(request);
+    require(
+        missing_swapchain.status
+            == vulkan_backend::vulkan_native_swapchain_images_operation_status::missing_swapchain_handle,
+        "native images operation blocks missing swapchain handle");
+    require(!missing_swapchain.swapchain_valid, "native images operation records missing swapchain");
+}
+
+void test_native_swapchain_images_operation_blocks_native_extension_and_entrypoint()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::vulkan_native_swapchain_images_operation_request request =
+        make_ready_native_swapchain_images_operation_request();
+    request.native_entrypoints.required_extensions_ready = false;
+    request.native_entrypoints.missing_required_extension = "VK_KHR_swapchain";
+    request.native_entrypoints.diagnostic = "missing VK_KHR_swapchain";
+    const vulkan_backend::vulkan_native_swapchain_images_operation_result missing_extension =
+        vulkan_backend::build_vulkan_native_swapchain_images_operation_plan(request);
+    require(
+        missing_extension.status
+            == vulkan_backend::vulkan_native_swapchain_images_operation_status::required_extension_unavailable,
+        "native images operation blocks missing required extension");
+    require(
+        missing_extension.missing_required_extension == "VK_KHR_swapchain",
+        "native images operation records missing extension");
+
+    request = make_ready_native_swapchain_images_operation_request();
+    request.native_entrypoints.get_swapchain_images_ready = false;
+    request.native_entrypoints.missing_symbol_name = "vkGetSwapchainImagesKHR";
+    const vulkan_backend::vulkan_native_swapchain_images_operation_result missing_symbol =
+        vulkan_backend::build_vulkan_native_swapchain_images_operation_plan(request);
+    require(
+        missing_symbol.status
+            == vulkan_backend::vulkan_native_swapchain_images_operation_status::missing_images_symbol,
+        "native images operation blocks missing get-images entrypoint");
+    require(
+        missing_symbol.missing_symbol_name == "vkGetSwapchainImagesKHR",
+        "native images operation records missing get-images symbol");
+}
+
+void test_native_swapchain_images_operation_blocks_missing_image_count()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::vulkan_native_swapchain_images_operation_request request =
+        make_ready_native_swapchain_images_operation_request();
+    request.create_operation.selected_image_count = 0;
+    const vulkan_backend::vulkan_native_swapchain_images_operation_result operation =
+        vulkan_backend::build_vulkan_native_swapchain_images_operation_plan(request);
+    require(
+        operation.status
+            == vulkan_backend::vulkan_native_swapchain_images_operation_status::image_count_unavailable,
+        "native images operation blocks missing image count");
+    require(operation.expected_image_count == 0, "native images operation records zero expected count");
+}
+
 void test_swapchain_create_plan_names_are_stable()
 {
     namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
@@ -561,6 +712,21 @@ void test_swapchain_create_plan_names_are_stable()
             vulkan_backend::vulkan_native_swapchain_create_operation_status::recreate_incompatible)
             == std::string_view{"recreate_incompatible"},
         "native swapchain create operation recreate status name is stable");
+    require(
+        vulkan_backend::native_swapchain_images_operation_status_name(
+            vulkan_backend::vulkan_native_swapchain_images_operation_status::ready)
+            == std::string_view{"ready"},
+        "native swapchain images operation ready status name is stable");
+    require(
+        vulkan_backend::native_swapchain_images_operation_status_name(
+            vulkan_backend::vulkan_native_swapchain_images_operation_status::missing_swapchain_handle)
+            == std::string_view{"missing_swapchain_handle"},
+        "native swapchain images operation missing handle status name is stable");
+    require(
+        vulkan_backend::native_swapchain_images_operation_status_name(
+            vulkan_backend::vulkan_native_swapchain_images_operation_status::missing_images_symbol)
+            == std::string_view{"missing_images_symbol"},
+        "native swapchain images operation missing symbol status name is stable");
 }
 
 } // namespace
@@ -576,6 +742,10 @@ int main()
     test_native_swapchain_create_operation_blocks_plan_and_recreate_compatibility();
     test_native_swapchain_create_operation_blocks_invalid_device_and_surface();
     test_native_swapchain_create_operation_blocks_native_extension_and_symbols();
+    test_native_swapchain_images_operation_reports_ready_operation_summary();
+    test_native_swapchain_images_operation_blocks_create_and_swapchain_prerequisites();
+    test_native_swapchain_images_operation_blocks_native_extension_and_entrypoint();
+    test_native_swapchain_images_operation_blocks_missing_image_count();
     test_swapchain_create_plan_names_are_stable();
     return 0;
 }

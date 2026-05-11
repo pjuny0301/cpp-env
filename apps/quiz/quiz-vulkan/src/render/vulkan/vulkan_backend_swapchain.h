@@ -36,6 +36,25 @@ struct vulkan_swapchain_image_id {
     std::size_t value = 0;
 };
 
+struct vulkan_swapchain_image_handle {
+    std::uintptr_t value = 0;
+
+    bool valid() const
+    {
+        return value != 0;
+    }
+};
+
+struct vulkan_native_swapchain_image_binding {
+    vulkan_swapchain_image_id image_id;
+    vulkan_swapchain_image_handle handle;
+
+    bool valid() const
+    {
+        return image_id.value > 0 && handle.valid();
+    }
+};
+
 struct vulkan_swapchain_image_state {
     vulkan_swapchain_image_id id;
     bool available = false;
@@ -716,6 +735,135 @@ struct vulkan_native_swapchain_create_operation_result {
     }
 };
 
+enum class vulkan_native_swapchain_images_operation_status {
+    not_checked,
+    ready,
+    create_operation_unavailable,
+    invalid_device,
+    missing_swapchain_handle,
+    native_entrypoints_unavailable,
+    required_extension_unavailable,
+    missing_images_symbol,
+    image_count_unavailable,
+};
+
+inline std::string_view native_swapchain_images_operation_status_name(
+    vulkan_native_swapchain_images_operation_status status)
+{
+    switch (status) {
+    case vulkan_native_swapchain_images_operation_status::not_checked:
+        return "not_checked";
+    case vulkan_native_swapchain_images_operation_status::ready:
+        return "ready";
+    case vulkan_native_swapchain_images_operation_status::create_operation_unavailable:
+        return "create_operation_unavailable";
+    case vulkan_native_swapchain_images_operation_status::invalid_device:
+        return "invalid_device";
+    case vulkan_native_swapchain_images_operation_status::missing_swapchain_handle:
+        return "missing_swapchain_handle";
+    case vulkan_native_swapchain_images_operation_status::native_entrypoints_unavailable:
+        return "native_entrypoints_unavailable";
+    case vulkan_native_swapchain_images_operation_status::required_extension_unavailable:
+        return "required_extension_unavailable";
+    case vulkan_native_swapchain_images_operation_status::missing_images_symbol:
+        return "missing_images_symbol";
+    case vulkan_native_swapchain_images_operation_status::image_count_unavailable:
+        return "image_count_unavailable";
+    }
+
+    return "unknown";
+}
+
+struct vulkan_native_swapchain_images_operation_request {
+    vulkan_native_swapchain_create_operation_result create_operation;
+    vulkan_native_swapchain_entrypoint_readiness native_entrypoints;
+    vulkan_swapchain_handle swapchain;
+    vulkan_native_function_pointer image_handle_base{.value = 3000};
+};
+
+struct vulkan_native_swapchain_images_operation_summary {
+    bool checked = false;
+    vulkan_native_swapchain_images_operation_status status =
+        vulkan_native_swapchain_images_operation_status::not_checked;
+    std::string entrypoint_name = "vkGetSwapchainImagesKHR";
+    bool vk_get_swapchain_images_callable = false;
+    vulkan_device_handle device;
+    vulkan_swapchain_handle swapchain;
+    std::size_t expected_image_count = 0;
+    std::size_t enumerated_image_count = 0;
+    std::vector<vulkan_native_swapchain_image_binding> images;
+    vulkan_surface_extent selected_extent;
+    vulkan_swapchain_surface_format selected_surface_format;
+    vulkan_swapchain_present_mode selected_present_mode =
+        vulkan_swapchain_present_mode::fifo;
+    bool create_operation_checked = false;
+    bool create_operation_ready = false;
+    bool native_entrypoints_checked = false;
+    bool required_extensions_ready = false;
+    bool get_images_symbol_ready = false;
+    bool device_valid = false;
+    bool swapchain_valid = false;
+    std::string missing_required_extension;
+    std::string missing_symbol_name;
+    std::string diagnostic;
+
+    bool ready_for_frame_lifecycle_setup() const
+    {
+        return checked
+            && status == vulkan_native_swapchain_images_operation_status::ready
+            && vk_get_swapchain_images_callable && expected_image_count > 0
+            && enumerated_image_count == expected_image_count
+            && images.size() == expected_image_count
+            && std::all_of(
+                images.begin(),
+                images.end(),
+                [](const vulkan_native_swapchain_image_binding& image) {
+                    return image.valid();
+                });
+    }
+};
+
+struct vulkan_native_swapchain_images_operation_result {
+    bool checked = false;
+    vulkan_native_swapchain_images_operation_status status =
+        vulkan_native_swapchain_images_operation_status::not_checked;
+    vulkan_native_swapchain_create_operation_result create_operation;
+    vulkan_native_swapchain_entrypoint_readiness native_entrypoints;
+    vulkan_device_handle device;
+    vulkan_swapchain_handle swapchain;
+    std::size_t expected_image_count = 0;
+    std::size_t enumerated_image_count = 0;
+    std::vector<vulkan_native_swapchain_image_binding> images;
+    vulkan_surface_extent selected_extent;
+    vulkan_swapchain_surface_format selected_surface_format;
+    vulkan_swapchain_present_mode selected_present_mode =
+        vulkan_swapchain_present_mode::fifo;
+    bool create_operation_checked = false;
+    bool create_operation_ready = false;
+    bool native_entrypoints_checked = false;
+    bool required_extensions_ready = false;
+    bool get_images_symbol_ready = false;
+    bool device_valid = false;
+    bool swapchain_valid = false;
+    bool vk_get_swapchain_images_callable = false;
+    std::string missing_required_extension;
+    std::string missing_symbol_name;
+    std::string diagnostic;
+    vulkan_native_swapchain_images_operation_summary operation;
+
+    bool can_call_vk_get_swapchain_images() const
+    {
+        return checked
+            && status == vulkan_native_swapchain_images_operation_status::ready
+            && vk_get_swapchain_images_callable && operation.ready_for_frame_lifecycle_setup();
+    }
+
+    bool blocked() const
+    {
+        return checked && !can_call_vk_get_swapchain_images();
+    }
+};
+
 struct vulkan_swapchain_create_request {
     vulkan_surface_extent requested_extent;
     vulkan_swapchain_present_mode requested_present_mode = vulkan_swapchain_present_mode::fifo;
@@ -915,6 +1063,23 @@ inline std::size_t selected_image_index_for(
 {
     static_cast<void>(request);
     return acquire.image.id.value;
+}
+
+inline std::vector<vulkan_native_swapchain_image_binding> make_native_swapchain_image_bindings(
+    std::size_t image_count,
+    vulkan_native_function_pointer image_handle_base)
+{
+    const std::uintptr_t base =
+        image_handle_base.valid() ? image_handle_base.value : 3000;
+    std::vector<vulkan_native_swapchain_image_binding> images;
+    images.reserve(image_count);
+    for (std::size_t image_index = 0; image_index < image_count; ++image_index) {
+        images.push_back(vulkan_native_swapchain_image_binding{
+            .image_id = vulkan_swapchain_image_id{.value = image_index + 1},
+            .handle = vulkan_swapchain_image_handle{.value = base + image_index + 1},
+        });
+    }
+    return images;
 }
 
 } // namespace swapchain_detail
@@ -1225,6 +1390,118 @@ build_vulkan_native_swapchain_create_operation_plan(
         .create_symbol_ready = result.create_symbol_ready,
         .destroy_symbol_ready = result.destroy_symbol_ready,
         .get_images_symbol_ready = result.get_images_symbol_ready,
+        .missing_required_extension = result.missing_required_extension,
+        .missing_symbol_name = result.missing_symbol_name,
+        .diagnostic = result.diagnostic,
+    };
+
+    return result;
+}
+
+inline vulkan_native_swapchain_images_operation_result
+build_vulkan_native_swapchain_images_operation_plan(
+    const vulkan_native_swapchain_images_operation_request& request)
+{
+    vulkan_native_swapchain_images_operation_result result{
+        .checked = true,
+        .status = vulkan_native_swapchain_images_operation_status::not_checked,
+        .create_operation = request.create_operation,
+        .native_entrypoints = request.native_entrypoints,
+        .device = request.create_operation.device,
+        .swapchain = request.swapchain,
+        .expected_image_count = request.create_operation.selected_image_count,
+        .enumerated_image_count = 0,
+        .images = {},
+        .selected_extent = request.create_operation.selected_extent,
+        .selected_surface_format = request.create_operation.selected_surface_format,
+        .selected_present_mode = request.create_operation.selected_present_mode,
+        .create_operation_checked = request.create_operation.checked,
+        .create_operation_ready = request.create_operation.can_call_vk_create_swapchain(),
+        .native_entrypoints_checked = request.native_entrypoints.checked,
+        .required_extensions_ready = request.native_entrypoints.required_extensions_ready,
+        .get_images_symbol_ready = request.native_entrypoints.get_swapchain_images_ready,
+        .device_valid = request.create_operation.device_valid
+            && request.create_operation.device.valid(),
+        .swapchain_valid = request.swapchain.valid(),
+        .vk_get_swapchain_images_callable = false,
+        .missing_required_extension = request.native_entrypoints.missing_required_extension,
+        .missing_symbol_name = request.native_entrypoints.missing_symbol_name,
+        .diagnostic = {},
+        .operation = {},
+    };
+
+    if (!result.create_operation_checked) {
+        result.status =
+            vulkan_native_swapchain_images_operation_status::create_operation_unavailable;
+        result.diagnostic =
+            "Native Vulkan swapchain images operation has unchecked create operation";
+    } else if (!result.device_valid) {
+        result.status = vulkan_native_swapchain_images_operation_status::invalid_device;
+        result.diagnostic =
+            "Native Vulkan swapchain images operation has no valid device handle";
+    } else if (!result.native_entrypoints_checked) {
+        result.status =
+            vulkan_native_swapchain_images_operation_status::native_entrypoints_unavailable;
+        result.diagnostic =
+            "Native Vulkan swapchain images operation has unchecked native entrypoints";
+    } else if (!result.required_extensions_ready) {
+        result.status =
+            vulkan_native_swapchain_images_operation_status::required_extension_unavailable;
+        result.diagnostic = request.native_entrypoints.diagnostic.empty()
+            ? "Native Vulkan swapchain images operation is missing VK_KHR_swapchain"
+            : request.native_entrypoints.diagnostic;
+    } else if (!result.get_images_symbol_ready) {
+        result.status = vulkan_native_swapchain_images_operation_status::missing_images_symbol;
+        result.diagnostic = request.native_entrypoints.diagnostic.empty()
+            ? "Native Vulkan swapchain images operation is missing vkGetSwapchainImagesKHR"
+            : request.native_entrypoints.diagnostic;
+    } else if (!result.create_operation_ready) {
+        result.status =
+            vulkan_native_swapchain_images_operation_status::create_operation_unavailable;
+        result.diagnostic = request.create_operation.diagnostic.empty()
+            ? "Native Vulkan swapchain images operation is missing a ready create operation"
+            : request.create_operation.diagnostic;
+    } else if (!result.swapchain_valid) {
+        result.status =
+            vulkan_native_swapchain_images_operation_status::missing_swapchain_handle;
+        result.diagnostic =
+            "Native Vulkan swapchain images operation has no valid swapchain handle";
+    } else if (result.expected_image_count == 0) {
+        result.status =
+            vulkan_native_swapchain_images_operation_status::image_count_unavailable;
+        result.diagnostic =
+            "Native Vulkan swapchain images operation has no expected swapchain images";
+    } else {
+        result.status = vulkan_native_swapchain_images_operation_status::ready;
+        result.vk_get_swapchain_images_callable = true;
+        result.images = swapchain_detail::make_native_swapchain_image_bindings(
+            result.expected_image_count,
+            request.image_handle_base);
+        result.enumerated_image_count = result.images.size();
+        result.diagnostic =
+            "Native Vulkan swapchain images operation can call vkGetSwapchainImagesKHR";
+    }
+
+    result.operation = vulkan_native_swapchain_images_operation_summary{
+        .checked = result.checked,
+        .status = result.status,
+        .entrypoint_name = "vkGetSwapchainImagesKHR",
+        .vk_get_swapchain_images_callable = result.vk_get_swapchain_images_callable,
+        .device = result.device,
+        .swapchain = result.swapchain,
+        .expected_image_count = result.expected_image_count,
+        .enumerated_image_count = result.enumerated_image_count,
+        .images = result.images,
+        .selected_extent = result.selected_extent,
+        .selected_surface_format = result.selected_surface_format,
+        .selected_present_mode = result.selected_present_mode,
+        .create_operation_checked = result.create_operation_checked,
+        .create_operation_ready = result.create_operation_ready,
+        .native_entrypoints_checked = result.native_entrypoints_checked,
+        .required_extensions_ready = result.required_extensions_ready,
+        .get_images_symbol_ready = result.get_images_symbol_ready,
+        .device_valid = result.device_valid,
+        .swapchain_valid = result.swapchain_valid,
         .missing_required_extension = result.missing_required_extension,
         .missing_symbol_name = result.missing_symbol_name,
         .diagnostic = result.diagnostic,

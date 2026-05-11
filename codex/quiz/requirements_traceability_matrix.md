@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: fake image upload snapshot diff header split integrated with public FILE_SET registration; Windows MinGW focused image CTest 1/1 and interface compile target build confirmed.
+- `eeba461`: image upload snapshot diff diagnostics now live in `image_texture_upload_snapshot_diff.h` while `image_texture_upload.h` preserves the existing include surface.
 - current: glyph atlas page planning diagnostics integrated; Windows MinGW focused text CTest 1/1 and interface compile target build confirmed.
 - `18c5121`: text atlas page plans now report page selection, reused placements, synthesized placements, occupancy, overflow, eviction hints, and upload byte totals before renderer/Vulkan upload.
 - current: Vulkan swapchain native function readiness integrated; Windows MinGW focused Vulkan CTest 3/3 and interface compile target build confirmed.

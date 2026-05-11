@@ -143,6 +143,7 @@ target_sources(
             src/render/image/image_texture_placeholder_policy.h
             src/render/image/image_texture_upload.h
             src/render/image/image_texture_upload_retry_policy.h
+            src/render/image/image_texture_upload_snapshot_diff.h
             src/render/image/image_types.h
             src/render/image/png_image_chunk_scanner.h
             src/render/image/png_image_decode_boundary.h

@@ -5,9 +5,11 @@
 #include "core/input/text_input_model.h"
 #include "platform/platform_input_event.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace quiz_vulkan::input {
@@ -293,6 +295,24 @@ struct input_routing_bool_delta {
     bool changed = false;
 };
 
+struct input_routing_float_delta {
+    float before_value = 0.0f;
+    float after_value = 0.0f;
+    float delta = 0.0f;
+    bool changed = false;
+    bool tightened = false;
+    bool loosened = false;
+};
+
+struct input_routing_int64_delta {
+    std::int64_t before_value = 0;
+    std::int64_t after_value = 0;
+    std::int64_t delta = 0;
+    bool changed = false;
+    bool tightened = false;
+    bool loosened = false;
+};
+
 struct input_routing_pointer_capture_delta {
     pointer_capture_snapshot before_capture;
     pointer_capture_snapshot after_capture;
@@ -302,6 +322,74 @@ struct input_routing_pointer_capture_delta {
     input_routing_count_delta tracked_pointer_count;
     bool lifecycle_changed = false;
     bool pointer_id_changed = false;
+    bool changed = false;
+};
+
+struct input_routing_gesture_policy_threshold_deltas {
+    input_routing_float_delta swipe_min_dx;
+    input_routing_float_delta swipe_max_dy;
+    input_routing_int64_delta swipe_max_duration_ms;
+    input_routing_int64_delta long_press_min_duration_ms;
+    input_routing_float_delta tap_slop;
+    input_routing_float_delta drag_start_slop;
+    bool swipe_threshold_changed = false;
+    bool long_press_threshold_changed = false;
+    bool tap_threshold_changed = false;
+    bool drag_threshold_changed = false;
+    bool tightened = false;
+    bool loosened = false;
+    bool changed = false;
+};
+
+struct input_routing_gesture_policy_route_diff {
+    std::size_t before_route_index = 0;
+    std::size_t after_route_index = 0;
+    action_route_policy_kind before_route_kind = action_route_policy_kind::pointer_capture_reset;
+    action_route_policy_kind after_route_kind = action_route_policy_kind::pointer_capture_reset;
+    gesture_policy_snapshot before_policy;
+    gesture_policy_snapshot after_policy;
+    pointer_contact_kind before_contact = pointer_contact_kind::unknown;
+    pointer_contact_kind after_contact = pointer_contact_kind::unknown;
+    pointer_phase before_phase = pointer_phase::down;
+    pointer_phase after_phase = pointer_phase::down;
+    std::int32_t before_pointer_id = 0;
+    std::int32_t after_pointer_id = 0;
+    input_routing_gesture_policy_threshold_deltas thresholds;
+    bool decision_changed = false;
+    bool emitted_kind_changed = false;
+    bool direction_changed = false;
+    bool emitted_input_event_changed = false;
+    bool accepted_to_suppressed = false;
+    bool suppressed_to_accepted = false;
+    bool pointer_mismatch = false;
+    bool contact_mismatch = false;
+    bool phase_mismatch = false;
+    bool changed = false;
+};
+
+struct input_routing_gesture_policy_diff {
+    std::vector<input_routing_gesture_policy_route_diff> routes;
+    input_routing_count_delta route_count;
+    std::size_t compared_route_count = 0;
+    std::size_t unpaired_before_route_count = 0;
+    std::size_t unpaired_after_route_count = 0;
+    std::size_t threshold_change_count = 0;
+    std::size_t decision_change_count = 0;
+    std::size_t emitted_kind_change_count = 0;
+    std::size_t direction_change_count = 0;
+    std::size_t accepted_to_suppressed_regression_count = 0;
+    std::size_t suppressed_to_accepted_recovery_count = 0;
+    std::size_t swipe_threshold_tightening_count = 0;
+    std::size_t swipe_threshold_loosening_count = 0;
+    std::size_t long_press_threshold_tightening_count = 0;
+    std::size_t long_press_threshold_loosening_count = 0;
+    std::size_t tap_threshold_tightening_count = 0;
+    std::size_t tap_threshold_loosening_count = 0;
+    std::size_t drag_threshold_tightening_count = 0;
+    std::size_t drag_threshold_loosening_count = 0;
+    std::size_t pointer_mismatch_count = 0;
+    std::size_t contact_mismatch_count = 0;
+    std::size_t phase_mismatch_count = 0;
     bool changed = false;
 };
 
@@ -439,6 +527,7 @@ struct input_routing_diagnostics_diff {
     input_route_kind_count_deltas routes;
     action_route_policy_kind_count_deltas action_routes;
     input_routing_keyboard_route_count_deltas keyboard_routes;
+    input_routing_gesture_policy_diff gesture_policies;
     input_routing_pointer_capture_delta pointer_capture;
     input_routing_bool_delta pointer_capture_ended_cleanly;
     input_routing_bool_delta focus_ended_cleanly;
@@ -446,6 +535,7 @@ struct input_routing_diagnostics_diff {
     bool normalized_events_changed = false;
     bool action_routes_changed = false;
     bool keyboard_routes_changed = false;
+    bool gesture_policy_changed = false;
     bool pointer_capture_changed = false;
     bool clean_state_changed = false;
     bool changed = false;
@@ -482,6 +572,50 @@ struct input_routing_diagnostics_diff {
         .after_value = after_value,
         .changed = before_value != after_value,
     };
+}
+
+[[nodiscard]] inline input_routing_float_delta diff_input_routing_float_threshold(
+    float before_value,
+    float after_value,
+    bool larger_value_is_tighter)
+{
+    const float delta = after_value - before_value;
+    input_routing_float_delta diff{
+        .before_value = before_value,
+        .after_value = after_value,
+        .delta = delta,
+        .changed = before_value != after_value,
+    };
+    if (!diff.changed) {
+        return diff;
+    }
+
+    const bool increased = after_value > before_value;
+    diff.tightened = larger_value_is_tighter ? increased : !increased;
+    diff.loosened = larger_value_is_tighter ? !increased : increased;
+    return diff;
+}
+
+[[nodiscard]] inline input_routing_int64_delta diff_input_routing_int64_threshold(
+    std::int64_t before_value,
+    std::int64_t after_value,
+    bool larger_value_is_tighter)
+{
+    const std::int64_t delta = after_value - before_value;
+    input_routing_int64_delta diff{
+        .before_value = before_value,
+        .after_value = after_value,
+        .delta = delta,
+        .changed = before_value != after_value,
+    };
+    if (!diff.changed) {
+        return diff;
+    }
+
+    const bool increased = after_value > before_value;
+    diff.tightened = larger_value_is_tighter ? increased : !increased;
+    diff.loosened = larger_value_is_tighter ? !increased : increased;
+    return diff;
 }
 
 [[nodiscard]] inline bool input_routing_keyboard_chord_present(
@@ -872,6 +1006,277 @@ inline void count_input_routing_keyboard_repeat_policy(
     return diff;
 }
 
+[[nodiscard]] inline bool input_routing_route_has_gesture_policy(
+    const action_route_policy_diagnostic& route)
+{
+    return route.kind == action_route_policy_kind::gesture_route_snapshot
+        || route.gesture_policy.decision != gesture_policy_decision::none
+        || route.gesture_policy.pointer_id != 0
+        || route.gesture_policy.timestamp_ms != 0
+        || route.gesture_policy.emitted_input_event;
+}
+
+[[nodiscard]] inline bool input_routing_gesture_policy_accepted(
+    const gesture_policy_snapshot& policy)
+{
+    return policy.emitted_input_event;
+}
+
+[[nodiscard]] inline std::vector<std::size_t> input_routing_gesture_policy_route_indices(
+    const input_routing_diagnostics& diagnostics)
+{
+    std::vector<std::size_t> indices;
+    for (std::size_t index = 0; index < diagnostics.action_routes.size(); ++index) {
+        if (input_routing_route_has_gesture_policy(diagnostics.action_routes[index])) {
+            indices.push_back(index);
+        }
+    }
+    return indices;
+}
+
+[[nodiscard]] inline input_routing_gesture_policy_threshold_deltas
+diff_input_routing_gesture_policy_thresholds(
+    const gesture_policy_snapshot& before,
+    const gesture_policy_snapshot& after)
+{
+    input_routing_gesture_policy_threshold_deltas diff{
+        .swipe_min_dx =
+            diff_input_routing_float_threshold(before.swipe_min_dx, after.swipe_min_dx, true),
+        .swipe_max_dy =
+            diff_input_routing_float_threshold(before.swipe_max_dy, after.swipe_max_dy, false),
+        .swipe_max_duration_ms =
+            diff_input_routing_int64_threshold(
+                before.swipe_max_duration_ms,
+                after.swipe_max_duration_ms,
+                false),
+        .long_press_min_duration_ms =
+            diff_input_routing_int64_threshold(
+                before.long_press_min_duration_ms,
+                after.long_press_min_duration_ms,
+                true),
+        .tap_slop = diff_input_routing_float_threshold(before.tap_slop, after.tap_slop, false),
+        .drag_start_slop =
+            diff_input_routing_float_threshold(before.drag_start_slop, after.drag_start_slop, true),
+    };
+    diff.swipe_threshold_changed =
+        diff.swipe_min_dx.changed
+        || diff.swipe_max_dy.changed
+        || diff.swipe_max_duration_ms.changed;
+    diff.long_press_threshold_changed = diff.long_press_min_duration_ms.changed;
+    diff.tap_threshold_changed = diff.tap_slop.changed;
+    diff.drag_threshold_changed = diff.drag_start_slop.changed;
+    diff.tightened =
+        diff.swipe_min_dx.tightened
+        || diff.swipe_max_dy.tightened
+        || diff.swipe_max_duration_ms.tightened
+        || diff.long_press_min_duration_ms.tightened
+        || diff.tap_slop.tightened
+        || diff.drag_start_slop.tightened;
+    diff.loosened =
+        diff.swipe_min_dx.loosened
+        || diff.swipe_max_dy.loosened
+        || diff.swipe_max_duration_ms.loosened
+        || diff.long_press_min_duration_ms.loosened
+        || diff.tap_slop.loosened
+        || diff.drag_start_slop.loosened;
+    diff.changed =
+        diff.swipe_threshold_changed
+        || diff.long_press_threshold_changed
+        || diff.tap_threshold_changed
+        || diff.drag_threshold_changed;
+    return diff;
+}
+
+inline void count_input_routing_threshold_delta(
+    const input_routing_float_delta& delta,
+    std::size_t& change_count,
+    std::size_t& tightening_count,
+    std::size_t& loosening_count)
+{
+    if (!delta.changed) {
+        return;
+    }
+    ++change_count;
+    if (delta.tightened) {
+        ++tightening_count;
+    }
+    if (delta.loosened) {
+        ++loosening_count;
+    }
+}
+
+inline void count_input_routing_threshold_delta(
+    const input_routing_int64_delta& delta,
+    std::size_t& change_count,
+    std::size_t& tightening_count,
+    std::size_t& loosening_count)
+{
+    if (!delta.changed) {
+        return;
+    }
+    ++change_count;
+    if (delta.tightened) {
+        ++tightening_count;
+    }
+    if (delta.loosened) {
+        ++loosening_count;
+    }
+}
+
+inline void accumulate_input_routing_gesture_policy_threshold_counts(
+    input_routing_gesture_policy_diff& target,
+    const input_routing_gesture_policy_threshold_deltas& thresholds)
+{
+    count_input_routing_threshold_delta(
+        thresholds.swipe_min_dx,
+        target.threshold_change_count,
+        target.swipe_threshold_tightening_count,
+        target.swipe_threshold_loosening_count);
+    count_input_routing_threshold_delta(
+        thresholds.swipe_max_dy,
+        target.threshold_change_count,
+        target.swipe_threshold_tightening_count,
+        target.swipe_threshold_loosening_count);
+    count_input_routing_threshold_delta(
+        thresholds.swipe_max_duration_ms,
+        target.threshold_change_count,
+        target.swipe_threshold_tightening_count,
+        target.swipe_threshold_loosening_count);
+    count_input_routing_threshold_delta(
+        thresholds.long_press_min_duration_ms,
+        target.threshold_change_count,
+        target.long_press_threshold_tightening_count,
+        target.long_press_threshold_loosening_count);
+    count_input_routing_threshold_delta(
+        thresholds.tap_slop,
+        target.threshold_change_count,
+        target.tap_threshold_tightening_count,
+        target.tap_threshold_loosening_count);
+    count_input_routing_threshold_delta(
+        thresholds.drag_start_slop,
+        target.threshold_change_count,
+        target.drag_threshold_tightening_count,
+        target.drag_threshold_loosening_count);
+}
+
+[[nodiscard]] inline input_routing_gesture_policy_route_diff diff_input_routing_gesture_policy_route(
+    const action_route_policy_diagnostic& before,
+    std::size_t before_route_index,
+    const action_route_policy_diagnostic& after,
+    std::size_t after_route_index)
+{
+    input_routing_gesture_policy_route_diff diff{
+        .before_route_index = before_route_index,
+        .after_route_index = after_route_index,
+        .before_route_kind = before.kind,
+        .after_route_kind = after.kind,
+        .before_policy = before.gesture_policy,
+        .after_policy = after.gesture_policy,
+        .before_contact = before.pointer_contact,
+        .after_contact = after.pointer_contact,
+        .before_phase = before.pointer_event_phase,
+        .after_phase = after.pointer_event_phase,
+        .before_pointer_id = before.pointer_id,
+        .after_pointer_id = after.pointer_id,
+        .thresholds = diff_input_routing_gesture_policy_thresholds(before.gesture_policy, after.gesture_policy),
+        .decision_changed = before.gesture_policy.decision != after.gesture_policy.decision,
+        .emitted_kind_changed = before.gesture_policy.emitted_kind != after.gesture_policy.emitted_kind,
+        .direction_changed = before.gesture_policy.direction != after.gesture_policy.direction,
+        .emitted_input_event_changed =
+            before.gesture_policy.emitted_input_event != after.gesture_policy.emitted_input_event,
+        .accepted_to_suppressed =
+            input_routing_gesture_policy_accepted(before.gesture_policy)
+            && !input_routing_gesture_policy_accepted(after.gesture_policy),
+        .suppressed_to_accepted =
+            !input_routing_gesture_policy_accepted(before.gesture_policy)
+            && input_routing_gesture_policy_accepted(after.gesture_policy),
+        .pointer_mismatch =
+            before.pointer_id != after.pointer_id
+            || before.gesture_policy.pointer_id != after.gesture_policy.pointer_id,
+        .contact_mismatch = before.pointer_contact != after.pointer_contact,
+        .phase_mismatch =
+            before.pointer_event_phase != after.pointer_event_phase
+            || before.gesture_policy.phase != after.gesture_policy.phase,
+    };
+    diff.changed =
+        diff.thresholds.changed
+        || diff.decision_changed
+        || diff.emitted_kind_changed
+        || diff.direction_changed
+        || diff.emitted_input_event_changed
+        || diff.accepted_to_suppressed
+        || diff.suppressed_to_accepted
+        || diff.pointer_mismatch
+        || diff.contact_mismatch
+        || diff.phase_mismatch
+        || diff.before_route_kind != diff.after_route_kind;
+    return diff;
+}
+
+[[nodiscard]] inline input_routing_gesture_policy_diff diff_input_routing_gesture_policies(
+    const input_routing_diagnostics& before,
+    const input_routing_diagnostics& after)
+{
+    const std::vector<std::size_t> before_indices = input_routing_gesture_policy_route_indices(before);
+    const std::vector<std::size_t> after_indices = input_routing_gesture_policy_route_indices(after);
+    const std::size_t compared_route_count = std::min(before_indices.size(), after_indices.size());
+
+    input_routing_gesture_policy_diff diff{
+        .routes = {},
+        .route_count = diff_input_routing_count(before_indices.size(), after_indices.size()),
+        .compared_route_count = compared_route_count,
+        .unpaired_before_route_count = before_indices.size() - compared_route_count,
+        .unpaired_after_route_count = after_indices.size() - compared_route_count,
+    };
+    diff.routes.reserve(compared_route_count);
+    for (std::size_t index = 0; index < compared_route_count; ++index) {
+        input_routing_gesture_policy_route_diff route_diff = diff_input_routing_gesture_policy_route(
+            before.action_routes[before_indices[index]],
+            before_indices[index],
+            after.action_routes[after_indices[index]],
+            after_indices[index]);
+        accumulate_input_routing_gesture_policy_threshold_counts(diff, route_diff.thresholds);
+        if (route_diff.decision_changed) {
+            ++diff.decision_change_count;
+        }
+        if (route_diff.emitted_kind_changed) {
+            ++diff.emitted_kind_change_count;
+        }
+        if (route_diff.direction_changed) {
+            ++diff.direction_change_count;
+        }
+        if (route_diff.accepted_to_suppressed) {
+            ++diff.accepted_to_suppressed_regression_count;
+        }
+        if (route_diff.suppressed_to_accepted) {
+            ++diff.suppressed_to_accepted_recovery_count;
+        }
+        if (route_diff.pointer_mismatch) {
+            ++diff.pointer_mismatch_count;
+        }
+        if (route_diff.contact_mismatch) {
+            ++diff.contact_mismatch_count;
+        }
+        if (route_diff.phase_mismatch) {
+            ++diff.phase_mismatch_count;
+        }
+        diff.routes.push_back(std::move(route_diff));
+    }
+
+    diff.changed =
+        diff.route_count.changed
+        || diff.threshold_change_count > 0
+        || diff.decision_change_count > 0
+        || diff.emitted_kind_change_count > 0
+        || diff.direction_change_count > 0
+        || diff.accepted_to_suppressed_regression_count > 0
+        || diff.suppressed_to_accepted_recovery_count > 0
+        || diff.pointer_mismatch_count > 0
+        || diff.contact_mismatch_count > 0
+        || diff.phase_mismatch_count > 0;
+    return diff;
+}
+
 [[nodiscard]] inline input_routing_diagnostics_diff diff_input_routing_diagnostics(
     const input_routing_diagnostics& before,
     const input_routing_diagnostics& after)
@@ -900,6 +1305,7 @@ inline void count_input_routing_keyboard_repeat_policy(
         .routes = diff_input_route_kind_counts(before.summary.routes, after.summary.routes),
         .action_routes = diff_action_route_policy_kind_counts(before_action_routes, after_action_routes),
         .keyboard_routes = diff_input_routing_keyboard_route_counts(before_keyboard_routes, after_keyboard_routes),
+        .gesture_policies = diff_input_routing_gesture_policies(before, after),
         .pointer_capture = diff_input_routing_pointer_capture(before.pointer_capture, after.pointer_capture),
         .pointer_capture_ended_cleanly =
             diff_input_routing_bool(
@@ -917,8 +1323,10 @@ inline void count_input_routing_keyboard_repeat_policy(
     diff.action_routes_changed =
         diff.action_route_count.changed
         || input_routing_route_kind_deltas_changed(diff.routes)
-        || input_routing_action_route_deltas_changed(diff.action_routes);
+        || input_routing_action_route_deltas_changed(diff.action_routes)
+        || diff.gesture_policies.changed;
     diff.keyboard_routes_changed = diff.keyboard_routes.changed;
+    diff.gesture_policy_changed = diff.gesture_policies.changed;
     diff.pointer_capture_changed = diff.pointer_capture.changed;
     diff.clean_state_changed =
         diff.pointer_capture_ended_cleanly.changed
@@ -928,6 +1336,7 @@ inline void count_input_routing_keyboard_repeat_policy(
         diff.normalized_events_changed
         || diff.action_routes_changed
         || diff.keyboard_routes_changed
+        || diff.gesture_policy_changed
         || diff.pointer_capture_changed
         || diff.clean_state_changed;
     return diff;

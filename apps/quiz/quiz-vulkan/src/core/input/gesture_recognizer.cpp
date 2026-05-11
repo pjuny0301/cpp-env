@@ -54,6 +54,7 @@ gesture_policy_snapshot gesture_policy(
         .swipe_min_dx = thresholds.swipe_min_dx,
         .swipe_max_dy = thresholds.swipe_max_dy,
         .swipe_max_duration_ms = thresholds.swipe_max_duration_ms,
+        .long_press_min_duration_ms = thresholds.long_press_min_duration_ms,
         .tap_slop = thresholds.tap_slop,
         .drag_start_slop = thresholds.drag_start_slop,
         .emitted_input_event = emitted_input_event,

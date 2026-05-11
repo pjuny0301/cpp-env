@@ -743,6 +743,7 @@ concept GesturePolicySnapshotInterface = requires(T snapshot) {
     { snapshot.swipe_min_dx } -> std::same_as<float&>;
     { snapshot.swipe_max_dy } -> std::same_as<float&>;
     { snapshot.swipe_max_duration_ms } -> std::same_as<std::int64_t&>;
+    { snapshot.long_press_min_duration_ms } -> std::same_as<std::int64_t&>;
     { snapshot.tap_slop } -> std::same_as<float&>;
     { snapshot.drag_start_slop } -> std::same_as<float&>;
     { snapshot.emitted_input_event } -> std::same_as<bool&>;
@@ -824,6 +825,26 @@ concept InputRoutingBoolDeltaInterface = requires(T delta) {
 };
 
 template <typename T>
+concept InputRoutingFloatDeltaInterface = requires(T delta) {
+    { delta.before_value } -> std::same_as<float&>;
+    { delta.after_value } -> std::same_as<float&>;
+    { delta.delta } -> std::same_as<float&>;
+    { delta.changed } -> std::same_as<bool&>;
+    { delta.tightened } -> std::same_as<bool&>;
+    { delta.loosened } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept InputRoutingInt64DeltaInterface = requires(T delta) {
+    { delta.before_value } -> std::same_as<std::int64_t&>;
+    { delta.after_value } -> std::same_as<std::int64_t&>;
+    { delta.delta } -> std::same_as<std::int64_t&>;
+    { delta.changed } -> std::same_as<bool&>;
+    { delta.tightened } -> std::same_as<bool&>;
+    { delta.loosened } -> std::same_as<bool&>;
+};
+
+template <typename T>
 concept InputRoutingPointerCaptureDeltaInterface = requires(T delta) {
     { delta.before_capture } -> std::same_as<input::pointer_capture_snapshot&>;
     { delta.after_capture } -> std::same_as<input::pointer_capture_snapshot&>;
@@ -834,6 +855,77 @@ concept InputRoutingPointerCaptureDeltaInterface = requires(T delta) {
     { delta.lifecycle_changed } -> std::same_as<bool&>;
     { delta.pointer_id_changed } -> std::same_as<bool&>;
     { delta.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept InputRoutingGesturePolicyThresholdDeltasInterface = requires(T deltas) {
+    { deltas.swipe_min_dx } -> std::same_as<input::input_routing_float_delta&>;
+    { deltas.swipe_max_dy } -> std::same_as<input::input_routing_float_delta&>;
+    { deltas.swipe_max_duration_ms } -> std::same_as<input::input_routing_int64_delta&>;
+    { deltas.long_press_min_duration_ms } -> std::same_as<input::input_routing_int64_delta&>;
+    { deltas.tap_slop } -> std::same_as<input::input_routing_float_delta&>;
+    { deltas.drag_start_slop } -> std::same_as<input::input_routing_float_delta&>;
+    { deltas.swipe_threshold_changed } -> std::same_as<bool&>;
+    { deltas.long_press_threshold_changed } -> std::same_as<bool&>;
+    { deltas.tap_threshold_changed } -> std::same_as<bool&>;
+    { deltas.drag_threshold_changed } -> std::same_as<bool&>;
+    { deltas.tightened } -> std::same_as<bool&>;
+    { deltas.loosened } -> std::same_as<bool&>;
+    { deltas.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept InputRoutingGesturePolicyRouteDiffInterface = requires(T diff) {
+    { diff.before_route_index } -> std::same_as<std::size_t&>;
+    { diff.after_route_index } -> std::same_as<std::size_t&>;
+    { diff.before_route_kind } -> std::same_as<input::action_route_policy_kind&>;
+    { diff.after_route_kind } -> std::same_as<input::action_route_policy_kind&>;
+    { diff.before_policy } -> std::same_as<input::gesture_policy_snapshot&>;
+    { diff.after_policy } -> std::same_as<input::gesture_policy_snapshot&>;
+    { diff.before_contact } -> std::same_as<input::pointer_contact_kind&>;
+    { diff.after_contact } -> std::same_as<input::pointer_contact_kind&>;
+    { diff.before_phase } -> std::same_as<input::pointer_phase&>;
+    { diff.after_phase } -> std::same_as<input::pointer_phase&>;
+    { diff.before_pointer_id } -> std::same_as<std::int32_t&>;
+    { diff.after_pointer_id } -> std::same_as<std::int32_t&>;
+    { diff.thresholds } -> std::same_as<input::input_routing_gesture_policy_threshold_deltas&>;
+    { diff.decision_changed } -> std::same_as<bool&>;
+    { diff.emitted_kind_changed } -> std::same_as<bool&>;
+    { diff.direction_changed } -> std::same_as<bool&>;
+    { diff.emitted_input_event_changed } -> std::same_as<bool&>;
+    { diff.accepted_to_suppressed } -> std::same_as<bool&>;
+    { diff.suppressed_to_accepted } -> std::same_as<bool&>;
+    { diff.pointer_mismatch } -> std::same_as<bool&>;
+    { diff.contact_mismatch } -> std::same_as<bool&>;
+    { diff.phase_mismatch } -> std::same_as<bool&>;
+    { diff.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept InputRoutingGesturePolicyDiffInterface = requires(T diff) {
+    { diff.routes } -> std::same_as<std::vector<input::input_routing_gesture_policy_route_diff>&>;
+    { diff.route_count } -> std::same_as<input::input_routing_count_delta&>;
+    { diff.compared_route_count } -> std::same_as<std::size_t&>;
+    { diff.unpaired_before_route_count } -> std::same_as<std::size_t&>;
+    { diff.unpaired_after_route_count } -> std::same_as<std::size_t&>;
+    { diff.threshold_change_count } -> std::same_as<std::size_t&>;
+    { diff.decision_change_count } -> std::same_as<std::size_t&>;
+    { diff.emitted_kind_change_count } -> std::same_as<std::size_t&>;
+    { diff.direction_change_count } -> std::same_as<std::size_t&>;
+    { diff.accepted_to_suppressed_regression_count } -> std::same_as<std::size_t&>;
+    { diff.suppressed_to_accepted_recovery_count } -> std::same_as<std::size_t&>;
+    { diff.swipe_threshold_tightening_count } -> std::same_as<std::size_t&>;
+    { diff.swipe_threshold_loosening_count } -> std::same_as<std::size_t&>;
+    { diff.long_press_threshold_tightening_count } -> std::same_as<std::size_t&>;
+    { diff.long_press_threshold_loosening_count } -> std::same_as<std::size_t&>;
+    { diff.tap_threshold_tightening_count } -> std::same_as<std::size_t&>;
+    { diff.tap_threshold_loosening_count } -> std::same_as<std::size_t&>;
+    { diff.drag_threshold_tightening_count } -> std::same_as<std::size_t&>;
+    { diff.drag_threshold_loosening_count } -> std::same_as<std::size_t&>;
+    { diff.pointer_mismatch_count } -> std::same_as<std::size_t&>;
+    { diff.contact_mismatch_count } -> std::same_as<std::size_t&>;
+    { diff.phase_mismatch_count } -> std::same_as<std::size_t&>;
+    { diff.changed } -> std::same_as<bool&>;
 };
 
 template <typename T>
@@ -1030,6 +1122,7 @@ concept InputRoutingDiagnosticsDiffInterface = requires(T diff) {
     { diff.routes } -> std::same_as<input::input_route_kind_count_deltas&>;
     { diff.action_routes } -> std::same_as<input::action_route_policy_kind_count_deltas&>;
     { diff.keyboard_routes } -> std::same_as<input::input_routing_keyboard_route_count_deltas&>;
+    { diff.gesture_policies } -> std::same_as<input::input_routing_gesture_policy_diff&>;
     { diff.pointer_capture } -> std::same_as<input::input_routing_pointer_capture_delta&>;
     { diff.pointer_capture_ended_cleanly } -> std::same_as<input::input_routing_bool_delta&>;
     { diff.focus_ended_cleanly } -> std::same_as<input::input_routing_bool_delta&>;
@@ -1037,6 +1130,7 @@ concept InputRoutingDiagnosticsDiffInterface = requires(T diff) {
     { diff.normalized_events_changed } -> std::same_as<bool&>;
     { diff.action_routes_changed } -> std::same_as<bool&>;
     { diff.keyboard_routes_changed } -> std::same_as<bool&>;
+    { diff.gesture_policy_changed } -> std::same_as<bool&>;
     { diff.pointer_capture_changed } -> std::same_as<bool&>;
     { diff.clean_state_changed } -> std::same_as<bool&>;
     { diff.changed } -> std::same_as<bool&>;
@@ -1053,6 +1147,8 @@ concept InputRoutingDiagnosticFunctions = requires(
     input::input_routing_keyboard_repeat_policy_counts& keyboard_repeat_policies,
     const input::pointer_capture_snapshot& capture,
     const input::input_routing_diagnostics& diagnostics,
+    const input::action_route_policy_diagnostic& route,
+    const input::gesture_policy_snapshot& gesture_policy,
     const input::keyboard_chord_diagnostic& keyboard,
     const input::text_input_model& text) {
     { input::count_input_diagnostic_normalized_event(target, event_kind) } -> std::same_as<void>;
@@ -1065,6 +1161,10 @@ concept InputRoutingDiagnosticFunctions = requires(
     { input::diff_input_routing_count(std::size_t{}, std::size_t{}) }
         -> std::same_as<input::input_routing_count_delta>;
     { input::diff_input_routing_bool(false, true) } -> std::same_as<input::input_routing_bool_delta>;
+    { input::diff_input_routing_float_threshold(float{}, float{}, true) }
+        -> std::same_as<input::input_routing_float_delta>;
+    { input::diff_input_routing_int64_threshold(std::int64_t{}, std::int64_t{}, true) }
+        -> std::same_as<input::input_routing_int64_delta>;
     { input::input_routing_keyboard_chord_present(keyboard) } -> std::same_as<bool>;
     { input::count_input_routing_action_route_policy_kind(action_route_counts, route_kind) }
         -> std::same_as<void>;
@@ -1091,6 +1191,16 @@ concept InputRoutingDiagnosticFunctions = requires(
         input::input_routing_keyboard_route_counts{},
         input::input_routing_keyboard_route_counts{}) }
         -> std::same_as<input::input_routing_keyboard_route_count_deltas>;
+    { input::input_routing_route_has_gesture_policy(route) } -> std::same_as<bool>;
+    { input::input_routing_gesture_policy_accepted(gesture_policy) } -> std::same_as<bool>;
+    { input::input_routing_gesture_policy_route_indices(diagnostics) }
+        -> std::same_as<std::vector<std::size_t>>;
+    { input::diff_input_routing_gesture_policy_thresholds(gesture_policy, gesture_policy) }
+        -> std::same_as<input::input_routing_gesture_policy_threshold_deltas>;
+    { input::diff_input_routing_gesture_policy_route(route, std::size_t{}, route, std::size_t{}) }
+        -> std::same_as<input::input_routing_gesture_policy_route_diff>;
+    { input::diff_input_routing_gesture_policies(diagnostics, diagnostics) }
+        -> std::same_as<input::input_routing_gesture_policy_diff>;
     { input::diff_input_routing_diagnostics(diagnostics, diagnostics) }
         -> std::same_as<input::input_routing_diagnostics_diff>;
 };
@@ -1336,7 +1446,13 @@ static_assert(InputDiagnosticSummaryInterface<input::input_diagnostic_summary>);
 static_assert(InputRoutingDiagnosticsInterface<input::input_routing_diagnostics>);
 static_assert(InputRoutingCountDeltaInterface<input::input_routing_count_delta>);
 static_assert(InputRoutingBoolDeltaInterface<input::input_routing_bool_delta>);
+static_assert(InputRoutingFloatDeltaInterface<input::input_routing_float_delta>);
+static_assert(InputRoutingInt64DeltaInterface<input::input_routing_int64_delta>);
 static_assert(InputRoutingPointerCaptureDeltaInterface<input::input_routing_pointer_capture_delta>);
+static_assert(InputRoutingGesturePolicyThresholdDeltasInterface<
+    input::input_routing_gesture_policy_threshold_deltas>);
+static_assert(InputRoutingGesturePolicyRouteDiffInterface<input::input_routing_gesture_policy_route_diff>);
+static_assert(InputRoutingGesturePolicyDiffInterface<input::input_routing_gesture_policy_diff>);
 static_assert(NormalizedInputEventKindCountDeltasInterface<input::normalized_input_event_kind_count_deltas>);
 static_assert(InputRouteKindCountDeltasInterface<input::input_route_kind_count_deltas>);
 static_assert(ActionRoutePolicyKindCountsInterface<input::action_route_policy_kind_counts>);
@@ -1457,7 +1573,12 @@ static_assert(std::is_default_constructible_v<input::normalized_input_replay_reg
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_diff>);
 static_assert(std::is_default_constructible_v<input::input_routing_count_delta>);
 static_assert(std::is_default_constructible_v<input::input_routing_bool_delta>);
+static_assert(std::is_default_constructible_v<input::input_routing_float_delta>);
+static_assert(std::is_default_constructible_v<input::input_routing_int64_delta>);
 static_assert(std::is_default_constructible_v<input::input_routing_pointer_capture_delta>);
+static_assert(std::is_default_constructible_v<input::input_routing_gesture_policy_threshold_deltas>);
+static_assert(std::is_default_constructible_v<input::input_routing_gesture_policy_route_diff>);
+static_assert(std::is_default_constructible_v<input::input_routing_gesture_policy_diff>);
 static_assert(std::is_default_constructible_v<input::normalized_input_event_kind_count_deltas>);
 static_assert(std::is_default_constructible_v<input::input_route_kind_count_deltas>);
 static_assert(std::is_default_constructible_v<input::action_route_policy_kind_counts>);
@@ -1495,6 +1616,7 @@ static_assert(!std::is_polymorphic_v<input::normalized_input_replay_pointer_summ
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_focus_summary>);
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_diff>);
 static_assert(!std::is_polymorphic_v<input::input_routing_diagnostics_diff>);
+static_assert(!std::is_polymorphic_v<input::input_routing_gesture_policy_diff>);
 static_assert(!std::is_polymorphic_v<input::text_input_presentation_snapshot>);
 static_assert(!std::is_polymorphic_v<input::text_input_presentation_diff>);
 static_assert(std::is_same_v<

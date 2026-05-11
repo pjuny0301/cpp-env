@@ -7,6 +7,7 @@
 #include "render/text/font_cmap_inspector.h"
 #include "render/text/font_coverage_run_segmentation.h"
 #include "render/text/font_glyph_id_resolver.h"
+#include "render/text/font_glyph_atlas_page_plan.h"
 #include "render/text/font_rasterizer.h"
 #include "render/text/text_frame_snapshot.h"
 #include "render/text/text_frame_draw_plan.h"

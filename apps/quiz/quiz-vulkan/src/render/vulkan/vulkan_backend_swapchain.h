@@ -864,6 +864,163 @@ struct vulkan_native_swapchain_images_operation_result {
     }
 };
 
+enum class vulkan_native_swapchain_acquire_operation_status {
+    not_checked,
+    ready,
+    images_operation_unavailable,
+    acquire_plan_unavailable,
+    invalid_device,
+    missing_swapchain_handle,
+    native_entrypoints_unavailable,
+    required_extension_unavailable,
+    missing_acquire_symbol,
+    image_binding_unavailable,
+    timeout,
+    out_of_date,
+    suboptimal,
+    error,
+};
+
+inline std::string_view native_swapchain_acquire_operation_status_name(
+    vulkan_native_swapchain_acquire_operation_status status)
+{
+    switch (status) {
+    case vulkan_native_swapchain_acquire_operation_status::not_checked:
+        return "not_checked";
+    case vulkan_native_swapchain_acquire_operation_status::ready:
+        return "ready";
+    case vulkan_native_swapchain_acquire_operation_status::images_operation_unavailable:
+        return "images_operation_unavailable";
+    case vulkan_native_swapchain_acquire_operation_status::acquire_plan_unavailable:
+        return "acquire_plan_unavailable";
+    case vulkan_native_swapchain_acquire_operation_status::invalid_device:
+        return "invalid_device";
+    case vulkan_native_swapchain_acquire_operation_status::missing_swapchain_handle:
+        return "missing_swapchain_handle";
+    case vulkan_native_swapchain_acquire_operation_status::native_entrypoints_unavailable:
+        return "native_entrypoints_unavailable";
+    case vulkan_native_swapchain_acquire_operation_status::required_extension_unavailable:
+        return "required_extension_unavailable";
+    case vulkan_native_swapchain_acquire_operation_status::missing_acquire_symbol:
+        return "missing_acquire_symbol";
+    case vulkan_native_swapchain_acquire_operation_status::image_binding_unavailable:
+        return "image_binding_unavailable";
+    case vulkan_native_swapchain_acquire_operation_status::timeout:
+        return "timeout";
+    case vulkan_native_swapchain_acquire_operation_status::out_of_date:
+        return "out_of_date";
+    case vulkan_native_swapchain_acquire_operation_status::suboptimal:
+        return "suboptimal";
+    case vulkan_native_swapchain_acquire_operation_status::error:
+        return "error";
+    }
+
+    return "unknown";
+}
+
+struct vulkan_native_swapchain_acquire_operation_request {
+    vulkan_native_swapchain_images_operation_result images_operation;
+    vulkan_swapchain_image_acquire_plan_result acquire_plan;
+    vulkan_native_swapchain_entrypoint_readiness native_entrypoints;
+};
+
+struct vulkan_native_swapchain_acquire_operation_summary {
+    bool checked = false;
+    vulkan_native_swapchain_acquire_operation_status status =
+        vulkan_native_swapchain_acquire_operation_status::not_checked;
+    std::string entrypoint_name = "vkAcquireNextImageKHR";
+    bool vk_acquire_next_image_callable = false;
+    bool command_recording_may_consume_acquired_image = false;
+    vulkan_device_handle device;
+    vulkan_swapchain_handle swapchain;
+    std::size_t selected_image_index = 0;
+    vulkan_swapchain_image_id image_id;
+    vulkan_swapchain_image_handle image_handle;
+    std::uint64_t timeout_nanoseconds = 0;
+    vulkan_swapchain_acquire_status acquire_status =
+        vulkan_swapchain_acquire_status::not_requested;
+    vulkan_swapchain_image_acquire_plan_status acquire_plan_status =
+        vulkan_swapchain_image_acquire_plan_status::not_checked;
+    bool images_operation_checked = false;
+    bool images_operation_ready = false;
+    bool acquire_plan_checked = false;
+    bool acquire_plan_ready_for_command_recording = false;
+    bool native_entrypoints_checked = false;
+    bool required_extensions_ready = false;
+    bool acquire_symbol_ready = false;
+    bool device_valid = false;
+    bool swapchain_valid = false;
+    bool image_binding_ready = false;
+    bool image_available = false;
+    bool image_acquired = false;
+    bool timed_out = false;
+    bool out_of_date = false;
+    bool suboptimal = false;
+    bool error = false;
+    std::string missing_required_extension;
+    std::string missing_symbol_name;
+    std::string diagnostic;
+
+    bool ready_for_command_recording() const
+    {
+        return checked && command_recording_may_consume_acquired_image
+            && image_binding_ready && image_handle.valid()
+            && (status == vulkan_native_swapchain_acquire_operation_status::ready
+                || status == vulkan_native_swapchain_acquire_operation_status::suboptimal);
+    }
+};
+
+struct vulkan_native_swapchain_acquire_operation_result {
+    bool checked = false;
+    vulkan_native_swapchain_acquire_operation_status status =
+        vulkan_native_swapchain_acquire_operation_status::not_checked;
+    vulkan_native_swapchain_images_operation_result images_operation;
+    vulkan_swapchain_image_acquire_plan_result acquire_plan;
+    vulkan_native_swapchain_entrypoint_readiness native_entrypoints;
+    vulkan_device_handle device;
+    vulkan_swapchain_handle swapchain;
+    std::size_t selected_image_index = 0;
+    vulkan_swapchain_image_id image_id;
+    vulkan_swapchain_image_handle image_handle;
+    std::uint64_t timeout_nanoseconds = 0;
+    vulkan_swapchain_acquire_status acquire_status =
+        vulkan_swapchain_acquire_status::not_requested;
+    vulkan_swapchain_image_acquire_plan_status acquire_plan_status =
+        vulkan_swapchain_image_acquire_plan_status::not_checked;
+    bool images_operation_checked = false;
+    bool images_operation_ready = false;
+    bool acquire_plan_checked = false;
+    bool acquire_plan_ready_for_command_recording = false;
+    bool native_entrypoints_checked = false;
+    bool required_extensions_ready = false;
+    bool acquire_symbol_ready = false;
+    bool device_valid = false;
+    bool swapchain_valid = false;
+    bool image_binding_ready = false;
+    bool image_available = false;
+    bool image_acquired = false;
+    bool timed_out = false;
+    bool out_of_date = false;
+    bool suboptimal = false;
+    bool error = false;
+    bool vk_acquire_next_image_callable = false;
+    bool command_recording_may_consume_acquired_image = false;
+    std::string missing_required_extension;
+    std::string missing_symbol_name;
+    std::string diagnostic;
+    vulkan_native_swapchain_acquire_operation_summary operation;
+
+    bool ready_for_command_recording() const
+    {
+        return checked && operation.ready_for_command_recording();
+    }
+
+    bool blocked() const
+    {
+        return checked && !ready_for_command_recording();
+    }
+};
+
 struct vulkan_swapchain_create_request {
     vulkan_surface_extent requested_extent;
     vulkan_swapchain_present_mode requested_present_mode = vulkan_swapchain_present_mode::fifo;
@@ -1080,6 +1237,19 @@ inline std::vector<vulkan_native_swapchain_image_binding> make_native_swapchain_
         });
     }
     return images;
+}
+
+inline vulkan_native_swapchain_image_binding find_native_swapchain_image_binding(
+    const std::vector<vulkan_native_swapchain_image_binding>& images,
+    vulkan_swapchain_image_id image_id)
+{
+    const auto found = std::find_if(
+        images.begin(),
+        images.end(),
+        [image_id](const vulkan_native_swapchain_image_binding& image) {
+            return image.image_id.value == image_id.value;
+        });
+    return found == images.end() ? vulkan_native_swapchain_image_binding{} : *found;
 }
 
 } // namespace swapchain_detail
@@ -1502,6 +1672,206 @@ build_vulkan_native_swapchain_images_operation_plan(
         .get_images_symbol_ready = result.get_images_symbol_ready,
         .device_valid = result.device_valid,
         .swapchain_valid = result.swapchain_valid,
+        .missing_required_extension = result.missing_required_extension,
+        .missing_symbol_name = result.missing_symbol_name,
+        .diagnostic = result.diagnostic,
+    };
+
+    return result;
+}
+
+inline vulkan_native_swapchain_acquire_operation_result
+build_vulkan_native_swapchain_acquire_operation_plan(
+    const vulkan_native_swapchain_acquire_operation_request& request)
+{
+    const vulkan_swapchain_image_id selected_image_id{
+        .value = request.acquire_plan.image_id.value > 0
+            ? request.acquire_plan.image_id.value
+            : request.acquire_plan.selected_image_index,
+    };
+    const vulkan_native_swapchain_image_binding selected_image =
+        swapchain_detail::find_native_swapchain_image_binding(
+            request.images_operation.images,
+            selected_image_id);
+
+    vulkan_native_swapchain_acquire_operation_result result{
+        .checked = true,
+        .status = vulkan_native_swapchain_acquire_operation_status::not_checked,
+        .images_operation = request.images_operation,
+        .acquire_plan = request.acquire_plan,
+        .native_entrypoints = request.native_entrypoints,
+        .device = request.images_operation.device,
+        .swapchain = request.images_operation.swapchain,
+        .selected_image_index = request.acquire_plan.selected_image_index,
+        .image_id = selected_image_id,
+        .image_handle = selected_image.handle,
+        .timeout_nanoseconds = request.acquire_plan.request.timeout_nanoseconds,
+        .acquire_status = request.acquire_plan.acquire_status,
+        .acquire_plan_status = request.acquire_plan.status,
+        .images_operation_checked = request.images_operation.checked,
+        .images_operation_ready =
+            request.images_operation.operation.ready_for_frame_lifecycle_setup(),
+        .acquire_plan_checked = request.acquire_plan.checked,
+        .acquire_plan_ready_for_command_recording =
+            request.acquire_plan.ready_for_command_recording(),
+        .native_entrypoints_checked = request.native_entrypoints.checked,
+        .required_extensions_ready = request.native_entrypoints.required_extensions_ready,
+        .acquire_symbol_ready = request.native_entrypoints.acquire_next_image_ready,
+        .device_valid = request.images_operation.device_valid
+            && request.images_operation.device.valid(),
+        .swapchain_valid = request.images_operation.swapchain_valid
+            && request.images_operation.swapchain.valid(),
+        .image_binding_ready = selected_image.valid(),
+        .image_available = request.acquire_plan.image_available,
+        .image_acquired = request.acquire_plan.image_acquired,
+        .timed_out = request.acquire_plan.timed_out,
+        .out_of_date = request.acquire_plan.out_of_date,
+        .suboptimal = request.acquire_plan.suboptimal,
+        .error = request.acquire_plan.error,
+        .vk_acquire_next_image_callable = false,
+        .command_recording_may_consume_acquired_image = false,
+        .missing_required_extension = request.native_entrypoints.missing_required_extension,
+        .missing_symbol_name = request.native_entrypoints.missing_symbol_name,
+        .diagnostic = {},
+        .operation = {},
+    };
+
+    if (!result.images_operation_checked) {
+        result.status =
+            vulkan_native_swapchain_acquire_operation_status::images_operation_unavailable;
+        result.diagnostic = request.images_operation.diagnostic.empty()
+            ? "Native Vulkan acquire operation is missing enumerated swapchain images"
+            : request.images_operation.diagnostic;
+    } else if (!result.device_valid) {
+        result.status = vulkan_native_swapchain_acquire_operation_status::invalid_device;
+        result.diagnostic =
+            "Native Vulkan acquire operation has no valid device handle";
+    } else if (!result.swapchain_valid) {
+        result.status =
+            vulkan_native_swapchain_acquire_operation_status::missing_swapchain_handle;
+        result.diagnostic =
+            "Native Vulkan acquire operation has no valid swapchain handle";
+    } else if (!result.images_operation_ready) {
+        result.status =
+            vulkan_native_swapchain_acquire_operation_status::images_operation_unavailable;
+        result.diagnostic = request.images_operation.diagnostic.empty()
+            ? "Native Vulkan acquire operation is missing enumerated swapchain images"
+            : request.images_operation.diagnostic;
+    } else if (!result.native_entrypoints_checked) {
+        result.status =
+            vulkan_native_swapchain_acquire_operation_status::native_entrypoints_unavailable;
+        result.diagnostic =
+            "Native Vulkan acquire operation has unchecked native entrypoints";
+    } else if (!result.required_extensions_ready) {
+        result.status =
+            vulkan_native_swapchain_acquire_operation_status::required_extension_unavailable;
+        result.diagnostic = request.native_entrypoints.diagnostic.empty()
+            ? "Native Vulkan acquire operation is missing VK_KHR_swapchain"
+            : request.native_entrypoints.diagnostic;
+    } else if (!result.acquire_symbol_ready) {
+        result.status =
+            vulkan_native_swapchain_acquire_operation_status::missing_acquire_symbol;
+        result.diagnostic = request.native_entrypoints.diagnostic.empty()
+            ? "Native Vulkan acquire operation is missing vkAcquireNextImageKHR"
+            : request.native_entrypoints.diagnostic;
+    } else if (!result.acquire_plan_checked) {
+        result.status =
+            vulkan_native_swapchain_acquire_operation_status::acquire_plan_unavailable;
+        result.diagnostic =
+            "Native Vulkan acquire operation has unchecked acquire diagnostics";
+    } else {
+        result.vk_acquire_next_image_callable = true;
+
+        switch (result.acquire_plan_status) {
+        case vulkan_swapchain_image_acquire_plan_status::ready:
+            if (!result.image_binding_ready) {
+                result.status =
+                    vulkan_native_swapchain_acquire_operation_status::image_binding_unavailable;
+                result.diagnostic =
+                    "Native Vulkan acquire operation selected an unbound swapchain image";
+                break;
+            }
+            result.status = vulkan_native_swapchain_acquire_operation_status::ready;
+            result.command_recording_may_consume_acquired_image = true;
+            result.diagnostic =
+                "Native Vulkan acquire operation can feed command recording";
+            break;
+        case vulkan_swapchain_image_acquire_plan_status::suboptimal:
+            result.status = vulkan_native_swapchain_acquire_operation_status::suboptimal;
+            if (result.acquire_plan_ready_for_command_recording
+                && result.image_binding_ready) {
+                result.command_recording_may_consume_acquired_image = true;
+                result.diagnostic =
+                    "Native Vulkan acquire operation is suboptimal but recordable";
+            } else {
+                result.diagnostic =
+                    "Native Vulkan acquire operation is suboptimal and not recordable";
+            }
+            break;
+        case vulkan_swapchain_image_acquire_plan_status::timeout:
+            result.status = vulkan_native_swapchain_acquire_operation_status::timeout;
+            result.timed_out = true;
+            result.diagnostic = "Native Vulkan acquire operation timed out";
+            break;
+        case vulkan_swapchain_image_acquire_plan_status::out_of_date:
+            result.status = vulkan_native_swapchain_acquire_operation_status::out_of_date;
+            result.out_of_date = true;
+            result.diagnostic =
+                "Native Vulkan acquire operation found an out-of-date swapchain";
+            break;
+        case vulkan_swapchain_image_acquire_plan_status::error:
+            result.status = vulkan_native_swapchain_acquire_operation_status::error;
+            result.error = true;
+            result.diagnostic = "Native Vulkan acquire operation failed";
+            break;
+        case vulkan_swapchain_image_acquire_plan_status::not_checked:
+        case vulkan_swapchain_image_acquire_plan_status::not_requested:
+        case vulkan_swapchain_image_acquire_plan_status::lifecycle_unavailable:
+        case vulkan_swapchain_image_acquire_plan_status::swapchain_unavailable:
+        case vulkan_swapchain_image_acquire_plan_status::sync_unavailable:
+        case vulkan_swapchain_image_acquire_plan_status::no_images_available:
+        case vulkan_swapchain_image_acquire_plan_status::backpressured:
+            result.status =
+                vulkan_native_swapchain_acquire_operation_status::acquire_plan_unavailable;
+            result.diagnostic = request.acquire_plan.diagnostic.empty()
+                ? "Native Vulkan acquire operation has no usable acquire plan"
+                : request.acquire_plan.diagnostic;
+            break;
+        }
+    }
+
+    result.operation = vulkan_native_swapchain_acquire_operation_summary{
+        .checked = result.checked,
+        .status = result.status,
+        .entrypoint_name = "vkAcquireNextImageKHR",
+        .vk_acquire_next_image_callable = result.vk_acquire_next_image_callable,
+        .command_recording_may_consume_acquired_image =
+            result.command_recording_may_consume_acquired_image,
+        .device = result.device,
+        .swapchain = result.swapchain,
+        .selected_image_index = result.selected_image_index,
+        .image_id = result.image_id,
+        .image_handle = result.image_handle,
+        .timeout_nanoseconds = result.timeout_nanoseconds,
+        .acquire_status = result.acquire_status,
+        .acquire_plan_status = result.acquire_plan_status,
+        .images_operation_checked = result.images_operation_checked,
+        .images_operation_ready = result.images_operation_ready,
+        .acquire_plan_checked = result.acquire_plan_checked,
+        .acquire_plan_ready_for_command_recording =
+            result.acquire_plan_ready_for_command_recording,
+        .native_entrypoints_checked = result.native_entrypoints_checked,
+        .required_extensions_ready = result.required_extensions_ready,
+        .acquire_symbol_ready = result.acquire_symbol_ready,
+        .device_valid = result.device_valid,
+        .swapchain_valid = result.swapchain_valid,
+        .image_binding_ready = result.image_binding_ready,
+        .image_available = result.image_available,
+        .image_acquired = result.image_acquired,
+        .timed_out = result.timed_out,
+        .out_of_date = result.out_of_date,
+        .suboptimal = result.suboptimal,
+        .error = result.error,
         .missing_required_extension = result.missing_required_extension,
         .missing_symbol_name = result.missing_symbol_name,
         .diagnostic = result.diagnostic,

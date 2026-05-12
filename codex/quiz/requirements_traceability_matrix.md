@@ -6,6 +6,7 @@
 
 최근 baseline 통합 증거:
 
+- current: Windows MinGW full CTest passed `95/95` after image/input/text handoff hardening integrations.
 - current: text frame upload handoff hardening integrated; Windows MinGW focused text CTest 1/1 and interface compile target build confirmed.
 - `2199519`: text frame handoff tests now cover missing draw packets versus missing upload results, fallback/backend flag changes, page revision/page ID diffs, blocker deltas, and upload byte deltas.
 - current: platform gesture replay diagnostics integrated; Windows MinGW focused input CTest 6/6 and interface compile target build confirmed.

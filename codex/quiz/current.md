@@ -40,6 +40,7 @@ Last updated: 2026-05-09
 - Large file splitting is allowed when it improves module cohesion, worker ownership, reviewability, or conflict isolation. Do not split files only because they exceed a line-count threshold, and do not move stable public interfaces without explicit integrator approval.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
 - Latest verification note: Windows MinGW full CTest passed `95/95` after the image/input/text handoff hardening integrations.
+- Latest integration note: `b6baeb3` hardens normalized input replay diagnostics for IME preedit start/update/commit/cancel, focus/caret/selection transitions, UTF-8 boundary-safe backspace evidence, pointer capture reset, and wheel diagnostics.
 - Latest integration note: `9090b05` adds text font fallback run planning diagnostics for Latin/Hangul coverage, missing glyph ranges, fallback order, stable run keys, selected face order, and catalog-change diffs.
 - Latest integration note: `aa30a27` adds data-only Vulkan native frame operation summary diagnostics that compose native function-table readiness, swapchain creation/images, acquire, command recording, submit, present, frame completion, fallback, and failure states.
 - Latest integration note: `2199519` hardens text frame upload handoff diagnostics for missing draw packets versus missing upload results, fallback/backend flag changes, page revision/page ID diffs, blocker deltas, and upload byte deltas.

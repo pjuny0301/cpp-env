@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: focus/IME normalized input replay hardening integrated; Windows MinGW focused input CTest 7/7 and interface compile target build confirmed.
+- `b6baeb3`: normalized input replay tests now cover IME preedit lifecycle, focus/caret/selection transitions, UTF-8 boundary-safe backspace evidence, pointer capture reset, and wheel diagnostics.
 - current: text font fallback run planning integrated; Windows MinGW focused text CTest 1/1 and interface compile target build confirmed.
 - `9090b05`: text fallback run diagnostics now identify selected font face per UTF-8 range, Latin/Hangul coverage, missing glyph ranges, fallback order, stable run keys, and catalog-change diffs.
 - current: Vulkan native frame operation summary integrated; Windows MinGW focused Vulkan/renderer CTest 2/2 and interface compile target build confirmed.

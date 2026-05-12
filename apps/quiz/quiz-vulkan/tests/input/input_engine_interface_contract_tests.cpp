@@ -6,6 +6,7 @@
 #include "core/input/platform_input_engine_adapter.h"
 #include "core/input/platform_input_translator.h"
 #include "core/input/text_edit_transaction_diagnostics.h"
+#include "core/input/text_edit_transaction_replay.h"
 #include "core/input/text_input_model.h"
 #include "core/input/text_input_presentation.h"
 #include "platform/platform_input_event.h"
@@ -1517,6 +1518,248 @@ concept TextInputPresentationFunctions = requires(
         -> std::same_as<input::text_input_presentation_diff>;
 };
 
+template <typename T>
+concept TextEditTransactionReplayStepInterface = requires(T step) {
+    { step.label } -> std::same_as<std::string&>;
+    { step.operation } -> std::same_as<input::text_edit_transaction_operation&>;
+    { step.text } -> std::same_as<std::string&>;
+    { step.range } -> std::same_as<input::text_range&>;
+};
+
+template <typename T>
+concept TextEditTransactionReplayOperationCountsInterface = requires(T counts) {
+    { counts.none } -> std::same_as<std::size_t&>;
+    { counts.focus } -> std::same_as<std::size_t&>;
+    { counts.clear_focus } -> std::same_as<std::size_t&>;
+    { counts.move_caret_to_start } -> std::same_as<std::size_t&>;
+    { counts.move_caret_to_end } -> std::same_as<std::size_t&>;
+    { counts.move_caret_left } -> std::same_as<std::size_t&>;
+    { counts.move_caret_right } -> std::same_as<std::size_t&>;
+    { counts.extend_selection_left } -> std::same_as<std::size_t&>;
+    { counts.extend_selection_right } -> std::same_as<std::size_t&>;
+    { counts.select_all } -> std::same_as<std::size_t&>;
+    { counts.clear_selection } -> std::same_as<std::size_t&>;
+    { counts.set_selection } -> std::same_as<std::size_t&>;
+    { counts.commit_utf8 } -> std::same_as<std::size_t&>;
+    { counts.backspace } -> std::same_as<std::size_t&>;
+    { counts.delete_forward } -> std::same_as<std::size_t&>;
+    { counts.set_preedit } -> std::same_as<std::size_t&>;
+    { counts.commit_ime } -> std::same_as<std::size_t&>;
+    { counts.cancel_ime } -> std::same_as<std::size_t&>;
+    { counts.submit } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
+concept TextEditTransactionReplayStepDiagnosticsInterface = requires(T diagnostics) {
+    { diagnostics.label } -> std::same_as<std::string&>;
+    { diagnostics.operation } -> std::same_as<input::text_edit_transaction_operation&>;
+    { diagnostics.transaction } -> std::same_as<input::text_edit_transaction_diagnostics&>;
+    { diagnostics.before_presentation } -> std::same_as<input::text_input_presentation_snapshot&>;
+    { diagnostics.after_presentation } -> std::same_as<input::text_input_presentation_snapshot&>;
+    { diagnostics.presentation_diff } -> std::same_as<input::text_input_presentation_diff&>;
+    { diagnostics.committed_text_bytes_before } -> std::same_as<std::size_t&>;
+    { diagnostics.committed_text_bytes_after } -> std::same_as<std::size_t&>;
+    { diagnostics.display_text_bytes_before } -> std::same_as<std::size_t&>;
+    { diagnostics.display_text_bytes_after } -> std::same_as<std::size_t&>;
+    { diagnostics.caret_before } -> std::same_as<input::text_range&>;
+    { diagnostics.caret_after } -> std::same_as<input::text_range&>;
+    { diagnostics.had_selection_before } -> std::same_as<bool&>;
+    { diagnostics.has_selection_after } -> std::same_as<bool&>;
+    { diagnostics.had_preedit_before } -> std::same_as<bool&>;
+    { diagnostics.has_preedit_after } -> std::same_as<bool&>;
+    { diagnostics.had_submit_before } -> std::same_as<bool&>;
+    { diagnostics.has_submit_after } -> std::same_as<bool&>;
+    { diagnostics.accepted } -> std::same_as<bool&>;
+    { diagnostics.rejected } -> std::same_as<bool&>;
+    { diagnostics.invalid_edit_rejected } -> std::same_as<bool&>;
+    { diagnostics.utf8_boundary_safe } -> std::same_as<bool&>;
+    { diagnostics.selection_replaced_committed_text } -> std::same_as<bool&>;
+    { diagnostics.selection_replaced_display_text } -> std::same_as<bool&>;
+    { diagnostics.selection_deleted } -> std::same_as<bool&>;
+    { diagnostics.selection_cleared } -> std::same_as<bool&>;
+    { diagnostics.ime_preedit_started } -> std::same_as<bool&>;
+    { diagnostics.ime_preedit_updated } -> std::same_as<bool&>;
+    { diagnostics.ime_preedit_cleared } -> std::same_as<bool&>;
+    { diagnostics.ime_committed } -> std::same_as<bool&>;
+    { diagnostics.ime_canceled } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept TextEditTransactionReplayAggregateCountsInterface = requires(T counts) {
+    { counts.operations } -> std::same_as<input::text_edit_transaction_replay_operation_counts&>;
+    { counts.step_count } -> std::same_as<std::size_t&>;
+    { counts.accepted_count } -> std::same_as<std::size_t&>;
+    { counts.rejected_count } -> std::same_as<std::size_t&>;
+    { counts.invalid_edit_rejected_count } -> std::same_as<std::size_t&>;
+    { counts.utf8_boundary_safe_count } -> std::same_as<std::size_t&>;
+    { counts.utf8_boundary_unsafe_count } -> std::same_as<std::size_t&>;
+    { counts.text_changed_count } -> std::same_as<std::size_t&>;
+    { counts.display_text_changed_count } -> std::same_as<std::size_t&>;
+    { counts.caret_changed_count } -> std::same_as<std::size_t&>;
+    { counts.selection_changed_count } -> std::same_as<std::size_t&>;
+    { counts.preedit_changed_count } -> std::same_as<std::size_t&>;
+    { counts.submit_available_after_count } -> std::same_as<std::size_t&>;
+    { counts.selection_replaced_committed_text_count } -> std::same_as<std::size_t&>;
+    { counts.selection_replaced_display_text_count } -> std::same_as<std::size_t&>;
+    { counts.selection_deleted_count } -> std::same_as<std::size_t&>;
+    { counts.selection_cleared_count } -> std::same_as<std::size_t&>;
+    { counts.ime_preedit_started_count } -> std::same_as<std::size_t&>;
+    { counts.ime_preedit_updated_count } -> std::same_as<std::size_t&>;
+    { counts.ime_preedit_cleared_count } -> std::same_as<std::size_t&>;
+    { counts.ime_committed_count } -> std::same_as<std::size_t&>;
+    { counts.ime_canceled_count } -> std::same_as<std::size_t&>;
+    { counts.inserted_byte_count } -> std::same_as<std::size_t&>;
+    { counts.deleted_byte_count } -> std::same_as<std::size_t&>;
+    { counts.replaced_byte_count } -> std::same_as<std::size_t&>;
+    { counts.committed_byte_delta } -> std::same_as<std::int64_t&>;
+    { counts.display_byte_delta } -> std::same_as<std::int64_t&>;
+};
+
+template <typename T>
+concept TextEditTransactionReplaySummaryInterface = requires(T summary) {
+    { summary.steps } -> std::same_as<std::vector<input::text_edit_transaction_replay_step_diagnostics>&>;
+    { summary.counts } -> std::same_as<input::text_edit_transaction_replay_aggregate_counts&>;
+    { summary.final_presentation } -> std::same_as<input::text_input_presentation_snapshot&>;
+    { summary.final_transaction } -> std::same_as<input::text_edit_transaction_diagnostics&>;
+    { summary.final_submit_available } -> std::same_as<bool&>;
+    { summary.final_utf8_boundary_safe } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept TextEditTransactionReplayCountDeltaInterface = requires(T delta) {
+    { delta.before_count } -> std::same_as<std::size_t&>;
+    { delta.after_count } -> std::same_as<std::size_t&>;
+    { delta.delta } -> std::same_as<std::int64_t&>;
+    { delta.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept TextEditTransactionReplayIntDeltaInterface = requires(T delta) {
+    { delta.before_value } -> std::same_as<std::int64_t&>;
+    { delta.after_value } -> std::same_as<std::int64_t&>;
+    { delta.delta } -> std::same_as<std::int64_t&>;
+    { delta.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept TextEditTransactionReplayOperationCountDeltasInterface = requires(T deltas) {
+    { deltas.none } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.focus } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.clear_focus } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.move_caret_to_start } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.move_caret_to_end } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.move_caret_left } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.move_caret_right } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.extend_selection_left } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.extend_selection_right } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.select_all } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.clear_selection } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.set_selection } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.commit_utf8 } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.backspace } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.delete_forward } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.set_preedit } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.commit_ime } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.cancel_ime } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.submit } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept TextEditTransactionReplayAggregateCountDeltasInterface = requires(T deltas) {
+    { deltas.operations } -> std::same_as<input::text_edit_transaction_replay_operation_count_deltas&>;
+    { deltas.step_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.accepted_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.rejected_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.invalid_edit_rejected_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.utf8_boundary_safe_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.utf8_boundary_unsafe_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.text_changed_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.display_text_changed_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.caret_changed_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.selection_changed_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.preedit_changed_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.submit_available_after_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.selection_replaced_committed_text_count }
+        -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.selection_replaced_display_text_count }
+        -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.selection_deleted_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.selection_cleared_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.ime_preedit_started_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.ime_preedit_updated_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.ime_preedit_cleared_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.ime_committed_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.ime_canceled_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.inserted_byte_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.deleted_byte_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.replaced_byte_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.committed_byte_delta } -> std::same_as<input::text_edit_transaction_replay_int_delta&>;
+    { deltas.display_byte_delta } -> std::same_as<input::text_edit_transaction_replay_int_delta&>;
+    { deltas.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept TextEditTransactionReplayDiffInterface = requires(T diff) {
+    { diff.counts } -> std::same_as<input::text_edit_transaction_replay_aggregate_count_deltas&>;
+    { diff.final_presentation } -> std::same_as<input::text_input_presentation_diff&>;
+    { diff.final_presentation_changed } -> std::same_as<bool&>;
+    { diff.invalid_edit_changed } -> std::same_as<bool&>;
+    { diff.utf8_boundary_changed } -> std::same_as<bool&>;
+    { diff.replacement_changed } -> std::same_as<bool&>;
+    { diff.ime_transition_changed } -> std::same_as<bool&>;
+    { diff.submit_changed } -> std::same_as<bool&>;
+    { diff.changed_category_count } -> std::same_as<std::size_t&>;
+    { diff.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept TextEditTransactionReplayFunctions = requires(
+    input::text_input_model& model,
+    input::text_edit_transaction_replay_operation_counts& operation_counts,
+    input::text_edit_transaction_replay_aggregate_counts& aggregate_counts,
+    input::text_edit_transaction_operation operation,
+    const input::text_edit_transaction_replay_step& step,
+    const input::text_edit_transaction_replay_step_diagnostics& step_diagnostics,
+    const input::text_input_presentation_snapshot& presentation,
+    const input::text_edit_transaction_replay_operation_counts& before_operations,
+    const input::text_edit_transaction_replay_operation_counts& after_operations,
+    const input::text_edit_transaction_replay_aggregate_counts& before_counts,
+    const input::text_edit_transaction_replay_aggregate_counts& after_counts,
+    const input::text_edit_transaction_replay_operation_count_deltas& operation_deltas,
+    const input::text_edit_transaction_replay_summary& summary,
+    std::span<const input::text_edit_transaction_replay_step> steps) {
+    { input::count_text_edit_transaction_replay_operation(operation_counts, operation) }
+        -> std::same_as<void>;
+    { input::make_text_edit_transaction_replay_snapshot(presentation) }
+        -> std::same_as<input::text_edit_transaction_snapshot>;
+    { input::make_text_edit_transaction_replay_noop_transaction(presentation) }
+        -> std::same_as<input::text_edit_transaction_diagnostics>;
+    { input::apply_text_edit_transaction_replay_step(model, step) } -> std::same_as<void>;
+    { input::record_text_edit_transaction_replay_step(model, step) }
+        -> std::same_as<input::text_edit_transaction_replay_step_diagnostics>;
+    { input::accumulate_text_edit_transaction_replay_counts(aggregate_counts, step_diagnostics) }
+        -> std::same_as<void>;
+    { input::replay_text_edit_transactions(model, steps) }
+        -> std::same_as<input::text_edit_transaction_replay_summary>;
+    { input::replay_text_edit_transactions(steps) }
+        -> std::same_as<input::text_edit_transaction_replay_summary>;
+    { input::text_edit_transaction_replay_size_delta(std::size_t{}, std::size_t{}) }
+        -> std::same_as<std::int64_t>;
+    { input::diff_text_edit_transaction_replay_count(std::size_t{}, std::size_t{}) }
+        -> std::same_as<input::text_edit_transaction_replay_count_delta>;
+    { input::diff_text_edit_transaction_replay_int(std::int64_t{}, std::int64_t{}) }
+        -> std::same_as<input::text_edit_transaction_replay_int_delta>;
+    { input::text_edit_transaction_replay_operation_deltas_changed(operation_deltas) }
+        -> std::same_as<bool>;
+    { input::diff_text_edit_transaction_replay_operation_counts(before_operations, after_operations) }
+        -> std::same_as<input::text_edit_transaction_replay_operation_count_deltas>;
+    { input::diff_text_edit_transaction_replay_aggregate_counts(before_counts, after_counts) }
+        -> std::same_as<input::text_edit_transaction_replay_aggregate_count_deltas>;
+    { input::diff_text_edit_transaction_replay_summaries(summary, summary) }
+        -> std::same_as<input::text_edit_transaction_replay_diff>;
+};
+
 static_assert(ImeCompositionStateInterface<input::ime_composition_state>);
 static_assert(std::is_default_constructible_v<input::ime_composition_state>);
 static_assert(PointerCaptureSnapshotInterface<input::pointer_capture_snapshot>);
@@ -1692,6 +1935,16 @@ static_assert(std::is_default_constructible_v<input::text_input_presentation_str
 static_assert(std::is_default_constructible_v<input::text_input_presentation_byte_count_deltas>);
 static_assert(std::is_default_constructible_v<input::text_input_presentation_route_byte_diagnostics_diff>);
 static_assert(std::is_default_constructible_v<input::text_input_presentation_diff>);
+static_assert(std::is_default_constructible_v<input::text_edit_transaction_replay_step>);
+static_assert(std::is_default_constructible_v<input::text_edit_transaction_replay_operation_counts>);
+static_assert(std::is_default_constructible_v<input::text_edit_transaction_replay_step_diagnostics>);
+static_assert(std::is_default_constructible_v<input::text_edit_transaction_replay_aggregate_counts>);
+static_assert(std::is_default_constructible_v<input::text_edit_transaction_replay_summary>);
+static_assert(std::is_default_constructible_v<input::text_edit_transaction_replay_count_delta>);
+static_assert(std::is_default_constructible_v<input::text_edit_transaction_replay_int_delta>);
+static_assert(std::is_default_constructible_v<input::text_edit_transaction_replay_operation_count_deltas>);
+static_assert(std::is_default_constructible_v<input::text_edit_transaction_replay_aggregate_count_deltas>);
+static_assert(std::is_default_constructible_v<input::text_edit_transaction_replay_diff>);
 static_assert(std::is_default_constructible_v<input::keyboard_modifier_state>);
 static_assert(std::is_default_constructible_v<input::keyboard_chord_diagnostic>);
 static_assert(!std::is_polymorphic_v<input::platform_input_translation_request>);
@@ -1714,6 +1967,9 @@ static_assert(!std::is_polymorphic_v<input::text_edit_transaction_byte_diagnosti
 static_assert(!std::is_polymorphic_v<input::text_edit_transaction_diagnostics>);
 static_assert(!std::is_polymorphic_v<input::text_input_presentation_snapshot>);
 static_assert(!std::is_polymorphic_v<input::text_input_presentation_diff>);
+static_assert(!std::is_polymorphic_v<input::text_edit_transaction_replay_step>);
+static_assert(!std::is_polymorphic_v<input::text_edit_transaction_replay_summary>);
+static_assert(!std::is_polymorphic_v<input::text_edit_transaction_replay_diff>);
 static_assert(std::is_same_v<
     decltype(input::platform_input_translation_result{}.event),
     std::optional<raw_platform_input_event>>);
@@ -1798,6 +2054,22 @@ static_assert(TextInputPresentationRouteByteDiagnosticsDiffInterface<
     input::text_input_presentation_route_byte_diagnostics_diff>);
 static_assert(TextInputPresentationDiffInterface<input::text_input_presentation_diff>);
 static_assert(TextInputPresentationFunctions<void>);
+static_assert(TextEditTransactionReplayStepInterface<input::text_edit_transaction_replay_step>);
+static_assert(TextEditTransactionReplayOperationCountsInterface<
+    input::text_edit_transaction_replay_operation_counts>);
+static_assert(TextEditTransactionReplayStepDiagnosticsInterface<
+    input::text_edit_transaction_replay_step_diagnostics>);
+static_assert(TextEditTransactionReplayAggregateCountsInterface<
+    input::text_edit_transaction_replay_aggregate_counts>);
+static_assert(TextEditTransactionReplaySummaryInterface<input::text_edit_transaction_replay_summary>);
+static_assert(TextEditTransactionReplayCountDeltaInterface<input::text_edit_transaction_replay_count_delta>);
+static_assert(TextEditTransactionReplayIntDeltaInterface<input::text_edit_transaction_replay_int_delta>);
+static_assert(TextEditTransactionReplayOperationCountDeltasInterface<
+    input::text_edit_transaction_replay_operation_count_deltas>);
+static_assert(TextEditTransactionReplayAggregateCountDeltasInterface<
+    input::text_edit_transaction_replay_aggregate_count_deltas>);
+static_assert(TextEditTransactionReplayDiffInterface<input::text_edit_transaction_replay_diff>);
+static_assert(TextEditTransactionReplayFunctions<void>);
 
 constexpr input::text_range text_range_contract{
     .start_byte = 3,

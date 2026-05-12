@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: image frame binding summary diagnostics integrated; Windows MinGW focused image CTest 1/1 and interface compile target build confirmed.
+- `511f81b`: image frame binding summaries now report upload-backed, placeholder-backed, missing binding/upload-result, retry/backoff blocker, cache-key, sampler, and frame-to-frame diff evidence.
 - current: focus/IME normalized input replay hardening integrated; Windows MinGW focused input CTest 7/7 and interface compile target build confirmed.
 - `b6baeb3`: normalized input replay tests now cover IME preedit lifecycle, focus/caret/selection transitions, UTF-8 boundary-safe backspace evidence, pointer capture reset, and wheel diagnostics.
 - current: text font fallback run planning integrated; Windows MinGW focused text CTest 1/1 and interface compile target build confirmed.

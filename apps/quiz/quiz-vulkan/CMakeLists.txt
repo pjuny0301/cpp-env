@@ -186,6 +186,7 @@ target_sources(
             src/render/text/glyph_run.h
             src/render/text/text_frame_draw_plan.h
             src/render/text/text_frame_snapshot.h
+            src/render/text/text_frame_upload_handoff.h
             src/render/text/text_engine.h
             src/render/text/utf8_line_break.h
             src/render/text/utf8_text_run.h

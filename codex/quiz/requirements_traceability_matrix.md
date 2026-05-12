@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: Vulkan native queue present operation planning integrated; Windows MinGW focused present/renderer CTest 2/2 and interface compile target build confirmed.
+- `0892ae9`: native queue present operation planning now reports queue-present symbol readiness, swapchain extension readiness, acquired/submitted frame readiness, out-of-date/suboptimal states, blockers, and frame completion readiness.
 - current: platform input replay diagnostics integrated with public FILE_SET registration; Windows MinGW focused platform input CTest 3/3 and interface compile target build confirmed.
 - `7e032b0`: input diagnostics now replay raw/platform-style batches into normalized event counts, text edit replay summaries, gesture/capture/focus summaries, final presentation snapshots, and semantic-free diffs.
 - current: Vulkan native acquire operation planning, text glyph-atlas upload result diagnostics, and image texture upload result diagnostics integrated; Windows MinGW focused Vulkan/text/image CTest 3/3 and interface compile target build confirmed.

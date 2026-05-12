@@ -1483,3 +1483,5 @@ inline render_image_texture_frame_binding_plan_diff diff_render_image_texture_fr
 }
 
 } // namespace quiz_vulkan::render
+
+#include "render/image/image_texture_frame_upload_handoff.h"

@@ -3,6 +3,7 @@
 #include "render/image/image_resolver.h"
 #include "render/image/image_source_bytes_loader.h"
 #include "render/image/image_texture_cache.h"
+#include "render/image/image_texture_frame_upload_handoff.h"
 #include "render/image/image_texture_pipeline.h"
 #include "render/image/image_texture_upload_operation_plan.h"
 #include "render/image/image_texture_upload_result_diagnostics.h"
@@ -297,6 +298,12 @@ static_assert(requires(
     render::render_image_texture_frame_binding_plan_diff_entry_status texture_frame_binding_diff_entry_status,
     render::render_image_texture_frame_binding_packet_diff texture_frame_binding_packet_diff,
     render::render_image_texture_frame_binding_plan_diff texture_frame_binding_diff,
+    render::render_image_texture_frame_upload_handoff_entry_status texture_frame_upload_handoff_status,
+    render::render_image_texture_frame_upload_handoff_entry texture_frame_upload_handoff_entry,
+    render::render_image_texture_frame_upload_handoff_summary texture_frame_upload_handoff,
+    render::render_image_texture_frame_upload_handoff_diff_entry_status texture_frame_upload_handoff_diff_status,
+    render::render_image_texture_frame_upload_handoff_entry_diff texture_frame_upload_handoff_entry_diff,
+    render::render_image_texture_frame_upload_handoff_summary_diff texture_frame_upload_handoff_diff,
     render::fake_image_texture_pipeline_entry_snapshot pipeline_entry,
     render::fake_image_texture_pipeline_snapshot pipeline_snapshot,
     render::standard_image_texture_pipeline_decode_snapshot standard_pipeline_decoder_snapshot,
@@ -1393,6 +1400,48 @@ static_assert(requires(
         -> std::same_as<render::render_image_texture_frame_binding_packet_diff>;
     { render::diff_render_image_texture_frame_binding_plans(texture_frame_binding_plan, texture_frame_binding_plan) }
         -> std::same_as<render::render_image_texture_frame_binding_plan_diff>;
+    { render::render_image_texture_frame_upload_handoff_entry_status_name(texture_frame_upload_handoff_status) }
+        -> std::same_as<std::string>;
+    { render::render_image_texture_frame_upload_handoff_entry_status_is_blocked(texture_frame_upload_handoff_status) }
+        -> std::same_as<bool>;
+    { render::render_image_texture_upload_result_packet_for_stable_cache_key(
+        upload_result_diagnostics_snapshot, std::string{}) }
+        -> std::same_as<const render::render_image_texture_upload_result_packet_snapshot*>;
+    { render::render_image_texture_frame_upload_result_packet_for_binding_packet(
+        upload_result_diagnostics_snapshot, texture_frame_binding_packet) }
+        -> std::same_as<const render::render_image_texture_upload_result_packet_snapshot*>;
+    { render::render_image_texture_frame_upload_handoff_entry_status_for(
+        texture_frame_binding_packet, &upload_result_packet) }
+        -> std::same_as<render::render_image_texture_frame_upload_handoff_entry_status>;
+    { render::make_render_image_texture_frame_upload_handoff_entry(
+        texture_frame_binding_packet, &upload_result_packet) }
+        -> std::same_as<render::render_image_texture_frame_upload_handoff_entry>;
+    { render::make_render_image_texture_frame_upload_handoff_summary(
+        texture_frame, texture_frame_binding_plan, upload_result_diagnostics_snapshot) }
+        -> std::same_as<render::render_image_texture_frame_upload_handoff_summary>;
+    { render::make_render_image_texture_frame_upload_handoff_summary(
+        texture_frame, upload_result_diagnostics_snapshot) }
+        -> std::same_as<render::render_image_texture_frame_upload_handoff_summary>;
+    { render::make_render_image_texture_frame_upload_handoff_summary(
+        texture_frame, texture_frame, upload_result_diagnostics_snapshot) }
+        -> std::same_as<render::render_image_texture_frame_upload_handoff_summary>;
+    { render::render_image_texture_frame_upload_handoff_diff_entry_status_name(
+        texture_frame_upload_handoff_diff_status) } -> std::same_as<std::string>;
+    { render::render_image_texture_frame_upload_handoff_entry_for_request_index(
+        texture_frame_upload_handoff, std::size_t{}) }
+        -> std::same_as<const render::render_image_texture_frame_upload_handoff_entry*>;
+    { render::render_image_texture_frame_upload_handoff_entry_equal(
+        texture_frame_upload_handoff_entry, texture_frame_upload_handoff_entry) }
+        -> std::same_as<bool>;
+    { render::make_render_image_texture_frame_upload_handoff_entry_diff(
+        &texture_frame_upload_handoff_entry, &texture_frame_upload_handoff_entry, std::size_t{}) }
+        -> std::same_as<render::render_image_texture_frame_upload_handoff_entry_diff>;
+    { render::diff_render_image_texture_frame_upload_handoff_summaries(
+        texture_frame_upload_handoff, texture_frame_upload_handoff) }
+        -> std::same_as<render::render_image_texture_frame_upload_handoff_summary_diff>;
+    { render::diff_render_image_texture_frame_upload_handoff_summaries(
+        texture_frame, texture_frame, upload_result_diagnostics_snapshot, upload_result_diagnostics_snapshot) }
+        -> std::same_as<render::render_image_texture_frame_upload_handoff_summary_diff>;
     { render::render_image_decoder_capability_candidate_kind_name(decoder_capability_kind) }
         -> std::same_as<std::string>;
     { render::render_image_decoder_capability_candidate_status_name(decoder_capability_status) }
@@ -1490,6 +1539,8 @@ static_assert(requires(
     texture_frame_diff_entry_status;
     texture_frame_binding_status;
     texture_frame_binding_diff_entry_status;
+    texture_frame_upload_handoff_status;
+    texture_frame_upload_handoff_diff_status;
     decoder_capability_kind;
     decoder_capability_status;
     stb_dependency_status;
@@ -2068,6 +2119,118 @@ static_assert(requires(
         -> std::same_as<std::vector<render::render_image_texture_frame_binding_packet_diff>&>;
     { texture_frame_binding_diff.diagnostic } -> std::same_as<std::string&>;
     { texture_frame_binding_diff.ok() } -> std::same_as<bool>;
+    { texture_frame_upload_handoff_entry.sequence } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_entry.request_index } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_entry.status }
+        -> std::same_as<render::render_image_texture_frame_upload_handoff_entry_status&>;
+    { texture_frame_upload_handoff_entry.status_name } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff_entry.render_image_uri } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff_entry.normalized_uri } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff_entry.cache_key } -> std::same_as<render::render_image_cache_key&>;
+    { texture_frame_upload_handoff_entry.sampler } -> std::same_as<render::render_image_sampler_policy&>;
+    { texture_frame_upload_handoff_entry.sampler_key } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff_entry.texture_key } -> std::same_as<render::render_image_texture_key&>;
+    { texture_frame_upload_handoff_entry.stable_texture_cache_key } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff_entry.texture_id } -> std::same_as<render::render_image_texture_id&>;
+    { texture_frame_upload_handoff_entry.upload_request_id } -> std::same_as<std::uint64_t&>;
+    { texture_frame_upload_handoff_entry.upload_result_status }
+        -> std::same_as<render::render_image_texture_upload_result_packet_status&>;
+    { texture_frame_upload_handoff_entry.upload_status }
+        -> std::same_as<render::render_image_texture_upload_status&>;
+    { texture_frame_upload_handoff_entry.mip_level_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_entry.uploaded_byte_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_entry.planned_staging_byte_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_entry.planned_mipmap_byte_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_entry.requested } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry.upload_result_present } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry.ready } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry.placeholder_texture } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry.blocked } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry.retryable_blocker } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry.missing_upload_result } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry.removed } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry.cache_reused } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry.added_in_frame } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry.changed_in_frame } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry.removed_from_frame } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry.readiness_changed } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry.residency_budget_pressure } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry.cache_key_summary } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff_entry.sampler_summary } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff_entry.blocker_summary } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff_entry.diagnostic } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff_entry.ok() } -> std::same_as<bool>;
+    { texture_frame_upload_handoff.frame_request_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff.binding_packet_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff.upload_packet_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff.requested_texture_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff.ready_texture_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff.placeholder_texture_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff.blocked_texture_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff.missing_upload_result_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff.retry_blocker_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff.cache_reused_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff.uploaded_byte_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff.total_mip_level_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff.renderer_handoff_ready } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff.has_placeholders } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff.has_blockers } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff.has_frame_delta } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff.entries }
+        -> std::same_as<std::vector<render::render_image_texture_frame_upload_handoff_entry>&>;
+    { texture_frame_upload_handoff.cache_key_summary } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff.sampler_summary } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff.mip_level_summary } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff.frame_delta_summary } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff.diagnostic } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff.ok() } -> std::same_as<bool>;
+    { texture_frame_upload_handoff_entry_diff.request_index } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_entry_diff.status }
+        -> std::same_as<render::render_image_texture_frame_upload_handoff_diff_entry_status&>;
+    { texture_frame_upload_handoff_entry_diff.before_handoff_status }
+        -> std::same_as<render::render_image_texture_frame_upload_handoff_entry_status&>;
+    { texture_frame_upload_handoff_entry_diff.after_handoff_status }
+        -> std::same_as<render::render_image_texture_frame_upload_handoff_entry_status&>;
+    { texture_frame_upload_handoff_entry_diff.before_render_image_uri } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff_entry_diff.after_render_image_uri } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff_entry_diff.before_stable_texture_cache_key } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff_entry_diff.after_stable_texture_cache_key } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff_entry_diff.before_texture_id } -> std::same_as<render::render_image_texture_id&>;
+    { texture_frame_upload_handoff_entry_diff.after_texture_id } -> std::same_as<render::render_image_texture_id&>;
+    { texture_frame_upload_handoff_entry_diff.before_uploaded_byte_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_entry_diff.after_uploaded_byte_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_entry_diff.uploaded_byte_delta } -> std::same_as<std::int64_t&>;
+    { texture_frame_upload_handoff_entry_diff.readiness_changed } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry_diff.placeholder_changed } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry_diff.blocker_changed } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry_diff.cache_key_changed } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry_diff.sampler_changed } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry_diff.texture_changed } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry_diff.regression } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry_diff.diagnostic } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff_entry_diff.changed() } -> std::same_as<bool>;
+    { texture_frame_upload_handoff_entry_diff.ok() } -> std::same_as<bool>;
+    { texture_frame_upload_handoff_diff.before_requested_texture_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_diff.after_requested_texture_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_diff.requested_texture_delta } -> std::same_as<std::int64_t&>;
+    { texture_frame_upload_handoff_diff.before_ready_texture_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_diff.after_ready_texture_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_diff.ready_texture_delta } -> std::same_as<std::int64_t&>;
+    { texture_frame_upload_handoff_diff.placeholder_texture_delta } -> std::same_as<std::int64_t&>;
+    { texture_frame_upload_handoff_diff.blocked_texture_delta } -> std::same_as<std::int64_t&>;
+    { texture_frame_upload_handoff_diff.uploaded_byte_delta } -> std::same_as<std::int64_t&>;
+    { texture_frame_upload_handoff_diff.added_entry_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_diff.changed_entry_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_diff.readiness_regressed_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_diff.blocker_changed_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_diff.renderer_handoff_regressed } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_diff.has_changes } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_diff.has_regression } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_diff.entries }
+        -> std::same_as<std::vector<render::render_image_texture_frame_upload_handoff_entry_diff>&>;
+    { texture_frame_upload_handoff_diff.regression_summary } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff_diff.diagnostic } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff_diff.ok() } -> std::same_as<bool>;
     { pipeline_entry.sequence } -> std::same_as<std::size_t&>;
     { pipeline_entry.request } -> std::same_as<render::render_image_texture_pipeline_request&>;
     { pipeline_entry.status } -> std::same_as<render::render_image_texture_pipeline_status&>;
@@ -2359,6 +2522,10 @@ static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_binding_plan>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_binding_packet_diff>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_binding_plan_diff>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_upload_handoff_entry>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_upload_handoff_summary>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_upload_handoff_entry_diff>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_upload_handoff_summary_diff>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_external_decoder_selection_snapshot>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_external_decoder_selection_entry_diff>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_external_decoder_selection_snapshot_diff>);
@@ -2383,6 +2550,10 @@ static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_textur
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_binding_plan>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_binding_packet_diff>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_binding_plan_diff>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_upload_handoff_entry>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_upload_handoff_summary>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_upload_handoff_entry_diff>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_upload_handoff_summary_diff>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_external_decoder_selection_snapshot>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_external_decoder_selection_entry_diff>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_external_decoder_selection_snapshot_diff>);
@@ -2407,6 +2578,10 @@ static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_binding_plan>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_binding_packet_diff>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_binding_plan_diff>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_upload_handoff_entry>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_upload_handoff_summary>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_upload_handoff_entry_diff>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_upload_handoff_summary_diff>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_external_decoder_selection_snapshot>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_external_decoder_selection_entry_diff>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_external_decoder_selection_snapshot_diff>);
@@ -2421,5 +2596,7 @@ static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_textu
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_snapshot_diff>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_binding_plan>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_binding_plan_diff>);
+static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_upload_handoff_summary>);
+static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_upload_handoff_summary_diff>);
 
 } // namespace

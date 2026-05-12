@@ -6,6 +6,10 @@
 
 최근 baseline 통합 증거:
 
+- current: Vulkan native acquire operation planning, text glyph-atlas upload result diagnostics, and image texture upload result diagnostics integrated; Windows MinGW focused Vulkan/text/image CTest 3/3 and interface compile target build confirmed.
+- `f846177`: image texture upload result diagnostics now summarize accepted/rejected packets, texture/request IDs, mip levels, uploaded bytes, retry/placeholder/blocker counts, and changed texture packet evidence.
+- `22a4e3a`: glyph atlas upload result diagnostics now summarize accepted/rejected packets, page-level bytes, blockers, stable page IDs, upload request IDs, and changed packet/page evidence.
+- `baf9470`: native swapchain acquire operation planning now reports selected image index, acquire timeout/out-of-date/suboptimal/error status, native entrypoint readiness, and command-recording consume readiness.
 - current: text edit transaction replay diagnostics integrated with public FILE_SET registration; Windows MinGW focused text input/replay CTest 2/2 and interface compile target build confirmed.
 - `0747af0`: input replay diagnostics now summarize text edit operation sequences with per-step byte/caret/selection/preedit/submit/invalid-edit/UTF-8/replacement evidence and semantic-free diffs.
 - current: Vulkan swapchain image enumeration, text glyph-atlas upload operation planning, and image texture upload operation planning integrated; Windows MinGW focused Vulkan/text/image CTest 3/3 and interface compile target build confirmed.

@@ -150,6 +150,7 @@ target_sources(
             src/render/image/image_texture_placeholder_policy.h
             src/render/image/image_texture_upload.h
             src/render/image/image_texture_upload_operation_plan.h
+            src/render/image/image_texture_upload_result_diagnostics.h
             src/render/image/image_texture_upload_retry_policy.h
             src/render/image/image_texture_upload_snapshot_diff.h
             src/render/image/image_types.h
@@ -170,6 +171,7 @@ target_sources(
             src/render/text/font_cmap_inspector.h
             src/render/text/font_glyph_atlas.h
             src/render/text/font_glyph_atlas_page_plan.h
+            src/render/text/font_glyph_atlas_upload_result.h
             src/render/text/font_glyph_atlas_upload_operation_plan.h
             src/render/text/font_glyph_id_resolver.h
             src/render/text/font_rasterizer.h

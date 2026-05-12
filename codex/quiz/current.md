@@ -39,6 +39,8 @@ Last updated: 2026-05-09
 - Engine workers own only their engine folders. App/runtime, top-level CMake, and aggregate contract wiring stay with the integrator unless explicitly assigned.
 - Large file splitting is allowed when it improves module cohesion, worker ownership, reviewability, or conflict isolation. Do not split files only because they exceed a line-count threshold, and do not move stable public interfaces without explicit integrator approval.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
+- Latest integration note: `f846177` adds image texture upload result/diff diagnostics and `22a4e3a` adds glyph atlas upload result/diff diagnostics; the integrator registers both new public headers in the render contract FILE_SET.
+- Latest integration note: `baf9470` adds data-only Vulkan native swapchain acquire operation planning after swapchain image enumeration, reporting selected image index, timeout/out-of-date/suboptimal/error states, and command-recording readiness.
 - Latest integration note: `0747af0` adds text edit transaction replay diagnostics for per-step byte/caret/selection/preedit/submit/invalid-edit/UTF-8/replacement evidence, and the integrator registers the public replay header in the input FILE_SET.
 - Latest integration note: `710f05c` adds image texture upload operation planning diagnostics and `3c0b76f` adds glyph atlas upload operation planning diagnostics; the integrator registers both new public headers in the render contract FILE_SET.
 - Latest integration note: `4d207d9` adds data-only Vulkan native swapchain image enumeration operation planning after native swapchain creation readiness, reporting image-count, binding validity, and blocker summaries before real `vkGetSwapchainImagesKHR`.

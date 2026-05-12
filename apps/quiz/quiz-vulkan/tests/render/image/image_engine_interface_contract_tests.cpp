@@ -5,13 +5,16 @@
 #include "render/image/image_texture_cache.h"
 #include "render/image/image_texture_pipeline.h"
 #include "render/image/image_texture_upload_operation_plan.h"
+#include "render/image/image_texture_upload_result_diagnostics.h"
 #include "render/image/image_texture_upload_snapshot_diff.h"
 #include "render/render_draw_list.h"
 
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -257,6 +260,12 @@ static_assert(requires(
     render::render_image_texture_upload_operation_packet_status upload_operation_status,
     render::render_image_texture_upload_operation_packet upload_operation_packet,
     render::render_image_texture_upload_operation_plan upload_operation_plan,
+    render::render_image_texture_upload_result_packet_status upload_result_packet_status,
+    render::render_image_texture_upload_result_packet_snapshot upload_result_packet,
+    render::render_image_texture_upload_result_snapshot upload_result_diagnostics_snapshot,
+    render::render_image_texture_upload_result_diff_entry_status upload_result_diff_entry_status,
+    render::render_image_texture_upload_result_packet_diff upload_result_packet_diff,
+    render::render_image_texture_upload_result_snapshot_diff upload_result_diagnostics_snapshot_diff,
     const render::fake_image_texture_uploader& uploader,
     render::render_image_texture_pipeline_request pipeline_request,
     render::render_image_texture_pipeline_result pipeline_result,
@@ -1135,6 +1144,147 @@ static_assert(requires(
         -> std::same_as<std::vector<render::render_image_texture_upload_operation_packet>&>;
     { upload_operation_plan.diagnostic } -> std::same_as<std::string&>;
     { upload_operation_plan.ok() } -> std::same_as<bool>;
+    { render::render_image_texture_upload_result_packet_status_name(upload_result_packet_status) }
+        -> std::same_as<std::string>;
+    { render::render_image_texture_upload_result_packet_status_for(upload_operation_packet) }
+        -> std::same_as<render::render_image_texture_upload_result_packet_status>;
+    { render::render_image_texture_upload_result_packet_status_is_accepted(upload_result_packet_status) }
+        -> std::same_as<bool>;
+    { render::make_render_image_texture_upload_result_packet_snapshot(upload_operation_packet) }
+        -> std::same_as<render::render_image_texture_upload_result_packet_snapshot>;
+    { render::append_render_image_texture_upload_result_summary(upload_result_diagnostics_snapshot.diagnostic, std::string{}) }
+        -> std::same_as<void>;
+    { render::make_render_image_texture_upload_result_snapshot(upload_operation_plan) }
+        -> std::same_as<render::render_image_texture_upload_result_snapshot>;
+    { render::make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(upload_snapshot) }
+        -> std::same_as<render::render_image_texture_upload_result_snapshot>;
+    { render::render_image_texture_upload_result_diff_entry_status_name(upload_result_diff_entry_status) }
+        -> std::same_as<std::string>;
+    { render::render_image_texture_upload_result_size_delta(std::size_t{}, std::size_t{}) }
+        -> std::same_as<std::int64_t>;
+    { render::render_image_texture_upload_result_packet_for_request_id(upload_result_diagnostics_snapshot, std::uint64_t{}) }
+        -> std::same_as<const render::render_image_texture_upload_result_packet_snapshot*>;
+    { render::append_render_image_texture_upload_result_request_ids(
+        std::declval<std::map<std::uint64_t, bool>&>(), upload_result_diagnostics_snapshot) } -> std::same_as<void>;
+    { render::render_image_texture_upload_result_packet_equal(upload_result_packet, upload_result_packet) }
+        -> std::same_as<bool>;
+    { render::make_render_image_texture_upload_result_packet_diff(
+        &upload_result_packet, &upload_result_packet, std::uint64_t{}) }
+        -> std::same_as<render::render_image_texture_upload_result_packet_diff>;
+    { render::diff_render_image_texture_upload_result_snapshots(upload_result_diagnostics_snapshot, upload_result_diagnostics_snapshot) }
+        -> std::same_as<render::render_image_texture_upload_result_snapshot_diff>;
+    { upload_result_packet.packet_index } -> std::same_as<std::size_t&>;
+    { upload_result_packet.request_id } -> std::same_as<std::uint64_t&>;
+    { upload_result_packet.generation_id } -> std::same_as<std::uint64_t&>;
+    { upload_result_packet.status }
+        -> std::same_as<render::render_image_texture_upload_result_packet_status&>;
+    { upload_result_packet.status_name } -> std::same_as<std::string&>;
+    { upload_result_packet.operation_status }
+        -> std::same_as<render::render_image_texture_upload_operation_packet_status&>;
+    { upload_result_packet.operation_status_name } -> std::same_as<std::string&>;
+    { upload_result_packet.upload_status } -> std::same_as<render::render_image_texture_upload_status&>;
+    { upload_result_packet.upload_status_name } -> std::same_as<std::string&>;
+    { upload_result_packet.texture_key } -> std::same_as<render::render_image_texture_key&>;
+    { upload_result_packet.stable_cache_key } -> std::same_as<std::string&>;
+    { upload_result_packet.source_key_summary } -> std::same_as<std::string&>;
+    { upload_result_packet.sampler } -> std::same_as<render::render_image_sampler_policy&>;
+    { upload_result_packet.sampler_summary } -> std::same_as<std::string&>;
+    { upload_result_packet.texture } -> std::same_as<render::render_image_texture_handle&>;
+    { upload_result_packet.texture_id } -> std::same_as<render::render_image_texture_id&>;
+    { upload_result_packet.texture_revision } -> std::same_as<render::render_image_revision&>;
+    { upload_result_packet.mip_level_count } -> std::same_as<std::size_t&>;
+    { upload_result_packet.accepted_mip_level_count } -> std::same_as<std::size_t&>;
+    { upload_result_packet.rejected_mip_level_count } -> std::same_as<std::size_t&>;
+    { upload_result_packet.uploaded_byte_count } -> std::same_as<std::size_t&>;
+    { upload_result_packet.planned_staging_byte_count } -> std::same_as<std::size_t&>;
+    { upload_result_packet.planned_mipmap_byte_count } -> std::same_as<std::size_t&>;
+    { upload_result_packet.accepted } -> std::same_as<bool&>;
+    { upload_result_packet.rejected } -> std::same_as<bool&>;
+    { upload_result_packet.placeholder_texture } -> std::same_as<bool&>;
+    { upload_result_packet.fallback_texture } -> std::same_as<bool&>;
+    { upload_result_packet.retryable } -> std::same_as<bool&>;
+    { upload_result_packet.nonretryable_failure } -> std::same_as<bool&>;
+    { upload_result_packet.blocked } -> std::same_as<bool&>;
+    { upload_result_packet.has_texture_handle } -> std::same_as<bool&>;
+    { upload_result_packet.retry_eligibility_name } -> std::same_as<std::string&>;
+    { upload_result_packet.blocker_summary } -> std::same_as<std::string&>;
+    { upload_result_packet.diagnostic } -> std::same_as<std::string&>;
+    { upload_result_packet.ok() } -> std::same_as<bool>;
+    { upload_result_diagnostics_snapshot.source_upload_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.operation_packet_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.packet_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.accepted_packet_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.rejected_packet_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.placeholder_packet_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.fallback_packet_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.retryable_rejected_packet_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.nonretryable_rejected_packet_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.blocker_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.texture_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.request_id_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.total_mip_level_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.accepted_mip_level_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.rejected_mip_level_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.total_uploaded_byte_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.total_planned_staging_byte_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.total_planned_mipmap_byte_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.request_ids } -> std::same_as<std::vector<std::uint64_t>&>;
+    { upload_result_diagnostics_snapshot.texture_ids } -> std::same_as<std::vector<render::render_image_texture_id>&>;
+    { upload_result_diagnostics_snapshot.packets }
+        -> std::same_as<std::vector<render::render_image_texture_upload_result_packet_snapshot>&>;
+    { upload_result_diagnostics_snapshot.diagnostic } -> std::same_as<std::string&>;
+    { upload_result_diagnostics_snapshot.ok() } -> std::same_as<bool>;
+    { upload_result_packet_diff.request_id } -> std::same_as<std::uint64_t&>;
+    { upload_result_packet_diff.status }
+        -> std::same_as<render::render_image_texture_upload_result_diff_entry_status&>;
+    { upload_result_packet_diff.status_name } -> std::same_as<std::string&>;
+    { upload_result_packet_diff.before_present } -> std::same_as<bool&>;
+    { upload_result_packet_diff.after_present } -> std::same_as<bool&>;
+    { upload_result_packet_diff.before_accepted } -> std::same_as<bool&>;
+    { upload_result_packet_diff.after_accepted } -> std::same_as<bool&>;
+    { upload_result_packet_diff.accepted_changed } -> std::same_as<bool&>;
+    { upload_result_packet_diff.accepted_to_rejected } -> std::same_as<bool&>;
+    { upload_result_packet_diff.rejected_to_accepted } -> std::same_as<bool&>;
+    { upload_result_packet_diff.texture_changed } -> std::same_as<bool&>;
+    { upload_result_packet_diff.cache_key_changed } -> std::same_as<bool&>;
+    { upload_result_packet_diff.sampler_changed } -> std::same_as<bool&>;
+    { upload_result_packet_diff.placeholder_changed } -> std::same_as<bool&>;
+    { upload_result_packet_diff.retryability_changed } -> std::same_as<bool&>;
+    { upload_result_packet_diff.blocker_changed } -> std::same_as<bool&>;
+    { upload_result_packet_diff.uploaded_byte_delta } -> std::same_as<std::int64_t&>;
+    { upload_result_packet_diff.planned_mipmap_byte_delta } -> std::same_as<std::int64_t&>;
+    { upload_result_packet_diff.regression } -> std::same_as<bool&>;
+    { upload_result_packet_diff.recovery } -> std::same_as<bool&>;
+    { upload_result_packet_diff.diagnostic } -> std::same_as<std::string&>;
+    { upload_result_packet_diff.changed() } -> std::same_as<bool>;
+    { upload_result_packet_diff.ok() } -> std::same_as<bool>;
+    { upload_result_diagnostics_snapshot_diff.before_packet_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot_diff.after_packet_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot_diff.added_packet_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot_diff.removed_packet_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot_diff.changed_packet_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot_diff.accepted_packet_delta } -> std::same_as<std::int64_t&>;
+    { upload_result_diagnostics_snapshot_diff.rejected_packet_delta } -> std::same_as<std::int64_t&>;
+    { upload_result_diagnostics_snapshot_diff.accepted_to_rejected_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot_diff.rejected_to_accepted_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot_diff.texture_changed_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot_diff.cache_key_changed_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot_diff.sampler_changed_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot_diff.placeholder_changed_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot_diff.retryability_changed_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot_diff.blocker_changed_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot_diff.uploaded_byte_delta } -> std::same_as<std::int64_t&>;
+    { upload_result_diagnostics_snapshot_diff.planned_mipmap_byte_delta } -> std::same_as<std::int64_t&>;
+    { upload_result_diagnostics_snapshot_diff.has_changes } -> std::same_as<bool&>;
+    { upload_result_diagnostics_snapshot_diff.has_regression } -> std::same_as<bool&>;
+    { upload_result_diagnostics_snapshot_diff.has_recovery } -> std::same_as<bool&>;
+    { upload_result_diagnostics_snapshot_diff.changed_packet_summary } -> std::same_as<std::string&>;
+    { upload_result_diagnostics_snapshot_diff.changed_texture_summary } -> std::same_as<std::string&>;
+    { upload_result_diagnostics_snapshot_diff.regression_summary } -> std::same_as<std::string&>;
+    { upload_result_diagnostics_snapshot_diff.entries }
+        -> std::same_as<std::vector<render::render_image_texture_upload_result_packet_diff>&>;
+    { upload_result_diagnostics_snapshot_diff.diagnostic } -> std::same_as<std::string&>;
+    { upload_result_diagnostics_snapshot_diff.ok() } -> std::same_as<bool>;
     { uploader.diagnostic_snapshot() } -> std::same_as<render::fake_image_texture_upload_snapshot>;
     upload_generation_id;
     upload_status;

@@ -1,4 +1,4 @@
-#include "render/image/image_texture_upload_operation_plan.h"
+#include "render/image/image_texture_upload_result_diagnostics.h"
 
 #include <algorithm>
 #include <cassert>
@@ -846,6 +846,237 @@ void test_texture_upload_operation_plan_reports_invalid_mipmap_and_missing_snaps
         "operation packet status helper names missing handle status");
 }
 
+void test_texture_upload_result_snapshot_reports_accepted_rejected_and_placeholder_packets()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_image_texture_key base_key{
+        .source_key = "textures/result-base.ppm",
+        .sampler = render_image_sampler_policy{},
+    };
+    const render_image_sampler_policy mipmapped_sampler = make_mipmapped_sampler();
+    const render_image_texture_key mipmapped_key{
+        .source_key = "textures/result-mips.ppm",
+        .sampler = mipmapped_sampler,
+    };
+    const render_image_texture_key placeholder_key = make_fake_image_texture_placeholder_key(
+        fake_image_texture_placeholder_policy{},
+        fake_image_texture_placeholder_reason::upload_failed,
+        mipmapped_key);
+
+    fake_image_texture_uploader uploader;
+    const render_image_texture_upload_result uploaded = uploader.upload(render_image_texture_upload_request{
+        .key = base_key,
+        .sampler = render_image_sampler_policy{},
+        .image = make_rgba_2x1_decoded_image(),
+    });
+    const render_image_texture_upload_result placeholder = uploader.upload(render_image_texture_upload_request{
+        .key = placeholder_key,
+        .sampler = mipmapped_sampler,
+        .image = make_rgba_4x4_decoded_image(),
+    });
+    render_decoded_image invalid_payload = make_rgba_2x1_decoded_image();
+    invalid_payload.pixels.pop_back();
+    const render_image_texture_upload_result failed = uploader.upload(render_image_texture_upload_request{
+        .key = base_key,
+        .sampler = render_image_sampler_policy{},
+        .image = invalid_payload,
+    });
+
+    require(uploaded.ok(), "upload result snapshot starts from accepted base upload");
+    require(placeholder.ok(), "upload result snapshot includes accepted placeholder upload");
+    require(!failed.ok(), "upload result snapshot includes rejected upload");
+
+    const render_image_texture_upload_result_snapshot result_snapshot =
+        make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(
+            uploader.diagnostic_snapshot());
+
+    require(!result_snapshot.ok(), "upload result snapshot reports rejected packet");
+    require(result_snapshot.source_upload_count == 3, "upload result snapshot records source upload count");
+    require(result_snapshot.operation_packet_count == 3, "upload result snapshot records operation packet count");
+    require(result_snapshot.packet_count == 3, "upload result snapshot records packet count");
+    require(result_snapshot.accepted_packet_count == 2, "upload result snapshot counts accepted packets");
+    require(result_snapshot.rejected_packet_count == 1, "upload result snapshot counts rejected packets");
+    require(result_snapshot.placeholder_packet_count == 1, "upload result snapshot counts placeholders");
+    require(result_snapshot.fallback_packet_count == 1, "upload result snapshot counts fallback packets");
+    require(result_snapshot.retryable_rejected_packet_count == 1, "upload result snapshot counts retryable rejections");
+    require(result_snapshot.nonretryable_rejected_packet_count == 0, "upload result snapshot reports no nonretryable rejections");
+    require(result_snapshot.blocker_count == 1, "upload result snapshot counts blockers");
+    require(result_snapshot.texture_count == 2, "upload result snapshot counts accepted texture handles");
+    require(result_snapshot.request_id_count == 3, "upload result snapshot counts request ids");
+    require(result_snapshot.total_mip_level_count == 5, "upload result snapshot sums all planned mip levels");
+    require(result_snapshot.accepted_mip_level_count == 4, "upload result snapshot sums accepted mip levels");
+    require(result_snapshot.rejected_mip_level_count == 1, "upload result snapshot sums rejected mip levels");
+    require(result_snapshot.total_uploaded_byte_count == 92, "upload result snapshot sums accepted upload bytes");
+    require(result_snapshot.total_planned_staging_byte_count == 92, "upload result snapshot sums planned staging bytes");
+    require(result_snapshot.total_planned_mipmap_byte_count == 100, "upload result snapshot sums planned mipmap bytes");
+    require(result_snapshot.request_ids.size() == 3, "upload result snapshot exposes request ids");
+    require(result_snapshot.texture_ids.size() == 2, "upload result snapshot exposes texture ids");
+    require(result_snapshot.has_rejections, "upload result snapshot exposes rejection flag");
+    require(result_snapshot.has_placeholders, "upload result snapshot exposes placeholder flag");
+    require(result_snapshot.has_retryable_rejections, "upload result snapshot exposes retryable rejection flag");
+    require(
+        result_snapshot.rejected_summary.find("invalid_image") != std::string::npos,
+        "upload result snapshot preserves rejection summary");
+    require(
+        result_snapshot.texture_summary.find("#texture=1") != std::string::npos,
+        "upload result snapshot preserves texture id summary");
+
+    const render_image_texture_upload_result_packet_snapshot& base_packet = result_snapshot.packets[0];
+    require(base_packet.ok(), "base upload result packet is accepted");
+    require(base_packet.status == render_image_texture_upload_result_packet_status::accepted, "base result packet is accepted");
+    require(base_packet.status_name == "accepted", "base result packet status name is stable");
+    require(base_packet.request_id == 1, "base result packet records request id");
+    require(base_packet.generation_id == 1, "base result packet records generation id");
+    require(base_packet.texture_id == uploaded.texture.id, "base result packet records texture id");
+    require(base_packet.texture_revision == 1, "base result packet records texture revision");
+    require(base_packet.stable_cache_key.find("textures/result-base.ppm") != std::string::npos, "base result packet records stable cache key");
+    require(base_packet.sampler_summary == render_image_sampler_policy_stable_fragment(render_image_sampler_policy{}), "base result packet records sampler summary");
+    require(base_packet.uploaded_byte_count == 8, "base result packet records uploaded bytes");
+    require(base_packet.accepted_mip_level_count == 1, "base result packet records accepted mip count");
+    require(!base_packet.placeholder_texture, "base result packet is not placeholder");
+
+    const render_image_texture_upload_result_packet_snapshot& placeholder_packet = result_snapshot.packets[1];
+    require(placeholder_packet.ok(), "placeholder result packet is accepted");
+    require(
+        placeholder_packet.status == render_image_texture_upload_result_packet_status::accepted_placeholder,
+        "placeholder result packet reports placeholder accepted status");
+    require(placeholder_packet.status_name == "accepted_placeholder", "placeholder result packet status name is stable");
+    require(placeholder_packet.placeholder_texture, "placeholder result packet keeps placeholder flag");
+    require(placeholder_packet.fallback_texture, "placeholder result packet keeps fallback flag");
+    require(placeholder_packet.texture_id == placeholder.texture.id, "placeholder result packet records texture id");
+    require(placeholder_packet.mip_level_count == 3, "placeholder result packet records mip levels");
+    require(placeholder_packet.uploaded_byte_count == 84, "placeholder result packet records uploaded bytes");
+
+    const render_image_texture_upload_result_packet_snapshot& failed_packet = result_snapshot.packets[2];
+    require(!failed_packet.ok(), "failed result packet is rejected");
+    require(
+        failed_packet.status == render_image_texture_upload_result_packet_status::rejected_retryable,
+        "failed result packet reports retryable rejection");
+    require(failed_packet.status_name == "rejected_retryable", "failed result packet status name is stable");
+    require(failed_packet.retryable, "failed result packet keeps retryable flag");
+    require(failed_packet.uploaded_byte_count == 0, "failed result packet has no uploaded bytes");
+    require(failed_packet.planned_mipmap_byte_count == 8, "failed result packet preserves planned mipmap bytes");
+    require(failed_packet.blocker_summary == "upload failed but can retry: invalid_image", "failed result packet keeps blocker summary");
+    require(
+        render_image_texture_upload_result_packet_status_name(
+            render_image_texture_upload_result_packet_status::rejected_missing_texture_handle)
+            == "rejected_missing_texture_handle",
+        "upload result packet status helper names missing texture handle");
+}
+
+void test_texture_upload_result_diff_reports_added_changed_and_regressed_packets()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_image_texture_key base_key{
+        .source_key = "textures/result-diff-base.ppm",
+        .sampler = render_image_sampler_policy{},
+    };
+    const render_image_sampler_policy mipmapped_sampler = make_mipmapped_sampler();
+    const render_image_texture_key mipmapped_key{
+        .source_key = "textures/result-diff-mips.ppm",
+        .sampler = mipmapped_sampler,
+    };
+    const render_image_texture_key placeholder_key = make_fake_image_texture_placeholder_key(
+        fake_image_texture_placeholder_policy{},
+        fake_image_texture_placeholder_reason::decode_failed,
+        mipmapped_key);
+
+    fake_image_texture_uploader uploader;
+    const render_image_texture_upload_result base_upload = uploader.upload(render_image_texture_upload_request{
+        .key = base_key,
+        .sampler = render_image_sampler_policy{},
+        .image = make_rgba_2x1_decoded_image(),
+    });
+    require(base_upload.ok(), "upload result diff starts from base accepted upload");
+
+    const fake_image_texture_upload_snapshot before_fake_snapshot = uploader.diagnostic_snapshot();
+    const render_image_texture_upload_result_snapshot before =
+        make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(before_fake_snapshot);
+
+    uploader.upload(render_image_texture_upload_request{
+        .key = placeholder_key,
+        .sampler = mipmapped_sampler,
+        .image = make_rgba_4x4_decoded_image(),
+    });
+    render_decoded_image invalid_payload = make_rgba_2x1_decoded_image();
+    invalid_payload.pixels.pop_back();
+    uploader.upload(render_image_texture_upload_request{
+        .key = base_key,
+        .sampler = render_image_sampler_policy{},
+        .image = invalid_payload,
+    });
+
+    const render_image_texture_upload_result_snapshot after_added =
+        make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(
+            uploader.diagnostic_snapshot());
+    const render_image_texture_upload_result_snapshot_diff added_diff =
+        diff_render_image_texture_upload_result_snapshots(before, after_added);
+
+    require(added_diff.ok(), "added upload result diff is not a transition regression");
+    require(added_diff.has_changes, "added upload result diff reports changes");
+    require(added_diff.before_packet_count == 1, "added upload result diff records before packet count");
+    require(added_diff.after_packet_count == 3, "added upload result diff records after packet count");
+    require(added_diff.added_packet_count == 2, "added upload result diff counts added packets");
+    require(added_diff.changed_packet_count == 0, "added upload result diff reports no changed existing packets");
+    require(added_diff.accepted_packet_delta == 1, "added upload result diff records accepted packet delta");
+    require(added_diff.rejected_packet_delta == 1, "added upload result diff records rejected packet delta");
+    require(added_diff.texture_count_delta == 1, "added upload result diff records texture count delta");
+    require(added_diff.placeholder_packet_delta == 1, "added upload result diff records placeholder delta");
+    require(added_diff.retryable_rejected_packet_delta == 1, "added upload result diff records retryable rejection delta");
+    require(added_diff.blocker_count_delta == 1, "added upload result diff records blocker delta");
+    require(added_diff.mip_level_count_delta == 4, "added upload result diff records mip level delta");
+    require(added_diff.uploaded_byte_delta == 84, "added upload result diff records uploaded byte delta");
+    require(added_diff.planned_mipmap_byte_delta == 92, "added upload result diff records planned mipmap byte delta");
+    require(
+        added_diff.changed_packet_summary.find("request=2:added") != std::string::npos,
+        "added upload result diff summarizes added packet");
+    require(
+        render_image_texture_upload_result_diff_entry_status_name(
+            render_image_texture_upload_result_diff_entry_status::changed)
+            == "changed",
+        "upload result diff status name is stable");
+
+    fake_image_texture_upload_snapshot texture_changed_fake_snapshot = before_fake_snapshot;
+    set_upload_snapshot_texture_for_generation(
+        texture_changed_fake_snapshot,
+        base_upload.generation_id,
+        render_image_texture_handle{.id = 42, .revision = 7, .width = 2, .height = 1});
+    const render_image_texture_upload_result_snapshot texture_changed =
+        make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(texture_changed_fake_snapshot);
+    const render_image_texture_upload_result_snapshot_diff texture_diff =
+        diff_render_image_texture_upload_result_snapshots(before, texture_changed);
+
+    require(texture_diff.ok(), "texture handle change is not a rejection regression");
+    require(texture_diff.changed_packet_count == 1, "texture handle diff counts changed packet");
+    require(texture_diff.texture_changed_count == 1, "texture handle diff counts changed texture");
+    require(
+        texture_diff.changed_texture_summary == "request=1:texture=1->42",
+        "texture handle diff emits stable texture summary");
+
+    fake_image_texture_upload_snapshot regressed_fake_snapshot = before_fake_snapshot;
+    set_upload_snapshot_status_for_generation(
+        regressed_fake_snapshot,
+        base_upload.generation_id,
+        render_image_texture_upload_status::invalid_image,
+        fake_image_texture_upload_retry_eligibility::eligible);
+    const render_image_texture_upload_result_snapshot regressed =
+        make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(regressed_fake_snapshot);
+    const render_image_texture_upload_result_snapshot_diff regression_diff =
+        diff_render_image_texture_upload_result_snapshots(before, regressed);
+
+    require(!regression_diff.ok(), "accepted-to-rejected upload result diff is a regression");
+    require(regression_diff.has_regression, "upload result diff exposes regression flag");
+    require(regression_diff.accepted_to_rejected_count == 1, "upload result diff counts accepted-to-rejected transition");
+    require(regression_diff.retryability_changed_count == 1, "upload result diff counts retryability change");
+    require(regression_diff.blocker_changed_count == 1, "upload result diff counts blocker change");
+    require(regression_diff.uploaded_byte_delta == -8, "upload result diff records uploaded byte regression");
+    require(
+        regression_diff.regression_summary.find("changed") != std::string::npos,
+        "upload result diff exposes regression summary");
+}
+
 void test_texture_upload_snapshot_diff_reports_added_uploads_and_byte_deltas()
 {
     using namespace quiz_vulkan::render;
@@ -1151,6 +1382,8 @@ int main()
     test_texture_uploader_reports_retry_eligibility_and_backoff();
     test_texture_upload_operation_plan_reports_ready_placeholder_and_retryable_packets();
     test_texture_upload_operation_plan_reports_invalid_mipmap_and_missing_snapshot_blockers();
+    test_texture_upload_result_snapshot_reports_accepted_rejected_and_placeholder_packets();
+    test_texture_upload_result_diff_reports_added_changed_and_regressed_packets();
     test_texture_upload_snapshot_diff_reports_added_uploads_and_byte_deltas();
     test_texture_upload_snapshot_diff_reports_changed_transitions_and_regressions();
     test_texture_uploader_rejects_invalid_inputs();

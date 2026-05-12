@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: platform input replay diagnostics integrated with public FILE_SET registration; Windows MinGW focused platform input CTest 3/3 and interface compile target build confirmed.
+- `7e032b0`: input diagnostics now replay raw/platform-style batches into normalized event counts, text edit replay summaries, gesture/capture/focus summaries, final presentation snapshots, and semantic-free diffs.
 - current: Vulkan native acquire operation planning, text glyph-atlas upload result diagnostics, and image texture upload result diagnostics integrated; Windows MinGW focused Vulkan/text/image CTest 3/3 and interface compile target build confirmed.
 - `f846177`: image texture upload result diagnostics now summarize accepted/rejected packets, texture/request IDs, mip levels, uploaded bytes, retry/placeholder/blocker counts, and changed texture packet evidence.
 - `22a4e3a`: glyph atlas upload result diagnostics now summarize accepted/rejected packets, page-level bytes, blockers, stable page IDs, upload request IDs, and changed packet/page evidence.
@@ -341,7 +343,7 @@
 - `5965a4b`: Vulkan swapchain policy/pipeline compatibility/shader binding/fallback diagnostics 추가.
 - `244d5b7`: input multipointer touch-like arbitration diagnostics 추가.
 - `94a922f`: asset manifest integrity diagnostics 추가.
-- 기준 검증 예시: Windows MinGW focused text/image/input/Vulkan/architecture CTest는 최신 통합별로 실행한다. 최신 full CTest는 94/94 통과했다. 현재 `ctest -N`이 94개 테스트를 보고한다. 권위 있는 테스트 목록은 항상 실행 시점의 `ctest -N`으로 확인한다.
+- 기준 검증 예시: Windows MinGW focused text/image/input/Vulkan/architecture CTest는 최신 통합별로 실행한다. 최신 full CTest는 94/94 통과했다. 현재 `ctest -N`이 95개 테스트를 보고한다. 권위 있는 테스트 목록은 항상 실행 시점의 `ctest -N`으로 확인한다.
 - 기준 검증은 고정 개수로 적지 않는다. 현재 전체 테스트 수는 `ctest -N`이 권위이며, handoff에는 실행한 focused target만 기록한다.
 
 상태 기준:

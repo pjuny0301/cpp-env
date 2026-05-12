@@ -39,6 +39,7 @@ Last updated: 2026-05-09
 - Engine workers own only their engine folders. App/runtime, top-level CMake, and aggregate contract wiring stay with the integrator unless explicitly assigned.
 - Large file splitting is allowed when it improves module cohesion, worker ownership, reviewability, or conflict isolation. Do not split files only because they exceed a line-count threshold, and do not move stable public interfaces without explicit integrator approval.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
+- Latest integration note: `7e032b0` adds platform input replay diagnostics for raw/platform-style batches, event-kind counts, text edit replay summaries, gesture/capture/focus summaries, final presentation snapshots, and semantic-free diffs.
 - Latest integration note: `f846177` adds image texture upload result/diff diagnostics and `22a4e3a` adds glyph atlas upload result/diff diagnostics; the integrator registers both new public headers in the render contract FILE_SET.
 - Latest integration note: `baf9470` adds data-only Vulkan native swapchain acquire operation planning after swapchain image enumeration, reporting selected image index, timeout/out-of-date/suboptimal/error states, and command-recording readiness.
 - Latest integration note: `0747af0` adds text edit transaction replay diagnostics for per-step byte/caret/selection/preedit/submit/invalid-edit/UTF-8/replacement evidence, and the integrator registers the public replay header in the input FILE_SET.
@@ -116,7 +117,7 @@ Last updated: 2026-05-09
 - Latest integration note: `2656970` adds a Vulkan frame pipeline handoff summary/result that composes loader, instance, device, swapchain, render pass, pipeline, resource binding, command recording, submit, present, and fallback readiness without scene/UI/app/domain coupling.
 - Latest integration note: text/image/input worker commits added font backend selection metadata, optional third-party image decoder adapter boundary, and IME/focus/caret hardening; CMake render contract FILE_SET registration was handled by the integrator.
 - Latest integration note: `15d77ce` reports app scene modifier errors in `app_render_report`; `0a721e2` blocks host/external source paths in architecture tests; `7505a63` tracks native dependency manifest/README while ignoring downloaded source directories.
-- Latest verification: Windows MinGW full CTest passed 94/94 after the latest input/text/image/Vulkan integrations. Current `ctest -N` reports 94 tests.
+- Latest verification: Windows MinGW full CTest passed 94/94 before platform input replay integration. Current `ctest -N` reports 95 tests.
 
 ## Verification commands
 

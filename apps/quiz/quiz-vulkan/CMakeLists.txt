@@ -227,6 +227,7 @@ target_sources(
             src/core/input/normalized_input_replay.h
             src/core/input/normalized_input_replay_diff.h
             src/core/input/platform_input_engine_adapter.h
+            src/core/input/platform_input_replay.h
             src/core/input/platform_input_translator.h
             src/core/input/text_edit_transaction_diagnostics.h
             src/core/input/text_edit_transaction_replay.h

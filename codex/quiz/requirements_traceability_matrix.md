@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: text font fallback run planning integrated; Windows MinGW focused text CTest 1/1 and interface compile target build confirmed.
+- `9090b05`: text fallback run diagnostics now identify selected font face per UTF-8 range, Latin/Hangul coverage, missing glyph ranges, fallback order, stable run keys, and catalog-change diffs.
 - current: Vulkan native frame operation summary integrated; Windows MinGW focused Vulkan/renderer CTest 2/2 and interface compile target build confirmed.
 - `aa30a27`: native frame operation diagnostics now compose function-table readiness, swapchain creation/images, acquire, command recording, submit, present, frame completion, fallback, and failure states without real Vulkan SDK calls.
 - current: Windows MinGW full CTest passed `95/95` after image/input/text handoff hardening integrations.

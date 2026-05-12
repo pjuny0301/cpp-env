@@ -1416,6 +1416,9 @@ static_assert(requires(
     { render::make_render_image_texture_frame_upload_handoff_entry(
         texture_frame_binding_packet, &upload_result_packet) }
         -> std::same_as<render::render_image_texture_frame_upload_handoff_entry>;
+    { render::make_render_image_texture_frame_upload_handoff_missing_binding_entry(
+        upload_result_packet, std::size_t{}) }
+        -> std::same_as<render::render_image_texture_frame_upload_handoff_entry>;
     { render::make_render_image_texture_frame_upload_handoff_summary(
         texture_frame, texture_frame_binding_plan, upload_result_diagnostics_snapshot) }
         -> std::same_as<render::render_image_texture_frame_upload_handoff_summary>;
@@ -2148,6 +2151,7 @@ static_assert(requires(
     { texture_frame_upload_handoff_entry.blocked } -> std::same_as<bool&>;
     { texture_frame_upload_handoff_entry.retryable_blocker } -> std::same_as<bool&>;
     { texture_frame_upload_handoff_entry.missing_upload_result } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry.missing_frame_binding } -> std::same_as<bool&>;
     { texture_frame_upload_handoff_entry.removed } -> std::same_as<bool&>;
     { texture_frame_upload_handoff_entry.cache_reused } -> std::same_as<bool&>;
     { texture_frame_upload_handoff_entry.added_in_frame } -> std::same_as<bool&>;
@@ -2158,6 +2162,10 @@ static_assert(requires(
     { texture_frame_upload_handoff_entry.cache_key_summary } -> std::same_as<std::string&>;
     { texture_frame_upload_handoff_entry.sampler_summary } -> std::same_as<std::string&>;
     { texture_frame_upload_handoff_entry.blocker_summary } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff_entry.attempt_count_for_key } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_entry.failed_attempt_count_for_key } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_entry.retry_after_queue_sequence_delta } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_entry.next_retry_sequence } -> std::same_as<std::size_t&>;
     { texture_frame_upload_handoff_entry.diagnostic } -> std::same_as<std::string&>;
     { texture_frame_upload_handoff_entry.ok() } -> std::same_as<bool>;
     { texture_frame_upload_handoff.frame_request_count } -> std::same_as<std::size_t&>;
@@ -2168,6 +2176,7 @@ static_assert(requires(
     { texture_frame_upload_handoff.placeholder_texture_count } -> std::same_as<std::size_t&>;
     { texture_frame_upload_handoff.blocked_texture_count } -> std::same_as<std::size_t&>;
     { texture_frame_upload_handoff.missing_upload_result_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff.missing_frame_binding_count } -> std::same_as<std::size_t&>;
     { texture_frame_upload_handoff.retry_blocker_count } -> std::same_as<std::size_t&>;
     { texture_frame_upload_handoff.cache_reused_count } -> std::same_as<std::size_t&>;
     { texture_frame_upload_handoff.uploaded_byte_count } -> std::same_as<std::size_t&>;
@@ -2200,6 +2209,8 @@ static_assert(requires(
     { texture_frame_upload_handoff_entry_diff.before_uploaded_byte_count } -> std::same_as<std::size_t&>;
     { texture_frame_upload_handoff_entry_diff.after_uploaded_byte_count } -> std::same_as<std::size_t&>;
     { texture_frame_upload_handoff_entry_diff.uploaded_byte_delta } -> std::same_as<std::int64_t&>;
+    { texture_frame_upload_handoff_entry_diff.before_missing_frame_binding } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry_diff.after_missing_frame_binding } -> std::same_as<bool&>;
     { texture_frame_upload_handoff_entry_diff.readiness_changed } -> std::same_as<bool&>;
     { texture_frame_upload_handoff_entry_diff.placeholder_changed } -> std::same_as<bool&>;
     { texture_frame_upload_handoff_entry_diff.blocker_changed } -> std::same_as<bool&>;

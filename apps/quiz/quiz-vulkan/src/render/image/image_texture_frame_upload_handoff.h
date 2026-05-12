@@ -18,6 +18,7 @@ enum class render_image_texture_frame_upload_handoff_entry_status {
     placeholder,
     blocked,
     missing_upload_result,
+    missing_frame_binding,
     removed,
 };
 
@@ -33,6 +34,8 @@ inline std::string render_image_texture_frame_upload_handoff_entry_status_name(
         return "blocked";
     case render_image_texture_frame_upload_handoff_entry_status::missing_upload_result:
         return "missing_upload_result";
+    case render_image_texture_frame_upload_handoff_entry_status::missing_frame_binding:
+        return "missing_frame_binding";
     case render_image_texture_frame_upload_handoff_entry_status::removed:
         return "removed";
     }
@@ -89,6 +92,7 @@ struct render_image_texture_frame_upload_handoff_entry {
     bool retryable_blocker = false;
     bool nonretryable_blocker = false;
     bool missing_upload_result = true;
+    bool missing_frame_binding = false;
     bool removed = false;
     bool renderer_handoff_ready = false;
     bool cache_reused = false;
@@ -108,6 +112,10 @@ struct render_image_texture_frame_upload_handoff_entry {
     std::string cache_key_summary;
     std::string sampler_summary;
     std::string retry_eligibility_name;
+    std::size_t attempt_count_for_key = 0;
+    std::size_t failed_attempt_count_for_key = 0;
+    std::size_t retry_after_queue_sequence_delta = 0;
+    std::size_t next_retry_sequence = 0;
     std::string blocker_summary;
     std::string diagnostic;
 
@@ -128,6 +136,7 @@ struct render_image_texture_frame_upload_handoff_summary {
     std::size_t blocked_texture_count = 0;
     std::size_t removed_texture_count = 0;
     std::size_t missing_upload_result_count = 0;
+    std::size_t missing_frame_binding_count = 0;
     std::size_t retry_blocker_count = 0;
     std::size_t nonretryable_blocker_count = 0;
     std::size_t cache_reused_count = 0;
@@ -279,6 +288,7 @@ inline render_image_texture_frame_upload_handoff_entry make_render_image_texture
         .blocked = render_image_texture_frame_upload_handoff_entry_status_is_blocked(status),
         .missing_upload_result =
             status == render_image_texture_frame_upload_handoff_entry_status::missing_upload_result,
+        .missing_frame_binding = false,
         .removed = binding_packet.removed,
         .renderer_handoff_ready = binding_packet.renderer_handoff_ready,
         .cache_reused = binding_packet.cache_reused,
@@ -313,6 +323,10 @@ inline render_image_texture_frame_upload_handoff_entry make_render_image_texture
         entry.retryable_blocker = upload_packet->retryable && upload_packet->rejected;
         entry.nonretryable_blocker = upload_packet->nonretryable_failure && upload_packet->rejected;
         entry.retry_eligibility_name = upload_packet->retry_eligibility_name;
+        entry.attempt_count_for_key = upload_packet->attempt_count_for_key;
+        entry.failed_attempt_count_for_key = upload_packet->failed_attempt_count_for_key;
+        entry.retry_after_queue_sequence_delta = upload_packet->retry_after_queue_sequence_delta;
+        entry.next_retry_sequence = upload_packet->next_retry_sequence;
         entry.blocker_summary = upload_packet->blocker_summary;
     } else {
         entry.blocker_summary = binding_packet.failed
@@ -330,11 +344,64 @@ inline render_image_texture_frame_upload_handoff_entry make_render_image_texture
         entry.diagnostic = "image frame upload handoff entry uses placeholder texture";
     } else if (entry.status == render_image_texture_frame_upload_handoff_entry_status::missing_upload_result) {
         entry.diagnostic = "image frame upload handoff entry is missing upload result";
+    } else if (entry.status == render_image_texture_frame_upload_handoff_entry_status::missing_frame_binding) {
+        entry.diagnostic = "image frame upload handoff entry is missing frame binding";
     } else {
         entry.diagnostic = "image frame upload handoff entry is blocked: " + entry.blocker_summary;
     }
 
     return entry;
+}
+
+inline render_image_texture_frame_upload_handoff_entry make_render_image_texture_frame_upload_handoff_missing_binding_entry(
+    const render_image_texture_upload_result_packet_snapshot& upload_packet,
+    std::size_t request_index)
+{
+    return render_image_texture_frame_upload_handoff_entry{
+        .request_index = request_index,
+        .status = render_image_texture_frame_upload_handoff_entry_status::missing_frame_binding,
+        .status_name = render_image_texture_frame_upload_handoff_entry_status_name(
+            render_image_texture_frame_upload_handoff_entry_status::missing_frame_binding),
+        .sampler = upload_packet.sampler,
+        .sampler_key = upload_packet.sampler_summary,
+        .texture_key = upload_packet.texture_key,
+        .stable_texture_cache_key = upload_packet.stable_cache_key,
+        .texture_id = upload_packet.texture_id,
+        .texture_revision = upload_packet.texture_revision,
+        .texture_width = upload_packet.texture_width,
+        .texture_height = upload_packet.texture_height,
+        .upload_request_id = upload_packet.request_id,
+        .upload_generation_id = upload_packet.generation_id,
+        .upload_result_status = upload_packet.status,
+        .upload_result_status_name = upload_packet.status_name,
+        .upload_status = upload_packet.upload_status,
+        .upload_status_name = upload_packet.upload_status_name,
+        .mip_level_count = upload_packet.mip_level_count,
+        .accepted_mip_level_count = upload_packet.accepted_mip_level_count,
+        .rejected_mip_level_count = upload_packet.rejected_mip_level_count,
+        .uploaded_byte_count = upload_packet.uploaded_byte_count,
+        .planned_staging_byte_count = upload_packet.planned_staging_byte_count,
+        .planned_mipmap_byte_count = upload_packet.planned_mipmap_byte_count,
+        .requested = false,
+        .upload_result_present = true,
+        .ready = false,
+        .placeholder_texture = upload_packet.placeholder_texture,
+        .blocked = false,
+        .retryable_blocker = upload_packet.retryable && upload_packet.rejected,
+        .nonretryable_blocker = upload_packet.nonretryable_failure && upload_packet.rejected,
+        .missing_upload_result = false,
+        .missing_frame_binding = true,
+        .renderer_handoff_ready = false,
+        .cache_key_summary = upload_packet.stable_cache_key,
+        .sampler_summary = upload_packet.sampler_summary,
+        .retry_eligibility_name = upload_packet.retry_eligibility_name,
+        .attempt_count_for_key = upload_packet.attempt_count_for_key,
+        .failed_attempt_count_for_key = upload_packet.failed_attempt_count_for_key,
+        .retry_after_queue_sequence_delta = upload_packet.retry_after_queue_sequence_delta,
+        .next_retry_sequence = upload_packet.next_retry_sequence,
+        .blocker_summary = upload_packet.blocker_summary,
+        .diagnostic = "image frame upload handoff entry is missing frame binding",
+    };
 }
 
 inline void count_render_image_texture_frame_upload_handoff_entry(
@@ -343,7 +410,7 @@ inline void count_render_image_texture_frame_upload_handoff_entry(
 {
     if (entry.removed) {
         ++summary.removed_texture_count;
-    } else {
+    } else if (entry.requested) {
         ++summary.requested_texture_count;
     }
 
@@ -358,11 +425,22 @@ inline void count_render_image_texture_frame_upload_handoff_entry(
     case render_image_texture_frame_upload_handoff_entry_status::blocked:
         ++summary.blocked_texture_count;
         summary.has_blockers = true;
+        if (entry.placeholder_texture) {
+            ++summary.placeholder_texture_count;
+            summary.has_placeholders = true;
+        }
         break;
     case render_image_texture_frame_upload_handoff_entry_status::missing_upload_result:
         ++summary.blocked_texture_count;
         ++summary.missing_upload_result_count;
         summary.has_blockers = true;
+        break;
+    case render_image_texture_frame_upload_handoff_entry_status::missing_frame_binding:
+        ++summary.missing_frame_binding_count;
+        if (entry.placeholder_texture) {
+            ++summary.placeholder_texture_count;
+            summary.has_placeholders = true;
+        }
         break;
     case render_image_texture_frame_upload_handoff_entry_status::removed:
         break;
@@ -467,7 +545,9 @@ inline void finalize_render_image_texture_frame_upload_handoff_summary(
         summary.frame_delta_summary = "image frame upload handoff has no frame delta";
     }
 
-    if (summary.binding_packet_count == 0) {
+    if (summary.binding_packet_count == 0 && summary.missing_frame_binding_count != 0) {
+        summary.diagnostic = "image frame upload handoff has upload results without frame bindings";
+    } else if (summary.binding_packet_count == 0) {
         summary.diagnostic = "image frame upload handoff has no texture requests";
     } else if (summary.has_blockers) {
         summary.diagnostic = "image frame upload handoff has blocked texture uploads";
@@ -492,11 +572,27 @@ inline render_image_texture_frame_upload_handoff_summary make_render_image_textu
         .upload_packet_count = upload_result.packet_count,
     };
 
+    std::map<std::size_t, bool> matched_upload_packet_indexes;
     for (const render_image_texture_frame_binding_packet& binding_packet : binding_plan.packets) {
         const render_image_texture_upload_result_packet_snapshot* upload_packet =
             render_image_texture_frame_upload_result_packet_for_binding_packet(upload_result, binding_packet);
+        if (upload_packet != nullptr) {
+            matched_upload_packet_indexes.emplace(upload_packet->packet_index, true);
+        }
         render_image_texture_frame_upload_handoff_entry entry =
             make_render_image_texture_frame_upload_handoff_entry(binding_packet, upload_packet);
+        count_render_image_texture_frame_upload_handoff_entry(summary, entry);
+        summary.entries.push_back(std::move(entry));
+    }
+
+    for (const render_image_texture_upload_result_packet_snapshot& upload_packet : upload_result.packets) {
+        if (matched_upload_packet_indexes.contains(upload_packet.packet_index)) {
+            continue;
+        }
+        render_image_texture_frame_upload_handoff_entry entry =
+            make_render_image_texture_frame_upload_handoff_missing_binding_entry(
+                upload_packet,
+                frame.request_count + upload_packet.packet_index);
         count_render_image_texture_frame_upload_handoff_entry(summary, entry);
         summary.entries.push_back(std::move(entry));
     }
@@ -590,6 +686,8 @@ struct render_image_texture_frame_upload_handoff_entry_diff {
     bool after_blocked = false;
     bool before_retryable_blocker = false;
     bool after_retryable_blocker = false;
+    bool before_missing_frame_binding = false;
+    bool after_missing_frame_binding = false;
     bool before_removed = false;
     bool after_removed = false;
     bool readiness_changed = false;
@@ -744,6 +842,7 @@ make_render_image_texture_frame_upload_handoff_entry_diff(
         diff.before_placeholder_texture = before->placeholder_texture;
         diff.before_blocked = before->blocked;
         diff.before_retryable_blocker = before->retryable_blocker;
+        diff.before_missing_frame_binding = before->missing_frame_binding;
         diff.before_removed = before->removed;
     }
 
@@ -762,6 +861,7 @@ make_render_image_texture_frame_upload_handoff_entry_diff(
         diff.after_placeholder_texture = after->placeholder_texture;
         diff.after_blocked = after->blocked;
         diff.after_retryable_blocker = after->retryable_blocker;
+        diff.after_missing_frame_binding = after->missing_frame_binding;
         diff.after_removed = after->removed;
     }
 

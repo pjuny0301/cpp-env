@@ -47,6 +47,20 @@ bool contains_pointer_id(const std::vector<std::int32_t>& pointer_ids, std::int3
     return false;
 }
 
+void require_capture_snapshot(
+    quiz_vulkan::input::pointer_capture_snapshot snapshot,
+    quiz_vulkan::input::pointer_capture_lifecycle lifecycle,
+    bool active,
+    std::int32_t pointer_id,
+    std::size_t tracked_pointer_count,
+    const char* message)
+{
+    require(snapshot.lifecycle == lifecycle, message);
+    require(snapshot.active == active, message);
+    require(snapshot.pointer_id == pointer_id, message);
+    require(snapshot.tracked_pointer_count == tracked_pointer_count, message);
+}
+
 quiz_vulkan::input::platform_input_replay_step request_step(
     std::string label,
     quiz_vulkan::input::platform_input_sample sample)
@@ -72,6 +86,20 @@ quiz_vulkan::input::platform_input_replay_step focus_step(
             quiz_vulkan::raw_platform_focus_event{
                 .timestamp_ms = timestamp_ms,
                 .phase = phase,
+            },
+        },
+    };
+}
+
+quiz_vulkan::input::platform_input_replay_step time_step(
+    std::string label,
+    std::int64_t timestamp_ms)
+{
+    return quiz_vulkan::input::platform_input_replay_step{
+        .label = std::move(label),
+        .action = quiz_vulkan::input::platform_input_replay_action{
+            quiz_vulkan::input::normalized_input_replay_time_update{
+                .timestamp_ms = timestamp_ms,
             },
         },
     };
@@ -704,6 +732,492 @@ void test_platform_replay_diff_flags_ime_utf8_pointer_and_wheel_changes()
         "platform hardening diff fixture preserves expected committed text");
 }
 
+void test_touch_multipointer_arbitration_replay_preserves_route_evidence()
+{
+    using namespace quiz_vulkan::input;
+
+    const std::array steps{
+        request_step("first touch down", platform_touch_sample{
+            .timestamp_ms = 900,
+            .contact_id = 10,
+            .phase = platform_pointer_sample_phase::down,
+            .x = 0.0f,
+            .y = 0.0f,
+        }),
+        request_step("second touch down", platform_touch_sample{
+            .timestamp_ms = 910,
+            .contact_id = 20,
+            .phase = platform_pointer_sample_phase::down,
+            .x = 50.0f,
+            .y = 0.0f,
+        }),
+        request_step("first touch cancel", platform_touch_sample{
+            .timestamp_ms = 920,
+            .contact_id = 10,
+            .phase = platform_pointer_sample_phase::cancel,
+            .x = 0.0f,
+            .y = 0.0f,
+        }),
+        request_step("second touch up", platform_touch_sample{
+            .timestamp_ms = 940,
+            .contact_id = 20,
+            .phase = platform_pointer_sample_phase::up,
+            .x = 51.0f,
+            .y = 1.0f,
+        }),
+    };
+
+    const platform_input_replay_summary replay = replay_platform_input_batch(
+        std::span{steps},
+        platform_input_replay_options{.initial_focus_target_id = "answer"});
+
+    require(replay.events.touch == steps.size(), "multipointer replay counts all touch samples");
+    require(replay.pointer.total == 5, "multipointer replay records five pointer route entries");
+    require(replay.pointer.kinds.pointer_capture_arbitration == 2,
+        "multipointer replay records two tracking arbitration entries");
+    require(replay.pointer.kinds.gesture_suppressed == 1,
+        "multipointer replay records canceled pointer suppression");
+    require(replay.pointer.kinds.pointer_capture_reset == 1,
+        "multipointer replay records capture reset for canceled pointer");
+    require(replay.pointer.kinds.tap == 1, "multipointer replay records remaining touch tap");
+    require(replay.pointer.saw_multipointer_touch, "multipointer replay records multipointer touch evidence");
+    require(contains_pointer_id(replay.pointer.touch_pointer_ids, 10),
+        "multipointer replay records first touch id");
+    require(contains_pointer_id(replay.pointer.touch_pointer_ids, 20),
+        "multipointer replay records second touch id");
+    require(replay.pointer.final_capture_clean, "multipointer replay ends with clean capture");
+    require(replay.route_summary.pointer_capture_ended_cleanly,
+        "multipointer route summary ends with clean capture");
+
+    const normalized_input_replay_pointer_timeline_entry& second_down =
+        replay.steps[1].normalized_batch.pointer.timeline.front();
+    require(second_down.kind == normalized_input_replay_pointer_timeline_kind::pointer_capture_arbitration,
+        "multipointer second down records arbitration timeline entry");
+    require(second_down.pointer_id == 20, "multipointer second down records second pointer id");
+    require(second_down.decision == pointer_arbitration_decision::tracked,
+        "multipointer second down records tracked decision");
+    require(second_down.tracked_pointer_count_before == 1,
+        "multipointer second down records one tracked pointer before");
+    require(second_down.tracked_pointer_count_after == 2,
+        "multipointer second down records two tracked pointers after");
+    require_capture_snapshot(
+        second_down.capture_after,
+        pointer_capture_lifecycle::tracking,
+        false,
+        10,
+        2,
+        "multipointer second down preserves deterministic lowest tracked pointer id");
+
+    const platform_input_replay_step_diagnostics& cancel = replay.steps[2];
+    require(cancel.normalized_batch.pointer.timeline.size() == 2,
+        "multipointer cancel records suppression plus reset entries");
+    const normalized_input_replay_pointer_timeline_entry& cancel_suppression =
+        cancel.normalized_batch.pointer.timeline[0];
+    require(cancel_suppression.kind == normalized_input_replay_pointer_timeline_kind::gesture_suppressed,
+        "multipointer cancel first entry records suppression");
+    require(cancel_suppression.pointer_id == 10, "multipointer cancel records canceled pointer id");
+    require(cancel_suppression.decision == pointer_arbitration_decision::canceled,
+        "multipointer cancel records canceled decision");
+    require(cancel_suppression.tracked_pointer_count_before == 2,
+        "multipointer cancel records two tracked before");
+    require(cancel_suppression.tracked_pointer_count_after == 1,
+        "multipointer cancel records one tracked after");
+
+    const normalized_input_replay_pointer_timeline_entry& cancel_reset =
+        cancel.normalized_batch.pointer.timeline[1];
+    require(cancel_reset.kind == normalized_input_replay_pointer_timeline_kind::pointer_capture_reset,
+        "multipointer cancel second entry records capture reset");
+    require_capture_snapshot(
+        cancel_reset.capture_after,
+        pointer_capture_lifecycle::tracking,
+        false,
+        20,
+        1,
+        "multipointer cancel reset keeps remaining pointer tracked");
+
+    const normalized_input_replay_pointer_timeline_entry& remaining_tap =
+        replay.steps[3].normalized_batch.pointer.timeline.front();
+    require(remaining_tap.kind == normalized_input_replay_pointer_timeline_kind::tap,
+        "multipointer remaining touch emits tap");
+    require(remaining_tap.pointer_id == 20, "multipointer remaining tap preserves pointer id");
+    require(remaining_tap.capture_ended_cleanly_after,
+        "multipointer remaining tap clears final capture state");
+}
+
+void test_platform_replay_records_long_press_swipe_and_drag_threshold_evidence()
+{
+    using namespace quiz_vulkan::input;
+
+    const std::array steps{
+        request_step("long press down", platform_touch_sample{
+            .timestamp_ms = 1000,
+            .contact_id = 31,
+            .phase = platform_pointer_sample_phase::down,
+            .x = 4.0f,
+            .y = 4.0f,
+        }),
+        time_step("long press threshold", 1600),
+        request_step("long press release", platform_touch_sample{
+            .timestamp_ms = 1610,
+            .contact_id = 31,
+            .phase = platform_pointer_sample_phase::up,
+            .x = 4.0f,
+            .y = 4.0f,
+        }),
+        request_step("swipe down", platform_touch_sample{
+            .timestamp_ms = 2000,
+            .contact_id = 32,
+            .phase = platform_pointer_sample_phase::down,
+            .x = 0.0f,
+            .y = 0.0f,
+        }),
+        request_step("swipe up", platform_touch_sample{
+            .timestamp_ms = 2070,
+            .contact_id = 32,
+            .phase = platform_pointer_sample_phase::up,
+            .x = 70.0f,
+            .y = 0.0f,
+        }),
+        request_step("drag down", platform_touch_sample{
+            .timestamp_ms = 3000,
+            .contact_id = 33,
+            .phase = platform_pointer_sample_phase::down,
+            .x = 10.0f,
+            .y = 10.0f,
+        }),
+        request_step("drag move", platform_touch_sample{
+            .timestamp_ms = 3010,
+            .contact_id = 33,
+            .phase = platform_pointer_sample_phase::move,
+            .x = 19.0f,
+            .y = 10.0f,
+        }),
+        request_step("drag release", platform_touch_sample{
+            .timestamp_ms = 3020,
+            .contact_id = 33,
+            .phase = platform_pointer_sample_phase::up,
+            .x = 21.0f,
+            .y = 10.0f,
+        }),
+    };
+
+    const platform_input_replay_summary replay = replay_platform_input_batch(
+        std::span{steps},
+        platform_input_replay_options{.initial_focus_target_id = "answer"});
+
+    require(replay.events.touch == 7, "threshold replay counts touch samples");
+    require(replay.events.time_update == 1, "threshold replay counts long-press time update");
+    require(replay.route_summary.normalized_events.long_press == 1,
+        "threshold replay counts long press event");
+    require(replay.route_summary.normalized_events.swipe_right == 1,
+        "threshold replay counts swipe event");
+    require(replay.route_summary.normalized_events.drag_start == 1,
+        "threshold replay counts drag start event");
+    require(replay.route_summary.normalized_events.drag_end == 1,
+        "threshold replay counts drag end event");
+    require(replay.pointer.kinds.long_press == 1, "threshold replay records long press timeline");
+    require(replay.pointer.kinds.swipe_right == 1, "threshold replay records swipe timeline");
+    require(replay.pointer.kinds.drag_start == 1, "threshold replay records drag start timeline");
+    require(replay.pointer.kinds.drag_end == 1, "threshold replay records drag end timeline");
+    require(replay.pointer.kinds.gesture_suppressed == 1,
+        "threshold replay records long-press release suppression");
+    require(replay.pointer.final_capture_clean, "threshold replay ends with clean capture");
+
+    const normalized_input_replay_pointer_timeline_entry& long_press =
+        replay.steps[1].normalized_batch.pointer.timeline.front();
+    require(long_press.kind == normalized_input_replay_pointer_timeline_kind::long_press,
+        "threshold replay long press step records long press");
+    require(long_press.pointer_id == 31, "threshold replay long press preserves touch id");
+    require(long_press.duration_ms == 600, "threshold replay records long press duration");
+    require(long_press.gesture_policy.long_press_min_duration_ms == 600,
+        "threshold replay records long press threshold");
+    require(long_press.gesture_policy.tap_slop == 8.0f,
+        "threshold replay records tap slop threshold");
+
+    const normalized_input_replay_pointer_timeline_entry& long_release =
+        replay.steps[2].normalized_batch.pointer.timeline.front();
+    require(long_release.kind == normalized_input_replay_pointer_timeline_kind::gesture_suppressed,
+        "threshold replay long press release is suppressed");
+    require(long_release.gesture_policy.decision == gesture_policy_decision::release_suppressed,
+        "threshold replay long press release records suppression decision");
+
+    const normalized_input_replay_pointer_timeline_entry& swipe =
+        replay.steps[4].normalized_batch.pointer.timeline.front();
+    require(swipe.kind == normalized_input_replay_pointer_timeline_kind::swipe_right,
+        "threshold replay swipe step records swipe right");
+    require(swipe.duration_ms == 70, "threshold replay records swipe duration");
+    require(swipe.gesture_policy.delta_x == 70.0f,
+        "threshold replay records swipe policy delta x");
+    require(swipe.gesture_policy.swipe_min_dx == 60.0f,
+        "threshold replay records swipe dx threshold");
+    require(swipe.gesture_policy.swipe_max_dy == 40.0f,
+        "threshold replay records swipe dy threshold");
+    require(swipe.gesture_policy.swipe_max_duration_ms == 800,
+        "threshold replay records swipe duration threshold");
+
+    const normalized_input_replay_pointer_timeline_entry& drag_start =
+        replay.steps[6].normalized_batch.pointer.timeline.front();
+    require(drag_start.kind == normalized_input_replay_pointer_timeline_kind::drag_start,
+        "threshold replay drag move records drag start");
+    require(drag_start.gesture_policy.drag_start_slop == 8.0f,
+        "threshold replay records drag threshold");
+    require(drag_start.gesture_policy.direction == gesture_direction::right,
+        "threshold replay records drag direction");
+
+    const normalized_input_replay_pointer_timeline_entry& drag_end =
+        replay.steps[7].normalized_batch.pointer.timeline.front();
+    require(drag_end.kind == normalized_input_replay_pointer_timeline_kind::drag_end,
+        "threshold replay drag release records drag end");
+    require(drag_end.capture_ended_cleanly_after,
+        "threshold replay drag release clears capture");
+}
+
+void test_cancel_restart_replay_does_not_leak_capture_or_stale_gesture_state()
+{
+    using namespace quiz_vulkan::input;
+
+    const std::array steps{
+        request_step("drag down", platform_touch_sample{
+            .timestamp_ms = 4000,
+            .contact_id = 55,
+            .phase = platform_pointer_sample_phase::down,
+            .x = 0.0f,
+            .y = 0.0f,
+        }),
+        request_step("drag start", platform_touch_sample{
+            .timestamp_ms = 4010,
+            .contact_id = 55,
+            .phase = platform_pointer_sample_phase::move,
+            .x = 20.0f,
+            .y = 0.0f,
+        }),
+        request_step("reuse pointer down", platform_touch_sample{
+            .timestamp_ms = 4020,
+            .contact_id = 55,
+            .phase = platform_pointer_sample_phase::down,
+            .x = 2.0f,
+            .y = 2.0f,
+        }),
+        request_step("reuse pointer cancel", platform_touch_sample{
+            .timestamp_ms = 4030,
+            .contact_id = 55,
+            .phase = platform_pointer_sample_phase::cancel,
+            .x = 2.0f,
+            .y = 2.0f,
+        }),
+        request_step("fresh touch down", platform_touch_sample{
+            .timestamp_ms = 4040,
+            .contact_id = 56,
+            .phase = platform_pointer_sample_phase::down,
+            .x = 1.0f,
+            .y = 1.0f,
+        }),
+        request_step("fresh touch up", platform_touch_sample{
+            .timestamp_ms = 4060,
+            .contact_id = 56,
+            .phase = platform_pointer_sample_phase::up,
+            .x = 1.0f,
+            .y = 1.0f,
+        }),
+    };
+
+    const platform_input_replay_summary replay = replay_platform_input_batch(
+        std::span{steps},
+        platform_input_replay_options{.initial_focus_target_id = "answer"});
+
+    require(replay.pointer.kinds.drag_start == 1, "restart replay records initial drag start");
+    require(replay.pointer.kinds.drag_cancel == 1, "restart replay records restart drag cancel");
+    require(replay.pointer.kinds.pointer_capture_reset == 1,
+        "restart replay records cancel capture reset");
+    require(replay.pointer.kinds.tap == 1, "restart replay records fresh touch tap");
+    require(replay.pointer.decisions.restarted == 1, "restart replay records restarted decision");
+    require(replay.pointer.decisions.canceled == 2,
+        "restart replay records canceled decision for suppression and reset");
+    require(replay.pointer.final_capture_clean, "restart replay ends with clean capture");
+    require(replay.route_summary.pointer_capture_ended_cleanly,
+        "restart route summary ends with clean capture");
+
+    const normalized_input_replay_pointer_timeline_entry& restart =
+        replay.steps[2].normalized_batch.pointer.timeline.front();
+    require(restart.kind == normalized_input_replay_pointer_timeline_kind::drag_cancel,
+        "restart replay reused down emits drag cancel");
+    require(restart.pointer_id == 55, "restart replay reused down preserves pointer id");
+    require(restart.decision == pointer_arbitration_decision::restarted,
+        "restart replay reused down records restarted decision");
+    require_capture_snapshot(
+        restart.capture_before,
+        pointer_capture_lifecycle::captured,
+        true,
+        55,
+        1,
+        "restart replay reused down records captured pointer before");
+    require_capture_snapshot(
+        restart.capture_after,
+        pointer_capture_lifecycle::tracking,
+        false,
+        55,
+        1,
+        "restart replay reused down records replacement tracking state");
+
+    const platform_input_replay_step_diagnostics& cancel = replay.steps[3];
+    require(cancel.normalized_batch.pointer.timeline.size() == 2,
+        "restart replay cancel records suppression plus reset");
+    require(cancel.normalized_batch.pointer.timeline[1].capture_ended_cleanly_after,
+        "restart replay cancel reset clears capture");
+
+    const normalized_input_replay_pointer_timeline_entry& fresh_tap =
+        replay.steps[5].normalized_batch.pointer.timeline.front();
+    require(fresh_tap.kind == normalized_input_replay_pointer_timeline_kind::tap,
+        "restart replay fresh touch emits tap");
+    require(fresh_tap.pointer_id == 56, "restart replay fresh tap uses new pointer id");
+    require(fresh_tap.capture_ended_cleanly_after,
+        "restart replay fresh tap has no stale capture");
+}
+
+void test_platform_replay_diff_flags_touch_gesture_threshold_and_capture_changes()
+{
+    using namespace quiz_vulkan::input;
+
+    const std::array threshold_steps{
+        request_step("swipe threshold down", platform_touch_sample{
+            .timestamp_ms = 5000,
+            .contact_id = 70,
+            .phase = platform_pointer_sample_phase::down,
+            .x = 0.0f,
+            .y = 0.0f,
+        }),
+        request_step("swipe threshold up", platform_touch_sample{
+            .timestamp_ms = 5060,
+            .contact_id = 70,
+            .phase = platform_pointer_sample_phase::up,
+            .x = 70.0f,
+            .y = 0.0f,
+        }),
+    };
+
+    input_engine default_engine;
+    input_engine tighter_engine{gesture_thresholds{.swipe_min_dx = 80.0f}};
+    platform_input_translator translator;
+    const platform_input_replay_summary accepted = replay_platform_input_batch(
+        default_engine,
+        translator,
+        std::span{threshold_steps},
+        platform_input_replay_options{.initial_focus_target_id = "answer"});
+    const platform_input_replay_summary suppressed = replay_platform_input_batch(
+        tighter_engine,
+        translator,
+        std::span{threshold_steps},
+        platform_input_replay_options{.initial_focus_target_id = "answer"});
+    const platform_input_replay_diff regression = diff_platform_input_replay_summaries(accepted, suppressed);
+    const platform_input_replay_diff recovery = diff_platform_input_replay_summaries(suppressed, accepted);
+
+    require(!regression.event_counts_changed,
+        "gesture threshold diff keeps source event counts stable");
+    require(!regression.translation_counts_changed,
+        "gesture threshold diff keeps translation counts stable");
+    require(regression.normalized_changed,
+        "gesture threshold diff flags normalized replay changes");
+    require(regression.gesture_capture_focus_changed,
+        "gesture threshold diff flags gesture capture category");
+    require(regression.normalized.gesture_policies.changed,
+        "gesture threshold diff flags gesture policy changes");
+    require(regression.normalized.gesture_policies.threshold_change_count >= 2,
+        "gesture threshold diff records threshold changes for compared routes");
+    require(regression.normalized.gesture_policies.swipe_threshold_tightening_count >= 2,
+        "gesture threshold diff records swipe threshold tightening");
+    require(regression.normalized.gesture_policies.decision_change_count == 1,
+        "gesture threshold diff records accepted versus suppressed decision");
+    require(regression.normalized.gesture_policies.accepted_to_suppressed_regression_count == 1,
+        "gesture threshold diff records accepted-to-suppressed regression");
+    require(regression.normalized.pointer.kinds.swipe_right.delta == -1,
+        "gesture threshold diff records lost swipe event");
+    require(regression.normalized.pointer.kinds.gesture_suppressed.delta == 1,
+        "gesture threshold diff records added suppression");
+    require(regression.normalized.regression.gesture_policy_changed,
+        "gesture threshold diff regression summary flags gesture policy");
+    require(regression.normalized.regression.pointer_timeline_changed,
+        "gesture threshold diff regression summary flags pointer timeline");
+
+    require(recovery.normalized.gesture_policies.suppressed_to_accepted_recovery_count == 1,
+        "gesture threshold recovery diff records suppressed-to-accepted recovery");
+    require(recovery.normalized.gesture_policies.swipe_threshold_loosening_count >= 2,
+        "gesture threshold recovery diff records swipe threshold loosening");
+    require(recovery.normalized.pointer.kinds.swipe_right.delta == 1,
+        "gesture threshold recovery diff records restored swipe event");
+
+    const std::array before_steps{
+        request_step("single touch down", platform_touch_sample{
+            .timestamp_ms = 5100,
+            .contact_id = 80,
+            .phase = platform_pointer_sample_phase::down,
+            .x = 0.0f,
+            .y = 0.0f,
+        }),
+        request_step("single touch up", platform_touch_sample{
+            .timestamp_ms = 5120,
+            .contact_id = 80,
+            .phase = platform_pointer_sample_phase::up,
+            .x = 1.0f,
+            .y = 1.0f,
+        }),
+    };
+    const std::array after_steps{
+        request_step("multi first down", platform_touch_sample{
+            .timestamp_ms = 5100,
+            .contact_id = 80,
+            .phase = platform_pointer_sample_phase::down,
+            .x = 0.0f,
+            .y = 0.0f,
+        }),
+        request_step("multi second down", platform_touch_sample{
+            .timestamp_ms = 5110,
+            .contact_id = 81,
+            .phase = platform_pointer_sample_phase::down,
+            .x = 40.0f,
+            .y = 0.0f,
+        }),
+        request_step("multi first cancel", platform_touch_sample{
+            .timestamp_ms = 5120,
+            .contact_id = 80,
+            .phase = platform_pointer_sample_phase::cancel,
+            .x = 0.0f,
+            .y = 0.0f,
+        }),
+        request_step("multi second up", platform_touch_sample{
+            .timestamp_ms = 5140,
+            .contact_id = 81,
+            .phase = platform_pointer_sample_phase::up,
+            .x = 41.0f,
+            .y = 1.0f,
+        }),
+    };
+
+    const platform_input_replay_summary single = replay_platform_input_batch(
+        std::span{before_steps},
+        platform_input_replay_options{.initial_focus_target_id = "answer"});
+    const platform_input_replay_summary multi = replay_platform_input_batch(
+        std::span{after_steps},
+        platform_input_replay_options{.initial_focus_target_id = "answer"});
+    const platform_input_replay_diff touch_diff = diff_platform_input_replay_summaries(single, multi);
+
+    require(touch_diff.event_counts_changed, "touch diff flags changed source event counts");
+    require(touch_diff.events.touch.delta == 2, "touch diff records added touch samples");
+    require(touch_diff.normalized.pointer.saw_multipointer_touch.changed,
+        "touch diff flags multipointer touch state change");
+    require(touch_diff.normalized.pointer.kinds.pointer_capture_arbitration.delta == 1,
+        "touch diff records additional arbitration route");
+    require(touch_diff.normalized.pointer.kinds.pointer_capture_reset.delta == 1,
+        "touch diff records added capture reset route");
+    require(touch_diff.normalized.pointer.kinds.gesture_suppressed.delta == 1,
+        "touch diff records added cancel suppression route");
+    require(touch_diff.normalized.pointer.touch_pointer_id_count.delta == 1,
+        "touch diff records additional touch pointer id");
+    require(touch_diff.normalized.regression.pointer_timeline_changed,
+        "touch diff regression summary flags pointer timeline");
+    require(!multi.pointer.final_capture.active && multi.pointer.final_capture_clean,
+        "touch diff fixture after replay ends with clean capture");
+}
+
 } // namespace
 
 int main()
@@ -714,5 +1228,9 @@ int main()
     test_utf8_text_and_backspace_replay_stay_boundary_safe();
     test_pointer_cancel_restart_and_wheel_preserve_capture_and_focus_evidence();
     test_platform_replay_diff_flags_ime_utf8_pointer_and_wheel_changes();
+    test_touch_multipointer_arbitration_replay_preserves_route_evidence();
+    test_platform_replay_records_long_press_swipe_and_drag_threshold_evidence();
+    test_cancel_restart_replay_does_not_leak_capture_or_stale_gesture_state();
+    test_platform_replay_diff_flags_touch_gesture_threshold_and_capture_changes();
     return 0;
 }

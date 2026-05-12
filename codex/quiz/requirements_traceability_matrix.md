@@ -6,6 +6,9 @@
 
 최근 baseline 통합 증거:
 
+- current: image frame upload handoff diagnostics and platform input replay hardening integrated; Windows MinGW focused image/input CTest 2/2 and interface compile target build confirmed.
+- `9665261`: platform input replay tests now cover IME restart/cancel, UTF-8 backspace boundary safety, pointer cancel/restart, wheel evidence, and replay diff category flags.
+- `f747652`: image frame upload handoff diagnostics now connect frame binding packets to upload result snapshots by stable texture/cache key while keeping cache/uploader internals hidden.
 - current: Vulkan native queue present operation planning integrated; Windows MinGW focused present/renderer CTest 2/2 and interface compile target build confirmed.
 - `0892ae9`: native queue present operation planning now reports queue-present symbol readiness, swapchain extension readiness, acquired/submitted frame readiness, out-of-date/suboptimal states, blockers, and frame completion readiness.
 - current: platform input replay diagnostics integrated with public FILE_SET registration; Windows MinGW focused platform input CTest 3/3 and interface compile target build confirmed.

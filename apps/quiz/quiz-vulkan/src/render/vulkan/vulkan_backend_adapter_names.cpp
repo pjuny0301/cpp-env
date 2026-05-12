@@ -495,6 +495,49 @@ std::string_view frame_completion_status_name(vulkan_frame_completion_status sta
     return "unknown";
 }
 
+std::string_view native_queue_present_operation_status_name(
+    vulkan_native_queue_present_operation_status status)
+{
+    switch (status) {
+    case vulkan_native_queue_present_operation_status::not_checked:
+        return "not_checked";
+    case vulkan_native_queue_present_operation_status::ready:
+        return "ready";
+    case vulkan_native_queue_present_operation_status::acquire_operation_unavailable:
+        return "acquire_operation_unavailable";
+    case vulkan_native_queue_present_operation_status::submit_batch_unavailable:
+        return "submit_batch_unavailable";
+    case vulkan_native_queue_present_operation_status::present_completion_unavailable:
+        return "present_completion_unavailable";
+    case vulkan_native_queue_present_operation_status::native_entrypoints_unavailable:
+        return "native_entrypoints_unavailable";
+    case vulkan_native_queue_present_operation_status::required_extension_unavailable:
+        return "required_extension_unavailable";
+    case vulkan_native_queue_present_operation_status::missing_queue_present_symbol:
+        return "missing_queue_present_symbol";
+    case vulkan_native_queue_present_operation_status::present_queue_unavailable:
+        return "present_queue_unavailable";
+    case vulkan_native_queue_present_operation_status::swapchain_unavailable:
+        return "swapchain_unavailable";
+    case vulkan_native_queue_present_operation_status::acquired_image_unavailable:
+        return "acquired_image_unavailable";
+    case vulkan_native_queue_present_operation_status::submitted_frame_unavailable:
+        return "submitted_frame_unavailable";
+    case vulkan_native_queue_present_operation_status::present_result_unavailable:
+        return "present_result_unavailable";
+    case vulkan_native_queue_present_operation_status::out_of_date:
+        return "out_of_date";
+    case vulkan_native_queue_present_operation_status::suboptimal:
+        return "suboptimal";
+    case vulkan_native_queue_present_operation_status::present_failed_recoverable:
+        return "present_failed_recoverable";
+    case vulkan_native_queue_present_operation_status::present_failed_fatal:
+        return "present_failed_fatal";
+    }
+
+    return "unknown";
+}
+
 std::string_view frame_pipeline_handoff_status_name(
     vulkan_backend_frame_pipeline_handoff_status status)
 {

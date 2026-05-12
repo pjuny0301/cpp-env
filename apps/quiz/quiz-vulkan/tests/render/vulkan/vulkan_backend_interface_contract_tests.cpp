@@ -5023,6 +5023,58 @@ static_assert(std::same_as<
     render::vulkan_backend::vulkan_present_completion_plan_status>);
 
 static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_present_operation_status::not_checked),
+    render::vulkan_backend::vulkan_native_queue_present_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_present_operation_status::ready),
+    render::vulkan_backend::vulkan_native_queue_present_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_present_operation_status::acquire_operation_unavailable),
+    render::vulkan_backend::vulkan_native_queue_present_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_present_operation_status::submit_batch_unavailable),
+    render::vulkan_backend::vulkan_native_queue_present_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_present_operation_status::present_completion_unavailable),
+    render::vulkan_backend::vulkan_native_queue_present_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_present_operation_status::native_entrypoints_unavailable),
+    render::vulkan_backend::vulkan_native_queue_present_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_present_operation_status::required_extension_unavailable),
+    render::vulkan_backend::vulkan_native_queue_present_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_present_operation_status::missing_queue_present_symbol),
+    render::vulkan_backend::vulkan_native_queue_present_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_present_operation_status::present_queue_unavailable),
+    render::vulkan_backend::vulkan_native_queue_present_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_present_operation_status::swapchain_unavailable),
+    render::vulkan_backend::vulkan_native_queue_present_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_present_operation_status::acquired_image_unavailable),
+    render::vulkan_backend::vulkan_native_queue_present_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_present_operation_status::submitted_frame_unavailable),
+    render::vulkan_backend::vulkan_native_queue_present_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_present_operation_status::present_result_unavailable),
+    render::vulkan_backend::vulkan_native_queue_present_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_present_operation_status::out_of_date),
+    render::vulkan_backend::vulkan_native_queue_present_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_present_operation_status::suboptimal),
+    render::vulkan_backend::vulkan_native_queue_present_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_present_operation_status::present_failed_recoverable),
+    render::vulkan_backend::vulkan_native_queue_present_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_present_operation_status::present_failed_fatal),
+    render::vulkan_backend::vulkan_native_queue_present_operation_status>);
+
+static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_frame_completion_status::not_checked),
     render::vulkan_backend::vulkan_frame_completion_status>);
 static_assert(std::same_as<
@@ -5052,10 +5104,13 @@ static_assert(std::same_as<
 
 static_assert(requires(
     render::vulkan_backend::vulkan_present_completion_plan_status present_status,
-    render::vulkan_backend::vulkan_frame_completion_status frame_status) {
+    render::vulkan_backend::vulkan_frame_completion_status frame_status,
+    render::vulkan_backend::vulkan_native_queue_present_operation_status native_present_status) {
     { render::vulkan_backend::present_completion_plan_status_name(present_status) }
         -> std::same_as<std::string_view>;
     { render::vulkan_backend::frame_completion_status_name(frame_status) }
+        -> std::same_as<std::string_view>;
+    { render::vulkan_backend::native_queue_present_operation_status_name(native_present_status) }
         -> std::same_as<std::string_view>;
 });
 
@@ -5202,6 +5257,117 @@ static_assert(requires(render::vulkan_backend::vulkan_present_completion_plan_re
     { plan.diagnostic } -> std::same_as<std::string&>;
     { plan.completed() } -> std::same_as<bool>;
     { plan.blocked() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_queue_present_operation_request request) {
+    { request.acquire_operation }
+        -> std::same_as<render::vulkan_backend::vulkan_native_swapchain_acquire_operation_result&>;
+    { request.submit_batch }
+        -> std::same_as<render::vulkan_backend::vulkan_submit_batch_plan_result&>;
+    { request.present_completion }
+        -> std::same_as<render::vulkan_backend::vulkan_present_completion_plan_result&>;
+    { request.native_entrypoints }
+        -> std::same_as<render::vulkan_backend::vulkan_native_swapchain_entrypoint_readiness&>;
+    { request.present_result }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_present_result&>;
+    { request.allow_suboptimal } -> std::same_as<bool&>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_queue_present_operation_summary summary) {
+    { summary.checked } -> std::same_as<bool&>;
+    { summary.status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_queue_present_operation_status&>;
+    { summary.entrypoint_name } -> std::same_as<std::string&>;
+    { summary.vk_queue_present_callable } -> std::same_as<bool&>;
+    { summary.frame_lifecycle_may_complete } -> std::same_as<bool&>;
+    { summary.device } -> std::same_as<render::vulkan_backend::vulkan_device_handle&>;
+    { summary.swapchain } -> std::same_as<render::vulkan_backend::vulkan_swapchain_handle&>;
+    { summary.present_queue } -> std::same_as<render::vulkan_backend::vulkan_queue_handle&>;
+    { summary.image_id } -> std::same_as<render::vulkan_backend::vulkan_swapchain_image_id&>;
+    { summary.image_handle } -> std::same_as<render::vulkan_backend::vulkan_swapchain_image_handle&>;
+    { summary.wait_render_finished_semaphore }
+        -> std::same_as<render::vulkan_backend::vulkan_command_submit_sync_handle&>;
+    { summary.present_status }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_present_status&>;
+    { summary.acquire_operation_checked } -> std::same_as<bool&>;
+    { summary.acquired_image_ready } -> std::same_as<bool&>;
+    { summary.submit_batch_checked } -> std::same_as<bool&>;
+    { summary.submit_batch_ready } -> std::same_as<bool&>;
+    { summary.present_completion_checked } -> std::same_as<bool&>;
+    { summary.present_completion_ready } -> std::same_as<bool&>;
+    { summary.native_entrypoints_checked } -> std::same_as<bool&>;
+    { summary.required_extensions_ready } -> std::same_as<bool&>;
+    { summary.queue_present_symbol_ready } -> std::same_as<bool&>;
+    { summary.present_queue_ready } -> std::same_as<bool&>;
+    { summary.swapchain_ready } -> std::same_as<bool&>;
+    { summary.submitted_frame_ready } -> std::same_as<bool&>;
+    { summary.present_request_ready } -> std::same_as<bool&>;
+    { summary.present_adapter_result_ready } -> std::same_as<bool&>;
+    { summary.present_result_checked } -> std::same_as<bool&>;
+    { summary.present_result_completed } -> std::same_as<bool&>;
+    { summary.submit_before_present } -> std::same_as<bool&>;
+    { summary.out_of_date } -> std::same_as<bool&>;
+    { summary.suboptimal } -> std::same_as<bool&>;
+    { summary.recoverable_failure } -> std::same_as<bool&>;
+    { summary.fatal_failure } -> std::same_as<bool&>;
+    { summary.missing_required_extension } -> std::same_as<std::string&>;
+    { summary.missing_symbol_name } -> std::same_as<std::string&>;
+    { summary.diagnostic } -> std::same_as<std::string&>;
+    { summary.ready_for_frame_completion() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_queue_present_operation_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_queue_present_operation_status&>;
+    { result.acquire_operation }
+        -> std::same_as<render::vulkan_backend::vulkan_native_swapchain_acquire_operation_result&>;
+    { result.submit_batch }
+        -> std::same_as<render::vulkan_backend::vulkan_submit_batch_plan_result&>;
+    { result.present_completion }
+        -> std::same_as<render::vulkan_backend::vulkan_present_completion_plan_result&>;
+    { result.native_entrypoints }
+        -> std::same_as<render::vulkan_backend::vulkan_native_swapchain_entrypoint_readiness&>;
+    { result.device } -> std::same_as<render::vulkan_backend::vulkan_device_handle&>;
+    { result.swapchain } -> std::same_as<render::vulkan_backend::vulkan_swapchain_handle&>;
+    { result.present_queue } -> std::same_as<render::vulkan_backend::vulkan_queue_handle&>;
+    { result.image_id } -> std::same_as<render::vulkan_backend::vulkan_swapchain_image_id&>;
+    { result.image_handle } -> std::same_as<render::vulkan_backend::vulkan_swapchain_image_handle&>;
+    { result.wait_render_finished_semaphore }
+        -> std::same_as<render::vulkan_backend::vulkan_command_submit_sync_handle&>;
+    { result.present_status }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_present_status&>;
+    { result.acquire_operation_checked } -> std::same_as<bool&>;
+    { result.acquired_image_ready } -> std::same_as<bool&>;
+    { result.submit_batch_checked } -> std::same_as<bool&>;
+    { result.submit_batch_ready } -> std::same_as<bool&>;
+    { result.present_completion_checked } -> std::same_as<bool&>;
+    { result.present_completion_ready } -> std::same_as<bool&>;
+    { result.native_entrypoints_checked } -> std::same_as<bool&>;
+    { result.required_extensions_ready } -> std::same_as<bool&>;
+    { result.queue_present_symbol_ready } -> std::same_as<bool&>;
+    { result.present_queue_ready } -> std::same_as<bool&>;
+    { result.swapchain_ready } -> std::same_as<bool&>;
+    { result.submitted_frame_ready } -> std::same_as<bool&>;
+    { result.present_request_ready } -> std::same_as<bool&>;
+    { result.present_adapter_result_ready } -> std::same_as<bool&>;
+    { result.present_result_checked } -> std::same_as<bool&>;
+    { result.present_result_completed } -> std::same_as<bool&>;
+    { result.submit_before_present } -> std::same_as<bool&>;
+    { result.out_of_date } -> std::same_as<bool&>;
+    { result.suboptimal } -> std::same_as<bool&>;
+    { result.recoverable_failure } -> std::same_as<bool&>;
+    { result.fatal_failure } -> std::same_as<bool&>;
+    { result.vk_queue_present_callable } -> std::same_as<bool&>;
+    { result.frame_lifecycle_may_complete } -> std::same_as<bool&>;
+    { result.missing_required_extension } -> std::same_as<std::string&>;
+    { result.missing_symbol_name } -> std::same_as<std::string&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.operation }
+        -> std::same_as<render::vulkan_backend::vulkan_native_queue_present_operation_summary&>;
+    { result.can_call_vk_queue_present() } -> std::same_as<bool>;
+    { result.ready_for_frame_completion() } -> std::same_as<bool>;
+    { result.blocked() } -> std::same_as<bool>;
 });
 
 static_assert(std::same_as<
@@ -5474,6 +5640,9 @@ static_assert(requires(
         render::vulkan_backend::vulkan_native_function_table_diagnostics{},
         sdk_capabilities) }
         -> std::same_as<render::vulkan_backend::vulkan_present_completion_plan_result>;
+    { render::vulkan_backend::build_vulkan_native_queue_present_operation_plan(
+        render::vulkan_backend::vulkan_native_queue_present_operation_request{}) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_queue_present_operation_result>;
 });
 
 static_assert(requires(

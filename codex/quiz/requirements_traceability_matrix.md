@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: Vulkan native frame operation summary integrated; Windows MinGW focused Vulkan/renderer CTest 2/2 and interface compile target build confirmed.
+- `aa30a27`: native frame operation diagnostics now compose function-table readiness, swapchain creation/images, acquire, command recording, submit, present, frame completion, fallback, and failure states without real Vulkan SDK calls.
 - current: Windows MinGW full CTest passed `95/95` after image/input/text handoff hardening integrations.
 - current: text frame upload handoff hardening integrated; Windows MinGW focused text CTest 1/1 and interface compile target build confirmed.
 - `2199519`: text frame handoff tests now cover missing draw packets versus missing upload results, fallback/backend flag changes, page revision/page ID diffs, blocker deltas, and upload byte deltas.

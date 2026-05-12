@@ -1466,6 +1466,87 @@ static_assert(requires(
 });
 
 static_assert(requires(
+    render::render_text_font_fallback_run_status status,
+    render::render_text_font_fallback_run_snapshot run,
+    render::render_text_font_fallback_run_plan_policy_snapshot policy,
+    render::render_text_font_fallback_run_plan_request request,
+    render::render_text_font_fallback_run_plan_snapshot plan,
+    render::render_text_font_fallback_run_diff_policy_snapshot diff_policy,
+    render::render_text_font_fallback_run_diff_snapshot run_diff,
+    render::render_text_font_fallback_run_plan_diff_snapshot plan_diff,
+    render::font_face_catalog catalog,
+    render::render_text_style style,
+    std::string_view text,
+    std::vector<render::font_face_id> face_ids) {
+    { render::render_text_font_fallback_run_status_name(status) } -> std::same_as<std::string>;
+    { run.stable_run_key } -> std::same_as<std::string&>;
+    { run.item_index } -> std::same_as<std::size_t&>;
+    { run.source_run_index } -> std::same_as<std::size_t&>;
+    { run.fallback_run_index } -> std::same_as<std::size_t&>;
+    { run.style_token } -> std::same_as<render::render_style_id&>;
+    { run.byte_offset } -> std::same_as<std::size_t&>;
+    { run.byte_count } -> std::same_as<std::size_t&>;
+    { run.codepoint_offset } -> std::same_as<std::size_t&>;
+    { run.codepoint_count } -> std::same_as<std::size_t&>;
+    { run.first_codepoint } -> std::same_as<std::uint32_t&>;
+    { run.last_codepoint } -> std::same_as<std::uint32_t&>;
+    { run.requested_face_id } -> std::same_as<render::font_face_id&>;
+    { run.selected_face_id } -> std::same_as<render::font_face_id&>;
+    { run.selected_family } -> std::same_as<std::string&>;
+    { run.selected_source_uri } -> std::same_as<std::string&>;
+    { run.fallback_order } -> std::same_as<std::size_t&>;
+    { run.attempted_face_ids } -> std::same_as<std::vector<render::font_face_id>&>;
+    { run.valid_utf8 } -> std::same_as<bool&>;
+    { run.glyph_supported } -> std::same_as<bool&>;
+    { run.used_fallback } -> std::same_as<bool&>;
+    { run.status } -> std::same_as<render::render_text_font_fallback_run_status&>;
+    { run.ok() } -> std::same_as<bool>;
+    { run.missing() } -> std::same_as<bool>;
+    { policy.fallback_run_count } -> std::same_as<std::size_t&>;
+    { policy.covered_codepoint_count } -> std::same_as<std::size_t&>;
+    { policy.fallback_codepoint_count } -> std::same_as<std::size_t&>;
+    { policy.missing_glyph_count } -> std::same_as<std::size_t&>;
+    { policy.invalid_utf8_count } -> std::same_as<std::size_t&>;
+    { policy.unique_selected_face_count } -> std::same_as<std::size_t&>;
+    { policy.has_missing_ranges } -> std::same_as<bool&>;
+    { request.items } -> std::same_as<std::vector<render::render_text_font_fallback_chain_plan_item>&>;
+    { plan.runs } -> std::same_as<std::vector<render::render_text_font_fallback_run_snapshot>&>;
+    { plan.missing_runs } -> std::same_as<std::vector<render::render_text_font_fallback_run_snapshot>&>;
+    { plan.selected_face_order } -> std::same_as<std::vector<render::font_face_id>&>;
+    { plan.policy } -> std::same_as<render::render_text_font_fallback_run_plan_policy_snapshot&>;
+    { plan.ok() } -> std::same_as<bool>;
+    { plan.has_missing_ranges() } -> std::same_as<bool>;
+    { diff_policy.fallback_run_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.covered_codepoint_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.missing_glyph_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.selected_face_order_changed } -> std::same_as<bool&>;
+    { run_diff.stable_run_key } -> std::same_as<std::string&>;
+    { run_diff.status_changed } -> std::same_as<bool&>;
+    { run_diff.selected_face_changed } -> std::same_as<bool&>;
+    { plan_diff.policy } -> std::same_as<render::render_text_font_fallback_run_diff_policy_snapshot&>;
+    { plan_diff.run_diffs } -> std::same_as<std::vector<render::render_text_font_fallback_run_diff_snapshot>&>;
+    { plan_diff.changed_run_keys } -> std::same_as<std::vector<std::string>&>;
+    { plan_diff.has_changes() } -> std::same_as<bool>;
+    { render::font_fallback_run_stable_key_for(run) } -> std::same_as<std::string>;
+    { render::font_fallback_run_attempted_faces_equal(face_ids, face_ids) } -> std::same_as<bool>;
+    { render::font_fallback_runs_can_merge(run, run) } -> std::same_as<bool>;
+    { render::plan_render_text_font_fallback_runs(request, catalog) }
+        -> std::same_as<render::render_text_font_fallback_run_plan_snapshot>;
+    { render::plan_render_text_font_fallback_runs(text, catalog, style) }
+        -> std::same_as<render::render_text_font_fallback_run_plan_snapshot>;
+    { render::font_fallback_run_count_delta(std::size_t{}, std::size_t{}) }
+        -> std::same_as<std::ptrdiff_t>;
+    { render::render_text_font_fallback_run_snapshots_equal(run, run) } -> std::same_as<bool>;
+    { render::find_render_text_font_fallback_run_by_key(plan.runs, run.stable_run_key) }
+        -> std::same_as<const render::render_text_font_fallback_run_snapshot*>;
+    { render::font_fallback_run_selected_face_order_equal(face_ids, face_ids) } -> std::same_as<bool>;
+    { render::diff_render_text_font_fallback_runs(&run, &run, run.stable_run_key) }
+        -> std::same_as<render::render_text_font_fallback_run_diff_snapshot>;
+    { render::diff_render_text_font_fallback_run_plans(plan, plan) }
+        -> std::same_as<render::render_text_font_fallback_run_plan_diff_snapshot>;
+});
+
+static_assert(requires(
     render::render_text_font_fallback_chain_entry_snapshot entry,
     render::render_text_font_fallback_chain_missing_glyph_snapshot missing,
     render::render_text_font_fallback_chain_run_snapshot run,

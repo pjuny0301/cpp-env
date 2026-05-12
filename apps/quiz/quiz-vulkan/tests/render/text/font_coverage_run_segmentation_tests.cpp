@@ -395,6 +395,112 @@ void test_fallback_chain_reports_missing_emoji_without_claiming_support()
     require(run.entries[1].selected_codepoint_count == 1U, "Hangul fallback selects Hangul only");
 }
 
+void test_fallback_run_plan_splits_latin_hangul_and_missing_ranges()
+{
+    using namespace quiz_vulkan::render;
+
+    const font_face_catalog catalog = make_fallback_chain_catalog(false);
+    const std::string text = std::string("A") + std::string("\xEA\xB0\x80", 3)
+        + std::string("\xF0\x9F\x98\x80", 4) + std::string("B");
+    const render_text_font_fallback_run_plan_snapshot plan =
+        plan_render_text_font_fallback_runs(text, catalog, primary_style());
+
+    require(!plan.ok(), "missing emoji keeps fallback run plan incomplete");
+    require(plan.policy.fallback_run_count == 4U, "mixed Latin/Hangul/missing text forms four ranges");
+    require(plan.policy.codepoint_count == 4U, "fallback run plan counts all scalars");
+    require(plan.policy.covered_codepoint_count == 3U, "Latin and Hangul are covered");
+    require(plan.policy.fallback_codepoint_count == 1U, "Hangul uses fallback face");
+    require(plan.policy.missing_glyph_count == 1U, "emoji is missing");
+    require(plan.policy.missing_run_count == 1U, "missing emoji range is counted");
+    require(plan.policy.unique_selected_face_count == 2U, "selected face order excludes missing glyph");
+    require(plan.selected_face_order.size() == 2U, "selected face order records deterministic fallback order");
+    require(plan.selected_face_order[0] == 201U, "Latin requested face is selected first");
+    require(plan.selected_face_order[1] == 202U, "Hangul fallback face is selected second");
+
+    require(plan.runs[0].ok(), "first Latin run is covered");
+    require(plan.runs[0].selected_face_id == 201U, "Latin run selects requested face");
+    require(!plan.runs[0].used_fallback, "Latin run does not use fallback");
+    require(plan.runs[0].byte_offset == 0U && plan.runs[0].byte_count == 1U, "Latin run records byte range");
+    require(!plan.runs[0].stable_run_key.empty(), "Latin run has stable key");
+
+    require(plan.runs[1].ok(), "Hangul run is covered");
+    require(plan.runs[1].selected_face_id == 202U, "Hangul run selects fallback face");
+    require(plan.runs[1].fallback_order == 1U, "Hangul run records fallback order");
+    require(plan.runs[1].used_fallback, "Hangul run records fallback selection");
+    require(plan.runs[1].attempted_face_ids.size() == 2U, "Hangul run records attempted faces");
+    require(plan.runs[1].attempted_face_ids[0] == 201U, "requested face is attempted first");
+    require(plan.runs[1].attempted_face_ids[1] == 202U, "fallback face is attempted second");
+
+    require(plan.runs[2].missing(), "emoji run is missing");
+    require(
+        plan.runs[2].status == render_text_font_fallback_run_status::missing_glyph,
+        "emoji run reports missing glyph status");
+    require(plan.runs[2].selected_face_id == 0U, "missing emoji does not claim selected face");
+    require(!plan.runs[2].glyph_supported, "missing emoji does not claim glyph support");
+    require(plan.missing_runs.size() == 1U, "missing run is copied to missing range summary");
+    require(plan.missing_runs.front().stable_run_key == plan.runs[2].stable_run_key, "missing summary preserves stable key");
+
+    require(plan.runs[3].ok(), "trailing Latin run is covered");
+    require(plan.runs[3].selected_face_id == 201U, "trailing Latin returns to requested face");
+}
+
+void test_fallback_run_plan_merges_contiguous_ranges_for_same_selected_face()
+{
+    using namespace quiz_vulkan::render;
+
+    const font_face_catalog catalog = make_fallback_chain_catalog(true);
+    const std::string text = std::string("AB") + std::string("\xEA\xB0\x80", 3)
+        + std::string("\xEA\xB0\x81", 3);
+    const render_text_font_fallback_run_plan_snapshot plan =
+        plan_render_text_font_fallback_runs(text, catalog, primary_style());
+
+    require(plan.ok(), "Latin and Hangul fallback ranges resolve");
+    require(plan.policy.fallback_run_count == 2U, "contiguous same-face ranges merge");
+    require(plan.runs[0].selected_face_id == 201U, "first merged run uses requested Latin face");
+    require(plan.runs[0].byte_count == 2U, "Latin run merges two ASCII bytes");
+    require(plan.runs[0].codepoint_count == 2U, "Latin run merges two codepoints");
+    require(plan.runs[1].selected_face_id == 202U, "second merged run uses Hangul fallback");
+    require(plan.runs[1].byte_count == 6U, "Hangul run merges two UTF-8 scalars");
+    require(plan.runs[1].codepoint_count == 2U, "Hangul run merges two codepoints");
+    require(plan.runs[1].first_codepoint == 0xac00U, "Hangul run records first codepoint");
+    require(plan.runs[1].last_codepoint == 0xac01U, "Hangul run records last codepoint");
+
+    const render_text_font_fallback_run_plan_snapshot repeated =
+        plan_render_text_font_fallback_runs(text, catalog, primary_style());
+    require(
+        repeated.runs[1].stable_run_key == plan.runs[1].stable_run_key,
+        "stable run key repeats for identical fallback ranges");
+}
+
+void test_fallback_run_plan_diff_reports_catalog_coverage_change()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::string text = std::string("\xF0\x9F\x98\x80", 4);
+    const render_text_font_fallback_run_plan_snapshot missing =
+        plan_render_text_font_fallback_runs(text, make_fallback_chain_catalog(false), primary_style());
+    const render_text_font_fallback_run_plan_snapshot covered =
+        plan_render_text_font_fallback_runs(text, make_fallback_chain_catalog(true), primary_style());
+    const render_text_font_fallback_run_plan_diff_snapshot diff =
+        diff_render_text_font_fallback_run_plans(missing, covered);
+
+    require(!missing.ok(), "baseline plan is missing emoji coverage");
+    require(covered.ok(), "updated catalog covers emoji");
+    require(diff.has_changes(), "fallback run diff detects catalog coverage change");
+    require(diff.changed_run_count == 1U, "same UTF-8 range is reported as changed");
+    require(diff.added_run_count == 0U && diff.removed_run_count == 0U, "coverage change keeps stable run key");
+    require(diff.policy.covered_codepoint_count_delta == 1, "diff records covered codepoint gain");
+    require(diff.policy.missing_glyph_count_delta == -1, "diff records missing glyph recovery");
+    require(diff.policy.unique_selected_face_count_delta == 1, "diff records selected face gain");
+    require(diff.policy.selected_face_order_changed, "diff records selected face order change");
+    require(diff.policy.missing_state_changed, "diff records missing state change");
+    require(diff.run_diffs.front().status_changed, "run diff records status change");
+    require(diff.run_diffs.front().selected_face_changed, "run diff records selected face change");
+    require(diff.run_diffs.front().missing_changed, "run diff records missing recovery");
+    require(diff.run_diffs.front().previous_selected_face_id == 0U, "previous run did not claim selected face");
+    require(diff.run_diffs.front().current_selected_face_id == 203U, "current run selects emoji fallback face");
+}
+
 } // namespace
 
 int main()
@@ -406,5 +512,8 @@ int main()
     test_adjacent_requested_and_fallback_faces_form_separate_merged_runs();
     test_fallback_chain_plans_mixed_batch_selected_face_order_before_shaping();
     test_fallback_chain_reports_missing_emoji_without_claiming_support();
+    test_fallback_run_plan_splits_latin_hangul_and_missing_ranges();
+    test_fallback_run_plan_merges_contiguous_ranges_for_same_selected_face();
+    test_fallback_run_plan_diff_reports_catalog_coverage_change();
     return 0;
 }

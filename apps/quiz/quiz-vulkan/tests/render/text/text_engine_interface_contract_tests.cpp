@@ -9,6 +9,7 @@
 #include "render/text/font_glyph_id_resolver.h"
 #include "render/text/font_glyph_atlas_page_plan.h"
 #include "render/text/font_glyph_atlas_upload_operation_plan.h"
+#include "render/text/font_glyph_atlas_upload_result.h"
 #include "render/text/font_rasterizer.h"
 #include "render/text/text_frame_snapshot.h"
 #include "render/text/text_frame_draw_plan.h"
@@ -2242,6 +2243,162 @@ static_assert(requires(
         -> std::same_as<render::render_text_glyph_atlas_upload_operation_plan_snapshot>;
     { render::plan_render_text_glyph_atlas_upload_operations(request.page_plan, materializations) }
         -> std::same_as<render::render_text_glyph_atlas_upload_operation_plan_snapshot>;
+});
+
+static_assert(requires(
+    render::render_text_glyph_atlas_upload_result_status status,
+    render::render_text_glyph_atlas_upload_result_packet_snapshot packet,
+    render::render_text_glyph_atlas_upload_result_page_snapshot page,
+    render::render_text_glyph_atlas_upload_result_policy_snapshot policy,
+    render::render_text_glyph_atlas_upload_result_request request,
+    render::render_text_glyph_atlas_upload_result_snapshot result,
+    render::render_text_glyph_atlas_upload_result_diff_status diff_status,
+    render::render_text_glyph_atlas_upload_result_policy_diff_snapshot policy_diff,
+    render::render_text_glyph_atlas_upload_result_packet_diff_snapshot packet_diff,
+    render::render_text_glyph_atlas_upload_result_page_diff_snapshot page_diff,
+    render::render_text_glyph_atlas_upload_result_diff_snapshot diff,
+    render::render_text_glyph_atlas_upload_operation_packet operation_packet,
+    std::vector<render::render_text_glyph_atlas_upload_result_page_snapshot> result_pages,
+    std::vector<render::render_text_glyph_atlas_upload_result_packet_snapshot> result_packets,
+    std::vector<bool> used_flags,
+    std::string stable_page_id,
+    std::size_t count) {
+    { render::render_text_glyph_atlas_upload_result_status_name(status) } -> std::same_as<std::string>;
+    { packet.operation_id } -> std::same_as<std::string&>;
+    { packet.upload_request_id } -> std::same_as<std::string&>;
+    { packet.stable_page_id } -> std::same_as<std::string&>;
+    { packet.operation_index } -> std::same_as<std::size_t&>;
+    { packet.page_plan_entry_index } -> std::same_as<std::size_t&>;
+    { packet.materialization_index } -> std::same_as<std::size_t&>;
+    { packet.materialization_id } -> std::same_as<std::string&>;
+    { packet.run_index } -> std::same_as<std::size_t&>;
+    { packet.cluster_index } -> std::same_as<std::size_t&>;
+    { packet.cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { packet.has_cache_key } -> std::same_as<bool&>;
+    { packet.page } -> std::same_as<render::render_text_atlas_page&>;
+    { packet.page_id } -> std::same_as<render::render_text_atlas_page_id&>;
+    { packet.update_bounds } -> std::same_as<render::render_rect&>;
+    { packet.rgba_byte_count } -> std::same_as<std::size_t&>;
+    { packet.operation_status } -> std::same_as<render::render_text_glyph_atlas_upload_operation_status&>;
+    { packet.result_status } -> std::same_as<render::render_text_glyph_atlas_upload_result_status&>;
+    { packet.accepted } -> std::same_as<bool&>;
+    { packet.rejected } -> std::same_as<bool&>;
+    { packet.upload_accepted } -> std::same_as<bool&>;
+    { packet.clean_reuse_accepted } -> std::same_as<bool&>;
+    { packet.dirty_upload } -> std::same_as<bool&>;
+    { packet.clean_reuse } -> std::same_as<bool&>;
+    { packet.blocked } -> std::same_as<bool&>;
+    { packet.overflow } -> std::same_as<bool&>;
+    { packet.missing_cache_key } -> std::same_as<bool&>;
+    { packet.missing_upload_request_id } -> std::same_as<bool&>;
+    { packet.payload_byte_count_mismatch } -> std::same_as<bool&>;
+    { packet.blocker_reason } -> std::same_as<std::string&>;
+    { packet.diagnostic } -> std::same_as<std::string&>;
+    { page.stable_page_id } -> std::same_as<std::string&>;
+    { page.page } -> std::same_as<render::render_text_atlas_page&>;
+    { page.page_id } -> std::same_as<render::render_text_atlas_page_id&>;
+    { page.packet_count } -> std::same_as<std::size_t&>;
+    { page.accepted_packet_count } -> std::same_as<std::size_t&>;
+    { page.rejected_packet_count } -> std::same_as<std::size_t&>;
+    { page.upload_request_count } -> std::same_as<std::size_t&>;
+    { page.materialized_glyph_count } -> std::same_as<std::size_t&>;
+    { page.reused_glyph_count } -> std::same_as<std::size_t&>;
+    { page.missing_glyph_count } -> std::same_as<std::size_t&>;
+    { page.blocker_count } -> std::same_as<std::size_t&>;
+    { page.overflow_count } -> std::same_as<std::size_t&>;
+    { page.upload_rgba_bytes } -> std::same_as<std::size_t&>;
+    { page.has_uploads } -> std::same_as<bool&>;
+    { page.has_rejections } -> std::same_as<bool&>;
+    { policy.operation_count } -> std::same_as<std::size_t&>;
+    { policy.accepted_packet_count } -> std::same_as<std::size_t&>;
+    { policy.rejected_packet_count } -> std::same_as<std::size_t&>;
+    { policy.accepted_upload_count } -> std::same_as<std::size_t&>;
+    { policy.accepted_clean_reuse_count } -> std::same_as<std::size_t&>;
+    { policy.rejected_blocked_packet_count } -> std::same_as<std::size_t&>;
+    { policy.rejected_missing_upload_request_id_count } -> std::same_as<std::size_t&>;
+    { policy.blocker_count } -> std::same_as<std::size_t&>;
+    { policy.overflow_count } -> std::same_as<std::size_t&>;
+    { policy.payload_byte_count_mismatch_count } -> std::same_as<std::size_t&>;
+    { policy.upload_request_id_count } -> std::same_as<std::size_t&>;
+    { policy.page_count } -> std::same_as<std::size_t&>;
+    { policy.page_with_upload_count } -> std::same_as<std::size_t&>;
+    { policy.page_with_rejection_count } -> std::same_as<std::size_t&>;
+    { policy.materialized_glyph_count } -> std::same_as<std::size_t&>;
+    { policy.reused_glyph_count } -> std::same_as<std::size_t&>;
+    { policy.missing_glyph_count } -> std::same_as<std::size_t&>;
+    { policy.total_upload_rgba_bytes } -> std::same_as<std::size_t&>;
+    { policy.has_uploads } -> std::same_as<bool&>;
+    { policy.has_rejections } -> std::same_as<bool&>;
+    { policy.diagnostic } -> std::same_as<std::string&>;
+    { request.operation_plan } -> std::same_as<render::render_text_glyph_atlas_upload_operation_plan_snapshot&>;
+    { request.upload_request_ids } -> std::same_as<std::vector<std::string>&>;
+    { request.require_upload_request_ids } -> std::same_as<bool&>;
+    { result.packets }
+        -> std::same_as<std::vector<render::render_text_glyph_atlas_upload_result_packet_snapshot>&>;
+    { result.pages }
+        -> std::same_as<std::vector<render::render_text_glyph_atlas_upload_result_page_snapshot>&>;
+    { result.policy } -> std::same_as<render::render_text_glyph_atlas_upload_result_policy_snapshot&>;
+    { result.ok() } -> std::same_as<bool>;
+    { result.has_uploads() } -> std::same_as<bool>;
+    { result.has_rejections() } -> std::same_as<bool>;
+    { render::render_text_glyph_atlas_upload_result_status_for(operation_packet, stable_page_id, true) }
+        -> std::same_as<render::render_text_glyph_atlas_upload_result_status>;
+    { render::render_text_glyph_atlas_upload_result_rejection_reason_for(status, operation_packet) }
+        -> std::same_as<std::string>;
+    { render::make_render_text_glyph_atlas_upload_result_packet(operation_packet, stable_page_id, true) }
+        -> std::same_as<render::render_text_glyph_atlas_upload_result_packet_snapshot>;
+    { render::render_text_glyph_atlas_upload_result_find_page(result_pages, stable_page_id) }
+        -> std::same_as<render::render_text_glyph_atlas_upload_result_page_snapshot*>;
+    { render::append_render_text_glyph_atlas_upload_result_packet(result, packet) } -> std::same_as<void>;
+    { render::summarize_render_text_glyph_atlas_upload_result_pages(result) } -> std::same_as<void>;
+    { render::make_render_text_glyph_atlas_upload_result(request) }
+        -> std::same_as<render::render_text_glyph_atlas_upload_result_snapshot>;
+    { render::render_text_glyph_atlas_upload_result_diff_status_name(diff_status) }
+        -> std::same_as<std::string>;
+    { policy_diff.before } -> std::same_as<render::render_text_glyph_atlas_upload_result_policy_snapshot&>;
+    { policy_diff.after } -> std::same_as<render::render_text_glyph_atlas_upload_result_policy_snapshot&>;
+    { policy_diff.operation_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { policy_diff.accepted_packet_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { policy_diff.rejected_packet_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { policy_diff.accepted_upload_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { policy_diff.accepted_clean_reuse_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { policy_diff.blocker_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { policy_diff.upload_request_id_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { policy_diff.page_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { policy_diff.materialized_glyph_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { policy_diff.reused_glyph_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { policy_diff.missing_glyph_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { policy_diff.total_upload_rgba_bytes_delta } -> std::same_as<std::ptrdiff_t&>;
+    { policy_diff.has_changes } -> std::same_as<bool&>;
+    { packet_diff.operation_id } -> std::same_as<std::string&>;
+    { packet_diff.accepted_changed } -> std::same_as<bool&>;
+    { packet_diff.upload_request_id_changed } -> std::same_as<bool&>;
+    { packet_diff.upload_rgba_bytes_delta } -> std::same_as<std::ptrdiff_t&>;
+    { page_diff.stable_page_id } -> std::same_as<std::string&>;
+    { page_diff.upload_rgba_bytes_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff.packet_diffs }
+        -> std::same_as<std::vector<render::render_text_glyph_atlas_upload_result_packet_diff_snapshot>&>;
+    { diff.page_diffs }
+        -> std::same_as<std::vector<render::render_text_glyph_atlas_upload_result_page_diff_snapshot>&>;
+    { diff.changed_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { diff.changed_page_ids } -> std::same_as<std::vector<std::string>&>;
+    { diff.policy } -> std::same_as<render::render_text_glyph_atlas_upload_result_policy_diff_snapshot&>;
+    { diff.has_changes() } -> std::same_as<bool>;
+    { render::render_text_glyph_atlas_upload_result_delta(count, count) } -> std::same_as<std::ptrdiff_t>;
+    { render::render_text_glyph_atlas_upload_result_packet_equal(packet, packet) } -> std::same_as<bool>;
+    { render::render_text_glyph_atlas_upload_result_page_equal(page, page) } -> std::same_as<bool>;
+    { render::diff_render_text_glyph_atlas_upload_result_policies(policy, policy) }
+        -> std::same_as<render::render_text_glyph_atlas_upload_result_policy_diff_snapshot>;
+    { render::diff_render_text_glyph_atlas_upload_result_packets(&packet, &packet) }
+        -> std::same_as<render::render_text_glyph_atlas_upload_result_packet_diff_snapshot>;
+    { render::diff_render_text_glyph_atlas_upload_result_pages(&page, &page) }
+        -> std::same_as<render::render_text_glyph_atlas_upload_result_page_diff_snapshot>;
+    { render::find_render_text_glyph_atlas_upload_result_packet(result_packets, stable_page_id, used_flags) }
+        -> std::same_as<const render::render_text_glyph_atlas_upload_result_packet_snapshot*>;
+    { render::find_render_text_glyph_atlas_upload_result_page(result_pages, stable_page_id, used_flags) }
+        -> std::same_as<const render::render_text_glyph_atlas_upload_result_page_snapshot*>;
+    { render::diff_render_text_glyph_atlas_upload_results(result, result) }
+        -> std::same_as<render::render_text_glyph_atlas_upload_result_diff_snapshot>;
 });
 
 static_assert(requires(

@@ -951,6 +951,7 @@ diff_render_text_glyph_atlas_materialization_batches(
 #include "render/text/font_glyph_atlas_page_plan.h"
 #undef QUIZ_VULKAN_RENDER_TEXT_FONT_GLYPH_ATLAS_PAGE_PLAN_HAVE_MATERIALIZATION
 #include "render/text/font_glyph_atlas_upload_operation_plan.h"
+#include "render/text/font_glyph_atlas_upload_result.h"
 
 namespace quiz_vulkan::render {
 

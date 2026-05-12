@@ -1045,6 +1045,143 @@ void test_glyph_atlas_upload_operation_plan_reports_payload_mismatch_blocker()
     require(upload_plan.policy.total_upload_rgba_bytes == 0U, "blocked payload mismatch does not claim bytes");
 }
 
+void test_glyph_atlas_upload_result_accepts_upload_and_clean_reuse_packets()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_glyph_atlas_materialization_snapshot upload =
+        upload_ready_materialization();
+    const render_text_glyph_atlas_materialization_snapshot clean =
+        clean_reuse_materialization();
+    const std::vector<render_text_glyph_atlas_materialization_snapshot> materializations = {
+        upload,
+        clean,
+    };
+    const render_text_glyph_atlas_upload_operation_plan_snapshot operation_plan =
+        plan_render_text_glyph_atlas_upload_operations(
+            plan_render_text_glyph_atlas_pages(materializations),
+            materializations);
+
+    const render_text_glyph_atlas_upload_result_snapshot result =
+        make_render_text_glyph_atlas_upload_result(render_text_glyph_atlas_upload_result_request{
+            .operation_plan = operation_plan,
+            .upload_request_ids = {"upload-request:page-2:A"},
+        });
+
+    require(result.ok(), "accepted upload result has no rejections");
+    require(result.has_uploads(), "accepted upload result reports uploads");
+    require(result.policy.operation_count == 2U, "upload result counts operation packets");
+    require(result.policy.accepted_packet_count == 2U, "upload result accepts upload and clean reuse");
+    require(result.policy.rejected_packet_count == 0U, "upload result has no rejected packets");
+    require(result.policy.accepted_upload_count == 1U, "upload result counts accepted upload");
+    require(result.policy.accepted_clean_reuse_count == 1U, "upload result counts accepted clean reuse");
+    require(result.policy.upload_request_id_count == 1U, "upload result counts upload bridge ids");
+    require(result.policy.materialized_glyph_count == 1U, "upload result counts materialized glyphs");
+    require(result.policy.reused_glyph_count == 1U, "upload result counts reused glyphs");
+    require(result.policy.total_upload_rgba_bytes == upload.atlas_update_rgba_bytes, "upload result totals page bytes");
+    require(result.policy.page_count == 1U, "upload result keeps stable page summaries");
+    require(result.pages.front().stable_page_id == "page:2", "upload result preserves stable page id");
+    require(result.pages.front().upload_rgba_bytes == upload.atlas_update_rgba_bytes, "page summary totals bytes");
+
+    const render_text_glyph_atlas_upload_result_packet_snapshot& upload_packet =
+        result.packets.front();
+    require(
+        upload_packet.result_status == render_text_glyph_atlas_upload_result_status::accepted_upload,
+        "upload packet is accepted");
+    require(upload_packet.upload_request_id == "upload-request:page-2:A", "upload packet preserves request id");
+    require(upload_packet.rgba_byte_count == upload.atlas_update_rgba_bytes, "upload packet preserves bytes");
+
+    const render_text_glyph_atlas_upload_result_packet_snapshot& clean_packet =
+        result.packets.back();
+    require(
+        clean_packet.result_status == render_text_glyph_atlas_upload_result_status::accepted_clean_reuse,
+        "clean reuse packet is accepted");
+    require(clean_packet.clean_reuse_accepted, "clean reuse packet records reuse");
+}
+
+void test_glyph_atlas_upload_result_rejects_blockers_and_missing_upload_ids()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_glyph_atlas_materialization_snapshot upload =
+        upload_ready_materialization();
+    const render_text_glyph_atlas_materialization_snapshot missing =
+        missing_cache_key_materialization();
+    const std::vector<render_text_glyph_atlas_materialization_snapshot> materializations = {
+        upload,
+        missing,
+    };
+    const render_text_glyph_atlas_upload_operation_plan_snapshot operation_plan =
+        plan_render_text_glyph_atlas_upload_operations(
+            plan_render_text_glyph_atlas_pages(materializations),
+            materializations);
+
+    const render_text_glyph_atlas_upload_result_snapshot result =
+        make_render_text_glyph_atlas_upload_result(render_text_glyph_atlas_upload_result_request{
+            .operation_plan = operation_plan,
+        });
+
+    require(!result.ok(), "upload result reports missing ids and blockers");
+    require(result.has_rejections(), "upload result exposes rejections");
+    require(result.policy.accepted_packet_count == 0U, "upload result accepts no packets without ids");
+    require(result.policy.rejected_packet_count == 2U, "upload result rejects both packets");
+    require(
+        result.policy.rejected_missing_upload_request_id_count == 1U,
+        "upload result counts missing upload request id");
+    require(result.policy.rejected_blocked_packet_count == 1U, "upload result counts blocked packet");
+    require(result.policy.blocker_count == 2U, "upload result counts blocker reasons");
+    require(result.policy.missing_glyph_count == 1U, "upload result counts missing glyph/cache key");
+    require(result.policy.total_upload_rgba_bytes == 0U, "rejected upload result claims no bytes");
+    require(
+        result.packets.front().result_status
+            == render_text_glyph_atlas_upload_result_status::rejected_missing_upload_request_id,
+        "upload packet without request id is rejected");
+    require(result.packets.back().missing_cache_key, "missing-cache packet records missing glyph");
+}
+
+void test_glyph_atlas_upload_result_diff_reports_changed_packet_and_page_summaries()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_glyph_atlas_materialization_snapshot upload =
+        upload_ready_materialization();
+    const std::vector<render_text_glyph_atlas_materialization_snapshot> materializations = {
+        upload,
+    };
+    const render_text_glyph_atlas_upload_operation_plan_snapshot operation_plan =
+        plan_render_text_glyph_atlas_upload_operations(
+            plan_render_text_glyph_atlas_pages(materializations),
+            materializations);
+    const render_text_glyph_atlas_upload_result_snapshot accepted =
+        make_render_text_glyph_atlas_upload_result(render_text_glyph_atlas_upload_result_request{
+            .operation_plan = operation_plan,
+            .upload_request_ids = {"upload-request:page-2:A"},
+        });
+    const render_text_glyph_atlas_upload_result_snapshot rejected =
+        make_render_text_glyph_atlas_upload_result(render_text_glyph_atlas_upload_result_request{
+            .operation_plan = operation_plan,
+        });
+
+    const render_text_glyph_atlas_upload_result_diff_snapshot diff =
+        diff_render_text_glyph_atlas_upload_results(accepted, rejected);
+
+    require(diff.has_changes(), "upload result diff reports changed result");
+    require(diff.changed_packet_count == 1U, "upload result diff counts changed packet");
+    require(diff.changed_page_count == 1U, "upload result diff counts changed page");
+    require(diff.changed_packet_ids.size() == 1U, "upload result diff records changed packet id");
+    require(diff.changed_page_ids.size() == 1U, "upload result diff records changed page id");
+    require(diff.policy.accepted_packet_count_delta == -1, "upload result diff records accepted loss");
+    require(diff.policy.rejected_packet_count_delta == 1, "upload result diff records rejection increase");
+    require(
+        diff.policy.total_upload_rgba_bytes_delta
+            == -static_cast<std::ptrdiff_t>(upload.atlas_update_rgba_bytes),
+        "upload result diff records upload byte loss");
+    require(diff.packet_diffs.front().upload_request_id_changed, "packet diff records request id change");
+    require(diff.packet_diffs.front().result_status_changed, "packet diff records status change");
+    require(diff.page_diffs.front().upload_byte_count_changed, "page diff records byte change");
+    require(diff.page_diffs.front().blocker_count_changed, "page diff records blocker change");
+}
+
 void test_atlas_upload_bridge_produces_stable_render_text_atlas_updates()
 {
     using namespace quiz_vulkan::render;
@@ -1683,6 +1820,9 @@ int main()
     test_glyph_atlas_upload_operation_plan_emits_upload_and_clean_reuse_packets();
     test_glyph_atlas_upload_operation_plan_reports_overflow_and_missing_cache_blockers();
     test_glyph_atlas_upload_operation_plan_reports_payload_mismatch_blocker();
+    test_glyph_atlas_upload_result_accepts_upload_and_clean_reuse_packets();
+    test_glyph_atlas_upload_result_rejects_blockers_and_missing_upload_ids();
+    test_glyph_atlas_upload_result_diff_reports_changed_packet_and_page_summaries();
     test_atlas_upload_bridge_produces_stable_render_text_atlas_updates();
     test_atlas_upload_bridge_suppresses_duplicates_and_skips_non_uploadable_work();
     test_text_frame_snapshot_combines_planning_fallback_materialization_and_upload_ids();

@@ -2432,6 +2432,7 @@ static_assert(requires(
     render::render_text_frame_draw_plan_snapshot draw_plan,
     render::render_text_frame_draw_plan_diff_policy draw_diff_policy,
     render::render_text_frame_draw_plan_diff draw_diff,
+    render::render_text_glyph_atlas_upload_result_packet_snapshot upload_result_packet,
     render::render_text_glyph_atlas_upload_result_snapshot upload_result,
     render::render_text_frame_upload_handoff_packet_snapshot handoff_packet,
     render::render_text_frame_upload_handoff_page_snapshot handoff_page,
@@ -2943,6 +2944,8 @@ static_assert(requires(
     { handoff_packet.blocked } -> std::same_as<bool&>;
     { handoff_packet.uploaded } -> std::same_as<bool&>;
     { handoff_packet.clean_reuse } -> std::same_as<bool&>;
+    { handoff_packet.missing_upload_result } -> std::same_as<bool&>;
+    { handoff_packet.missing_draw_packet } -> std::same_as<bool&>;
     { handoff_packet.missing_glyph } -> std::same_as<bool&>;
     { handoff_packet.missing_materialization } -> std::same_as<bool&>;
     { handoff_packet.used_deterministic_fallback } -> std::same_as<bool&>;
@@ -2956,6 +2959,7 @@ static_assert(requires(
     { handoff_page.page_revision } -> std::same_as<render::render_text_revision&>;
     { handoff_page.ready_packet_count } -> std::same_as<std::size_t&>;
     { handoff_page.blocked_packet_count } -> std::same_as<std::size_t&>;
+    { handoff_page.missing_draw_packet_count } -> std::same_as<std::size_t&>;
     { handoff_page.upload_rgba_bytes } -> std::same_as<std::size_t&>;
     { handoff_page.has_uploads } -> std::same_as<bool&>;
     { handoff_page.has_blockers } -> std::same_as<bool&>;
@@ -2964,6 +2968,7 @@ static_assert(requires(
     { handoff_policy.blocked_glyph_packet_count } -> std::same_as<std::size_t&>;
     { handoff_policy.uploaded_page_count } -> std::same_as<std::size_t&>;
     { handoff_policy.upload_result_missing_count } -> std::same_as<std::size_t&>;
+    { handoff_policy.draw_packet_missing_count } -> std::same_as<std::size_t&>;
     { handoff_policy.upload_result_rejected_count } -> std::same_as<std::size_t&>;
     { handoff_policy.uploaded_glyph_count } -> std::same_as<std::size_t&>;
     { handoff_policy.clean_reuse_glyph_count } -> std::same_as<std::size_t&>;
@@ -2990,13 +2995,18 @@ static_assert(requires(
     { handoff.has_blockers() } -> std::same_as<bool>;
     { render::make_render_text_frame_upload_handoff_packet(draw_packet, nullptr) }
         -> std::same_as<render::render_text_frame_upload_handoff_packet_snapshot>;
+    { render::make_render_text_frame_upload_handoff_missing_draw_packet(frame_snapshot, upload_result_packet) }
+        -> std::same_as<render::render_text_frame_upload_handoff_packet_snapshot>;
     { render::make_render_text_frame_upload_handoff(handoff_request) }
         -> std::same_as<render::render_text_frame_upload_handoff_snapshot>;
     { handoff_diff_policy.ready_glyph_packet_count_delta } -> std::same_as<std::ptrdiff_t&>;
     { handoff_diff_policy.blocked_glyph_packet_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { handoff_diff_policy.draw_packet_missing_count_delta } -> std::same_as<std::ptrdiff_t&>;
     { handoff_diff_policy.total_upload_rgba_bytes_delta } -> std::same_as<std::ptrdiff_t&>;
     { handoff_diff_policy.frame_ready_changed } -> std::same_as<bool&>;
     { handoff_diff_policy.blockers_changed } -> std::same_as<bool&>;
+    { handoff_diff_policy.deterministic_fallback_changed } -> std::same_as<bool&>;
+    { handoff_diff_policy.real_backend_changed } -> std::same_as<bool&>;
     { handoff_packet_diff.stable_packet_key } -> std::same_as<std::string&>;
     { handoff_packet_diff.added } -> std::same_as<bool&>;
     { handoff_packet_diff.removed } -> std::same_as<bool&>;

@@ -17,6 +17,7 @@ enum class render_text_frame_upload_handoff_packet_status {
   ready_clean_reuse,
   blocked_draw_packet,
   blocked_missing_upload_result,
+  blocked_missing_draw_packet,
   blocked_upload_rejected,
 };
 
@@ -55,6 +56,7 @@ struct render_text_frame_upload_handoff_packet_snapshot {
   bool uploaded{};
   bool clean_reuse{};
   bool missing_upload_result{};
+  bool missing_draw_packet{};
   bool missing_glyph{};
   bool missing_materialization{};
   bool fallback_incomplete{};
@@ -81,6 +83,7 @@ struct render_text_frame_upload_handoff_page_snapshot {
   std::size_t uploaded_glyph_count{};
   std::size_t clean_reuse_glyph_count{};
   std::size_t missing_glyph_count{};
+  std::size_t missing_draw_packet_count{};
   std::size_t missing_materialization_count{};
   std::size_t upload_rgba_bytes{};
   bool has_uploads{};
@@ -93,6 +96,7 @@ struct render_text_frame_upload_handoff_policy_snapshot {
   std::size_t blocked_glyph_packet_count{};
   std::size_t uploaded_page_count{};
   std::size_t upload_result_missing_count{};
+  std::size_t draw_packet_missing_count{};
   std::size_t upload_result_rejected_count{};
   std::size_t uploaded_glyph_count{};
   std::size_t clean_reuse_glyph_count{};
@@ -149,8 +153,7 @@ namespace detail {
          std::to_string(packet.cluster_byte_offset) + "+" +
          std::to_string(packet.cluster_byte_count) + ":face=" +
          std::to_string(packet.resolved_face_id) + ":glyph=" +
-         std::to_string(packet.resolved_glyph_id) + ":page=" +
-         std::to_string(packet.page_id) + ":cache-face=" +
+         std::to_string(packet.resolved_glyph_id) + ":cache-face=" +
          std::to_string(packet.cache_key.face_id) + ":cache-glyph=" +
          std::to_string(packet.cache_key.glyph_id) + ":cache-px=" +
          std::to_string(packet.cache_key.pixel_size);
@@ -234,6 +237,9 @@ handoff_status_for(
     case render_text_frame_upload_handoff_packet_status::
         blocked_missing_upload_result:
       return "draw packet has no matching atlas upload result";
+    case render_text_frame_upload_handoff_packet_status::
+        blocked_missing_draw_packet:
+      return "atlas upload result has no matching draw packet";
     case render_text_frame_upload_handoff_packet_status::blocked_upload_rejected:
       if (upload_packet != nullptr && !upload_packet->blocker_reason.empty()) {
         return upload_packet->blocker_reason;
@@ -271,7 +277,9 @@ inline void append_packet_to_handoff_policy(
     render_text_frame_upload_handoff_snapshot& snapshot,
     const render_text_frame_upload_handoff_packet_snapshot& packet) {
   auto& policy = snapshot.policy;
-  ++policy.requested_glyph_packet_count;
+  if (packet.requested) {
+    ++policy.requested_glyph_packet_count;
+  }
   if (packet.ready) {
     ++policy.ready_glyph_packet_count;
     snapshot.ready_packet_ids.push_back(packet.handoff_id);
@@ -288,6 +296,9 @@ inline void append_packet_to_handoff_policy(
   }
   if (packet.missing_upload_result) {
     ++policy.upload_result_missing_count;
+  }
+  if (packet.missing_draw_packet) {
+    ++policy.draw_packet_missing_count;
   }
   if (packet.has_upload_result &&
       (packet.upload_result_status ==
@@ -348,6 +359,9 @@ inline void append_packet_to_handoff_policy(
   }
   if (packet.missing_glyph) {
     ++page->missing_glyph_count;
+  }
+  if (packet.missing_draw_packet) {
+    ++page->missing_draw_packet_count;
   }
   if (packet.missing_materialization) {
     ++page->missing_materialization_count;
@@ -445,6 +459,52 @@ make_render_text_frame_upload_handoff_packet(
   };
 }
 
+[[nodiscard]] inline render_text_frame_upload_handoff_packet_snapshot
+make_render_text_frame_upload_handoff_missing_draw_packet(
+    const render_text_frame_snapshot& frame,
+    const render_text_glyph_atlas_upload_result_packet_snapshot& upload_packet) {
+  const std::string stable_key =
+      "text-frame-upload-handoff:v1:item=orphan:mat=" +
+      std::to_string(upload_packet.materialization_index) + ":run=" +
+      std::to_string(upload_packet.run_index) + ":cluster=" +
+      std::to_string(upload_packet.cluster_index) + ":face=" +
+      std::to_string(upload_packet.cache_key.face_id) + ":glyph=" +
+      std::to_string(upload_packet.cache_key.glyph_id) + ":cache-face=" +
+      std::to_string(upload_packet.cache_key.face_id) + ":cache-glyph=" +
+      std::to_string(upload_packet.cache_key.glyph_id) + ":cache-px=" +
+      std::to_string(upload_packet.cache_key.pixel_size);
+  return {
+      .handoff_id = "text-frame-upload-handoff:v1:frame=" + frame.frame_id +
+                    ":missing-draw:operation=" + upload_packet.operation_id,
+      .stable_packet_key = stable_key,
+      .frame_id = frame.frame_id,
+      .source_label = frame.source_label,
+      .upload_operation_id = upload_packet.operation_id,
+      .upload_request_id = upload_packet.upload_request_id,
+      .stable_page_id = upload_packet.stable_page_id,
+      .materialization_index = upload_packet.materialization_index,
+      .run_index = upload_packet.run_index,
+      .cluster_byte_offset = upload_packet.cluster_index,
+      .cache_key = upload_packet.cache_key,
+      .resolved_glyph_id = upload_packet.cache_key.glyph_id,
+      .resolved_face_id = upload_packet.cache_key.face_id,
+      .page_id = upload_packet.page_id,
+      .page_revision = upload_packet.page.revision,
+      .update_bounds = upload_packet.update_bounds,
+      .upload_result_status = upload_packet.result_status,
+      .handoff_status =
+          render_text_frame_upload_handoff_packet_status::blocked_missing_draw_packet,
+      .has_upload_result = true,
+      .blocked = true,
+      .missing_draw_packet = true,
+      .missing_glyph = upload_packet.missing_cache_key,
+      .missing_materialization = upload_packet.blocked,
+      .glyph_supported = !upload_packet.missing_cache_key,
+      .blocker_reason = "atlas upload result has no matching draw packet",
+      .diagnostic = "atlas upload result has no matching draw packet",
+  };
+}
+
 [[nodiscard]] inline render_text_frame_upload_handoff_snapshot
 make_render_text_frame_upload_handoff(
     render_text_frame_upload_handoff_request request) {
@@ -459,11 +519,28 @@ make_render_text_frame_upload_handoff(
   };
 
   snapshot.packets.reserve(request.draw_plan.packets.size());
+  std::vector<bool> matched_upload_packets(request.upload_result.packets.size(), false);
   for (const auto& draw_packet : request.draw_plan.packets) {
     const auto* upload_packet = detail::find_matching_upload_result_packet(
         request.upload_result, draw_packet);
+    if (upload_packet != nullptr && !request.upload_result.packets.empty()) {
+      const auto matched_index = static_cast<std::size_t>(
+          upload_packet - request.upload_result.packets.data());
+      if (matched_index < matched_upload_packets.size()) {
+        matched_upload_packets[matched_index] = true;
+      }
+    }
     auto handoff_packet =
         make_render_text_frame_upload_handoff_packet(draw_packet, upload_packet);
+    detail::append_packet_to_handoff_policy(snapshot, handoff_packet);
+    snapshot.packets.push_back(std::move(handoff_packet));
+  }
+  for (std::size_t index = 0; index < request.upload_result.packets.size(); ++index) {
+    if (matched_upload_packets[index]) {
+      continue;
+    }
+    auto handoff_packet = make_render_text_frame_upload_handoff_missing_draw_packet(
+        request.frame, request.upload_result.packets[index]);
     detail::append_packet_to_handoff_policy(snapshot, handoff_packet);
     snapshot.packets.push_back(std::move(handoff_packet));
   }
@@ -482,6 +559,7 @@ struct render_text_frame_upload_handoff_diff_policy {
   std::ptrdiff_t blocked_glyph_packet_count_delta{};
   std::ptrdiff_t uploaded_page_count_delta{};
   std::ptrdiff_t upload_result_missing_count_delta{};
+  std::ptrdiff_t draw_packet_missing_count_delta{};
   std::ptrdiff_t upload_result_rejected_count_delta{};
   std::ptrdiff_t uploaded_glyph_count_delta{};
   std::ptrdiff_t clean_reuse_glyph_count_delta{};
@@ -561,7 +639,8 @@ struct render_text_frame_upload_handoff_diff_snapshot {
            changed_packet_count != 0U || added_page_count != 0U ||
            removed_page_count != 0U || changed_page_count != 0U ||
            policy.frame_ready_changed || policy.blockers_changed ||
-           policy.uploads_changed;
+           policy.uploads_changed || policy.deterministic_fallback_changed ||
+           policy.real_backend_changed;
   }
 };
 
@@ -622,6 +701,9 @@ diff_handoff_policy(const render_text_frame_upload_handoff_policy_snapshot& befo
       .upload_result_missing_count_delta =
           text_frame_upload_handoff_delta(before.upload_result_missing_count,
                                           after.upload_result_missing_count),
+      .draw_packet_missing_count_delta =
+          text_frame_upload_handoff_delta(before.draw_packet_missing_count,
+                                          after.draw_packet_missing_count),
       .upload_result_rejected_count_delta =
           text_frame_upload_handoff_delta(before.upload_result_rejected_count,
                                           after.upload_result_rejected_count),

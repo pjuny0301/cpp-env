@@ -1334,6 +1334,77 @@ void test_text_frame_upload_handoff_reports_rejected_and_missing_materialization
     require(missing_handoff.pages.front().has_blockers, "page summary marks blockers");
 }
 
+void test_text_frame_upload_handoff_distinguishes_missing_upload_result_and_missing_draw_packet()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_glyph_atlas_materialization_snapshot upload =
+        upload_ready_materialization();
+    const std::vector<render_text_glyph_atlas_materialization_snapshot> materializations = {
+        upload,
+    };
+    const render_text_frame_snapshot frame =
+        frame_snapshot_for_materializations(materializations, true);
+    const render_text_frame_draw_plan_snapshot draw_plan =
+        plan_render_text_frame_draw_packets(render_text_frame_draw_plan_request{
+            .frame = frame,
+            .materializations = materializations,
+        });
+
+    const render_text_frame_upload_handoff_snapshot missing_upload_result =
+        make_render_text_frame_upload_handoff(render_text_frame_upload_handoff_request{
+            .frame = frame,
+            .draw_plan = draw_plan,
+            .upload_result = render_text_glyph_atlas_upload_result_snapshot{},
+        });
+
+    require(!missing_upload_result.ok(), "missing upload result blocks a drawable glyph packet");
+    require(missing_upload_result.policy.requested_glyph_packet_count == 1U, "missing upload result keeps draw request count");
+    require(missing_upload_result.policy.upload_result_missing_count == 1U, "missing upload result is counted separately");
+    require(missing_upload_result.policy.draw_packet_missing_count == 0U, "missing upload result does not claim missing draw packet");
+    require(
+        missing_upload_result.packets.front().handoff_status
+            == render_text_frame_upload_handoff_packet_status::blocked_missing_upload_result,
+        "drawable packet without result reports missing upload result");
+    require(missing_upload_result.packets.front().missing_upload_result, "packet marks missing upload result");
+    require(!missing_upload_result.packets.front().missing_draw_packet, "packet does not mark missing draw packet");
+
+    const render_text_glyph_atlas_upload_operation_plan_snapshot operation_plan =
+        plan_render_text_glyph_atlas_upload_operations(
+            plan_render_text_glyph_atlas_pages(materializations),
+            materializations);
+    const render_text_glyph_atlas_upload_result_snapshot orphan_result =
+        make_render_text_glyph_atlas_upload_result(render_text_glyph_atlas_upload_result_request{
+            .operation_plan = operation_plan,
+            .upload_request_ids = {"orphan-upload-request"},
+        });
+    const render_text_frame_snapshot empty_frame =
+        frame_snapshot_for_materializations({});
+    const render_text_frame_draw_plan_snapshot empty_draw_plan =
+        plan_render_text_frame_draw_packets(render_text_frame_draw_plan_request{
+            .frame = empty_frame,
+            .materializations = {},
+        });
+    const render_text_frame_upload_handoff_snapshot missing_draw_packet =
+        make_render_text_frame_upload_handoff(render_text_frame_upload_handoff_request{
+            .frame = empty_frame,
+            .draw_plan = empty_draw_plan,
+            .upload_result = orphan_result,
+        });
+
+    require(!missing_draw_packet.ok(), "orphan upload result blocks handoff");
+    require(missing_draw_packet.policy.requested_glyph_packet_count == 0U, "orphan upload result is not counted as a draw request");
+    require(missing_draw_packet.policy.blocked_glyph_packet_count == 1U, "orphan upload result is counted as blocked handoff work");
+    require(missing_draw_packet.policy.draw_packet_missing_count == 1U, "missing draw packet is counted separately");
+    require(missing_draw_packet.policy.upload_result_missing_count == 0U, "missing draw packet does not claim missing upload result");
+    require(
+        missing_draw_packet.packets.front().handoff_status
+            == render_text_frame_upload_handoff_packet_status::blocked_missing_draw_packet,
+        "orphan upload result reports missing draw packet");
+    require(missing_draw_packet.packets.front().missing_draw_packet, "orphan packet marks missing draw packet");
+    require(!missing_draw_packet.packets.front().missing_upload_result, "orphan packet does not mark missing upload result");
+}
+
 void test_text_frame_upload_handoff_diff_reports_frame_to_frame_evidence()
 {
     using namespace quiz_vulkan::render;
@@ -1365,6 +1436,90 @@ void test_text_frame_upload_handoff_diff_reports_frame_to_frame_evidence()
     require(diff.packet_diffs.front().status_changed, "packet diff records handoff status change");
     require(diff.packet_diffs.front().readiness_changed, "packet diff records readiness change");
     require(diff.page_diffs.front().blocker_changed, "page diff records blocker transition");
+}
+
+void test_text_frame_upload_handoff_diff_reports_backend_and_fallback_flag_changes()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_frame_upload_handoff_snapshot deterministic =
+        handoff_for_materializations({upload_ready_materialization()});
+    const render_text_frame_upload_handoff_snapshot real_backend =
+        handoff_for_materializations({real_backend_materialization(key_for_a())});
+    const render_text_frame_upload_handoff_diff_snapshot diff =
+        diff_render_text_frame_upload_handoffs(deterministic, real_backend);
+
+    require(deterministic.policy.used_deterministic_fallback, "baseline handoff uses deterministic fallback");
+    require(!deterministic.policy.used_real_backend, "baseline handoff does not claim real backend");
+    require(!real_backend.policy.used_deterministic_fallback, "real backend handoff clears deterministic fallback");
+    require(real_backend.policy.used_real_backend, "real backend handoff reports real backend");
+    require(diff.has_changes(), "handoff diff reports backend/fallback transition");
+    require(diff.changed_packet_count == 1U, "backend/fallback transition changes the stable packet");
+    require(diff.policy.deterministic_fallback_count_delta == -1, "diff records deterministic fallback loss");
+    require(diff.policy.real_backend_count_delta == 1, "diff records real backend gain");
+    require(diff.policy.deterministic_fallback_changed, "diff marks deterministic fallback flag change");
+    require(diff.policy.real_backend_changed, "diff marks real backend flag change");
+    require(diff.packet_diffs.front().fallback_changed, "packet diff marks fallback change");
+    require(diff.packet_diffs.front().backend_changed, "packet diff marks backend change");
+}
+
+void test_text_frame_upload_handoff_diff_reports_page_revision_and_page_id_changes()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_glyph_atlas_materialization_snapshot previous =
+        upload_ready_materialization();
+    render_text_glyph_atlas_materialization_snapshot revised =
+        upload_ready_materialization();
+    revised.page.revision = previous.page.revision + 1U;
+
+    const render_text_frame_upload_handoff_diff_snapshot revision_diff =
+        diff_render_text_frame_upload_handoffs(
+            handoff_for_materializations({previous}),
+            handoff_for_materializations({revised}));
+
+    require(revision_diff.has_changes(), "page revision change is visible in handoff diff");
+    require(revision_diff.changed_packet_count == 1U, "page revision change marks packet changed");
+    require(revision_diff.changed_page_count == 1U, "page revision change marks page changed");
+    require(revision_diff.packet_diffs.front().page_changed, "packet diff records page revision change");
+    require(revision_diff.page_diffs.front().page_revision_changed, "page diff records revision change");
+
+    render_text_glyph_atlas_materialization_snapshot moved =
+        upload_ready_materialization();
+    moved.page.id = previous.page.id + 7U;
+
+    const render_text_frame_upload_handoff_diff_snapshot page_id_diff =
+        diff_render_text_frame_upload_handoffs(
+            handoff_for_materializations({previous}),
+            handoff_for_materializations({moved}));
+
+    require(page_id_diff.has_changes(), "page id change is visible in handoff diff");
+    require(page_id_diff.changed_packet_count == 1U, "page id change marks stable glyph packet changed");
+    require(page_id_diff.packet_diffs.front().page_changed, "packet diff records page id change");
+    require(page_id_diff.added_page_count == 1U, "page id change records added page id");
+    require(page_id_diff.removed_page_count == 1U, "page id change records removed page id");
+    require(page_id_diff.policy.total_upload_rgba_bytes_delta == 0, "page id move keeps upload byte total stable");
+}
+
+void test_text_frame_upload_handoff_diff_keeps_materialization_blocker_byte_deltas_stable()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_frame_upload_handoff_snapshot before =
+        handoff_for_materializations({missing_cache_key_materialization()});
+    const render_text_frame_upload_handoff_snapshot after =
+        handoff_for_materializations({missing_cache_key_materialization()});
+    const render_text_frame_upload_handoff_diff_snapshot diff =
+        diff_render_text_frame_upload_handoffs(before, after);
+
+    require(!before.ok(), "missing cache handoff is blocked");
+    require(before.policy.missing_glyph_count == 1U, "missing cache handoff counts missing glyph");
+    require(before.policy.total_upload_rgba_bytes == 0U, "missing cache handoff claims no upload bytes");
+    require(!diff.has_changes(), "identical materialization blocker handoffs remain stable");
+    require(diff.unchanged_packet_count == 1U, "blocker diff keeps stable packet key");
+    require(diff.policy.blocked_glyph_packet_count_delta == 0, "blocker count delta remains stable");
+    require(diff.policy.missing_glyph_count_delta == 0, "missing glyph delta remains stable");
+    require(diff.policy.total_upload_rgba_bytes_delta == 0, "upload byte delta remains stable for blockers");
 }
 
 void test_atlas_upload_bridge_produces_stable_render_text_atlas_updates()
@@ -2010,7 +2165,11 @@ int main()
     test_glyph_atlas_upload_result_diff_reports_changed_packet_and_page_summaries();
     test_text_frame_upload_handoff_links_draw_packets_to_upload_results();
     test_text_frame_upload_handoff_reports_rejected_and_missing_materialization_blockers();
+    test_text_frame_upload_handoff_distinguishes_missing_upload_result_and_missing_draw_packet();
     test_text_frame_upload_handoff_diff_reports_frame_to_frame_evidence();
+    test_text_frame_upload_handoff_diff_reports_backend_and_fallback_flag_changes();
+    test_text_frame_upload_handoff_diff_reports_page_revision_and_page_id_changes();
+    test_text_frame_upload_handoff_diff_keeps_materialization_blocker_byte_deltas_stable();
     test_atlas_upload_bridge_produces_stable_render_text_atlas_updates();
     test_atlas_upload_bridge_suppresses_duplicates_and_skips_non_uploadable_work();
     test_text_frame_snapshot_combines_planning_fallback_materialization_and_upload_ids();

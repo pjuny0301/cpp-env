@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: platform gesture replay diagnostics integrated; Windows MinGW focused input CTest 6/6 and interface compile target build confirmed.
+- `2dc1c02`: platform input replay tests now cover touch/multipointer arbitration, long-press versus swipe/drag threshold evidence, cancel/restart stale-state guards, and replay diff flags.
 - current: image frame upload handoff hardening integrated; Windows MinGW focused image CTest 1/1 and interface compile target build confirmed.
 - `e956714`: image frame handoff tests now cover placeholder evidence, retry/backoff evidence, cache-key and sampler diffs, and missing upload-result versus missing frame-binding categories.
 - current: text frame upload handoff diagnostics integrated with public FILE_SET registration; Windows MinGW focused text CTest 1/1 and interface compile target build confirmed.

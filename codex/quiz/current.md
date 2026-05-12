@@ -39,6 +39,7 @@ Last updated: 2026-05-09
 - Engine workers own only their engine folders. App/runtime, top-level CMake, and aggregate contract wiring stay with the integrator unless explicitly assigned.
 - Large file splitting is allowed when it improves module cohesion, worker ownership, reviewability, or conflict isolation. Do not split files only because they exceed a line-count threshold, and do not move stable public interfaces without explicit integrator approval.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
+- Latest integration note: `2dc1c02` hardens platform gesture replay diagnostics for touch/multipointer arbitration, long-press versus swipe/drag threshold evidence, cancel/restart stale-state guards, and replay diff flags.
 - Latest integration note: `e956714` hardens image frame upload handoff diagnostics for placeholders, retry/backoff evidence, cache-key and sampler diffs, and missing upload-result versus missing frame-binding categories.
 - Latest integration note: `e41dbbf` adds text frame upload handoff diagnostics that link glyph draw packets to atlas upload result snapshots, page IDs, upload bytes, materialization blockers, fallback/backend flags, and frame-to-frame diffs.
 - Latest integration note: `9665261` hardens platform input replay edge-case tests for IME lifecycle, UTF-8 backspace safety, pointer cancel/restart, wheel evidence, and replay diff categories.

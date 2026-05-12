@@ -10,7 +10,7 @@
   },
   "compiler_profiles": {
     "mingw_gcc_6_cxx1z": {
-      "description": "Available local MinGW GCC 6.3.0. Use only for scene/layout scaffold smoke tests that avoid modern C++17 standard library dependencies.",
+      "description": "Available local MinGW GCC 6.3.0. Use only for scene/layout scaffold smoke tests that avoid modern C++23 standard library dependencies.",
       "windows_compiler": "C:/MinGW/bin/g++.exe",
       "wsl_compiler": "/mnt/c/MinGW/bin/g++.exe",
       "flags": [
@@ -30,11 +30,11 @@
       "minimum_standard": "C++23",
       "helper_script": "tools/run_windows_mingw_ascii.ps1"
     },
-    "modern_cxx17_or_newer": {
-      "description": "Required for domain smoke tests because they use <optional>, <variant>, and related modern standard library features.",
-      "minimum_standard": "C++17"
+    "modern_cxx23_or_newer": {
+      "description": "Required for domain smoke tests and native engine targets because project code is standardized on C++23.",
+      "minimum_standard": "C++23"
     },
-    "modern_cxx20_app": {
+    "modern_cxx23_app": {
       "description": "Required for the full app/CMake presets described in README.md.",
       "minimum_standard": "C++23"
     }

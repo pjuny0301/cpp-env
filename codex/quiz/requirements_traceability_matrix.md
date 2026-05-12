@@ -6,6 +6,10 @@
 
 최근 baseline 통합 증거:
 
+- current: Vulkan swapchain image enumeration, text glyph-atlas upload operation planning, and image texture upload operation planning integrated; Windows MinGW focused Vulkan/text/image CTest 3/3 and interface compile target build confirmed.
+- `710f05c`: image texture upload operation planning now turns fake upload snapshots and mipmap plans into renderer-facing packet readiness diagnostics without Vulkan/cache ownership leakage.
+- `3c0b76f`: glyph atlas upload operation planning now turns atlas page plans and materialization snapshots into renderer-facing upload packet/page summaries without renderer/domain coupling.
+- `4d207d9`: Vulkan native swapchain image enumeration planning reports expected/enumerated image counts, opaque bindings, readiness, and blockers before real `vkGetSwapchainImagesKHR`.
 - current: CMake public FILE_SET registration now covers all current render text/image/Vulkan, input, and asset headers; Windows MinGW focused asset/input CTest 4/4 and interface compile target build confirmed.
 - current: text edit transaction diagnostics header split integrated with public FILE_SET registration; Windows MinGW focused text input model CTest 1/1 and interface compile target build confirmed.
 - `eee4fcd`: text edit transaction diagnostics now live in `text_edit_transaction_diagnostics.h` while `text_input_model.h` preserves the text model include surface.

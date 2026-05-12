@@ -39,6 +39,8 @@ Last updated: 2026-05-09
 - Engine workers own only their engine folders. App/runtime, top-level CMake, and aggregate contract wiring stay with the integrator unless explicitly assigned.
 - Large file splitting is allowed when it improves module cohesion, worker ownership, reviewability, or conflict isolation. Do not split files only because they exceed a line-count threshold, and do not move stable public interfaces without explicit integrator approval.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
+- Latest integration note: `710f05c` adds image texture upload operation planning diagnostics and `3c0b76f` adds glyph atlas upload operation planning diagnostics; the integrator registers both new public headers in the render contract FILE_SET.
+- Latest integration note: `4d207d9` adds data-only Vulkan native swapchain image enumeration operation planning after native swapchain creation readiness, reporting image-count, binding validity, and blocker summaries before real `vkGetSwapchainImagesKHR`.
 - Latest integration note: CMake public FILE_SET registration now covers all current `src/render/text`, `src/render/image`, `src/render/vulkan`, `src/core/input`, and `src/assets` headers; focused asset/input CTest 4/4 passed after registration.
 - Latest integration note: `eee4fcd` splits text edit transaction diagnostics into `text_edit_transaction_diagnostics.h`, and the integrator registers that public header in the input contract FILE_SET.
 - Latest integration note: `3230bfc` splits glyph atlas page planning into `font_glyph_atlas_page_plan.h`, and the integrator registers that public header in the render contract FILE_SET.

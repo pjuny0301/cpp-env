@@ -913,6 +913,181 @@ void block_native_queue_present_operation(
     finalize_native_queue_present_operation(result);
 }
 
+vulkan_backend_fallback_reason fallback_for_native_function_table(
+    const vulkan_native_function_table_diagnostics& native_functions)
+{
+    if (!native_functions.checked) {
+        return vulkan_backend_fallback_reason::not_requested;
+    }
+    if (native_functions.fallback_reason != vulkan_backend_fallback_reason::none
+        && native_functions.fallback_reason != vulkan_backend_fallback_reason::not_requested) {
+        return native_functions.fallback_reason;
+    }
+
+    switch (native_functions.missing_symbol_stage) {
+    case vulkan_native_entrypoint_stage::command_buffer_recording:
+        return vulkan_backend_fallback_reason::record_commands_failed;
+    case vulkan_native_entrypoint_stage::queue_submit:
+        return vulkan_backend_fallback_reason::submit_frame_failed;
+    case vulkan_native_entrypoint_stage::queue_present:
+        return vulkan_backend_fallback_reason::present_frame_failed;
+    case vulkan_native_entrypoint_stage::swapchain_create:
+    case vulkan_native_entrypoint_stage::swapchain_destroy:
+    case vulkan_native_entrypoint_stage::swapchain_images:
+        return vulkan_backend_fallback_reason::swapchain_unavailable;
+    case vulkan_native_entrypoint_stage::swapchain_acquire:
+        return vulkan_backend_fallback_reason::acquire_image_failed;
+    }
+
+    return vulkan_backend_fallback_reason::not_requested;
+}
+
+vulkan_native_frame_operation_stage_summary make_native_frame_stage_summary(
+    vulkan_native_frame_operation_stage stage,
+    bool checked,
+    bool ready,
+    vulkan_backend_fallback_reason fallback_reason,
+    std::string diagnostic)
+{
+    const bool blocked = !ready;
+    return vulkan_native_frame_operation_stage_summary{
+        .stage = stage,
+        .checked = checked,
+        .ready = ready,
+        .blocked = blocked,
+        .fallback_reason = blocked ? fallback_reason : vulkan_backend_fallback_reason::none,
+        .diagnostic = blocked ? std::move(diagnostic) : std::string{},
+    };
+}
+
+std::vector<vulkan_native_frame_operation_stage_summary> build_native_frame_stage_summaries(
+    const vulkan_native_frame_operation_result& result)
+{
+    return {
+        make_native_frame_stage_summary(
+            vulkan_native_frame_operation_stage::native_function_table,
+            result.native_function_table_checked,
+            result.native_function_table_ready,
+            fallback_for_native_function_table(result.native_functions),
+            result.native_functions.diagnostic.empty()
+                ? "Native Vulkan function table is unavailable for frame operation"
+                : result.native_functions.diagnostic),
+        make_native_frame_stage_summary(
+            vulkan_native_frame_operation_stage::swapchain_create,
+            result.swapchain_create_checked,
+            result.swapchain_create_ready,
+            vulkan_backend_fallback_reason::swapchain_unavailable,
+            result.swapchain_create.diagnostic.empty()
+                ? "Native Vulkan frame operation has no ready swapchain create operation"
+                : result.swapchain_create.diagnostic),
+        make_native_frame_stage_summary(
+            vulkan_native_frame_operation_stage::swapchain_images,
+            result.swapchain_images_checked,
+            result.swapchain_images_ready,
+            vulkan_backend_fallback_reason::swapchain_unavailable,
+            result.swapchain_images.diagnostic.empty()
+                ? "Native Vulkan frame operation has no enumerated swapchain images"
+                : result.swapchain_images.diagnostic),
+        make_native_frame_stage_summary(
+            vulkan_native_frame_operation_stage::acquire,
+            result.acquire_checked,
+            result.acquire_ready,
+            vulkan_backend_fallback_reason::acquire_image_failed,
+            result.acquire_operation.diagnostic.empty()
+                ? "Native Vulkan frame operation has no acquired image"
+                : result.acquire_operation.diagnostic),
+        make_native_frame_stage_summary(
+            vulkan_native_frame_operation_stage::command_recording,
+            result.command_recording_checked,
+            result.command_recording_ready,
+            vulkan_backend_fallback_reason::record_commands_failed,
+            result.command_buffer_recording.diagnostic.empty()
+                ? "Native Vulkan frame operation has no recorded command buffer"
+                : result.command_buffer_recording.diagnostic),
+        make_native_frame_stage_summary(
+            vulkan_native_frame_operation_stage::submit,
+            result.submit_batch_checked,
+            result.submit_batch_ready,
+            vulkan_backend_fallback_reason::submit_frame_failed,
+            result.submit_batch.diagnostic.empty()
+                ? "Native Vulkan frame operation has no submit batch"
+                : result.submit_batch.diagnostic),
+        make_native_frame_stage_summary(
+            vulkan_native_frame_operation_stage::present,
+            result.present_operation_checked,
+            result.present_operation_ready,
+            vulkan_backend_fallback_reason::present_frame_failed,
+            result.present_operation.diagnostic.empty()
+                ? "Native Vulkan frame operation has no queue present operation"
+                : result.present_operation.diagnostic),
+        make_native_frame_stage_summary(
+            vulkan_native_frame_operation_stage::frame_completion,
+            result.present_operation_checked,
+            result.frame_completion_ready,
+            vulkan_backend_fallback_reason::present_frame_failed,
+            result.present_operation.diagnostic.empty()
+                ? "Native Vulkan frame operation did not complete frame lifecycle"
+                : result.present_operation.diagnostic),
+    };
+}
+
+void finalize_native_frame_operation(vulkan_native_frame_operation_result& result)
+{
+    result.cpu_fallback_should_remain_active =
+        result.cpu_fallback_available
+        && result.status != vulkan_native_frame_operation_status::ready;
+    result.operation = vulkan_native_frame_operation_summary{
+        .checked = result.checked,
+        .status = result.status,
+        .reached_stage = result.reached_stage,
+        .blocker_stage = result.blocker_stage,
+        .fallback_reason = result.fallback_reason,
+        .native_function_table_checked = result.native_function_table_checked,
+        .native_function_table_ready = result.native_function_table_ready,
+        .swapchain_create_checked = result.swapchain_create_checked,
+        .swapchain_create_ready = result.swapchain_create_ready,
+        .swapchain_images_checked = result.swapchain_images_checked,
+        .swapchain_images_ready = result.swapchain_images_ready,
+        .acquire_checked = result.acquire_checked,
+        .acquire_ready = result.acquire_ready,
+        .command_recording_checked = result.command_recording_checked,
+        .command_recording_ready = result.command_recording_ready,
+        .submit_batch_checked = result.submit_batch_checked,
+        .submit_batch_ready = result.submit_batch_ready,
+        .present_operation_checked = result.present_operation_checked,
+        .present_operation_ready = result.present_operation_ready,
+        .frame_completion_ready = result.frame_completion_ready,
+        .recoverable_failure = result.recoverable_failure,
+        .fatal_failure = result.fatal_failure,
+        .swapchain_out_of_date = result.swapchain_out_of_date,
+        .suboptimal = result.suboptimal,
+        .cpu_fallback_available = result.cpu_fallback_available,
+        .cpu_fallback_should_remain_active =
+            result.cpu_fallback_should_remain_active,
+        .native_function_table_status = result.native_function_table_status,
+        .missing_required_extension = result.missing_required_extension,
+        .missing_symbol_name = result.missing_symbol_name,
+        .stages = result.stages,
+        .diagnostic = result.diagnostic,
+    };
+}
+
+void block_native_frame_operation(
+    vulkan_native_frame_operation_result& result,
+    vulkan_native_frame_operation_status status,
+    vulkan_native_frame_operation_stage reached_stage,
+    vulkan_native_frame_operation_stage blocker_stage,
+    vulkan_backend_fallback_reason fallback_reason,
+    std::string diagnostic)
+{
+    result.status = status;
+    result.reached_stage = reached_stage;
+    result.blocker_stage = blocker_stage;
+    result.fallback_reason = fallback_reason;
+    result.diagnostic = std::move(diagnostic);
+    finalize_native_frame_operation(result);
+}
+
 template <typename T>
 void apply_sdk_native_path_readiness(
     T& result,
@@ -3206,6 +3381,226 @@ vulkan_native_queue_present_operation_result build_vulkan_native_queue_present_o
     }
 
     finalize_native_queue_present_operation(result);
+    return result;
+}
+
+vulkan_native_frame_operation_result build_vulkan_native_frame_operation_summary(
+    const vulkan_native_frame_operation_request& request)
+{
+    vulkan_native_frame_operation_result result{
+        .checked = true,
+        .status = vulkan_native_frame_operation_status::not_checked,
+        .native_functions = request.native_functions,
+        .swapchain_create = request.swapchain_create,
+        .swapchain_images = request.swapchain_images,
+        .acquire_operation = request.acquire_operation,
+        .command_buffer_recording = request.command_buffer_recording,
+        .submit_batch = request.submit_batch,
+        .present_operation = request.present_operation,
+        .reached_stage = vulkan_native_frame_operation_stage::not_started,
+        .blocker_stage = vulkan_native_frame_operation_stage::not_started,
+        .fallback_reason = vulkan_backend_fallback_reason::not_requested,
+        .native_function_table_checked = request.native_functions.checked,
+        .native_function_table_ready = request.native_functions.ready_for_backend_path(),
+        .swapchain_create_checked = request.swapchain_create.checked,
+        .swapchain_create_ready = request.swapchain_create.can_call_vk_create_swapchain(),
+        .swapchain_images_checked = request.swapchain_images.checked,
+        .swapchain_images_ready =
+            request.swapchain_images.can_call_vk_get_swapchain_images(),
+        .acquire_checked = request.acquire_operation.checked,
+        .acquire_ready = request.acquire_operation.ready_for_command_recording(),
+        .command_recording_checked = request.command_buffer_recording.checked,
+        .command_recording_ready = request.command_buffer_recording.completed(),
+        .submit_batch_checked = request.submit_batch.checked,
+        .submit_batch_ready = request.submit_batch.completed(),
+        .present_operation_checked = request.present_operation.checked,
+        .present_operation_ready = request.present_operation.ready_for_frame_completion(),
+        .frame_completion_ready =
+            request.present_operation.ready_for_frame_completion()
+            && request.present_operation.frame_lifecycle_may_complete,
+        .recoverable_failure = request.present_operation.recoverable_failure
+            || request.submit_batch.status
+                == vulkan_submit_batch_plan_status::submit_failed_recoverable,
+        .fatal_failure = request.present_operation.fatal_failure
+            || request.submit_batch.status == vulkan_submit_batch_plan_status::submit_failed_fatal,
+        .swapchain_out_of_date = request.acquire_operation.out_of_date
+            || request.present_operation.out_of_date,
+        .suboptimal = request.acquire_operation.suboptimal
+            || request.present_operation.suboptimal,
+        .cpu_fallback_available = request.cpu_fallback_available,
+        .cpu_fallback_should_remain_active = request.cpu_fallback_available,
+        .native_function_table_status = request.native_functions.status,
+        .missing_required_extension = !request.native_functions.missing_required_extension.empty()
+            ? request.native_functions.missing_required_extension
+            : !request.acquire_operation.missing_required_extension.empty()
+                ? request.acquire_operation.missing_required_extension
+                : request.present_operation.missing_required_extension,
+        .missing_symbol_name = !request.native_functions.missing_symbol_name.empty()
+            ? request.native_functions.missing_symbol_name
+            : !request.acquire_operation.missing_symbol_name.empty()
+                ? request.acquire_operation.missing_symbol_name
+                : request.present_operation.missing_symbol_name,
+        .stages = {},
+        .diagnostic = {},
+        .operation = {},
+    };
+    result.stages = build_native_frame_stage_summaries(result);
+
+    if (!result.native_function_table_ready) {
+        block_native_frame_operation(
+            result,
+            vulkan_native_frame_operation_status::native_function_table_unavailable,
+            vulkan_native_frame_operation_stage::not_started,
+            vulkan_native_frame_operation_stage::native_function_table,
+            fallback_for_native_function_table(request.native_functions),
+            request.native_functions.diagnostic.empty()
+                ? "Native Vulkan frame operation has no ready function table"
+                : request.native_functions.diagnostic);
+        return result;
+    }
+    if (!result.swapchain_create_ready) {
+        block_native_frame_operation(
+            result,
+            vulkan_native_frame_operation_status::swapchain_create_unavailable,
+            vulkan_native_frame_operation_stage::native_function_table,
+            vulkan_native_frame_operation_stage::swapchain_create,
+            vulkan_backend_fallback_reason::swapchain_unavailable,
+            request.swapchain_create.diagnostic.empty()
+                ? "Native Vulkan frame operation has no ready swapchain create operation"
+                : request.swapchain_create.diagnostic);
+        return result;
+    }
+    if (!result.swapchain_images_ready) {
+        block_native_frame_operation(
+            result,
+            vulkan_native_frame_operation_status::swapchain_images_unavailable,
+            vulkan_native_frame_operation_stage::swapchain_create,
+            vulkan_native_frame_operation_stage::swapchain_images,
+            vulkan_backend_fallback_reason::swapchain_unavailable,
+            request.swapchain_images.diagnostic.empty()
+                ? "Native Vulkan frame operation has no enumerated swapchain images"
+                : request.swapchain_images.diagnostic);
+        return result;
+    }
+    if (!result.acquire_ready) {
+        block_native_frame_operation(
+            result,
+            vulkan_native_frame_operation_status::acquire_unavailable,
+            vulkan_native_frame_operation_stage::swapchain_images,
+            vulkan_native_frame_operation_stage::acquire,
+            vulkan_backend_fallback_reason::acquire_image_failed,
+            request.acquire_operation.diagnostic.empty()
+                ? "Native Vulkan frame operation has no recordable acquired image"
+                : request.acquire_operation.diagnostic);
+        return result;
+    }
+    if (!result.command_recording_ready) {
+        block_native_frame_operation(
+            result,
+            vulkan_native_frame_operation_status::command_recording_unavailable,
+            vulkan_native_frame_operation_stage::acquire,
+            vulkan_native_frame_operation_stage::command_recording,
+            vulkan_backend_fallback_reason::record_commands_failed,
+            request.command_buffer_recording.diagnostic.empty()
+                ? "Native Vulkan frame operation has no recorded command buffer"
+                : request.command_buffer_recording.diagnostic);
+        return result;
+    }
+    if (request.submit_batch.status == vulkan_submit_batch_plan_status::submit_failed_recoverable) {
+        result.recoverable_failure = true;
+        block_native_frame_operation(
+            result,
+            vulkan_native_frame_operation_status::recoverable_failure,
+            vulkan_native_frame_operation_stage::command_recording,
+            vulkan_native_frame_operation_stage::submit,
+            vulkan_backend_fallback_reason::submit_frame_failed,
+            request.submit_batch.diagnostic.empty()
+                ? "Native Vulkan frame operation observed recoverable submit failure"
+                : request.submit_batch.diagnostic);
+        return result;
+    }
+    if (request.submit_batch.status == vulkan_submit_batch_plan_status::submit_failed_fatal) {
+        result.fatal_failure = true;
+        block_native_frame_operation(
+            result,
+            vulkan_native_frame_operation_status::fatal_failure,
+            vulkan_native_frame_operation_stage::command_recording,
+            vulkan_native_frame_operation_stage::submit,
+            vulkan_backend_fallback_reason::submit_frame_failed,
+            request.submit_batch.diagnostic.empty()
+                ? "Native Vulkan frame operation observed fatal submit failure"
+                : request.submit_batch.diagnostic);
+        return result;
+    }
+    if (!result.submit_batch_ready) {
+        block_native_frame_operation(
+            result,
+            vulkan_native_frame_operation_status::submit_unavailable,
+            vulkan_native_frame_operation_stage::command_recording,
+            vulkan_native_frame_operation_stage::submit,
+            vulkan_backend_fallback_reason::submit_frame_failed,
+            request.submit_batch.diagnostic.empty()
+                ? "Native Vulkan frame operation has no ready submit batch"
+                : request.submit_batch.diagnostic);
+        return result;
+    }
+    if (request.present_operation.recoverable_failure) {
+        result.recoverable_failure = true;
+        block_native_frame_operation(
+            result,
+            vulkan_native_frame_operation_status::recoverable_failure,
+            vulkan_native_frame_operation_stage::submit,
+            vulkan_native_frame_operation_stage::present,
+            vulkan_backend_fallback_reason::present_frame_failed,
+            request.present_operation.diagnostic.empty()
+                ? "Native Vulkan frame operation observed recoverable present failure"
+                : request.present_operation.diagnostic);
+        return result;
+    }
+    if (request.present_operation.fatal_failure) {
+        result.fatal_failure = true;
+        block_native_frame_operation(
+            result,
+            vulkan_native_frame_operation_status::fatal_failure,
+            vulkan_native_frame_operation_stage::submit,
+            vulkan_native_frame_operation_stage::present,
+            vulkan_backend_fallback_reason::present_frame_failed,
+            request.present_operation.diagnostic.empty()
+                ? "Native Vulkan frame operation observed fatal present failure"
+                : request.present_operation.diagnostic);
+        return result;
+    }
+    if (!result.present_operation_ready) {
+        block_native_frame_operation(
+            result,
+            vulkan_native_frame_operation_status::present_unavailable,
+            vulkan_native_frame_operation_stage::submit,
+            vulkan_native_frame_operation_stage::present,
+            vulkan_backend_fallback_reason::present_frame_failed,
+            request.present_operation.diagnostic.empty()
+                ? "Native Vulkan frame operation has no ready queue present operation"
+                : request.present_operation.diagnostic);
+        return result;
+    }
+    if (!result.frame_completion_ready) {
+        block_native_frame_operation(
+            result,
+            vulkan_native_frame_operation_status::frame_completion_unavailable,
+            vulkan_native_frame_operation_stage::present,
+            vulkan_native_frame_operation_stage::frame_completion,
+            vulkan_backend_fallback_reason::present_frame_failed,
+            request.present_operation.diagnostic.empty()
+                ? "Native Vulkan frame operation did not complete frame lifecycle"
+                : request.present_operation.diagnostic);
+        return result;
+    }
+
+    result.status = vulkan_native_frame_operation_status::ready;
+    result.reached_stage = vulkan_native_frame_operation_stage::frame_completion;
+    result.blocker_stage = vulkan_native_frame_operation_stage::not_started;
+    result.fallback_reason = vulkan_backend_fallback_reason::none;
+    result.diagnostic = "Native Vulkan frame operation completed all data-only stages";
+    finalize_native_frame_operation(result);
     return result;
 }
 

@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: image frame upload handoff hardening integrated; Windows MinGW focused image CTest 1/1 and interface compile target build confirmed.
+- `e956714`: image frame handoff tests now cover placeholder evidence, retry/backoff evidence, cache-key and sampler diffs, and missing upload-result versus missing frame-binding categories.
 - current: text frame upload handoff diagnostics integrated with public FILE_SET registration; Windows MinGW focused text CTest 1/1 and interface compile target build confirmed.
 - `e41dbbf`: text frame upload handoff diagnostics now connect glyph draw packets to atlas upload results, page IDs, upload byte totals, materialization blockers, fallback/backend flags, and frame-to-frame diffs.
 - current: image frame upload handoff diagnostics and platform input replay hardening integrated; Windows MinGW focused image/input CTest 2/2 and interface compile target build confirmed.

@@ -1,9 +1,11 @@
 #include "render/text/font_shaped_atlas_update.h"
 #include "render/text/text_frame_draw_plan.h"
+#include "render/text/text_frame_upload_handoff.h"
 
 #include <cassert>
 #include <cstddef>
 #include <cstdio>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -130,6 +132,8 @@ quiz_vulkan::render::render_text_glyph_atlas_materialization_snapshot clean_reus
         },
         .has_cache_key = true,
         .glyph_supported = true,
+        .layout_bounds = render_rect{18.0f, 20.0f, 4.0f, 4.0f},
+        .has_layout_bounds = true,
         .rasterizer_status = render_text_font_rasterizer_status::rasterized,
         .raster_payload_matches_cache_key = true,
         .rasterized_payload_skipped = false,
@@ -371,6 +375,55 @@ quiz_vulkan::render::render_text_frame_draw_plan_snapshot draw_plan_for_material
     return plan_render_text_frame_draw_packets(render_text_frame_draw_plan_request{
         .frame = frame,
         .materializations = std::move(materializations),
+    });
+}
+
+quiz_vulkan::render::render_text_glyph_atlas_upload_result_snapshot upload_result_for_materializations(
+    const std::vector<quiz_vulkan::render::render_text_glyph_atlas_materialization_snapshot>& materializations,
+    const quiz_vulkan::render::render_text_frame_draw_plan_snapshot& draw_plan,
+    const bool include_upload_request_ids)
+{
+    using namespace quiz_vulkan::render;
+
+    std::vector<std::string> upload_request_ids;
+    if (include_upload_request_ids) {
+        for (const render_text_frame_draw_packet_snapshot& packet : draw_plan.packets) {
+            if (!packet.atlas_upload_request_id.empty()) {
+                upload_request_ids.push_back(packet.atlas_upload_request_id);
+            }
+        }
+    }
+
+    const render_text_glyph_atlas_upload_operation_plan_snapshot operation_plan =
+        plan_render_text_glyph_atlas_upload_operations(
+            plan_render_text_glyph_atlas_pages(materializations),
+            materializations);
+    return make_render_text_glyph_atlas_upload_result(render_text_glyph_atlas_upload_result_request{
+        .operation_plan = operation_plan,
+        .upload_request_ids = std::move(upload_request_ids),
+    });
+}
+
+quiz_vulkan::render::render_text_frame_upload_handoff_snapshot handoff_for_materializations(
+    const std::vector<quiz_vulkan::render::render_text_glyph_atlas_materialization_snapshot>& materializations,
+    const bool consumed = true,
+    const bool include_upload_request_ids = true)
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_frame_snapshot frame =
+        frame_snapshot_for_materializations(materializations, consumed);
+    const render_text_frame_draw_plan_snapshot draw_plan =
+        plan_render_text_frame_draw_packets(render_text_frame_draw_plan_request{
+            .frame = frame,
+            .materializations = materializations,
+        });
+    const render_text_glyph_atlas_upload_result_snapshot upload_result =
+        upload_result_for_materializations(materializations, draw_plan, include_upload_request_ids);
+    return make_render_text_frame_upload_handoff(render_text_frame_upload_handoff_request{
+        .frame = frame,
+        .draw_plan = draw_plan,
+        .upload_result = upload_result,
     });
 }
 
@@ -1182,6 +1235,138 @@ void test_glyph_atlas_upload_result_diff_reports_changed_packet_and_page_summari
     require(diff.page_diffs.front().blocker_count_changed, "page diff records blocker change");
 }
 
+void test_text_frame_upload_handoff_links_draw_packets_to_upload_results()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_glyph_atlas_materialization_snapshot upload =
+        upload_ready_materialization();
+    const render_text_glyph_atlas_materialization_snapshot clean =
+        clean_reuse_materialization();
+    const std::vector<render_text_glyph_atlas_materialization_snapshot> materializations = {
+        upload,
+        clean,
+    };
+
+    const render_text_frame_upload_handoff_snapshot handoff =
+        handoff_for_materializations(materializations);
+
+    require(handoff.ok(), "upload handoff is ready when draw packets and upload results are accepted");
+    require(handoff.policy.requested_glyph_packet_count == 2U, "handoff counts requested draw packets");
+    require(handoff.policy.ready_glyph_packet_count == 2U, "handoff counts ready packets");
+    require(handoff.policy.blocked_glyph_packet_count == 0U, "handoff has no blocked packets");
+    require(handoff.policy.uploaded_glyph_count == 1U, "handoff counts uploaded glyph payload");
+    require(handoff.policy.clean_reuse_glyph_count == 1U, "handoff counts clean atlas reuse");
+    require(handoff.policy.uploaded_page_count == 1U, "handoff records uploaded page ids");
+    require(handoff.policy.used_deterministic_fallback, "handoff preserves deterministic fallback flag");
+    require(handoff.policy.deterministic_fallback_count == 1U, "handoff counts deterministic fallback packet");
+    require(
+        handoff.policy.total_upload_rgba_bytes == upload.atlas_update_rgba_bytes,
+        "handoff totals uploaded RGBA bytes");
+    require(handoff.uploaded_page_ids.size() == 1U, "handoff exposes uploaded page id list");
+    require(handoff.ready_packet_ids.size() == 2U, "handoff exposes ready packet ids");
+    require(handoff.packets.size() == 2U, "handoff preserves per-glyph packet diagnostics");
+    require(
+        handoff.packets.front().handoff_status
+            == render_text_frame_upload_handoff_packet_status::ready_uploaded,
+        "upload packet is ready for handoff");
+    require(handoff.packets.front().uploaded, "upload packet records materialized upload");
+    require(!handoff.packets.front().upload_request_id.empty(), "upload packet links upload request id");
+    require(
+        handoff.packets.back().handoff_status
+            == render_text_frame_upload_handoff_packet_status::ready_clean_reuse,
+        "clean packet is ready through clean reuse");
+    require(handoff.packets.back().clean_reuse, "clean packet records atlas reuse");
+    require(handoff.pages.size() == 1U, "handoff keeps page-level summary");
+    require(handoff.pages.front().ready_packet_count == 2U, "page summary counts ready packets");
+
+    const render_text_frame_upload_handoff_snapshot real_backend_handoff =
+        handoff_for_materializations({real_backend_materialization(key_for_a())});
+    require(real_backend_handoff.ok(), "real backend handoff remains ready");
+    require(real_backend_handoff.policy.used_real_backend, "handoff preserves real backend flag");
+    require(real_backend_handoff.policy.real_backend_count == 1U, "handoff counts real backend packet");
+}
+
+void test_text_frame_upload_handoff_reports_rejected_and_missing_materialization_blockers()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_glyph_atlas_materialization_snapshot upload =
+        upload_ready_materialization();
+    const render_text_glyph_atlas_materialization_snapshot missing =
+        missing_cache_key_materialization();
+    const std::vector<render_text_glyph_atlas_materialization_snapshot> upload_only = {
+        upload,
+    };
+    const std::vector<render_text_glyph_atlas_materialization_snapshot> missing_only = {
+        missing,
+    };
+
+    const render_text_frame_upload_handoff_snapshot rejected =
+        handoff_for_materializations(upload_only, true, false);
+
+    require(!rejected.ok(), "handoff with rejected upload result is blocked");
+    require(rejected.has_blockers(), "rejected handoff exposes blockers");
+    require(rejected.policy.requested_glyph_packet_count == 1U, "rejected handoff counts requested packet");
+    require(rejected.policy.ready_glyph_packet_count == 0U, "rejected handoff has no ready packets");
+    require(rejected.policy.blocked_glyph_packet_count == 1U, "rejected handoff counts blocker");
+    require(rejected.policy.upload_result_rejected_count == 1U, "handoff counts rejected upload result");
+    require(rejected.policy.total_upload_rgba_bytes == 0U, "rejected handoff claims no upload bytes");
+    require(rejected.blocker_packet_ids.size() == 1U, "rejected handoff records blocked packet id");
+    require(
+        rejected.packets.front().handoff_status
+            == render_text_frame_upload_handoff_packet_status::blocked_upload_rejected,
+        "missing upload request id rejects uploadable packet");
+    require(!rejected.packets.front().blocker_reason.empty(), "rejected packet carries blocker reason");
+
+    const render_text_frame_upload_handoff_snapshot missing_handoff =
+        handoff_for_materializations(missing_only);
+
+    require(!missing_handoff.ok(), "handoff with missing glyph/cache key is blocked");
+    require(missing_handoff.policy.requested_glyph_packet_count == 1U, "missing handoff counts requested packet");
+    require(missing_handoff.policy.blocked_glyph_packet_count == 1U, "missing handoff counts blocker");
+    require(missing_handoff.policy.missing_glyph_count == 1U, "handoff counts missing glyph/cache key blocker");
+    require(
+        missing_handoff.packets.front().handoff_status
+            == render_text_frame_upload_handoff_packet_status::blocked_draw_packet,
+        "missing cache key blocks draw packet before upload handoff");
+    require(missing_handoff.packets.front().missing_glyph, "missing-cache packet records missing glyph flag");
+    require(missing_handoff.pages.front().has_blockers, "page summary marks blockers");
+}
+
+void test_text_frame_upload_handoff_diff_reports_frame_to_frame_evidence()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_glyph_atlas_materialization_snapshot upload =
+        upload_ready_materialization();
+    const std::vector<render_text_glyph_atlas_materialization_snapshot> materializations = {
+        upload,
+    };
+
+    const render_text_frame_upload_handoff_snapshot accepted =
+        handoff_for_materializations(materializations, true, true);
+    const render_text_frame_upload_handoff_snapshot rejected =
+        handoff_for_materializations(materializations, true, false);
+    const render_text_frame_upload_handoff_diff_snapshot diff =
+        diff_render_text_frame_upload_handoffs(accepted, rejected);
+
+    require(diff.has_changes(), "handoff diff reports accepted-to-rejected transition");
+    require(diff.changed_packet_count == 1U, "handoff diff counts changed glyph packet");
+    require(diff.changed_page_count == 1U, "handoff diff counts changed page summary");
+    require(diff.changed_packet_keys.size() == 1U, "handoff diff exposes changed packet key");
+    require(diff.changed_page_ids.size() == 1U, "handoff diff exposes changed page id");
+    require(diff.policy.ready_glyph_packet_count_delta == -1, "handoff diff records ready packet loss");
+    require(diff.policy.blocked_glyph_packet_count_delta == 1, "handoff diff records blocker increase");
+    require(
+        diff.policy.total_upload_rgba_bytes_delta
+            == -static_cast<std::ptrdiff_t>(upload.atlas_update_rgba_bytes),
+        "handoff diff records upload byte loss");
+    require(diff.packet_diffs.front().status_changed, "packet diff records handoff status change");
+    require(diff.packet_diffs.front().readiness_changed, "packet diff records readiness change");
+    require(diff.page_diffs.front().blocker_changed, "page diff records blocker transition");
+}
+
 void test_atlas_upload_bridge_produces_stable_render_text_atlas_updates()
 {
     using namespace quiz_vulkan::render;
@@ -1823,6 +2008,9 @@ int main()
     test_glyph_atlas_upload_result_accepts_upload_and_clean_reuse_packets();
     test_glyph_atlas_upload_result_rejects_blockers_and_missing_upload_ids();
     test_glyph_atlas_upload_result_diff_reports_changed_packet_and_page_summaries();
+    test_text_frame_upload_handoff_links_draw_packets_to_upload_results();
+    test_text_frame_upload_handoff_reports_rejected_and_missing_materialization_blockers();
+    test_text_frame_upload_handoff_diff_reports_frame_to_frame_evidence();
     test_atlas_upload_bridge_produces_stable_render_text_atlas_updates();
     test_atlas_upload_bridge_suppresses_duplicates_and_skips_non_uploadable_work();
     test_text_frame_snapshot_combines_planning_fallback_materialization_and_upload_ids();

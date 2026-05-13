@@ -18,6 +18,13 @@ enum class render_image_texture_frame_resource_materialization_diff_entry_status
     changed,
 };
 
+enum class render_image_texture_frame_resource_materialization_change_classification {
+    neutral,
+    regression,
+    improvement,
+    churn,
+};
+
 inline std::string render_image_texture_frame_resource_materialization_diff_entry_status_name(
     render_image_texture_frame_resource_materialization_diff_entry_status status)
 {
@@ -30,6 +37,23 @@ inline std::string render_image_texture_frame_resource_materialization_diff_entr
         return "removed";
     case render_image_texture_frame_resource_materialization_diff_entry_status::changed:
         return "changed";
+    }
+
+    return "unknown";
+}
+
+inline std::string render_image_texture_frame_resource_materialization_change_classification_name(
+    render_image_texture_frame_resource_materialization_change_classification classification)
+{
+    switch (classification) {
+    case render_image_texture_frame_resource_materialization_change_classification::neutral:
+        return "neutral";
+    case render_image_texture_frame_resource_materialization_change_classification::regression:
+        return "regression";
+    case render_image_texture_frame_resource_materialization_change_classification::improvement:
+        return "improvement";
+    case render_image_texture_frame_resource_materialization_change_classification::churn:
+        return "churn";
     }
 
     return "unknown";
@@ -197,6 +221,22 @@ struct render_image_texture_frame_resource_materialization_entry_diff {
     render_image_texture_frame_resource_sampler_handoff_delta sampler_delta;
     bool regression = false;
     bool recovery = false;
+    bool improvement = false;
+    bool churn = false;
+    bool placeholder_to_real = false;
+    bool real_to_placeholder = false;
+    bool cache_key_churn = false;
+    bool upload_handoff_lost = false;
+    bool upload_handoff_gained = false;
+    bool sampler_policy_churn = false;
+    bool materialization_failure_added = false;
+    bool materialization_failure_removed = false;
+    bool materialization_failure_changed = false;
+    render_image_texture_frame_resource_materialization_change_classification classification =
+        render_image_texture_frame_resource_materialization_change_classification::neutral;
+    std::string classification_name = render_image_texture_frame_resource_materialization_change_classification_name(
+        render_image_texture_frame_resource_materialization_change_classification::neutral);
+    std::string classification_reason;
     std::string before_blocker_summary;
     std::string after_blocker_summary;
     std::string diagnostic;
@@ -256,6 +296,9 @@ struct render_image_texture_frame_resource_materialization_diff {
     std::size_t added_entry_count = 0;
     std::size_t removed_entry_count = 0;
     std::size_t changed_entry_count = 0;
+    std::size_t regression_entry_count = 0;
+    std::size_t improvement_entry_count = 0;
+    std::size_t churn_entry_count = 0;
     std::size_t materialization_status_changed_count = 0;
     std::size_t packet_status_changed_count = 0;
     std::size_t materialized_changed_count = 0;
@@ -281,6 +324,15 @@ struct render_image_texture_frame_resource_materialization_diff {
     std::size_t sampler_changed_count = 0;
     std::size_t sampler_key_changed_count = 0;
     std::size_t sampler_summary_changed_count = 0;
+    std::size_t placeholder_to_real_count = 0;
+    std::size_t real_to_placeholder_count = 0;
+    std::size_t cache_key_churn_count = 0;
+    std::size_t upload_handoff_lost_count = 0;
+    std::size_t upload_handoff_gained_count = 0;
+    std::size_t sampler_policy_churn_count = 0;
+    std::size_t materialization_failure_added_count = 0;
+    std::size_t materialization_failure_removed_count = 0;
+    std::size_t materialization_failure_changed_count = 0;
     bool before_renderer_boundary_ready = false;
     bool after_renderer_boundary_ready = false;
     bool renderer_boundary_regressed = false;
@@ -288,11 +340,17 @@ struct render_image_texture_frame_resource_materialization_diff {
     bool has_changes = false;
     bool has_regression = false;
     bool has_recovery = false;
+    bool has_improvement = false;
+    bool has_churn = false;
     std::string changed_summary;
     std::string cache_handoff_delta_summary;
     std::string upload_handoff_delta_summary;
     std::string sampler_handoff_delta_summary;
     std::string regression_summary;
+    std::string improvement_summary;
+    std::string churn_summary;
+    std::string materialization_failure_summary;
+    std::string classification_summary;
     std::vector<render_image_texture_frame_resource_materialization_entry_diff> entries;
     std::string diagnostic;
 
@@ -333,6 +391,13 @@ inline std::size_t render_image_texture_frame_resource_materialization_uploaded_
         uploaded_byte_count += record.uploaded_byte_count;
     }
     return uploaded_byte_count;
+}
+
+inline void append_render_image_texture_frame_resource_materialization_classification_reason(
+    std::string& summary,
+    const std::string& reason)
+{
+    append_render_image_texture_frame_upload_handoff_summary_fragment(summary, reason);
 }
 
 inline bool render_image_texture_frame_resource_cache_handoff_record_equal(
@@ -690,6 +755,27 @@ make_render_image_texture_frame_resource_materialization_entry_diff(
     diff.cache_handoff_changed = diff.cache_delta.changed;
     diff.upload_handoff_changed = diff.upload_delta.changed;
     diff.sampler_handoff_changed = diff.sampler_delta.changed;
+    diff.placeholder_to_real = before != nullptr && after != nullptr
+        && before->placeholder_backed && after->materialized && !after->placeholder_backed;
+    diff.real_to_placeholder = before != nullptr && after != nullptr
+        && before->materialized && !before->placeholder_backed && after->placeholder_backed;
+    diff.cache_key_churn = before_cache != nullptr && after_cache != nullptr
+        && (diff.cache_delta.cache_key_changed
+            || diff.cache_delta.stable_texture_cache_key_changed
+            || diff.cache_delta.texture_key_changed);
+    diff.upload_handoff_lost = before_upload != nullptr && after_upload == nullptr;
+    diff.upload_handoff_gained = before_upload == nullptr && after_upload != nullptr;
+    diff.sampler_policy_churn = before_sampler != nullptr && after_sampler != nullptr
+        && (diff.sampler_delta.sampler_changed
+            || diff.sampler_delta.sampler_key_changed
+            || diff.sampler_delta.sampler_summary_changed);
+    diff.materialization_failure_added = (before == nullptr && after != nullptr && after->blocked)
+        || (before != nullptr && after != nullptr && !before->blocked && after->blocked);
+    diff.materialization_failure_removed = before != nullptr && before->blocked
+        && ((after != nullptr && !after->blocked) || after == nullptr);
+    diff.materialization_failure_changed = before != nullptr && after != nullptr
+        && before->blocked && after->blocked
+        && (diff.materialization_status_changed || diff.before_blocker_summary != diff.after_blocker_summary);
 
     if (before == nullptr && after != nullptr) {
         diff.status = render_image_texture_frame_resource_materialization_diff_entry_status::added;
@@ -711,6 +797,57 @@ make_render_image_texture_frame_resource_materialization_entry_diff(
             diff.status = render_image_texture_frame_resource_materialization_diff_entry_status::changed;
         }
     }
+    append_render_image_texture_frame_resource_materialization_classification_reason(
+        diff.classification_reason,
+        diff.placeholder_to_real ? "placeholder became real resource" : "");
+    append_render_image_texture_frame_resource_materialization_classification_reason(
+        diff.classification_reason,
+        diff.real_to_placeholder ? "real resource fell back to placeholder" : "");
+    append_render_image_texture_frame_resource_materialization_classification_reason(
+        diff.classification_reason,
+        diff.cache_key_churn ? "stable cache key changed" : "");
+    append_render_image_texture_frame_resource_materialization_classification_reason(
+        diff.classification_reason,
+        diff.upload_handoff_lost ? "upload handoff was lost" : "");
+    append_render_image_texture_frame_resource_materialization_classification_reason(
+        diff.classification_reason,
+        diff.upload_handoff_gained ? "upload handoff was gained" : "");
+    append_render_image_texture_frame_resource_materialization_classification_reason(
+        diff.classification_reason,
+        diff.sampler_policy_churn ? "sampler policy changed" : "");
+    append_render_image_texture_frame_resource_materialization_classification_reason(
+        diff.classification_reason,
+        diff.materialization_failure_added ? "materialization failure was added" : "");
+    append_render_image_texture_frame_resource_materialization_classification_reason(
+        diff.classification_reason,
+        diff.materialization_failure_removed ? "materialization failure was removed" : "");
+    append_render_image_texture_frame_resource_materialization_classification_reason(
+        diff.classification_reason,
+        diff.materialization_failure_changed ? "materialization failure changed" : "");
+    if (diff.classification_reason.empty()) {
+        diff.classification_reason = diff.changed()
+            ? "materialization changed without classified severity"
+            : "no materialization classification changes";
+    }
+
+    if (diff.regression || diff.real_to_placeholder || diff.upload_handoff_lost
+        || diff.materialization_failure_added) {
+        diff.classification = render_image_texture_frame_resource_materialization_change_classification::regression;
+    } else if (diff.recovery || diff.placeholder_to_real || diff.upload_handoff_gained
+        || diff.materialization_failure_removed) {
+        diff.classification = render_image_texture_frame_resource_materialization_change_classification::improvement;
+    } else if (diff.cache_key_churn || diff.sampler_policy_churn || diff.materialization_failure_changed
+        || diff.cache_handoff_changed || diff.upload_handoff_changed || diff.sampler_handoff_changed) {
+        diff.classification = render_image_texture_frame_resource_materialization_change_classification::churn;
+    } else {
+        diff.classification = render_image_texture_frame_resource_materialization_change_classification::neutral;
+    }
+    diff.classification_name = render_image_texture_frame_resource_materialization_change_classification_name(
+        diff.classification);
+    diff.improvement =
+        diff.classification == render_image_texture_frame_resource_materialization_change_classification::improvement;
+    diff.churn =
+        diff.classification == render_image_texture_frame_resource_materialization_change_classification::churn;
     diff.status_name = render_image_texture_frame_resource_materialization_diff_entry_status_name(diff.status);
 
     if (diff.status == render_image_texture_frame_resource_materialization_diff_entry_status::unchanged) {
@@ -771,6 +908,21 @@ inline void count_render_image_texture_frame_resource_materialization_diff_entry
     if (entry.retry_backoff_changed) {
         ++diff.retry_backoff_changed_count;
     }
+    if (entry.regression) {
+        ++diff.regression_entry_count;
+    }
+    if (entry.improvement) {
+        ++diff.improvement_entry_count;
+        append_render_image_texture_frame_upload_handoff_summary_fragment(
+            diff.improvement_summary,
+            "request=" + std::to_string(entry.request_index) + ":" + entry.classification_reason);
+    }
+    if (entry.churn) {
+        ++diff.churn_entry_count;
+        append_render_image_texture_frame_upload_handoff_summary_fragment(
+            diff.churn_summary,
+            "request=" + std::to_string(entry.request_index) + ":" + entry.classification_reason);
+    }
     if (entry.cache_handoff_changed) {
         ++diff.cache_handoff_changed_count;
     }
@@ -819,10 +971,54 @@ inline void count_render_image_texture_frame_resource_materialization_diff_entry
     if (entry.sampler_delta.sampler_summary_changed) {
         ++diff.sampler_summary_changed_count;
     }
+    if (entry.placeholder_to_real) {
+        ++diff.placeholder_to_real_count;
+    }
+    if (entry.real_to_placeholder) {
+        ++diff.real_to_placeholder_count;
+    }
+    if (entry.cache_key_churn) {
+        ++diff.cache_key_churn_count;
+    }
+    if (entry.upload_handoff_lost) {
+        ++diff.upload_handoff_lost_count;
+    }
+    if (entry.upload_handoff_gained) {
+        ++diff.upload_handoff_gained_count;
+    }
+    if (entry.sampler_policy_churn) {
+        ++diff.sampler_policy_churn_count;
+    }
+    if (entry.materialization_failure_added) {
+        ++diff.materialization_failure_added_count;
+        append_render_image_texture_frame_upload_handoff_summary_fragment(
+            diff.materialization_failure_summary,
+            "request=" + std::to_string(entry.request_index) + ":materialization failure was added");
+    }
+    if (entry.materialization_failure_removed) {
+        ++diff.materialization_failure_removed_count;
+        append_render_image_texture_frame_upload_handoff_summary_fragment(
+            diff.materialization_failure_summary,
+            "request=" + std::to_string(entry.request_index) + ":materialization failure was removed");
+    }
+    if (entry.materialization_failure_changed) {
+        ++diff.materialization_failure_changed_count;
+        append_render_image_texture_frame_upload_handoff_summary_fragment(
+            diff.materialization_failure_summary,
+            "request=" + std::to_string(entry.request_index) + ":materialization failure changed");
+    }
+    if (entry.changed()) {
+        append_render_image_texture_frame_upload_handoff_summary_fragment(
+            diff.classification_summary,
+            "request=" + std::to_string(entry.request_index) + ":"
+                + entry.classification_name + ":" + entry.classification_reason);
+    }
 
     diff.has_changes = diff.has_changes || entry.changed();
     diff.has_regression = diff.has_regression || entry.regression;
     diff.has_recovery = diff.has_recovery || entry.recovery;
+    diff.has_improvement = diff.has_improvement || entry.improvement;
+    diff.has_churn = diff.has_churn || entry.churn;
 }
 
 inline render_image_texture_frame_resource_materialization_diff
@@ -952,6 +1148,8 @@ diff_render_image_texture_frame_resource_materializations(
         || diff.missing_upload_result_delta < 0
         || diff.missing_frame_binding_delta < 0
         || diff.retry_backoff_blocked_delta < 0;
+    diff.has_improvement = diff.has_improvement || diff.improvement_entry_count != 0;
+    diff.has_churn = diff.has_churn || diff.churn_entry_count != 0;
 
     if (diff.added_entry_count != 0) {
         append_render_image_texture_frame_upload_handoff_summary_fragment(
@@ -1034,6 +1232,26 @@ diff_render_image_texture_frame_resource_materializations(
     if (diff.regression_summary.empty()) {
         diff.regression_summary = diff.has_changes
             ? "image frame resource materialization diff has changes without regressions"
+            : "image frame resource materialization diff has no changes";
+    }
+    if (diff.improvement_summary.empty()) {
+        diff.improvement_summary = diff.has_changes
+            ? "image frame resource materialization diff has changes without improvements"
+            : "image frame resource materialization diff has no changes";
+    }
+    if (diff.churn_summary.empty()) {
+        diff.churn_summary = diff.has_changes
+            ? "image frame resource materialization diff has no churn"
+            : "image frame resource materialization diff has no changes";
+    }
+    if (diff.materialization_failure_summary.empty()) {
+        diff.materialization_failure_summary = diff.has_changes
+            ? "image frame resource materialization diff has no materialization failure changes"
+            : "image frame resource materialization diff has no changes";
+    }
+    if (diff.classification_summary.empty()) {
+        diff.classification_summary = diff.has_changes
+            ? "image frame resource materialization diff has changes without classified reasons"
             : "image frame resource materialization diff has no changes";
     }
 

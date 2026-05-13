@@ -321,6 +321,161 @@ void test_materialization_diff_reports_blocker_placeholder_regression_and_recove
         "regression summary reports missing upload growth");
 }
 
+void test_materialization_diff_classifies_placeholder_to_real_improvement()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_image_texture_frame_resource_packet_materialization before = materialize_packets({
+        make_packet(0, "asset://textures/card.ppm", render_image_texture_frame_resource_packet_status::placeholder_backed),
+    });
+    const render_image_texture_frame_resource_packet_materialization after = materialize_packets({
+        make_packet(0, "asset://textures/card.ppm", render_image_texture_frame_resource_packet_status::resource_packet_ready),
+    });
+
+    const render_image_texture_frame_resource_materialization_diff diff =
+        diff_render_image_texture_frame_resource_materializations(before, after);
+
+    require(diff.ok(), "placeholder-to-real diff is ok");
+    require(diff.has_changes, "placeholder-to-real diff reports changes");
+    require(diff.has_improvement, "placeholder-to-real diff reports improvement");
+    require(!diff.has_regression, "placeholder-to-real diff has no regression");
+    require(!diff.has_churn, "placeholder-to-real diff is not classified as churn");
+    require(diff.placeholder_to_real_count == 1, "placeholder-to-real count is stable");
+    require(diff.real_to_placeholder_count == 0, "real-to-placeholder count remains zero");
+    require(diff.improvement_entry_count == 1, "placeholder-to-real improvement entry is counted");
+    require(diff.entries[0].placeholder_to_real, "entry records placeholder-to-real transition");
+    require(diff.entries[0].improvement, "entry records improvement classification");
+    require(
+        diff.entries[0].classification
+            == render_image_texture_frame_resource_materialization_change_classification::improvement,
+        "entry improvement classification is stable");
+    require(diff.entries[0].classification_name == "improvement", "entry improvement name is stable");
+    require(
+        diff.entries[0].classification_reason == "placeholder became real resource",
+        "entry improvement reason is stable");
+    require(
+        diff.improvement_summary == "request=0:placeholder became real resource",
+        "aggregate improvement summary is stable");
+    require(
+        diff.classification_summary == "request=0:improvement:placeholder became real resource",
+        "aggregate classification summary is stable");
+}
+
+void test_materialization_diff_classifies_regressions_failures_and_recoveries()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_image_texture_frame_resource_packet_materialization before = materialize_packets({
+        make_packet(0, "asset://textures/placeholder.ppm", render_image_texture_frame_resource_packet_status::resource_packet_ready),
+        make_packet(1, "asset://textures/upload-lost.ppm", render_image_texture_frame_resource_packet_status::resource_packet_ready),
+        make_packet(2, "asset://textures/upload-gained.ppm", render_image_texture_frame_resource_packet_status::blocked_missing_upload_result),
+        make_packet(3, "asset://textures/failure-changed.ppm", render_image_texture_frame_resource_packet_status::blocked_missing_upload_result),
+    });
+    const render_image_texture_frame_resource_packet_materialization after = materialize_packets({
+        make_packet(0, "asset://textures/placeholder.ppm", render_image_texture_frame_resource_packet_status::placeholder_backed),
+        make_packet(1, "asset://textures/upload-lost.ppm", render_image_texture_frame_resource_packet_status::blocked_missing_upload_result),
+        make_packet(2, "asset://textures/upload-gained.ppm", render_image_texture_frame_resource_packet_status::resource_packet_ready),
+        make_packet(3, "asset://textures/failure-changed.ppm", render_image_texture_frame_resource_packet_status::blocked_retry_backoff),
+    });
+
+    const render_image_texture_frame_resource_materialization_diff diff =
+        diff_render_image_texture_frame_resource_materializations(before, after);
+
+    require(!diff.ok(), "regression classification diff is not ok");
+    require(diff.has_regression, "regression classification diff reports regression");
+    require(diff.has_improvement, "regression classification diff reports improvement");
+    require(diff.has_churn, "regression classification diff reports churn");
+    require(diff.real_to_placeholder_count == 1, "real-to-placeholder regression is counted");
+    require(diff.upload_handoff_lost_count == 1, "upload handoff lost is counted");
+    require(diff.upload_handoff_gained_count == 1, "upload handoff gained is counted");
+    require(diff.materialization_failure_added_count == 1, "materialization failure added is counted");
+    require(diff.materialization_failure_removed_count == 1, "materialization failure removed is counted");
+    require(diff.materialization_failure_changed_count == 1, "materialization failure changed is counted");
+    require(diff.regression_entry_count == 2, "regression entry count is stable");
+    require(diff.improvement_entry_count == 1, "improvement entry count is stable");
+    require(diff.churn_entry_count == 1, "churn entry count is stable");
+    require(diff.entries[0].real_to_placeholder, "first entry records real-to-placeholder");
+    require(
+        diff.entries[0].classification_reason == "real resource fell back to placeholder",
+        "real-to-placeholder reason is stable");
+    require(diff.entries[1].upload_handoff_lost, "second entry records upload handoff lost");
+    require(diff.entries[1].materialization_failure_added, "second entry records failure added");
+    require(
+        diff.entries[1].classification_reason
+            == "upload handoff was lost; materialization failure was added",
+        "upload lost regression reason is stable");
+    require(diff.entries[2].upload_handoff_gained, "third entry records upload handoff gained");
+    require(diff.entries[2].materialization_failure_removed, "third entry records failure removed");
+    require(
+        diff.entries[2].classification_reason
+            == "upload handoff was gained; materialization failure was removed",
+        "upload gained improvement reason is stable");
+    require(diff.entries[3].materialization_failure_changed, "fourth entry records failure changed");
+    require(diff.entries[3].churn, "failure changed entry is classified as churn");
+    require(
+        diff.entries[3].classification_reason == "materialization failure changed",
+        "failure changed reason is stable");
+    require(
+        diff.materialization_failure_summary
+            == "request=1:materialization failure was added; request=2:materialization failure was removed; request=3:materialization failure changed",
+        "materialization failure summary is stable");
+    require(
+        diff.improvement_summary
+            == "request=2:upload handoff was gained; materialization failure was removed",
+        "recovery improvement summary is stable");
+    require(
+        diff.churn_summary == "request=3:materialization failure changed",
+        "failure churn summary is stable");
+}
+
+void test_materialization_diff_classifies_cache_key_and_sampler_churn()
+{
+    using namespace quiz_vulkan::render;
+
+    render_image_sampler_policy nearest_sampler;
+    nearest_sampler.min_filter = render_image_filter::nearest;
+    nearest_sampler.mag_filter = render_image_filter::nearest;
+
+    const render_image_texture_frame_resource_packet_materialization before = materialize_packets({
+        make_packet(0, "asset://textures/cache-a.ppm", render_image_texture_frame_resource_packet_status::resource_packet_ready),
+        make_packet(1, "asset://textures/sampler.ppm", render_image_texture_frame_resource_packet_status::resource_packet_ready),
+    });
+    const render_image_texture_frame_resource_packet_materialization after = materialize_packets({
+        make_packet(0, "asset://textures/cache-b.ppm", render_image_texture_frame_resource_packet_status::resource_packet_ready),
+        make_packet(1, "asset://textures/sampler.ppm", render_image_texture_frame_resource_packet_status::resource_packet_ready, nearest_sampler),
+    });
+
+    const render_image_texture_frame_resource_materialization_diff diff =
+        diff_render_image_texture_frame_resource_materializations(before, after);
+
+    require(diff.ok(), "cache and sampler churn diff is ok");
+    require(diff.has_changes, "cache and sampler churn diff reports changes");
+    require(diff.has_churn, "cache and sampler churn diff reports churn");
+    require(!diff.has_regression, "cache and sampler churn diff has no regression");
+    require(!diff.has_improvement, "cache and sampler churn diff has no improvement");
+    require(diff.churn_entry_count == 2, "cache and sampler churn entries are counted");
+    require(diff.cache_key_churn_count == 2, "stable cache key churn is counted");
+    require(diff.sampler_policy_churn_count == 1, "sampler policy churn is counted");
+    require(diff.entries[0].cache_key_churn, "cache source change records cache key churn");
+    require(!diff.entries[0].sampler_policy_churn, "cache source change does not record sampler churn");
+    require(
+        diff.entries[0].classification_reason == "stable cache key changed",
+        "cache churn reason is stable");
+    require(diff.entries[1].cache_key_churn, "sampler change also changes stable cache key");
+    require(diff.entries[1].sampler_policy_churn, "sampler change records sampler policy churn");
+    require(
+        diff.entries[1].classification_reason == "stable cache key changed; sampler policy changed",
+        "sampler churn reason is stable");
+    require(
+        diff.churn_summary
+            == "request=0:stable cache key changed; request=1:stable cache key changed; sampler policy changed",
+        "cache and sampler churn summary is stable");
+    require(
+        diff.classification_summary
+            == "request=0:churn:stable cache key changed; request=1:churn:stable cache key changed; sampler policy changed",
+        "cache and sampler classification summary is stable");
+}
+
 void test_materialization_diff_reports_added_and_removed_entries()
 {
     using namespace quiz_vulkan::render;
@@ -407,6 +562,9 @@ int main()
     test_unchanged_materialization_diff_is_stable();
     test_materialization_diff_reports_renderer_boundary_handoff_deltas();
     test_materialization_diff_reports_blocker_placeholder_regression_and_recovery();
+    test_materialization_diff_classifies_placeholder_to_real_improvement();
+    test_materialization_diff_classifies_regressions_failures_and_recoveries();
+    test_materialization_diff_classifies_cache_key_and_sampler_churn();
     test_materialization_diff_reports_added_and_removed_entries();
     test_materialization_diff_helpers_are_stable();
     return 0;

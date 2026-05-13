@@ -1,6 +1,6 @@
 # Quiz Current Handoff
 
-Last updated: 2026-05-09
+Last updated: 2026-05-13
 
 ## Top priorities
 
@@ -39,6 +39,11 @@ Last updated: 2026-05-09
 - Engine workers own only their engine folders. App/runtime, top-level CMake, and aggregate contract wiring stay with the integrator unless explicitly assigned.
 - Large file splitting is allowed when it improves module cohesion, worker ownership, reviewability, or conflict isolation. Do not split files only because they exceed a line-count threshold, and do not move stable public interfaces without explicit integrator approval.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
+- Latest integration note: `993039e` adds Vulkan native frame operation diff diagnostics for operation summary deltas, fallback/native readiness changes, and renderer-facing frame lifecycle evidence; Windows MinGW focused Vulkan/renderer CTest passed 2/2.
+- Latest integration note: `2106032` adds image frame resource packet planning diagnostics for texture resource packets, placeholder-backed frames, sampler/cache-key routing, and failure evidence; integrator registered `image_texture_frame_resource_packet_plan.h`, and Windows MinGW focused image CTest passed 1/1.
+- Latest integration note: `ff3e5c6` adds text fallback shaping handoff diagnostics for fallback run planning to shaping-input boundaries; integrator registered `font_fallback_shaping_handoff.h`, and Windows MinGW focused text CTest passed 1/1.
+- Latest integration note: `e789e8c` adds input action candidate planning diagnostics behind the input interface; integrator registered `input_action_candidate_plan.h`, and Windows MinGW focused input CTest passed 2/2.
+- Latest verification note: configured Windows MinGW CTest count is now `99`, and public FILE_SET registration scan reports 0 missing headers for input, render text, render image, render Vulkan, and assets.
 - Latest integration note: `de9860e` splits Vulkan native frame operation diagnostics into `vulkan_backend_native_frame_operation.h`; integrator registered the new public header in the renderer FILE_SET, Windows MinGW focused Vulkan/renderer CTest passed 2/2, and configured CTest count is now `97`.
 - Latest integration note: `7f7ef0a` splits text fallback run planning diagnostics into `font_fallback_run_planning_diagnostics.h`; `5c380cd` splits normalized input replay diff policy helpers into `normalized_input_replay_diff_policy.h` and a focused test. Integrator registered both public headers and Windows MinGW focused text/input CTest passed 4/4.
 - Latest integration note: `dc05a96` splits image frame binding summary diagnostics into `image_texture_frame_binding_summary.h`; integrator registered the new public header in the render contract FILE_SET and Windows MinGW focused image CTest passed 1/1.

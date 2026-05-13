@@ -1,11 +1,16 @@
 # Quiz 요구사항 추적 매트릭스
 
-마지막 갱신: 2026-05-09
+마지막 갱신: 2026-05-13
 
 이 문서는 요구사항 번호를 실행 순서가 아니라 추적 ID로 관리한다. 실제 구현 순서는 `big_plan.md`의 의존관계 기반 단계가 기준이며, 각 행은 루트 구현 문서, 하위 프로젝트 문서, 현재 C++/문서 증거를 연결한다.
 
 최근 baseline 통합 증거:
 
+- current: input action candidate, text fallback shaping handoff, image frame resource packet plan, and Vulkan native frame operation diff diagnostics integrated; Windows MinGW focused input/text/image/Vulkan CTest passed 6/6 and interface compile target builds confirmed. Configured CTest count is now `99`.
+- `e789e8c`: input core now exposes data-only action candidate planning diagnostics behind the input interface, without renderer/domain dispatch.
+- `ff3e5c6`: text engine now exposes fallback-run-to-shaping handoff diagnostics for future shaping backend integration.
+- `2106032`: image engine now exposes frame resource packet planning diagnostics for texture packet/cache-key/sampler/placeholder handoff evidence.
+- `993039e`: Vulkan backend now exposes native frame operation diff diagnostics for frame lifecycle and fallback/native readiness comparisons.
 - current: Vulkan native frame operation header split integrated with public FILE_SET registration; Windows MinGW focused Vulkan/renderer CTest 2/2 and interface compile target build confirmed. Configured CTest count is now `97`.
 - `de9860e`: Vulkan native frame operation diagnostics now live in `vulkan_backend_native_frame_operation.h` while `vulkan_backend_adapter.h` preserves the existing include surface.
 - current: text fallback-run and input replay-diff header splits integrated with public FILE_SET registration; Windows MinGW focused text/input CTest 4/4 and interface compile target build confirmed.

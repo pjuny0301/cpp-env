@@ -399,6 +399,21 @@ void record_font_fallback_chain_plan(
         "fake_text_engine",
         0U));
 
+    const render_text_font_fallback_run_plan_request run_plan_request{
+        .items = plan_request.items,
+    };
+    diagnostics.font_fallback_run_plan =
+        plan_render_text_font_fallback_runs(run_plan_request, font_catalog);
+    diagnostics.font_fallback_shaping_handoff =
+        make_render_text_font_fallback_shaping_handoff(diagnostics.font_fallback_run_plan);
+    diagnostics.font_fallback_shaped_glyph_inputs =
+        make_render_text_font_fallback_shaped_glyph_inputs(
+            render_text_font_fallback_shaped_glyph_input_request{
+                .handoff = diagnostics.font_fallback_shaping_handoff,
+                .items = plan_request.items,
+                .font_catalog = font_catalog,
+            });
+
     render_text_font_fallback_chain_plan_snapshot plan =
         plan_render_text_font_fallback_chains(plan_request, font_catalog);
     diagnostics.font_fallback_chain_runs = std::move(plan.runs);

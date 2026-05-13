@@ -456,7 +456,12 @@ inline std::vector<const font_face_descriptor*> font_fallback_chain_candidate_fa
         catalog.find_exact(style.font_family, style.font_weight, style.italic));
 
     for (const font_face_descriptor& face : catalog.faces()) {
-        if (face.fallback) {
+        if (face.fallback && !face.coverage.empty()) {
+            font_fallback_chain_append_candidate_face(candidates, &face);
+        }
+    }
+    for (const font_face_descriptor& face : catalog.faces()) {
+        if (face.fallback && face.coverage.empty()) {
             font_fallback_chain_append_candidate_face(candidates, &face);
         }
     }

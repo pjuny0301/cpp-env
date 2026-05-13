@@ -236,6 +236,11 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.font_fallback_chain_policy }
         -> std::same_as<render::render_text_font_fallback_chain_plan_policy_snapshot&>;
     { diagnostics.font_fallback_chain_diagnostic } -> std::same_as<std::string&>;
+    { diagnostics.font_fallback_run_plan } -> std::same_as<render::render_text_font_fallback_run_plan_snapshot&>;
+    { diagnostics.font_fallback_shaping_handoff }
+        -> std::same_as<render::render_text_font_fallback_shaping_handoff_snapshot&>;
+    { diagnostics.font_fallback_shaped_glyph_inputs }
+        -> std::same_as<render::render_text_font_fallback_shaped_glyph_input_snapshot&>;
     { diagnostics.font_backend_shaping_capability }
         -> std::same_as<render::render_text_font_backend_shaping_capability&>;
     { diagnostics.font_backend_uses_deterministic_shaping } -> std::same_as<bool&>;
@@ -310,6 +315,9 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.has_font_fallback_chain_runs() } -> std::same_as<bool>;
     { diagnostics.has_font_fallback_chain_missing_glyphs() } -> std::same_as<bool>;
     { diagnostics.has_font_fallback_chain_policy() } -> std::same_as<bool>;
+    { diagnostics.has_font_fallback_run_plan() } -> std::same_as<bool>;
+    { diagnostics.has_font_fallback_shaping_handoff() } -> std::same_as<bool>;
+    { diagnostics.has_font_fallback_shaped_glyph_inputs() } -> std::same_as<bool>;
     { diagnostics.has_font_backend_adapter_diagnostics() } -> std::same_as<bool>;
     { diagnostics.has_font_backend_adapter_policy() } -> std::same_as<bool>;
     { diagnostics.has_font_backend_dependency_probe() } -> std::same_as<bool>;
@@ -1616,6 +1624,101 @@ static_assert(requires(
         -> std::same_as<render::render_text_font_fallback_shaping_handoff_snapshot>;
     { render::make_render_text_font_fallback_shaping_handoff(request) }
         -> std::same_as<render::render_text_font_fallback_shaping_handoff_snapshot>;
+});
+
+static_assert(requires(
+    render::render_text_font_fallback_shaped_glyph_input_record input,
+    render::render_text_font_fallback_shaped_glyph_input_policy_snapshot policy,
+    render::render_text_font_fallback_shaped_glyph_input_request request,
+    render::render_text_font_fallback_shaped_glyph_input_snapshot snapshot,
+    render::render_text_font_fallback_shaping_handoff_run_snapshot handoff_run,
+    render::render_text_font_fallback_shaping_handoff_snapshot handoff,
+    render::render_text_font_fallback_run_plan_snapshot fallback_plan,
+    render::render_text_font_fallback_chain_plan_item item,
+    std::vector<render::render_text_font_fallback_chain_plan_item> items,
+    render::utf8_text_codepoint scalar,
+    render::render_text_style style,
+    render::font_face_catalog catalog) {
+    { input.stable_input_key } -> std::same_as<std::string&>;
+    { input.stable_run_key } -> std::same_as<std::string&>;
+    { input.stable_page_key } -> std::same_as<std::string&>;
+    { input.item_index } -> std::same_as<std::size_t&>;
+    { input.source_run_index } -> std::same_as<std::size_t&>;
+    { input.fallback_run_index } -> std::same_as<std::size_t&>;
+    { input.glyph_index } -> std::same_as<std::size_t&>;
+    { input.source_codepoint_index } -> std::same_as<std::size_t&>;
+    { input.style_token } -> std::same_as<render::render_style_id&>;
+    { input.byte_offset } -> std::same_as<std::size_t&>;
+    { input.byte_count } -> std::same_as<std::size_t&>;
+    { input.codepoint } -> std::same_as<std::uint32_t&>;
+    { input.glyph_id } -> std::same_as<std::uint32_t&>;
+    { input.requested_face_id } -> std::same_as<render::font_face_id&>;
+    { input.selected_face_id } -> std::same_as<render::font_face_id&>;
+    { input.selected_family } -> std::same_as<std::string&>;
+    { input.selected_source_uri } -> std::same_as<std::string&>;
+    { input.advance_x } -> std::same_as<float&>;
+    { input.line_height } -> std::same_as<float&>;
+    { input.cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { input.has_cache_key } -> std::same_as<bool&>;
+    { input.cacheable } -> std::same_as<bool&>;
+    { input.valid_utf8 } -> std::same_as<bool&>;
+    { input.glyph_supported } -> std::same_as<bool&>;
+    { input.cluster_start } -> std::same_as<bool&>;
+    { input.used_fallback } -> std::same_as<bool&>;
+    { input.glyph_id_from_selection } -> std::same_as<bool&>;
+    { input.glyph_id_matches_codepoint } -> std::same_as<bool&>;
+    { input.glyph_id_offset } -> std::same_as<std::uint32_t&>;
+    { input.font_selection } -> std::same_as<render::render_text_font_shaping_codepoint_selection&>;
+    { input.diagnostic } -> std::same_as<std::string&>;
+    { input.ready_for_shaping() } -> std::same_as<bool>;
+    { input.ready_for_glyph_atlas() } -> std::same_as<bool>;
+    { policy.handoff_run_count } -> std::same_as<std::size_t&>;
+    { policy.ready_run_count } -> std::same_as<std::size_t&>;
+    { policy.blocked_run_count } -> std::same_as<std::size_t&>;
+    { policy.input_count } -> std::same_as<std::size_t&>;
+    { policy.cacheable_input_count } -> std::same_as<std::size_t&>;
+    { policy.uncacheable_input_count } -> std::same_as<std::size_t&>;
+    { policy.fallback_input_count } -> std::same_as<std::size_t&>;
+    { policy.glyph_id_offset_input_count } -> std::same_as<std::size_t&>;
+    { policy.missing_source_run_count } -> std::same_as<std::size_t&>;
+    { policy.missing_codepoint_count } -> std::same_as<std::size_t&>;
+    { policy.fallback_style_count } -> std::same_as<std::size_t&>;
+    { policy.no_selected_face_count } -> std::same_as<std::size_t&>;
+    { policy.unique_page_key_count } -> std::same_as<std::size_t&>;
+    { policy.unique_style_token_count } -> std::same_as<std::size_t&>;
+    { request.handoff } -> std::same_as<render::render_text_font_fallback_shaping_handoff_snapshot&>;
+    { request.items } -> std::same_as<std::vector<render::render_text_font_fallback_chain_plan_item>&>;
+    { request.font_catalog } -> std::same_as<render::font_face_catalog&>;
+    { snapshot.inputs } -> std::same_as<std::vector<render::render_text_font_fallback_shaped_glyph_input_record>&>;
+    { snapshot.blocked_runs }
+        -> std::same_as<std::vector<render::render_text_font_fallback_shaping_handoff_run_snapshot>&>;
+    { snapshot.stable_input_keys } -> std::same_as<std::vector<std::string>&>;
+    { snapshot.stable_page_keys } -> std::same_as<std::vector<std::string>&>;
+    { snapshot.style_tokens } -> std::same_as<std::vector<render::render_style_id>&>;
+    { snapshot.policy } -> std::same_as<render::render_text_font_fallback_shaped_glyph_input_policy_snapshot&>;
+    { snapshot.diagnostic } -> std::same_as<std::string&>;
+    { snapshot.ok() } -> std::same_as<bool>;
+    { snapshot.has_inputs() } -> std::same_as<bool>;
+    { render::font_fallback_shaped_glyph_input_line_height_for(style) } -> std::same_as<float>;
+    { render::font_fallback_shaped_glyph_input_atlas_dimension_for(1.0f) } -> std::same_as<std::size_t>;
+    { render::font_fallback_shaped_glyph_input_stable_key_for(handoff_run, scalar, std::size_t{}) }
+        -> std::same_as<std::string>;
+    { render::find_font_fallback_shaped_glyph_input_item(items, item.item_index) }
+        -> std::same_as<const render::render_text_font_fallback_chain_plan_item*>;
+    { render::make_render_text_font_fallback_shaped_glyph_input(
+        handoff_run,
+        scalar,
+        std::size_t{},
+        std::size_t{},
+        style,
+        catalog) } -> std::same_as<render::render_text_font_fallback_shaped_glyph_input_record>;
+    { render::append_render_text_font_fallback_shaped_glyph_input(snapshot, input) } -> std::same_as<void>;
+    { render::make_render_text_font_fallback_shaped_glyph_inputs(request) }
+        -> std::same_as<render::render_text_font_fallback_shaped_glyph_input_snapshot>;
+    { render::make_render_text_font_fallback_shaped_glyph_inputs(handoff, items, catalog) }
+        -> std::same_as<render::render_text_font_fallback_shaped_glyph_input_snapshot>;
+    { render::make_render_text_font_fallback_shaped_glyph_inputs(fallback_plan, items, catalog) }
+        -> std::same_as<render::render_text_font_fallback_shaped_glyph_input_snapshot>;
 });
 
 static_assert(requires(

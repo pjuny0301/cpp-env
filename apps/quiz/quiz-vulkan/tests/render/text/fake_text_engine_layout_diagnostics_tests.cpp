@@ -227,6 +227,11 @@ void require_mixed_script_fallback_chain_diagnostics(
 
     require(diagnostics.has_font_fallback_chain_runs(), "diagnostics record fallback-chain run snapshots");
     require(diagnostics.has_font_fallback_chain_policy(), "diagnostics record fallback-chain policy");
+    require(diagnostics.has_font_fallback_run_plan(), "diagnostics record fallback run planning snapshot");
+    require(diagnostics.has_font_fallback_shaping_handoff(), "diagnostics record fallback shaping handoff snapshot");
+    require(
+        diagnostics.has_font_fallback_shaped_glyph_inputs(),
+        "diagnostics record shaped glyph input handoff snapshot");
     require(!diagnostics.has_font_fallback_chain_missing_glyphs(), "covered mixed fixture has no missing glyphs");
     require(diagnostics.font_fallback_chain_runs.size() == 1U, "one text run produces one fallback-chain run");
     require(diagnostics.font_fallback_chain_policy.run_count == 1U, "fallback-chain policy counts one run");
@@ -250,6 +255,70 @@ void require_mixed_script_fallback_chain_diagnostics(
         diagnostics.font_fallback_chain_shaping_selection.selected.library
             == render_text_font_backend_library::harfbuzz,
         "fallback-chain diagnostics carry selected shaping backend");
+    require(diagnostics.font_fallback_run_plan.ok(), "covered mixed fixture has a complete fallback run plan");
+    require(
+        diagnostics.font_fallback_run_plan.policy.fallback_run_count == 3U,
+        "fallback run plan splits mixed script by selected face");
+    require(
+        diagnostics.font_fallback_run_plan.policy.covered_codepoint_count == 3U,
+        "fallback run plan counts all mixed glyphs as covered");
+    require(
+        diagnostics.font_fallback_run_plan.policy.fallback_codepoint_count == 2U,
+        "fallback run plan counts Hangul and emoji fallback codepoints");
+    require(
+        diagnostics.font_fallback_run_plan.selected_face_order.size() == 3U,
+        "fallback run plan records deterministic selected face order");
+    require(diagnostics.font_fallback_run_plan.selected_face_order[0] == 501U, "run plan selected face order starts Latin");
+    require(diagnostics.font_fallback_run_plan.selected_face_order[1] == 502U, "run plan selected face order keeps Hangul");
+    require(diagnostics.font_fallback_run_plan.selected_face_order[2] == 503U, "run plan selected face order keeps emoji");
+
+    require(diagnostics.font_fallback_shaping_handoff.ok(), "covered mixed fixture has complete shaping handoff");
+    require(
+        diagnostics.font_fallback_shaping_handoff.policy.run_count == 3U,
+        "shaping handoff preserves split fallback runs");
+    require(
+        diagnostics.font_fallback_shaping_handoff.policy.ready_run_count == 3U,
+        "all mixed fallback runs are ready to shape");
+    require(
+        diagnostics.font_fallback_shaping_handoff.policy.blocked_run_count == 0U,
+        "covered mixed handoff has no blocked runs");
+    require(
+        diagnostics.font_fallback_shaping_handoff.policy.unique_page_key_count == 3U,
+        "handoff records one stable page key per selected face");
+
+    require(
+        diagnostics.font_fallback_shaped_glyph_inputs.ok(),
+        "covered mixed fixture has complete shaped glyph input handoff");
+    require(
+        diagnostics.font_fallback_shaped_glyph_inputs.policy.input_count == 3U,
+        "shaped glyph input handoff emits one input per scalar");
+    require(
+        diagnostics.font_fallback_shaped_glyph_inputs.policy.cacheable_input_count == 3U,
+        "shaped glyph input handoff marks all mixed glyphs cacheable");
+    require(
+        diagnostics.font_fallback_shaped_glyph_inputs.policy.fallback_input_count == 2U,
+        "shaped glyph input handoff counts Hangul and emoji fallback inputs");
+    require(
+        diagnostics.font_fallback_shaped_glyph_inputs.policy.unique_page_key_count == 3U,
+        "shaped glyph input handoff preserves stable page key evidence");
+    require(
+        diagnostics.font_fallback_shaped_glyph_inputs.stable_input_keys.size() == 3U,
+        "shaped glyph input handoff exposes stable input keys");
+    require(
+        diagnostics.font_fallback_shaped_glyph_inputs.inputs[0].selected_face_id == 501U,
+        "Latin shaped input uses requested face");
+    require(
+        diagnostics.font_fallback_shaped_glyph_inputs.inputs[1].selected_face_id == 502U,
+        "Hangul shaped input uses fallback face");
+    require(
+        diagnostics.font_fallback_shaped_glyph_inputs.inputs[2].selected_face_id == 503U,
+        "emoji shaped input uses fallback face");
+    require(
+        diagnostics.font_fallback_shaped_glyph_inputs.inputs[1].used_fallback,
+        "Hangul shaped input records fallback use");
+    require(
+        diagnostics.font_fallback_shaped_glyph_inputs.inputs[2].cache_key.face_id == 503U,
+        "emoji shaped input cache key uses selected face");
 
     const render_text_font_fallback_chain_run_snapshot& run = diagnostics.font_fallback_chain_runs.front();
     require(run.style_token == "mixed", "fallback-chain run records style token");
@@ -1380,6 +1449,7 @@ void test_fake_text_engine_records_font_fallback_chain_for_mixed_script_layout()
     require(diagnostics.has_glyph_atlas_materializations(), "layout still records atlas materialization diagnostics");
     require(diagnostics.has_shaped_atlas_update_traces(), "layout still records shaped-atlas update traces");
     require(diagnostics.has_line_metrics(), "layout still records line metrics");
+    require_mixed_script_fallback_chain_diagnostics(diagnostics);
 
     require(diagnostics.font_fallback_chain_runs.size() == 1U, "one text run produces one fallback-chain run");
     require(diagnostics.font_fallback_chain_policy.run_count == 1U, "fallback-chain policy counts one run");

@@ -5,6 +5,7 @@
 #include "render/text/font_backend_dependency.h"
 #include "render/text/font_backend_selection.h"
 #include "render/text/font_coverage_run_segmentation.h"
+#include "render/text/font_fallback_shaping_handoff.h"
 #include "render/text/font_rasterizer.h"
 #include "render/text/font_glyph_id_resolver.h"
 #include "render/text/font_resolver.h"
@@ -130,6 +131,9 @@ struct fake_text_engine_diagnostics {
     render_text_font_backend_selection_result font_fallback_chain_shaping_selection;
     render_text_font_fallback_chain_plan_policy_snapshot font_fallback_chain_policy;
     std::string font_fallback_chain_diagnostic;
+    render_text_font_fallback_run_plan_snapshot font_fallback_run_plan;
+    render_text_font_fallback_shaping_handoff_snapshot font_fallback_shaping_handoff;
+    render_text_font_fallback_shaped_glyph_input_snapshot font_fallback_shaped_glyph_inputs;
     render_text_font_backend_shaping_capability font_backend_shaping_capability;
     bool font_backend_uses_deterministic_shaping = true;
     bool font_backend_uses_deterministic_rasterizer = true;
@@ -280,6 +284,21 @@ struct fake_text_engine_diagnostics {
     bool has_font_fallback_chain_policy() const
     {
         return font_fallback_chain_policy.run_count > 0;
+    }
+
+    bool has_font_fallback_run_plan() const
+    {
+        return font_fallback_run_plan.policy.fallback_run_count > 0;
+    }
+
+    bool has_font_fallback_shaping_handoff() const
+    {
+        return font_fallback_shaping_handoff.policy.run_count > 0;
+    }
+
+    bool has_font_fallback_shaped_glyph_inputs() const
+    {
+        return font_fallback_shaped_glyph_inputs.has_inputs();
     }
 
     bool has_font_backend_adapter_diagnostics() const

@@ -589,6 +589,157 @@ void test_fallback_shaping_handoff_reports_invalid_utf8_and_no_selected_face()
     require(no_face_handoff.blocked_runs.front().stable_page_key.empty(), "no selected face has no page evidence");
 }
 
+void test_fallback_shaped_glyph_inputs_materialize_ready_runs_only()
+{
+    using namespace quiz_vulkan::render;
+
+    const font_face_catalog catalog = make_fallback_chain_catalog(false);
+    const std::string text = std::string("A") + std::string("\xEA\xB0\x80", 3)
+        + std::string("\xF0\x9F\x98\x80", 4) + std::string("B");
+    render_text_font_fallback_run_plan_request request;
+    request.items.push_back(make_render_text_font_fallback_chain_plan_item(
+        std::vector<render_text_run>{
+            render_text_run{
+                .text = text,
+                .style_token = "primary",
+            },
+        },
+        fallback_chain_style_catalog(),
+        "shaped-input-fixture",
+        11U));
+
+    const render_text_font_fallback_run_plan_snapshot plan =
+        plan_render_text_font_fallback_runs(request, catalog);
+    const render_text_font_fallback_shaping_handoff_snapshot handoff =
+        make_render_text_font_fallback_shaping_handoff(plan);
+    const render_text_font_fallback_shaped_glyph_input_snapshot inputs =
+        make_render_text_font_fallback_shaped_glyph_inputs(
+            render_text_font_fallback_shaped_glyph_input_request{
+                .handoff = handoff,
+                .items = request.items,
+                .font_catalog = catalog,
+            });
+
+    require(!inputs.ok(), "missing emoji keeps shaped glyph input snapshot incomplete");
+    require(inputs.has_inputs(), "ready fallback runs produce shaped glyph input records");
+    require(inputs.inputs.size() == 3U, "Latin, Hangul, and trailing Latin produce inputs");
+    require(inputs.blocked_runs.size() == 1U, "missing emoji remains a blocked run");
+    require(inputs.policy.handoff_run_count == 4U, "input policy preserves handoff run count");
+    require(inputs.policy.ready_run_count == 3U, "input policy preserves ready run count");
+    require(inputs.policy.blocked_run_count == 1U, "input policy preserves blocked run count");
+    require(inputs.policy.input_count == 3U, "input policy counts emitted input records");
+    require(inputs.policy.cacheable_input_count == 3U, "all supported fixture glyphs are cacheable");
+    require(inputs.policy.uncacheable_input_count == 0U, "no ready fixture glyph is uncacheable");
+    require(inputs.policy.fallback_input_count == 1U, "only Hangul uses a fallback face");
+    require(inputs.policy.unique_page_key_count == 2U, "requested and fallback page keys are stable evidence");
+    require(inputs.policy.unique_style_token_count == 1U, "style token evidence is stable");
+    require(inputs.stable_input_keys.size() == 3U, "each shaped input exposes a stable key");
+
+    const render_text_font_fallback_shaped_glyph_input_record& latin = inputs.inputs[0];
+    require(latin.ready_for_shaping(), "Latin input is ready for fake shaping");
+    require(latin.ready_for_glyph_atlas(), "Latin input is ready for fake atlas handoff");
+    require(latin.stable_run_key == plan.runs[0].stable_run_key, "Latin input preserves fallback run key");
+    require(latin.stable_page_key == handoff.ready_runs[0].stable_page_key, "Latin input preserves page key");
+    require(latin.item_index == 11U && latin.source_run_index == 0U, "Latin input preserves item/run identity");
+    require(latin.byte_offset == 0U && latin.byte_count == 1U, "Latin input preserves byte span");
+    require(latin.source_codepoint_index == 0U, "Latin input records source scalar index");
+    require(latin.codepoint == U'A', "Latin input keeps codepoint");
+    require(latin.glyph_id == U'A', "Latin input maps glyph id deterministically");
+    require(latin.selected_face_id == 201U, "Latin input selects requested face");
+    require(latin.cache_key.face_id == 201U, "Latin atlas key uses selected face");
+    require(latin.cache_key.glyph_id == U'A', "Latin atlas key uses glyph id");
+    require(latin.cache_key.pixel_size == 16U, "Latin atlas key uses line-height pixel size");
+    require(latin.font_selection.glyph_id == latin.glyph_id, "Latin shaping selection carries glyph id");
+    require(latin.font_selection.resolved_face_id == latin.selected_face_id, "Latin shaping selection carries face");
+
+    const render_text_font_fallback_shaped_glyph_input_record& hangul = inputs.inputs[1];
+    require(hangul.ready_for_glyph_atlas(), "Hangul input is ready for fake atlas handoff");
+    require(hangul.stable_run_key == plan.runs[1].stable_run_key, "Hangul input preserves fallback run key");
+    require(
+        hangul.stable_page_key == font_fallback_shaping_handoff_stable_page_key_for(plan.runs[1]),
+        "Hangul input preserves stable page key");
+    require(hangul.byte_offset == 1U && hangul.byte_count == 3U, "Hangul input preserves UTF-8 byte span");
+    require(hangul.source_codepoint_index == 1U, "Hangul input records source scalar index");
+    require(hangul.codepoint == 0xac00U, "Hangul input keeps codepoint");
+    require(hangul.glyph_id == 0xac00U, "Hangul input maps glyph id deterministically");
+    require(hangul.selected_face_id == 202U, "Hangul input selects fallback face");
+    require(hangul.used_fallback, "Hangul input records fallback use");
+    require(hangul.font_selection.used_codepoint_fallback, "Hangul shaping selection records fallback use");
+    require(hangul.advance_x == 16.0f, "Hangul fake advance is deterministic");
+    require(hangul.line_height == 16.0f, "Hangul line height falls back to font size");
+
+    const render_text_font_fallback_shaped_glyph_input_record& trailing = inputs.inputs[2];
+    require(trailing.stable_run_key == plan.runs[3].stable_run_key, "trailing Latin preserves final run key");
+    require(trailing.byte_offset == 8U && trailing.byte_count == 1U, "trailing Latin preserves byte span");
+    require(trailing.source_codepoint_index == 3U, "trailing Latin records source scalar index");
+    require(trailing.selected_face_id == 201U, "trailing Latin returns to requested face");
+}
+
+void test_fallback_shaped_glyph_inputs_apply_face_local_glyph_mapping()
+{
+    using namespace quiz_vulkan::render;
+
+    font_face_catalog catalog;
+    catalog.add_face(font_face_descriptor{
+        .id = 301,
+        .family = "Mapped Sans",
+        .source_uri = "fixture://fonts/mapped-sans",
+        .version = "fixture-1",
+        .license = "test-fixture",
+        .coverage = {
+            font_codepoint_range{.first = U'A', .last = U'A'},
+        },
+        .weight = 400,
+        .glyph_id_offset = 1000U,
+    });
+
+    render_text_style mapped_style = primary_style();
+    mapped_style.id = "mapped";
+    mapped_style.font_family = "Mapped Sans";
+
+    render_text_style_catalog styles;
+    styles.fallback_style = mapped_style;
+    styles.styles.push_back(mapped_style);
+
+    render_text_font_fallback_run_plan_request request;
+    request.items.push_back(make_render_text_font_fallback_chain_plan_item(
+        std::vector<render_text_run>{
+            render_text_run{
+                .text = "A",
+                .style_token = "mapped",
+            },
+        },
+        styles,
+        "mapped-glyph-fixture",
+        12U));
+
+    const render_text_font_fallback_run_plan_snapshot plan =
+        plan_render_text_font_fallback_runs(request, catalog);
+    const render_text_font_fallback_shaping_handoff_snapshot handoff =
+        make_render_text_font_fallback_shaping_handoff(plan);
+    const render_text_font_fallback_shaped_glyph_input_snapshot inputs =
+        make_render_text_font_fallback_shaped_glyph_inputs(
+            render_text_font_fallback_shaped_glyph_input_request{
+                .handoff = handoff,
+                .items = request.items,
+                .font_catalog = catalog,
+            });
+
+    require(inputs.ok(), "mapped glyph fixture produces complete shaped input snapshot");
+    require(inputs.inputs.size() == 1U, "mapped glyph fixture emits one shaped input");
+    require(inputs.policy.glyph_id_offset_input_count == 1U, "input policy counts face-local glyph mapping");
+
+    const render_text_font_fallback_shaped_glyph_input_record& input = inputs.inputs.front();
+    require(input.glyph_id == U'A' + 1000U, "shaped input applies face-local glyph id offset");
+    require(input.cache_key.glyph_id == input.glyph_id, "atlas key uses mapped glyph id");
+    require(input.glyph_id_from_selection, "input records selection-sourced glyph id");
+    require(!input.glyph_id_matches_codepoint, "input records glyph id/codepoint mismatch");
+    require(input.glyph_id_offset == 1000U, "input records glyph id offset");
+    require(input.font_selection.glyph_id == input.glyph_id, "font selection uses mapped glyph id");
+    require(input.font_selection.glyph_id_offset == 1000U, "font selection records glyph id offset");
+    require(!input.font_selection.glyph_id_matches_codepoint, "font selection records mapped glyph id");
+}
+
 } // namespace
 
 int main()
@@ -605,5 +756,7 @@ int main()
     test_fallback_run_plan_diff_reports_catalog_coverage_change();
     test_fallback_shaping_handoff_summarizes_ready_and_blocked_runs();
     test_fallback_shaping_handoff_reports_invalid_utf8_and_no_selected_face();
+    test_fallback_shaped_glyph_inputs_materialize_ready_runs_only();
+    test_fallback_shaped_glyph_inputs_apply_face_local_glyph_mapping();
     return 0;
 }

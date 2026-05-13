@@ -514,8 +514,11 @@ static_assert(requires(
 static_assert(requires(
     render::render_text_font_backend_selection_purpose purpose,
     render::render_text_font_backend_adapter_readiness_status readiness_status,
+    render::render_text_font_backend_library library,
     render::render_text_external_font_backend_dependency dependency,
     render::render_text_external_font_backend_manifest manifest,
+    render::render_text_external_font_backend_header_probe header_probe,
+    render::render_text_external_font_backend_header_probe_snapshot header_probe_snapshot,
     render::render_text_external_font_backend_probe_request request,
     render::render_text_external_font_backend_probe_result result,
     render::render_text_external_font_backend_probe_state_snapshot probe_state,
@@ -554,6 +557,29 @@ static_assert(requires(
     { manifest.dependencies } -> std::same_as<std::vector<render::render_text_external_font_backend_dependency>&>;
     { manifest.allow_deterministic_fallback } -> std::same_as<bool&>;
     { manifest.empty() } -> std::same_as<bool>;
+    { header_probe.library } -> std::same_as<render::render_text_font_backend_library&>;
+    { header_probe.label } -> std::same_as<std::string&>;
+    { header_probe.approved_header } -> std::same_as<std::string&>;
+    { header_probe.header_available } -> std::same_as<bool&>;
+    { header_probe.version_available } -> std::same_as<bool&>;
+    { header_probe.version } -> std::same_as<render::render_text_font_backend_version&>;
+    { header_probe.features } -> std::same_as<std::vector<render::render_text_font_backend_feature>&>;
+    { header_probe.diagnostic } -> std::same_as<std::string&>;
+    { header_probe.supports_feature(render::render_text_font_backend_feature::glyph_shaping) }
+        -> std::same_as<bool>;
+    { header_probe.header_dependency() } -> std::same_as<render::render_text_external_font_backend_dependency>;
+    { header_probe_snapshot.probes }
+        -> std::same_as<std::vector<render::render_text_external_font_backend_header_probe>&>;
+    { header_probe_snapshot.freetype_headers_available } -> std::same_as<bool&>;
+    { header_probe_snapshot.harfbuzz_headers_available } -> std::same_as<bool&>;
+    { header_probe_snapshot.utf8proc_headers_available } -> std::same_as<bool&>;
+    { header_probe_snapshot.fake_fallback_preserved } -> std::same_as<bool&>;
+    { header_probe_snapshot.available_header_count } -> std::same_as<std::size_t&>;
+    { header_probe_snapshot.versioned_header_count } -> std::same_as<std::size_t&>;
+    { header_probe_snapshot.advertised_feature_count } -> std::same_as<std::size_t&>;
+    { header_probe_snapshot.diagnostic } -> std::same_as<std::string&>;
+    { header_probe_snapshot.any_real_headers_available() } -> std::same_as<bool>;
+    { header_probe_snapshot.all_real_headers_available() } -> std::same_as<bool>;
     { request.purpose } -> std::same_as<render::render_text_font_backend_selection_purpose&>;
     { request.required_libraries } -> std::same_as<std::vector<render::render_text_font_backend_library>&>;
     { request.required_features } -> std::same_as<std::vector<render::render_text_font_backend_feature>&>;
@@ -644,6 +670,30 @@ static_assert(requires(
         -> std::same_as<render::render_text_external_font_backend_dependency>;
     { render::make_render_text_deterministic_fake_external_dependency() }
         -> std::same_as<render::render_text_external_font_backend_dependency>;
+    { render::render_text_external_font_backend_header_available(library) } -> std::same_as<bool>;
+    { render::render_text_freetype_header_version() } -> std::same_as<render::render_text_font_backend_version>;
+    { render::render_text_harfbuzz_header_version() } -> std::same_as<render::render_text_font_backend_version>;
+    { render::render_text_utf8proc_header_version() } -> std::same_as<render::render_text_font_backend_version>;
+    { render::render_text_external_font_backend_header_version(library) }
+        -> std::same_as<render::render_text_font_backend_version>;
+    { render::render_text_external_font_backend_header_version_available(library) } -> std::same_as<bool>;
+    { render::render_text_external_font_backend_header_features_for(library) }
+        -> std::same_as<std::vector<render::render_text_font_backend_feature>>;
+    { render::render_text_external_font_backend_header_path_for(library) } -> std::same_as<std::string>;
+    { render::render_text_external_font_backend_header_diagnostic_for(library, bool{}, bool{}) }
+        -> std::same_as<std::string>;
+    { render::make_render_text_external_font_backend_header_probe(library) }
+        -> std::same_as<render::render_text_external_font_backend_header_probe>;
+    { render::find_render_text_external_font_backend_header_probe(header_probe_snapshot.probes, library) }
+        -> std::same_as<const render::render_text_external_font_backend_header_probe*>;
+    { render::append_render_text_external_font_backend_header_probe(header_probe_snapshot, header_probe) }
+        -> std::same_as<void>;
+    { render::make_render_text_external_font_backend_header_probe_snapshot() }
+        -> std::same_as<render::render_text_external_font_backend_header_probe_snapshot>;
+    { render::render_text_external_font_backend_header_dependencies(header_probe_snapshot) }
+        -> std::same_as<std::vector<render::render_text_external_font_backend_dependency>>;
+    { render::make_render_text_header_backed_external_font_backend_manifest() }
+        -> std::same_as<render::render_text_external_font_backend_manifest>;
     { render::make_render_text_known_external_font_backend_manifest() }
         -> std::same_as<render::render_text_external_font_backend_manifest>;
     { render::render_text_external_font_backend_default_libraries_for(purpose) }

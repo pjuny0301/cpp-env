@@ -943,7 +943,7 @@ void test_external_backend_dependency_metadata_and_header_stay_text_owned()
         "absolute dependency source hint is detected");
 
     const std::string header = read_text_owned_header("font_backend_dependency.h");
-    const std::array<const char*, 10> forbidden_tokens = {
+    const std::array<const char*, 9> forbidden_tokens = {
         "render/vulkan",
         "render/image",
         "src/app",
@@ -953,10 +953,164 @@ void test_external_backend_dependency_metadata_and_header_stay_text_owned()
         "input/",
         "platform/",
         "build/external",
-        "#include <hb",
     };
     for (const char* token : forbidden_tokens) {
         require(header.find(token) == std::string::npos, "font backend dependency header stays text-owned");
+    }
+}
+
+void test_external_backend_header_probe_reports_compile_time_boundary()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_external_font_backend_header_probe_snapshot snapshot =
+        make_render_text_external_font_backend_header_probe_snapshot();
+    const std::size_t expected_available_count =
+        (QUIZ_VULKAN_HAS_FREETYPE_HEADERS != 0 ? 1U : 0U)
+        + (QUIZ_VULKAN_HAS_HARFBUZZ_HEADERS != 0 ? 1U : 0U)
+        + (QUIZ_VULKAN_HAS_UTF8PROC_HEADERS != 0 ? 1U : 0U);
+
+    require(snapshot.probes.size() == 3U, "header probe snapshot checks the three approved text headers");
+    require(snapshot.fake_fallback_preserved, "header probe snapshot preserves deterministic fake fallback");
+    require(
+        snapshot.available_header_count == expected_available_count,
+        "header probe snapshot mirrors external-header CMake definitions");
+    require(
+        snapshot.freetype_headers_available == (QUIZ_VULKAN_HAS_FREETYPE_HEADERS != 0),
+        "FreeType header availability mirrors CMake definition");
+    require(
+        snapshot.harfbuzz_headers_available == (QUIZ_VULKAN_HAS_HARFBUZZ_HEADERS != 0),
+        "HarfBuzz header availability mirrors CMake definition");
+    require(
+        snapshot.utf8proc_headers_available == (QUIZ_VULKAN_HAS_UTF8PROC_HEADERS != 0),
+        "utf8proc header availability mirrors CMake definition");
+    require(
+        snapshot.any_real_headers_available() == (expected_available_count != 0U),
+        "header probe snapshot reports whether any real header is present");
+    require(
+        snapshot.all_real_headers_available() == (expected_available_count == 3U),
+        "header probe snapshot reports whether all approved headers are present");
+
+    const std::array<render_text_font_backend_library, 3> libraries = {
+        render_text_font_backend_library::freetype,
+        render_text_font_backend_library::harfbuzz,
+        render_text_font_backend_library::utf8proc,
+    };
+    std::size_t expected_feature_count = 0;
+    for (const render_text_font_backend_library library : libraries) {
+        const render_text_external_font_backend_header_probe* probe =
+            find_render_text_external_font_backend_header_probe(snapshot.probes, library);
+        require(probe != nullptr, "header probe snapshot exposes each approved text dependency");
+        require(
+            probe->header_available == render_text_external_font_backend_header_available(library),
+            "header probe availability matches helper");
+        require(
+            probe->approved_header == render_text_external_font_backend_header_path_for(library),
+            "header probe records approved include surface");
+        if (probe->header_available) {
+            expected_feature_count += render_text_external_font_backend_header_features_for(library).size();
+            require(!probe->features.empty(), "available header probe advertises capability evidence");
+            require(
+                probe->diagnostic.find("available") != std::string::npos,
+                "available header probe records availability diagnostic");
+        } else {
+            require(probe->features.empty(), "unavailable header probe does not advertise real features");
+            require(
+                probe->diagnostic.find("unavailable") != std::string::npos,
+                "unavailable header probe records fallback diagnostic");
+        }
+    }
+    require(
+        snapshot.advertised_feature_count == expected_feature_count,
+        "header probe snapshot counts advertised feature evidence");
+    require(
+        snapshot.versioned_header_count <= snapshot.available_header_count,
+        "header probe version evidence is bounded by available headers");
+}
+
+void test_external_backend_header_backed_manifest_preserves_fake_fallback_without_linking()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_external_font_backend_header_probe_snapshot snapshot =
+        make_render_text_external_font_backend_header_probe_snapshot();
+    const render_text_external_font_backend_manifest manifest =
+        make_render_text_header_backed_external_font_backend_manifest();
+
+    require(!manifest.empty(), "header-backed manifest exposes dependency records");
+    require(
+        manifest.dependencies.size() == snapshot.probes.size() + 1U,
+        "header-backed manifest includes real header probes plus deterministic fallback");
+    require(manifest.allow_deterministic_fallback, "header-backed manifest preserves deterministic fallback");
+
+    for (const render_text_external_font_backend_header_probe& probe : snapshot.probes) {
+        const render_text_external_font_backend_dependency* dependency =
+            find_render_text_external_font_backend_dependency(manifest.dependencies, probe.library);
+        require(dependency != nullptr, "header-backed manifest includes each approved dependency");
+        require(
+            dependency->source_available == probe.header_available,
+            "header-backed dependency source availability mirrors header probe");
+        require(!dependency->build_linked, "header-backed dependency does not claim linked library");
+        require(
+            !dependency->adapter_symbols_available,
+            "header-backed dependency does not claim adapter symbols");
+        require(!dependency->adapter_ready(), "header-backed dependency keeps adapter readiness false");
+        require(
+            dependency->metadata_is_portable(),
+            "header-backed dependency metadata stays portable");
+    }
+
+    const manifest_font_backend_dependency_probe probe(manifest);
+    const std::array<render_text_font_backend_selection_purpose, 3> purposes = {
+        render_text_font_backend_selection_purpose::shaping,
+        render_text_font_backend_selection_purpose::rasterization,
+        render_text_font_backend_selection_purpose::unicode_processing,
+    };
+    for (const render_text_font_backend_selection_purpose purpose : purposes) {
+        const std::vector<render_text_font_backend_library> required_libraries =
+            render_text_external_font_backend_default_libraries_for(purpose);
+        require(required_libraries.size() == 1U, "focused text purpose maps to one external dependency");
+
+        const render_text_font_backend_library library = required_libraries.front();
+        const bool header_available = render_text_external_font_backend_header_available(library);
+        const render_text_external_font_backend_probe_result result = probe.probe(
+            render_text_external_font_backend_probe_request{
+                .purpose = purpose,
+            });
+
+        require(result.ok(), "header-backed manifest preserves deterministic fallback path");
+        require(
+            result.status == render_text_font_backend_adapter_readiness_status::fallback_ready,
+            "header-backed manifest reports fallback-ready status");
+        require(result.fallback_ready, "header-backed manifest marks fallback ready");
+        require(result.used_deterministic_fallback, "header-backed manifest uses deterministic fallback");
+        require(!result.adapter_ready, "header-backed manifest does not claim adapter readiness");
+        require(!result.can_attempt_real_backend, "header-backed manifest cannot attempt real backend");
+        require(
+            result.selection.selected.library == render_text_font_backend_library::deterministic_fake,
+            "header-backed manifest selects deterministic fake backend");
+        if (header_available) {
+            require(
+                result.fallback_reason == render_text_font_backend_adapter_readiness_status::adapter_unavailable,
+                "header-backed available headers fall back because adapters are unlinked");
+            require(result.missing_dependencies.empty(), "available header is not reported as missing source");
+            require(
+                result.adapter_unavailable_dependencies.size() == 1U,
+                "available header reports one adapter-unavailable dependency");
+            require(
+                result.adapter_unavailable_dependencies.front() == library,
+                "available header records the adapter-unavailable library");
+        } else {
+            require(
+                result.fallback_reason == render_text_font_backend_adapter_readiness_status::missing_dependency,
+                "missing header falls back because the approved header is unavailable");
+            require(
+                result.missing_dependencies.size() == 1U,
+                "missing header records one missing dependency");
+            require(
+                result.missing_dependencies.front() == library,
+                "missing header records the required library");
+        }
     }
 }
 
@@ -1467,6 +1621,8 @@ int main()
     test_external_backend_dependency_probe_reports_unlinked_adapter_fallback();
     test_external_backend_dependency_probe_reports_version_and_feature_mismatch();
     test_external_backend_dependency_metadata_and_header_stay_text_owned();
+    test_external_backend_header_probe_reports_compile_time_boundary();
+    test_external_backend_header_backed_manifest_preserves_fake_fallback_without_linking();
     test_external_backend_dependency_probe_diff_reports_fake_to_adapter_ready();
     test_external_backend_dependency_probe_diff_reports_unavailable_to_mismatch();
     test_external_backend_dependency_probe_diff_summary_compares_backend_snapshots();

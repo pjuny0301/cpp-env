@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: fallback shaped glyph input handoff integrated; Windows MinGW focused text CTest passed 2/2 and interface compile target build confirmed.
+- `857c9be`: text engine now derives deterministic shaped glyph input records from fallback run/handoff data and exposes them through fake text engine diagnostics without app/domain/renderer coupling.
 - current: input action candidate resolution, image frame resource packet materialization, and Vulkan native frame execution boundary integrated; Windows MinGW focused input/image/Vulkan CTest passed 4/4 and interface compile target builds confirmed. Configured CTest count is now `100`.
 - `be14dc3`: input core now resolves semantic-free action candidates into deterministic primary/support/rejected results without app/domain dispatch.
 - `8968a73`: image engine now materializes frame resource packet plans into cache/upload/sampler handoff records for the renderer boundary.

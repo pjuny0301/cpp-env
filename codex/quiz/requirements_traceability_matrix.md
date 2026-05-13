@@ -6,6 +6,9 @@
 
 최근 baseline 통합 증거:
 
+- current: input replay classification and text external header probes integrated; Windows MinGW focused input/text CTest passed 3/3 and interface compile target build confirmed.
+- `73d4ab2`: input core now classifies replay diff changes into churn/regression/improvement/mixed/stable categories while staying semantic-free.
+- `592ad24`: text engine now probes approved FreeType, HarfBuzz, and utf8proc headers through the CMake external header boundary without linking those libraries.
 - current: Vulkan/VMA compile-time external header probe integrated; Windows MinGW focused Vulkan/renderer CTest passed 3/3 and interface compile target build confirmed.
 - `8d147f3`: Vulkan backend now records external Vulkan header API/version/type/extension evidence and VMA header availability without linking the Vulkan loader or calling `vk*` functions.
 - current: optional desktop external header CMake boundary integrated for future text/image/Vulkan/native backend work; focused dependency-boundary CTest passed 3/3.

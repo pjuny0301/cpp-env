@@ -151,6 +151,46 @@ quiz_vulkan::render::font_face_catalog make_fallback_chain_catalog(const bool in
     return catalog;
 }
 
+quiz_vulkan::render::font_face_catalog make_alternate_hangul_fallback_catalog()
+{
+    using namespace quiz_vulkan::render;
+
+    const font_unicode_coverage_catalog_adapter adapter;
+    font_face_catalog catalog;
+    catalog.add_face(adapter.apply_to_descriptor(
+        font_face_descriptor{
+            .id = 201,
+            .family = "Primary Sans",
+            .source_uri = "fixture://fonts/primary-latin",
+            .version = "fixture-1",
+            .license = "test-fixture",
+            .weight = 400,
+        },
+        make_coverage({
+            render_text_font_cmap_range{
+                .first_codepoint = U'A',
+                .last_codepoint = U'Z',
+            },
+        })));
+    catalog.add_face(adapter.apply_to_descriptor(
+        font_face_descriptor{
+            .id = 204,
+            .family = "Alternate Hangul Fallback",
+            .source_uri = "fixture://fonts/alternate-hangul",
+            .version = "fixture-1",
+            .license = "test-fixture",
+            .weight = 400,
+            .fallback = true,
+        },
+        make_coverage({
+            render_text_font_cmap_range{
+                .first_codepoint = static_cast<char32_t>(0xac00U),
+                .last_codepoint = static_cast<char32_t>(0xac02U),
+            },
+        })));
+    return catalog;
+}
+
 quiz_vulkan::render::render_text_font_backend_selection_result selected_harfbuzz_shaping()
 {
     using namespace quiz_vulkan::render;
@@ -161,6 +201,41 @@ quiz_vulkan::render::render_text_font_backend_selection_result selected_harfbuzz
             make_render_text_deterministic_fake_backend_candidate(),
         },
     });
+}
+
+quiz_vulkan::render::render_text_font_fallback_shaped_glyph_execution_snapshot
+make_fallback_execution_snapshot(
+    const std::string& text,
+    const quiz_vulkan::render::font_face_catalog& catalog,
+    const std::string& source_label,
+    const std::size_t item_index)
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_font_fallback_run_plan_request request;
+    request.items.push_back(make_render_text_font_fallback_chain_plan_item(
+        std::vector<render_text_run>{
+            render_text_run{
+                .text = text,
+                .style_token = "primary",
+            },
+        },
+        fallback_chain_style_catalog(),
+        source_label,
+        item_index));
+
+    const render_text_font_fallback_run_plan_snapshot plan =
+        plan_render_text_font_fallback_runs(request, catalog);
+    const render_text_font_fallback_shaping_handoff_snapshot handoff =
+        make_render_text_font_fallback_shaping_handoff(plan);
+    const render_text_font_fallback_shaped_glyph_input_snapshot inputs =
+        make_render_text_font_fallback_shaped_glyph_inputs(
+            render_text_font_fallback_shaped_glyph_input_request{
+                .handoff = handoff,
+                .items = request.items,
+                .font_catalog = catalog,
+            });
+    return execute_render_text_font_fallback_shaped_glyph_inputs(inputs);
 }
 
 void test_latin_stays_on_requested_face_and_merges_contiguous_codepoints()
@@ -878,6 +953,168 @@ void test_fallback_shaped_glyph_execution_records_uncacheable_combining_mark()
     require(mark.shaped_glyph.cluster_codepoint_offset == 1U, "combining mark shaped glyph records source scalar offset");
 }
 
+void test_fallback_shaped_glyph_execution_diff_reports_missing_to_covered_transition()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::string text = std::string("A") + std::string("\xEA\xB0\x80", 3)
+        + std::string("\xF0\x9F\x98\x80", 4) + std::string("B");
+    const render_text_font_fallback_shaped_glyph_execution_snapshot before =
+        make_fallback_execution_snapshot(
+            text,
+            make_fallback_chain_catalog(false),
+            "execution-diff-fixture",
+            15U);
+    const render_text_font_fallback_shaped_glyph_execution_snapshot after =
+        make_fallback_execution_snapshot(
+            text,
+            make_fallback_chain_catalog(true),
+            "execution-diff-fixture",
+            15U);
+
+    const render_text_font_fallback_shaped_glyph_execution_diff_snapshot diff =
+        diff_render_text_font_fallback_shaped_glyph_execution_snapshots(before, after);
+
+    require(!before.ok(), "baseline execution snapshot keeps the missing emoji blocked");
+    require(after.ok(), "covered execution snapshot has no blocked runs");
+    require(before.executions.size() == 3U, "baseline execution snapshot shapes only covered runs");
+    require(after.executions.size() == 4U, "covered execution snapshot shapes the emoji run");
+    require(diff.has_changes(), "execution diff reports the coverage transition");
+    require(diff.policy.input_count_delta == 1, "execution diff reports the added shaped input");
+    require(diff.policy.execution_count_delta == 1, "execution diff reports the added execution");
+    require(diff.policy.shaped_count_delta == 1, "execution diff reports the added shaped glyph");
+    require(diff.policy.glyph_count_delta == 1, "execution diff mirrors shaped glyph count changes");
+    require(diff.policy.blocked_input_count_delta == -1, "execution diff reports one fewer blocked input");
+    require(diff.policy.blocked_run_count_delta == -1, "execution diff reports one fewer blocked run");
+    require(diff.policy.added_execution_count == 1U, "execution diff counts the added emoji execution");
+    require(diff.policy.removed_execution_count == 0U, "execution diff does not remove ready executions");
+    require(diff.policy.changed_execution_count == 0U, "execution diff keeps existing executions unchanged");
+    require(diff.policy.added_blocked_run_count == 0U, "execution diff does not add blocked runs");
+    require(diff.policy.removed_blocked_run_count == 1U, "execution diff counts the removed blocked run");
+    require(diff.policy.status_counts_changed, "execution diff reports status-count changes");
+    require(diff.policy.blocked_runs_changed, "execution diff reports blocked-run changes");
+    require(diff.policy.glyph_count_changed, "execution diff reports glyph-count changes");
+    require(diff.policy.unique_selected_face_count_delta == 1, "execution diff reports new selected face evidence");
+    require(diff.policy.unique_cache_key_count_delta == 1, "execution diff reports new cache key evidence");
+    require(diff.policy.unique_page_key_count_delta == 1, "execution diff reports new page key evidence");
+    require(diff.added_execution_keys.size() == 1U, "execution diff exposes the added execution key");
+    require(diff.removed_blocked_run_keys.size() == 1U, "execution diff exposes the removed blocked-run key");
+    require(!diff.diagnostic_reasons.empty(), "execution diff records stable diagnostic reasons");
+
+    const render_text_font_fallback_shaped_glyph_execution_record_diff* added = nullptr;
+    for (const render_text_font_fallback_shaped_glyph_execution_record_diff& execution_diff :
+         diff.execution_diffs) {
+        if (execution_diff.added) {
+            added = &execution_diff;
+            break;
+        }
+    }
+
+    require(added != nullptr, "execution diff includes an added execution record");
+    require(added->current_selected_face_id == 203U, "added execution records emoji selected face evidence");
+    require(
+        added->current_status == render_text_font_fallback_shaped_glyph_execution_status::shaped,
+        "added execution records shaped status");
+    require(
+        added->diagnostic_reason.find("added execution") != std::string::npos,
+        "added execution records stable diagnostic reason");
+}
+
+void test_fallback_shaped_glyph_execution_diff_reports_selected_face_cache_and_page_changes()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::string text = std::string("\xEA\xB0\x80", 3);
+    const render_text_font_fallback_shaped_glyph_execution_snapshot before =
+        make_fallback_execution_snapshot(
+            text,
+            make_fallback_chain_catalog(false),
+            "execution-face-diff-fixture",
+            16U);
+    const render_text_font_fallback_shaped_glyph_execution_snapshot after =
+        make_fallback_execution_snapshot(
+            text,
+            make_alternate_hangul_fallback_catalog(),
+            "execution-face-diff-fixture",
+            16U);
+
+    const render_text_font_fallback_shaped_glyph_execution_diff_snapshot diff =
+        diff_render_text_font_fallback_shaped_glyph_execution_snapshots(before, after);
+
+    require(before.ok(), "baseline Hangul execution snapshot is ready");
+    require(after.ok(), "alternate Hangul execution snapshot is ready");
+    require(before.executions.size() == 1U, "baseline Hangul fixture has one execution");
+    require(after.executions.size() == 1U, "alternate Hangul fixture has one execution");
+    require(diff.has_changes(), "execution diff reports selected face evidence changes");
+    require(diff.policy.added_execution_count == 0U, "execution diff does not add the stable Hangul execution");
+    require(diff.policy.removed_execution_count == 0U, "execution diff does not remove the stable Hangul execution");
+    require(diff.policy.changed_execution_count == 1U, "execution diff counts the changed Hangul execution");
+    require(diff.policy.selected_face_changed_count == 1U, "execution diff counts selected face changes");
+    require(diff.policy.cache_key_changed_count == 1U, "execution diff counts cache key changes");
+    require(diff.policy.page_key_changed_count == 1U, "execution diff counts page key changes");
+    require(diff.policy.style_token_changed_count == 0U, "execution diff does not report style changes");
+    require(diff.policy.glyph_id_changed_count == 0U, "execution diff keeps glyph id stable");
+    require(diff.policy.status_changed_count == 0U, "execution diff keeps execution status stable");
+    require(diff.policy.selected_face_set_changed, "execution diff reports selected face set changes");
+    require(diff.policy.cache_key_set_changed, "execution diff reports cache key set changes");
+    require(diff.policy.page_key_set_changed, "execution diff reports page key set changes");
+    require(!diff.policy.style_token_set_changed, "execution diff keeps style token set stable");
+    require(!diff.policy.status_counts_changed, "execution diff keeps status counts stable");
+    require(!diff.policy.glyph_count_changed, "execution diff keeps glyph count stable");
+    require(diff.changed_execution_keys.size() == 1U, "execution diff exposes the changed execution key");
+
+    const render_text_font_fallback_shaped_glyph_execution_record_diff& execution_diff =
+        diff.execution_diffs.front();
+    require(execution_diff.changed, "Hangul execution diff is marked changed");
+    require(execution_diff.previous_selected_face_id == 202U, "execution diff records previous selected face");
+    require(execution_diff.current_selected_face_id == 204U, "execution diff records current selected face");
+    require(
+        !(execution_diff.previous_cache_key == execution_diff.current_cache_key),
+        "execution diff records changed cache key evidence");
+    require(
+        execution_diff.previous_page_key != execution_diff.current_page_key,
+        "execution diff records changed page key evidence");
+    require(
+        execution_diff.diagnostic_reason.find("selected face changed") != std::string::npos,
+        "execution diff records stable selected-face diagnostic reason");
+}
+
+void test_fallback_shaped_glyph_execution_diff_reports_style_token_changes()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_font_fallback_shaped_glyph_execution_snapshot before =
+        make_fallback_execution_snapshot(
+            "A",
+            make_fallback_chain_catalog(false),
+            "execution-style-diff-fixture",
+            17U);
+    render_text_font_fallback_shaped_glyph_execution_snapshot after = before;
+    after.executions.front().style_token = "alternate-style";
+    after.style_tokens = {"alternate-style"};
+
+    const render_text_font_fallback_shaped_glyph_execution_diff_snapshot diff =
+        diff_render_text_font_fallback_shaped_glyph_execution_snapshots(before, after);
+
+    require(before.ok(), "baseline style fixture is ready");
+    require(after.ok(), "mutated style fixture remains ready");
+    require(diff.has_changes(), "execution diff reports style token evidence changes");
+    require(diff.policy.changed_execution_count == 1U, "execution diff counts the changed style execution");
+    require(diff.policy.style_token_changed_count == 1U, "execution diff counts style token changes");
+    require(diff.policy.style_token_set_changed, "execution diff reports style token set changes");
+    require(diff.policy.added_execution_count == 0U, "execution diff does not add executions for style mutation");
+    require(diff.policy.removed_execution_count == 0U, "execution diff does not remove executions for style mutation");
+    require(!diff.policy.status_counts_changed, "execution diff keeps style-only status counts stable");
+    require(!diff.policy.glyph_count_changed, "execution diff keeps style-only glyph count stable");
+    require(diff.execution_diffs.front().previous_style_token == "primary", "execution diff records old style token");
+    require(
+        diff.execution_diffs.front().current_style_token == "alternate-style",
+        "execution diff records new style token");
+    require(
+        diff.execution_diffs.front().diagnostic_reason.find("style token changed") != std::string::npos,
+        "execution diff records stable style-token diagnostic reason");
+}
+
 } // namespace
 
 int main()
@@ -898,5 +1135,8 @@ int main()
     test_fallback_shaped_glyph_inputs_apply_face_local_glyph_mapping();
     test_fallback_shaped_glyph_execution_shapes_ready_inputs_and_keeps_blockers();
     test_fallback_shaped_glyph_execution_records_uncacheable_combining_mark();
+    test_fallback_shaped_glyph_execution_diff_reports_missing_to_covered_transition();
+    test_fallback_shaped_glyph_execution_diff_reports_selected_face_cache_and_page_changes();
+    test_fallback_shaped_glyph_execution_diff_reports_style_token_changes();
     return 0;
 }

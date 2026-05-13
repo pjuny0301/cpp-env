@@ -336,6 +336,105 @@ struct render_text_font_fallback_shaped_glyph_execution_snapshot {
     }
 };
 
+struct render_text_font_fallback_shaped_glyph_execution_record_diff {
+    std::string stable_execution_key;
+    bool added = false;
+    bool removed = false;
+    bool changed = false;
+    bool status_changed = false;
+    bool selected_face_changed = false;
+    bool cache_key_changed = false;
+    bool page_key_changed = false;
+    bool style_token_changed = false;
+    bool glyph_id_changed = false;
+    bool diagnostic_changed = false;
+    render_text_font_fallback_shaped_glyph_execution_status previous_status =
+        render_text_font_fallback_shaped_glyph_execution_status::missing_glyph_id;
+    render_text_font_fallback_shaped_glyph_execution_status current_status =
+        render_text_font_fallback_shaped_glyph_execution_status::missing_glyph_id;
+    font_face_id previous_selected_face_id = 0;
+    font_face_id current_selected_face_id = 0;
+    glyph_atlas_key previous_cache_key;
+    glyph_atlas_key current_cache_key;
+    std::string previous_page_key;
+    std::string current_page_key;
+    render_style_id previous_style_token;
+    render_style_id current_style_token;
+    std::uint32_t previous_glyph_id = 0;
+    std::uint32_t current_glyph_id = 0;
+    std::string previous_diagnostic;
+    std::string current_diagnostic;
+    std::string diagnostic_reason;
+};
+
+struct render_text_font_fallback_shaped_glyph_execution_diff_policy {
+    std::ptrdiff_t input_count_delta = 0;
+    std::ptrdiff_t execution_count_delta = 0;
+    std::ptrdiff_t shaped_count_delta = 0;
+    std::ptrdiff_t glyph_count_delta = 0;
+    std::ptrdiff_t blocked_input_count_delta = 0;
+    std::ptrdiff_t blocked_run_count_delta = 0;
+    std::ptrdiff_t atlas_ready_count_delta = 0;
+    std::ptrdiff_t missing_cache_key_count_delta = 0;
+    std::ptrdiff_t invalid_utf8_count_delta = 0;
+    std::ptrdiff_t unsupported_glyph_count_delta = 0;
+    std::ptrdiff_t no_selected_face_count_delta = 0;
+    std::ptrdiff_t missing_glyph_id_count_delta = 0;
+    std::ptrdiff_t fallback_execution_count_delta = 0;
+    std::ptrdiff_t glyph_id_offset_execution_count_delta = 0;
+    std::ptrdiff_t unique_page_key_count_delta = 0;
+    std::ptrdiff_t unique_cache_key_count_delta = 0;
+    std::ptrdiff_t unique_selected_face_count_delta = 0;
+    std::ptrdiff_t unique_style_token_count_delta = 0;
+    std::size_t added_execution_count = 0;
+    std::size_t removed_execution_count = 0;
+    std::size_t changed_execution_count = 0;
+    std::size_t unchanged_execution_count = 0;
+    std::size_t status_changed_count = 0;
+    std::size_t selected_face_changed_count = 0;
+    std::size_t cache_key_changed_count = 0;
+    std::size_t page_key_changed_count = 0;
+    std::size_t style_token_changed_count = 0;
+    std::size_t glyph_id_changed_count = 0;
+    std::size_t diagnostic_changed_count = 0;
+    std::size_t added_blocked_run_count = 0;
+    std::size_t removed_blocked_run_count = 0;
+    bool status_counts_changed = false;
+    bool selected_face_set_changed = false;
+    bool cache_key_set_changed = false;
+    bool page_key_set_changed = false;
+    bool style_token_set_changed = false;
+    bool blocked_runs_changed = false;
+    bool glyph_count_changed = false;
+};
+
+struct render_text_font_fallback_shaped_glyph_execution_diff_snapshot {
+    render_text_font_fallback_shaped_glyph_execution_diff_policy policy;
+    std::vector<render_text_font_fallback_shaped_glyph_execution_record_diff> execution_diffs;
+    std::vector<std::string> added_execution_keys;
+    std::vector<std::string> removed_execution_keys;
+    std::vector<std::string> changed_execution_keys;
+    std::vector<std::string> added_blocked_run_keys;
+    std::vector<std::string> removed_blocked_run_keys;
+    std::vector<std::string> diagnostic_reasons;
+    std::string diagnostic;
+
+    [[nodiscard]] bool has_changes() const
+    {
+        return policy.added_execution_count != 0U
+            || policy.removed_execution_count != 0U
+            || policy.changed_execution_count != 0U
+            || policy.added_blocked_run_count != 0U
+            || policy.removed_blocked_run_count != 0U
+            || policy.status_counts_changed
+            || policy.selected_face_set_changed
+            || policy.cache_key_set_changed
+            || policy.page_key_set_changed
+            || policy.style_token_set_changed
+            || policy.glyph_count_changed;
+    }
+};
+
 [[nodiscard]] inline std::string font_fallback_shaping_handoff_stable_page_key_for(
     const render_text_font_fallback_run_snapshot& run)
 {
@@ -973,6 +1072,380 @@ execute_render_text_font_fallback_shaped_glyph_inputs(
         render_text_font_fallback_shaped_glyph_execution_request{
             .inputs = inputs,
         });
+}
+
+[[nodiscard]] inline std::ptrdiff_t font_fallback_shaped_glyph_execution_count_delta(
+    const std::size_t before,
+    const std::size_t after)
+{
+    return static_cast<std::ptrdiff_t>(after) - static_cast<std::ptrdiff_t>(before);
+}
+
+inline void font_fallback_shaped_glyph_execution_append_unique_reason(
+    std::vector<std::string>& reasons,
+    const std::string& reason)
+{
+    if (!reason.empty() && std::find(reasons.begin(), reasons.end(), reason) == reasons.end()) {
+        reasons.push_back(reason);
+    }
+}
+
+[[nodiscard]] inline const render_text_font_fallback_shaped_glyph_execution_record*
+find_render_text_font_fallback_shaped_glyph_execution_by_key(
+    const std::vector<render_text_font_fallback_shaped_glyph_execution_record>& executions,
+    const std::string& stable_execution_key)
+{
+    const auto match = std::find_if(
+        executions.begin(),
+        executions.end(),
+        [&](const render_text_font_fallback_shaped_glyph_execution_record& execution) {
+            return execution.stable_execution_key == stable_execution_key;
+        });
+    return match == executions.end() ? nullptr : &*match;
+}
+
+inline void font_fallback_shaped_glyph_execution_append_unique_execution_key(
+    std::vector<std::string>& keys,
+    const std::string& key)
+{
+    font_fallback_shaping_handoff_append_unique_key(keys, key);
+}
+
+[[nodiscard]] inline std::vector<std::string> font_fallback_shaped_glyph_execution_blocked_run_keys(
+    const render_text_font_fallback_shaped_glyph_execution_snapshot& snapshot)
+{
+    std::vector<std::string> keys;
+    keys.reserve(snapshot.blocked_runs.size());
+    for (const render_text_font_fallback_shaping_handoff_run_snapshot& run : snapshot.blocked_runs) {
+        font_fallback_shaping_handoff_append_unique_key(keys, run.stable_run_key);
+    }
+    return keys;
+}
+
+[[nodiscard]] inline bool font_fallback_shaped_glyph_execution_key_list_contains(
+    const std::vector<std::string>& keys,
+    const std::string& key)
+{
+    return std::find(keys.begin(), keys.end(), key) != keys.end();
+}
+
+[[nodiscard]] inline bool render_text_font_fallback_shaped_glyph_execution_records_equal(
+    const render_text_font_fallback_shaped_glyph_execution_record& lhs,
+    const render_text_font_fallback_shaped_glyph_execution_record& rhs)
+{
+    return lhs.stable_execution_key == rhs.stable_execution_key
+        && lhs.status == rhs.status
+        && lhs.selected_face_id == rhs.selected_face_id
+        && lhs.cache_key == rhs.cache_key
+        && lhs.stable_page_key == rhs.stable_page_key
+        && lhs.style_token == rhs.style_token
+        && lhs.glyph_id == rhs.glyph_id
+        && lhs.codepoint == rhs.codepoint
+        && lhs.byte_offset == rhs.byte_offset
+        && lhs.byte_count == rhs.byte_count
+        && lhs.has_cache_key == rhs.has_cache_key
+        && lhs.cacheable == rhs.cacheable
+        && lhs.glyph_supported == rhs.glyph_supported
+        && lhs.used_fallback == rhs.used_fallback
+        && lhs.diagnostic == rhs.diagnostic;
+}
+
+[[nodiscard]] inline std::string font_fallback_shaped_glyph_execution_diff_reason_for(
+    const render_text_font_fallback_shaped_glyph_execution_record_diff& diff)
+{
+    if (diff.added) {
+        return "added execution " + diff.stable_execution_key
+            + " with status "
+            + render_text_font_fallback_shaped_glyph_execution_status_name(diff.current_status);
+    }
+    if (diff.removed) {
+        return "removed execution " + diff.stable_execution_key
+            + " with status "
+            + render_text_font_fallback_shaped_glyph_execution_status_name(diff.previous_status);
+    }
+    if (diff.status_changed) {
+        return "execution " + diff.stable_execution_key
+            + " status changed from "
+            + render_text_font_fallback_shaped_glyph_execution_status_name(diff.previous_status)
+            + " to "
+            + render_text_font_fallback_shaped_glyph_execution_status_name(diff.current_status);
+    }
+    if (diff.selected_face_changed) {
+        return "execution " + diff.stable_execution_key
+            + " selected face changed from "
+            + std::to_string(diff.previous_selected_face_id)
+            + " to "
+            + std::to_string(diff.current_selected_face_id);
+    }
+    if (diff.cache_key_changed) {
+        return "execution " + diff.stable_execution_key + " cache key changed";
+    }
+    if (diff.page_key_changed) {
+        return "execution " + diff.stable_execution_key + " page key changed";
+    }
+    if (diff.style_token_changed) {
+        return "execution " + diff.stable_execution_key + " style token changed";
+    }
+    if (diff.glyph_id_changed) {
+        return "execution " + diff.stable_execution_key
+            + " glyph id changed from "
+            + std::to_string(diff.previous_glyph_id)
+            + " to "
+            + std::to_string(diff.current_glyph_id);
+    }
+    if (diff.diagnostic_changed) {
+        return "execution " + diff.stable_execution_key + " diagnostic changed";
+    }
+    return {};
+}
+
+[[nodiscard]] inline render_text_font_fallback_shaped_glyph_execution_record_diff
+diff_render_text_font_fallback_shaped_glyph_execution_records(
+    const render_text_font_fallback_shaped_glyph_execution_record* before,
+    const render_text_font_fallback_shaped_glyph_execution_record* after,
+    const std::string& stable_execution_key)
+{
+    if (before == nullptr && after != nullptr) {
+        render_text_font_fallback_shaped_glyph_execution_record_diff diff{
+            .stable_execution_key = stable_execution_key,
+            .added = true,
+            .changed = true,
+            .current_status = after->status,
+            .current_selected_face_id = after->selected_face_id,
+            .current_cache_key = after->cache_key,
+            .current_page_key = after->stable_page_key,
+            .current_style_token = after->style_token,
+            .current_glyph_id = after->glyph_id,
+            .current_diagnostic = after->diagnostic,
+        };
+        diff.diagnostic_reason = font_fallback_shaped_glyph_execution_diff_reason_for(diff);
+        return diff;
+    }
+    if (before != nullptr && after == nullptr) {
+        render_text_font_fallback_shaped_glyph_execution_record_diff diff{
+            .stable_execution_key = stable_execution_key,
+            .removed = true,
+            .changed = true,
+            .previous_status = before->status,
+            .previous_selected_face_id = before->selected_face_id,
+            .previous_cache_key = before->cache_key,
+            .previous_page_key = before->stable_page_key,
+            .previous_style_token = before->style_token,
+            .previous_glyph_id = before->glyph_id,
+            .previous_diagnostic = before->diagnostic,
+        };
+        diff.diagnostic_reason = font_fallback_shaped_glyph_execution_diff_reason_for(diff);
+        return diff;
+    }
+    if (before == nullptr || after == nullptr) {
+        return render_text_font_fallback_shaped_glyph_execution_record_diff{
+            .stable_execution_key = stable_execution_key,
+        };
+    }
+
+    render_text_font_fallback_shaped_glyph_execution_record_diff diff{
+        .stable_execution_key = stable_execution_key,
+        .status_changed = before->status != after->status,
+        .selected_face_changed = before->selected_face_id != after->selected_face_id,
+        .cache_key_changed = !(before->cache_key == after->cache_key),
+        .page_key_changed = before->stable_page_key != after->stable_page_key,
+        .style_token_changed = before->style_token != after->style_token,
+        .glyph_id_changed = before->glyph_id != after->glyph_id,
+        .diagnostic_changed = before->diagnostic != after->diagnostic,
+        .previous_status = before->status,
+        .current_status = after->status,
+        .previous_selected_face_id = before->selected_face_id,
+        .current_selected_face_id = after->selected_face_id,
+        .previous_cache_key = before->cache_key,
+        .current_cache_key = after->cache_key,
+        .previous_page_key = before->stable_page_key,
+        .current_page_key = after->stable_page_key,
+        .previous_style_token = before->style_token,
+        .current_style_token = after->style_token,
+        .previous_glyph_id = before->glyph_id,
+        .current_glyph_id = after->glyph_id,
+        .previous_diagnostic = before->diagnostic,
+        .current_diagnostic = after->diagnostic,
+    };
+    diff.changed = !render_text_font_fallback_shaped_glyph_execution_records_equal(*before, *after);
+    diff.diagnostic_reason = font_fallback_shaped_glyph_execution_diff_reason_for(diff);
+    return diff;
+}
+
+inline void summarize_render_text_font_fallback_shaped_glyph_execution_diff_policy(
+    render_text_font_fallback_shaped_glyph_execution_diff_snapshot& diff,
+    const render_text_font_fallback_shaped_glyph_execution_snapshot& before,
+    const render_text_font_fallback_shaped_glyph_execution_snapshot& after)
+{
+    diff.policy.input_count_delta = font_fallback_shaped_glyph_execution_count_delta(
+        before.policy.input_count,
+        after.policy.input_count);
+    diff.policy.execution_count_delta = font_fallback_shaped_glyph_execution_count_delta(
+        before.policy.execution_count,
+        after.policy.execution_count);
+    diff.policy.shaped_count_delta = font_fallback_shaped_glyph_execution_count_delta(
+        before.policy.shaped_count,
+        after.policy.shaped_count);
+    diff.policy.glyph_count_delta = diff.policy.shaped_count_delta;
+    diff.policy.blocked_input_count_delta = font_fallback_shaped_glyph_execution_count_delta(
+        before.policy.blocked_input_count,
+        after.policy.blocked_input_count);
+    diff.policy.blocked_run_count_delta = font_fallback_shaped_glyph_execution_count_delta(
+        before.blocked_runs.size(),
+        after.blocked_runs.size());
+    diff.policy.atlas_ready_count_delta = font_fallback_shaped_glyph_execution_count_delta(
+        before.policy.atlas_ready_count,
+        after.policy.atlas_ready_count);
+    diff.policy.missing_cache_key_count_delta = font_fallback_shaped_glyph_execution_count_delta(
+        before.policy.missing_cache_key_count,
+        after.policy.missing_cache_key_count);
+    diff.policy.invalid_utf8_count_delta = font_fallback_shaped_glyph_execution_count_delta(
+        before.policy.invalid_utf8_count,
+        after.policy.invalid_utf8_count);
+    diff.policy.unsupported_glyph_count_delta = font_fallback_shaped_glyph_execution_count_delta(
+        before.policy.unsupported_glyph_count,
+        after.policy.unsupported_glyph_count);
+    diff.policy.no_selected_face_count_delta = font_fallback_shaped_glyph_execution_count_delta(
+        before.policy.no_selected_face_count,
+        after.policy.no_selected_face_count);
+    diff.policy.missing_glyph_id_count_delta = font_fallback_shaped_glyph_execution_count_delta(
+        before.policy.missing_glyph_id_count,
+        after.policy.missing_glyph_id_count);
+    diff.policy.fallback_execution_count_delta = font_fallback_shaped_glyph_execution_count_delta(
+        before.policy.fallback_execution_count,
+        after.policy.fallback_execution_count);
+    diff.policy.glyph_id_offset_execution_count_delta = font_fallback_shaped_glyph_execution_count_delta(
+        before.policy.glyph_id_offset_execution_count,
+        after.policy.glyph_id_offset_execution_count);
+    diff.policy.unique_page_key_count_delta = font_fallback_shaped_glyph_execution_count_delta(
+        before.policy.unique_page_key_count,
+        after.policy.unique_page_key_count);
+    diff.policy.unique_cache_key_count_delta = font_fallback_shaped_glyph_execution_count_delta(
+        before.policy.unique_cache_key_count,
+        after.policy.unique_cache_key_count);
+    diff.policy.unique_selected_face_count_delta = font_fallback_shaped_glyph_execution_count_delta(
+        before.policy.unique_selected_face_count,
+        after.policy.unique_selected_face_count);
+    diff.policy.unique_style_token_count_delta = font_fallback_shaped_glyph_execution_count_delta(
+        before.policy.unique_style_token_count,
+        after.policy.unique_style_token_count);
+
+    diff.policy.status_counts_changed = diff.policy.shaped_count_delta != 0
+        || diff.policy.invalid_utf8_count_delta != 0
+        || diff.policy.unsupported_glyph_count_delta != 0
+        || diff.policy.no_selected_face_count_delta != 0
+        || diff.policy.missing_glyph_id_count_delta != 0;
+    diff.policy.selected_face_set_changed = before.selected_face_ids != after.selected_face_ids;
+    diff.policy.cache_key_set_changed = before.cache_keys != after.cache_keys;
+    diff.policy.page_key_set_changed = before.stable_page_keys != after.stable_page_keys;
+    diff.policy.style_token_set_changed = before.style_tokens != after.style_tokens;
+    diff.policy.glyph_count_changed = diff.policy.glyph_count_delta != 0;
+}
+
+[[nodiscard]] inline render_text_font_fallback_shaped_glyph_execution_diff_snapshot
+diff_render_text_font_fallback_shaped_glyph_execution_snapshots(
+    const render_text_font_fallback_shaped_glyph_execution_snapshot& before,
+    const render_text_font_fallback_shaped_glyph_execution_snapshot& after)
+{
+    render_text_font_fallback_shaped_glyph_execution_diff_snapshot diff;
+    summarize_render_text_font_fallback_shaped_glyph_execution_diff_policy(diff, before, after);
+
+    std::vector<std::string> execution_keys;
+    for (const render_text_font_fallback_shaped_glyph_execution_record& execution : before.executions) {
+        font_fallback_shaped_glyph_execution_append_unique_execution_key(
+            execution_keys,
+            execution.stable_execution_key);
+    }
+    for (const render_text_font_fallback_shaped_glyph_execution_record& execution : after.executions) {
+        font_fallback_shaped_glyph_execution_append_unique_execution_key(
+            execution_keys,
+            execution.stable_execution_key);
+    }
+
+    for (const std::string& key : execution_keys) {
+        const render_text_font_fallback_shaped_glyph_execution_record* before_execution =
+            find_render_text_font_fallback_shaped_glyph_execution_by_key(before.executions, key);
+        const render_text_font_fallback_shaped_glyph_execution_record* after_execution =
+            find_render_text_font_fallback_shaped_glyph_execution_by_key(after.executions, key);
+        render_text_font_fallback_shaped_glyph_execution_record_diff execution_diff =
+            diff_render_text_font_fallback_shaped_glyph_execution_records(
+                before_execution,
+                after_execution,
+                key);
+
+        if (execution_diff.added) {
+            ++diff.policy.added_execution_count;
+            diff.added_execution_keys.push_back(key);
+        } else if (execution_diff.removed) {
+            ++diff.policy.removed_execution_count;
+            diff.removed_execution_keys.push_back(key);
+        } else if (execution_diff.changed) {
+            ++diff.policy.changed_execution_count;
+            diff.changed_execution_keys.push_back(key);
+        } else {
+            ++diff.policy.unchanged_execution_count;
+        }
+
+        if (execution_diff.status_changed) {
+            ++diff.policy.status_changed_count;
+        }
+        if (execution_diff.selected_face_changed) {
+            ++diff.policy.selected_face_changed_count;
+        }
+        if (execution_diff.cache_key_changed) {
+            ++diff.policy.cache_key_changed_count;
+        }
+        if (execution_diff.page_key_changed) {
+            ++diff.policy.page_key_changed_count;
+        }
+        if (execution_diff.style_token_changed) {
+            ++diff.policy.style_token_changed_count;
+        }
+        if (execution_diff.glyph_id_changed) {
+            ++diff.policy.glyph_id_changed_count;
+        }
+        if (execution_diff.diagnostic_changed) {
+            ++diff.policy.diagnostic_changed_count;
+        }
+        font_fallback_shaped_glyph_execution_append_unique_reason(
+            diff.diagnostic_reasons,
+            execution_diff.diagnostic_reason);
+        diff.execution_diffs.push_back(std::move(execution_diff));
+    }
+
+    const std::vector<std::string> before_blocked =
+        font_fallback_shaped_glyph_execution_blocked_run_keys(before);
+    const std::vector<std::string> after_blocked =
+        font_fallback_shaped_glyph_execution_blocked_run_keys(after);
+    for (const std::string& key : before_blocked) {
+        if (!font_fallback_shaped_glyph_execution_key_list_contains(after_blocked, key)) {
+            diff.removed_blocked_run_keys.push_back(key);
+        }
+    }
+    for (const std::string& key : after_blocked) {
+        if (!font_fallback_shaped_glyph_execution_key_list_contains(before_blocked, key)) {
+            diff.added_blocked_run_keys.push_back(key);
+        }
+    }
+    diff.policy.added_blocked_run_count = diff.added_blocked_run_keys.size();
+    diff.policy.removed_blocked_run_count = diff.removed_blocked_run_keys.size();
+    diff.policy.blocked_runs_changed =
+        diff.policy.added_blocked_run_count != 0U || diff.policy.removed_blocked_run_count != 0U;
+    for (const std::string& key : diff.added_blocked_run_keys) {
+        font_fallback_shaped_glyph_execution_append_unique_reason(
+            diff.diagnostic_reasons,
+            "added blocked run " + key);
+    }
+    for (const std::string& key : diff.removed_blocked_run_keys) {
+        font_fallback_shaped_glyph_execution_append_unique_reason(
+            diff.diagnostic_reasons,
+            "removed blocked run " + key);
+    }
+
+    diff.diagnostic = diff.has_changes()
+        ? "fallback shaped glyph execution snapshots changed"
+        : "fallback shaped glyph execution snapshots match";
+    return diff;
 }
 
 } // namespace quiz_vulkan::render

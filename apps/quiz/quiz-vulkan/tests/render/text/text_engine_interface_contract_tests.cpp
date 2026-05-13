@@ -1823,6 +1823,126 @@ static_assert(requires(
 });
 
 static_assert(requires(
+    render::render_text_font_fallback_shaped_glyph_execution_record execution,
+    render::render_text_font_fallback_shaped_glyph_execution_record_diff execution_diff,
+    render::render_text_font_fallback_shaped_glyph_execution_diff_policy diff_policy,
+    render::render_text_font_fallback_shaped_glyph_execution_diff_snapshot diff_snapshot,
+    render::render_text_font_fallback_shaped_glyph_execution_snapshot snapshot,
+    std::vector<std::string> execution_keys,
+    std::vector<std::string> diagnostic_reasons) {
+    { execution_diff.stable_execution_key } -> std::same_as<std::string&>;
+    { execution_diff.added } -> std::same_as<bool&>;
+    { execution_diff.removed } -> std::same_as<bool&>;
+    { execution_diff.changed } -> std::same_as<bool&>;
+    { execution_diff.status_changed } -> std::same_as<bool&>;
+    { execution_diff.selected_face_changed } -> std::same_as<bool&>;
+    { execution_diff.cache_key_changed } -> std::same_as<bool&>;
+    { execution_diff.page_key_changed } -> std::same_as<bool&>;
+    { execution_diff.style_token_changed } -> std::same_as<bool&>;
+    { execution_diff.glyph_id_changed } -> std::same_as<bool&>;
+    { execution_diff.diagnostic_changed } -> std::same_as<bool&>;
+    { execution_diff.previous_status }
+        -> std::same_as<render::render_text_font_fallback_shaped_glyph_execution_status&>;
+    { execution_diff.current_status }
+        -> std::same_as<render::render_text_font_fallback_shaped_glyph_execution_status&>;
+    { execution_diff.previous_selected_face_id } -> std::same_as<render::font_face_id&>;
+    { execution_diff.current_selected_face_id } -> std::same_as<render::font_face_id&>;
+    { execution_diff.previous_cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { execution_diff.current_cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { execution_diff.previous_page_key } -> std::same_as<std::string&>;
+    { execution_diff.current_page_key } -> std::same_as<std::string&>;
+    { execution_diff.previous_style_token } -> std::same_as<render::render_style_id&>;
+    { execution_diff.current_style_token } -> std::same_as<render::render_style_id&>;
+    { execution_diff.previous_glyph_id } -> std::same_as<std::uint32_t&>;
+    { execution_diff.current_glyph_id } -> std::same_as<std::uint32_t&>;
+    { execution_diff.previous_diagnostic } -> std::same_as<std::string&>;
+    { execution_diff.current_diagnostic } -> std::same_as<std::string&>;
+    { execution_diff.diagnostic_reason } -> std::same_as<std::string&>;
+    { diff_policy.input_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.execution_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.shaped_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.glyph_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.blocked_input_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.blocked_run_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.atlas_ready_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.missing_cache_key_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.invalid_utf8_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.unsupported_glyph_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.no_selected_face_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.missing_glyph_id_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.fallback_execution_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.glyph_id_offset_execution_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.unique_page_key_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.unique_cache_key_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.unique_selected_face_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.unique_style_token_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.added_execution_count } -> std::same_as<std::size_t&>;
+    { diff_policy.removed_execution_count } -> std::same_as<std::size_t&>;
+    { diff_policy.changed_execution_count } -> std::same_as<std::size_t&>;
+    { diff_policy.unchanged_execution_count } -> std::same_as<std::size_t&>;
+    { diff_policy.status_changed_count } -> std::same_as<std::size_t&>;
+    { diff_policy.selected_face_changed_count } -> std::same_as<std::size_t&>;
+    { diff_policy.cache_key_changed_count } -> std::same_as<std::size_t&>;
+    { diff_policy.page_key_changed_count } -> std::same_as<std::size_t&>;
+    { diff_policy.style_token_changed_count } -> std::same_as<std::size_t&>;
+    { diff_policy.glyph_id_changed_count } -> std::same_as<std::size_t&>;
+    { diff_policy.diagnostic_changed_count } -> std::same_as<std::size_t&>;
+    { diff_policy.added_blocked_run_count } -> std::same_as<std::size_t&>;
+    { diff_policy.removed_blocked_run_count } -> std::same_as<std::size_t&>;
+    { diff_policy.status_counts_changed } -> std::same_as<bool&>;
+    { diff_policy.selected_face_set_changed } -> std::same_as<bool&>;
+    { diff_policy.cache_key_set_changed } -> std::same_as<bool&>;
+    { diff_policy.page_key_set_changed } -> std::same_as<bool&>;
+    { diff_policy.style_token_set_changed } -> std::same_as<bool&>;
+    { diff_policy.blocked_runs_changed } -> std::same_as<bool&>;
+    { diff_policy.glyph_count_changed } -> std::same_as<bool&>;
+    { diff_snapshot.policy }
+        -> std::same_as<render::render_text_font_fallback_shaped_glyph_execution_diff_policy&>;
+    { diff_snapshot.execution_diffs }
+        -> std::same_as<std::vector<render::render_text_font_fallback_shaped_glyph_execution_record_diff>&>;
+    { diff_snapshot.added_execution_keys } -> std::same_as<std::vector<std::string>&>;
+    { diff_snapshot.removed_execution_keys } -> std::same_as<std::vector<std::string>&>;
+    { diff_snapshot.changed_execution_keys } -> std::same_as<std::vector<std::string>&>;
+    { diff_snapshot.added_blocked_run_keys } -> std::same_as<std::vector<std::string>&>;
+    { diff_snapshot.removed_blocked_run_keys } -> std::same_as<std::vector<std::string>&>;
+    { diff_snapshot.diagnostic_reasons } -> std::same_as<std::vector<std::string>&>;
+    { diff_snapshot.diagnostic } -> std::same_as<std::string&>;
+    { diff_snapshot.has_changes() } -> std::same_as<bool>;
+    { render::font_fallback_shaped_glyph_execution_count_delta(std::size_t{}, std::size_t{}) }
+        -> std::same_as<std::ptrdiff_t>;
+    { render::font_fallback_shaped_glyph_execution_append_unique_reason(diagnostic_reasons, std::string{}) }
+        -> std::same_as<void>;
+    { render::find_render_text_font_fallback_shaped_glyph_execution_by_key(
+        snapshot.executions,
+        execution.stable_execution_key) }
+        -> std::same_as<const render::render_text_font_fallback_shaped_glyph_execution_record*>;
+    { render::font_fallback_shaped_glyph_execution_append_unique_execution_key(
+        execution_keys,
+        execution.stable_execution_key) }
+        -> std::same_as<void>;
+    { render::font_fallback_shaped_glyph_execution_blocked_run_keys(snapshot) }
+        -> std::same_as<std::vector<std::string>>;
+    { render::font_fallback_shaped_glyph_execution_key_list_contains(execution_keys, std::string{}) }
+        -> std::same_as<bool>;
+    { render::render_text_font_fallback_shaped_glyph_execution_records_equal(execution, execution) }
+        -> std::same_as<bool>;
+    { render::font_fallback_shaped_glyph_execution_diff_reason_for(execution_diff) }
+        -> std::same_as<std::string>;
+    { render::diff_render_text_font_fallback_shaped_glyph_execution_records(
+        &execution,
+        &execution,
+        execution.stable_execution_key) }
+        -> std::same_as<render::render_text_font_fallback_shaped_glyph_execution_record_diff>;
+    { render::summarize_render_text_font_fallback_shaped_glyph_execution_diff_policy(
+        diff_snapshot,
+        snapshot,
+        snapshot) }
+        -> std::same_as<void>;
+    { render::diff_render_text_font_fallback_shaped_glyph_execution_snapshots(snapshot, snapshot) }
+        -> std::same_as<render::render_text_font_fallback_shaped_glyph_execution_diff_snapshot>;
+});
+
+static_assert(requires(
     render::render_text_font_fallback_chain_entry_snapshot entry,
     render::render_text_font_fallback_chain_missing_glyph_snapshot missing,
     render::render_text_font_fallback_chain_run_snapshot run,

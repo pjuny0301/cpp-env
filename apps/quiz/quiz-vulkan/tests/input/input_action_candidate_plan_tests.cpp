@@ -123,6 +123,19 @@ const quiz_vulkan::input::input_action_candidate* find_first_candidate(
     return nullptr;
 }
 
+const quiz_vulkan::input::input_action_candidate_result* find_first_result(
+    const quiz_vulkan::input::input_action_candidate_resolution& resolution,
+    quiz_vulkan::input::input_action_candidate_kind kind,
+    quiz_vulkan::input::input_action_candidate_result_status status)
+{
+    for (const quiz_vulkan::input::input_action_candidate_result& result : resolution.results) {
+        if (result.candidate.kind == kind && result.status == status) {
+            return &result;
+        }
+    }
+    return nullptr;
+}
+
 void test_replay_evidence_maps_to_semantic_free_candidates()
 {
     using namespace quiz_vulkan;
@@ -247,6 +260,211 @@ void test_replay_evidence_maps_to_semantic_free_candidates()
         "batch candidate count matches candidate vector size");
 }
 
+void test_candidate_resolution_selects_primary_results_and_supporting_evidence()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    const std::array steps{
+        step("text-initial", text(100, std::string{"A"})),
+        step("focus-gained", focus(raw_platform_focus_phase::gained, 110)),
+        step("ime-preedit", ime(raw_platform_ime_phase::preedit_update, 120, utf8(u8"ㅎ"))),
+        step("ime-commit", ime(raw_platform_ime_phase::commit, 130, utf8(u8"한"))),
+        step("ime-second-preedit", ime(raw_platform_ime_phase::preedit_update, 140, "draft")),
+        step("ime-cancel", ime(raw_platform_ime_phase::cancel, 150)),
+        step("pointer-down", pointer(raw_platform_pointer_phase::down, 200, 0.0f, 0.0f, raw_platform_pointer_button::primary, 7)),
+        step("pointer-drag", pointer(raw_platform_pointer_phase::move, 220, 12.0f, 0.0f, raw_platform_pointer_button::primary, 7)),
+        step("pointer-up", pointer(raw_platform_pointer_phase::up, 240, 14.0f, 0.0f, raw_platform_pointer_button::primary, 7)),
+        step("wheel", platform_scroll(260, 3.0f, 4.0f, 0.0f, -2.0f, raw_platform_scroll_delta_unit::lines)),
+    };
+
+    const normalized_input_replay_recording recording = replay_normalized_input_fixture(
+        engine,
+        steps,
+        normalized_input_replay_options{.initial_focus_target_id = "answer"});
+    const input_action_candidate_plan plan = plan_input_action_candidates(recording);
+    const input_action_candidate_resolution resolution = resolve_input_action_candidate_plan(plan);
+
+    require(resolution.results.size() == plan.candidates.size(),
+        "candidate resolution keeps one result per planned candidate");
+    require(resolution.final_state.text == recording.final_state.text,
+        "candidate resolution preserves final text state");
+    require(resolution.counts.total == plan.candidates.size(),
+        "candidate resolution counts every candidate result");
+    require(resolution.counts.rejected.total == 0,
+        "valid replay candidate resolution has no rejected results");
+    require(resolution.counts.selected.text_edit == 1,
+        "candidate resolution selects text edit result");
+    require(resolution.counts.selected.focus_move == 1,
+        "candidate resolution selects focus result");
+    require(resolution.counts.selected.ime_preedit == 2,
+        "candidate resolution selects preedit results");
+    require(resolution.counts.selected.ime_commit == 1,
+        "candidate resolution selects ime commit result");
+    require(resolution.counts.selected.ime_cancel == 1,
+        "candidate resolution selects ime cancel result");
+    require(resolution.counts.selected.pointer_capture == 1,
+        "candidate resolution selects standalone pointer capture result");
+    require(resolution.counts.selected.gesture_candidate == 2,
+        "candidate resolution selects emitted gesture results");
+    require(resolution.counts.selected.wheel_scroll == 1,
+        "candidate resolution selects wheel result");
+    require(resolution.counts.supporting_evidence.pointer_capture == 2,
+        "candidate resolution keeps capture transitions supporting gesture batches");
+
+    const input_action_candidate_result* ime_commit_result = find_first_result(
+        resolution,
+        input_action_candidate_kind::ime_commit,
+        input_action_candidate_result_status::selected);
+    require(ime_commit_result != nullptr, "ime commit selected result exists");
+    require(ime_commit_result->reason == input_action_candidate_result_reason::ime_committed,
+        "ime commit result records semantic-free commit reason");
+    require(ime_commit_result->has_ime_payload,
+        "ime commit result carries payload evidence");
+    require(ime_commit_result->evidence_clean,
+        "ime commit result records clean evidence");
+
+    const input_action_candidate_result* wheel_result = find_first_result(
+        resolution,
+        input_action_candidate_kind::wheel_scroll,
+        input_action_candidate_result_status::selected);
+    require(wheel_result != nullptr, "wheel selected result exists");
+    require(wheel_result->reason == input_action_candidate_result_reason::wheel_delta,
+        "wheel result records delta reason");
+    require(wheel_result->has_wheel_delta,
+        "wheel result carries delta evidence");
+
+    const input_action_candidate_batch_plan pointer_batch =
+        plan_input_action_candidates_for_batch(recording.batches[7], 7);
+    const input_action_candidate_batch_resolution pointer_resolution =
+        resolve_input_action_candidate_batch(pointer_batch);
+    require(pointer_resolution.has_selected_candidate,
+        "pointer drag batch resolution selects a primary result");
+    require(pointer_resolution.selected_candidate_index != input_action_candidate_npos,
+        "pointer drag batch resolution records selected index");
+    const input_action_candidate_result& selected =
+        pointer_resolution.results[pointer_resolution.selected_candidate_index];
+    require(selected.candidate.kind == input_action_candidate_kind::gesture_candidate,
+        "pointer drag batch selects gesture over capture support");
+    require(selected.reason == input_action_candidate_result_reason::gesture_emitted,
+        "pointer drag selected result records emitted gesture reason");
+    require(pointer_resolution.counts.selected.gesture_candidate == 1,
+        "pointer drag batch selected count records gesture result");
+    require(pointer_resolution.counts.supporting_evidence.pointer_capture == 1,
+        "pointer drag batch support count records capture result");
+
+    const input_action_candidate_result* capture_support = nullptr;
+    for (const input_action_candidate_result& result : pointer_resolution.results) {
+        if (result.candidate.kind == input_action_candidate_kind::pointer_capture) {
+            capture_support = &result;
+            break;
+        }
+    }
+    require(capture_support != nullptr, "pointer drag capture support exists");
+    require(capture_support->status == input_action_candidate_result_status::supporting_evidence,
+        "pointer drag capture is supporting evidence");
+    require(capture_support->supports_selected_candidate,
+        "pointer drag capture marks selected-candidate support");
+    require(capture_support->reason == input_action_candidate_result_reason::pointer_capture_supports_selected,
+        "pointer drag capture records support reason");
+}
+
+void test_candidate_resolution_rejects_invalid_and_suppressed_evidence()
+{
+    using namespace quiz_vulkan::input;
+
+    const input_action_candidate_result invalid_preedit = resolve_input_action_candidate(
+        input_action_candidate{
+            .kind = input_action_candidate_kind::ime_preedit,
+            .utf8_text = "draft",
+            .preedit_text_valid = false,
+        });
+    require(invalid_preedit.status == input_action_candidate_result_status::rejected,
+        "invalid preedit resolves to rejected result");
+    require(invalid_preedit.reason == input_action_candidate_result_reason::ime_preedit_invalid,
+        "invalid preedit records invalid reason");
+    require(!invalid_preedit.evidence_clean,
+        "invalid preedit records unclean evidence");
+
+    const input_action_candidate_result rejected_gesture = resolve_input_action_candidate(
+        input_action_candidate{
+            .kind = input_action_candidate_kind::gesture_candidate,
+            .gesture_policy = gesture_policy_snapshot{
+                .decision = gesture_policy_decision::swipe_rejected_distance,
+            },
+        });
+    require(rejected_gesture.status == input_action_candidate_result_status::rejected,
+        "rejected gesture policy resolves to rejected result");
+    require(rejected_gesture.reason == input_action_candidate_result_reason::gesture_policy_rejected,
+        "rejected gesture policy records rejection reason");
+
+    const input_action_candidate_result suppressed_gesture = resolve_input_action_candidate(
+        input_action_candidate{
+            .kind = input_action_candidate_kind::gesture_candidate,
+            .gesture_policy = gesture_policy_snapshot{
+                .decision = gesture_policy_decision::ignored_by_capture,
+            },
+        });
+    require(suppressed_gesture.status == input_action_candidate_result_status::rejected,
+        "suppressed gesture policy resolves to rejected result");
+    require(suppressed_gesture.reason == input_action_candidate_result_reason::gesture_policy_suppressed,
+        "suppressed gesture policy records suppression reason");
+
+    const input_action_candidate_result unchanged_text = resolve_input_action_candidate(
+        input_action_candidate{.kind = input_action_candidate_kind::text_edit});
+    require(unchanged_text.status == input_action_candidate_result_status::diagnostic_only,
+        "unchanged text candidate remains diagnostic-only");
+    require(unchanged_text.reason == input_action_candidate_result_reason::no_observable_delta,
+        "unchanged text candidate records no-delta reason");
+}
+
+void test_candidate_resolution_uses_deterministic_priority_tiebreak()
+{
+    using namespace quiz_vulkan::input;
+
+    input_action_candidate_batch_plan batch{
+        .label = "manual-mixed",
+        .candidates = {
+            input_action_candidate{
+                .kind = input_action_candidate_kind::wheel_scroll,
+                .timestamp_ms = 10,
+                .line_delta_y = -1.0f,
+            },
+            input_action_candidate{
+                .kind = input_action_candidate_kind::text_edit,
+                .timestamp_ms = 20,
+                .text_presentation_diff = text_input_presentation_diff{
+                    .committed_text_changed = true,
+                    .changed = true,
+                },
+                .text_byte_count_before = 0,
+                .text_byte_count_after = 1,
+            },
+        },
+    };
+
+    const input_action_candidate_batch_resolution resolution =
+        resolve_input_action_candidate_batch(batch);
+
+    require(resolution.has_selected_candidate,
+        "manual batch resolution selects a primary result");
+    require(resolution.selected_candidate_index == 1,
+        "manual batch resolution chooses higher-priority text candidate deterministically");
+    require(resolution.results[1].selected,
+        "manual batch marks selected text result");
+    require(resolution.results[1].reason == input_action_candidate_result_reason::text_edit_diff,
+        "manual selected text result records text diff reason");
+    require(resolution.results[0].status == input_action_candidate_result_status::supporting_evidence,
+        "manual lower-priority wheel result becomes supporting evidence");
+    require(resolution.results[0].reason == input_action_candidate_result_reason::coalesced_by_selected_candidate,
+        "manual lower-priority result records coalescing reason");
+    require(resolution.counts.selected.text_edit == 1,
+        "manual resolution counts selected text result");
+    require(resolution.counts.supporting_evidence.wheel_scroll == 1,
+        "manual resolution counts supporting wheel result");
+}
+
 void test_empty_replay_yields_empty_candidate_plan()
 {
     using namespace quiz_vulkan::input;
@@ -270,6 +488,9 @@ void test_empty_replay_yields_empty_candidate_plan()
 int main()
 {
     test_replay_evidence_maps_to_semantic_free_candidates();
+    test_candidate_resolution_selects_primary_results_and_supporting_evidence();
+    test_candidate_resolution_rejects_invalid_and_suppressed_evidence();
+    test_candidate_resolution_uses_deterministic_priority_tiebreak();
     test_empty_replay_yields_empty_candidate_plan();
 
     std::cout << "input_action_candidate_plan_tests passed\n";

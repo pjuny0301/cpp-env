@@ -1077,6 +1077,96 @@ concept InputActionCandidatePlanFunctions = requires(
 };
 
 template <typename T>
+concept InputActionCandidateResultCountsInterface = requires(T counts) {
+    { counts.selected } -> std::same_as<input::input_action_candidate_counts&>;
+    { counts.supporting_evidence } -> std::same_as<input::input_action_candidate_counts&>;
+    { counts.diagnostic_only } -> std::same_as<input::input_action_candidate_counts&>;
+    { counts.rejected } -> std::same_as<input::input_action_candidate_counts&>;
+    { counts.total } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
+concept InputActionCandidateResultInterface = requires(T result) {
+    { result.candidate } -> std::same_as<input::input_action_candidate&>;
+    { result.status } -> std::same_as<input::input_action_candidate_result_status&>;
+    { result.reason } -> std::same_as<input::input_action_candidate_result_reason&>;
+    { result.candidate_index } -> std::same_as<std::size_t&>;
+    { result.selected_candidate_index } -> std::same_as<std::size_t&>;
+    { result.priority } -> std::same_as<int&>;
+    { result.selected } -> std::same_as<bool&>;
+    { result.supports_selected_candidate } -> std::same_as<bool&>;
+    { result.emits_input_event } -> std::same_as<bool&>;
+    { result.has_text_delta } -> std::same_as<bool&>;
+    { result.has_focus_transition } -> std::same_as<bool&>;
+    { result.has_pointer_capture_transition } -> std::same_as<bool&>;
+    { result.has_gesture_event } -> std::same_as<bool&>;
+    { result.has_wheel_delta } -> std::same_as<bool&>;
+    { result.has_ime_payload } -> std::same_as<bool&>;
+    { result.evidence_clean } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept InputActionCandidateBatchResolutionInterface = requires(T batch_resolution) {
+    { batch_resolution.label } -> std::same_as<std::string&>;
+    { batch_resolution.results } -> std::same_as<std::vector<input::input_action_candidate_result>&>;
+    { batch_resolution.counts } -> std::same_as<input::input_action_candidate_result_counts&>;
+    { batch_resolution.selected_candidate_index } -> std::same_as<std::size_t&>;
+    { batch_resolution.has_selected_candidate } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept InputActionCandidateResolutionInterface = requires(T resolution) {
+    { resolution.batches } -> std::same_as<std::vector<input::input_action_candidate_batch_resolution>&>;
+    { resolution.results } -> std::same_as<std::vector<input::input_action_candidate_result>&>;
+    { resolution.counts } -> std::same_as<input::input_action_candidate_result_counts&>;
+    { resolution.final_state } -> std::same_as<input::normalized_input_replay_end_state&>;
+};
+
+template <typename T>
+concept InputActionCandidateResolutionFunctions = requires(
+    input::input_action_candidate_result_counts& result_counts,
+    const input::input_action_candidate_result& result,
+    input::input_action_candidate candidate,
+    const input::pointer_capture_snapshot& capture_snapshot,
+    input::gesture_policy_decision gesture_decision,
+    input::input_action_candidate_batch_resolution& batch_resolution,
+    input::input_action_candidate_resolution& resolution,
+    input::input_action_candidate_batch_resolution batch_resolution_value,
+    const input::input_action_candidate_batch_plan& batch_plan,
+    const input::input_action_candidate_plan& plan,
+    std::span<const input::normalized_input_replay_batch> batches,
+    const input::normalized_input_replay_recording& recording) {
+    { input::count_input_action_candidate_result(result_counts, result) } -> std::same_as<void>;
+    { input::input_action_candidate_text_has_delta(candidate) } -> std::same_as<bool>;
+    { input::input_action_candidate_focus_has_transition(candidate) } -> std::same_as<bool>;
+    { input::input_action_candidate_capture_snapshot_changed(capture_snapshot, capture_snapshot) }
+        -> std::same_as<bool>;
+    { input::input_action_candidate_pointer_has_capture_transition(candidate) } -> std::same_as<bool>;
+    { input::input_action_candidate_wheel_has_delta(candidate) } -> std::same_as<bool>;
+    { input::input_action_candidate_gesture_emits_event(candidate) } -> std::same_as<bool>;
+    { input::input_action_candidate_gesture_policy_rejected(gesture_decision) } -> std::same_as<bool>;
+    { input::input_action_candidate_gesture_policy_suppressed(gesture_decision) } -> std::same_as<bool>;
+    { input::input_action_candidate_ime_has_payload(candidate) } -> std::same_as<bool>;
+    { input::input_action_candidate_ime_evidence_clean(candidate) } -> std::same_as<bool>;
+    { input::input_action_candidate_result_priority(candidate.kind) } -> std::same_as<int>;
+    { input::resolve_input_action_candidate(candidate, std::size_t{}) }
+        -> std::same_as<input::input_action_candidate_result>;
+    { input::input_action_candidate_result_is_primary_candidate(result) } -> std::same_as<bool>;
+    { input::input_action_candidate_result_precedes(result, result) } -> std::same_as<bool>;
+    { input::finalize_input_action_candidate_batch_resolution(batch_resolution) } -> std::same_as<void>;
+    { input::resolve_input_action_candidate_batch(batch_plan) }
+        -> std::same_as<input::input_action_candidate_batch_resolution>;
+    { input::append_input_action_candidate_batch_resolution(resolution, std::move(batch_resolution_value)) }
+        -> std::same_as<void>;
+    { input::resolve_input_action_candidate_plan(plan) }
+        -> std::same_as<input::input_action_candidate_resolution>;
+    { input::resolve_input_action_candidates(batches) }
+        -> std::same_as<input::input_action_candidate_resolution>;
+    { input::resolve_input_action_candidates(recording) }
+        -> std::same_as<input::input_action_candidate_resolution>;
+};
+
+template <typename T>
 concept PointerCaptureSnapshotInterface = requires(T snapshot) {
     { snapshot.lifecycle } -> std::same_as<input::pointer_capture_lifecycle&>;
     { snapshot.active } -> std::same_as<bool&>;
@@ -2215,6 +2305,12 @@ static_assert(InputActionCandidateInterface<input::input_action_candidate>);
 static_assert(InputActionCandidateBatchPlanInterface<input::input_action_candidate_batch_plan>);
 static_assert(InputActionCandidatePlanInterface<input::input_action_candidate_plan>);
 static_assert(InputActionCandidatePlanFunctions<void>);
+static_assert(InputActionCandidateResultCountsInterface<input::input_action_candidate_result_counts>);
+static_assert(InputActionCandidateResultInterface<input::input_action_candidate_result>);
+static_assert(InputActionCandidateBatchResolutionInterface<
+    input::input_action_candidate_batch_resolution>);
+static_assert(InputActionCandidateResolutionInterface<input::input_action_candidate_resolution>);
+static_assert(InputActionCandidateResolutionFunctions<void>);
 static_assert(std::is_default_constructible_v<input::platform_input_translation_request>);
 static_assert(std::is_default_constructible_v<input::platform_input_translation_result>);
 static_assert(std::is_default_constructible_v<input::platform_input_dispatch_result>);
@@ -2275,6 +2371,10 @@ static_assert(std::is_default_constructible_v<input::input_action_candidate_coun
 static_assert(std::is_default_constructible_v<input::input_action_candidate>);
 static_assert(std::is_default_constructible_v<input::input_action_candidate_batch_plan>);
 static_assert(std::is_default_constructible_v<input::input_action_candidate_plan>);
+static_assert(std::is_default_constructible_v<input::input_action_candidate_result_counts>);
+static_assert(std::is_default_constructible_v<input::input_action_candidate_result>);
+static_assert(std::is_default_constructible_v<input::input_action_candidate_batch_resolution>);
+static_assert(std::is_default_constructible_v<input::input_action_candidate_resolution>);
 static_assert(std::is_default_constructible_v<input::input_routing_count_delta>);
 static_assert(std::is_default_constructible_v<input::input_routing_bool_delta>);
 static_assert(std::is_default_constructible_v<input::input_routing_float_delta>);
@@ -2340,6 +2440,9 @@ static_assert(!std::is_polymorphic_v<input::normalized_input_replay_diff>);
 static_assert(!std::is_polymorphic_v<input::input_action_candidate>);
 static_assert(!std::is_polymorphic_v<input::input_action_candidate_batch_plan>);
 static_assert(!std::is_polymorphic_v<input::input_action_candidate_plan>);
+static_assert(!std::is_polymorphic_v<input::input_action_candidate_result>);
+static_assert(!std::is_polymorphic_v<input::input_action_candidate_batch_resolution>);
+static_assert(!std::is_polymorphic_v<input::input_action_candidate_resolution>);
 static_assert(!std::is_polymorphic_v<input::input_routing_diagnostics_diff>);
 static_assert(!std::is_polymorphic_v<input::input_routing_gesture_policy_diff>);
 static_assert(!std::is_polymorphic_v<input::text_edit_transaction_snapshot>);

@@ -193,6 +193,114 @@ struct input_action_candidate_resolution {
     normalized_input_replay_end_state final_state;
 };
 
+struct input_action_resolution_result_summary {
+    input_action_candidate_kind kind = input_action_candidate_kind::text_edit;
+    input_action_candidate_result_status status =
+        input_action_candidate_result_status::diagnostic_only;
+    input_action_candidate_result_reason reason =
+        input_action_candidate_result_reason::no_observable_delta;
+    std::string batch_label;
+    std::size_t batch_index = 0;
+    std::size_t candidate_index = 0;
+    std::size_t selected_candidate_index = input_action_candidate_npos;
+    std::size_t event_index = 0;
+    int priority = 0;
+    std::int64_t timestamp_ms = 0;
+    bool selected = false;
+    bool supports_selected_candidate = false;
+    bool emits_input_event = false;
+    bool evidence_clean = true;
+    bool has_text_delta = false;
+    bool has_focus_transition = false;
+    bool has_pointer_capture_transition = false;
+    bool has_gesture_event = false;
+    bool has_wheel_delta = false;
+    bool has_ime_payload = false;
+
+    std::string target_id;
+    std::string target_id_before;
+    std::string target_id_after;
+    bool target_changed = false;
+    bool had_focus_before = false;
+    bool has_focus_after = false;
+    normalized_input_replay_focus_timeline_kind focus_kind =
+        normalized_input_replay_focus_timeline_kind::caret_moved;
+    keyboard_shortcut_intent keyboard_intent = keyboard_shortcut_intent::none;
+
+    std::size_t text_byte_count = 0;
+    std::size_t text_byte_count_before = 0;
+    std::size_t text_byte_count_after = 0;
+    std::int64_t text_byte_delta = 0;
+    text_range caret_before;
+    text_range caret_after;
+    bool caret_changed = false;
+    bool had_selection_before = false;
+    bool has_selection_after = false;
+    text_range selection_before;
+    text_range selection_after;
+    bool selection_changed = false;
+
+    normalized_input_replay_ime_timeline_phase ime_phase =
+        normalized_input_replay_ime_timeline_phase::preedit_update;
+    std::size_t utf8_text_bytes = 0;
+    std::size_t committed_text_bytes = 0;
+    bool preedit_text_valid = true;
+    bool preedit_range_valid = true;
+    bool stale_preedit_cleared_after = true;
+    bool ime_composition_active = false;
+
+    normalized_input_replay_pointer_timeline_kind pointer_kind =
+        normalized_input_replay_pointer_timeline_kind::gesture_suppressed;
+    std::int32_t pointer_id = 0;
+    pointer_phase event_phase = pointer_phase::down;
+    pointer_contact_kind pointer_contact = pointer_contact_kind::unknown;
+    pointer_arbitration_decision pointer_decision = pointer_arbitration_decision::none;
+    pointer_capture_lifecycle capture_before_lifecycle = pointer_capture_lifecycle::idle;
+    pointer_capture_lifecycle capture_after_lifecycle = pointer_capture_lifecycle::idle;
+    bool capture_before_active = false;
+    bool capture_after_active = false;
+    bool capture_changed = false;
+    bool capture_ended_cleanly_after = true;
+    std::size_t tracked_pointer_count_before = 0;
+    std::size_t tracked_pointer_count_after = 0;
+    gesture_policy_decision gesture_decision = gesture_policy_decision::none;
+    gesture_direction gesture_direction_hint = gesture_direction::none;
+    input_event_summary_kind normalized_event_kind = input_event_summary_kind::tap;
+
+    std::int64_t duration_ms = 0;
+    float start_x = 0.0f;
+    float start_y = 0.0f;
+    float x = 0.0f;
+    float y = 0.0f;
+    float delta_x = 0.0f;
+    float delta_y = 0.0f;
+    float pixel_delta_x = 0.0f;
+    float pixel_delta_y = 0.0f;
+    float line_delta_x = 0.0f;
+    float line_delta_y = 0.0f;
+};
+
+struct input_action_resolution_batch_summary {
+    std::string label;
+    std::vector<input_action_resolution_result_summary> selected;
+    std::vector<input_action_resolution_result_summary> supporting_evidence;
+    std::vector<input_action_resolution_result_summary> rejected;
+    std::vector<input_action_resolution_result_summary> diagnostic_only;
+    input_action_candidate_result_counts counts;
+    std::size_t selected_candidate_index = input_action_candidate_npos;
+    bool has_selected_candidate = false;
+};
+
+struct input_action_resolution_replay_summary {
+    std::vector<input_action_resolution_batch_summary> batches;
+    std::vector<input_action_resolution_result_summary> selected;
+    std::vector<input_action_resolution_result_summary> supporting_evidence;
+    std::vector<input_action_resolution_result_summary> rejected;
+    std::vector<input_action_resolution_result_summary> diagnostic_only;
+    input_action_candidate_result_counts counts;
+    normalized_input_replay_end_state final_state;
+};
+
 inline void count_input_action_candidate_kind(
     input_action_candidate_counts& counts,
     input_action_candidate_kind kind)
@@ -329,6 +437,35 @@ inline void count_input_action_candidate_result(
         count_input_action_candidate_kind(counts.rejected, result.candidate.kind);
         return;
     }
+}
+
+inline void accumulate_input_action_candidate_counts(
+    input_action_candidate_counts& target,
+    const input_action_candidate_counts& source)
+{
+    target.text_edit += source.text_edit;
+    target.focus_move += source.focus_move;
+    target.pointer_capture += source.pointer_capture;
+    target.gesture_candidate += source.gesture_candidate;
+    target.wheel_scroll += source.wheel_scroll;
+    target.ime_composition_start += source.ime_composition_start;
+    target.ime_preedit += source.ime_preedit;
+    target.ime_commit += source.ime_commit;
+    target.ime_cancel += source.ime_cancel;
+    target.total += source.total;
+}
+
+inline void accumulate_input_action_candidate_result_counts(
+    input_action_candidate_result_counts& target,
+    const input_action_candidate_result_counts& source)
+{
+    accumulate_input_action_candidate_counts(target.selected, source.selected);
+    accumulate_input_action_candidate_counts(
+        target.supporting_evidence,
+        source.supporting_evidence);
+    accumulate_input_action_candidate_counts(target.diagnostic_only, source.diagnostic_only);
+    accumulate_input_action_candidate_counts(target.rejected, source.rejected);
+    target.total += source.total;
 }
 
 [[nodiscard]] inline input_action_candidate make_text_edit_input_action_candidate(
@@ -917,6 +1054,204 @@ inline void append_input_action_candidate_batch_resolution(
         resolve_input_action_candidate_plan(plan_input_action_candidates(recording));
     resolution.final_state = recording.final_state;
     return resolution;
+}
+
+[[nodiscard]] inline std::int64_t input_action_resolution_byte_delta(
+    std::size_t before_count,
+    std::size_t after_count)
+{
+    if (after_count >= before_count) {
+        return static_cast<std::int64_t>(after_count - before_count);
+    }
+    return -static_cast<std::int64_t>(before_count - after_count);
+}
+
+[[nodiscard]] inline input_action_resolution_result_summary
+summarize_input_action_candidate_result(
+    const input_action_candidate_result& result)
+{
+    const input_action_candidate& candidate = result.candidate;
+    return input_action_resolution_result_summary{
+        .kind = candidate.kind,
+        .status = result.status,
+        .reason = result.reason,
+        .batch_label = candidate.batch_label,
+        .batch_index = candidate.batch_index,
+        .candidate_index = result.candidate_index,
+        .selected_candidate_index = result.selected_candidate_index,
+        .event_index = candidate.event_index,
+        .priority = result.priority,
+        .timestamp_ms = candidate.timestamp_ms,
+        .selected = result.selected,
+        .supports_selected_candidate = result.supports_selected_candidate,
+        .emits_input_event = result.emits_input_event,
+        .evidence_clean = result.evidence_clean,
+        .has_text_delta = result.has_text_delta,
+        .has_focus_transition = result.has_focus_transition,
+        .has_pointer_capture_transition = result.has_pointer_capture_transition,
+        .has_gesture_event = result.has_gesture_event,
+        .has_wheel_delta = result.has_wheel_delta,
+        .has_ime_payload = result.has_ime_payload,
+        .target_id = candidate.target_id,
+        .target_id_before = candidate.target_id_before,
+        .target_id_after = candidate.target_id_after,
+        .target_changed = candidate.target_changed,
+        .had_focus_before = candidate.had_focus_before,
+        .has_focus_after = candidate.has_focus_after,
+        .focus_kind = candidate.focus_kind,
+        .keyboard_intent = candidate.keyboard.intent,
+        .text_byte_count = candidate.text_byte_count,
+        .text_byte_count_before = candidate.text_byte_count_before,
+        .text_byte_count_after = candidate.text_byte_count_after,
+        .text_byte_delta = input_action_resolution_byte_delta(
+            candidate.text_byte_count_before,
+            candidate.text_byte_count_after),
+        .caret_before = candidate.caret_before,
+        .caret_after = candidate.caret_after,
+        .caret_changed = candidate.caret_changed,
+        .had_selection_before = candidate.had_selection_before,
+        .has_selection_after = candidate.has_selection_after,
+        .selection_before = candidate.selection_before,
+        .selection_after = candidate.selection_after,
+        .selection_changed = candidate.selection_changed,
+        .ime_phase = candidate.ime_phase,
+        .utf8_text_bytes = candidate.utf8_text.size(),
+        .committed_text_bytes = candidate.committed_text.size(),
+        .preedit_text_valid = candidate.preedit_text_valid,
+        .preedit_range_valid = candidate.preedit_range_valid,
+        .stale_preedit_cleared_after = candidate.stale_preedit_cleared_after,
+        .ime_composition_active = candidate.composition.active,
+        .pointer_kind = candidate.pointer_kind,
+        .pointer_id = candidate.pointer_id,
+        .event_phase = candidate.event_phase,
+        .pointer_contact = candidate.pointer_contact,
+        .pointer_decision = candidate.pointer_decision,
+        .capture_before_lifecycle = candidate.capture_before.lifecycle,
+        .capture_after_lifecycle = candidate.capture_after.lifecycle,
+        .capture_before_active = candidate.capture_before.active,
+        .capture_after_active = candidate.capture_after.active,
+        .capture_changed = candidate.capture_changed,
+        .capture_ended_cleanly_after = candidate.capture_ended_cleanly_after,
+        .tracked_pointer_count_before = candidate.tracked_pointer_count_before,
+        .tracked_pointer_count_after = candidate.tracked_pointer_count_after,
+        .gesture_decision = candidate.gesture_policy.decision,
+        .gesture_direction_hint = candidate.gesture_policy.direction,
+        .normalized_event_kind = candidate.normalized_event.kind,
+        .duration_ms = candidate.duration_ms,
+        .start_x = candidate.start_x,
+        .start_y = candidate.start_y,
+        .x = candidate.x,
+        .y = candidate.y,
+        .delta_x = candidate.delta_x,
+        .delta_y = candidate.delta_y,
+        .pixel_delta_x = candidate.pixel_delta_x,
+        .pixel_delta_y = candidate.pixel_delta_y,
+        .line_delta_x = candidate.line_delta_x,
+        .line_delta_y = candidate.line_delta_y,
+    };
+}
+
+inline void append_input_action_resolution_result_summary(
+    input_action_resolution_batch_summary& batch_summary,
+    input_action_resolution_result_summary summary)
+{
+    switch (summary.status) {
+    case input_action_candidate_result_status::selected:
+        batch_summary.selected.push_back(std::move(summary));
+        return;
+    case input_action_candidate_result_status::supporting_evidence:
+        batch_summary.supporting_evidence.push_back(std::move(summary));
+        return;
+    case input_action_candidate_result_status::diagnostic_only:
+        batch_summary.diagnostic_only.push_back(std::move(summary));
+        return;
+    case input_action_candidate_result_status::rejected:
+        batch_summary.rejected.push_back(std::move(summary));
+        return;
+    }
+}
+
+[[nodiscard]] inline input_action_resolution_batch_summary
+summarize_input_action_candidate_batch_resolution(
+    const input_action_candidate_batch_resolution& batch_resolution)
+{
+    input_action_resolution_batch_summary summary{
+        .label = batch_resolution.label,
+        .counts = batch_resolution.counts,
+        .selected_candidate_index = batch_resolution.selected_candidate_index,
+        .has_selected_candidate = batch_resolution.has_selected_candidate,
+    };
+    summary.selected.reserve(batch_resolution.counts.selected.total);
+    summary.supporting_evidence.reserve(batch_resolution.counts.supporting_evidence.total);
+    summary.rejected.reserve(batch_resolution.counts.rejected.total);
+    summary.diagnostic_only.reserve(batch_resolution.counts.diagnostic_only.total);
+    for (const input_action_candidate_result& result : batch_resolution.results) {
+        append_input_action_resolution_result_summary(
+            summary,
+            summarize_input_action_candidate_result(result));
+    }
+    return summary;
+}
+
+inline void append_input_action_resolution_batch_summary(
+    input_action_resolution_replay_summary& replay_summary,
+    input_action_resolution_batch_summary batch_summary)
+{
+    accumulate_input_action_candidate_result_counts(replay_summary.counts, batch_summary.counts);
+    replay_summary.selected.insert(
+        replay_summary.selected.end(),
+        batch_summary.selected.begin(),
+        batch_summary.selected.end());
+    replay_summary.supporting_evidence.insert(
+        replay_summary.supporting_evidence.end(),
+        batch_summary.supporting_evidence.begin(),
+        batch_summary.supporting_evidence.end());
+    replay_summary.rejected.insert(
+        replay_summary.rejected.end(),
+        batch_summary.rejected.begin(),
+        batch_summary.rejected.end());
+    replay_summary.diagnostic_only.insert(
+        replay_summary.diagnostic_only.end(),
+        batch_summary.diagnostic_only.begin(),
+        batch_summary.diagnostic_only.end());
+    replay_summary.batches.push_back(std::move(batch_summary));
+}
+
+[[nodiscard]] inline input_action_resolution_replay_summary
+summarize_input_action_candidate_resolution(
+    const input_action_candidate_resolution& resolution)
+{
+    input_action_resolution_replay_summary summary{
+        .final_state = resolution.final_state,
+    };
+    summary.batches.reserve(resolution.batches.size());
+    summary.selected.reserve(resolution.counts.selected.total);
+    summary.supporting_evidence.reserve(resolution.counts.supporting_evidence.total);
+    summary.rejected.reserve(resolution.counts.rejected.total);
+    summary.diagnostic_only.reserve(resolution.counts.diagnostic_only.total);
+    for (const input_action_candidate_batch_resolution& batch_resolution : resolution.batches) {
+        append_input_action_resolution_batch_summary(
+            summary,
+            summarize_input_action_candidate_batch_resolution(batch_resolution));
+    }
+    return summary;
+}
+
+[[nodiscard]] inline input_action_resolution_replay_summary
+summarize_input_action_resolution_replay(
+    std::span<const normalized_input_replay_batch> batches)
+{
+    return summarize_input_action_candidate_resolution(resolve_input_action_candidates(batches));
+}
+
+[[nodiscard]] inline input_action_resolution_replay_summary
+summarize_input_action_resolution_replay(
+    const normalized_input_replay_recording& recording)
+{
+    input_action_resolution_replay_summary summary =
+        summarize_input_action_candidate_resolution(resolve_input_action_candidates(recording));
+    summary.final_state = recording.final_state;
+    return summary;
 }
 
 } // namespace quiz_vulkan::input

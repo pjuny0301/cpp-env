@@ -370,6 +370,109 @@ void test_candidate_resolution_selects_primary_results_and_supporting_evidence()
         "pointer drag capture records support reason");
 }
 
+void test_resolution_replay_summary_groups_handoff_results_by_batch()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    const std::array steps{
+        step("text-initial", text(100, std::string{"A"})),
+        step("focus-gained", focus(raw_platform_focus_phase::gained, 110)),
+        step("ime-preedit", ime(raw_platform_ime_phase::preedit_update, 120, utf8(u8"ㅎ"))),
+        step("ime-commit", ime(raw_platform_ime_phase::commit, 130, utf8(u8"한"))),
+        step("pointer-down", pointer(raw_platform_pointer_phase::down, 200, 0.0f, 0.0f, raw_platform_pointer_button::primary, 7)),
+        step("pointer-drag", pointer(raw_platform_pointer_phase::move, 220, 12.0f, 0.0f, raw_platform_pointer_button::primary, 7)),
+        step("wheel", platform_scroll(260, 3.0f, 4.0f, 0.0f, -2.0f, raw_platform_scroll_delta_unit::lines)),
+    };
+
+    const normalized_input_replay_recording recording = replay_normalized_input_fixture(
+        engine,
+        steps,
+        normalized_input_replay_options{.initial_focus_target_id = "answer"});
+    const input_action_candidate_resolution resolution =
+        resolve_input_action_candidates(recording);
+    const input_action_resolution_replay_summary summary =
+        summarize_input_action_candidate_resolution(resolution);
+
+    require(summary.batches.size() == recording.batches.size(),
+        "resolution replay summary keeps one summary batch per replay batch");
+    require(summary.counts.total == resolution.counts.total,
+        "resolution replay summary preserves total result count");
+    require(summary.selected.size() == summary.counts.selected.total,
+        "resolution replay summary selected vector matches selected counts");
+    require(summary.supporting_evidence.size() == summary.counts.supporting_evidence.total,
+        "resolution replay summary support vector matches support counts");
+    require(summary.rejected.empty(),
+        "valid resolution replay summary has no rejected results");
+    require(summary.final_state.text == recording.final_state.text,
+        "resolution replay summary preserves final text state");
+
+    const input_action_resolution_batch_summary& text_batch = summary.batches[0];
+    require(text_batch.label == "text-initial",
+        "resolution replay summary preserves source batch labels");
+    require(text_batch.selected.size() == 1,
+        "text batch summary has one selected result");
+    require(text_batch.selected[0].kind == input_action_candidate_kind::text_edit,
+        "text batch summary selects text edit");
+    require(text_batch.selected[0].target_id == "answer",
+        "text batch summary preserves target id for router handoff");
+    require(text_batch.selected[0].text_byte_delta == 1,
+        "text batch summary exposes text byte delta");
+    require(text_batch.selected[0].has_text_delta,
+        "text batch summary carries text delta flag");
+
+    const input_action_resolution_result_summary* ime_commit_summary = nullptr;
+    for (const input_action_resolution_result_summary& result : summary.selected) {
+        if (result.kind == input_action_candidate_kind::ime_commit) {
+            ime_commit_summary = &result;
+            break;
+        }
+    }
+    require(ime_commit_summary != nullptr,
+        "resolution replay summary exposes ime commit selected summary");
+    require(ime_commit_summary->reason == input_action_candidate_result_reason::ime_committed,
+        "ime commit summary preserves selected reason");
+    require(ime_commit_summary->committed_text_bytes == utf8(u8"한").size(),
+        "ime commit summary exposes committed text byte count");
+    require(ime_commit_summary->stale_preedit_cleared_after,
+        "ime commit summary exposes preedit cleanup flag");
+
+    const input_action_resolution_batch_summary& pointer_batch = summary.batches[5];
+    require(pointer_batch.label == "pointer-drag",
+        "pointer drag summary preserves batch label");
+    require(pointer_batch.has_selected_candidate,
+        "pointer drag summary records selected candidate");
+    require(pointer_batch.selected_candidate_index != input_action_candidate_npos,
+        "pointer drag summary records selected candidate index");
+    require(pointer_batch.selected.size() == 1,
+        "pointer drag summary has one selected result");
+    require(pointer_batch.supporting_evidence.size() == 1,
+        "pointer drag summary has one support result");
+    require(pointer_batch.selected[0].kind == input_action_candidate_kind::gesture_candidate,
+        "pointer drag summary selects gesture candidate");
+    require(pointer_batch.selected[0].gesture_decision == gesture_policy_decision::drag_started,
+        "pointer drag summary exposes gesture decision");
+    require(pointer_batch.selected[0].normalized_event_kind == input_event_summary_kind::drag_start,
+        "pointer drag summary exposes normalized event kind");
+    require(pointer_batch.supporting_evidence[0].kind == input_action_candidate_kind::pointer_capture,
+        "pointer drag summary keeps capture support");
+    require(pointer_batch.supporting_evidence[0].capture_before_lifecycle == pointer_capture_lifecycle::tracking,
+        "pointer drag support summary exposes capture before lifecycle");
+    require(pointer_batch.supporting_evidence[0].capture_after_lifecycle == pointer_capture_lifecycle::captured,
+        "pointer drag support summary exposes capture after lifecycle");
+
+    const input_action_resolution_batch_summary& wheel_batch = summary.batches[6];
+    require(wheel_batch.selected.size() == 1,
+        "wheel batch summary has one selected result");
+    require(wheel_batch.selected[0].kind == input_action_candidate_kind::wheel_scroll,
+        "wheel batch summary selects wheel scroll");
+    require(wheel_batch.selected[0].line_delta_y == -2.0f,
+        "wheel batch summary exposes line delta");
+    require(wheel_batch.selected[0].has_wheel_delta,
+        "wheel batch summary carries wheel delta flag");
+}
+
 void test_candidate_resolution_rejects_invalid_and_suppressed_evidence()
 {
     using namespace quiz_vulkan::input;
@@ -419,6 +522,59 @@ void test_candidate_resolution_rejects_invalid_and_suppressed_evidence()
         "unchanged text candidate records no-delta reason");
 }
 
+void test_resolution_batch_summary_groups_rejected_and_diagnostic_results()
+{
+    using namespace quiz_vulkan::input;
+
+    input_action_candidate_batch_plan batch{
+        .label = "manual-rejected",
+        .candidates = {
+            input_action_candidate{
+                .kind = input_action_candidate_kind::ime_preedit,
+                .utf8_text = "draft",
+                .preedit_text_valid = false,
+            },
+            input_action_candidate{
+                .kind = input_action_candidate_kind::gesture_candidate,
+                .gesture_policy = gesture_policy_snapshot{
+                    .decision = gesture_policy_decision::ignored_by_capture,
+                },
+            },
+            input_action_candidate{
+                .kind = input_action_candidate_kind::text_edit,
+            },
+        },
+    };
+
+    const input_action_candidate_batch_resolution resolution =
+        resolve_input_action_candidate_batch(batch);
+    const input_action_resolution_batch_summary summary =
+        summarize_input_action_candidate_batch_resolution(resolution);
+
+    require(!summary.has_selected_candidate,
+        "rejected batch summary has no selected candidate");
+    require(summary.selected.empty(),
+        "rejected batch summary has no selected results");
+    require(summary.rejected.size() == 2,
+        "rejected batch summary groups rejected results");
+    require(summary.diagnostic_only.size() == 1,
+        "rejected batch summary groups diagnostic-only results");
+    require(summary.counts.rejected.ime_preedit == 1,
+        "rejected batch summary counts invalid preedit");
+    require(summary.counts.rejected.gesture_candidate == 1,
+        "rejected batch summary counts suppressed gesture");
+    require(summary.counts.diagnostic_only.text_edit == 1,
+        "rejected batch summary counts unchanged text diagnostic");
+    require(summary.rejected[0].reason == input_action_candidate_result_reason::ime_preedit_invalid,
+        "rejected batch summary preserves invalid preedit reason");
+    require(!summary.rejected[0].evidence_clean,
+        "rejected batch summary exposes invalid evidence flag");
+    require(summary.rejected[1].reason == input_action_candidate_result_reason::gesture_policy_suppressed,
+        "rejected batch summary preserves suppressed gesture reason");
+    require(summary.diagnostic_only[0].reason == input_action_candidate_result_reason::no_observable_delta,
+        "diagnostic-only batch summary preserves no-delta reason");
+}
+
 void test_candidate_resolution_uses_deterministic_priority_tiebreak()
 {
     using namespace quiz_vulkan::input;
@@ -463,6 +619,17 @@ void test_candidate_resolution_uses_deterministic_priority_tiebreak()
         "manual resolution counts selected text result");
     require(resolution.counts.supporting_evidence.wheel_scroll == 1,
         "manual resolution counts supporting wheel result");
+
+    const input_action_resolution_batch_summary summary =
+        summarize_input_action_candidate_batch_resolution(resolution);
+    require(summary.selected.size() == 1,
+        "manual batch summary has one selected result");
+    require(summary.supporting_evidence.size() == 1,
+        "manual batch summary has one support result");
+    require(summary.selected[0].candidate_index == 1,
+        "manual batch summary preserves selected candidate index");
+    require(summary.supporting_evidence[0].candidate_index == 0,
+        "manual batch summary preserves supporting candidate index");
 }
 
 void test_empty_replay_yields_empty_candidate_plan()
@@ -489,7 +656,9 @@ int main()
 {
     test_replay_evidence_maps_to_semantic_free_candidates();
     test_candidate_resolution_selects_primary_results_and_supporting_evidence();
+    test_resolution_replay_summary_groups_handoff_results_by_batch();
     test_candidate_resolution_rejects_invalid_and_suppressed_evidence();
+    test_resolution_batch_summary_groups_rejected_and_diagnostic_results();
     test_candidate_resolution_uses_deterministic_priority_tiebreak();
     test_empty_replay_yields_empty_candidate_plan();
 

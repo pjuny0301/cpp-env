@@ -229,6 +229,7 @@ static_assert(requires(
     render::stb_image_decoder_format_matrix_entry stb_format_matrix_entry,
     render::stb_image_decoder_dependency_manifest stb_dependency_manifest,
     render::stb_image_decoder_adapter_selection_result stb_selection,
+    render::stb_image_decoder_header_dependency_probe stb_header_probe,
     render::fake_stb_image_decoder_dependency_probe stb_probe,
     const render::stb_image_decoder_dependency_probe_interface& stb_probe_interface,
     render::render_image_decode_result decode_result,
@@ -432,18 +433,32 @@ static_assert(requires(
     { standard_decoder_chain.decode(request) } -> std::same_as<render::render_image_decode_result>;
     { render::stb_image_decoder_dependency_status_name(stb_dependency_status) } -> std::same_as<std::string>;
     { render::stb_image_decoder_adapter_selection_status_name(stb_selection_status) } -> std::same_as<std::string>;
+    { render::stb_image_decoder_headers_available() } -> std::same_as<bool>;
+    { render::stb_image_decoder_header_version() } -> std::same_as<std::string>;
     { render::make_stb_image_decoder_format_matrix_entry(encoded_format, bool{}, bool{}, bool{}) }
         -> std::same_as<render::stb_image_decoder_format_matrix_entry>;
     { render::make_default_stb_image_decoder_format_matrix() }
         -> std::same_as<std::vector<render::stb_image_decoder_format_matrix_entry>>;
+    { render::make_stb_image_decoder_header_format_matrix() }
+        -> std::same_as<std::vector<render::stb_image_decoder_format_matrix_entry>>;
     { render::stb_image_decoder_format_matrix_entry_for(
         stb_dependency_manifest.supported_format_matrix, encoded_format) }
         -> std::same_as<const render::stb_image_decoder_format_matrix_entry*>;
+    { render::stb_image_decoder_supported_format_count(stb_dependency_manifest.supported_format_matrix) }
+        -> std::same_as<std::size_t>;
+    { render::stb_image_decoder_header_format_count(
+        stb_dependency_manifest.supported_format_matrix,
+        &render::stb_image_decoder_format_matrix_entry::declared_by_header) }
+        -> std::same_as<std::size_t>;
+    { render::make_stb_image_decoder_supported_format_summary(stb_dependency_manifest.supported_format_matrix) }
+        -> std::same_as<std::string>;
     { render::make_missing_stb_image_decoder_dependency_manifest("decoder") }
         -> std::same_as<render::stb_image_decoder_dependency_manifest>;
     { render::make_available_stb_image_decoder_dependency_manifest("decoder") }
         -> std::same_as<render::stb_image_decoder_dependency_manifest>;
     { render::make_mismatched_stb_image_decoder_dependency_manifest("decoder") }
+        -> std::same_as<render::stb_image_decoder_dependency_manifest>;
+    { render::make_stb_image_decoder_header_dependency_manifest("decoder") }
         -> std::same_as<render::stb_image_decoder_dependency_manifest>;
     { render::select_stb_image_decoder_adapter(request, stb_dependency_manifest) }
         -> std::same_as<render::stb_image_decoder_adapter_selection_result>;
@@ -594,6 +609,13 @@ static_assert(requires(
     { external_decoder_selection.selection_status_name } -> std::same_as<std::string&>;
     { external_decoder_selection.detected_format } -> std::same_as<render::render_image_encoded_format&>;
     { external_decoder_selection.detected_format_name } -> std::same_as<std::string&>;
+    { external_decoder_selection.dependency_header_available } -> std::same_as<bool&>;
+    { external_decoder_selection.dependency_implementation_linked } -> std::same_as<bool&>;
+    { external_decoder_selection.dependency_header_probe_used } -> std::same_as<bool&>;
+    { external_decoder_selection.declared_supported_format_count } -> std::same_as<std::size_t&>;
+    { external_decoder_selection.probed_supported_format_count } -> std::same_as<std::size_t&>;
+    { external_decoder_selection.supported_format_summary } -> std::same_as<std::string&>;
+    { external_decoder_selection.fallback_reason } -> std::same_as<std::string&>;
     { external_decoder_selection.dependency_available } -> std::same_as<bool&>;
     { external_decoder_selection.dependency_capability_ready } -> std::same_as<bool&>;
     { external_decoder_selection.format_supported_by_dependency } -> std::same_as<bool&>;
@@ -1651,6 +1673,8 @@ static_assert(requires(
     { stb_format_matrix_entry.internal_decoder_available } -> std::same_as<bool&>;
     { stb_format_matrix_entry.prefer_internal_decoder } -> std::same_as<bool&>;
     { stb_format_matrix_entry.external_decode_enabled } -> std::same_as<bool&>;
+    { stb_format_matrix_entry.declared_by_header } -> std::same_as<bool&>;
+    { stb_format_matrix_entry.probed_by_header } -> std::same_as<bool&>;
     { stb_format_matrix_entry.diagnostic } -> std::same_as<std::string&>;
     { stb_format_matrix_entry.route_to_external() } -> std::same_as<bool>;
     { stb_dependency_manifest.status } -> std::same_as<render::stb_image_decoder_dependency_status&>;
@@ -1658,6 +1682,13 @@ static_assert(requires(
     { stb_dependency_manifest.decoder_id } -> std::same_as<std::string&>;
     { stb_dependency_manifest.dependency_name } -> std::same_as<std::string&>;
     { stb_dependency_manifest.dependency_version } -> std::same_as<std::string&>;
+    { stb_dependency_manifest.header_available } -> std::same_as<bool&>;
+    { stb_dependency_manifest.implementation_linked } -> std::same_as<bool&>;
+    { stb_dependency_manifest.header_probe_used } -> std::same_as<bool&>;
+    { stb_dependency_manifest.declared_supported_format_count } -> std::same_as<std::size_t&>;
+    { stb_dependency_manifest.probed_supported_format_count } -> std::same_as<std::size_t&>;
+    { stb_dependency_manifest.supported_format_summary } -> std::same_as<std::string&>;
+    { stb_dependency_manifest.fallback_reason } -> std::same_as<std::string&>;
     { stb_dependency_manifest.memory_decode_available } -> std::same_as<bool&>;
     { stb_dependency_manifest.info_probe_available } -> std::same_as<bool&>;
     { stb_dependency_manifest.forced_rgba8_decode_available } -> std::same_as<bool&>;
@@ -1675,6 +1706,13 @@ static_assert(requires(
     { stb_selection.detected_format_name } -> std::same_as<std::string&>;
     { stb_selection.dependency_status } -> std::same_as<render::stb_image_decoder_dependency_status&>;
     { stb_selection.dependency_status_name } -> std::same_as<std::string&>;
+    { stb_selection.dependency_header_available } -> std::same_as<bool&>;
+    { stb_selection.dependency_implementation_linked } -> std::same_as<bool&>;
+    { stb_selection.dependency_header_probe_used } -> std::same_as<bool&>;
+    { stb_selection.declared_supported_format_count } -> std::same_as<std::size_t&>;
+    { stb_selection.probed_supported_format_count } -> std::same_as<std::size_t&>;
+    { stb_selection.supported_format_summary } -> std::same_as<std::string&>;
+    { stb_selection.fallback_reason } -> std::same_as<std::string&>;
     { stb_selection.dependency_available } -> std::same_as<bool&>;
     { stb_selection.dependency_capability_ready } -> std::same_as<bool&>;
     { stb_selection.format_supported_by_dependency } -> std::same_as<bool&>;
@@ -1687,6 +1725,7 @@ static_assert(requires(
         -> std::same_as<std::vector<render::stb_image_decoder_format_matrix_entry>&>;
     { stb_selection.diagnostic } -> std::same_as<std::string&>;
     { stb_selection.ok() } -> std::same_as<bool>;
+    { stb_header_probe.probe_dependency() } -> std::same_as<render::stb_image_decoder_dependency_manifest>;
     { stb_probe.set_manifest(stb_dependency_manifest) } -> std::same_as<void>;
     { stb_probe.set_missing("decoder") } -> std::same_as<void>;
     { stb_probe.set_available("decoder") } -> std::same_as<void>;

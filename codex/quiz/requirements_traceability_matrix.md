@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: input action resolution replay diff diagnostics integrated; Windows MinGW focused input CTest passed 1/1 and interface compile target build confirmed.
+- `3175eeb`: input core now compares candidate-resolution replay summaries for selected/support/rejected counts, action-kind deltas, reasons, and target changes without app/domain dispatch.
 - current: image materialization diff regression classification and Vulkan native frame execution summary integrated; Windows MinGW focused image/Vulkan CTest passed 5/5 and interface compile target build confirmed.
 - current: Windows MinGW full CTest passed `101/101` on baseline `4fb4227`; post-integration public FILE_SET scan reports 0 missing headers.
 - `2e249f0`: image engine now classifies materialization diff regressions, improvements, churn, upload-handoff transitions, sampler churn, and materialization failure changes.

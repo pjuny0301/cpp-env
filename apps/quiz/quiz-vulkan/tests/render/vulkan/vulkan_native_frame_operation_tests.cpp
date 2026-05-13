@@ -531,6 +531,20 @@ find_stage_diff(
     return nullptr;
 }
 
+const quiz_vulkan::render::vulkan_backend::vulkan_native_frame_operation_step_execution_decision*
+find_execution_step(
+    const quiz_vulkan::render::vulkan_backend::vulkan_native_frame_operation_execution_plan& plan,
+    quiz_vulkan::render::vulkan_backend::vulkan_native_frame_execution_step step)
+{
+    for (const auto& step_decision : plan.steps) {
+        if (step_decision.step == step) {
+            return &step_decision;
+        }
+    }
+
+    return nullptr;
+}
+
 void test_native_frame_operation_names_are_stable()
 {
     namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
@@ -555,6 +569,16 @@ void test_native_frame_operation_names_are_stable()
             vulkan_backend::vulkan_native_frame_operation_status::present_unavailable)
             == std::string_view{"present_unavailable"},
         "native frame operation present unavailable status name is stable");
+    require(
+        vulkan_backend::native_frame_execution_step_name(
+            vulkan_backend::vulkan_native_frame_execution_step::record)
+            == std::string_view{"record"},
+        "native frame execution record step name is stable");
+    require(
+        vulkan_backend::native_frame_execution_decision_name(
+            vulkan_backend::vulkan_native_frame_execution_decision::fallback)
+            == std::string_view{"fallback"},
+        "native frame execution fallback decision name is stable");
 }
 
 void test_native_frame_operation_reports_ready_frame_completion()
@@ -915,6 +939,145 @@ void test_native_frame_operation_diff_reports_failure_transitions()
         "native frame diff records fatal status");
 }
 
+void test_native_frame_operation_execution_plan_executes_ready_lifecycle()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_frame_operation_result ready =
+        make_ready_frame();
+    const vulkan_backend::vulkan_native_frame_operation_execution_plan plan =
+        vulkan_backend::build_vulkan_native_frame_operation_execution_plan(
+            ready.operation);
+
+    require(plan.checked, "native frame execution plan is checked");
+    require(plan.summary_checked, "native frame execution plan observes checked summary");
+    require(plan.native_execution_ready, "native frame execution plan is ready");
+    require(plan.should_execute_native_frame(), "native frame execution plan executes native frame");
+    require(!plan.should_use_cpu_fallback(), "ready native frame does not fallback");
+    require(!plan.skip_required, "ready native frame does not skip");
+    require(plan.step_count == 4, "native frame execution plan records lifecycle steps");
+    require(plan.execute_step_count == 4, "native frame execution plan executes all steps");
+    require(plan.fallback_step_count == 0, "native frame execution plan has no fallback steps");
+    require(plan.skip_step_count == 0, "native frame execution plan has no skip steps");
+
+    const auto* acquire = find_execution_step(
+        plan,
+        vulkan_backend::vulkan_native_frame_execution_step::acquire);
+    const auto* record = find_execution_step(
+        plan,
+        vulkan_backend::vulkan_native_frame_execution_step::record);
+    const auto* submit = find_execution_step(
+        plan,
+        vulkan_backend::vulkan_native_frame_execution_step::submit);
+    const auto* present = find_execution_step(
+        plan,
+        vulkan_backend::vulkan_native_frame_execution_step::present);
+    require(acquire != nullptr && acquire->should_execute(), "ready plan executes acquire");
+    require(record != nullptr && record->should_execute(), "ready plan executes record");
+    require(submit != nullptr && submit->should_execute(), "ready plan executes submit");
+    require(present != nullptr && present->should_execute(), "ready plan executes present");
+}
+
+void test_native_frame_operation_execution_plan_falls_back_at_submit_blocker()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_frame_operation_result ready =
+        make_ready_frame();
+    const vulkan_backend::vulkan_native_frame_operation_result submit_blocked =
+        make_submit_blocked_frame();
+    const vulkan_backend::vulkan_native_frame_operation_diff_diagnostics diff =
+        vulkan_backend::build_vulkan_native_frame_operation_result_diff(
+            ready,
+            submit_blocked);
+    const vulkan_backend::vulkan_native_frame_operation_execution_plan plan =
+        vulkan_backend::build_vulkan_native_frame_operation_execution_plan(
+            submit_blocked.operation,
+            diff);
+
+    require(plan.checked, "submit-blocked execution plan is checked");
+    require(plan.diff_checked, "submit-blocked execution plan consumes diff");
+    require(plan.diff_changed, "submit-blocked execution plan records diff change");
+    require(!plan.native_execution_ready, "submit-blocked execution plan is not native-ready");
+    require(plan.should_use_cpu_fallback(), "submit-blocked execution plan uses fallback");
+    require(plan.execute_step_count == 2, "submit-blocked plan executes acquire and record");
+    require(plan.fallback_step_count == 1, "submit-blocked plan has one fallback step");
+    require(plan.skip_step_count == 1, "submit-blocked plan skips after fallback");
+    require(
+        plan.fallback_reason
+            == vulkan_backend::vulkan_backend_fallback_reason::submit_frame_failed,
+        "submit-blocked plan carries submit fallback reason");
+
+    const auto* submit = find_execution_step(
+        plan,
+        vulkan_backend::vulkan_native_frame_execution_step::submit);
+    const auto* present = find_execution_step(
+        plan,
+        vulkan_backend::vulkan_native_frame_execution_step::present);
+    require(submit != nullptr && submit->should_fallback(), "submit-blocked plan falls back at submit");
+    require(submit->diff_became_blocked, "submit-blocked plan consumes submit diff blocker");
+    require(
+        submit->fallback_reason
+            == vulkan_backend::vulkan_backend_fallback_reason::submit_frame_failed,
+        "submit-blocked step carries submit fallback reason");
+    require(
+        present != nullptr
+            && present->decision == vulkan_backend::vulkan_native_frame_execution_decision::skip,
+        "submit-blocked plan skips present after fallback");
+    require(present->blocked_by_previous_step, "present skip is caused by prior fallback");
+}
+
+void test_native_frame_operation_execution_plan_falls_back_at_present_failure()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_frame_operation_result ready =
+        make_ready_frame();
+    const vulkan_backend::vulkan_native_frame_operation_result recoverable =
+        make_recoverable_present_failure_frame();
+    const vulkan_backend::vulkan_native_frame_operation_execution_plan plan =
+        vulkan_backend::build_vulkan_native_frame_operation_execution_plan(
+            recoverable.operation,
+            vulkan_backend::build_vulkan_native_frame_operation_result_diff(
+                ready,
+                recoverable));
+
+    require(plan.recoverable_failure, "present failure plan records recoverable failure");
+    require(plan.execute_step_count == 3, "present failure plan executes through submit");
+    require(plan.fallback_step_count == 1, "present failure plan falls back once");
+    require(plan.skip_step_count == 0, "present failure plan does not skip after terminal present");
+
+    const auto* present = find_execution_step(
+        plan,
+        vulkan_backend::vulkan_native_frame_execution_step::present);
+    require(present != nullptr && present->should_fallback(), "present failure plan falls back at present");
+    require(
+        present->operation_stage == vulkan_backend::vulkan_native_frame_operation_stage::present,
+        "present failure plan maps present step to present stage");
+    require(
+        present->fallback_reason
+            == vulkan_backend::vulkan_backend_fallback_reason::present_frame_failed,
+        "present failure plan carries present fallback");
+}
+
+void test_native_frame_operation_execution_plan_skips_unchecked_summary()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_frame_operation_execution_plan plan =
+        vulkan_backend::build_vulkan_native_frame_operation_execution_plan(
+            vulkan_backend::vulkan_native_frame_operation_summary{});
+
+    require(plan.checked, "unchecked summary execution plan is checked");
+    require(!plan.summary_checked, "unchecked summary execution plan records unchecked summary");
+    require(!plan.native_execution_ready, "unchecked summary execution plan is not native-ready");
+    require(!plan.should_use_cpu_fallback(), "unchecked summary execution plan does not fallback");
+    require(plan.not_checked_step_count == 4, "unchecked summary marks all steps unchecked");
+    require(plan.execute_step_count == 0, "unchecked summary executes no steps");
+    require(plan.fallback_step_count == 0, "unchecked summary has no fallback steps");
+    require(plan.skip_step_count == 0, "unchecked summary has no explicit skip steps");
+}
+
 } // namespace
 
 int main()
@@ -928,5 +1091,9 @@ int main()
     test_native_frame_operation_diff_reports_blocker_movement();
     test_native_frame_operation_diff_reports_swapchain_readiness_changes();
     test_native_frame_operation_diff_reports_failure_transitions();
+    test_native_frame_operation_execution_plan_executes_ready_lifecycle();
+    test_native_frame_operation_execution_plan_falls_back_at_submit_blocker();
+    test_native_frame_operation_execution_plan_falls_back_at_present_failure();
+    test_native_frame_operation_execution_plan_skips_unchecked_summary();
     return 0;
 }

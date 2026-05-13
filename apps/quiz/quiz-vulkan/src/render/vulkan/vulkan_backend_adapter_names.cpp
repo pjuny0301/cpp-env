@@ -598,6 +598,40 @@ std::string_view native_frame_operation_status_name(
     return "unknown";
 }
 
+std::string_view native_frame_execution_step_name(
+    vulkan_native_frame_execution_step step)
+{
+    switch (step) {
+    case vulkan_native_frame_execution_step::acquire:
+        return "acquire";
+    case vulkan_native_frame_execution_step::record:
+        return "record";
+    case vulkan_native_frame_execution_step::submit:
+        return "submit";
+    case vulkan_native_frame_execution_step::present:
+        return "present";
+    }
+
+    return "unknown";
+}
+
+std::string_view native_frame_execution_decision_name(
+    vulkan_native_frame_execution_decision decision)
+{
+    switch (decision) {
+    case vulkan_native_frame_execution_decision::not_checked:
+        return "not_checked";
+    case vulkan_native_frame_execution_decision::execute:
+        return "execute";
+    case vulkan_native_frame_execution_decision::skip:
+        return "skip";
+    case vulkan_native_frame_execution_decision::fallback:
+        return "fallback";
+    }
+
+    return "unknown";
+}
+
 std::string_view frame_pipeline_handoff_status_name(
     vulkan_backend_frame_pipeline_handoff_status status)
 {

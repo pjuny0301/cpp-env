@@ -1100,6 +1100,13 @@ constexpr std::array<vulkan_native_frame_operation_stage, 8> k_native_frame_oper
     vulkan_native_frame_operation_stage::frame_completion,
 };
 
+constexpr std::array<vulkan_native_frame_execution_step, 4> k_native_frame_execution_steps{
+    vulkan_native_frame_execution_step::acquire,
+    vulkan_native_frame_execution_step::record,
+    vulkan_native_frame_execution_step::submit,
+    vulkan_native_frame_execution_step::present,
+};
+
 std::size_t native_frame_operation_stage_order(vulkan_native_frame_operation_stage stage)
 {
     switch (stage) {
@@ -1150,6 +1157,40 @@ vulkan_native_frame_operation_stage_summary native_frame_stage_summary_or_defaul
     };
 }
 
+vulkan_native_frame_operation_stage_diff_diagnostics native_frame_stage_diff_or_default(
+    const vulkan_native_frame_operation_diff_diagnostics& diff,
+    vulkan_native_frame_operation_stage stage)
+{
+    const auto found = std::find_if(
+        diff.stages.begin(),
+        diff.stages.end(),
+        [stage](const vulkan_native_frame_operation_stage_diff_diagnostics& candidate) {
+            return candidate.stage == stage;
+        });
+    if (found != diff.stages.end()) {
+        return *found;
+    }
+
+    return vulkan_native_frame_operation_stage_diff_diagnostics{
+        .stage = stage,
+        .before_checked = false,
+        .after_checked = false,
+        .before_ready = false,
+        .after_ready = false,
+        .before_blocked = false,
+        .after_blocked = false,
+        .before_fallback_reason = vulkan_backend_fallback_reason::not_requested,
+        .after_fallback_reason = vulkan_backend_fallback_reason::not_requested,
+        .checked_changed = false,
+        .readiness_changed = false,
+        .became_ready = false,
+        .became_blocked = false,
+        .fallback_reason_changed = false,
+        .before_diagnostic = {},
+        .after_diagnostic = {},
+    };
+}
+
 vulkan_native_frame_operation_stage_diff_diagnostics build_native_frame_stage_diff(
     const vulkan_native_frame_operation_stage_summary& before,
     const vulkan_native_frame_operation_stage_summary& after)
@@ -1172,6 +1213,164 @@ vulkan_native_frame_operation_stage_diff_diagnostics build_native_frame_stage_di
         .fallback_reason_changed = before.fallback_reason != after.fallback_reason,
         .before_diagnostic = before.diagnostic,
         .after_diagnostic = after.diagnostic,
+    };
+}
+
+vulkan_native_frame_operation_stage operation_stage_for_execution_step(
+    vulkan_native_frame_execution_step step)
+{
+    switch (step) {
+    case vulkan_native_frame_execution_step::acquire:
+        return vulkan_native_frame_operation_stage::acquire;
+    case vulkan_native_frame_execution_step::record:
+        return vulkan_native_frame_operation_stage::command_recording;
+    case vulkan_native_frame_execution_step::submit:
+        return vulkan_native_frame_operation_stage::submit;
+    case vulkan_native_frame_execution_step::present:
+        return vulkan_native_frame_operation_stage::present;
+    }
+
+    return vulkan_native_frame_operation_stage::not_started;
+}
+
+bool native_frame_execution_step_checked(
+    const vulkan_native_frame_operation_summary& summary,
+    vulkan_native_frame_execution_step step)
+{
+    switch (step) {
+    case vulkan_native_frame_execution_step::acquire:
+        return summary.acquire_checked;
+    case vulkan_native_frame_execution_step::record:
+        return summary.command_recording_checked;
+    case vulkan_native_frame_execution_step::submit:
+        return summary.submit_batch_checked;
+    case vulkan_native_frame_execution_step::present:
+        return summary.present_operation_checked;
+    }
+
+    return false;
+}
+
+bool native_frame_execution_step_ready(
+    const vulkan_native_frame_operation_summary& summary,
+    vulkan_native_frame_execution_step step)
+{
+    switch (step) {
+    case vulkan_native_frame_execution_step::acquire:
+        return summary.acquire_ready;
+    case vulkan_native_frame_execution_step::record:
+        return summary.command_recording_ready;
+    case vulkan_native_frame_execution_step::submit:
+        return summary.submit_batch_ready;
+    case vulkan_native_frame_execution_step::present:
+        return summary.present_operation_ready && summary.frame_completion_ready;
+    }
+
+    return false;
+}
+
+vulkan_backend_fallback_reason fallback_reason_for_execution_step(
+    vulkan_native_frame_execution_step step)
+{
+    switch (step) {
+    case vulkan_native_frame_execution_step::acquire:
+        return vulkan_backend_fallback_reason::acquire_image_failed;
+    case vulkan_native_frame_execution_step::record:
+        return vulkan_backend_fallback_reason::record_commands_failed;
+    case vulkan_native_frame_execution_step::submit:
+        return vulkan_backend_fallback_reason::submit_frame_failed;
+    case vulkan_native_frame_execution_step::present:
+        return vulkan_backend_fallback_reason::present_frame_failed;
+    }
+
+    return vulkan_backend_fallback_reason::not_requested;
+}
+
+vulkan_backend_fallback_reason native_frame_execution_fallback_reason(
+    const vulkan_native_frame_operation_summary& summary,
+    vulkan_native_frame_execution_step step)
+{
+    if (summary.fallback_reason != vulkan_backend_fallback_reason::none
+        && summary.fallback_reason != vulkan_backend_fallback_reason::not_requested) {
+        return summary.fallback_reason;
+    }
+
+    return fallback_reason_for_execution_step(step);
+}
+
+std::string native_frame_execution_step_diagnostic(
+    vulkan_native_frame_execution_decision decision,
+    vulkan_native_frame_execution_step step)
+{
+    switch (decision) {
+    case vulkan_native_frame_execution_decision::not_checked:
+        return "Native Vulkan frame execution step has no checked summary";
+    case vulkan_native_frame_execution_decision::execute:
+        return "Native Vulkan frame execution step is ready to execute";
+    case vulkan_native_frame_execution_decision::skip:
+        return std::string{"Native Vulkan frame execution step skipped: "}
+            + std::string{native_frame_execution_step_name(step)};
+    case vulkan_native_frame_execution_decision::fallback:
+        return std::string{"Native Vulkan frame execution step falls back: "}
+            + std::string{native_frame_execution_step_name(step)};
+    }
+
+    return "Native Vulkan frame execution step has unknown decision";
+}
+
+vulkan_native_frame_operation_step_execution_decision build_native_frame_step_execution_decision(
+    const vulkan_native_frame_operation_summary& summary,
+    const vulkan_native_frame_operation_diff_diagnostics& diff,
+    vulkan_native_frame_execution_step step,
+    bool blocked_by_previous_step)
+{
+    const vulkan_native_frame_operation_stage operation_stage =
+        operation_stage_for_execution_step(step);
+    const bool stage_checked = native_frame_execution_step_checked(summary, step);
+    const bool stage_ready = native_frame_execution_step_ready(summary, step);
+    const vulkan_native_frame_operation_stage_diff_diagnostics stage_diff =
+        native_frame_stage_diff_or_default(diff, operation_stage);
+    const bool fallback_context =
+        summary.cpu_fallback_should_remain_active
+        || summary.recoverable_failure
+        || summary.fatal_failure
+        || (summary.fallback_reason != vulkan_backend_fallback_reason::none
+            && summary.fallback_reason != vulkan_backend_fallback_reason::not_requested);
+
+    vulkan_native_frame_execution_decision decision =
+        vulkan_native_frame_execution_decision::not_checked;
+    if (!summary.checked) {
+        decision = vulkan_native_frame_execution_decision::not_checked;
+    } else if (blocked_by_previous_step || !stage_checked) {
+        decision = vulkan_native_frame_execution_decision::skip;
+    } else if (stage_ready) {
+        decision = vulkan_native_frame_execution_decision::execute;
+    } else if (summary.cpu_fallback_available && fallback_context) {
+        decision = vulkan_native_frame_execution_decision::fallback;
+    } else {
+        decision = vulkan_native_frame_execution_decision::skip;
+    }
+
+    const bool cpu_fallback_required =
+        decision == vulkan_native_frame_execution_decision::fallback;
+    return vulkan_native_frame_operation_step_execution_decision{
+        .step = step,
+        .operation_stage = operation_stage,
+        .decision = decision,
+        .summary_checked = summary.checked,
+        .stage_checked = stage_checked,
+        .stage_ready = stage_ready,
+        .diff_checked = diff.checked,
+        .diff_changed = stage_diff.changed(),
+        .diff_became_ready = stage_diff.became_ready,
+        .diff_became_blocked = stage_diff.became_blocked,
+        .blocked_by_previous_step = blocked_by_previous_step,
+        .cpu_fallback_available = summary.cpu_fallback_available,
+        .cpu_fallback_required = cpu_fallback_required,
+        .fallback_reason = cpu_fallback_required
+            ? native_frame_execution_fallback_reason(summary, step)
+            : vulkan_backend_fallback_reason::not_requested,
+        .diagnostic = native_frame_execution_step_diagnostic(decision, step),
     };
 }
 
@@ -3872,6 +4071,106 @@ vulkan_native_frame_operation_diff_diagnostics build_vulkan_native_frame_operati
     return build_vulkan_native_frame_operation_summary_diff(
         native_frame_operation_summary_from_result(before),
         native_frame_operation_summary_from_result(after));
+}
+
+vulkan_native_frame_operation_execution_plan build_vulkan_native_frame_operation_execution_plan(
+    const vulkan_native_frame_operation_execution_request& request)
+{
+    const vulkan_native_frame_operation_summary& summary = request.summary;
+    const vulkan_native_frame_operation_diff_diagnostics& diff = request.diff;
+    vulkan_native_frame_operation_execution_plan plan{
+        .checked = true,
+        .summary_checked = summary.checked,
+        .diff_checked = diff.checked,
+        .diff_changed = diff.changed,
+        .native_execution_ready = false,
+        .cpu_fallback_required = false,
+        .skip_required = false,
+        .fatal_failure = summary.fatal_failure,
+        .recoverable_failure = summary.recoverable_failure,
+        .swapchain_out_of_date = summary.swapchain_out_of_date,
+        .suboptimal = summary.suboptimal,
+        .summary_status = summary.status,
+        .blocker_stage = summary.blocker_stage,
+        .fallback_reason = summary.fallback_reason,
+        .step_count = 0,
+        .execute_step_count = 0,
+        .skip_step_count = 0,
+        .fallback_step_count = 0,
+        .not_checked_step_count = 0,
+        .steps = {},
+        .diagnostic = {},
+    };
+
+    bool terminal_decision_seen = false;
+    plan.steps.reserve(k_native_frame_execution_steps.size());
+    for (const vulkan_native_frame_execution_step step : k_native_frame_execution_steps) {
+        vulkan_native_frame_operation_step_execution_decision step_decision =
+            build_native_frame_step_execution_decision(
+                summary,
+                diff,
+                step,
+                terminal_decision_seen);
+        switch (step_decision.decision) {
+        case vulkan_native_frame_execution_decision::not_checked:
+            ++plan.not_checked_step_count;
+            break;
+        case vulkan_native_frame_execution_decision::execute:
+            ++plan.execute_step_count;
+            break;
+        case vulkan_native_frame_execution_decision::skip:
+            ++plan.skip_step_count;
+            break;
+        case vulkan_native_frame_execution_decision::fallback:
+            ++plan.fallback_step_count;
+            if (plan.fallback_reason == vulkan_backend_fallback_reason::none
+                || plan.fallback_reason == vulkan_backend_fallback_reason::not_requested) {
+                plan.fallback_reason = step_decision.fallback_reason;
+            }
+            break;
+        }
+        if (step_decision.decision != vulkan_native_frame_execution_decision::execute) {
+            terminal_decision_seen = true;
+        }
+        plan.steps.push_back(std::move(step_decision));
+    }
+
+    plan.step_count = plan.steps.size();
+    plan.cpu_fallback_required =
+        plan.fallback_step_count > 0
+        || (summary.checked
+            && summary.cpu_fallback_available
+            && summary.cpu_fallback_should_remain_active);
+    plan.skip_required = plan.skip_step_count > 0 || plan.not_checked_step_count > 0;
+    plan.native_execution_ready =
+        summary.completed()
+        && plan.execute_step_count == plan.step_count
+        && plan.fallback_step_count == 0
+        && plan.skip_step_count == 0
+        && plan.not_checked_step_count == 0;
+    if (!summary.checked) {
+        plan.diagnostic = "Native Vulkan frame execution skipped because summary is unchecked";
+    } else if (plan.native_execution_ready) {
+        plan.diagnostic =
+            "Native Vulkan frame execution will execute acquire, record, submit, and present";
+    } else if (plan.cpu_fallback_required) {
+        plan.diagnostic = "Native Vulkan frame execution requires CPU fallback";
+    } else {
+        plan.diagnostic = "Native Vulkan frame execution skipped by readiness policy";
+    }
+
+    return plan;
+}
+
+vulkan_native_frame_operation_execution_plan build_vulkan_native_frame_operation_execution_plan(
+    const vulkan_native_frame_operation_summary& summary,
+    const vulkan_native_frame_operation_diff_diagnostics& diff)
+{
+    return build_vulkan_native_frame_operation_execution_plan(
+        vulkan_native_frame_operation_execution_request{
+            .summary = summary,
+            .diff = diff,
+        });
 }
 
 vulkan_native_function_table_status native_function_table_status_from_frame(

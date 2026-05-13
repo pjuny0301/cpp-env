@@ -290,6 +290,107 @@ vulkan_native_frame_operation_diff_diagnostics build_vulkan_native_frame_operati
     const vulkan_native_frame_operation_result& before,
     const vulkan_native_frame_operation_result& after);
 
+enum class vulkan_native_frame_execution_step {
+    acquire,
+    record,
+    submit,
+    present,
+};
+
+std::string_view native_frame_execution_step_name(
+    vulkan_native_frame_execution_step step);
+
+enum class vulkan_native_frame_execution_decision {
+    not_checked,
+    execute,
+    skip,
+    fallback,
+};
+
+std::string_view native_frame_execution_decision_name(
+    vulkan_native_frame_execution_decision decision);
+
+struct vulkan_native_frame_operation_execution_request {
+    vulkan_native_frame_operation_summary summary;
+    vulkan_native_frame_operation_diff_diagnostics diff;
+};
+
+struct vulkan_native_frame_operation_step_execution_decision {
+    vulkan_native_frame_execution_step step =
+        vulkan_native_frame_execution_step::acquire;
+    vulkan_native_frame_operation_stage operation_stage =
+        vulkan_native_frame_operation_stage::acquire;
+    vulkan_native_frame_execution_decision decision =
+        vulkan_native_frame_execution_decision::not_checked;
+    bool summary_checked = false;
+    bool stage_checked = false;
+    bool stage_ready = false;
+    bool diff_checked = false;
+    bool diff_changed = false;
+    bool diff_became_ready = false;
+    bool diff_became_blocked = false;
+    bool blocked_by_previous_step = false;
+    bool cpu_fallback_available = false;
+    bool cpu_fallback_required = false;
+    vulkan_backend_fallback_reason fallback_reason =
+        vulkan_backend_fallback_reason::not_requested;
+    std::string diagnostic;
+
+    bool should_execute() const
+    {
+        return decision == vulkan_native_frame_execution_decision::execute;
+    }
+
+    bool should_fallback() const
+    {
+        return decision == vulkan_native_frame_execution_decision::fallback;
+    }
+};
+
+struct vulkan_native_frame_operation_execution_plan {
+    bool checked = false;
+    bool summary_checked = false;
+    bool diff_checked = false;
+    bool diff_changed = false;
+    bool native_execution_ready = false;
+    bool cpu_fallback_required = false;
+    bool skip_required = false;
+    bool fatal_failure = false;
+    bool recoverable_failure = false;
+    bool swapchain_out_of_date = false;
+    bool suboptimal = false;
+    vulkan_native_frame_operation_status summary_status =
+        vulkan_native_frame_operation_status::not_checked;
+    vulkan_native_frame_operation_stage blocker_stage =
+        vulkan_native_frame_operation_stage::not_started;
+    vulkan_backend_fallback_reason fallback_reason =
+        vulkan_backend_fallback_reason::not_requested;
+    std::size_t step_count = 0;
+    std::size_t execute_step_count = 0;
+    std::size_t skip_step_count = 0;
+    std::size_t fallback_step_count = 0;
+    std::size_t not_checked_step_count = 0;
+    std::vector<vulkan_native_frame_operation_step_execution_decision> steps;
+    std::string diagnostic;
+
+    bool should_execute_native_frame() const
+    {
+        return checked && native_execution_ready && execute_step_count == step_count;
+    }
+
+    bool should_use_cpu_fallback() const
+    {
+        return checked && cpu_fallback_required;
+    }
+};
+
+vulkan_native_frame_operation_execution_plan build_vulkan_native_frame_operation_execution_plan(
+    const vulkan_native_frame_operation_execution_request& request);
+
+vulkan_native_frame_operation_execution_plan build_vulkan_native_frame_operation_execution_plan(
+    const vulkan_native_frame_operation_summary& summary,
+    const vulkan_native_frame_operation_diff_diagnostics& diff = {});
+
 } // namespace quiz_vulkan::render::vulkan_backend
 
 #endif

@@ -5652,6 +5652,97 @@ static_assert(requires(render::vulkan_backend::vulkan_native_frame_operation_dif
 });
 
 static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_execution_step::acquire),
+    render::vulkan_backend::vulkan_native_frame_execution_step>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_execution_step::record),
+    render::vulkan_backend::vulkan_native_frame_execution_step>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_execution_step::submit),
+    render::vulkan_backend::vulkan_native_frame_execution_step>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_execution_step::present),
+    render::vulkan_backend::vulkan_native_frame_execution_step>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_execution_decision::not_checked),
+    render::vulkan_backend::vulkan_native_frame_execution_decision>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_execution_decision::execute),
+    render::vulkan_backend::vulkan_native_frame_execution_decision>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_execution_decision::skip),
+    render::vulkan_backend::vulkan_native_frame_execution_decision>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_execution_decision::fallback),
+    render::vulkan_backend::vulkan_native_frame_execution_decision>);
+static_assert(requires(
+    render::vulkan_backend::vulkan_native_frame_execution_step step,
+    render::vulkan_backend::vulkan_native_frame_execution_decision decision) {
+    { render::vulkan_backend::native_frame_execution_step_name(step) }
+        -> std::same_as<std::string_view>;
+    { render::vulkan_backend::native_frame_execution_decision_name(decision) }
+        -> std::same_as<std::string_view>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_frame_operation_execution_request request) {
+    { request.summary }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_summary&>;
+    { request.diff }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_diff_diagnostics&>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_frame_operation_step_execution_decision decision) {
+    { decision.step } -> std::same_as<render::vulkan_backend::vulkan_native_frame_execution_step&>;
+    { decision.operation_stage }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_stage&>;
+    { decision.decision }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_execution_decision&>;
+    { decision.summary_checked } -> std::same_as<bool&>;
+    { decision.stage_checked } -> std::same_as<bool&>;
+    { decision.stage_ready } -> std::same_as<bool&>;
+    { decision.diff_checked } -> std::same_as<bool&>;
+    { decision.diff_changed } -> std::same_as<bool&>;
+    { decision.diff_became_ready } -> std::same_as<bool&>;
+    { decision.diff_became_blocked } -> std::same_as<bool&>;
+    { decision.blocked_by_previous_step } -> std::same_as<bool&>;
+    { decision.cpu_fallback_available } -> std::same_as<bool&>;
+    { decision.cpu_fallback_required } -> std::same_as<bool&>;
+    { decision.fallback_reason } -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
+    { decision.diagnostic } -> std::same_as<std::string&>;
+    { decision.should_execute() } -> std::same_as<bool>;
+    { decision.should_fallback() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_frame_operation_execution_plan plan) {
+    { plan.checked } -> std::same_as<bool&>;
+    { plan.summary_checked } -> std::same_as<bool&>;
+    { plan.diff_checked } -> std::same_as<bool&>;
+    { plan.diff_changed } -> std::same_as<bool&>;
+    { plan.native_execution_ready } -> std::same_as<bool&>;
+    { plan.cpu_fallback_required } -> std::same_as<bool&>;
+    { plan.skip_required } -> std::same_as<bool&>;
+    { plan.fatal_failure } -> std::same_as<bool&>;
+    { plan.recoverable_failure } -> std::same_as<bool&>;
+    { plan.swapchain_out_of_date } -> std::same_as<bool&>;
+    { plan.suboptimal } -> std::same_as<bool&>;
+    { plan.summary_status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_status&>;
+    { plan.blocker_stage }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_stage&>;
+    { plan.fallback_reason } -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
+    { plan.step_count } -> std::same_as<std::size_t&>;
+    { plan.execute_step_count } -> std::same_as<std::size_t&>;
+    { plan.skip_step_count } -> std::same_as<std::size_t&>;
+    { plan.fallback_step_count } -> std::same_as<std::size_t&>;
+    { plan.not_checked_step_count } -> std::same_as<std::size_t&>;
+    { plan.steps }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_frame_operation_step_execution_decision>&>;
+    { plan.diagnostic } -> std::same_as<std::string&>;
+    { plan.should_execute_native_frame() } -> std::same_as<bool>;
+    { plan.should_use_cpu_fallback() } -> std::same_as<bool>;
+});
+
+static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status::not_checked),
     render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status>);
 static_assert(std::same_as<
@@ -5935,6 +6026,13 @@ static_assert(requires(
         render::vulkan_backend::vulkan_native_frame_operation_result{},
         render::vulkan_backend::vulkan_native_frame_operation_result{}) }
         -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_diff_diagnostics>;
+    { render::vulkan_backend::build_vulkan_native_frame_operation_execution_plan(
+        render::vulkan_backend::vulkan_native_frame_operation_execution_request{}) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_execution_plan>;
+    { render::vulkan_backend::build_vulkan_native_frame_operation_execution_plan(
+        render::vulkan_backend::vulkan_native_frame_operation_summary{},
+        render::vulkan_backend::vulkan_native_frame_operation_diff_diagnostics{}) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_execution_plan>;
 });
 
 static_assert(requires(

@@ -9,6 +9,7 @@
 #include "render/vulkan/vulkan_backend_swapchain.h"
 
 #include <algorithm>
+#include <array>
 #include <string>
 #include <utility>
 #include <vector>
@@ -1086,6 +1087,131 @@ void block_native_frame_operation(
     result.fallback_reason = fallback_reason;
     result.diagnostic = std::move(diagnostic);
     finalize_native_frame_operation(result);
+}
+
+constexpr std::array<vulkan_native_frame_operation_stage, 8> k_native_frame_operation_stages{
+    vulkan_native_frame_operation_stage::native_function_table,
+    vulkan_native_frame_operation_stage::swapchain_create,
+    vulkan_native_frame_operation_stage::swapchain_images,
+    vulkan_native_frame_operation_stage::acquire,
+    vulkan_native_frame_operation_stage::command_recording,
+    vulkan_native_frame_operation_stage::submit,
+    vulkan_native_frame_operation_stage::present,
+    vulkan_native_frame_operation_stage::frame_completion,
+};
+
+std::size_t native_frame_operation_stage_order(vulkan_native_frame_operation_stage stage)
+{
+    switch (stage) {
+    case vulkan_native_frame_operation_stage::not_started:
+        return 0;
+    case vulkan_native_frame_operation_stage::native_function_table:
+        return 1;
+    case vulkan_native_frame_operation_stage::swapchain_create:
+        return 2;
+    case vulkan_native_frame_operation_stage::swapchain_images:
+        return 3;
+    case vulkan_native_frame_operation_stage::acquire:
+        return 4;
+    case vulkan_native_frame_operation_stage::command_recording:
+        return 5;
+    case vulkan_native_frame_operation_stage::submit:
+        return 6;
+    case vulkan_native_frame_operation_stage::present:
+        return 7;
+    case vulkan_native_frame_operation_stage::frame_completion:
+        return 8;
+    }
+
+    return 0;
+}
+
+vulkan_native_frame_operation_stage_summary native_frame_stage_summary_or_default(
+    const vulkan_native_frame_operation_summary& summary,
+    vulkan_native_frame_operation_stage stage)
+{
+    const auto found = std::find_if(
+        summary.stages.begin(),
+        summary.stages.end(),
+        [stage](const vulkan_native_frame_operation_stage_summary& candidate) {
+            return candidate.stage == stage;
+        });
+    if (found != summary.stages.end()) {
+        return *found;
+    }
+
+    return vulkan_native_frame_operation_stage_summary{
+        .stage = stage,
+        .checked = false,
+        .ready = false,
+        .blocked = false,
+        .fallback_reason = vulkan_backend_fallback_reason::not_requested,
+        .diagnostic = {},
+    };
+}
+
+vulkan_native_frame_operation_stage_diff_diagnostics build_native_frame_stage_diff(
+    const vulkan_native_frame_operation_stage_summary& before,
+    const vulkan_native_frame_operation_stage_summary& after)
+{
+    return vulkan_native_frame_operation_stage_diff_diagnostics{
+        .stage = after.stage,
+        .before_checked = before.checked,
+        .after_checked = after.checked,
+        .before_ready = before.ready,
+        .after_ready = after.ready,
+        .before_blocked = before.blocked,
+        .after_blocked = after.blocked,
+        .before_fallback_reason = before.fallback_reason,
+        .after_fallback_reason = after.fallback_reason,
+        .checked_changed = before.checked != after.checked,
+        .readiness_changed =
+            before.ready != after.ready || before.blocked != after.blocked,
+        .became_ready = !before.ready && after.ready,
+        .became_blocked = !before.blocked && after.blocked,
+        .fallback_reason_changed = before.fallback_reason != after.fallback_reason,
+        .before_diagnostic = before.diagnostic,
+        .after_diagnostic = after.diagnostic,
+    };
+}
+
+vulkan_native_frame_operation_summary native_frame_operation_summary_from_result(
+    const vulkan_native_frame_operation_result& result)
+{
+    return vulkan_native_frame_operation_summary{
+        .checked = result.checked,
+        .status = result.status,
+        .reached_stage = result.reached_stage,
+        .blocker_stage = result.blocker_stage,
+        .fallback_reason = result.fallback_reason,
+        .native_function_table_checked = result.native_function_table_checked,
+        .native_function_table_ready = result.native_function_table_ready,
+        .swapchain_create_checked = result.swapchain_create_checked,
+        .swapchain_create_ready = result.swapchain_create_ready,
+        .swapchain_images_checked = result.swapchain_images_checked,
+        .swapchain_images_ready = result.swapchain_images_ready,
+        .acquire_checked = result.acquire_checked,
+        .acquire_ready = result.acquire_ready,
+        .command_recording_checked = result.command_recording_checked,
+        .command_recording_ready = result.command_recording_ready,
+        .submit_batch_checked = result.submit_batch_checked,
+        .submit_batch_ready = result.submit_batch_ready,
+        .present_operation_checked = result.present_operation_checked,
+        .present_operation_ready = result.present_operation_ready,
+        .frame_completion_ready = result.frame_completion_ready,
+        .recoverable_failure = result.recoverable_failure,
+        .fatal_failure = result.fatal_failure,
+        .swapchain_out_of_date = result.swapchain_out_of_date,
+        .suboptimal = result.suboptimal,
+        .cpu_fallback_available = result.cpu_fallback_available,
+        .cpu_fallback_should_remain_active =
+            result.cpu_fallback_should_remain_active,
+        .native_function_table_status = result.native_function_table_status,
+        .missing_required_extension = result.missing_required_extension,
+        .missing_symbol_name = result.missing_symbol_name,
+        .stages = result.stages,
+        .diagnostic = result.diagnostic,
+    };
 }
 
 template <typename T>
@@ -3602,6 +3728,150 @@ vulkan_native_frame_operation_result build_vulkan_native_frame_operation_summary
     result.diagnostic = "Native Vulkan frame operation completed all data-only stages";
     finalize_native_frame_operation(result);
     return result;
+}
+
+vulkan_native_frame_operation_diff_diagnostics build_vulkan_native_frame_operation_summary_diff(
+    const vulkan_native_frame_operation_summary& before,
+    const vulkan_native_frame_operation_summary& after)
+{
+    vulkan_native_frame_operation_diff_diagnostics diff{
+        .checked = true,
+        .changed = false,
+        .before_checked = before.checked,
+        .after_checked = after.checked,
+        .before_status = before.status,
+        .after_status = after.status,
+        .status_changed = before.status != after.status,
+        .before_reached_stage = before.reached_stage,
+        .after_reached_stage = after.reached_stage,
+        .reached_stage_changed = before.reached_stage != after.reached_stage,
+        .before_blocker_stage = before.blocker_stage,
+        .after_blocker_stage = after.blocker_stage,
+        .blocker_stage_changed = before.blocker_stage != after.blocker_stage,
+        .blocker_introduced =
+            before.blocker_stage == vulkan_native_frame_operation_stage::not_started
+            && after.blocker_stage != vulkan_native_frame_operation_stage::not_started,
+        .blocker_cleared =
+            before.blocker_stage != vulkan_native_frame_operation_stage::not_started
+            && after.blocker_stage == vulkan_native_frame_operation_stage::not_started,
+        .blocker_moved_forward =
+            before.blocker_stage != vulkan_native_frame_operation_stage::not_started
+            && after.blocker_stage != vulkan_native_frame_operation_stage::not_started
+            && native_frame_operation_stage_order(after.blocker_stage)
+                > native_frame_operation_stage_order(before.blocker_stage),
+        .blocker_moved_backward =
+            before.blocker_stage != vulkan_native_frame_operation_stage::not_started
+            && after.blocker_stage != vulkan_native_frame_operation_stage::not_started
+            && native_frame_operation_stage_order(after.blocker_stage)
+                < native_frame_operation_stage_order(before.blocker_stage),
+        .before_fallback_reason = before.fallback_reason,
+        .after_fallback_reason = after.fallback_reason,
+        .fallback_reason_changed = before.fallback_reason != after.fallback_reason,
+        .before_cpu_fallback_should_remain_active =
+            before.cpu_fallback_should_remain_active,
+        .after_cpu_fallback_should_remain_active =
+            after.cpu_fallback_should_remain_active,
+        .fallback_activation_changed =
+            before.cpu_fallback_should_remain_active
+            != after.cpu_fallback_should_remain_active,
+        .fallback_activated =
+            !before.cpu_fallback_should_remain_active
+            && after.cpu_fallback_should_remain_active,
+        .fallback_deactivated =
+            before.cpu_fallback_should_remain_active
+            && !after.cpu_fallback_should_remain_active,
+        .before_recoverable_failure = before.recoverable_failure,
+        .after_recoverable_failure = after.recoverable_failure,
+        .recoverable_failure_changed =
+            before.recoverable_failure != after.recoverable_failure,
+        .recoverable_failure_started =
+            !before.recoverable_failure && after.recoverable_failure,
+        .recoverable_failure_cleared =
+            before.recoverable_failure && !after.recoverable_failure,
+        .before_fatal_failure = before.fatal_failure,
+        .after_fatal_failure = after.fatal_failure,
+        .fatal_failure_changed = before.fatal_failure != after.fatal_failure,
+        .fatal_failure_started = !before.fatal_failure && after.fatal_failure,
+        .fatal_failure_cleared = before.fatal_failure && !after.fatal_failure,
+        .before_swapchain_out_of_date = before.swapchain_out_of_date,
+        .after_swapchain_out_of_date = after.swapchain_out_of_date,
+        .swapchain_out_of_date_changed =
+            before.swapchain_out_of_date != after.swapchain_out_of_date,
+        .swapchain_out_of_date_started =
+            !before.swapchain_out_of_date && after.swapchain_out_of_date,
+        .swapchain_out_of_date_cleared =
+            before.swapchain_out_of_date && !after.swapchain_out_of_date,
+        .before_suboptimal = before.suboptimal,
+        .after_suboptimal = after.suboptimal,
+        .suboptimal_changed = before.suboptimal != after.suboptimal,
+        .suboptimal_started = !before.suboptimal && after.suboptimal,
+        .suboptimal_cleared = before.suboptimal && !after.suboptimal,
+        .before_frame_completion_ready = before.frame_completion_ready,
+        .after_frame_completion_ready = after.frame_completion_ready,
+        .frame_completion_readiness_changed =
+            before.frame_completion_ready != after.frame_completion_ready,
+        .frame_completion_became_ready =
+            !before.frame_completion_ready && after.frame_completion_ready,
+        .frame_completion_became_unready =
+            before.frame_completion_ready && !after.frame_completion_ready,
+        .before_completed = before.completed(),
+        .after_completed = after.completed(),
+        .completion_readiness_changed = before.completed() != after.completed(),
+        .completion_became_ready = !before.completed() && after.completed(),
+        .completion_became_unready = before.completed() && !after.completed(),
+        .stage_count = 0,
+        .stage_checked_change_count = 0,
+        .stage_readiness_change_count = 0,
+        .stage_ready_gain_count = 0,
+        .stage_ready_loss_count = 0,
+        .stages = {},
+    };
+
+    diff.stages.reserve(k_native_frame_operation_stages.size());
+    for (const vulkan_native_frame_operation_stage stage : k_native_frame_operation_stages) {
+        vulkan_native_frame_operation_stage_diff_diagnostics stage_diff =
+            build_native_frame_stage_diff(
+                native_frame_stage_summary_or_default(before, stage),
+                native_frame_stage_summary_or_default(after, stage));
+        if (stage_diff.checked_changed) {
+            ++diff.stage_checked_change_count;
+        }
+        if (stage_diff.readiness_changed) {
+            ++diff.stage_readiness_change_count;
+        }
+        if (stage_diff.became_ready) {
+            ++diff.stage_ready_gain_count;
+        }
+        if (stage_diff.before_ready && !stage_diff.after_ready) {
+            ++diff.stage_ready_loss_count;
+        }
+        diff.stages.push_back(std::move(stage_diff));
+    }
+    diff.stage_count = diff.stages.size();
+    diff.changed = diff.before_checked != diff.after_checked
+        || diff.status_changed
+        || diff.reached_stage_changed
+        || diff.blocker_stage_changed
+        || diff.fallback_reason_changed
+        || diff.fallback_activation_changed
+        || diff.recoverable_failure_changed
+        || diff.fatal_failure_changed
+        || diff.swapchain_out_of_date_changed
+        || diff.suboptimal_changed
+        || diff.frame_completion_readiness_changed
+        || diff.completion_readiness_changed
+        || diff.stage_checked_change_count > 0
+        || diff.stage_readiness_change_count > 0;
+    return diff;
+}
+
+vulkan_native_frame_operation_diff_diagnostics build_vulkan_native_frame_operation_result_diff(
+    const vulkan_native_frame_operation_result& before,
+    const vulkan_native_frame_operation_result& after)
+{
+    return build_vulkan_native_frame_operation_summary_diff(
+        native_frame_operation_summary_from_result(before),
+        native_frame_operation_summary_from_result(after));
 }
 
 vulkan_native_function_table_status native_function_table_status_from_frame(

@@ -5566,6 +5566,91 @@ static_assert(requires(render::vulkan_backend::vulkan_native_frame_operation_res
     { result.blocked() } -> std::same_as<bool>;
 });
 
+static_assert(requires(render::vulkan_backend::vulkan_native_frame_operation_stage_diff_diagnostics diff) {
+    { diff.stage } -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_stage&>;
+    { diff.before_checked } -> std::same_as<bool&>;
+    { diff.after_checked } -> std::same_as<bool&>;
+    { diff.before_ready } -> std::same_as<bool&>;
+    { diff.after_ready } -> std::same_as<bool&>;
+    { diff.before_blocked } -> std::same_as<bool&>;
+    { diff.after_blocked } -> std::same_as<bool&>;
+    { diff.before_fallback_reason } -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
+    { diff.after_fallback_reason } -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
+    { diff.checked_changed } -> std::same_as<bool&>;
+    { diff.readiness_changed } -> std::same_as<bool&>;
+    { diff.became_ready } -> std::same_as<bool&>;
+    { diff.became_blocked } -> std::same_as<bool&>;
+    { diff.fallback_reason_changed } -> std::same_as<bool&>;
+    { diff.before_diagnostic } -> std::same_as<std::string&>;
+    { diff.after_diagnostic } -> std::same_as<std::string&>;
+    { diff.changed() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_frame_operation_diff_diagnostics diff) {
+    { diff.checked } -> std::same_as<bool&>;
+    { diff.changed } -> std::same_as<bool&>;
+    { diff.before_checked } -> std::same_as<bool&>;
+    { diff.after_checked } -> std::same_as<bool&>;
+    { diff.before_status } -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_status&>;
+    { diff.after_status } -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_status&>;
+    { diff.status_changed } -> std::same_as<bool&>;
+    { diff.before_reached_stage } -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_stage&>;
+    { diff.after_reached_stage } -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_stage&>;
+    { diff.reached_stage_changed } -> std::same_as<bool&>;
+    { diff.before_blocker_stage } -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_stage&>;
+    { diff.after_blocker_stage } -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_stage&>;
+    { diff.blocker_stage_changed } -> std::same_as<bool&>;
+    { diff.blocker_introduced } -> std::same_as<bool&>;
+    { diff.blocker_cleared } -> std::same_as<bool&>;
+    { diff.blocker_moved_forward } -> std::same_as<bool&>;
+    { diff.blocker_moved_backward } -> std::same_as<bool&>;
+    { diff.before_fallback_reason } -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
+    { diff.after_fallback_reason } -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
+    { diff.fallback_reason_changed } -> std::same_as<bool&>;
+    { diff.before_cpu_fallback_should_remain_active } -> std::same_as<bool&>;
+    { diff.after_cpu_fallback_should_remain_active } -> std::same_as<bool&>;
+    { diff.fallback_activation_changed } -> std::same_as<bool&>;
+    { diff.fallback_activated } -> std::same_as<bool&>;
+    { diff.fallback_deactivated } -> std::same_as<bool&>;
+    { diff.before_recoverable_failure } -> std::same_as<bool&>;
+    { diff.after_recoverable_failure } -> std::same_as<bool&>;
+    { diff.recoverable_failure_changed } -> std::same_as<bool&>;
+    { diff.recoverable_failure_started } -> std::same_as<bool&>;
+    { diff.recoverable_failure_cleared } -> std::same_as<bool&>;
+    { diff.before_fatal_failure } -> std::same_as<bool&>;
+    { diff.after_fatal_failure } -> std::same_as<bool&>;
+    { diff.fatal_failure_changed } -> std::same_as<bool&>;
+    { diff.fatal_failure_started } -> std::same_as<bool&>;
+    { diff.fatal_failure_cleared } -> std::same_as<bool&>;
+    { diff.before_swapchain_out_of_date } -> std::same_as<bool&>;
+    { diff.after_swapchain_out_of_date } -> std::same_as<bool&>;
+    { diff.swapchain_out_of_date_changed } -> std::same_as<bool&>;
+    { diff.swapchain_out_of_date_started } -> std::same_as<bool&>;
+    { diff.swapchain_out_of_date_cleared } -> std::same_as<bool&>;
+    { diff.before_suboptimal } -> std::same_as<bool&>;
+    { diff.after_suboptimal } -> std::same_as<bool&>;
+    { diff.suboptimal_changed } -> std::same_as<bool&>;
+    { diff.suboptimal_started } -> std::same_as<bool&>;
+    { diff.suboptimal_cleared } -> std::same_as<bool&>;
+    { diff.before_frame_completion_ready } -> std::same_as<bool&>;
+    { diff.after_frame_completion_ready } -> std::same_as<bool&>;
+    { diff.frame_completion_readiness_changed } -> std::same_as<bool&>;
+    { diff.frame_completion_became_ready } -> std::same_as<bool&>;
+    { diff.frame_completion_became_unready } -> std::same_as<bool&>;
+    { diff.before_completed } -> std::same_as<bool&>;
+    { diff.after_completed } -> std::same_as<bool&>;
+    { diff.completion_readiness_changed } -> std::same_as<bool&>;
+    { diff.completion_became_ready } -> std::same_as<bool&>;
+    { diff.completion_became_unready } -> std::same_as<bool&>;
+    { diff.stage_count } -> std::same_as<std::size_t&>;
+    { diff.stage_checked_change_count } -> std::same_as<std::size_t&>;
+    { diff.stage_readiness_change_count } -> std::same_as<std::size_t&>;
+    { diff.stage_ready_gain_count } -> std::same_as<std::size_t&>;
+    { diff.stage_ready_loss_count } -> std::same_as<std::size_t&>;
+    { diff.stages }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_frame_operation_stage_diff_diagnostics>&>;
+});
+
 static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status::not_checked),
     render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status>);
@@ -5842,6 +5927,14 @@ static_assert(requires(
     { render::vulkan_backend::build_vulkan_native_frame_operation_summary(
         render::vulkan_backend::vulkan_native_frame_operation_request{}) }
         -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_result>;
+    { render::vulkan_backend::build_vulkan_native_frame_operation_summary_diff(
+        render::vulkan_backend::vulkan_native_frame_operation_summary{},
+        render::vulkan_backend::vulkan_native_frame_operation_summary{}) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_diff_diagnostics>;
+    { render::vulkan_backend::build_vulkan_native_frame_operation_result_diff(
+        render::vulkan_backend::vulkan_native_frame_operation_result{},
+        render::vulkan_backend::vulkan_native_frame_operation_result{}) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_diff_diagnostics>;
 });
 
 static_assert(requires(

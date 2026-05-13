@@ -401,6 +401,136 @@ make_ready_frame_request()
     };
 }
 
+quiz_vulkan::render::vulkan_backend::vulkan_native_frame_operation_result
+make_ready_frame()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    return vulkan_backend::build_vulkan_native_frame_operation_summary(
+        make_ready_frame_request());
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_native_frame_operation_result
+make_swapchain_create_blocked_frame()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::vulkan_native_frame_operation_request request =
+        make_ready_frame_request();
+    request.swapchain_create.status =
+        vulkan_backend::vulkan_native_swapchain_create_operation_status::create_plan_unavailable;
+    request.swapchain_create.vk_create_swapchain_callable = false;
+    request.swapchain_create.operation.status =
+        vulkan_backend::vulkan_native_swapchain_create_operation_status::create_plan_unavailable;
+    request.swapchain_create.operation.vk_create_swapchain_callable = false;
+    request.swapchain_create.diagnostic = "create unavailable";
+    return vulkan_backend::build_vulkan_native_frame_operation_summary(request);
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_native_frame_operation_result
+make_submit_blocked_frame()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::vulkan_native_frame_operation_request request =
+        make_ready_frame_request();
+    request.submit_batch.status =
+        vulkan_backend::vulkan_submit_batch_plan_status::submit_queue_unavailable;
+    request.submit_batch.fallback_reason =
+        vulkan_backend::vulkan_backend_fallback_reason::submit_frame_failed;
+    request.submit_batch.diagnostic = "submit unavailable";
+    return vulkan_backend::build_vulkan_native_frame_operation_summary(request);
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_native_frame_operation_result
+make_out_of_date_acquire_frame()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::vulkan_native_frame_operation_request request =
+        make_ready_frame_request();
+    request.acquire_operation =
+        vulkan_backend::build_vulkan_native_swapchain_acquire_operation_plan(
+            vulkan_backend::vulkan_native_swapchain_acquire_operation_request{
+                .images_operation = make_ready_swapchain_images(),
+                .acquire_plan = make_acquire_plan(
+                    vulkan_backend::vulkan_swapchain_acquire_status::out_of_date,
+                    0),
+                .native_entrypoints = make_ready_swapchain_entrypoints(),
+            });
+    return vulkan_backend::build_vulkan_native_frame_operation_summary(request);
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_native_frame_operation_result
+make_suboptimal_acquire_frame()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::vulkan_native_frame_operation_request request =
+        make_ready_frame_request();
+    request.acquire_operation =
+        vulkan_backend::build_vulkan_native_swapchain_acquire_operation_plan(
+            vulkan_backend::vulkan_native_swapchain_acquire_operation_request{
+                .images_operation = make_ready_swapchain_images(),
+                .acquire_plan = make_acquire_plan(
+                    vulkan_backend::vulkan_swapchain_acquire_status::suboptimal),
+                .native_entrypoints = make_ready_swapchain_entrypoints(),
+            });
+    return vulkan_backend::build_vulkan_native_frame_operation_summary(request);
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_native_frame_operation_result
+make_recoverable_present_failure_frame()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::vulkan_native_frame_operation_request request =
+        make_ready_frame_request();
+    request.present_operation.status =
+        vulkan_backend::vulkan_native_queue_present_operation_status::present_failed_recoverable;
+    request.present_operation.recoverable_failure = true;
+    request.present_operation.frame_lifecycle_may_complete = false;
+    request.present_operation.operation.status =
+        vulkan_backend::vulkan_native_queue_present_operation_status::present_failed_recoverable;
+    request.present_operation.operation.recoverable_failure = true;
+    request.present_operation.operation.frame_lifecycle_may_complete = false;
+    request.present_operation.diagnostic = "recoverable present";
+    return vulkan_backend::build_vulkan_native_frame_operation_summary(request);
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_native_frame_operation_result
+make_fatal_present_failure_frame()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::vulkan_native_frame_operation_request request =
+        make_ready_frame_request();
+    request.present_operation.status =
+        vulkan_backend::vulkan_native_queue_present_operation_status::present_failed_fatal;
+    request.present_operation.fatal_failure = true;
+    request.present_operation.frame_lifecycle_may_complete = false;
+    request.present_operation.operation.status =
+        vulkan_backend::vulkan_native_queue_present_operation_status::present_failed_fatal;
+    request.present_operation.operation.fatal_failure = true;
+    request.present_operation.operation.frame_lifecycle_may_complete = false;
+    request.present_operation.diagnostic = "fatal present";
+    return vulkan_backend::build_vulkan_native_frame_operation_summary(request);
+}
+
+const quiz_vulkan::render::vulkan_backend::vulkan_native_frame_operation_stage_diff_diagnostics*
+find_stage_diff(
+    const quiz_vulkan::render::vulkan_backend::vulkan_native_frame_operation_diff_diagnostics& diff,
+    quiz_vulkan::render::vulkan_backend::vulkan_native_frame_operation_stage stage)
+{
+    for (const auto& stage_diff : diff.stages) {
+        if (stage_diff.stage == stage) {
+            return &stage_diff;
+        }
+    }
+
+    return nullptr;
+}
+
 void test_native_frame_operation_names_are_stable()
 {
     namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
@@ -635,6 +765,156 @@ void test_native_frame_operation_classifies_recoverable_and_fatal_present_failur
     require(fatal.cpu_fallback_should_remain_active, "fatal failure keeps CPU fallback active");
 }
 
+void test_native_frame_operation_diff_reports_stage_and_fallback_changes()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_frame_operation_result ready =
+        make_ready_frame();
+    const vulkan_backend::vulkan_native_frame_operation_result submit_blocked =
+        make_submit_blocked_frame();
+
+    const vulkan_backend::vulkan_native_frame_operation_diff_diagnostics result_diff =
+        vulkan_backend::build_vulkan_native_frame_operation_result_diff(
+            ready,
+            submit_blocked);
+    const vulkan_backend::vulkan_native_frame_operation_diff_diagnostics summary_diff =
+        vulkan_backend::build_vulkan_native_frame_operation_summary_diff(
+            ready.operation,
+            submit_blocked.operation);
+
+    require(result_diff.checked, "native frame result diff is checked");
+    require(result_diff.changed, "native frame result diff detects changes");
+    require(summary_diff.changed, "native frame summary diff detects changes");
+    require(result_diff.status_changed, "native frame diff reports status change");
+    require(result_diff.blocker_introduced, "native frame diff reports introduced blocker");
+    require(
+        result_diff.after_blocker_stage
+            == vulkan_backend::vulkan_native_frame_operation_stage::submit,
+        "native frame diff reports submit blocker");
+    require(result_diff.fallback_activation_changed, "native frame diff reports fallback change");
+    require(result_diff.fallback_activated, "native frame diff reports fallback activation");
+    require(
+        result_diff.after_fallback_reason
+            == vulkan_backend::vulkan_backend_fallback_reason::submit_frame_failed,
+        "native frame diff reports submit fallback reason");
+    require(
+        result_diff.completion_readiness_changed,
+        "native frame diff reports completion readiness delta");
+    require(
+        result_diff.completion_became_unready,
+        "native frame diff reports completion becoming unready");
+    require(result_diff.stage_count == 8, "native frame diff reports all operation stages");
+    require(
+        result_diff.stage_readiness_change_count == 1,
+        "native frame diff reports one stage readiness change");
+    require(
+        result_diff.stage_ready_loss_count == 1,
+        "native frame diff reports one stage readiness loss");
+
+    const auto* submit_stage = find_stage_diff(
+        result_diff,
+        vulkan_backend::vulkan_native_frame_operation_stage::submit);
+    require(submit_stage != nullptr, "native frame diff includes submit stage");
+    require(submit_stage->readiness_changed, "native frame diff marks submit readiness change");
+    require(submit_stage->became_blocked, "native frame diff marks submit stage blocked");
+    require(
+        submit_stage->after_fallback_reason
+            == vulkan_backend::vulkan_backend_fallback_reason::submit_frame_failed,
+        "native frame diff carries submit stage fallback");
+}
+
+void test_native_frame_operation_diff_reports_blocker_movement()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_frame_operation_diff_diagnostics diff =
+        vulkan_backend::build_vulkan_native_frame_operation_result_diff(
+            make_swapchain_create_blocked_frame(),
+            make_submit_blocked_frame());
+
+    require(diff.changed, "native frame diff detects blocker movement");
+    require(diff.blocker_stage_changed, "native frame diff reports changed blocker");
+    require(diff.blocker_moved_forward, "native frame diff reports blocker moving forward");
+    require(!diff.blocker_moved_backward, "native frame diff does not report backward movement");
+    require(
+        diff.before_blocker_stage
+            == vulkan_backend::vulkan_native_frame_operation_stage::swapchain_create,
+        "native frame diff records original blocker");
+    require(
+        diff.after_blocker_stage
+            == vulkan_backend::vulkan_native_frame_operation_stage::submit,
+        "native frame diff records new blocker");
+    require(diff.fallback_reason_changed, "native frame diff reports fallback reason movement");
+    require(
+        diff.stage_readiness_change_count == 2,
+        "native frame diff reports readiness change at old and new blocker stages");
+    require(diff.stage_ready_gain_count == 1, "native frame diff reports old blocker ready gain");
+    require(diff.stage_ready_loss_count == 1, "native frame diff reports new blocker ready loss");
+}
+
+void test_native_frame_operation_diff_reports_swapchain_readiness_changes()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_frame_operation_diff_diagnostics diff =
+        vulkan_backend::build_vulkan_native_frame_operation_result_diff(
+            make_out_of_date_acquire_frame(),
+            make_suboptimal_acquire_frame());
+
+    require(diff.changed, "native frame diff detects swapchain state changes");
+    require(
+        diff.swapchain_out_of_date_changed,
+        "native frame diff reports out-of-date transition");
+    require(
+        diff.swapchain_out_of_date_cleared,
+        "native frame diff reports out-of-date clearing");
+    require(diff.suboptimal_changed, "native frame diff reports suboptimal transition");
+    require(diff.suboptimal_started, "native frame diff reports suboptimal starting");
+    require(diff.fallback_deactivated, "native frame diff reports fallback deactivation");
+    require(
+        diff.completion_became_ready,
+        "native frame diff reports completion becoming ready");
+
+    const auto* acquire_stage = find_stage_diff(
+        diff,
+        vulkan_backend::vulkan_native_frame_operation_stage::acquire);
+    require(acquire_stage != nullptr, "native frame diff includes acquire stage");
+    require(acquire_stage->became_ready, "native frame diff marks acquire becoming ready");
+}
+
+void test_native_frame_operation_diff_reports_failure_transitions()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_frame_operation_diff_diagnostics ready_to_recoverable =
+        vulkan_backend::build_vulkan_native_frame_operation_result_diff(
+            make_ready_frame(),
+            make_recoverable_present_failure_frame());
+    require(
+        ready_to_recoverable.frame_completion_became_unready,
+        "native frame diff reports frame completion readiness becoming unready");
+
+    const vulkan_backend::vulkan_native_frame_operation_diff_diagnostics diff =
+        vulkan_backend::build_vulkan_native_frame_operation_result_diff(
+            make_recoverable_present_failure_frame(),
+            make_fatal_present_failure_frame());
+
+    require(diff.changed, "native frame diff detects failure transitions");
+    require(
+        diff.recoverable_failure_changed,
+        "native frame diff reports recoverable failure transition");
+    require(
+        diff.recoverable_failure_cleared,
+        "native frame diff reports recoverable failure clearing");
+    require(diff.fatal_failure_changed, "native frame diff reports fatal failure transition");
+    require(diff.fatal_failure_started, "native frame diff reports fatal failure starting");
+    require(!diff.fallback_activation_changed, "native frame diff leaves active fallback stable");
+    require(
+        diff.after_status == vulkan_backend::vulkan_native_frame_operation_status::fatal_failure,
+        "native frame diff records fatal status");
+}
+
 } // namespace
 
 int main()
@@ -644,5 +924,9 @@ int main()
     test_native_frame_operation_blocks_major_prerequisite_stages();
     test_native_frame_operation_blocks_missing_native_function_table();
     test_native_frame_operation_classifies_recoverable_and_fatal_present_failures();
+    test_native_frame_operation_diff_reports_stage_and_fallback_changes();
+    test_native_frame_operation_diff_reports_blocker_movement();
+    test_native_frame_operation_diff_reports_swapchain_readiness_changes();
+    test_native_frame_operation_diff_reports_failure_transitions();
     return 0;
 }

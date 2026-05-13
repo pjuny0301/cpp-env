@@ -301,6 +301,94 @@ struct input_action_resolution_replay_summary {
     normalized_input_replay_end_state final_state;
 };
 
+struct input_action_candidate_count_deltas {
+    normalized_input_replay_count_delta text_edit;
+    normalized_input_replay_count_delta focus_move;
+    normalized_input_replay_count_delta pointer_capture;
+    normalized_input_replay_count_delta gesture_candidate;
+    normalized_input_replay_count_delta wheel_scroll;
+    normalized_input_replay_count_delta ime_composition_start;
+    normalized_input_replay_count_delta ime_preedit;
+    normalized_input_replay_count_delta ime_commit;
+    normalized_input_replay_count_delta ime_cancel;
+    normalized_input_replay_count_delta total;
+    bool changed = false;
+};
+
+struct input_action_candidate_result_count_deltas {
+    input_action_candidate_count_deltas selected;
+    input_action_candidate_count_deltas supporting_evidence;
+    input_action_candidate_count_deltas diagnostic_only;
+    input_action_candidate_count_deltas rejected;
+    normalized_input_replay_count_delta total;
+    bool changed = false;
+};
+
+struct input_action_resolution_reason_counts {
+    std::size_t text_edit_diff = 0;
+    std::size_t focus_transition = 0;
+    std::size_t pointer_capture_transition = 0;
+    std::size_t pointer_capture_supports_selected = 0;
+    std::size_t wheel_delta = 0;
+    std::size_t gesture_emitted = 0;
+    std::size_t gesture_policy_rejected = 0;
+    std::size_t gesture_policy_suppressed = 0;
+    std::size_t ime_composition_started = 0;
+    std::size_t ime_preedit_valid = 0;
+    std::size_t ime_preedit_invalid = 0;
+    std::size_t ime_committed = 0;
+    std::size_t ime_commit_invalid = 0;
+    std::size_t ime_canceled = 0;
+    std::size_t ime_cancel_invalid = 0;
+    std::size_t coalesced_by_selected_candidate = 0;
+    std::size_t no_observable_delta = 0;
+    std::size_t total = 0;
+};
+
+struct input_action_resolution_reason_count_deltas {
+    normalized_input_replay_count_delta text_edit_diff;
+    normalized_input_replay_count_delta focus_transition;
+    normalized_input_replay_count_delta pointer_capture_transition;
+    normalized_input_replay_count_delta pointer_capture_supports_selected;
+    normalized_input_replay_count_delta wheel_delta;
+    normalized_input_replay_count_delta gesture_emitted;
+    normalized_input_replay_count_delta gesture_policy_rejected;
+    normalized_input_replay_count_delta gesture_policy_suppressed;
+    normalized_input_replay_count_delta ime_composition_started;
+    normalized_input_replay_count_delta ime_preedit_valid;
+    normalized_input_replay_count_delta ime_preedit_invalid;
+    normalized_input_replay_count_delta ime_committed;
+    normalized_input_replay_count_delta ime_commit_invalid;
+    normalized_input_replay_count_delta ime_canceled;
+    normalized_input_replay_count_delta ime_cancel_invalid;
+    normalized_input_replay_count_delta coalesced_by_selected_candidate;
+    normalized_input_replay_count_delta no_observable_delta;
+    normalized_input_replay_count_delta total;
+    bool changed = false;
+};
+
+struct input_action_resolution_target_snapshot {
+    bool present = false;
+    std::string target_id;
+};
+
+struct input_action_resolution_target_delta {
+    normalized_input_replay_bool_delta present;
+    normalized_input_replay_string_delta target_id;
+    bool changed = false;
+};
+
+struct input_action_resolution_replay_summary_diff {
+    normalized_input_replay_count_delta batch_count;
+    input_action_candidate_result_count_deltas result_counts;
+    input_action_candidate_count_deltas action_kinds;
+    input_action_resolution_reason_count_deltas reasons;
+    input_action_resolution_target_delta focus_target;
+    input_action_resolution_target_delta text_target;
+    bool changed = false;
+    std::size_t changed_category_count = 0;
+};
+
 inline void count_input_action_candidate_kind(
     input_action_candidate_counts& counts,
     input_action_candidate_kind kind)
@@ -435,6 +523,66 @@ inline void count_input_action_candidate_result(
         return;
     case input_action_candidate_result_status::rejected:
         count_input_action_candidate_kind(counts.rejected, result.candidate.kind);
+        return;
+    }
+}
+
+inline void count_input_action_resolution_reason(
+    input_action_resolution_reason_counts& counts,
+    input_action_candidate_result_reason reason)
+{
+    ++counts.total;
+    switch (reason) {
+    case input_action_candidate_result_reason::text_edit_diff:
+        ++counts.text_edit_diff;
+        return;
+    case input_action_candidate_result_reason::focus_transition:
+        ++counts.focus_transition;
+        return;
+    case input_action_candidate_result_reason::pointer_capture_transition:
+        ++counts.pointer_capture_transition;
+        return;
+    case input_action_candidate_result_reason::pointer_capture_supports_selected:
+        ++counts.pointer_capture_supports_selected;
+        return;
+    case input_action_candidate_result_reason::wheel_delta:
+        ++counts.wheel_delta;
+        return;
+    case input_action_candidate_result_reason::gesture_emitted:
+        ++counts.gesture_emitted;
+        return;
+    case input_action_candidate_result_reason::gesture_policy_rejected:
+        ++counts.gesture_policy_rejected;
+        return;
+    case input_action_candidate_result_reason::gesture_policy_suppressed:
+        ++counts.gesture_policy_suppressed;
+        return;
+    case input_action_candidate_result_reason::ime_composition_started:
+        ++counts.ime_composition_started;
+        return;
+    case input_action_candidate_result_reason::ime_preedit_valid:
+        ++counts.ime_preedit_valid;
+        return;
+    case input_action_candidate_result_reason::ime_preedit_invalid:
+        ++counts.ime_preedit_invalid;
+        return;
+    case input_action_candidate_result_reason::ime_committed:
+        ++counts.ime_committed;
+        return;
+    case input_action_candidate_result_reason::ime_commit_invalid:
+        ++counts.ime_commit_invalid;
+        return;
+    case input_action_candidate_result_reason::ime_canceled:
+        ++counts.ime_canceled;
+        return;
+    case input_action_candidate_result_reason::ime_cancel_invalid:
+        ++counts.ime_cancel_invalid;
+        return;
+    case input_action_candidate_result_reason::coalesced_by_selected_candidate:
+        ++counts.coalesced_by_selected_candidate;
+        return;
+    case input_action_candidate_result_reason::no_observable_delta:
+        ++counts.no_observable_delta;
         return;
     }
 }
@@ -1252,6 +1400,308 @@ summarize_input_action_resolution_replay(
         summarize_input_action_candidate_resolution(resolve_input_action_candidates(recording));
     summary.final_state = recording.final_state;
     return summary;
+}
+
+[[nodiscard]] inline bool input_action_candidate_count_deltas_changed(
+    const input_action_candidate_count_deltas& deltas)
+{
+    return deltas.text_edit.changed
+        || deltas.focus_move.changed
+        || deltas.pointer_capture.changed
+        || deltas.gesture_candidate.changed
+        || deltas.wheel_scroll.changed
+        || deltas.ime_composition_start.changed
+        || deltas.ime_preedit.changed
+        || deltas.ime_commit.changed
+        || deltas.ime_cancel.changed
+        || deltas.total.changed;
+}
+
+[[nodiscard]] inline input_action_candidate_count_deltas diff_input_action_candidate_counts(
+    const input_action_candidate_counts& before,
+    const input_action_candidate_counts& after)
+{
+    input_action_candidate_count_deltas deltas{
+        .text_edit = normalized_input_replay_diff_count(before.text_edit, after.text_edit),
+        .focus_move = normalized_input_replay_diff_count(before.focus_move, after.focus_move),
+        .pointer_capture =
+            normalized_input_replay_diff_count(before.pointer_capture, after.pointer_capture),
+        .gesture_candidate =
+            normalized_input_replay_diff_count(before.gesture_candidate, after.gesture_candidate),
+        .wheel_scroll = normalized_input_replay_diff_count(before.wheel_scroll, after.wheel_scroll),
+        .ime_composition_start = normalized_input_replay_diff_count(
+            before.ime_composition_start,
+            after.ime_composition_start),
+        .ime_preedit = normalized_input_replay_diff_count(before.ime_preedit, after.ime_preedit),
+        .ime_commit = normalized_input_replay_diff_count(before.ime_commit, after.ime_commit),
+        .ime_cancel = normalized_input_replay_diff_count(before.ime_cancel, after.ime_cancel),
+        .total = normalized_input_replay_diff_count(before.total, after.total),
+    };
+    deltas.changed = input_action_candidate_count_deltas_changed(deltas);
+    return deltas;
+}
+
+[[nodiscard]] inline input_action_candidate_counts input_action_resolution_all_action_counts(
+    const input_action_candidate_result_counts& counts)
+{
+    input_action_candidate_counts total;
+    accumulate_input_action_candidate_counts(total, counts.selected);
+    accumulate_input_action_candidate_counts(total, counts.supporting_evidence);
+    accumulate_input_action_candidate_counts(total, counts.diagnostic_only);
+    accumulate_input_action_candidate_counts(total, counts.rejected);
+    return total;
+}
+
+[[nodiscard]] inline bool input_action_candidate_result_count_deltas_changed(
+    const input_action_candidate_result_count_deltas& deltas)
+{
+    return deltas.selected.changed
+        || deltas.supporting_evidence.changed
+        || deltas.diagnostic_only.changed
+        || deltas.rejected.changed
+        || deltas.total.changed;
+}
+
+[[nodiscard]] inline input_action_candidate_result_count_deltas
+diff_input_action_candidate_result_counts(
+    const input_action_candidate_result_counts& before,
+    const input_action_candidate_result_counts& after)
+{
+    input_action_candidate_result_count_deltas deltas{
+        .selected = diff_input_action_candidate_counts(before.selected, after.selected),
+        .supporting_evidence = diff_input_action_candidate_counts(
+            before.supporting_evidence,
+            after.supporting_evidence),
+        .diagnostic_only =
+            diff_input_action_candidate_counts(before.diagnostic_only, after.diagnostic_only),
+        .rejected = diff_input_action_candidate_counts(before.rejected, after.rejected),
+        .total = normalized_input_replay_diff_count(before.total, after.total),
+    };
+    deltas.changed = input_action_candidate_result_count_deltas_changed(deltas);
+    return deltas;
+}
+
+inline void count_input_action_resolution_reasons(
+    input_action_resolution_reason_counts& counts,
+    const std::vector<input_action_resolution_result_summary>& summaries)
+{
+    for (const input_action_resolution_result_summary& summary : summaries) {
+        count_input_action_resolution_reason(counts, summary.reason);
+    }
+}
+
+[[nodiscard]] inline input_action_resolution_reason_counts summarize_input_action_resolution_reasons(
+    const input_action_resolution_replay_summary& summary)
+{
+    input_action_resolution_reason_counts counts;
+    count_input_action_resolution_reasons(counts, summary.selected);
+    count_input_action_resolution_reasons(counts, summary.supporting_evidence);
+    count_input_action_resolution_reasons(counts, summary.rejected);
+    count_input_action_resolution_reasons(counts, summary.diagnostic_only);
+    return counts;
+}
+
+[[nodiscard]] inline bool input_action_resolution_reason_count_deltas_changed(
+    const input_action_resolution_reason_count_deltas& deltas)
+{
+    return deltas.text_edit_diff.changed
+        || deltas.focus_transition.changed
+        || deltas.pointer_capture_transition.changed
+        || deltas.pointer_capture_supports_selected.changed
+        || deltas.wheel_delta.changed
+        || deltas.gesture_emitted.changed
+        || deltas.gesture_policy_rejected.changed
+        || deltas.gesture_policy_suppressed.changed
+        || deltas.ime_composition_started.changed
+        || deltas.ime_preedit_valid.changed
+        || deltas.ime_preedit_invalid.changed
+        || deltas.ime_committed.changed
+        || deltas.ime_commit_invalid.changed
+        || deltas.ime_canceled.changed
+        || deltas.ime_cancel_invalid.changed
+        || deltas.coalesced_by_selected_candidate.changed
+        || deltas.no_observable_delta.changed
+        || deltas.total.changed;
+}
+
+[[nodiscard]] inline input_action_resolution_reason_count_deltas
+diff_input_action_resolution_reason_counts(
+    const input_action_resolution_reason_counts& before,
+    const input_action_resolution_reason_counts& after)
+{
+    input_action_resolution_reason_count_deltas deltas{
+        .text_edit_diff =
+            normalized_input_replay_diff_count(before.text_edit_diff, after.text_edit_diff),
+        .focus_transition =
+            normalized_input_replay_diff_count(before.focus_transition, after.focus_transition),
+        .pointer_capture_transition = normalized_input_replay_diff_count(
+            before.pointer_capture_transition,
+            after.pointer_capture_transition),
+        .pointer_capture_supports_selected = normalized_input_replay_diff_count(
+            before.pointer_capture_supports_selected,
+            after.pointer_capture_supports_selected),
+        .wheel_delta = normalized_input_replay_diff_count(before.wheel_delta, after.wheel_delta),
+        .gesture_emitted =
+            normalized_input_replay_diff_count(before.gesture_emitted, after.gesture_emitted),
+        .gesture_policy_rejected = normalized_input_replay_diff_count(
+            before.gesture_policy_rejected,
+            after.gesture_policy_rejected),
+        .gesture_policy_suppressed = normalized_input_replay_diff_count(
+            before.gesture_policy_suppressed,
+            after.gesture_policy_suppressed),
+        .ime_composition_started = normalized_input_replay_diff_count(
+            before.ime_composition_started,
+            after.ime_composition_started),
+        .ime_preedit_valid = normalized_input_replay_diff_count(
+            before.ime_preedit_valid,
+            after.ime_preedit_valid),
+        .ime_preedit_invalid = normalized_input_replay_diff_count(
+            before.ime_preedit_invalid,
+            after.ime_preedit_invalid),
+        .ime_committed =
+            normalized_input_replay_diff_count(before.ime_committed, after.ime_committed),
+        .ime_commit_invalid = normalized_input_replay_diff_count(
+            before.ime_commit_invalid,
+            after.ime_commit_invalid),
+        .ime_canceled =
+            normalized_input_replay_diff_count(before.ime_canceled, after.ime_canceled),
+        .ime_cancel_invalid = normalized_input_replay_diff_count(
+            before.ime_cancel_invalid,
+            after.ime_cancel_invalid),
+        .coalesced_by_selected_candidate = normalized_input_replay_diff_count(
+            before.coalesced_by_selected_candidate,
+            after.coalesced_by_selected_candidate),
+        .no_observable_delta = normalized_input_replay_diff_count(
+            before.no_observable_delta,
+            after.no_observable_delta),
+        .total = normalized_input_replay_diff_count(before.total, after.total),
+    };
+    deltas.changed = input_action_resolution_reason_count_deltas_changed(deltas);
+    return deltas;
+}
+
+[[nodiscard]] inline bool input_action_resolution_summary_is_focus_target_evidence(
+    const input_action_resolution_result_summary& summary)
+{
+    return summary.kind == input_action_candidate_kind::focus_move;
+}
+
+[[nodiscard]] inline bool input_action_resolution_summary_is_text_target_evidence(
+    const input_action_resolution_result_summary& summary)
+{
+    return summary.kind == input_action_candidate_kind::text_edit
+        || summary.kind == input_action_candidate_kind::ime_composition_start
+        || summary.kind == input_action_candidate_kind::ime_preedit
+        || summary.kind == input_action_candidate_kind::ime_commit
+        || summary.kind == input_action_candidate_kind::ime_cancel;
+}
+
+inline void update_input_action_resolution_focus_target_snapshot(
+    input_action_resolution_target_snapshot& snapshot,
+    const std::vector<input_action_resolution_result_summary>& summaries)
+{
+    for (const input_action_resolution_result_summary& summary : summaries) {
+        if (!input_action_resolution_summary_is_focus_target_evidence(summary)) {
+            continue;
+        }
+        snapshot.present = true;
+        if (!summary.has_focus_after) {
+            snapshot.target_id.clear();
+        } else if (summary.target_changed || !summary.target_id_after.empty()) {
+            snapshot.target_id = summary.target_id_after;
+        } else {
+            snapshot.target_id = summary.target_id;
+        }
+    }
+}
+
+inline void update_input_action_resolution_text_target_snapshot(
+    input_action_resolution_target_snapshot& snapshot,
+    const std::vector<input_action_resolution_result_summary>& summaries)
+{
+    for (const input_action_resolution_result_summary& summary : summaries) {
+        if (!input_action_resolution_summary_is_text_target_evidence(summary)) {
+            continue;
+        }
+        snapshot.present = true;
+        snapshot.target_id = summary.target_id;
+    }
+}
+
+[[nodiscard]] inline input_action_resolution_target_snapshot
+input_action_resolution_focus_target_snapshot(
+    const input_action_resolution_replay_summary& summary)
+{
+    input_action_resolution_target_snapshot snapshot;
+    update_input_action_resolution_focus_target_snapshot(snapshot, summary.selected);
+    update_input_action_resolution_focus_target_snapshot(snapshot, summary.supporting_evidence);
+    update_input_action_resolution_focus_target_snapshot(snapshot, summary.rejected);
+    update_input_action_resolution_focus_target_snapshot(snapshot, summary.diagnostic_only);
+    return snapshot;
+}
+
+[[nodiscard]] inline input_action_resolution_target_snapshot
+input_action_resolution_text_target_snapshot(
+    const input_action_resolution_replay_summary& summary)
+{
+    input_action_resolution_target_snapshot snapshot;
+    update_input_action_resolution_text_target_snapshot(snapshot, summary.selected);
+    update_input_action_resolution_text_target_snapshot(snapshot, summary.supporting_evidence);
+    update_input_action_resolution_text_target_snapshot(snapshot, summary.rejected);
+    update_input_action_resolution_text_target_snapshot(snapshot, summary.diagnostic_only);
+    return snapshot;
+}
+
+[[nodiscard]] inline input_action_resolution_target_delta diff_input_action_resolution_target_snapshot(
+    const input_action_resolution_target_snapshot& before,
+    const input_action_resolution_target_snapshot& after)
+{
+    input_action_resolution_target_delta delta{
+        .present = normalized_input_replay_diff_bool(before.present, after.present),
+        .target_id = normalized_input_replay_diff_string(before.target_id, after.target_id),
+    };
+    delta.changed = delta.present.changed || delta.target_id.changed;
+    return delta;
+}
+
+inline void count_input_action_resolution_diff_category(
+    bool changed,
+    std::size_t& changed_category_count)
+{
+    if (changed) {
+        ++changed_category_count;
+    }
+}
+
+[[nodiscard]] inline input_action_resolution_replay_summary_diff
+diff_input_action_resolution_replay_summaries(
+    const input_action_resolution_replay_summary& before,
+    const input_action_resolution_replay_summary& after)
+{
+    input_action_resolution_replay_summary_diff diff{
+        .batch_count = normalized_input_replay_diff_count(before.batches.size(), after.batches.size()),
+        .result_counts = diff_input_action_candidate_result_counts(before.counts, after.counts),
+        .action_kinds = diff_input_action_candidate_counts(
+            input_action_resolution_all_action_counts(before.counts),
+            input_action_resolution_all_action_counts(after.counts)),
+        .reasons = diff_input_action_resolution_reason_counts(
+            summarize_input_action_resolution_reasons(before),
+            summarize_input_action_resolution_reasons(after)),
+        .focus_target = diff_input_action_resolution_target_snapshot(
+            input_action_resolution_focus_target_snapshot(before),
+            input_action_resolution_focus_target_snapshot(after)),
+        .text_target = diff_input_action_resolution_target_snapshot(
+            input_action_resolution_text_target_snapshot(before),
+            input_action_resolution_text_target_snapshot(after)),
+    };
+    count_input_action_resolution_diff_category(diff.batch_count.changed, diff.changed_category_count);
+    count_input_action_resolution_diff_category(diff.result_counts.changed, diff.changed_category_count);
+    count_input_action_resolution_diff_category(diff.action_kinds.changed, diff.changed_category_count);
+    count_input_action_resolution_diff_category(diff.reasons.changed, diff.changed_category_count);
+    count_input_action_resolution_diff_category(diff.focus_target.changed, diff.changed_category_count);
+    count_input_action_resolution_diff_category(diff.text_target.changed, diff.changed_category_count);
+    diff.changed = diff.changed_category_count > 0;
+    return diff;
 }
 
 } // namespace quiz_vulkan::input

@@ -1310,6 +1310,158 @@ concept InputActionResolutionSummaryFunctions = requires(
 };
 
 template <typename T>
+concept InputActionCandidateCountDeltasInterface = requires(T deltas) {
+    { deltas.text_edit } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.focus_move } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.pointer_capture } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.gesture_candidate } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.wheel_scroll } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.ime_composition_start } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.ime_preedit } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.ime_commit } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.ime_cancel } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.total } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept InputActionCandidateResultCountDeltasInterface = requires(T deltas) {
+    { deltas.selected } -> std::same_as<input::input_action_candidate_count_deltas&>;
+    { deltas.supporting_evidence } -> std::same_as<input::input_action_candidate_count_deltas&>;
+    { deltas.diagnostic_only } -> std::same_as<input::input_action_candidate_count_deltas&>;
+    { deltas.rejected } -> std::same_as<input::input_action_candidate_count_deltas&>;
+    { deltas.total } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept InputActionResolutionReasonCountsInterface = requires(T counts) {
+    { counts.text_edit_diff } -> std::same_as<std::size_t&>;
+    { counts.focus_transition } -> std::same_as<std::size_t&>;
+    { counts.pointer_capture_transition } -> std::same_as<std::size_t&>;
+    { counts.pointer_capture_supports_selected } -> std::same_as<std::size_t&>;
+    { counts.wheel_delta } -> std::same_as<std::size_t&>;
+    { counts.gesture_emitted } -> std::same_as<std::size_t&>;
+    { counts.gesture_policy_rejected } -> std::same_as<std::size_t&>;
+    { counts.gesture_policy_suppressed } -> std::same_as<std::size_t&>;
+    { counts.ime_composition_started } -> std::same_as<std::size_t&>;
+    { counts.ime_preedit_valid } -> std::same_as<std::size_t&>;
+    { counts.ime_preedit_invalid } -> std::same_as<std::size_t&>;
+    { counts.ime_committed } -> std::same_as<std::size_t&>;
+    { counts.ime_commit_invalid } -> std::same_as<std::size_t&>;
+    { counts.ime_canceled } -> std::same_as<std::size_t&>;
+    { counts.ime_cancel_invalid } -> std::same_as<std::size_t&>;
+    { counts.coalesced_by_selected_candidate } -> std::same_as<std::size_t&>;
+    { counts.no_observable_delta } -> std::same_as<std::size_t&>;
+    { counts.total } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
+concept InputActionResolutionReasonCountDeltasInterface = requires(T deltas) {
+    { deltas.text_edit_diff } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.focus_transition } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.pointer_capture_transition } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.pointer_capture_supports_selected }
+        -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.wheel_delta } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.gesture_emitted } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.gesture_policy_rejected } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.gesture_policy_suppressed } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.ime_composition_started } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.ime_preedit_valid } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.ime_preedit_invalid } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.ime_committed } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.ime_commit_invalid } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.ime_canceled } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.ime_cancel_invalid } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.coalesced_by_selected_candidate }
+        -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.no_observable_delta } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.total } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept InputActionResolutionTargetSnapshotInterface = requires(T snapshot) {
+    { snapshot.present } -> std::same_as<bool&>;
+    { snapshot.target_id } -> std::same_as<std::string&>;
+};
+
+template <typename T>
+concept InputActionResolutionTargetDeltaInterface = requires(T delta) {
+    { delta.present } -> std::same_as<input::normalized_input_replay_bool_delta&>;
+    { delta.target_id } -> std::same_as<input::normalized_input_replay_string_delta&>;
+    { delta.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept InputActionResolutionReplaySummaryDiffInterface = requires(T diff) {
+    { diff.batch_count } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { diff.result_counts } -> std::same_as<input::input_action_candidate_result_count_deltas&>;
+    { diff.action_kinds } -> std::same_as<input::input_action_candidate_count_deltas&>;
+    { diff.reasons } -> std::same_as<input::input_action_resolution_reason_count_deltas&>;
+    { diff.focus_target } -> std::same_as<input::input_action_resolution_target_delta&>;
+    { diff.text_target } -> std::same_as<input::input_action_resolution_target_delta&>;
+    { diff.changed } -> std::same_as<bool&>;
+    { diff.changed_category_count } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
+concept InputActionResolutionDiffFunctions = requires(
+    input::input_action_resolution_reason_counts& reason_counts,
+    input::input_action_candidate_result_reason reason,
+    const input::input_action_candidate_count_deltas& candidate_deltas,
+    const input::input_action_candidate_counts& candidate_counts,
+    const input::input_action_candidate_result_count_deltas& result_deltas,
+    const input::input_action_candidate_result_counts& result_counts,
+    const input::input_action_resolution_replay_summary& replay_summary,
+    const std::vector<input::input_action_resolution_result_summary>& result_summaries,
+    const input::input_action_resolution_reason_counts& reason_count_source,
+    const input::input_action_resolution_reason_count_deltas& reason_deltas,
+    const input::input_action_resolution_result_summary& result_summary,
+    input::input_action_resolution_target_snapshot& target_snapshot,
+    const input::input_action_resolution_target_snapshot& target_snapshot_source,
+    std::size_t& changed_category_count,
+    bool changed) {
+    { input::count_input_action_resolution_reason(reason_counts, reason) } -> std::same_as<void>;
+    { input::input_action_candidate_count_deltas_changed(candidate_deltas) } -> std::same_as<bool>;
+    { input::diff_input_action_candidate_counts(candidate_counts, candidate_counts) }
+        -> std::same_as<input::input_action_candidate_count_deltas>;
+    { input::input_action_resolution_all_action_counts(result_counts) }
+        -> std::same_as<input::input_action_candidate_counts>;
+    { input::input_action_candidate_result_count_deltas_changed(result_deltas) }
+        -> std::same_as<bool>;
+    { input::diff_input_action_candidate_result_counts(result_counts, result_counts) }
+        -> std::same_as<input::input_action_candidate_result_count_deltas>;
+    { input::count_input_action_resolution_reasons(reason_counts, result_summaries) }
+        -> std::same_as<void>;
+    { input::summarize_input_action_resolution_reasons(replay_summary) }
+        -> std::same_as<input::input_action_resolution_reason_counts>;
+    { input::input_action_resolution_reason_count_deltas_changed(reason_deltas) }
+        -> std::same_as<bool>;
+    { input::diff_input_action_resolution_reason_counts(reason_count_source, reason_count_source) }
+        -> std::same_as<input::input_action_resolution_reason_count_deltas>;
+    { input::input_action_resolution_summary_is_focus_target_evidence(result_summary) }
+        -> std::same_as<bool>;
+    { input::input_action_resolution_summary_is_text_target_evidence(result_summary) }
+        -> std::same_as<bool>;
+    { input::update_input_action_resolution_focus_target_snapshot(target_snapshot, result_summaries) }
+        -> std::same_as<void>;
+    { input::update_input_action_resolution_text_target_snapshot(target_snapshot, result_summaries) }
+        -> std::same_as<void>;
+    { input::input_action_resolution_focus_target_snapshot(replay_summary) }
+        -> std::same_as<input::input_action_resolution_target_snapshot>;
+    { input::input_action_resolution_text_target_snapshot(replay_summary) }
+        -> std::same_as<input::input_action_resolution_target_snapshot>;
+    { input::diff_input_action_resolution_target_snapshot(target_snapshot_source, target_snapshot_source) }
+        -> std::same_as<input::input_action_resolution_target_delta>;
+    { input::count_input_action_resolution_diff_category(changed, changed_category_count) }
+        -> std::same_as<void>;
+    { input::diff_input_action_resolution_replay_summaries(replay_summary, replay_summary) }
+        -> std::same_as<input::input_action_resolution_replay_summary_diff>;
+};
+
+template <typename T>
 concept PointerCaptureSnapshotInterface = requires(T snapshot) {
     { snapshot.lifecycle } -> std::same_as<input::pointer_capture_lifecycle&>;
     { snapshot.active } -> std::same_as<bool&>;
@@ -2461,6 +2613,18 @@ static_assert(InputActionResolutionBatchSummaryInterface<
 static_assert(InputActionResolutionReplaySummaryInterface<
     input::input_action_resolution_replay_summary>);
 static_assert(InputActionResolutionSummaryFunctions<void>);
+static_assert(InputActionCandidateCountDeltasInterface<input::input_action_candidate_count_deltas>);
+static_assert(InputActionCandidateResultCountDeltasInterface<
+    input::input_action_candidate_result_count_deltas>);
+static_assert(InputActionResolutionReasonCountsInterface<input::input_action_resolution_reason_counts>);
+static_assert(InputActionResolutionReasonCountDeltasInterface<
+    input::input_action_resolution_reason_count_deltas>);
+static_assert(InputActionResolutionTargetSnapshotInterface<
+    input::input_action_resolution_target_snapshot>);
+static_assert(InputActionResolutionTargetDeltaInterface<input::input_action_resolution_target_delta>);
+static_assert(InputActionResolutionReplaySummaryDiffInterface<
+    input::input_action_resolution_replay_summary_diff>);
+static_assert(InputActionResolutionDiffFunctions<void>);
 static_assert(std::is_default_constructible_v<input::platform_input_translation_request>);
 static_assert(std::is_default_constructible_v<input::platform_input_translation_result>);
 static_assert(std::is_default_constructible_v<input::platform_input_dispatch_result>);
@@ -2528,6 +2692,13 @@ static_assert(std::is_default_constructible_v<input::input_action_candidate_reso
 static_assert(std::is_default_constructible_v<input::input_action_resolution_result_summary>);
 static_assert(std::is_default_constructible_v<input::input_action_resolution_batch_summary>);
 static_assert(std::is_default_constructible_v<input::input_action_resolution_replay_summary>);
+static_assert(std::is_default_constructible_v<input::input_action_candidate_count_deltas>);
+static_assert(std::is_default_constructible_v<input::input_action_candidate_result_count_deltas>);
+static_assert(std::is_default_constructible_v<input::input_action_resolution_reason_counts>);
+static_assert(std::is_default_constructible_v<input::input_action_resolution_reason_count_deltas>);
+static_assert(std::is_default_constructible_v<input::input_action_resolution_target_snapshot>);
+static_assert(std::is_default_constructible_v<input::input_action_resolution_target_delta>);
+static_assert(std::is_default_constructible_v<input::input_action_resolution_replay_summary_diff>);
 static_assert(std::is_default_constructible_v<input::input_routing_count_delta>);
 static_assert(std::is_default_constructible_v<input::input_routing_bool_delta>);
 static_assert(std::is_default_constructible_v<input::input_routing_float_delta>);
@@ -2599,6 +2770,13 @@ static_assert(!std::is_polymorphic_v<input::input_action_candidate_resolution>);
 static_assert(!std::is_polymorphic_v<input::input_action_resolution_result_summary>);
 static_assert(!std::is_polymorphic_v<input::input_action_resolution_batch_summary>);
 static_assert(!std::is_polymorphic_v<input::input_action_resolution_replay_summary>);
+static_assert(!std::is_polymorphic_v<input::input_action_candidate_count_deltas>);
+static_assert(!std::is_polymorphic_v<input::input_action_candidate_result_count_deltas>);
+static_assert(!std::is_polymorphic_v<input::input_action_resolution_reason_counts>);
+static_assert(!std::is_polymorphic_v<input::input_action_resolution_reason_count_deltas>);
+static_assert(!std::is_polymorphic_v<input::input_action_resolution_target_snapshot>);
+static_assert(!std::is_polymorphic_v<input::input_action_resolution_target_delta>);
+static_assert(!std::is_polymorphic_v<input::input_action_resolution_replay_summary_diff>);
 static_assert(!std::is_polymorphic_v<input::input_routing_diagnostics_diff>);
 static_assert(!std::is_polymorphic_v<input::input_routing_gesture_policy_diff>);
 static_assert(!std::is_polymorphic_v<input::text_edit_transaction_snapshot>);

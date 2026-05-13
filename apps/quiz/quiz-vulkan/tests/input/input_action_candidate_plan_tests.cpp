@@ -632,6 +632,218 @@ void test_candidate_resolution_uses_deterministic_priority_tiebreak()
         "manual batch summary preserves supporting candidate index");
 }
 
+void test_resolution_replay_summary_diff_reports_counts_reasons_and_targets()
+{
+    using namespace quiz_vulkan::input;
+
+    const input_action_resolution_replay_summary before{
+        .batches = {
+            input_action_resolution_batch_summary{.label = "before"},
+        },
+        .selected = {
+            input_action_resolution_result_summary{
+                .kind = input_action_candidate_kind::text_edit,
+                .status = input_action_candidate_result_status::selected,
+                .reason = input_action_candidate_result_reason::text_edit_diff,
+                .batch_label = "before",
+                .has_text_delta = true,
+                .target_id = "answer",
+            },
+            input_action_resolution_result_summary{
+                .kind = input_action_candidate_kind::focus_move,
+                .status = input_action_candidate_result_status::selected,
+                .reason = input_action_candidate_result_reason::focus_transition,
+                .batch_label = "before",
+                .has_focus_transition = true,
+                .target_id = "answer",
+                .target_id_after = "answer",
+                .has_focus_after = true,
+            },
+        },
+        .counts = input_action_candidate_result_counts{
+            .selected = input_action_candidate_counts{
+                .text_edit = 1,
+                .focus_move = 1,
+                .total = 2,
+            },
+            .total = 2,
+        },
+    };
+    const input_action_resolution_replay_summary after{
+        .batches = {
+            input_action_resolution_batch_summary{.label = "before"},
+            input_action_resolution_batch_summary{.label = "after"},
+        },
+        .selected = {
+            input_action_resolution_result_summary{
+                .kind = input_action_candidate_kind::text_edit,
+                .status = input_action_candidate_result_status::selected,
+                .reason = input_action_candidate_result_reason::text_edit_diff,
+                .batch_label = "after",
+                .has_text_delta = true,
+                .target_id = "answer-alt",
+            },
+            input_action_resolution_result_summary{
+                .kind = input_action_candidate_kind::focus_move,
+                .status = input_action_candidate_result_status::selected,
+                .reason = input_action_candidate_result_reason::focus_transition,
+                .batch_label = "after",
+                .has_focus_transition = true,
+                .target_id = "next",
+                .target_id_before = "answer",
+                .target_id_after = "next",
+                .target_changed = true,
+                .has_focus_after = true,
+            },
+            input_action_resolution_result_summary{
+                .kind = input_action_candidate_kind::wheel_scroll,
+                .status = input_action_candidate_result_status::selected,
+                .reason = input_action_candidate_result_reason::wheel_delta,
+                .batch_label = "after",
+                .has_wheel_delta = true,
+                .line_delta_y = -2.0f,
+            },
+        },
+        .supporting_evidence = {
+            input_action_resolution_result_summary{
+                .kind = input_action_candidate_kind::pointer_capture,
+                .status = input_action_candidate_result_status::supporting_evidence,
+                .reason = input_action_candidate_result_reason::pointer_capture_supports_selected,
+                .batch_label = "after",
+                .supports_selected_candidate = true,
+                .has_pointer_capture_transition = true,
+            },
+        },
+        .rejected = {
+            input_action_resolution_result_summary{
+                .kind = input_action_candidate_kind::gesture_candidate,
+                .status = input_action_candidate_result_status::rejected,
+                .reason = input_action_candidate_result_reason::gesture_policy_rejected,
+                .batch_label = "after",
+                .gesture_decision = gesture_policy_decision::swipe_rejected_distance,
+            },
+        },
+        .counts = input_action_candidate_result_counts{
+            .selected = input_action_candidate_counts{
+                .text_edit = 1,
+                .focus_move = 1,
+                .wheel_scroll = 1,
+                .total = 3,
+            },
+            .supporting_evidence = input_action_candidate_counts{
+                .pointer_capture = 1,
+                .total = 1,
+            },
+            .rejected = input_action_candidate_counts{
+                .gesture_candidate = 1,
+                .total = 1,
+            },
+            .total = 5,
+        },
+    };
+
+    const input_action_resolution_replay_summary_diff diff =
+        diff_input_action_resolution_replay_summaries(before, after);
+
+    require(diff.changed, "resolution replay diff reports changed summaries");
+    require(diff.changed_category_count == 6,
+        "resolution replay diff counts changed high-level categories");
+    require(diff.batch_count.delta == 1,
+        "resolution replay diff reports batch count growth");
+    require(diff.result_counts.selected.total.delta == 1,
+        "resolution replay diff reports selected total delta");
+    require(diff.result_counts.supporting_evidence.pointer_capture.delta == 1,
+        "resolution replay diff reports pointer capture support delta");
+    require(diff.result_counts.rejected.gesture_candidate.delta == 1,
+        "resolution replay diff reports rejected gesture delta");
+    require(diff.action_kinds.wheel_scroll.delta == 1,
+        "resolution replay diff reports aggregate wheel action delta");
+    require(diff.action_kinds.pointer_capture.delta == 1,
+        "resolution replay diff reports aggregate pointer capture action delta");
+    require(diff.action_kinds.gesture_candidate.delta == 1,
+        "resolution replay diff reports aggregate gesture action delta");
+    require(diff.reasons.wheel_delta.delta == 1,
+        "resolution replay diff reports stable wheel reason delta");
+    require(diff.reasons.pointer_capture_supports_selected.delta == 1,
+        "resolution replay diff reports stable pointer support reason delta");
+    require(diff.reasons.gesture_policy_rejected.delta == 1,
+        "resolution replay diff reports stable gesture rejection reason delta");
+    require(diff.reasons.text_edit_diff.delta == 0,
+        "resolution replay diff keeps stable unchanged text reason delta");
+    require(diff.focus_target.changed,
+        "resolution replay diff reports focus target change");
+    require(diff.focus_target.target_id.before_value == "answer",
+        "resolution replay diff records before focus target");
+    require(diff.focus_target.target_id.after_value == "next",
+        "resolution replay diff records after focus target");
+    require(diff.text_target.changed,
+        "resolution replay diff reports text target change");
+    require(diff.text_target.target_id.before_value == "answer",
+        "resolution replay diff records before text target");
+    require(diff.text_target.target_id.after_value == "answer-alt",
+        "resolution replay diff records after text target");
+
+    const input_action_resolution_target_snapshot focus_snapshot =
+        input_action_resolution_focus_target_snapshot(after);
+    require(focus_snapshot.present,
+        "resolution replay focus target snapshot is present when focus evidence exists");
+    require(focus_snapshot.target_id == "next",
+        "resolution replay focus target snapshot uses latest focus target");
+
+    const input_action_resolution_target_snapshot text_snapshot =
+        input_action_resolution_text_target_snapshot(after);
+    require(text_snapshot.present,
+        "resolution replay text target snapshot is present when text evidence exists");
+    require(text_snapshot.target_id == "answer-alt",
+        "resolution replay text target snapshot uses latest text target");
+}
+
+void test_resolution_replay_summary_diff_is_stable_for_identical_snapshots()
+{
+    using namespace quiz_vulkan::input;
+
+    const input_action_resolution_replay_summary summary{
+        .batches = {
+            input_action_resolution_batch_summary{.label = "stable"},
+        },
+        .selected = {
+            input_action_resolution_result_summary{
+                .kind = input_action_candidate_kind::ime_commit,
+                .status = input_action_candidate_result_status::selected,
+                .reason = input_action_candidate_result_reason::ime_committed,
+                .batch_label = "stable",
+                .has_ime_payload = true,
+                .target_id = "answer",
+            },
+        },
+        .counts = input_action_candidate_result_counts{
+            .selected = input_action_candidate_counts{
+                .ime_commit = 1,
+                .total = 1,
+            },
+            .total = 1,
+        },
+    };
+
+    const input_action_resolution_replay_summary_diff diff =
+        diff_input_action_resolution_replay_summaries(summary, summary);
+
+    require(!diff.changed,
+        "stable resolution replay diff reports no change");
+    require(diff.changed_category_count == 0,
+        "stable resolution replay diff has zero changed categories");
+    require(!diff.result_counts.changed,
+        "stable resolution replay diff has stable status counts");
+    require(!diff.action_kinds.changed,
+        "stable resolution replay diff has stable action-kind counts");
+    require(!diff.reasons.changed,
+        "stable resolution replay diff has stable reason counts");
+    require(!diff.text_target.changed,
+        "stable resolution replay diff has stable text target");
+    require(!diff.focus_target.changed,
+        "stable resolution replay diff has stable absent focus target");
+}
+
 void test_empty_replay_yields_empty_candidate_plan()
 {
     using namespace quiz_vulkan::input;
@@ -660,6 +872,8 @@ int main()
     test_candidate_resolution_rejects_invalid_and_suppressed_evidence();
     test_resolution_batch_summary_groups_rejected_and_diagnostic_results();
     test_candidate_resolution_uses_deterministic_priority_tiebreak();
+    test_resolution_replay_summary_diff_reports_counts_reasons_and_targets();
+    test_resolution_replay_summary_diff_is_stable_for_identical_snapshots();
     test_empty_replay_yields_empty_candidate_plan();
 
     std::cout << "input_action_candidate_plan_tests passed\n";

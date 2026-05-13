@@ -1554,3 +1554,4 @@ inline void accumulate_normalized_input_replay_focus_summary(
 } // namespace quiz_vulkan::input
 
 #include "core/input/normalized_input_replay_diff.h"
+#include "core/input/input_action_candidate_plan.h"

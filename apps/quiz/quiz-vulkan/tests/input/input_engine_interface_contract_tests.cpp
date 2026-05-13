@@ -1,4 +1,5 @@
 #include "core/input/gesture_recognizer.h"
+#include "core/input/input_action_candidate_plan.h"
 #include "core/input/input_routing_diagnostics.h"
 #include "core/input/input_engine.h"
 #include "core/input/normalized_input_replay_diff.h"
@@ -939,6 +940,140 @@ concept NormalizedInputReplayFunctions = requires(
         -> std::same_as<input::normalized_input_replay_batch>;
     { input::replay_normalized_input_fixture(engine, steps, options) }
         -> std::same_as<input::normalized_input_replay_recording>;
+};
+
+template <typename T>
+concept InputActionCandidateCountsInterface = requires(T counts) {
+    { counts.text_edit } -> std::same_as<std::size_t&>;
+    { counts.focus_move } -> std::same_as<std::size_t&>;
+    { counts.pointer_capture } -> std::same_as<std::size_t&>;
+    { counts.gesture_candidate } -> std::same_as<std::size_t&>;
+    { counts.wheel_scroll } -> std::same_as<std::size_t&>;
+    { counts.ime_composition_start } -> std::same_as<std::size_t&>;
+    { counts.ime_preedit } -> std::same_as<std::size_t&>;
+    { counts.ime_commit } -> std::same_as<std::size_t&>;
+    { counts.ime_cancel } -> std::same_as<std::size_t&>;
+    { counts.total } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
+concept InputActionCandidateInterface = requires(T candidate) {
+    { candidate.kind } -> std::same_as<input::input_action_candidate_kind&>;
+    { candidate.batch_label } -> std::same_as<std::string&>;
+    { candidate.batch_index } -> std::same_as<std::size_t&>;
+    { candidate.timeline_index } -> std::same_as<std::size_t&>;
+    { candidate.timestamp_ms } -> std::same_as<std::int64_t&>;
+    { candidate.emits_input_event } -> std::same_as<bool&>;
+    { candidate.event_index } -> std::same_as<std::size_t&>;
+    { candidate.target_id } -> std::same_as<std::string&>;
+    { candidate.focus_kind } -> std::same_as<input::normalized_input_replay_focus_timeline_kind&>;
+    { candidate.target_id_before } -> std::same_as<std::string&>;
+    { candidate.target_id_after } -> std::same_as<std::string&>;
+    { candidate.had_focus_before } -> std::same_as<bool&>;
+    { candidate.has_focus_after } -> std::same_as<bool&>;
+    { candidate.target_changed } -> std::same_as<bool&>;
+    { candidate.pointer_kind } -> std::same_as<input::normalized_input_replay_pointer_timeline_kind&>;
+    { candidate.pointer_id } -> std::same_as<std::int32_t&>;
+    { candidate.event_phase } -> std::same_as<input::pointer_phase&>;
+    { candidate.pointer_contact } -> std::same_as<input::pointer_contact_kind&>;
+    { candidate.pointer_decision } -> std::same_as<input::pointer_arbitration_decision&>;
+    { candidate.capture_before } -> std::same_as<input::pointer_capture_snapshot&>;
+    { candidate.capture_after } -> std::same_as<input::pointer_capture_snapshot&>;
+    { candidate.capture_changed } -> std::same_as<bool&>;
+    { candidate.capture_ended_cleanly_after } -> std::same_as<bool&>;
+    { candidate.tracked_pointer_count_before } -> std::same_as<std::size_t&>;
+    { candidate.tracked_pointer_count_after } -> std::same_as<std::size_t&>;
+    { candidate.ime_phase } -> std::same_as<input::normalized_input_replay_ime_timeline_phase&>;
+    { candidate.composition } -> std::same_as<input::ime_composition_state&>;
+    { candidate.utf8_text } -> std::same_as<std::string&>;
+    { candidate.committed_text } -> std::same_as<std::string&>;
+    { candidate.preedit_text_valid } -> std::same_as<bool&>;
+    { candidate.preedit_range_valid } -> std::same_as<bool&>;
+    { candidate.stale_preedit_cleared_after } -> std::same_as<bool&>;
+    { candidate.keyboard } -> std::same_as<input::keyboard_chord_diagnostic&>;
+    { candidate.normalized_event } -> std::same_as<input::normalized_input_event_summary&>;
+    { candidate.gesture_policy } -> std::same_as<input::gesture_policy_snapshot&>;
+    { candidate.text_presentation_diff } -> std::same_as<input::text_input_presentation_diff&>;
+    { candidate.end_state } -> std::same_as<input::normalized_input_replay_end_state&>;
+    { candidate.text_byte_count } -> std::same_as<std::size_t&>;
+    { candidate.text_byte_count_before } -> std::same_as<std::size_t&>;
+    { candidate.text_byte_count_after } -> std::same_as<std::size_t&>;
+    { candidate.caret_before } -> std::same_as<input::text_range&>;
+    { candidate.caret_after } -> std::same_as<input::text_range&>;
+    { candidate.caret_changed } -> std::same_as<bool&>;
+    { candidate.had_selection_before } -> std::same_as<bool&>;
+    { candidate.has_selection_after } -> std::same_as<bool&>;
+    { candidate.selection_before } -> std::same_as<input::text_range&>;
+    { candidate.selection_after } -> std::same_as<input::text_range&>;
+    { candidate.selection_changed } -> std::same_as<bool&>;
+    { candidate.duration_ms } -> std::same_as<std::int64_t&>;
+    { candidate.start_x } -> std::same_as<float&>;
+    { candidate.start_y } -> std::same_as<float&>;
+    { candidate.x } -> std::same_as<float&>;
+    { candidate.y } -> std::same_as<float&>;
+    { candidate.delta_x } -> std::same_as<float&>;
+    { candidate.delta_y } -> std::same_as<float&>;
+    { candidate.pixel_delta_x } -> std::same_as<float&>;
+    { candidate.pixel_delta_y } -> std::same_as<float&>;
+    { candidate.line_delta_x } -> std::same_as<float&>;
+    { candidate.line_delta_y } -> std::same_as<float&>;
+};
+
+template <typename T>
+concept InputActionCandidateBatchPlanInterface = requires(T batch_plan) {
+    { batch_plan.label } -> std::same_as<std::string&>;
+    { batch_plan.candidates } -> std::same_as<std::vector<input::input_action_candidate>&>;
+    { batch_plan.counts } -> std::same_as<input::input_action_candidate_counts&>;
+};
+
+template <typename T>
+concept InputActionCandidatePlanInterface = requires(T plan) {
+    { plan.batches } -> std::same_as<std::vector<input::input_action_candidate_batch_plan>&>;
+    { plan.candidates } -> std::same_as<std::vector<input::input_action_candidate>&>;
+    { plan.counts } -> std::same_as<input::input_action_candidate_counts&>;
+    { plan.final_state } -> std::same_as<input::normalized_input_replay_end_state&>;
+};
+
+template <typename T>
+concept InputActionCandidatePlanFunctions = requires(
+    input::input_action_candidate_counts& counts,
+    input::input_action_candidate_kind candidate_kind,
+    input::normalized_input_replay_ime_timeline_phase ime_phase,
+    input::normalized_input_replay_pointer_timeline_kind pointer_kind,
+    const input::input_event& event,
+    input::input_action_candidate_plan& plan,
+    input::input_action_candidate_batch_plan& batch_plan,
+    input::input_action_candidate candidate,
+    const input::normalized_input_replay_batch& batch,
+    const input::normalized_input_replay_focus_timeline_entry& focus_entry,
+    const input::normalized_input_replay_ime_timeline_entry& ime_entry,
+    const input::normalized_input_replay_pointer_timeline_entry& pointer_entry,
+    std::span<const input::normalized_input_replay_batch> batches,
+    const input::normalized_input_replay_recording& recording) {
+    { input::count_input_action_candidate_kind(counts, candidate_kind) } -> std::same_as<void>;
+    { input::input_action_candidate_kind_for_ime_phase(ime_phase) }
+        -> std::same_as<input::input_action_candidate_kind>;
+    { input::input_action_candidate_pointer_kind_is_capture(pointer_kind) } -> std::same_as<bool>;
+    { input::input_action_candidate_pointer_kind_is_wheel(pointer_kind) } -> std::same_as<bool>;
+    { input::input_action_candidate_pointer_kind_is_gesture(pointer_kind) } -> std::same_as<bool>;
+    { input::input_action_candidate_timestamp_for_event(event) } -> std::same_as<std::int64_t>;
+    { input::input_action_candidate_timestamp_for_batch(batch) } -> std::same_as<std::int64_t>;
+    { input::input_action_candidate_batch_has_text_edit(batch) } -> std::same_as<bool>;
+    { input::append_input_action_candidate(plan, batch_plan, std::move(candidate)) } -> std::same_as<void>;
+    { input::make_text_edit_input_action_candidate(batch, std::size_t{}) }
+        -> std::same_as<input::input_action_candidate>;
+    { input::make_focus_move_input_action_candidate(batch, focus_entry, std::size_t{}, std::size_t{}) }
+        -> std::same_as<input::input_action_candidate>;
+    { input::make_ime_input_action_candidate(batch, ime_entry, std::size_t{}, std::size_t{}) }
+        -> std::same_as<input::input_action_candidate>;
+    { input::make_pointer_input_action_candidate(batch, pointer_entry, candidate_kind, std::size_t{}, std::size_t{}) }
+        -> std::same_as<input::input_action_candidate>;
+    { input::append_input_action_candidates_for_batch(plan, batch_plan, batch, std::size_t{}) }
+        -> std::same_as<void>;
+    { input::plan_input_action_candidates_for_batch(batch, std::size_t{}) }
+        -> std::same_as<input::input_action_candidate_batch_plan>;
+    { input::plan_input_action_candidates(batches) } -> std::same_as<input::input_action_candidate_plan>;
+    { input::plan_input_action_candidates(recording) } -> std::same_as<input::input_action_candidate_plan>;
 };
 
 template <typename T>
@@ -2075,6 +2210,11 @@ static_assert(NormalizedInputReplayRegressionSummaryInterface<
     input::normalized_input_replay_regression_summary>);
 static_assert(NormalizedInputReplayDiffInterface<input::normalized_input_replay_diff>);
 static_assert(NormalizedInputReplayFunctions<void>);
+static_assert(InputActionCandidateCountsInterface<input::input_action_candidate_counts>);
+static_assert(InputActionCandidateInterface<input::input_action_candidate>);
+static_assert(InputActionCandidateBatchPlanInterface<input::input_action_candidate_batch_plan>);
+static_assert(InputActionCandidatePlanInterface<input::input_action_candidate_plan>);
+static_assert(InputActionCandidatePlanFunctions<void>);
 static_assert(std::is_default_constructible_v<input::platform_input_translation_request>);
 static_assert(std::is_default_constructible_v<input::platform_input_translation_result>);
 static_assert(std::is_default_constructible_v<input::platform_input_dispatch_result>);
@@ -2131,6 +2271,10 @@ static_assert(std::is_default_constructible_v<input::normalized_input_replay_foc
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_focus_diff>);
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_regression_summary>);
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_diff>);
+static_assert(std::is_default_constructible_v<input::input_action_candidate_counts>);
+static_assert(std::is_default_constructible_v<input::input_action_candidate>);
+static_assert(std::is_default_constructible_v<input::input_action_candidate_batch_plan>);
+static_assert(std::is_default_constructible_v<input::input_action_candidate_plan>);
 static_assert(std::is_default_constructible_v<input::input_routing_count_delta>);
 static_assert(std::is_default_constructible_v<input::input_routing_bool_delta>);
 static_assert(std::is_default_constructible_v<input::input_routing_float_delta>);
@@ -2193,6 +2337,9 @@ static_assert(!std::is_polymorphic_v<input::normalized_input_replay_ime_summary>
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_pointer_summary>);
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_focus_summary>);
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_diff>);
+static_assert(!std::is_polymorphic_v<input::input_action_candidate>);
+static_assert(!std::is_polymorphic_v<input::input_action_candidate_batch_plan>);
+static_assert(!std::is_polymorphic_v<input::input_action_candidate_plan>);
 static_assert(!std::is_polymorphic_v<input::input_routing_diagnostics_diff>);
 static_assert(!std::is_polymorphic_v<input::input_routing_gesture_policy_diff>);
 static_assert(!std::is_polymorphic_v<input::text_edit_transaction_snapshot>);

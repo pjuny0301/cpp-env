@@ -1,3 +1,4 @@
+#include "render/text/font_fallback_shaping_handoff.h"
 #include "render/text/font_fallback_run_planning_diagnostics.h"
 #include "render/text/font_coverage_run_segmentation.h"
 #include "render/text/font_unicode_coverage.h"
@@ -502,6 +503,92 @@ void test_fallback_run_plan_diff_reports_catalog_coverage_change()
     require(diff.run_diffs.front().current_selected_face_id == 203U, "current run selects emoji fallback face");
 }
 
+void test_fallback_shaping_handoff_summarizes_ready_and_blocked_runs()
+{
+    using namespace quiz_vulkan::render;
+
+    const font_face_catalog catalog = make_fallback_chain_catalog(false);
+    const std::string text = std::string("A") + std::string("\xEA\xB0\x80", 3)
+        + std::string("\xF0\x9F\x98\x80", 4) + std::string("B");
+    const render_text_font_fallback_run_plan_snapshot plan =
+        plan_render_text_font_fallback_runs(text, catalog, primary_style());
+    const render_text_font_fallback_shaping_handoff_snapshot handoff =
+        make_render_text_font_fallback_shaping_handoff(plan);
+
+    require(!handoff.ok(), "missing emoji blocks shaping handoff");
+    require(handoff.has_blocked_runs(), "handoff exposes blocked run summaries");
+    require(handoff.policy.run_count == 4U, "handoff preserves fallback run count");
+    require(handoff.policy.ready_run_count == 3U, "Latin and Hangul runs are ready to shape");
+    require(handoff.policy.blocked_run_count == 1U, "emoji run is blocked");
+    require(handoff.policy.missing_glyph_run_count == 1U, "missing emoji is counted as missing glyph");
+    require(handoff.policy.invalid_utf8_run_count == 0U, "valid emoji is not invalid UTF-8");
+    require(handoff.policy.no_selected_face_run_count == 0U, "missing glyph accounts for absent selected face");
+    require(handoff.policy.ready_codepoint_count == 3U, "ready runs total supported codepoints");
+    require(handoff.policy.blocked_codepoint_count == 1U, "blocked run totals missing emoji codepoint");
+    require(handoff.policy.fallback_ready_run_count == 1U, "Hangul ready run records fallback use");
+    require(handoff.policy.unique_page_key_count == 2U, "ready runs expose requested and fallback page evidence");
+    require(handoff.policy.unique_style_token_count == 1U, "handoff records stable style evidence");
+
+    require(handoff.stable_run_keys.size() == 4U, "handoff exposes every fallback run key");
+    require(handoff.stable_page_keys.size() == 2U, "handoff exposes unique ready page keys");
+    require(handoff.style_tokens.size() == 1U && handoff.style_tokens.front() == "primary", "handoff records style token");
+    require(
+        handoff.ready_runs[0].stable_run_key == plan.runs[0].stable_run_key,
+        "first ready run preserves fallback run key");
+    require(
+        handoff.ready_runs[1].stable_page_key
+            == font_fallback_shaping_handoff_stable_page_key_for(plan.runs[1]),
+        "fallback run exposes stable page key for later atlas shaping");
+    require(handoff.ready_runs[1].selected_face_id == 202U, "handoff preserves selected fallback face");
+    require(handoff.ready_runs[1].style_token == "primary", "handoff preserves style token");
+    require(handoff.ready_runs[1].ready_to_shape(), "Hangul run is marked ready to shape");
+
+    const render_text_font_fallback_shaping_handoff_run_snapshot& blocked = handoff.blocked_runs.front();
+    require(blocked.blocked(), "blocked emoji run is not ready");
+    require(blocked.stable_run_key == plan.runs[2].stable_run_key, "blocked run preserves stable fallback key");
+    require(blocked.stable_page_key.empty(), "blocked run does not claim page evidence");
+    require(
+        blocked.handoff_status == render_text_font_fallback_shaping_handoff_status::missing_glyph,
+        "blocked run records missing glyph handoff status");
+    require(blocked.selected_face_id == 0U, "blocked missing glyph has no selected face");
+    require(blocked.diagnostic.find("missing_glyph") != std::string::npos, "blocked diagnostic names reason");
+}
+
+void test_fallback_shaping_handoff_reports_invalid_utf8_and_no_selected_face()
+{
+    using namespace quiz_vulkan::render;
+
+    const font_face_catalog catalog = make_fallback_chain_catalog(true);
+    const std::string invalid_text(1U, static_cast<char>(0xc3U));
+    const render_text_font_fallback_run_plan_snapshot invalid_plan =
+        plan_render_text_font_fallback_runs(invalid_text, catalog, primary_style());
+    const render_text_font_fallback_shaping_handoff_snapshot invalid_handoff =
+        make_render_text_font_fallback_shaping_handoff(invalid_plan);
+
+    require(!invalid_handoff.ok(), "invalid UTF-8 blocks shaping handoff");
+    require(invalid_handoff.policy.invalid_utf8_run_count == 1U, "invalid UTF-8 blocker is counted");
+    require(
+        invalid_handoff.blocked_runs.front().handoff_status
+            == render_text_font_fallback_shaping_handoff_status::invalid_utf8,
+        "invalid handoff run records invalid UTF-8 status");
+    require(invalid_handoff.blocked_runs.front().stable_page_key.empty(), "invalid UTF-8 has no page evidence");
+
+    render_text_font_fallback_run_plan_snapshot no_face_plan =
+        plan_render_text_font_fallback_runs("A", catalog, primary_style());
+    no_face_plan.runs.front().selected_face_id = 0U;
+    const render_text_font_fallback_shaping_handoff_snapshot no_face_handoff =
+        make_render_text_font_fallback_shaping_handoff(no_face_plan);
+
+    require(!no_face_handoff.ok(), "covered run without selected face blocks handoff");
+    require(no_face_handoff.policy.no_selected_face_run_count == 1U, "no selected face blocker is counted");
+    require(no_face_handoff.policy.missing_glyph_run_count == 0U, "no selected face is distinct from missing glyph");
+    require(
+        no_face_handoff.blocked_runs.front().handoff_status
+            == render_text_font_fallback_shaping_handoff_status::no_selected_face,
+        "blocked run records no selected face handoff status");
+    require(no_face_handoff.blocked_runs.front().stable_page_key.empty(), "no selected face has no page evidence");
+}
+
 } // namespace
 
 int main()
@@ -516,5 +603,7 @@ int main()
     test_fallback_run_plan_splits_latin_hangul_and_missing_ranges();
     test_fallback_run_plan_merges_contiguous_ranges_for_same_selected_face();
     test_fallback_run_plan_diff_reports_catalog_coverage_change();
+    test_fallback_shaping_handoff_summarizes_ready_and_blocked_runs();
+    test_fallback_shaping_handoff_reports_invalid_utf8_and_no_selected_face();
     return 0;
 }

@@ -6,6 +6,7 @@
 #include "render/text/font_backend_selection.h"
 #include "render/text/font_cmap_inspector.h"
 #include "render/text/font_coverage_run_segmentation.h"
+#include "render/text/font_fallback_shaping_handoff.h"
 #include "render/text/font_glyph_id_resolver.h"
 #include "render/text/font_glyph_atlas_page_plan.h"
 #include "render/text/font_glyph_atlas_upload_operation_plan.h"
@@ -1544,6 +1545,77 @@ static_assert(requires(
         -> std::same_as<render::render_text_font_fallback_run_diff_snapshot>;
     { render::diff_render_text_font_fallback_run_plans(plan, plan) }
         -> std::same_as<render::render_text_font_fallback_run_plan_diff_snapshot>;
+});
+
+static_assert(requires(
+    render::render_text_font_fallback_shaping_handoff_status status,
+    render::render_text_font_fallback_shaping_handoff_run_snapshot run,
+    render::render_text_font_fallback_shaping_handoff_policy_snapshot policy,
+    render::render_text_font_fallback_shaping_handoff_request request,
+    render::render_text_font_fallback_shaping_handoff_snapshot handoff,
+    render::render_text_font_fallback_run_snapshot fallback_run,
+    render::render_text_font_fallback_run_plan_snapshot fallback_plan,
+    std::vector<std::string> keys,
+    std::vector<render::render_style_id> style_tokens) {
+    { render::render_text_font_fallback_shaping_handoff_status_name(status) } -> std::same_as<std::string>;
+    { run.stable_run_key } -> std::same_as<std::string&>;
+    { run.stable_page_key } -> std::same_as<std::string&>;
+    { run.item_index } -> std::same_as<std::size_t&>;
+    { run.source_run_index } -> std::same_as<std::size_t&>;
+    { run.fallback_run_index } -> std::same_as<std::size_t&>;
+    { run.style_token } -> std::same_as<render::render_style_id&>;
+    { run.byte_offset } -> std::same_as<std::size_t&>;
+    { run.byte_count } -> std::same_as<std::size_t&>;
+    { run.codepoint_offset } -> std::same_as<std::size_t&>;
+    { run.codepoint_count } -> std::same_as<std::size_t&>;
+    { run.first_codepoint } -> std::same_as<std::uint32_t&>;
+    { run.last_codepoint } -> std::same_as<std::uint32_t&>;
+    { run.requested_face_id } -> std::same_as<render::font_face_id&>;
+    { run.selected_face_id } -> std::same_as<render::font_face_id&>;
+    { run.requested_family } -> std::same_as<std::string&>;
+    { run.selected_family } -> std::same_as<std::string&>;
+    { run.selected_source_uri } -> std::same_as<std::string&>;
+    { run.fallback_order } -> std::same_as<std::size_t&>;
+    { run.attempted_face_ids } -> std::same_as<std::vector<render::font_face_id>&>;
+    { run.valid_utf8 } -> std::same_as<bool&>;
+    { run.glyph_supported } -> std::same_as<bool&>;
+    { run.used_fallback } -> std::same_as<bool&>;
+    { run.fallback_run_status } -> std::same_as<render::render_text_font_fallback_run_status&>;
+    { run.handoff_status } -> std::same_as<render::render_text_font_fallback_shaping_handoff_status&>;
+    { run.ready_to_shape() } -> std::same_as<bool>;
+    { run.blocked() } -> std::same_as<bool>;
+    { policy.run_count } -> std::same_as<std::size_t&>;
+    { policy.ready_run_count } -> std::same_as<std::size_t&>;
+    { policy.blocked_run_count } -> std::same_as<std::size_t&>;
+    { policy.missing_glyph_run_count } -> std::same_as<std::size_t&>;
+    { policy.invalid_utf8_run_count } -> std::same_as<std::size_t&>;
+    { policy.no_selected_face_run_count } -> std::same_as<std::size_t&>;
+    { policy.ready_codepoint_count } -> std::same_as<std::size_t&>;
+    { policy.blocked_codepoint_count } -> std::same_as<std::size_t&>;
+    { policy.unique_page_key_count } -> std::same_as<std::size_t&>;
+    { policy.unique_style_token_count } -> std::same_as<std::size_t&>;
+    { request.fallback_run_plan } -> std::same_as<render::render_text_font_fallback_run_plan_snapshot&>;
+    { handoff.runs } -> std::same_as<std::vector<render::render_text_font_fallback_shaping_handoff_run_snapshot>&>;
+    { handoff.ready_runs } -> std::same_as<std::vector<render::render_text_font_fallback_shaping_handoff_run_snapshot>&>;
+    { handoff.blocked_runs } -> std::same_as<std::vector<render::render_text_font_fallback_shaping_handoff_run_snapshot>&>;
+    { handoff.stable_run_keys } -> std::same_as<std::vector<std::string>&>;
+    { handoff.stable_page_keys } -> std::same_as<std::vector<std::string>&>;
+    { handoff.style_tokens } -> std::same_as<std::vector<render::render_style_id>&>;
+    { handoff.policy } -> std::same_as<render::render_text_font_fallback_shaping_handoff_policy_snapshot&>;
+    { handoff.ok() } -> std::same_as<bool>;
+    { handoff.has_blocked_runs() } -> std::same_as<bool>;
+    { render::font_fallback_shaping_handoff_stable_page_key_for(fallback_run) } -> std::same_as<std::string>;
+    { render::font_fallback_shaping_handoff_status_for(fallback_run) }
+        -> std::same_as<render::render_text_font_fallback_shaping_handoff_status>;
+    { render::font_fallback_shaping_handoff_append_unique_key(keys, run.stable_run_key) } -> std::same_as<void>;
+    { render::font_fallback_shaping_handoff_append_unique_style(style_tokens, run.style_token) } -> std::same_as<void>;
+    { render::make_render_text_font_fallback_shaping_handoff_run(fallback_run) }
+        -> std::same_as<render::render_text_font_fallback_shaping_handoff_run_snapshot>;
+    { render::summarize_render_text_font_fallback_shaping_handoff_policy(handoff) } -> std::same_as<void>;
+    { render::make_render_text_font_fallback_shaping_handoff(fallback_plan) }
+        -> std::same_as<render::render_text_font_fallback_shaping_handoff_snapshot>;
+    { render::make_render_text_font_fallback_shaping_handoff(request) }
+        -> std::same_as<render::render_text_font_fallback_shaping_handoff_snapshot>;
 });
 
 static_assert(requires(

@@ -2105,6 +2105,40 @@ enum class vulkan_backend_frame_pipeline_handoff_status {
 std::string_view frame_pipeline_handoff_status_name(
     vulkan_backend_frame_pipeline_handoff_status status);
 
+struct vulkan_backend_frame_native_execution_summary {
+    bool checked = false;
+    vulkan_native_frame_operation_summary operation;
+    vulkan_native_frame_operation_diff_diagnostics diff;
+    vulkan_native_frame_operation_execution_plan plan;
+    vulkan_native_frame_execution_decision acquire_decision =
+        vulkan_native_frame_execution_decision::not_checked;
+    vulkan_native_frame_execution_decision record_decision =
+        vulkan_native_frame_execution_decision::not_checked;
+    vulkan_native_frame_execution_decision submit_decision =
+        vulkan_native_frame_execution_decision::not_checked;
+    vulkan_native_frame_execution_decision present_decision =
+        vulkan_native_frame_execution_decision::not_checked;
+    bool native_acquire_would_execute = false;
+    bool native_record_would_execute = false;
+    bool native_submit_would_execute = false;
+    bool native_present_would_execute = false;
+
+    bool should_execute_native_frame() const
+    {
+        return checked && plan.should_execute_native_frame();
+    }
+
+    bool should_skip_native_frame() const
+    {
+        return checked && plan.skip_required;
+    }
+
+    bool should_use_cpu_fallback() const
+    {
+        return checked && plan.should_use_cpu_fallback();
+    }
+};
+
 struct vulkan_backend_frame_pipeline_handoff {
     bool checked = false;
     vulkan_backend_frame_pipeline_handoff_status status =
@@ -2156,6 +2190,7 @@ struct vulkan_backend_frame_pipeline_handoff {
     vulkan_native_function_table_status native_function_table_status =
         vulkan_native_function_table_status::not_checked;
     std::string missing_native_symbol_name;
+    vulkan_backend_frame_native_execution_summary native_frame_execution;
     bool sdk_native_path_checked = false;
     bool sdk_adapter_ready = false;
     vulkan_sdk_native_path_status sdk_native_path_status =

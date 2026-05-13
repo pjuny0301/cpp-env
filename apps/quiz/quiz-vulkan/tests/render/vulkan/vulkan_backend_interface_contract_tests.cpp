@@ -5742,6 +5742,31 @@ static_assert(requires(render::vulkan_backend::vulkan_native_frame_operation_exe
     { plan.should_use_cpu_fallback() } -> std::same_as<bool>;
 });
 
+static_assert(requires(render::vulkan_backend::vulkan_backend_frame_native_execution_summary summary) {
+    { summary.checked } -> std::same_as<bool&>;
+    { summary.operation }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_summary&>;
+    { summary.diff }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_diff_diagnostics&>;
+    { summary.plan }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_execution_plan&>;
+    { summary.acquire_decision }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_execution_decision&>;
+    { summary.record_decision }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_execution_decision&>;
+    { summary.submit_decision }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_execution_decision&>;
+    { summary.present_decision }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_execution_decision&>;
+    { summary.native_acquire_would_execute } -> std::same_as<bool&>;
+    { summary.native_record_would_execute } -> std::same_as<bool&>;
+    { summary.native_submit_would_execute } -> std::same_as<bool&>;
+    { summary.native_present_would_execute } -> std::same_as<bool&>;
+    { summary.should_execute_native_frame() } -> std::same_as<bool>;
+    { summary.should_skip_native_frame() } -> std::same_as<bool>;
+    { summary.should_use_cpu_fallback() } -> std::same_as<bool>;
+});
+
 static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status::not_checked),
     render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status>);
@@ -5838,6 +5863,8 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_frame_pipeline_han
     { handoff.native_function_table_status }
         -> std::same_as<render::vulkan_backend::vulkan_native_function_table_status&>;
     { handoff.missing_native_symbol_name } -> std::same_as<std::string&>;
+    { handoff.native_frame_execution }
+        -> std::same_as<render::vulkan_backend::vulkan_backend_frame_native_execution_summary&>;
     { handoff.sdk_native_path_checked } -> std::same_as<bool&>;
     { handoff.sdk_adapter_ready } -> std::same_as<bool&>;
     { handoff.sdk_native_path_status }

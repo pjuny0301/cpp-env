@@ -10,6 +10,8 @@ The workers are meant to implement behind existing quiz-vulkan interfaces, not r
 - `prompts/<role>.md`: role-specific task scope.
 - `setup-worktrees.sh`: creates role worktrees under `/mnt/c/aa-workers` by default.
 - `run-codex-tmux.sh`: starts one role in a persistent tmux session.
+- `send-worker-prompt.sh`: pastes and submits a prompt file into an existing
+  persistent tmux worker.
 - `with-build-lock.sh`: serializes shared Windows CMake/CTest access so
   parallel workers do not race on the same build directory.
 - `worker-status.sh`: summarizes live Codex tmux sessions, current paths, branch
@@ -58,6 +60,17 @@ Start `vulkan-backend` and `asset-system` after the lower contracts settle, unle
 tmux list-sessions
 tmux capture-pane -pt codex-text-engine -S -120
 tmux attach -t codex-text-engine
+```
+
+Send follow-up work to a long-lived worker without retyping a large prompt:
+
+```bash
+cat > /tmp/text-next.md <<'EOF'
+Continue in this same long-lived session, but start a fresh branch from the
+latest pushed baseline before editing. Keep edits inside the assigned engine
+folder and focused tests. Commit scoped files and report the hash.
+EOF
+/mnt/c/aa/codex-workers/send-worker-prompt.sh codex-text-engine /tmp/text-next.md
 ```
 
 For a compact coordinator view:

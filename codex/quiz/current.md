@@ -1,6 +1,6 @@
 # Quiz Current Handoff
 
-Last updated: 2026-05-13
+Last updated: 2026-05-14
 
 ## Top priorities
 
@@ -42,6 +42,8 @@ Last updated: 2026-05-13
 - Worker pipeline rule: keep tasks bounded to one engine-owned surface plus focused tests. If a worker discovers a cross-engine or app/CMake need, it should finish the engine-local patch and hand off the wiring need instead of editing integrator-owned files.
 - Worker pipeline rule: focused tests are enough for worker handoff; the integrator runs Windows focused verification after cherry-pick and full CTest only after meaningful batches. This keeps throughput without hiding boundary regressions.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
+- Latest integration note: `9e9765e` adds fallback shaped glyph execution diagnostics behind the text interface and threads the results into fake text engine diagnostics; Windows MinGW focused text CTest passed 2/2.
+- Latest integration note: `15456bb` adds input action resolution replay summaries behind the input interface; Windows MinGW focused input CTest passed 1/1.
 - Latest integration note: `993039e` adds Vulkan native frame operation diff diagnostics for operation summary deltas, fallback/native readiness changes, and renderer-facing frame lifecycle evidence; Windows MinGW focused Vulkan/renderer CTest passed 2/2.
 - Latest integration note: `2106032` adds image frame resource packet planning diagnostics for texture resource packets, placeholder-backed frames, sampler/cache-key routing, and failure evidence; integrator registered `image_texture_frame_resource_packet_plan.h`, and Windows MinGW focused image CTest passed 1/1.
 - Latest integration note: `ff3e5c6` adds text fallback shaping handoff diagnostics for fallback run planning to shaping-input boundaries; integrator registered `font_fallback_shaping_handoff.h`, and Windows MinGW focused text CTest passed 1/1.

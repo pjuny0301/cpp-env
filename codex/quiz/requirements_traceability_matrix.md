@@ -1,11 +1,14 @@
 # Quiz 요구사항 추적 매트릭스
 
-마지막 갱신: 2026-05-13
+마지막 갱신: 2026-05-14
 
 이 문서는 요구사항 번호를 실행 순서가 아니라 추적 ID로 관리한다. 실제 구현 순서는 `big_plan.md`의 의존관계 기반 단계가 기준이며, 각 행은 루트 구현 문서, 하위 프로젝트 문서, 현재 C++/문서 증거를 연결한다.
 
 최근 baseline 통합 증거:
 
+- current: input action resolution replay summaries and fallback shaped glyph execution diagnostics integrated; Windows MinGW focused input/text CTest passed 3/3 and interface compile target build confirmed.
+- `15456bb`: input core now summarizes candidate resolution replay output without app/domain dispatch, preserving selected/support/rejected evidence for normalized input routing review.
+- `9e9765e`: text engine now executes fallback shaped glyph input records into deterministic execution diagnostics and exposes them through fake text engine layout diagnostics.
 - current: fallback shaped glyph input handoff integrated; Windows MinGW focused text CTest passed 2/2 and interface compile target build confirmed.
 - `857c9be`: text engine now derives deterministic shaped glyph input records from fallback run/handoff data and exposes them through fake text engine diagnostics without app/domain/renderer coupling.
 - current: input action candidate resolution, image frame resource packet materialization, and Vulkan native frame execution boundary integrated; Windows MinGW focused input/image/Vulkan CTest passed 4/4 and interface compile target builds confirmed. Configured CTest count is now `100`.

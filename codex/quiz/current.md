@@ -39,6 +39,7 @@ Last updated: 2026-05-09
 - Engine workers own only their engine folders. App/runtime, top-level CMake, and aggregate contract wiring stay with the integrator unless explicitly assigned.
 - Large file splitting is allowed when it improves module cohesion, worker ownership, reviewability, or conflict isolation. Do not split files only because they exceed a line-count threshold, and do not move stable public interfaces without explicit integrator approval.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
+- Latest verification note: after reboot recovery, Windows MinGW full CTest passed `96/96` on baseline `e1f56aa`.
 - Latest verification note: Windows MinGW full CTest passed `95/95` after the image/input/text handoff hardening integrations.
 - Latest integration note: `511f81b` adds image frame binding summary diagnostics for upload-backed, placeholder-backed, missing binding/upload-result, retry/backoff blocker, cache-key, sampler, and frame-to-frame diff evidence.
 - Latest integration note: `b6baeb3` hardens normalized input replay diagnostics for IME preedit start/update/commit/cancel, focus/caret/selection transitions, UTF-8 boundary-safe backspace evidence, pointer capture reset, and wheel diagnostics.

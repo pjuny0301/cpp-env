@@ -1395,6 +1395,32 @@ concept InputActionResolutionTargetDeltaInterface = requires(T delta) {
 };
 
 template <typename T>
+concept InputActionResolutionReplayClassificationInterface = requires(T classification) {
+    { classification.change_class }
+        -> std::same_as<input::input_action_resolution_replay_change_class&>;
+    { classification.focus_target_churn } -> std::same_as<bool&>;
+    { classification.text_target_churn } -> std::same_as<bool&>;
+    { classification.selected_action_lost } -> std::same_as<bool&>;
+    { classification.selected_action_gained } -> std::same_as<bool&>;
+    { classification.supporting_evidence_lost } -> std::same_as<bool&>;
+    { classification.supporting_evidence_gained } -> std::same_as<bool&>;
+    { classification.rejected_count_changed } -> std::same_as<bool&>;
+    { classification.rejected_count_lost } -> std::same_as<bool&>;
+    { classification.rejected_count_gained } -> std::same_as<bool&>;
+    { classification.no_observable_delta_changed } -> std::same_as<bool&>;
+    { classification.no_observable_delta_lost } -> std::same_as<bool&>;
+    { classification.no_observable_delta_gained } -> std::same_as<bool&>;
+    { classification.has_churn } -> std::same_as<bool&>;
+    { classification.has_regression } -> std::same_as<bool&>;
+    { classification.has_improvement } -> std::same_as<bool&>;
+    { classification.changed } -> std::same_as<bool&>;
+    { classification.churn_count } -> std::same_as<std::size_t&>;
+    { classification.regression_count } -> std::same_as<std::size_t&>;
+    { classification.improvement_count } -> std::same_as<std::size_t&>;
+    { classification.changed_category_count } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
 concept InputActionResolutionReplaySummaryDiffInterface = requires(T diff) {
     { diff.batch_count } -> std::same_as<input::normalized_input_replay_count_delta&>;
     { diff.result_counts } -> std::same_as<input::input_action_candidate_result_count_deltas&>;
@@ -1402,6 +1428,8 @@ concept InputActionResolutionReplaySummaryDiffInterface = requires(T diff) {
     { diff.reasons } -> std::same_as<input::input_action_resolution_reason_count_deltas&>;
     { diff.focus_target } -> std::same_as<input::input_action_resolution_target_delta&>;
     { diff.text_target } -> std::same_as<input::input_action_resolution_target_delta&>;
+    { diff.classification }
+        -> std::same_as<input::input_action_resolution_replay_classification&>;
     { diff.changed } -> std::same_as<bool&>;
     { diff.changed_category_count } -> std::same_as<std::size_t&>;
 };
@@ -1410,11 +1438,13 @@ template <typename T>
 concept InputActionResolutionDiffFunctions = requires(
     input::input_action_resolution_reason_counts& reason_counts,
     input::input_action_candidate_result_reason reason,
+    const input::normalized_input_replay_count_delta& count_delta,
     const input::input_action_candidate_count_deltas& candidate_deltas,
     const input::input_action_candidate_counts& candidate_counts,
     const input::input_action_candidate_result_count_deltas& result_deltas,
     const input::input_action_candidate_result_counts& result_counts,
     const input::input_action_resolution_replay_summary& replay_summary,
+    const input::input_action_resolution_replay_summary_diff& replay_summary_diff,
     const std::vector<input::input_action_resolution_result_summary>& result_summaries,
     const input::input_action_resolution_reason_counts& reason_count_source,
     const input::input_action_resolution_reason_count_deltas& reason_deltas,
@@ -1457,6 +1487,14 @@ concept InputActionResolutionDiffFunctions = requires(
         -> std::same_as<input::input_action_resolution_target_delta>;
     { input::count_input_action_resolution_diff_category(changed, changed_category_count) }
         -> std::same_as<void>;
+    { input::input_action_resolution_count_delta_gained(count_delta) } -> std::same_as<bool>;
+    { input::input_action_resolution_count_delta_lost(count_delta) } -> std::same_as<bool>;
+    { input::input_action_candidate_count_deltas_gained(candidate_deltas) } -> std::same_as<bool>;
+    { input::input_action_candidate_count_deltas_lost(candidate_deltas) } -> std::same_as<bool>;
+    { input::input_action_resolution_replay_change_class_for(changed, changed, changed) }
+        -> std::same_as<input::input_action_resolution_replay_change_class>;
+    { input::classify_input_action_resolution_replay_diff(replay_summary_diff) }
+        -> std::same_as<input::input_action_resolution_replay_classification>;
     { input::diff_input_action_resolution_replay_summaries(replay_summary, replay_summary) }
         -> std::same_as<input::input_action_resolution_replay_summary_diff>;
 };
@@ -2622,6 +2660,8 @@ static_assert(InputActionResolutionReasonCountDeltasInterface<
 static_assert(InputActionResolutionTargetSnapshotInterface<
     input::input_action_resolution_target_snapshot>);
 static_assert(InputActionResolutionTargetDeltaInterface<input::input_action_resolution_target_delta>);
+static_assert(InputActionResolutionReplayClassificationInterface<
+    input::input_action_resolution_replay_classification>);
 static_assert(InputActionResolutionReplaySummaryDiffInterface<
     input::input_action_resolution_replay_summary_diff>);
 static_assert(InputActionResolutionDiffFunctions<void>);
@@ -2698,6 +2738,7 @@ static_assert(std::is_default_constructible_v<input::input_action_resolution_rea
 static_assert(std::is_default_constructible_v<input::input_action_resolution_reason_count_deltas>);
 static_assert(std::is_default_constructible_v<input::input_action_resolution_target_snapshot>);
 static_assert(std::is_default_constructible_v<input::input_action_resolution_target_delta>);
+static_assert(std::is_default_constructible_v<input::input_action_resolution_replay_classification>);
 static_assert(std::is_default_constructible_v<input::input_action_resolution_replay_summary_diff>);
 static_assert(std::is_default_constructible_v<input::input_routing_count_delta>);
 static_assert(std::is_default_constructible_v<input::input_routing_bool_delta>);
@@ -2776,6 +2817,7 @@ static_assert(!std::is_polymorphic_v<input::input_action_resolution_reason_count
 static_assert(!std::is_polymorphic_v<input::input_action_resolution_reason_count_deltas>);
 static_assert(!std::is_polymorphic_v<input::input_action_resolution_target_snapshot>);
 static_assert(!std::is_polymorphic_v<input::input_action_resolution_target_delta>);
+static_assert(!std::is_polymorphic_v<input::input_action_resolution_replay_classification>);
 static_assert(!std::is_polymorphic_v<input::input_action_resolution_replay_summary_diff>);
 static_assert(!std::is_polymorphic_v<input::input_routing_diagnostics_diff>);
 static_assert(!std::is_polymorphic_v<input::input_routing_gesture_policy_diff>);

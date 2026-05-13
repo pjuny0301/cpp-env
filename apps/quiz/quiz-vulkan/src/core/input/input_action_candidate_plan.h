@@ -378,6 +378,39 @@ struct input_action_resolution_target_delta {
     bool changed = false;
 };
 
+enum class input_action_resolution_replay_change_class {
+    stable,
+    behavior_change,
+    regression,
+    improvement,
+    mixed,
+};
+
+struct input_action_resolution_replay_classification {
+    input_action_resolution_replay_change_class change_class =
+        input_action_resolution_replay_change_class::stable;
+    bool focus_target_churn = false;
+    bool text_target_churn = false;
+    bool selected_action_lost = false;
+    bool selected_action_gained = false;
+    bool supporting_evidence_lost = false;
+    bool supporting_evidence_gained = false;
+    bool rejected_count_changed = false;
+    bool rejected_count_lost = false;
+    bool rejected_count_gained = false;
+    bool no_observable_delta_changed = false;
+    bool no_observable_delta_lost = false;
+    bool no_observable_delta_gained = false;
+    bool has_churn = false;
+    bool has_regression = false;
+    bool has_improvement = false;
+    bool changed = false;
+    std::size_t churn_count = 0;
+    std::size_t regression_count = 0;
+    std::size_t improvement_count = 0;
+    std::size_t changed_category_count = 0;
+};
+
 struct input_action_resolution_replay_summary_diff {
     normalized_input_replay_count_delta batch_count;
     input_action_candidate_result_count_deltas result_counts;
@@ -385,6 +418,7 @@ struct input_action_resolution_replay_summary_diff {
     input_action_resolution_reason_count_deltas reasons;
     input_action_resolution_target_delta focus_target;
     input_action_resolution_target_delta text_target;
+    input_action_resolution_replay_classification classification;
     bool changed = false;
     std::size_t changed_category_count = 0;
 };
@@ -1673,6 +1707,164 @@ inline void count_input_action_resolution_diff_category(
     }
 }
 
+[[nodiscard]] inline bool input_action_resolution_count_delta_gained(
+    const normalized_input_replay_count_delta& delta)
+{
+    return delta.delta > 0;
+}
+
+[[nodiscard]] inline bool input_action_resolution_count_delta_lost(
+    const normalized_input_replay_count_delta& delta)
+{
+    return delta.delta < 0;
+}
+
+[[nodiscard]] inline bool input_action_candidate_count_deltas_gained(
+    const input_action_candidate_count_deltas& deltas)
+{
+    return input_action_resolution_count_delta_gained(deltas.text_edit)
+        || input_action_resolution_count_delta_gained(deltas.focus_move)
+        || input_action_resolution_count_delta_gained(deltas.pointer_capture)
+        || input_action_resolution_count_delta_gained(deltas.gesture_candidate)
+        || input_action_resolution_count_delta_gained(deltas.wheel_scroll)
+        || input_action_resolution_count_delta_gained(deltas.ime_composition_start)
+        || input_action_resolution_count_delta_gained(deltas.ime_preedit)
+        || input_action_resolution_count_delta_gained(deltas.ime_commit)
+        || input_action_resolution_count_delta_gained(deltas.ime_cancel)
+        || input_action_resolution_count_delta_gained(deltas.total);
+}
+
+[[nodiscard]] inline bool input_action_candidate_count_deltas_lost(
+    const input_action_candidate_count_deltas& deltas)
+{
+    return input_action_resolution_count_delta_lost(deltas.text_edit)
+        || input_action_resolution_count_delta_lost(deltas.focus_move)
+        || input_action_resolution_count_delta_lost(deltas.pointer_capture)
+        || input_action_resolution_count_delta_lost(deltas.gesture_candidate)
+        || input_action_resolution_count_delta_lost(deltas.wheel_scroll)
+        || input_action_resolution_count_delta_lost(deltas.ime_composition_start)
+        || input_action_resolution_count_delta_lost(deltas.ime_preedit)
+        || input_action_resolution_count_delta_lost(deltas.ime_commit)
+        || input_action_resolution_count_delta_lost(deltas.ime_cancel)
+        || input_action_resolution_count_delta_lost(deltas.total);
+}
+
+[[nodiscard]] inline input_action_resolution_replay_change_class
+input_action_resolution_replay_change_class_for(
+    bool changed,
+    bool has_regression,
+    bool has_improvement)
+{
+    if (!changed) {
+        return input_action_resolution_replay_change_class::stable;
+    }
+    if (has_regression && has_improvement) {
+        return input_action_resolution_replay_change_class::mixed;
+    }
+    if (has_regression) {
+        return input_action_resolution_replay_change_class::regression;
+    }
+    if (has_improvement) {
+        return input_action_resolution_replay_change_class::improvement;
+    }
+    return input_action_resolution_replay_change_class::behavior_change;
+}
+
+[[nodiscard]] inline input_action_resolution_replay_classification
+classify_input_action_resolution_replay_diff(
+    const input_action_resolution_replay_summary_diff& diff)
+{
+    input_action_resolution_replay_classification classification{
+        .focus_target_churn = diff.focus_target.changed,
+        .text_target_churn = diff.text_target.changed,
+        .selected_action_lost =
+            input_action_candidate_count_deltas_lost(diff.result_counts.selected),
+        .selected_action_gained =
+            input_action_candidate_count_deltas_gained(diff.result_counts.selected),
+        .supporting_evidence_lost =
+            input_action_candidate_count_deltas_lost(diff.result_counts.supporting_evidence),
+        .supporting_evidence_gained =
+            input_action_candidate_count_deltas_gained(diff.result_counts.supporting_evidence),
+        .rejected_count_changed = diff.result_counts.rejected.total.changed,
+        .rejected_count_lost =
+            input_action_resolution_count_delta_lost(diff.result_counts.rejected.total),
+        .rejected_count_gained =
+            input_action_resolution_count_delta_gained(diff.result_counts.rejected.total),
+        .no_observable_delta_changed = diff.reasons.no_observable_delta.changed,
+        .no_observable_delta_lost =
+            input_action_resolution_count_delta_lost(diff.reasons.no_observable_delta),
+        .no_observable_delta_gained =
+            input_action_resolution_count_delta_gained(diff.reasons.no_observable_delta),
+        .changed = diff.changed,
+    };
+
+    count_input_action_resolution_diff_category(
+        classification.focus_target_churn,
+        classification.churn_count);
+    count_input_action_resolution_diff_category(
+        classification.text_target_churn,
+        classification.churn_count);
+    count_input_action_resolution_diff_category(
+        classification.selected_action_lost,
+        classification.regression_count);
+    count_input_action_resolution_diff_category(
+        classification.supporting_evidence_lost,
+        classification.regression_count);
+    count_input_action_resolution_diff_category(
+        classification.rejected_count_gained,
+        classification.regression_count);
+    count_input_action_resolution_diff_category(
+        classification.no_observable_delta_gained,
+        classification.regression_count);
+    count_input_action_resolution_diff_category(
+        classification.selected_action_gained,
+        classification.improvement_count);
+    count_input_action_resolution_diff_category(
+        classification.supporting_evidence_gained,
+        classification.improvement_count);
+    count_input_action_resolution_diff_category(
+        classification.rejected_count_lost,
+        classification.improvement_count);
+    count_input_action_resolution_diff_category(
+        classification.no_observable_delta_lost,
+        classification.improvement_count);
+
+    count_input_action_resolution_diff_category(
+        classification.focus_target_churn,
+        classification.changed_category_count);
+    count_input_action_resolution_diff_category(
+        classification.text_target_churn,
+        classification.changed_category_count);
+    count_input_action_resolution_diff_category(
+        classification.selected_action_lost,
+        classification.changed_category_count);
+    count_input_action_resolution_diff_category(
+        classification.selected_action_gained,
+        classification.changed_category_count);
+    count_input_action_resolution_diff_category(
+        classification.supporting_evidence_lost,
+        classification.changed_category_count);
+    count_input_action_resolution_diff_category(
+        classification.supporting_evidence_gained,
+        classification.changed_category_count);
+    count_input_action_resolution_diff_category(
+        classification.rejected_count_changed,
+        classification.changed_category_count);
+    count_input_action_resolution_diff_category(
+        classification.no_observable_delta_changed,
+        classification.changed_category_count);
+
+    classification.changed = classification.changed || classification.changed_category_count > 0;
+    classification.has_churn = classification.churn_count > 0;
+    classification.has_regression = classification.regression_count > 0;
+    classification.has_improvement = classification.improvement_count > 0;
+    classification.change_class = input_action_resolution_replay_change_class_for(
+        classification.changed,
+        classification.has_regression,
+        classification.has_improvement);
+    return classification;
+}
+
 [[nodiscard]] inline input_action_resolution_replay_summary_diff
 diff_input_action_resolution_replay_summaries(
     const input_action_resolution_replay_summary& before,
@@ -1701,6 +1893,7 @@ diff_input_action_resolution_replay_summaries(
     count_input_action_resolution_diff_category(diff.focus_target.changed, diff.changed_category_count);
     count_input_action_resolution_diff_category(diff.text_target.changed, diff.changed_category_count);
     diff.changed = diff.changed_category_count > 0;
+    diff.classification = classify_input_action_resolution_replay_diff(diff);
     return diff;
 }
 

@@ -798,6 +798,252 @@ void test_resolution_replay_summary_diff_reports_counts_reasons_and_targets()
         "resolution replay text target snapshot uses latest text target");
 }
 
+void test_resolution_replay_summary_diff_classifies_regressions_and_improvements()
+{
+    using namespace quiz_vulkan::input;
+
+    const input_action_resolution_replay_summary before{
+        .selected = {
+            input_action_resolution_result_summary{
+                .kind = input_action_candidate_kind::text_edit,
+                .status = input_action_candidate_result_status::selected,
+                .reason = input_action_candidate_result_reason::text_edit_diff,
+                .batch_label = "before",
+                .has_text_delta = true,
+                .target_id = "answer",
+            },
+            input_action_resolution_result_summary{
+                .kind = input_action_candidate_kind::focus_move,
+                .status = input_action_candidate_result_status::selected,
+                .reason = input_action_candidate_result_reason::focus_transition,
+                .batch_label = "before",
+                .has_focus_transition = true,
+                .target_id = "answer",
+                .target_id_after = "answer",
+                .has_focus_after = true,
+            },
+        },
+        .supporting_evidence = {
+            input_action_resolution_result_summary{
+                .kind = input_action_candidate_kind::pointer_capture,
+                .status = input_action_candidate_result_status::supporting_evidence,
+                .reason = input_action_candidate_result_reason::pointer_capture_supports_selected,
+                .batch_label = "before",
+                .supports_selected_candidate = true,
+                .has_pointer_capture_transition = true,
+            },
+        },
+        .counts = input_action_candidate_result_counts{
+            .selected = input_action_candidate_counts{
+                .text_edit = 1,
+                .focus_move = 1,
+                .total = 2,
+            },
+            .supporting_evidence = input_action_candidate_counts{
+                .pointer_capture = 1,
+                .total = 1,
+            },
+            .total = 3,
+        },
+    };
+    const input_action_resolution_replay_summary after{
+        .selected = {
+            input_action_resolution_result_summary{
+                .kind = input_action_candidate_kind::focus_move,
+                .status = input_action_candidate_result_status::selected,
+                .reason = input_action_candidate_result_reason::focus_transition,
+                .batch_label = "after",
+                .has_focus_transition = true,
+                .target_id = "next",
+                .target_id_before = "answer",
+                .target_id_after = "next",
+                .target_changed = true,
+                .has_focus_after = true,
+            },
+        },
+        .rejected = {
+            input_action_resolution_result_summary{
+                .kind = input_action_candidate_kind::gesture_candidate,
+                .status = input_action_candidate_result_status::rejected,
+                .reason = input_action_candidate_result_reason::gesture_policy_rejected,
+                .batch_label = "after",
+                .gesture_decision = gesture_policy_decision::swipe_rejected_distance,
+            },
+        },
+        .diagnostic_only = {
+            input_action_resolution_result_summary{
+                .kind = input_action_candidate_kind::text_edit,
+                .status = input_action_candidate_result_status::diagnostic_only,
+                .reason = input_action_candidate_result_reason::no_observable_delta,
+                .batch_label = "after",
+                .target_id = "answer-alt",
+            },
+        },
+        .counts = input_action_candidate_result_counts{
+            .selected = input_action_candidate_counts{
+                .focus_move = 1,
+                .total = 1,
+            },
+            .diagnostic_only = input_action_candidate_counts{
+                .text_edit = 1,
+                .total = 1,
+            },
+            .rejected = input_action_candidate_counts{
+                .gesture_candidate = 1,
+                .total = 1,
+            },
+            .total = 3,
+        },
+    };
+
+    const input_action_resolution_replay_summary_diff regression_diff =
+        diff_input_action_resolution_replay_summaries(before, after);
+    const input_action_resolution_replay_classification& regression =
+        regression_diff.classification;
+
+    require(regression.change_class == input_action_resolution_replay_change_class::regression,
+        "resolution replay classification reports regression-only diff");
+    require(regression.focus_target_churn,
+        "resolution replay classification reports focus target churn");
+    require(regression.text_target_churn,
+        "resolution replay classification reports text target churn");
+    require(regression.selected_action_lost,
+        "resolution replay classification reports selected action loss");
+    require(!regression.selected_action_gained,
+        "resolution replay classification does not report selected action gain");
+    require(regression.supporting_evidence_lost,
+        "resolution replay classification reports support evidence loss");
+    require(!regression.supporting_evidence_gained,
+        "resolution replay classification does not report support evidence gain");
+    require(regression.rejected_count_changed,
+        "resolution replay classification reports rejected count change");
+    require(regression.rejected_count_gained,
+        "resolution replay classification reports rejected count growth");
+    require(!regression.rejected_count_lost,
+        "resolution replay classification does not report rejected count loss");
+    require(regression.no_observable_delta_changed,
+        "resolution replay classification reports no-observable-delta transition");
+    require(regression.no_observable_delta_gained,
+        "resolution replay classification reports no-observable-delta growth");
+    require(!regression.no_observable_delta_lost,
+        "resolution replay classification does not report no-observable-delta loss");
+    require(regression.has_churn,
+        "resolution replay classification records churn presence");
+    require(regression.has_regression,
+        "resolution replay classification records regression presence");
+    require(!regression.has_improvement,
+        "resolution replay classification does not record improvement presence");
+    require(regression.churn_count == 2,
+        "resolution replay classification counts focus and text churn categories");
+    require(regression.regression_count == 4,
+        "resolution replay classification counts regression categories");
+    require(regression.improvement_count == 0,
+        "resolution replay classification has zero improvement categories");
+    require(regression.changed_category_count == 6,
+        "resolution replay classification counts changed categories");
+
+    const input_action_resolution_replay_summary_diff improvement_diff =
+        diff_input_action_resolution_replay_summaries(after, before);
+    const input_action_resolution_replay_classification& improvement =
+        improvement_diff.classification;
+
+    require(improvement.change_class == input_action_resolution_replay_change_class::improvement,
+        "resolution replay classification reports improvement-only inverse diff");
+    require(improvement.focus_target_churn,
+        "inverse resolution replay classification keeps focus target churn");
+    require(improvement.text_target_churn,
+        "inverse resolution replay classification keeps text target churn");
+    require(improvement.selected_action_gained,
+        "inverse resolution replay classification reports selected action gain");
+    require(!improvement.selected_action_lost,
+        "inverse resolution replay classification does not report selected action loss");
+    require(improvement.supporting_evidence_gained,
+        "inverse resolution replay classification reports support evidence gain");
+    require(!improvement.supporting_evidence_lost,
+        "inverse resolution replay classification does not report support evidence loss");
+    require(improvement.rejected_count_lost,
+        "inverse resolution replay classification reports rejected count loss");
+    require(!improvement.rejected_count_gained,
+        "inverse resolution replay classification does not report rejected count gain");
+    require(improvement.no_observable_delta_lost,
+        "inverse resolution replay classification reports no-observable-delta loss");
+    require(!improvement.no_observable_delta_gained,
+        "inverse resolution replay classification does not report no-observable-delta gain");
+    require(!improvement.has_regression,
+        "inverse resolution replay classification has no regression category");
+    require(improvement.has_improvement,
+        "inverse resolution replay classification has improvement categories");
+    require(improvement.churn_count == 2,
+        "inverse resolution replay classification counts churn categories");
+    require(improvement.regression_count == 0,
+        "inverse resolution replay classification has zero regression categories");
+    require(improvement.improvement_count == 4,
+        "inverse resolution replay classification counts improvement categories");
+    require(improvement.changed_category_count == 6,
+        "inverse resolution replay classification counts changed categories");
+}
+
+void test_resolution_replay_summary_diff_classifies_selected_action_kind_churn()
+{
+    using namespace quiz_vulkan::input;
+
+    const input_action_resolution_replay_summary selected_text{
+        .selected = {
+            input_action_resolution_result_summary{
+                .kind = input_action_candidate_kind::text_edit,
+                .status = input_action_candidate_result_status::selected,
+                .reason = input_action_candidate_result_reason::text_edit_diff,
+                .batch_label = "text",
+                .has_text_delta = true,
+                .target_id = "answer",
+            },
+        },
+        .counts = input_action_candidate_result_counts{
+            .selected = input_action_candidate_counts{
+                .text_edit = 1,
+                .total = 1,
+            },
+            .total = 1,
+        },
+    };
+    const input_action_resolution_replay_summary selected_wheel{
+        .selected = {
+            input_action_resolution_result_summary{
+                .kind = input_action_candidate_kind::wheel_scroll,
+                .status = input_action_candidate_result_status::selected,
+                .reason = input_action_candidate_result_reason::wheel_delta,
+                .batch_label = "wheel",
+                .has_wheel_delta = true,
+                .line_delta_y = -1.0f,
+            },
+        },
+        .counts = input_action_candidate_result_counts{
+            .selected = input_action_candidate_counts{
+                .wheel_scroll = 1,
+                .total = 1,
+            },
+            .total = 1,
+        },
+    };
+
+    const input_action_resolution_replay_summary_diff diff =
+        diff_input_action_resolution_replay_summaries(selected_text, selected_wheel);
+    const input_action_resolution_replay_classification& classification = diff.classification;
+
+    require(diff.result_counts.selected.total.delta == 0,
+        "selected kind churn keeps selected total stable");
+    require(classification.selected_action_lost,
+        "selected kind churn reports selected action loss by kind");
+    require(classification.selected_action_gained,
+        "selected kind churn reports selected action gain by kind");
+    require(classification.change_class == input_action_resolution_replay_change_class::mixed,
+        "selected kind churn reports mixed classification");
+    require(classification.regression_count == 1,
+        "selected kind churn counts selected action loss as one regression category");
+    require(classification.improvement_count == 1,
+        "selected kind churn counts selected action gain as one improvement category");
+}
+
 void test_resolution_replay_summary_diff_is_stable_for_identical_snapshots()
 {
     using namespace quiz_vulkan::input;
@@ -842,6 +1088,12 @@ void test_resolution_replay_summary_diff_is_stable_for_identical_snapshots()
         "stable resolution replay diff has stable text target");
     require(!diff.focus_target.changed,
         "stable resolution replay diff has stable absent focus target");
+    require(diff.classification.change_class == input_action_resolution_replay_change_class::stable,
+        "stable resolution replay classification is stable");
+    require(!diff.classification.changed,
+        "stable resolution replay classification reports unchanged");
+    require(diff.classification.changed_category_count == 0,
+        "stable resolution replay classification has zero changed categories");
 }
 
 void test_empty_replay_yields_empty_candidate_plan()
@@ -873,6 +1125,8 @@ int main()
     test_resolution_batch_summary_groups_rejected_and_diagnostic_results();
     test_candidate_resolution_uses_deterministic_priority_tiebreak();
     test_resolution_replay_summary_diff_reports_counts_reasons_and_targets();
+    test_resolution_replay_summary_diff_classifies_regressions_and_improvements();
+    test_resolution_replay_summary_diff_classifies_selected_action_kind_churn();
     test_resolution_replay_summary_diff_is_stable_for_identical_snapshots();
     test_empty_replay_yields_empty_candidate_plan();
 

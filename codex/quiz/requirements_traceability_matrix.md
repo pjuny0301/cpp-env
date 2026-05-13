@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: image frame resource materialization diff integrated with public FILE_SET registration; Windows MinGW focused image CTest passed 2/2, interface compile target build confirmed, and configured CTest count is now `101`.
+- `93d445c`: image engine now compares materialized frame resource records and reports cache/upload/sampler/materialization deltas without exposing cache or uploader internals.
 - current: input action resolution replay summaries and fallback shaped glyph execution diagnostics integrated; Windows MinGW focused input/text CTest passed 3/3 and interface compile target build confirmed.
 - `15456bb`: input core now summarizes candidate resolution replay output without app/domain dispatch, preserving selected/support/rejected evidence for normalized input routing review.
 - `9e9765e`: text engine now executes fallback shaped glyph input records into deterministic execution diagnostics and exposes them through fake text engine layout diagnostics.

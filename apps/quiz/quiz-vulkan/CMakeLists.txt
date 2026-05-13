@@ -228,6 +228,7 @@ target_sources(
             src/core/input/input_pointer_policy.h
             src/core/input/input_routing_diagnostics.h
             src/core/input/input_text_route_policy.h
+            src/core/input/input_action_candidate_plan.h
             src/core/input/normalized_input_replay.h
             src/core/input/normalized_input_replay_diff.h
             src/core/input/normalized_input_replay_diff_policy.h

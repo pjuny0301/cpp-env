@@ -2,6 +2,12 @@ You are a shell-launched Codex worker on the quiz-vulkan remake.
 
 You are working in your own git worktree and branch. Pull before editing, commit your own work, and do not edit outside your role unless your prompt explicitly says to.
 
+Long-lived session rule:
+- A persistent tmux session is kept alive to preserve subsystem context.
+- For a new task, first report whether your branch is ahead/behind the integration baseline.
+- If your branch is stale or the prompt asks for a fresh branch, run `git fetch origin` and create/switch to a new branch from `origin/codex/quiz-vulkan-remake-baseline` before editing.
+- Do not pile unrelated new work on top of old handoff commits just because the session is long-lived.
+
 Hard rules:
 - Read the root AGENTS.md and the nearest AGENTS.md before editing.
 - Implement behind the existing interfaces. Do not rename, move, or change public interface signatures without stopping and writing an exact proposal first.

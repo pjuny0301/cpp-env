@@ -4,6 +4,7 @@
 #include "render/image/image_source_bytes_loader.h"
 #include "render/image/image_texture_cache.h"
 #include "render/image/image_texture_frame_resource_packet_materialization.h"
+#include "render/image/image_texture_frame_resource_materialization_diff.h"
 #include "render/image/image_texture_frame_resource_packet_plan.h"
 #include "render/image/image_texture_frame_upload_handoff.h"
 #include "render/image/image_texture_pipeline.h"
@@ -321,6 +322,18 @@ static_assert(requires(
         texture_frame_resource_packet_materialization_entry,
     render::render_image_texture_frame_resource_packet_materialization
         texture_frame_resource_packet_materialization,
+    render::render_image_texture_frame_resource_materialization_diff_entry_status
+        texture_frame_resource_materialization_diff_status,
+    render::render_image_texture_frame_resource_cache_handoff_delta
+        texture_frame_resource_cache_handoff_delta,
+    render::render_image_texture_frame_resource_upload_handoff_delta
+        texture_frame_resource_upload_handoff_delta,
+    render::render_image_texture_frame_resource_sampler_handoff_delta
+        texture_frame_resource_sampler_handoff_delta,
+    render::render_image_texture_frame_resource_materialization_entry_diff
+        texture_frame_resource_materialization_entry_diff,
+    render::render_image_texture_frame_resource_materialization_diff
+        texture_frame_resource_materialization_diff,
     render::fake_image_texture_pipeline_entry_snapshot pipeline_entry,
     render::fake_image_texture_pipeline_snapshot pipeline_snapshot,
     render::standard_image_texture_pipeline_decode_snapshot standard_pipeline_decoder_snapshot,
@@ -1541,6 +1554,51 @@ static_assert(requires(
     { render::materialize_render_image_texture_frame_resource_packets(
         texture_frame, upload_result_diagnostics_snapshot) }
         -> std::same_as<render::render_image_texture_frame_resource_packet_materialization>;
+    { render::render_image_texture_frame_resource_materialization_diff_entry_status_name(
+        texture_frame_resource_materialization_diff_status) } -> std::same_as<std::string>;
+    { render::render_image_texture_frame_resource_materialization_entry_for_request_index(
+        texture_frame_resource_packet_materialization, std::size_t{}) }
+        -> std::same_as<const render::render_image_texture_frame_resource_packet_materialization_entry*>;
+    { render::append_render_image_texture_frame_resource_materialization_request_indexes(
+        std::declval<std::map<std::size_t, bool>&>(), texture_frame_resource_packet_materialization) }
+        -> std::same_as<void>;
+    { render::render_image_texture_frame_resource_materialization_uploaded_byte_count(
+        texture_frame_resource_packet_materialization) } -> std::same_as<std::size_t>;
+    { render::render_image_texture_frame_resource_cache_handoff_record_equal(
+        texture_frame_resource_cache_handoff, texture_frame_resource_cache_handoff) }
+        -> std::same_as<bool>;
+    { render::render_image_texture_frame_resource_upload_handoff_record_equal(
+        texture_frame_resource_upload_handoff, texture_frame_resource_upload_handoff) }
+        -> std::same_as<bool>;
+    { render::render_image_texture_frame_resource_sampler_handoff_record_equal(
+        texture_frame_resource_sampler_handoff, texture_frame_resource_sampler_handoff) }
+        -> std::same_as<bool>;
+    { render::render_image_texture_frame_resource_materialization_entry_equal(
+        texture_frame_resource_packet_materialization_entry,
+        texture_frame_resource_packet_materialization_entry) } -> std::same_as<bool>;
+    { render::make_render_image_texture_frame_resource_cache_handoff_delta(
+        &texture_frame_resource_cache_handoff,
+        &texture_frame_resource_cache_handoff,
+        std::size_t{}) } -> std::same_as<render::render_image_texture_frame_resource_cache_handoff_delta>;
+    { render::make_render_image_texture_frame_resource_upload_handoff_delta(
+        &texture_frame_resource_upload_handoff,
+        &texture_frame_resource_upload_handoff,
+        std::size_t{}) } -> std::same_as<render::render_image_texture_frame_resource_upload_handoff_delta>;
+    { render::make_render_image_texture_frame_resource_sampler_handoff_delta(
+        &texture_frame_resource_sampler_handoff,
+        &texture_frame_resource_sampler_handoff,
+        std::size_t{}) } -> std::same_as<render::render_image_texture_frame_resource_sampler_handoff_delta>;
+    { render::make_render_image_texture_frame_resource_materialization_entry_diff(
+        &texture_frame_resource_packet_materialization_entry,
+        &texture_frame_resource_packet_materialization_entry,
+        std::size_t{}) } -> std::same_as<render::render_image_texture_frame_resource_materialization_entry_diff>;
+    { render::count_render_image_texture_frame_resource_materialization_diff_entry(
+        texture_frame_resource_materialization_diff,
+        texture_frame_resource_materialization_entry_diff) } -> std::same_as<void>;
+    { render::diff_render_image_texture_frame_resource_materializations(
+        texture_frame_resource_packet_materialization,
+        texture_frame_resource_packet_materialization) }
+        -> std::same_as<render::render_image_texture_frame_resource_materialization_diff>;
     { render::render_image_decoder_capability_candidate_kind_name(decoder_capability_kind) }
         -> std::same_as<std::string>;
     { render::render_image_decoder_capability_candidate_status_name(decoder_capability_status) }
@@ -2540,6 +2598,103 @@ static_assert(requires(
     { texture_frame_resource_packet_materialization.sampler_handoff_summary } -> std::same_as<std::string&>;
     { texture_frame_resource_packet_materialization.diagnostic } -> std::same_as<std::string&>;
     { texture_frame_resource_packet_materialization.ok() } -> std::same_as<bool>;
+    { texture_frame_resource_cache_handoff_delta.request_index } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_cache_handoff_delta.before_present } -> std::same_as<bool&>;
+    { texture_frame_resource_cache_handoff_delta.after_present } -> std::same_as<bool&>;
+    { texture_frame_resource_cache_handoff_delta.before_stable_texture_cache_key }
+        -> std::same_as<std::string&>;
+    { texture_frame_resource_cache_handoff_delta.after_stable_texture_cache_key }
+        -> std::same_as<std::string&>;
+    { texture_frame_resource_cache_handoff_delta.before_texture_id }
+        -> std::same_as<render::render_image_texture_id&>;
+    { texture_frame_resource_cache_handoff_delta.after_texture_id }
+        -> std::same_as<render::render_image_texture_id&>;
+    { texture_frame_resource_cache_handoff_delta.stable_texture_cache_key_changed }
+        -> std::same_as<bool&>;
+    { texture_frame_resource_cache_handoff_delta.texture_handle_changed } -> std::same_as<bool&>;
+    { texture_frame_resource_cache_handoff_delta.changed } -> std::same_as<bool&>;
+    { texture_frame_resource_cache_handoff_delta.diagnostic } -> std::same_as<std::string&>;
+    { texture_frame_resource_cache_handoff_delta.ok() } -> std::same_as<bool>;
+    { texture_frame_resource_upload_handoff_delta.request_index } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_upload_handoff_delta.before_upload_request_id }
+        -> std::same_as<std::uint64_t&>;
+    { texture_frame_resource_upload_handoff_delta.after_upload_request_id }
+        -> std::same_as<std::uint64_t&>;
+    { texture_frame_resource_upload_handoff_delta.upload_request_changed } -> std::same_as<bool&>;
+    { texture_frame_resource_upload_handoff_delta.uploaded_byte_delta } -> std::same_as<std::int64_t&>;
+    { texture_frame_resource_upload_handoff_delta.changed } -> std::same_as<bool&>;
+    { texture_frame_resource_upload_handoff_delta.diagnostic } -> std::same_as<std::string&>;
+    { texture_frame_resource_upload_handoff_delta.ok() } -> std::same_as<bool>;
+    { texture_frame_resource_sampler_handoff_delta.request_index } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_sampler_handoff_delta.before_sampler }
+        -> std::same_as<render::render_image_sampler_policy&>;
+    { texture_frame_resource_sampler_handoff_delta.after_sampler }
+        -> std::same_as<render::render_image_sampler_policy&>;
+    { texture_frame_resource_sampler_handoff_delta.before_sampler_summary } -> std::same_as<std::string&>;
+    { texture_frame_resource_sampler_handoff_delta.after_sampler_summary } -> std::same_as<std::string&>;
+    { texture_frame_resource_sampler_handoff_delta.sampler_changed } -> std::same_as<bool&>;
+    { texture_frame_resource_sampler_handoff_delta.sampler_key_changed } -> std::same_as<bool&>;
+    { texture_frame_resource_sampler_handoff_delta.changed } -> std::same_as<bool&>;
+    { texture_frame_resource_sampler_handoff_delta.diagnostic } -> std::same_as<std::string&>;
+    { texture_frame_resource_sampler_handoff_delta.ok() } -> std::same_as<bool>;
+    { texture_frame_resource_materialization_entry_diff.request_index } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_materialization_entry_diff.status }
+        -> std::same_as<render::render_image_texture_frame_resource_materialization_diff_entry_status&>;
+    { texture_frame_resource_materialization_entry_diff.status_name } -> std::same_as<std::string&>;
+    { texture_frame_resource_materialization_entry_diff.before_present } -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_entry_diff.after_present } -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_entry_diff.before_materialization_status }
+        -> std::same_as<render::render_image_texture_frame_resource_packet_materialization_status&>;
+    { texture_frame_resource_materialization_entry_diff.after_materialization_status }
+        -> std::same_as<render::render_image_texture_frame_resource_packet_materialization_status&>;
+    { texture_frame_resource_materialization_entry_diff.cache_handoff_changed } -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_entry_diff.upload_handoff_changed } -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_entry_diff.sampler_handoff_changed } -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_entry_diff.cache_delta }
+        -> std::same_as<render::render_image_texture_frame_resource_cache_handoff_delta&>;
+    { texture_frame_resource_materialization_entry_diff.upload_delta }
+        -> std::same_as<render::render_image_texture_frame_resource_upload_handoff_delta&>;
+    { texture_frame_resource_materialization_entry_diff.sampler_delta }
+        -> std::same_as<render::render_image_texture_frame_resource_sampler_handoff_delta&>;
+    { texture_frame_resource_materialization_entry_diff.regression } -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_entry_diff.recovery } -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_entry_diff.diagnostic } -> std::same_as<std::string&>;
+    { texture_frame_resource_materialization_entry_diff.changed() } -> std::same_as<bool>;
+    { texture_frame_resource_materialization_entry_diff.ok() } -> std::same_as<bool>;
+    { texture_frame_resource_materialization_diff.before_frame_request_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_materialization_diff.after_frame_request_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_materialization_diff.frame_request_delta } -> std::same_as<std::int64_t&>;
+    { texture_frame_resource_materialization_diff.before_materialized_packet_count }
+        -> std::same_as<std::size_t&>;
+    { texture_frame_resource_materialization_diff.after_materialized_packet_count }
+        -> std::same_as<std::size_t&>;
+    { texture_frame_resource_materialization_diff.materialized_packet_delta }
+        -> std::same_as<std::int64_t&>;
+    { texture_frame_resource_materialization_diff.cache_handoff_changed_count }
+        -> std::same_as<std::size_t&>;
+    { texture_frame_resource_materialization_diff.upload_handoff_changed_count }
+        -> std::same_as<std::size_t&>;
+    { texture_frame_resource_materialization_diff.sampler_handoff_changed_count }
+        -> std::same_as<std::size_t&>;
+    { texture_frame_resource_materialization_diff.stable_texture_cache_key_changed_count }
+        -> std::same_as<std::size_t&>;
+    { texture_frame_resource_materialization_diff.upload_request_changed_count }
+        -> std::same_as<std::size_t&>;
+    { texture_frame_resource_materialization_diff.sampler_key_changed_count }
+        -> std::same_as<std::size_t&>;
+    { texture_frame_resource_materialization_diff.before_renderer_boundary_ready }
+        -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_diff.after_renderer_boundary_ready }
+        -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_diff.has_changes } -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_diff.has_regression } -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_diff.entries }
+        -> std::same_as<std::vector<render::render_image_texture_frame_resource_materialization_entry_diff>&>;
+    { texture_frame_resource_materialization_diff.cache_handoff_delta_summary } -> std::same_as<std::string&>;
+    { texture_frame_resource_materialization_diff.upload_handoff_delta_summary } -> std::same_as<std::string&>;
+    { texture_frame_resource_materialization_diff.sampler_handoff_delta_summary } -> std::same_as<std::string&>;
+    { texture_frame_resource_materialization_diff.diagnostic } -> std::same_as<std::string&>;
+    { texture_frame_resource_materialization_diff.ok() } -> std::same_as<bool>;
     { pipeline_entry.sequence } -> std::same_as<std::size_t&>;
     { pipeline_entry.request } -> std::same_as<render::render_image_texture_pipeline_request&>;
     { pipeline_entry.status } -> std::same_as<render::render_image_texture_pipeline_status&>;
@@ -2845,6 +3000,12 @@ static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture
 static_assert(
     !ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_resource_packet_materialization_entry>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_resource_packet_materialization>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_resource_cache_handoff_delta>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_resource_upload_handoff_delta>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_resource_sampler_handoff_delta>);
+static_assert(
+    !ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_resource_materialization_entry_diff>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_resource_materialization_diff>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_external_decoder_selection_snapshot>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_external_decoder_selection_entry_diff>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_external_decoder_selection_snapshot_diff>);
@@ -2883,6 +3044,12 @@ static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_textur
 static_assert(
     !ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_resource_packet_materialization_entry>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_resource_packet_materialization>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_resource_cache_handoff_delta>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_resource_upload_handoff_delta>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_resource_sampler_handoff_delta>);
+static_assert(
+    !ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_resource_materialization_entry_diff>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_resource_materialization_diff>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_external_decoder_selection_snapshot>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_external_decoder_selection_entry_diff>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_external_decoder_selection_snapshot_diff>);
@@ -2921,6 +3088,12 @@ static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture
 static_assert(
     !ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_resource_packet_materialization_entry>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_resource_packet_materialization>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_resource_cache_handoff_delta>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_resource_upload_handoff_delta>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_resource_sampler_handoff_delta>);
+static_assert(
+    !ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_resource_materialization_entry_diff>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_resource_materialization_diff>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_external_decoder_selection_snapshot>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_external_decoder_selection_entry_diff>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_external_decoder_selection_snapshot_diff>);
@@ -2944,5 +3117,8 @@ static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_textu
 static_assert(
     !ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_resource_packet_materialization_entry>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_resource_packet_materialization>);
+static_assert(
+    !ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_resource_materialization_entry_diff>);
+static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_resource_materialization_diff>);
 
 } // namespace

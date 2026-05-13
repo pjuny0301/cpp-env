@@ -413,6 +413,9 @@ void record_font_fallback_chain_plan(
                 .items = plan_request.items,
                 .font_catalog = font_catalog,
             });
+    diagnostics.font_fallback_shaped_glyph_executions =
+        execute_render_text_font_fallback_shaped_glyph_inputs(
+            diagnostics.font_fallback_shaped_glyph_inputs);
 
     render_text_font_fallback_chain_plan_snapshot plan =
         plan_render_text_font_fallback_chains(plan_request, font_catalog);

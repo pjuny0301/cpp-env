@@ -232,6 +232,9 @@ void require_mixed_script_fallback_chain_diagnostics(
     require(
         diagnostics.has_font_fallback_shaped_glyph_inputs(),
         "diagnostics record shaped glyph input handoff snapshot");
+    require(
+        diagnostics.has_font_fallback_shaped_glyph_executions(),
+        "diagnostics record shaped glyph execution snapshot");
     require(!diagnostics.has_font_fallback_chain_missing_glyphs(), "covered mixed fixture has no missing glyphs");
     require(diagnostics.font_fallback_chain_runs.size() == 1U, "one text run produces one fallback-chain run");
     require(diagnostics.font_fallback_chain_policy.run_count == 1U, "fallback-chain policy counts one run");
@@ -319,6 +322,37 @@ void require_mixed_script_fallback_chain_diagnostics(
     require(
         diagnostics.font_fallback_shaped_glyph_inputs.inputs[2].cache_key.face_id == 503U,
         "emoji shaped input cache key uses selected face");
+
+    require(
+        diagnostics.font_fallback_shaped_glyph_executions.ok(),
+        "covered mixed fixture has complete shaped glyph execution snapshot");
+    require(
+        diagnostics.font_fallback_shaped_glyph_executions.policy.input_count == 3U,
+        "shaped glyph execution records input count");
+    require(
+        diagnostics.font_fallback_shaped_glyph_executions.policy.execution_count == 3U,
+        "shaped glyph execution records execution count");
+    require(
+        diagnostics.font_fallback_shaped_glyph_executions.policy.shaped_count == 3U,
+        "shaped glyph execution records shaped count");
+    require(
+        diagnostics.font_fallback_shaped_glyph_executions.policy.atlas_ready_count == 3U,
+        "shaped glyph execution records atlas-ready count");
+    require(
+        diagnostics.font_fallback_shaped_glyph_executions.policy.fallback_execution_count == 2U,
+        "shaped glyph execution counts Hangul and emoji fallback executions");
+    require(
+        diagnostics.font_fallback_shaped_glyph_executions.policy.unique_cache_key_count == 3U,
+        "shaped glyph execution records cache key evidence");
+    require(
+        diagnostics.font_fallback_shaped_glyph_executions.executions[0].shaped_glyph.resolved_face_id == 501U,
+        "Latin execution shaped glyph records requested face");
+    require(
+        diagnostics.font_fallback_shaped_glyph_executions.executions[1].shaped_glyph.resolved_face_id == 502U,
+        "Hangul execution shaped glyph records fallback face");
+    require(
+        diagnostics.font_fallback_shaped_glyph_executions.executions[2].shaped_glyph.resolved_face_id == 503U,
+        "emoji execution shaped glyph records fallback face");
 
     const render_text_font_fallback_chain_run_snapshot& run = diagnostics.font_fallback_chain_runs.front();
     require(run.style_token == "mixed", "fallback-chain run records style token");

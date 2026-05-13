@@ -19,6 +19,14 @@ enum class render_text_font_fallback_shaping_handoff_status {
     no_selected_face,
 };
 
+enum class render_text_font_fallback_shaped_glyph_execution_status {
+    shaped,
+    invalid_utf8,
+    unsupported_glyph,
+    no_selected_face,
+    missing_glyph_id,
+};
+
 [[nodiscard]] inline std::string render_text_font_fallback_shaping_handoff_status_name(
     const render_text_font_fallback_shaping_handoff_status status)
 {
@@ -31,6 +39,25 @@ enum class render_text_font_fallback_shaping_handoff_status {
         return "invalid_utf8";
     case render_text_font_fallback_shaping_handoff_status::no_selected_face:
         return "no_selected_face";
+    }
+
+    return "unknown";
+}
+
+[[nodiscard]] inline std::string render_text_font_fallback_shaped_glyph_execution_status_name(
+    const render_text_font_fallback_shaped_glyph_execution_status status)
+{
+    switch (status) {
+    case render_text_font_fallback_shaped_glyph_execution_status::shaped:
+        return "shaped";
+    case render_text_font_fallback_shaped_glyph_execution_status::invalid_utf8:
+        return "invalid_utf8";
+    case render_text_font_fallback_shaped_glyph_execution_status::unsupported_glyph:
+        return "unsupported_glyph";
+    case render_text_font_fallback_shaped_glyph_execution_status::no_selected_face:
+        return "no_selected_face";
+    case render_text_font_fallback_shaped_glyph_execution_status::missing_glyph_id:
+        return "missing_glyph_id";
     }
 
     return "unknown";
@@ -210,6 +237,102 @@ struct render_text_font_fallback_shaped_glyph_input_snapshot {
     [[nodiscard]] bool has_inputs() const
     {
         return !inputs.empty();
+    }
+};
+
+struct render_text_font_fallback_shaped_glyph_execution_record {
+    std::string stable_execution_key;
+    std::string stable_input_key;
+    std::string stable_run_key;
+    std::string stable_page_key;
+    std::size_t item_index = 0;
+    std::size_t source_run_index = 0;
+    std::size_t fallback_run_index = 0;
+    std::size_t glyph_index = 0;
+    std::size_t source_codepoint_index = 0;
+    render_style_id style_token;
+    std::size_t byte_offset = 0;
+    std::size_t byte_count = 0;
+    std::uint32_t codepoint = utf8_replacement_codepoint;
+    std::uint32_t glyph_id = 0;
+    font_face_id requested_face_id = 0;
+    font_face_id selected_face_id = 0;
+    float advance_x = 0.0f;
+    float line_height = 0.0f;
+    glyph_atlas_key cache_key;
+    bool has_cache_key = false;
+    bool cacheable = false;
+    bool valid_utf8 = true;
+    bool glyph_supported = true;
+    bool cluster_start = true;
+    bool used_fallback = false;
+    bool glyph_id_from_selection = false;
+    bool glyph_id_matches_codepoint = false;
+    std::uint32_t glyph_id_offset = 0;
+    render_text_font_fallback_shaped_glyph_execution_status status =
+        render_text_font_fallback_shaped_glyph_execution_status::missing_glyph_id;
+    render_text_shaped_glyph shaped_glyph;
+    std::string diagnostic;
+
+    [[nodiscard]] bool executed() const
+    {
+        return status == render_text_font_fallback_shaped_glyph_execution_status::shaped;
+    }
+
+    [[nodiscard]] bool ready_for_glyph_atlas() const
+    {
+        return executed() && has_cache_key && cacheable;
+    }
+};
+
+struct render_text_font_fallback_shaped_glyph_execution_policy_snapshot {
+    std::size_t input_count = 0;
+    std::size_t execution_count = 0;
+    std::size_t shaped_count = 0;
+    std::size_t blocked_input_count = 0;
+    std::size_t atlas_ready_count = 0;
+    std::size_t missing_cache_key_count = 0;
+    std::size_t invalid_utf8_count = 0;
+    std::size_t unsupported_glyph_count = 0;
+    std::size_t no_selected_face_count = 0;
+    std::size_t missing_glyph_id_count = 0;
+    std::size_t fallback_execution_count = 0;
+    std::size_t glyph_id_offset_execution_count = 0;
+    std::size_t unique_input_key_count = 0;
+    std::size_t unique_page_key_count = 0;
+    std::size_t unique_cache_key_count = 0;
+    std::size_t unique_selected_face_count = 0;
+    std::size_t unique_style_token_count = 0;
+};
+
+struct render_text_font_fallback_shaped_glyph_execution_request {
+    render_text_font_fallback_shaped_glyph_input_snapshot inputs;
+};
+
+struct render_text_font_fallback_shaped_glyph_execution_snapshot {
+    std::vector<render_text_font_fallback_shaped_glyph_execution_record> executions;
+    std::vector<render_text_font_fallback_shaping_handoff_run_snapshot> blocked_runs;
+    std::vector<std::string> stable_execution_keys;
+    std::vector<std::string> stable_input_keys;
+    std::vector<std::string> stable_page_keys;
+    std::vector<glyph_atlas_key> cache_keys;
+    std::vector<font_face_id> selected_face_ids;
+    std::vector<render_style_id> style_tokens;
+    render_text_font_fallback_shaped_glyph_execution_policy_snapshot policy;
+    std::string diagnostic;
+
+    [[nodiscard]] bool ok() const
+    {
+        return policy.blocked_input_count == 0U
+            && policy.invalid_utf8_count == 0U
+            && policy.unsupported_glyph_count == 0U
+            && policy.no_selected_face_count == 0U
+            && policy.missing_glyph_id_count == 0U;
+    }
+
+    [[nodiscard]] bool has_executions() const
+    {
+        return !executions.empty();
     }
 };
 
@@ -622,6 +745,234 @@ make_render_text_font_fallback_shaped_glyph_inputs(
         make_render_text_font_fallback_shaping_handoff(fallback_run_plan),
         std::move(items),
         std::move(font_catalog));
+}
+
+[[nodiscard]] inline std::string font_fallback_shaped_glyph_execution_stable_key_for(
+    const render_text_font_fallback_shaped_glyph_input_record& input)
+{
+    return "font-fallback-shaped-glyph-execution:v1"
+        + std::string{":input="} + input.stable_input_key;
+}
+
+[[nodiscard]] inline render_text_font_fallback_shaped_glyph_execution_status
+font_fallback_shaped_glyph_execution_status_for(
+    const render_text_font_fallback_shaped_glyph_input_record& input)
+{
+    if (!input.valid_utf8) {
+        return render_text_font_fallback_shaped_glyph_execution_status::invalid_utf8;
+    }
+    if (!input.glyph_supported) {
+        return render_text_font_fallback_shaped_glyph_execution_status::unsupported_glyph;
+    }
+    if (input.selected_face_id == 0U || input.font_selection.resolved_face_id == 0U) {
+        return render_text_font_fallback_shaped_glyph_execution_status::no_selected_face;
+    }
+    if (!input.font_selection.has_glyph_id || input.glyph_id == 0U) {
+        return render_text_font_fallback_shaped_glyph_execution_status::missing_glyph_id;
+    }
+
+    return render_text_font_fallback_shaped_glyph_execution_status::shaped;
+}
+
+[[nodiscard]] inline render_text_shaped_glyph
+make_render_text_font_fallback_shaped_glyph_for_execution(
+    const render_text_font_fallback_shaped_glyph_input_record& input)
+{
+    return render_text_shaped_glyph{
+        .run_index = input.source_run_index,
+        .glyph_index = input.source_codepoint_index,
+        .byte_offset = input.byte_offset,
+        .byte_count = input.byte_count,
+        .cluster_byte_offset = input.byte_offset,
+        .cluster_byte_count = input.byte_count,
+        .cluster_codepoint_offset = input.source_codepoint_index,
+        .cluster_codepoint_count = 1,
+        .codepoint = input.codepoint,
+        .glyph_id = input.glyph_id,
+        .requested_face_id = input.requested_face_id,
+        .resolved_face_id = input.selected_face_id,
+        .advance_x = input.advance_x,
+        .valid_utf8 = input.valid_utf8,
+        .cluster_start = input.cluster_start,
+        .glyph_supported = input.glyph_supported,
+        .used_codepoint_fallback = input.used_fallback,
+        .used_fallback_glyph_id = false,
+        .glyph_id_from_selection = input.glyph_id_from_selection,
+        .glyph_id_offset = input.glyph_id_offset,
+        .glyph_id_matches_codepoint = input.glyph_id_matches_codepoint,
+        .zero_advance = input.advance_x <= 0.0f,
+        .combining_mark = is_utf8_combining_mark(input.codepoint),
+    };
+}
+
+[[nodiscard]] inline render_text_font_fallback_shaped_glyph_execution_record
+execute_render_text_font_fallback_shaped_glyph_input(
+    const render_text_font_fallback_shaped_glyph_input_record& input)
+{
+    const render_text_font_fallback_shaped_glyph_execution_status status =
+        font_fallback_shaped_glyph_execution_status_for(input);
+
+    return render_text_font_fallback_shaped_glyph_execution_record{
+        .stable_execution_key = font_fallback_shaped_glyph_execution_stable_key_for(input),
+        .stable_input_key = input.stable_input_key,
+        .stable_run_key = input.stable_run_key,
+        .stable_page_key = input.stable_page_key,
+        .item_index = input.item_index,
+        .source_run_index = input.source_run_index,
+        .fallback_run_index = input.fallback_run_index,
+        .glyph_index = input.glyph_index,
+        .source_codepoint_index = input.source_codepoint_index,
+        .style_token = input.style_token,
+        .byte_offset = input.byte_offset,
+        .byte_count = input.byte_count,
+        .codepoint = input.codepoint,
+        .glyph_id = input.glyph_id,
+        .requested_face_id = input.requested_face_id,
+        .selected_face_id = input.selected_face_id,
+        .advance_x = input.advance_x,
+        .line_height = input.line_height,
+        .cache_key = input.cache_key,
+        .has_cache_key = input.has_cache_key,
+        .cacheable = input.cacheable,
+        .valid_utf8 = input.valid_utf8,
+        .glyph_supported = input.glyph_supported,
+        .cluster_start = input.cluster_start,
+        .used_fallback = input.used_fallback,
+        .glyph_id_from_selection = input.glyph_id_from_selection,
+        .glyph_id_matches_codepoint = input.glyph_id_matches_codepoint,
+        .glyph_id_offset = input.glyph_id_offset,
+        .status = status,
+        .shaped_glyph = make_render_text_font_fallback_shaped_glyph_for_execution(input),
+        .diagnostic = status == render_text_font_fallback_shaped_glyph_execution_status::shaped
+            ? "fallback shaped glyph input executed deterministically"
+            : "fallback shaped glyph input execution blocked: "
+                + render_text_font_fallback_shaped_glyph_execution_status_name(status),
+    };
+}
+
+inline void font_fallback_shaped_glyph_execution_append_unique_face(
+    std::vector<font_face_id>& face_ids,
+    const font_face_id face_id)
+{
+    if (face_id != 0U && std::find(face_ids.begin(), face_ids.end(), face_id) == face_ids.end()) {
+        face_ids.push_back(face_id);
+    }
+}
+
+inline void font_fallback_shaped_glyph_execution_append_unique_cache_key(
+    std::vector<glyph_atlas_key>& cache_keys,
+    const glyph_atlas_key& cache_key)
+{
+    if (cache_key.face_id != 0U
+        && std::find(cache_keys.begin(), cache_keys.end(), cache_key) == cache_keys.end()) {
+        cache_keys.push_back(cache_key);
+    }
+}
+
+inline void count_render_text_font_fallback_shaped_glyph_execution_status(
+    render_text_font_fallback_shaped_glyph_execution_policy_snapshot& policy,
+    const render_text_font_fallback_shaped_glyph_execution_status status)
+{
+    switch (status) {
+    case render_text_font_fallback_shaped_glyph_execution_status::shaped:
+        ++policy.shaped_count;
+        return;
+    case render_text_font_fallback_shaped_glyph_execution_status::invalid_utf8:
+        ++policy.invalid_utf8_count;
+        return;
+    case render_text_font_fallback_shaped_glyph_execution_status::unsupported_glyph:
+        ++policy.unsupported_glyph_count;
+        return;
+    case render_text_font_fallback_shaped_glyph_execution_status::no_selected_face:
+        ++policy.no_selected_face_count;
+        return;
+    case render_text_font_fallback_shaped_glyph_execution_status::missing_glyph_id:
+        ++policy.missing_glyph_id_count;
+        return;
+    }
+}
+
+inline void append_render_text_font_fallback_shaped_glyph_execution(
+    render_text_font_fallback_shaped_glyph_execution_snapshot& snapshot,
+    render_text_font_fallback_shaped_glyph_execution_record execution)
+{
+    count_render_text_font_fallback_shaped_glyph_execution_status(snapshot.policy, execution.status);
+    if (execution.ready_for_glyph_atlas()) {
+        ++snapshot.policy.atlas_ready_count;
+        font_fallback_shaped_glyph_execution_append_unique_cache_key(
+            snapshot.cache_keys,
+            execution.cache_key);
+    } else if (execution.executed()) {
+        ++snapshot.policy.missing_cache_key_count;
+    }
+    if (execution.used_fallback) {
+        ++snapshot.policy.fallback_execution_count;
+    }
+    if (execution.glyph_id_offset != 0U) {
+        ++snapshot.policy.glyph_id_offset_execution_count;
+    }
+
+    font_fallback_shaping_handoff_append_unique_key(
+        snapshot.stable_execution_keys,
+        execution.stable_execution_key);
+    font_fallback_shaping_handoff_append_unique_key(snapshot.stable_input_keys, execution.stable_input_key);
+    font_fallback_shaping_handoff_append_unique_key(snapshot.stable_page_keys, execution.stable_page_key);
+    font_fallback_shaped_glyph_execution_append_unique_face(
+        snapshot.selected_face_ids,
+        execution.selected_face_id);
+    font_fallback_shaping_handoff_append_unique_style(snapshot.style_tokens, execution.style_token);
+    snapshot.executions.push_back(std::move(execution));
+    snapshot.policy.execution_count = snapshot.executions.size();
+    snapshot.policy.unique_input_key_count = snapshot.stable_input_keys.size();
+    snapshot.policy.unique_page_key_count = snapshot.stable_page_keys.size();
+    snapshot.policy.unique_cache_key_count = snapshot.cache_keys.size();
+    snapshot.policy.unique_selected_face_count = snapshot.selected_face_ids.size();
+    snapshot.policy.unique_style_token_count = snapshot.style_tokens.size();
+}
+
+[[nodiscard]] inline render_text_font_fallback_shaped_glyph_execution_snapshot
+execute_render_text_font_fallback_shaped_glyph_inputs(
+    const render_text_font_fallback_shaped_glyph_execution_request& request)
+{
+    render_text_font_fallback_shaped_glyph_execution_snapshot snapshot;
+    snapshot.policy.input_count = request.inputs.policy.input_count;
+    snapshot.policy.blocked_input_count = request.inputs.policy.blocked_run_count
+        + request.inputs.policy.missing_source_run_count
+        + request.inputs.policy.missing_codepoint_count
+        + request.inputs.policy.no_selected_face_count;
+    snapshot.blocked_runs = request.inputs.blocked_runs;
+
+    snapshot.executions.reserve(request.inputs.inputs.size());
+    for (const render_text_font_fallback_shaped_glyph_input_record& input : request.inputs.inputs) {
+        append_render_text_font_fallback_shaped_glyph_execution(
+            snapshot,
+            execute_render_text_font_fallback_shaped_glyph_input(input));
+    }
+
+    snapshot.policy.execution_count = snapshot.executions.size();
+    snapshot.policy.unique_input_key_count = snapshot.stable_input_keys.size();
+    snapshot.policy.unique_page_key_count = snapshot.stable_page_keys.size();
+    snapshot.policy.unique_cache_key_count = snapshot.cache_keys.size();
+    snapshot.policy.unique_selected_face_count = snapshot.selected_face_ids.size();
+    snapshot.policy.unique_style_token_count = snapshot.style_tokens.size();
+    snapshot.diagnostic = snapshot.ok()
+        ? "fallback shaped glyph inputs executed deterministically"
+        : "fallback shaped glyph execution has "
+            + std::to_string(snapshot.policy.blocked_input_count)
+            + " blocked input(s) and "
+            + std::to_string(snapshot.policy.execution_count - snapshot.policy.shaped_count)
+            + " unshaped execution record(s)";
+    return snapshot;
+}
+
+[[nodiscard]] inline render_text_font_fallback_shaped_glyph_execution_snapshot
+execute_render_text_font_fallback_shaped_glyph_inputs(
+    const render_text_font_fallback_shaped_glyph_input_snapshot& inputs)
+{
+    return execute_render_text_font_fallback_shaped_glyph_inputs(
+        render_text_font_fallback_shaped_glyph_execution_request{
+            .inputs = inputs,
+        });
 }
 
 } // namespace quiz_vulkan::render

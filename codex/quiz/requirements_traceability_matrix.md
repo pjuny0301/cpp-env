@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: stb compile-time header probe integrated behind the third-party image decoder adapter; Windows MinGW focused image CTest passed 2/2 and interface compile target build confirmed.
+- `556ba09`: image engine now reports approved stb header availability, declared/probed format evidence, and fallback reason without defining `STB_IMAGE_IMPLEMENTATION` or decoding real images.
 - current: input replay classification and text external header probes integrated; Windows MinGW focused input/text CTest passed 3/3 and interface compile target build confirmed.
 - `73d4ab2`: input core now classifies replay diff changes into churn/regression/improvement/mixed/stable categories while staying semantic-free.
 - `592ad24`: text engine now probes approved FreeType, HarfBuzz, and utf8proc headers through the CMake external header boundary without linking those libraries.

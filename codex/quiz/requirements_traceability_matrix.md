@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: Vulkan/VMA compile-time external header probe integrated; Windows MinGW focused Vulkan/renderer CTest passed 3/3 and interface compile target build confirmed.
+- `8d147f3`: Vulkan backend now records external Vulkan header API/version/type/extension evidence and VMA header availability without linking the Vulkan loader or calling `vk*` functions.
 - current: optional desktop external header CMake boundary integrated for future text/image/Vulkan/native backend work; focused dependency-boundary CTest passed 3/3.
 - current: fallback shaped glyph execution diff diagnostics integrated; Windows MinGW focused text CTest passed 2/2 and interface compile target build confirmed.
 - current: Windows MinGW full CTest passed `101/101` after image/Vulkan/input/text diff integrations.

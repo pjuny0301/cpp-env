@@ -100,7 +100,9 @@ concept VulkanSdkHeaderProbeInterface = requires(
 
 static_assert(VulkanSdkHeaderProbeInterface<render::vulkan_backend::vulkan_sdk_header_probe_interface>);
 static_assert(VulkanSdkHeaderProbeInterface<render::vulkan_backend::fake_vulkan_sdk_header_probe>);
+static_assert(VulkanSdkHeaderProbeInterface<render::vulkan_backend::compile_time_vulkan_sdk_header_probe>);
 static_assert(std::default_initializable<render::vulkan_backend::fake_vulkan_sdk_header_probe>);
+static_assert(std::default_initializable<render::vulkan_backend::compile_time_vulkan_sdk_header_probe>);
 static_assert(std::constructible_from<
     render::vulkan_backend::fake_vulkan_sdk_header_probe,
     render::vulkan_backend::fake_vulkan_sdk_header_probe_options>);
@@ -834,6 +836,46 @@ static_assert(requires {
         -> std::same_as<render::vulkan_backend::vulkan_sdk_api_version>;
 });
 
+static_assert(requires(render::vulkan_backend::vulkan_sdk_vulkan_header_evidence evidence) {
+    { evidence.available } -> std::same_as<bool&>;
+    { evidence.api_version_macro_available } -> std::same_as<bool&>;
+    { evidence.header_version_macro_available } -> std::same_as<bool&>;
+    { evidence.api_version } -> std::same_as<render::vulkan_backend::vulkan_sdk_api_version&>;
+    { evidence.header_version } -> std::same_as<std::uint32_t&>;
+    { evidence.instance_handle_size } -> std::same_as<std::size_t&>;
+    { evidence.device_handle_size } -> std::same_as<std::size_t&>;
+    { evidence.result_type_size } -> std::same_as<std::size_t&>;
+    { evidence.success_constant_available } -> std::same_as<bool&>;
+    { evidence.success_value } -> std::same_as<std::int32_t&>;
+    { evidence.surface_extension_constant_available } -> std::same_as<bool&>;
+    { evidence.swapchain_extension_constant_available } -> std::same_as<bool&>;
+    { evidence.surface_extension_name } -> std::same_as<std::string&>;
+    { evidence.swapchain_extension_name } -> std::same_as<std::string&>;
+    { evidence.diagnostic } -> std::same_as<std::string&>;
+    { evidence.complete() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_sdk_vma_header_evidence evidence) {
+    { evidence.available } -> std::same_as<bool&>;
+    { evidence.safe_to_include } -> std::same_as<bool&>;
+    { evidence.vulkan_headers_required } -> std::same_as<bool&>;
+    { evidence.vma_vulkan_version } -> std::same_as<std::uint32_t&>;
+    { evidence.allocator_handle_size } -> std::same_as<std::size_t&>;
+    { evidence.allocation_handle_size } -> std::same_as<std::size_t&>;
+    { evidence.diagnostic } -> std::same_as<std::string&>;
+    { evidence.complete() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_sdk_external_header_evidence evidence) {
+    { evidence.checked } -> std::same_as<bool&>;
+    { evidence.vulkan }
+        -> std::same_as<render::vulkan_backend::vulkan_sdk_vulkan_header_evidence&>;
+    { evidence.vma } -> std::same_as<render::vulkan_backend::vulkan_sdk_vma_header_evidence&>;
+    { evidence.diagnostic } -> std::same_as<std::string&>;
+    { evidence.vulkan_headers_available() } -> std::same_as<bool>;
+    { evidence.vma_headers_available() } -> std::same_as<bool>;
+});
+
 static_assert(requires(render::vulkan_backend::vulkan_sdk_header_manifest manifest) {
     { manifest.headers_available } -> std::same_as<bool&>;
     { manifest.api_version } -> std::same_as<render::vulkan_backend::vulkan_sdk_api_version&>;
@@ -841,10 +883,19 @@ static_assert(requires(render::vulkan_backend::vulkan_sdk_header_manifest manife
     { manifest.sdk_tag } -> std::same_as<std::string&>;
     { manifest.source_label } -> std::same_as<std::string&>;
     { manifest.supported_extensions } -> std::same_as<std::vector<std::string>&>;
+    { manifest.external_headers }
+        -> std::same_as<render::vulkan_backend::vulkan_sdk_external_header_evidence&>;
     { manifest.diagnostic } -> std::same_as<std::string&>;
     { manifest.supports_api_version(render::vulkan_backend::vulkan_sdk_api_version{}) }
         -> std::same_as<bool>;
     { manifest.supports_extension(std::string_view{}) } -> std::same_as<bool>;
+});
+
+static_assert(requires {
+    { render::vulkan_backend::probe_vulkan_sdk_external_headers() }
+        -> std::same_as<render::vulkan_backend::vulkan_sdk_external_header_evidence>;
+    { render::vulkan_backend::make_compile_time_vulkan_sdk_header_manifest() }
+        -> std::same_as<render::vulkan_backend::vulkan_sdk_header_manifest>;
 });
 
 static_assert(requires(render::vulkan_backend::vulkan_sdk_header_probe_request request) {
@@ -885,6 +936,8 @@ static_assert(requires(render::vulkan_backend::vulkan_sdk_capability_result resu
         -> std::same_as<render::vulkan_backend::vulkan_native_function_table_diagnostics&>;
     { result.minimum_api_version }
         -> std::same_as<render::vulkan_backend::vulkan_sdk_api_version&>;
+    { result.external_headers }
+        -> std::same_as<render::vulkan_backend::vulkan_sdk_external_header_evidence&>;
     { result.headers_available } -> std::same_as<bool&>;
     { result.api_version_available } -> std::same_as<bool&>;
     { result.api_version_compatible } -> std::same_as<bool&>;

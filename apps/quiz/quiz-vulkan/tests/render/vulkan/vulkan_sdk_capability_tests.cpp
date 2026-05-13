@@ -103,6 +103,89 @@ void test_sdk_capability_names_and_versions_are_stable()
         "Vulkan SDK API version 1.3 does not support 1.4");
 }
 
+void test_sdk_external_header_probe_reports_compile_time_boundary()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_sdk_external_header_evidence evidence =
+        vulkan_backend::probe_vulkan_sdk_external_headers();
+    const vulkan_backend::vulkan_sdk_header_manifest manifest =
+        vulkan_backend::make_compile_time_vulkan_sdk_header_manifest();
+
+    require(evidence.checked, "external header evidence is checked");
+    require(
+        manifest.source_label == "quiz_vulkan_desktop_external_headers",
+        "compile-time manifest records external header boundary label");
+    require(
+        manifest.external_headers.checked,
+        "compile-time manifest carries external header evidence");
+
+#if QUIZ_VULKAN_HAS_VULKAN_HEADERS
+    require(evidence.vulkan_headers_available(), "Vulkan header evidence is available");
+    require(manifest.headers_available, "compile-time manifest records Vulkan headers");
+    require(manifest.api_version.valid(), "compile-time manifest records Vulkan API version");
+    require(manifest.header_version > 0, "compile-time manifest records Vulkan header version");
+    require(evidence.vulkan.instance_handle_size > 0, "Vulkan header probe sees VkInstance");
+    require(evidence.vulkan.device_handle_size > 0, "Vulkan header probe sees VkDevice");
+    require(evidence.vulkan.result_type_size > 0, "Vulkan header probe sees VkResult");
+    require(evidence.vulkan.success_constant_available, "Vulkan header probe sees VK_SUCCESS");
+    require(evidence.vulkan.success_value == 0, "Vulkan header probe records VK_SUCCESS value");
+    require(
+        manifest.supports_extension("VK_KHR_surface"),
+        "Vulkan header probe records surface extension constant");
+    require(
+        manifest.supports_extension("VK_KHR_swapchain"),
+        "Vulkan header probe records swapchain extension constant");
+#else
+    require(!evidence.vulkan_headers_available(), "Vulkan header evidence is unavailable");
+    require(!manifest.headers_available, "compile-time manifest records missing Vulkan headers");
+    require(!manifest.api_version.valid(), "missing Vulkan headers have no API version");
+#endif
+
+#if QUIZ_VULKAN_HAS_VULKAN_HEADERS && QUIZ_VULKAN_HAS_VMA_HEADERS
+    require(evidence.vma_headers_available(), "VMA header evidence is available");
+    require(evidence.vma.safe_to_include, "VMA header probe uses safe include guard");
+    require(evidence.vma.allocator_handle_size > 0, "VMA header probe sees VmaAllocator");
+    require(evidence.vma.allocation_handle_size > 0, "VMA header probe sees VmaAllocation");
+#else
+    require(!evidence.vma_headers_available(), "VMA header evidence is unavailable");
+#endif
+}
+
+void test_compile_time_sdk_header_probe_uses_external_header_manifest()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::compile_time_vulkan_sdk_header_probe probe;
+    const vulkan_backend::vulkan_sdk_header_probe_result header_result =
+        probe.probe_headers(vulkan_backend::vulkan_sdk_header_probe_request{});
+    const vulkan_backend::vulkan_sdk_capability_result capability =
+        vulkan_backend::collect_vulkan_sdk_capabilities(
+            probe,
+            make_native_functions(),
+            vulkan_backend::vulkan_sdk_capability_request{
+                .require_native_function_table = false,
+            });
+
+    require(header_result.checked, "compile-time header probe is checked");
+    require(
+        header_result.manifest.source_label == "quiz_vulkan_desktop_external_headers",
+        "compile-time header probe records external boundary source");
+    require(capability.external_headers.checked, "SDK capability carries external header evidence");
+
+#if QUIZ_VULKAN_HAS_VULKAN_HEADERS
+    require(header_result.available(), "compile-time Vulkan headers are available");
+    require(capability.headers_available, "SDK capability sees compile-time Vulkan headers");
+    require(capability.api_version_available, "SDK capability sees compile-time API version");
+#else
+    require(!header_result.available(), "compile-time Vulkan headers are unavailable");
+    require(!capability.headers_available, "SDK capability records missing compile-time headers");
+    require(
+        capability.status == vulkan_backend::vulkan_sdk_capability_status::headers_unavailable,
+        "SDK capability blocks when compile-time Vulkan headers are missing");
+#endif
+}
+
 void test_sdk_native_path_readiness_summarizes_capability_states()
 {
     namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
@@ -335,6 +418,8 @@ void test_sdk_capability_blocks_on_missing_native_function_table()
 int main()
 {
     test_sdk_capability_names_and_versions_are_stable();
+    test_sdk_external_header_probe_reports_compile_time_boundary();
+    test_compile_time_sdk_header_probe_uses_external_header_manifest();
     test_sdk_native_path_readiness_summarizes_capability_states();
     test_sdk_capability_reports_adapter_ready_when_headers_and_native_symbols_match();
     test_sdk_capability_blocks_when_headers_are_missing();

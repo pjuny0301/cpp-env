@@ -10,6 +10,38 @@
 #include <utility>
 #include <vector>
 
+#ifndef QUIZ_VULKAN_HAS_VULKAN_HEADERS
+#define QUIZ_VULKAN_HAS_VULKAN_HEADERS 0
+#endif
+
+#ifndef QUIZ_VULKAN_HAS_VMA_HEADERS
+#define QUIZ_VULKAN_HAS_VMA_HEADERS 0
+#endif
+
+#if QUIZ_VULKAN_HAS_VULKAN_HEADERS
+#include <vulkan/vulkan.h>
+#endif
+
+#if QUIZ_VULKAN_HAS_VULKAN_HEADERS && QUIZ_VULKAN_HAS_VMA_HEADERS
+#ifndef VMA_STATIC_VULKAN_FUNCTIONS
+#define QUIZ_VULKAN_DEFINED_VMA_STATIC_VULKAN_FUNCTIONS
+#define VMA_STATIC_VULKAN_FUNCTIONS 0
+#endif
+#ifndef VMA_DYNAMIC_VULKAN_FUNCTIONS
+#define QUIZ_VULKAN_DEFINED_VMA_DYNAMIC_VULKAN_FUNCTIONS
+#define VMA_DYNAMIC_VULKAN_FUNCTIONS 0
+#endif
+#include <vk_mem_alloc.h>
+#ifdef QUIZ_VULKAN_DEFINED_VMA_STATIC_VULKAN_FUNCTIONS
+#undef VMA_STATIC_VULKAN_FUNCTIONS
+#undef QUIZ_VULKAN_DEFINED_VMA_STATIC_VULKAN_FUNCTIONS
+#endif
+#ifdef QUIZ_VULKAN_DEFINED_VMA_DYNAMIC_VULKAN_FUNCTIONS
+#undef VMA_DYNAMIC_VULKAN_FUNCTIONS
+#undef QUIZ_VULKAN_DEFINED_VMA_DYNAMIC_VULKAN_FUNCTIONS
+#endif
+#endif
+
 namespace quiz_vulkan::render::vulkan_backend {
 
 struct vulkan_sdk_api_version {
@@ -105,6 +137,65 @@ enum class vulkan_sdk_native_path_status {
 
 std::string_view sdk_native_path_status_name(vulkan_sdk_native_path_status status);
 
+struct vulkan_sdk_vulkan_header_evidence {
+    bool available = false;
+    bool api_version_macro_available = false;
+    bool header_version_macro_available = false;
+    vulkan_sdk_api_version api_version;
+    std::uint32_t header_version = 0;
+    std::size_t instance_handle_size = 0;
+    std::size_t device_handle_size = 0;
+    std::size_t result_type_size = 0;
+    bool success_constant_available = false;
+    std::int32_t success_value = 0;
+    bool surface_extension_constant_available = false;
+    bool swapchain_extension_constant_available = false;
+    std::string surface_extension_name;
+    std::string swapchain_extension_name;
+    std::string diagnostic;
+
+    bool complete() const
+    {
+        return available && api_version.valid() && header_version_macro_available
+            && instance_handle_size > 0 && device_handle_size > 0 && result_type_size > 0
+            && success_constant_available && surface_extension_constant_available
+            && swapchain_extension_constant_available;
+    }
+};
+
+struct vulkan_sdk_vma_header_evidence {
+    bool available = false;
+    bool safe_to_include = false;
+    bool vulkan_headers_required = true;
+    std::uint32_t vma_vulkan_version = 0;
+    std::size_t allocator_handle_size = 0;
+    std::size_t allocation_handle_size = 0;
+    std::string diagnostic;
+
+    bool complete() const
+    {
+        return available && safe_to_include && allocator_handle_size > 0
+            && allocation_handle_size > 0;
+    }
+};
+
+struct vulkan_sdk_external_header_evidence {
+    bool checked = false;
+    vulkan_sdk_vulkan_header_evidence vulkan;
+    vulkan_sdk_vma_header_evidence vma;
+    std::string diagnostic;
+
+    bool vulkan_headers_available() const
+    {
+        return checked && vulkan.complete();
+    }
+
+    bool vma_headers_available() const
+    {
+        return checked && vma.complete();
+    }
+};
+
 struct vulkan_sdk_header_manifest {
     bool headers_available = false;
     vulkan_sdk_api_version api_version;
@@ -112,6 +203,7 @@ struct vulkan_sdk_header_manifest {
     std::string sdk_tag;
     std::string source_label;
     std::vector<std::string> supported_extensions;
+    vulkan_sdk_external_header_evidence external_headers;
     std::string diagnostic;
 
     bool supports_api_version(vulkan_sdk_api_version required) const
@@ -128,6 +220,104 @@ struct vulkan_sdk_header_manifest {
             != supported_extensions.end();
     }
 };
+
+inline vulkan_sdk_external_header_evidence probe_vulkan_sdk_external_headers()
+{
+    vulkan_sdk_external_header_evidence evidence{
+        .checked = true,
+        .vulkan = {},
+        .vma = {},
+        .diagnostic = {},
+    };
+
+#if QUIZ_VULKAN_HAS_VULKAN_HEADERS
+    evidence.vulkan.available = true;
+#ifdef VK_HEADER_VERSION_COMPLETE
+    evidence.vulkan.api_version_macro_available = true;
+    evidence.vulkan.api_version = make_vulkan_sdk_api_version(
+        VK_API_VERSION_MAJOR(VK_HEADER_VERSION_COMPLETE),
+        VK_API_VERSION_MINOR(VK_HEADER_VERSION_COMPLETE),
+        VK_API_VERSION_PATCH(VK_HEADER_VERSION_COMPLETE),
+        VK_API_VERSION_VARIANT(VK_HEADER_VERSION_COMPLETE));
+#endif
+#ifdef VK_HEADER_VERSION
+    evidence.vulkan.header_version_macro_available = true;
+    evidence.vulkan.header_version = VK_HEADER_VERSION;
+#endif
+    evidence.vulkan.instance_handle_size = sizeof(VkInstance);
+    evidence.vulkan.device_handle_size = sizeof(VkDevice);
+    evidence.vulkan.result_type_size = sizeof(VkResult);
+    evidence.vulkan.success_constant_available = true;
+    evidence.vulkan.success_value = static_cast<std::int32_t>(VK_SUCCESS);
+#ifdef VK_KHR_SURFACE_EXTENSION_NAME
+    evidence.vulkan.surface_extension_constant_available = true;
+    evidence.vulkan.surface_extension_name = VK_KHR_SURFACE_EXTENSION_NAME;
+#endif
+#ifdef VK_KHR_SWAPCHAIN_EXTENSION_NAME
+    evidence.vulkan.swapchain_extension_constant_available = true;
+    evidence.vulkan.swapchain_extension_name = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
+#endif
+    evidence.vulkan.diagnostic = evidence.vulkan.complete()
+        ? "Compile-time Vulkan headers are available"
+        : "Compile-time Vulkan headers are present but incomplete";
+#else
+    evidence.vulkan.diagnostic =
+        "Compile-time Vulkan headers are unavailable";
+#endif
+
+#if QUIZ_VULKAN_HAS_VULKAN_HEADERS && QUIZ_VULKAN_HAS_VMA_HEADERS
+    evidence.vma.available = true;
+    evidence.vma.safe_to_include = true;
+    evidence.vma.vulkan_headers_required = true;
+#ifdef VMA_VULKAN_VERSION
+    evidence.vma.vma_vulkan_version = VMA_VULKAN_VERSION;
+#endif
+    evidence.vma.allocator_handle_size = sizeof(VmaAllocator);
+    evidence.vma.allocation_handle_size = sizeof(VmaAllocation);
+    evidence.vma.diagnostic = evidence.vma.complete()
+        ? "Compile-time VMA headers are available"
+        : "Compile-time VMA headers are present but incomplete";
+#elif QUIZ_VULKAN_HAS_VMA_HEADERS
+    evidence.vma.available = false;
+    evidence.vma.safe_to_include = false;
+    evidence.vma.diagnostic =
+        "Compile-time VMA headers require Vulkan headers";
+#else
+    evidence.vma.available = false;
+    evidence.vma.safe_to_include = QUIZ_VULKAN_HAS_VULKAN_HEADERS != 0;
+    evidence.vma.diagnostic = "Compile-time VMA headers are unavailable";
+#endif
+
+    evidence.diagnostic = evidence.vulkan_headers_available()
+        ? "Compile-time Vulkan external header probe completed"
+        : "Compile-time Vulkan external header probe found no Vulkan headers";
+    return evidence;
+}
+
+inline vulkan_sdk_header_manifest make_compile_time_vulkan_sdk_header_manifest()
+{
+    const vulkan_sdk_external_header_evidence evidence =
+        probe_vulkan_sdk_external_headers();
+    vulkan_sdk_header_manifest manifest{
+        .headers_available = evidence.vulkan_headers_available(),
+        .api_version = evidence.vulkan.api_version,
+        .header_version = evidence.vulkan.header_version,
+        .sdk_tag = evidence.vulkan.available
+            ? "compile-time-vulkan-headers"
+            : "compile-time-vulkan-headers-unavailable",
+        .source_label = "quiz_vulkan_desktop_external_headers",
+        .supported_extensions = {},
+        .external_headers = evidence,
+        .diagnostic = evidence.vulkan.diagnostic,
+    };
+    if (evidence.vulkan.surface_extension_constant_available) {
+        manifest.supported_extensions.push_back(evidence.vulkan.surface_extension_name);
+    }
+    if (evidence.vulkan.swapchain_extension_constant_available) {
+        manifest.supported_extensions.push_back(evidence.vulkan.swapchain_extension_name);
+    }
+    return manifest;
+}
 
 struct vulkan_sdk_header_probe_request {
     std::string manifest_name = "vulkan-headers";
@@ -194,6 +384,24 @@ private:
     fake_vulkan_sdk_header_probe_state state_;
 };
 
+class compile_time_vulkan_sdk_header_probe final : public vulkan_sdk_header_probe_interface {
+public:
+    vulkan_sdk_header_probe_result probe_headers(
+        const vulkan_sdk_header_probe_request& request) override
+    {
+        static_cast<void>(request);
+        vulkan_sdk_header_manifest manifest =
+            make_compile_time_vulkan_sdk_header_manifest();
+        return vulkan_sdk_header_probe_result{
+            .checked = true,
+            .status = manifest.headers_available
+                ? vulkan_sdk_header_probe_status::available
+                : vulkan_sdk_header_probe_status::unavailable,
+            .manifest = std::move(manifest),
+        };
+    }
+};
+
 struct vulkan_sdk_capability_request {
     vulkan_sdk_api_version minimum_api_version = vulkan_sdk_api_version_1_0();
     bool include_default_backend_extensions = true;
@@ -209,6 +417,7 @@ struct vulkan_sdk_capability_result {
     vulkan_sdk_header_probe_result headers;
     vulkan_native_function_table_diagnostics native_functions;
     vulkan_sdk_api_version minimum_api_version;
+    vulkan_sdk_external_header_evidence external_headers;
     bool headers_available = false;
     bool api_version_available = false;
     bool api_version_compatible = false;
@@ -370,6 +579,7 @@ inline vulkan_sdk_capability_result collect_vulkan_sdk_capabilities(
         .headers = header_result,
         .native_functions = native_functions,
         .minimum_api_version = request.minimum_api_version,
+        .external_headers = header_result.manifest.external_headers,
         .headers_available = header_result.available(),
         .api_version_available = header_result.manifest.api_version.valid(),
         .api_version_compatible =

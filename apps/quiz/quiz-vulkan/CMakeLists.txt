@@ -24,6 +24,75 @@ function(quiz_vulkan_copy_mingw_runtime_dlls target_name)
     endif()
 endfunction()
 
+get_filename_component(QUIZ_VULKAN_REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
+set(
+    QUIZ_VULKAN_DESKTOP_EXTERNAL_DIR
+    "${QUIZ_VULKAN_REPO_ROOT}/build/external/lib/cpp/desktop"
+    CACHE PATH
+    "Directory containing optional desktop C++ dependency source snapshots"
+)
+
+add_library(quiz_vulkan_desktop_external_headers INTERFACE)
+
+function(quiz_vulkan_add_optional_external_header define_name relative_dir marker_file)
+    set(external_include_dir "${QUIZ_VULKAN_DESKTOP_EXTERNAL_DIR}/${relative_dir}")
+    if(EXISTS "${external_include_dir}/${marker_file}")
+        target_include_directories(
+            quiz_vulkan_desktop_external_headers
+            SYSTEM
+            INTERFACE
+                "${external_include_dir}"
+        )
+        target_compile_definitions(
+            quiz_vulkan_desktop_external_headers
+            INTERFACE
+                "${define_name}=1"
+        )
+    else()
+        target_compile_definitions(
+            quiz_vulkan_desktop_external_headers
+            INTERFACE
+                "${define_name}=0"
+        )
+    endif()
+endfunction()
+
+quiz_vulkan_add_optional_external_header(
+    QUIZ_VULKAN_HAS_VULKAN_HEADERS
+    "Vulkan-Headers-vulkan-sdk-1.4.341.0/include"
+    "vulkan/vulkan.h"
+)
+quiz_vulkan_add_optional_external_header(
+    QUIZ_VULKAN_HAS_VMA_HEADERS
+    "VulkanMemoryAllocator-v3.3.0/include"
+    "vk_mem_alloc.h"
+)
+quiz_vulkan_add_optional_external_header(
+    QUIZ_VULKAN_HAS_FREETYPE_HEADERS
+    "freetype-2.14.3/include"
+    "ft2build.h"
+)
+quiz_vulkan_add_optional_external_header(
+    QUIZ_VULKAN_HAS_HARFBUZZ_HEADERS
+    "harfbuzz-14.2.0/src"
+    "hb.h"
+)
+quiz_vulkan_add_optional_external_header(
+    QUIZ_VULKAN_HAS_UTF8PROC_HEADERS
+    "utf8proc-v2.11.3"
+    "utf8proc.h"
+)
+quiz_vulkan_add_optional_external_header(
+    QUIZ_VULKAN_HAS_STB_HEADERS
+    "stb-31c1ad3"
+    "stb_image.h"
+)
+quiz_vulkan_add_optional_external_header(
+    QUIZ_VULKAN_HAS_MINIAUDIO_HEADERS
+    "miniaudio-0.11.25"
+    "miniaudio.h"
+)
+
 add_library(quiz_vulkan_platform_shell STATIC)
 target_sources(
     quiz_vulkan_platform_shell
@@ -199,6 +268,7 @@ target_sources(
 )
 target_compile_features(quiz_vulkan_render_contract INTERFACE cxx_std_23)
 target_include_directories(quiz_vulkan_render_contract INTERFACE src)
+target_link_libraries(quiz_vulkan_render_contract INTERFACE quiz_vulkan_desktop_external_headers)
 
 add_library(quiz_vulkan_audio_contract INTERFACE)
 target_sources(
@@ -611,4 +681,5 @@ if(BUILD_TESTING)
     )
     target_include_directories(quiz_vulkan_interface_contract_compile_tests PRIVATE src)
     target_compile_features(quiz_vulkan_interface_contract_compile_tests PRIVATE cxx_std_23)
+    target_link_libraries(quiz_vulkan_interface_contract_compile_tests PRIVATE quiz_vulkan_desktop_external_headers)
 endif()

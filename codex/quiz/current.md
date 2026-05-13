@@ -42,6 +42,7 @@ Last updated: 2026-05-14
 - Worker pipeline rule: keep tasks bounded to one engine-owned surface plus focused tests. If a worker discovers a cross-engine or app/CMake need, it should finish the engine-local patch and hand off the wiring need instead of editing integrator-owned files.
 - Worker pipeline rule: focused tests are enough for worker handoff; the integrator runs Windows focused verification after cherry-pick and full CTest only after meaningful batches. This keeps throughput without hiding boundary regressions.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
+- Latest integration note: CMake now exposes optional desktop external header snapshots through `quiz_vulkan_desktop_external_headers`, so text/image/Vulkan workers can include approved FreeType, HarfBuzz, utf8proc, Vulkan, VMA, stb, and miniaudio headers without hard-coding `build/external` paths in source; focused dependency-boundary CTest passed 3/3.
 - Latest integration note: `e5ab1f2` adds fallback shaped glyph execution diff diagnostics; Windows MinGW focused text CTest passed 2/2.
 - Latest verification note: Windows MinGW full CTest passed `101/101` after image/Vulkan/input/text diff integrations.
 - Latest integration note: `3175eeb` adds semantic-free input action resolution replay diff diagnostics; Windows MinGW focused input CTest passed 1/1.

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/input/input_engine.h"
+#include "core/input/normalized_input_replay_diff_policy.h"
 #include "core/input/platform_input_translator.h"
 
 #include <cstddef>
@@ -541,13 +542,6 @@ summarize_normalized_input_replay_gesture_policy_routes(
     return diagnostics;
 }
 
-[[nodiscard]] inline bool pointer_capture_snapshot_clean(const pointer_capture_snapshot& snapshot)
-{
-    return snapshot.lifecycle == pointer_capture_lifecycle::idle
-        && !snapshot.active
-        && snapshot.tracked_pointer_count == 0;
-}
-
 [[nodiscard]] inline bool normalized_input_replay_range_size_matches(
     text_range range,
     std::size_t byte_count)
@@ -884,16 +878,6 @@ normalized_input_replay_pointer_kind_for_route(const action_route_policy_diagnos
     return normalized_input_replay_pointer_timeline_kind::gesture_suppressed;
 }
 
-[[nodiscard]] inline bool normalized_input_replay_pointer_capture_changed(
-    const pointer_capture_snapshot& before,
-    const pointer_capture_snapshot& after)
-{
-    return before.lifecycle != after.lifecycle
-        || before.active != after.active
-        || before.pointer_id != after.pointer_id
-        || before.tracked_pointer_count != after.tracked_pointer_count;
-}
-
 [[nodiscard]] inline std::int32_t normalized_input_replay_pointer_id_for_route(
     const action_route_policy_diagnostic& route)
 {
@@ -1195,11 +1179,6 @@ inline void accumulate_normalized_input_replay_pointer_summary(
         .start_byte = offset,
         .end_byte = offset,
     };
-}
-
-[[nodiscard]] inline bool normalized_input_replay_same_text_range(text_range lhs, text_range rhs)
-{
-    return lhs.start_byte == rhs.start_byte && lhs.end_byte == rhs.end_byte;
 }
 
 [[nodiscard]] inline bool normalized_input_replay_focus_route_kind(action_route_policy_kind kind)

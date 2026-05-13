@@ -6,6 +6,9 @@
 
 최근 baseline 통합 증거:
 
+- current: fallback shaped glyph execution diff diagnostics integrated; Windows MinGW focused text CTest passed 2/2 and interface compile target build confirmed.
+- current: Windows MinGW full CTest passed `101/101` after image/Vulkan/input/text diff integrations.
+- `e5ab1f2`: text engine now compares fallback shaped glyph execution snapshots for status, selected-face, cache-key, page-key, style-token, blocked-run, glyph-count, and diagnostic deltas.
 - current: input action resolution replay diff diagnostics integrated; Windows MinGW focused input CTest passed 1/1 and interface compile target build confirmed.
 - `3175eeb`: input core now compares candidate-resolution replay summaries for selected/support/rejected counts, action-kind deltas, reasons, and target changes without app/domain dispatch.
 - current: image materialization diff regression classification and Vulkan native frame execution summary integrated; Windows MinGW focused image/Vulkan CTest passed 5/5 and interface compile target build confirmed.

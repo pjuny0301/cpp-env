@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <string>
+#include <string_view>
 #include <utility>
 
 namespace {
@@ -134,6 +135,19 @@ const quiz_vulkan::input::input_action_candidate_result* find_first_result(
         }
     }
     return nullptr;
+}
+
+bool has_summary_fragment(
+    const quiz_vulkan::input::input_action_resolution_replay_classification_summary& summary,
+    quiz_vulkan::input::input_action_resolution_replay_summary_fragment fragment)
+{
+    for (const quiz_vulkan::input::input_action_resolution_replay_summary_fragment candidate :
+        summary.reason_fragments) {
+        if (candidate == fragment) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void test_replay_evidence_maps_to_semantic_free_candidates()
@@ -942,6 +956,60 @@ void test_resolution_replay_summary_diff_classifies_regressions_and_improvements
     require(regression.changed_category_count == 6,
         "resolution replay classification counts changed categories");
 
+    const input_action_resolution_replay_classification_summary& regression_summary =
+        regression_diff.classification_summary;
+    require(regression_summary.category == input_action_resolution_replay_summary_category::regression,
+        "resolution replay classification summary reports regression category");
+    require(regression_summary.change_class == input_action_resolution_replay_change_class::regression,
+        "resolution replay classification summary preserves change class");
+    require(regression_summary.changed_category_count == 6,
+        "resolution replay classification summary preserves changed category count");
+    require(regression_summary.churn_count == 2,
+        "resolution replay classification summary preserves churn count");
+    require(regression_summary.regression_count == 4,
+        "resolution replay classification summary preserves regression count");
+    require(regression_summary.improvement_count == 0,
+        "resolution replay classification summary preserves improvement count");
+    require(regression_summary.reason_fragment_count == 6,
+        "resolution replay classification summary reports stable reason fragment count");
+    require(regression_summary.reason_fragments.size() == regression_summary.reason_fragment_count,
+        "resolution replay classification summary fragment count matches vector size");
+    require(regression_summary.reason_fragments[0]
+            == input_action_resolution_replay_summary_fragment::focus_target_churn,
+        "resolution replay classification summary orders focus churn first");
+    require(regression_summary.reason_fragments[1]
+            == input_action_resolution_replay_summary_fragment::text_target_churn,
+        "resolution replay classification summary orders text churn second");
+    require(regression_summary.reason_fragments[2]
+            == input_action_resolution_replay_summary_fragment::selected_action_lost,
+        "resolution replay classification summary orders selected loss after churn");
+    require(has_summary_fragment(
+            regression_summary,
+            input_action_resolution_replay_summary_fragment::supporting_evidence_lost),
+        "resolution replay classification summary includes support evidence loss fragment");
+    require(has_summary_fragment(
+            regression_summary,
+            input_action_resolution_replay_summary_fragment::rejected_count_gained),
+        "resolution replay classification summary includes rejected count growth fragment");
+    require(has_summary_fragment(
+            regression_summary,
+            input_action_resolution_replay_summary_fragment::no_observable_delta_gained),
+        "resolution replay classification summary includes no-observable-delta growth fragment");
+    require(input_action_resolution_replay_summary_category_name(regression_summary.category)
+            == std::string_view{"regression"},
+        "resolution replay classification summary category string is stable");
+    require(input_action_resolution_replay_change_class_name(regression_summary.change_class)
+            == std::string_view{"regression"},
+        "resolution replay classification change class string is stable");
+    require(input_action_resolution_replay_summary_fragment_name(
+            input_action_resolution_replay_summary_fragment::selected_action_lost)
+            == std::string_view{"selected_action_lost"},
+        "resolution replay classification selected-loss fragment string is stable");
+    require(input_action_resolution_replay_summary_fragment_name(
+            input_action_resolution_replay_summary_fragment::rejected_count_gained)
+            == std::string_view{"rejected_count_gained"},
+        "resolution replay classification rejected-growth fragment string is stable");
+
     const input_action_resolution_replay_summary_diff improvement_diff =
         diff_input_action_resolution_replay_summaries(after, before);
     const input_action_resolution_replay_classification& improvement =
@@ -981,6 +1049,33 @@ void test_resolution_replay_summary_diff_classifies_regressions_and_improvements
         "inverse resolution replay classification counts improvement categories");
     require(improvement.changed_category_count == 6,
         "inverse resolution replay classification counts changed categories");
+
+    const input_action_resolution_replay_classification_summary& improvement_summary =
+        improvement_diff.classification_summary;
+    require(improvement_summary.category
+            == input_action_resolution_replay_summary_category::improvement,
+        "inverse resolution replay classification summary reports improvement category");
+    require(improvement_summary.reason_fragment_count == 6,
+        "inverse resolution replay classification summary reports stable reason fragments");
+    require(has_summary_fragment(
+            improvement_summary,
+            input_action_resolution_replay_summary_fragment::selected_action_gained),
+        "inverse resolution replay classification summary includes selected gain fragment");
+    require(has_summary_fragment(
+            improvement_summary,
+            input_action_resolution_replay_summary_fragment::supporting_evidence_gained),
+        "inverse resolution replay classification summary includes support gain fragment");
+    require(has_summary_fragment(
+            improvement_summary,
+            input_action_resolution_replay_summary_fragment::rejected_count_lost),
+        "inverse resolution replay classification summary includes rejected count loss fragment");
+    require(has_summary_fragment(
+            improvement_summary,
+            input_action_resolution_replay_summary_fragment::no_observable_delta_lost),
+        "inverse resolution replay classification summary includes no-observable-delta loss fragment");
+    require(input_action_resolution_replay_summary_category_name(improvement_summary.category)
+            == std::string_view{"improvement"},
+        "inverse resolution replay classification summary category string is stable");
 }
 
 void test_resolution_replay_summary_diff_classifies_selected_action_kind_churn()
@@ -1042,6 +1137,110 @@ void test_resolution_replay_summary_diff_classifies_selected_action_kind_churn()
         "selected kind churn counts selected action loss as one regression category");
     require(classification.improvement_count == 1,
         "selected kind churn counts selected action gain as one improvement category");
+
+    const input_action_resolution_replay_classification_summary& summary =
+        diff.classification_summary;
+    require(summary.category == input_action_resolution_replay_summary_category::mixed,
+        "selected kind churn summary reports mixed category");
+    require(summary.reason_fragment_count == 3,
+        "selected kind churn summary records churn, lost, and gained fragments");
+    require(has_summary_fragment(
+            summary,
+            input_action_resolution_replay_summary_fragment::text_target_churn),
+        "selected kind churn summary records text target churn fragment");
+    require(has_summary_fragment(
+            summary,
+            input_action_resolution_replay_summary_fragment::selected_action_lost),
+        "selected kind churn summary records selected loss fragment");
+    require(has_summary_fragment(
+            summary,
+            input_action_resolution_replay_summary_fragment::selected_action_gained),
+        "selected kind churn summary records selected gain fragment");
+    require(input_action_resolution_replay_summary_category_name(summary.category)
+            == std::string_view{"mixed"},
+        "selected kind churn summary category string is stable");
+}
+
+void test_resolution_replay_classification_summary_reports_churn_category()
+{
+    using namespace quiz_vulkan::input;
+
+    const input_action_resolution_replay_summary before{
+        .selected = {
+            input_action_resolution_result_summary{
+                .kind = input_action_candidate_kind::focus_move,
+                .status = input_action_candidate_result_status::selected,
+                .reason = input_action_candidate_result_reason::focus_transition,
+                .batch_label = "before",
+                .has_focus_transition = true,
+                .target_id = "answer",
+                .target_id_after = "answer",
+                .has_focus_after = true,
+            },
+        },
+        .counts = input_action_candidate_result_counts{
+            .selected = input_action_candidate_counts{
+                .focus_move = 1,
+                .total = 1,
+            },
+            .total = 1,
+        },
+    };
+    const input_action_resolution_replay_summary after{
+        .selected = {
+            input_action_resolution_result_summary{
+                .kind = input_action_candidate_kind::focus_move,
+                .status = input_action_candidate_result_status::selected,
+                .reason = input_action_candidate_result_reason::focus_transition,
+                .batch_label = "after",
+                .has_focus_transition = true,
+                .target_id = "next",
+                .target_id_before = "answer",
+                .target_id_after = "next",
+                .target_changed = true,
+                .has_focus_after = true,
+            },
+        },
+        .counts = input_action_candidate_result_counts{
+            .selected = input_action_candidate_counts{
+                .focus_move = 1,
+                .total = 1,
+            },
+            .total = 1,
+        },
+    };
+
+    const input_action_resolution_replay_summary_diff diff =
+        diff_input_action_resolution_replay_summaries(before, after);
+    const input_action_resolution_replay_classification_summary summary =
+        summarize_input_action_resolution_replay_diff_classification(diff);
+
+    require(diff.classification.change_class
+            == input_action_resolution_replay_change_class::behavior_change,
+        "focus-only target churn remains behavior-change classification");
+    require(summary.category == input_action_resolution_replay_summary_category::churn,
+        "focus-only target churn summary reports churn category");
+    require(summary.changed,
+        "focus-only target churn summary reports changed");
+    require(summary.changed_category_count == 1,
+        "focus-only target churn summary records one changed category");
+    require(summary.churn_count == 1,
+        "focus-only target churn summary records one churn fragment");
+    require(summary.regression_count == 0,
+        "focus-only target churn summary has zero regression count");
+    require(summary.improvement_count == 0,
+        "focus-only target churn summary has zero improvement count");
+    require(summary.reason_fragment_count == 1,
+        "focus-only target churn summary records one stable reason fragment");
+    require(summary.reason_fragments[0]
+            == input_action_resolution_replay_summary_fragment::focus_target_churn,
+        "focus-only target churn summary records focus churn fragment");
+    require(input_action_resolution_replay_summary_category_name(summary.category)
+            == std::string_view{"churn"},
+        "focus-only target churn summary category string is stable");
+    require(input_action_resolution_replay_change_class_name(diff.classification.change_class)
+            == std::string_view{"behavior_change"},
+        "focus-only target churn change class string is stable");
 }
 
 void test_resolution_replay_summary_diff_is_stable_for_identical_snapshots()
@@ -1094,6 +1293,21 @@ void test_resolution_replay_summary_diff_is_stable_for_identical_snapshots()
         "stable resolution replay classification reports unchanged");
     require(diff.classification.changed_category_count == 0,
         "stable resolution replay classification has zero changed categories");
+    require(diff.classification_summary.category
+            == input_action_resolution_replay_summary_category::stable,
+        "stable resolution replay classification summary reports stable category");
+    require(!diff.classification_summary.changed,
+        "stable resolution replay classification summary reports unchanged");
+    require(diff.classification_summary.reason_fragment_count == 0,
+        "stable resolution replay classification summary has no reason fragments");
+    require(diff.classification_summary.reason_fragments.empty(),
+        "stable resolution replay classification summary fragment vector is empty");
+    require(input_action_resolution_replay_summary_category_name(diff.classification_summary.category)
+            == std::string_view{"stable"},
+        "stable resolution replay classification summary category string is stable");
+    require(input_action_resolution_replay_change_class_name(diff.classification.change_class)
+            == std::string_view{"stable"},
+        "stable resolution replay classification change class string is stable");
 }
 
 void test_empty_replay_yields_empty_candidate_plan()
@@ -1127,6 +1341,7 @@ int main()
     test_resolution_replay_summary_diff_reports_counts_reasons_and_targets();
     test_resolution_replay_summary_diff_classifies_regressions_and_improvements();
     test_resolution_replay_summary_diff_classifies_selected_action_kind_churn();
+    test_resolution_replay_classification_summary_reports_churn_category();
     test_resolution_replay_summary_diff_is_stable_for_identical_snapshots();
     test_empty_replay_yields_empty_candidate_plan();
 

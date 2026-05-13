@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <span>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -411,6 +412,44 @@ struct input_action_resolution_replay_classification {
     std::size_t changed_category_count = 0;
 };
 
+enum class input_action_resolution_replay_summary_category {
+    stable,
+    churn,
+    regression,
+    improvement,
+    mixed,
+};
+
+enum class input_action_resolution_replay_summary_fragment {
+    focus_target_churn,
+    text_target_churn,
+    selected_action_lost,
+    selected_action_gained,
+    supporting_evidence_lost,
+    supporting_evidence_gained,
+    rejected_count_lost,
+    rejected_count_gained,
+    no_observable_delta_lost,
+    no_observable_delta_gained,
+};
+
+struct input_action_resolution_replay_classification_summary {
+    input_action_resolution_replay_summary_category category =
+        input_action_resolution_replay_summary_category::stable;
+    input_action_resolution_replay_change_class change_class =
+        input_action_resolution_replay_change_class::stable;
+    std::vector<input_action_resolution_replay_summary_fragment> reason_fragments;
+    std::size_t changed_category_count = 0;
+    std::size_t churn_count = 0;
+    std::size_t regression_count = 0;
+    std::size_t improvement_count = 0;
+    std::size_t reason_fragment_count = 0;
+    bool changed = false;
+    bool has_churn = false;
+    bool has_regression = false;
+    bool has_improvement = false;
+};
+
 struct input_action_resolution_replay_summary_diff {
     normalized_input_replay_count_delta batch_count;
     input_action_candidate_result_count_deltas result_counts;
@@ -419,6 +458,7 @@ struct input_action_resolution_replay_summary_diff {
     input_action_resolution_target_delta focus_target;
     input_action_resolution_target_delta text_target;
     input_action_resolution_replay_classification classification;
+    input_action_resolution_replay_classification_summary classification_summary;
     bool changed = false;
     std::size_t changed_category_count = 0;
 };
@@ -1770,6 +1810,24 @@ input_action_resolution_replay_change_class_for(
     return input_action_resolution_replay_change_class::behavior_change;
 }
 
+[[nodiscard]] inline std::string_view input_action_resolution_replay_change_class_name(
+    input_action_resolution_replay_change_class change_class)
+{
+    switch (change_class) {
+    case input_action_resolution_replay_change_class::stable:
+        return "stable";
+    case input_action_resolution_replay_change_class::behavior_change:
+        return "behavior_change";
+    case input_action_resolution_replay_change_class::regression:
+        return "regression";
+    case input_action_resolution_replay_change_class::improvement:
+        return "improvement";
+    case input_action_resolution_replay_change_class::mixed:
+        return "mixed";
+    }
+    return "stable";
+}
+
 [[nodiscard]] inline input_action_resolution_replay_classification
 classify_input_action_resolution_replay_diff(
     const input_action_resolution_replay_summary_diff& diff)
@@ -1865,6 +1923,148 @@ classify_input_action_resolution_replay_diff(
     return classification;
 }
 
+[[nodiscard]] inline input_action_resolution_replay_summary_category
+input_action_resolution_replay_summary_category_for(
+    const input_action_resolution_replay_classification& classification)
+{
+    if (!classification.changed) {
+        return input_action_resolution_replay_summary_category::stable;
+    }
+    if (classification.has_regression && classification.has_improvement) {
+        return input_action_resolution_replay_summary_category::mixed;
+    }
+    if (classification.has_regression) {
+        return input_action_resolution_replay_summary_category::regression;
+    }
+    if (classification.has_improvement) {
+        return input_action_resolution_replay_summary_category::improvement;
+    }
+    return input_action_resolution_replay_summary_category::churn;
+}
+
+[[nodiscard]] inline std::string_view input_action_resolution_replay_summary_category_name(
+    input_action_resolution_replay_summary_category category)
+{
+    switch (category) {
+    case input_action_resolution_replay_summary_category::stable:
+        return "stable";
+    case input_action_resolution_replay_summary_category::churn:
+        return "churn";
+    case input_action_resolution_replay_summary_category::regression:
+        return "regression";
+    case input_action_resolution_replay_summary_category::improvement:
+        return "improvement";
+    case input_action_resolution_replay_summary_category::mixed:
+        return "mixed";
+    }
+    return "stable";
+}
+
+[[nodiscard]] inline std::string_view input_action_resolution_replay_summary_fragment_name(
+    input_action_resolution_replay_summary_fragment fragment)
+{
+    switch (fragment) {
+    case input_action_resolution_replay_summary_fragment::focus_target_churn:
+        return "focus_target_churn";
+    case input_action_resolution_replay_summary_fragment::text_target_churn:
+        return "text_target_churn";
+    case input_action_resolution_replay_summary_fragment::selected_action_lost:
+        return "selected_action_lost";
+    case input_action_resolution_replay_summary_fragment::selected_action_gained:
+        return "selected_action_gained";
+    case input_action_resolution_replay_summary_fragment::supporting_evidence_lost:
+        return "supporting_evidence_lost";
+    case input_action_resolution_replay_summary_fragment::supporting_evidence_gained:
+        return "supporting_evidence_gained";
+    case input_action_resolution_replay_summary_fragment::rejected_count_lost:
+        return "rejected_count_lost";
+    case input_action_resolution_replay_summary_fragment::rejected_count_gained:
+        return "rejected_count_gained";
+    case input_action_resolution_replay_summary_fragment::no_observable_delta_lost:
+        return "no_observable_delta_lost";
+    case input_action_resolution_replay_summary_fragment::no_observable_delta_gained:
+        return "no_observable_delta_gained";
+    }
+    return "focus_target_churn";
+}
+
+inline void append_input_action_resolution_replay_summary_fragment(
+    std::vector<input_action_resolution_replay_summary_fragment>& fragments,
+    bool enabled,
+    input_action_resolution_replay_summary_fragment fragment)
+{
+    if (enabled) {
+        fragments.push_back(fragment);
+    }
+}
+
+[[nodiscard]] inline input_action_resolution_replay_classification_summary
+summarize_input_action_resolution_replay_classification(
+    const input_action_resolution_replay_classification& classification)
+{
+    input_action_resolution_replay_classification_summary summary{
+        .category = input_action_resolution_replay_summary_category_for(classification),
+        .change_class = classification.change_class,
+        .changed_category_count = classification.changed_category_count,
+        .churn_count = classification.churn_count,
+        .regression_count = classification.regression_count,
+        .improvement_count = classification.improvement_count,
+        .changed = classification.changed,
+        .has_churn = classification.has_churn,
+        .has_regression = classification.has_regression,
+        .has_improvement = classification.has_improvement,
+    };
+    append_input_action_resolution_replay_summary_fragment(
+        summary.reason_fragments,
+        classification.focus_target_churn,
+        input_action_resolution_replay_summary_fragment::focus_target_churn);
+    append_input_action_resolution_replay_summary_fragment(
+        summary.reason_fragments,
+        classification.text_target_churn,
+        input_action_resolution_replay_summary_fragment::text_target_churn);
+    append_input_action_resolution_replay_summary_fragment(
+        summary.reason_fragments,
+        classification.selected_action_lost,
+        input_action_resolution_replay_summary_fragment::selected_action_lost);
+    append_input_action_resolution_replay_summary_fragment(
+        summary.reason_fragments,
+        classification.selected_action_gained,
+        input_action_resolution_replay_summary_fragment::selected_action_gained);
+    append_input_action_resolution_replay_summary_fragment(
+        summary.reason_fragments,
+        classification.supporting_evidence_lost,
+        input_action_resolution_replay_summary_fragment::supporting_evidence_lost);
+    append_input_action_resolution_replay_summary_fragment(
+        summary.reason_fragments,
+        classification.supporting_evidence_gained,
+        input_action_resolution_replay_summary_fragment::supporting_evidence_gained);
+    append_input_action_resolution_replay_summary_fragment(
+        summary.reason_fragments,
+        classification.rejected_count_lost,
+        input_action_resolution_replay_summary_fragment::rejected_count_lost);
+    append_input_action_resolution_replay_summary_fragment(
+        summary.reason_fragments,
+        classification.rejected_count_gained,
+        input_action_resolution_replay_summary_fragment::rejected_count_gained);
+    append_input_action_resolution_replay_summary_fragment(
+        summary.reason_fragments,
+        classification.no_observable_delta_lost,
+        input_action_resolution_replay_summary_fragment::no_observable_delta_lost);
+    append_input_action_resolution_replay_summary_fragment(
+        summary.reason_fragments,
+        classification.no_observable_delta_gained,
+        input_action_resolution_replay_summary_fragment::no_observable_delta_gained);
+    summary.reason_fragment_count = summary.reason_fragments.size();
+    return summary;
+}
+
+[[nodiscard]] inline input_action_resolution_replay_classification_summary
+summarize_input_action_resolution_replay_diff_classification(
+    const input_action_resolution_replay_summary_diff& diff)
+{
+    return summarize_input_action_resolution_replay_classification(diff.classification);
+}
+
 [[nodiscard]] inline input_action_resolution_replay_summary_diff
 diff_input_action_resolution_replay_summaries(
     const input_action_resolution_replay_summary& before,
@@ -1894,6 +2094,8 @@ diff_input_action_resolution_replay_summaries(
     count_input_action_resolution_diff_category(diff.text_target.changed, diff.changed_category_count);
     diff.changed = diff.changed_category_count > 0;
     diff.classification = classify_input_action_resolution_replay_diff(diff);
+    diff.classification_summary =
+        summarize_input_action_resolution_replay_classification(diff.classification);
     return diff;
 }
 

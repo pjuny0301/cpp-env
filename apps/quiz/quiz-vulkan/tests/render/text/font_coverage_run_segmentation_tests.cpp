@@ -1,3 +1,4 @@
+#include "render/text/font_fallback_run_planning_diagnostics.h"
 #include "render/text/font_coverage_run_segmentation.h"
 #include "render/text/font_unicode_coverage.h"
 

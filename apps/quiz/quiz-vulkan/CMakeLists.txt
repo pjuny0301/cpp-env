@@ -364,6 +364,7 @@ target_sources(
             src/render/vulkan/vulkan_backend_graphics_pipeline.h
             src/render/vulkan/vulkan_backend_instance.h
             src/render/vulkan/vulkan_backend_loader.h
+            src/render/vulkan/vulkan_backend_native_frame_operation.h
             src/render/vulkan/vulkan_backend_native_readiness.h
             src/render/vulkan/vulkan_backend_native_symbols.h
             src/render/vulkan/vulkan_backend_pipeline_layout.h

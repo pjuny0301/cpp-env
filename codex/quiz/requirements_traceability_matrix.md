@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: Vulkan native frame operation header split integrated with public FILE_SET registration; Windows MinGW focused Vulkan/renderer CTest 2/2 and interface compile target build confirmed. Configured CTest count is now `97`.
+- `de9860e`: Vulkan native frame operation diagnostics now live in `vulkan_backend_native_frame_operation.h` while `vulkan_backend_adapter.h` preserves the existing include surface.
 - current: text fallback-run and input replay-diff header splits integrated with public FILE_SET registration; Windows MinGW focused text/input CTest 4/4 and interface compile target build confirmed.
 - `7f7ef0a`: text fallback run planning diagnostics now live in `font_fallback_run_planning_diagnostics.h` while `font_coverage_run_segmentation.h` preserves the existing include surface.
 - `5c380cd`: normalized input replay diff policy helpers now live in `normalized_input_replay_diff_policy.h` with a focused policy test while `normalized_input_replay.h` preserves the existing include surface.

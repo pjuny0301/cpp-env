@@ -146,6 +146,7 @@ target_sources(
             src/render/image/image_texture_cache_snapshot.h
             src/render/image/image_texture_diagnostics.h
             src/render/image/image_texture_frame_binding_summary.h
+            src/render/image/image_texture_frame_resource_packet_materialization.h
             src/render/image/image_texture_frame_resource_packet_plan.h
             src/render/image/image_texture_frame_snapshot.h
             src/render/image/image_texture_frame_upload_handoff.h

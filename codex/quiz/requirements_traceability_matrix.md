@@ -6,7 +6,7 @@
 
 최근 baseline 통합 증거:
 
-- current: input action candidate, text fallback shaping handoff, image frame resource packet plan, and Vulkan native frame operation diff diagnostics integrated; Windows MinGW focused input/text/image/Vulkan CTest passed 6/6 and interface compile target builds confirmed. Configured CTest count is now `99`.
+- current: input action candidate, text fallback shaping handoff, image frame resource packet plan, and Vulkan native frame operation diff diagnostics integrated; Windows MinGW focused input/text/image/Vulkan CTest passed 6/6 and interface compile target builds confirmed. Windows MinGW full CTest passed `99/99`.
 - `e789e8c`: input core now exposes data-only action candidate planning diagnostics behind the input interface, without renderer/domain dispatch.
 - `ff3e5c6`: text engine now exposes fallback-run-to-shaping handoff diagnostics for future shaping backend integration.
 - `2106032`: image engine now exposes frame resource packet planning diagnostics for texture packet/cache-key/sampler/placeholder handoff evidence.

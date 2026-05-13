@@ -6,6 +6,10 @@
 
 최근 baseline 통합 증거:
 
+- current: image materialization diff regression classification and Vulkan native frame execution summary integrated; Windows MinGW focused image/Vulkan CTest passed 5/5 and interface compile target build confirmed.
+- current: Windows MinGW full CTest passed `101/101` on baseline `4fb4227`; post-integration public FILE_SET scan reports 0 missing headers.
+- `2e249f0`: image engine now classifies materialization diff regressions, improvements, churn, upload-handoff transitions, sampler churn, and materialization failure changes.
+- `e725fbd`: Vulkan backend now surfaces native acquire/record/submit/present execution summaries through the frame-pipeline handoff without scene/UI/app/domain coupling.
 - current: image frame resource materialization diff integrated with public FILE_SET registration; Windows MinGW focused image CTest passed 2/2, interface compile target build confirmed, and configured CTest count is now `101`.
 - `93d445c`: image engine now compares materialized frame resource records and reports cache/upload/sampler/materialization deltas without exposing cache or uploader internals.
 - current: input action resolution replay summaries and fallback shaped glyph execution diagnostics integrated; Windows MinGW focused input/text CTest passed 3/3 and interface compile target build confirmed.

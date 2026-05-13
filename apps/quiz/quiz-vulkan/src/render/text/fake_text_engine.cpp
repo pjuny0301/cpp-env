@@ -71,6 +71,7 @@ struct fake_text_engine_backend_selection_context {
     std::optional<render_text_external_font_backend_probe_result> shaping_dependency;
     std::optional<render_text_external_font_backend_probe_result> rasterization_dependency;
     std::optional<render_text_external_font_backend_probe_result> unicode_dependency;
+    render_text_external_font_backend_header_probe_snapshot header_probe;
     bool dependency_manifest_configured = false;
 };
 
@@ -182,6 +183,7 @@ fake_text_engine_backend_selection_context select_fake_text_engine_font_backends
     const std::optional<render_text_external_font_backend_manifest>& dependency_manifest)
 {
     fake_text_engine_backend_selection_context context;
+    context.header_probe = make_render_text_external_font_backend_header_probe_snapshot();
     if (dependency_manifest.has_value()) {
         context.dependency_manifest_configured = true;
         context.candidates = render_text_external_font_backend_candidates(
@@ -235,11 +237,21 @@ fake_text_engine_backend_selection_context select_fake_text_engine_font_backends
 
 fake_text_engine_font_backend_selection_snapshot fake_text_engine_font_backend_selection_snapshot_for(
     const render_text_font_backend_selection_result& selection,
-    const std::optional<render_text_external_font_backend_probe_result>& dependency)
+    const std::optional<render_text_external_font_backend_probe_result>& dependency,
+    const render_text_external_font_backend_header_probe_snapshot& header_probe)
 {
     const bool selected_fake =
         selection.has_selection
         && selection.selected.library == render_text_font_backend_library::deterministic_fake;
+    const std::vector<render_text_font_backend_library> default_libraries =
+        render_text_external_font_backend_default_libraries_for(selection.purpose);
+    const render_text_font_backend_library default_library = default_libraries.empty()
+        ? render_text_font_backend_library::deterministic_fake
+        : default_libraries.front();
+    const render_text_external_font_backend_header_probe* dependency_header =
+        find_render_text_external_font_backend_header_probe(
+            header_probe.probes,
+            default_library);
     const render_text_font_backend_adapter_readiness_status dependency_status =
         dependency.has_value()
             ? dependency->status
@@ -272,6 +284,14 @@ fake_text_engine_font_backend_selection_snapshot fake_text_engine_font_backend_s
             ? dependency->fallback_ready
             : selection.used_deterministic_fallback,
         .fake_only = selected_fake,
+        .dependency_header_available =
+            dependency_header != nullptr && dependency_header->header_available,
+        .dependency_header_version_available =
+            dependency_header != nullptr && dependency_header->version_available,
+        .dependency_header_version =
+            dependency_header != nullptr ? dependency_header->version : render_text_font_backend_version{},
+        .dependency_header_diagnostic =
+            dependency_header != nullptr ? dependency_header->diagnostic : std::string{},
         .dependency_diagnostic = dependency.has_value() ? dependency->diagnostic : std::string{},
     };
 }
@@ -326,6 +346,21 @@ void record_font_backend_dependency_probe(
     fake_text_engine_diagnostics& diagnostics,
     const fake_text_engine_backend_selection_context& context)
 {
+    diagnostics.font_backend_header_probe = context.header_probe;
+    diagnostics.font_backend_dependency_policy.header_probe_recorded =
+        !context.header_probe.probes.empty();
+    diagnostics.font_backend_dependency_policy.freetype_headers_available =
+        context.header_probe.freetype_headers_available;
+    diagnostics.font_backend_dependency_policy.harfbuzz_headers_available =
+        context.header_probe.harfbuzz_headers_available;
+    diagnostics.font_backend_dependency_policy.utf8proc_headers_available =
+        context.header_probe.utf8proc_headers_available;
+    diagnostics.font_backend_dependency_policy.available_header_count =
+        context.header_probe.available_header_count;
+    diagnostics.font_backend_dependency_policy.versioned_header_count =
+        context.header_probe.versioned_header_count;
+    diagnostics.font_backend_dependency_policy.advertised_header_feature_count =
+        context.header_probe.advertised_feature_count;
     diagnostics.font_backend_dependency_policy.configured =
         context.dependency_manifest_configured;
     if (!context.dependency_manifest_configured
@@ -375,13 +410,16 @@ void record_font_backend_run_selection(
             .style_token = style_token,
             .shaping = fake_text_engine_font_backend_selection_snapshot_for(
                 context.shaping,
-                context.shaping_dependency),
+                context.shaping_dependency,
+                context.header_probe),
             .rasterization = fake_text_engine_font_backend_selection_snapshot_for(
                 context.rasterization,
-                context.rasterization_dependency),
+                context.rasterization_dependency,
+                context.header_probe),
             .unicode_processing = fake_text_engine_font_backend_selection_snapshot_for(
                 context.unicode_processing,
-                context.unicode_dependency),
+                context.unicode_dependency,
+                context.header_probe),
         });
 }
 

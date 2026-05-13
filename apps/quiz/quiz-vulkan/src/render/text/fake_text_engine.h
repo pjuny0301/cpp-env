@@ -59,6 +59,10 @@ struct fake_text_engine_font_backend_dependency_policy_snapshot {
     bool fake_only = true;
     bool adapter_ready = false;
     bool fallback_ready = false;
+    bool header_probe_recorded = false;
+    bool freetype_headers_available = false;
+    bool harfbuzz_headers_available = false;
+    bool utf8proc_headers_available = false;
     std::size_t probe_count = 0;
     std::size_t adapter_ready_count = 0;
     std::size_t fallback_ready_count = 0;
@@ -66,6 +70,9 @@ struct fake_text_engine_font_backend_dependency_policy_snapshot {
     std::size_t adapter_unavailable_count = 0;
     std::size_t version_mismatch_count = 0;
     std::size_t unsupported_feature_count = 0;
+    std::size_t available_header_count = 0;
+    std::size_t versioned_header_count = 0;
+    std::size_t advertised_header_feature_count = 0;
 };
 
 struct fake_text_engine_font_backend_selection_snapshot {
@@ -89,6 +96,10 @@ struct fake_text_engine_font_backend_selection_snapshot {
     bool dependency_adapter_ready = false;
     bool dependency_fallback_ready = false;
     bool fake_only = false;
+    bool dependency_header_available = false;
+    bool dependency_header_version_available = false;
+    render_text_font_backend_version dependency_header_version;
+    std::string dependency_header_diagnostic;
     std::string dependency_diagnostic;
 };
 
@@ -124,6 +135,7 @@ struct fake_text_engine_diagnostics {
     render_text_external_font_backend_probe_result font_backend_shaping_dependency;
     render_text_external_font_backend_probe_result font_backend_rasterization_dependency;
     render_text_external_font_backend_probe_result font_backend_unicode_dependency;
+    render_text_external_font_backend_header_probe_snapshot font_backend_header_probe;
     std::vector<fake_text_engine_font_backend_run_selection_snapshot> font_backend_run_selections;
     std::vector<render_text_font_fallback_chain_run_snapshot> font_fallback_chain_runs;
     std::vector<render_text_font_fallback_chain_missing_glyph_snapshot> font_fallback_chain_missing_glyphs;
@@ -322,6 +334,12 @@ struct fake_text_engine_diagnostics {
     {
         return font_backend_dependency_policy.configured
             || font_backend_dependency_policy.probe_count > 0;
+    }
+
+    bool has_font_backend_header_probe() const
+    {
+        return font_backend_dependency_policy.header_probe_recorded
+            || !font_backend_header_probe.probes.empty();
     }
 
     bool has_shaped_glyphs() const

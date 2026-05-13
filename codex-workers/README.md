@@ -12,6 +12,9 @@ The workers are meant to implement behind existing quiz-vulkan interfaces, not r
 - `run-codex-tmux.sh`: starts one role in a persistent tmux session.
 - `with-build-lock.sh`: serializes shared Windows CMake/CTest access so
   parallel workers do not race on the same build directory.
+- `worker-status.sh`: summarizes live Codex tmux sessions, current paths, branch
+  names, dirty-file counts, and ahead/behind counts versus the integration
+  baseline.
 
 ## One-Time Setup
 
@@ -56,6 +59,16 @@ tmux list-sessions
 tmux capture-pane -pt codex-text-engine -S -120
 tmux attach -t codex-text-engine
 ```
+
+For a compact coordinator view:
+
+```bash
+/mnt/c/aa/codex-workers/worker-status.sh /mnt/c/aa
+```
+
+Read `dirty`, `ahead`, and `behind` before assigning more work. A long-lived
+session is useful when it keeps engine-specific context, but new tasks should
+start from the latest pushed baseline when the old worker branch is far behind.
 
 To detach from a visible tmux worker without stopping it, press:
 

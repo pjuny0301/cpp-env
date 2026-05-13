@@ -6,6 +6,9 @@
 
 최근 baseline 통합 증거:
 
+- current: text fallback-run and input replay-diff header splits integrated with public FILE_SET registration; Windows MinGW focused text/input CTest 4/4 and interface compile target build confirmed.
+- `7f7ef0a`: text fallback run planning diagnostics now live in `font_fallback_run_planning_diagnostics.h` while `font_coverage_run_segmentation.h` preserves the existing include surface.
+- `5c380cd`: normalized input replay diff policy helpers now live in `normalized_input_replay_diff_policy.h` with a focused policy test while `normalized_input_replay.h` preserves the existing include surface.
 - current: image frame binding summary header split integrated with public FILE_SET registration; Windows MinGW focused image CTest 1/1 and interface compile target build confirmed.
 - `dc05a96`: image frame binding summary diagnostics now live in `image_texture_frame_binding_summary.h` while `image_texture_frame_upload_handoff.h` preserves the existing include surface.
 - current: after reboot recovery, Windows MinGW full CTest passed `96/96` on baseline `e1f56aa`.

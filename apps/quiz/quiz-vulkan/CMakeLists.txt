@@ -171,6 +171,7 @@ target_sources(
             src/render/text/font_backend_selection.h
             src/render/text/font_coverage_run_segmentation.h
             src/render/text/font_cmap_inspector.h
+            src/render/text/font_fallback_run_planning_diagnostics.h
             src/render/text/font_glyph_atlas.h
             src/render/text/font_glyph_atlas_page_plan.h
             src/render/text/font_glyph_atlas_upload_result.h
@@ -229,6 +230,7 @@ target_sources(
             src/core/input/input_text_route_policy.h
             src/core/input/normalized_input_replay.h
             src/core/input/normalized_input_replay_diff.h
+            src/core/input/normalized_input_replay_diff_policy.h
             src/core/input/platform_input_engine_adapter.h
             src/core/input/platform_input_replay.h
             src/core/input/platform_input_translator.h

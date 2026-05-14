@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.25)
 project(
     quiz_vulkan
     VERSION 0.1.0
-    LANGUAGES CXX
+    LANGUAGES C CXX
 )
 
 function(quiz_vulkan_copy_mingw_runtime_dlls target_name)
@@ -92,6 +92,30 @@ quiz_vulkan_add_optional_external_header(
     "miniaudio-0.11.25"
     "miniaudio.h"
 )
+
+set(QUIZ_VULKAN_UTF8PROC_EXTERNAL_DIR "${QUIZ_VULKAN_DESKTOP_EXTERNAL_DIR}/utf8proc-v2.11.3")
+if(EXISTS "${QUIZ_VULKAN_UTF8PROC_EXTERNAL_DIR}/utf8proc.c")
+    add_library(quiz_vulkan_utf8proc_external STATIC "${QUIZ_VULKAN_UTF8PROC_EXTERNAL_DIR}/utf8proc.c")
+    target_include_directories(
+        quiz_vulkan_utf8proc_external
+        SYSTEM
+        PUBLIC
+            "${QUIZ_VULKAN_UTF8PROC_EXTERNAL_DIR}"
+    )
+    target_compile_definitions(
+        quiz_vulkan_utf8proc_external
+        PUBLIC
+            UTF8PROC_STATIC
+            QUIZ_VULKAN_HAS_UTF8PROC_EXTERNAL_LIBRARY=1
+    )
+else()
+    add_library(quiz_vulkan_utf8proc_external INTERFACE)
+    target_compile_definitions(
+        quiz_vulkan_utf8proc_external
+        INTERFACE
+            QUIZ_VULKAN_HAS_UTF8PROC_EXTERNAL_LIBRARY=0
+    )
+endif()
 
 add_library(quiz_vulkan_platform_shell STATIC)
 target_sources(
@@ -687,6 +711,7 @@ if(BUILD_TESTING)
     quiz_vulkan_add_test_directory(tests/render/vulkan LINK_LIBRARIES quiz_vulkan_renderer)
     quiz_vulkan_add_test_directory(tests/audio LINK_LIBRARIES quiz_vulkan_audio_contract)
     quiz_vulkan_add_test_directory(tests/assets LINK_LIBRARIES quiz_vulkan_asset_contract quiz_vulkan_deck_source_asset_adapter)
+    quiz_vulkan_add_test_directory(tests/external LINK_LIBRARIES quiz_vulkan_utf8proc_external)
 
     add_library(
         quiz_vulkan_interface_contract_compile_tests

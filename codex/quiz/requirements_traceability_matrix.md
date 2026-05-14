@@ -6,6 +6,10 @@
 
 최근 baseline 통합 증거:
 
+- current: typed materialized asset byte summaries and decoded-payload-to-texture-request handoff bridge integrated; Windows MinGW focused asset/image CTest passed 5/5.
+- current: Windows MinGW full CTest attempted 103 configured tests; 102 executed tests passed, with `quiz_vulkan_font_shaped_atlas_update_tests` still blocked by host access-denied execution after clean target rebuild.
+- `c774460`: asset system now groups materialized byte summaries by engine-facing type while preserving cache key, source URI, materialized path, byte count/hash, and integrity state.
+- `90166eb`: image engine now carries decoded payload hash/sample evidence into texture request and upload-result handoff data.
 - current: decoded image payload upload evidence and Vulkan instance-scoped dispatch readiness integrated; Windows MinGW focused image/Vulkan CTest passed 5/5.
 - `3874cfb`: image upload readiness and fake upload snapshots now carry stable decoded payload evidence, including byte hash, decoded byte counts, RGBA edge samples, and alpha opacity flags.
 - `2f1984f`: Vulkan backend now collects instance-scoped dispatch readiness for `vkDestroyInstance` and gates dispatch-table destroy before any invalid pointer/native call.

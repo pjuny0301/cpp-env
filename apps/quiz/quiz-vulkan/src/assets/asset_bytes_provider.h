@@ -3,6 +3,7 @@
 #include "assets/asset_runtime_catalog.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -44,6 +45,7 @@ struct asset_bytes_load_result {
     asset_bytes_load_status status = asset_bytes_load_status::missing_bytes;
     std::vector<std::byte> bytes;
     std::size_t byte_count = 0U;
+    std::string content_hash;
     asset_cache_key cache_key;
     std::string source_uri;
     std::string diagnostic;
@@ -59,6 +61,7 @@ enum class asset_bytes_integrity_issue_kind {
     cache_key_mismatch,
     source_uri_mismatch,
     byte_count_mismatch,
+    content_hash_mismatch,
     missing_content,
 };
 
@@ -72,6 +75,8 @@ struct asset_bytes_integrity_issue {
     std::string expected_source_uri;
     std::size_t reported_byte_count = 0U;
     std::size_t actual_byte_count = 0U;
+    std::string reported_content_hash;
+    std::string actual_content_hash;
     std::string diagnostic;
 };
 
@@ -102,6 +107,25 @@ struct fake_asset_bytes_record {
     asset_cache_key cache_key;
     std::vector<std::byte> bytes;
 };
+
+inline std::string make_asset_bytes_content_hash(const std::vector<std::byte>& bytes)
+{
+    constexpr std::uint64_t offset_basis = 14695981039346656037ULL;
+    constexpr std::uint64_t prime = 1099511628211ULL;
+    constexpr char hex_digits[] = "0123456789abcdef";
+
+    std::uint64_t hash = offset_basis;
+    for (const std::byte value : bytes) {
+        hash ^= static_cast<std::uint64_t>(std::to_integer<unsigned char>(value));
+        hash *= prime;
+    }
+
+    std::string result = "fnv1a64:";
+    for (int shift = 60; shift >= 0; shift -= 4) {
+        result.push_back(hex_digits[(hash >> shift) & 0x0FU]);
+    }
+    return result;
+}
 
 namespace detail {
 
@@ -191,6 +215,8 @@ inline asset_bytes_integrity_issue make_asset_bytes_integrity_issue(
         .expected_source_uri = snapshot.source.normalized_uri,
         .reported_byte_count = load.byte_count,
         .actual_byte_count = load.bytes.size(),
+        .reported_content_hash = load.content_hash,
+        .actual_content_hash = make_asset_bytes_content_hash(load.bytes),
         .diagnostic = std::move(diagnostic),
     };
 }
@@ -208,6 +234,13 @@ inline bool asset_bytes_path_has_parent_reference(const std::filesystem::path& p
 inline bool asset_bytes_rooted_path_is_safe(const std::filesystem::path& path)
 {
     return !path.empty() && path.is_absolute() && !asset_bytes_path_has_parent_reference(path);
+}
+
+inline void finish_loaded_asset_bytes_result(asset_bytes_load_result& result)
+{
+    result.byte_count = result.bytes.size();
+    result.content_hash = make_asset_bytes_content_hash(result.bytes);
+    result.status = asset_bytes_load_status::loaded;
 }
 
 } // namespace detail
@@ -256,6 +289,15 @@ inline asset_bytes_integrity_report validate_asset_bytes_integrity(
             "loaded asset byte count does not match the byte payload size"));
     }
 
+    if (!request.load.content_hash.empty()
+        && request.load.content_hash != make_asset_bytes_content_hash(request.load.bytes)) {
+        report.issues.push_back(detail::make_asset_bytes_integrity_issue(
+            asset_bytes_integrity_issue_kind::content_hash_mismatch,
+            request.snapshot,
+            request.load,
+            "loaded asset content hash does not match the byte payload"));
+    }
+
     if (request.require_non_empty && request.load.bytes.empty()) {
         report.issues.push_back(detail::make_asset_bytes_integrity_issue(
             asset_bytes_integrity_issue_kind::missing_content,
@@ -298,9 +340,8 @@ public:
         asset_bytes_load_result result = detail::make_asset_bytes_metadata(request.snapshot);
         for (const fake_asset_bytes_record& record : records_) {
             if (record.cache_key == request.snapshot.cache_key) {
-                result.status = asset_bytes_load_status::loaded;
                 result.bytes = record.bytes;
-                result.byte_count = result.bytes.size();
+                detail::finish_loaded_asset_bytes_result(result);
                 return result;
             }
         }
@@ -347,8 +388,7 @@ public:
         for (const char value : file_bytes) {
             result.bytes.push_back(static_cast<std::byte>(static_cast<unsigned char>(value)));
         }
-        result.byte_count = result.bytes.size();
-        result.status = asset_bytes_load_status::loaded;
+        detail::finish_loaded_asset_bytes_result(result);
         return result;
     }
 };

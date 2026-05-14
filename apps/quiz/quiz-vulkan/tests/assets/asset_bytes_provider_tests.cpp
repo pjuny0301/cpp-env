@@ -145,6 +145,9 @@ void test_fake_provider_loads_bytes_by_snapshot_and_catalog_id()
     require(by_snapshot.cache_key == "image|asset://cards/front.png|rev=rev1", "byte result includes cache key");
     require(by_snapshot.source_uri == "asset://cards/front.png", "byte result includes source uri");
     require(by_snapshot.byte_count == 11U, "byte result includes byte count");
+    require(
+        by_snapshot.content_hash == make_asset_bytes_content_hash(by_snapshot.bytes),
+        "byte result includes deterministic content hash evidence");
     require(bytes_to_string(by_snapshot.bytes) == "image bytes", "fake byte provider returns registered bytes");
 
     const asset_bytes_load_result by_id = load_asset_bytes(
@@ -154,6 +157,7 @@ void test_fake_provider_loads_bytes_by_snapshot_and_catalog_id()
     require(by_id.ok(), "fake byte provider loads bytes by catalog id");
     require(by_id.cache_key == by_snapshot.cache_key, "catalog byte request preserves cache key");
     require(by_id.source_uri == by_snapshot.source_uri, "catalog byte request preserves source uri");
+    require(by_id.content_hash == by_snapshot.content_hash, "catalog byte request preserves content hash evidence");
     require(bytes_to_string(by_id.bytes) == "image bytes", "catalog byte request returns registered bytes");
 }
 
@@ -242,6 +246,9 @@ void test_local_file_provider_reads_rooted_paths_and_rejects_unreadable_sources(
         asset_bytes_catalog_request{.id = "body_font", .expected_type = asset_type::font});
     require(font.ok(), "local file provider reads rooted font bytes");
     require(font.byte_count == 10U, "local file provider reports byte count");
+    require(
+        font.content_hash == make_asset_bytes_content_hash(font.bytes),
+        "local file provider reports content hash evidence");
     require(font.cache_key == "font|fonts/body.ttf", "local file provider result includes cache key");
     require(font.source_uri == "fonts/body.ttf", "local file provider result includes source uri");
     require(bytes_to_string(font.bytes) == "font bytes", "local file provider returns file bytes");
@@ -308,6 +315,9 @@ void test_materialized_asset_bytes_read_local_files()
     require(font.ok(), "materialized byte provider reads local rooted files");
     require(font.status == asset_bytes_load_status::loaded, "materialized byte load reports loaded status");
     require(font.byte_count == 10U, "materialized byte load reports byte count");
+    require(
+        font.content_hash == make_asset_bytes_content_hash(font.bytes),
+        "materialized byte load reports content hash evidence");
     require(font.cache_key == "font|fonts/body.ttf|rev=v2", "materialized byte load preserves cache key");
     require(font.source_uri == "fonts/body.ttf", "materialized byte load preserves normalized source uri");
     require(bytes_to_string(font.bytes) == "font bytes", "materialized byte load returns local file bytes");
@@ -809,6 +819,7 @@ void test_asset_bytes_integrity_validates_load_result_byte_count_and_content()
         .status = asset_bytes_load_status::loaded,
         .bytes = detail::make_asset_byte_vector("image bytes"),
         .byte_count = 11U,
+        .content_hash = make_asset_bytes_content_hash(detail::make_asset_byte_vector("image bytes")),
         .cache_key = snapshot.cache_key,
         .source_uri = snapshot.source.normalized_uri,
     };
@@ -818,6 +829,25 @@ void test_asset_bytes_integrity_validates_load_result_byte_count_and_content()
         .load = load,
     });
     require(valid.ok(), "asset byte integrity accepts matching metadata and byte counts");
+
+    asset_bytes_load_result hash_load = load;
+    hash_load.content_hash = "fnv1a64:0000000000000000";
+    const asset_bytes_integrity_report hash_mismatch =
+        validate_asset_bytes_integrity(asset_bytes_integrity_request{
+            .snapshot = snapshot,
+            .load = hash_load,
+        });
+    require(
+        integrity_issue_at(
+            hash_mismatch,
+            0U,
+            asset_bytes_integrity_issue_kind::content_hash_mismatch,
+            "card_front"),
+        "asset byte integrity reports content hash mismatches");
+    require(
+        hash_mismatch.issues[0].reported_content_hash == "fnv1a64:0000000000000000"
+            && hash_mismatch.issues[0].actual_content_hash == make_asset_bytes_content_hash(load.bytes),
+        "content hash mismatch reports both provider and actual hashes");
 
     load.byte_count = 12U;
     const asset_bytes_integrity_report count_mismatch =
@@ -838,6 +868,7 @@ void test_asset_bytes_integrity_validates_load_result_byte_count_and_content()
 
     load.bytes.clear();
     load.byte_count = 0U;
+    load.content_hash.clear();
     const asset_bytes_integrity_report missing_content =
         validate_asset_bytes_integrity(asset_bytes_integrity_request{
             .snapshot = snapshot,

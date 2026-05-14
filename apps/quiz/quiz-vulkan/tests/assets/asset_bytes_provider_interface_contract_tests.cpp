@@ -142,6 +142,39 @@ static_assert(requires(
     { const_summary.find_entry(id) } -> std::same_as<const asset_typed_materialized_bytes_entry*>;
 });
 
+static_assert(std::is_enum_v<asset_typed_materialized_bytes_delta_kind>);
+
+static_assert(requires(
+    asset_typed_materialized_bytes_diff_entry entry,
+    const asset_typed_materialized_bytes_diff_entry& const_entry) {
+    { entry.kind } -> std::same_as<asset_typed_materialized_bytes_delta_kind&>;
+    { entry.id } -> std::same_as<std::string&>;
+    { entry.type } -> std::same_as<asset_type&>;
+    { entry.before } -> std::same_as<std::optional<asset_typed_materialized_bytes_entry>&>;
+    { entry.after } -> std::same_as<std::optional<asset_typed_materialized_bytes_entry>&>;
+    { entry.type_changed } -> std::same_as<bool&>;
+    { entry.cache_key_changed } -> std::same_as<bool&>;
+    { entry.source_uri_changed } -> std::same_as<bool&>;
+    { entry.materialized_path_changed } -> std::same_as<bool&>;
+    { entry.content_hash_changed } -> std::same_as<bool&>;
+    { entry.integrity_status_changed } -> std::same_as<bool&>;
+    { const_entry.has_field_delta() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    asset_typed_materialized_bytes_diff_summary summary,
+    const asset_typed_materialized_bytes_diff_summary& const_summary,
+    std::string_view id) {
+    { summary.added } -> std::same_as<std::vector<asset_typed_materialized_bytes_diff_entry>&>;
+    { summary.removed } -> std::same_as<std::vector<asset_typed_materialized_bytes_diff_entry>&>;
+    { summary.changed } -> std::same_as<std::vector<asset_typed_materialized_bytes_diff_entry>&>;
+    { const_summary.empty() } -> std::same_as<bool>;
+    { const_summary.change_count() } -> std::same_as<std::size_t>;
+    { const_summary.find_added(id) } -> std::same_as<const asset_typed_materialized_bytes_diff_entry*>;
+    { const_summary.find_removed(id) } -> std::same_as<const asset_typed_materialized_bytes_diff_entry*>;
+    { const_summary.find_changed(id) } -> std::same_as<const asset_typed_materialized_bytes_diff_entry*>;
+});
+
 static_assert(std::has_virtual_destructor_v<asset_bytes_provider_interface>);
 static_assert(std::derived_from<fake_asset_bytes_provider, asset_bytes_provider_interface>);
 static_assert(std::derived_from<local_file_asset_bytes_provider, asset_bytes_provider_interface>);
@@ -175,6 +208,7 @@ static_assert(requires(
     const asset_materialized_bytes_request& materialized_request,
     const runtime_asset_catalog& catalog,
     const asset_bytes_integrity_request& integrity_request,
+    const asset_typed_materialized_bytes_summary& typed_summary,
     const std::vector<asset_bytes_catalog_request>& requests,
     const asset_bytes_catalog_request& request) {
     { make_asset_bytes_content_hash(bytes) } -> std::same_as<std::string>;
@@ -195,6 +229,8 @@ static_assert(requires(
         std::same_as<asset_materialized_bytes_cache_policy_summary>;
     { summarize_typed_materialized_asset_bytes(provider, catalog) } ->
         std::same_as<asset_typed_materialized_bytes_summary>;
+    { diff_typed_materialized_asset_bytes(typed_summary, typed_summary) } ->
+        std::same_as<asset_typed_materialized_bytes_diff_summary>;
 });
 
 } // namespace

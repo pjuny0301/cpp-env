@@ -90,6 +90,49 @@ bool integrity_issue_at(
         && std::string_view(report.issues[index].id) == id;
 }
 
+quiz_vulkan::assets::asset_typed_materialized_bytes_entry make_typed_summary_entry(
+    std::string id,
+    quiz_vulkan::assets::asset_type type,
+    std::string source_uri,
+    std::filesystem::path materialized_path,
+    std::string content_hash,
+    bool integrity_ok = true)
+{
+    using namespace quiz_vulkan::assets;
+
+    asset_typed_materialized_bytes_entry entry{
+        .id = std::move(id),
+        .type = type,
+        .cache_key = make_asset_cache_key(type, source_uri),
+        .source_uri = std::move(source_uri),
+        .rooted_path = materialized_path.lexically_normal(),
+        .materialized_source_path = materialized_path.filename().string(),
+        .materialized_path = std::move(materialized_path).lexically_normal(),
+        .byte_count = 11U,
+        .content_hash = std::move(content_hash),
+        .materialized_status = runtime_materialized_asset_lookup_status::materialized,
+        .load_status = asset_bytes_load_status::loaded,
+    };
+
+    if (!integrity_ok) {
+        entry.load_status = asset_bytes_load_status::missing_bytes;
+        entry.issues.push_back(asset_bytes_integrity_issue{
+            .kind = asset_bytes_integrity_issue_kind::load_failed,
+            .id = entry.id,
+            .type = entry.type,
+            .cache_key = entry.cache_key,
+            .expected_cache_key = entry.cache_key,
+            .source_uri = entry.source_uri,
+            .expected_source_uri = entry.source_uri,
+            .reported_byte_count = entry.byte_count,
+            .diagnostic = "test entry intentionally fails integrity",
+        });
+        entry.diagnostic = "test entry intentionally fails integrity";
+    }
+
+    return entry;
+}
+
 quiz_vulkan::assets::runtime_asset_catalog_snapshot make_card_front_snapshot(
     const std::filesystem::path& fixture_root)
 {
@@ -1068,6 +1111,111 @@ void test_typed_materialized_asset_bytes_summary_groups_engine_assets()
         "typed summary entries_for_type exposes grouped image entries");
 }
 
+void test_typed_materialized_asset_bytes_diff_tracks_engine_entry_deltas()
+{
+    using namespace quiz_vulkan::assets;
+
+    asset_typed_materialized_bytes_summary before;
+    before.fonts.push_back(make_typed_summary_entry(
+        "body_font",
+        asset_type::font,
+        "asset://fonts/body.ttf",
+        "/assets/fonts/body.ttf",
+        "hash:font"));
+    before.images.push_back(make_typed_summary_entry(
+        "card_front",
+        asset_type::image,
+        "asset://cards/front.png",
+        "/assets/cards/front.png",
+        "hash:image-old"));
+    before.shaders.push_back(make_typed_summary_entry(
+        "shared_program",
+        asset_type::shader,
+        "asset://shaders/shared.vert.spv",
+        "/assets/shaders/shared.vert.spv",
+        "hash:shader"));
+
+    asset_typed_materialized_bytes_summary after;
+    after.images.push_back(make_typed_summary_entry(
+        "card_front",
+        asset_type::image,
+        "asset://cards/front_hd.png",
+        "/assets/cards/front_hd.png",
+        "hash:image-new"));
+    after.sounds.push_back(make_typed_summary_entry(
+        "answer_sound",
+        asset_type::sound,
+        "asset://sounds/correct.ogg",
+        "/assets/sounds/correct.ogg",
+        "hash:sound"));
+    after.decks.push_back(make_typed_summary_entry(
+        "shared_program",
+        asset_type::deck,
+        "asset://decks/shared.quiz",
+        "/assets/decks/shared.quiz",
+        "hash:deck",
+        false));
+
+    const asset_typed_materialized_bytes_diff_summary diff =
+        diff_typed_materialized_asset_bytes(before, after);
+
+    require(!diff.empty(), "typed materialized diff reports changes");
+    require(diff.change_count() == 4U, "typed materialized diff counts added removed and changed entries");
+    require(diff.added.size() == 1U, "typed materialized diff records added entries");
+    require(diff.removed.size() == 1U, "typed materialized diff records removed entries");
+    require(diff.changed.size() == 2U, "typed materialized diff records changed entries");
+
+    const asset_typed_materialized_bytes_diff_entry* added = diff.find_added("answer_sound");
+    require(added != nullptr, "typed materialized diff finds added sound entries");
+    require(
+        added->kind == asset_typed_materialized_bytes_delta_kind::added,
+        "typed materialized diff marks added entries");
+    require(added->type == asset_type::sound, "typed materialized diff records added entry type");
+    require(!added->before.has_value() && added->after.has_value(), "typed materialized diff keeps added after entry");
+    require(
+        added->after->cache_key == "sound|asset://sounds/correct.ogg",
+        "typed materialized diff keeps added cache key evidence");
+
+    const asset_typed_materialized_bytes_diff_entry* removed = diff.find_removed("body_font");
+    require(removed != nullptr, "typed materialized diff finds removed font entries");
+    require(
+        removed->kind == asset_typed_materialized_bytes_delta_kind::removed,
+        "typed materialized diff marks removed entries");
+    require(removed->type == asset_type::font, "typed materialized diff records removed entry type");
+    require(removed->before.has_value() && !removed->after.has_value(), "typed diff keeps removed before entry");
+    require(
+        removed->before->source_uri == "asset://fonts/body.ttf",
+        "typed materialized diff keeps removed source uri evidence");
+
+    const asset_typed_materialized_bytes_diff_entry* image = diff.find_changed("card_front");
+    require(image != nullptr, "typed materialized diff finds changed image entries");
+    require(
+        image->kind == asset_typed_materialized_bytes_delta_kind::changed,
+        "typed materialized diff marks changed entries");
+    require(image->type == asset_type::image, "typed materialized diff records changed entry type");
+    require(image->before.has_value() && image->after.has_value(), "typed diff keeps before and after entries");
+    require(!image->type_changed, "typed materialized diff leaves stable types unchanged");
+    require(image->cache_key_changed, "typed materialized diff tracks cache key deltas");
+    require(image->source_uri_changed, "typed materialized diff tracks source uri deltas");
+    require(image->materialized_path_changed, "typed materialized diff tracks materialized path deltas");
+    require(image->content_hash_changed, "typed materialized diff tracks content hash deltas");
+    require(!image->integrity_status_changed, "typed materialized diff leaves stable integrity unchanged");
+    require(image->has_field_delta(), "typed materialized diff marks changed field deltas");
+    require(
+        image->before->content_hash == "hash:image-old" && image->after->content_hash == "hash:image-new",
+        "typed materialized diff keeps before and after hash evidence");
+
+    const asset_typed_materialized_bytes_diff_entry* moved = diff.find_changed("shared_program");
+    require(moved != nullptr, "typed materialized diff finds same-id type changes");
+    require(moved->type == asset_type::deck, "typed materialized diff records changed entry after type");
+    require(moved->before->type == asset_type::shader, "typed materialized diff keeps before type evidence");
+    require(moved->after->type == asset_type::deck, "typed materialized diff keeps after type evidence");
+    require(moved->type_changed, "typed materialized diff tracks type deltas");
+    require(moved->cache_key_changed, "typed materialized diff tracks cache deltas for type moves");
+    require(moved->integrity_status_changed, "typed materialized diff tracks integrity status deltas");
+    require(moved->after->load_status == asset_bytes_load_status::missing_bytes, "typed diff keeps load status");
+}
+
 void test_materialized_asset_bytes_integrity_fails_before_provider_for_unmaterialized_sources()
 {
     using namespace quiz_vulkan::assets;
@@ -1178,6 +1326,7 @@ int main()
     test_asset_bytes_integrity_validates_load_result_byte_count_and_content();
     test_materialized_asset_bytes_cache_policy_summary_tracks_hash_and_integrity();
     test_typed_materialized_asset_bytes_summary_groups_engine_assets();
+    test_typed_materialized_asset_bytes_diff_tracks_engine_entry_deltas();
     test_materialized_asset_bytes_integrity_fails_before_provider_for_unmaterialized_sources();
     test_materialized_asset_bytes_integrity_fails_after_provider_for_byte_count_mismatch();
     test_materialized_asset_bytes_integrity_fails_after_provider_for_metadata_mismatch();

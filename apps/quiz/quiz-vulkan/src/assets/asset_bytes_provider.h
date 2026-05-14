@@ -243,6 +243,78 @@ struct asset_typed_materialized_bytes_summary {
     }
 };
 
+enum class asset_typed_materialized_bytes_delta_kind {
+    added,
+    removed,
+    changed,
+};
+
+struct asset_typed_materialized_bytes_diff_entry {
+    asset_typed_materialized_bytes_delta_kind kind = asset_typed_materialized_bytes_delta_kind::changed;
+    std::string id;
+    asset_type type = asset_type::generic;
+    std::optional<asset_typed_materialized_bytes_entry> before;
+    std::optional<asset_typed_materialized_bytes_entry> after;
+    bool type_changed = false;
+    bool cache_key_changed = false;
+    bool source_uri_changed = false;
+    bool materialized_path_changed = false;
+    bool content_hash_changed = false;
+    bool integrity_status_changed = false;
+
+    [[nodiscard]] bool has_field_delta() const
+    {
+        return type_changed || cache_key_changed || source_uri_changed || materialized_path_changed
+            || content_hash_changed || integrity_status_changed;
+    }
+};
+
+struct asset_typed_materialized_bytes_diff_summary {
+    std::vector<asset_typed_materialized_bytes_diff_entry> added;
+    std::vector<asset_typed_materialized_bytes_diff_entry> removed;
+    std::vector<asset_typed_materialized_bytes_diff_entry> changed;
+
+    [[nodiscard]] bool empty() const
+    {
+        return added.empty() && removed.empty() && changed.empty();
+    }
+
+    [[nodiscard]] std::size_t change_count() const
+    {
+        return added.size() + removed.size() + changed.size();
+    }
+
+    [[nodiscard]] const asset_typed_materialized_bytes_diff_entry* find_added(std::string_view id) const
+    {
+        for (const asset_typed_materialized_bytes_diff_entry& entry : added) {
+            if (entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const asset_typed_materialized_bytes_diff_entry* find_removed(std::string_view id) const
+    {
+        for (const asset_typed_materialized_bytes_diff_entry& entry : removed) {
+            if (entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const asset_typed_materialized_bytes_diff_entry* find_changed(std::string_view id) const
+    {
+        for (const asset_typed_materialized_bytes_diff_entry& entry : changed) {
+            if (entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+};
+
 class asset_bytes_provider_interface {
 public:
     virtual ~asset_bytes_provider_interface() = default;
@@ -499,6 +571,77 @@ inline void add_typed_materialized_bytes_entry(
             ++summary.skipped_generic_count;
             break;
     }
+}
+
+template <typename Visitor>
+inline void for_each_typed_materialized_bytes_entry(
+    const asset_typed_materialized_bytes_summary& summary,
+    Visitor&& visitor)
+{
+    for (const asset_typed_materialized_bytes_entry& entry : summary.fonts) {
+        visitor(entry);
+    }
+    for (const asset_typed_materialized_bytes_entry& entry : summary.images) {
+        visitor(entry);
+    }
+    for (const asset_typed_materialized_bytes_entry& entry : summary.sounds) {
+        visitor(entry);
+    }
+    for (const asset_typed_materialized_bytes_entry& entry : summary.shaders) {
+        visitor(entry);
+    }
+    for (const asset_typed_materialized_bytes_entry& entry : summary.decks) {
+        visitor(entry);
+    }
+}
+
+inline bool typed_materialized_bytes_integrity_status_matches(
+    const asset_typed_materialized_bytes_entry& before,
+    const asset_typed_materialized_bytes_entry& after)
+{
+    return before.ok() == after.ok() && before.materialized_status == after.materialized_status
+        && before.load_status == after.load_status && before.issues.size() == after.issues.size();
+}
+
+inline asset_typed_materialized_bytes_diff_entry make_added_typed_materialized_bytes_diff_entry(
+    const asset_typed_materialized_bytes_entry& after)
+{
+    return asset_typed_materialized_bytes_diff_entry{
+        .kind = asset_typed_materialized_bytes_delta_kind::added,
+        .id = after.id,
+        .type = after.type,
+        .after = after,
+    };
+}
+
+inline asset_typed_materialized_bytes_diff_entry make_removed_typed_materialized_bytes_diff_entry(
+    const asset_typed_materialized_bytes_entry& before)
+{
+    return asset_typed_materialized_bytes_diff_entry{
+        .kind = asset_typed_materialized_bytes_delta_kind::removed,
+        .id = before.id,
+        .type = before.type,
+        .before = before,
+    };
+}
+
+inline asset_typed_materialized_bytes_diff_entry make_changed_typed_materialized_bytes_diff_entry(
+    const asset_typed_materialized_bytes_entry& before,
+    const asset_typed_materialized_bytes_entry& after)
+{
+    return asset_typed_materialized_bytes_diff_entry{
+        .kind = asset_typed_materialized_bytes_delta_kind::changed,
+        .id = after.id,
+        .type = after.type,
+        .before = before,
+        .after = after,
+        .type_changed = before.type != after.type,
+        .cache_key_changed = before.cache_key != after.cache_key,
+        .source_uri_changed = before.source_uri != after.source_uri,
+        .materialized_path_changed = before.materialized_path != after.materialized_path,
+        .content_hash_changed = before.content_hash != after.content_hash,
+        .integrity_status_changed = !typed_materialized_bytes_integrity_status_matches(before, after),
+    };
 }
 
 } // namespace detail
@@ -832,6 +975,35 @@ inline asset_typed_materialized_bytes_summary summarize_typed_materialized_asset
     }
 
     return summary;
+}
+
+inline asset_typed_materialized_bytes_diff_summary diff_typed_materialized_asset_bytes(
+    const asset_typed_materialized_bytes_summary& before,
+    const asset_typed_materialized_bytes_summary& after)
+{
+    asset_typed_materialized_bytes_diff_summary diff;
+
+    detail::for_each_typed_materialized_bytes_entry(before, [&](const asset_typed_materialized_bytes_entry& before_entry) {
+        const asset_typed_materialized_bytes_entry* after_entry = after.find_entry(before_entry.id);
+        if (after_entry == nullptr) {
+            diff.removed.push_back(detail::make_removed_typed_materialized_bytes_diff_entry(before_entry));
+            return;
+        }
+
+        asset_typed_materialized_bytes_diff_entry changed =
+            detail::make_changed_typed_materialized_bytes_diff_entry(before_entry, *after_entry);
+        if (changed.has_field_delta()) {
+            diff.changed.push_back(std::move(changed));
+        }
+    });
+
+    detail::for_each_typed_materialized_bytes_entry(after, [&](const asset_typed_materialized_bytes_entry& after_entry) {
+        if (before.find_entry(after_entry.id) == nullptr) {
+            diff.added.push_back(detail::make_added_typed_materialized_bytes_diff_entry(after_entry));
+        }
+    });
+
+    return diff;
 }
 
 } // namespace quiz_vulkan::assets

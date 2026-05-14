@@ -441,6 +441,31 @@ void test_materialized_asset_bytes_surface_materialization_policy_diagnostics()
         "materialized byte load surfaces cache key mismatches");
     require(provider.load_count() == 0U, "cache key mismatches do not call the byte provider");
 
+    runtime_asset_catalog_snapshot source_path_mismatch_snapshot{
+        .entry = asset_manifest_entry{
+            .id = "wrong_shader_file",
+            .type = asset_type::shader,
+            .uri = "asset://shaders/ui.vert.spv",
+        },
+        .source = resolved_asset_source{
+            .original_uri = "asset://shaders/ui.vert.spv",
+            .normalized_uri = "asset://shaders/ui.vert.spv",
+            .kind = asset_source_kind::asset_uri,
+            .type = asset_type::shader,
+        },
+        .cache_key = "shader|asset://shaders/ui.vert.spv",
+        .resolved_root_id = "packaged",
+        .rooted_path = std::filesystem::absolute(fixture_root / "packaged" / "shaders" / "other.vert.spv"),
+    };
+    const asset_bytes_load_result source_path_mismatch = load_materialized_asset_bytes(
+        provider,
+        materialize_runtime_asset(source_path_mismatch_snapshot));
+    require(
+        source_path_mismatch.status == asset_bytes_load_status::source_path_mismatch,
+        "materialized byte load surfaces source path mismatches");
+    require(!source_path_mismatch.diagnostic.empty(), "source path mismatch result includes diagnostics");
+    require(provider.load_count() == 0U, "source path mismatches do not call the byte provider");
+
     runtime_asset_catalog_snapshot noncanonical_snapshot{
         .entry = asset_manifest_entry{
             .id = "noncanonical_image",
@@ -481,15 +506,15 @@ void test_materialized_asset_bytes_call_provider_after_materialization()
         .entry = asset_manifest_entry{
             .id = "card_front",
             .type = asset_type::image,
-            .uri = "asset://cards/front.png",
+            .uri = "asset://images/front.png",
         },
         .source = resolved_asset_source{
-            .original_uri = "asset://cards/front.png",
-            .normalized_uri = "asset://cards/front.png",
+            .original_uri = "asset://images/front.png",
+            .normalized_uri = "asset://images/front.png",
             .kind = asset_source_kind::asset_uri,
             .type = asset_type::image,
         },
-        .cache_key = "image|asset://cards/front.png",
+        .cache_key = "image|asset://images/front.png",
         .resolved_root_id = "quiz_data",
         .rooted_path = rooted_path,
     };

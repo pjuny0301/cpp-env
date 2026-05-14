@@ -21,6 +21,7 @@ enum class asset_bytes_load_status {
     missing_bytes,
     source_not_readable,
     invalid_rooted_path,
+    source_path_mismatch,
     file_read_failed,
     cache_key_mismatch,
     noncanonical_cache_key,
@@ -154,6 +155,8 @@ inline asset_bytes_load_status asset_bytes_status_from_materialized_status(
             return asset_bytes_load_status::source_not_readable;
         case runtime_materialized_asset_lookup_status::invalid_rooted_path:
             return asset_bytes_load_status::invalid_rooted_path;
+        case runtime_materialized_asset_lookup_status::source_path_mismatch:
+            return asset_bytes_load_status::source_path_mismatch;
         case runtime_materialized_asset_lookup_status::cache_key_mismatch:
             return asset_bytes_load_status::cache_key_mismatch;
         case runtime_materialized_asset_lookup_status::noncanonical_cache_key:

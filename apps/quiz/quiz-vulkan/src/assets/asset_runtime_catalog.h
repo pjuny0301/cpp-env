@@ -26,6 +26,7 @@ enum class runtime_materialized_asset_lookup_status {
     unsupported_source_kind,
     missing_rooted_path,
     invalid_rooted_path,
+    source_path_mismatch,
     cache_key_mismatch,
     noncanonical_cache_key,
 };
@@ -215,6 +216,37 @@ inline bool runtime_asset_rooted_path_is_safe(const std::filesystem::path& path)
     return !path.empty() && path.is_absolute() && !runtime_asset_path_has_parent_reference(path);
 }
 
+inline bool runtime_asset_rooted_path_matches_source_path(
+    const std::filesystem::path& rooted_path,
+    std::string_view source_path)
+{
+    if (source_path.empty()) {
+        return false;
+    }
+
+    const std::filesystem::path source{std::string(source_path)};
+    if (source.empty() || source.is_absolute() || source.has_root_name()
+        || runtime_asset_path_has_parent_reference(source)) {
+        return false;
+    }
+
+    const std::filesystem::path normalized_rooted_path = rooted_path.lexically_normal();
+    auto rooted_part = normalized_rooted_path.end();
+    auto source_part = source.end();
+    while (source_part != source.begin()) {
+        --source_part;
+        if (rooted_part == normalized_rooted_path.begin()) {
+            return false;
+        }
+        --rooted_part;
+        if (*rooted_part != *source_part) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 inline runtime_materialized_asset_lookup_status materialized_status_from_catalog_lookup_status(
     runtime_asset_catalog_lookup_status status)
 {
@@ -271,6 +303,14 @@ inline runtime_materialized_asset_lookup_result materialize_runtime_asset(
     if (!detail::runtime_asset_rooted_path_is_safe(*snapshot.rooted_path)) {
         result.status = runtime_materialized_asset_lookup_status::invalid_rooted_path;
         result.diagnostic = "runtime materialized asset rooted path must be absolute and cannot contain parent traversal";
+        return result;
+    }
+
+    if (!detail::runtime_asset_rooted_path_matches_source_path(
+            *snapshot.rooted_path,
+            result.materialized.cache_key_policy.source_path)) {
+        result.status = runtime_materialized_asset_lookup_status::source_path_mismatch;
+        result.diagnostic = "runtime materialized asset rooted path does not match the normalized source path";
         return result;
     }
 

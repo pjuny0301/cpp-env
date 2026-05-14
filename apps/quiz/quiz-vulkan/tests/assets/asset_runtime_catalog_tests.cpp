@@ -405,6 +405,29 @@ void test_runtime_materialized_lookup_reports_lookup_and_path_diagnostics()
         mismatched_key.status == runtime_materialized_asset_lookup_status::cache_key_mismatch,
         "materialized snapshot rejects mismatched cache keys");
 
+    runtime_asset_catalog_snapshot source_path_mismatch_snapshot{
+        .entry = asset_manifest_entry{
+            .id = "wrong_file",
+            .type = asset_type::shader,
+            .uri = "asset://shaders/ui.vert.spv",
+        },
+        .source = resolved_asset_source{
+            .original_uri = "asset://shaders/ui.vert.spv",
+            .normalized_uri = "asset://shaders/ui.vert.spv",
+            .kind = asset_source_kind::asset_uri,
+            .type = asset_type::shader,
+        },
+        .cache_key = "shader|asset://shaders/ui.vert.spv",
+        .resolved_root_id = "packaged",
+        .rooted_path = std::filesystem::absolute(fixture_root / "packaged" / "shaders" / "other.vert.spv"),
+    };
+    const runtime_materialized_asset_lookup_result source_path_mismatch =
+        materialize_runtime_asset(source_path_mismatch_snapshot);
+    require(
+        source_path_mismatch.status == runtime_materialized_asset_lookup_status::source_path_mismatch,
+        "materialized snapshot rejects rooted paths that do not match the normalized source path");
+    require(!source_path_mismatch.diagnostic.empty(), "source path mismatch includes diagnostics");
+
     runtime_asset_catalog_snapshot noncanonical_snapshot{
         .entry = asset_manifest_entry{
             .id = "noncanonical_image",

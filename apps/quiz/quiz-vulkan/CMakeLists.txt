@@ -384,6 +384,21 @@ target_include_directories(quiz_vulkan_text_engine PUBLIC src)
 target_link_libraries(quiz_vulkan_text_engine PUBLIC quiz_vulkan_render_contract)
 target_link_libraries(quiz_vulkan_text_scene_bridge INTERFACE quiz_vulkan_scene quiz_vulkan_render_contract)
 
+add_library(quiz_vulkan_image_engine STATIC)
+target_sources(
+    quiz_vulkan_image_engine
+    PRIVATE
+        src/render/image/third_party_image_decoder_adapter.cpp
+)
+target_compile_features(quiz_vulkan_image_engine PUBLIC cxx_std_23)
+target_include_directories(quiz_vulkan_image_engine PUBLIC src)
+target_link_libraries(quiz_vulkan_image_engine PUBLIC quiz_vulkan_render_contract)
+target_compile_definitions(
+    quiz_vulkan_image_engine
+    PUBLIC
+        QUIZ_VULKAN_HAS_STB_IMAGE_DECODE_BACKEND=1
+)
+
 add_library(quiz_vulkan_ui_renderer STATIC)
 target_sources(
     quiz_vulkan_ui_renderer
@@ -662,13 +677,13 @@ if(BUILD_TESTING)
     target_link_libraries(
         quiz_vulkan_fake_image_texture_cache_tests
         PRIVATE
-            quiz_vulkan_render_contract
+            quiz_vulkan_image_engine
     )
     quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_fake_image_texture_cache_tests)
     add_test(NAME quiz_vulkan_fake_image_texture_cache_tests COMMAND quiz_vulkan_fake_image_texture_cache_tests)
 
     quiz_vulkan_add_test_directory(tests/render/text LINK_LIBRARIES quiz_vulkan_render_contract quiz_vulkan_scene quiz_vulkan_text_engine quiz_vulkan_text_scene_bridge)
-    quiz_vulkan_add_test_directory(tests/render/image LINK_LIBRARIES quiz_vulkan_render_contract)
+    quiz_vulkan_add_test_directory(tests/render/image LINK_LIBRARIES quiz_vulkan_image_engine)
     quiz_vulkan_add_test_directory(tests/render/vulkan LINK_LIBRARIES quiz_vulkan_renderer)
     quiz_vulkan_add_test_directory(tests/audio LINK_LIBRARIES quiz_vulkan_audio_contract)
     quiz_vulkan_add_test_directory(tests/assets LINK_LIBRARIES quiz_vulkan_asset_contract quiz_vulkan_deck_source_asset_adapter)

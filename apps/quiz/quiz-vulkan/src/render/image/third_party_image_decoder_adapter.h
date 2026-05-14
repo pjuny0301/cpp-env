@@ -83,13 +83,14 @@ public:
 
 inline third_party_image_decoder_capability make_unavailable_third_party_image_decoder_capability(
     const render_image_decode_request& request,
-    std::string decoder_id = "third_party_image_decoder_adapter")
+    std::string decoder_id = "third_party_image_decoder_adapter",
+    std::string diagnostic = "third-party image decoder backend is unavailable")
 {
     return third_party_image_decoder_capability{
         .status = third_party_image_decoder_adapter_status::unavailable,
         .decoder_id = std::move(decoder_id),
         .format_detection = detect_render_image_format(request),
-        .diagnostic = "third-party image decoder backend is unavailable",
+        .diagnostic = std::move(diagnostic),
     };
 }
 
@@ -546,6 +547,16 @@ inline const stb_image_decoder_format_matrix_entry* stb_image_decoder_format_mat
     return nullptr;
 }
 
+inline bool stb_image_decoder_format_supported(
+    render_image_encoded_format format,
+    const std::vector<stb_image_decoder_format_matrix_entry>& matrix =
+        make_default_stb_image_decoder_format_matrix())
+{
+    const stb_image_decoder_format_matrix_entry* entry =
+        stb_image_decoder_format_matrix_entry_for(matrix, format);
+    return entry != nullptr && entry->dependency_supports;
+}
+
 inline std::size_t stb_image_decoder_supported_format_count(
     const std::vector<stb_image_decoder_format_matrix_entry>& matrix)
 {
@@ -740,6 +751,28 @@ inline stb_image_decoder_dependency_manifest make_stb_image_decoder_header_depen
         stb_image_decoder_header_format_count(
             supported_format_matrix,
             &stb_image_decoder_format_matrix_entry::probed_by_header);
+#if defined(QUIZ_VULKAN_HAS_STB_IMAGE_DECODE_BACKEND) && QUIZ_VULKAN_HAS_STB_IMAGE_DECODE_BACKEND
+    return stb_image_decoder_dependency_manifest{
+        .status = stb_image_decoder_dependency_status::available,
+        .status_name = stb_image_decoder_dependency_status_name(
+            stb_image_decoder_dependency_status::available),
+        .decoder_id = std::move(decoder_id),
+        .dependency_name = "stb_image",
+        .dependency_version = stb_image_decoder_header_version(),
+        .header_available = true,
+        .implementation_linked = true,
+        .header_probe_used = true,
+        .declared_supported_format_count = declared_supported_format_count,
+        .probed_supported_format_count = probed_supported_format_count,
+        .supported_format_summary = make_stb_image_decoder_supported_format_summary(supported_format_matrix),
+        .fallback_reason = {},
+        .memory_decode_available = true,
+        .info_probe_available = true,
+        .forced_rgba8_decode_available = true,
+        .supported_format_matrix = std::move(supported_format_matrix),
+        .diagnostic = "stb_image header decode adapter is available",
+    };
+#else
     const std::string fallback_reason =
         "stb_image header is available but decode implementation is not linked";
     return stb_image_decoder_dependency_manifest{
@@ -762,6 +795,7 @@ inline stb_image_decoder_dependency_manifest make_stb_image_decoder_header_depen
         .supported_format_matrix = std::move(supported_format_matrix),
         .diagnostic = fallback_reason + "; falling back to standard image decoders",
     };
+#endif
 }
 
 class stb_image_decoder_header_dependency_probe final : public stb_image_decoder_dependency_probe_interface {
@@ -1007,9 +1041,29 @@ private:
     stb_image_decoder_dependency_manifest manifest_;
 };
 
+class stb_image_decoder_backend final : public third_party_image_decoder_backend_interface {
+public:
+    explicit stb_image_decoder_backend(std::string decoder_id = "stb_image_decoder");
+
+    third_party_image_decoder_capability inspect(
+        const render_image_decode_request& request) const override;
+    render_image_decode_result decode(
+        const render_image_decode_request& request) const override;
+
+private:
+    render_image_decode_result make_failure(
+        render_image_decode_status status,
+        const render_image_decode_request& request,
+        std::string diagnostic) const;
+
+    std::string decoder_id_ = "stb_image_decoder";
+};
+
+const third_party_image_decoder_backend_interface* default_stb_image_decoder_backend();
+
 class third_party_image_decoder_adapter final : public image_decoder_interface {
 public:
-    third_party_image_decoder_adapter() = default;
+    third_party_image_decoder_adapter();
 
     explicit third_party_image_decoder_adapter(
         const third_party_image_decoder_backend_interface& backend)

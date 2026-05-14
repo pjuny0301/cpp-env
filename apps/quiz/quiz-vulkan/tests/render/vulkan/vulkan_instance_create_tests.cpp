@@ -1,6 +1,7 @@
 #include "render/vulkan/vulkan_backend_adapter.h"
 #include "render/vulkan/vulkan_backend_instance.h"
 #include "render/vulkan/vulkan_backend_loader.h"
+#include "render/vulkan/vulkan_backend_sdk.h"
 
 #include <cassert>
 #include <cstdio>
@@ -357,6 +358,181 @@ void test_vulkan_instance_create_status_names_are_stable()
         "instance create status name for creation failed is stable");
 }
 
+void test_native_instance_function_table_collects_global_entrypoints()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::fake_vulkan_native_symbol_resolver resolver;
+    const vulkan_backend::vulkan_native_instance_function_table table =
+        vulkan_backend::collect_vulkan_native_instance_function_table(resolver);
+
+    require(table.checked, "native instance function table is checked");
+    require(table.ready(), "native instance function table is ready");
+    require(
+        table.status == vulkan_backend::vulkan_native_instance_function_table_status::ready,
+        "native instance function table reports ready");
+    require(table.create_instance.valid(), "native instance table records vkCreateInstance");
+    require(table.destroy_instance.valid(), "native instance table records vkDestroyInstance");
+    require(
+        resolver.state().resolve_call_count == 2,
+        "native instance table resolves create and destroy symbols");
+    require(
+        resolver.state().requested_symbols.front() == "vkCreateInstance",
+        "native instance table resolves vkCreateInstance first");
+    require(
+        resolver.state().requested_symbols.back() == "vkDestroyInstance",
+        "native instance table resolves vkDestroyInstance second");
+}
+
+void test_native_instance_function_table_reports_missing_symbols()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    {
+        vulkan_backend::fake_vulkan_native_symbol_resolver resolver(
+            vulkan_backend::fake_vulkan_native_symbol_resolver_options{
+                .missing_symbols = {"vkCreateInstance"},
+            });
+        const vulkan_backend::vulkan_native_instance_function_table table =
+            vulkan_backend::collect_vulkan_native_instance_function_table(resolver);
+
+        require(!table.ready(), "missing create blocks native instance table");
+        require(
+            table.status
+                == vulkan_backend::vulkan_native_instance_function_table_status::missing_create_instance_symbol,
+            "native instance table maps missing vkCreateInstance");
+    }
+
+    {
+        vulkan_backend::fake_vulkan_native_symbol_resolver resolver(
+            vulkan_backend::fake_vulkan_native_symbol_resolver_options{
+                .missing_symbols = {"vkDestroyInstance"},
+            });
+        const vulkan_backend::vulkan_native_instance_function_table table =
+            vulkan_backend::collect_vulkan_native_instance_function_table(resolver);
+
+        require(!table.ready(), "missing destroy blocks native instance table");
+        require(
+            table.status
+                == vulkan_backend::vulkan_native_instance_function_table_status::missing_destroy_instance_symbol,
+            "native instance table maps missing vkDestroyInstance");
+        require(table.create_instance.valid(), "missing destroy table preserves create pointer");
+    }
+}
+
+void test_native_instance_create_blocks_before_calling_invalid_fake_pointers()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::fake_vulkan_native_symbol_resolver resolver;
+    const vulkan_backend::vulkan_native_instance_function_table table =
+        vulkan_backend::collect_vulkan_native_instance_function_table(resolver);
+
+    const vulkan_backend::vulkan_native_instance_create_result missing_loader_result =
+        vulkan_backend::create_native_vulkan_instance(
+            make_missing_loader(),
+            table,
+            vulkan_backend::vulkan_instance_create_request{});
+    require(missing_loader_result.checked, "native instance missing-loader result is checked");
+    require(
+        missing_loader_result.status
+            == vulkan_backend::vulkan_native_instance_create_status::loader_unavailable,
+        "native instance create blocks on loader readiness before function pointers");
+    require(!missing_loader_result.created(), "missing-loader native instance is not created");
+
+    vulkan_backend::fake_vulkan_native_symbol_resolver missing_symbol_resolver(
+        vulkan_backend::fake_vulkan_native_symbol_resolver_options{
+            .missing_symbols = {"vkCreateInstance"},
+        });
+    const vulkan_backend::vulkan_native_instance_function_table missing_table =
+        vulkan_backend::collect_vulkan_native_instance_function_table(missing_symbol_resolver);
+    const vulkan_backend::vulkan_native_instance_create_result missing_table_result =
+        vulkan_backend::create_native_vulkan_instance(
+            make_ready_loader(),
+            missing_table,
+            vulkan_backend::vulkan_instance_create_request{});
+    require(missing_table_result.checked, "native instance missing-table result is checked");
+    require(
+        missing_table_result.status
+            == vulkan_backend::vulkan_native_instance_create_status::function_table_unavailable,
+        "native instance create blocks on function table readiness");
+    require(!missing_table_result.created(), "missing-table native instance is not created");
+}
+
+void test_native_instance_destroy_blocks_invalid_handles()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::fake_vulkan_native_symbol_resolver resolver;
+    const vulkan_backend::vulkan_native_instance_function_table table =
+        vulkan_backend::collect_vulkan_native_instance_function_table(resolver);
+    const vulkan_backend::vulkan_native_instance_destroy_result result =
+        vulkan_backend::destroy_native_vulkan_instance(table, vulkan_backend::vulkan_instance_handle{});
+
+    require(result.checked, "native instance destroy invalid-handle result is checked");
+    require(
+        result.status == vulkan_backend::vulkan_native_instance_destroy_status::invalid_handle,
+        "native instance destroy maps invalid handle");
+    require(!result.destroyed(), "native instance destroy does not complete invalid handle");
+}
+
+void test_native_instance_create_smoke_uses_system_loader_when_available()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::system_vulkan_loader loader;
+    const vulkan_backend::vulkan_loader_probe_result probe =
+        vulkan_backend::probe_vulkan_loader(loader);
+    require(probe.checked, "native instance smoke checks the system loader");
+    if (!probe.available()) {
+        return;
+    }
+
+    const vulkan_backend::vulkan_loader_readiness_state loader_readiness =
+        vulkan_backend::make_vulkan_loader_readiness_state(probe);
+    vulkan_backend::system_vulkan_native_symbol_resolver resolver(
+        vulkan_backend::system_vulkan_native_symbol_resolver_options{
+            .candidate_library_names = {probe.loaded_library_name},
+            .use_default_library_names = false,
+        });
+    const vulkan_backend::vulkan_native_instance_function_table table =
+        vulkan_backend::collect_vulkan_native_instance_function_table(resolver);
+    require(table.checked, "native instance smoke checks the function table");
+    if (!table.ready()) {
+        return;
+    }
+
+    const vulkan_backend::vulkan_native_instance_create_result create_result =
+        vulkan_backend::create_native_vulkan_instance(
+            loader_readiness,
+            table,
+            vulkan_backend::vulkan_instance_create_request{
+                .app_name = "quiz-vulkan-native-instance-smoke",
+                .engine_name = "quiz-vulkan-renderer-test",
+            });
+    require(create_result.checked, "native instance smoke create result is checked");
+#if QUIZ_VULKAN_HAS_VULKAN_HEADERS
+    require(
+        create_result.status == vulkan_backend::vulkan_native_instance_create_status::created
+            || create_result.status
+                == vulkan_backend::vulkan_native_instance_create_status::creation_failed,
+        "native instance smoke either creates an instance or records driver failure");
+#else
+    require(
+        create_result.status
+            == vulkan_backend::vulkan_native_instance_create_status::headers_unavailable,
+        "native instance smoke reports missing compile-time Vulkan headers");
+#endif
+    if (!create_result.created()) {
+        return;
+    }
+
+    const vulkan_backend::vulkan_native_instance_destroy_result destroy_result =
+        vulkan_backend::destroy_native_vulkan_instance(table, create_result.handle);
+    require(destroy_result.checked, "native instance smoke destroy result is checked");
+    require(destroy_result.destroyed(), "native instance smoke destroys created instance");
+}
+
 } // namespace
 
 int main()
@@ -367,5 +543,10 @@ int main()
     test_instance_factory_reports_missing_requested_layer();
     test_instance_factory_reports_creation_failure_after_requirements_pass();
     test_vulkan_instance_create_status_names_are_stable();
+    test_native_instance_function_table_collects_global_entrypoints();
+    test_native_instance_function_table_reports_missing_symbols();
+    test_native_instance_create_blocks_before_calling_invalid_fake_pointers();
+    test_native_instance_destroy_blocks_invalid_handles();
+    test_native_instance_create_smoke_uses_system_loader_when_available();
     return 0;
 }

@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <string>
 #include <utility>
 #include <vector>
@@ -447,6 +448,47 @@ vulkan_system_symbol_resolution_result make_system_symbol_resolution_result(
         .resolved_via_instance_proc_address = false,
         .resolved_via_direct_export = false,
         .pointer = {},
+        .diagnostic = {},
+    };
+}
+
+vulkan_native_instance_function_table make_native_instance_function_table()
+{
+    return vulkan_native_instance_function_table{
+        .checked = true,
+        .status = vulkan_native_instance_function_table_status::not_checked,
+        .create_instance = {},
+        .destroy_instance = {},
+        .diagnostic = {},
+    };
+}
+
+vulkan_native_instance_create_result make_native_instance_create_result(
+    const vulkan_loader_readiness_state& loader_readiness,
+    const vulkan_native_instance_function_table& function_table,
+    const vulkan_instance_create_request& request)
+{
+    return vulkan_native_instance_create_result{
+        .checked = true,
+        .status = vulkan_native_instance_create_status::not_requested,
+        .loader = loader_readiness,
+        .function_table = function_table,
+        .request = request,
+        .handle = {},
+        .native_result = 0,
+        .diagnostic = {},
+    };
+}
+
+vulkan_native_instance_destroy_result make_native_instance_destroy_result(
+    const vulkan_native_instance_function_table& function_table,
+    vulkan_instance_handle handle)
+{
+    return vulkan_native_instance_destroy_result{
+        .checked = true,
+        .status = vulkan_native_instance_destroy_status::not_requested,
+        .function_table = function_table,
+        .handle = handle,
         .diagnostic = {},
     };
 }
@@ -2462,6 +2504,160 @@ system_vulkan_native_symbol_resolver::resolve_symbol_with_diagnostics(
         result.diagnostic = "Native Vulkan symbol was unavailable: " + result.symbol_name;
     }
     return result;
+}
+
+vulkan_native_instance_function_table collect_vulkan_native_instance_function_table(
+    vulkan_native_symbol_resolver_interface& resolver)
+{
+    vulkan_native_instance_function_table table = make_native_instance_function_table();
+    table.create_instance = resolver.resolve_symbol("vkCreateInstance");
+    if (!table.create_instance.valid()) {
+        table.status =
+            vulkan_native_instance_function_table_status::missing_create_instance_symbol;
+        table.diagnostic = "Native Vulkan instance table is missing vkCreateInstance";
+        return table;
+    }
+
+    table.destroy_instance = resolver.resolve_symbol("vkDestroyInstance");
+    if (!table.destroy_instance.valid()) {
+        table.status =
+            vulkan_native_instance_function_table_status::missing_destroy_instance_symbol;
+        table.diagnostic = "Native Vulkan instance table is missing vkDestroyInstance";
+        return table;
+    }
+
+    table.status = vulkan_native_instance_function_table_status::ready;
+    table.diagnostic = "Native Vulkan instance function table is ready";
+    return table;
+}
+
+vulkan_native_instance_create_result create_native_vulkan_instance(
+    const vulkan_loader_readiness_state& loader_readiness,
+    const vulkan_native_instance_function_table& function_table,
+    const vulkan_instance_create_request& request)
+{
+    vulkan_native_instance_create_result result = make_native_instance_create_result(
+        loader_readiness,
+        function_table,
+        request);
+
+    if (!loader_readiness.ready_for_instance()) {
+        result.status = vulkan_native_instance_create_status::loader_unavailable;
+        result.diagnostic = "Vulkan loader is not ready for native instance creation";
+        return result;
+    }
+    if (!function_table.ready()) {
+        result.status = vulkan_native_instance_create_status::function_table_unavailable;
+        result.diagnostic = function_table.diagnostic.empty()
+            ? "Native Vulkan instance function table is unavailable"
+            : function_table.diagnostic;
+        return result;
+    }
+
+#if QUIZ_VULKAN_HAS_VULKAN_HEADERS
+    const auto create_instance =
+        reinterpret_cast<PFN_vkCreateInstance>(function_table.create_instance.value);
+    if (create_instance == nullptr) {
+        result.status = vulkan_native_instance_create_status::function_table_unavailable;
+        result.diagnostic = "Native Vulkan instance create pointer is invalid";
+        return result;
+    }
+
+    const std::vector<std::string> requested_layers =
+        instance_detail::requested_instance_layers(request);
+    std::vector<const char*> extension_names;
+    extension_names.reserve(request.required_instance_extensions.size());
+    for (const std::string& extension_name : request.required_instance_extensions) {
+        extension_names.push_back(extension_name.c_str());
+    }
+    std::vector<const char*> layer_names;
+    layer_names.reserve(requested_layers.size());
+    for (const std::string& layer_name : requested_layers) {
+        layer_names.push_back(layer_name.c_str());
+    }
+
+    VkApplicationInfo application_info{};
+    application_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    application_info.pApplicationName =
+        request.app_name.empty() ? nullptr : request.app_name.c_str();
+    application_info.applicationVersion = 0;
+    application_info.pEngineName =
+        request.engine_name.empty() ? nullptr : request.engine_name.c_str();
+    application_info.engineVersion = 0;
+    application_info.apiVersion =
+        request.api_version != 0 ? request.api_version : VK_API_VERSION_1_0;
+
+    VkInstanceCreateInfo create_info{};
+    create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    create_info.pApplicationInfo = &application_info;
+    create_info.enabledExtensionCount =
+        static_cast<std::uint32_t>(extension_names.size());
+    create_info.ppEnabledExtensionNames =
+        extension_names.empty() ? nullptr : extension_names.data();
+    create_info.enabledLayerCount =
+        static_cast<std::uint32_t>(layer_names.size());
+    create_info.ppEnabledLayerNames = layer_names.empty() ? nullptr : layer_names.data();
+
+    VkInstance native_instance = VK_NULL_HANDLE;
+    const VkResult native_result = create_instance(&create_info, nullptr, &native_instance);
+    result.native_result = static_cast<std::int32_t>(native_result);
+    if (native_result != VK_SUCCESS || native_instance == VK_NULL_HANDLE) {
+        result.status = vulkan_native_instance_create_status::creation_failed;
+        result.diagnostic = "Native Vulkan instance creation failed";
+        return result;
+    }
+
+    result.status = vulkan_native_instance_create_status::created;
+    result.handle = vulkan_instance_handle{
+        .value = reinterpret_cast<std::uintptr_t>(native_instance),
+    };
+    result.diagnostic = "Native Vulkan instance created";
+    return result;
+#else
+    result.status = vulkan_native_instance_create_status::headers_unavailable;
+    result.diagnostic = "Vulkan headers are unavailable for native instance creation";
+    return result;
+#endif
+}
+
+vulkan_native_instance_destroy_result destroy_native_vulkan_instance(
+    const vulkan_native_instance_function_table& function_table,
+    vulkan_instance_handle handle)
+{
+    vulkan_native_instance_destroy_result result =
+        make_native_instance_destroy_result(function_table, handle);
+
+    if (!function_table.ready()) {
+        result.status = vulkan_native_instance_destroy_status::function_table_unavailable;
+        result.diagnostic = function_table.diagnostic.empty()
+            ? "Native Vulkan instance function table is unavailable for destroy"
+            : function_table.diagnostic;
+        return result;
+    }
+    if (!handle.valid()) {
+        result.status = vulkan_native_instance_destroy_status::invalid_handle;
+        result.diagnostic = "Native Vulkan instance destroy received an invalid handle";
+        return result;
+    }
+
+#if QUIZ_VULKAN_HAS_VULKAN_HEADERS
+    const auto destroy_instance =
+        reinterpret_cast<PFN_vkDestroyInstance>(function_table.destroy_instance.value);
+    if (destroy_instance == nullptr) {
+        result.status = vulkan_native_instance_destroy_status::function_table_unavailable;
+        result.diagnostic = "Native Vulkan instance destroy pointer is invalid";
+        return result;
+    }
+
+    destroy_instance(reinterpret_cast<VkInstance>(handle.value), nullptr);
+    result.status = vulkan_native_instance_destroy_status::destroyed;
+    result.diagnostic = "Native Vulkan instance destroyed";
+    return result;
+#else
+    result.status = vulkan_native_instance_destroy_status::headers_unavailable;
+    result.diagnostic = "Vulkan headers are unavailable for native instance destroy";
+    return result;
+#endif
 }
 
 std::vector<vulkan_native_entrypoint_symbol_request>

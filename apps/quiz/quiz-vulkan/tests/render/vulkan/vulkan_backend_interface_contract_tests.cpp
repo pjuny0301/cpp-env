@@ -1123,6 +1123,39 @@ static_assert(requires(render::vulkan_backend::vulkan_instance_create_result res
     { result.ready_for_device() } -> std::same_as<bool>;
 });
 
+static_assert(requires(render::vulkan_backend::vulkan_native_instance_function_table table) {
+    { table.checked } -> std::same_as<bool&>;
+    { table.status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_instance_function_table_status&>;
+    { table.create_instance } -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { table.destroy_instance } -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { table.diagnostic } -> std::same_as<std::string&>;
+    { table.ready() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_instance_create_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.status } -> std::same_as<render::vulkan_backend::vulkan_native_instance_create_status&>;
+    { result.loader } -> std::same_as<render::vulkan_backend::vulkan_loader_readiness_state&>;
+    { result.function_table }
+        -> std::same_as<render::vulkan_backend::vulkan_native_instance_function_table&>;
+    { result.request } -> std::same_as<render::vulkan_backend::vulkan_instance_create_request&>;
+    { result.handle } -> std::same_as<render::vulkan_backend::vulkan_instance_handle&>;
+    { result.native_result } -> std::same_as<std::int32_t&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.created() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_instance_destroy_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.status } -> std::same_as<render::vulkan_backend::vulkan_native_instance_destroy_status&>;
+    { result.function_table }
+        -> std::same_as<render::vulkan_backend::vulkan_native_instance_function_table&>;
+    { result.handle } -> std::same_as<render::vulkan_backend::vulkan_instance_handle&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.destroyed() } -> std::same_as<bool>;
+});
+
 static_assert(requires(render::vulkan_backend::vulkan_device_handle handle) {
     { handle.value } -> std::same_as<std::uintptr_t&>;
     { handle.valid() } -> std::same_as<bool>;
@@ -1717,12 +1750,24 @@ static_assert(requires(
 
 static_assert(requires(
     render::vulkan_backend::vulkan_instance_factory_interface& factory,
+    render::vulkan_backend::vulkan_native_symbol_resolver_interface& native_resolver,
     const render::vulkan_backend::vulkan_loader_readiness_state& loader_readiness,
+    const render::vulkan_backend::vulkan_native_instance_function_table& native_instance_table,
     const render::vulkan_backend::vulkan_instance_create_request& request) {
     { render::vulkan_backend::create_vulkan_instance(
         factory,
         loader_readiness,
         request) } -> std::same_as<render::vulkan_backend::vulkan_instance_create_result>;
+    { render::vulkan_backend::collect_vulkan_native_instance_function_table(native_resolver) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_instance_function_table>;
+    { render::vulkan_backend::create_native_vulkan_instance(
+        loader_readiness,
+        native_instance_table,
+        request) } -> std::same_as<render::vulkan_backend::vulkan_native_instance_create_result>;
+    { render::vulkan_backend::destroy_native_vulkan_instance(
+        native_instance_table,
+        render::vulkan_backend::vulkan_instance_handle{}) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_instance_destroy_result>;
 });
 
 static_assert(requires(

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "render/vulkan/vulkan_backend_loader.h"
+#include "render/vulkan/vulkan_backend_native_symbols.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -101,6 +101,77 @@ struct vulkan_instance_create_result {
         return checked && status == vulkan_instance_create_status::created
             && loader.ready_for_instance() && handle.valid()
             && required_extensions_ready();
+    }
+};
+
+enum class vulkan_native_instance_function_table_status {
+    not_checked,
+    ready,
+    missing_create_instance_symbol,
+    missing_destroy_instance_symbol,
+};
+
+struct vulkan_native_instance_function_table {
+    bool checked = false;
+    vulkan_native_instance_function_table_status status =
+        vulkan_native_instance_function_table_status::not_checked;
+    vulkan_native_function_pointer create_instance;
+    vulkan_native_function_pointer destroy_instance;
+    std::string diagnostic;
+
+    bool ready() const
+    {
+        return checked && status == vulkan_native_instance_function_table_status::ready
+            && create_instance.valid() && destroy_instance.valid();
+    }
+};
+
+enum class vulkan_native_instance_create_status {
+    not_requested,
+    created,
+    loader_unavailable,
+    function_table_unavailable,
+    headers_unavailable,
+    creation_failed,
+};
+
+struct vulkan_native_instance_create_result {
+    bool checked = false;
+    vulkan_native_instance_create_status status =
+        vulkan_native_instance_create_status::not_requested;
+    vulkan_loader_readiness_state loader;
+    vulkan_native_instance_function_table function_table;
+    vulkan_instance_create_request request;
+    vulkan_instance_handle handle;
+    std::int32_t native_result = 0;
+    std::string diagnostic;
+
+    bool created() const
+    {
+        return checked && status == vulkan_native_instance_create_status::created
+            && handle.valid();
+    }
+};
+
+enum class vulkan_native_instance_destroy_status {
+    not_requested,
+    destroyed,
+    function_table_unavailable,
+    headers_unavailable,
+    invalid_handle,
+};
+
+struct vulkan_native_instance_destroy_result {
+    bool checked = false;
+    vulkan_native_instance_destroy_status status =
+        vulkan_native_instance_destroy_status::not_requested;
+    vulkan_native_instance_function_table function_table;
+    vulkan_instance_handle handle;
+    std::string diagnostic;
+
+    bool destroyed() const
+    {
+        return checked && status == vulkan_native_instance_destroy_status::destroyed;
     }
 };
 
@@ -300,5 +371,17 @@ inline vulkan_instance_create_result create_vulkan_instance(
 {
     return factory.create_instance(loader_readiness, request);
 }
+
+vulkan_native_instance_function_table collect_vulkan_native_instance_function_table(
+    vulkan_native_symbol_resolver_interface& resolver);
+
+vulkan_native_instance_create_result create_native_vulkan_instance(
+    const vulkan_loader_readiness_state& loader_readiness,
+    const vulkan_native_instance_function_table& function_table,
+    const vulkan_instance_create_request& request = {});
+
+vulkan_native_instance_destroy_result destroy_native_vulkan_instance(
+    const vulkan_native_instance_function_table& function_table,
+    vulkan_instance_handle handle);
 
 } // namespace quiz_vulkan::render::vulkan_backend

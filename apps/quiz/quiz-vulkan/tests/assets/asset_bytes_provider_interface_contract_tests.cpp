@@ -2,6 +2,7 @@
 
 #include <concepts>
 #include <cstddef>
+#include <filesystem>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -65,6 +66,43 @@ static_assert(requires(asset_bytes_integrity_report report, const asset_bytes_in
     { const_report.ok() } -> std::same_as<bool>;
 });
 
+static_assert(requires(
+    asset_materialized_bytes_cache_policy_entry entry,
+    const asset_materialized_bytes_cache_policy_entry& const_entry) {
+    { entry.id } -> std::same_as<std::string&>;
+    { entry.expected_type } -> std::same_as<asset_type&>;
+    { entry.materialized_status } -> std::same_as<runtime_materialized_asset_lookup_status&>;
+    { entry.load_status } -> std::same_as<asset_bytes_load_status&>;
+    { entry.cache_key } -> std::same_as<asset_cache_key&>;
+    { entry.source_uri } -> std::same_as<std::string&>;
+    { entry.materialized_source_path } -> std::same_as<std::string&>;
+    { entry.materialized_path } -> std::same_as<std::filesystem::path&>;
+    { entry.byte_count } -> std::same_as<std::size_t&>;
+    { entry.content_hash } -> std::same_as<std::string&>;
+    { entry.issues } -> std::same_as<std::vector<asset_bytes_integrity_issue>&>;
+    { entry.diagnostic } -> std::same_as<std::string&>;
+    { const_entry.ok() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    asset_materialized_bytes_cache_policy_summary summary,
+    const asset_materialized_bytes_cache_policy_summary& const_summary,
+    std::string_view id) {
+    { summary.entries } -> std::same_as<std::vector<asset_materialized_bytes_cache_policy_entry>&>;
+    { summary.request_count } -> std::same_as<std::size_t&>;
+    { summary.loaded_count } -> std::same_as<std::size_t&>;
+    { summary.failed_count } -> std::same_as<std::size_t&>;
+    { summary.total_byte_count } -> std::same_as<std::size_t&>;
+    { summary.load_failed_count } -> std::same_as<std::size_t&>;
+    { summary.cache_key_mismatch_count } -> std::same_as<std::size_t&>;
+    { summary.source_uri_mismatch_count } -> std::same_as<std::size_t&>;
+    { summary.byte_count_mismatch_count } -> std::same_as<std::size_t&>;
+    { summary.content_hash_mismatch_count } -> std::same_as<std::size_t&>;
+    { summary.missing_content_count } -> std::same_as<std::size_t&>;
+    { const_summary.ok() } -> std::same_as<bool>;
+    { const_summary.find_entry(id) } -> std::same_as<const asset_materialized_bytes_cache_policy_entry*>;
+});
+
 static_assert(std::has_virtual_destructor_v<asset_bytes_provider_interface>);
 static_assert(std::derived_from<fake_asset_bytes_provider, asset_bytes_provider_interface>);
 static_assert(std::derived_from<local_file_asset_bytes_provider, asset_bytes_provider_interface>);
@@ -98,6 +136,7 @@ static_assert(requires(
     const asset_materialized_bytes_request& materialized_request,
     const runtime_asset_catalog& catalog,
     const asset_bytes_integrity_request& integrity_request,
+    const std::vector<asset_bytes_catalog_request>& requests,
     const asset_bytes_catalog_request& request) {
     { make_asset_bytes_content_hash(bytes) } -> std::same_as<std::string>;
     { validate_asset_bytes_integrity(integrity_request) } -> std::same_as<asset_bytes_integrity_report>;
@@ -113,6 +152,8 @@ static_assert(requires(
         std::same_as<asset_bytes_integrity_report>;
     { load_materialized_asset_bytes_with_integrity(provider, catalog, request) } ->
         std::same_as<asset_bytes_integrity_report>;
+    { summarize_materialized_asset_bytes_cache_policy(provider, catalog, requests) } ->
+        std::same_as<asset_materialized_bytes_cache_policy_summary>;
 });
 
 } // namespace

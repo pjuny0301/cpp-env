@@ -891,6 +891,85 @@ void test_asset_bytes_integrity_validates_load_result_byte_count_and_content()
     require(empty_allowed.ok(), "asset byte integrity can explicitly allow empty content");
 }
 
+void test_materialized_asset_bytes_cache_policy_summary_tracks_hash_and_integrity()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    write_fixture_file(fixture_root / "packaged" / "cards" / "front.png", "image bytes");
+
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "packaged",
+        .root_path = fixture_root / "packaged",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_front",
+        .type = asset_type::image,
+        .uri = "asset://cards/front.png",
+        .root_id = "packaged",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const runtime_asset_catalog catalog = build_runtime_asset_catalog(manifest, resolver);
+    const std::vector<asset_bytes_catalog_request> requests{
+        asset_bytes_catalog_request{.id = "card_front", .expected_type = asset_type::image},
+    };
+
+    const local_file_asset_bytes_provider local_provider;
+    const asset_materialized_bytes_cache_policy_summary summary =
+        summarize_materialized_asset_bytes_cache_policy(local_provider, catalog, requests);
+
+    require(summary.ok(), "cache policy summary accepts matching materialized bytes");
+    require(summary.request_count == 1U, "cache policy summary records request count");
+    require(summary.loaded_count == 1U, "cache policy summary counts loaded byte results");
+    require(summary.failed_count == 0U, "cache policy summary has no failures for matching bytes");
+    require(summary.total_byte_count == 11U, "cache policy summary totals loaded byte counts");
+
+    const asset_materialized_bytes_cache_policy_entry* entry = summary.find_entry("card_front");
+    require(entry != nullptr, "cache policy summary can find entries by id");
+    require(entry->ok(), "cache policy summary entry accepts matching materialized bytes");
+    require(entry->cache_key == "image|asset://cards/front.png", "cache policy summary preserves cache key");
+    require(entry->source_uri == "asset://cards/front.png", "cache policy summary preserves source uri");
+    require(entry->materialized_source_path == "cards/front.png", "cache policy summary records source path");
+    require(
+        entry->materialized_path
+            == std::filesystem::absolute(fixture_root / "packaged" / "cards" / "front.png").lexically_normal(),
+        "cache policy summary records materialized path");
+    require(entry->byte_count == 11U, "cache policy summary entry records byte count");
+    require(
+        entry->content_hash == make_asset_bytes_content_hash(detail::make_asset_byte_vector("image bytes")),
+        "cache policy summary entry records content hash evidence");
+    require(entry->issues.empty(), "cache policy summary entry has no issues for matching bytes");
+
+    const runtime_asset_catalog_lookup_result image = catalog.lookup_image("card_front");
+    require(image.ok(), "runtime catalog resolves image for cache policy mismatch summary");
+    const counting_asset_bytes_provider bad_hash_provider(asset_bytes_load_result{
+        .status = asset_bytes_load_status::loaded,
+        .bytes = detail::make_asset_byte_vector("image bytes"),
+        .byte_count = 11U,
+        .content_hash = "fnv1a64:0000000000000000",
+        .cache_key = image.asset.cache_key,
+        .source_uri = image.asset.source.normalized_uri,
+    });
+
+    const asset_materialized_bytes_cache_policy_summary mismatch_summary =
+        summarize_materialized_asset_bytes_cache_policy(bad_hash_provider, catalog, requests);
+    require(!mismatch_summary.ok(), "cache policy summary rejects reported content hash mismatches");
+    require(mismatch_summary.loaded_count == 1U, "cache policy summary still counts loaded mismatch payloads");
+    require(mismatch_summary.failed_count == 1U, "cache policy summary counts hash mismatch failures");
+    require(
+        mismatch_summary.content_hash_mismatch_count == 1U,
+        "cache policy summary counts content hash mismatches");
+    require(
+        mismatch_summary.entries[0].issues[0].reported_content_hash == "fnv1a64:0000000000000000",
+        "cache policy summary keeps reported content hash diagnostics");
+    require(
+        mismatch_summary.entries[0].issues[0].actual_content_hash
+            == make_asset_bytes_content_hash(detail::make_asset_byte_vector("image bytes")),
+        "cache policy summary keeps actual content hash diagnostics");
+}
+
 void test_materialized_asset_bytes_integrity_fails_before_provider_for_unmaterialized_sources()
 {
     using namespace quiz_vulkan::assets;
@@ -999,6 +1078,7 @@ int main()
     test_materialized_asset_bytes_with_integrity_loads_catalog_font_image_and_shader_bytes();
     test_materialized_asset_bytes_with_integrity_reports_catalog_provider_failures();
     test_asset_bytes_integrity_validates_load_result_byte_count_and_content();
+    test_materialized_asset_bytes_cache_policy_summary_tracks_hash_and_integrity();
     test_materialized_asset_bytes_integrity_fails_before_provider_for_unmaterialized_sources();
     test_materialized_asset_bytes_integrity_fails_after_provider_for_byte_count_mismatch();
     test_materialized_asset_bytes_integrity_fails_after_provider_for_metadata_mismatch();

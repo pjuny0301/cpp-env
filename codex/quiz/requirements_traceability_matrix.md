@@ -7,6 +7,8 @@
 최근 baseline 통합 증거:
 
 - current: Vulkan global loader proc resolution, materialized asset byte-read routing, and native `stb_image` memory decode handoff tightening integrated; Windows MinGW focused renderer/image/Vulkan/asset CTest passed 4/4.
+- current: materialized asset source/rooted-path mismatch rejection integrated; Windows MinGW focused asset CTest passed 2/2.
+- `29f7aaa`: asset runtime materialization now rejects rooted filesystem paths whose suffix does not match the normalized source path before byte loading.
 - `4507f71`: Vulkan backend now attempts global entrypoint resolution through loader `vkGetInstanceProcAddr` and records direct-export fallback evidence without scene/UI/domain coupling.
 - `4ecd2f3`: asset byte loading now consumes validated materialized local paths, keeping resolver source validation separate from filesystem byte-provider access.
 - `4782797`: image decoder adapter tests now exercise the tightened native `stb_image` memory decode handoff and invalid source-byte handling behind the image engine boundary.

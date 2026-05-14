@@ -42,6 +42,8 @@ Last updated: 2026-05-14
 - Worker pipeline rule: keep tasks bounded to one engine-owned surface plus focused tests. If a worker discovers a cross-engine or app/CMake need, it should finish the engine-local patch and hand off the wiring need instead of editing integrator-owned files.
 - Worker pipeline rule: focused tests are enough for worker handoff; the integrator runs Windows focused verification after cherry-pick and full CTest only after meaningful batches. This keeps throughput without hiding boundary regressions.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
+- Latest integration note: `1ded041` threads font byte-readiness state into glyph cache/readiness diagnostics and fake text engine layout evidence, distinguishing missing bytes and descriptor-coverage fallback; Windows MinGW focused text CTest passed 3/3.
+- Latest integration note: `170a747` makes generated CTest executables compile as C++23 so worker tests can use the project standard consistently; Windows MinGW focused external/asset/text CTest passed 3/3.
 - Latest integration note: `915b8c8` adds image decode-to-upload handoff readiness diagnostics for decoded metadata/pixel payload consistency before texture upload; Windows MinGW focused external/Vulkan/asset/image CTest passed 4/4.
 - Latest integration note: `7feda06` classifies asset manifest version compatibility states for supported, older-compatible, newer-required, and incompatible schema cases; Windows MinGW focused external/Vulkan/asset/image CTest passed 4/4.
 - Latest integration note: `51ceecb` records required Vulkan device extension diagnostics after instance readiness and before device creation; Windows MinGW focused external/Vulkan/asset/image CTest passed 4/4.

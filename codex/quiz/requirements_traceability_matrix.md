@@ -6,6 +6,9 @@
 
 최근 baseline 통합 증거:
 
+- current: font byte-readiness glyph diagnostics integrated and generated tests now compile as C++23; Windows MinGW focused text CTest passed 3/3 and focused external/asset/text CTest passed 3/3.
+- `1ded041`: text engine diagnostics now carry font face byte-readiness status, fallback-required flags, FreeType-load attempt readiness, and descriptor-coverage fallback counters through fake layout/glyph cache evidence.
+- `170a747`: CMake-generated test executables now request C++23 directly, avoiding per-target standard drift when worker tests use current project language features.
 - current: real `utf8proc` static-library smoke, Vulkan device extension diagnostics, asset manifest version compatibility, and image decode-upload handoff readiness integrated; Windows MinGW focused external/Vulkan/asset/image CTest passed 4/4.
 - `44102a7`: CMake now builds the downloaded `utf8proc-v2.11.3/utf8proc.c` as a native static library and tests real Hangul UTF-8 decode, Unicode category lookup, NFC compose, and runtime version.
 - `51ceecb`: Vulkan device readiness now records required device extension count/availability and missing-extension evidence before native device creation.

@@ -83,6 +83,23 @@ Read `dirty`, `ahead`, and `behind` before assigning more work. A long-lived
 session is useful when it keeps engine-specific context, but new tasks should
 start from the latest pushed baseline when the old worker branch is far behind.
 
+## Current Pipeline Limits
+
+- Long-lived sessions preserve subsystem context, but their checked-out branch
+  can drift behind the integration baseline. For each new task, keep the tmux
+  session alive while switching the worktree to a fresh branch from
+  `origin/codex/quiz-vulkan-remake-baseline`.
+- Worker commits are still review inputs, not merge authority. The integrator
+  verifies them on Windows MinGW, handles top-level CMake and FILE_SET changes,
+  then pushes the baseline before assigning the next batch.
+- If a worker only needs engine-local context, reuse the existing session. If a
+  task changes ownership boundaries or needs a clean comparison, create a fresh
+  branch/worktree and leave the old session available for inspection.
+- Do not let workers duplicate external libraries that already exist under
+  `build/external`. They should inspect approved external dependencies first,
+  consume them behind existing interfaces when possible, and report any
+  integrator-owned CMake wiring that remains.
+
 To detach from a visible tmux worker without stopping it, press:
 
 ```text

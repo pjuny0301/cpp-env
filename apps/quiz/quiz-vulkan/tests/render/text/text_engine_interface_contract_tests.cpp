@@ -25,6 +25,7 @@
 #include "render/text/glyph_run.h"
 #include "render/text/scene_text_metrics_adapter.h"
 #include "render/text/text_engine.h"
+#include "render/text/utf8_text_run.h"
 
 #include <concepts>
 #include <cstddef>
@@ -105,6 +106,16 @@ concept FontUnicodeCoverageResolverContract = requires(
 
 static_assert(FontUnicodeCoverageResolverContract<render::font_unicode_coverage_resolver_interface>);
 static_assert(FontUnicodeCoverageResolverContract<render::basic_font_unicode_coverage_resolver>);
+
+static_assert(requires(std::string_view text, std::uint32_t code_point) {
+    { render::utf8_text_run_uses_utf8proc_runtime() } -> std::same_as<bool>;
+    { render::decode_utf8_text_codepoint(text, std::size_t{}) } -> std::same_as<render::utf8_text_codepoint>;
+    { render::is_utf8_combining_mark(code_point) } -> std::same_as<bool>;
+    { render::starts_new_utf8_text_cluster(std::vector<render::utf8_text_codepoint>{}, render::utf8_text_codepoint{}) }
+        -> std::same_as<bool>;
+    { render::iterate_utf8_text_run(text) } -> std::same_as<std::vector<render::utf8_text_codepoint>>;
+    { render::cluster_utf8_text_run(text) } -> std::same_as<std::vector<render::utf8_text_cluster>>;
+});
 
 template <typename T>
 concept FontGlyphIdResolverContract = requires(

@@ -408,6 +408,49 @@ std::vector<std::string> native_symbol_candidate_libraries(
     return candidate_names;
 }
 
+vulkan_native_function_pointer resolve_loader_global_symbol(
+    vulkan_native_function_pointer instance_proc_address,
+    const std::string& symbol_name)
+{
+    if (!instance_proc_address.valid() || symbol_name.empty()) {
+        return {};
+    }
+
+    using vk_void_function = void (*)();
+#if defined(_WIN32)
+    using vk_get_instance_proc_addr = vk_void_function(__stdcall *)(void*, const char*);
+#else
+    using vk_get_instance_proc_addr = vk_void_function (*)(void*, const char*);
+#endif
+    const auto get_instance_proc_address =
+        reinterpret_cast<vk_get_instance_proc_addr>(instance_proc_address.value);
+    if (get_instance_proc_address == nullptr) {
+        return {};
+    }
+
+    const vk_void_function resolved = get_instance_proc_address(nullptr, symbol_name.c_str());
+    return vulkan_native_function_pointer{
+        .value = reinterpret_cast<std::uintptr_t>(resolved),
+    };
+}
+
+vulkan_system_symbol_resolution_result make_system_symbol_resolution_result(
+    std::string_view symbol_name)
+{
+    return vulkan_system_symbol_resolution_result{
+        .checked = true,
+        .symbol_name = std::string{symbol_name},
+        .attempted_library_names = {},
+        .loaded_library_name = {},
+        .loader_library_available = false,
+        .instance_proc_address_available = false,
+        .resolved_via_instance_proc_address = false,
+        .resolved_via_direct_export = false,
+        .pointer = {},
+        .diagnostic = {},
+    };
+}
+
 bool has_visible_area(const render_rect& rect)
 {
     return rect.width > 0.0f && rect.height > 0.0f;
@@ -2359,20 +2402,66 @@ system_vulkan_native_symbol_resolver::system_vulkan_native_symbol_resolver(
 vulkan_native_function_pointer system_vulkan_native_symbol_resolver::resolve_symbol(
     std::string_view symbol_name)
 {
+    return resolve_symbol_with_diagnostics(symbol_name).pointer;
+}
+
+vulkan_system_symbol_resolution_result
+system_vulkan_native_symbol_resolver::resolve_symbol_with_diagnostics(
+    std::string_view symbol_name)
+{
+    vulkan_system_symbol_resolution_result result =
+        make_system_symbol_resolution_result(symbol_name);
+
     for (const std::string& candidate_library : native_symbol_candidate_libraries(options_)) {
+        result.attempted_library_names.push_back(candidate_library);
         native_loader_library library(candidate_library);
         if (!library.valid()) {
             continue;
         }
 
-        const vulkan_native_function_pointer pointer =
-            library.resolve_symbol(std::string{symbol_name});
-        if (pointer.valid()) {
-            return pointer;
+        result.loader_library_available = true;
+        if (result.loaded_library_name.empty()) {
+            result.loaded_library_name = candidate_library;
+        }
+
+        const vulkan_native_function_pointer instance_proc_address =
+            library.resolve_symbol(std::string{k_vulkan_loader_required_symbol_name});
+        result.instance_proc_address_available = instance_proc_address.valid();
+        if (instance_proc_address.valid()) {
+            const vulkan_native_function_pointer pointer =
+                resolve_loader_global_symbol(instance_proc_address, result.symbol_name);
+            if (pointer.valid()) {
+                result.pointer = pointer;
+                result.resolved_via_instance_proc_address = true;
+                result.diagnostic =
+                    "Resolved native Vulkan symbol through vkGetInstanceProcAddr: "
+                    + result.symbol_name;
+                return result;
+            }
+        }
+
+        const vulkan_native_function_pointer direct_pointer =
+            library.resolve_symbol(result.symbol_name);
+        if (direct_pointer.valid()) {
+            result.pointer = direct_pointer;
+            result.resolved_via_direct_export = true;
+            result.diagnostic =
+                "Resolved native Vulkan symbol through loader library export: "
+                + result.symbol_name;
+            return result;
         }
     }
 
-    return {};
+    if (!result.loader_library_available) {
+        result.diagnostic =
+            "No Vulkan loader library was available for native symbol resolution";
+    } else if (!result.instance_proc_address_available) {
+        result.diagnostic =
+            "Vulkan loader library did not export vkGetInstanceProcAddr";
+    } else {
+        result.diagnostic = "Native Vulkan symbol was unavailable: " + result.symbol_name;
+    }
+    return result;
 }
 
 std::vector<vulkan_native_entrypoint_symbol_request>

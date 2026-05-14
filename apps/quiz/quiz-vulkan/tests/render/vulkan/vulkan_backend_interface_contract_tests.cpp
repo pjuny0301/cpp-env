@@ -1464,6 +1464,25 @@ static_assert(requires(render::vulkan_backend::system_vulkan_native_symbol_resol
     { options.use_default_library_names } -> std::same_as<bool&>;
 });
 
+static_assert(requires(render::vulkan_backend::vulkan_system_symbol_resolution_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.symbol_name } -> std::same_as<std::string&>;
+    { result.attempted_library_names } -> std::same_as<std::vector<std::string>&>;
+    { result.loaded_library_name } -> std::same_as<std::string&>;
+    { result.loader_library_available } -> std::same_as<bool&>;
+    { result.instance_proc_address_available } -> std::same_as<bool&>;
+    { result.resolved_via_instance_proc_address } -> std::same_as<bool&>;
+    { result.resolved_via_direct_export } -> std::same_as<bool&>;
+    { result.pointer } -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.resolved() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::system_vulkan_native_symbol_resolver resolver) {
+    { resolver.resolve_symbol_with_diagnostics("vkCreateInstance") }
+        -> std::same_as<render::vulkan_backend::vulkan_system_symbol_resolution_result>;
+});
+
 static_assert(requires(render::vulkan_backend::fake_vulkan_instance_factory_options options) {
     { options.supported_instance_extensions } -> std::same_as<std::vector<std::string>&>;
     { options.supported_layers } -> std::same_as<std::vector<std::string>&>;

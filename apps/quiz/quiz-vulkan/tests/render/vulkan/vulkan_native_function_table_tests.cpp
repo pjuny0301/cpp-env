@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <cstdio>
+#include <string>
 #include <string_view>
 
 namespace {
@@ -86,6 +87,83 @@ void test_native_function_table_names_are_stable()
             vulkan_backend::vulkan_native_function_table_status::missing_queue_present_symbol)
             == std::string_view{"missing_queue_present_symbol"},
         "native function table status name for missing queue present is stable");
+}
+
+void test_system_native_symbol_resolver_reports_missing_loader_candidate()
+{
+    using namespace quiz_vulkan::render;
+
+    vulkan_backend::system_vulkan_native_symbol_resolver resolver(
+        vulkan_backend::system_vulkan_native_symbol_resolver_options{
+            .candidate_library_names = {
+                "quiz_vulkan_missing_native_symbol_loader_20260515_97c31d0a.so",
+            },
+            .use_default_library_names = false,
+        });
+    const vulkan_backend::vulkan_system_symbol_resolution_result result =
+        resolver.resolve_symbol_with_diagnostics("vkCreateInstance");
+
+    require(result.checked, "system native symbol result records checked state");
+    require(result.symbol_name == "vkCreateInstance", "system native symbol result records name");
+    require(!result.resolved(), "missing loader candidate does not resolve a symbol");
+    require(!result.pointer.valid(), "missing loader candidate has no resolved pointer");
+    require(!result.loader_library_available, "missing loader candidate records no library");
+    require(
+        !result.instance_proc_address_available,
+        "missing loader candidate records no vkGetInstanceProcAddr");
+    require(
+        !result.resolved_via_instance_proc_address,
+        "missing loader candidate is not resolved through vkGetInstanceProcAddr");
+    require(
+        !result.resolved_via_direct_export,
+        "missing loader candidate is not resolved through direct export");
+    require(
+        result.attempted_library_names.size() == 1,
+        "missing loader candidate records one attempted library");
+    require(
+        result.attempted_library_names.front()
+            == "quiz_vulkan_missing_native_symbol_loader_20260515_97c31d0a.so",
+        "missing loader candidate records the attempted library name");
+    require(!result.diagnostic.empty(), "missing loader candidate records a diagnostic");
+}
+
+void test_system_native_symbol_resolver_uses_loader_proc_address_when_available()
+{
+    using namespace quiz_vulkan::render;
+
+    vulkan_backend::system_vulkan_loader loader;
+    const vulkan_backend::vulkan_loader_probe_result probe =
+        vulkan_backend::probe_vulkan_loader(loader);
+
+    require(probe.checked, "system Vulkan loader smoke probe is checked");
+    if (!probe.available()) {
+        return;
+    }
+
+    vulkan_backend::system_vulkan_native_symbol_resolver resolver(
+        vulkan_backend::system_vulkan_native_symbol_resolver_options{
+            .candidate_library_names = {probe.loaded_library_name},
+            .use_default_library_names = false,
+        });
+    const vulkan_backend::vulkan_system_symbol_resolution_result result =
+        resolver.resolve_symbol_with_diagnostics("vkCreateInstance");
+
+    require(result.checked, "system native symbol smoke result records checked state");
+    require(result.loader_library_available, "system native symbol smoke found loader library");
+    require(
+        result.loaded_library_name == probe.loaded_library_name,
+        "system native symbol smoke uses the probed loader library");
+    require(
+        result.instance_proc_address_available,
+        "system native symbol smoke sees vkGetInstanceProcAddr");
+    require(result.resolved(), "system native symbol smoke resolves vkCreateInstance");
+    require(result.pointer.valid(), "system native symbol smoke returns a valid function pointer");
+    require(
+        result.resolved_via_instance_proc_address,
+        "system native symbol smoke resolves vkCreateInstance through vkGetInstanceProcAddr");
+    require(
+        !result.resolved_via_direct_export,
+        "system native symbol smoke does not need direct export fallback");
 }
 
 void test_native_function_table_collects_default_backend_entrypoints()
@@ -439,6 +517,8 @@ void test_native_function_table_allows_missing_optional_custom_symbol()
 int main()
 {
     test_native_function_table_names_are_stable();
+    test_system_native_symbol_resolver_reports_missing_loader_candidate();
+    test_system_native_symbol_resolver_uses_loader_proc_address_when_available();
     test_native_function_table_collects_default_backend_entrypoints();
     test_native_function_table_blocks_when_loader_is_unavailable();
     test_native_function_table_maps_missing_command_recording_symbol();

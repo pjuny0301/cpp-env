@@ -42,6 +42,9 @@ Last updated: 2026-05-14
 - Worker pipeline rule: keep tasks bounded to one engine-owned surface plus focused tests. If a worker discovers a cross-engine or app/CMake need, it should finish the engine-local patch and hand off the wiring need instead of editing integrator-owned files.
 - Worker pipeline rule: focused tests are enough for worker handoff; the integrator runs Windows focused verification after cherry-pick and full CTest only after meaningful batches. This keeps throughput without hiding boundary regressions.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
+- Latest integration note: `f4055b9` records required Vulkan instance extension diagnostics with selected/missing extension evidence before device readiness; Windows MinGW focused Vulkan/text/asset CTest batch passed 4/4.
+- Latest integration note: `4f38c36` adds font face byte-readiness diagnostics over source bytes, SFNT inspection, cmap coverage, and future FreeType load readiness states; Windows MinGW focused Vulkan/text/asset CTest batch passed 4/4.
+- Latest integration note: `c079cb7` classifies unsupported asset cache-key source schemes separately from generic invalid source URIs; Windows MinGW focused Vulkan/text/asset CTest batch passed 4/4.
 - Latest integration note: `a5a9663` adds data-only Vulkan loader candidate diagnostics for missing libraries, missing `vkGetInstanceProcAddr`, and usable loader candidates; Windows MinGW focused Vulkan/renderer CTest passed 2/2.
 - Latest integration note: `dbc5fce` adds text external backend work-readiness diagnostics distinguishing approved-header-only, source-ready, library-linked, adapter-ready, and fallback-only states; Windows MinGW focused text CTest passed 1/1.
 - Latest integration note: `b281c0b` exposes asset cache-key type/source/revision components through the existing resolver classification without changing resolver ownership; Windows MinGW focused asset CTest passed 1/1.

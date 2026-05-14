@@ -6,6 +6,10 @@
 
 최근 baseline 통합 증거:
 
+- current: required Vulkan instance extension diagnostics, font face byte-readiness diagnostics, and unsupported asset source-scheme classification integrated; Windows MinGW focused Vulkan/text/asset CTest passed 4/4 and public FILE_SET scan reports 0 missing headers.
+- `f4055b9`: Vulkan instance creation results now record required extension counts, selected extension counts, missing extension names, and per-required-extension diagnostics before device readiness.
+- `4f38c36`: text engine now classifies font source byte payloads as missing, empty, invalid SFNT, missing cmap, coverage-ready, or fallback-required without invoking FreeType.
+- `c079cb7`: asset resolver cache-key classification now distinguishes unsupported source schemes such as `ftp://` from malformed but supported source URIs.
 - current: Vulkan loader candidate diagnostics, text backend work-readiness diagnostics, and asset cache-key component classification integrated; Windows MinGW focused Vulkan/text/asset CTest passed 4/4 and interface compile target builds confirmed.
 - `a5a9663`: Vulkan backend now records per-loader-candidate missing-library, missing-required-symbol, and usable classifications without requiring a platform window or scene/UI/domain coupling.
 - `dbc5fce`: text engine now reports whether approved external font backend work is header-only, source-ready, library-linked, adapter-ready, deterministic fallback-only, or missing an approved header.

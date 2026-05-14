@@ -211,12 +211,8 @@ render_image_decode_result stb_image_decoder_backend::make_failure(
 
 const third_party_image_decoder_backend_interface* default_stb_image_decoder_backend()
 {
-#if defined(QUIZ_VULKAN_HAS_STB_HEADERS) && QUIZ_VULKAN_HAS_STB_HEADERS
     static const stb_image_decoder_backend backend{"stb_image_decoder"};
     return &backend;
-#else
-    return nullptr;
-#endif
 }
 
 third_party_image_decoder_adapter::third_party_image_decoder_adapter()

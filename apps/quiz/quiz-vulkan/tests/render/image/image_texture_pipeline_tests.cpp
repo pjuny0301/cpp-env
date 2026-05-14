@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <ios>
 #include <string>
 #include <string_view>
@@ -108,6 +109,16 @@ void append_byte(std::vector<std::byte>& bytes, unsigned char value)
     bytes.push_back(std::byte{value});
 }
 
+std::vector<std::byte> make_bytes(std::initializer_list<unsigned char> values)
+{
+    std::vector<std::byte> bytes;
+    bytes.reserve(values.size());
+    for (const unsigned char value : values) {
+        append_byte(bytes, value);
+    }
+    return bytes;
+}
+
 void append_u16_le(std::vector<std::byte>& bytes, std::uint16_t value)
 {
     append_byte(bytes, static_cast<unsigned char>(value & 0xffu));
@@ -158,6 +169,65 @@ std::vector<std::byte> make_jpeg_signature_bytes()
     append_byte(bytes, 0xff);
     append_byte(bytes, 0xd9);
     return bytes;
+}
+
+std::vector<std::byte> make_valid_jpeg_1x1_fixture_bytes()
+{
+    return make_bytes({
+        0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01,
+        0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xff, 0xdb, 0x00, 0x43,
+        0x00, 0x02, 0x01, 0x01, 0x01, 0x01, 0x01, 0x02, 0x01, 0x01, 0x01, 0x02,
+        0x02, 0x02, 0x02, 0x02, 0x04, 0x03, 0x02, 0x02, 0x02, 0x02, 0x05, 0x04,
+        0x04, 0x03, 0x04, 0x06, 0x05, 0x06, 0x06, 0x06, 0x05, 0x06, 0x06, 0x06,
+        0x07, 0x09, 0x08, 0x06, 0x07, 0x09, 0x07, 0x06, 0x06, 0x08, 0x0b, 0x08,
+        0x09, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x06, 0x08, 0x0b, 0x0c, 0x0b, 0x0a,
+        0x0c, 0x09, 0x0a, 0x0a, 0x0a, 0xff, 0xdb, 0x00, 0x43, 0x01, 0x02, 0x02,
+        0x02, 0x02, 0x02, 0x02, 0x05, 0x03, 0x03, 0x05, 0x0a, 0x07, 0x06, 0x07,
+        0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a,
+        0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a,
+        0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a,
+        0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a,
+        0x0a, 0x0a, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0x01, 0x00, 0x01, 0x03,
+        0x01, 0x22, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01, 0xff, 0xc4, 0x00,
+        0x1f, 0x00, 0x00, 0x01, 0x05, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05,
+        0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0xff, 0xc4, 0x00, 0xb5, 0x10, 0x00,
+        0x02, 0x01, 0x03, 0x03, 0x02, 0x04, 0x03, 0x05, 0x05, 0x04, 0x04, 0x00,
+        0x00, 0x01, 0x7d, 0x01, 0x02, 0x03, 0x00, 0x04, 0x11, 0x05, 0x12, 0x21,
+        0x31, 0x41, 0x06, 0x13, 0x51, 0x61, 0x07, 0x22, 0x71, 0x14, 0x32, 0x81,
+        0x91, 0xa1, 0x08, 0x23, 0x42, 0xb1, 0xc1, 0x15, 0x52, 0xd1, 0xf0, 0x24,
+        0x33, 0x62, 0x72, 0x82, 0x09, 0x0a, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x25,
+        0x26, 0x27, 0x28, 0x29, 0x2a, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a,
+        0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x53, 0x54, 0x55, 0x56,
+        0x57, 0x58, 0x59, 0x5a, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a,
+        0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79, 0x7a, 0x83, 0x84, 0x85, 0x86,
+        0x87, 0x88, 0x89, 0x8a, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99,
+        0x9a, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7, 0xa8, 0xa9, 0xaa, 0xb2, 0xb3,
+        0xb4, 0xb5, 0xb6, 0xb7, 0xb8, 0xb9, 0xba, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6,
+        0xc7, 0xc8, 0xc9, 0xca, 0xd2, 0xd3, 0xd4, 0xd5, 0xd6, 0xd7, 0xd8, 0xd9,
+        0xda, 0xe1, 0xe2, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7, 0xe8, 0xe9, 0xea, 0xf1,
+        0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa, 0xff, 0xc4, 0x00,
+        0x1f, 0x01, 0x00, 0x03, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05,
+        0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0xff, 0xc4, 0x00, 0xb5, 0x11, 0x00,
+        0x02, 0x01, 0x02, 0x04, 0x04, 0x03, 0x04, 0x07, 0x05, 0x04, 0x04, 0x00,
+        0x01, 0x02, 0x77, 0x00, 0x01, 0x02, 0x03, 0x11, 0x04, 0x05, 0x21, 0x31,
+        0x06, 0x12, 0x41, 0x51, 0x07, 0x61, 0x71, 0x13, 0x22, 0x32, 0x81, 0x08,
+        0x14, 0x42, 0x91, 0xa1, 0xb1, 0xc1, 0x09, 0x23, 0x33, 0x52, 0xf0, 0x15,
+        0x62, 0x72, 0xd1, 0x0a, 0x16, 0x24, 0x34, 0xe1, 0x25, 0xf1, 0x17, 0x18,
+        0x19, 0x1a, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x35, 0x36, 0x37, 0x38, 0x39,
+        0x3a, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x53, 0x54, 0x55,
+        0x56, 0x57, 0x58, 0x59, 0x5a, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69,
+        0x6a, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79, 0x7a, 0x82, 0x83, 0x84,
+        0x85, 0x86, 0x87, 0x88, 0x89, 0x8a, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97,
+        0x98, 0x99, 0x9a, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7, 0xa8, 0xa9, 0xaa,
+        0xb2, 0xb3, 0xb4, 0xb5, 0xb6, 0xb7, 0xb8, 0xb9, 0xba, 0xc2, 0xc3, 0xc4,
+        0xc5, 0xc6, 0xc7, 0xc8, 0xc9, 0xca, 0xd2, 0xd3, 0xd4, 0xd5, 0xd6, 0xd7,
+        0xd8, 0xd9, 0xda, 0xe2, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7, 0xe8, 0xe9, 0xea,
+        0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa, 0xff, 0xda, 0x00,
+        0x0c, 0x03, 0x01, 0x00, 0x02, 0x11, 0x03, 0x11, 0x00, 0x3f, 0x00, 0xfe,
+        0x7f, 0xe8, 0xa2, 0x8a, 0x00, 0xff, 0xd9,
+    });
 }
 
 std::vector<std::byte> make_bmp_24_bit_1x1_fixture_bytes()
@@ -370,6 +440,136 @@ void test_filesystem_pipeline_reads_ppm_fixture_and_reuses_cache()
     require(snapshot.entries[1].upload_count_after == 1, "repeat snapshot records unchanged upload count");
     require(snapshot.upload_snapshot.upload_count == 1, "pipeline upload snapshot records one upload");
     require(snapshot.cache_snapshot.texture_count == 1, "pipeline cache snapshot records one texture");
+}
+
+void test_filesystem_pipeline_routes_real_jpeg_through_stb_upload_handoff()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::filesystem::path root = test_data_root();
+    reset_test_data_root(root);
+    const std::vector<std::byte> fixture_bytes = make_valid_jpeg_1x1_fixture_bytes();
+    write_bytes(root / "textures" / "real-stb.jpg", fixture_bytes);
+
+    const normalizing_image_resolver resolver;
+    filesystem_image_source_bytes_loader loader(root);
+    const stb_image_decoder_header_dependency_probe probe{"stb_image_decoder"};
+    const stb_image_decoder_dependency_manifest manifest = probe.probe_dependency();
+    standard_image_texture_pipeline pipeline(resolver, loader);
+
+    const render_image_texture_pipeline_result result = pipeline.acquire_texture(
+        render_image_texture_pipeline_request{.uri = "textures/real-stb.jpg"});
+
+    require(result.resolve.ok(), "real JPEG pipeline resolves local file source");
+    require(result.source_bytes.ok(), "real JPEG pipeline loads source bytes from filesystem");
+    require(result.source_bytes.encoded_bytes == fixture_bytes, "real JPEG pipeline preserves loaded source bytes");
+    require(
+        result.texture.external_decoder_selection.diagnostics_available,
+        "real JPEG pipeline exposes stb selection diagnostics");
+    require(
+        result.texture.external_decoder_selection.detected_format == render_image_encoded_format::jpeg,
+        "real JPEG pipeline records detected JPEG format");
+
+    if (manifest.status != stb_image_decoder_dependency_status::available) {
+        require(!result.ok(), "standard pipeline reports decode failure when stb is unavailable");
+        require(
+            result.status == render_image_texture_pipeline_status::decode_failed,
+            "unavailable stb path reports decode failure");
+        require(
+            result.texture.external_decoder_selection.fallback_to_standard_decoder_chain,
+            "unavailable stb path records standard fallback");
+        require(
+            !result.texture.external_decoder_selection.used_third_party_adapter,
+            "unavailable stb path does not report adapter use");
+
+        const standard_image_texture_pipeline_snapshot snapshot = pipeline.standard_diagnostic_snapshot();
+        require(snapshot.pipeline.decode_failure_count == 1, "unavailable stb snapshot counts decode failure");
+        require(snapshot.pipeline.upload_snapshot.upload_count == 0, "unavailable stb path does not upload");
+        require(snapshot.decoder.decode_attempt_count == 1, "unavailable stb path still attempts decode chain");
+        require(snapshot.decoder.failed_decode_count == 1, "unavailable stb path records decoder failure");
+        return;
+    }
+
+    require(result.ok(), "standard pipeline creates a texture through stb memory decode");
+    require(result.status == render_image_texture_pipeline_status::ready, "real JPEG pipeline result is ready");
+    require(!is_fake_image_texture_placeholder_key(result.texture.key), "real JPEG pipeline does not use placeholder");
+    require(!result.texture.cache_hit, "real JPEG first acquire is a cache miss");
+    require(result.texture.texture.width == 1, "real JPEG texture preserves decoded width");
+    require(result.texture.texture.height == 1, "real JPEG texture preserves decoded height");
+    require(result.texture.decode_metadata.decoder_id == "stb_image_decoder", "standard pipeline real JPEG decode uses stb backend");
+    require(result.texture.decode_metadata.width == 1, "real JPEG metadata records width");
+    require(result.texture.decode_metadata.height == 1, "real JPEG metadata records height");
+    require(result.texture.decode_metadata.encoded_byte_count == fixture_bytes.size(), "real JPEG metadata records source byte count");
+    require(result.texture.decode_metadata.decoded_byte_count == 4, "real JPEG metadata records RGBA byte count");
+    require(result.texture.decode_metadata.size_validation.valid, "real JPEG metadata validates decoded payload");
+    require(
+        result.texture.decode_metadata.format_detection.detected_format == render_image_encoded_format::jpeg,
+        "real JPEG metadata records detected source format");
+    require(result.texture.decoder_diagnostics.size() == 1, "real JPEG path records adapter diagnostic");
+    require(result.texture.decoder_diagnostics[0].decoder_id == "stb_image_decoder", "real JPEG diagnostic records stb backend");
+    require(result.texture.decoder_diagnostics[0].decode_attempted, "real JPEG diagnostic records decode attempt");
+    require(result.texture.external_decoder_selection.ready_for_external_decode, "real JPEG selection is external-decode ready");
+    require(result.texture.external_decoder_selection.used_third_party_adapter, "real JPEG selection records adapter route");
+    require(
+        !result.texture.external_decoder_selection.fallback_to_standard_decoder_chain,
+        "real JPEG selection records no standard fallback");
+
+    const standard_image_texture_pipeline_snapshot standard_snapshot = pipeline.standard_diagnostic_snapshot();
+    require(standard_snapshot.decoder.support_check_count == 1, "real JPEG standard decoder records support check");
+    require(standard_snapshot.decoder.decode_attempt_count == 1, "real JPEG standard decoder records decode attempt");
+    require(standard_snapshot.decoder.decoded_count == 1, "real JPEG standard decoder records decoded count");
+    require(standard_snapshot.decoder.failed_decode_count == 0, "real JPEG standard decoder records no failures");
+    require(
+        standard_snapshot.decoder.last_encoded_byte_count == fixture_bytes.size(),
+        "real JPEG standard decoder records source byte count");
+    require(
+        standard_snapshot.decoder.last_decode_status == render_image_decode_status::decoded,
+        "real JPEG standard decoder records decoded status");
+
+    const fake_image_texture_pipeline_snapshot& snapshot = standard_snapshot.pipeline;
+    require(snapshot.acquire_count == 1, "real JPEG snapshot records acquire");
+    require(snapshot.ready_count == 1, "real JPEG snapshot records ready");
+    require(snapshot.failure_count == 0, "real JPEG snapshot records no failures");
+    require(snapshot.upload_snapshot.upload_count == 1, "real JPEG snapshot records one upload");
+    require(snapshot.upload_snapshot.uploaded_decoded_byte_count == 4, "real JPEG snapshot records uploaded bytes");
+    require(snapshot.upload_snapshot.request_snapshots.size() == 1, "real JPEG snapshot records upload request");
+    require(snapshot.upload_snapshot.request_snapshots[0].width == 1, "real JPEG upload snapshot records width");
+    require(snapshot.upload_snapshot.request_snapshots[0].height == 1, "real JPEG upload snapshot records height");
+    require(
+        snapshot.upload_snapshot.request_snapshots[0].decoded_byte_count == 4,
+        "real JPEG upload snapshot records decoded bytes");
+    require(
+        snapshot.upload_snapshot.request_snapshots[0].staging_byte_count == 4,
+        "real JPEG upload snapshot records staging bytes");
+    require(snapshot.cache_snapshot.texture_count == 1, "real JPEG pipeline caches decoded texture");
+    require(snapshot.cache_snapshot.cached_decoded_byte_count == 4, "real JPEG cache records decoded RGBA bytes");
+    require(snapshot.entries[0].encoded_byte_count == fixture_bytes.size(), "real JPEG snapshot records source byte count");
+    require(snapshot.entries[0].selected_decoder_id == "stb_image_decoder", "real JPEG snapshot records selected stb decoder");
+    require(
+        snapshot.entries[0].decoder_capability_manifest.used_third_party_adapter,
+        "real JPEG snapshot manifest records adapter route");
+    require(
+        !snapshot.entries[0].decoder_capability_manifest.fallback_used,
+        "real JPEG snapshot manifest records no fallback");
+    require(
+        snapshot.entries[0].decoder_capability_manifest.terminal_decoder_id == "stb_image_decoder",
+        "real JPEG snapshot manifest records stb terminal decoder");
+    require(snapshot.entries[0].upload_count_before == 0, "real JPEG snapshot records upload count before");
+    require(snapshot.entries[0].upload_count_after == 1, "real JPEG snapshot records upload count after");
+    require(!snapshot.cache_snapshot.entries.empty(), "real JPEG cache snapshot exposes cache entry");
+
+    const render_image_upload_readiness_snapshot& readiness =
+        snapshot.cache_snapshot.entries[0].upload_readiness;
+    require(readiness.upload_ready, "real JPEG cache entry is upload-ready");
+    require(readiness.decode_metadata_matches_image, "real JPEG cache entry validates decode handoff metadata");
+    require(readiness.decoded_byte_count == 4, "real JPEG readiness records decoded bytes");
+    require(readiness.metadata_decoded_byte_count == 4, "real JPEG readiness records metadata decoded bytes");
+    require(readiness.metadata_expected_decoded_byte_count == 4, "real JPEG readiness records expected bytes");
+    require(readiness.metadata_actual_decoded_byte_count == 4, "real JPEG readiness records actual bytes");
+    require(readiness.staging_byte_count == 4, "real JPEG readiness records staging bytes");
+    require(
+        readiness.decode_handoff_diagnostic == "decode handoff metadata matches decoded image",
+        "real JPEG readiness records matching handoff diagnostic");
 }
 
 void test_filesystem_pipeline_reports_missing_file_source_load_failed()
@@ -3410,6 +3610,7 @@ void test_texture_frame_upload_handoff_diff_reports_frame_to_frame_evidence()
 int main()
 {
     test_filesystem_pipeline_reads_ppm_fixture_and_reuses_cache();
+    test_filesystem_pipeline_routes_real_jpeg_through_stb_upload_handoff();
     test_filesystem_pipeline_reports_missing_file_source_load_failed();
     test_filesystem_pipeline_reports_empty_file_source_load_failed();
     test_filesystem_pipeline_reports_malformed_ppm_decode_failed();

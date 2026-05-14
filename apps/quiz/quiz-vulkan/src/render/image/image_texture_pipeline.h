@@ -1989,6 +1989,11 @@ namespace detail {
 
 class standard_image_texture_pipeline_decoder final : public image_decoder_interface {
 public:
+    standard_image_texture_pipeline_decoder()
+        : decoder_(default_stb_image_decoder_backend(), &stb_probe_)
+    {
+    }
+
     bool supports(const render_image_decode_request& request) const override
     {
         ++support_check_count_;
@@ -2026,7 +2031,8 @@ public:
     }
 
 private:
-    standard_image_decoder_chain decoder_;
+    stb_image_decoder_header_dependency_probe stb_probe_;
+    optional_third_party_image_decoder_chain decoder_;
     mutable std::size_t support_check_count_ = 0;
     mutable std::size_t decode_attempt_count_ = 0;
     mutable std::size_t decoded_count_ = 0;

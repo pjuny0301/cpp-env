@@ -1,6 +1,7 @@
 #pragma once
 
 #include "render/text/font_backend_selection.h"
+#include "render/text/font_unicode_coverage.h"
 
 #ifndef QUIZ_VULKAN_HAS_FREETYPE_HEADERS
 #define QUIZ_VULKAN_HAS_FREETYPE_HEADERS 0
@@ -90,6 +91,51 @@ inline std::string render_text_external_font_backend_work_readiness_status_name(
         return "adapter_ready";
     case render_text_external_font_backend_work_readiness_status::deterministic_fallback_only:
         return "deterministic_fallback_only";
+    }
+
+    return "unknown";
+}
+
+enum class render_text_freetype_face_load_readiness_status {
+    missing_bytes,
+    empty_bytes,
+    invalid_sfnt,
+    missing_cmap,
+    invalid_cmap,
+    missing_approved_header,
+    header_only,
+    source_ready,
+    library_linked,
+    ready_for_load,
+    fallback_required,
+};
+
+inline std::string render_text_freetype_face_load_readiness_status_name(
+    const render_text_freetype_face_load_readiness_status status)
+{
+    switch (status) {
+    case render_text_freetype_face_load_readiness_status::missing_bytes:
+        return "missing_bytes";
+    case render_text_freetype_face_load_readiness_status::empty_bytes:
+        return "empty_bytes";
+    case render_text_freetype_face_load_readiness_status::invalid_sfnt:
+        return "invalid_sfnt";
+    case render_text_freetype_face_load_readiness_status::missing_cmap:
+        return "missing_cmap";
+    case render_text_freetype_face_load_readiness_status::invalid_cmap:
+        return "invalid_cmap";
+    case render_text_freetype_face_load_readiness_status::missing_approved_header:
+        return "missing_approved_header";
+    case render_text_freetype_face_load_readiness_status::header_only:
+        return "header_only";
+    case render_text_freetype_face_load_readiness_status::source_ready:
+        return "source_ready";
+    case render_text_freetype_face_load_readiness_status::library_linked:
+        return "library_linked";
+    case render_text_freetype_face_load_readiness_status::ready_for_load:
+        return "ready_for_load";
+    case render_text_freetype_face_load_readiness_status::fallback_required:
+        return "fallback_required";
     }
 
     return "unknown";
@@ -404,6 +450,38 @@ struct render_text_external_font_backend_work_readiness {
     bool header_backed_without_library() const
     {
         return status == render_text_external_font_backend_work_readiness_status::header_only;
+    }
+};
+
+struct render_text_freetype_face_load_readiness {
+    font_face_id face_id = 0;
+    std::string source_label;
+    render_text_freetype_face_load_readiness_status status =
+        render_text_freetype_face_load_readiness_status::fallback_required;
+    render_text_font_face_byte_readiness_status face_byte_status =
+        render_text_font_face_byte_readiness_status::fallback_required;
+    render_text_external_font_backend_work_readiness_status backend_work_status =
+        render_text_external_font_backend_work_readiness_status::deterministic_fallback_only;
+    render_text_font_sfnt_inspect_status sfnt_status =
+        render_text_font_sfnt_inspect_status::missing_bytes;
+    render_text_font_cmap_inspect_status cmap_status =
+        render_text_font_cmap_inspect_status::missing_cmap_table;
+    std::size_t byte_count = 0;
+    std::size_t coverage_range_count = 0;
+    bool materialized_bytes_ready = false;
+    bool coverage_ready = false;
+    bool freetype_header_available = false;
+    bool freetype_source_available = false;
+    bool freetype_library_linked = false;
+    bool freetype_adapter_ready = false;
+    bool can_call_freetype_new_memory_face = false;
+    bool deterministic_fallback_required = true;
+    std::string required_wiring;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return status == render_text_freetype_face_load_readiness_status::ready_for_load;
     }
 };
 
@@ -901,6 +979,136 @@ make_render_text_external_font_backend_work_readiness_records(
             headers,
             manifest,
             render_text_font_backend_selection_purpose::unicode_processing),
+    };
+}
+
+inline render_text_freetype_face_load_readiness_status
+render_text_freetype_face_load_readiness_status_for(
+    const render_text_font_face_byte_readiness& face_bytes,
+    const render_text_external_font_backend_work_readiness& backend)
+{
+    switch (face_bytes.status) {
+    case render_text_font_face_byte_readiness_status::missing_bytes:
+        return render_text_freetype_face_load_readiness_status::missing_bytes;
+    case render_text_font_face_byte_readiness_status::empty_bytes:
+        return render_text_freetype_face_load_readiness_status::empty_bytes;
+    case render_text_font_face_byte_readiness_status::invalid_sfnt:
+        return render_text_freetype_face_load_readiness_status::invalid_sfnt;
+    case render_text_font_face_byte_readiness_status::missing_cmap:
+        return render_text_freetype_face_load_readiness_status::missing_cmap;
+    case render_text_font_face_byte_readiness_status::invalid_cmap:
+        return render_text_freetype_face_load_readiness_status::invalid_cmap;
+    case render_text_font_face_byte_readiness_status::fallback_required:
+        return render_text_freetype_face_load_readiness_status::fallback_required;
+    case render_text_font_face_byte_readiness_status::coverage_ready:
+        break;
+    }
+
+    if (backend.library != render_text_font_backend_library::freetype) {
+        return render_text_freetype_face_load_readiness_status::fallback_required;
+    }
+
+    switch (backend.status) {
+    case render_text_external_font_backend_work_readiness_status::adapter_ready:
+        return render_text_freetype_face_load_readiness_status::ready_for_load;
+    case render_text_external_font_backend_work_readiness_status::library_linked:
+        return render_text_freetype_face_load_readiness_status::library_linked;
+    case render_text_external_font_backend_work_readiness_status::source_ready:
+        return render_text_freetype_face_load_readiness_status::source_ready;
+    case render_text_external_font_backend_work_readiness_status::header_only:
+        return render_text_freetype_face_load_readiness_status::header_only;
+    case render_text_external_font_backend_work_readiness_status::missing_approved_header:
+        return render_text_freetype_face_load_readiness_status::missing_approved_header;
+    case render_text_external_font_backend_work_readiness_status::deterministic_fallback_only:
+        return render_text_freetype_face_load_readiness_status::fallback_required;
+    }
+
+    return render_text_freetype_face_load_readiness_status::fallback_required;
+}
+
+inline std::string render_text_freetype_face_load_required_wiring_for(
+    const render_text_freetype_face_load_readiness_status status)
+{
+    switch (status) {
+    case render_text_freetype_face_load_readiness_status::ready_for_load:
+        return {};
+    case render_text_freetype_face_load_readiness_status::missing_approved_header:
+        return "expose the approved FreeType include directory through the desktop external header target";
+    case render_text_freetype_face_load_readiness_status::header_only:
+    case render_text_freetype_face_load_readiness_status::source_ready:
+        return "add a quiz_vulkan_freetype_external library target and link quiz_vulkan_text_engine to it";
+    case render_text_freetype_face_load_readiness_status::library_linked:
+        return "wire FreeType adapter symbols so the text engine can call FT_New_Memory_Face";
+    case render_text_freetype_face_load_readiness_status::missing_bytes:
+    case render_text_freetype_face_load_readiness_status::empty_bytes:
+    case render_text_freetype_face_load_readiness_status::invalid_sfnt:
+    case render_text_freetype_face_load_readiness_status::missing_cmap:
+    case render_text_freetype_face_load_readiness_status::invalid_cmap:
+    case render_text_freetype_face_load_readiness_status::fallback_required:
+        return {};
+    }
+
+    return {};
+}
+
+inline std::string render_text_freetype_face_load_readiness_diagnostic_for(
+    const render_text_freetype_face_load_readiness_status status,
+    const render_text_font_face_byte_readiness& face_bytes,
+    const render_text_external_font_backend_work_readiness& backend)
+{
+    switch (status) {
+    case render_text_freetype_face_load_readiness_status::ready_for_load:
+        return "materialized font bytes and FreeType adapter readiness allow a future FT_New_Memory_Face call";
+    case render_text_freetype_face_load_readiness_status::missing_bytes:
+    case render_text_freetype_face_load_readiness_status::empty_bytes:
+    case render_text_freetype_face_load_readiness_status::invalid_sfnt:
+    case render_text_freetype_face_load_readiness_status::missing_cmap:
+    case render_text_freetype_face_load_readiness_status::invalid_cmap:
+    case render_text_freetype_face_load_readiness_status::fallback_required:
+        return "font face bytes block FreeType face loading: " + face_bytes.diagnostic;
+    case render_text_freetype_face_load_readiness_status::missing_approved_header:
+    case render_text_freetype_face_load_readiness_status::header_only:
+    case render_text_freetype_face_load_readiness_status::source_ready:
+    case render_text_freetype_face_load_readiness_status::library_linked:
+        return "font face bytes are coverage-ready, but FreeType backend work is "
+            + render_text_external_font_backend_work_readiness_status_name(backend.status)
+            + ": " + backend.diagnostic;
+    }
+
+    return "unknown FreeType face load readiness";
+}
+
+inline render_text_freetype_face_load_readiness make_render_text_freetype_face_load_readiness(
+    const render_text_font_face_byte_readiness& face_bytes,
+    const render_text_external_font_backend_work_readiness& backend)
+{
+    const render_text_freetype_face_load_readiness_status status =
+        render_text_freetype_face_load_readiness_status_for(face_bytes, backend);
+    return render_text_freetype_face_load_readiness{
+        .face_id = face_bytes.face_id,
+        .source_label = face_bytes.source_label,
+        .status = status,
+        .face_byte_status = face_bytes.status,
+        .backend_work_status = backend.status,
+        .sfnt_status = face_bytes.sfnt_status,
+        .cmap_status = face_bytes.cmap_status,
+        .byte_count = face_bytes.byte_count,
+        .coverage_range_count = face_bytes.coverage_range_count,
+        .materialized_bytes_ready = face_bytes.source_loaded,
+        .coverage_ready = face_bytes.coverage_ready,
+        .freetype_header_available = backend.header_available,
+        .freetype_source_available = backend.source_available,
+        .freetype_library_linked = backend.build_linked,
+        .freetype_adapter_ready = backend.adapter_symbols_available,
+        .can_call_freetype_new_memory_face =
+            status == render_text_freetype_face_load_readiness_status::ready_for_load,
+        .deterministic_fallback_required =
+            status != render_text_freetype_face_load_readiness_status::ready_for_load,
+        .required_wiring = render_text_freetype_face_load_required_wiring_for(status),
+        .diagnostic = render_text_freetype_face_load_readiness_diagnostic_for(
+            status,
+            face_bytes,
+            backend),
     };
 }
 

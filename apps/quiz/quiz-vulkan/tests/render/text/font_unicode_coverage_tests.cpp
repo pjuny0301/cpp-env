@@ -1,4 +1,5 @@
 #include "render/text/font_unicode_coverage.h"
+#include "render/text/font_backend_dependency.h"
 
 #include <cassert>
 #include <cstddef>
@@ -270,6 +271,17 @@ quiz_vulkan::render::render_text_font_source_bytes_load_result font_source_bytes
         .resolved_path = "resolved/fixture.ttf",
         .bytes = std::move(bytes),
     };
+}
+
+quiz_vulkan::render::render_text_external_font_backend_work_readiness freetype_work_readiness_for(
+    const quiz_vulkan::render::render_text_external_font_backend_manifest& manifest)
+{
+    using namespace quiz_vulkan::render;
+
+    return make_render_text_external_font_backend_work_readiness(
+        make_render_text_external_font_backend_header_probe_snapshot(),
+        manifest,
+        render_text_font_backend_selection_purpose::rasterization);
 }
 
 class valid_sfnt_without_cmap_inspector final
@@ -608,6 +620,129 @@ void test_font_face_byte_readiness_classifies_future_freetype_load_states()
     require(!fallback.can_attempt_freetype_load, "fallback-required readiness does not attempt FreeType load");
 }
 
+void test_freetype_face_load_readiness_combines_materialized_bytes_and_backend_work()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::vector<std::byte> valid_bytes = make_font_bytes_with_cmap(
+        wrap_cmap_subtable(
+            3U,
+            1U,
+            make_format4_subtable({
+                cmap_format4_fixture_range{.first_codepoint = 0x0041U, .last_codepoint = 0x005aU},
+            })));
+    const render_text_font_face_byte_readiness face_bytes =
+        inspect_render_text_font_face_byte_readiness(font_source_bytes_result_for(valid_bytes));
+    require(face_bytes.ok(), "valid materialized SFNT bytes are ready before backend loading");
+
+    const render_text_external_font_backend_work_readiness header_only_backend =
+        freetype_work_readiness_for(make_render_text_header_backed_external_font_backend_manifest());
+    const render_text_freetype_face_load_readiness header_only =
+        make_render_text_freetype_face_load_readiness(face_bytes, header_only_backend);
+    require(header_only.face_id == 47U, "FreeType load readiness preserves face id");
+    require(header_only.materialized_bytes_ready, "FreeType load readiness consumes materialized bytes");
+    require(header_only.coverage_ready, "FreeType load readiness consumes cmap coverage readiness");
+    require(header_only.face_byte_status == render_text_font_face_byte_readiness_status::coverage_ready, "FreeType load readiness records byte status");
+    require(header_only.backend_work_status == header_only_backend.status, "FreeType load readiness records backend work status");
+    require(header_only.freetype_header_available == header_only_backend.header_available, "FreeType load readiness mirrors header availability");
+    require(!header_only.ok(), "header-only backend readiness cannot call FreeType yet");
+    require(header_only.deterministic_fallback_required, "header-only backend readiness requires fallback");
+    if (header_only_backend.header_available) {
+        require(
+            header_only.status == render_text_freetype_face_load_readiness_status::header_only,
+            "approved FreeType header without library reports header-only load readiness");
+        require(
+            header_only.required_wiring.find("quiz_vulkan_freetype_external") != std::string::npos,
+            "header-only readiness reports the required FreeType target wiring");
+    } else {
+        require(
+            header_only.status == render_text_freetype_face_load_readiness_status::missing_approved_header,
+            "missing approved FreeType header reports missing-header load readiness");
+    }
+
+    const render_text_freetype_face_load_readiness source_ready =
+        make_render_text_freetype_face_load_readiness(
+            face_bytes,
+            freetype_work_readiness_for(make_render_text_known_external_font_backend_manifest(true, false, false)));
+    require(
+        source_ready.status == render_text_freetype_face_load_readiness_status::source_ready,
+        "source-ready FreeType dependency still cannot load a face without linking");
+    require(source_ready.freetype_source_available, "source-ready load readiness records source availability");
+    require(!source_ready.freetype_library_linked, "source-ready load readiness records missing library link");
+    require(!source_ready.can_call_freetype_new_memory_face, "source-ready load readiness cannot call FreeType");
+
+    const render_text_freetype_face_load_readiness library_linked =
+        make_render_text_freetype_face_load_readiness(
+            face_bytes,
+            freetype_work_readiness_for(make_render_text_known_external_font_backend_manifest(true, true, false)));
+    require(
+        library_linked.status == render_text_freetype_face_load_readiness_status::library_linked,
+        "linked FreeType library without adapter symbols reports library-linked readiness");
+    require(library_linked.freetype_library_linked, "library-linked readiness records linked library");
+    require(!library_linked.freetype_adapter_ready, "library-linked readiness records missing adapter symbols");
+    require(
+        library_linked.required_wiring.find("FT_New_Memory_Face") != std::string::npos,
+        "library-linked readiness reports the missing adapter symbol wiring");
+
+    const render_text_freetype_face_load_readiness adapter_ready =
+        make_render_text_freetype_face_load_readiness(
+            face_bytes,
+            freetype_work_readiness_for(make_render_text_known_external_font_backend_manifest(true, true, true)));
+    require(adapter_ready.ok(), "adapter-ready FreeType backend can load materialized face bytes");
+    require(
+        adapter_ready.status == render_text_freetype_face_load_readiness_status::ready_for_load,
+        "adapter-ready FreeType backend reports ready-for-load status");
+    require(adapter_ready.freetype_adapter_ready, "adapter-ready load readiness records adapter symbols");
+    require(adapter_ready.can_call_freetype_new_memory_face, "adapter-ready load readiness can call FreeType");
+    require(!adapter_ready.deterministic_fallback_required, "adapter-ready load readiness does not require fallback");
+    require(adapter_ready.required_wiring.empty(), "adapter-ready load readiness needs no additional wiring");
+}
+
+void test_freetype_face_load_readiness_keeps_byte_failures_ahead_of_backend_work()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_external_font_backend_work_readiness adapter_ready_backend =
+        freetype_work_readiness_for(make_render_text_known_external_font_backend_manifest(true, true, true));
+
+    const render_text_freetype_face_load_readiness missing =
+        make_render_text_freetype_face_load_readiness(
+            inspect_render_text_font_face_byte_readiness(
+                font_source_bytes_result_for({}, render_text_font_source_bytes_load_status::missing_bytes)),
+            adapter_ready_backend);
+    require(
+        missing.status == render_text_freetype_face_load_readiness_status::missing_bytes,
+        "missing bytes block FreeType load before backend readiness");
+    require(!missing.can_call_freetype_new_memory_face, "missing bytes cannot call FreeType");
+
+    const std::vector<std::byte> truncated_sfnt{std::byte{'O'}, std::byte{'T'}, std::byte{'T'}, std::byte{'O'}};
+    const render_text_freetype_face_load_readiness invalid_sfnt =
+        make_render_text_freetype_face_load_readiness(
+            inspect_render_text_font_face_byte_readiness(font_source_bytes_result_for(truncated_sfnt)),
+            adapter_ready_backend);
+    require(
+        invalid_sfnt.status == render_text_freetype_face_load_readiness_status::invalid_sfnt,
+        "invalid SFNT bytes block FreeType load before backend readiness");
+    require(
+        invalid_sfnt.sfnt_status == render_text_font_sfnt_inspect_status::truncated_header,
+        "invalid SFNT load readiness preserves SFNT inspector status");
+
+    const std::vector<std::byte> missing_cmap_bytes = make_sfnt_bytes(
+        std::string_view{"\0\1\0\0", 4U},
+        required_truetype_tables_without_cmap());
+    const render_text_freetype_face_load_readiness missing_cmap =
+        make_render_text_freetype_face_load_readiness(
+            inspect_render_text_font_face_byte_readiness(font_source_bytes_result_for(missing_cmap_bytes)),
+            adapter_ready_backend);
+    require(
+        missing_cmap.status == render_text_freetype_face_load_readiness_status::missing_cmap,
+        "missing cmap bytes block FreeType load before backend readiness");
+    require(
+        missing_cmap.face_byte_status == render_text_font_face_byte_readiness_status::missing_cmap,
+        "missing cmap load readiness preserves byte readiness status");
+    require(missing_cmap.deterministic_fallback_required, "byte failure keeps deterministic fallback required");
+}
+
 void test_catalog_adapter_converts_valid_coverage_to_descriptor_ranges()
 {
     using namespace quiz_vulkan::render;
@@ -801,6 +936,8 @@ int main()
     test_resolver_preserves_unsupported_cmap_status();
     test_resolver_preserves_missing_cmap_status_from_valid_sfnt_diagnostics();
     test_font_face_byte_readiness_classifies_future_freetype_load_states();
+    test_freetype_face_load_readiness_combines_materialized_bytes_and_backend_work();
+    test_freetype_face_load_readiness_keeps_byte_failures_ahead_of_backend_work();
     test_catalog_adapter_converts_valid_coverage_to_descriptor_ranges();
     test_catalog_adapter_keeps_missing_and_invalid_coverage_known_empty();
     test_catalog_adapter_lets_font_catalog_pick_fallback_from_adapted_coverage();

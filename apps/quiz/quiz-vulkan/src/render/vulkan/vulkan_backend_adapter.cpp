@@ -541,6 +541,50 @@ make_native_physical_device_enumeration_result(
     };
 }
 
+vulkan_native_physical_device_selection_result
+make_native_physical_device_selection_result(
+    const vulkan_native_physical_device_enumeration_result& enumeration,
+    const vulkan_device_create_request& request)
+{
+    return vulkan_native_physical_device_selection_result{
+        .checked = true,
+        .status = vulkan_native_physical_device_selection_status::not_checked,
+        .enumeration = enumeration,
+        .request = request,
+        .selected_physical_device = {},
+        .selected_queue_families = {},
+        .candidates = {},
+        .missing_required_queue = {},
+        .diagnostic = {},
+    };
+}
+
+std::vector<vulkan_native_physical_device_queue_family>
+queue_families_for_physical_device(
+    const std::vector<vulkan_native_physical_device_queue_family>& queue_families,
+    vulkan_physical_device_handle physical_device)
+{
+    std::vector<vulkan_native_physical_device_queue_family> matching_families;
+    for (const vulkan_native_physical_device_queue_family& family : queue_families) {
+        if (family.physical_device.value == physical_device.value) {
+            matching_families.push_back(family);
+        }
+    }
+    return matching_families;
+}
+
+vulkan_native_physical_device_queue_family_selection make_queue_family_selection(
+    vulkan_device_queue_capability capability,
+    const vulkan_native_physical_device_queue_family& family)
+{
+    return vulkan_native_physical_device_queue_family_selection{
+        .capability = capability,
+        .physical_device = family.physical_device,
+        .family_index = family.family_index,
+        .queue_count = family.queue_count,
+    };
+}
+
 bool has_visible_area(const render_rect& rect)
 {
     return rect.width > 0.0f && rect.height > 0.0f;
@@ -2591,6 +2635,104 @@ fake_vulkan_native_physical_device_enumerator::state() const
     return state_;
 }
 
+fake_vulkan_native_physical_device_selector::fake_vulkan_native_physical_device_selector()
+    : fake_vulkan_native_physical_device_selector(
+        fake_vulkan_native_physical_device_selector_options{})
+{
+}
+
+fake_vulkan_native_physical_device_selector::fake_vulkan_native_physical_device_selector(
+    fake_vulkan_native_physical_device_selector_options options)
+    : options_(std::move(options))
+{
+}
+
+vulkan_native_physical_device_selection_result
+fake_vulkan_native_physical_device_selector::select_physical_device(
+    const vulkan_native_physical_device_enumeration_result& enumeration,
+    const vulkan_device_create_request& request)
+{
+    vulkan_native_physical_device_selection_result result =
+        make_native_physical_device_selection_result(enumeration, request);
+    ++state_.select_call_count;
+
+    if (!enumeration.ready_for_device_selection()) {
+        if (enumeration.status
+            == vulkan_native_physical_device_enumeration_status::no_devices) {
+            result.status = vulkan_native_physical_device_selection_status::no_devices;
+            result.diagnostic = "No native Vulkan physical devices are available";
+        } else {
+            result.status =
+                vulkan_native_physical_device_selection_status::enumeration_unavailable;
+            result.diagnostic =
+                "Native Vulkan physical device enumeration is unavailable";
+        }
+        return result;
+    }
+
+    const std::vector<vulkan_device_queue_capability> required_capabilities =
+        device_detail::requested_queue_capabilities(request);
+    for (const vulkan_physical_device_handle physical_device :
+         enumeration.physical_devices) {
+        state_.inspected_physical_devices.push_back(physical_device);
+
+        vulkan_native_physical_device_selection_candidate candidate{
+            .physical_device = physical_device,
+            .queue_families = queue_families_for_physical_device(
+                options_.queue_families,
+                physical_device),
+            .selected_queue_families = {},
+            .missing_required_queue = {},
+            .selected = false,
+        };
+
+        for (const vulkan_device_queue_capability capability : required_capabilities) {
+            auto matching_family = std::find_if(
+                candidate.queue_families.begin(),
+                candidate.queue_families.end(),
+                [capability](const vulkan_native_physical_device_queue_family& family) {
+                    return family.usable() && family.supports(capability);
+                });
+            if (matching_family == candidate.queue_families.end()) {
+                candidate.missing_required_queue =
+                    std::string{device_queue_capability_name(capability)};
+                break;
+            }
+
+            candidate.selected_queue_families.push_back(
+                make_queue_family_selection(capability, *matching_family));
+        }
+
+        if (candidate.missing_required_queue.empty()) {
+            candidate.selected = true;
+            result.selected_physical_device = physical_device;
+            result.selected_queue_families = candidate.selected_queue_families;
+            result.missing_required_queue.clear();
+            result.candidates.push_back(candidate);
+            result.status = vulkan_native_physical_device_selection_status::selected;
+            result.diagnostic =
+                "Native Vulkan physical device and queue families selected";
+            return result;
+        }
+
+        if (result.missing_required_queue.empty()) {
+            result.missing_required_queue = candidate.missing_required_queue;
+        }
+        result.candidates.push_back(candidate);
+    }
+
+    result.status = vulkan_native_physical_device_selection_status::missing_required_queue;
+    result.diagnostic =
+        "No native Vulkan physical device exposes the required queue families";
+    return result;
+}
+
+const fake_vulkan_native_physical_device_selector_state&
+fake_vulkan_native_physical_device_selector::state() const
+{
+    return state_;
+}
+
 vulkan_native_instance_proc_addr_resolver::vulkan_native_instance_proc_addr_resolver(
     vulkan_native_function_pointer get_instance_proc_address)
     : get_instance_proc_address_(get_instance_proc_address)
@@ -2912,6 +3054,15 @@ enumerate_native_vulkan_physical_devices(
     const vulkan_native_physical_device_dispatch_table& dispatch_table)
 {
     return enumerator.enumerate_physical_devices(dispatch_table);
+}
+
+vulkan_native_physical_device_selection_result
+select_native_vulkan_physical_device(
+    vulkan_native_physical_device_selector_interface& selector,
+    const vulkan_native_physical_device_enumeration_result& enumeration,
+    const vulkan_device_create_request& request)
+{
+    return selector.select_physical_device(enumeration, request);
 }
 
 vulkan_native_instance_create_result create_native_vulkan_instance(

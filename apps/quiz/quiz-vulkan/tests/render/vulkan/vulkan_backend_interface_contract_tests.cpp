@@ -313,6 +313,22 @@ static_assert(std::same_as<
     render::vulkan_backend::vulkan_native_physical_device_enumeration_status>);
 
 static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_physical_device_selection_status::not_checked),
+    render::vulkan_backend::vulkan_native_physical_device_selection_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_physical_device_selection_status::selected),
+    render::vulkan_backend::vulkan_native_physical_device_selection_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_physical_device_selection_status::enumeration_unavailable),
+    render::vulkan_backend::vulkan_native_physical_device_selection_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_physical_device_selection_status::no_devices),
+    render::vulkan_backend::vulkan_native_physical_device_selection_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_physical_device_selection_status::missing_required_queue),
+    render::vulkan_backend::vulkan_native_physical_device_selection_status>);
+
+static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_swapchain_create_status::not_requested),
     render::vulkan_backend::vulkan_swapchain_create_status>);
 static_assert(std::same_as<
@@ -1323,6 +1339,59 @@ static_assert(requires(render::vulkan_backend::vulkan_native_physical_device_enu
     { result.ready_for_device_selection() } -> std::same_as<bool>;
 });
 
+static_assert(requires(
+    render::vulkan_backend::vulkan_native_physical_device_queue_family family,
+    render::vulkan_backend::vulkan_device_queue_capability capability) {
+    { family.physical_device }
+        -> std::same_as<render::vulkan_backend::vulkan_physical_device_handle&>;
+    { family.family_index } -> std::same_as<std::size_t&>;
+    { family.queue_count } -> std::same_as<std::size_t&>;
+    { family.capabilities }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_device_queue_capability>&>;
+    { family.supports(capability) } -> std::same_as<bool>;
+    { family.usable() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_physical_device_queue_family_selection selection) {
+    { selection.capability }
+        -> std::same_as<render::vulkan_backend::vulkan_device_queue_capability&>;
+    { selection.physical_device }
+        -> std::same_as<render::vulkan_backend::vulkan_physical_device_handle&>;
+    { selection.family_index } -> std::same_as<std::size_t&>;
+    { selection.queue_count } -> std::same_as<std::size_t&>;
+    { selection.valid() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_physical_device_selection_candidate candidate) {
+    { candidate.physical_device }
+        -> std::same_as<render::vulkan_backend::vulkan_physical_device_handle&>;
+    { candidate.queue_families }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_physical_device_queue_family>&>;
+    { candidate.selected_queue_families }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_physical_device_queue_family_selection>&>;
+    { candidate.missing_required_queue } -> std::same_as<std::string&>;
+    { candidate.selected } -> std::same_as<bool&>;
+    { candidate.required_queues_ready() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_physical_device_selection_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_physical_device_selection_status&>;
+    { result.enumeration }
+        -> std::same_as<render::vulkan_backend::vulkan_native_physical_device_enumeration_result&>;
+    { result.request } -> std::same_as<render::vulkan_backend::vulkan_device_create_request&>;
+    { result.selected_physical_device }
+        -> std::same_as<render::vulkan_backend::vulkan_physical_device_handle&>;
+    { result.selected_queue_families }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_physical_device_queue_family_selection>&>;
+    { result.candidates }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_physical_device_selection_candidate>&>;
+    { result.missing_required_queue } -> std::same_as<std::string&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.ready_for_device_create() } -> std::same_as<bool>;
+});
+
 static_assert(requires(render::vulkan_backend::vulkan_swapchain_handle handle) {
     { handle.value } -> std::same_as<std::uintptr_t&>;
     { handle.valid() } -> std::same_as<bool>;
@@ -1687,6 +1756,17 @@ static_assert(requires(render::vulkan_backend::fake_vulkan_native_physical_devic
         -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
 });
 
+static_assert(requires(render::vulkan_backend::fake_vulkan_native_physical_device_selector_options options) {
+    { options.queue_families }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_physical_device_queue_family>&>;
+});
+
+static_assert(requires(render::vulkan_backend::fake_vulkan_native_physical_device_selector_state state) {
+    { state.select_call_count } -> std::same_as<std::size_t&>;
+    { state.inspected_physical_devices }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_physical_device_handle>&>;
+});
+
 static_assert(requires(render::vulkan_backend::fake_vulkan_swapchain_factory_options options) {
     { options.supported_present_modes }
         -> std::same_as<std::vector<render::vulkan_backend::vulkan_swapchain_present_mode>&>;
@@ -1872,6 +1952,20 @@ static_assert(requires(
         -> std::same_as<render::vulkan_backend::vulkan_native_physical_device_enumeration_result>;
 });
 
+static_assert(std::default_initializable<render::vulkan_backend::fake_vulkan_native_physical_device_selector>);
+static_assert(std::constructible_from<
+    render::vulkan_backend::fake_vulkan_native_physical_device_selector,
+    render::vulkan_backend::fake_vulkan_native_physical_device_selector_options>);
+static_assert(requires(
+    render::vulkan_backend::fake_vulkan_native_physical_device_selector fake,
+    const render::vulkan_backend::vulkan_native_physical_device_enumeration_result& enumeration,
+    const render::vulkan_backend::vulkan_device_create_request& request) {
+    { fake.select_physical_device(enumeration, request) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_physical_device_selection_result>;
+    { fake.state() }
+        -> std::same_as<const render::vulkan_backend::fake_vulkan_native_physical_device_selector_state&>;
+});
+
 static_assert(std::default_initializable<render::vulkan_backend::system_vulkan_native_symbol_resolver>);
 static_assert(std::constructible_from<
     render::vulkan_backend::system_vulkan_native_symbol_resolver,
@@ -1985,9 +2079,11 @@ static_assert(requires(
     render::vulkan_backend::vulkan_device_factory_interface& factory,
     render::vulkan_backend::vulkan_native_instance_symbol_resolver_interface& native_instance_resolver,
     render::vulkan_backend::vulkan_native_physical_device_enumerator_interface& physical_device_enumerator,
+    render::vulkan_backend::vulkan_native_physical_device_selector_interface& physical_device_selector,
     const render::vulkan_backend::vulkan_instance_create_result& instance_result,
     const render::vulkan_backend::vulkan_native_instance_create_result& native_instance_create_result,
     const render::vulkan_backend::vulkan_native_physical_device_dispatch_table& physical_device_dispatch_table,
+    const render::vulkan_backend::vulkan_native_physical_device_enumeration_result& physical_device_enumeration,
     const render::vulkan_backend::vulkan_device_create_request& request) {
     { render::vulkan_backend::create_vulkan_device(
         factory,
@@ -2001,6 +2097,11 @@ static_assert(requires(
         physical_device_enumerator,
         physical_device_dispatch_table) }
         -> std::same_as<render::vulkan_backend::vulkan_native_physical_device_enumeration_result>;
+    { render::vulkan_backend::select_native_vulkan_physical_device(
+        physical_device_selector,
+        physical_device_enumeration,
+        request) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_physical_device_selection_result>;
 });
 
 static_assert(requires(

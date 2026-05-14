@@ -89,6 +89,24 @@ quiz_vulkan::render::vulkan_backend::fake_vulkan_instance_factory make_surface_f
         });
 }
 
+quiz_vulkan::render::vulkan_backend::vulkan_native_instance_create_result
+make_created_native_instance_result(
+    const quiz_vulkan::render::vulkan_backend::vulkan_native_instance_function_table& table)
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    return vulkan_backend::vulkan_native_instance_create_result{
+        .checked = true,
+        .status = vulkan_backend::vulkan_native_instance_create_status::created,
+        .loader = make_ready_loader(),
+        .function_table = table,
+        .request = vulkan_backend::vulkan_instance_create_request{},
+        .handle = vulkan_backend::vulkan_instance_handle{.value = 84},
+        .native_result = 0,
+        .diagnostic = "created test native instance",
+    };
+}
+
 void test_instance_factory_creates_instance_when_loader_and_requirements_are_available()
 {
     namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
@@ -378,22 +396,43 @@ void test_native_instance_function_table_collects_global_entrypoints()
     require(
         table.status == vulkan_backend::vulkan_native_instance_function_table_status::ready,
         "native instance function table reports ready");
+    require(
+        table.get_instance_proc_address.valid(),
+        "native instance table records vkGetInstanceProcAddr");
     require(table.create_instance.valid(), "native instance table records vkCreateInstance");
     require(table.destroy_instance.valid(), "native instance table records vkDestroyInstance");
     require(
-        resolver.state().resolve_call_count == 2,
-        "native instance table resolves create and destroy symbols");
+        resolver.state().resolve_call_count == 3,
+        "native instance table resolves proc address, create, and destroy symbols");
     require(
-        resolver.state().requested_symbols.front() == "vkCreateInstance",
-        "native instance table resolves vkCreateInstance first");
+        resolver.state().requested_symbols.front() == "vkGetInstanceProcAddr",
+        "native instance table resolves vkGetInstanceProcAddr first");
     require(
         resolver.state().requested_symbols.back() == "vkDestroyInstance",
-        "native instance table resolves vkDestroyInstance second");
+        "native instance table resolves vkDestroyInstance last");
 }
 
 void test_native_instance_function_table_reports_missing_symbols()
 {
     namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    {
+        vulkan_backend::fake_vulkan_native_symbol_resolver resolver(
+            vulkan_backend::fake_vulkan_native_symbol_resolver_options{
+                .missing_symbols = {"vkGetInstanceProcAddr"},
+            });
+        const vulkan_backend::vulkan_native_instance_function_table table =
+            vulkan_backend::collect_vulkan_native_instance_function_table(resolver);
+
+        require(!table.ready(), "missing proc address blocks native instance table");
+        require(
+            table.status
+                == vulkan_backend::vulkan_native_instance_function_table_status::missing_get_instance_proc_address_symbol,
+            "native instance table maps missing vkGetInstanceProcAddr");
+        require(
+            resolver.state().resolve_call_count == 1,
+            "native instance table stops after missing vkGetInstanceProcAddr");
+    }
 
     {
         vulkan_backend::fake_vulkan_native_symbol_resolver resolver(
@@ -423,6 +462,9 @@ void test_native_instance_function_table_reports_missing_symbols()
             table.status
                 == vulkan_backend::vulkan_native_instance_function_table_status::missing_destroy_instance_symbol,
             "native instance table maps missing vkDestroyInstance");
+        require(
+            table.get_instance_proc_address.valid(),
+            "missing destroy table preserves proc address pointer");
         require(table.create_instance.valid(), "missing destroy table preserves create pointer");
     }
 }
@@ -483,6 +525,183 @@ void test_native_instance_destroy_blocks_invalid_handles()
     require(!result.destroyed(), "native instance destroy does not complete invalid handle");
 }
 
+void test_native_instance_dispatch_table_collects_destroy_from_created_instance()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::fake_vulkan_native_symbol_resolver global_resolver;
+    const vulkan_backend::vulkan_native_instance_function_table function_table =
+        vulkan_backend::collect_vulkan_native_instance_function_table(global_resolver);
+    const vulkan_backend::vulkan_native_instance_create_result create_result =
+        make_created_native_instance_result(function_table);
+
+    vulkan_backend::fake_vulkan_native_instance_symbol_resolver instance_resolver(
+        vulkan_backend::fake_vulkan_native_instance_symbol_resolver_options{
+            .get_instance_proc_address = function_table.get_instance_proc_address,
+        });
+    const vulkan_backend::vulkan_native_instance_dispatch_table dispatch_table =
+        vulkan_backend::collect_vulkan_native_instance_dispatch_table(
+            instance_resolver,
+            create_result);
+
+    require(dispatch_table.checked, "native instance dispatch table is checked");
+    require(dispatch_table.ready_for_destroy(), "native instance dispatch table is ready for destroy");
+    require(
+        dispatch_table.status
+            == vulkan_backend::vulkan_native_instance_dispatch_table_status::ready,
+        "native instance dispatch table reports ready");
+    require(
+        dispatch_table.handle.value == create_result.handle.value,
+        "native instance dispatch table keeps the created instance handle");
+    require(
+        dispatch_table.get_instance_proc_address.value
+            == function_table.get_instance_proc_address.value,
+        "native instance dispatch table keeps the proc address pointer");
+    require(
+        dispatch_table.destroy_instance.valid(),
+        "native instance dispatch table resolves vkDestroyInstance");
+    require(
+        instance_resolver.state().resolve_call_count == 1,
+        "native instance dispatch table resolves one instance-scoped symbol");
+    require(
+        instance_resolver.state().requested_instance_handles.front()
+            == create_result.handle.value,
+        "native instance dispatch table resolves against the created instance handle");
+    require(
+        instance_resolver.state().requested_symbols.front() == "vkDestroyInstance",
+        "native instance dispatch table resolves vkDestroyInstance through the instance");
+}
+
+void test_native_instance_dispatch_table_reports_blockers()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::fake_vulkan_native_symbol_resolver global_resolver;
+    const vulkan_backend::vulkan_native_instance_function_table function_table =
+        vulkan_backend::collect_vulkan_native_instance_function_table(global_resolver);
+
+    {
+        vulkan_backend::fake_vulkan_native_instance_symbol_resolver instance_resolver(
+            vulkan_backend::fake_vulkan_native_instance_symbol_resolver_options{
+                .get_instance_proc_address = function_table.get_instance_proc_address,
+            });
+        vulkan_backend::vulkan_native_instance_create_result create_result =
+            make_created_native_instance_result(function_table);
+        create_result.status =
+            vulkan_backend::vulkan_native_instance_create_status::creation_failed;
+        create_result.handle = {};
+
+        const vulkan_backend::vulkan_native_instance_dispatch_table dispatch_table =
+            vulkan_backend::collect_vulkan_native_instance_dispatch_table(
+                instance_resolver,
+                create_result);
+
+        require(!dispatch_table.ready_for_destroy(), "uncreated instance blocks dispatch table");
+        require(
+            dispatch_table.status
+                == vulkan_backend::vulkan_native_instance_dispatch_table_status::instance_unavailable,
+            "native instance dispatch table maps unavailable instance");
+        require(
+            instance_resolver.state().resolve_call_count == 0,
+            "native instance dispatch table does not resolve symbols without an instance");
+    }
+
+    {
+        vulkan_backend::fake_vulkan_native_instance_symbol_resolver instance_resolver(
+            vulkan_backend::fake_vulkan_native_instance_symbol_resolver_options{
+                .get_instance_proc_address = {},
+            });
+        const vulkan_backend::vulkan_native_instance_dispatch_table dispatch_table =
+            vulkan_backend::collect_vulkan_native_instance_dispatch_table(
+                instance_resolver,
+                make_created_native_instance_result(function_table));
+
+        require(!dispatch_table.ready_for_destroy(), "missing proc address blocks dispatch table");
+        require(
+            dispatch_table.status
+                == vulkan_backend::vulkan_native_instance_dispatch_table_status::get_instance_proc_address_unavailable,
+            "native instance dispatch table maps missing vkGetInstanceProcAddr");
+        require(
+            instance_resolver.state().resolve_call_count == 0,
+            "native instance dispatch table does not resolve without vkGetInstanceProcAddr");
+    }
+
+    {
+        vulkan_backend::fake_vulkan_native_instance_symbol_resolver instance_resolver(
+            vulkan_backend::fake_vulkan_native_instance_symbol_resolver_options{
+                .missing_symbols = {"vkDestroyInstance"},
+                .get_instance_proc_address = function_table.get_instance_proc_address,
+            });
+        const vulkan_backend::vulkan_native_instance_dispatch_table dispatch_table =
+            vulkan_backend::collect_vulkan_native_instance_dispatch_table(
+                instance_resolver,
+                make_created_native_instance_result(function_table));
+
+        require(!dispatch_table.ready_for_destroy(), "missing destroy blocks dispatch table");
+        require(
+            dispatch_table.status
+                == vulkan_backend::vulkan_native_instance_dispatch_table_status::missing_destroy_instance_symbol,
+            "native instance dispatch table maps missing vkDestroyInstance");
+        require(
+            dispatch_table.missing_symbol_name == "vkDestroyInstance",
+            "native instance dispatch table records the missing instance symbol");
+        require(
+            instance_resolver.state().resolve_call_count == 1,
+            "native instance dispatch table attempts the missing destroy symbol");
+    }
+}
+
+void test_native_instance_dispatch_destroy_blocks_before_invalid_fake_pointer()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_instance_dispatch_table missing_dispatch_table{
+        .checked = true,
+        .status = vulkan_backend::vulkan_native_instance_dispatch_table_status::missing_destroy_instance_symbol,
+        .handle = vulkan_backend::vulkan_instance_handle{.value = 84},
+        .get_instance_proc_address = vulkan_backend::vulkan_native_function_pointer{.value = 1500},
+        .destroy_instance = {},
+        .missing_symbol_name = "vkDestroyInstance",
+        .diagnostic = "missing dispatch destroy",
+    };
+    const vulkan_backend::vulkan_native_instance_destroy_result missing_dispatch_result =
+        vulkan_backend::destroy_native_vulkan_instance(missing_dispatch_table);
+
+    require(
+        missing_dispatch_result.checked,
+        "native instance dispatch destroy missing-table result is checked");
+    require(
+        missing_dispatch_result.used_instance_dispatch,
+        "native instance dispatch destroy records dispatch use");
+    require(
+        missing_dispatch_result.status
+            == vulkan_backend::vulkan_native_instance_destroy_status::dispatch_table_unavailable,
+        "native instance dispatch destroy blocks on unavailable dispatch table");
+    require(
+        !missing_dispatch_result.destroyed(),
+        "native instance dispatch destroy does not call missing dispatch pointer");
+
+    const vulkan_backend::vulkan_native_instance_dispatch_table invalid_handle_table{
+        .checked = true,
+        .status = vulkan_backend::vulkan_native_instance_dispatch_table_status::ready,
+        .handle = {},
+        .get_instance_proc_address = vulkan_backend::vulkan_native_function_pointer{.value = 1500},
+        .destroy_instance = vulkan_backend::vulkan_native_function_pointer{.value = 2001},
+        .missing_symbol_name = {},
+        .diagnostic = "invalid handle dispatch",
+    };
+    const vulkan_backend::vulkan_native_instance_destroy_result invalid_handle_result =
+        vulkan_backend::destroy_native_vulkan_instance(invalid_handle_table);
+
+    require(
+        invalid_handle_result.status
+            == vulkan_backend::vulkan_native_instance_destroy_status::invalid_handle,
+        "native instance dispatch destroy maps invalid handle before pointer call");
+    require(
+        !invalid_handle_result.destroyed(),
+        "native instance dispatch destroy does not call invalid-handle dispatch pointer");
+}
+
 void test_native_instance_create_smoke_uses_system_loader_when_available()
 {
     namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
@@ -538,9 +757,22 @@ void test_native_instance_create_smoke_uses_system_loader_when_available()
         return;
     }
 
+    vulkan_backend::vulkan_native_instance_proc_addr_resolver instance_resolver(
+        table.get_instance_proc_address);
+    const vulkan_backend::vulkan_native_instance_dispatch_table dispatch_table =
+        vulkan_backend::collect_vulkan_native_instance_dispatch_table(
+            instance_resolver,
+            create_result);
+    require(
+        dispatch_table.ready_for_destroy(),
+        "native instance smoke resolves instance-scoped destroy dispatch");
+
     const vulkan_backend::vulkan_native_instance_destroy_result destroy_result =
-        vulkan_backend::destroy_native_vulkan_instance(table, create_result.handle);
+        vulkan_backend::destroy_native_vulkan_instance(dispatch_table);
     require(destroy_result.checked, "native instance smoke destroy result is checked");
+    require(
+        destroy_result.used_instance_dispatch,
+        "native instance smoke destroys through instance dispatch");
     require(destroy_result.destroyed(), "native instance smoke destroys created instance");
 }
 
@@ -558,6 +790,9 @@ int main()
     test_native_instance_function_table_reports_missing_symbols();
     test_native_instance_create_blocks_before_calling_invalid_fake_pointers();
     test_native_instance_destroy_blocks_invalid_handles();
+    test_native_instance_dispatch_table_collects_destroy_from_created_instance();
+    test_native_instance_dispatch_table_reports_blockers();
+    test_native_instance_dispatch_destroy_blocks_before_invalid_fake_pointer();
     test_native_instance_create_smoke_uses_system_loader_when_available();
     return 0;
 }

@@ -107,6 +107,7 @@ struct vulkan_instance_create_result {
 enum class vulkan_native_instance_function_table_status {
     not_checked,
     ready,
+    missing_get_instance_proc_address_symbol,
     missing_create_instance_symbol,
     missing_destroy_instance_symbol,
 };
@@ -115,6 +116,7 @@ struct vulkan_native_instance_function_table {
     bool checked = false;
     vulkan_native_instance_function_table_status status =
         vulkan_native_instance_function_table_status::not_checked;
+    vulkan_native_function_pointer get_instance_proc_address;
     vulkan_native_function_pointer create_instance;
     vulkan_native_function_pointer destroy_instance;
     std::string diagnostic;
@@ -122,7 +124,8 @@ struct vulkan_native_instance_function_table {
     bool ready() const
     {
         return checked && status == vulkan_native_instance_function_table_status::ready
-            && create_instance.valid() && destroy_instance.valid();
+            && get_instance_proc_address.valid() && create_instance.valid()
+            && destroy_instance.valid();
     }
 };
 
@@ -153,10 +156,96 @@ struct vulkan_native_instance_create_result {
     }
 };
 
+enum class vulkan_native_instance_dispatch_table_status {
+    not_checked,
+    ready,
+    instance_unavailable,
+    get_instance_proc_address_unavailable,
+    missing_destroy_instance_symbol,
+};
+
+class vulkan_native_instance_symbol_resolver_interface {
+public:
+    virtual ~vulkan_native_instance_symbol_resolver_interface() = default;
+
+    virtual vulkan_native_function_pointer get_instance_proc_address() const = 0;
+    virtual vulkan_native_function_pointer resolve_instance_symbol(
+        vulkan_instance_handle instance,
+        std::string_view symbol_name) = 0;
+};
+
+struct fake_vulkan_native_instance_symbol_resolver_options {
+    bool default_available = true;
+    std::vector<std::string> available_symbols;
+    std::vector<std::string> missing_symbols;
+    vulkan_native_function_pointer get_instance_proc_address{.value = 1500};
+    vulkan_native_function_pointer pointer_base{.value = 2000};
+};
+
+struct fake_vulkan_native_instance_symbol_resolver_state {
+    std::size_t resolve_call_count = 0;
+    std::vector<std::uintptr_t> requested_instance_handles;
+    std::vector<std::string> requested_symbols;
+    std::vector<std::string> resolved_symbols;
+    std::vector<std::string> missing_symbols;
+};
+
+class fake_vulkan_native_instance_symbol_resolver final
+    : public vulkan_native_instance_symbol_resolver_interface {
+public:
+    fake_vulkan_native_instance_symbol_resolver();
+    explicit fake_vulkan_native_instance_symbol_resolver(
+        fake_vulkan_native_instance_symbol_resolver_options options);
+
+    vulkan_native_function_pointer get_instance_proc_address() const override;
+    vulkan_native_function_pointer resolve_instance_symbol(
+        vulkan_instance_handle instance,
+        std::string_view symbol_name) override;
+    const fake_vulkan_native_instance_symbol_resolver_state& state() const;
+
+private:
+    fake_vulkan_native_instance_symbol_resolver_options options_;
+    fake_vulkan_native_instance_symbol_resolver_state state_;
+};
+
+class vulkan_native_instance_proc_addr_resolver final
+    : public vulkan_native_instance_symbol_resolver_interface {
+public:
+    explicit vulkan_native_instance_proc_addr_resolver(
+        vulkan_native_function_pointer get_instance_proc_address);
+
+    vulkan_native_function_pointer get_instance_proc_address() const override;
+    vulkan_native_function_pointer resolve_instance_symbol(
+        vulkan_instance_handle instance,
+        std::string_view symbol_name) override;
+
+private:
+    vulkan_native_function_pointer get_instance_proc_address_;
+};
+
+struct vulkan_native_instance_dispatch_table {
+    bool checked = false;
+    vulkan_native_instance_dispatch_table_status status =
+        vulkan_native_instance_dispatch_table_status::not_checked;
+    vulkan_instance_handle handle;
+    vulkan_native_function_pointer get_instance_proc_address;
+    vulkan_native_function_pointer destroy_instance;
+    std::string missing_symbol_name;
+    std::string diagnostic;
+
+    bool ready_for_destroy() const
+    {
+        return checked && status == vulkan_native_instance_dispatch_table_status::ready
+            && handle.valid() && get_instance_proc_address.valid()
+            && destroy_instance.valid();
+    }
+};
+
 enum class vulkan_native_instance_destroy_status {
     not_requested,
     destroyed,
     function_table_unavailable,
+    dispatch_table_unavailable,
     headers_unavailable,
     invalid_handle,
 };
@@ -166,7 +255,9 @@ struct vulkan_native_instance_destroy_result {
     vulkan_native_instance_destroy_status status =
         vulkan_native_instance_destroy_status::not_requested;
     vulkan_native_instance_function_table function_table;
+    vulkan_native_instance_dispatch_table dispatch_table;
     vulkan_instance_handle handle;
+    bool used_instance_dispatch = false;
     std::string diagnostic;
 
     bool destroyed() const
@@ -380,8 +471,15 @@ vulkan_native_instance_create_result create_native_vulkan_instance(
     const vulkan_native_instance_function_table& function_table,
     const vulkan_instance_create_request& request = {});
 
+vulkan_native_instance_dispatch_table collect_vulkan_native_instance_dispatch_table(
+    vulkan_native_instance_symbol_resolver_interface& resolver,
+    const vulkan_native_instance_create_result& create_result);
+
 vulkan_native_instance_destroy_result destroy_native_vulkan_instance(
     const vulkan_native_instance_function_table& function_table,
     vulkan_instance_handle handle);
+
+vulkan_native_instance_destroy_result destroy_native_vulkan_instance(
+    const vulkan_native_instance_dispatch_table& dispatch_table);
 
 } // namespace quiz_vulkan::render::vulkan_backend

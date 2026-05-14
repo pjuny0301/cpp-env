@@ -207,6 +207,42 @@ static_assert(std::same_as<
     render::vulkan_backend::vulkan_instance_create_status>);
 
 static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_instance_function_table_status::not_checked),
+    render::vulkan_backend::vulkan_native_instance_function_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_instance_function_table_status::ready),
+    render::vulkan_backend::vulkan_native_instance_function_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_instance_function_table_status::missing_get_instance_proc_address_symbol),
+    render::vulkan_backend::vulkan_native_instance_function_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_instance_function_table_status::missing_create_instance_symbol),
+    render::vulkan_backend::vulkan_native_instance_function_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_instance_function_table_status::missing_destroy_instance_symbol),
+    render::vulkan_backend::vulkan_native_instance_function_table_status>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_instance_dispatch_table_status::not_checked),
+    render::vulkan_backend::vulkan_native_instance_dispatch_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_instance_dispatch_table_status::ready),
+    render::vulkan_backend::vulkan_native_instance_dispatch_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_instance_dispatch_table_status::instance_unavailable),
+    render::vulkan_backend::vulkan_native_instance_dispatch_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_instance_dispatch_table_status::get_instance_proc_address_unavailable),
+    render::vulkan_backend::vulkan_native_instance_dispatch_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_instance_dispatch_table_status::missing_destroy_instance_symbol),
+    render::vulkan_backend::vulkan_native_instance_dispatch_table_status>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_instance_destroy_status::dispatch_table_unavailable),
+    render::vulkan_backend::vulkan_native_instance_destroy_status>);
+
+static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_device_queue_capability::graphics),
     render::vulkan_backend::vulkan_device_queue_capability>);
 static_assert(std::same_as<
@@ -1127,6 +1163,8 @@ static_assert(requires(render::vulkan_backend::vulkan_native_instance_function_t
     { table.checked } -> std::same_as<bool&>;
     { table.status }
         -> std::same_as<render::vulkan_backend::vulkan_native_instance_function_table_status&>;
+    { table.get_instance_proc_address }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
     { table.create_instance } -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
     { table.destroy_instance } -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
     { table.diagnostic } -> std::same_as<std::string&>;
@@ -1146,12 +1184,29 @@ static_assert(requires(render::vulkan_backend::vulkan_native_instance_create_res
     { result.created() } -> std::same_as<bool>;
 });
 
+static_assert(requires(render::vulkan_backend::vulkan_native_instance_dispatch_table table) {
+    { table.checked } -> std::same_as<bool&>;
+    { table.status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_instance_dispatch_table_status&>;
+    { table.handle } -> std::same_as<render::vulkan_backend::vulkan_instance_handle&>;
+    { table.get_instance_proc_address }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { table.destroy_instance }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { table.missing_symbol_name } -> std::same_as<std::string&>;
+    { table.diagnostic } -> std::same_as<std::string&>;
+    { table.ready_for_destroy() } -> std::same_as<bool>;
+});
+
 static_assert(requires(render::vulkan_backend::vulkan_native_instance_destroy_result result) {
     { result.checked } -> std::same_as<bool&>;
     { result.status } -> std::same_as<render::vulkan_backend::vulkan_native_instance_destroy_status&>;
     { result.function_table }
         -> std::same_as<render::vulkan_backend::vulkan_native_instance_function_table&>;
+    { result.dispatch_table }
+        -> std::same_as<render::vulkan_backend::vulkan_native_instance_dispatch_table&>;
     { result.handle } -> std::same_as<render::vulkan_backend::vulkan_instance_handle&>;
+    { result.used_instance_dispatch } -> std::same_as<bool&>;
     { result.diagnostic } -> std::same_as<std::string&>;
     { result.destroyed() } -> std::same_as<bool>;
 });
@@ -1492,6 +1547,23 @@ static_assert(requires(render::vulkan_backend::fake_vulkan_native_symbol_resolve
     { state.missing_symbols } -> std::same_as<std::vector<std::string>&>;
 });
 
+static_assert(requires(render::vulkan_backend::fake_vulkan_native_instance_symbol_resolver_options options) {
+    { options.default_available } -> std::same_as<bool&>;
+    { options.available_symbols } -> std::same_as<std::vector<std::string>&>;
+    { options.missing_symbols } -> std::same_as<std::vector<std::string>&>;
+    { options.get_instance_proc_address }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { options.pointer_base } -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+});
+
+static_assert(requires(render::vulkan_backend::fake_vulkan_native_instance_symbol_resolver_state state) {
+    { state.resolve_call_count } -> std::same_as<std::size_t&>;
+    { state.requested_instance_handles } -> std::same_as<std::vector<std::uintptr_t>&>;
+    { state.requested_symbols } -> std::same_as<std::vector<std::string>&>;
+    { state.resolved_symbols } -> std::same_as<std::vector<std::string>&>;
+    { state.missing_symbols } -> std::same_as<std::vector<std::string>&>;
+});
+
 static_assert(requires(render::vulkan_backend::system_vulkan_native_symbol_resolver_options options) {
     { options.candidate_library_names } -> std::same_as<std::vector<std::string>&>;
     { options.use_default_library_names } -> std::same_as<bool&>;
@@ -1670,6 +1742,34 @@ static_assert(requires(
         -> std::same_as<const render::vulkan_backend::fake_vulkan_native_symbol_resolver_state&>;
 });
 
+static_assert(std::default_initializable<render::vulkan_backend::fake_vulkan_native_instance_symbol_resolver>);
+static_assert(std::constructible_from<
+    render::vulkan_backend::fake_vulkan_native_instance_symbol_resolver,
+    render::vulkan_backend::fake_vulkan_native_instance_symbol_resolver_options>);
+static_assert(std::constructible_from<
+    render::vulkan_backend::vulkan_native_instance_proc_addr_resolver,
+    render::vulkan_backend::vulkan_native_function_pointer>);
+static_assert(requires(
+    render::vulkan_backend::fake_vulkan_native_instance_symbol_resolver fake,
+    render::vulkan_backend::vulkan_instance_handle instance,
+    std::string_view symbol_name) {
+    { fake.get_instance_proc_address() }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer>;
+    { fake.resolve_instance_symbol(instance, symbol_name) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer>;
+    { fake.state() }
+        -> std::same_as<const render::vulkan_backend::fake_vulkan_native_instance_symbol_resolver_state&>;
+});
+static_assert(requires(
+    render::vulkan_backend::vulkan_native_instance_proc_addr_resolver resolver,
+    render::vulkan_backend::vulkan_instance_handle instance,
+    std::string_view symbol_name) {
+    { resolver.get_instance_proc_address() }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer>;
+    { resolver.resolve_instance_symbol(instance, symbol_name) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer>;
+});
+
 static_assert(std::default_initializable<render::vulkan_backend::system_vulkan_native_symbol_resolver>);
 static_assert(std::constructible_from<
     render::vulkan_backend::system_vulkan_native_symbol_resolver,
@@ -1751,8 +1851,11 @@ static_assert(requires(
 static_assert(requires(
     render::vulkan_backend::vulkan_instance_factory_interface& factory,
     render::vulkan_backend::vulkan_native_symbol_resolver_interface& native_resolver,
+    render::vulkan_backend::vulkan_native_instance_symbol_resolver_interface& native_instance_resolver,
     const render::vulkan_backend::vulkan_loader_readiness_state& loader_readiness,
     const render::vulkan_backend::vulkan_native_instance_function_table& native_instance_table,
+    const render::vulkan_backend::vulkan_native_instance_create_result& native_instance_create_result,
+    const render::vulkan_backend::vulkan_native_instance_dispatch_table& native_instance_dispatch_table,
     const render::vulkan_backend::vulkan_instance_create_request& request) {
     { render::vulkan_backend::create_vulkan_instance(
         factory,
@@ -1764,9 +1867,15 @@ static_assert(requires(
         loader_readiness,
         native_instance_table,
         request) } -> std::same_as<render::vulkan_backend::vulkan_native_instance_create_result>;
+    { render::vulkan_backend::collect_vulkan_native_instance_dispatch_table(
+        native_instance_resolver,
+        native_instance_create_result) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_instance_dispatch_table>;
     { render::vulkan_backend::destroy_native_vulkan_instance(
         native_instance_table,
         render::vulkan_backend::vulkan_instance_handle{}) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_instance_destroy_result>;
+    { render::vulkan_backend::destroy_native_vulkan_instance(native_instance_dispatch_table) }
         -> std::same_as<render::vulkan_backend::vulkan_native_instance_destroy_result>;
 });
 

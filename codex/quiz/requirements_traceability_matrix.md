@@ -1,11 +1,15 @@
 # Quiz 요구사항 추적 매트릭스
 
-마지막 갱신: 2026-05-14
+마지막 갱신: 2026-05-15
 
 이 문서는 요구사항 번호를 실행 순서가 아니라 추적 ID로 관리한다. 실제 구현 순서는 `big_plan.md`의 의존관계 기반 단계가 기준이며, 각 행은 루트 구현 문서, 하위 프로젝트 문서, 현재 C++/문서 증거를 연결한다.
 
 최근 baseline 통합 증거:
 
+- current: Vulkan global loader proc resolution, materialized asset byte-read routing, and native `stb_image` memory decode handoff tightening integrated; Windows MinGW focused renderer/image/Vulkan/asset CTest passed 4/4.
+- `4507f71`: Vulkan backend now attempts global entrypoint resolution through loader `vkGetInstanceProcAddr` and records direct-export fallback evidence without scene/UI/domain coupling.
+- `4ecd2f3`: asset byte loading now consumes validated materialized local paths, keeping resolver source validation separate from filesystem byte-provider access.
+- `4782797`: image decoder adapter tests now exercise the tightened native `stb_image` memory decode handoff and invalid source-byte handling behind the image engine boundary.
 - current: font byte-readiness glyph diagnostics integrated and generated tests now compile as C++23; Windows MinGW focused text CTest passed 3/3 and focused external/asset/text CTest passed 3/3.
 - `1ded041`: text engine diagnostics now carry font face byte-readiness status, fallback-required flags, FreeType-load attempt readiness, and descriptor-coverage fallback counters through fake layout/glyph cache evidence.
 - `170a747`: CMake-generated test executables now request C++23 directly, avoiding per-target standard drift when worker tests use current project language features.

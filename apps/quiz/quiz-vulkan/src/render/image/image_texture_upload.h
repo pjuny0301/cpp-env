@@ -247,6 +247,7 @@ struct fake_image_texture_upload_request_snapshot {
     std::size_t pixel_byte_count = 0;
     std::size_t decoded_byte_count = 0;
     std::size_t staging_byte_count = 0;
+    render_image_decoded_payload_evidence decoded_payload;
     render_image_texture_mipmap_upload_plan mipmap_upload_plan;
     std::size_t enqueue_sequence = 0;
     std::size_t queue_depth_before_enqueue = 0;
@@ -373,6 +374,7 @@ public:
             .pixel_byte_count = pixel_byte_count,
             .decoded_byte_count = decoded_byte_count,
             .staging_byte_count = staging_byte_count,
+            .decoded_payload = make_render_image_decoded_payload_evidence(request.image),
             .mipmap_upload_plan = mipmap_upload_plan,
             .enqueue_sequence = enqueue_sequence,
             .queue_depth_before_enqueue = queue_depth_before_enqueue,

@@ -3,13 +3,16 @@
 #include "render/image/image_decoder.h"
 #include "render/image/image_types.h"
 
+#include <array>
 #include <cctype>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <string>
 #include <string_view>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 namespace quiz_vulkan::render {
 
@@ -278,6 +281,28 @@ inline bool has_valid_render_decoded_image_payload(const render_decoded_image& i
     return expected_byte_count != 0 && image.pixels.size() == expected_byte_count;
 }
 
+struct render_image_decoded_rgba8_sample {
+    bool available = false;
+    std::size_t pixel_index = 0;
+    std::size_t byte_offset = 0;
+    std::array<unsigned char, 4> rgba{};
+};
+
+struct render_image_decoded_payload_evidence {
+    render_image_pixel_format pixel_format = render_image_pixel_format::rgba8_srgb;
+    std::size_t pixel_count = 0;
+    std::size_t expected_byte_count = 0;
+    std::size_t decoded_byte_count = 0;
+    std::uint64_t stable_byte_hash = 0;
+    bool payload_valid = false;
+    bool rgba8_sample_available = false;
+    render_image_decoded_rgba8_sample first_pixel;
+    render_image_decoded_rgba8_sample last_pixel;
+    bool all_alpha_opaque = false;
+    bool contains_transparent_alpha = false;
+    std::string diagnostic;
+};
+
 struct render_image_upload_readiness_snapshot {
     render_image_texture_key key;
     render_image_texture_key_diagnostic key_diagnostic;
@@ -296,6 +321,7 @@ struct render_image_upload_readiness_snapshot {
     std::size_t metadata_expected_decoded_byte_count = 0;
     std::size_t metadata_actual_decoded_byte_count = 0;
     std::size_t staging_byte_count = 0;
+    render_image_decoded_payload_evidence decoded_payload;
     std::string decode_handoff_diagnostic;
     std::string diagnostic;
 };
@@ -311,6 +337,96 @@ inline std::size_t render_image_checked_pixel_count(const render_decoded_image& 
         return 0;
     }
     return image.width * image.height;
+}
+
+inline std::uint64_t render_image_decoded_payload_stable_hash(const std::vector<std::byte>& pixels)
+{
+    std::uint64_t hash = 1469598103934665603ull;
+    for (const std::byte value : pixels) {
+        hash ^= static_cast<std::uint64_t>(std::to_integer<unsigned char>(value));
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+
+inline render_image_decoded_rgba8_sample make_render_image_decoded_rgba8_sample(
+    const render_decoded_image& image,
+    std::size_t pixel_index)
+{
+    render_image_decoded_rgba8_sample sample{
+        .available = false,
+        .pixel_index = pixel_index,
+        .byte_offset = pixel_index * 4,
+        .rgba = {},
+    };
+    if (render_image_pixel_format_byte_count(image.pixel_format) != 4
+        || image.pixels.size() < sample.byte_offset + 4) {
+        return sample;
+    }
+
+    sample.available = true;
+    sample.rgba = {
+        std::to_integer<unsigned char>(image.pixels[sample.byte_offset]),
+        std::to_integer<unsigned char>(image.pixels[sample.byte_offset + 1]),
+        std::to_integer<unsigned char>(image.pixels[sample.byte_offset + 2]),
+        std::to_integer<unsigned char>(image.pixels[sample.byte_offset + 3]),
+    };
+    return sample;
+}
+
+inline render_image_decoded_payload_evidence make_render_image_decoded_payload_evidence(
+    const render_decoded_image& image)
+{
+    const std::size_t expected_byte_count = expected_render_decoded_image_byte_count(image);
+    const std::size_t decoded_byte_count = image.pixels.size();
+    const std::size_t pixel_count = render_image_checked_pixel_count(image);
+    const bool payload_valid = has_valid_render_decoded_image_payload(image);
+    const bool rgba8_sample_available = payload_valid
+        && pixel_count != 0
+        && render_image_pixel_format_byte_count(image.pixel_format) == 4;
+
+    bool all_alpha_opaque = false;
+    bool contains_transparent_alpha = false;
+    if (rgba8_sample_available) {
+        all_alpha_opaque = true;
+        for (std::size_t alpha_offset = 3; alpha_offset < image.pixels.size(); alpha_offset += 4) {
+            const unsigned char alpha = std::to_integer<unsigned char>(image.pixels[alpha_offset]);
+            if (alpha != 0xff) {
+                all_alpha_opaque = false;
+                contains_transparent_alpha = true;
+            }
+        }
+    }
+
+    std::string diagnostic;
+    if (render_image_pixel_format_byte_count(image.pixel_format) == 0) {
+        diagnostic = "decoded payload evidence has unsupported pixel format";
+    } else if (image.empty()) {
+        diagnostic = "decoded payload evidence has empty image";
+    } else if (!payload_valid) {
+        diagnostic = "decoded payload evidence has invalid byte count";
+    } else {
+        diagnostic = "decoded payload evidence recorded";
+    }
+
+    return render_image_decoded_payload_evidence{
+        .pixel_format = image.pixel_format,
+        .pixel_count = pixel_count,
+        .expected_byte_count = expected_byte_count,
+        .decoded_byte_count = decoded_byte_count,
+        .stable_byte_hash = render_image_decoded_payload_stable_hash(image.pixels),
+        .payload_valid = payload_valid,
+        .rgba8_sample_available = rgba8_sample_available,
+        .first_pixel = rgba8_sample_available
+            ? make_render_image_decoded_rgba8_sample(image, 0)
+            : render_image_decoded_rgba8_sample{},
+        .last_pixel = rgba8_sample_available
+            ? make_render_image_decoded_rgba8_sample(image, pixel_count - 1)
+            : render_image_decoded_rgba8_sample{},
+        .all_alpha_opaque = all_alpha_opaque,
+        .contains_transparent_alpha = contains_transparent_alpha,
+        .diagnostic = std::move(diagnostic),
+    };
 }
 
 inline render_image_upload_readiness_snapshot make_render_image_upload_readiness_snapshot(
@@ -383,6 +499,7 @@ inline render_image_upload_readiness_snapshot make_render_image_upload_readiness
         .metadata_actual_decoded_byte_count =
             decode_metadata.size_validation.actual_decoded_byte_count,
         .staging_byte_count = payload_valid ? decoded_byte_count : 0,
+        .decoded_payload = make_render_image_decoded_payload_evidence(image),
         .decode_handoff_diagnostic = std::move(decode_handoff_diagnostic),
         .diagnostic = std::move(diagnostic),
     };

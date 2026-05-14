@@ -541,6 +541,15 @@ void test_filesystem_pipeline_routes_real_jpeg_through_stb_upload_handoff()
     require(
         snapshot.upload_snapshot.request_snapshots[0].staging_byte_count == 4,
         "real JPEG upload snapshot records staging bytes");
+    const render_image_decoded_payload_evidence& upload_payload =
+        snapshot.upload_snapshot.request_snapshots[0].decoded_payload;
+    require(upload_payload.payload_valid, "real JPEG upload snapshot records valid decoded payload evidence");
+    require(upload_payload.decoded_byte_count == 4, "real JPEG upload payload evidence records RGBA byte count");
+    require(upload_payload.rgba8_sample_available, "real JPEG upload payload evidence records RGBA samples");
+    require(upload_payload.first_pixel.available, "real JPEG upload payload evidence records first pixel sample");
+    require(upload_payload.last_pixel.available, "real JPEG upload payload evidence records last pixel sample");
+    require(upload_payload.first_pixel.rgba[3] == 0xff, "real JPEG upload payload evidence records opaque alpha");
+    require(upload_payload.all_alpha_opaque, "real JPEG upload payload evidence records alpha opacity");
     require(snapshot.cache_snapshot.texture_count == 1, "real JPEG pipeline caches decoded texture");
     require(snapshot.cache_snapshot.cached_decoded_byte_count == 4, "real JPEG cache records decoded RGBA bytes");
     require(snapshot.entries[0].encoded_byte_count == fixture_bytes.size(), "real JPEG snapshot records source byte count");
@@ -567,6 +576,13 @@ void test_filesystem_pipeline_routes_real_jpeg_through_stb_upload_handoff()
     require(readiness.metadata_expected_decoded_byte_count == 4, "real JPEG readiness records expected bytes");
     require(readiness.metadata_actual_decoded_byte_count == 4, "real JPEG readiness records actual bytes");
     require(readiness.staging_byte_count == 4, "real JPEG readiness records staging bytes");
+    require(readiness.decoded_payload.payload_valid, "real JPEG cache readiness records decoded payload evidence");
+    require(
+        readiness.decoded_payload.stable_byte_hash == upload_payload.stable_byte_hash,
+        "real JPEG cache readiness payload evidence matches upload request evidence");
+    require(
+        readiness.decoded_payload.first_pixel.rgba == upload_payload.first_pixel.rgba,
+        "real JPEG cache readiness preserves first decoded RGBA sample");
     require(
         readiness.decode_handoff_diagnostic == "decode handoff metadata matches decoded image",
         "real JPEG readiness records matching handoff diagnostic");

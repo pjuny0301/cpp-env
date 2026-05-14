@@ -6,6 +6,9 @@
 
 최근 baseline 통합 증거:
 
+- current: decoded image payload upload evidence and Vulkan instance-scoped dispatch readiness integrated; Windows MinGW focused image/Vulkan CTest passed 5/5.
+- `3874cfb`: image upload readiness and fake upload snapshots now carry stable decoded payload evidence, including byte hash, decoded byte counts, RGBA edge samples, and alpha opacity flags.
+- `2f1984f`: Vulkan backend now collects instance-scoped dispatch readiness for `vkDestroyInstance` and gates dispatch-table destroy before any invalid pointer/native call.
 - current: UTF-8 cluster-preserving font fallback segmentation and materialized asset byte cache-policy summaries integrated; Windows MinGW focused text/asset CTest passed 6/6.
 - `8c54665`: text fallback planning now keeps coverage/fallback decisions aligned to UTF-8 clusters, including combining-mark and mixed-script cases, without renderer/domain coupling.
 - `fa732ea`: asset byte diagnostics now summarize materialized cache policy entries with content hash evidence and integrity failure counts.

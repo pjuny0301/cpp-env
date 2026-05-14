@@ -9,6 +9,10 @@
 - current: Vulkan global loader proc resolution, materialized asset byte-read routing, and native `stb_image` memory decode handoff tightening integrated; Windows MinGW focused renderer/image/Vulkan/asset CTest passed 4/4.
 - current: materialized asset source/rooted-path mismatch rejection integrated; Windows MinGW focused asset CTest passed 2/2.
 - current: `utf8proc` runtime-backed UTF-8 run diagnostics integrated behind the text engine contract; Windows MinGW focused text CTest passed 11/11, excluding the known host permission-denied shaped-atlas executable.
+- current: asset byte content hash evidence, `stb_image`-routed standard image pipeline, and opt-in native Vulkan instance smoke path integrated; Windows MinGW focused asset/image/Vulkan CTest passed 6/6.
+- `e2704aa`: asset byte providers now report deterministic non-cryptographic content hash evidence and integrity validation can detect reported hash mismatches.
+- `bc37ec0`: standard image texture pipeline can route eligible requests through the real `stb_image` adapter without forcing renderer ownership of decode/cache internals.
+- `c6c7bb3`/`6368d57`: Vulkan backend owns native instance function-table/create/destroy contracts, with actual system-loader instance creation guarded by `QUIZ_VULKAN_RUN_NATIVE_VULKAN_SMOKE=1`.
 - `bc2d474`: text UTF-8 run helpers now use linked `utf8proc` for scalar iteration, combining mark classification, and grapheme boundary evidence when the external library is available.
 - `29f7aaa`: asset runtime materialization now rejects rooted filesystem paths whose suffix does not match the normalized source path before byte loading.
 - `4507f71`: Vulkan backend now attempts global entrypoint resolution through loader `vkGetInstanceProcAddr` and records direct-export fallback evidence without scene/UI/domain coupling.

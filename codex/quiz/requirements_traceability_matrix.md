@@ -6,6 +6,10 @@
 
 최근 baseline 통합 증거:
 
+- current: Vulkan loader candidate diagnostics, text backend work-readiness diagnostics, and asset cache-key component classification integrated; Windows MinGW focused Vulkan/text/asset CTest passed 4/4 and interface compile target builds confirmed.
+- `a5a9663`: Vulkan backend now records per-loader-candidate missing-library, missing-required-symbol, and usable classifications without requiring a platform window or scene/UI/domain coupling.
+- `dbc5fce`: text engine now reports whether approved external font backend work is header-only, source-ready, library-linked, adapter-ready, deterministic fallback-only, or missing an approved header.
+- `b281c0b`: asset resolver cache-key classification now exposes explicit type/source/revision components so font/image/sound/shader/deck pipelines can consume stable cache identity data without reparsing cache keys.
 - current: Vulkan/VMA external header evidence threaded into native-path and frame handoff diagnostics; Windows MinGW focused Vulkan/renderer CTest passed 3/3 and interface compile target build confirmed.
 - `ed01afb`: Vulkan backend now reports checked external header availability separately from native function-table readiness in SDK native path and frame pipeline summaries.
 - current: native stb image memory decode integrated behind the image decoder adapter boundary; Windows MinGW focused image CTest passed 3/3 and interface compile target build confirmed.

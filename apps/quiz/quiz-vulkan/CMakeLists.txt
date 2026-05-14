@@ -405,7 +405,12 @@ target_sources(
 )
 target_compile_features(quiz_vulkan_text_engine PUBLIC cxx_std_23)
 target_include_directories(quiz_vulkan_text_engine PUBLIC src)
-target_link_libraries(quiz_vulkan_text_engine PUBLIC quiz_vulkan_render_contract)
+target_link_libraries(
+    quiz_vulkan_text_engine
+    PUBLIC
+        quiz_vulkan_render_contract
+        quiz_vulkan_utf8proc_external
+)
 target_link_libraries(quiz_vulkan_text_scene_bridge INTERFACE quiz_vulkan_scene quiz_vulkan_render_contract)
 
 add_library(quiz_vulkan_image_engine STATIC)

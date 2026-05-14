@@ -6,6 +6,9 @@
 
 최근 baseline 통합 증거:
 
+- current: FreeType face-load readiness and native Vulkan physical-device enumeration readiness integrated; Windows MinGW focused text/Vulkan CTest passed 7/7.
+- `b5c8e91`: text backend readiness now combines materialized font bytes, SFNT/cmap evidence, and FreeType backend work states, while explicitly reporting remaining `quiz_vulkan_freetype_external` and `FT_New_Memory_Face` wiring.
+- `a909eb6`: Vulkan backend now models physical-device dispatch/enumeration readiness with opaque handles and fake tests for unavailable instance, missing symbol, zero devices, and usable devices.
 - current: typed materialized asset byte summaries and decoded-payload-to-texture-request handoff bridge integrated; Windows MinGW focused asset/image CTest passed 5/5.
 - current: Windows MinGW full CTest attempted 103 configured tests; 102 executed tests passed, with `quiz_vulkan_font_shaped_atlas_update_tests` still blocked by host access-denied execution after clean target rebuild.
 - `c774460`: asset system now groups materialized byte summaries by engine-facing type while preserving cache key, source URI, materialized path, byte count/hash, and integrity state.

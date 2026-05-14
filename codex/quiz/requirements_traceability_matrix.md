@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: text external header probe diagnostics threaded into fake text engine diagnostics; Windows MinGW focused text CTest passed 2/2 and interface compile target build confirmed.
+- `7ca7699`: text engine now records approved FreeType/HarfBuzz/utf8proc header evidence in dependency policy and per-run backend selection snapshots without linking real font libraries.
 - current: input action replay classification summary integrated; Windows MinGW focused input CTest passed 1/1 and interface compile target build confirmed.
 - `4eac3e9`: input core now exposes compact replay classification summaries and stable string tokens for churn, regression, improvement, mixed, and stable changes.
 - current: stb compile-time header probe integrated behind the third-party image decoder adapter; Windows MinGW focused image CTest passed 2/2 and interface compile target build confirmed.

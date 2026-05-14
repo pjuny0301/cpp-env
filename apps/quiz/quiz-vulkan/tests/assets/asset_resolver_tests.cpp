@@ -70,6 +70,11 @@ void test_asset_cache_key_classification_extracts_source_policy()
     require(shader.status == asset_cache_key_policy_status::accepted, "shader cache key status is accepted");
     require(shader.type == asset_type::shader, "shader cache key type is parsed");
     require(shader.source_kind == asset_source_kind::asset_uri, "shader cache key source kind is parsed");
+    require(shader.type_component == "shader", "shader cache key type component is exposed");
+    require(
+        shader.source_component == "asset://shaders/ui.vert.spv",
+        "shader cache key source component is exposed");
+    require(shader.revision_component == "rev=pack-2026.05", "shader cache key revision component is exposed");
     require(shader.normalized_uri == "asset://shaders/ui.vert.spv", "shader cache key uri is preserved");
     require(shader.source_path == "shaders/ui.vert.spv", "shader cache key source path is available");
     require(shader.has_cache_revision(), "shader cache key revision is detected");
@@ -82,6 +87,9 @@ void test_asset_cache_key_classification_extracts_source_policy()
     require(deck.ok(), "deck cache key classification is accepted");
     require(deck.type == asset_type::deck, "deck cache key type is parsed");
     require(deck.source_kind == asset_source_kind::local_path, "deck cache key local source is classified");
+    require(deck.type_component == "deck", "deck cache key type component is exposed");
+    require(deck.source_component == "decks/main.quiz", "deck cache key source component is exposed");
+    require(deck.revision_component.empty(), "deck cache key has no revision component");
     require(deck.source_path == "decks/main.quiz", "deck cache key local source path is available");
     require(!deck.has_cache_revision(), "deck cache key without rev has no revision");
 
@@ -89,6 +97,10 @@ void test_asset_cache_key_classification_extracts_source_policy()
         classify_asset_cache_key("image|https://example.test/cards/front.png");
     require(remote.ok(), "remote image cache key classification is accepted");
     require(remote.source_kind == asset_source_kind::https_uri, "remote image cache key source kind is parsed");
+    require(remote.type_component == "image", "remote cache key type component is exposed");
+    require(
+        remote.source_component == "https://example.test/cards/front.png",
+        "remote cache key source component is exposed");
     require(remote.source_path.empty(), "remote cache keys do not claim a rooted source path");
 }
 
@@ -111,6 +123,7 @@ void test_asset_cache_key_classification_rejects_ambiguous_or_noncanonical_keys(
     require(
         unsupported.status == asset_cache_key_policy_status::unsupported_asset_type,
         "unsupported type status is explicit");
+    require(unsupported.type_component == "video", "unsupported type component remains inspectable");
 
     const asset_cache_key_classification missing_source = classify_asset_cache_key("image|");
     require(!missing_source.ok(), "cache key without source uri is rejected");
@@ -144,6 +157,12 @@ void test_asset_cache_key_classification_rejects_ambiguous_or_noncanonical_keys(
     require(
         bad_revision.status == asset_cache_key_policy_status::invalid_revision,
         "unknown revision field status is explicit");
+    require(
+        bad_revision.source_component == "asset://fonts/body.ttf",
+        "invalid revision keeps source component inspectable");
+    require(
+        bad_revision.revision_component == "version=v2",
+        "invalid revision keeps revision component inspectable");
 
     const asset_cache_key_classification empty_revision =
         classify_asset_cache_key("font|asset://fonts/body.ttf|rev=");

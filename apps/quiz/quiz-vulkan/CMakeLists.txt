@@ -117,6 +117,35 @@ else()
     )
 endif()
 
+set(QUIZ_VULKAN_FREETYPE_EXTERNAL_DIR "${QUIZ_VULKAN_DESKTOP_EXTERNAL_DIR}/freetype-2.14.3")
+if(EXISTS "${QUIZ_VULKAN_FREETYPE_EXTERNAL_DIR}/CMakeLists.txt")
+    set(FT_DISABLE_ZLIB TRUE CACHE BOOL "Disable optional zlib support for quiz-vulkan FreeType" FORCE)
+    set(FT_DISABLE_BZIP2 TRUE CACHE BOOL "Disable optional bzip2 support for quiz-vulkan FreeType" FORCE)
+    set(FT_DISABLE_PNG TRUE CACHE BOOL "Disable optional PNG support for quiz-vulkan FreeType" FORCE)
+    set(FT_DISABLE_HARFBUZZ TRUE CACHE BOOL "Disable optional HarfBuzz support for quiz-vulkan FreeType" FORCE)
+    set(FT_DISABLE_BROTLI TRUE CACHE BOOL "Disable optional Brotli support for quiz-vulkan FreeType" FORCE)
+    set(FT_ENABLE_ERROR_STRINGS TRUE CACHE BOOL "Enable FreeType error strings for diagnostics" FORCE)
+    add_subdirectory(
+        "${QUIZ_VULKAN_FREETYPE_EXTERNAL_DIR}"
+        "${CMAKE_BINARY_DIR}/external/freetype"
+        EXCLUDE_FROM_ALL
+    )
+    add_library(quiz_vulkan_freetype_external INTERFACE)
+    target_link_libraries(quiz_vulkan_freetype_external INTERFACE freetype)
+    target_compile_definitions(
+        quiz_vulkan_freetype_external
+        INTERFACE
+            QUIZ_VULKAN_HAS_FREETYPE_EXTERNAL_LIBRARY=1
+    )
+else()
+    add_library(quiz_vulkan_freetype_external INTERFACE)
+    target_compile_definitions(
+        quiz_vulkan_freetype_external
+        INTERFACE
+            QUIZ_VULKAN_HAS_FREETYPE_EXTERNAL_LIBRARY=0
+    )
+endif()
+
 add_library(quiz_vulkan_platform_shell STATIC)
 target_sources(
     quiz_vulkan_platform_shell
@@ -409,6 +438,7 @@ target_link_libraries(
     quiz_vulkan_text_engine
     PUBLIC
         quiz_vulkan_render_contract
+        quiz_vulkan_freetype_external
         quiz_vulkan_utf8proc_external
 )
 target_link_libraries(quiz_vulkan_text_scene_bridge INTERFACE quiz_vulkan_scene quiz_vulkan_render_contract)

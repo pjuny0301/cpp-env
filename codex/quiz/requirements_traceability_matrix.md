@@ -6,6 +6,7 @@
 
 최근 baseline 통합 증거:
 
+- current: FreeType 2.14.3 external source is now built as `quiz_vulkan_freetype_external` and linked into `quiz_vulkan_text_engine`; Windows MinGW focused text CTest passed 2/2.
 - current: FreeType face-load readiness and native Vulkan physical-device enumeration readiness integrated; Windows MinGW focused text/Vulkan CTest passed 7/7.
 - `b5c8e91`: text backend readiness now combines materialized font bytes, SFNT/cmap evidence, and FreeType backend work states, while explicitly reporting remaining `quiz_vulkan_freetype_external` and `FT_New_Memory_Face` wiring.
 - `a909eb6`: Vulkan backend now models physical-device dispatch/enumeration readiness with opaque handles and fake tests for unavailable instance, missing symbol, zero devices, and usable devices.

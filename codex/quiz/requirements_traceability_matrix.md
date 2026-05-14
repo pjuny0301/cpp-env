@@ -6,6 +6,9 @@
 
 최근 baseline 통합 증거:
 
+- current: UTF-8 cluster-preserving font fallback segmentation and materialized asset byte cache-policy summaries integrated; Windows MinGW focused text/asset CTest passed 6/6.
+- `8c54665`: text fallback planning now keeps coverage/fallback decisions aligned to UTF-8 clusters, including combining-mark and mixed-script cases, without renderer/domain coupling.
+- `fa732ea`: asset byte diagnostics now summarize materialized cache policy entries with content hash evidence and integrity failure counts.
 - current: Vulkan global loader proc resolution, materialized asset byte-read routing, and native `stb_image` memory decode handoff tightening integrated; Windows MinGW focused renderer/image/Vulkan/asset CTest passed 4/4.
 - current: materialized asset source/rooted-path mismatch rejection integrated; Windows MinGW focused asset CTest passed 2/2.
 - current: `utf8proc` runtime-backed UTF-8 run diagnostics integrated behind the text engine contract; Windows MinGW focused text CTest passed 11/11, excluding the known host permission-denied shaped-atlas executable.

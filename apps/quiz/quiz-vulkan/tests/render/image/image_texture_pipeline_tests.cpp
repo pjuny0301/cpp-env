@@ -85,6 +85,10 @@ static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_textu
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_frame_binding_summary_diff>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_binding_summary>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_binding_summary_diff>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_frame_binding_payload_evidence_entry>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_frame_binding_payload_evidence_summary>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_binding_payload_evidence_entry>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_binding_payload_evidence_summary>);
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_external_decoder_selection_entry_diff>);
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_external_decoder_selection_snapshot_diff>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_external_decoder_selection_entry_diff>);
@@ -2968,6 +2972,85 @@ void test_texture_frame_upload_handoff_links_bindings_to_upload_results()
     require(third.stable_texture_cache_key != first.stable_texture_cache_key, "sampler-separated handoff entry has distinct key");
     require(third.decoded_payload.payload_valid, "sampler-separated handoff entry preserves decoded payload evidence");
 
+    const render_image_texture_frame_binding_payload_evidence_summary binding_evidence =
+        make_render_image_texture_frame_binding_payload_evidence_summary(binding_plan, handoff);
+    require(binding_evidence.ok(), "binding payload evidence is ready for uploaded bindings");
+    require(binding_evidence.binding_packet_count == 3, "binding payload evidence records binding packet count");
+    require(binding_evidence.evidence_entry_count == 3, "binding payload evidence has one entry per binding");
+    require(binding_evidence.proven_payload_count == 3, "binding payload evidence proves each decoded upload");
+    require(binding_evidence.placeholder_payload_count == 0, "binding payload evidence records no placeholders");
+    require(binding_evidence.missing_upload_result_count == 0, "binding payload evidence records no missing uploads");
+    require(binding_evidence.failed_binding_count == 0, "binding payload evidence records no failed bindings");
+    require(binding_evidence.rejected_upload_count == 0, "binding payload evidence records no rejected uploads");
+    require(binding_evidence.decoded_payload_hash_count == 3, "binding payload evidence records decoded hashes");
+    require(binding_evidence.accepted_upload_result_count == 3, "binding payload evidence records accepted uploads");
+    require(binding_evidence.cache_reused_count == 1, "binding payload evidence records cache reuse");
+    require(binding_evidence.renderer_handoff_ready, "binding payload evidence records renderer handoff readiness");
+    require(
+        binding_evidence.evidence_summary == "binding_payloads=3; payload_hashes=3; accepted_uploads=3",
+        "binding payload evidence summary is stable");
+    require(
+        binding_evidence.diagnostic == "image texture binding payload evidence is ready",
+        "binding payload evidence ready diagnostic is stable");
+    require(binding_evidence.entries.size() == 3, "binding payload evidence exposes entries");
+
+    const render_image_texture_frame_binding_payload_evidence_entry& first_evidence =
+        binding_evidence.entries[0];
+    require(first_evidence.ok(), "first binding payload evidence is ok");
+    require(
+        first_evidence.status == render_image_texture_frame_binding_payload_evidence_status::payload_proven,
+        "first binding payload evidence status is proven");
+    require(
+        first_evidence.binding_status == render_image_texture_frame_binding_packet_status::ready,
+        "first binding payload evidence preserves binding status");
+    require(
+        first_evidence.handoff_status == render_image_texture_frame_upload_handoff_entry_status::ready,
+        "first binding payload evidence preserves handoff status");
+    require(
+        first_evidence.upload_result_status == render_image_texture_upload_result_packet_status::accepted,
+        "first binding payload evidence preserves upload result status");
+    require(first_evidence.texture_id == first.texture_id, "first binding payload evidence preserves texture id");
+    require(
+        first_evidence.upload_request_id == first.upload_request_id,
+        "first binding payload evidence preserves upload request id");
+    require(
+        first_evidence.stable_texture_cache_key == first.stable_texture_cache_key,
+        "first binding payload evidence preserves stable cache key");
+    require(first_evidence.sampler_key == first.sampler_key, "first binding payload evidence preserves sampler key");
+    require(
+        first_evidence.decoded_payload_hash == first_payload.stable_byte_hash,
+        "first binding payload evidence preserves decoded payload hash");
+    require(first_evidence.decoded_byte_count == 8, "first binding payload evidence preserves decoded byte count");
+    require(first_evidence.uploaded_byte_count == 8, "first binding payload evidence preserves uploaded byte count");
+    require(first_evidence.decoded_payload_valid, "first binding payload evidence records decoded payload validity");
+    require(first_evidence.upload_result_present, "first binding payload evidence records upload presence");
+    require(first_evidence.upload_result_accepted, "first binding payload evidence records accepted upload");
+    require(
+        first_evidence.evidence_key.find("payload_hash=" + std::to_string(first_payload.stable_byte_hash))
+            != std::string::npos,
+        "first binding payload evidence key includes decoded payload hash");
+
+    const render_image_texture_frame_binding_payload_evidence_entry& second_evidence =
+        binding_evidence.entries[1];
+    require(second_evidence.cache_reused, "cache-hit binding payload evidence records cache reuse");
+    require(
+        second_evidence.upload_request_id == first.upload_request_id,
+        "cache-hit binding payload evidence points to original upload request");
+    require(
+        second_evidence.decoded_payload_hash == first_payload.stable_byte_hash,
+        "cache-hit binding payload evidence reuses decoded payload hash");
+    require(
+        second_evidence.texture_id == first.texture_id,
+        "cache-hit binding payload evidence preserves reused texture id");
+
+    const render_image_texture_frame_binding_payload_evidence_entry& third_evidence =
+        binding_evidence.entries[2];
+    require(third_evidence.upload_request_id == third.upload_request_id, "sampler-separated evidence records upload id");
+    require(third_evidence.texture_id == third.texture_id, "sampler-separated evidence records texture id");
+    require(
+        third_evidence.sampler_key != first_evidence.sampler_key,
+        "sampler-separated evidence preserves distinct sampler");
+
     const render_image_texture_frame_resource_packet_plan resource_plan =
         make_render_image_texture_frame_resource_packet_plan(handoff);
     require(resource_plan.ok(), "resource packet plan remains ready from decoded upload handoff");
@@ -3040,10 +3123,12 @@ void test_texture_frame_upload_handoff_reports_placeholders_and_blockers()
         execute_render_image_texture_batch_plan(plan, pipeline);
     const render_image_texture_frame_snapshot frame =
         make_render_image_texture_frame_snapshot(plan, execution);
+    const render_image_texture_frame_binding_plan binding_plan =
+        make_render_image_texture_frame_binding_plan(frame);
     const render_image_texture_upload_result_snapshot upload_result =
         make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(uploader.diagnostic_snapshot());
     const render_image_texture_frame_upload_handoff_summary handoff =
-        make_render_image_texture_frame_upload_handoff_summary(frame, upload_result);
+        make_render_image_texture_frame_upload_handoff_summary(frame, binding_plan, upload_result);
 
     require(!handoff.ok(), "frame upload handoff reports invalid request blocker");
     require(!handoff.renderer_handoff_ready, "frame upload handoff is not renderer-ready with blocker");
@@ -3085,6 +3170,62 @@ void test_texture_frame_upload_handoff_reports_placeholders_and_blockers()
     require(placeholder.uploaded_byte_count == 16, "placeholder upload handoff records uploaded bytes");
     require(placeholder.mip_level_count == 1, "placeholder upload handoff records mip level");
     require(is_fake_image_texture_placeholder_key(placeholder.texture_key), "placeholder handoff keeps placeholder key");
+
+    const render_image_texture_frame_binding_payload_evidence_summary binding_evidence =
+        make_render_image_texture_frame_binding_payload_evidence_summary(binding_plan, handoff);
+    require(!binding_evidence.ok(), "binding payload evidence reports missing upload blockers");
+    require(binding_evidence.binding_packet_count == 2, "blocked binding payload evidence records binding count");
+    require(binding_evidence.evidence_entry_count == 2, "blocked binding payload evidence records entries");
+    require(binding_evidence.placeholder_payload_count == 1, "blocked binding payload evidence records placeholder");
+    require(
+        binding_evidence.missing_upload_result_count == 1,
+        "blocked binding payload evidence records missing upload");
+    require(binding_evidence.failed_binding_count == 0, "missing upload is classified before binding failure");
+    require(binding_evidence.rejected_upload_count == 0, "placeholder evidence records no rejected upload");
+    require(binding_evidence.decoded_payload_hash_count == 1, "placeholder evidence records placeholder payload hash");
+    require(binding_evidence.accepted_upload_result_count == 1, "placeholder evidence records accepted placeholder");
+    require(binding_evidence.has_placeholders, "blocked binding payload evidence records placeholder aggregate");
+    require(
+        binding_evidence.has_missing_upload_results,
+        "blocked binding payload evidence records missing upload aggregate");
+    require(
+        binding_evidence.diagnostic == "image texture binding payload evidence has missing upload results",
+        "blocked binding payload evidence diagnostic is stable");
+
+    const render_image_texture_frame_binding_payload_evidence_entry& missing_evidence =
+        binding_evidence.entries[0];
+    require(
+        missing_evidence.status
+            == render_image_texture_frame_binding_payload_evidence_status::missing_upload_result,
+        "missing binding payload evidence status is stable");
+    require(missing_evidence.failed, "missing binding payload evidence preserves binding failure flag");
+    require(!missing_evidence.upload_result_present, "missing binding payload evidence records missing upload");
+
+    const render_image_texture_frame_binding_payload_evidence_entry& placeholder_evidence =
+        binding_evidence.entries[1];
+    require(placeholder_evidence.ok(), "placeholder binding payload evidence is acceptable");
+    require(
+        placeholder_evidence.status
+            == render_image_texture_frame_binding_payload_evidence_status::placeholder_payload,
+        "placeholder binding payload evidence status is stable");
+    require(placeholder_evidence.placeholder_texture, "placeholder binding payload evidence preserves placeholder");
+    require(
+        placeholder_evidence.upload_result_status
+            == render_image_texture_upload_result_packet_status::accepted_placeholder,
+        "placeholder binding payload evidence preserves upload result status");
+    require(
+        placeholder_evidence.upload_request_id == placeholder.upload_request_id,
+        "placeholder binding payload evidence preserves upload request id");
+    require(
+        placeholder_evidence.texture_id == placeholder.texture_id,
+        "placeholder binding payload evidence preserves texture id");
+    require(
+        placeholder_evidence.stable_texture_cache_key == placeholder.stable_texture_cache_key,
+        "placeholder binding payload evidence preserves cache key");
+    require(placeholder_evidence.uploaded_byte_count == 16, "placeholder evidence preserves uploaded bytes");
+    require(
+        placeholder_evidence.decoded_payload_hash == placeholder.decoded_payload.stable_byte_hash,
+        "placeholder evidence preserves decoded payload hash");
 }
 
 void test_texture_frame_upload_handoff_preserves_blocked_placeholder_retry_evidence()

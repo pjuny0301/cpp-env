@@ -5,6 +5,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace quiz_vulkan::render {
 
@@ -189,6 +191,319 @@ inline render_image_texture_frame_binding_summary make_render_image_texture_fram
 {
     return make_render_image_texture_frame_binding_summary(
         make_render_image_texture_frame_upload_handoff_summary(frame, upload_result));
+}
+
+enum class render_image_texture_frame_binding_payload_evidence_status {
+    payload_proven,
+    placeholder_payload,
+    missing_upload_result,
+    binding_failed,
+    upload_rejected,
+};
+
+inline std::string render_image_texture_frame_binding_payload_evidence_status_name(
+    render_image_texture_frame_binding_payload_evidence_status status)
+{
+    switch (status) {
+    case render_image_texture_frame_binding_payload_evidence_status::payload_proven:
+        return "payload_proven";
+    case render_image_texture_frame_binding_payload_evidence_status::placeholder_payload:
+        return "placeholder_payload";
+    case render_image_texture_frame_binding_payload_evidence_status::missing_upload_result:
+        return "missing_upload_result";
+    case render_image_texture_frame_binding_payload_evidence_status::binding_failed:
+        return "binding_failed";
+    case render_image_texture_frame_binding_payload_evidence_status::upload_rejected:
+        return "upload_rejected";
+    }
+
+    return "unknown";
+}
+
+struct render_image_texture_frame_binding_payload_evidence_entry {
+    std::size_t sequence = 0;
+    std::size_t request_index = 0;
+    render_image_texture_frame_binding_payload_evidence_status status =
+        render_image_texture_frame_binding_payload_evidence_status::missing_upload_result;
+    std::string status_name = render_image_texture_frame_binding_payload_evidence_status_name(
+        render_image_texture_frame_binding_payload_evidence_status::missing_upload_result);
+    render_image_texture_frame_binding_packet_status binding_status =
+        render_image_texture_frame_binding_packet_status::failed;
+    std::string binding_status_name;
+    render_image_texture_frame_upload_handoff_entry_status handoff_status =
+        render_image_texture_frame_upload_handoff_entry_status::missing_upload_result;
+    std::string handoff_status_name;
+    render_image_texture_upload_result_packet_status upload_result_status =
+        render_image_texture_upload_result_packet_status::rejected_missing_snapshot;
+    std::string upload_result_status_name = render_image_texture_upload_result_packet_status_name(
+        render_image_texture_upload_result_packet_status::rejected_missing_snapshot);
+    render_image_texture_upload_status upload_status = render_image_texture_upload_status::invalid_image;
+    std::string upload_status_name = render_image_texture_upload_operation_upload_status_name(
+        render_image_texture_upload_status::invalid_image);
+    std::string render_image_uri;
+    std::string normalized_uri;
+    render_image_cache_key cache_key;
+    render_image_sampler_policy sampler;
+    std::string sampler_key;
+    render_image_texture_key texture_key;
+    std::string stable_texture_cache_key;
+    render_image_texture_id texture_id = 0;
+    render_image_revision texture_revision = 0;
+    std::uint64_t upload_request_id = 0;
+    std::uint64_t upload_generation_id = 0;
+    std::size_t uploaded_byte_count = 0;
+    std::size_t decoded_byte_count = 0;
+    std::uint64_t decoded_payload_hash = 0;
+    bool binding_packet_present = true;
+    bool upload_result_present = false;
+    bool upload_result_accepted = false;
+    bool decoded_payload_valid = false;
+    bool decoded_payload_hash_present = false;
+    bool renderer_handoff_ready = false;
+    bool placeholder_texture = false;
+    bool failed = true;
+    bool blocked = true;
+    bool cache_reused = false;
+    bool expected_cache_reuse = false;
+    std::string evidence_key;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return status == render_image_texture_frame_binding_payload_evidence_status::payload_proven
+            || status == render_image_texture_frame_binding_payload_evidence_status::placeholder_payload;
+    }
+};
+
+struct render_image_texture_frame_binding_payload_evidence_summary {
+    std::size_t binding_packet_count = 0;
+    std::size_t evidence_entry_count = 0;
+    std::size_t proven_payload_count = 0;
+    std::size_t placeholder_payload_count = 0;
+    std::size_t missing_upload_result_count = 0;
+    std::size_t failed_binding_count = 0;
+    std::size_t rejected_upload_count = 0;
+    std::size_t decoded_payload_hash_count = 0;
+    std::size_t accepted_upload_result_count = 0;
+    std::size_t cache_reused_count = 0;
+    bool binding_evidence_ready = false;
+    bool renderer_handoff_ready = false;
+    bool has_placeholders = false;
+    bool has_failures = false;
+    bool has_rejections = false;
+    bool has_missing_upload_results = false;
+    bool cache_reused = false;
+    std::vector<render_image_texture_frame_binding_payload_evidence_entry> entries;
+    std::string evidence_summary;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return binding_evidence_ready && !has_failures && !has_rejections && !has_missing_upload_results;
+    }
+};
+
+inline render_image_texture_frame_binding_payload_evidence_status
+render_image_texture_frame_binding_payload_evidence_status_for(
+    const render_image_texture_frame_binding_packet& binding_packet,
+    const render_image_texture_frame_upload_handoff_entry* handoff_entry)
+{
+    if (handoff_entry == nullptr || !handoff_entry->upload_result_present) {
+        return render_image_texture_frame_binding_payload_evidence_status::missing_upload_result;
+    }
+    if (binding_packet.failed) {
+        return render_image_texture_frame_binding_payload_evidence_status::binding_failed;
+    }
+    if (handoff_entry->blocked
+        || !render_image_texture_upload_result_packet_status_is_accepted(handoff_entry->upload_result_status)) {
+        return render_image_texture_frame_binding_payload_evidence_status::upload_rejected;
+    }
+    if (binding_packet.placeholder_texture || handoff_entry->placeholder_texture) {
+        return render_image_texture_frame_binding_payload_evidence_status::placeholder_payload;
+    }
+    return render_image_texture_frame_binding_payload_evidence_status::payload_proven;
+}
+
+inline std::string render_image_texture_frame_binding_payload_evidence_key_for(
+    const render_image_texture_frame_binding_payload_evidence_entry& entry)
+{
+    return entry.stable_texture_cache_key
+        + "|sampler=" + entry.sampler_key
+        + "|texture=" + std::to_string(entry.texture_id)
+        + "|upload=" + std::to_string(entry.upload_request_id)
+        + "|upload_status=" + entry.upload_result_status_name
+        + "|payload_hash=" + std::to_string(entry.decoded_payload_hash);
+}
+
+inline render_image_texture_frame_binding_payload_evidence_entry
+make_render_image_texture_frame_binding_payload_evidence_entry(
+    const render_image_texture_frame_binding_packet& binding_packet,
+    const render_image_texture_frame_upload_handoff_entry* handoff_entry)
+{
+    const render_image_texture_frame_binding_payload_evidence_status status =
+        render_image_texture_frame_binding_payload_evidence_status_for(binding_packet, handoff_entry);
+
+    render_image_texture_frame_binding_payload_evidence_entry entry{
+        .sequence = binding_packet.sequence,
+        .request_index = binding_packet.request_index,
+        .status = status,
+        .status_name = render_image_texture_frame_binding_payload_evidence_status_name(status),
+        .binding_status = binding_packet.status,
+        .binding_status_name = binding_packet.status_name,
+        .render_image_uri = binding_packet.render_image_uri,
+        .normalized_uri = binding_packet.normalized_uri,
+        .cache_key = binding_packet.cache_key,
+        .sampler = binding_packet.sampler,
+        .sampler_key = binding_packet.sampler_key,
+        .texture_key = binding_packet.texture_key,
+        .stable_texture_cache_key = binding_packet.stable_texture_cache_key,
+        .texture_id = binding_packet.texture_id,
+        .texture_revision = binding_packet.texture_revision,
+        .renderer_handoff_ready = binding_packet.renderer_handoff_ready,
+        .placeholder_texture = binding_packet.placeholder_texture,
+        .failed = binding_packet.failed,
+        .cache_reused = binding_packet.cache_reused,
+        .expected_cache_reuse = binding_packet.expected_cache_reuse,
+    };
+
+    if (handoff_entry != nullptr) {
+        entry.handoff_status = handoff_entry->status;
+        entry.handoff_status_name = handoff_entry->status_name;
+        entry.upload_result_status = handoff_entry->upload_result_status;
+        entry.upload_result_status_name = handoff_entry->upload_result_status_name;
+        entry.upload_status = handoff_entry->upload_status;
+        entry.upload_status_name = handoff_entry->upload_status_name;
+        entry.upload_request_id = handoff_entry->upload_request_id;
+        entry.upload_generation_id = handoff_entry->upload_generation_id;
+        entry.uploaded_byte_count = handoff_entry->uploaded_byte_count;
+        entry.decoded_byte_count = handoff_entry->decoded_payload.decoded_byte_count;
+        entry.decoded_payload_hash = handoff_entry->decoded_payload.stable_byte_hash;
+        entry.upload_result_present = handoff_entry->upload_result_present;
+        entry.upload_result_accepted =
+            render_image_texture_upload_result_packet_status_is_accepted(handoff_entry->upload_result_status);
+        entry.decoded_payload_valid = handoff_entry->decoded_payload.payload_valid;
+        entry.decoded_payload_hash_present = handoff_entry->decoded_payload.stable_byte_hash != 0;
+        entry.placeholder_texture = entry.placeholder_texture || handoff_entry->placeholder_texture;
+        entry.blocked = handoff_entry->blocked;
+    }
+
+    entry.evidence_key = render_image_texture_frame_binding_payload_evidence_key_for(entry);
+    switch (entry.status) {
+    case render_image_texture_frame_binding_payload_evidence_status::payload_proven:
+        entry.diagnostic = "image texture binding payload evidence is proven";
+        break;
+    case render_image_texture_frame_binding_payload_evidence_status::placeholder_payload:
+        entry.diagnostic = "image texture binding payload evidence uses placeholder texture";
+        break;
+    case render_image_texture_frame_binding_payload_evidence_status::missing_upload_result:
+        entry.diagnostic = "image texture binding payload evidence is missing upload result";
+        break;
+    case render_image_texture_frame_binding_payload_evidence_status::binding_failed:
+        entry.diagnostic = "image texture binding payload evidence has failed binding";
+        break;
+    case render_image_texture_frame_binding_payload_evidence_status::upload_rejected:
+        entry.diagnostic = "image texture binding payload evidence has rejected upload";
+        break;
+    }
+
+    return entry;
+}
+
+inline void count_render_image_texture_frame_binding_payload_evidence_entry(
+    render_image_texture_frame_binding_payload_evidence_summary& summary,
+    const render_image_texture_frame_binding_payload_evidence_entry& entry)
+{
+    ++summary.evidence_entry_count;
+    switch (entry.status) {
+    case render_image_texture_frame_binding_payload_evidence_status::payload_proven:
+        ++summary.proven_payload_count;
+        break;
+    case render_image_texture_frame_binding_payload_evidence_status::placeholder_payload:
+        ++summary.placeholder_payload_count;
+        summary.has_placeholders = true;
+        break;
+    case render_image_texture_frame_binding_payload_evidence_status::missing_upload_result:
+        ++summary.missing_upload_result_count;
+        summary.has_missing_upload_results = true;
+        break;
+    case render_image_texture_frame_binding_payload_evidence_status::binding_failed:
+        ++summary.failed_binding_count;
+        summary.has_failures = true;
+        break;
+    case render_image_texture_frame_binding_payload_evidence_status::upload_rejected:
+        ++summary.rejected_upload_count;
+        summary.has_rejections = true;
+        break;
+    }
+    if (entry.decoded_payload_hash_present) {
+        ++summary.decoded_payload_hash_count;
+    }
+    if (entry.upload_result_accepted) {
+        ++summary.accepted_upload_result_count;
+    }
+    if (entry.cache_reused) {
+        ++summary.cache_reused_count;
+        summary.cache_reused = true;
+    }
+}
+
+inline render_image_texture_frame_binding_payload_evidence_summary
+make_render_image_texture_frame_binding_payload_evidence_summary(
+    const render_image_texture_frame_binding_plan& binding_plan,
+    const render_image_texture_frame_upload_handoff_summary& handoff)
+{
+    render_image_texture_frame_binding_payload_evidence_summary summary{
+        .binding_packet_count = binding_plan.packet_count,
+        .renderer_handoff_ready = binding_plan.renderer_handoff_ready,
+    };
+
+    for (const render_image_texture_frame_binding_packet& binding_packet : binding_plan.packets) {
+        render_image_texture_frame_binding_payload_evidence_entry entry =
+            make_render_image_texture_frame_binding_payload_evidence_entry(
+                binding_packet,
+                render_image_texture_frame_upload_handoff_entry_for_request_index(
+                    handoff,
+                    binding_packet.request_index));
+        count_render_image_texture_frame_binding_payload_evidence_entry(summary, entry);
+        summary.entries.push_back(std::move(entry));
+    }
+
+    summary.binding_evidence_ready =
+        summary.binding_packet_count == summary.evidence_entry_count
+        && !summary.has_missing_upload_results
+        && !summary.has_failures
+        && !summary.has_rejections;
+    summary.evidence_summary = "binding_payloads="
+        + std::to_string(summary.evidence_entry_count)
+        + "; payload_hashes=" + std::to_string(summary.decoded_payload_hash_count)
+        + "; accepted_uploads=" + std::to_string(summary.accepted_upload_result_count);
+    if (summary.has_missing_upload_results) {
+        summary.diagnostic = "image texture binding payload evidence has missing upload results";
+    } else if (summary.has_failures) {
+        summary.diagnostic = "image texture binding payload evidence has failed bindings";
+    } else if (summary.has_rejections) {
+        summary.diagnostic = "image texture binding payload evidence has rejected uploads";
+    } else if (summary.has_placeholders) {
+        summary.diagnostic = "image texture binding payload evidence is placeholder-backed";
+    } else if (summary.binding_packet_count == 0) {
+        summary.diagnostic = "image texture binding payload evidence has no binding packets";
+    } else {
+        summary.diagnostic = "image texture binding payload evidence is ready";
+    }
+
+    return summary;
+}
+
+inline render_image_texture_frame_binding_payload_evidence_summary
+make_render_image_texture_frame_binding_payload_evidence_summary(
+    const render_image_texture_frame_snapshot& frame,
+    const render_image_texture_upload_result_snapshot& upload_result)
+{
+    const render_image_texture_frame_binding_plan binding_plan =
+        make_render_image_texture_frame_binding_plan(frame);
+    return make_render_image_texture_frame_binding_payload_evidence_summary(
+        binding_plan,
+        make_render_image_texture_frame_upload_handoff_summary(frame, binding_plan, upload_result));
 }
 
 struct render_image_texture_frame_binding_summary_diff {

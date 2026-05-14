@@ -6,6 +6,11 @@
 
 최근 baseline 통합 증거:
 
+- current: real `utf8proc` static-library smoke, Vulkan device extension diagnostics, asset manifest version compatibility, and image decode-upload handoff readiness integrated; Windows MinGW focused external/Vulkan/asset/image CTest passed 4/4.
+- `44102a7`: CMake now builds the downloaded `utf8proc-v2.11.3/utf8proc.c` as a native static library and tests real Hangul UTF-8 decode, Unicode category lookup, NFC compose, and runtime version.
+- `51ceecb`: Vulkan device readiness now records required device extension count/availability and missing-extension evidence before native device creation.
+- `7feda06`: asset manifest version policy now distinguishes compatible, older-compatible, newer-required, and incompatible manifest schema states for future asset packs.
+- `915b8c8`: image texture diagnostics now verify decode metadata and pixel payload readiness before upload handoff, keeping texture upload blockers visible without renderer coupling.
 - current: required Vulkan instance extension diagnostics, font face byte-readiness diagnostics, and unsupported asset source-scheme classification integrated; Windows MinGW focused Vulkan/text/asset CTest passed 4/4 and public FILE_SET scan reports 0 missing headers.
 - `f4055b9`: Vulkan instance creation results now record required extension counts, selected extension counts, missing extension names, and per-required-extension diagnostics before device readiness.
 - `4f38c36`: text engine now classifies font source byte payloads as missing, empty, invalid SFNT, missing cmap, coverage-ready, or fallback-required without invoking FreeType.

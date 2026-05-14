@@ -472,6 +472,11 @@ void test_materialized_asset_bytes_call_provider_after_materialization()
     using namespace quiz_vulkan::assets;
 
     const std::filesystem::path fixture_root = reset_fixture_root();
+    const std::filesystem::path quiz_data_root = fixture_root / "build" / "external" / "quiz" / "quiz-data";
+    const std::filesystem::path rooted_path =
+        std::filesystem::absolute(quiz_data_root / "images" / "." / "front.png");
+    const std::filesystem::path materialized_path =
+        std::filesystem::absolute(quiz_data_root / "images" / "front.png").lexically_normal();
     runtime_asset_catalog_snapshot snapshot{
         .entry = asset_manifest_entry{
             .id = "card_front",
@@ -485,8 +490,8 @@ void test_materialized_asset_bytes_call_provider_after_materialization()
             .type = asset_type::image,
         },
         .cache_key = "image|asset://cards/front.png",
-        .resolved_root_id = "packaged",
-        .rooted_path = std::filesystem::absolute(fixture_root / "packaged" / "cards" / "front.png"),
+        .resolved_root_id = "quiz_data",
+        .rooted_path = rooted_path,
     };
 
     asset_bytes_load_result provider_result{
@@ -506,7 +511,70 @@ void test_materialized_asset_bytes_call_provider_after_materialization()
     require(provider.load_count() == 1U, "materialized local assets call the byte provider once");
     require(provider.last_snapshot().has_value(), "provider receives a materialized catalog snapshot");
     require(provider.last_snapshot()->entry.id == "card_front", "provider receives the materialized asset id");
+    require(
+        provider.last_snapshot()->rooted_path == materialized_path,
+        "provider receives the normalized materialized local path");
     require(bytes_to_string(loaded.bytes) == "image bytes", "provider result is returned after materialization");
+}
+
+void test_materialized_asset_bytes_load_build_external_quiz_data_assets()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    const std::filesystem::path quiz_data_root = fixture_root / "build" / "external" / "quiz" / "quiz-data";
+    write_fixture_file(quiz_data_root / "fonts" / "body.ttf", "font bytes");
+    write_fixture_file(quiz_data_root / "images" / "front.png", "image bytes");
+    write_fixture_file(quiz_data_root / "shaders" / "ui.vert.spv", "shader bytes");
+
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "quiz_data",
+        .root_path = quiz_data_root,
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "body_font",
+        .type = asset_type::font,
+        .uri = "fonts/body.ttf",
+        .root_id = "quiz_data",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_front",
+        .type = asset_type::image,
+        .uri = "asset://images/front.png",
+        .root_id = "quiz_data",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "ui_shader",
+        .type = asset_type::shader,
+        .uri = "asset://shaders/ui.vert.spv",
+        .root_id = "quiz_data",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const runtime_asset_catalog catalog = build_runtime_asset_catalog(manifest, resolver);
+    const local_file_asset_bytes_provider provider;
+
+    const asset_bytes_load_result font = load_materialized_asset_bytes(
+        provider,
+        catalog,
+        asset_bytes_catalog_request{.id = "body_font", .expected_type = asset_type::font});
+    require(font.ok(), "materialized byte load reads font bytes from build external quiz data");
+    require(bytes_to_string(font.bytes) == "font bytes", "font bytes come from build external quiz data root");
+
+    const asset_bytes_load_result image = load_materialized_asset_bytes(
+        provider,
+        catalog,
+        asset_bytes_catalog_request{.id = "card_front", .expected_type = asset_type::image});
+    require(image.ok(), "materialized byte load reads image bytes from build external quiz data");
+    require(bytes_to_string(image.bytes) == "image bytes", "image bytes come from build external quiz data root");
+
+    const asset_bytes_load_result shader = load_materialized_asset_bytes(
+        provider,
+        catalog,
+        asset_bytes_catalog_request{.id = "ui_shader", .expected_type = asset_type::shader});
+    require(shader.ok(), "materialized byte load reads shader bytes from build external quiz data");
+    require(bytes_to_string(shader.bytes) == "shader bytes", "shader bytes come from build external quiz data root");
 }
 
 void test_materialized_asset_bytes_with_integrity_loads_catalog_font_image_and_shader_bytes()
@@ -871,6 +939,7 @@ int main()
     test_materialized_asset_bytes_do_not_read_unsupported_or_unmaterialized_sources();
     test_materialized_asset_bytes_surface_materialization_policy_diagnostics();
     test_materialized_asset_bytes_call_provider_after_materialization();
+    test_materialized_asset_bytes_load_build_external_quiz_data_assets();
     test_materialized_asset_bytes_with_integrity_loads_catalog_font_image_and_shader_bytes();
     test_materialized_asset_bytes_with_integrity_reports_catalog_provider_failures();
     test_asset_bytes_integrity_validates_load_result_byte_count_and_content();

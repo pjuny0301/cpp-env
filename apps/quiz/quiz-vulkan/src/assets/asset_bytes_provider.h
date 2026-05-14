@@ -398,7 +398,9 @@ inline asset_bytes_load_result load_materialized_asset_bytes(
         return result;
     }
 
-    return load_asset_bytes(provider, request.materialized.materialized.asset);
+    runtime_asset_catalog_snapshot materialized_snapshot = request.materialized.materialized.asset;
+    materialized_snapshot.rooted_path = request.materialized.materialized.local_path;
+    return load_asset_bytes(provider, materialized_snapshot);
 }
 
 inline asset_bytes_load_result load_materialized_asset_bytes(

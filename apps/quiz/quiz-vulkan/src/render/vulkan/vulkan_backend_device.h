@@ -73,6 +73,18 @@ struct vulkan_device_queue_selection {
     }
 };
 
+struct vulkan_device_extension_diagnostic {
+    std::string extension_name;
+    bool required = true;
+    bool available = false;
+    bool selected = false;
+
+    bool missing_required() const
+    {
+        return required && !available;
+    }
+};
+
 enum class vulkan_device_create_status {
     not_requested,
     created,
@@ -111,14 +123,24 @@ struct vulkan_device_create_result {
     vulkan_instance_create_result instance;
     vulkan_device_handle handle;
     std::vector<std::string> selected_extensions;
+    std::vector<vulkan_device_extension_diagnostic> required_extension_diagnostics;
+    std::size_t required_extension_count = 0;
+    std::size_t available_required_extension_count = 0;
+    std::string missing_required_extension;
     std::vector<vulkan_device_queue_selection> selected_queues;
     std::string diagnostic;
+
+    bool required_extensions_ready() const
+    {
+        return checked && required_extension_count == available_required_extension_count
+            && missing_required_extension.empty();
+    }
 
     bool ready_for_backend() const
     {
         return checked && status == vulkan_device_create_status::created
             && instance.ready_for_device() && handle.valid()
-            && !selected_queues.empty();
+            && required_extensions_ready() && !selected_queues.empty();
     }
 };
 
@@ -203,6 +225,10 @@ inline vulkan_device_create_result make_device_create_result(
         .instance = instance_result,
         .handle = {},
         .selected_extensions = {},
+        .required_extension_diagnostics = {},
+        .required_extension_count = 0,
+        .available_required_extension_count = 0,
+        .missing_required_extension = {},
         .selected_queues = {},
         .diagnostic = {},
     };
@@ -212,6 +238,26 @@ inline std::string make_missing_required_device_extension_diagnostic(
     const std::string& extension_name)
 {
     return "missing required device extension: " + extension_name;
+}
+
+inline void record_required_extension_diagnostic(
+    vulkan_device_create_result& result,
+    const std::string& extension_name,
+    bool available)
+{
+    result.required_extension_diagnostics.push_back(
+        vulkan_device_extension_diagnostic{
+            .extension_name = extension_name,
+            .required = true,
+            .available = available,
+            .selected = available,
+        });
+    result.required_extension_count = result.required_extension_diagnostics.size();
+    if (available) {
+        ++result.available_required_extension_count;
+    } else if (result.missing_required_extension.empty()) {
+        result.missing_required_extension = extension_name;
+    }
 }
 
 inline std::string make_missing_required_queue_diagnostic(
@@ -278,9 +324,14 @@ inline vulkan_device_create_result fake_vulkan_device_factory::create_device(
     }
 
     for (const std::string& extension_name : request.required_device_extensions) {
-        if (!device_detail::contains_string(
-                options_.supported_device_extensions,
-                extension_name)) {
+        const bool extension_available = device_detail::contains_string(
+            options_.supported_device_extensions,
+            extension_name);
+        device_detail::record_required_extension_diagnostic(
+            result,
+            extension_name,
+            extension_available);
+        if (!extension_available) {
             result.status = vulkan_device_create_status::missing_required_device_extension;
             result.diagnostic =
                 device_detail::make_missing_required_device_extension_diagnostic(extension_name);

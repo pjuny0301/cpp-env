@@ -123,6 +123,33 @@ void test_device_factory_marks_created_instance_device_ready()
     require(
         result.selected_extensions[1] == "VK_EXT_memory_budget",
         "created device selects supported optional memory budget extension");
+    require(
+        result.required_extensions_ready(),
+        "created device records required device extensions ready");
+    require(
+        result.required_extension_count == 1,
+        "created device counts required device extensions");
+    require(
+        result.available_required_extension_count == 1,
+        "created device counts available required device extensions");
+    require(
+        result.missing_required_extension.empty(),
+        "created device records no missing required device extension");
+    require(
+        result.required_extension_diagnostics.size() == 1,
+        "created device records one required device extension diagnostic");
+    require(
+        result.required_extension_diagnostics.front().extension_name == "VK_KHR_swapchain",
+        "created device records required swapchain extension diagnostic name");
+    require(
+        result.required_extension_diagnostics.front().available,
+        "created device records required swapchain extension available");
+    require(
+        result.required_extension_diagnostics.front().selected,
+        "created device records required swapchain extension selected");
+    require(
+        !result.required_extension_diagnostics.front().missing_required(),
+        "created device required swapchain diagnostic is not missing");
     require(result.selected_queues.size() == 2, "created device selects graphics and present queues");
     require(
         result.selected_queues[0].capability
@@ -163,6 +190,12 @@ void test_device_factory_maps_instance_failure_to_device_unavailable()
     require(!result.ready_for_backend(), "instance-failure device result does not reach device gate");
     require(!result.handle.valid(), "instance-failure device result has no device handle");
     require(result.selected_extensions.empty(), "instance-failure device result selects no extensions");
+    require(
+        result.required_extension_diagnostics.empty(),
+        "instance-failure device result skips device extension diagnostics");
+    require(
+        result.required_extension_count == 0,
+        "instance-failure device result leaves required extension count at zero");
     require(result.selected_queues.empty(), "instance-failure device result selects no queues");
     require(
         result.diagnostic == "Vulkan instance is not ready for device creation",
@@ -200,6 +233,33 @@ void test_device_factory_reports_missing_required_device_extension()
     require(!result.handle.valid(), "missing-extension device result has no device handle");
     require(result.selected_extensions.empty(), "missing-extension device result selects no extensions");
     require(
+        !result.required_extensions_ready(),
+        "missing-extension device result records required extensions not ready");
+    require(
+        result.required_extension_count == 1,
+        "missing-extension device result counts required extension checks");
+    require(
+        result.available_required_extension_count == 0,
+        "missing-extension device result counts no available required extensions");
+    require(
+        result.missing_required_extension == "VK_KHR_swapchain",
+        "missing-extension device result records missing extension field");
+    require(
+        result.required_extension_diagnostics.size() == 1,
+        "missing-extension device result records one required extension diagnostic");
+    require(
+        result.required_extension_diagnostics.front().extension_name == "VK_KHR_swapchain",
+        "missing-extension diagnostic records swapchain extension name");
+    require(
+        !result.required_extension_diagnostics.front().available,
+        "missing-extension diagnostic records unavailable required extension");
+    require(
+        !result.required_extension_diagnostics.front().selected,
+        "missing-extension diagnostic records unselected required extension");
+    require(
+        result.required_extension_diagnostics.front().missing_required(),
+        "missing-extension diagnostic marks missing required extension");
+    require(
         result.diagnostic == "missing required device extension: VK_KHR_swapchain",
         "missing-extension device result records diagnostic extension name");
 }
@@ -233,6 +293,12 @@ void test_device_factory_reports_missing_required_queue_and_keeps_frame_at_devic
     require(!result.ready_for_backend(), "missing-queue device result does not reach device gate");
     require(!result.handle.valid(), "missing-queue device result has no device handle");
     require(result.selected_extensions.size() == 2, "missing-queue device result preserves selected extensions");
+    require(
+        result.required_extensions_ready(),
+        "missing-queue device result keeps required extension diagnostics ready");
+    require(
+        result.required_extension_diagnostics.size() == 1,
+        "missing-queue device result preserves required extension diagnostic");
     require(result.selected_queues.size() == 1, "missing-queue device result preserves earlier queue selection");
     require(
         result.diagnostic == "missing required device queue: present",

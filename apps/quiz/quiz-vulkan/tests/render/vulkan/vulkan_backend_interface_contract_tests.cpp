@@ -1141,15 +1141,29 @@ static_assert(requires(render::vulkan_backend::vulkan_device_queue_selection sel
     { selection.valid() } -> std::same_as<bool>;
 });
 
+static_assert(requires(render::vulkan_backend::vulkan_device_extension_diagnostic diagnostic) {
+    { diagnostic.extension_name } -> std::same_as<std::string&>;
+    { diagnostic.required } -> std::same_as<bool&>;
+    { diagnostic.available } -> std::same_as<bool&>;
+    { diagnostic.selected } -> std::same_as<bool&>;
+    { diagnostic.missing_required() } -> std::same_as<bool>;
+});
+
 static_assert(requires(render::vulkan_backend::vulkan_device_create_result result) {
     { result.checked } -> std::same_as<bool&>;
     { result.status } -> std::same_as<render::vulkan_backend::vulkan_device_create_status&>;
     { result.instance } -> std::same_as<render::vulkan_backend::vulkan_instance_create_result&>;
     { result.handle } -> std::same_as<render::vulkan_backend::vulkan_device_handle&>;
     { result.selected_extensions } -> std::same_as<std::vector<std::string>&>;
+    { result.required_extension_diagnostics }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_device_extension_diagnostic>&>;
+    { result.required_extension_count } -> std::same_as<std::size_t&>;
+    { result.available_required_extension_count } -> std::same_as<std::size_t&>;
+    { result.missing_required_extension } -> std::same_as<std::string&>;
     { result.selected_queues }
         -> std::same_as<std::vector<render::vulkan_backend::vulkan_device_queue_selection>&>;
     { result.diagnostic } -> std::same_as<std::string&>;
+    { result.required_extensions_ready() } -> std::same_as<bool>;
     { result.ready_for_backend() } -> std::same_as<bool>;
 });
 

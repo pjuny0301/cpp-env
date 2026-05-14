@@ -34,5 +34,7 @@ tmux load-buffer "${prompt_file}"
 tmux paste-buffer -t "${session}:0"
 sleep 0.2
 tmux send-keys -t "${session}:0" Enter
+sleep 0.2
+tmux send-keys -t "${session}:0" Enter
 
 echo "sent prompt to ${session}"

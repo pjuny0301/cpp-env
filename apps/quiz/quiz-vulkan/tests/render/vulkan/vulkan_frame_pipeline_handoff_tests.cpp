@@ -278,6 +278,64 @@ quiz_vulkan::render::vulkan_backend::vulkan_render_pass_create_result make_ready
     };
 }
 
+quiz_vulkan::render::vulkan_backend::vulkan_sdk_external_header_evidence
+make_ready_external_header_evidence()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    return vulkan_backend::vulkan_sdk_external_header_evidence{
+        .checked = true,
+        .vulkan = vulkan_backend::vulkan_sdk_vulkan_header_evidence{
+            .available = true,
+            .api_version_macro_available = true,
+            .header_version_macro_available = true,
+            .api_version = vulkan_backend::vulkan_sdk_api_version_1_4(),
+            .header_version = 341,
+            .instance_handle_size = sizeof(void*),
+            .device_handle_size = sizeof(void*),
+            .result_type_size = sizeof(int),
+            .success_constant_available = true,
+            .success_value = 0,
+            .surface_extension_constant_available = true,
+            .swapchain_extension_constant_available = true,
+            .surface_extension_name = "VK_KHR_surface",
+            .swapchain_extension_name = "VK_KHR_swapchain",
+            .diagnostic = "fake Vulkan external headers available",
+        },
+        .vma = vulkan_backend::vulkan_sdk_vma_header_evidence{
+            .available = true,
+            .safe_to_include = true,
+            .vulkan_headers_required = true,
+            .vma_vulkan_version = 1003000,
+            .allocator_handle_size = sizeof(void*),
+            .allocation_handle_size = sizeof(void*),
+            .diagnostic = "fake VMA external headers available",
+        },
+        .diagnostic = "fake external headers available",
+    };
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_sdk_external_header_evidence
+make_missing_external_header_evidence()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    return vulkan_backend::vulkan_sdk_external_header_evidence{
+        .checked = true,
+        .vulkan = vulkan_backend::vulkan_sdk_vulkan_header_evidence{
+            .available = false,
+            .diagnostic = "fake Vulkan external headers missing",
+        },
+        .vma = vulkan_backend::vulkan_sdk_vma_header_evidence{
+            .available = false,
+            .safe_to_include = false,
+            .vulkan_headers_required = true,
+            .diagnostic = "fake VMA external headers missing",
+        },
+        .diagnostic = "fake external headers missing",
+    };
+}
+
 quiz_vulkan::render::vulkan_backend::vulkan_sdk_capability_result make_ready_sdk_capabilities()
 {
     namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
@@ -287,6 +345,7 @@ quiz_vulkan::render::vulkan_backend::vulkan_sdk_capability_result make_ready_sdk
         .status = vulkan_backend::vulkan_sdk_capability_status::ready,
         .fallback_status = vulkan_backend::vulkan_sdk_adapter_fallback_status::none,
         .minimum_api_version = vulkan_backend::vulkan_sdk_api_version_1_3(),
+        .external_headers = make_ready_external_header_evidence(),
         .headers_available = true,
         .api_version_available = true,
         .api_version_compatible = true,
@@ -308,6 +367,7 @@ quiz_vulkan::render::vulkan_backend::vulkan_sdk_capability_result make_missing_s
         .status = vulkan_backend::vulkan_sdk_capability_status::headers_unavailable,
         .fallback_status = vulkan_backend::vulkan_sdk_adapter_fallback_status::headers_unavailable,
         .minimum_api_version = vulkan_backend::vulkan_sdk_api_version_1_3(),
+        .external_headers = make_missing_external_header_evidence(),
         .headers_available = false,
         .api_version_available = false,
         .api_version_compatible = false,
@@ -827,6 +887,18 @@ void test_vulkan_frame_pipeline_handoff_reports_sdk_native_path_summary()
         sdk_ready.pipeline_handoff.sdk_native_path_status
             == vulkan_backend::vulkan_sdk_native_path_status::ready,
         "handoff records SDK-ready native-path status");
+    require(
+        sdk_ready.pipeline_handoff.sdk_external_headers_checked,
+        "handoff records checked external header evidence separately");
+    require(
+        sdk_ready.pipeline_handoff.sdk_vulkan_headers_available,
+        "handoff records Vulkan header availability separately from native functions");
+    require(
+        sdk_ready.pipeline_handoff.sdk_vma_headers_available,
+        "handoff records VMA header availability separately from native functions");
+    require(
+        sdk_ready.pipeline_handoff.sdk_external_headers.vulkan.header_version == 341,
+        "handoff carries Vulkan header version evidence");
 
     const vulkan_backend::vulkan_backend_frame_result sdk_missing =
         vulkan_backend::apply_vulkan_sdk_capability_result_to_frame(
@@ -845,6 +917,15 @@ void test_vulkan_frame_pipeline_handoff_reports_sdk_native_path_summary()
         sdk_missing.pipeline_handoff.sdk_capability_status
             == vulkan_backend::vulkan_sdk_capability_status::headers_unavailable,
         "handoff records SDK missing-header capability status");
+    require(
+        sdk_missing.pipeline_handoff.sdk_external_headers_checked,
+        "handoff records checked missing external header evidence");
+    require(
+        !sdk_missing.pipeline_handoff.sdk_vulkan_headers_available,
+        "handoff reports missing Vulkan headers separately from native function table");
+    require(
+        !sdk_missing.pipeline_handoff.sdk_vma_headers_available,
+        "handoff reports missing VMA headers separately from native function table");
     require(
         sdk_missing.pipeline_handoff.sdk_diagnostic == "fake Vulkan SDK path missing",
         "handoff records SDK missing diagnostic");

@@ -490,6 +490,10 @@ struct vulkan_sdk_native_path_readiness {
         vulkan_sdk_capability_status::not_checked;
     vulkan_sdk_adapter_fallback_status sdk_adapter_fallback_status =
         vulkan_sdk_adapter_fallback_status::none;
+    vulkan_sdk_external_header_evidence external_headers;
+    bool external_headers_checked = false;
+    bool vulkan_headers_available = false;
+    bool vma_headers_available = false;
     bool headers_available = false;
     bool api_version_compatible = false;
     bool required_extensions_ready = false;
@@ -527,6 +531,10 @@ inline vulkan_sdk_native_path_readiness summarize_vulkan_sdk_native_path_readine
         .sdk_adapter_ready = result.adapter_ready(),
         .sdk_capability_status = result.status,
         .sdk_adapter_fallback_status = result.fallback_status,
+        .external_headers = result.external_headers,
+        .external_headers_checked = result.external_headers.checked,
+        .vulkan_headers_available = result.external_headers.vulkan_headers_available(),
+        .vma_headers_available = result.external_headers.vma_headers_available(),
         .headers_available = result.headers_available,
         .api_version_compatible = result.api_version_compatible,
         .required_extensions_ready = result.required_extensions_ready,

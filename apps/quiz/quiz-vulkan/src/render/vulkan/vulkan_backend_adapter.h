@@ -2199,6 +2199,10 @@ struct vulkan_backend_frame_pipeline_handoff {
         vulkan_sdk_capability_status::not_checked;
     vulkan_sdk_adapter_fallback_status sdk_adapter_fallback_status =
         vulkan_sdk_adapter_fallback_status::none;
+    vulkan_sdk_external_header_evidence sdk_external_headers;
+    bool sdk_external_headers_checked = false;
+    bool sdk_vulkan_headers_available = false;
+    bool sdk_vma_headers_available = false;
     std::string sdk_diagnostic;
     bool submit_batch_planning_checked = false;
     bool submit_batch_planning_completed = false;

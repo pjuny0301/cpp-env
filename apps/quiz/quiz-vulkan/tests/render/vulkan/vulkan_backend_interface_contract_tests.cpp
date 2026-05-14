@@ -977,6 +977,11 @@ static_assert(requires(render::vulkan_backend::vulkan_sdk_native_path_readiness 
         -> std::same_as<render::vulkan_backend::vulkan_sdk_capability_status&>;
     { readiness.sdk_adapter_fallback_status }
         -> std::same_as<render::vulkan_backend::vulkan_sdk_adapter_fallback_status&>;
+    { readiness.external_headers }
+        -> std::same_as<render::vulkan_backend::vulkan_sdk_external_header_evidence&>;
+    { readiness.external_headers_checked } -> std::same_as<bool&>;
+    { readiness.vulkan_headers_available } -> std::same_as<bool&>;
+    { readiness.vma_headers_available } -> std::same_as<bool&>;
     { readiness.headers_available } -> std::same_as<bool&>;
     { readiness.api_version_compatible } -> std::same_as<bool&>;
     { readiness.required_extensions_ready } -> std::same_as<bool&>;
@@ -5926,6 +5931,11 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_frame_pipeline_han
         -> std::same_as<render::vulkan_backend::vulkan_sdk_capability_status&>;
     { handoff.sdk_adapter_fallback_status }
         -> std::same_as<render::vulkan_backend::vulkan_sdk_adapter_fallback_status&>;
+    { handoff.sdk_external_headers }
+        -> std::same_as<render::vulkan_backend::vulkan_sdk_external_header_evidence&>;
+    { handoff.sdk_external_headers_checked } -> std::same_as<bool&>;
+    { handoff.sdk_vulkan_headers_available } -> std::same_as<bool&>;
+    { handoff.sdk_vma_headers_available } -> std::same_as<bool&>;
     { handoff.sdk_diagnostic } -> std::same_as<std::string&>;
     { handoff.submit_batch_planning_checked } -> std::same_as<bool&>;
     { handoff.submit_batch_planning_completed } -> std::same_as<bool&>;

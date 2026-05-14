@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -142,6 +143,101 @@ struct asset_materialized_bytes_cache_policy_summary {
             if (entry.id == id) {
                 return &entry;
             }
+        }
+        return nullptr;
+    }
+};
+
+struct asset_typed_materialized_bytes_entry {
+    std::string id;
+    asset_type type = asset_type::generic;
+    asset_cache_key cache_key;
+    std::string source_uri;
+    std::optional<std::filesystem::path> rooted_path;
+    std::string materialized_source_path;
+    std::filesystem::path materialized_path;
+    std::size_t byte_count = 0U;
+    std::string content_hash;
+    runtime_materialized_asset_lookup_status materialized_status =
+        runtime_materialized_asset_lookup_status::missing_id;
+    asset_bytes_load_status load_status = asset_bytes_load_status::missing_bytes;
+    std::vector<asset_bytes_integrity_issue> issues;
+    std::string diagnostic;
+
+    [[nodiscard]] bool ok() const
+    {
+        return materialized_status == runtime_materialized_asset_lookup_status::materialized
+            && load_status == asset_bytes_load_status::loaded && issues.empty();
+    }
+};
+
+struct asset_typed_materialized_bytes_summary {
+    asset_materialized_bytes_cache_policy_summary cache_policy;
+    std::vector<asset_typed_materialized_bytes_entry> fonts;
+    std::vector<asset_typed_materialized_bytes_entry> images;
+    std::vector<asset_typed_materialized_bytes_entry> sounds;
+    std::vector<asset_typed_materialized_bytes_entry> shaders;
+    std::vector<asset_typed_materialized_bytes_entry> decks;
+    std::size_t skipped_generic_count = 0U;
+
+    [[nodiscard]] bool ok() const
+    {
+        return cache_policy.ok();
+    }
+
+    [[nodiscard]] std::size_t entry_count() const
+    {
+        return fonts.size() + images.size() + sounds.size() + shaders.size() + decks.size();
+    }
+
+    [[nodiscard]] const std::vector<asset_typed_materialized_bytes_entry>& entries_for_type(
+        asset_type type) const
+    {
+        switch (type) {
+            case asset_type::font:
+                return fonts;
+            case asset_type::image:
+                return images;
+            case asset_type::sound:
+                return sounds;
+            case asset_type::shader:
+                return shaders;
+            case asset_type::deck:
+                return decks;
+            case asset_type::generic:
+                break;
+        }
+
+        static const std::vector<asset_typed_materialized_bytes_entry> empty_entries;
+        return empty_entries;
+    }
+
+    [[nodiscard]] const asset_typed_materialized_bytes_entry* find_entry(std::string_view id) const
+    {
+        const auto find_in = [id](const std::vector<asset_typed_materialized_bytes_entry>& entries)
+            -> const asset_typed_materialized_bytes_entry* {
+            for (const asset_typed_materialized_bytes_entry& entry : entries) {
+                if (entry.id == id) {
+                    return &entry;
+                }
+            }
+            return nullptr;
+        };
+
+        if (const asset_typed_materialized_bytes_entry* entry = find_in(fonts); entry != nullptr) {
+            return entry;
+        }
+        if (const asset_typed_materialized_bytes_entry* entry = find_in(images); entry != nullptr) {
+            return entry;
+        }
+        if (const asset_typed_materialized_bytes_entry* entry = find_in(sounds); entry != nullptr) {
+            return entry;
+        }
+        if (const asset_typed_materialized_bytes_entry* entry = find_in(shaders); entry != nullptr) {
+            return entry;
+        }
+        if (const asset_typed_materialized_bytes_entry* entry = find_in(decks); entry != nullptr) {
+            return entry;
         }
         return nullptr;
     }
@@ -316,6 +412,91 @@ inline void count_asset_bytes_integrity_issue(
             break;
         case asset_bytes_integrity_issue_kind::missing_content:
             ++summary.missing_content_count;
+            break;
+    }
+}
+
+inline bool asset_type_is_engine_facing(asset_type type)
+{
+    switch (type) {
+        case asset_type::font:
+        case asset_type::image:
+        case asset_type::sound:
+        case asset_type::shader:
+        case asset_type::deck:
+            return true;
+        case asset_type::generic:
+            return false;
+    }
+    return false;
+}
+
+inline std::vector<asset_bytes_catalog_request> make_typed_materialized_asset_byte_requests(
+    const runtime_asset_catalog& catalog,
+    std::size_t& skipped_generic_count)
+{
+    std::vector<asset_bytes_catalog_request> requests;
+    requests.reserve(catalog.assets.size());
+    for (const runtime_asset_catalog_snapshot& asset : catalog.assets) {
+        if (!asset_type_is_engine_facing(asset.entry.type)) {
+            ++skipped_generic_count;
+            continue;
+        }
+        requests.push_back(asset_bytes_catalog_request{
+            .id = asset.entry.id,
+            .expected_type = asset.entry.type,
+        });
+    }
+    return requests;
+}
+
+inline asset_typed_materialized_bytes_entry make_typed_materialized_bytes_entry(
+    const asset_materialized_bytes_cache_policy_entry& policy_entry,
+    const runtime_asset_catalog& catalog)
+{
+    const runtime_asset_catalog_snapshot* snapshot = catalog.find(policy_entry.id);
+    asset_typed_materialized_bytes_entry entry{
+        .id = policy_entry.id,
+        .type = snapshot == nullptr ? policy_entry.expected_type : snapshot->entry.type,
+        .cache_key = policy_entry.cache_key,
+        .source_uri = policy_entry.source_uri,
+        .materialized_source_path = policy_entry.materialized_source_path,
+        .materialized_path = policy_entry.materialized_path,
+        .byte_count = policy_entry.byte_count,
+        .content_hash = policy_entry.content_hash,
+        .materialized_status = policy_entry.materialized_status,
+        .load_status = policy_entry.load_status,
+        .issues = policy_entry.issues,
+        .diagnostic = policy_entry.diagnostic,
+    };
+    if (snapshot != nullptr && snapshot->rooted_path.has_value()) {
+        entry.rooted_path = snapshot->rooted_path->lexically_normal();
+    }
+    return entry;
+}
+
+inline void add_typed_materialized_bytes_entry(
+    asset_typed_materialized_bytes_summary& summary,
+    asset_typed_materialized_bytes_entry entry)
+{
+    switch (entry.type) {
+        case asset_type::font:
+            summary.fonts.push_back(std::move(entry));
+            break;
+        case asset_type::image:
+            summary.images.push_back(std::move(entry));
+            break;
+        case asset_type::sound:
+            summary.sounds.push_back(std::move(entry));
+            break;
+        case asset_type::shader:
+            summary.shaders.push_back(std::move(entry));
+            break;
+        case asset_type::deck:
+            summary.decks.push_back(std::move(entry));
+            break;
+        case asset_type::generic:
+            ++summary.skipped_generic_count;
             break;
     }
 }
@@ -628,6 +809,26 @@ inline asset_materialized_bytes_cache_policy_summary summarize_materialized_asse
         }
 
         summary.entries.push_back(std::move(entry));
+    }
+
+    return summary;
+}
+
+inline asset_typed_materialized_bytes_summary summarize_typed_materialized_asset_bytes(
+    const asset_bytes_provider_interface& provider,
+    const runtime_asset_catalog& catalog,
+    bool require_non_empty = true)
+{
+    asset_typed_materialized_bytes_summary summary;
+    std::vector<asset_bytes_catalog_request> requests =
+        detail::make_typed_materialized_asset_byte_requests(catalog, summary.skipped_generic_count);
+    summary.cache_policy =
+        summarize_materialized_asset_bytes_cache_policy(provider, catalog, requests, require_non_empty);
+
+    for (const asset_materialized_bytes_cache_policy_entry& policy_entry : summary.cache_policy.entries) {
+        detail::add_typed_materialized_bytes_entry(
+            summary,
+            detail::make_typed_materialized_bytes_entry(policy_entry, catalog));
     }
 
     return summary;

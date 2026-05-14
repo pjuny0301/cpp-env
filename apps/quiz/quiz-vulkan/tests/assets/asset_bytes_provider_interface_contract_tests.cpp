@@ -3,6 +3,7 @@
 #include <concepts>
 #include <cstddef>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -103,6 +104,44 @@ static_assert(requires(
     { const_summary.find_entry(id) } -> std::same_as<const asset_materialized_bytes_cache_policy_entry*>;
 });
 
+static_assert(requires(
+    asset_typed_materialized_bytes_entry entry,
+    const asset_typed_materialized_bytes_entry& const_entry) {
+    { entry.id } -> std::same_as<std::string&>;
+    { entry.type } -> std::same_as<asset_type&>;
+    { entry.cache_key } -> std::same_as<asset_cache_key&>;
+    { entry.source_uri } -> std::same_as<std::string&>;
+    { entry.rooted_path } -> std::same_as<std::optional<std::filesystem::path>&>;
+    { entry.materialized_source_path } -> std::same_as<std::string&>;
+    { entry.materialized_path } -> std::same_as<std::filesystem::path&>;
+    { entry.byte_count } -> std::same_as<std::size_t&>;
+    { entry.content_hash } -> std::same_as<std::string&>;
+    { entry.materialized_status } -> std::same_as<runtime_materialized_asset_lookup_status&>;
+    { entry.load_status } -> std::same_as<asset_bytes_load_status&>;
+    { entry.issues } -> std::same_as<std::vector<asset_bytes_integrity_issue>&>;
+    { entry.diagnostic } -> std::same_as<std::string&>;
+    { const_entry.ok() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    asset_typed_materialized_bytes_summary summary,
+    const asset_typed_materialized_bytes_summary& const_summary,
+    std::string_view id,
+    asset_type type) {
+    { summary.cache_policy } -> std::same_as<asset_materialized_bytes_cache_policy_summary&>;
+    { summary.fonts } -> std::same_as<std::vector<asset_typed_materialized_bytes_entry>&>;
+    { summary.images } -> std::same_as<std::vector<asset_typed_materialized_bytes_entry>&>;
+    { summary.sounds } -> std::same_as<std::vector<asset_typed_materialized_bytes_entry>&>;
+    { summary.shaders } -> std::same_as<std::vector<asset_typed_materialized_bytes_entry>&>;
+    { summary.decks } -> std::same_as<std::vector<asset_typed_materialized_bytes_entry>&>;
+    { summary.skipped_generic_count } -> std::same_as<std::size_t&>;
+    { const_summary.ok() } -> std::same_as<bool>;
+    { const_summary.entry_count() } -> std::same_as<std::size_t>;
+    { const_summary.entries_for_type(type) } ->
+        std::same_as<const std::vector<asset_typed_materialized_bytes_entry>&>;
+    { const_summary.find_entry(id) } -> std::same_as<const asset_typed_materialized_bytes_entry*>;
+});
+
 static_assert(std::has_virtual_destructor_v<asset_bytes_provider_interface>);
 static_assert(std::derived_from<fake_asset_bytes_provider, asset_bytes_provider_interface>);
 static_assert(std::derived_from<local_file_asset_bytes_provider, asset_bytes_provider_interface>);
@@ -154,6 +193,8 @@ static_assert(requires(
         std::same_as<asset_bytes_integrity_report>;
     { summarize_materialized_asset_bytes_cache_policy(provider, catalog, requests) } ->
         std::same_as<asset_materialized_bytes_cache_policy_summary>;
+    { summarize_typed_materialized_asset_bytes(provider, catalog) } ->
+        std::same_as<asset_typed_materialized_bytes_summary>;
 });
 
 } // namespace

@@ -970,6 +970,104 @@ void test_materialized_asset_bytes_cache_policy_summary_tracks_hash_and_integrit
         "cache policy summary keeps actual content hash diagnostics");
 }
 
+void test_typed_materialized_asset_bytes_summary_groups_engine_assets()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    write_fixture_file(fixture_root / "packaged" / "fonts" / "body.ttf", "font bytes");
+    write_fixture_file(fixture_root / "packaged" / "cards" / "front.png", "image bytes");
+    write_fixture_file(fixture_root / "packaged" / "sounds" / "correct.ogg", "sound bytes");
+    write_fixture_file(fixture_root / "packaged" / "shaders" / "ui.vert.spv", "shader bytes");
+    write_fixture_file(fixture_root / "packaged" / "decks" / "main.quiz", "deck bytes");
+    write_fixture_file(fixture_root / "packaged" / "misc" / "notes.txt", "generic bytes");
+
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "packaged",
+        .root_path = fixture_root / "packaged",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "body_font",
+        .type = asset_type::font,
+        .uri = "asset://fonts/body.ttf",
+        .root_id = "packaged",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_front",
+        .type = asset_type::image,
+        .uri = "asset://cards/front.png",
+        .root_id = "packaged",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "answer_sound",
+        .type = asset_type::sound,
+        .uri = "asset://sounds/correct.ogg",
+        .root_id = "packaged",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "ui_shader",
+        .type = asset_type::shader,
+        .uri = "asset://shaders/ui.vert.spv",
+        .root_id = "packaged",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "main_deck",
+        .type = asset_type::deck,
+        .uri = "asset://decks/main.quiz",
+        .root_id = "packaged",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "generic_notes",
+        .type = asset_type::generic,
+        .uri = "asset://misc/notes.txt",
+        .root_id = "packaged",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const runtime_asset_catalog catalog = build_runtime_asset_catalog(manifest, resolver);
+    const local_file_asset_bytes_provider provider;
+    const asset_typed_materialized_bytes_summary summary =
+        summarize_typed_materialized_asset_bytes(provider, catalog);
+
+    require(summary.ok(), "typed materialized bytes summary accepts matching engine assets");
+    require(summary.entry_count() == 5U, "typed materialized bytes summary groups five engine assets");
+    require(summary.skipped_generic_count == 1U, "typed materialized bytes summary skips generic assets");
+    require(summary.cache_policy.request_count == 5U, "typed summary only requests engine-facing assets");
+    require(summary.cache_policy.loaded_count == 5U, "typed summary loads every engine-facing asset");
+    require(summary.cache_policy.failed_count == 0U, "typed summary records no integrity failures");
+    require(summary.cache_policy.total_byte_count == 54U, "typed summary totals engine-facing bytes");
+    require(summary.fonts.size() == 1U, "typed summary groups fonts");
+    require(summary.images.size() == 1U, "typed summary groups images");
+    require(summary.sounds.size() == 1U, "typed summary groups sounds");
+    require(summary.shaders.size() == 1U, "typed summary groups shaders");
+    require(summary.decks.size() == 1U, "typed summary groups decks");
+    require(summary.entries_for_type(asset_type::generic).empty(), "typed summary leaves generic assets ungrouped");
+    require(summary.find_entry("generic_notes") == nullptr, "typed summary excludes generic entries from lookup");
+
+    const asset_typed_materialized_bytes_entry* image = summary.find_entry("card_front");
+    require(image != nullptr, "typed summary can find grouped image entries");
+    require(image->ok(), "typed summary image entry keeps integrity status");
+    require(image->type == asset_type::image, "typed summary image entry keeps type");
+    require(image->cache_key == "image|asset://cards/front.png", "typed summary image keeps cache key");
+    require(image->source_uri == "asset://cards/front.png", "typed summary image keeps source uri");
+    require(image->rooted_path.has_value(), "typed summary image keeps rooted path");
+    require(
+        *image->rooted_path
+            == std::filesystem::absolute(fixture_root / "packaged" / "cards" / "front.png").lexically_normal(),
+        "typed summary image rooted path is normalized under the root");
+    require(image->materialized_source_path == "cards/front.png", "typed summary image keeps source path");
+    require(image->materialized_path == *image->rooted_path, "typed summary image keeps materialized path");
+    require(image->byte_count == 11U, "typed summary image keeps byte count evidence");
+    require(
+        image->content_hash == make_asset_bytes_content_hash(detail::make_asset_byte_vector("image bytes")),
+        "typed summary image keeps content hash evidence");
+    require(image->issues.empty(), "typed summary image has no integrity issues");
+    require(
+        summary.entries_for_type(asset_type::image)[0].id == "card_front",
+        "typed summary entries_for_type exposes grouped image entries");
+}
+
 void test_materialized_asset_bytes_integrity_fails_before_provider_for_unmaterialized_sources()
 {
     using namespace quiz_vulkan::assets;
@@ -1079,6 +1177,7 @@ int main()
     test_materialized_asset_bytes_with_integrity_reports_catalog_provider_failures();
     test_asset_bytes_integrity_validates_load_result_byte_count_and_content();
     test_materialized_asset_bytes_cache_policy_summary_tracks_hash_and_integrity();
+    test_typed_materialized_asset_bytes_summary_groups_engine_assets();
     test_materialized_asset_bytes_integrity_fails_before_provider_for_unmaterialized_sources();
     test_materialized_asset_bytes_integrity_fails_after_provider_for_byte_count_mismatch();
     test_materialized_asset_bytes_integrity_fails_after_provider_for_metadata_mismatch();

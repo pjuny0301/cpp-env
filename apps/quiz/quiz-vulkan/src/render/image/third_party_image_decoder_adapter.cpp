@@ -14,7 +14,39 @@
 #undef STB_IMAGE_IMPLEMENTATION
 #endif
 
+#include <cstring>
 #include <limits>
+
+namespace {
+
+bool checked_stb_rgba8_byte_count(
+    int width,
+    int height,
+    int component_count,
+    std::size_t& byte_count)
+{
+    byte_count = 0;
+    if (width <= 0 || height <= 0 || component_count <= 0) {
+        return false;
+    }
+
+    constexpr std::size_t max_size = std::numeric_limits<std::size_t>::max();
+    const std::size_t checked_width = static_cast<std::size_t>(width);
+    const std::size_t checked_height = static_cast<std::size_t>(height);
+    const std::size_t checked_component_count = static_cast<std::size_t>(component_count);
+    if (checked_width > max_size / checked_height) {
+        return false;
+    }
+    const std::size_t pixel_count = checked_width * checked_height;
+    if (pixel_count > max_size / checked_component_count) {
+        return false;
+    }
+
+    byte_count = pixel_count * checked_component_count;
+    return true;
+}
+
+} // namespace
 
 namespace quiz_vulkan::render {
 
@@ -110,16 +142,28 @@ render_image_decode_result stb_image_decoder_backend::decode(
             request,
             "stb_image decoder returned invalid image dimensions");
     }
-
-    const std::size_t pixel_byte_count =
-        static_cast<std::size_t>(width)
-        * static_cast<std::size_t>(height)
-        * static_cast<std::size_t>(requested_component_count);
-    std::vector<std::byte> pixels;
-    pixels.reserve(pixel_byte_count);
-    for (std::size_t index = 0; index < pixel_byte_count; ++index) {
-        pixels.push_back(std::byte{decoded[index]});
+    if (source_component_count <= 0) {
+        stbi_image_free(decoded);
+        return make_failure(
+            render_image_decode_status::invalid_data,
+            request,
+            "stb_image decoder returned invalid source component count");
     }
+
+    std::size_t pixel_byte_count = 0;
+    if (!checked_stb_rgba8_byte_count(
+            width,
+            height,
+            requested_component_count,
+            pixel_byte_count)) {
+        stbi_image_free(decoded);
+        return make_failure(
+            render_image_decode_status::invalid_data,
+            request,
+            "stb_image decoder returned image dimensions that overflow RGBA8 byte count");
+    }
+    std::vector<std::byte> pixels(pixel_byte_count);
+    std::memcpy(pixels.data(), decoded, pixel_byte_count);
     stbi_image_free(decoded);
 
     render_decoded_image image{

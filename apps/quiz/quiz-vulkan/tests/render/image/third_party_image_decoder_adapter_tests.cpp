@@ -70,6 +70,23 @@ std::vector<std::byte> make_png_signature_bytes()
     return make_bytes({0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a});
 }
 
+std::vector<std::byte> make_valid_png_bytes()
+{
+    return make_bytes({
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+        0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+        0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x02,
+        0x08, 0x06, 0x00, 0x00, 0x00, 0x72, 0xb6, 0x0d,
+        0x24, 0x00, 0x00, 0x00, 0x1a, 0x49, 0x44, 0x41,
+        0x54, 0x78, 0x9c, 0x63, 0x64, 0x64, 0x62, 0x66,
+        0x61, 0x61, 0x61, 0x61, 0x61, 0xe1, 0xe0, 0xe0,
+        0xe0, 0x60, 0x61, 0x61, 0x61, 0x01, 0x00, 0x02,
+        0x8e, 0x00, 0x50, 0xda, 0x58, 0x47, 0xa5, 0x00,
+        0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae,
+        0x42, 0x60, 0x82,
+    });
+}
+
 std::vector<std::byte> make_bmp_signature_bytes()
 {
     return make_bytes({'B', 'M', 0x00, 0x00});
@@ -802,6 +819,58 @@ void test_stb_backend_decodes_memory_bmp_when_headers_are_available()
         "stb decode diagnostic is stable");
 }
 
+void test_third_party_adapter_decodes_memory_png_with_stb_backend()
+{
+    using namespace quiz_vulkan::render;
+
+    const stb_image_decoder_backend backend{"stb_image_decoder"};
+    const third_party_image_decoder_adapter adapter(backend);
+    const render_image_decode_request request =
+        make_decode_request("textures/card.png", make_valid_png_bytes());
+
+    const third_party_image_decoder_capability capability = adapter.inspect(request);
+    const render_image_decode_result result = adapter.decode(request);
+
+    if (!stb_image_decoder_headers_available()) {
+        require(
+            capability.status == third_party_image_decoder_adapter_status::unavailable,
+            "missing stb headers keep adapter PNG capability unavailable");
+        require(
+            result.status == render_image_decode_status::unsupported_format,
+            "missing stb headers keep adapter PNG decode unsupported");
+        return;
+    }
+
+    require(adapter.supports(request), "third-party adapter supports real PNG memory decode");
+    require(capability.supports_decode(), "stb adapter reports PNG memory decode support");
+    require(result.ok(), "third-party adapter decodes PNG bytes through stb memory backend");
+    require(result.metadata.decoder_id == "stb_image_decoder", "stb adapter PNG metadata records decoder id");
+    require(result.metadata.encoded_byte_count == request.encoded_bytes.size(), "stb adapter PNG metadata records encoded bytes");
+    require(result.metadata.width == 2, "stb adapter PNG metadata records width");
+    require(result.metadata.height == 2, "stb adapter PNG metadata records height");
+    require(result.metadata.decoded_byte_count == 16, "stb adapter PNG metadata records RGBA bytes");
+    require(result.metadata.size_validation.valid, "stb adapter PNG metadata validates decoded size");
+    require(
+        result.metadata.format_detection.detected_format == render_image_encoded_format::png,
+        "stb adapter PNG metadata records detected format");
+    require(result.image.width == 2, "stb adapter PNG decode preserves width");
+    require(result.image.height == 2, "stb adapter PNG decode preserves height");
+    require(result.image.pixel_format == render_image_pixel_format::rgba8_srgb, "stb adapter PNG decode forces RGBA8");
+    require(
+        result.image.pixels == make_bytes({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}),
+        "stb adapter PNG decode preserves RGBA pixel bytes");
+
+    const render_image_texture_key key{
+        .source_key = "textures/card.png",
+        .sampler = render_image_sampler_policy{},
+    };
+    const render_image_upload_readiness_snapshot readiness =
+        make_render_image_upload_readiness_snapshot(key, result.metadata, result.image);
+    require(readiness.upload_ready, "stb adapter PNG output is upload-ready");
+    require(readiness.decode_metadata_matches_image, "stb adapter PNG output has matching decode handoff metadata");
+    require(readiness.staging_byte_count == 16, "stb adapter PNG output reports upload staging bytes");
+}
+
 void test_third_party_adapter_header_stays_image_owned()
 {
     const std::filesystem::path header_path = locate_source_file(
@@ -862,6 +931,7 @@ int main()
     test_unavailable_adapter_preserves_standard_unsupported_failure();
     test_adapter_unsupported_format_is_placeholder_safe();
     test_stb_backend_decodes_memory_bmp_when_headers_are_available();
+    test_third_party_adapter_decodes_memory_png_with_stb_backend();
     test_third_party_adapter_header_stays_image_owned();
     return 0;
 }

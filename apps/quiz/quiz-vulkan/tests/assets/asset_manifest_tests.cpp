@@ -242,6 +242,10 @@ void test_summarize_asset_manifest_version_policy_tracks_schema_version_and_feat
         compatible_summary.unsupported_features[0].feature == "feature.beta"
             && !compatible_summary.unsupported_features[0].required,
         "version policy summary marks optional unsupported features");
+    require(
+        compatible_summary.compatibility_status == asset_manifest_version_compatibility_status::accepted,
+        "version policy summary reports compatible status");
+    require(compatible_summary.diagnostic.empty(), "version policy summary has no compatible diagnostic");
     require(compatible_summary.compatible_accepted, "version policy summary accepts compatible manifests");
     require(!compatible_summary.strict_accepted, "version policy summary rejects strict mode when optional features are unsupported");
     require(compatible_summary.ok(), "version policy summary ok() follows compatible acceptance");
@@ -267,9 +271,43 @@ void test_summarize_asset_manifest_version_policy_tracks_schema_version_and_feat
         strict_summary.unsupported_features[1].feature == "feature.delta"
             && !strict_summary.unsupported_features[1].required,
         "version policy summary sorts optional unsupported features after required features");
+    require(
+        strict_summary.compatibility_status
+            == asset_manifest_version_compatibility_status::unsupported_required_features,
+        "version policy summary classifies unsupported required features");
+    require(
+        strict_summary.diagnostic == "asset manifest requires unsupported features",
+        "version policy summary explains unsupported required features");
     require(!strict_summary.compatible_accepted, "version policy summary rejects incompatible manifests");
     require(!strict_summary.strict_accepted, "version policy summary rejects strict mode for incompatible manifests");
     require(!strict_summary.ok(), "version policy summary ok() fails for incompatible manifests");
+
+    asset_manifest missing_schema_manifest;
+    const asset_manifest_version_policy_summary missing_schema_summary = summarize_asset_manifest_version_policy(
+        missing_schema_manifest,
+        "manifest.v2",
+        supported_features);
+    require(
+        missing_schema_summary.compatibility_status
+            == asset_manifest_version_compatibility_status::missing_schema_version,
+        "version policy summary classifies missing schema versions");
+    require(
+        missing_schema_summary.diagnostic == "asset manifest schema_version is required for compatibility checks",
+        "version policy summary explains missing schema versions");
+
+    asset_manifest mismatched_manifest;
+    mismatched_manifest.schema_version = "manifest.v1";
+    const asset_manifest_version_policy_summary mismatched_summary = summarize_asset_manifest_version_policy(
+        mismatched_manifest,
+        "manifest.v2",
+        supported_features);
+    require(
+        mismatched_summary.compatibility_status
+            == asset_manifest_version_compatibility_status::schema_version_mismatch,
+        "version policy summary classifies schema version mismatches");
+    require(
+        mismatched_summary.diagnostic == "asset manifest schema_version does not match the expected version",
+        "version policy summary explains schema version mismatches");
 }
 
 void test_parse_asset_manifest_text_loads_roots_entries_and_aliases()

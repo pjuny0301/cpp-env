@@ -2253,6 +2253,11 @@ static_assert(requires(render::render_text_glyph_cache_readiness_snapshot readin
         -> std::same_as<render::render_text_font_backend_capability_status&>;
     { readiness.font_backend_used_deterministic_fallback } -> std::same_as<bool&>;
     { readiness.font_backend_fallback_only } -> std::same_as<bool&>;
+    { readiness.font_face_byte_readiness_status }
+        -> std::same_as<render::render_text_font_face_byte_readiness_status&>;
+    { readiness.font_face_byte_fallback_required } -> std::same_as<bool&>;
+    { readiness.font_face_can_attempt_freetype_load } -> std::same_as<bool&>;
+    { readiness.used_descriptor_coverage_fallback } -> std::same_as<bool&>;
     { readiness.cacheable } -> std::same_as<bool&>;
     { readiness.has_atlas_slot } -> std::same_as<bool&>;
 });
@@ -2267,6 +2272,11 @@ static_assert(requires(render::render_text_glyph_cache_readiness_policy_snapshot
     { policy.unique_cache_key_count } -> std::same_as<std::size_t&>;
     { policy.unique_face_count } -> std::same_as<std::size_t&>;
     { policy.estimated_rgba_bytes } -> std::same_as<std::size_t&>;
+    { policy.font_face_byte_coverage_ready_count } -> std::same_as<std::size_t&>;
+    { policy.font_face_byte_missing_count } -> std::same_as<std::size_t&>;
+    { policy.font_face_byte_invalid_count } -> std::same_as<std::size_t&>;
+    { policy.font_face_byte_fallback_required_count } -> std::same_as<std::size_t&>;
+    { policy.descriptor_coverage_fallback_cluster_count } -> std::same_as<std::size_t&>;
 });
 
 static_assert(requires(render::render_text_rasterized_glyph_atlas_payload_snapshot payload) {

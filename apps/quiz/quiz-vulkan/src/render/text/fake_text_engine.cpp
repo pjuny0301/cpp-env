@@ -1593,9 +1593,90 @@ void record_glyph_atlas_page_diagnostics(
     diagnostics.glyph_atlas_page_policy.repeated_layout_clean_page_count = dirty_page_count == 0 ? pages.size() : 0;
 }
 
+render_text_font_source_bytes_load_status fake_font_face_byte_readiness_load_status_for(
+    const font_source_bytes_readiness& readiness)
+{
+    switch (readiness.status) {
+    case render_text_font_source_bytes_status::available_virtual_fixture:
+        return render_text_font_source_bytes_load_status::available_virtual_fixture;
+    case render_text_font_source_bytes_status::missing_source:
+        return render_text_font_source_bytes_load_status::missing_source;
+    case render_text_font_source_bytes_status::unsupported_source:
+        return render_text_font_source_bytes_load_status::unsupported_source;
+    case render_text_font_source_bytes_status::pending_file_load:
+        return render_text_font_source_bytes_load_status::missing_bytes;
+    }
+
+    return render_text_font_source_bytes_load_status::missing_bytes;
+}
+
+render_text_font_source_bytes_load_result fake_font_face_byte_readiness_load_result_for(
+    const font_face_descriptor& face)
+{
+    const font_source_resolution source = resolve_font_source(face);
+    const font_source_bytes_readiness readiness = inspect_font_source_bytes(source);
+    const render_text_font_source_bytes_load_status status =
+        fake_font_face_byte_readiness_load_status_for(readiness);
+    const std::string diagnostic =
+        status == render_text_font_source_bytes_load_status::available_virtual_fixture
+            ? "virtual fixture source uses deterministic descriptor coverage fallback"
+            : render_text_font_source_bytes_load_status_name(status);
+    return make_font_source_bytes_load_result(
+        status,
+        source,
+        readiness,
+        source.resolved_location,
+        {},
+        diagnostic);
+}
+
+render_text_font_face_byte_readiness fake_font_face_byte_readiness_for_face(
+    const font_face_descriptor* face)
+{
+    if (face == nullptr) {
+        return inspect_render_text_font_face_byte_readiness(render_text_font_source_bytes_load_result{});
+    }
+    return inspect_render_text_font_face_byte_readiness(
+        fake_font_face_byte_readiness_load_result_for(*face));
+}
+
+bool fake_glyph_cluster_uses_descriptor_coverage_fallback(
+    const laid_out_glyph_cluster& cluster,
+    const font_face_descriptor* face,
+    const render_text_font_face_byte_readiness& readiness)
+{
+    return face != nullptr
+        && readiness.fallback_required
+        && cluster.glyph_supported
+        && face->supports_codepoint(cluster.code_point);
+}
+
+void count_font_face_byte_readiness_status(
+    render_text_glyph_cache_readiness_policy_snapshot& policy,
+    const render_text_font_face_byte_readiness_status status)
+{
+    switch (status) {
+    case render_text_font_face_byte_readiness_status::coverage_ready:
+        ++policy.font_face_byte_coverage_ready_count;
+        return;
+    case render_text_font_face_byte_readiness_status::missing_bytes:
+    case render_text_font_face_byte_readiness_status::empty_bytes:
+        ++policy.font_face_byte_missing_count;
+        return;
+    case render_text_font_face_byte_readiness_status::invalid_sfnt:
+    case render_text_font_face_byte_readiness_status::missing_cmap:
+    case render_text_font_face_byte_readiness_status::invalid_cmap:
+        ++policy.font_face_byte_invalid_count;
+        return;
+    case render_text_font_face_byte_readiness_status::fallback_required:
+        return;
+    }
+}
+
 void record_glyph_cache_readiness_diagnostics(
     fake_text_engine_diagnostics& diagnostics,
-    const std::vector<laid_out_glyph_cluster>& clusters)
+    const std::vector<laid_out_glyph_cluster>& clusters,
+    const font_face_catalog& catalog)
 {
     diagnostics.glyph_cache_readiness.clear();
     diagnostics.glyph_cache_readiness.reserve(clusters.size());
@@ -1616,6 +1697,11 @@ void record_glyph_cache_readiness_diagnostics(
         const bool has_shape = cluster.snapshot.advance > 0.0f && cluster.glyph_height > 0.0f;
         const bool cacheable = cluster.cacheable && has_shape;
         const std::size_t estimated_rgba_bytes = cacheable ? atlas_width * atlas_height * 4U : 0U;
+        const font_face_descriptor* face = catalog.find_by_id(cluster.snapshot.resolved_face_id);
+        const render_text_font_face_byte_readiness face_byte_readiness =
+            fake_font_face_byte_readiness_for_face(face);
+        const bool descriptor_coverage_fallback =
+            fake_glyph_cluster_uses_descriptor_coverage_fallback(cluster, face, face_byte_readiness);
 
         diagnostics.glyph_cache_readiness.push_back(render_text_glyph_cache_readiness_snapshot{
             .cluster_index = cluster_index,
@@ -1641,6 +1727,10 @@ void record_glyph_cache_readiness_diagnostics(
             .font_backend_capability_status = cluster.font_backend_capability_status,
             .font_backend_used_deterministic_fallback = cluster.font_backend_used_deterministic_fallback,
             .font_backend_fallback_only = cluster.font_backend_fallback_only,
+            .font_face_byte_readiness_status = face_byte_readiness.status,
+            .font_face_byte_fallback_required = face_byte_readiness.fallback_required,
+            .font_face_can_attempt_freetype_load = face_byte_readiness.can_attempt_freetype_load,
+            .used_descriptor_coverage_fallback = descriptor_coverage_fallback,
             .cacheable = cacheable,
             .has_atlas_slot = cluster.atlas_slot.has_value(),
         });
@@ -1665,6 +1755,15 @@ void record_glyph_cache_readiness_diagnostics(
         }
         if (cluster.snapshot.advance <= 0.0f) {
             ++diagnostics.glyph_cache_readiness_policy.zero_advance_cluster_count;
+        }
+        if (face_byte_readiness.fallback_required) {
+            ++diagnostics.glyph_cache_readiness_policy.font_face_byte_fallback_required_count;
+        }
+        count_font_face_byte_readiness_status(
+            diagnostics.glyph_cache_readiness_policy,
+            face_byte_readiness.status);
+        if (descriptor_coverage_fallback) {
+            ++diagnostics.glyph_cache_readiness_policy.descriptor_coverage_fallback_cluster_count;
         }
     }
 
@@ -2349,7 +2448,7 @@ void update_atlas_for_clusters(
         });
     }
 
-    record_glyph_cache_readiness_diagnostics(diagnostics, clusters);
+    record_glyph_cache_readiness_diagnostics(diagnostics, clusters, catalog);
     record_rasterized_glyph_atlas_payload_diagnostics(
         diagnostics,
         clusters,

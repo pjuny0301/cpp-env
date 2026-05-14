@@ -793,6 +793,18 @@ void test_fake_text_engine_records_rasterized_atlas_payloads_for_cacheable_glyph
     const render_text_rasterized_glyph_atlas_payload_snapshot& payload =
         diagnostics.rasterized_glyph_atlas_payloads.front();
     require(readiness.glyph_id == glyph_id_resolution.glyph_id, "cache readiness uses resolved glyph id");
+    require(
+        readiness.font_face_byte_readiness_status == render_text_font_face_byte_readiness_status::fallback_required,
+        "fixture glyph readiness records descriptor fallback byte readiness");
+    require(
+        readiness.font_face_byte_fallback_required,
+        "fixture glyph byte readiness requires deterministic fallback");
+    require(
+        !readiness.font_face_can_attempt_freetype_load,
+        "fixture glyph does not claim FreeType load readiness");
+    require(
+        readiness.used_descriptor_coverage_fallback,
+        "fixture glyph records descriptor coverage fallback");
     require(payload.cluster_index == readiness.cluster_index, "payload records matching cluster index");
     require(payload.run_index == 0 && payload.byte_offset == 0, "payload records glyph run position");
     require(payload.glyph_id == glyph_id_resolution.glyph_id, "raster payload uses resolved glyph id");
@@ -821,6 +833,12 @@ void test_fake_text_engine_records_rasterized_atlas_payloads_for_cacheable_glyph
     require(
         diagnostics.rasterized_glyph_atlas_payload_policy.total_rgba_bytes == 256U,
         "rasterizer payload policy totals RGBA bytes");
+    require(
+        diagnostics.glyph_cache_readiness_policy.font_face_byte_fallback_required_count == 1,
+        "cache readiness policy counts fixture byte fallback");
+    require(
+        diagnostics.glyph_cache_readiness_policy.descriptor_coverage_fallback_cluster_count == 1,
+        "cache readiness policy counts descriptor coverage fallback");
     require(diagnostics.has_shaped_atlas_update_traces(), "rasterized payload fixture records shaped atlas traces");
     require(
         diagnostics.has_shaped_atlas_update_trace_policy(),
@@ -2266,10 +2284,32 @@ void test_fake_text_engine_skips_rasterized_payloads_when_font_bytes_are_missing
     const fake_text_engine_diagnostics& diagnostics = engine.last_diagnostics();
     require(diagnostics.glyph_atlas_placements.size() == 1, "missing byte fixture preserves atlas cache placement");
     require(diagnostics.glyph_cache_readiness.size() == 1, "missing byte fixture records cache readiness");
-    require(diagnostics.glyph_cache_readiness.front().cacheable, "missing byte glyph remains cacheable before rasterizer");
+    const render_text_glyph_cache_readiness_snapshot& readiness = diagnostics.glyph_cache_readiness.front();
+    require(readiness.cacheable, "missing byte glyph remains cacheable before rasterizer");
     require(
-        diagnostics.glyph_cache_readiness.front().has_atlas_slot,
+        readiness.has_atlas_slot,
         "missing byte glyph keeps existing atlas readiness behavior");
+    require(
+        readiness.font_face_byte_readiness_status == render_text_font_face_byte_readiness_status::missing_bytes,
+        "missing byte fixture records missing byte readiness before rasterizer");
+    require(
+        readiness.font_face_byte_fallback_required,
+        "missing byte fixture requires deterministic byte fallback");
+    require(
+        !readiness.font_face_can_attempt_freetype_load,
+        "missing byte fixture does not claim FreeType load readiness");
+    require(
+        readiness.used_descriptor_coverage_fallback,
+        "missing byte fixture records descriptor coverage fallback");
+    require(
+        diagnostics.glyph_cache_readiness_policy.font_face_byte_missing_count == 1,
+        "cache readiness policy counts missing font bytes");
+    require(
+        diagnostics.glyph_cache_readiness_policy.font_face_byte_fallback_required_count == 1,
+        "cache readiness policy counts missing byte fallback");
+    require(
+        diagnostics.glyph_cache_readiness_policy.descriptor_coverage_fallback_cluster_count == 1,
+        "cache readiness policy counts descriptor coverage fallback for missing bytes");
     require(
         diagnostics.rasterized_glyph_atlas_payloads.size() == 1,
         "missing byte fixture records one rasterizer payload decision");

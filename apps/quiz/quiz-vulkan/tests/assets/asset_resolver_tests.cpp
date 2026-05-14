@@ -131,6 +131,17 @@ void test_asset_cache_key_classification_rejects_ambiguous_or_noncanonical_keys(
         missing_source.status == asset_cache_key_policy_status::missing_source_uri,
         "missing source status is explicit");
 
+    const asset_cache_key_classification unsupported_scheme =
+        classify_asset_cache_key("image|ftp://example.test/cards/front.png");
+    require(!unsupported_scheme.ok(), "cache key rejects unsupported source schemes");
+    require(
+        unsupported_scheme.status == asset_cache_key_policy_status::unsupported_source_scheme,
+        "unsupported source scheme status is explicit");
+    require(unsupported_scheme.source_kind == asset_source_kind::unsupported, "unsupported source kind is exposed");
+    require(
+        unsupported_scheme.source_component == "ftp://example.test/cards/front.png",
+        "unsupported scheme keeps source component inspectable");
+
     const asset_cache_key_classification asset_slashes = classify_asset_cache_key("image|asset:///cards/front.png");
     require(!asset_slashes.ok(), "cache key requires canonical asset uri slashes");
     require(

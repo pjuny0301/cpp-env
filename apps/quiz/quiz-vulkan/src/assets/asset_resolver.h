@@ -44,6 +44,7 @@ enum class asset_cache_key_policy_status {
     missing_type_separator,
     unsupported_asset_type,
     missing_source_uri,
+    unsupported_source_scheme,
     invalid_source_uri,
     noncanonical_source_uri,
     path_traversal,
@@ -505,6 +506,9 @@ inline bool asset_cache_revision_is_valid(std::string_view revision)
 
 inline asset_cache_key_policy_status cache_key_status_from_resolve_status(asset_resolve_status status)
 {
+    if (status == asset_resolve_status::unsupported_scheme) {
+        return asset_cache_key_policy_status::unsupported_source_scheme;
+    }
     if (status == asset_resolve_status::path_traversal) {
         return asset_cache_key_policy_status::path_traversal;
     }

@@ -151,6 +151,50 @@ quiz_vulkan::render::font_face_catalog make_fallback_chain_catalog(const bool in
     return catalog;
 }
 
+quiz_vulkan::render::font_face_catalog make_cluster_fallback_catalog()
+{
+    using namespace quiz_vulkan::render;
+
+    const font_unicode_coverage_catalog_adapter adapter;
+    font_face_catalog catalog;
+    catalog.add_face(adapter.apply_to_descriptor(
+        font_face_descriptor{
+            .id = 211,
+            .family = "Primary Sans",
+            .source_uri = "fixture://fonts/primary-latin",
+            .version = "fixture-1",
+            .license = "test-fixture",
+            .weight = 400,
+        },
+        make_coverage({
+            render_text_font_cmap_range{
+                .first_codepoint = U'A',
+                .last_codepoint = U'A',
+            },
+        })));
+    catalog.add_face(adapter.apply_to_descriptor(
+        font_face_descriptor{
+            .id = 212,
+            .family = "Cluster Fallback",
+            .source_uri = "fixture://fonts/cluster-fallback",
+            .version = "fixture-1",
+            .license = "test-fixture",
+            .weight = 400,
+            .fallback = true,
+        },
+        make_coverage({
+            render_text_font_cmap_range{
+                .first_codepoint = U'A',
+                .last_codepoint = U'A',
+            },
+            render_text_font_cmap_range{
+                .first_codepoint = static_cast<char32_t>(0x0301U),
+                .last_codepoint = static_cast<char32_t>(0x0301U),
+            },
+        })));
+    return catalog;
+}
+
 quiz_vulkan::render::font_face_catalog make_alternate_hangul_fallback_catalog()
 {
     using namespace quiz_vulkan::render;
@@ -357,6 +401,30 @@ void test_adjacent_requested_and_fallback_faces_form_separate_merged_runs()
     require(segmentation.segments[1].codepoint_count == 2U, "second run merges fallback codepoints");
 }
 
+void test_combining_cluster_uses_one_fallback_face_for_coverage()
+{
+    using namespace quiz_vulkan::render;
+
+    const font_face_catalog catalog = make_cluster_fallback_catalog();
+    const std::string text = std::string("A") + std::string("\xCC\x81", 2);
+    const render_text_font_coverage_run_segmentation segmentation =
+        segment_font_coverage_runs(text, catalog, primary_style());
+
+    require(segmentation.ok(), "cluster-aware segmentation resolves combining sequence");
+    require(segmentation.codepoint_count == 2U, "combining sequence records two codepoints");
+    require(segmentation.supported_codepoint_count == 2U, "combining sequence is fully supported");
+    require(segmentation.fallback_codepoint_count == 2U, "entire combining cluster moves to fallback face");
+    require(segmentation.segments.size() == 1U, "combining sequence stays in one coverage segment");
+
+    const render_text_font_coverage_run_segment& segment = segmentation.segments.front();
+    require(segment.byte_offset == 0U && segment.byte_count == 3U, "cluster segment spans base and mark bytes");
+    require(segment.codepoint_offset == 0U && segment.codepoint_count == 2U, "cluster segment spans base and mark scalars");
+    require(segment.requested_face_id == 211U, "cluster segment records requested face");
+    require(segment.resolved_face_id == 212U, "cluster segment selects the fallback face that covers the whole cluster");
+    require(segment.used_fallback, "cluster segment records fallback use");
+    require(segment.glyph_supported, "cluster segment reports supported glyph coverage");
+}
+
 void test_fallback_chain_plans_mixed_batch_selected_face_order_before_shaping()
 {
     using namespace quiz_vulkan::render;
@@ -547,6 +615,31 @@ void test_fallback_run_plan_merges_contiguous_ranges_for_same_selected_face()
     require(
         repeated.runs[1].stable_run_key == plan.runs[1].stable_run_key,
         "stable run key repeats for identical fallback ranges");
+}
+
+void test_fallback_run_plan_keeps_combining_cluster_on_one_face()
+{
+    using namespace quiz_vulkan::render;
+
+    const font_face_catalog catalog = make_cluster_fallback_catalog();
+    const std::string text = std::string("A") + std::string("\xCC\x81", 2);
+    const render_text_font_fallback_run_plan_snapshot plan =
+        plan_render_text_font_fallback_runs(text, catalog, primary_style());
+
+    require(plan.ok(), "fallback run planner resolves combining cluster");
+    require(plan.policy.fallback_run_count == 1U, "combining cluster produces one fallback run");
+    require(plan.policy.covered_codepoint_count == 2U, "fallback run covers both combining codepoints");
+    require(plan.policy.fallback_codepoint_count == 2U, "fallback policy counts both codepoints as fallback");
+    require(plan.policy.unique_selected_face_count == 1U, "one face is selected for the cluster");
+    require(plan.selected_face_order.size() == 1U && plan.selected_face_order.front() == 212U, "cluster fallback face is selected once");
+
+    const render_text_font_fallback_run_snapshot& run = plan.runs.front();
+    require(run.selected_face_id == 212U, "combining fallback run selects whole-cluster fallback face");
+    require(run.byte_offset == 0U && run.byte_count == 3U, "combining fallback run spans all cluster bytes");
+    require(run.codepoint_offset == 0U && run.codepoint_count == 2U, "combining fallback run spans all cluster codepoints");
+    require(run.first_codepoint == U'A' && run.last_codepoint == 0x0301U, "combining fallback run records cluster endpoints");
+    require(run.used_fallback, "combining fallback run records fallback use");
+    require(run.ok(), "combining fallback run is ready for shaping");
 }
 
 void test_fallback_run_plan_diff_reports_catalog_coverage_change()
@@ -1124,10 +1217,12 @@ int main()
     test_invalid_utf8_produces_unsupported_segment_diagnostic();
     test_unsupported_codepoint_produces_unsupported_segment_diagnostic();
     test_adjacent_requested_and_fallback_faces_form_separate_merged_runs();
+    test_combining_cluster_uses_one_fallback_face_for_coverage();
     test_fallback_chain_plans_mixed_batch_selected_face_order_before_shaping();
     test_fallback_chain_reports_missing_emoji_without_claiming_support();
     test_fallback_run_plan_splits_latin_hangul_and_missing_ranges();
     test_fallback_run_plan_merges_contiguous_ranges_for_same_selected_face();
+    test_fallback_run_plan_keeps_combining_cluster_on_one_face();
     test_fallback_run_plan_diff_reports_catalog_coverage_change();
     test_fallback_shaping_handoff_summarizes_ready_and_blocked_runs();
     test_fallback_shaping_handoff_reports_invalid_utf8_and_no_selected_face();

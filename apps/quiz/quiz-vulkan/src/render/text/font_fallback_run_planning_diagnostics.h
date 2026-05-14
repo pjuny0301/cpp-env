@@ -244,6 +244,36 @@ inline const font_face_descriptor* font_fallback_run_select_face_for_codepoint(
     return nullptr;
 }
 
+inline const font_face_descriptor* font_fallback_run_select_face_for_cluster(
+    const std::vector<const font_face_descriptor*>& candidate_faces,
+    const std::vector<utf8_text_codepoint>& codepoints,
+    const utf8_text_cluster& cluster,
+    std::size_t& selected_order)
+{
+    for (std::size_t index = 0; index < candidate_faces.size(); ++index) {
+        const font_face_descriptor* face = candidate_faces[index];
+        if (face != nullptr && font_coverage_face_supports_utf8_cluster(*face, codepoints, cluster)) {
+            selected_order = index;
+            return face;
+        }
+    }
+
+    selected_order = candidate_faces.size();
+    return nullptr;
+}
+
+inline std::uint32_t font_fallback_run_cluster_last_codepoint(
+    const std::vector<utf8_text_codepoint>& codepoints,
+    const utf8_text_cluster& cluster)
+{
+    const std::size_t cluster_end = cluster.codepoint_offset + cluster.codepoint_count;
+    if (cluster_end == 0U || cluster_end > codepoints.size()) {
+        return utf8_replacement_codepoint;
+    }
+    const utf8_text_codepoint& scalar = codepoints[cluster_end - 1U];
+    return scalar.valid ? scalar.code_point : utf8_replacement_codepoint;
+}
+
 inline render_text_font_fallback_run_snapshot make_render_text_font_fallback_run_for_scalar(
     const utf8_text_codepoint& scalar,
     const std::size_t item_index,
@@ -316,6 +346,84 @@ inline render_text_font_fallback_run_snapshot make_render_text_font_fallback_run
     };
 }
 
+inline render_text_font_fallback_run_snapshot make_render_text_font_fallback_run_for_cluster(
+    const std::vector<utf8_text_codepoint>& codepoints,
+    const utf8_text_cluster& cluster,
+    const std::size_t item_index,
+    const std::size_t source_run_index,
+    const render_text_run& source_run,
+    const render_text_style& style,
+    const std::string& source_label,
+    const font_face_descriptor* requested_face,
+    const std::vector<const font_face_descriptor*>& candidate_faces,
+    const std::vector<font_face_id>& attempted_face_ids)
+{
+    const std::uint32_t first_codepoint =
+        font_coverage_run_cluster_first_codepoint(codepoints, cluster);
+    const std::uint32_t last_codepoint =
+        font_fallback_run_cluster_last_codepoint(codepoints, cluster);
+
+    if (!cluster.valid) {
+        return render_text_font_fallback_run_snapshot{
+            .item_index = item_index,
+            .source_run_index = source_run_index,
+            .style_token = source_run.style_token,
+            .source_label = source_label,
+            .byte_offset = cluster.byte_offset,
+            .byte_count = cluster.byte_count,
+            .codepoint_offset = cluster.codepoint_offset,
+            .codepoint_count = cluster.codepoint_count,
+            .first_codepoint = first_codepoint,
+            .last_codepoint = last_codepoint,
+            .requested_face_id = requested_face == nullptr ? 0U : requested_face->id,
+            .requested_family = style.font_family,
+            .fallback_order = attempted_face_ids.size(),
+            .attempted_face_ids = attempted_face_ids,
+            .valid_utf8 = false,
+            .glyph_supported = false,
+            .status = render_text_font_fallback_run_status::invalid_utf8,
+            .diagnostic = "invalid UTF-8 cluster at byte " + std::to_string(cluster.byte_offset),
+        };
+    }
+
+    std::size_t selected_order = candidate_faces.size();
+    const font_face_descriptor* selected =
+        font_fallback_run_select_face_for_cluster(candidate_faces, codepoints, cluster, selected_order);
+    const bool supported = selected != nullptr;
+    const bool used_fallback =
+        supported && (requested_face == nullptr || selected->id != requested_face->id);
+
+    return render_text_font_fallback_run_snapshot{
+        .item_index = item_index,
+        .source_run_index = source_run_index,
+        .style_token = source_run.style_token,
+        .source_label = source_label,
+        .byte_offset = cluster.byte_offset,
+        .byte_count = cluster.byte_count,
+        .codepoint_offset = cluster.codepoint_offset,
+        .codepoint_count = cluster.codepoint_count,
+        .first_codepoint = first_codepoint,
+        .last_codepoint = last_codepoint,
+        .requested_face_id = requested_face == nullptr ? 0U : requested_face->id,
+        .selected_face_id = selected == nullptr ? 0U : selected->id,
+        .requested_family = style.font_family,
+        .selected_family = selected == nullptr ? std::string{} : selected->family,
+        .selected_source_uri = selected == nullptr ? std::string{} : selected->source_uri,
+        .fallback_order = selected_order,
+        .attempted_face_ids = attempted_face_ids,
+        .valid_utf8 = true,
+        .glyph_supported = supported,
+        .used_fallback = used_fallback,
+        .status = supported
+            ? render_text_font_fallback_run_status::covered
+            : render_text_font_fallback_run_status::missing_glyph,
+        .diagnostic = supported
+            ? std::string{"font fallback run selected one face for a UTF-8 cluster before shaping"}
+            : "no fallback run face covers UTF-8 cluster starting at "
+                + font_coverage_run_hex_codepoint_label(first_codepoint),
+    };
+}
+
 inline void summarize_render_text_font_fallback_run_policy(
     render_text_font_fallback_run_plan_snapshot& plan)
 {
@@ -369,12 +477,14 @@ inline render_text_font_fallback_run_plan_snapshot plan_render_text_font_fallbac
                 font_fallback_chain_attempted_face_ids(candidate_faces);
             const std::vector<utf8_text_codepoint> codepoints =
                 iterate_utf8_text_run(source_run.text);
+            const std::vector<utf8_text_cluster> clusters = cluster_utf8_text_run(codepoints);
 
-            for (std::size_t codepoint_index = 0; codepoint_index < codepoints.size(); ++codepoint_index) {
+            for (const utf8_text_cluster& cluster : clusters) {
                 append_render_text_font_fallback_run(
                     plan,
-                    make_render_text_font_fallback_run_for_scalar(
-                        codepoints[codepoint_index],
+                    make_render_text_font_fallback_run_for_cluster(
+                        codepoints,
+                        cluster,
                         item.item_index,
                         source_run_index,
                         source_run,
@@ -382,8 +492,7 @@ inline render_text_font_fallback_run_plan_snapshot plan_render_text_font_fallbac
                         item.source_label,
                         requested_face,
                         candidate_faces,
-                        attempted_face_ids,
-                        codepoint_index));
+                        attempted_face_ids));
             }
         }
     }

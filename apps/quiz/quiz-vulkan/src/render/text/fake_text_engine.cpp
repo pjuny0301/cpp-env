@@ -1077,13 +1077,37 @@ std::vector<shaped_glyph> shape_request(
         std::vector<render_text_font_shaping_codepoint_selection> shaping_selections;
         shaping_selections.reserve(codepoints.size());
         const deterministic_font_glyph_id_resolver glyph_id_resolver;
-        for (const utf8_text_codepoint& scalar : codepoints) {
+        std::size_t scalar_cluster_index = 0;
+        for (std::size_t codepoint_index = 0; codepoint_index < codepoints.size(); ++codepoint_index) {
+            const utf8_text_codepoint& scalar = codepoints[codepoint_index];
+            while (scalar_cluster_index + 1U < utf8_clusters.size()
+                && codepoint_index >= utf8_clusters[scalar_cluster_index].codepoint_offset
+                    + utf8_clusters[scalar_cluster_index].codepoint_count) {
+                ++scalar_cluster_index;
+            }
+            const utf8_text_cluster scalar_cluster =
+                scalar_cluster_index < utf8_clusters.size()
+                    ? utf8_clusters[scalar_cluster_index]
+                    : utf8_text_cluster{
+                        .byte_offset = scalar.byte_offset,
+                        .byte_count = scalar.byte_count,
+                        .codepoint_offset = codepoint_index,
+                        .codepoint_count = 1,
+                        .valid = scalar.valid,
+                    };
             const std::uint32_t code_point = scalar.code_point;
             if (!scalar.valid) {
                 ++diagnostics.invalid_utf8_sequence_count;
             }
-            const font_face_resolution glyph_resolution =
-                font_resolver.catalog().resolve_for_face_and_codepoint(font_resolution.resolved_face_id, code_point);
+            const font_face_resolution glyph_resolution = scalar.valid
+                ? resolve_font_face_for_utf8_cluster(
+                    font_resolver.catalog(),
+                    font_resolution.resolved_face_id,
+                    codepoints,
+                    scalar_cluster)
+                : font_resolver.catalog().resolve_for_face_and_codepoint(
+                    font_resolution.resolved_face_id,
+                    code_point);
             const font_face_id requested_face_id =
                 glyph_resolution.requested_face == nullptr ? 0 : glyph_resolution.requested_face->id;
             const font_face_id resolved_face_id = glyph_resolution.resolved_face == nullptr

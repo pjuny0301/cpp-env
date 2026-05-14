@@ -216,6 +216,161 @@ inline std::string font_coverage_run_hex_codepoint_label(const std::uint32_t cod
     return label;
 }
 
+inline bool font_coverage_face_supports_utf8_cluster(
+    const font_face_descriptor& face,
+    const std::vector<utf8_text_codepoint>& codepoints,
+    const utf8_text_cluster& cluster)
+{
+    const std::size_t cluster_end = cluster.codepoint_offset + cluster.codepoint_count;
+    if (!cluster.valid || cluster.codepoint_count == 0U || cluster_end > codepoints.size()) {
+        return false;
+    }
+
+    for (std::size_t index = cluster.codepoint_offset; index < cluster_end; ++index) {
+        const utf8_text_codepoint& scalar = codepoints[index];
+        if (!scalar.valid || !face.supports_codepoint(scalar.code_point)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+inline const font_face_descriptor* font_coverage_find_covering_fallback_for_cluster(
+    const font_face_catalog& catalog,
+    const std::vector<utf8_text_codepoint>& codepoints,
+    const utf8_text_cluster& cluster)
+{
+    const auto known_coverage_match = std::find_if(
+        catalog.faces().begin(),
+        catalog.faces().end(),
+        [&](const font_face_descriptor& face) {
+            return face.fallback
+                && !face.coverage.empty()
+                && font_coverage_face_supports_utf8_cluster(face, codepoints, cluster);
+        });
+    if (known_coverage_match != catalog.faces().end()) {
+        return &*known_coverage_match;
+    }
+
+    const auto match = std::find_if(
+        catalog.faces().begin(),
+        catalog.faces().end(),
+        [&](const font_face_descriptor& face) {
+            return face.fallback
+                && font_coverage_face_supports_utf8_cluster(face, codepoints, cluster);
+        });
+    return match == catalog.faces().end() ? nullptr : &*match;
+}
+
+inline const font_face_descriptor* font_coverage_find_covering_face_for_cluster(
+    const font_face_catalog& catalog,
+    const std::vector<utf8_text_codepoint>& codepoints,
+    const utf8_text_cluster& cluster)
+{
+    const auto known_coverage_match = std::find_if(
+        catalog.faces().begin(),
+        catalog.faces().end(),
+        [&](const font_face_descriptor& face) {
+            return !face.coverage.empty()
+                && font_coverage_face_supports_utf8_cluster(face, codepoints, cluster);
+        });
+    if (known_coverage_match != catalog.faces().end()) {
+        return &*known_coverage_match;
+    }
+
+    const auto match = std::find_if(
+        catalog.faces().begin(),
+        catalog.faces().end(),
+        [&](const font_face_descriptor& face) {
+            return font_coverage_face_supports_utf8_cluster(face, codepoints, cluster);
+        });
+    return match == catalog.faces().end() ? nullptr : &*match;
+}
+
+inline font_face_resolution resolve_font_face_for_utf8_cluster(
+    const font_face_catalog& catalog,
+    const font_face_descriptor* requested,
+    const std::vector<utf8_text_codepoint>& codepoints,
+    const utf8_text_cluster& cluster)
+{
+    if (requested != nullptr && font_coverage_face_supports_utf8_cluster(*requested, codepoints, cluster)) {
+        return font_face_resolution{
+            .requested_face = requested,
+            .resolved_face = requested,
+            .used_fallback = false,
+            .glyph_supported = true,
+        };
+    }
+
+    if (const font_face_descriptor* fallback =
+            font_coverage_find_covering_fallback_for_cluster(catalog, codepoints, cluster);
+        fallback != nullptr) {
+        return font_face_resolution{
+            .requested_face = requested,
+            .resolved_face = fallback,
+            .used_fallback = requested == nullptr || fallback->id != requested->id,
+            .glyph_supported = true,
+        };
+    }
+
+    if (const font_face_descriptor* covering =
+            font_coverage_find_covering_face_for_cluster(catalog, codepoints, cluster);
+        covering != nullptr) {
+        return font_face_resolution{
+            .requested_face = requested,
+            .resolved_face = covering,
+            .used_fallback = requested == nullptr || covering->id != requested->id,
+            .glyph_supported = true,
+        };
+    }
+
+    const font_face_descriptor* unresolved = requested == nullptr ? catalog.fallback_face() : requested;
+    return font_face_resolution{
+        .requested_face = requested,
+        .resolved_face = unresolved,
+        .used_fallback = requested == nullptr && unresolved != nullptr,
+        .glyph_supported = false,
+    };
+}
+
+inline font_face_resolution resolve_font_face_for_utf8_cluster(
+    const font_face_catalog& catalog,
+    const render_text_style& style,
+    const std::vector<utf8_text_codepoint>& codepoints,
+    const utf8_text_cluster& cluster)
+{
+    return resolve_font_face_for_utf8_cluster(
+        catalog,
+        catalog.find_exact(style.font_family, style.font_weight, style.italic),
+        codepoints,
+        cluster);
+}
+
+inline font_face_resolution resolve_font_face_for_utf8_cluster(
+    const font_face_catalog& catalog,
+    const font_face_id requested_face_id,
+    const std::vector<utf8_text_codepoint>& codepoints,
+    const utf8_text_cluster& cluster)
+{
+    return resolve_font_face_for_utf8_cluster(
+        catalog,
+        catalog.find_by_id(requested_face_id),
+        codepoints,
+        cluster);
+}
+
+inline std::uint32_t font_coverage_run_cluster_first_codepoint(
+    const std::vector<utf8_text_codepoint>& codepoints,
+    const utf8_text_cluster& cluster)
+{
+    if (cluster.codepoint_offset >= codepoints.size()) {
+        return utf8_replacement_codepoint;
+    }
+    return codepoints[cluster.codepoint_offset].valid
+        ? codepoints[cluster.codepoint_offset].code_point
+        : utf8_replacement_codepoint;
+}
+
 inline bool font_coverage_run_segments_can_merge(
     const render_text_font_coverage_run_segment& lhs,
     const render_text_font_coverage_run_segment& rhs)
@@ -290,6 +445,43 @@ inline render_text_font_coverage_run_segment make_font_coverage_codepoint_segmen
     };
 }
 
+inline render_text_font_coverage_run_segment make_font_coverage_cluster_segment(
+    const std::vector<utf8_text_codepoint>& codepoints,
+    const utf8_text_cluster& cluster,
+    const font_face_catalog& catalog,
+    const render_text_style& style)
+{
+    const font_face_resolution resolution =
+        resolve_font_face_for_utf8_cluster(catalog, style, codepoints, cluster);
+    const font_face_descriptor* requested = resolution.requested_face;
+    const font_face_descriptor* resolved = resolution.resolved_face;
+    const bool supported = resolution.glyph_supported;
+    const std::uint32_t first_codepoint =
+        font_coverage_run_cluster_first_codepoint(codepoints, cluster);
+
+    return render_text_font_coverage_run_segment{
+        .byte_offset = cluster.byte_offset,
+        .byte_count = cluster.byte_count,
+        .codepoint_offset = cluster.codepoint_offset,
+        .codepoint_count = cluster.codepoint_count,
+        .first_codepoint = first_codepoint,
+        .requested_face_id = requested == nullptr ? 0 : requested->id,
+        .resolved_face_id = resolved == nullptr ? 0 : resolved->id,
+        .requested_family = style.font_family,
+        .resolved_family = resolved == nullptr ? std::string{} : resolved->family,
+        .used_fallback = resolution.used_fallback,
+        .glyph_supported = supported,
+        .valid_utf8 = true,
+        .status = supported
+            ? render_text_font_coverage_run_segment_status::supported
+            : render_text_font_coverage_run_segment_status::unsupported_codepoint,
+        .diagnostic = supported
+            ? std::string{}
+            : "no font face covers UTF-8 cluster starting at "
+                + font_coverage_run_hex_codepoint_label(first_codepoint),
+    };
+}
+
 inline void font_coverage_run_append_segment(
     std::vector<render_text_font_coverage_run_segment>& segments,
     render_text_font_coverage_run_segment segment)
@@ -313,21 +505,30 @@ inline render_text_font_coverage_run_segmentation segment_font_coverage_runs(
         .codepoint_count = codepoints.size(),
     };
 
-    for (std::size_t index = 0; index < codepoints.size(); ++index) {
-        const utf8_text_codepoint& scalar = codepoints[index];
-        render_text_font_coverage_run_segment segment = scalar.valid
-            ? make_font_coverage_codepoint_segment(scalar, index, catalog, style)
-            : make_font_coverage_invalid_utf8_segment(scalar, index, catalog, style);
+    const std::vector<utf8_text_cluster> clusters = cluster_utf8_text_run(codepoints);
+    for (const utf8_text_cluster& cluster : clusters) {
+        if (!cluster.valid) {
+            const std::size_t cluster_end = cluster.codepoint_offset + cluster.codepoint_count;
+            for (std::size_t index = cluster.codepoint_offset;
+                 index < cluster_end && index < codepoints.size();
+                 ++index) {
+                render_text_font_coverage_run_segment segment =
+                    make_font_coverage_invalid_utf8_segment(codepoints[index], index, catalog, style);
+                ++segmentation.invalid_utf8_count;
+                font_coverage_run_append_segment(segmentation.segments, std::move(segment));
+            }
+            continue;
+        }
 
-        if (!segment.valid_utf8) {
-            ++segmentation.invalid_utf8_count;
-        } else if (!segment.glyph_supported) {
-            ++segmentation.unsupported_codepoint_count;
+        render_text_font_coverage_run_segment segment =
+            make_font_coverage_cluster_segment(codepoints, cluster, catalog, style);
+        if (!segment.glyph_supported) {
+            segmentation.unsupported_codepoint_count += segment.codepoint_count;
         } else {
-            ++segmentation.supported_codepoint_count;
+            segmentation.supported_codepoint_count += segment.codepoint_count;
         }
         if (segment.used_fallback && segment.glyph_supported) {
-            ++segmentation.fallback_codepoint_count;
+            segmentation.fallback_codepoint_count += segment.codepoint_count;
         }
 
         font_coverage_run_append_segment(segmentation.segments, std::move(segment));
@@ -567,6 +768,7 @@ inline render_text_font_fallback_chain_run_snapshot plan_render_text_font_fallba
     const font_face_descriptor* requested_face =
         font_catalog.find_exact(style.font_family, style.font_weight, style.italic);
     const std::vector<utf8_text_codepoint> codepoints = iterate_utf8_text_run(run.text);
+    const std::vector<utf8_text_cluster> clusters = cluster_utf8_text_run(codepoints);
     const std::vector<const font_face_descriptor*> candidate_faces =
         font_fallback_chain_candidate_faces_for(font_catalog, style);
 
@@ -599,54 +801,63 @@ inline render_text_font_fallback_chain_run_snapshot plan_render_text_font_fallba
 
     const std::vector<font_face_id> attempted_face_ids =
         font_fallback_chain_attempted_face_ids(candidate_faces);
-    for (std::size_t codepoint_index = 0; codepoint_index < codepoints.size(); ++codepoint_index) {
-        const utf8_text_codepoint& scalar = codepoints[codepoint_index];
-        if (!scalar.valid) {
-            ++snapshot.invalid_utf8_count;
-            ++snapshot.missing_glyph_count;
-            missing_glyphs.push_back(make_font_fallback_chain_missing_glyph(
-                item_index,
-                run_index,
-                run,
-                style,
-                requested_face,
-                scalar,
-                codepoint_index,
-                attempted_face_ids));
+    for (const utf8_text_cluster& cluster : clusters) {
+        const std::size_t cluster_end = cluster.codepoint_offset + cluster.codepoint_count;
+        if (!cluster.valid) {
+            for (std::size_t codepoint_index = cluster.codepoint_offset;
+                 codepoint_index < cluster_end && codepoint_index < codepoints.size();
+                 ++codepoint_index) {
+                const utf8_text_codepoint& scalar = codepoints[codepoint_index];
+                ++snapshot.invalid_utf8_count;
+                ++snapshot.missing_glyph_count;
+                missing_glyphs.push_back(make_font_fallback_chain_missing_glyph(
+                    item_index,
+                    run_index,
+                    run,
+                    style,
+                    requested_face,
+                    scalar,
+                    codepoint_index,
+                    attempted_face_ids));
+            }
             continue;
         }
 
         for (render_text_font_fallback_chain_entry_snapshot& entry : snapshot.entries) {
             if (const font_face_descriptor* face = font_catalog.find_by_id(entry.face_id);
-                face != nullptr && face->supports_codepoint(scalar.code_point)) {
-                ++entry.covered_codepoint_count;
+                face != nullptr && font_coverage_face_supports_utf8_cluster(*face, codepoints, cluster)) {
+                entry.covered_codepoint_count += cluster.codepoint_count;
             }
         }
 
         const render_text_font_coverage_run_segment segment =
-            make_font_coverage_codepoint_segment(scalar, codepoint_index, font_catalog, style);
+            make_font_coverage_cluster_segment(codepoints, cluster, font_catalog, style);
         if (!segment.glyph_supported) {
-            ++snapshot.missing_glyph_count;
-            missing_glyphs.push_back(make_font_fallback_chain_missing_glyph(
-                item_index,
-                run_index,
-                run,
-                style,
-                requested_face,
-                scalar,
-                codepoint_index,
-                attempted_face_ids));
+            snapshot.missing_glyph_count += segment.codepoint_count;
+            for (std::size_t codepoint_index = cluster.codepoint_offset;
+                 codepoint_index < cluster_end && codepoint_index < codepoints.size();
+                 ++codepoint_index) {
+                missing_glyphs.push_back(make_font_fallback_chain_missing_glyph(
+                    item_index,
+                    run_index,
+                    run,
+                    style,
+                    requested_face,
+                    codepoints[codepoint_index],
+                    codepoint_index,
+                    attempted_face_ids));
+            }
             continue;
         }
 
-        ++snapshot.supported_codepoint_count;
+        snapshot.supported_codepoint_count += segment.codepoint_count;
         if (segment.used_fallback) {
-            ++snapshot.fallback_codepoint_count;
+            snapshot.fallback_codepoint_count += segment.codepoint_count;
         }
         if (render_text_font_fallback_chain_entry_snapshot* entry =
                 font_fallback_chain_find_entry(snapshot.entries, segment.resolved_face_id);
             entry != nullptr) {
-            ++entry->selected_codepoint_count;
+            entry->selected_codepoint_count += segment.codepoint_count;
         }
         font_fallback_chain_append_unique_selected_face(snapshot.selected_face_ids, segment.resolved_face_id);
         font_fallback_chain_append_unique_selected_face(deterministic_selected_face_order, segment.resolved_face_id);

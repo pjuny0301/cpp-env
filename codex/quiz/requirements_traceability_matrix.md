@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: Vulkan/VMA external header evidence threaded into native-path and frame handoff diagnostics; Windows MinGW focused Vulkan/renderer CTest passed 3/3 and interface compile target build confirmed.
+- `ed01afb`: Vulkan backend now reports checked external header availability separately from native function-table readiness in SDK native path and frame pipeline summaries.
 - current: native stb image memory decode integrated behind the image decoder adapter boundary; Windows MinGW focused image CTest passed 3/3 and interface compile target build confirmed.
 - current: `STB_IMAGE_IMPLEMENTATION` is isolated in the image engine `.cpp`, while public image headers remain declaration/contract surfaces.
 - current: text external header probe diagnostics threaded into fake text engine diagnostics; Windows MinGW focused text CTest passed 2/2 and interface compile target build confirmed.

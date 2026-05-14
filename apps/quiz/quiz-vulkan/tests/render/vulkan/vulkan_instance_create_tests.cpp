@@ -104,6 +104,33 @@ void test_instance_factory_creates_instance_when_loader_and_requirements_are_ava
     require(
         result.selected_extensions[1] == "VK_EXT_debug_utils",
         "created instance selects supported optional debug extension");
+    require(
+        result.required_extensions_ready(),
+        "created instance records required instance extensions ready");
+    require(
+        result.required_extension_count == 1,
+        "created instance counts required instance extensions");
+    require(
+        result.available_required_extension_count == 1,
+        "created instance counts available required instance extensions");
+    require(
+        result.missing_required_extension.empty(),
+        "created instance records no missing required extension");
+    require(
+        result.required_extension_diagnostics.size() == 1,
+        "created instance records one required extension diagnostic");
+    require(
+        result.required_extension_diagnostics.front().extension_name == "VK_KHR_surface",
+        "created instance records required surface extension diagnostic name");
+    require(
+        result.required_extension_diagnostics.front().available,
+        "created instance records required surface extension available");
+    require(
+        result.required_extension_diagnostics.front().selected,
+        "created instance records required surface extension selected");
+    require(
+        !result.required_extension_diagnostics.front().missing_required(),
+        "created instance required surface diagnostic is not missing");
     require(result.enabled_layers.size() == 1, "created instance enables validation layer");
     require(
         result.enabled_layers.front() == std::string{vulkan_backend::vulkan_validation_layer_name()},
@@ -144,6 +171,12 @@ void test_instance_factory_reports_loader_unavailable_before_extension_checks()
     require(!result.ready_for_device(), "loader-unavailable instance result does not reach device gate");
     require(!result.handle.valid(), "loader-unavailable instance result has no handle");
     require(result.selected_extensions.empty(), "loader-unavailable instance result selects no extensions");
+    require(
+        result.required_extension_diagnostics.empty(),
+        "loader-unavailable instance result skips extension diagnostics");
+    require(
+        result.required_extension_count == 0,
+        "loader-unavailable instance result leaves required extension count at zero");
     require(result.enabled_layers.empty(), "loader-unavailable instance result enables no layers");
     require(
         result.loader.status == vulkan_backend::vulkan_loader_readiness_status::library_missing,
@@ -173,6 +206,33 @@ void test_instance_factory_reports_missing_required_extension()
     require(!result.handle.valid(), "missing-extension instance result has no handle");
     require(result.selected_extensions.empty(), "missing-extension instance result selects no extensions");
     require(
+        !result.required_extensions_ready(),
+        "missing-extension instance result records required extensions not ready");
+    require(
+        result.required_extension_count == 1,
+        "missing-extension instance result counts required extension checks");
+    require(
+        result.available_required_extension_count == 0,
+        "missing-extension instance result counts no available required extensions");
+    require(
+        result.missing_required_extension == "VK_KHR_surface",
+        "missing-extension instance result records missing extension field");
+    require(
+        result.required_extension_diagnostics.size() == 1,
+        "missing-extension instance result records one required extension diagnostic");
+    require(
+        result.required_extension_diagnostics.front().extension_name == "VK_KHR_surface",
+        "missing-extension diagnostic records surface extension name");
+    require(
+        !result.required_extension_diagnostics.front().available,
+        "missing-extension diagnostic records unavailable required extension");
+    require(
+        !result.required_extension_diagnostics.front().selected,
+        "missing-extension diagnostic records unselected required extension");
+    require(
+        result.required_extension_diagnostics.front().missing_required(),
+        "missing-extension diagnostic marks missing required extension");
+    require(
         result.diagnostic == "missing required instance extension: VK_KHR_surface",
         "missing-extension instance result records diagnostic extension name");
 }
@@ -199,6 +259,12 @@ void test_instance_factory_reports_missing_requested_layer()
     require(!result.ready_for_device(), "missing-layer instance result does not reach device gate");
     require(!result.handle.valid(), "missing-layer instance result has no handle");
     require(result.selected_extensions.size() == 2, "missing-layer instance result preserves selected extensions");
+    require(
+        result.required_extensions_ready(),
+        "missing-layer instance result keeps required extension diagnostics ready");
+    require(
+        result.required_extension_diagnostics.size() == 1,
+        "missing-layer instance result preserves required extension diagnostic");
     require(result.enabled_layers.empty(), "missing-layer instance result enables no layers");
     require(
         result.diagnostic == "missing requested instance layer: VK_LAYER_KHRONOS_validation",
@@ -227,6 +293,12 @@ void test_instance_factory_reports_creation_failure_after_requirements_pass()
     require(!result.ready_for_device(), "creation-failure instance result does not reach device gate");
     require(!result.handle.valid(), "creation-failure instance result has no handle");
     require(result.selected_extensions.size() == 2, "creation-failure instance result preserves selected extensions");
+    require(
+        result.required_extensions_ready(),
+        "creation-failure instance result keeps required extension diagnostics ready");
+    require(
+        result.available_required_extension_count == result.required_extension_count,
+        "creation-failure instance result counts all required extensions available");
     require(result.enabled_layers.size() == 1, "creation-failure instance result preserves enabled layers");
 
     vulkan_backend::null_vulkan_backend_device device(result);

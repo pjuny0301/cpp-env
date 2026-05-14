@@ -3,6 +3,7 @@
 #include "render/vulkan/vulkan_backend_loader.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -64,19 +65,42 @@ inline std::string_view vulkan_validation_layer_name()
     return "VK_LAYER_KHRONOS_validation";
 }
 
+struct vulkan_instance_extension_diagnostic {
+    std::string extension_name;
+    bool required = true;
+    bool available = false;
+    bool selected = false;
+
+    bool missing_required() const
+    {
+        return required && !available;
+    }
+};
+
 struct vulkan_instance_create_result {
     bool checked = false;
     vulkan_instance_create_status status = vulkan_instance_create_status::not_requested;
     vulkan_loader_readiness_state loader;
     vulkan_instance_handle handle;
     std::vector<std::string> selected_extensions;
+    std::vector<vulkan_instance_extension_diagnostic> required_extension_diagnostics;
+    std::size_t required_extension_count = 0;
+    std::size_t available_required_extension_count = 0;
+    std::string missing_required_extension;
     std::vector<std::string> enabled_layers;
     std::string diagnostic;
+
+    bool required_extensions_ready() const
+    {
+        return checked && required_extension_count == available_required_extension_count
+            && missing_required_extension.empty();
+    }
 
     bool ready_for_device() const
     {
         return checked && status == vulkan_instance_create_status::created
-            && loader.ready_for_instance() && handle.valid();
+            && loader.ready_for_instance() && handle.valid()
+            && required_extensions_ready();
     }
 };
 
@@ -138,6 +162,10 @@ inline vulkan_instance_create_result make_instance_create_result(
         .loader = loader_readiness,
         .handle = {},
         .selected_extensions = {},
+        .required_extension_diagnostics = {},
+        .required_extension_count = 0,
+        .available_required_extension_count = 0,
+        .missing_required_extension = {},
         .enabled_layers = {},
         .diagnostic = {},
     };
@@ -170,6 +198,26 @@ inline std::string make_missing_requested_layer_diagnostic(
     return "missing requested instance layer: " + layer_name;
 }
 
+inline void record_required_extension_diagnostic(
+    vulkan_instance_create_result& result,
+    const std::string& extension_name,
+    bool available)
+{
+    result.required_extension_diagnostics.push_back(
+        vulkan_instance_extension_diagnostic{
+            .extension_name = extension_name,
+            .required = true,
+            .available = available,
+            .selected = available,
+        });
+    result.required_extension_count = result.required_extension_diagnostics.size();
+    if (available) {
+        ++result.available_required_extension_count;
+    } else if (result.missing_required_extension.empty()) {
+        result.missing_required_extension = extension_name;
+    }
+}
+
 } // namespace instance_detail
 
 inline fake_vulkan_instance_factory::fake_vulkan_instance_factory()
@@ -197,9 +245,14 @@ inline vulkan_instance_create_result fake_vulkan_instance_factory::create_instan
     }
 
     for (const std::string& extension_name : request.required_instance_extensions) {
-        if (!instance_detail::contains_string(
-                options_.supported_instance_extensions,
-                extension_name)) {
+        const bool extension_available = instance_detail::contains_string(
+            options_.supported_instance_extensions,
+            extension_name);
+        instance_detail::record_required_extension_diagnostic(
+            result,
+            extension_name,
+            extension_available);
+        if (!extension_available) {
             result.status = vulkan_instance_create_status::missing_required_extension;
             result.diagnostic =
                 instance_detail::make_missing_required_extension_diagnostic(extension_name);

@@ -65,6 +65,36 @@ inline std::string render_text_font_backend_adapter_readiness_status_name(
     return "unknown";
 }
 
+enum class render_text_external_font_backend_work_readiness_status {
+    missing_approved_header,
+    header_only,
+    source_ready,
+    library_linked,
+    adapter_ready,
+    deterministic_fallback_only,
+};
+
+inline std::string render_text_external_font_backend_work_readiness_status_name(
+    const render_text_external_font_backend_work_readiness_status status)
+{
+    switch (status) {
+    case render_text_external_font_backend_work_readiness_status::missing_approved_header:
+        return "missing_approved_header";
+    case render_text_external_font_backend_work_readiness_status::header_only:
+        return "header_only";
+    case render_text_external_font_backend_work_readiness_status::source_ready:
+        return "source_ready";
+    case render_text_external_font_backend_work_readiness_status::library_linked:
+        return "library_linked";
+    case render_text_external_font_backend_work_readiness_status::adapter_ready:
+        return "adapter_ready";
+    case render_text_external_font_backend_work_readiness_status::deterministic_fallback_only:
+        return "deterministic_fallback_only";
+    }
+
+    return "unknown";
+}
+
 inline bool render_text_external_font_backend_hint_uses_absolute_or_host_path(
     const std::string& value)
 {
@@ -343,6 +373,37 @@ struct render_text_external_font_backend_probe_diff_summary_snapshot {
     bool has_changes() const
     {
         return changed_count > 0;
+    }
+};
+
+struct render_text_external_font_backend_work_readiness {
+    render_text_font_backend_selection_purpose purpose =
+        render_text_font_backend_selection_purpose::shaping;
+    render_text_font_backend_library library =
+        render_text_font_backend_library::deterministic_fake;
+    render_text_external_font_backend_work_readiness_status status =
+        render_text_external_font_backend_work_readiness_status::missing_approved_header;
+    std::string label;
+    render_text_font_backend_version header_version;
+    render_text_font_backend_version dependency_version;
+    bool header_available = false;
+    bool header_version_available = false;
+    bool dependency_declared = false;
+    bool source_available = false;
+    bool build_linked = false;
+    bool adapter_symbols_available = false;
+    bool fallback_required = true;
+    bool can_attempt_real_backend = false;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return status == render_text_external_font_backend_work_readiness_status::adapter_ready;
+    }
+
+    bool header_backed_without_library() const
+    {
+        return status == render_text_external_font_backend_work_readiness_status::header_only;
     }
 };
 
@@ -730,6 +791,117 @@ inline const render_text_external_font_backend_dependency* find_render_text_exte
             return dependency.library == library;
         });
     return match == dependencies.end() ? nullptr : &*match;
+}
+
+inline std::string render_text_external_font_backend_work_readiness_diagnostic_for(
+    const render_text_external_font_backend_work_readiness& readiness)
+{
+    const std::string library = render_text_font_backend_library_name(readiness.library);
+    switch (readiness.status) {
+    case render_text_external_font_backend_work_readiness_status::adapter_ready:
+        return library + " dependency has approved headers, linked library, and adapter symbols";
+    case render_text_external_font_backend_work_readiness_status::library_linked:
+        return library + " dependency is linked but adapter symbols are not available";
+    case render_text_external_font_backend_work_readiness_status::source_ready:
+        return library + " dependency source is present but the library is not linked";
+    case render_text_external_font_backend_work_readiness_status::header_only:
+        return library + " approved header is present, but no linked library or adapter symbols are available";
+    case render_text_external_font_backend_work_readiness_status::deterministic_fallback_only:
+        return "deterministic fake text backend remains the fallback-only implementation";
+    case render_text_external_font_backend_work_readiness_status::missing_approved_header:
+        return library + " approved header is missing, so deterministic fallback remains required";
+    }
+
+    return "unknown text backend work readiness";
+}
+
+inline render_text_external_font_backend_work_readiness_status
+render_text_external_font_backend_work_readiness_status_for(
+    const render_text_external_font_backend_header_probe* header,
+    const render_text_external_font_backend_dependency* dependency,
+    const render_text_font_backend_library library)
+{
+    const bool header_probe_only_dependency =
+        dependency != nullptr
+        && dependency->source_hint == "desktop external header boundary"
+        && dependency->library_hint == "not linked by header probe";
+
+    if (library == render_text_font_backend_library::deterministic_fake) {
+        return render_text_external_font_backend_work_readiness_status::deterministic_fallback_only;
+    }
+    if (dependency != nullptr && dependency->adapter_ready()) {
+        return render_text_external_font_backend_work_readiness_status::adapter_ready;
+    }
+    if (dependency != nullptr && dependency->build_linked) {
+        return render_text_external_font_backend_work_readiness_status::library_linked;
+    }
+    if (dependency != nullptr && dependency->source_available) {
+        return header_probe_only_dependency && header != nullptr && header->header_available
+            ? render_text_external_font_backend_work_readiness_status::header_only
+            : render_text_external_font_backend_work_readiness_status::source_ready;
+    }
+    if (header != nullptr && header->header_available) {
+        return render_text_external_font_backend_work_readiness_status::header_only;
+    }
+    return render_text_external_font_backend_work_readiness_status::missing_approved_header;
+}
+
+inline render_text_external_font_backend_work_readiness make_render_text_external_font_backend_work_readiness(
+    const render_text_external_font_backend_header_probe_snapshot& headers,
+    const render_text_external_font_backend_manifest& manifest,
+    const render_text_font_backend_selection_purpose purpose)
+{
+    const std::vector<render_text_font_backend_library> libraries =
+        render_text_external_font_backend_default_libraries_for(purpose);
+    const render_text_font_backend_library library = libraries.empty()
+        ? render_text_font_backend_library::deterministic_fake
+        : libraries.front();
+    const render_text_external_font_backend_header_probe* header =
+        find_render_text_external_font_backend_header_probe(headers.probes, library);
+    const render_text_external_font_backend_dependency* dependency =
+        find_render_text_external_font_backend_dependency(manifest.dependencies, library);
+    const render_text_external_font_backend_work_readiness_status status =
+        render_text_external_font_backend_work_readiness_status_for(header, dependency, library);
+
+    render_text_external_font_backend_work_readiness readiness{
+        .purpose = purpose,
+        .library = library,
+        .status = status,
+        .label = dependency != nullptr ? dependency->label : render_text_font_backend_library_name(library),
+        .header_version = header != nullptr ? header->version : render_text_font_backend_version{},
+        .dependency_version = dependency != nullptr ? dependency->version : render_text_font_backend_version{},
+        .header_available = header != nullptr && header->header_available,
+        .header_version_available = header != nullptr && header->version_available,
+        .dependency_declared = dependency != nullptr,
+        .source_available = dependency != nullptr && dependency->source_available,
+        .build_linked = dependency != nullptr && dependency->build_linked,
+        .adapter_symbols_available = dependency != nullptr && dependency->adapter_symbols_available,
+        .fallback_required = status != render_text_external_font_backend_work_readiness_status::adapter_ready,
+        .can_attempt_real_backend = status == render_text_external_font_backend_work_readiness_status::adapter_ready,
+    };
+    readiness.diagnostic = render_text_external_font_backend_work_readiness_diagnostic_for(readiness);
+    return readiness;
+}
+
+inline std::vector<render_text_external_font_backend_work_readiness>
+make_render_text_external_font_backend_work_readiness_records(
+    const render_text_external_font_backend_header_probe_snapshot& headers,
+    const render_text_external_font_backend_manifest& manifest)
+{
+    return {
+        make_render_text_external_font_backend_work_readiness(
+            headers,
+            manifest,
+            render_text_font_backend_selection_purpose::shaping),
+        make_render_text_external_font_backend_work_readiness(
+            headers,
+            manifest,
+            render_text_font_backend_selection_purpose::rasterization),
+        make_render_text_external_font_backend_work_readiness(
+            headers,
+            manifest,
+            render_text_font_backend_selection_purpose::unicode_processing),
+    };
 }
 
 inline std::vector<render_text_font_backend_library> missing_render_text_external_font_backend_dependencies(

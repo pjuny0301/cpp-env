@@ -1114,6 +1114,91 @@ void test_external_backend_header_backed_manifest_preserves_fake_fallback_withou
     }
 }
 
+void test_external_backend_work_readiness_distinguishes_headers_sources_and_linking()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_external_font_backend_header_probe_snapshot headers =
+        make_render_text_external_font_backend_header_probe_snapshot();
+    const std::array<render_text_font_backend_selection_purpose, 3> purposes = {
+        render_text_font_backend_selection_purpose::shaping,
+        render_text_font_backend_selection_purpose::rasterization,
+        render_text_font_backend_selection_purpose::unicode_processing,
+    };
+
+    const std::vector<render_text_external_font_backend_work_readiness> header_only =
+        make_render_text_external_font_backend_work_readiness_records(
+            headers,
+            make_render_text_header_backed_external_font_backend_manifest());
+    require(header_only.size() == purposes.size(), "work readiness records each external text purpose");
+    for (std::size_t index = 0; index < purposes.size(); ++index) {
+        const render_text_external_font_backend_work_readiness& readiness = header_only[index];
+        const render_text_font_backend_library library =
+            render_text_external_font_backend_default_libraries_for(purposes[index]).front();
+
+        require(readiness.purpose == purposes[index], "header-only readiness preserves purpose");
+        require(readiness.library == library, "header-only readiness records required library");
+        require(
+            readiness.header_available == render_text_external_font_backend_header_available(library),
+            "header-only readiness mirrors approved header availability");
+        require(!readiness.build_linked, "header-only readiness does not claim linked libraries");
+        require(!readiness.adapter_symbols_available, "header-only readiness does not claim adapter symbols");
+        require(readiness.fallback_required, "header-only readiness keeps deterministic fallback required");
+        require(!readiness.can_attempt_real_backend, "header-only readiness cannot attempt real backend work");
+        if (readiness.header_available) {
+            require(
+                readiness.status == render_text_external_font_backend_work_readiness_status::header_only,
+                "available approved headers are classified as header-only without linking");
+            require(
+                readiness.header_backed_without_library(),
+                "header-only readiness reports header-backed state");
+        } else {
+            require(
+                readiness.status
+                    == render_text_external_font_backend_work_readiness_status::missing_approved_header,
+                "missing approved headers are classified separately");
+        }
+    }
+
+    const std::vector<render_text_external_font_backend_work_readiness> source_ready =
+        make_render_text_external_font_backend_work_readiness_records(
+            headers,
+            make_render_text_known_external_font_backend_manifest(true, false, false));
+    const std::vector<render_text_external_font_backend_work_readiness> library_linked =
+        make_render_text_external_font_backend_work_readiness_records(
+            headers,
+            make_render_text_known_external_font_backend_manifest(true, true, false));
+    const std::vector<render_text_external_font_backend_work_readiness> adapter_ready =
+        make_render_text_external_font_backend_work_readiness_records(
+            headers,
+            make_render_text_known_external_font_backend_manifest(true, true, true));
+
+    for (std::size_t index = 0; index < purposes.size(); ++index) {
+        require(
+            source_ready[index].status == render_text_external_font_backend_work_readiness_status::source_ready,
+            "source-ready dependencies are distinct from header-only probes");
+        require(source_ready[index].source_available, "source-ready dependency records source availability");
+        require(!source_ready[index].build_linked, "source-ready dependency is not linked yet");
+        require(source_ready[index].fallback_required, "source-ready dependency still requires fallback");
+
+        require(
+            library_linked[index].status == render_text_external_font_backend_work_readiness_status::library_linked,
+            "linked dependencies without adapter symbols are classified as linked");
+        require(library_linked[index].build_linked, "linked readiness records library linkage");
+        require(
+            !library_linked[index].adapter_symbols_available,
+            "linked readiness distinguishes missing adapter symbols");
+        require(!library_linked[index].can_attempt_real_backend, "linked readiness without adapter cannot run backend");
+
+        require(
+            adapter_ready[index].status == render_text_external_font_backend_work_readiness_status::adapter_ready,
+            "adapter-ready dependencies are classified as runnable real backend work");
+        require(adapter_ready[index].ok(), "adapter-ready readiness is ok");
+        require(adapter_ready[index].can_attempt_real_backend, "adapter-ready readiness can attempt real backend");
+        require(!adapter_ready[index].fallback_required, "adapter-ready readiness does not require fallback");
+    }
+}
+
 void test_external_backend_dependency_probe_diff_reports_fake_to_adapter_ready()
 {
     using namespace quiz_vulkan::render;
@@ -1623,6 +1708,7 @@ int main()
     test_external_backend_dependency_metadata_and_header_stay_text_owned();
     test_external_backend_header_probe_reports_compile_time_boundary();
     test_external_backend_header_backed_manifest_preserves_fake_fallback_without_linking();
+    test_external_backend_work_readiness_distinguishes_headers_sources_and_linking();
     test_external_backend_dependency_probe_diff_reports_fake_to_adapter_ready();
     test_external_backend_dependency_probe_diff_reports_unavailable_to_mismatch();
     test_external_backend_dependency_probe_diff_summary_compares_backend_snapshots();

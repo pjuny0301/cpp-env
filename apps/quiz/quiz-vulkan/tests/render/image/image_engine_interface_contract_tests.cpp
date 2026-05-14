@@ -856,11 +856,16 @@ static_assert(requires(
     { upload_readiness.color_space_name } -> std::same_as<std::string&>;
     { upload_readiness.placeholder_fallback } -> std::same_as<bool&>;
     { upload_readiness.payload_valid } -> std::same_as<bool&>;
+    { upload_readiness.decode_metadata_matches_image } -> std::same_as<bool&>;
     { upload_readiness.upload_ready } -> std::same_as<bool&>;
     { upload_readiness.pixel_count } -> std::same_as<std::size_t&>;
     { upload_readiness.pixel_byte_count } -> std::same_as<std::size_t&>;
     { upload_readiness.decoded_byte_count } -> std::same_as<std::size_t&>;
+    { upload_readiness.metadata_decoded_byte_count } -> std::same_as<std::size_t&>;
+    { upload_readiness.metadata_expected_decoded_byte_count } -> std::same_as<std::size_t&>;
+    { upload_readiness.metadata_actual_decoded_byte_count } -> std::same_as<std::size_t&>;
     { upload_readiness.staging_byte_count } -> std::same_as<std::size_t&>;
+    { upload_readiness.decode_handoff_diagnostic } -> std::same_as<std::string&>;
     { upload_readiness.diagnostic } -> std::same_as<std::string&>;
     { render::make_render_image_upload_readiness_snapshot(texture_key, metadata, image) }
         -> std::same_as<render::render_image_upload_readiness_snapshot>;

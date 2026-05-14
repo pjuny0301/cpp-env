@@ -287,11 +287,16 @@ struct render_image_upload_readiness_snapshot {
     std::string color_space_name;
     bool placeholder_fallback = false;
     bool payload_valid = false;
+    bool decode_metadata_matches_image = false;
     bool upload_ready = false;
     std::size_t pixel_count = 0;
     std::size_t pixel_byte_count = 0;
     std::size_t decoded_byte_count = 0;
+    std::size_t metadata_decoded_byte_count = 0;
+    std::size_t metadata_expected_decoded_byte_count = 0;
+    std::size_t metadata_actual_decoded_byte_count = 0;
     std::size_t staging_byte_count = 0;
+    std::string decode_handoff_diagnostic;
     std::string diagnostic;
 };
 
@@ -319,6 +324,27 @@ inline render_image_upload_readiness_snapshot make_render_image_upload_readiness
         render_image_texture_color_space_for(image.pixel_format);
     const bool payload_valid = has_valid_render_decoded_image_payload(image);
     const std::size_t decoded_byte_count = image.pixels.size();
+    const std::size_t expected_byte_count = expected_render_decoded_image_byte_count(image);
+    const bool decode_metadata_matches_image = decode_metadata.has_image()
+        && decode_metadata.size_validation.valid
+        && decode_metadata.width == image.width
+        && decode_metadata.height == image.height
+        && decode_metadata.pixel_format == image.pixel_format
+        && decode_metadata.decoded_byte_count == decoded_byte_count
+        && decode_metadata.size_validation.expected_decoded_byte_count == expected_byte_count
+        && decode_metadata.size_validation.actual_decoded_byte_count == decoded_byte_count;
+    std::string decode_handoff_diagnostic;
+    if (!decode_metadata.has_image()) {
+        decode_handoff_diagnostic = "decode handoff metadata has no image";
+    } else if (!decode_metadata.size_validation.valid) {
+        decode_handoff_diagnostic = "decode handoff metadata failed size validation: "
+            + decode_metadata.size_validation.diagnostic;
+    } else if (!decode_metadata_matches_image) {
+        decode_handoff_diagnostic = "decode handoff metadata does not match decoded image";
+    } else {
+        decode_handoff_diagnostic = "decode handoff metadata matches decoded image";
+    }
+
     std::string diagnostic;
     if (!key_diagnostic.valid) {
         diagnostic = key_diagnostic.diagnostic;
@@ -328,11 +354,14 @@ inline render_image_upload_readiness_snapshot make_render_image_upload_readiness
         diagnostic = "decoded image is empty";
     } else if (!payload_valid) {
         diagnostic = "decoded image payload size does not match dimensions and format";
+    } else if (!decode_metadata_matches_image) {
+        diagnostic = decode_handoff_diagnostic;
     } else {
         diagnostic = "decoded image is upload-ready";
     }
     const bool upload_ready = key_diagnostic.valid && payload_valid
-        && color_space != render_image_texture_color_space::unknown;
+        && color_space != render_image_texture_color_space::unknown
+        && decode_metadata_matches_image;
 
     return render_image_upload_readiness_snapshot{
         .key = key,
@@ -343,11 +372,18 @@ inline render_image_upload_readiness_snapshot make_render_image_upload_readiness
         .color_space_name = render_image_texture_color_space_name(color_space),
         .placeholder_fallback = decode_metadata.format_detection.placeholder_fallback,
         .payload_valid = payload_valid,
+        .decode_metadata_matches_image = decode_metadata_matches_image,
         .upload_ready = upload_ready,
         .pixel_count = render_image_checked_pixel_count(image),
-        .pixel_byte_count = expected_render_decoded_image_byte_count(image),
+        .pixel_byte_count = expected_byte_count,
         .decoded_byte_count = decoded_byte_count,
+        .metadata_decoded_byte_count = decode_metadata.decoded_byte_count,
+        .metadata_expected_decoded_byte_count =
+            decode_metadata.size_validation.expected_decoded_byte_count,
+        .metadata_actual_decoded_byte_count =
+            decode_metadata.size_validation.actual_decoded_byte_count,
         .staging_byte_count = payload_valid ? decoded_byte_count : 0,
+        .decode_handoff_diagnostic = std::move(decode_handoff_diagnostic),
         .diagnostic = std::move(diagnostic),
     };
 }

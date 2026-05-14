@@ -487,6 +487,57 @@ void test_filesystem_pipeline_reports_malformed_ppm_decode_failed()
     require(!snapshot.entries[0].diagnostic.empty(), "malformed file snapshot keeps diagnostic");
 }
 
+void test_upload_readiness_reports_decode_handoff_metadata()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_image_texture_key key{
+        .source_key = "textures/handoff.jpg",
+        .sampler = render_image_sampler_policy{},
+    };
+    const render_decoded_image image = make_rgba_1x1_image(1, 2, 3, 4);
+    const render_image_decode_request request{
+        .source = render_resolved_image_source{
+            .original_uri = "textures/handoff.jpg",
+            .normalized_uri = "textures/handoff.jpg",
+            .kind = render_image_source_kind::local_path,
+        },
+        .encoded_bytes = make_jpeg_signature_bytes(),
+    };
+    const render_image_decode_metadata metadata =
+        make_render_image_decode_metadata("fake_stb_decoder", request, image);
+
+    const render_image_upload_readiness_snapshot ready =
+        make_render_image_upload_readiness_snapshot(key, metadata, image);
+
+    require(ready.payload_valid, "upload readiness accepts valid decoded payload");
+    require(ready.decode_metadata_matches_image, "upload readiness records matching decode handoff");
+    require(ready.upload_ready, "matching decode handoff is upload-ready");
+    require(ready.metadata_decoded_byte_count == 4, "upload readiness records metadata decoded bytes");
+    require(ready.metadata_expected_decoded_byte_count == 4, "upload readiness records metadata expected bytes");
+    require(ready.metadata_actual_decoded_byte_count == 4, "upload readiness records metadata actual bytes");
+    require(
+        ready.decode_handoff_diagnostic == "decode handoff metadata matches decoded image",
+        "upload readiness records matching handoff diagnostic");
+
+    render_image_decode_metadata mismatched_metadata = metadata;
+    mismatched_metadata.decoded_byte_count = 8;
+    const render_image_upload_readiness_snapshot mismatched =
+        make_render_image_upload_readiness_snapshot(key, mismatched_metadata, image);
+
+    require(mismatched.payload_valid, "handoff mismatch preserves valid payload evidence");
+    require(!mismatched.decode_metadata_matches_image, "upload readiness detects metadata mismatch");
+    require(!mismatched.upload_ready, "metadata mismatch blocks upload readiness");
+    require(mismatched.metadata_decoded_byte_count == 8, "mismatch snapshot preserves metadata byte count");
+    require(mismatched.decoded_byte_count == 4, "mismatch snapshot preserves payload byte count");
+    require(
+        mismatched.decode_handoff_diagnostic == "decode handoff metadata does not match decoded image",
+        "upload readiness records mismatch handoff diagnostic");
+    require(
+        mismatched.diagnostic == "decode handoff metadata does not match decoded image",
+        "upload readiness surfaces handoff mismatch as primary diagnostic");
+}
+
 void test_pipeline_uses_optional_third_party_decoder_through_interface()
 {
     using namespace quiz_vulkan::render;
@@ -559,6 +610,18 @@ void test_pipeline_uses_optional_third_party_decoder_through_interface()
     require(
         snapshot.entries[0].decoder_capability_manifest.terminal_decoder_id == "fake_stb_decoder",
         "pipeline entry capability manifest records adapter terminal decoder");
+
+    require(!snapshot.cache_snapshot.entries.empty(), "third-party pipeline snapshot exposes cache entry");
+    const render_image_upload_readiness_snapshot& readiness =
+        snapshot.cache_snapshot.entries[0].upload_readiness;
+    require(readiness.upload_ready, "third-party cache entry is upload-ready");
+    require(readiness.decode_metadata_matches_image, "third-party cache entry validates decode handoff");
+    require(readiness.metadata_decoded_byte_count == 4, "third-party handoff records metadata decoded bytes");
+    require(readiness.metadata_expected_decoded_byte_count == 4, "third-party handoff records expected bytes");
+    require(readiness.metadata_actual_decoded_byte_count == 4, "third-party handoff records actual bytes");
+    require(
+        readiness.decode_handoff_diagnostic == "decode handoff metadata matches decoded image",
+        "third-party cache entry records handoff diagnostic");
 }
 
 void test_optional_adapter_failure_falls_back_before_texture_upload()
@@ -3350,6 +3413,7 @@ int main()
     test_filesystem_pipeline_reports_missing_file_source_load_failed();
     test_filesystem_pipeline_reports_empty_file_source_load_failed();
     test_filesystem_pipeline_reports_malformed_ppm_decode_failed();
+    test_upload_readiness_reports_decode_handoff_metadata();
     test_pipeline_uses_optional_third_party_decoder_through_interface();
     test_optional_adapter_failure_falls_back_before_texture_upload();
     test_unavailable_optional_adapter_keeps_diagnostics_without_upload();

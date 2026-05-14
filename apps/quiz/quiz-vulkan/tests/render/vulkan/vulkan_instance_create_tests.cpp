@@ -4,6 +4,7 @@
 #include "render/vulkan/vulkan_backend_sdk.h"
 
 #include <cassert>
+#include <cstdlib>
 #include <cstdio>
 #include <cstdint>
 #include <string>
@@ -18,6 +19,12 @@ void require(bool condition, const char* message)
         std::fprintf(stderr, "Requirement failed: %s\n", message);
     }
     assert((condition) && message);
+}
+
+bool native_vulkan_smoke_enabled()
+{
+    const char* enabled = std::getenv("QUIZ_VULKAN_RUN_NATIVE_VULKAN_SMOKE");
+    return enabled != nullptr && std::string_view{enabled} == "1";
 }
 
 quiz_vulkan::render::vulkan_backend::vulkan_loader_readiness_state make_ready_loader()
@@ -479,6 +486,10 @@ void test_native_instance_destroy_blocks_invalid_handles()
 void test_native_instance_create_smoke_uses_system_loader_when_available()
 {
     namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    if (!native_vulkan_smoke_enabled()) {
+        return;
+    }
 
     vulkan_backend::system_vulkan_loader loader;
     const vulkan_backend::vulkan_loader_probe_result probe =

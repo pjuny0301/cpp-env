@@ -105,6 +105,19 @@ std::vector<sfnt_fixture_table> required_truetype_tables(std::vector<std::byte> 
     };
 }
 
+std::vector<sfnt_fixture_table> required_truetype_tables_without_cmap()
+{
+    return {
+        sfnt_fixture_table{.tag = "glyf", .bytes = minimal_table_bytes()},
+        sfnt_fixture_table{.tag = "head", .bytes = minimal_table_bytes()},
+        sfnt_fixture_table{.tag = "hhea", .bytes = minimal_table_bytes()},
+        sfnt_fixture_table{.tag = "hmtx", .bytes = minimal_table_bytes()},
+        sfnt_fixture_table{.tag = "loca", .bytes = minimal_table_bytes()},
+        sfnt_fixture_table{.tag = "maxp", .bytes = minimal_table_bytes()},
+        sfnt_fixture_table{.tag = "name", .bytes = make_empty_name_table()},
+    };
+}
+
 std::vector<std::byte> make_sfnt_bytes(
     std::string_view scaler_tag,
     const std::vector<sfnt_fixture_table>& tables)
@@ -226,6 +239,37 @@ std::vector<std::byte> make_font_bytes_with_cmap(std::vector<std::byte> cmap_tab
     return make_sfnt_bytes(
         std::string_view{"\0\1\0\0", 4U},
         required_truetype_tables(std::move(cmap_table)));
+}
+
+quiz_vulkan::render::render_text_font_source_bytes_load_result font_source_bytes_result_for(
+    std::vector<std::byte> bytes,
+    quiz_vulkan::render::render_text_font_source_bytes_load_status status =
+        quiz_vulkan::render::render_text_font_source_bytes_load_status::loaded)
+{
+    using namespace quiz_vulkan::render;
+
+    return render_text_font_source_bytes_load_result{
+        .status = status,
+        .source = font_source_resolution{
+            .face_id = 47,
+            .family = "Fixture Sans",
+            .source_uri = "fonts/fixture.ttf",
+            .kind = render_text_font_source_kind::file_path,
+            .resolved_location = "fonts/fixture.ttf",
+            .can_attempt_load = true,
+        },
+        .readiness = font_source_bytes_readiness{
+            .face_id = 47,
+            .cache_key = "fonts/fixture.ttf",
+            .source_kind = render_text_font_source_kind::file_path,
+            .status = render_text_font_source_bytes_status::pending_file_load,
+            .cacheable = true,
+            .requires_io = true,
+        },
+        .cache_key = "fonts/fixture.ttf",
+        .resolved_path = "resolved/fixture.ttf",
+        .bytes = std::move(bytes),
+    };
 }
 
 class valid_sfnt_without_cmap_inspector final
@@ -466,6 +510,104 @@ void test_resolver_preserves_missing_cmap_status_from_valid_sfnt_diagnostics()
         "coverage diagnostic names missing cmap status");
 }
 
+void test_font_face_byte_readiness_classifies_future_freetype_load_states()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::vector<std::byte> valid_bytes = make_font_bytes_with_cmap(
+        wrap_cmap_subtable(
+            3U,
+            1U,
+            make_format4_subtable({
+                cmap_format4_fixture_range{.first_codepoint = 0x0041U, .last_codepoint = 0x005aU},
+            })));
+    const render_text_font_face_byte_readiness ready =
+        inspect_render_text_font_face_byte_readiness(font_source_bytes_result_for(valid_bytes));
+    require(ready.ok(), "valid bytes produce coverage-ready font face byte readiness");
+    require(
+        ready.status == render_text_font_face_byte_readiness_status::coverage_ready,
+        "valid bytes report coverage-ready status");
+    require(ready.source_loaded, "coverage-ready bytes record loaded source bytes");
+    require(ready.sfnt_valid, "coverage-ready bytes record valid SFNT");
+    require(ready.cmap_valid, "coverage-ready bytes record valid cmap");
+    require(ready.coverage_range_count == 1U, "coverage-ready bytes record cmap coverage ranges");
+    require(ready.can_attempt_freetype_load, "coverage-ready bytes can attempt future FreeType load");
+    require(!ready.fallback_required, "coverage-ready bytes do not require fallback");
+    require(ready.source_label == "resolved/fixture.ttf", "readiness preserves resolved source label");
+
+    const render_text_font_face_byte_readiness missing =
+        inspect_render_text_font_face_byte_readiness(
+            font_source_bytes_result_for({}, render_text_font_source_bytes_load_status::missing_bytes));
+    require(
+        missing.status == render_text_font_face_byte_readiness_status::missing_bytes,
+        "missing source bytes report missing-byte readiness");
+    require(missing.fallback_required, "missing bytes require fallback");
+    require(!missing.source_loaded, "missing bytes are not marked loaded");
+
+    const render_text_font_face_byte_readiness empty =
+        inspect_render_text_font_face_byte_readiness(
+            font_source_bytes_result_for({}, render_text_font_source_bytes_load_status::empty_bytes));
+    require(
+        empty.status == render_text_font_face_byte_readiness_status::empty_bytes,
+        "empty source bytes report empty-byte readiness");
+    require(empty.byte_count == 0U, "empty source bytes preserve zero byte count");
+    require(empty.fallback_required, "empty source bytes require fallback");
+
+    const std::vector<std::byte> truncated_sfnt{std::byte{'O'}, std::byte{'T'}, std::byte{'T'}, std::byte{'O'}};
+    const render_text_font_face_byte_readiness invalid_sfnt =
+        inspect_render_text_font_face_byte_readiness(font_source_bytes_result_for(truncated_sfnt));
+    require(
+        invalid_sfnt.status == render_text_font_face_byte_readiness_status::invalid_sfnt,
+        "truncated SFNT bytes report invalid-SFNT readiness");
+    require(
+        invalid_sfnt.sfnt_status == render_text_font_sfnt_inspect_status::truncated_header,
+        "invalid-SFNT readiness preserves SFNT inspector status");
+    require(invalid_sfnt.fallback_required, "invalid SFNT bytes require fallback");
+
+    const std::vector<std::byte> missing_cmap_bytes = make_sfnt_bytes(
+        std::string_view{"\0\1\0\0", 4U},
+        required_truetype_tables_without_cmap());
+    const render_text_font_face_byte_readiness missing_cmap =
+        inspect_render_text_font_face_byte_readiness(font_source_bytes_result_for(missing_cmap_bytes));
+    require(
+        missing_cmap.status == render_text_font_face_byte_readiness_status::missing_cmap,
+        "SFNT bytes without cmap report missing-cmap readiness");
+    require(missing_cmap.missing_cmap, "missing-cmap readiness preserves missing cmap evidence");
+    require(
+        missing_cmap.sfnt_status == render_text_font_sfnt_inspect_status::missing_required_table,
+        "missing-cmap readiness records SFNT required-table failure");
+    require(missing_cmap.fallback_required, "missing-cmap bytes require fallback");
+
+    const std::vector<std::byte> unsupported_cmap_bytes = make_font_bytes_with_cmap(
+        wrap_cmap_subtable(3U, 1U, make_format6_subtable()));
+    const render_text_font_face_byte_readiness invalid_cmap =
+        inspect_render_text_font_face_byte_readiness(font_source_bytes_result_for(unsupported_cmap_bytes));
+    require(
+        invalid_cmap.status == render_text_font_face_byte_readiness_status::invalid_cmap,
+        "unsupported cmap reports invalid-cmap readiness");
+    require(
+        invalid_cmap.cmap_status == render_text_font_cmap_inspect_status::unsupported_subtable_format,
+        "invalid-cmap readiness preserves cmap inspector status");
+    require(invalid_cmap.fallback_required, "invalid cmap bytes require fallback");
+
+    render_text_font_source_bytes_load_result virtual_fixture =
+        font_source_bytes_result_for({}, render_text_font_source_bytes_load_status::available_virtual_fixture);
+    virtual_fixture.source.kind = render_text_font_source_kind::fixture_uri;
+    virtual_fixture.source.source_uri = "fixture://fonts/virtual";
+    virtual_fixture.source.resolved_location = "fonts/virtual";
+    virtual_fixture.source.virtual_fixture = true;
+    virtual_fixture.readiness.status = render_text_font_source_bytes_status::available_virtual_fixture;
+    virtual_fixture.readiness.requires_io = false;
+    virtual_fixture.readiness.bytes_available_without_io = true;
+    const render_text_font_face_byte_readiness fallback =
+        inspect_render_text_font_face_byte_readiness(virtual_fixture);
+    require(
+        fallback.status == render_text_font_face_byte_readiness_status::fallback_required,
+        "virtual fixture bytes report fallback-required readiness");
+    require(fallback.fallback_required, "fallback-required readiness records fallback requirement");
+    require(!fallback.can_attempt_freetype_load, "fallback-required readiness does not attempt FreeType load");
+}
+
 void test_catalog_adapter_converts_valid_coverage_to_descriptor_ranges()
 {
     using namespace quiz_vulkan::render;
@@ -658,6 +800,7 @@ int main()
     test_resolver_propagates_invalid_sfnt();
     test_resolver_preserves_unsupported_cmap_status();
     test_resolver_preserves_missing_cmap_status_from_valid_sfnt_diagnostics();
+    test_font_face_byte_readiness_classifies_future_freetype_load_states();
     test_catalog_adapter_converts_valid_coverage_to_descriptor_ranges();
     test_catalog_adapter_keeps_missing_and_invalid_coverage_known_empty();
     test_catalog_adapter_lets_font_catalog_pick_fallback_from_adapted_coverage();

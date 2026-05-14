@@ -38,6 +38,39 @@ inline std::string render_text_font_unicode_coverage_status_name(
     return "unknown";
 }
 
+enum class render_text_font_face_byte_readiness_status {
+    missing_bytes,
+    empty_bytes,
+    invalid_sfnt,
+    missing_cmap,
+    invalid_cmap,
+    coverage_ready,
+    fallback_required,
+};
+
+inline std::string render_text_font_face_byte_readiness_status_name(
+    const render_text_font_face_byte_readiness_status status)
+{
+    switch (status) {
+    case render_text_font_face_byte_readiness_status::missing_bytes:
+        return "missing_bytes";
+    case render_text_font_face_byte_readiness_status::empty_bytes:
+        return "empty_bytes";
+    case render_text_font_face_byte_readiness_status::invalid_sfnt:
+        return "invalid_sfnt";
+    case render_text_font_face_byte_readiness_status::missing_cmap:
+        return "missing_cmap";
+    case render_text_font_face_byte_readiness_status::invalid_cmap:
+        return "invalid_cmap";
+    case render_text_font_face_byte_readiness_status::coverage_ready:
+        return "coverage_ready";
+    case render_text_font_face_byte_readiness_status::fallback_required:
+        return "fallback_required";
+    }
+
+    return "unknown";
+}
+
 inline bool font_unicode_coverage_codepoint_is_unicode_scalar(const char32_t codepoint)
 {
     const std::uint32_t value = static_cast<std::uint32_t>(codepoint);
@@ -75,6 +108,36 @@ struct render_text_font_unicode_coverage_snapshot {
 struct render_text_font_unicode_coverage_request {
     std::span<const std::byte> bytes;
     std::string source_label;
+};
+
+struct render_text_font_face_byte_readiness {
+    font_face_id face_id = 0;
+    std::string source_label;
+    render_text_font_face_byte_readiness_status status =
+        render_text_font_face_byte_readiness_status::missing_bytes;
+    render_text_font_source_bytes_load_status source_bytes_status =
+        render_text_font_source_bytes_load_status::missing_source;
+    render_text_font_unicode_coverage_status coverage_status =
+        render_text_font_unicode_coverage_status::missing_bytes;
+    render_text_font_sfnt_inspect_status sfnt_status =
+        render_text_font_sfnt_inspect_status::missing_bytes;
+    render_text_font_cmap_inspect_status cmap_status =
+        render_text_font_cmap_inspect_status::missing_cmap_table;
+    std::size_t byte_count = 0;
+    std::size_t coverage_range_count = 0;
+    bool source_loaded = false;
+    bool sfnt_valid = false;
+    bool cmap_valid = false;
+    bool coverage_ready = false;
+    bool fallback_required = true;
+    bool can_attempt_freetype_load = false;
+    bool missing_cmap = false;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return status == render_text_font_face_byte_readiness_status::coverage_ready;
+    }
 };
 
 class font_unicode_coverage_resolver_interface {
@@ -203,6 +266,122 @@ inline render_text_font_unicode_coverage_snapshot resolve_font_unicode_coverage(
     const basic_font_sfnt_inspector sfnt_inspector;
     const basic_font_cmap_inspector cmap_inspector;
     return resolve_font_unicode_coverage(result, sfnt_inspector, cmap_inspector);
+}
+
+inline bool render_text_font_face_byte_readiness_sfnt_missing_cmap(
+    const render_text_font_sfnt_inspection& sfnt)
+{
+    return sfnt.status == render_text_font_sfnt_inspect_status::missing_required_table
+        && std::ranges::find(sfnt.missing_required_tables, "cmap")
+            != sfnt.missing_required_tables.end();
+}
+
+inline bool render_text_font_face_byte_readiness_missing_cmap(
+    const render_text_font_unicode_coverage_snapshot& coverage)
+{
+    return render_text_font_face_byte_readiness_sfnt_missing_cmap(coverage.sfnt)
+        || coverage.cmap.status == render_text_font_cmap_inspect_status::missing_cmap_table;
+}
+
+inline render_text_font_face_byte_readiness_status render_text_font_face_byte_readiness_status_for(
+    const render_text_font_source_bytes_load_result& result,
+    const render_text_font_unicode_coverage_snapshot& coverage)
+{
+    if (result.status == render_text_font_source_bytes_load_status::empty_bytes) {
+        return render_text_font_face_byte_readiness_status::empty_bytes;
+    }
+    if (result.status == render_text_font_source_bytes_load_status::missing_source
+        || result.status == render_text_font_source_bytes_load_status::missing_bytes) {
+        return render_text_font_face_byte_readiness_status::missing_bytes;
+    }
+    if (!result.ok()) {
+        return render_text_font_face_byte_readiness_status::fallback_required;
+    }
+    if (result.bytes.empty()) {
+        return render_text_font_face_byte_readiness_status::empty_bytes;
+    }
+
+    if (coverage.status == render_text_font_unicode_coverage_status::sfnt_invalid) {
+        return render_text_font_face_byte_readiness_missing_cmap(coverage)
+            ? render_text_font_face_byte_readiness_status::missing_cmap
+            : render_text_font_face_byte_readiness_status::invalid_sfnt;
+    }
+    if (coverage.status == render_text_font_unicode_coverage_status::cmap_invalid) {
+        return render_text_font_face_byte_readiness_missing_cmap(coverage)
+            ? render_text_font_face_byte_readiness_status::missing_cmap
+            : render_text_font_face_byte_readiness_status::invalid_cmap;
+    }
+    if (coverage.ok() && !coverage.ranges.empty()) {
+        return render_text_font_face_byte_readiness_status::coverage_ready;
+    }
+    return render_text_font_face_byte_readiness_status::fallback_required;
+}
+
+inline std::string render_text_font_face_byte_readiness_diagnostic_for(
+    const render_text_font_source_bytes_load_result& result,
+    const render_text_font_unicode_coverage_snapshot& coverage,
+    const render_text_font_face_byte_readiness_status status)
+{
+    switch (status) {
+    case render_text_font_face_byte_readiness_status::coverage_ready:
+        return "font face bytes have valid SFNT and Unicode cmap coverage";
+    case render_text_font_face_byte_readiness_status::missing_bytes:
+        return "font face bytes are missing: "
+            + render_text_font_source_bytes_load_status_name(result.status);
+    case render_text_font_face_byte_readiness_status::empty_bytes:
+        return "font face bytes are empty";
+    case render_text_font_face_byte_readiness_status::invalid_sfnt:
+        return "font face bytes are not valid SFNT: "
+            + render_text_font_sfnt_inspect_status_name(coverage.sfnt.status);
+    case render_text_font_face_byte_readiness_status::missing_cmap:
+        return "font face bytes are missing Unicode cmap coverage";
+    case render_text_font_face_byte_readiness_status::invalid_cmap:
+        return "font face bytes have invalid cmap coverage: "
+            + render_text_font_cmap_inspect_status_name(coverage.cmap.status);
+    case render_text_font_face_byte_readiness_status::fallback_required:
+        return "font face bytes are not ready for a future FreeType load; deterministic fallback is required";
+    }
+
+    return "unknown font face byte readiness";
+}
+
+inline render_text_font_face_byte_readiness make_render_text_font_face_byte_readiness(
+    const render_text_font_source_bytes_load_result& result,
+    const render_text_font_unicode_coverage_snapshot& coverage)
+{
+    const render_text_font_face_byte_readiness_status status =
+        render_text_font_face_byte_readiness_status_for(result, coverage);
+    const font_face_id face_id =
+        result.source.face_id != 0U ? result.source.face_id : result.readiness.face_id;
+
+    return render_text_font_face_byte_readiness{
+        .face_id = face_id,
+        .source_label = font_unicode_coverage_source_label_for(result),
+        .status = status,
+        .source_bytes_status = result.status,
+        .coverage_status = coverage.status,
+        .sfnt_status = coverage.sfnt.status,
+        .cmap_status = coverage.cmap.status,
+        .byte_count = result.bytes.size(),
+        .coverage_range_count = coverage.ranges.size(),
+        .source_loaded = result.ok() && !result.bytes.empty(),
+        .sfnt_valid = coverage.sfnt.ok(),
+        .cmap_valid = coverage.cmap.ok(),
+        .coverage_ready = status == render_text_font_face_byte_readiness_status::coverage_ready,
+        .fallback_required = status != render_text_font_face_byte_readiness_status::coverage_ready,
+        .can_attempt_freetype_load =
+            status == render_text_font_face_byte_readiness_status::coverage_ready,
+        .missing_cmap = render_text_font_face_byte_readiness_missing_cmap(coverage),
+        .diagnostic = render_text_font_face_byte_readiness_diagnostic_for(result, coverage, status),
+    };
+}
+
+inline render_text_font_face_byte_readiness inspect_render_text_font_face_byte_readiness(
+    const render_text_font_source_bytes_load_result& result)
+{
+    return make_render_text_font_face_byte_readiness(
+        result,
+        resolve_font_unicode_coverage(result));
 }
 
 class basic_font_unicode_coverage_resolver final

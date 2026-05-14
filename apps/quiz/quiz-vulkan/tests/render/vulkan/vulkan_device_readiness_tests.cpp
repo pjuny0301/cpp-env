@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -95,6 +96,50 @@ quiz_vulkan::render::vulkan_backend::fake_vulkan_device_factory make_device_fact
             .handle = vulkan_backend::vulkan_device_handle{.value = 99},
             .queue_handle_base = 1000,
         });
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_native_instance_function_table
+make_native_instance_function_table()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::fake_vulkan_native_symbol_resolver resolver;
+    return vulkan_backend::collect_vulkan_native_instance_function_table(resolver);
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_native_instance_create_result
+make_created_native_instance(
+    const quiz_vulkan::render::vulkan_backend::vulkan_native_instance_function_table& table)
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    return vulkan_backend::vulkan_native_instance_create_result{
+        .checked = true,
+        .status = vulkan_backend::vulkan_native_instance_create_status::created,
+        .loader = make_ready_loader(),
+        .function_table = table,
+        .request = vulkan_backend::vulkan_instance_create_request{},
+        .handle = vulkan_backend::vulkan_instance_handle{.value = 84},
+        .native_result = 0,
+        .diagnostic = "created test native instance",
+    };
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_native_physical_device_dispatch_table
+make_ready_physical_device_dispatch_table()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_instance_function_table function_table =
+        make_native_instance_function_table();
+    vulkan_backend::fake_vulkan_native_instance_symbol_resolver resolver(
+        vulkan_backend::fake_vulkan_native_instance_symbol_resolver_options{
+            .get_instance_proc_address = function_table.get_instance_proc_address,
+        });
+
+    return vulkan_backend::collect_vulkan_native_physical_device_dispatch_table(
+        resolver,
+        make_created_native_instance(function_table));
 }
 
 void test_device_factory_marks_created_instance_device_ready()
@@ -319,6 +364,139 @@ void test_device_factory_reports_missing_required_queue_and_keeps_frame_at_devic
         "missing-queue frame fallback stays at device unavailable");
 }
 
+void test_physical_device_dispatch_reports_no_instance()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_instance_function_table function_table =
+        make_native_instance_function_table();
+    vulkan_backend::fake_vulkan_native_instance_symbol_resolver resolver(
+        vulkan_backend::fake_vulkan_native_instance_symbol_resolver_options{
+            .get_instance_proc_address = function_table.get_instance_proc_address,
+        });
+
+    const vulkan_backend::vulkan_native_physical_device_dispatch_table dispatch_table =
+        vulkan_backend::collect_vulkan_native_physical_device_dispatch_table(
+            resolver,
+            vulkan_backend::vulkan_native_instance_create_result{});
+
+    require(dispatch_table.checked, "physical device dispatch no-instance result is checked");
+    require(
+        dispatch_table.status
+            == vulkan_backend::vulkan_native_physical_device_dispatch_table_status::instance_unavailable,
+        "physical device dispatch maps missing native instance");
+    require(
+        !dispatch_table.ready_for_enumeration(),
+        "physical device dispatch is not ready without an instance");
+    require(
+        resolver.state().resolve_call_count == 0,
+        "physical device dispatch does not resolve symbols without an instance");
+}
+
+void test_physical_device_dispatch_reports_missing_symbol()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_instance_function_table function_table =
+        make_native_instance_function_table();
+    vulkan_backend::fake_vulkan_native_instance_symbol_resolver resolver(
+        vulkan_backend::fake_vulkan_native_instance_symbol_resolver_options{
+            .missing_symbols = {"vkEnumeratePhysicalDevices"},
+            .get_instance_proc_address = function_table.get_instance_proc_address,
+        });
+
+    const vulkan_backend::vulkan_native_physical_device_dispatch_table dispatch_table =
+        vulkan_backend::collect_vulkan_native_physical_device_dispatch_table(
+            resolver,
+            make_created_native_instance(function_table));
+
+    require(dispatch_table.checked, "physical device dispatch missing-symbol result is checked");
+    require(
+        dispatch_table.status
+            == vulkan_backend::vulkan_native_physical_device_dispatch_table_status::missing_enumerate_physical_devices_symbol,
+        "physical device dispatch maps missing vkEnumeratePhysicalDevices");
+    require(
+        dispatch_table.missing_symbol_name == "vkEnumeratePhysicalDevices",
+        "physical device dispatch records the missing enumerate symbol");
+    require(
+        resolver.state().resolve_call_count == 1,
+        "physical device dispatch attempts the missing enumerate symbol");
+    require(
+        resolver.state().requested_symbols.front() == "vkEnumeratePhysicalDevices",
+        "physical device dispatch requests vkEnumeratePhysicalDevices");
+}
+
+void test_physical_device_enumerator_reports_zero_devices()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_physical_device_dispatch_table dispatch_table =
+        make_ready_physical_device_dispatch_table();
+    vulkan_backend::fake_vulkan_native_physical_device_enumerator enumerator(
+        vulkan_backend::fake_vulkan_native_physical_device_enumerator_options{
+            .physical_devices = {},
+        });
+
+    const vulkan_backend::vulkan_native_physical_device_enumeration_result result =
+        vulkan_backend::enumerate_native_vulkan_physical_devices(
+            enumerator,
+            dispatch_table);
+
+    require(result.checked, "physical device zero-device enumeration result is checked");
+    require(
+        result.status
+            == vulkan_backend::vulkan_native_physical_device_enumeration_status::no_devices,
+        "physical device enumeration maps zero devices");
+    require(result.physical_device_count == 0, "physical device enumeration records zero count");
+    require(result.physical_devices.empty(), "physical device enumeration records no handles");
+    require(
+        !result.ready_for_device_selection(),
+        "zero physical devices are not ready for device selection");
+    require(
+        enumerator.state().enumerate_call_count == 1,
+        "physical device enumerator is called once for a ready dispatch table");
+}
+
+void test_physical_device_enumerator_reports_usable_devices()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_physical_device_dispatch_table dispatch_table =
+        make_ready_physical_device_dispatch_table();
+    vulkan_backend::fake_vulkan_native_physical_device_enumerator enumerator(
+        vulkan_backend::fake_vulkan_native_physical_device_enumerator_options{
+            .physical_devices = {
+                vulkan_backend::vulkan_physical_device_handle{.value = 9001},
+                vulkan_backend::vulkan_physical_device_handle{.value = 9002},
+            },
+        });
+
+    const vulkan_backend::vulkan_native_physical_device_enumeration_result result =
+        vulkan_backend::enumerate_native_vulkan_physical_devices(
+            enumerator,
+            dispatch_table);
+
+    require(result.checked, "physical device enumeration result is checked");
+    require(
+        result.status
+            == vulkan_backend::vulkan_native_physical_device_enumeration_status::ready,
+        "physical device enumeration reports ready");
+    require(
+        result.ready_for_device_selection(),
+        "physical device enumeration is ready for device selection");
+    require(result.physical_device_count == 2, "physical device enumeration records count");
+    require(result.physical_devices.size() == 2, "physical device enumeration records handles");
+    require(result.physical_devices[0].value == 9001, "first physical device handle is stable");
+    require(result.physical_devices[1].value == 9002, "second physical device handle is stable");
+    require(
+        enumerator.state().last_instance.value == dispatch_table.instance.value,
+        "physical device enumerator records the dispatch instance handle");
+    require(
+        enumerator.state().last_enumerate_physical_devices.value
+            == dispatch_table.enumerate_physical_devices.value,
+        "physical device enumerator records the dispatch enumerate pointer");
+}
+
 void test_vulkan_device_status_and_queue_names_are_stable()
 {
     namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
@@ -388,6 +566,10 @@ int main()
     test_device_factory_maps_instance_failure_to_device_unavailable();
     test_device_factory_reports_missing_required_device_extension();
     test_device_factory_reports_missing_required_queue_and_keeps_frame_at_device_gate();
+    test_physical_device_dispatch_reports_no_instance();
+    test_physical_device_dispatch_reports_missing_symbol();
+    test_physical_device_enumerator_reports_zero_devices();
+    test_physical_device_enumerator_reports_usable_devices();
     test_vulkan_device_status_and_queue_names_are_stable();
     return 0;
 }

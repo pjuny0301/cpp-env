@@ -511,6 +511,36 @@ vulkan_native_instance_destroy_result make_native_instance_destroy_result(
     };
 }
 
+vulkan_native_physical_device_dispatch_table make_native_physical_device_dispatch_table(
+    const vulkan_native_instance_create_result& create_result,
+    vulkan_native_instance_symbol_resolver_interface& resolver)
+{
+    return vulkan_native_physical_device_dispatch_table{
+        .checked = true,
+        .status = vulkan_native_physical_device_dispatch_table_status::not_checked,
+        .instance = create_result.handle,
+        .get_instance_proc_address = resolver.get_instance_proc_address(),
+        .enumerate_physical_devices = {},
+        .missing_symbol_name = {},
+        .diagnostic = {},
+    };
+}
+
+vulkan_native_physical_device_enumeration_result
+make_native_physical_device_enumeration_result(
+    const vulkan_native_physical_device_dispatch_table& dispatch_table)
+{
+    return vulkan_native_physical_device_enumeration_result{
+        .checked = true,
+        .status = vulkan_native_physical_device_enumeration_status::not_checked,
+        .dispatch_table = dispatch_table,
+        .physical_devices = {},
+        .physical_device_count = 0,
+        .native_result = 0,
+        .diagnostic = {},
+    };
+}
+
 bool has_visible_area(const render_rect& rect)
 {
     return rect.width > 0.0f && rect.height > 0.0f;
@@ -2502,6 +2532,65 @@ fake_vulkan_native_instance_symbol_resolver::state() const
     return state_;
 }
 
+fake_vulkan_native_physical_device_enumerator::fake_vulkan_native_physical_device_enumerator()
+    : fake_vulkan_native_physical_device_enumerator(
+        fake_vulkan_native_physical_device_enumerator_options{})
+{
+}
+
+fake_vulkan_native_physical_device_enumerator::fake_vulkan_native_physical_device_enumerator(
+    fake_vulkan_native_physical_device_enumerator_options options)
+    : options_(std::move(options))
+{
+}
+
+vulkan_native_physical_device_enumeration_result
+fake_vulkan_native_physical_device_enumerator::enumerate_physical_devices(
+    const vulkan_native_physical_device_dispatch_table& dispatch_table)
+{
+    vulkan_native_physical_device_enumeration_result result =
+        make_native_physical_device_enumeration_result(dispatch_table);
+
+    if (!dispatch_table.ready_for_enumeration()) {
+        result.status =
+            vulkan_native_physical_device_enumeration_status::dispatch_table_unavailable;
+        result.diagnostic = dispatch_table.diagnostic.empty()
+            ? "Native Vulkan physical device dispatch table is unavailable"
+            : dispatch_table.diagnostic;
+        return result;
+    }
+
+    ++state_.enumerate_call_count;
+    state_.last_instance = dispatch_table.instance;
+    state_.last_enumerate_physical_devices =
+        dispatch_table.enumerate_physical_devices;
+
+    if (options_.fail_enumeration) {
+        result.status = vulkan_native_physical_device_enumeration_status::enumeration_failed;
+        result.native_result = options_.failure_result;
+        result.diagnostic = "Native Vulkan physical device enumeration failed";
+        return result;
+    }
+
+    result.physical_devices = options_.physical_devices;
+    result.physical_device_count = result.physical_devices.size();
+    if (result.physical_devices.empty()) {
+        result.status = vulkan_native_physical_device_enumeration_status::no_devices;
+        result.diagnostic = "Native Vulkan physical device enumeration returned no devices";
+        return result;
+    }
+
+    result.status = vulkan_native_physical_device_enumeration_status::ready;
+    result.diagnostic = "Native Vulkan physical devices enumerated";
+    return result;
+}
+
+const fake_vulkan_native_physical_device_enumerator_state&
+fake_vulkan_native_physical_device_enumerator::state() const
+{
+    return state_;
+}
+
 vulkan_native_instance_proc_addr_resolver::vulkan_native_instance_proc_addr_resolver(
     vulkan_native_function_pointer get_instance_proc_address)
     : get_instance_proc_address_(get_instance_proc_address)
@@ -2690,6 +2779,139 @@ vulkan_native_instance_dispatch_table collect_vulkan_native_instance_dispatch_ta
     table.status = vulkan_native_instance_dispatch_table_status::ready;
     table.diagnostic = "Native Vulkan instance dispatch table is ready";
     return table;
+}
+
+vulkan_native_physical_device_dispatch_table
+collect_vulkan_native_physical_device_dispatch_table(
+    vulkan_native_instance_symbol_resolver_interface& resolver,
+    const vulkan_native_instance_create_result& create_result)
+{
+    vulkan_native_physical_device_dispatch_table table =
+        make_native_physical_device_dispatch_table(create_result, resolver);
+
+    if (!create_result.created()) {
+        table.status =
+            vulkan_native_physical_device_dispatch_table_status::instance_unavailable;
+        table.diagnostic =
+            "Native Vulkan physical device dispatch table requires a created instance";
+        return table;
+    }
+    if (!table.get_instance_proc_address.valid()) {
+        table.status =
+            vulkan_native_physical_device_dispatch_table_status::get_instance_proc_address_unavailable;
+        table.diagnostic =
+            "Native Vulkan physical device dispatch table is missing vkGetInstanceProcAddr";
+        return table;
+    }
+
+    table.enumerate_physical_devices =
+        resolver.resolve_instance_symbol(create_result.handle, "vkEnumeratePhysicalDevices");
+    if (!table.enumerate_physical_devices.valid()) {
+        table.status =
+            vulkan_native_physical_device_dispatch_table_status::missing_enumerate_physical_devices_symbol;
+        table.missing_symbol_name = "vkEnumeratePhysicalDevices";
+        table.diagnostic =
+            "Native Vulkan physical device dispatch table is missing vkEnumeratePhysicalDevices";
+        return table;
+    }
+
+    table.status = vulkan_native_physical_device_dispatch_table_status::ready;
+    table.diagnostic = "Native Vulkan physical device dispatch table is ready";
+    return table;
+}
+
+vulkan_native_physical_device_enumeration_result
+vulkan_native_physical_device_enumerator::enumerate_physical_devices(
+    const vulkan_native_physical_device_dispatch_table& dispatch_table)
+{
+    vulkan_native_physical_device_enumeration_result result =
+        make_native_physical_device_enumeration_result(dispatch_table);
+
+    if (!dispatch_table.ready_for_enumeration()) {
+        result.status =
+            vulkan_native_physical_device_enumeration_status::dispatch_table_unavailable;
+        result.diagnostic = dispatch_table.diagnostic.empty()
+            ? "Native Vulkan physical device dispatch table is unavailable"
+            : dispatch_table.diagnostic;
+        return result;
+    }
+
+#if QUIZ_VULKAN_HAS_VULKAN_HEADERS
+    const auto enumerate_physical_devices =
+        reinterpret_cast<PFN_vkEnumeratePhysicalDevices>(
+            dispatch_table.enumerate_physical_devices.value);
+    if (enumerate_physical_devices == nullptr) {
+        result.status =
+            vulkan_native_physical_device_enumeration_status::dispatch_table_unavailable;
+        result.diagnostic =
+            "Native Vulkan physical device enumeration pointer is invalid";
+        return result;
+    }
+
+    std::uint32_t device_count = 0;
+    VkResult native_result = enumerate_physical_devices(
+        reinterpret_cast<VkInstance>(dispatch_table.instance.value),
+        &device_count,
+        nullptr);
+    result.native_result = static_cast<std::int32_t>(native_result);
+    if (native_result != VK_SUCCESS) {
+        result.status = vulkan_native_physical_device_enumeration_status::enumeration_failed;
+        result.diagnostic = "Native Vulkan physical device count query failed";
+        return result;
+    }
+    if (device_count == 0) {
+        result.status = vulkan_native_physical_device_enumeration_status::no_devices;
+        result.diagnostic =
+            "Native Vulkan physical device enumeration returned no devices";
+        return result;
+    }
+
+    std::vector<VkPhysicalDevice> native_devices(device_count, VK_NULL_HANDLE);
+    native_result = enumerate_physical_devices(
+        reinterpret_cast<VkInstance>(dispatch_table.instance.value),
+        &device_count,
+        native_devices.data());
+    result.native_result = static_cast<std::int32_t>(native_result);
+    if (native_result != VK_SUCCESS) {
+        result.status = vulkan_native_physical_device_enumeration_status::enumeration_failed;
+        result.diagnostic = "Native Vulkan physical device list query failed";
+        return result;
+    }
+
+    result.physical_devices.reserve(device_count);
+    for (const VkPhysicalDevice native_device : native_devices) {
+        if (native_device == VK_NULL_HANDLE) {
+            continue;
+        }
+        result.physical_devices.push_back(vulkan_physical_device_handle{
+            .value = reinterpret_cast<std::uintptr_t>(native_device),
+        });
+    }
+    result.physical_device_count = result.physical_devices.size();
+    if (result.physical_devices.empty()) {
+        result.status = vulkan_native_physical_device_enumeration_status::no_devices;
+        result.diagnostic =
+            "Native Vulkan physical device enumeration returned no valid handles";
+        return result;
+    }
+
+    result.status = vulkan_native_physical_device_enumeration_status::ready;
+    result.diagnostic = "Native Vulkan physical devices enumerated";
+    return result;
+#else
+    result.status = vulkan_native_physical_device_enumeration_status::headers_unavailable;
+    result.diagnostic =
+        "Vulkan headers are unavailable for native physical device enumeration";
+    return result;
+#endif
+}
+
+vulkan_native_physical_device_enumeration_result
+enumerate_native_vulkan_physical_devices(
+    vulkan_native_physical_device_enumerator_interface& enumerator,
+    const vulkan_native_physical_device_dispatch_table& dispatch_table)
+{
+    return enumerator.enumerate_physical_devices(dispatch_table);
 }
 
 vulkan_native_instance_create_result create_native_vulkan_instance(

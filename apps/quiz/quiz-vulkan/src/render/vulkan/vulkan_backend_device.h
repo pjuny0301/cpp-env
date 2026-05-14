@@ -62,6 +62,15 @@ struct vulkan_queue_handle {
     }
 };
 
+struct vulkan_physical_device_handle {
+    std::uintptr_t value = 0;
+
+    bool valid() const
+    {
+        return value != 0;
+    }
+};
+
 struct vulkan_device_queue_selection {
     vulkan_device_queue_capability capability = vulkan_device_queue_capability::graphics;
     std::size_t family_index = 0;
@@ -116,6 +125,109 @@ inline std::string_view device_create_status_name(vulkan_device_create_status st
 
     return "unknown";
 }
+
+enum class vulkan_native_physical_device_dispatch_table_status {
+    not_checked,
+    ready,
+    instance_unavailable,
+    get_instance_proc_address_unavailable,
+    missing_enumerate_physical_devices_symbol,
+};
+
+struct vulkan_native_physical_device_dispatch_table {
+    bool checked = false;
+    vulkan_native_physical_device_dispatch_table_status status =
+        vulkan_native_physical_device_dispatch_table_status::not_checked;
+    vulkan_instance_handle instance;
+    vulkan_native_function_pointer get_instance_proc_address;
+    vulkan_native_function_pointer enumerate_physical_devices;
+    std::string missing_symbol_name;
+    std::string diagnostic;
+
+    bool ready_for_enumeration() const
+    {
+        return checked
+            && status == vulkan_native_physical_device_dispatch_table_status::ready
+            && instance.valid() && get_instance_proc_address.valid()
+            && enumerate_physical_devices.valid();
+    }
+};
+
+enum class vulkan_native_physical_device_enumeration_status {
+    not_checked,
+    ready,
+    dispatch_table_unavailable,
+    headers_unavailable,
+    enumeration_failed,
+    no_devices,
+};
+
+struct vulkan_native_physical_device_enumeration_result {
+    bool checked = false;
+    vulkan_native_physical_device_enumeration_status status =
+        vulkan_native_physical_device_enumeration_status::not_checked;
+    vulkan_native_physical_device_dispatch_table dispatch_table;
+    std::vector<vulkan_physical_device_handle> physical_devices;
+    std::size_t physical_device_count = 0;
+    std::int32_t native_result = 0;
+    std::string diagnostic;
+
+    bool ready_for_device_selection() const
+    {
+        return checked && status == vulkan_native_physical_device_enumeration_status::ready
+            && dispatch_table.ready_for_enumeration() && physical_device_count > 0
+            && physical_device_count == physical_devices.size()
+            && std::all_of(
+                physical_devices.begin(),
+                physical_devices.end(),
+                [](vulkan_physical_device_handle handle) { return handle.valid(); });
+    }
+};
+
+class vulkan_native_physical_device_enumerator_interface {
+public:
+    virtual ~vulkan_native_physical_device_enumerator_interface() = default;
+
+    virtual vulkan_native_physical_device_enumeration_result enumerate_physical_devices(
+        const vulkan_native_physical_device_dispatch_table& dispatch_table) = 0;
+};
+
+struct fake_vulkan_native_physical_device_enumerator_options {
+    std::vector<vulkan_physical_device_handle> physical_devices{
+        vulkan_physical_device_handle{.value = 3000},
+    };
+    bool fail_enumeration = false;
+    std::int32_t failure_result = -1;
+};
+
+struct fake_vulkan_native_physical_device_enumerator_state {
+    std::size_t enumerate_call_count = 0;
+    vulkan_instance_handle last_instance;
+    vulkan_native_function_pointer last_enumerate_physical_devices;
+};
+
+class fake_vulkan_native_physical_device_enumerator final
+    : public vulkan_native_physical_device_enumerator_interface {
+public:
+    fake_vulkan_native_physical_device_enumerator();
+    explicit fake_vulkan_native_physical_device_enumerator(
+        fake_vulkan_native_physical_device_enumerator_options options);
+
+    vulkan_native_physical_device_enumeration_result enumerate_physical_devices(
+        const vulkan_native_physical_device_dispatch_table& dispatch_table) override;
+    const fake_vulkan_native_physical_device_enumerator_state& state() const;
+
+private:
+    fake_vulkan_native_physical_device_enumerator_options options_;
+    fake_vulkan_native_physical_device_enumerator_state state_;
+};
+
+class vulkan_native_physical_device_enumerator final
+    : public vulkan_native_physical_device_enumerator_interface {
+public:
+    vulkan_native_physical_device_enumeration_result enumerate_physical_devices(
+        const vulkan_native_physical_device_dispatch_table& dispatch_table) override;
+};
 
 struct vulkan_device_create_result {
     bool checked = false;
@@ -385,5 +497,15 @@ inline vulkan_device_create_result create_vulkan_device(
 {
     return factory.create_device(instance_result, request);
 }
+
+vulkan_native_physical_device_dispatch_table
+collect_vulkan_native_physical_device_dispatch_table(
+    vulkan_native_instance_symbol_resolver_interface& resolver,
+    const vulkan_native_instance_create_result& create_result);
+
+vulkan_native_physical_device_enumeration_result
+enumerate_native_vulkan_physical_devices(
+    vulkan_native_physical_device_enumerator_interface& enumerator,
+    const vulkan_native_physical_device_dispatch_table& dispatch_table);
 
 } // namespace quiz_vulkan::render::vulkan_backend

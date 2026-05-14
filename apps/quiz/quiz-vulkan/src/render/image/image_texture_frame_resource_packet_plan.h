@@ -116,6 +116,7 @@ struct render_image_texture_frame_resource_packet_plan_entry {
     std::uint64_t upload_generation_id = 0;
     std::size_t mip_level_count = 0;
     std::size_t uploaded_byte_count = 0;
+    render_image_decoded_payload_evidence decoded_payload;
     bool requested = false;
     bool bindable = false;
     bool resource_packet_ready = false;
@@ -214,6 +215,7 @@ make_render_image_texture_frame_resource_packet_plan_entry(
         .upload_generation_id = handoff_entry.upload_generation_id,
         .mip_level_count = handoff_entry.mip_level_count,
         .uploaded_byte_count = handoff_entry.uploaded_byte_count,
+        .decoded_payload = handoff_entry.decoded_payload,
         .requested = handoff_entry.requested,
         .bindable = bindable,
         .resource_packet_ready =

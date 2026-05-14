@@ -118,6 +118,7 @@ struct render_image_texture_frame_resource_upload_handoff_record {
     std::uint64_t upload_generation_id = 0;
     std::size_t mip_level_count = 0;
     std::size_t uploaded_byte_count = 0;
+    render_image_decoded_payload_evidence decoded_payload;
     bool upload_result_present = false;
     bool placeholder_backed = false;
     bool renderer_boundary_ready = false;
@@ -278,6 +279,7 @@ make_render_image_texture_frame_resource_upload_handoff_record(
         .upload_generation_id = packet.upload_generation_id,
         .mip_level_count = packet.mip_level_count,
         .uploaded_byte_count = packet.uploaded_byte_count,
+        .decoded_payload = packet.decoded_payload,
         .upload_result_present = packet.upload_request_id != 0 || packet.upload_generation_id != 0,
         .placeholder_backed = packet.placeholder_backed,
         .renderer_boundary_ready = packet.bindable,

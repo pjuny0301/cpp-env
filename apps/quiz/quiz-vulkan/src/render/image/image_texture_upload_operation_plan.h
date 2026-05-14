@@ -78,6 +78,7 @@ struct render_image_texture_upload_operation_packet {
     render_image_texture_handle texture;
     render_image_sampler_policy sampler;
     render_image_texture_mipmap_upload_plan mipmap_upload_plan;
+    render_image_decoded_payload_evidence decoded_payload;
     std::size_t staging_byte_count = 0;
     std::size_t mip_level_count = 0;
     std::size_t mipmap_byte_count = 0;
@@ -216,6 +217,9 @@ inline render_image_texture_upload_operation_packet make_render_image_texture_up
         .texture_key = render_image_texture_upload_operation_key_for(request, result, queue_entry),
         .sampler = render_image_texture_upload_operation_sampler_for(request, result),
         .mipmap_upload_plan = mipmap_plan,
+        .decoded_payload = request != nullptr
+            ? request->decoded_payload
+            : render_image_decoded_payload_evidence{},
         .staging_byte_count = result != nullptr
             ? result->staging_byte_count
             : (queue_entry != nullptr

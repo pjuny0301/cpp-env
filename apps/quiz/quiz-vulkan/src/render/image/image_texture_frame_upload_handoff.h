@@ -84,6 +84,7 @@ struct render_image_texture_frame_upload_handoff_entry {
     std::size_t uploaded_byte_count = 0;
     std::size_t planned_staging_byte_count = 0;
     std::size_t planned_mipmap_byte_count = 0;
+    render_image_decoded_payload_evidence decoded_payload;
     bool requested = false;
     bool upload_result_present = false;
     bool ready = false;
@@ -319,6 +320,7 @@ inline render_image_texture_frame_upload_handoff_entry make_render_image_texture
         entry.uploaded_byte_count = upload_packet->uploaded_byte_count;
         entry.planned_staging_byte_count = upload_packet->planned_staging_byte_count;
         entry.planned_mipmap_byte_count = upload_packet->planned_mipmap_byte_count;
+        entry.decoded_payload = upload_packet->decoded_payload;
         entry.placeholder_texture = entry.placeholder_texture || upload_packet->placeholder_texture;
         entry.retryable_blocker = upload_packet->retryable && upload_packet->rejected;
         entry.nonretryable_blocker = upload_packet->nonretryable_failure && upload_packet->rejected;
@@ -382,6 +384,7 @@ inline render_image_texture_frame_upload_handoff_entry make_render_image_texture
         .uploaded_byte_count = upload_packet.uploaded_byte_count,
         .planned_staging_byte_count = upload_packet.planned_staging_byte_count,
         .planned_mipmap_byte_count = upload_packet.planned_mipmap_byte_count,
+        .decoded_payload = upload_packet.decoded_payload,
         .requested = false,
         .upload_result_present = true,
         .ready = false,

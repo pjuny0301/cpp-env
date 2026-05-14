@@ -105,6 +105,7 @@ struct render_image_texture_upload_result_packet_snapshot {
     std::size_t uploaded_byte_count = 0;
     std::size_t planned_staging_byte_count = 0;
     std::size_t planned_mipmap_byte_count = 0;
+    render_image_decoded_payload_evidence decoded_payload;
     bool accepted = false;
     bool rejected = true;
     bool placeholder_texture = false;
@@ -203,6 +204,7 @@ make_render_image_texture_upload_result_packet_snapshot(
         .uploaded_byte_count = accepted ? packet.staging_byte_count : 0,
         .planned_staging_byte_count = packet.staging_byte_count,
         .planned_mipmap_byte_count = packet.mipmap_byte_count,
+        .decoded_payload = packet.decoded_payload,
         .accepted = accepted,
         .rejected = !accepted,
         .placeholder_texture = packet.placeholder_texture,

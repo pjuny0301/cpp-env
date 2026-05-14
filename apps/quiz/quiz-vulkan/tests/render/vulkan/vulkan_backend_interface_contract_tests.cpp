@@ -705,12 +705,22 @@ static_assert(requires(render::vulkan_backend::vulkan_loader_probe_result result
     { result.checked } -> std::same_as<bool&>;
     { result.status } -> std::same_as<render::vulkan_backend::vulkan_loader_probe_status&>;
     { result.attempted_library_names } -> std::same_as<std::vector<std::string>&>;
+    { result.candidate_diagnostics }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_loader_candidate_diagnostic>&>;
     { result.loaded_library_name } -> std::same_as<std::string&>;
     { result.required_symbol_name } -> std::same_as<std::string&>;
     { result.attempted_library_count } -> std::same_as<std::size_t&>;
     { result.library_found } -> std::same_as<bool&>;
     { result.required_symbol_found } -> std::same_as<bool&>;
     { result.available() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_loader_candidate_diagnostic candidate) {
+    { candidate.library_name } -> std::same_as<std::string&>;
+    { candidate.status } -> std::same_as<render::vulkan_backend::vulkan_loader_candidate_status&>;
+    { candidate.library_found } -> std::same_as<bool&>;
+    { candidate.required_symbol_found } -> std::same_as<bool&>;
+    { candidate.usable() } -> std::same_as<bool>;
 });
 
 static_assert(requires(render::vulkan_backend::vulkan_loader_readiness_state readiness) {
@@ -1625,6 +1635,8 @@ static_assert(requires(
     render::vulkan_backend::vulkan_loader_interface& loader,
     const render::vulkan_backend::vulkan_loader_probe_request& request) {
     { render::vulkan_backend::vulkan_loader_required_symbol_name() } -> std::same_as<std::string_view>;
+    { render::vulkan_backend::loader_candidate_status_name(
+        render::vulkan_backend::vulkan_loader_candidate_status::usable) } -> std::same_as<std::string_view>;
     { render::vulkan_backend::default_vulkan_loader_library_names() }
         -> std::same_as<std::vector<std::string>>;
     { render::vulkan_backend::probe_vulkan_loader(loader, request) }

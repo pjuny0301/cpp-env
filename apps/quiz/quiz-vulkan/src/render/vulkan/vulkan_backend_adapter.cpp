@@ -91,6 +91,7 @@ vulkan_loader_probe_result make_loader_probe_result(
         .checked = true,
         .status = vulkan_loader_probe_status::library_missing,
         .attempted_library_names = {},
+        .candidate_diagnostics = {},
         .loaded_library_name = {},
         .required_symbol_name = required_symbol_name_for(request),
         .attempted_library_count = 0,
@@ -105,12 +106,53 @@ void record_loader_attempt(
 {
     result.attempted_library_names.push_back(library_name);
     result.attempted_library_count = result.attempted_library_names.size();
+    result.candidate_diagnostics.push_back(vulkan_loader_candidate_diagnostic{
+        .library_name = library_name,
+        .status = vulkan_loader_candidate_status::library_missing,
+        .library_found = false,
+        .required_symbol_found = false,
+    });
+}
+
+void mark_loader_candidate_found(
+    vulkan_loader_probe_result& result,
+    const std::string& library_name)
+{
+    for (vulkan_loader_candidate_diagnostic& candidate :
+         result.candidate_diagnostics) {
+        if (candidate.library_name != library_name) {
+            continue;
+        }
+
+        candidate.status = vulkan_loader_candidate_status::required_symbol_missing;
+        candidate.library_found = true;
+        candidate.required_symbol_found = false;
+        return;
+    }
+}
+
+void mark_loader_candidate_usable(
+    vulkan_loader_probe_result& result,
+    const std::string& library_name)
+{
+    for (vulkan_loader_candidate_diagnostic& candidate :
+         result.candidate_diagnostics) {
+        if (candidate.library_name != library_name) {
+            continue;
+        }
+
+        candidate.status = vulkan_loader_candidate_status::usable;
+        candidate.library_found = true;
+        candidate.required_symbol_found = true;
+        return;
+    }
 }
 
 void mark_loader_library_found(
     vulkan_loader_probe_result& result,
     const std::string& library_name)
 {
+    mark_loader_candidate_found(result, library_name);
     result.library_found = true;
     if (result.loaded_library_name.empty()) {
         result.loaded_library_name = library_name;
@@ -121,6 +163,7 @@ void mark_loader_available(
     vulkan_loader_probe_result& result,
     const std::string& library_name)
 {
+    mark_loader_candidate_usable(result, library_name);
     result.status = vulkan_loader_probe_status::available;
     result.loaded_library_name = library_name;
     result.library_found = true;
@@ -2141,17 +2184,16 @@ vulkan_loader_probe_result fake_vulkan_loader::probe_loader(
 
     for (const std::string& candidate_name : candidate_names) {
         record_loader_attempt(result, candidate_name);
-    }
 
-    if (candidate_names.empty() || !options_.library_available) {
-        mark_loader_probe_completed(result);
-        return result;
-    }
+        if (!options_.library_available || candidate_name != options_.library_name) {
+            continue;
+        }
 
-    mark_loader_library_found(result, candidate_names.front());
-    if (options_.required_symbol_available) {
-        mark_loader_available(result, candidate_names.front());
-        return result;
+        mark_loader_library_found(result, candidate_name);
+        if (options_.required_symbol_available) {
+            mark_loader_available(result, candidate_name);
+            return result;
+        }
     }
 
     mark_loader_probe_completed(result);

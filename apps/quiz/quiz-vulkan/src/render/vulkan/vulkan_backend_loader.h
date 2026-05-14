@@ -14,6 +14,13 @@ enum class vulkan_loader_probe_status {
     required_symbol_missing,
 };
 
+enum class vulkan_loader_candidate_status {
+    not_checked,
+    library_missing,
+    required_symbol_missing,
+    usable,
+};
+
 enum class vulkan_loader_readiness_status {
     not_checked,
     ready,
@@ -22,6 +29,7 @@ enum class vulkan_loader_readiness_status {
 };
 
 std::string_view loader_probe_status_name(vulkan_loader_probe_status status);
+std::string_view loader_candidate_status_name(vulkan_loader_candidate_status status);
 std::string_view loader_readiness_status_name(vulkan_loader_readiness_status status);
 std::string_view vulkan_loader_required_symbol_name();
 
@@ -31,10 +39,24 @@ struct vulkan_loader_probe_request {
     bool use_default_library_names = true;
 };
 
+struct vulkan_loader_candidate_diagnostic {
+    std::string library_name;
+    vulkan_loader_candidate_status status = vulkan_loader_candidate_status::not_checked;
+    bool library_found = false;
+    bool required_symbol_found = false;
+
+    bool usable() const
+    {
+        return status == vulkan_loader_candidate_status::usable
+            && library_found && required_symbol_found;
+    }
+};
+
 struct vulkan_loader_probe_result {
     bool checked = false;
     vulkan_loader_probe_status status = vulkan_loader_probe_status::not_checked;
     std::vector<std::string> attempted_library_names;
+    std::vector<vulkan_loader_candidate_diagnostic> candidate_diagnostics;
     std::string loaded_library_name;
     std::string required_symbol_name = "vkGetInstanceProcAddr";
     std::size_t attempted_library_count = 0;

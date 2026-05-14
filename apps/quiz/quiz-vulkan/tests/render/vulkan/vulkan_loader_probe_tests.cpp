@@ -63,6 +63,25 @@ void test_fake_vulkan_loader_reports_available_when_required_symbol_exists()
     require(
         result.attempted_library_names.front() == "fake-vulkan-loader",
         "available probe records the attempted fake loader name");
+    require(
+        result.candidate_diagnostics.size() == 1,
+        "available probe records one candidate diagnostic");
+    require(
+        result.candidate_diagnostics.front().library_name == "fake-vulkan-loader",
+        "available probe candidate records the fake loader name");
+    require(
+        result.candidate_diagnostics.front().status
+            == vulkan_backend::vulkan_loader_candidate_status::usable,
+        "available probe candidate is classified as usable");
+    require(
+        result.candidate_diagnostics.front().library_found,
+        "available probe candidate records a found library");
+    require(
+        result.candidate_diagnostics.front().required_symbol_found,
+        "available probe candidate records a found required symbol");
+    require(
+        result.candidate_diagnostics.front().usable(),
+        "available probe candidate passes the usable gate");
 }
 
 void test_fake_vulkan_loader_reports_required_symbol_missing()
@@ -94,6 +113,75 @@ void test_fake_vulkan_loader_reports_required_symbol_missing()
     require(
         result.attempted_library_count == 1,
         "missing-symbol probe records one attempted library");
+    require(
+        result.candidate_diagnostics.size() == 1,
+        "missing-symbol probe records one candidate diagnostic");
+    require(
+        result.candidate_diagnostics.front().status
+            == vulkan_backend::vulkan_loader_candidate_status::required_symbol_missing,
+        "missing-symbol probe candidate is classified by missing vkGetInstanceProcAddr");
+    require(
+        result.candidate_diagnostics.front().library_found,
+        "missing-symbol probe candidate records the found loader library");
+    require(
+        !result.candidate_diagnostics.front().required_symbol_found,
+        "missing-symbol probe candidate records the missing required symbol");
+    require(
+        !result.candidate_diagnostics.front().usable(),
+        "missing-symbol probe candidate is not usable");
+}
+
+void test_fake_vulkan_loader_classifies_candidates_until_usable_loader()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::fake_vulkan_loader loader(
+        vulkan_backend::fake_vulkan_loader_options{
+            .library_name = "fake-vulkan-loader",
+            .library_available = true,
+            .required_symbol_available = true,
+        });
+    const vulkan_backend::vulkan_loader_probe_result result =
+        vulkan_backend::probe_vulkan_loader(
+            loader,
+            vulkan_backend::vulkan_loader_probe_request{
+                .candidate_library_names = {
+                    "missing-vulkan-loader",
+                    "fake-vulkan-loader",
+                    "unused-vulkan-loader",
+                },
+                .required_symbol_name =
+                    std::string{vulkan_backend::vulkan_loader_required_symbol_name()},
+                .use_default_library_names = false,
+            });
+
+    require(result.available(), "candidate classification finds a usable loader");
+    require(
+        result.attempted_library_count == 2,
+        "candidate classification stops after the first usable loader");
+    require(
+        result.candidate_diagnostics.size() == 2,
+        "candidate classification records attempted candidates only");
+    require(
+        result.candidate_diagnostics[0].library_name == "missing-vulkan-loader",
+        "candidate classification records the missing candidate name");
+    require(
+        result.candidate_diagnostics[0].status
+            == vulkan_backend::vulkan_loader_candidate_status::library_missing,
+        "candidate classification marks the missing library candidate");
+    require(
+        !result.candidate_diagnostics[0].library_found,
+        "candidate classification records that the first library was missing");
+    require(
+        result.candidate_diagnostics[1].library_name == "fake-vulkan-loader",
+        "candidate classification records the usable candidate name");
+    require(
+        result.candidate_diagnostics[1].status
+            == vulkan_backend::vulkan_loader_candidate_status::usable,
+        "candidate classification marks the found loader candidate usable");
+    require(
+        result.candidate_diagnostics[1].usable(),
+        "candidate classification usable helper follows the candidate state");
 }
 
 void test_system_vulkan_loader_reports_missing_library_for_explicit_missing_candidate()
@@ -123,6 +211,19 @@ void test_system_vulkan_loader_reports_missing_library_for_explicit_missing_cand
         result.attempted_library_names.front()
             == "quiz_vulkan_missing_vulkan_loader_probe_20260507_7f9b0b7e.dll",
         "missing-library probe records the explicit missing candidate");
+    require(
+        result.candidate_diagnostics.size() == 1,
+        "missing-library probe records one candidate diagnostic");
+    require(
+        result.candidate_diagnostics.front().status
+            == vulkan_backend::vulkan_loader_candidate_status::library_missing,
+        "missing-library probe candidate is classified as library missing");
+    require(
+        !result.candidate_diagnostics.front().library_found,
+        "missing-library probe candidate records no library");
+    require(
+        !result.candidate_diagnostics.front().required_symbol_found,
+        "missing-library probe candidate records no required symbol");
 }
 
 void test_vulkan_loader_probe_status_names_are_stable()
@@ -179,6 +280,32 @@ void test_vulkan_loader_readiness_status_names_are_stable()
             vulkan_backend::vulkan_loader_readiness_status::required_symbol_missing)
             == std::string_view{"required_symbol_missing"},
         "loader readiness status name for required symbol missing is stable");
+}
+
+void test_vulkan_loader_candidate_status_names_are_stable()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    require(
+        vulkan_backend::loader_candidate_status_name(
+            vulkan_backend::vulkan_loader_candidate_status::not_checked)
+            == std::string_view{"not_checked"},
+        "loader candidate status name for not checked is stable");
+    require(
+        vulkan_backend::loader_candidate_status_name(
+            vulkan_backend::vulkan_loader_candidate_status::library_missing)
+            == std::string_view{"library_missing"},
+        "loader candidate status name for library missing is stable");
+    require(
+        vulkan_backend::loader_candidate_status_name(
+            vulkan_backend::vulkan_loader_candidate_status::required_symbol_missing)
+            == std::string_view{"required_symbol_missing"},
+        "loader candidate status name for required symbol missing is stable");
+    require(
+        vulkan_backend::loader_candidate_status_name(
+            vulkan_backend::vulkan_loader_candidate_status::usable)
+            == std::string_view{"usable"},
+        "loader candidate status name for usable is stable");
 }
 
 void test_loader_probe_result_builds_instance_readiness_state()
@@ -322,9 +449,11 @@ int main()
 {
     test_fake_vulkan_loader_reports_available_when_required_symbol_exists();
     test_fake_vulkan_loader_reports_required_symbol_missing();
+    test_fake_vulkan_loader_classifies_candidates_until_usable_loader();
     test_system_vulkan_loader_reports_missing_library_for_explicit_missing_candidate();
     test_vulkan_loader_probe_status_names_are_stable();
     test_vulkan_loader_readiness_status_names_are_stable();
+    test_vulkan_loader_candidate_status_names_are_stable();
     test_loader_probe_result_builds_instance_readiness_state();
     test_null_backend_loader_available_reaches_device_gate();
     test_null_backend_missing_loader_stops_at_instance_gate();

@@ -229,6 +229,61 @@ static_assert(requires(
     { const_summary.find_blocked(id) } -> std::same_as<const asset_materialized_bytes_handoff_payload*>;
 });
 
+static_assert(requires(
+    asset_materialized_byte_payload payload,
+    const asset_materialized_byte_payload& const_payload) {
+    { payload.id } -> std::same_as<std::string&>;
+    { payload.type } -> std::same_as<asset_type&>;
+    { payload.cache_key } -> std::same_as<asset_cache_key&>;
+    { payload.source_uri } -> std::same_as<std::string&>;
+    { payload.rooted_path } -> std::same_as<std::optional<std::filesystem::path>&>;
+    { payload.materialized_source_path } -> std::same_as<std::string&>;
+    { payload.materialized_path } -> std::same_as<std::filesystem::path&>;
+    { payload.byte_count } -> std::same_as<std::size_t&>;
+    { payload.content_hash } -> std::same_as<std::string&>;
+    { payload.bytes } -> std::same_as<std::vector<std::byte>&>;
+    { payload.status } -> std::same_as<asset_materialized_bytes_handoff_status&>;
+    { payload.materialized_status } -> std::same_as<runtime_materialized_asset_lookup_status&>;
+    { payload.load_status } -> std::same_as<asset_bytes_load_status&>;
+    { payload.issues } -> std::same_as<std::vector<asset_bytes_integrity_issue>&>;
+    { payload.diagnostic } -> std::same_as<std::string&>;
+    { const_payload.ready() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    asset_materialized_byte_payload_group group,
+    const asset_materialized_byte_payload_group& const_group,
+    std::string_view id) {
+    { group.ready } -> std::same_as<std::vector<asset_materialized_byte_payload>&>;
+    { group.blocked } -> std::same_as<std::vector<asset_materialized_byte_payload>&>;
+    { const_group.payload_count() } -> std::same_as<std::size_t>;
+    { const_group.ok() } -> std::same_as<bool>;
+    { const_group.find_ready(id) } -> std::same_as<const asset_materialized_byte_payload*>;
+    { const_group.find_blocked(id) } -> std::same_as<const asset_materialized_byte_payload*>;
+});
+
+static_assert(requires(
+    asset_materialized_byte_payload_bundle bundle,
+    const asset_materialized_byte_payload_bundle& const_bundle,
+    std::string_view id,
+    asset_type type) {
+    { bundle.cache_policy } -> std::same_as<asset_materialized_bytes_cache_policy_summary&>;
+    { bundle.handoff } -> std::same_as<asset_materialized_bytes_handoff_summary&>;
+    { bundle.fonts } -> std::same_as<asset_materialized_byte_payload_group&>;
+    { bundle.images } -> std::same_as<asset_materialized_byte_payload_group&>;
+    { bundle.sounds } -> std::same_as<asset_materialized_byte_payload_group&>;
+    { bundle.shaders } -> std::same_as<asset_materialized_byte_payload_group&>;
+    { bundle.decks } -> std::same_as<asset_materialized_byte_payload_group&>;
+    { bundle.skipped_generic_count } -> std::same_as<std::size_t&>;
+    { const_bundle.ok() } -> std::same_as<bool>;
+    { const_bundle.ready_count() } -> std::same_as<std::size_t>;
+    { const_bundle.blocked_count() } -> std::same_as<std::size_t>;
+    { const_bundle.payload_count() } -> std::same_as<std::size_t>;
+    { const_bundle.group_for_type(type) } -> std::same_as<const asset_materialized_byte_payload_group&>;
+    { const_bundle.find_ready(id) } -> std::same_as<const asset_materialized_byte_payload*>;
+    { const_bundle.find_blocked(id) } -> std::same_as<const asset_materialized_byte_payload*>;
+});
+
 static_assert(std::has_virtual_destructor_v<asset_bytes_provider_interface>);
 static_assert(std::derived_from<fake_asset_bytes_provider, asset_bytes_provider_interface>);
 static_assert(std::derived_from<local_file_asset_bytes_provider, asset_bytes_provider_interface>);
@@ -287,6 +342,8 @@ static_assert(requires(
         std::same_as<asset_typed_materialized_bytes_diff_summary>;
     { make_materialized_asset_bytes_handoff_summary(typed_summary) } ->
         std::same_as<asset_materialized_bytes_handoff_summary>;
+    { make_materialized_asset_byte_payload_bundle(provider, catalog) } ->
+        std::same_as<asset_materialized_byte_payload_bundle>;
 });
 
 } // namespace

@@ -520,4 +520,71 @@ inline asset_typed_materialized_bytes_summary summarize_typed_materialized_asset
     return summary;
 }
 
+inline asset_materialized_byte_payload_bundle make_materialized_asset_byte_payload_bundle(
+    const asset_bytes_provider_interface& provider,
+    const runtime_asset_catalog& catalog,
+    bool require_non_empty = true)
+{
+    asset_materialized_byte_payload_bundle bundle;
+    const std::vector<asset_bytes_catalog_request> requests =
+        detail::make_typed_materialized_asset_byte_requests(catalog, bundle.skipped_generic_count);
+    bundle.cache_policy.request_count = requests.size();
+    bundle.handoff.skipped_generic_count = bundle.skipped_generic_count;
+
+    for (const asset_bytes_catalog_request& request : requests) {
+        const runtime_materialized_asset_lookup_result materialized = lookup_runtime_materialized_asset(
+            catalog,
+            runtime_materialized_asset_lookup_request{
+                .id = request.id,
+                .expected_type = request.expected_type,
+            });
+        asset_bytes_load_result load = load_materialized_asset_bytes(provider, materialized);
+        asset_bytes_integrity_report report = validate_asset_bytes_integrity(asset_bytes_integrity_request{
+            .snapshot = materialized.materialized.asset,
+            .load = std::move(load),
+            .require_non_empty = require_non_empty,
+        });
+
+        asset_materialized_bytes_cache_policy_entry policy_entry{
+            .id = request.id,
+            .expected_type = request.expected_type,
+            .materialized_status = materialized.status,
+            .load_status = report.load.status,
+            .cache_key = report.load.cache_key,
+            .source_uri = report.load.source_uri,
+            .byte_count = report.load.byte_count,
+            .content_hash = report.load.content_hash,
+            .issues = report.issues,
+            .diagnostic = report.load.diagnostic,
+        };
+        if (materialized.ok()) {
+            policy_entry.materialized_source_path = materialized.materialized.source_path;
+            policy_entry.materialized_path = materialized.materialized.local_path;
+        }
+
+        if (report.load.ok()) {
+            ++bundle.cache_policy.loaded_count;
+            bundle.cache_policy.total_byte_count += report.load.byte_count;
+        }
+        if (!policy_entry.ok()) {
+            ++bundle.cache_policy.failed_count;
+        }
+        for (const asset_bytes_integrity_issue& issue : policy_entry.issues) {
+            detail::count_asset_bytes_integrity_issue(bundle.cache_policy, issue.kind);
+        }
+
+        const asset_typed_materialized_bytes_entry typed_entry =
+            detail::make_typed_materialized_bytes_entry(policy_entry, catalog);
+        detail::add_materialized_bytes_handoff_payload(
+            bundle.handoff,
+            detail::make_materialized_bytes_handoff_payload(typed_entry));
+        detail::add_materialized_byte_payload(
+            bundle,
+            detail::make_materialized_byte_payload(typed_entry, std::move(report.load)));
+        bundle.cache_policy.entries.push_back(std::move(policy_entry));
+    }
+
+    return bundle;
+}
+
 } // namespace quiz_vulkan::assets

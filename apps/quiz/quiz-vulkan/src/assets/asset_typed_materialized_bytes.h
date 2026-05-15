@@ -335,6 +335,160 @@ struct asset_materialized_bytes_handoff_summary {
     }
 };
 
+struct asset_materialized_byte_payload {
+    std::string id;
+    asset_type type = asset_type::generic;
+    asset_cache_key cache_key;
+    std::string source_uri;
+    std::optional<std::filesystem::path> rooted_path;
+    std::string materialized_source_path;
+    std::filesystem::path materialized_path;
+    std::size_t byte_count = 0U;
+    std::string content_hash;
+    std::vector<std::byte> bytes;
+    asset_materialized_bytes_handoff_status status =
+        asset_materialized_bytes_handoff_status::materialization_blocked;
+    runtime_materialized_asset_lookup_status materialized_status =
+        runtime_materialized_asset_lookup_status::missing_id;
+    asset_bytes_load_status load_status = asset_bytes_load_status::missing_bytes;
+    std::vector<asset_bytes_integrity_issue> issues;
+    std::string diagnostic;
+
+    [[nodiscard]] bool ready() const
+    {
+        return status == asset_materialized_bytes_handoff_status::ready;
+    }
+};
+
+struct asset_materialized_byte_payload_group {
+    std::vector<asset_materialized_byte_payload> ready;
+    std::vector<asset_materialized_byte_payload> blocked;
+
+    [[nodiscard]] std::size_t payload_count() const
+    {
+        return ready.size() + blocked.size();
+    }
+
+    [[nodiscard]] bool ok() const
+    {
+        return blocked.empty();
+    }
+
+    [[nodiscard]] const asset_materialized_byte_payload* find_ready(std::string_view id) const
+    {
+        for (const asset_materialized_byte_payload& payload : ready) {
+            if (payload.id == id) {
+                return &payload;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const asset_materialized_byte_payload* find_blocked(std::string_view id) const
+    {
+        for (const asset_materialized_byte_payload& payload : blocked) {
+            if (payload.id == id) {
+                return &payload;
+            }
+        }
+        return nullptr;
+    }
+};
+
+struct asset_materialized_byte_payload_bundle {
+    asset_materialized_bytes_cache_policy_summary cache_policy;
+    asset_materialized_bytes_handoff_summary handoff;
+    asset_materialized_byte_payload_group fonts;
+    asset_materialized_byte_payload_group images;
+    asset_materialized_byte_payload_group sounds;
+    asset_materialized_byte_payload_group shaders;
+    asset_materialized_byte_payload_group decks;
+    std::size_t skipped_generic_count = 0U;
+
+    [[nodiscard]] bool ok() const
+    {
+        return cache_policy.ok() && handoff.ok() && blocked_count() == 0U;
+    }
+
+    [[nodiscard]] std::size_t ready_count() const
+    {
+        return fonts.ready.size() + images.ready.size() + sounds.ready.size() + shaders.ready.size()
+            + decks.ready.size();
+    }
+
+    [[nodiscard]] std::size_t blocked_count() const
+    {
+        return fonts.blocked.size() + images.blocked.size() + sounds.blocked.size() + shaders.blocked.size()
+            + decks.blocked.size();
+    }
+
+    [[nodiscard]] std::size_t payload_count() const
+    {
+        return ready_count() + blocked_count();
+    }
+
+    [[nodiscard]] const asset_materialized_byte_payload_group& group_for_type(asset_type type) const
+    {
+        switch (type) {
+            case asset_type::font:
+                return fonts;
+            case asset_type::image:
+                return images;
+            case asset_type::sound:
+                return sounds;
+            case asset_type::shader:
+                return shaders;
+            case asset_type::deck:
+                return decks;
+            case asset_type::generic:
+                break;
+        }
+
+        static const asset_materialized_byte_payload_group empty_group;
+        return empty_group;
+    }
+
+    [[nodiscard]] const asset_materialized_byte_payload* find_ready(std::string_view id) const
+    {
+        if (const asset_materialized_byte_payload* payload = fonts.find_ready(id); payload != nullptr) {
+            return payload;
+        }
+        if (const asset_materialized_byte_payload* payload = images.find_ready(id); payload != nullptr) {
+            return payload;
+        }
+        if (const asset_materialized_byte_payload* payload = sounds.find_ready(id); payload != nullptr) {
+            return payload;
+        }
+        if (const asset_materialized_byte_payload* payload = shaders.find_ready(id); payload != nullptr) {
+            return payload;
+        }
+        if (const asset_materialized_byte_payload* payload = decks.find_ready(id); payload != nullptr) {
+            return payload;
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const asset_materialized_byte_payload* find_blocked(std::string_view id) const
+    {
+        if (const asset_materialized_byte_payload* payload = fonts.find_blocked(id); payload != nullptr) {
+            return payload;
+        }
+        if (const asset_materialized_byte_payload* payload = images.find_blocked(id); payload != nullptr) {
+            return payload;
+        }
+        if (const asset_materialized_byte_payload* payload = sounds.find_blocked(id); payload != nullptr) {
+            return payload;
+        }
+        if (const asset_materialized_byte_payload* payload = shaders.find_blocked(id); payload != nullptr) {
+            return payload;
+        }
+        if (const asset_materialized_byte_payload* payload = decks.find_blocked(id); payload != nullptr) {
+            return payload;
+        }
+        return nullptr;
+    }
+};
+
 namespace detail {
 
 inline bool asset_type_is_engine_facing(asset_type type)
@@ -550,6 +704,62 @@ inline void add_materialized_bytes_handoff_payload(
             break;
         case asset_type::generic:
             ++summary.skipped_generic_count;
+            return;
+    }
+
+    if (payload.ready()) {
+        group->ready.push_back(std::move(payload));
+    } else {
+        group->blocked.push_back(std::move(payload));
+    }
+}
+
+inline asset_materialized_byte_payload make_materialized_byte_payload(
+    const asset_typed_materialized_bytes_entry& entry,
+    asset_bytes_load_result load)
+{
+    return asset_materialized_byte_payload{
+        .id = entry.id,
+        .type = entry.type,
+        .cache_key = entry.cache_key,
+        .source_uri = entry.source_uri,
+        .rooted_path = entry.rooted_path,
+        .materialized_source_path = entry.materialized_source_path,
+        .materialized_path = entry.materialized_path,
+        .byte_count = entry.byte_count,
+        .content_hash = entry.content_hash,
+        .bytes = std::move(load.bytes),
+        .status = materialized_bytes_handoff_status_for_entry(entry),
+        .materialized_status = entry.materialized_status,
+        .load_status = entry.load_status,
+        .issues = entry.issues,
+        .diagnostic = entry.diagnostic,
+    };
+}
+
+inline void add_materialized_byte_payload(
+    asset_materialized_byte_payload_bundle& bundle,
+    asset_materialized_byte_payload payload)
+{
+    asset_materialized_byte_payload_group* group = nullptr;
+    switch (payload.type) {
+        case asset_type::font:
+            group = &bundle.fonts;
+            break;
+        case asset_type::image:
+            group = &bundle.images;
+            break;
+        case asset_type::sound:
+            group = &bundle.sounds;
+            break;
+        case asset_type::shader:
+            group = &bundle.shaders;
+            break;
+        case asset_type::deck:
+            group = &bundle.decks;
+            break;
+        case asset_type::generic:
+            ++bundle.skipped_generic_count;
             return;
     }
 

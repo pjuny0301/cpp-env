@@ -1330,6 +1330,150 @@ void test_materialized_asset_bytes_handoff_summary_groups_ready_and_blocked_payl
     require(handoff.find_ready("rootless_shader") == nullptr, "blocked payloads are not exposed as ready");
 }
 
+void test_materialized_asset_byte_payload_bundle_groups_loaded_bytes_by_type()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    write_fixture_file(fixture_root / "packaged" / "fonts" / "body.ttf", "font bytes");
+    write_fixture_file(fixture_root / "packaged" / "cards" / "front.png", "image bytes");
+    write_fixture_file(fixture_root / "packaged" / "sounds" / "correct.ogg", "sound bytes");
+    write_fixture_file(fixture_root / "packaged" / "shaders" / "ui.vert.spv", "shader bytes");
+    write_fixture_file(fixture_root / "packaged" / "decks" / "main.quiz", "deck bytes");
+    write_fixture_file(fixture_root / "packaged" / "misc" / "notes.txt", "generic bytes");
+
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "packaged",
+        .root_path = fixture_root / "packaged",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "body_font",
+        .type = asset_type::font,
+        .uri = "asset://fonts/body.ttf",
+        .root_id = "packaged",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_front",
+        .type = asset_type::image,
+        .uri = "asset://cards/front.png",
+        .root_id = "packaged",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "answer_sound",
+        .type = asset_type::sound,
+        .uri = "asset://sounds/correct.ogg",
+        .root_id = "packaged",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "ui_shader",
+        .type = asset_type::shader,
+        .uri = "asset://shaders/ui.vert.spv",
+        .root_id = "packaged",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "main_deck",
+        .type = asset_type::deck,
+        .uri = "asset://decks/main.quiz",
+        .root_id = "packaged",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "rootless_shader",
+        .type = asset_type::shader,
+        .uri = "asset://shaders/rootless.vert.spv",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "generic_notes",
+        .type = asset_type::generic,
+        .uri = "asset://misc/notes.txt",
+        .root_id = "packaged",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const runtime_asset_catalog catalog = build_runtime_asset_catalog(manifest, resolver);
+    const local_file_asset_bytes_provider provider;
+    const asset_materialized_byte_payload_bundle bundle =
+        make_materialized_asset_byte_payload_bundle(provider, catalog);
+
+    require(!bundle.ok(), "payload bundle reports blocked materialized assets");
+    require(bundle.ready_count() == 5U, "payload bundle counts ready typed byte payloads");
+    require(bundle.blocked_count() == 1U, "payload bundle counts blocked typed byte payloads");
+    require(bundle.payload_count() == 6U, "payload bundle counts every typed byte payload");
+    require(bundle.skipped_generic_count == 1U, "payload bundle skips generic byte payloads");
+    require(bundle.group_for_type(asset_type::generic).payload_count() == 0U, "payload bundle has no generic group");
+    require(bundle.cache_policy.request_count == 6U, "payload bundle cache policy tracks typed requests");
+    require(bundle.cache_policy.loaded_count == 5U, "payload bundle cache policy counts loaded bytes");
+    require(bundle.cache_policy.failed_count == 1U, "payload bundle cache policy counts blocked assets");
+    require(bundle.cache_policy.total_byte_count == 54U, "payload bundle cache policy totals loaded byte counts");
+    require(bundle.cache_policy.load_failed_count == 1U, "payload bundle cache policy records load blockers");
+    require(bundle.handoff.ready_count() == 5U, "payload bundle carries ready handoff evidence");
+    require(bundle.handoff.blocked_count() == 1U, "payload bundle carries blocked handoff evidence");
+    require(bundle.handoff.skipped_generic_count == 1U, "payload bundle mirrors skipped generic handoff count");
+
+    require(bundle.fonts.ready.size() == 1U, "payload bundle groups ready font bytes");
+    require(bundle.images.ready.size() == 1U, "payload bundle groups ready image bytes");
+    require(bundle.sounds.ready.size() == 1U, "payload bundle groups ready sound bytes");
+    require(bundle.shaders.ready.size() == 1U, "payload bundle groups ready shader bytes");
+    require(bundle.shaders.blocked.size() == 1U, "payload bundle groups blocked shader payloads");
+    require(bundle.decks.ready.size() == 1U, "payload bundle groups ready deck bytes");
+
+    const asset_materialized_byte_payload* image = bundle.find_ready("card_front");
+    require(image != nullptr, "payload bundle can find ready image bytes");
+    require(image->ready(), "ready byte payload reports ready status");
+    require(image->type == asset_type::image, "ready byte payload preserves type");
+    require(image->cache_key == "image|asset://cards/front.png", "ready byte payload preserves cache key");
+    require(image->source_uri == "asset://cards/front.png", "ready byte payload preserves source uri");
+    require(image->rooted_path.has_value(), "ready byte payload preserves rooted path");
+    require(
+        *image->rooted_path
+            == std::filesystem::absolute(fixture_root / "packaged" / "cards" / "front.png").lexically_normal(),
+        "ready byte payload rooted path is normalized");
+    require(image->materialized_source_path == "cards/front.png", "ready byte payload preserves source path");
+    require(image->materialized_path == *image->rooted_path, "ready byte payload preserves materialized path");
+    require(image->byte_count == image->bytes.size(), "ready byte payload byte count matches owned bytes");
+    require(bytes_to_string(image->bytes) == "image bytes", "ready byte payload owns loaded image bytes");
+    require(
+        image->content_hash == make_asset_bytes_content_hash(image->bytes),
+        "ready byte payload preserves content hash evidence");
+    require(image->issues.empty(), "ready byte payload has no integrity issues");
+
+    asset_materialized_byte_payload copied_image = *image;
+    require(
+        bytes_to_string(copied_image.bytes) == "image bytes",
+        "materialized byte payload copy preserves owned bytes");
+
+    const asset_materialized_byte_payload* font = bundle.find_ready("body_font");
+    require(font != nullptr, "payload bundle can find ready font bytes");
+    require(bytes_to_string(font->bytes) == "font bytes", "payload bundle stores font bytes");
+    const asset_materialized_byte_payload* sound = bundle.find_ready("answer_sound");
+    require(sound != nullptr, "payload bundle can find ready sound bytes");
+    require(bytes_to_string(sound->bytes) == "sound bytes", "payload bundle stores sound bytes");
+    const asset_materialized_byte_payload* shader = bundle.find_ready("ui_shader");
+    require(shader != nullptr, "payload bundle can find ready shader bytes");
+    require(bytes_to_string(shader->bytes) == "shader bytes", "payload bundle stores shader bytes");
+    const asset_materialized_byte_payload* deck = bundle.find_ready("main_deck");
+    require(deck != nullptr, "payload bundle can find ready deck bytes");
+    require(bytes_to_string(deck->bytes) == "deck bytes", "payload bundle stores deck bytes");
+
+    const asset_materialized_byte_payload* blocked_shader = bundle.find_blocked("rootless_shader");
+    require(blocked_shader != nullptr, "payload bundle can find blocked shader payloads");
+    require(!blocked_shader->ready(), "blocked byte payload reports blocked status");
+    require(
+        blocked_shader->status == asset_materialized_bytes_handoff_status::materialization_blocked,
+        "blocked byte payload preserves materialization blocker status");
+    require(
+        blocked_shader->materialized_status == runtime_materialized_asset_lookup_status::missing_rooted_path,
+        "blocked byte payload preserves materialization status");
+    require(
+        blocked_shader->load_status == asset_bytes_load_status::source_not_readable,
+        "blocked byte payload preserves load status");
+    require(blocked_shader->bytes.empty(), "blocked pre-provider payload has no byte ownership");
+    require(blocked_shader->issues.size() == 1U, "blocked byte payload preserves integrity issue evidence");
+    require(!blocked_shader->diagnostic.empty(), "blocked byte payload preserves diagnostics");
+    require(bundle.find_ready("rootless_shader") == nullptr, "blocked byte payload is not reported as ready");
+    require(bundle.cache_policy.find_entry("rootless_shader") != nullptr, "payload bundle preserves cache policy entries");
+}
+
 void test_materialized_asset_bytes_integrity_fails_before_provider_for_unmaterialized_sources()
 {
     using namespace quiz_vulkan::assets;
@@ -1442,6 +1586,7 @@ int main()
     test_typed_materialized_asset_bytes_summary_groups_engine_assets();
     test_typed_materialized_asset_bytes_diff_tracks_engine_entry_deltas();
     test_materialized_asset_bytes_handoff_summary_groups_ready_and_blocked_payloads();
+    test_materialized_asset_byte_payload_bundle_groups_loaded_bytes_by_type();
     test_materialized_asset_bytes_integrity_fails_before_provider_for_unmaterialized_sources();
     test_materialized_asset_bytes_integrity_fails_after_provider_for_byte_count_mismatch();
     test_materialized_asset_bytes_integrity_fails_after_provider_for_metadata_mismatch();

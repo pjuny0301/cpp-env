@@ -5,6 +5,14 @@
 #include <string_view>
 #include <vector>
 
+#ifndef QUIZ_VULKAN_HAS_UTF8PROC_EXTERNAL_LIBRARY
+#define QUIZ_VULKAN_HAS_UTF8PROC_EXTERNAL_LIBRARY 0
+#endif
+
+#if QUIZ_VULKAN_HAS_UTF8PROC_EXTERNAL_LIBRARY
+#include <utf8proc.h>
+#endif
+
 namespace quiz_vulkan::render {
 
 constexpr std::uint32_t utf8_replacement_codepoint = 0xfffd;
@@ -30,13 +38,29 @@ inline bool is_utf8_continuation_byte(const unsigned char byte)
     return (byte & 0xc0U) == 0x80U;
 }
 
+inline bool utf8_text_run_uses_utf8proc_runtime()
+{
+    return QUIZ_VULKAN_HAS_UTF8PROC_EXTERNAL_LIBRARY != 0;
+}
+
 inline bool is_utf8_combining_mark(const std::uint32_t code_point)
 {
+#if QUIZ_VULKAN_HAS_UTF8PROC_EXTERNAL_LIBRARY
+    if (code_point > 0x10ffffU || (code_point >= 0xd800U && code_point <= 0xdfffU)) {
+        return false;
+    }
+    const utf8proc_category_t category =
+        utf8proc_category(static_cast<utf8proc_int32_t>(code_point));
+    return category == UTF8PROC_CATEGORY_MN
+        || category == UTF8PROC_CATEGORY_MC
+        || category == UTF8PROC_CATEGORY_ME;
+#else
     return (code_point >= 0x0300U && code_point <= 0x036fU)
         || (code_point >= 0x1ab0U && code_point <= 0x1affU)
         || (code_point >= 0x1dc0U && code_point <= 0x1dffU)
         || (code_point >= 0x20d0U && code_point <= 0x20ffU)
         || (code_point >= 0xfe20U && code_point <= 0xfe2fU);
+#endif
 }
 
 inline bool is_utf8_hangul_syllable(const std::uint32_t code_point)
@@ -57,6 +81,32 @@ inline utf8_text_codepoint decode_utf8_text_codepoint(
         };
     }
 
+#if QUIZ_VULKAN_HAS_UTF8PROC_EXTERNAL_LIBRARY
+    utf8proc_int32_t code_point = 0;
+    const utf8proc_uint8_t* bytes =
+        reinterpret_cast<const utf8proc_uint8_t*>(text.data() + byte_offset);
+    const utf8proc_ssize_t consumed = utf8proc_iterate(
+        bytes,
+        static_cast<utf8proc_ssize_t>(text.size() - byte_offset),
+        &code_point);
+
+    if (consumed > 0) {
+        return utf8_text_codepoint{
+            .code_point = static_cast<std::uint32_t>(code_point),
+            .byte_offset = byte_offset,
+            .byte_count = static_cast<std::size_t>(consumed),
+            .valid = true,
+            .cluster_start = true,
+        };
+    }
+
+    return utf8_text_codepoint{
+        .byte_offset = byte_offset,
+        .byte_count = 1,
+        .valid = false,
+        .cluster_start = true,
+    };
+#else
     const auto byte = static_cast<unsigned char>(text[byte_offset]);
     if (byte < 0x80U) {
         return utf8_text_codepoint{
@@ -128,6 +178,7 @@ inline utf8_text_codepoint decode_utf8_text_codepoint(
         .valid = false,
         .cluster_start = true,
     };
+#endif
 }
 
 inline bool starts_new_utf8_text_cluster(
@@ -143,6 +194,11 @@ inline bool starts_new_utf8_text_cluster(
     if (!prior_codepoints.back().valid) {
         return true;
     }
+#if QUIZ_VULKAN_HAS_UTF8PROC_EXTERNAL_LIBRARY
+    return utf8proc_grapheme_break(
+        static_cast<utf8proc_int32_t>(prior_codepoints.back().code_point),
+        static_cast<utf8proc_int32_t>(codepoint.code_point)) != 0;
+#else
     if (is_utf8_combining_mark(codepoint.code_point)) {
         return false;
     }
@@ -150,6 +206,7 @@ inline bool starts_new_utf8_text_cluster(
         return true;
     }
     return true;
+#endif
 }
 
 inline std::vector<utf8_text_codepoint> iterate_utf8_text_run(const std::string_view text)

@@ -5,6 +5,7 @@
 #include "render/text/font_backend_dependency.h"
 #include "render/text/font_backend_selection.h"
 #include "render/text/font_coverage_run_segmentation.h"
+#include "render/text/font_fallback_shaping_handoff.h"
 #include "render/text/font_rasterizer.h"
 #include "render/text/font_glyph_id_resolver.h"
 #include "render/text/font_resolver.h"
@@ -58,6 +59,10 @@ struct fake_text_engine_font_backend_dependency_policy_snapshot {
     bool fake_only = true;
     bool adapter_ready = false;
     bool fallback_ready = false;
+    bool header_probe_recorded = false;
+    bool freetype_headers_available = false;
+    bool harfbuzz_headers_available = false;
+    bool utf8proc_headers_available = false;
     std::size_t probe_count = 0;
     std::size_t adapter_ready_count = 0;
     std::size_t fallback_ready_count = 0;
@@ -65,6 +70,9 @@ struct fake_text_engine_font_backend_dependency_policy_snapshot {
     std::size_t adapter_unavailable_count = 0;
     std::size_t version_mismatch_count = 0;
     std::size_t unsupported_feature_count = 0;
+    std::size_t available_header_count = 0;
+    std::size_t versioned_header_count = 0;
+    std::size_t advertised_header_feature_count = 0;
 };
 
 struct fake_text_engine_font_backend_selection_snapshot {
@@ -88,6 +96,10 @@ struct fake_text_engine_font_backend_selection_snapshot {
     bool dependency_adapter_ready = false;
     bool dependency_fallback_ready = false;
     bool fake_only = false;
+    bool dependency_header_available = false;
+    bool dependency_header_version_available = false;
+    render_text_font_backend_version dependency_header_version;
+    std::string dependency_header_diagnostic;
     std::string dependency_diagnostic;
 };
 
@@ -97,6 +109,111 @@ struct fake_text_engine_font_backend_run_selection_snapshot {
     fake_text_engine_font_backend_selection_snapshot shaping;
     fake_text_engine_font_backend_selection_snapshot rasterization;
     fake_text_engine_font_backend_selection_snapshot unicode_processing;
+};
+
+struct fake_text_engine_shaping_handoff_snapshot {
+    std::size_t run_index = 0;
+    render_style_id style_token;
+    std::size_t glyph_index = 0;
+    std::size_t byte_offset = 0;
+    std::size_t byte_count = 0;
+    std::size_t cluster_byte_offset = 0;
+    std::size_t cluster_byte_count = 0;
+    std::size_t cluster_codepoint_offset = 0;
+    std::size_t cluster_codepoint_count = 0;
+    std::uint32_t codepoint = utf8_replacement_codepoint;
+    std::uint32_t glyph_id = 0;
+    font_face_id resolved_face_id = 0;
+    float advance_x = 0.0f;
+    render_text_font_backend_library backend_library =
+        render_text_font_backend_library::deterministic_fake;
+    std::string backend_label;
+    render_text_font_backend_adapter_status adapter_status =
+        render_text_font_backend_adapter_status::backend_unavailable;
+    render_text_font_backend_capability_status capability_status =
+        render_text_font_backend_capability_status::unavailable;
+    render_text_font_source_bytes_load_status source_bytes_status =
+        render_text_font_source_bytes_load_status::missing_source;
+    bool materialized_font_bytes = false;
+    bool used_adapter = false;
+    bool used_harfbuzz = false;
+    bool used_deterministic_fallback = true;
+    bool glyph_supported = true;
+    bool cacheable = false;
+    bool atlas_ready = false;
+    std::string fallback_reason;
+};
+
+struct fake_text_engine_shaping_handoff_policy_snapshot {
+    std::size_t run_count = 0;
+    std::size_t glyph_count = 0;
+    std::size_t adapter_run_count = 0;
+    std::size_t harfbuzz_run_count = 0;
+    std::size_t deterministic_fallback_run_count = 0;
+    std::size_t materialized_font_byte_run_count = 0;
+    std::size_t missing_font_byte_run_count = 0;
+    std::size_t adapter_failure_run_count = 0;
+    std::size_t atlas_ready_glyph_count = 0;
+};
+
+struct fake_text_engine_shaping_atlas_handoff_snapshot {
+    std::size_t cluster_index = 0;
+    std::size_t run_index = 0;
+    render_style_id style_token;
+    std::size_t cluster_byte_offset = 0;
+    std::size_t cluster_byte_count = 0;
+    std::size_t cluster_codepoint_offset = 0;
+    std::size_t cluster_codepoint_count = 0;
+    std::vector<std::uint32_t> shaped_glyph_ids;
+    std::uint32_t resolved_glyph_id = 0;
+    font_face_id resolved_face_id = 0;
+    glyph_atlas_key cache_key;
+    std::string stable_page_key;
+    render_text_font_backend_library backend_library =
+        render_text_font_backend_library::deterministic_fake;
+    std::string backend_label;
+    render_text_font_backend_adapter_status adapter_status =
+        render_text_font_backend_adapter_status::backend_unavailable;
+    render_text_font_backend_capability_status capability_status =
+        render_text_font_backend_capability_status::unavailable;
+    render_text_font_source_bytes_load_status source_bytes_status =
+        render_text_font_source_bytes_load_status::missing_source;
+    render_text_glyph_atlas_materialization_status materialization_status =
+        render_text_glyph_atlas_materialization_status::skipped_missing_cache_key;
+    render_text_shaped_atlas_update_trace_status atlas_update_trace_status =
+        render_text_shaped_atlas_update_trace_status::shaped_glyph_without_cache_key;
+    bool materialized_font_bytes = false;
+    bool used_adapter = false;
+    bool used_harfbuzz = false;
+    bool used_deterministic_fallback = true;
+    bool glyph_supported = true;
+    bool cacheable = false;
+    bool has_cache_key = false;
+    bool has_atlas_placement = false;
+    bool payload_upload_ready = false;
+    bool has_atlas_update = false;
+    bool atlas_ready = false;
+    bool blocked = true;
+    std::string fallback_reason;
+    std::string blocker_reason;
+};
+
+struct fake_text_engine_shaping_atlas_handoff_policy_snapshot {
+    std::size_t cluster_count = 0;
+    std::size_t harfbuzz_cluster_count = 0;
+    std::size_t deterministic_fallback_cluster_count = 0;
+    std::size_t materialized_font_byte_cluster_count = 0;
+    std::size_t missing_font_byte_cluster_count = 0;
+    std::size_t cacheable_cluster_count = 0;
+    std::size_t atlas_ready_cluster_count = 0;
+    std::size_t blocked_cluster_count = 0;
+    std::size_t upload_ready_cluster_count = 0;
+    std::size_t clean_reuse_cluster_count = 0;
+    std::size_t raster_payload_blocked_cluster_count = 0;
+    std::size_t missing_cache_key_cluster_count = 0;
+    std::size_t fallback_reason_cluster_count = 0;
+    std::size_t unique_cache_key_count = 0;
+    std::size_t unique_page_key_count = 0;
 };
 
 struct fake_text_engine_diagnostics {
@@ -123,6 +240,7 @@ struct fake_text_engine_diagnostics {
     render_text_external_font_backend_probe_result font_backend_shaping_dependency;
     render_text_external_font_backend_probe_result font_backend_rasterization_dependency;
     render_text_external_font_backend_probe_result font_backend_unicode_dependency;
+    render_text_external_font_backend_header_probe_snapshot font_backend_header_probe;
     std::vector<fake_text_engine_font_backend_run_selection_snapshot> font_backend_run_selections;
     std::vector<render_text_font_fallback_chain_run_snapshot> font_fallback_chain_runs;
     std::vector<render_text_font_fallback_chain_missing_glyph_snapshot> font_fallback_chain_missing_glyphs;
@@ -130,6 +248,10 @@ struct fake_text_engine_diagnostics {
     render_text_font_backend_selection_result font_fallback_chain_shaping_selection;
     render_text_font_fallback_chain_plan_policy_snapshot font_fallback_chain_policy;
     std::string font_fallback_chain_diagnostic;
+    render_text_font_fallback_run_plan_snapshot font_fallback_run_plan;
+    render_text_font_fallback_shaping_handoff_snapshot font_fallback_shaping_handoff;
+    render_text_font_fallback_shaped_glyph_input_snapshot font_fallback_shaped_glyph_inputs;
+    render_text_font_fallback_shaped_glyph_execution_snapshot font_fallback_shaped_glyph_executions;
     render_text_font_backend_shaping_capability font_backend_shaping_capability;
     bool font_backend_uses_deterministic_shaping = true;
     bool font_backend_uses_deterministic_rasterizer = true;
@@ -137,6 +259,10 @@ struct fake_text_engine_diagnostics {
     std::vector<render_text_font_backend_adapter_diagnostic> font_backend_adapter_diagnostics;
     fake_text_engine_font_backend_adapter_policy_snapshot font_backend_adapter_policy;
     fake_text_engine_font_backend_dependency_policy_snapshot font_backend_dependency_policy;
+    std::vector<fake_text_engine_shaping_handoff_snapshot> shaping_handoffs;
+    fake_text_engine_shaping_handoff_policy_snapshot shaping_handoff_policy;
+    std::vector<fake_text_engine_shaping_atlas_handoff_snapshot> shaping_atlas_handoffs;
+    fake_text_engine_shaping_atlas_handoff_policy_snapshot shaping_atlas_handoff_policy;
     std::vector<render_text_shaped_glyph> shaped_glyphs;
     std::vector<render_text_font_shaping_diagnostic> font_shaping_diagnostics;
     render_text_font_shaping_policy_snapshot font_shaping_policy;
@@ -282,6 +408,26 @@ struct fake_text_engine_diagnostics {
         return font_fallback_chain_policy.run_count > 0;
     }
 
+    bool has_font_fallback_run_plan() const
+    {
+        return font_fallback_run_plan.policy.fallback_run_count > 0;
+    }
+
+    bool has_font_fallback_shaping_handoff() const
+    {
+        return font_fallback_shaping_handoff.policy.run_count > 0;
+    }
+
+    bool has_font_fallback_shaped_glyph_inputs() const
+    {
+        return font_fallback_shaped_glyph_inputs.has_inputs();
+    }
+
+    bool has_font_fallback_shaped_glyph_executions() const
+    {
+        return font_fallback_shaped_glyph_executions.has_executions();
+    }
+
     bool has_font_backend_adapter_diagnostics() const
     {
         return !font_backend_adapter_diagnostics.empty();
@@ -293,10 +439,26 @@ struct fake_text_engine_diagnostics {
             || font_backend_adapter_policy.shaping_request_count > 0;
     }
 
+    bool has_shaping_handoffs() const
+    {
+        return !shaping_handoffs.empty() || shaping_handoff_policy.run_count > 0;
+    }
+
+    bool has_shaping_atlas_handoffs() const
+    {
+        return !shaping_atlas_handoffs.empty() || shaping_atlas_handoff_policy.cluster_count > 0;
+    }
+
     bool has_font_backend_dependency_probe() const
     {
         return font_backend_dependency_policy.configured
             || font_backend_dependency_policy.probe_count > 0;
+    }
+
+    bool has_font_backend_header_probe() const
+    {
+        return font_backend_dependency_policy.header_probe_recorded
+            || !font_backend_header_probe.probes.empty();
     }
 
     bool has_shaped_glyphs() const

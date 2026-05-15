@@ -1235,6 +1235,217 @@ void test_pointer_replay_timeline_records_gestures_capture_and_wheel()
     require(wheel.timeline[0].pixel_delta_y == 0.0f, "pointer replay wheel records pixel delta");
 }
 
+void test_combined_focus_ime_text_pointer_replay_evidence_stays_input_owned()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    const std::string initial = std::string("A") + utf8(u8"한");
+    const std::array steps{
+        step("text-initial", text(7000, initial)),
+        step("backspace-hangul", key(7010, "Backspace")),
+        step("focus-gained", focus(raw_platform_focus_phase::gained, 7020)),
+        step("home", key(7030, "Home")),
+        step("select-ascii", key(7040, "ArrowRight", false, raw_platform_key_phase::down, false, true)),
+        step("composition-start", ime(raw_platform_ime_phase::composition_start, 7050)),
+        step("preedit-jamo", ime(raw_platform_ime_phase::preedit_update, 7060, utf8(u8"ㅎ"))),
+        step("preedit-syllable", ime(raw_platform_ime_phase::preedit_update, 7070, utf8(u8"하"))),
+        step("commit-replacement", ime(raw_platform_ime_phase::commit, 7080, utf8(u8"가"))),
+        step("second-composition-start", ime(raw_platform_ime_phase::composition_start, 7090)),
+        step("second-preedit", ime(raw_platform_ime_phase::preedit_update, 7100, "x")),
+        step("cancel-second", ime(raw_platform_ime_phase::cancel, 7110)),
+        step("touch-down", pointer(raw_platform_pointer_phase::down, 7120, 0.0f, 0.0f, raw_platform_pointer_button::none, 90)),
+        step("touch-drag", pointer(raw_platform_pointer_phase::move, 7140, 12.0f, 0.0f, raw_platform_pointer_button::none, 90)),
+        step("touch-cancel", pointer(raw_platform_pointer_phase::cancel, 7160, 12.0f, 0.0f, raw_platform_pointer_button::none, 90)),
+        step("wheel", platform_scroll(7170, 2.0f, 3.0f, 0.0f, -1.0f, raw_platform_scroll_delta_unit::lines)),
+        step("focus-lost", focus(raw_platform_focus_phase::lost, 7180)),
+    };
+
+    const normalized_input_replay_recording recording = replay_normalized_input_fixture(
+        engine,
+        steps,
+        normalized_input_replay_options{.initial_focus_target_id = "answer"});
+
+    require(recording.batches.size() == steps.size(), "combined replay records one batch per step");
+    require(recording.summary.routes.text == 4,
+        "combined replay counts text commit, backspace, caret, and selection routes");
+    require(recording.summary.routes.ime == 7,
+        "combined replay counts ime start update commit cancel routes");
+    require(recording.summary.routes.focus == 1, "combined replay counts focus loss route");
+    require(recording.summary.routes.pointer == 4,
+        "combined replay counts touch down drag cancel and reset pointer routes");
+    require(recording.summary.routes.wheel == 1, "combined replay counts wheel route");
+    require(recording.summary.normalized_events.drag_start == 1,
+        "combined replay counts drag start normalized event");
+    require(recording.summary.normalized_events.drag_cancel == 1,
+        "combined replay counts drag cancel normalized event");
+    require(recording.summary.normalized_events.wheel == 1,
+        "combined replay counts wheel normalized event");
+    require(recording.summary.pointer_capture_ended_cleanly,
+        "combined replay aggregate ends with clean pointer capture");
+    require(recording.summary.preedit_ended_cleanly,
+        "combined replay aggregate ends with clean preedit");
+    require(recording.summary.focus_ended_cleanly,
+        "combined replay aggregate ends with clean focus state");
+
+    const normalized_input_replay_batch& backspace_batch = recording.batches[1];
+    require(backspace_batch.keyboard.intents.delete_backward == 1,
+        "combined replay backspace batch records delete-backward intent");
+    require(backspace_batch.keyboard.repeat_policies.not_repeat == 1,
+        "combined replay backspace batch records non-repeat policy");
+    require(backspace_batch.end_state.text == "A",
+        "combined replay backspace removes exactly the trailing multibyte character");
+    require(backspace_batch.end_state.caret_byte_offset == 1,
+        "combined replay backspace lands caret on an ASCII boundary");
+    require(backspace_batch.text_presentation_diff.committed_text.byte_delta
+                == -static_cast<std::int64_t>(std::string(utf8(u8"한")).size()),
+        "combined replay backspace records multibyte byte delta");
+    require(backspace_batch.text_presentation_diff.route_byte_diagnostics.available.after_value,
+        "combined replay backspace exposes route byte diagnostics");
+    require(backspace_batch.text_presentation_diff.route_byte_diagnostics.text_byte_delta.after_value
+                == -static_cast<std::int64_t>(std::string(utf8(u8"한")).size()),
+        "combined replay backspace route records multibyte deletion delta");
+
+    const normalized_input_replay_focus_summary& focus_summary = recording.focus;
+    require(focus_summary.kinds.focus_gain == 1, "combined replay distinguishes focus gain");
+    require(focus_summary.kinds.focus_loss == 1, "combined replay distinguishes focus loss");
+    require(focus_summary.kinds.caret_moved == 1, "combined replay distinguishes caret movement");
+    require(focus_summary.kinds.selection_changed == 1,
+        "combined replay distinguishes selection movement");
+    require(focus_summary.target_transition_count == 1,
+        "combined replay records target transition only on focus loss");
+    require(focus_summary.caret_transition_count >= 2,
+        "combined replay records caret movement and focus-loss caret transition evidence");
+    require(focus_summary.selection_transition_count >= 1,
+        "combined replay records focus-owned selection movement evidence");
+    require(!focus_summary.final_has_focus, "combined replay focus final state is cleared");
+    require(focus_summary.final_focus_id.empty(), "combined replay focus final id is empty");
+    require(focus_summary.final_focus_clean, "combined replay focus final state is clean");
+
+    const normalized_input_replay_focus_timeline_entry& selection =
+        recording.batches[4].focus.timeline.front();
+    require(selection.kind == normalized_input_replay_focus_timeline_kind::selection_changed,
+        "combined replay selection batch records selection timeline kind");
+    require(selection.keyboard.intent == keyboard_shortcut_intent::selection_next,
+        "combined replay selection batch records shortcut intent");
+    require(selection.keyboard.modifiers.shift, "combined replay selection batch records shift modifier");
+    require_range(selection.selection_after, 0, 1,
+        "combined replay selection batch records selected byte range");
+
+    const normalized_input_replay_ime_summary& ime_summary = recording.ime;
+    require(ime_summary.phases.composition_start == 2,
+        "combined replay distinguishes ime composition starts");
+    require(ime_summary.phases.preedit_update == 3,
+        "combined replay distinguishes ime preedit updates");
+    require(ime_summary.phases.commit == 1, "combined replay distinguishes ime commit");
+    require(ime_summary.phases.cancel == 1, "combined replay distinguishes ime cancel");
+    require(ime_summary.emitted_input_event_routes == 5,
+        "combined replay counts emitted ime update commit cancel events");
+    require(ime_summary.diagnostic_only_routes == 2,
+        "combined replay counts diagnostic-only ime starts");
+    require(ime_summary.all_preedit_text_valid,
+        "combined replay keeps preedit text valid");
+    require(ime_summary.all_preedit_ranges_valid,
+        "combined replay keeps preedit ranges valid");
+    require(ime_summary.stale_preedit_cleared,
+        "combined replay records cancel clearing stale preedit");
+    require(ime_summary.final_committed_text == utf8(u8"가"),
+        "combined replay ime final committed text is semantic-free text state");
+    require(ime_summary.final_preedit_text.empty(),
+        "combined replay ime final preedit is empty");
+    require(ime_summary.final_preedit_clean,
+        "combined replay ime final preedit state is clean");
+
+    const normalized_input_replay_ime_timeline_entry& ime_start =
+        recording.batches[5].ime.timeline.front();
+    require(ime_start.phase == normalized_input_replay_ime_timeline_phase::composition_start,
+        "combined replay start batch records composition-start phase");
+    require(!ime_start.emits_input_event,
+        "combined replay composition start is diagnostic-only");
+    require_range(ime_start.composition.replacement_range, 0, 1,
+        "combined replay composition start records selected replacement range");
+
+    const normalized_input_replay_ime_timeline_entry& ime_update =
+        recording.batches[7].ime.timeline.front();
+    require(ime_update.phase == normalized_input_replay_ime_timeline_phase::preedit_update,
+        "combined replay update batch records preedit-update phase");
+    require(ime_update.utf8_text == utf8(u8"하"),
+        "combined replay update batch records preedit text");
+    require(ime_update.display_text_after == std::string(utf8(u8"하")),
+        "combined replay update batch records display text with preedit");
+
+    const normalized_input_replay_ime_timeline_entry& ime_commit =
+        recording.batches[8].ime.timeline.front();
+    require(ime_commit.phase == normalized_input_replay_ime_timeline_phase::commit,
+        "combined replay commit batch records commit phase");
+    require(ime_commit.committed_text == utf8(u8"가"),
+        "combined replay commit batch records committed text payload");
+    require(ime_commit.stale_preedit_cleared_after,
+        "combined replay commit batch clears preedit state");
+
+    const normalized_input_replay_ime_timeline_entry& ime_cancel =
+        recording.batches[11].ime.timeline.front();
+    require(ime_cancel.phase == normalized_input_replay_ime_timeline_phase::cancel,
+        "combined replay cancel batch records cancel phase");
+    require(ime_cancel.composition.preedit_text == "x",
+        "combined replay cancel batch records stale preedit snapshot");
+    require(ime_cancel.stale_preedit_cleared_after,
+        "combined replay cancel batch clears stale preedit");
+
+    const normalized_input_replay_pointer_summary& pointer_summary = recording.pointer;
+    require(pointer_summary.kinds.pointer_capture_arbitration == 1,
+        "combined replay distinguishes pointer arbitration");
+    require(pointer_summary.kinds.drag_start == 1, "combined replay distinguishes drag start");
+    require(pointer_summary.kinds.drag_cancel == 1, "combined replay distinguishes drag cancel");
+    require(pointer_summary.kinds.pointer_capture_reset == 1,
+        "combined replay distinguishes pointer capture reset");
+    require(pointer_summary.kinds.wheel == 1, "combined replay distinguishes wheel timeline");
+    require(pointer_summary.decisions.tracked == 1,
+        "combined replay records tracked pointer decision");
+    require(pointer_summary.decisions.captured == 1,
+        "combined replay records captured pointer decision");
+    require(pointer_summary.decisions.canceled == 2,
+        "combined replay records canceled pointer decisions for drag and reset");
+    require(pointer_summary.final_capture_clean,
+        "combined replay pointer summary ends with clean capture");
+    require(contains_pointer_id(pointer_summary.touch_pointer_ids, 90),
+        "combined replay records touch pointer id");
+
+    const normalized_input_replay_pointer_timeline_entry& drag_start =
+        recording.batches[13].pointer.timeline.front();
+    require(drag_start.kind == normalized_input_replay_pointer_timeline_kind::drag_start,
+        "combined replay drag batch records drag-start timeline kind");
+    require(drag_start.capture_after.lifecycle == pointer_capture_lifecycle::captured,
+        "combined replay drag batch records captured lifecycle");
+
+    const normalized_input_replay_pointer_summary& cancel_summary = recording.batches[14].pointer;
+    require(cancel_summary.timeline.size() == 2,
+        "combined replay cancel batch records drag cancel plus capture reset");
+    require(cancel_summary.timeline[1].kind == normalized_input_replay_pointer_timeline_kind::pointer_capture_reset,
+        "combined replay cancel batch records reset timeline kind");
+    require(cancel_summary.final_capture_clean,
+        "combined replay cancel batch ends with clean capture");
+
+    const normalized_input_replay_pointer_summary& wheel_summary = recording.batches[15].pointer;
+    require(wheel_summary.kinds.wheel == 1, "combined replay wheel batch records wheel");
+    require(wheel_summary.timeline[0].line_delta_y == -1.0f,
+        "combined replay wheel batch records normalized line delta");
+
+    require(!recording.final_state.has_text_focus,
+        "combined replay final state has no app-level focus dispatch");
+    require(recording.final_state.focus_id.empty(),
+        "combined replay final state clears focus id");
+    require(recording.final_state.text == utf8(u8"가"),
+        "combined replay final state keeps committed input text");
+    require(recording.final_state.display_text == utf8(u8"가"),
+        "combined replay final state keeps display input text");
+    require(recording.final_state.preedit_clean,
+        "combined replay final state has clean preedit");
+    require(recording.final_state.pointer_capture_clean,
+        "combined replay final state has clean pointer capture");
+}
+
 } // namespace
 
 int main()
@@ -1249,6 +1460,7 @@ int main()
     test_replay_diff_diagnostics_compare_recordings_without_semantics();
     test_replay_diff_threads_gesture_policy_route_diagnostics();
     test_pointer_replay_timeline_records_gestures_capture_and_wheel();
+    test_combined_focus_ime_text_pointer_replay_evidence_stays_input_owned();
 
     std::cout << "normalized_input_replay_tests passed\n";
     return 0;

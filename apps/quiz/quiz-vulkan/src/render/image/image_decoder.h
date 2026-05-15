@@ -158,6 +158,13 @@ struct render_image_external_decoder_selection_snapshot {
     std::string selection_status_name;
     render_image_encoded_format detected_format = render_image_encoded_format::unknown;
     std::string detected_format_name;
+    bool dependency_header_available = false;
+    bool dependency_implementation_linked = false;
+    bool dependency_header_probe_used = false;
+    std::size_t declared_supported_format_count = 0;
+    std::size_t probed_supported_format_count = 0;
+    std::string supported_format_summary;
+    std::string fallback_reason;
     bool dependency_available = false;
     bool dependency_capability_ready = false;
     bool format_supported_by_dependency = false;

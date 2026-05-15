@@ -1801,6 +1801,82 @@ void test_fake_caret_positions_follow_utf8_runs_and_combining_marks()
     require(snapshots[4].line_index == 0, "combining cluster caret stays on first line");
 }
 
+void test_fake_layout_keeps_combining_cluster_on_one_fallback_face()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    engine.add_font_face(font_face_descriptor{
+        .family = "Cluster Primary",
+        .source_uri = "fixture://fonts/cluster-primary",
+        .version = "fixture-1",
+        .license = "test-fixture",
+        .coverage = {
+            font_codepoint_range{.first = U'A', .last = U'A'},
+        },
+        .weight = 400,
+    });
+    const font_face_id cluster_fallback_face_id = engine.add_font_face(font_face_descriptor{
+        .family = "Cluster Fallback",
+        .source_uri = "fixture://fonts/cluster-fallback",
+        .version = "fixture-1",
+        .license = "test-fixture",
+        .coverage = {
+            font_codepoint_range{.first = U'A', .last = U'A'},
+            font_codepoint_range{.first = 0x0301U, .last = 0x0301U},
+        },
+        .weight = 400,
+        .fallback = true,
+    }).id;
+
+    render_text_style_catalog catalog;
+    catalog.fallback_style = render_text_style{
+        .id = "cluster",
+        .font_family = "Cluster Primary",
+        .font_size = 20.0f,
+        .line_height = 24.0f,
+        .font_weight = 400,
+    };
+    catalog.styles.push_back(catalog.fallback_style);
+
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = std::string("A") + std::string("\xCC\x81", 2), .style_token = "cluster"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 200.0f, 0.0f};
+    request.style_catalog = catalog;
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    const render_text_layout layout = engine.layout_text(request);
+    require(layout.glyphs.size() == 2, "combining cluster still emits base and mark glyph records");
+    require(engine.last_diagnostics().shaped_glyphs.size() == 2, "combining cluster shapes two source scalars");
+    require(
+        engine.last_diagnostics().shaped_glyphs[0].resolved_face_id == cluster_fallback_face_id,
+        "cluster base scalar uses whole-cluster fallback face");
+    require(
+        engine.last_diagnostics().shaped_glyphs[1].resolved_face_id == cluster_fallback_face_id,
+        "cluster combining mark uses the same fallback face");
+    require(engine.last_diagnostics().glyph_clusters.size() == 1, "layout keeps base and mark in one glyph cluster");
+    require(
+        engine.last_diagnostics().glyph_clusters.front().resolved_face_id == cluster_fallback_face_id,
+        "glyph cluster records the selected whole-cluster fallback face");
+    require(
+        engine.last_diagnostics().glyph_clusters.front().byte_offset == 0
+            && engine.last_diagnostics().glyph_clusters.front().byte_count == 3,
+        "glyph cluster spans base and combining mark bytes");
+    require(
+        engine.last_diagnostics().glyph_clusters.front().glyph_count == 2,
+        "glyph cluster spans both shaped glyph records");
+
+    const std::vector<fake_text_engine_caret> carets = engine.caret_positions(request);
+    require(carets.size() == 2, "caret stops stay on UTF-8 cluster boundaries");
+    require(carets[0].byte_offset == 0 && carets[1].byte_offset == 3, "caret skips the interior combining mark boundary");
+}
+
 void test_fake_selection_rects_cover_utf8_ranges_without_atlas_updates()
 {
     using namespace quiz_vulkan::render;
@@ -2351,6 +2427,7 @@ int main()
     test_fake_atlas_updates_are_revisioned_and_consumed();
     test_fake_glyph_atlas_page_diagnostics_track_overflow();
     test_fake_caret_positions_follow_utf8_runs_and_combining_marks();
+    test_fake_layout_keeps_combining_cluster_on_one_fallback_face();
     test_fake_selection_rects_cover_utf8_ranges_without_atlas_updates();
     test_fake_caret_and_selection_clip_to_request_height();
     test_fake_selection_rects_follow_wrapped_hangul_lines();

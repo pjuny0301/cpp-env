@@ -70,9 +70,36 @@ std::vector<std::byte> make_png_signature_bytes()
     return make_bytes({0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a});
 }
 
+std::vector<std::byte> make_valid_png_bytes()
+{
+    return make_bytes({
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+        0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+        0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x02,
+        0x08, 0x06, 0x00, 0x00, 0x00, 0x72, 0xb6, 0x0d,
+        0x24, 0x00, 0x00, 0x00, 0x1a, 0x49, 0x44, 0x41,
+        0x54, 0x78, 0x9c, 0x63, 0x64, 0x64, 0x62, 0x66,
+        0x61, 0x61, 0x61, 0x61, 0x61, 0xe1, 0xe0, 0xe0,
+        0xe0, 0x60, 0x61, 0x61, 0x61, 0x01, 0x00, 0x02,
+        0x8e, 0x00, 0x50, 0xda, 0x58, 0x47, 0xa5, 0x00,
+        0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae,
+        0x42, 0x60, 0x82,
+    });
+}
+
 std::vector<std::byte> make_bmp_signature_bytes()
 {
     return make_bytes({'B', 'M', 0x00, 0x00});
+}
+
+std::vector<std::byte> make_valid_bmp_bytes()
+{
+    return make_bytes({
+        'B', 'M', 58, 0, 0, 0, 0, 0, 0, 0, 54, 0, 0, 0,
+        40, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 32, 0,
+        0, 0, 0, 0, 4, 0, 0, 0, 0x13, 0x0b, 0, 0, 0x13, 0x0b, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 30, 20, 10, 255,
+    });
 }
 
 std::vector<std::byte> make_ppm_bytes()
@@ -297,7 +324,7 @@ void test_stb_dependency_selection_ready_for_jpeg()
     require(capability.supports_decode(), "ready stb capability supports decode");
 }
 
-void test_stb_dependency_selection_preserves_internal_decoders()
+void test_stb_dependency_selection_routes_supported_internal_formats_to_adapter()
 {
     using namespace quiz_vulkan::render;
 
@@ -310,17 +337,17 @@ void test_stb_dependency_selection_preserves_internal_decoders()
             probe);
     require_stb_selection_status(
         png_selection,
-        stb_image_decoder_adapter_selection_status::fallback_internal_decoder_preferred,
-        false,
-        true);
+        stb_image_decoder_adapter_selection_status::ready,
+        true,
+        false);
     require(png_selection.detected_format == render_image_encoded_format::png, "PNG selection detects PNG");
     require(png_selection.format_supported_by_dependency, "PNG selection records stb support");
-    require(png_selection.internal_decoder_available, "PNG selection records internal decoder ownership");
-    require(png_selection.prefer_internal_decoder, "PNG selection preserves internal decoder");
-    require(!png_selection.external_decode_enabled, "PNG selection keeps external route disabled");
+    require(png_selection.internal_decoder_available, "PNG selection records internal fallback availability");
+    require(!png_selection.prefer_internal_decoder, "PNG selection no longer prefers internal decoder");
+    require(png_selection.external_decode_enabled, "PNG selection enables external route");
     require(
-        png_selection.diagnostic == "stb_image adapter preserves internal png decoder",
-        "PNG internal preservation diagnostic is stable");
+        png_selection.diagnostic == "stb_image adapter selected for external png decode",
+        "PNG external selection diagnostic is stable");
 
     const stb_image_decoder_adapter_selection_result bmp_selection =
         select_stb_image_decoder_adapter(
@@ -328,12 +355,29 @@ void test_stb_dependency_selection_preserves_internal_decoders()
             probe);
     require_stb_selection_status(
         bmp_selection,
-        stb_image_decoder_adapter_selection_status::fallback_internal_decoder_preferred,
-        false,
-        true);
+        stb_image_decoder_adapter_selection_status::ready,
+        true,
+        false);
     require(bmp_selection.detected_format == render_image_encoded_format::bmp, "BMP selection detects BMP");
     require(bmp_selection.format_supported_by_dependency, "BMP selection records stb support");
-    require(bmp_selection.prefer_internal_decoder, "BMP selection preserves internal decoder");
+    require(bmp_selection.internal_decoder_available, "BMP selection records internal fallback availability");
+    require(!bmp_selection.prefer_internal_decoder, "BMP selection no longer prefers internal decoder");
+    require(bmp_selection.external_decode_enabled, "BMP selection enables external route");
+
+    const stb_image_decoder_adapter_selection_result ppm_selection =
+        select_stb_image_decoder_adapter(
+            make_decode_request("textures/card.ppm", make_ppm_bytes()),
+            probe);
+    require_stb_selection_status(
+        ppm_selection,
+        stb_image_decoder_adapter_selection_status::ready,
+        true,
+        false);
+    require(ppm_selection.detected_format == render_image_encoded_format::ppm, "PPM selection detects PPM");
+    require(ppm_selection.format_supported_by_dependency, "PPM selection records stb support");
+    require(ppm_selection.internal_decoder_available, "PPM selection records internal fallback availability");
+    require(!ppm_selection.prefer_internal_decoder, "PPM selection no longer prefers internal decoder");
+    require(ppm_selection.external_decode_enabled, "PPM selection enables external route");
 }
 
 void test_stb_dependency_selection_mismatched_capability_falls_back()
@@ -365,6 +409,135 @@ void test_stb_dependency_selection_mismatched_capability_falls_back()
         "mismatched stb selection diagnostic is stable");
     require(capability.status == third_party_image_decoder_adapter_status::unsupported_format, "mismatched stb capability is unsupported");
     require(!capability.supports_decode(), "mismatched stb capability does not support decode");
+}
+
+void test_stb_header_dependency_probe_reports_compile_time_boundary()
+{
+    using namespace quiz_vulkan::render;
+
+    const stb_image_decoder_header_dependency_probe probe("header_stb_image_decoder");
+    const stb_image_decoder_dependency_manifest manifest = probe.probe_dependency();
+    const bool headers_available = stb_image_decoder_headers_available();
+    const stb_image_decoder_format_matrix_entry* jpeg_entry =
+        stb_image_decoder_format_matrix_entry_for(
+            manifest.supported_format_matrix,
+            render_image_encoded_format::jpeg);
+
+    require(manifest.decoder_id == "header_stb_image_decoder", "header stb probe preserves decoder id");
+    require(manifest.header_probe_used, "header stb probe records compile-time probe use");
+    require(manifest.header_available == headers_available, "header stb probe records header availability");
+    require(jpeg_entry != nullptr, "header stb probe exposes JPEG matrix entry");
+    require(jpeg_entry->declared_by_header == headers_available, "JPEG header declaration evidence follows header availability");
+    require(jpeg_entry->probed_by_header == headers_available, "JPEG header probe evidence follows header availability");
+
+    if (headers_available) {
+        require(
+            manifest.status == stb_image_decoder_dependency_status::available,
+            "header stb manifest reports available dependency when image engine is linked");
+        require(manifest.dependency_available(), "header stb manifest records dependency presence");
+        require(manifest.implementation_linked, "header stb manifest records linked implementation");
+        require(manifest.memory_decode_available, "header stb manifest records memory decode implementation");
+        require(manifest.info_probe_available, "header stb manifest records info probe implementation");
+        require(manifest.forced_rgba8_decode_available, "header stb manifest records forced RGBA implementation");
+        require(manifest.capability_ready(), "header stb manifest is decode-ready");
+        require(manifest.ok(), "header stb manifest ok helper reports decode readiness");
+        require(!manifest.dependency_version.empty(), "header stb manifest records header version");
+        require(
+            manifest.declared_supported_format_count == 4,
+            "header stb manifest records declared source formats");
+        require(
+            manifest.probed_supported_format_count == 4,
+            "header stb manifest records probed source formats");
+        require(
+            manifest.supported_format_summary == "jpeg,png,bmp,ppm",
+            "header stb manifest records stable format summary");
+        require(manifest.fallback_reason.empty(), "header stb manifest has no fallback reason");
+        require(
+            manifest.diagnostic == "stb_image header decode adapter is available",
+            "header stb manifest diagnostic is stable");
+    } else {
+        require(
+            manifest.status == stb_image_decoder_dependency_status::missing,
+            "missing stb header manifest preserves missing dependency status");
+        require(!manifest.dependency_available(), "missing stb header manifest records dependency absence");
+        require(!manifest.implementation_linked, "missing stb header manifest records no implementation");
+        require(!manifest.memory_decode_available, "missing stb header manifest has no memory decode implementation");
+        require(!manifest.info_probe_available, "missing stb header manifest has no info probe implementation");
+        require(!manifest.forced_rgba8_decode_available, "missing stb header manifest has no forced RGBA implementation");
+        require(!manifest.capability_ready(), "missing stb header manifest is not decode-ready");
+        require(!manifest.ok(), "missing stb header manifest ok helper remains false");
+        require(manifest.dependency_version.empty(), "missing stb header manifest has no version");
+        require(manifest.declared_supported_format_count == 0, "missing stb header manifest has no declared formats");
+        require(manifest.probed_supported_format_count == 0, "missing stb header manifest has no probed formats");
+        require(manifest.supported_format_summary == "none", "missing stb header manifest has no format summary");
+        require(
+            manifest.diagnostic == "stb_image dependency is not available",
+            "missing stb header manifest preserves fallback diagnostic");
+    }
+}
+
+void test_stb_header_dependency_selection_is_data_only_fallback()
+{
+    using namespace quiz_vulkan::render;
+
+    const stb_image_decoder_header_dependency_probe probe("header_stb_image_decoder");
+    const render_image_decode_request request =
+        make_decode_request("textures/card.jpg", make_jpeg_signature_bytes());
+    const stb_image_decoder_adapter_selection_result selection =
+        select_stb_image_decoder_adapter(request, probe);
+    const third_party_image_decoder_capability capability =
+        make_third_party_image_decoder_capability_from_stb_selection(request, selection);
+    const render_image_external_decoder_selection_snapshot snapshot =
+        make_render_image_external_decoder_selection_snapshot(selection);
+    const bool headers_available = stb_image_decoder_headers_available();
+
+    require(selection.decoder_id == "header_stb_image_decoder", "header stb selection preserves decoder id");
+    require(selection.dependency_header_probe_used, "header stb selection records compile-time probe use");
+    require(selection.dependency_header_available == headers_available, "header stb selection records header availability");
+    require(snapshot.dependency_header_probe_used, "external selection snapshot records header probe use");
+    require(snapshot.dependency_header_available == headers_available, "external selection snapshot records header availability");
+    require(snapshot.ready_for_external_decode == selection.ready_for_external_decode, "snapshot mirrors readiness");
+    require(snapshot.fallback_reason == selection.fallback_reason, "snapshot mirrors fallback reason");
+
+    if (headers_available) {
+        require_stb_selection_status(
+            selection,
+            stb_image_decoder_adapter_selection_status::ready,
+            true,
+            false);
+        require(selection.dependency_available, "header stb selection records dependency present");
+        require(selection.dependency_capability_ready, "header stb selection records complete capability");
+        require(selection.dependency_implementation_linked, "header stb selection records linked implementation");
+        require(selection.format_supported_by_dependency, "header stb selection records JPEG format support");
+        require(selection.external_decode_enabled, "header stb selection enables external decode");
+        require(selection.declared_supported_format_count == 4, "header stb selection records declared formats");
+        require(selection.probed_supported_format_count == 4, "header stb selection records probed formats");
+        require(selection.supported_format_summary == "jpeg,png,bmp,ppm", "header stb selection records summary");
+        require(selection.fallback_reason.empty(), "header stb selection has no fallback reason");
+        require(snapshot.dependency_implementation_linked, "external selection snapshot records implementation");
+        require(capability.status == third_party_image_decoder_adapter_status::supported, "header stb selection enables decode");
+        require(capability.supports_decode(), "header stb capability supports decode");
+        require(
+            selection.diagnostic == "stb_image adapter selected for external jpeg decode",
+            "header stb selection diagnostic is stable");
+    } else {
+        require_stb_selection_status(
+            selection,
+            stb_image_decoder_adapter_selection_status::fallback_missing_dependency,
+            false,
+            true);
+        require(!selection.dependency_available, "missing header stb selection records dependency absent");
+        require(!selection.dependency_implementation_linked, "missing header stb selection records no implementation");
+        require(!snapshot.dependency_implementation_linked, "external selection snapshot records no linked implementation");
+        require(capability.status != third_party_image_decoder_adapter_status::supported, "missing header stb selection does not enable decode");
+        require(!capability.supports_decode(), "missing header stb capability does not support decode");
+        require(selection.declared_supported_format_count == 0, "missing header stb selection has no declared formats");
+        require(selection.probed_supported_format_count == 0, "missing header stb selection has no probed formats");
+        require(selection.supported_format_summary == "none", "missing header stb selection records no format summary");
+        require(
+            selection.diagnostic == "stb_image dependency is missing; falling back to standard image decoders",
+            "missing header stb selection preserves fallback diagnostic");
+    }
 }
 
 void test_stb_dependency_selection_respects_supported_format_matrix()
@@ -630,19 +803,120 @@ void test_adapter_unsupported_format_is_placeholder_safe()
     require(backend.decode_requests.empty(), "unsupported direct adapter decode does not call backend decode");
 }
 
+void test_stb_backend_decodes_memory_bmp_when_headers_are_available()
+{
+    using namespace quiz_vulkan::render;
+
+    const stb_image_decoder_backend backend{"stb_image_decoder"};
+    const render_image_decode_request request =
+        make_decode_request("textures/card.bmp", make_valid_bmp_bytes());
+
+    const third_party_image_decoder_capability capability = backend.inspect(request);
+    const render_image_decode_result result = backend.decode(request);
+
+    if (!stb_image_decoder_headers_available()) {
+        require(
+            capability.status == third_party_image_decoder_adapter_status::unavailable,
+            "missing stb headers keep backend unavailable");
+        require(
+            result.status == render_image_decode_status::unsupported_format,
+            "missing stb headers keep decode unsupported");
+        return;
+    }
+
+    require(capability.supports_decode(), "stb backend reports BMP memory decode support");
+    require(result.ok(), "stb backend decodes BMP bytes from memory");
+    require(result.metadata.decoder_id == "stb_image_decoder", "stb decode records decoder id");
+    require(result.image.width == 1U, "stb decode records width");
+    require(result.image.height == 1U, "stb decode records height");
+    require(result.image.pixel_format == render_image_pixel_format::rgba8_srgb, "stb decode forces RGBA8");
+    require(result.image.pixels == make_bytes({10, 20, 30, 255}), "stb decode preserves RGBA pixel bytes");
+    require(
+        result.diagnostic == "stb_image decoder decoded image bytes",
+        "stb decode diagnostic is stable");
+}
+
+void test_third_party_adapter_decodes_memory_png_with_stb_backend()
+{
+    using namespace quiz_vulkan::render;
+
+    const stb_image_decoder_backend backend{"stb_image_decoder"};
+    const third_party_image_decoder_adapter adapter(backend);
+    const render_image_decode_request request =
+        make_decode_request("textures/card.png", make_valid_png_bytes());
+
+    const third_party_image_decoder_capability capability = adapter.inspect(request);
+    const render_image_decode_result result = adapter.decode(request);
+
+    if (!stb_image_decoder_headers_available()) {
+        require(
+            capability.status == third_party_image_decoder_adapter_status::unavailable,
+            "missing stb headers keep adapter PNG capability unavailable");
+        require(
+            result.status == render_image_decode_status::unsupported_format,
+            "missing stb headers keep adapter PNG decode unsupported");
+        return;
+    }
+
+    require(adapter.supports(request), "third-party adapter supports real PNG memory decode");
+    require(capability.supports_decode(), "stb adapter reports PNG memory decode support");
+    require(result.ok(), "third-party adapter decodes PNG bytes through stb memory backend");
+    require(result.metadata.decoder_id == "stb_image_decoder", "stb adapter PNG metadata records decoder id");
+    require(result.metadata.encoded_byte_count == request.encoded_bytes.size(), "stb adapter PNG metadata records encoded bytes");
+    require(result.metadata.width == 2, "stb adapter PNG metadata records width");
+    require(result.metadata.height == 2, "stb adapter PNG metadata records height");
+    require(result.metadata.decoded_byte_count == 16, "stb adapter PNG metadata records RGBA bytes");
+    require(result.metadata.size_validation.valid, "stb adapter PNG metadata validates decoded size");
+    require(
+        result.metadata.format_detection.detected_format == render_image_encoded_format::png,
+        "stb adapter PNG metadata records detected format");
+    require(result.image.width == 2, "stb adapter PNG decode preserves width");
+    require(result.image.height == 2, "stb adapter PNG decode preserves height");
+    require(result.image.pixel_format == render_image_pixel_format::rgba8_srgb, "stb adapter PNG decode forces RGBA8");
+    require(
+        result.image.pixels == make_bytes({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}),
+        "stb adapter PNG decode preserves RGBA pixel bytes");
+
+    const render_image_texture_key key{
+        .source_key = "textures/card.png",
+        .sampler = render_image_sampler_policy{},
+    };
+    const render_image_upload_readiness_snapshot readiness =
+        make_render_image_upload_readiness_snapshot(key, result.metadata, result.image);
+    require(readiness.upload_ready, "stb adapter PNG output is upload-ready");
+    require(readiness.decode_metadata_matches_image, "stb adapter PNG output has matching decode handoff metadata");
+    require(readiness.staging_byte_count == 16, "stb adapter PNG output reports upload staging bytes");
+}
+
 void test_third_party_adapter_header_stays_image_owned()
 {
     const std::filesystem::path header_path = locate_source_file(
         "apps/quiz/quiz-vulkan/src/render/image/third_party_image_decoder_adapter.h",
         "src/render/image/third_party_image_decoder_adapter.h");
     require(!header_path.empty(), "third-party image decoder adapter header is discoverable");
+    const std::filesystem::path stb_selection_header_path = locate_source_file(
+        "apps/quiz/quiz-vulkan/src/render/image/stb_image_decoder_selection.inl",
+        "src/render/image/stb_image_decoder_selection.inl");
+    require(!stb_selection_header_path.empty(), "stb image decoder selection fragment is discoverable");
 
     const std::string header = read_text_file(header_path);
+    const std::string stb_selection_header = read_text_file(stb_selection_header_path);
     const std::string unix_host_prefix = std::string{"/mnt"} + "/c/aa";
     const std::string windows_drive_prefix = std::string{"C:"} + "\\";
     require(header.find(unix_host_prefix) == std::string::npos, "third-party adapter header has no host path");
     require(header.find(windows_drive_prefix) == std::string::npos, "third-party adapter header has no Windows host path");
-    require(header.find("#include <stb") == std::string::npos, "third-party adapter header has no external include");
+    require(
+        header.find("#include \"render/image/stb_image_decoder_selection.inl\"") != std::string::npos,
+        "third-party adapter header aggregates stb selection contracts");
+    require(
+        header.find("STB_IMAGE_IMPLEMENTATION") == std::string::npos,
+        "third-party adapter header does not define the stb implementation");
+    require(
+        stb_selection_header.find("#include <stb_image.h>") != std::string::npos,
+        "stb selection header uses the approved stb header include");
+    require(
+        stb_selection_header.find("STB_IMAGE_IMPLEMENTATION") == std::string::npos,
+        "stb selection header does not define the stb implementation");
 
     const std::vector<std::string_view> forbidden_includes = {
         "#include \"app/",
@@ -664,6 +938,9 @@ void test_third_party_adapter_header_stays_image_owned()
         require(
             header.find(forbidden_include) == std::string::npos,
             "third-party adapter header has no upper-layer include");
+        require(
+            stb_selection_header.find(forbidden_include) == std::string::npos,
+            "stb selection header has no upper-layer include");
     }
 }
 
@@ -674,14 +951,18 @@ int main()
     test_adapter_decodes_matching_format_and_sets_metadata();
     test_stb_dependency_selection_missing_falls_back();
     test_stb_dependency_selection_ready_for_jpeg();
-    test_stb_dependency_selection_preserves_internal_decoders();
+    test_stb_dependency_selection_routes_supported_internal_formats_to_adapter();
     test_stb_dependency_selection_mismatched_capability_falls_back();
+    test_stb_header_dependency_probe_reports_compile_time_boundary();
+    test_stb_header_dependency_selection_is_data_only_fallback();
     test_stb_dependency_selection_respects_supported_format_matrix();
     test_optional_chain_decodes_with_adapter_before_standard_candidates();
     test_adapter_failure_falls_back_to_standard_decoder_chain();
     test_unsupported_adapter_falls_back_to_standard_decoder_chain();
     test_unavailable_adapter_preserves_standard_unsupported_failure();
     test_adapter_unsupported_format_is_placeholder_safe();
+    test_stb_backend_decodes_memory_bmp_when_headers_are_available();
+    test_third_party_adapter_decodes_memory_png_with_stb_backend();
     test_third_party_adapter_header_stays_image_owned();
     return 0;
 }

@@ -146,6 +146,156 @@ make_completed_queue_present()
     };
 }
 
+quiz_vulkan::render::vulkan_backend::vulkan_native_swapchain_entrypoint_readiness
+make_ready_native_swapchain_entrypoints()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    return vulkan_backend::vulkan_native_swapchain_entrypoint_readiness{
+        .checked = true,
+        .function_table_checked = true,
+        .required_extensions_ready = true,
+        .create_swapchain_ready = true,
+        .destroy_swapchain_ready = true,
+        .get_swapchain_images_ready = true,
+        .acquire_next_image_ready = true,
+        .queue_present_ready = true,
+        .function_table_status =
+            vulkan_backend::vulkan_native_function_table_status::ready,
+        .required_extension_count = 1,
+        .available_required_extension_count = 1,
+        .diagnostic = "native swapchain entrypoints ready",
+    };
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_native_swapchain_acquire_operation_result
+make_ready_native_acquire_operation(
+    quiz_vulkan::render::vulkan_backend::vulkan_native_swapchain_acquire_operation_status status =
+        quiz_vulkan::render::vulkan_backend::vulkan_native_swapchain_acquire_operation_status::ready)
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const bool recordable =
+        status == vulkan_backend::vulkan_native_swapchain_acquire_operation_status::ready
+        || status == vulkan_backend::vulkan_native_swapchain_acquire_operation_status::suboptimal;
+    const bool out_of_date =
+        status == vulkan_backend::vulkan_native_swapchain_acquire_operation_status::out_of_date;
+    const bool suboptimal =
+        status == vulkan_backend::vulkan_native_swapchain_acquire_operation_status::suboptimal;
+    const bool error =
+        status == vulkan_backend::vulkan_native_swapchain_acquire_operation_status::error;
+    const vulkan_backend::vulkan_device_handle device{.value = 77};
+    const vulkan_backend::vulkan_swapchain_handle swapchain{.value = 90};
+    const vulkan_backend::vulkan_swapchain_image_id image_id{.value = recordable ? 5U : 0U};
+    const vulkan_backend::vulkan_swapchain_image_handle image_handle{
+        .value = recordable ? 5005U : 0U,
+    };
+    const vulkan_backend::vulkan_swapchain_acquire_status acquire_status =
+        suboptimal ? vulkan_backend::vulkan_swapchain_acquire_status::suboptimal
+        : out_of_date ? vulkan_backend::vulkan_swapchain_acquire_status::out_of_date
+        : error ? vulkan_backend::vulkan_swapchain_acquire_status::error
+                : vulkan_backend::vulkan_swapchain_acquire_status::acquired;
+    const vulkan_backend::vulkan_swapchain_image_acquire_plan_status acquire_plan_status =
+        suboptimal ? vulkan_backend::vulkan_swapchain_image_acquire_plan_status::suboptimal
+        : out_of_date ? vulkan_backend::vulkan_swapchain_image_acquire_plan_status::out_of_date
+        : error ? vulkan_backend::vulkan_swapchain_image_acquire_plan_status::error
+                : vulkan_backend::vulkan_swapchain_image_acquire_plan_status::ready;
+
+    const vulkan_backend::vulkan_native_swapchain_acquire_operation_summary summary{
+        .checked = true,
+        .status = status,
+        .entrypoint_name = "vkAcquireNextImageKHR",
+        .vk_acquire_next_image_callable = true,
+        .command_recording_may_consume_acquired_image = recordable,
+        .device = device,
+        .swapchain = swapchain,
+        .selected_image_index = image_id.value,
+        .image_id = image_id,
+        .image_handle = image_handle,
+        .timeout_nanoseconds = 16000000,
+        .acquire_status = acquire_status,
+        .acquire_plan_status = acquire_plan_status,
+        .images_operation_checked = true,
+        .images_operation_ready = true,
+        .acquire_plan_checked = true,
+        .acquire_plan_ready_for_command_recording = recordable,
+        .native_entrypoints_checked = true,
+        .required_extensions_ready = true,
+        .acquire_symbol_ready = true,
+        .device_valid = true,
+        .swapchain_valid = true,
+        .image_binding_ready = recordable,
+        .image_available = recordable,
+        .image_acquired = recordable,
+        .timed_out = false,
+        .out_of_date = out_of_date,
+        .suboptimal = suboptimal,
+        .error = error,
+        .diagnostic = "native acquire operation",
+    };
+
+    return vulkan_backend::vulkan_native_swapchain_acquire_operation_result{
+        .checked = true,
+        .status = status,
+        .device = device,
+        .swapchain = swapchain,
+        .selected_image_index = image_id.value,
+        .image_id = image_id,
+        .image_handle = image_handle,
+        .timeout_nanoseconds = 16000000,
+        .acquire_status = acquire_status,
+        .acquire_plan_status = acquire_plan_status,
+        .images_operation_checked = true,
+        .images_operation_ready = true,
+        .acquire_plan_checked = true,
+        .acquire_plan_ready_for_command_recording = recordable,
+        .native_entrypoints_checked = true,
+        .required_extensions_ready = true,
+        .acquire_symbol_ready = true,
+        .device_valid = true,
+        .swapchain_valid = true,
+        .image_binding_ready = recordable,
+        .image_available = recordable,
+        .image_acquired = recordable,
+        .timed_out = false,
+        .out_of_date = out_of_date,
+        .suboptimal = suboptimal,
+        .error = error,
+        .vk_acquire_next_image_callable = true,
+        .command_recording_may_consume_acquired_image = recordable,
+        .diagnostic = "native acquire operation",
+        .operation = summary,
+    };
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_present_completion_plan_result
+make_ready_present_completion_plan()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    return vulkan_backend::build_vulkan_present_completion_plan(
+        make_ready_submit_batch_plan(),
+        make_completed_queue_present());
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_native_queue_present_operation_request
+make_ready_native_queue_present_request()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    return vulkan_backend::vulkan_native_queue_present_operation_request{
+        .acquire_operation = make_ready_native_acquire_operation(),
+        .submit_batch = make_ready_submit_batch_plan(),
+        .present_completion = make_ready_present_completion_plan(),
+        .native_entrypoints = make_ready_native_swapchain_entrypoints(),
+        .present_result = vulkan_backend::vulkan_swapchain_present_result{
+            .status = vulkan_backend::vulkan_swapchain_present_status::presented,
+            .image_id = vulkan_backend::vulkan_swapchain_image_id{.value = 5},
+        },
+        .allow_suboptimal = true,
+    };
+}
+
 void test_vulkan_present_completion_plan_names_are_stable()
 {
     using namespace quiz_vulkan::render;
@@ -180,6 +330,21 @@ void test_vulkan_present_completion_plan_names_are_stable()
             vulkan_backend::vulkan_frame_completion_status::present_unavailable)
             == std::string_view{"present_unavailable"},
         "frame completion status name for present unavailable is stable");
+    require(
+        vulkan_backend::native_queue_present_operation_status_name(
+            vulkan_backend::vulkan_native_queue_present_operation_status::ready)
+            == std::string_view{"ready"},
+        "native present operation ready status name is stable");
+    require(
+        vulkan_backend::native_queue_present_operation_status_name(
+            vulkan_backend::vulkan_native_queue_present_operation_status::missing_queue_present_symbol)
+            == std::string_view{"missing_queue_present_symbol"},
+        "native present operation missing symbol status name is stable");
+    require(
+        vulkan_backend::native_queue_present_operation_status_name(
+            vulkan_backend::vulkan_native_queue_present_operation_status::out_of_date)
+            == std::string_view{"out_of_date"},
+        "native present operation out-of-date status name is stable");
 }
 
 void test_vulkan_present_completion_plan_uses_queue_present_adapter_summary()
@@ -341,6 +506,176 @@ void test_vulkan_present_completion_plan_maps_present_failures()
     require(!fatal_plan.recoverable_failure, "fatal present failure is not recoverable");
 }
 
+void test_native_queue_present_operation_reports_ready_completion()
+{
+    using namespace quiz_vulkan::render;
+
+    const vulkan_backend::vulkan_native_queue_present_operation_result operation =
+        vulkan_backend::build_vulkan_native_queue_present_operation_plan(
+            make_ready_native_queue_present_request());
+
+    require(operation.checked, "native present operation is checked");
+    require(
+        operation.status == vulkan_backend::vulkan_native_queue_present_operation_status::ready,
+        "native present operation reports ready");
+    require(operation.can_call_vk_queue_present(), "native present operation exposes call gate");
+    require(operation.ready_for_frame_completion(), "native present operation completes frame");
+    require(!operation.blocked(), "ready native present operation is not blocked");
+    require(operation.required_extensions_ready, "native present records extension readiness");
+    require(operation.queue_present_symbol_ready, "native present records queue-present symbol");
+    require(operation.acquired_image_ready, "native present records acquired image readiness");
+    require(operation.submit_batch_ready, "native present records submit batch readiness");
+    require(operation.submitted_frame_ready, "native present records submitted frame readiness");
+    require(operation.present_completion_ready, "native present records present completion readiness");
+    require(operation.present_request_ready, "native present records present request readiness");
+    require(operation.present_adapter_result_ready, "native present records adapter result readiness");
+    require(operation.present_result_completed, "native present records present result completion");
+    require(operation.frame_lifecycle_may_complete, "native present exposes frame completion gate");
+    require(operation.device.value == 77, "native present preserves device handle");
+    require(operation.swapchain.value == 90, "native present preserves swapchain handle");
+    require(operation.present_queue.value == 101, "native present preserves present queue");
+    require(operation.image_id.value == 5, "native present preserves image id");
+    require(operation.image_handle.value == 5005, "native present preserves image handle");
+    require(operation.wait_render_finished_semaphore.value == 12, "native present preserves wait semaphore");
+    require(operation.submit_before_present, "native present records submit-before-present order");
+    require(operation.operation.ready_for_frame_completion(), "native present summary is frame-ready");
+    require(
+        operation.operation.entrypoint_name == "vkQueuePresentKHR",
+        "native present summary names stable entrypoint");
+}
+
+void test_native_queue_present_operation_blocks_native_extension_and_symbol()
+{
+    using namespace quiz_vulkan::render;
+
+    vulkan_backend::vulkan_native_queue_present_operation_request request =
+        make_ready_native_queue_present_request();
+    request.native_entrypoints.required_extensions_ready = false;
+    request.native_entrypoints.missing_required_extension = "VK_KHR_swapchain";
+    request.native_entrypoints.diagnostic = "missing VK_KHR_swapchain";
+    const vulkan_backend::vulkan_native_queue_present_operation_result missing_extension =
+        vulkan_backend::build_vulkan_native_queue_present_operation_plan(request);
+
+    require(
+        missing_extension.status
+            == vulkan_backend::vulkan_native_queue_present_operation_status::required_extension_unavailable,
+        "native present blocks missing swapchain extension");
+    require(
+        missing_extension.missing_required_extension == "VK_KHR_swapchain",
+        "native present records missing extension");
+    require(!missing_extension.can_call_vk_queue_present(), "missing extension blocks call gate");
+
+    request = make_ready_native_queue_present_request();
+    request.native_entrypoints.queue_present_ready = false;
+    request.native_entrypoints.missing_symbol_name = "vkQueuePresentKHR";
+    const vulkan_backend::vulkan_native_queue_present_operation_result missing_symbol =
+        vulkan_backend::build_vulkan_native_queue_present_operation_plan(request);
+
+    require(
+        missing_symbol.status
+            == vulkan_backend::vulkan_native_queue_present_operation_status::missing_queue_present_symbol,
+        "native present blocks missing queue-present symbol");
+    require(
+        missing_symbol.missing_symbol_name == "vkQueuePresentKHR",
+        "native present records missing queue-present symbol");
+}
+
+void test_native_queue_present_operation_blocks_acquire_submit_and_targets()
+{
+    using namespace quiz_vulkan::render;
+
+    vulkan_backend::vulkan_native_queue_present_operation_request request =
+        make_ready_native_queue_present_request();
+    request.acquire_operation = make_ready_native_acquire_operation(
+        vulkan_backend::vulkan_native_swapchain_acquire_operation_status::out_of_date);
+    const vulkan_backend::vulkan_native_queue_present_operation_result outdated_acquire =
+        vulkan_backend::build_vulkan_native_queue_present_operation_plan(request);
+    require(
+        outdated_acquire.status
+            == vulkan_backend::vulkan_native_queue_present_operation_status::out_of_date,
+        "native present maps out-of-date acquire");
+    require(outdated_acquire.out_of_date, "native present records acquire out-of-date flag");
+
+    request = make_ready_native_queue_present_request();
+    request.submit_batch.status =
+        vulkan_backend::vulkan_submit_batch_plan_status::submit_queue_unavailable;
+    request.submit_batch.diagnostic = "missing submit queue";
+    const vulkan_backend::vulkan_native_queue_present_operation_result missing_submit =
+        vulkan_backend::build_vulkan_native_queue_present_operation_plan(request);
+    require(
+        missing_submit.status
+            == vulkan_backend::vulkan_native_queue_present_operation_status::submit_batch_unavailable,
+        "native present blocks missing submit batch");
+    require(!missing_submit.submitted_frame_ready, "missing submit batch blocks submitted frame");
+
+    request = make_ready_native_queue_present_request();
+    request.present_completion.request.present_queue = {};
+    const vulkan_backend::vulkan_native_queue_present_operation_result missing_queue =
+        vulkan_backend::build_vulkan_native_queue_present_operation_plan(request);
+    require(
+        missing_queue.status
+            == vulkan_backend::vulkan_native_queue_present_operation_status::present_queue_unavailable,
+        "native present blocks missing present queue");
+
+    request = make_ready_native_queue_present_request();
+    request.present_completion.request.swapchain = {};
+    const vulkan_backend::vulkan_native_queue_present_operation_result missing_swapchain =
+        vulkan_backend::build_vulkan_native_queue_present_operation_plan(request);
+    require(
+        missing_swapchain.status
+            == vulkan_backend::vulkan_native_queue_present_operation_status::swapchain_unavailable,
+        "native present blocks missing swapchain handle");
+}
+
+void test_native_queue_present_operation_maps_present_result_statuses()
+{
+    using namespace quiz_vulkan::render;
+
+    vulkan_backend::vulkan_native_queue_present_operation_request request =
+        make_ready_native_queue_present_request();
+    request.present_result.status = vulkan_backend::vulkan_swapchain_present_status::suboptimal;
+    const vulkan_backend::vulkan_native_queue_present_operation_result suboptimal =
+        vulkan_backend::build_vulkan_native_queue_present_operation_plan(request);
+    require(
+        suboptimal.status
+            == vulkan_backend::vulkan_native_queue_present_operation_status::suboptimal,
+        "native present reports suboptimal present result");
+    require(suboptimal.can_call_vk_queue_present(), "suboptimal present still records call gate");
+    require(suboptimal.ready_for_frame_completion(), "allowed suboptimal present completes frame");
+    require(suboptimal.suboptimal, "native present records suboptimal flag");
+
+    request = make_ready_native_queue_present_request();
+    request.present_result.status = vulkan_backend::vulkan_swapchain_present_status::out_of_date;
+    const vulkan_backend::vulkan_native_queue_present_operation_result out_of_date =
+        vulkan_backend::build_vulkan_native_queue_present_operation_plan(request);
+    require(
+        out_of_date.status
+            == vulkan_backend::vulkan_native_queue_present_operation_status::out_of_date,
+        "native present reports out-of-date present result");
+    require(out_of_date.can_call_vk_queue_present(), "out-of-date present records call gate");
+    require(!out_of_date.ready_for_frame_completion(), "out-of-date present does not complete frame");
+
+    request = make_ready_native_queue_present_request();
+    request.present_result.status = vulkan_backend::vulkan_swapchain_present_status::failed;
+    const vulkan_backend::vulkan_native_queue_present_operation_result recoverable =
+        vulkan_backend::build_vulkan_native_queue_present_operation_plan(request);
+    require(
+        recoverable.status
+            == vulkan_backend::vulkan_native_queue_present_operation_status::present_failed_recoverable,
+        "native present maps failed status to recoverable failure");
+    require(recoverable.recoverable_failure, "native present records recoverable failure");
+
+    request = make_ready_native_queue_present_request();
+    request.present_result.status = vulkan_backend::vulkan_swapchain_present_status::error;
+    const vulkan_backend::vulkan_native_queue_present_operation_result fatal =
+        vulkan_backend::build_vulkan_native_queue_present_operation_plan(request);
+    require(
+        fatal.status
+            == vulkan_backend::vulkan_native_queue_present_operation_status::present_failed_fatal,
+        "native present maps error status to fatal failure");
+    require(fatal.fatal_failure, "native present records fatal failure");
+}
+
 } // namespace
 
 int main()
@@ -351,5 +686,9 @@ int main()
     test_vulkan_present_completion_plan_blocks_without_submit_batch();
     test_vulkan_present_completion_plan_maps_present_target_unavailable();
     test_vulkan_present_completion_plan_maps_present_failures();
+    test_native_queue_present_operation_reports_ready_completion();
+    test_native_queue_present_operation_blocks_native_extension_and_symbol();
+    test_native_queue_present_operation_blocks_acquire_submit_and_targets();
+    test_native_queue_present_operation_maps_present_result_statuses();
     return 0;
 }

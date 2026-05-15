@@ -242,16 +242,47 @@ void test_standard_pipeline_uploads_bmp()
         pipeline.acquire_texture(make_render_image_texture_pipeline_request("textures/card.bmp"));
 
     require(result.ok(), "standard image texture pipeline uploads BMP");
-    require(result.texture.decode_metadata.decoder_id == "bmp_image_decoder", "standard pipeline uses BMP decoder");
     require(result.texture.texture.width == 1, "standard pipeline preserves BMP texture width");
     require(result.texture.texture.height == 1, "standard pipeline preserves BMP texture height");
-    require(result.texture.decoder_diagnostics.size() == 1, "standard pipeline records BMP candidate diagnostics");
+    require(
+        result.texture.external_decoder_selection.detected_format == render_image_encoded_format::bmp,
+        "standard pipeline records detected BMP format");
+    if (result.texture.external_decoder_selection.ready_for_external_decode) {
+        require(
+            result.texture.decode_metadata.decoder_id == "stb_image_decoder",
+            "standard pipeline prefers stb for BMP when available");
+        require(
+            result.texture.external_decoder_selection.used_third_party_adapter,
+            "standard pipeline records BMP adapter route");
+        require(
+            !result.texture.external_decoder_selection.prefer_internal_decoder,
+            "standard pipeline BMP route no longer reports internal preference");
+        require(result.texture.decoder_diagnostics.size() == 1, "BMP adapter route records one diagnostic");
+        require(
+            result.texture.decoder_diagnostics[0].decoder_id == "stb_image_decoder",
+            "BMP adapter route records stb diagnostic");
+    } else {
+        require(
+            result.texture.decode_metadata.decoder_id == "bmp_image_decoder",
+            "standard pipeline falls back to BMP decoder when stb is unavailable");
+        require(
+            result.texture.external_decoder_selection.fallback_to_standard_decoder_chain,
+            "standard pipeline BMP fallback records standard chain");
+        require(
+            result.texture.decoder_diagnostics.back().decoder_id == "bmp_image_decoder",
+            "BMP fallback records BMP decoder diagnostic");
+    }
 
     const fake_image_texture_pipeline_snapshot snapshot = pipeline.diagnostic_snapshot();
     require(snapshot.ready_count == 1, "standard pipeline BMP snapshot records ready count");
     require(snapshot.upload_snapshot.upload_count == 1, "standard pipeline uploads BMP once");
     require(snapshot.upload_snapshot.request_snapshots[0].decoded_byte_count == 4, "BMP upload stages RGBA bytes");
-    require(snapshot.entries[0].decoder_diagnostics.size() == 1, "BMP snapshot preserves decoder diagnostics");
+    require(
+        snapshot.entries[0].decoder_diagnostics.size() == result.texture.decoder_diagnostics.size(),
+        "BMP snapshot preserves decoder diagnostics");
+    require(
+        snapshot.entries[0].selected_decoder_id == result.texture.decode_metadata.decoder_id,
+        "BMP snapshot preserves selected decoder route");
 }
 
 void test_standard_pipeline_uploads_ppm()
@@ -267,12 +298,36 @@ void test_standard_pipeline_uploads_ppm()
         pipeline.acquire_texture(make_render_image_texture_pipeline_request("textures/card.ppm"));
 
     require(result.ok(), "standard image texture pipeline uploads PPM");
-    require(result.texture.decode_metadata.decoder_id == "ppm_image_decoder", "standard pipeline uses PPM decoder");
     require(result.texture.texture.width == 1, "standard pipeline preserves PPM texture width");
     require(result.texture.texture.height == 1, "standard pipeline preserves PPM texture height");
-    require(result.texture.decoder_diagnostics.size() == 2, "standard pipeline records BMP and PPM diagnostics");
-    require(result.texture.decoder_diagnostics[0].decoder_id == "bmp_image_decoder", "PPM checks BMP first");
-    require(result.texture.decoder_diagnostics[1].decoder_id == "ppm_image_decoder", "PPM checks PPM second");
+    require(
+        result.texture.external_decoder_selection.detected_format == render_image_encoded_format::ppm,
+        "standard pipeline records detected PPM format");
+    if (result.texture.external_decoder_selection.ready_for_external_decode) {
+        require(
+            result.texture.decode_metadata.decoder_id == "stb_image_decoder",
+            "standard pipeline prefers stb for PPM when available");
+        require(
+            result.texture.external_decoder_selection.used_third_party_adapter,
+            "standard pipeline records PPM adapter route");
+        require(
+            !result.texture.external_decoder_selection.prefer_internal_decoder,
+            "standard pipeline PPM route no longer reports internal preference");
+        require(result.texture.decoder_diagnostics.size() == 1, "PPM adapter route records one diagnostic");
+        require(
+            result.texture.decoder_diagnostics[0].decoder_id == "stb_image_decoder",
+            "PPM adapter route records stb diagnostic");
+    } else {
+        require(
+            result.texture.decode_metadata.decoder_id == "ppm_image_decoder",
+            "standard pipeline falls back to PPM decoder when stb is unavailable");
+        require(
+            result.texture.external_decoder_selection.fallback_to_standard_decoder_chain,
+            "standard pipeline PPM fallback records standard chain");
+        require(
+            result.texture.decoder_diagnostics.back().decoder_id == "ppm_image_decoder",
+            "PPM fallback records PPM decoder diagnostic");
+    }
 
     const fake_image_texture_pipeline_snapshot snapshot = pipeline.diagnostic_snapshot();
     require(snapshot.upload_snapshot.upload_count == 1, "standard pipeline uploads PPM once");
@@ -293,12 +348,36 @@ void test_standard_pipeline_uploads_zlib_stored_png()
         pipeline.acquire_texture(make_render_image_texture_pipeline_request("textures/card.png"));
 
     require(result.ok(), "standard image texture pipeline uploads zlib-stored PNG");
-    require(result.texture.decode_metadata.decoder_id == "png_image_decoder", "standard pipeline uses PNG decoder");
     require(result.texture.texture.width == 2, "standard pipeline preserves PNG texture width");
     require(result.texture.texture.height == 2, "standard pipeline preserves PNG texture height");
-    require(result.texture.decoder_diagnostics.size() == 3, "standard pipeline records all PNG candidates");
-    require(result.texture.decoder_diagnostics[2].decoder_id == "png_image_decoder", "PNG candidate is third");
-    require(result.texture.decoder_diagnostics[2].decode_attempted, "PNG candidate is decoded");
+    require(
+        result.texture.external_decoder_selection.detected_format == render_image_encoded_format::png,
+        "standard pipeline records detected PNG format");
+    if (result.texture.external_decoder_selection.ready_for_external_decode) {
+        require(
+            result.texture.decode_metadata.decoder_id == "stb_image_decoder",
+            "standard pipeline prefers stb for PNG when available");
+        require(
+            result.texture.external_decoder_selection.used_third_party_adapter,
+            "standard pipeline records PNG adapter route");
+        require(
+            !result.texture.external_decoder_selection.prefer_internal_decoder,
+            "standard pipeline PNG route no longer reports internal preference");
+        require(result.texture.decoder_diagnostics.size() == 1, "PNG adapter route records one diagnostic");
+        require(
+            result.texture.decoder_diagnostics[0].decoder_id == "stb_image_decoder",
+            "PNG adapter route records stb diagnostic");
+    } else {
+        require(
+            result.texture.decode_metadata.decoder_id == "png_image_decoder",
+            "standard pipeline falls back to PNG decoder when stb is unavailable");
+        require(
+            result.texture.external_decoder_selection.fallback_to_standard_decoder_chain,
+            "standard pipeline PNG fallback records standard chain");
+        require(
+            result.texture.decoder_diagnostics.back().decoder_id == "png_image_decoder",
+            "PNG fallback records PNG decoder diagnostic");
+    }
 
     const fake_image_texture_pipeline_snapshot snapshot = pipeline.diagnostic_snapshot();
     require(snapshot.upload_snapshot.upload_count == 1, "standard pipeline uploads PNG once");
@@ -348,7 +427,7 @@ void test_standard_pipeline_reuses_cached_decode_and_upload_for_same_normalized_
         snapshot.pipeline.entries[1].upload_count_before == snapshot.pipeline.entries[1].upload_count_after,
         "cache hit entry does not upload");
     require(
-        snapshot.pipeline.entries[1].decode_metadata.decoder_id == "png_image_decoder",
+        snapshot.pipeline.entries[1].decode_metadata.decoder_id == first.texture.decode_metadata.decoder_id,
         "cache hit preserves decoded metadata");
 }
 
@@ -412,10 +491,11 @@ void test_standard_pipeline_reports_unsupported_decode_with_candidate_diagnostic
     require(result.status == render_image_texture_pipeline_status::decode_failed, "unsupported JPEG is decode_failed");
     require(result.texture.status == render_image_texture_status::decode_failed, "texture result records decode failure");
     require(result.texture.texture.id == 0, "unsupported JPEG returns no placeholder texture");
-    require(result.texture.decoder_diagnostics.size() == 3, "unsupported JPEG records all decoder candidates");
-    require(result.texture.decoder_diagnostics[2].terminal_candidate, "unsupported JPEG terminates on final candidate");
+    require(result.texture.decoder_diagnostics.size() >= 4, "unsupported JPEG records adapter and standard candidates");
+    require(result.texture.decoder_diagnostics.front().decoder_id == "stb_image_decoder", "unsupported JPEG records stb diagnostic first");
+    require(result.texture.decoder_diagnostics.back().terminal_candidate, "unsupported JPEG terminates on final candidate");
     require(
-        result.texture.decoder_diagnostics[2].diagnostic == "decoder chain exhausted all candidates",
+        result.texture.decoder_diagnostics.back().diagnostic == "decoder chain exhausted all candidates",
         "unsupported JPEG diagnostic is deterministic");
 
     const fake_image_texture_pipeline_snapshot snapshot = pipeline.diagnostic_snapshot();
@@ -444,9 +524,10 @@ void test_standard_pipeline_reports_invalid_decode_with_candidate_diagnostics()
     require(result.status == render_image_texture_pipeline_status::decode_failed, "malformed PPM is decode_failed");
     require(result.texture.texture.id == 0, "malformed PPM returns no placeholder texture");
     require(result.texture.decode_metadata.decoder_id == "ppm_image_decoder", "malformed PPM records decoder id");
-    require(result.texture.decoder_diagnostics.size() == 2, "malformed PPM records BMP and PPM candidates");
-    require(result.texture.decoder_diagnostics[1].decoder_id == "ppm_image_decoder", "malformed PPM records PPM");
-    require(result.texture.decoder_diagnostics[1].decode_attempted, "malformed PPM attempts PPM decode");
+    require(result.texture.decoder_diagnostics.size() >= 3, "malformed PPM records adapter and standard candidates");
+    require(result.texture.decoder_diagnostics.front().decoder_id == "stb_image_decoder", "malformed PPM records stb diagnostic first");
+    require(result.texture.decoder_diagnostics.back().decoder_id == "ppm_image_decoder", "malformed PPM records PPM");
+    require(result.texture.decoder_diagnostics.back().decode_attempted, "malformed PPM attempts PPM decode");
     require(!result.diagnostic.empty(), "malformed PPM returns deterministic diagnostic text");
 
     const fake_image_texture_pipeline_snapshot snapshot = pipeline.diagnostic_snapshot();
@@ -470,10 +551,11 @@ void test_standard_pipeline_reports_invalid_png_inflater_failure()
     require(!result.ok(), "standard image texture pipeline rejects unsupported PNG compression");
     require(result.status == render_image_texture_pipeline_status::decode_failed, "bad PNG is decode_failed");
     require(result.texture.texture.id == 0, "bad PNG returns no placeholder texture");
-    require(result.texture.decoder_diagnostics.size() == 3, "bad PNG records all decoder candidates");
-    require(result.texture.decoder_diagnostics[2].decoder_id == "png_image_decoder", "bad PNG records PNG");
+    require(result.texture.decoder_diagnostics.size() >= 4, "bad PNG records adapter and standard candidates");
+    require(result.texture.decoder_diagnostics.front().decoder_id == "stb_image_decoder", "bad PNG records stb diagnostic first");
+    require(result.texture.decoder_diagnostics.back().decoder_id == "png_image_decoder", "bad PNG records PNG");
     require(
-        result.texture.decoder_diagnostics[2].decode_diagnostic.find("inflater_failed") != std::string::npos,
+        result.texture.decoder_diagnostics.back().decode_diagnostic.find("inflater_failed") != std::string::npos,
         "bad PNG diagnostic preserves inflater failure");
 
     const fake_image_texture_pipeline_snapshot snapshot = pipeline.diagnostic_snapshot();

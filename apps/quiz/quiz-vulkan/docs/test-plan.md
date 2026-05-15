@@ -90,7 +90,7 @@ Use these checks when a modern C++23 compiler is available. The local ASCII GCC 
 Domain smoke test, representative direct compile for legacy standalone checks:
 
 ```sh
-g++ -std=c++17 -Wall -Wextra -pedantic -Isrc \
+g++ -std=c++23 -Wall -Wextra -pedantic -Isrc \
   tests/domain/domain_smoke_test.cpp \
   src/core/domain/app_action.cpp \
   src/core/domain/app_snapshot.cpp \

@@ -495,6 +495,143 @@ std::string_view frame_completion_status_name(vulkan_frame_completion_status sta
     return "unknown";
 }
 
+std::string_view native_queue_present_operation_status_name(
+    vulkan_native_queue_present_operation_status status)
+{
+    switch (status) {
+    case vulkan_native_queue_present_operation_status::not_checked:
+        return "not_checked";
+    case vulkan_native_queue_present_operation_status::ready:
+        return "ready";
+    case vulkan_native_queue_present_operation_status::acquire_operation_unavailable:
+        return "acquire_operation_unavailable";
+    case vulkan_native_queue_present_operation_status::submit_batch_unavailable:
+        return "submit_batch_unavailable";
+    case vulkan_native_queue_present_operation_status::present_completion_unavailable:
+        return "present_completion_unavailable";
+    case vulkan_native_queue_present_operation_status::native_entrypoints_unavailable:
+        return "native_entrypoints_unavailable";
+    case vulkan_native_queue_present_operation_status::required_extension_unavailable:
+        return "required_extension_unavailable";
+    case vulkan_native_queue_present_operation_status::missing_queue_present_symbol:
+        return "missing_queue_present_symbol";
+    case vulkan_native_queue_present_operation_status::present_queue_unavailable:
+        return "present_queue_unavailable";
+    case vulkan_native_queue_present_operation_status::swapchain_unavailable:
+        return "swapchain_unavailable";
+    case vulkan_native_queue_present_operation_status::acquired_image_unavailable:
+        return "acquired_image_unavailable";
+    case vulkan_native_queue_present_operation_status::submitted_frame_unavailable:
+        return "submitted_frame_unavailable";
+    case vulkan_native_queue_present_operation_status::present_result_unavailable:
+        return "present_result_unavailable";
+    case vulkan_native_queue_present_operation_status::out_of_date:
+        return "out_of_date";
+    case vulkan_native_queue_present_operation_status::suboptimal:
+        return "suboptimal";
+    case vulkan_native_queue_present_operation_status::present_failed_recoverable:
+        return "present_failed_recoverable";
+    case vulkan_native_queue_present_operation_status::present_failed_fatal:
+        return "present_failed_fatal";
+    }
+
+    return "unknown";
+}
+
+std::string_view native_frame_operation_stage_name(
+    vulkan_native_frame_operation_stage stage)
+{
+    switch (stage) {
+    case vulkan_native_frame_operation_stage::not_started:
+        return "not_started";
+    case vulkan_native_frame_operation_stage::native_function_table:
+        return "native_function_table";
+    case vulkan_native_frame_operation_stage::swapchain_create:
+        return "swapchain_create";
+    case vulkan_native_frame_operation_stage::swapchain_images:
+        return "swapchain_images";
+    case vulkan_native_frame_operation_stage::acquire:
+        return "acquire";
+    case vulkan_native_frame_operation_stage::command_recording:
+        return "command_recording";
+    case vulkan_native_frame_operation_stage::submit:
+        return "submit";
+    case vulkan_native_frame_operation_stage::present:
+        return "present";
+    case vulkan_native_frame_operation_stage::frame_completion:
+        return "frame_completion";
+    }
+
+    return "unknown";
+}
+
+std::string_view native_frame_operation_status_name(
+    vulkan_native_frame_operation_status status)
+{
+    switch (status) {
+    case vulkan_native_frame_operation_status::not_checked:
+        return "not_checked";
+    case vulkan_native_frame_operation_status::ready:
+        return "ready";
+    case vulkan_native_frame_operation_status::native_function_table_unavailable:
+        return "native_function_table_unavailable";
+    case vulkan_native_frame_operation_status::swapchain_create_unavailable:
+        return "swapchain_create_unavailable";
+    case vulkan_native_frame_operation_status::swapchain_images_unavailable:
+        return "swapchain_images_unavailable";
+    case vulkan_native_frame_operation_status::acquire_unavailable:
+        return "acquire_unavailable";
+    case vulkan_native_frame_operation_status::command_recording_unavailable:
+        return "command_recording_unavailable";
+    case vulkan_native_frame_operation_status::submit_unavailable:
+        return "submit_unavailable";
+    case vulkan_native_frame_operation_status::present_unavailable:
+        return "present_unavailable";
+    case vulkan_native_frame_operation_status::frame_completion_unavailable:
+        return "frame_completion_unavailable";
+    case vulkan_native_frame_operation_status::recoverable_failure:
+        return "recoverable_failure";
+    case vulkan_native_frame_operation_status::fatal_failure:
+        return "fatal_failure";
+    }
+
+    return "unknown";
+}
+
+std::string_view native_frame_execution_step_name(
+    vulkan_native_frame_execution_step step)
+{
+    switch (step) {
+    case vulkan_native_frame_execution_step::acquire:
+        return "acquire";
+    case vulkan_native_frame_execution_step::record:
+        return "record";
+    case vulkan_native_frame_execution_step::submit:
+        return "submit";
+    case vulkan_native_frame_execution_step::present:
+        return "present";
+    }
+
+    return "unknown";
+}
+
+std::string_view native_frame_execution_decision_name(
+    vulkan_native_frame_execution_decision decision)
+{
+    switch (decision) {
+    case vulkan_native_frame_execution_decision::not_checked:
+        return "not_checked";
+    case vulkan_native_frame_execution_decision::execute:
+        return "execute";
+    case vulkan_native_frame_execution_decision::skip:
+        return "skip";
+    case vulkan_native_frame_execution_decision::fallback:
+        return "fallback";
+    }
+
+    return "unknown";
+}
+
 std::string_view frame_pipeline_handoff_status_name(
     vulkan_backend_frame_pipeline_handoff_status status)
 {
@@ -850,6 +987,22 @@ std::string_view loader_probe_status_name(vulkan_loader_probe_status status)
         return "library_missing";
     case vulkan_loader_probe_status::required_symbol_missing:
         return "required_symbol_missing";
+    }
+
+    return "unknown";
+}
+
+std::string_view loader_candidate_status_name(vulkan_loader_candidate_status status)
+{
+    switch (status) {
+    case vulkan_loader_candidate_status::not_checked:
+        return "not_checked";
+    case vulkan_loader_candidate_status::library_missing:
+        return "library_missing";
+    case vulkan_loader_candidate_status::required_symbol_missing:
+        return "required_symbol_missing";
+    case vulkan_loader_candidate_status::usable:
+        return "usable";
     }
 
     return "unknown";

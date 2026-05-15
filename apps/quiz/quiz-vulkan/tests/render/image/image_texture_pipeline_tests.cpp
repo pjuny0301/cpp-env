@@ -3,6 +3,8 @@
 #include "render/image/image_resolver.h"
 #include "render/image/image_source_bytes_loader.h"
 #include "render/image/image_texture_cache.h"
+#include "render/image/image_texture_frame_resource_packet_materialization.h"
+#include "render/image/image_texture_frame_upload_handoff.h"
 #include "render/image/image_texture_pipeline.h"
 #include "render/image/third_party_image_decoder_adapter.h"
 
@@ -13,6 +15,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <ios>
 #include <string>
 #include <string_view>
@@ -70,6 +73,22 @@ static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_textu
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_frame_binding_plan_diff>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_binding_packet_diff>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_binding_plan_diff>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_frame_upload_handoff_entry>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_frame_upload_handoff_summary>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_upload_handoff_entry>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_upload_handoff_summary>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_frame_upload_handoff_entry_diff>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_frame_upload_handoff_summary_diff>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_upload_handoff_entry_diff>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_upload_handoff_summary_diff>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_frame_binding_summary>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_frame_binding_summary_diff>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_binding_summary>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_binding_summary_diff>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_frame_binding_payload_evidence_entry>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_frame_binding_payload_evidence_summary>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_binding_payload_evidence_entry>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_binding_payload_evidence_summary>);
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_external_decoder_selection_entry_diff>);
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_external_decoder_selection_snapshot_diff>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_external_decoder_selection_entry_diff>);
@@ -93,6 +112,16 @@ void append_ascii(std::vector<std::byte>& bytes, std::string_view text)
 void append_byte(std::vector<std::byte>& bytes, unsigned char value)
 {
     bytes.push_back(std::byte{value});
+}
+
+std::vector<std::byte> make_bytes(std::initializer_list<unsigned char> values)
+{
+    std::vector<std::byte> bytes;
+    bytes.reserve(values.size());
+    for (const unsigned char value : values) {
+        append_byte(bytes, value);
+    }
+    return bytes;
 }
 
 void append_u16_le(std::vector<std::byte>& bytes, std::uint16_t value)
@@ -145,6 +174,65 @@ std::vector<std::byte> make_jpeg_signature_bytes()
     append_byte(bytes, 0xff);
     append_byte(bytes, 0xd9);
     return bytes;
+}
+
+std::vector<std::byte> make_valid_jpeg_1x1_fixture_bytes()
+{
+    return make_bytes({
+        0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01,
+        0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xff, 0xdb, 0x00, 0x43,
+        0x00, 0x02, 0x01, 0x01, 0x01, 0x01, 0x01, 0x02, 0x01, 0x01, 0x01, 0x02,
+        0x02, 0x02, 0x02, 0x02, 0x04, 0x03, 0x02, 0x02, 0x02, 0x02, 0x05, 0x04,
+        0x04, 0x03, 0x04, 0x06, 0x05, 0x06, 0x06, 0x06, 0x05, 0x06, 0x06, 0x06,
+        0x07, 0x09, 0x08, 0x06, 0x07, 0x09, 0x07, 0x06, 0x06, 0x08, 0x0b, 0x08,
+        0x09, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x06, 0x08, 0x0b, 0x0c, 0x0b, 0x0a,
+        0x0c, 0x09, 0x0a, 0x0a, 0x0a, 0xff, 0xdb, 0x00, 0x43, 0x01, 0x02, 0x02,
+        0x02, 0x02, 0x02, 0x02, 0x05, 0x03, 0x03, 0x05, 0x0a, 0x07, 0x06, 0x07,
+        0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a,
+        0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a,
+        0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a,
+        0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a,
+        0x0a, 0x0a, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0x01, 0x00, 0x01, 0x03,
+        0x01, 0x22, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01, 0xff, 0xc4, 0x00,
+        0x1f, 0x00, 0x00, 0x01, 0x05, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05,
+        0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0xff, 0xc4, 0x00, 0xb5, 0x10, 0x00,
+        0x02, 0x01, 0x03, 0x03, 0x02, 0x04, 0x03, 0x05, 0x05, 0x04, 0x04, 0x00,
+        0x00, 0x01, 0x7d, 0x01, 0x02, 0x03, 0x00, 0x04, 0x11, 0x05, 0x12, 0x21,
+        0x31, 0x41, 0x06, 0x13, 0x51, 0x61, 0x07, 0x22, 0x71, 0x14, 0x32, 0x81,
+        0x91, 0xa1, 0x08, 0x23, 0x42, 0xb1, 0xc1, 0x15, 0x52, 0xd1, 0xf0, 0x24,
+        0x33, 0x62, 0x72, 0x82, 0x09, 0x0a, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x25,
+        0x26, 0x27, 0x28, 0x29, 0x2a, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a,
+        0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x53, 0x54, 0x55, 0x56,
+        0x57, 0x58, 0x59, 0x5a, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a,
+        0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79, 0x7a, 0x83, 0x84, 0x85, 0x86,
+        0x87, 0x88, 0x89, 0x8a, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99,
+        0x9a, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7, 0xa8, 0xa9, 0xaa, 0xb2, 0xb3,
+        0xb4, 0xb5, 0xb6, 0xb7, 0xb8, 0xb9, 0xba, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6,
+        0xc7, 0xc8, 0xc9, 0xca, 0xd2, 0xd3, 0xd4, 0xd5, 0xd6, 0xd7, 0xd8, 0xd9,
+        0xda, 0xe1, 0xe2, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7, 0xe8, 0xe9, 0xea, 0xf1,
+        0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa, 0xff, 0xc4, 0x00,
+        0x1f, 0x01, 0x00, 0x03, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05,
+        0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0xff, 0xc4, 0x00, 0xb5, 0x11, 0x00,
+        0x02, 0x01, 0x02, 0x04, 0x04, 0x03, 0x04, 0x07, 0x05, 0x04, 0x04, 0x00,
+        0x01, 0x02, 0x77, 0x00, 0x01, 0x02, 0x03, 0x11, 0x04, 0x05, 0x21, 0x31,
+        0x06, 0x12, 0x41, 0x51, 0x07, 0x61, 0x71, 0x13, 0x22, 0x32, 0x81, 0x08,
+        0x14, 0x42, 0x91, 0xa1, 0xb1, 0xc1, 0x09, 0x23, 0x33, 0x52, 0xf0, 0x15,
+        0x62, 0x72, 0xd1, 0x0a, 0x16, 0x24, 0x34, 0xe1, 0x25, 0xf1, 0x17, 0x18,
+        0x19, 0x1a, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x35, 0x36, 0x37, 0x38, 0x39,
+        0x3a, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x53, 0x54, 0x55,
+        0x56, 0x57, 0x58, 0x59, 0x5a, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69,
+        0x6a, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79, 0x7a, 0x82, 0x83, 0x84,
+        0x85, 0x86, 0x87, 0x88, 0x89, 0x8a, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97,
+        0x98, 0x99, 0x9a, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7, 0xa8, 0xa9, 0xaa,
+        0xb2, 0xb3, 0xb4, 0xb5, 0xb6, 0xb7, 0xb8, 0xb9, 0xba, 0xc2, 0xc3, 0xc4,
+        0xc5, 0xc6, 0xc7, 0xc8, 0xc9, 0xca, 0xd2, 0xd3, 0xd4, 0xd5, 0xd6, 0xd7,
+        0xd8, 0xd9, 0xda, 0xe2, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7, 0xe8, 0xe9, 0xea,
+        0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa, 0xff, 0xda, 0x00,
+        0x0c, 0x03, 0x01, 0x00, 0x02, 0x11, 0x03, 0x11, 0x00, 0x3f, 0x00, 0xfe,
+        0x7f, 0xe8, 0xa2, 0x8a, 0x00, 0xff, 0xd9,
+    });
 }
 
 std::vector<std::byte> make_bmp_24_bit_1x1_fixture_bytes()
@@ -359,6 +447,152 @@ void test_filesystem_pipeline_reads_ppm_fixture_and_reuses_cache()
     require(snapshot.cache_snapshot.texture_count == 1, "pipeline cache snapshot records one texture");
 }
 
+void test_filesystem_pipeline_routes_real_jpeg_through_stb_upload_handoff()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::filesystem::path root = test_data_root();
+    reset_test_data_root(root);
+    const std::vector<std::byte> fixture_bytes = make_valid_jpeg_1x1_fixture_bytes();
+    write_bytes(root / "textures" / "real-stb.jpg", fixture_bytes);
+
+    const normalizing_image_resolver resolver;
+    filesystem_image_source_bytes_loader loader(root);
+    const stb_image_decoder_header_dependency_probe probe{"stb_image_decoder"};
+    const stb_image_decoder_dependency_manifest manifest = probe.probe_dependency();
+    standard_image_texture_pipeline pipeline(resolver, loader);
+
+    const render_image_texture_pipeline_result result = pipeline.acquire_texture(
+        render_image_texture_pipeline_request{.uri = "textures/real-stb.jpg"});
+
+    require(result.resolve.ok(), "real JPEG pipeline resolves local file source");
+    require(result.source_bytes.ok(), "real JPEG pipeline loads source bytes from filesystem");
+    require(result.source_bytes.encoded_bytes == fixture_bytes, "real JPEG pipeline preserves loaded source bytes");
+    require(
+        result.texture.external_decoder_selection.diagnostics_available,
+        "real JPEG pipeline exposes stb selection diagnostics");
+    require(
+        result.texture.external_decoder_selection.detected_format == render_image_encoded_format::jpeg,
+        "real JPEG pipeline records detected JPEG format");
+
+    if (manifest.status != stb_image_decoder_dependency_status::available) {
+        require(!result.ok(), "standard pipeline reports decode failure when stb is unavailable");
+        require(
+            result.status == render_image_texture_pipeline_status::decode_failed,
+            "unavailable stb path reports decode failure");
+        require(
+            result.texture.external_decoder_selection.fallback_to_standard_decoder_chain,
+            "unavailable stb path records standard fallback");
+        require(
+            !result.texture.external_decoder_selection.used_third_party_adapter,
+            "unavailable stb path does not report adapter use");
+
+        const standard_image_texture_pipeline_snapshot snapshot = pipeline.standard_diagnostic_snapshot();
+        require(snapshot.pipeline.decode_failure_count == 1, "unavailable stb snapshot counts decode failure");
+        require(snapshot.pipeline.upload_snapshot.upload_count == 0, "unavailable stb path does not upload");
+        require(snapshot.decoder.decode_attempt_count == 1, "unavailable stb path still attempts decode chain");
+        require(snapshot.decoder.failed_decode_count == 1, "unavailable stb path records decoder failure");
+        return;
+    }
+
+    require(result.ok(), "standard pipeline creates a texture through stb memory decode");
+    require(result.status == render_image_texture_pipeline_status::ready, "real JPEG pipeline result is ready");
+    require(!is_fake_image_texture_placeholder_key(result.texture.key), "real JPEG pipeline does not use placeholder");
+    require(!result.texture.cache_hit, "real JPEG first acquire is a cache miss");
+    require(result.texture.texture.width == 1, "real JPEG texture preserves decoded width");
+    require(result.texture.texture.height == 1, "real JPEG texture preserves decoded height");
+    require(result.texture.decode_metadata.decoder_id == "stb_image_decoder", "standard pipeline real JPEG decode uses stb backend");
+    require(result.texture.decode_metadata.width == 1, "real JPEG metadata records width");
+    require(result.texture.decode_metadata.height == 1, "real JPEG metadata records height");
+    require(result.texture.decode_metadata.encoded_byte_count == fixture_bytes.size(), "real JPEG metadata records source byte count");
+    require(result.texture.decode_metadata.decoded_byte_count == 4, "real JPEG metadata records RGBA byte count");
+    require(result.texture.decode_metadata.size_validation.valid, "real JPEG metadata validates decoded payload");
+    require(
+        result.texture.decode_metadata.format_detection.detected_format == render_image_encoded_format::jpeg,
+        "real JPEG metadata records detected source format");
+    require(result.texture.decoder_diagnostics.size() == 1, "real JPEG path records adapter diagnostic");
+    require(result.texture.decoder_diagnostics[0].decoder_id == "stb_image_decoder", "real JPEG diagnostic records stb backend");
+    require(result.texture.decoder_diagnostics[0].decode_attempted, "real JPEG diagnostic records decode attempt");
+    require(result.texture.external_decoder_selection.ready_for_external_decode, "real JPEG selection is external-decode ready");
+    require(result.texture.external_decoder_selection.used_third_party_adapter, "real JPEG selection records adapter route");
+    require(
+        !result.texture.external_decoder_selection.fallback_to_standard_decoder_chain,
+        "real JPEG selection records no standard fallback");
+
+    const standard_image_texture_pipeline_snapshot standard_snapshot = pipeline.standard_diagnostic_snapshot();
+    require(standard_snapshot.decoder.support_check_count == 1, "real JPEG standard decoder records support check");
+    require(standard_snapshot.decoder.decode_attempt_count == 1, "real JPEG standard decoder records decode attempt");
+    require(standard_snapshot.decoder.decoded_count == 1, "real JPEG standard decoder records decoded count");
+    require(standard_snapshot.decoder.failed_decode_count == 0, "real JPEG standard decoder records no failures");
+    require(
+        standard_snapshot.decoder.last_encoded_byte_count == fixture_bytes.size(),
+        "real JPEG standard decoder records source byte count");
+    require(
+        standard_snapshot.decoder.last_decode_status == render_image_decode_status::decoded,
+        "real JPEG standard decoder records decoded status");
+
+    const fake_image_texture_pipeline_snapshot& snapshot = standard_snapshot.pipeline;
+    require(snapshot.acquire_count == 1, "real JPEG snapshot records acquire");
+    require(snapshot.ready_count == 1, "real JPEG snapshot records ready");
+    require(snapshot.failure_count == 0, "real JPEG snapshot records no failures");
+    require(snapshot.upload_snapshot.upload_count == 1, "real JPEG snapshot records one upload");
+    require(snapshot.upload_snapshot.uploaded_decoded_byte_count == 4, "real JPEG snapshot records uploaded bytes");
+    require(snapshot.upload_snapshot.request_snapshots.size() == 1, "real JPEG snapshot records upload request");
+    require(snapshot.upload_snapshot.request_snapshots[0].width == 1, "real JPEG upload snapshot records width");
+    require(snapshot.upload_snapshot.request_snapshots[0].height == 1, "real JPEG upload snapshot records height");
+    require(
+        snapshot.upload_snapshot.request_snapshots[0].decoded_byte_count == 4,
+        "real JPEG upload snapshot records decoded bytes");
+    require(
+        snapshot.upload_snapshot.request_snapshots[0].staging_byte_count == 4,
+        "real JPEG upload snapshot records staging bytes");
+    const render_image_decoded_payload_evidence& upload_payload =
+        snapshot.upload_snapshot.request_snapshots[0].decoded_payload;
+    require(upload_payload.payload_valid, "real JPEG upload snapshot records valid decoded payload evidence");
+    require(upload_payload.decoded_byte_count == 4, "real JPEG upload payload evidence records RGBA byte count");
+    require(upload_payload.rgba8_sample_available, "real JPEG upload payload evidence records RGBA samples");
+    require(upload_payload.first_pixel.available, "real JPEG upload payload evidence records first pixel sample");
+    require(upload_payload.last_pixel.available, "real JPEG upload payload evidence records last pixel sample");
+    require(upload_payload.first_pixel.rgba[3] == 0xff, "real JPEG upload payload evidence records opaque alpha");
+    require(upload_payload.all_alpha_opaque, "real JPEG upload payload evidence records alpha opacity");
+    require(snapshot.cache_snapshot.texture_count == 1, "real JPEG pipeline caches decoded texture");
+    require(snapshot.cache_snapshot.cached_decoded_byte_count == 4, "real JPEG cache records decoded RGBA bytes");
+    require(snapshot.entries[0].encoded_byte_count == fixture_bytes.size(), "real JPEG snapshot records source byte count");
+    require(snapshot.entries[0].selected_decoder_id == "stb_image_decoder", "real JPEG snapshot records selected stb decoder");
+    require(
+        snapshot.entries[0].decoder_capability_manifest.used_third_party_adapter,
+        "real JPEG snapshot manifest records adapter route");
+    require(
+        !snapshot.entries[0].decoder_capability_manifest.fallback_used,
+        "real JPEG snapshot manifest records no fallback");
+    require(
+        snapshot.entries[0].decoder_capability_manifest.terminal_decoder_id == "stb_image_decoder",
+        "real JPEG snapshot manifest records stb terminal decoder");
+    require(snapshot.entries[0].upload_count_before == 0, "real JPEG snapshot records upload count before");
+    require(snapshot.entries[0].upload_count_after == 1, "real JPEG snapshot records upload count after");
+    require(!snapshot.cache_snapshot.entries.empty(), "real JPEG cache snapshot exposes cache entry");
+
+    const render_image_upload_readiness_snapshot& readiness =
+        snapshot.cache_snapshot.entries[0].upload_readiness;
+    require(readiness.upload_ready, "real JPEG cache entry is upload-ready");
+    require(readiness.decode_metadata_matches_image, "real JPEG cache entry validates decode handoff metadata");
+    require(readiness.decoded_byte_count == 4, "real JPEG readiness records decoded bytes");
+    require(readiness.metadata_decoded_byte_count == 4, "real JPEG readiness records metadata decoded bytes");
+    require(readiness.metadata_expected_decoded_byte_count == 4, "real JPEG readiness records expected bytes");
+    require(readiness.metadata_actual_decoded_byte_count == 4, "real JPEG readiness records actual bytes");
+    require(readiness.staging_byte_count == 4, "real JPEG readiness records staging bytes");
+    require(readiness.decoded_payload.payload_valid, "real JPEG cache readiness records decoded payload evidence");
+    require(
+        readiness.decoded_payload.stable_byte_hash == upload_payload.stable_byte_hash,
+        "real JPEG cache readiness payload evidence matches upload request evidence");
+    require(
+        readiness.decoded_payload.first_pixel.rgba == upload_payload.first_pixel.rgba,
+        "real JPEG cache readiness preserves first decoded RGBA sample");
+    require(
+        readiness.decode_handoff_diagnostic == "decode handoff metadata matches decoded image",
+        "real JPEG readiness records matching handoff diagnostic");
+}
+
 void test_filesystem_pipeline_reports_missing_file_source_load_failed()
 {
     using namespace quiz_vulkan::render;
@@ -474,6 +708,57 @@ void test_filesystem_pipeline_reports_malformed_ppm_decode_failed()
     require(!snapshot.entries[0].diagnostic.empty(), "malformed file snapshot keeps diagnostic");
 }
 
+void test_upload_readiness_reports_decode_handoff_metadata()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_image_texture_key key{
+        .source_key = "textures/handoff.jpg",
+        .sampler = render_image_sampler_policy{},
+    };
+    const render_decoded_image image = make_rgba_1x1_image(1, 2, 3, 4);
+    const render_image_decode_request request{
+        .source = render_resolved_image_source{
+            .original_uri = "textures/handoff.jpg",
+            .normalized_uri = "textures/handoff.jpg",
+            .kind = render_image_source_kind::local_path,
+        },
+        .encoded_bytes = make_jpeg_signature_bytes(),
+    };
+    const render_image_decode_metadata metadata =
+        make_render_image_decode_metadata("fake_stb_decoder", request, image);
+
+    const render_image_upload_readiness_snapshot ready =
+        make_render_image_upload_readiness_snapshot(key, metadata, image);
+
+    require(ready.payload_valid, "upload readiness accepts valid decoded payload");
+    require(ready.decode_metadata_matches_image, "upload readiness records matching decode handoff");
+    require(ready.upload_ready, "matching decode handoff is upload-ready");
+    require(ready.metadata_decoded_byte_count == 4, "upload readiness records metadata decoded bytes");
+    require(ready.metadata_expected_decoded_byte_count == 4, "upload readiness records metadata expected bytes");
+    require(ready.metadata_actual_decoded_byte_count == 4, "upload readiness records metadata actual bytes");
+    require(
+        ready.decode_handoff_diagnostic == "decode handoff metadata matches decoded image",
+        "upload readiness records matching handoff diagnostic");
+
+    render_image_decode_metadata mismatched_metadata = metadata;
+    mismatched_metadata.decoded_byte_count = 8;
+    const render_image_upload_readiness_snapshot mismatched =
+        make_render_image_upload_readiness_snapshot(key, mismatched_metadata, image);
+
+    require(mismatched.payload_valid, "handoff mismatch preserves valid payload evidence");
+    require(!mismatched.decode_metadata_matches_image, "upload readiness detects metadata mismatch");
+    require(!mismatched.upload_ready, "metadata mismatch blocks upload readiness");
+    require(mismatched.metadata_decoded_byte_count == 8, "mismatch snapshot preserves metadata byte count");
+    require(mismatched.decoded_byte_count == 4, "mismatch snapshot preserves payload byte count");
+    require(
+        mismatched.decode_handoff_diagnostic == "decode handoff metadata does not match decoded image",
+        "upload readiness records mismatch handoff diagnostic");
+    require(
+        mismatched.diagnostic == "decode handoff metadata does not match decoded image",
+        "upload readiness surfaces handoff mismatch as primary diagnostic");
+}
+
 void test_pipeline_uses_optional_third_party_decoder_through_interface()
 {
     using namespace quiz_vulkan::render;
@@ -546,6 +831,18 @@ void test_pipeline_uses_optional_third_party_decoder_through_interface()
     require(
         snapshot.entries[0].decoder_capability_manifest.terminal_decoder_id == "fake_stb_decoder",
         "pipeline entry capability manifest records adapter terminal decoder");
+
+    require(!snapshot.cache_snapshot.entries.empty(), "third-party pipeline snapshot exposes cache entry");
+    const render_image_upload_readiness_snapshot& readiness =
+        snapshot.cache_snapshot.entries[0].upload_readiness;
+    require(readiness.upload_ready, "third-party cache entry is upload-ready");
+    require(readiness.decode_metadata_matches_image, "third-party cache entry validates decode handoff");
+    require(readiness.metadata_decoded_byte_count == 4, "third-party handoff records metadata decoded bytes");
+    require(readiness.metadata_expected_decoded_byte_count == 4, "third-party handoff records expected bytes");
+    require(readiness.metadata_actual_decoded_byte_count == 4, "third-party handoff records actual bytes");
+    require(
+        readiness.decode_handoff_diagnostic == "decode handoff metadata matches decoded image",
+        "third-party cache entry records handoff diagnostic");
 }
 
 void test_optional_adapter_failure_falls_back_before_texture_upload()
@@ -659,7 +956,7 @@ void test_unavailable_optional_adapter_keeps_diagnostics_without_upload()
     require(snapshot.entries[0].upload_count_after == 0, "snapshot records no upload after unavailable adapter");
 }
 
-void test_stb_selection_preserves_internal_bmp_decoder_diagnostics()
+void test_stb_selection_prefers_adapter_for_bmp_when_available()
 {
     using namespace quiz_vulkan::render;
 
@@ -681,38 +978,39 @@ void test_stb_selection_preserves_internal_bmp_decoder_diagnostics()
     const render_image_texture_pipeline_result result = pipeline.acquire_texture(
         render_image_texture_pipeline_request{.uri = "asset://textures/card.bmp"});
 
-    require(result.ok(), "internal BMP fallback succeeds through optional decoder chain");
-    require(result.texture.decode_metadata.decoder_id == "bmp_image_decoder", "internal BMP decoder remains selected");
-    require(result.texture.decode_metadata.width == 1, "internal BMP decode records width");
-    require(result.texture.decode_metadata.height == 1, "internal BMP decode records height");
+    require(result.ok(), "BMP succeeds through preferred adapter route");
+    require(result.texture.decode_metadata.decoder_id == "fake_stb_decoder", "BMP decoder selects adapter backend");
+    require(result.texture.decode_metadata.width == 1, "adapter BMP decode records width");
+    require(result.texture.decode_metadata.height == 1, "adapter BMP decode records height");
     require(result.texture.external_decoder_selection.diagnostics_available, "BMP path exposes stb selection diagnostics");
     require(
-        result.texture.external_decoder_selection.selection_status_name == "fallback_internal_decoder_preferred",
-        "BMP path records internal decoder preference");
-    require(result.texture.external_decoder_selection.used_internal_decoder, "BMP path records internal decoder use");
-    require(!result.texture.external_decoder_selection.used_third_party_adapter, "BMP path does not report adapter use");
-    require(result.texture.external_decoder_selection.fallback_to_standard_decoder_chain, "BMP path records standard fallback");
-    require(result.texture.external_decoder_selection.prefer_internal_decoder, "BMP path records matrix preference");
-    require(result.texture.external_decoder_selection.internal_decoder_available, "BMP path records internal availability");
+        result.texture.external_decoder_selection.selection_status_name == "ready",
+        "BMP path records adapter-ready selection");
+    require(!result.texture.external_decoder_selection.used_internal_decoder, "BMP path does not report internal decoder use");
+    require(result.texture.external_decoder_selection.used_third_party_adapter, "BMP path reports adapter use");
+    require(!result.texture.external_decoder_selection.fallback_to_standard_decoder_chain, "BMP path records no standard fallback");
+    require(!result.texture.external_decoder_selection.prefer_internal_decoder, "BMP path records no internal preference");
+    require(result.texture.external_decoder_selection.internal_decoder_available, "BMP path records internal fallback availability");
+    require(result.texture.external_decoder_selection.ready_for_external_decode, "BMP path records external readiness");
     require(
         result.texture.external_decoder_selection.detected_format == render_image_encoded_format::bmp,
         "BMP path records detected format");
-    require(backend.decode_requests.empty(), "internal BMP path does not call third-party backend");
-    require(uploader.upload_requests.size() == 1, "internal BMP path uploads decoded texture");
-    require(probe.probe_count == 1, "internal BMP path probes stb dependency once");
+    require(backend.decode_requests.size() == 1, "adapter BMP path calls third-party backend");
+    require(uploader.upload_requests.size() == 1, "adapter BMP path uploads decoded texture");
+    require(probe.probe_count == 1, "adapter BMP path probes stb dependency once");
 
     const fake_image_texture_pipeline_snapshot snapshot = pipeline.diagnostic_snapshot();
-    require(snapshot.entries[0].selected_decoder_id == "bmp_image_decoder", "pipeline entry records BMP decoder");
+    require(snapshot.entries[0].selected_decoder_id == "fake_stb_decoder", "pipeline entry records adapter decoder");
     require(
-        snapshot.entries[0].external_decoder_selection.used_internal_decoder,
-        "pipeline entry carries internal decoder selection");
+        snapshot.entries[0].external_decoder_selection.used_third_party_adapter,
+        "pipeline entry carries adapter selection");
     require(
-        snapshot.entries[0].decoder_capability_manifest.external_decoder_selection.used_internal_decoder,
-        "capability manifest carries internal decoder selection");
+        snapshot.entries[0].decoder_capability_manifest.external_decoder_selection.used_third_party_adapter,
+        "capability manifest carries adapter selection");
     require(
-        snapshot.entries[0].decoder_capability_manifest.terminal_decoder_id == "bmp_image_decoder",
-        "capability manifest records BMP terminal decoder");
-    require(snapshot.entries[0].decoder_capability_manifest.fallback_used, "capability manifest records adapter fallback");
+        snapshot.entries[0].decoder_capability_manifest.terminal_decoder_id == "fake_stb_decoder",
+        "capability manifest records adapter terminal decoder");
+    require(!snapshot.entries[0].decoder_capability_manifest.fallback_used, "capability manifest records no fallback");
 }
 
 void test_stb_selection_missing_and_mismatched_fallback_diagnostics_reach_pipeline()
@@ -833,7 +1131,7 @@ void test_stb_selection_survives_placeholder_fallback()
         "placeholder manifest carries missing dependency fallback flag");
 }
 
-void test_external_decoder_selection_diff_reports_adapter_internal_and_placeholder_states()
+void test_external_decoder_selection_diff_reports_adapter_format_and_placeholder_states()
 {
     using namespace quiz_vulkan::render;
 
@@ -846,39 +1144,41 @@ void test_external_decoder_selection_diff_reports_adapter_internal_and_placehold
         make_bmp_24_bit_1x1_fixture_bytes(),
         make_available_stb_image_decoder_dependency_manifest("fake_stb_decoder"));
 
-    const render_image_external_decoder_selection_snapshot_diff internal_diff =
+    const render_image_external_decoder_selection_snapshot_diff format_diff =
         diff_render_image_external_decoder_selection_snapshots(adapter_snapshot, internal_snapshot);
 
-    require(internal_diff.has_changes, "external selection diff detects adapter to internal change");
-    require(!internal_diff.has_regression, "adapter to internal decoder change is not a fallback regression");
-    require(internal_diff.before_adapter_ready_count == 1, "external selection diff counts adapter-ready before");
-    require(internal_diff.after_adapter_ready_count == 0, "external selection diff counts no adapter-ready after");
-    require(internal_diff.before_internal_decoder_count == 0, "external selection diff counts no internal before");
-    require(internal_diff.after_internal_decoder_count == 1, "external selection diff counts internal after");
-    require(internal_diff.before_fallback_count == 0, "external selection diff counts no fallback before");
-    require(internal_diff.after_fallback_count == 1, "external selection diff counts internal standard fallback after");
-    require(internal_diff.changed_entry_count == 1, "external selection diff records one changed entry");
-    require(internal_diff.state_changed_count == 1, "external selection diff counts state change");
-    require(internal_diff.selected_decoder_changed_count == 1, "external selection diff counts selected decoder change");
-    require(internal_diff.selection_status_changed_count == 1, "external selection diff counts selection status change");
+    require(format_diff.has_changes, "external selection diff detects adapter format change");
+    require(!format_diff.has_regression, "adapter format change is not a fallback regression");
+    require(format_diff.before_adapter_ready_count == 1, "external selection diff counts adapter-ready before");
+    require(format_diff.after_adapter_ready_count == 1, "external selection diff keeps adapter-ready after");
+    require(format_diff.before_internal_decoder_count == 0, "external selection diff counts no internal before");
+    require(format_diff.after_internal_decoder_count == 0, "external selection diff counts no internal after");
+    require(format_diff.before_fallback_count == 0, "external selection diff counts no fallback before");
+    require(format_diff.after_fallback_count == 0, "external selection diff counts no standard fallback after");
+    require(format_diff.changed_entry_count == 1, "external selection diff records one changed entry");
+    require(format_diff.state_changed_count == 0, "external selection diff keeps adapter state stable");
+    require(format_diff.selected_decoder_changed_count == 0, "external selection diff keeps adapter decoder stable");
+    require(format_diff.selection_status_changed_count == 0, "external selection diff keeps selection status stable");
     require(
-        internal_diff.diagnostic == "external decoder selection diff reports changes",
+        format_diff.diagnostic == "external decoder selection diff reports changes",
         "external selection diff reports neutral changes");
 
-    const render_image_external_decoder_selection_entry_diff& internal_entry = internal_diff.entries[0];
+    const render_image_external_decoder_selection_entry_diff& format_entry = format_diff.entries[0];
     require(
-        internal_entry.before_state == render_image_external_decoder_selection_diff_state::adapter_ready,
+        format_entry.before_state == render_image_external_decoder_selection_diff_state::adapter_ready,
         "external selection entry records adapter-ready before state");
     require(
-        internal_entry.after_state == render_image_external_decoder_selection_diff_state::internal_decoder,
-        "external selection entry records internal decoder after state");
-    require(internal_entry.before_state_name == "adapter_ready", "adapter-ready state name is stable");
-    require(internal_entry.after_state_name == "internal_decoder", "internal decoder state name is stable");
-    require(internal_entry.before_selected_decoder_id == "fake_stb_decoder", "entry records before adapter decoder");
-    require(internal_entry.after_selected_decoder_id == "bmp_image_decoder", "entry records after BMP decoder");
-    require(internal_entry.before_ready_for_external_decode, "entry records before adapter readiness");
-    require(internal_entry.after_used_internal_decoder, "entry records after internal decoder flag");
-    require(!internal_entry.regression, "internal decoder route is not a severity regression");
+        format_entry.after_state == render_image_external_decoder_selection_diff_state::adapter_ready,
+        "external selection entry records adapter-ready after state");
+    require(format_entry.before_state_name == "adapter_ready", "adapter-ready state name is stable");
+    require(format_entry.after_state_name == "adapter_ready", "adapter-ready after state name is stable");
+    require(format_entry.before_selected_decoder_id == "fake_stb_decoder", "entry records before adapter decoder");
+    require(format_entry.after_selected_decoder_id == "fake_stb_decoder", "entry records after adapter decoder");
+    require(format_entry.before_ready_for_external_decode, "entry records before adapter readiness");
+    require(format_entry.after_ready_for_external_decode, "entry records after adapter readiness");
+    require(format_entry.detected_format_changed, "entry records detected format change");
+    require(!format_entry.after_used_internal_decoder, "entry records no internal decoder flag after");
+    require(!format_entry.regression, "adapter route remains non-regressive");
 
     const fake_image_texture_pipeline_snapshot placeholder_snapshot = make_optional_stb_pipeline_snapshot(
         "asset://textures/card.jpg",
@@ -2561,21 +2861,1064 @@ void test_texture_frame_binding_plan_diff_reports_binding_deltas()
     require(removed_packet.before_render_image_uri == "asset://textures/bad.ppm", "removed binding diff records source uri");
 }
 
+void test_texture_frame_upload_handoff_links_bindings_to_upload_results()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes("asset://textures/card.ppm", make_ppm_2x1_fixture_bytes());
+    ppm_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
+
+    render_image_sampler_policy nearest_sampler;
+    nearest_sampler.min_filter = render_image_filter::nearest;
+    nearest_sampler.mag_filter = render_image_filter::nearest;
+
+    const render_image_texture_batch_plan plan = plan_render_image_texture_batch(std::vector<render_image_ref>{
+        render_image_ref{.uri = "asset://textures/card.ppm"},
+        render_image_ref{.uri = "  ASSET:///textures\\card.ppm  "},
+        render_image_ref{.uri = "asset://textures/card.ppm", .sampler = nearest_sampler},
+    });
+    const render_image_texture_batch_execution_diagnostics execution =
+        execute_render_image_texture_batch_plan(plan, pipeline);
+    const render_image_texture_frame_snapshot frame =
+        make_render_image_texture_frame_snapshot(plan, execution);
+    const render_image_texture_frame_binding_plan binding_plan =
+        make_render_image_texture_frame_binding_plan(frame);
+    const render_image_texture_upload_result_snapshot upload_result =
+        make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(uploader.diagnostic_snapshot());
+    require(upload_result.packets.size() == 2, "upload result exposes one packet per cache-miss upload");
+    const render_image_decoded_payload_evidence& first_payload =
+        upload_result.packets[0].decoded_payload;
+    require(first_payload.payload_valid, "upload result packet preserves decoded payload validity");
+    require(first_payload.decoded_byte_count == 8, "upload result packet preserves decoded byte count");
+    require(first_payload.stable_byte_hash != 0, "upload result packet preserves decoded payload hash");
+    require(first_payload.rgba8_sample_available, "upload result packet preserves RGBA sample availability");
+    require(first_payload.first_pixel.rgba[0] == 0xff, "upload result packet first pixel preserves red");
+    require(first_payload.first_pixel.rgba[1] == 0x00, "upload result packet first pixel preserves green");
+    require(first_payload.first_pixel.rgba[2] == 0x00, "upload result packet first pixel preserves blue");
+    require(first_payload.first_pixel.rgba[3] == 0xff, "upload result packet first pixel preserves alpha");
+    require(first_payload.last_pixel.rgba[0] == 0x00, "upload result packet last pixel preserves red");
+    require(first_payload.last_pixel.rgba[1] == 0xff, "upload result packet last pixel preserves green");
+    require(first_payload.last_pixel.rgba[2] == 0x00, "upload result packet last pixel preserves blue");
+    require(first_payload.last_pixel.rgba[3] == 0xff, "upload result packet last pixel preserves alpha");
+    require(first_payload.all_alpha_opaque, "upload result packet preserves alpha opacity evidence");
+    const render_image_texture_upload_payload_layout_evidence& first_layout =
+        upload_result.packets[0].payload_layout;
+    require(first_layout.ok(), "upload result packet preserves upload payload layout readiness");
+    require(first_layout.extent_width == 2, "upload result packet layout preserves extent width");
+    require(first_layout.extent_height == 1, "upload result packet layout preserves extent height");
+    require(first_layout.row_stride_byte_count == 8, "upload result packet layout records row stride");
+    require(first_layout.byte_count_consistent, "upload result packet layout records byte consistency");
+    require(
+        first_layout.decoded_payload.stable_byte_hash == first_payload.stable_byte_hash,
+        "upload result packet layout preserves decoded payload hash");
+    require(
+        first_layout.stable_texture_cache_key == upload_result.packets[0].stable_cache_key,
+        "upload result packet layout preserves stable cache identity");
+    const render_image_texture_staging_payload_plan& first_staging_plan =
+        upload_result.packets[0].staging_payload_plan;
+    require(first_staging_plan.ok(), "upload result packet preserves staging payload plan readiness");
+    require(first_staging_plan.row_copy_count == 1, "upload result packet staging plan records row copy count");
+    require(first_staging_plan.total_staging_byte_count == 8, "upload result packet staging plan records bytes");
+    require(
+        first_staging_plan.stable_texture_cache_key == first_layout.stable_texture_cache_key,
+        "upload result packet staging plan preserves stable cache identity");
+    require(
+        first_staging_plan.decoded_payload_hash == first_payload.stable_byte_hash,
+        "upload result packet staging plan preserves decoded payload hash");
+
+    const render_image_texture_frame_upload_handoff_summary handoff =
+        make_render_image_texture_frame_upload_handoff_summary(frame, binding_plan, upload_result);
+
+    require(handoff.ok(), "frame upload handoff is ready when bindings and uploads are ready");
+    require(handoff.frame_request_count == 3, "frame upload handoff records frame request count");
+    require(handoff.binding_packet_count == 3, "frame upload handoff records binding packets");
+    require(handoff.upload_packet_count == 2, "frame upload handoff records only cache-miss upload packets");
+    require(handoff.requested_texture_count == 3, "frame upload handoff records render image refs");
+    require(handoff.ready_texture_count == 3, "frame upload handoff records ready texture refs");
+    require(handoff.placeholder_texture_count == 0, "frame upload handoff records no placeholders");
+    require(handoff.blocked_texture_count == 0, "frame upload handoff records no blocked refs");
+    require(handoff.missing_upload_result_count == 0, "frame upload handoff records no missing upload packets");
+    require(handoff.cache_reused_count == 1, "frame upload handoff records cache reuse");
+    require(handoff.expected_cache_reuse_count == 1, "frame upload handoff records expected reuse");
+    require(handoff.unique_texture_id_count == 2, "frame upload handoff deduplicates texture handles");
+    require(handoff.unique_texture_cache_key_count == 2, "frame upload handoff deduplicates texture cache keys");
+    require(handoff.uploaded_byte_count == 16, "frame upload handoff sums unique uploaded bytes");
+    require(handoff.planned_staging_byte_count == 16, "frame upload handoff sums planned staging bytes");
+    require(handoff.total_mip_level_count == 2, "frame upload handoff sums uploaded mip levels");
+    require(handoff.accepted_mip_level_count == 2, "frame upload handoff records accepted mip levels");
+    require(!handoff.has_blockers, "frame upload handoff has no blockers");
+    require(!handoff.has_placeholders, "frame upload handoff has no placeholders");
+    require(handoff.cache_key_summary.find("asset://textures/card.ppm") != std::string::npos, "frame upload handoff summarizes cache keys");
+    require(handoff.sampler_summary.find("min=nearest") != std::string::npos, "frame upload handoff summarizes sampler keys");
+    require(
+        handoff.mip_level_summary == "accepted_mips=2; rejected_mips=0; uploaded_bytes=16",
+        "frame upload handoff mip summary is stable");
+    require(
+        handoff.diagnostic == "image frame upload handoff ready",
+        "frame upload handoff ready diagnostic is stable");
+    require(handoff.entries.size() == 3, "frame upload handoff has one entry per binding packet");
+
+    const render_image_texture_frame_upload_handoff_entry& first = handoff.entries[0];
+    require(first.ok(), "first handoff entry is ready");
+    require(first.status == render_image_texture_frame_upload_handoff_entry_status::ready, "first handoff status is ready");
+    require(first.status_name == "ready", "first handoff status name is stable");
+    require(first.request_index == 0, "first handoff entry records request index");
+    require(first.render_image_uri == "asset://textures/card.ppm", "first handoff entry records uri");
+    require(first.upload_result_present, "first handoff entry links upload result");
+    require(first.upload_request_id == 1, "first handoff entry records upload request id");
+    require(first.uploaded_byte_count == 8, "first handoff entry records uploaded bytes");
+    require(first.mip_level_count == 1, "first handoff entry records mip level count");
+    require(
+        first.decoded_payload.stable_byte_hash == first_payload.stable_byte_hash,
+        "first handoff entry preserves decoded payload hash");
+    require(
+        first.decoded_payload.first_pixel.rgba == first_payload.first_pixel.rgba,
+        "first handoff entry preserves decoded first pixel sample");
+    require(first.payload_layout.ok(), "first handoff entry preserves upload payload layout readiness");
+    require(first.payload_layout.row_stride_byte_count == first_layout.row_stride_byte_count, "first handoff entry preserves row stride");
+    require(
+        first.payload_layout.stable_texture_cache_key == first_layout.stable_texture_cache_key,
+        "first handoff entry preserves payload layout cache identity");
+    require(first.staging_payload_plan.ok(), "first handoff entry preserves staging payload plan readiness");
+    require(
+        first.staging_payload_plan.total_staging_byte_count == first_staging_plan.total_staging_byte_count,
+        "first handoff entry preserves staging payload byte count");
+    require(!first.placeholder_texture, "first handoff entry is not placeholder");
+    require(!first.blocked, "first handoff entry is not blocked");
+
+    const render_image_texture_frame_upload_handoff_entry& second = handoff.entries[1];
+    require(second.ok(), "cache-hit handoff entry remains ready");
+    require(second.cache_reused, "cache-hit handoff entry records cache reuse");
+    require(second.expected_cache_reuse, "cache-hit handoff entry records expected reuse");
+    require(second.texture_id == first.texture_id, "cache-hit handoff entry shares texture id");
+    require(second.upload_request_id == first.upload_request_id, "cache-hit handoff entry links the reused upload packet");
+    require(
+        second.decoded_payload.stable_byte_hash == first_payload.stable_byte_hash,
+        "cache-hit handoff entry reuses decoded payload hash from original upload");
+    require(
+        second.payload_layout.stable_texture_cache_key == first.payload_layout.stable_texture_cache_key,
+        "cache-hit handoff entry reuses upload payload layout identity");
+    require(
+        second.staging_payload_plan.stable_texture_cache_key == first.staging_payload_plan.stable_texture_cache_key,
+        "cache-hit handoff entry reuses staging payload plan identity");
+
+    const render_image_texture_frame_upload_handoff_entry& third = handoff.entries[2];
+    require(third.ok(), "sampler-separated handoff entry is ready");
+    require(third.upload_request_id == 2, "sampler-separated handoff entry links second upload packet");
+    require(third.texture_id != first.texture_id, "sampler-separated handoff entry records distinct texture id");
+    require(third.stable_texture_cache_key != first.stable_texture_cache_key, "sampler-separated handoff entry has distinct key");
+    require(third.decoded_payload.payload_valid, "sampler-separated handoff entry preserves decoded payload evidence");
+    require(third.payload_layout.ok(), "sampler-separated handoff entry preserves payload layout evidence");
+    require(
+        third.payload_layout.sampler_summary != first.payload_layout.sampler_summary,
+        "sampler-separated handoff entry preserves distinct layout sampler identity");
+    require(third.staging_payload_plan.ok(), "sampler-separated handoff entry preserves staging payload plan");
+    require(
+        third.staging_payload_plan.sampler_summary != first.staging_payload_plan.sampler_summary,
+        "sampler-separated handoff entry preserves distinct staging sampler identity");
+
+    const render_image_texture_frame_binding_payload_evidence_summary binding_evidence =
+        make_render_image_texture_frame_binding_payload_evidence_summary(binding_plan, handoff);
+    require(binding_evidence.ok(), "binding payload evidence is ready for uploaded bindings");
+    require(binding_evidence.binding_packet_count == 3, "binding payload evidence records binding packet count");
+    require(binding_evidence.evidence_entry_count == 3, "binding payload evidence has one entry per binding");
+    require(binding_evidence.proven_payload_count == 3, "binding payload evidence proves each decoded upload");
+    require(binding_evidence.placeholder_payload_count == 0, "binding payload evidence records no placeholders");
+    require(binding_evidence.missing_upload_result_count == 0, "binding payload evidence records no missing uploads");
+    require(binding_evidence.failed_binding_count == 0, "binding payload evidence records no failed bindings");
+    require(binding_evidence.rejected_upload_count == 0, "binding payload evidence records no rejected uploads");
+    require(binding_evidence.decoded_payload_hash_count == 3, "binding payload evidence records decoded hashes");
+    require(binding_evidence.accepted_upload_result_count == 3, "binding payload evidence records accepted uploads");
+    require(binding_evidence.cache_reused_count == 1, "binding payload evidence records cache reuse");
+    require(binding_evidence.renderer_handoff_ready, "binding payload evidence records renderer handoff readiness");
+    require(
+        binding_evidence.evidence_summary == "binding_payloads=3; payload_hashes=3; accepted_uploads=3",
+        "binding payload evidence summary is stable");
+    require(
+        binding_evidence.diagnostic == "image texture binding payload evidence is ready",
+        "binding payload evidence ready diagnostic is stable");
+    require(binding_evidence.entries.size() == 3, "binding payload evidence exposes entries");
+
+    const render_image_texture_frame_binding_payload_evidence_entry& first_evidence =
+        binding_evidence.entries[0];
+    require(first_evidence.ok(), "first binding payload evidence is ok");
+    require(
+        first_evidence.status == render_image_texture_frame_binding_payload_evidence_status::payload_proven,
+        "first binding payload evidence status is proven");
+    require(
+        first_evidence.binding_status == render_image_texture_frame_binding_packet_status::ready,
+        "first binding payload evidence preserves binding status");
+    require(
+        first_evidence.handoff_status == render_image_texture_frame_upload_handoff_entry_status::ready,
+        "first binding payload evidence preserves handoff status");
+    require(
+        first_evidence.upload_result_status == render_image_texture_upload_result_packet_status::accepted,
+        "first binding payload evidence preserves upload result status");
+    require(first_evidence.texture_id == first.texture_id, "first binding payload evidence preserves texture id");
+    require(
+        first_evidence.upload_request_id == first.upload_request_id,
+        "first binding payload evidence preserves upload request id");
+    require(
+        first_evidence.stable_texture_cache_key == first.stable_texture_cache_key,
+        "first binding payload evidence preserves stable cache key");
+    require(first_evidence.sampler_key == first.sampler_key, "first binding payload evidence preserves sampler key");
+    require(
+        first_evidence.decoded_payload_hash == first_payload.stable_byte_hash,
+        "first binding payload evidence preserves decoded payload hash");
+    require(first_evidence.decoded_byte_count == 8, "first binding payload evidence preserves decoded byte count");
+    require(first_evidence.uploaded_byte_count == 8, "first binding payload evidence preserves uploaded byte count");
+    require(first_evidence.decoded_payload_valid, "first binding payload evidence records decoded payload validity");
+    require(first_evidence.upload_result_present, "first binding payload evidence records upload presence");
+    require(first_evidence.upload_result_accepted, "first binding payload evidence records accepted upload");
+    require(
+        first_evidence.evidence_key.find("payload_hash=" + std::to_string(first_payload.stable_byte_hash))
+            != std::string::npos,
+        "first binding payload evidence key includes decoded payload hash");
+
+    const render_image_texture_frame_binding_payload_evidence_entry& second_evidence =
+        binding_evidence.entries[1];
+    require(second_evidence.cache_reused, "cache-hit binding payload evidence records cache reuse");
+    require(
+        second_evidence.upload_request_id == first.upload_request_id,
+        "cache-hit binding payload evidence points to original upload request");
+    require(
+        second_evidence.decoded_payload_hash == first_payload.stable_byte_hash,
+        "cache-hit binding payload evidence reuses decoded payload hash");
+    require(
+        second_evidence.texture_id == first.texture_id,
+        "cache-hit binding payload evidence preserves reused texture id");
+
+    const render_image_texture_frame_binding_payload_evidence_entry& third_evidence =
+        binding_evidence.entries[2];
+    require(third_evidence.upload_request_id == third.upload_request_id, "sampler-separated evidence records upload id");
+    require(third_evidence.texture_id == third.texture_id, "sampler-separated evidence records texture id");
+    require(
+        third_evidence.sampler_key != first_evidence.sampler_key,
+        "sampler-separated evidence preserves distinct sampler");
+
+    const render_image_texture_frame_resource_packet_plan resource_plan =
+        make_render_image_texture_frame_resource_packet_plan(handoff);
+    require(resource_plan.ok(), "resource packet plan remains ready from decoded upload handoff");
+    require(resource_plan.entries.size() == 3, "resource packet plan preserves handoff entry count");
+    require(
+        resource_plan.entries[0].decoded_payload.stable_byte_hash == first_payload.stable_byte_hash,
+        "resource packet plan preserves decoded payload hash");
+    require(
+        resource_plan.entries[0].decoded_payload.first_pixel.rgba == first_payload.first_pixel.rgba,
+        "resource packet plan preserves decoded first pixel sample");
+    require(resource_plan.entries[0].payload_layout.ok(), "resource packet plan preserves upload payload layout");
+    require(
+        resource_plan.entries[0].payload_layout.row_stride_byte_count == first_layout.row_stride_byte_count,
+        "resource packet plan preserves upload payload row stride");
+    require(resource_plan.entries[0].staging_payload_plan.ok(), "resource packet plan preserves staging payload plan");
+    require(
+        resource_plan.entries[0].staging_payload_plan.total_staging_byte_count
+            == first_staging_plan.total_staging_byte_count,
+        "resource packet plan preserves staging payload byte count");
+    require(resource_plan.entries[1].cache_reused, "resource packet plan preserves cache reuse state");
+    require(
+        resource_plan.entries[1].decoded_payload.stable_byte_hash == first_payload.stable_byte_hash,
+        "resource packet plan preserves cache-hit decoded payload evidence");
+
+    const render_image_texture_frame_resource_packet_materialization materialization =
+        materialize_render_image_texture_frame_resource_packets(resource_plan);
+    require(materialization.ok(), "resource packet materialization remains renderer-boundary ready");
+    require(materialization.upload_record_count == 3, "resource packet materialization records upload handoffs");
+    require(materialization.upload_handoff_records.size() == 3, "materialization exposes upload handoff records");
+    require(
+        materialization.upload_handoff_records[0].decoded_payload.stable_byte_hash
+            == first_payload.stable_byte_hash,
+        "materialized upload handoff preserves decoded payload hash");
+    require(
+        materialization.upload_handoff_records[0].decoded_payload.last_pixel.rgba
+            == first_payload.last_pixel.rgba,
+        "materialized upload handoff preserves decoded last pixel sample");
+    require(
+        materialization.upload_handoff_records[0].payload_layout.stable_texture_cache_key
+            == first_layout.stable_texture_cache_key,
+        "materialized upload handoff preserves payload layout cache identity");
+    require(
+        materialization.upload_handoff_records[0].payload_layout.row_stride_byte_count
+            == first_layout.row_stride_byte_count,
+        "materialized upload handoff preserves payload layout row stride");
+    require(
+        materialization.upload_handoff_records[0].staging_payload_plan.total_staging_byte_count
+            == first_staging_plan.total_staging_byte_count,
+        "materialized upload handoff preserves staging payload bytes");
+    require(
+        materialization.entries[1].upload_record.decoded_payload.stable_byte_hash
+            == first_payload.stable_byte_hash,
+        "materialized cache-hit entry preserves decoded payload evidence");
+    require(
+        materialization.entries[1].upload_record.payload_layout.stable_texture_cache_key
+            == first_layout.stable_texture_cache_key,
+        "materialized cache-hit entry preserves payload layout identity");
+    require(
+        materialization.entries[1].upload_record.staging_payload_plan.stable_texture_cache_key
+            == first_staging_plan.stable_texture_cache_key,
+        "materialized cache-hit entry preserves staging payload identity");
+
+    require(
+        render_image_texture_frame_upload_result_packet_for_binding_packet(upload_result, binding_plan.packets[1])
+            == &upload_result.packets[0],
+        "frame upload handoff lookup resolves cache-hit binding to original upload packet");
+    require(
+        render_image_texture_frame_upload_handoff_entry_status_name(
+            render_image_texture_frame_upload_handoff_entry_status::missing_upload_result)
+            == "missing_upload_result",
+        "frame upload handoff status names are stable");
+}
+
+void test_texture_frame_upload_handoff_reports_placeholders_and_blockers()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_image_texture_placeholder_policy placeholder_policy{
+        .enabled = true,
+        .width = 2,
+        .height = 2,
+    };
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes("asset://textures/bad.ppm", make_short_ppm_2x1_fixture_bytes());
+    ppm_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    cache.set_placeholder_texture_policy(placeholder_policy);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
+
+    const render_image_texture_batch_plan plan = plan_render_image_texture_batch(
+        std::vector<render_image_ref>{
+            render_image_ref{.uri = "   "},
+            render_image_ref{.uri = "asset://textures/bad.ppm"},
+        },
+        render_image_texture_batch_plan_options{.placeholder_policy = placeholder_policy});
+    const render_image_texture_batch_execution_diagnostics execution =
+        execute_render_image_texture_batch_plan(plan, pipeline);
+    const render_image_texture_frame_snapshot frame =
+        make_render_image_texture_frame_snapshot(plan, execution);
+    const render_image_texture_frame_binding_plan binding_plan =
+        make_render_image_texture_frame_binding_plan(frame);
+    const render_image_texture_upload_result_snapshot upload_result =
+        make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(uploader.diagnostic_snapshot());
+    const render_image_texture_frame_upload_handoff_summary handoff =
+        make_render_image_texture_frame_upload_handoff_summary(frame, binding_plan, upload_result);
+
+    require(!handoff.ok(), "frame upload handoff reports invalid request blocker");
+    require(!handoff.renderer_handoff_ready, "frame upload handoff is not renderer-ready with blocker");
+    require(handoff.frame_request_count == 2, "blocked handoff records frame request count");
+    require(handoff.binding_packet_count == 2, "blocked handoff records binding packet count");
+    require(handoff.upload_packet_count == 1, "blocked handoff records placeholder upload packet");
+    require(handoff.requested_texture_count == 2, "blocked handoff records current requested textures");
+    require(handoff.ready_texture_count == 0, "blocked handoff records no real ready textures");
+    require(handoff.placeholder_texture_count == 1, "blocked handoff records placeholder texture");
+    require(handoff.blocked_texture_count == 1, "blocked handoff records one blocked request");
+    require(handoff.missing_upload_result_count == 1, "blocked handoff records missing upload result");
+    require(handoff.uploaded_byte_count == 16, "blocked handoff records placeholder upload bytes");
+    require(handoff.total_mip_level_count == 1, "blocked handoff records placeholder mip level");
+    require(handoff.has_blockers, "blocked handoff has blockers");
+    require(handoff.has_placeholders, "blocked handoff has placeholder");
+    require(
+        handoff.diagnostic == "image frame upload handoff has blocked texture uploads",
+        "blocked frame upload handoff diagnostic is stable");
+    require(handoff.entries.size() == 2, "blocked handoff has one entry per binding packet");
+
+    const render_image_texture_frame_upload_handoff_entry& missing = handoff.entries[0];
+    require(!missing.ok(), "missing upload handoff entry is blocked");
+    require(
+        missing.status == render_image_texture_frame_upload_handoff_entry_status::missing_upload_result,
+        "missing upload handoff entry reports missing upload result");
+    require(missing.status_name == "missing_upload_result", "missing upload status name is stable");
+    require(missing.missing_upload_result, "missing upload entry carries missing flag");
+    require(missing.blocked, "missing upload entry carries blocked flag");
+    require(!missing.upload_result_present, "missing upload entry has no upload packet");
+    require(missing.render_image_uri == "   ", "missing upload entry preserves invalid uri");
+
+    const render_image_texture_frame_upload_handoff_entry& placeholder = handoff.entries[1];
+    require(placeholder.ok(), "placeholder upload handoff entry is acceptable");
+    require(
+        placeholder.status == render_image_texture_frame_upload_handoff_entry_status::placeholder,
+        "placeholder upload handoff status is stable");
+    require(placeholder.placeholder_texture, "placeholder upload handoff carries placeholder flag");
+    require(placeholder.upload_result_present, "placeholder upload handoff links upload result");
+    require(placeholder.uploaded_byte_count == 16, "placeholder upload handoff records uploaded bytes");
+    require(placeholder.mip_level_count == 1, "placeholder upload handoff records mip level");
+    require(is_fake_image_texture_placeholder_key(placeholder.texture_key), "placeholder handoff keeps placeholder key");
+
+    const render_image_texture_frame_binding_payload_evidence_summary binding_evidence =
+        make_render_image_texture_frame_binding_payload_evidence_summary(binding_plan, handoff);
+    require(!binding_evidence.ok(), "binding payload evidence reports missing upload blockers");
+    require(binding_evidence.binding_packet_count == 2, "blocked binding payload evidence records binding count");
+    require(binding_evidence.evidence_entry_count == 2, "blocked binding payload evidence records entries");
+    require(binding_evidence.placeholder_payload_count == 1, "blocked binding payload evidence records placeholder");
+    require(
+        binding_evidence.missing_upload_result_count == 1,
+        "blocked binding payload evidence records missing upload");
+    require(binding_evidence.failed_binding_count == 0, "missing upload is classified before binding failure");
+    require(binding_evidence.rejected_upload_count == 0, "placeholder evidence records no rejected upload");
+    require(binding_evidence.decoded_payload_hash_count == 1, "placeholder evidence records placeholder payload hash");
+    require(binding_evidence.accepted_upload_result_count == 1, "placeholder evidence records accepted placeholder");
+    require(binding_evidence.has_placeholders, "blocked binding payload evidence records placeholder aggregate");
+    require(
+        binding_evidence.has_missing_upload_results,
+        "blocked binding payload evidence records missing upload aggregate");
+    require(
+        binding_evidence.diagnostic == "image texture binding payload evidence has missing upload results",
+        "blocked binding payload evidence diagnostic is stable");
+
+    const render_image_texture_frame_binding_payload_evidence_entry& missing_evidence =
+        binding_evidence.entries[0];
+    require(
+        missing_evidence.status
+            == render_image_texture_frame_binding_payload_evidence_status::missing_upload_result,
+        "missing binding payload evidence status is stable");
+    require(missing_evidence.failed, "missing binding payload evidence preserves binding failure flag");
+    require(!missing_evidence.upload_result_present, "missing binding payload evidence records missing upload");
+
+    const render_image_texture_frame_binding_payload_evidence_entry& placeholder_evidence =
+        binding_evidence.entries[1];
+    require(placeholder_evidence.ok(), "placeholder binding payload evidence is acceptable");
+    require(
+        placeholder_evidence.status
+            == render_image_texture_frame_binding_payload_evidence_status::placeholder_payload,
+        "placeholder binding payload evidence status is stable");
+    require(placeholder_evidence.placeholder_texture, "placeholder binding payload evidence preserves placeholder");
+    require(
+        placeholder_evidence.upload_result_status
+            == render_image_texture_upload_result_packet_status::accepted_placeholder,
+        "placeholder binding payload evidence preserves upload result status");
+    require(
+        placeholder_evidence.upload_request_id == placeholder.upload_request_id,
+        "placeholder binding payload evidence preserves upload request id");
+    require(
+        placeholder_evidence.texture_id == placeholder.texture_id,
+        "placeholder binding payload evidence preserves texture id");
+    require(
+        placeholder_evidence.stable_texture_cache_key == placeholder.stable_texture_cache_key,
+        "placeholder binding payload evidence preserves cache key");
+    require(placeholder_evidence.uploaded_byte_count == 16, "placeholder evidence preserves uploaded bytes");
+    require(
+        placeholder_evidence.decoded_payload_hash == placeholder.decoded_payload.stable_byte_hash,
+        "placeholder evidence preserves decoded payload hash");
+}
+
+void test_texture_frame_upload_handoff_preserves_blocked_placeholder_retry_evidence()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_image_texture_placeholder_policy placeholder_policy{
+        .enabled = true,
+        .width = 2,
+        .height = 2,
+    };
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes("asset://textures/bad.ppm", make_short_ppm_2x1_fixture_bytes());
+    ppm_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    cache.set_placeholder_texture_policy(placeholder_policy);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
+
+    const render_image_texture_batch_plan plan = plan_render_image_texture_batch(
+        std::vector<render_image_ref>{render_image_ref{.uri = "asset://textures/bad.ppm"}},
+        render_image_texture_batch_plan_options{.placeholder_policy = placeholder_policy});
+    const render_image_texture_batch_execution_diagnostics execution =
+        execute_render_image_texture_batch_plan(plan, pipeline);
+    const render_image_texture_frame_snapshot frame =
+        make_render_image_texture_frame_snapshot(plan, execution);
+    render_image_texture_upload_result_snapshot upload_result =
+        make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(uploader.diagnostic_snapshot());
+    require(upload_result.packets.size() == 1, "blocked placeholder fixture has one upload result packet");
+
+    render_image_texture_upload_result_packet_snapshot& packet = upload_result.packets[0];
+    packet.status = render_image_texture_upload_result_packet_status::rejected_retryable;
+    packet.status_name = render_image_texture_upload_result_packet_status_name(packet.status);
+    packet.upload_status = render_image_texture_upload_status::invalid_image;
+    packet.upload_status_name = "invalid_image";
+    packet.accepted = false;
+    packet.rejected = true;
+    packet.blocked = true;
+    packet.retryable = true;
+    packet.nonretryable_failure = false;
+    packet.accepted_mip_level_count = 0;
+    packet.rejected_mip_level_count = packet.mip_level_count;
+    packet.uploaded_byte_count = 0;
+    packet.retry_eligibility_name = "eligible";
+    packet.attempt_count_for_key = 3;
+    packet.failed_attempt_count_for_key = 2;
+    packet.retry_after_queue_sequence_delta = 2;
+    packet.next_retry_sequence = 9;
+    packet.blocker_summary = "upload failed but can retry: invalid_image";
+
+    upload_result.accepted_packet_count = 0;
+    upload_result.rejected_packet_count = 1;
+    upload_result.retryable_rejected_packet_count = 1;
+    upload_result.blocker_count = 1;
+    upload_result.has_rejections = true;
+    upload_result.has_retryable_rejections = true;
+    upload_result.total_uploaded_byte_count = 0;
+    upload_result.accepted_mip_level_count = 0;
+    upload_result.rejected_mip_level_count = packet.mip_level_count;
+
+    const render_image_texture_frame_upload_handoff_summary handoff =
+        make_render_image_texture_frame_upload_handoff_summary(frame, upload_result);
+
+    require(!handoff.ok(), "blocked placeholder handoff is not ok");
+    require(handoff.has_blockers, "blocked placeholder handoff records blockers");
+    require(handoff.has_placeholders, "blocked placeholder handoff still records placeholder evidence");
+    require(handoff.has_retry_blockers, "blocked placeholder handoff records retry blocker evidence");
+    require(handoff.placeholder_texture_count == 1, "blocked placeholder handoff counts placeholder texture evidence");
+    require(handoff.blocked_texture_count == 1, "blocked placeholder handoff counts blocked upload");
+    require(handoff.retry_blocker_count == 1, "blocked placeholder handoff counts retry blocker");
+    require(handoff.uploaded_byte_count == 0, "blocked placeholder handoff records no accepted upload bytes");
+    require(
+        handoff.retry_blocker_summary == "upload failed but can retry: invalid_image",
+        "blocked placeholder retry blocker summary is stable");
+
+    const render_image_texture_frame_upload_handoff_entry& entry = handoff.entries[0];
+    require(
+        entry.status == render_image_texture_frame_upload_handoff_entry_status::blocked,
+        "blocked placeholder handoff entry uses blocked status");
+    require(entry.placeholder_texture, "blocked placeholder entry preserves placeholder flag");
+    require(entry.retryable_blocker, "blocked placeholder entry preserves retryable flag");
+    require(entry.retry_eligibility_name == "eligible", "blocked placeholder entry carries retry eligibility");
+    require(entry.attempt_count_for_key == 3, "blocked placeholder entry carries attempt count");
+    require(entry.failed_attempt_count_for_key == 2, "blocked placeholder entry carries failed attempt count");
+    require(entry.retry_after_queue_sequence_delta == 2, "blocked placeholder entry carries retry backoff delta");
+    require(entry.next_retry_sequence == 9, "blocked placeholder entry carries next retry sequence");
+    require(entry.blocker_summary == "upload failed but can retry: invalid_image", "blocked placeholder entry carries blocker summary");
+}
+
+void test_texture_frame_upload_handoff_distinguishes_missing_upload_and_missing_binding()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes("asset://textures/card.ppm", make_ppm_2x1_fixture_bytes());
+    ppm_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
+
+    const render_image_texture_batch_plan plan = plan_render_image_texture_batch(std::vector<render_image_ref>{
+        render_image_ref{.uri = "asset://textures/card.ppm"},
+    });
+    const render_image_texture_batch_execution_diagnostics execution =
+        execute_render_image_texture_batch_plan(plan, pipeline);
+    const render_image_texture_frame_snapshot frame =
+        make_render_image_texture_frame_snapshot(plan, execution);
+    const render_image_texture_upload_result_snapshot upload_result =
+        make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(uploader.diagnostic_snapshot());
+
+    const render_image_texture_frame_upload_handoff_summary missing_upload =
+        make_render_image_texture_frame_upload_handoff_summary(frame, render_image_texture_upload_result_snapshot{});
+    require(!missing_upload.ok(), "missing upload result handoff is blocked");
+    require(missing_upload.blocked_texture_count == 1, "missing upload result handoff counts blocker");
+    require(missing_upload.missing_upload_result_count == 1, "missing upload result handoff has missing upload category");
+    require(missing_upload.missing_frame_binding_count == 0, "missing upload result handoff does not report missing binding");
+    require(missing_upload.entries.size() == 1, "missing upload result handoff keeps binding entry");
+    require(
+        missing_upload.entries[0].status
+            == render_image_texture_frame_upload_handoff_entry_status::missing_upload_result,
+        "missing upload result entry status is distinct");
+
+    const render_image_texture_frame_upload_handoff_summary missing_binding =
+        make_render_image_texture_frame_upload_handoff_summary(
+            render_image_texture_frame_snapshot{},
+            upload_result);
+    require(!missing_binding.ok(), "missing frame binding handoff is not renderer-ready for empty frame");
+    require(missing_binding.requested_texture_count == 0, "missing frame binding handoff does not count a frame request");
+    require(missing_binding.blocked_texture_count == 0, "missing frame binding handoff is not a frame blocker");
+    require(missing_binding.missing_upload_result_count == 0, "missing frame binding handoff does not report missing upload");
+    require(missing_binding.missing_frame_binding_count == 1, "missing frame binding handoff counts orphan upload packet");
+    require(missing_binding.entries.size() == 1, "missing frame binding handoff creates orphan upload entry");
+    require(
+        missing_binding.entries[0].status
+            == render_image_texture_frame_upload_handoff_entry_status::missing_frame_binding,
+        "missing frame binding entry status is distinct");
+    require(missing_binding.entries[0].upload_result_present, "missing frame binding entry carries upload result");
+    require(!missing_binding.entries[0].requested, "missing frame binding entry is not a frame request");
+    require(
+        missing_binding.diagnostic == "image frame upload handoff has upload results without frame bindings",
+        "missing frame binding diagnostic is stable");
+    require(
+        !render_image_texture_frame_upload_handoff_entry_status_is_blocked(
+            render_image_texture_frame_upload_handoff_entry_status::missing_frame_binding),
+        "missing frame binding status is not a current-frame blocker");
+}
+
+void test_texture_frame_upload_handoff_diff_reports_cache_key_and_sampler_changes()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+
+    fake_image_source_bytes_loader before_loader;
+    before_loader.set_source_bytes("asset://textures/card.ppm", make_ppm_2x1_fixture_bytes());
+    ppm_image_decoder before_decoder;
+    fake_image_texture_uploader before_uploader;
+    fake_image_texture_cache before_cache(before_decoder, before_uploader);
+    fake_image_texture_pipeline before_pipeline(resolver, before_loader, before_cache, before_uploader);
+
+    const render_image_texture_batch_plan before_plan = plan_render_image_texture_batch(std::vector<render_image_ref>{
+        render_image_ref{.uri = "asset://textures/card.ppm"},
+    });
+    const render_image_texture_batch_execution_diagnostics before_execution =
+        execute_render_image_texture_batch_plan(before_plan, before_pipeline);
+    const render_image_texture_frame_snapshot before_frame =
+        make_render_image_texture_frame_snapshot(before_plan, before_execution);
+    const render_image_texture_frame_upload_handoff_summary before_handoff =
+        make_render_image_texture_frame_upload_handoff_summary(
+            before_frame,
+            make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(
+                before_uploader.diagnostic_snapshot()));
+
+    render_image_sampler_policy nearest_sampler;
+    nearest_sampler.min_filter = render_image_filter::nearest;
+    nearest_sampler.mag_filter = render_image_filter::nearest;
+
+    fake_image_source_bytes_loader after_loader;
+    after_loader.set_source_bytes("asset://textures/card.ppm", make_ppm_2x1_fixture_bytes());
+    ppm_image_decoder after_decoder;
+    fake_image_texture_uploader after_uploader;
+    fake_image_texture_cache after_cache(after_decoder, after_uploader);
+    fake_image_texture_pipeline after_pipeline(resolver, after_loader, after_cache, after_uploader);
+
+    const render_image_texture_batch_plan after_plan = plan_render_image_texture_batch(std::vector<render_image_ref>{
+        render_image_ref{.uri = "asset://textures/card.ppm", .sampler = nearest_sampler},
+    });
+    const render_image_texture_batch_execution_diagnostics after_execution =
+        execute_render_image_texture_batch_plan(after_plan, after_pipeline);
+    const render_image_texture_frame_snapshot after_frame =
+        make_render_image_texture_frame_snapshot(after_plan, after_execution);
+    const render_image_texture_frame_upload_handoff_summary after_handoff =
+        make_render_image_texture_frame_upload_handoff_summary(
+            after_frame,
+            make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(
+                after_uploader.diagnostic_snapshot()));
+
+    const render_image_texture_frame_upload_handoff_summary_diff diff =
+        diff_render_image_texture_frame_upload_handoff_summaries(before_handoff, after_handoff);
+
+    require(diff.ok(), "sampler handoff diff changes without regression");
+    require(diff.has_changes, "sampler handoff diff records changes");
+    require(!diff.has_regression, "sampler handoff diff records no regression");
+    require(diff.changed_entry_count == 1, "sampler handoff diff counts changed entry");
+    require(diff.cache_key_changed_count == 1, "sampler handoff diff counts texture cache key change");
+    require(diff.sampler_changed_count == 1, "sampler handoff diff counts sampler policy change");
+    require(diff.entries.size() == 1, "sampler handoff diff keeps one entry");
+
+    const render_image_texture_frame_upload_handoff_entry_diff& entry = diff.entries[0];
+    require(
+        entry.status == render_image_texture_frame_upload_handoff_diff_entry_status::changed,
+        "sampler handoff diff entry status is changed");
+    require(entry.cache_key_changed, "sampler handoff diff entry records stable cache-key change");
+    require(entry.sampler_changed, "sampler handoff diff entry records sampler change");
+    require(!entry.blocker_changed, "sampler handoff diff entry has no blocker change");
+    require(!entry.placeholder_changed, "sampler handoff diff entry has no placeholder change");
+    require(!entry.regression, "sampler handoff diff entry has no regression");
+    require(entry.before_stable_texture_cache_key != entry.after_stable_texture_cache_key, "sampler handoff diff changes stable texture key");
+    require(entry.before_sampler_summary != entry.after_sampler_summary, "sampler handoff diff changes sampler summary");
+}
+
+void test_texture_frame_binding_summary_reports_ready_reuse_and_placeholder_states()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader ready_loader;
+    ready_loader.set_source_bytes("asset://textures/card.ppm", make_ppm_2x1_fixture_bytes());
+    ppm_image_decoder ready_decoder;
+    fake_image_texture_uploader ready_uploader;
+    fake_image_texture_cache ready_cache(ready_decoder, ready_uploader);
+    fake_image_texture_pipeline ready_pipeline(resolver, ready_loader, ready_cache, ready_uploader);
+
+    const render_image_texture_batch_plan ready_plan = plan_render_image_texture_batch(std::vector<render_image_ref>{
+        render_image_ref{.uri = "asset://textures/card.ppm"},
+        render_image_ref{.uri = "  ASSET:///textures\\card.ppm  "},
+    });
+    const render_image_texture_batch_execution_diagnostics ready_execution =
+        execute_render_image_texture_batch_plan(ready_plan, ready_pipeline);
+    const render_image_texture_frame_snapshot ready_frame =
+        make_render_image_texture_frame_snapshot(ready_plan, ready_execution);
+    const render_image_texture_frame_binding_summary ready_summary =
+        make_render_image_texture_frame_binding_summary(
+            make_render_image_texture_frame_upload_handoff_summary(
+                ready_frame,
+                make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(
+                    ready_uploader.diagnostic_snapshot())));
+
+    require(ready_summary.ok(), "ready binding summary is ok");
+    require(
+        ready_summary.status == render_image_texture_frame_binding_summary_status::fully_upload_backed,
+        "ready binding summary status is fully upload-backed");
+    require(ready_summary.status_name == "fully_upload_backed", "ready binding summary status name is stable");
+    require(ready_summary.fully_upload_backed, "ready binding summary records fully upload-backed state");
+    require(ready_summary.requested_texture_count == 2, "ready binding summary records requested refs");
+    require(ready_summary.upload_backed_count == 2, "ready binding summary counts upload-backed refs");
+    require(ready_summary.placeholder_backed_count == 0, "ready binding summary records no placeholders");
+    require(ready_summary.cache_reused, "ready binding summary records cache reuse");
+    require(ready_summary.cache_reused_count == 1, "ready binding summary counts cache reuse");
+    require(
+        ready_summary.diagnostic == "image frame binding summary is fully upload-backed",
+        "ready binding summary diagnostic is stable");
+
+    fake_image_texture_placeholder_policy placeholder_policy{
+        .enabled = true,
+        .width = 2,
+        .height = 2,
+    };
+    fake_image_source_bytes_loader placeholder_loader;
+    placeholder_loader.set_source_bytes("asset://textures/bad.ppm", make_short_ppm_2x1_fixture_bytes());
+    ppm_image_decoder placeholder_decoder;
+    fake_image_texture_uploader placeholder_uploader;
+    fake_image_texture_cache placeholder_cache(placeholder_decoder, placeholder_uploader);
+    placeholder_cache.set_placeholder_texture_policy(placeholder_policy);
+    fake_image_texture_pipeline placeholder_pipeline(resolver, placeholder_loader, placeholder_cache, placeholder_uploader);
+
+    const render_image_texture_batch_plan placeholder_plan = plan_render_image_texture_batch(
+        std::vector<render_image_ref>{render_image_ref{.uri = "asset://textures/bad.ppm"}},
+        render_image_texture_batch_plan_options{.placeholder_policy = placeholder_policy});
+    const render_image_texture_batch_execution_diagnostics placeholder_execution =
+        execute_render_image_texture_batch_plan(placeholder_plan, placeholder_pipeline);
+    const render_image_texture_frame_snapshot placeholder_frame =
+        make_render_image_texture_frame_snapshot(placeholder_plan, placeholder_execution);
+    const render_image_texture_frame_binding_summary placeholder_summary =
+        make_render_image_texture_frame_binding_summary(
+            make_render_image_texture_frame_upload_handoff_summary(
+                placeholder_frame,
+                make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(
+                    placeholder_uploader.diagnostic_snapshot())));
+
+    require(placeholder_summary.ok(), "placeholder binding summary is ok");
+    require(
+        placeholder_summary.status == render_image_texture_frame_binding_summary_status::placeholder_backed,
+        "placeholder binding summary status is placeholder-backed");
+    require(placeholder_summary.placeholder_backed, "placeholder binding summary records placeholder-backed state");
+    require(!placeholder_summary.fully_upload_backed, "placeholder binding summary is not fully upload-backed");
+    require(placeholder_summary.requested_texture_count == 1, "placeholder binding summary records requested ref");
+    require(placeholder_summary.upload_backed_count == 0, "placeholder binding summary records no real upload-backed refs");
+    require(placeholder_summary.placeholder_backed_count == 1, "placeholder binding summary counts placeholder-backed ref");
+    require(
+        placeholder_summary.diagnostic == "image frame binding summary is placeholder-backed",
+        "placeholder binding summary diagnostic is stable");
+}
+
+void test_texture_frame_binding_summary_reports_missing_and_retry_states()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes("asset://textures/card.ppm", make_ppm_2x1_fixture_bytes());
+    ppm_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
+
+    const render_image_texture_batch_plan plan = plan_render_image_texture_batch(std::vector<render_image_ref>{
+        render_image_ref{.uri = "asset://textures/card.ppm"},
+    });
+    const render_image_texture_batch_execution_diagnostics execution =
+        execute_render_image_texture_batch_plan(plan, pipeline);
+    const render_image_texture_frame_snapshot frame =
+        make_render_image_texture_frame_snapshot(plan, execution);
+    const render_image_texture_upload_result_snapshot upload_result =
+        make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(uploader.diagnostic_snapshot());
+
+    const render_image_texture_frame_binding_summary missing_upload_summary =
+        make_render_image_texture_frame_binding_summary(
+            make_render_image_texture_frame_upload_handoff_summary(
+                frame,
+                render_image_texture_upload_result_snapshot{}));
+    require(
+        missing_upload_summary.status == render_image_texture_frame_binding_summary_status::missing_upload_result,
+        "binding summary reports missing upload result status");
+    require(missing_upload_summary.missing_upload_result, "binding summary records missing upload result flag");
+    require(missing_upload_summary.missing_upload_result_count == 1, "binding summary counts missing upload result");
+    require(!missing_upload_summary.ok(), "missing upload result binding summary is not ok");
+
+    const render_image_texture_frame_binding_summary missing_binding_summary =
+        make_render_image_texture_frame_binding_summary(
+            make_render_image_texture_frame_upload_handoff_summary(
+                render_image_texture_frame_snapshot{},
+                upload_result));
+    require(
+        missing_binding_summary.status == render_image_texture_frame_binding_summary_status::missing_frame_binding,
+        "binding summary reports missing frame binding status");
+    require(missing_binding_summary.missing_frame_binding, "binding summary records missing frame binding flag");
+    require(missing_binding_summary.missing_frame_binding_count == 1, "binding summary counts missing frame binding");
+    require(missing_binding_summary.requested_texture_count == 0, "missing frame binding summary has no requested refs");
+    require(!missing_binding_summary.ok(), "missing frame binding summary is not ok");
+
+    fake_image_texture_placeholder_policy placeholder_policy{
+        .enabled = true,
+        .width = 2,
+        .height = 2,
+    };
+    fake_image_source_bytes_loader retry_loader;
+    retry_loader.set_source_bytes("asset://textures/bad.ppm", make_short_ppm_2x1_fixture_bytes());
+    ppm_image_decoder retry_decoder;
+    fake_image_texture_uploader retry_uploader;
+    fake_image_texture_cache retry_cache(retry_decoder, retry_uploader);
+    retry_cache.set_placeholder_texture_policy(placeholder_policy);
+    fake_image_texture_pipeline retry_pipeline(resolver, retry_loader, retry_cache, retry_uploader);
+
+    const render_image_texture_batch_plan retry_plan = plan_render_image_texture_batch(
+        std::vector<render_image_ref>{render_image_ref{.uri = "asset://textures/bad.ppm"}},
+        render_image_texture_batch_plan_options{.placeholder_policy = placeholder_policy});
+    const render_image_texture_batch_execution_diagnostics retry_execution =
+        execute_render_image_texture_batch_plan(retry_plan, retry_pipeline);
+    const render_image_texture_frame_snapshot retry_frame =
+        make_render_image_texture_frame_snapshot(retry_plan, retry_execution);
+    render_image_texture_upload_result_snapshot retry_upload_result =
+        make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(retry_uploader.diagnostic_snapshot());
+
+    render_image_texture_upload_result_packet_snapshot& retry_packet = retry_upload_result.packets[0];
+    retry_packet.status = render_image_texture_upload_result_packet_status::rejected_retryable;
+    retry_packet.status_name = render_image_texture_upload_result_packet_status_name(retry_packet.status);
+    retry_packet.accepted = false;
+    retry_packet.rejected = true;
+    retry_packet.blocked = true;
+    retry_packet.retryable = true;
+    retry_packet.uploaded_byte_count = 0;
+    retry_packet.retry_eligibility_name = "eligible";
+    retry_packet.retry_after_queue_sequence_delta = 3;
+    retry_packet.next_retry_sequence = 11;
+    retry_packet.blocker_summary = "upload failed but can retry: invalid_image";
+    retry_upload_result.accepted_packet_count = 0;
+    retry_upload_result.rejected_packet_count = 1;
+    retry_upload_result.retryable_rejected_packet_count = 1;
+    retry_upload_result.blocker_count = 1;
+    retry_upload_result.has_rejections = true;
+    retry_upload_result.has_retryable_rejections = true;
+    retry_upload_result.total_uploaded_byte_count = 0;
+
+    const render_image_texture_frame_binding_summary retry_summary =
+        make_render_image_texture_frame_binding_summary(
+            make_render_image_texture_frame_upload_handoff_summary(retry_frame, retry_upload_result));
+    require(
+        retry_summary.status == render_image_texture_frame_binding_summary_status::retry_backoff_blocked,
+        "binding summary reports retry backoff blocked status");
+    require(retry_summary.retry_backoff_blocked, "binding summary records retry backoff flag");
+    require(retry_summary.retry_backoff_blocked_count == 1, "binding summary counts retry blocker");
+    require(retry_summary.placeholder_backed_count == 1, "retry binding summary preserves placeholder evidence");
+    require(retry_summary.placeholder_backed, "retry binding summary records placeholder evidence");
+    require(retry_summary.max_retry_after_queue_sequence_delta == 3, "binding summary records retry backoff delta");
+    require(retry_summary.next_retry_sequence == 11, "binding summary records next retry sequence");
+    require(
+        retry_summary.retry_backoff_summary == "upload failed but can retry: invalid_image",
+        "binding summary retry summary is stable");
+    require(!retry_summary.ok(), "retry blocked binding summary is not ok");
+}
+
+void test_texture_frame_binding_summary_diff_reports_sampler_and_cache_key_changes()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader before_loader;
+    before_loader.set_source_bytes("asset://textures/card.ppm", make_ppm_2x1_fixture_bytes());
+    ppm_image_decoder before_decoder;
+    fake_image_texture_uploader before_uploader;
+    fake_image_texture_cache before_cache(before_decoder, before_uploader);
+    fake_image_texture_pipeline before_pipeline(resolver, before_loader, before_cache, before_uploader);
+
+    const render_image_texture_batch_plan before_plan = plan_render_image_texture_batch(std::vector<render_image_ref>{
+        render_image_ref{.uri = "asset://textures/card.ppm"},
+    });
+    const render_image_texture_batch_execution_diagnostics before_execution =
+        execute_render_image_texture_batch_plan(before_plan, before_pipeline);
+    const render_image_texture_frame_snapshot before_frame =
+        make_render_image_texture_frame_snapshot(before_plan, before_execution);
+    const render_image_texture_frame_binding_summary before_summary =
+        make_render_image_texture_frame_binding_summary(
+            make_render_image_texture_frame_upload_handoff_summary(
+                before_frame,
+                make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(
+                    before_uploader.diagnostic_snapshot())));
+
+    render_image_sampler_policy nearest_sampler;
+    nearest_sampler.min_filter = render_image_filter::nearest;
+    nearest_sampler.mag_filter = render_image_filter::nearest;
+
+    fake_image_source_bytes_loader after_loader;
+    after_loader.set_source_bytes("asset://textures/card.ppm", make_ppm_2x1_fixture_bytes());
+    ppm_image_decoder after_decoder;
+    fake_image_texture_uploader after_uploader;
+    fake_image_texture_cache after_cache(after_decoder, after_uploader);
+    fake_image_texture_pipeline after_pipeline(resolver, after_loader, after_cache, after_uploader);
+
+    const render_image_texture_batch_plan after_plan = plan_render_image_texture_batch(std::vector<render_image_ref>{
+        render_image_ref{.uri = "asset://textures/card.ppm", .sampler = nearest_sampler},
+    });
+    const render_image_texture_batch_execution_diagnostics after_execution =
+        execute_render_image_texture_batch_plan(after_plan, after_pipeline);
+    const render_image_texture_frame_snapshot after_frame =
+        make_render_image_texture_frame_snapshot(after_plan, after_execution);
+    const render_image_texture_frame_binding_summary after_summary =
+        make_render_image_texture_frame_binding_summary(
+            make_render_image_texture_frame_upload_handoff_summary(
+                after_frame,
+                make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(
+                    after_uploader.diagnostic_snapshot())));
+
+    const render_image_texture_frame_binding_summary_diff diff =
+        diff_render_image_texture_frame_binding_summaries(before_summary, after_summary);
+
+    require(diff.ok(), "binding summary diff with sampler change is ok");
+    require(diff.has_changes, "binding summary diff records changes");
+    require(!diff.has_regression, "binding summary diff records no regression");
+    require(!diff.status_changed, "binding summary status is unchanged");
+    require(diff.cache_key_summary_changed, "binding summary diff records cache-key change");
+    require(diff.sampler_summary_changed, "binding summary diff records sampler change");
+    require(diff.cache_key_or_sampler_changed, "binding summary diff records combined key/sampler change");
+    require(diff.upload_backed_delta == 0, "binding summary diff records stable upload-backed count");
+    require(
+        diff.changed_summary == "cache keys changed; samplers changed",
+        "binding summary diff changed summary is stable");
+    require(
+        diff.diagnostic == "image frame binding summary diff reports changes",
+        "binding summary diff diagnostic is stable");
+}
+
+void test_texture_frame_upload_handoff_diff_reports_frame_to_frame_evidence()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+
+    fake_image_source_bytes_loader ready_loader;
+    ready_loader.set_source_bytes("asset://textures/card.ppm", make_ppm_2x1_fixture_bytes());
+    ppm_image_decoder ready_decoder;
+    fake_image_texture_uploader ready_uploader;
+    fake_image_texture_cache ready_cache(ready_decoder, ready_uploader);
+    fake_image_texture_pipeline ready_pipeline(resolver, ready_loader, ready_cache, ready_uploader);
+    const render_image_texture_batch_plan ready_plan = plan_render_image_texture_batch(std::vector<render_image_ref>{
+        render_image_ref{.uri = "asset://textures/card.ppm"},
+    });
+    const render_image_texture_batch_execution_diagnostics ready_execution =
+        execute_render_image_texture_batch_plan(ready_plan, ready_pipeline);
+    const render_image_texture_frame_snapshot ready_frame =
+        make_render_image_texture_frame_snapshot(ready_plan, ready_execution);
+    const render_image_texture_frame_upload_handoff_summary ready_handoff =
+        make_render_image_texture_frame_upload_handoff_summary(
+            ready_frame,
+            make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(
+                ready_uploader.diagnostic_snapshot()));
+
+    fake_image_texture_placeholder_policy placeholder_policy{
+        .enabled = true,
+        .width = 2,
+        .height = 2,
+    };
+    fake_image_source_bytes_loader partial_loader;
+    partial_loader.set_source_bytes("asset://textures/bad.ppm", make_short_ppm_2x1_fixture_bytes());
+    ppm_image_decoder partial_decoder;
+    fake_image_texture_uploader partial_uploader;
+    fake_image_texture_cache partial_cache(partial_decoder, partial_uploader);
+    partial_cache.set_placeholder_texture_policy(placeholder_policy);
+    fake_image_texture_pipeline partial_pipeline(resolver, partial_loader, partial_cache, partial_uploader);
+    const render_image_texture_batch_plan partial_plan = plan_render_image_texture_batch(
+        std::vector<render_image_ref>{
+            render_image_ref{.uri = "   "},
+            render_image_ref{.uri = "asset://textures/bad.ppm"},
+        },
+        render_image_texture_batch_plan_options{.placeholder_policy = placeholder_policy});
+    const render_image_texture_batch_execution_diagnostics partial_execution =
+        execute_render_image_texture_batch_plan(partial_plan, partial_pipeline);
+    const render_image_texture_frame_snapshot partial_frame =
+        make_render_image_texture_frame_snapshot(partial_plan, partial_execution);
+    const render_image_texture_frame_upload_handoff_summary partial_handoff =
+        make_render_image_texture_frame_upload_handoff_summary(
+            ready_frame,
+            partial_frame,
+            make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(
+                partial_uploader.diagnostic_snapshot()));
+
+    require(!partial_handoff.ok(), "partial handoff is blocked before diffing");
+    require(partial_handoff.has_frame_delta, "partial handoff carries frame delta evidence");
+    require(partial_handoff.added_in_frame_count == 1, "partial handoff records added frame request");
+    require(partial_handoff.changed_in_frame_count == 1, "partial handoff records changed frame request");
+    require(partial_handoff.readiness_changed_count == 2, "partial handoff records readiness changes");
+    require(partial_handoff.readiness_regressed_count == 1, "partial handoff records readiness regression");
+    require(
+        partial_handoff.frame_delta_summary == "added=1; changed=1; removed=0; readiness_changed=2",
+        "partial handoff frame delta summary is stable");
+
+    const render_image_texture_frame_upload_handoff_summary_diff diff =
+        diff_render_image_texture_frame_upload_handoff_summaries(ready_handoff, partial_handoff);
+
+    require(!diff.ok(), "frame upload handoff diff records regression");
+    require(diff.has_changes, "frame upload handoff diff records changes");
+    require(diff.has_regression, "frame upload handoff diff records regression");
+    require(diff.before_requested_texture_count == 1, "handoff diff records before request count");
+    require(diff.after_requested_texture_count == 2, "handoff diff records after request count");
+    require(diff.requested_texture_delta == 1, "handoff diff records request delta");
+    require(diff.before_ready_texture_count == 1, "handoff diff records before ready count");
+    require(diff.after_ready_texture_count == 0, "handoff diff records after ready count");
+    require(diff.ready_texture_delta == -1, "handoff diff records ready regression delta");
+    require(diff.placeholder_texture_delta == 1, "handoff diff records placeholder delta");
+    require(diff.blocked_texture_delta == 1, "handoff diff records blocked delta");
+    require(diff.uploaded_byte_delta == 8, "handoff diff records uploaded byte delta");
+    require(diff.added_entry_count == 1, "handoff diff records added entry");
+    require(diff.changed_entry_count == 1, "handoff diff records changed entry");
+    require(diff.readiness_regressed_count == 1, "handoff diff records readiness regression count");
+    require(diff.placeholder_changed_count == 1, "handoff diff records placeholder change count");
+    require(diff.blocker_changed_count == 1, "handoff diff records blocker change count");
+    require(diff.renderer_handoff_regressed, "handoff diff records renderer handoff regression");
+    require(
+        diff.regression_summary
+            == "upload handoff regressed; ready uploads decreased; blocked uploads increased; "
+               "placeholder uploads increased",
+        "handoff diff regression summary is concise and stable");
+    require(
+        diff.diagnostic == "image frame upload handoff diff reports regressions",
+        "handoff diff diagnostic is stable");
+    require(diff.entries.size() == 2, "handoff diff has one entry per changed request index");
+
+    const render_image_texture_frame_upload_handoff_entry_diff& blocked = diff.entries[0];
+    require(
+        blocked.status == render_image_texture_frame_upload_handoff_diff_entry_status::changed,
+        "blocked handoff diff entry records changed status");
+    require(blocked.readiness_regressed, "blocked handoff diff entry records readiness regression");
+    require(blocked.blocker_changed, "blocked handoff diff entry records blocker change");
+    require(blocked.cache_key_changed, "blocked handoff diff entry records cache key change");
+    require(blocked.regression, "blocked handoff diff entry records regression");
+
+    const render_image_texture_frame_upload_handoff_entry_diff& added = diff.entries[1];
+    require(
+        added.status == render_image_texture_frame_upload_handoff_diff_entry_status::added,
+        "added handoff diff entry records added status");
+    require(added.placeholder_changed, "added handoff diff entry records placeholder delta");
+    require(added.uploaded_byte_changed, "added handoff diff entry records uploaded byte delta");
+    require(added.regression, "added handoff diff entry treats added placeholder as regression evidence");
+}
+
 } // namespace
 
 int main()
 {
     test_filesystem_pipeline_reads_ppm_fixture_and_reuses_cache();
+    test_filesystem_pipeline_routes_real_jpeg_through_stb_upload_handoff();
     test_filesystem_pipeline_reports_missing_file_source_load_failed();
     test_filesystem_pipeline_reports_empty_file_source_load_failed();
     test_filesystem_pipeline_reports_malformed_ppm_decode_failed();
+    test_upload_readiness_reports_decode_handoff_metadata();
     test_pipeline_uses_optional_third_party_decoder_through_interface();
     test_optional_adapter_failure_falls_back_before_texture_upload();
     test_unavailable_optional_adapter_keeps_diagnostics_without_upload();
-    test_stb_selection_preserves_internal_bmp_decoder_diagnostics();
+    test_stb_selection_prefers_adapter_for_bmp_when_available();
     test_stb_selection_missing_and_mismatched_fallback_diagnostics_reach_pipeline();
     test_stb_selection_survives_placeholder_fallback();
-    test_external_decoder_selection_diff_reports_adapter_internal_and_placeholder_states();
+    test_external_decoder_selection_diff_reports_adapter_format_and_placeholder_states();
     test_external_decoder_selection_diff_reports_missing_and_version_mismatch_fallbacks();
     test_pipeline_decoder_manifest_reports_placeholder_outcome();
     test_batch_plan_normalizes_and_deduplicates_texture_requests();
@@ -2598,5 +3941,14 @@ int main()
     test_texture_frame_binding_plan_reports_frame_deltas_and_failures();
     test_texture_frame_binding_plan_diff_reports_unchanged_bindings();
     test_texture_frame_binding_plan_diff_reports_binding_deltas();
+    test_texture_frame_upload_handoff_links_bindings_to_upload_results();
+    test_texture_frame_upload_handoff_reports_placeholders_and_blockers();
+    test_texture_frame_upload_handoff_preserves_blocked_placeholder_retry_evidence();
+    test_texture_frame_upload_handoff_distinguishes_missing_upload_and_missing_binding();
+    test_texture_frame_upload_handoff_diff_reports_cache_key_and_sampler_changes();
+    test_texture_frame_binding_summary_reports_ready_reuse_and_placeholder_states();
+    test_texture_frame_binding_summary_reports_missing_and_retry_states();
+    test_texture_frame_binding_summary_diff_reports_sampler_and_cache_key_changes();
+    test_texture_frame_upload_handoff_diff_reports_frame_to_frame_evidence();
     return 0;
 }

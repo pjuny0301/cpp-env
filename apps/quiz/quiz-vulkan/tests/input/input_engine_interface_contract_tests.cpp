@@ -1,10 +1,14 @@
 #include "core/input/gesture_recognizer.h"
+#include "core/input/input_action_candidate_plan.h"
 #include "core/input/input_routing_diagnostics.h"
 #include "core/input/input_engine.h"
 #include "core/input/normalized_input_replay_diff.h"
 #include "core/input/normalized_input_replay.h"
 #include "core/input/platform_input_engine_adapter.h"
+#include "core/input/platform_input_replay.h"
 #include "core/input/platform_input_translator.h"
+#include "core/input/text_edit_transaction_diagnostics.h"
+#include "core/input/text_edit_transaction_replay.h"
 #include "core/input/text_input_model.h"
 #include "core/input/text_input_presentation.h"
 #include "platform/platform_input_event.h"
@@ -141,6 +145,206 @@ concept PlatformInputEngineAdapterFunctions = requires(
         -> std::same_as<input::platform_input_dispatch_result>;
     { input::translate_and_dispatch_platform_input_batch(engine, translator, requests) }
         -> std::same_as<input::platform_input_dispatch_batch_result>;
+};
+
+template <typename T>
+concept PlatformInputReplayStepInterface = requires(T step) {
+    { step.label } -> std::same_as<std::string&>;
+    { step.action } -> std::same_as<input::platform_input_replay_action&>;
+};
+
+template <typename T>
+concept PlatformInputReplayOptionsInterface = requires(T options) {
+    { options.initial_focus_target_id } -> std::same_as<std::string&>;
+};
+
+template <typename T>
+concept PlatformInputReplayEventCountsInterface = requires(T counts) {
+    { counts.pointer } -> std::same_as<std::size_t&>;
+    { counts.mouse } -> std::same_as<std::size_t&>;
+    { counts.touch } -> std::same_as<std::size_t&>;
+    { counts.wheel } -> std::same_as<std::size_t&>;
+    { counts.key } -> std::same_as<std::size_t&>;
+    { counts.character } -> std::same_as<std::size_t&>;
+    { counts.focus } -> std::same_as<std::size_t&>;
+    { counts.ime } -> std::same_as<std::size_t&>;
+    { counts.time_update } -> std::same_as<std::size_t&>;
+    { counts.total } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
+concept PlatformInputReplayRejectionCountsInterface = requires(T counts) {
+    { counts.invalid_timestamp } -> std::same_as<std::size_t&>;
+    { counts.invalid_pointer_id } -> std::same_as<std::size_t&>;
+    { counts.invalid_coordinates } -> std::same_as<std::size_t&>;
+    { counts.invalid_wheel_delta } -> std::same_as<std::size_t&>;
+    { counts.invalid_key } -> std::same_as<std::size_t&>;
+    { counts.empty_text } -> std::same_as<std::size_t&>;
+    { counts.invalid_utf8 } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
+concept PlatformInputReplayTranslationCountsInterface = requires(T counts) {
+    { counts.total } -> std::same_as<std::size_t&>;
+    { counts.accepted } -> std::same_as<std::size_t&>;
+    { counts.rejected } -> std::same_as<std::size_t&>;
+    { counts.emitted_event } -> std::same_as<std::size_t&>;
+    { counts.dispatched_to_engine } -> std::same_as<std::size_t&>;
+    { counts.rejected_without_side_effect } -> std::same_as<std::size_t&>;
+    { counts.rejections } -> std::same_as<input::platform_input_replay_rejection_counts&>;
+};
+
+template <typename T>
+concept PlatformInputReplayStepDiagnosticsInterface = requires(T diagnostics) {
+    { diagnostics.label } -> std::same_as<std::string&>;
+    { diagnostics.source } -> std::same_as<input::platform_input_replay_source_kind&>;
+    { diagnostics.has_translation } -> std::same_as<bool&>;
+    { diagnostics.translation } -> std::same_as<input::platform_input_translation_diagnostic&>;
+    { diagnostics.dispatched_to_engine } -> std::same_as<bool&>;
+    { diagnostics.rejected_without_side_effect } -> std::same_as<bool&>;
+    { diagnostics.normalized_batch } -> std::same_as<input::normalized_input_replay_batch&>;
+    { diagnostics.before_presentation } -> std::same_as<input::text_input_presentation_snapshot&>;
+    { diagnostics.after_presentation } -> std::same_as<input::text_input_presentation_snapshot&>;
+    { diagnostics.text_presentation_diff } -> std::same_as<input::text_input_presentation_diff&>;
+    { diagnostics.produced_text_edit_transaction } -> std::same_as<bool&>;
+    { diagnostics.text_edit } -> std::same_as<input::text_edit_transaction_replay_step_diagnostics&>;
+};
+
+template <typename T>
+concept PlatformInputReplaySummaryInterface = requires(T summary) {
+    { summary.steps } -> std::same_as<std::vector<input::platform_input_replay_step_diagnostics>&>;
+    { summary.events } -> std::same_as<input::platform_input_replay_event_counts&>;
+    { summary.translations } -> std::same_as<input::platform_input_replay_translation_counts&>;
+    { summary.normalized } -> std::same_as<input::normalized_input_replay_recording&>;
+    { summary.text_edits } -> std::same_as<input::text_edit_transaction_replay_summary&>;
+    { summary.pointer } -> std::same_as<input::normalized_input_replay_pointer_summary&>;
+    { summary.gesture_policies } -> std::same_as<input::normalized_input_replay_gesture_policy_summary&>;
+    { summary.focus } -> std::same_as<input::normalized_input_replay_focus_summary&>;
+    { summary.ime } -> std::same_as<input::normalized_input_replay_ime_summary&>;
+    { summary.keyboard } -> std::same_as<input::normalized_input_replay_keyboard_summary&>;
+    { summary.route_summary } -> std::same_as<input::input_diagnostic_summary&>;
+    { summary.final_text_presentation } -> std::same_as<input::text_input_presentation_snapshot&>;
+};
+
+template <typename T>
+concept PlatformInputReplayEventCountDeltasInterface = requires(T deltas) {
+    { deltas.pointer } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.mouse } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.touch } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.wheel } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.key } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.character } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.focus } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.ime } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.time_update } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.total } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept PlatformInputReplayRejectionCountDeltasInterface = requires(T deltas) {
+    { deltas.invalid_timestamp } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.invalid_pointer_id } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.invalid_coordinates } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.invalid_wheel_delta } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.invalid_key } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.empty_text } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.invalid_utf8 } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept PlatformInputReplayTranslationCountDeltasInterface = requires(T deltas) {
+    { deltas.total } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.accepted } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.rejected } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.emitted_event } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.dispatched_to_engine } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.rejected_without_side_effect } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.rejections } -> std::same_as<input::platform_input_replay_rejection_count_deltas&>;
+    { deltas.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept PlatformInputReplayDiffInterface = requires(T diff) {
+    { diff.events } -> std::same_as<input::platform_input_replay_event_count_deltas&>;
+    { diff.translations } -> std::same_as<input::platform_input_replay_translation_count_deltas&>;
+    { diff.normalized } -> std::same_as<input::normalized_input_replay_diff&>;
+    { diff.text_edits } -> std::same_as<input::text_edit_transaction_replay_diff&>;
+    { diff.final_text_presentation } -> std::same_as<input::text_input_presentation_diff&>;
+    { diff.event_counts_changed } -> std::same_as<bool&>;
+    { diff.translation_counts_changed } -> std::same_as<bool&>;
+    { diff.normalized_changed } -> std::same_as<bool&>;
+    { diff.text_edit_changed } -> std::same_as<bool&>;
+    { diff.gesture_capture_focus_changed } -> std::same_as<bool&>;
+    { diff.final_text_presentation_changed } -> std::same_as<bool&>;
+    { diff.changed_category_count } -> std::same_as<std::size_t&>;
+    { diff.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept PlatformInputReplayFunctions = requires(
+    input::input_engine& engine,
+    const input::platform_input_translator& translator,
+    const input::platform_input_translation_request& request,
+    input::platform_input_replay_event_counts& event_counts,
+    input::platform_input_replay_rejection_counts& rejection_counts,
+    input::platform_input_replay_translation_counts& translation_counts,
+    const input::platform_input_translation_diagnostic& translation,
+    input::platform_input_replay_source_kind source,
+    input::action_route_policy_kind route_kind,
+    std::span<const input::action_route_policy_diagnostic> routes,
+    input::platform_input_replay_summary& summary,
+    input::platform_input_replay_step_diagnostics& step_diagnostics,
+    input::normalized_input_replay_recording& recording,
+    input::normalized_input_replay_batch batch,
+    const input::text_edit_transaction_diagnostics& transaction,
+    const input::text_input_presentation_snapshot& presentation,
+    const input::input_routing_diagnostics& routing,
+    const input::platform_input_replay_step& step,
+    std::span<const input::platform_input_replay_step> steps,
+    const input::platform_input_replay_options& options) {
+    { input::platform_input_replay_source_for(request) }
+        -> std::same_as<input::platform_input_replay_source_kind>;
+    { input::count_platform_input_replay_event(event_counts, source) } -> std::same_as<void>;
+    { input::count_platform_input_replay_rejection(
+        rejection_counts,
+        input::platform_input_rejection_reason{}) } -> std::same_as<void>;
+    { input::count_platform_input_replay_translation(translation_counts, translation, bool{}) }
+        -> std::same_as<void>;
+    { input::platform_input_replay_route_has_text_transaction(route_kind) } -> std::same_as<bool>;
+    { input::platform_input_replay_routes_have_text_transaction(routes) } -> std::same_as<bool>;
+    { input::make_platform_input_replay_text_edit_step(
+        std::string{},
+        transaction,
+        presentation,
+        presentation) } -> std::same_as<input::text_edit_transaction_replay_step_diagnostics>;
+    { input::make_platform_input_replay_empty_batch(engine, std::string{}) }
+        -> std::same_as<input::normalized_input_replay_batch>;
+    { input::append_platform_input_replay_normalized_batch(recording, std::move(batch)) }
+        -> std::same_as<void>;
+    { input::append_platform_input_replay_text_edit_if_present(
+        summary,
+        step_diagnostics,
+        engine,
+        routing) } -> std::same_as<void>;
+    { input::finalize_platform_input_replay_summary(summary, engine) } -> std::same_as<void>;
+    { input::replay_platform_input_step(engine, translator, summary, step) }
+        -> std::same_as<input::platform_input_replay_step_diagnostics>;
+    { input::replay_platform_input_batch(engine, translator, steps, options) }
+        -> std::same_as<input::platform_input_replay_summary>;
+    { input::replay_platform_input_batch(steps, options) }
+        -> std::same_as<input::platform_input_replay_summary>;
+    { input::diff_platform_input_replay_event_counts(summary.events, summary.events) }
+        -> std::same_as<input::platform_input_replay_event_count_deltas>;
+    { input::diff_platform_input_replay_rejection_counts(
+        summary.translations.rejections,
+        summary.translations.rejections) }
+        -> std::same_as<input::platform_input_replay_rejection_count_deltas>;
+    { input::diff_platform_input_replay_translation_counts(summary.translations, summary.translations) }
+        -> std::same_as<input::platform_input_replay_translation_count_deltas>;
+    { input::diff_platform_input_replay_summaries(summary, summary) }
+        -> std::same_as<input::platform_input_replay_diff>;
 };
 
 template <typename T>
@@ -736,6 +940,606 @@ concept NormalizedInputReplayFunctions = requires(
         -> std::same_as<input::normalized_input_replay_batch>;
     { input::replay_normalized_input_fixture(engine, steps, options) }
         -> std::same_as<input::normalized_input_replay_recording>;
+};
+
+template <typename T>
+concept InputActionCandidateCountsInterface = requires(T counts) {
+    { counts.text_edit } -> std::same_as<std::size_t&>;
+    { counts.focus_move } -> std::same_as<std::size_t&>;
+    { counts.pointer_capture } -> std::same_as<std::size_t&>;
+    { counts.gesture_candidate } -> std::same_as<std::size_t&>;
+    { counts.wheel_scroll } -> std::same_as<std::size_t&>;
+    { counts.ime_composition_start } -> std::same_as<std::size_t&>;
+    { counts.ime_preedit } -> std::same_as<std::size_t&>;
+    { counts.ime_commit } -> std::same_as<std::size_t&>;
+    { counts.ime_cancel } -> std::same_as<std::size_t&>;
+    { counts.total } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
+concept InputActionCandidateInterface = requires(T candidate) {
+    { candidate.kind } -> std::same_as<input::input_action_candidate_kind&>;
+    { candidate.batch_label } -> std::same_as<std::string&>;
+    { candidate.batch_index } -> std::same_as<std::size_t&>;
+    { candidate.timeline_index } -> std::same_as<std::size_t&>;
+    { candidate.timestamp_ms } -> std::same_as<std::int64_t&>;
+    { candidate.emits_input_event } -> std::same_as<bool&>;
+    { candidate.event_index } -> std::same_as<std::size_t&>;
+    { candidate.target_id } -> std::same_as<std::string&>;
+    { candidate.focus_kind } -> std::same_as<input::normalized_input_replay_focus_timeline_kind&>;
+    { candidate.target_id_before } -> std::same_as<std::string&>;
+    { candidate.target_id_after } -> std::same_as<std::string&>;
+    { candidate.had_focus_before } -> std::same_as<bool&>;
+    { candidate.has_focus_after } -> std::same_as<bool&>;
+    { candidate.target_changed } -> std::same_as<bool&>;
+    { candidate.pointer_kind } -> std::same_as<input::normalized_input_replay_pointer_timeline_kind&>;
+    { candidate.pointer_id } -> std::same_as<std::int32_t&>;
+    { candidate.event_phase } -> std::same_as<input::pointer_phase&>;
+    { candidate.pointer_contact } -> std::same_as<input::pointer_contact_kind&>;
+    { candidate.pointer_decision } -> std::same_as<input::pointer_arbitration_decision&>;
+    { candidate.capture_before } -> std::same_as<input::pointer_capture_snapshot&>;
+    { candidate.capture_after } -> std::same_as<input::pointer_capture_snapshot&>;
+    { candidate.capture_changed } -> std::same_as<bool&>;
+    { candidate.capture_ended_cleanly_after } -> std::same_as<bool&>;
+    { candidate.tracked_pointer_count_before } -> std::same_as<std::size_t&>;
+    { candidate.tracked_pointer_count_after } -> std::same_as<std::size_t&>;
+    { candidate.ime_phase } -> std::same_as<input::normalized_input_replay_ime_timeline_phase&>;
+    { candidate.composition } -> std::same_as<input::ime_composition_state&>;
+    { candidate.utf8_text } -> std::same_as<std::string&>;
+    { candidate.committed_text } -> std::same_as<std::string&>;
+    { candidate.preedit_text_valid } -> std::same_as<bool&>;
+    { candidate.preedit_range_valid } -> std::same_as<bool&>;
+    { candidate.stale_preedit_cleared_after } -> std::same_as<bool&>;
+    { candidate.keyboard } -> std::same_as<input::keyboard_chord_diagnostic&>;
+    { candidate.normalized_event } -> std::same_as<input::normalized_input_event_summary&>;
+    { candidate.gesture_policy } -> std::same_as<input::gesture_policy_snapshot&>;
+    { candidate.text_presentation_diff } -> std::same_as<input::text_input_presentation_diff&>;
+    { candidate.end_state } -> std::same_as<input::normalized_input_replay_end_state&>;
+    { candidate.text_byte_count } -> std::same_as<std::size_t&>;
+    { candidate.text_byte_count_before } -> std::same_as<std::size_t&>;
+    { candidate.text_byte_count_after } -> std::same_as<std::size_t&>;
+    { candidate.caret_before } -> std::same_as<input::text_range&>;
+    { candidate.caret_after } -> std::same_as<input::text_range&>;
+    { candidate.caret_changed } -> std::same_as<bool&>;
+    { candidate.had_selection_before } -> std::same_as<bool&>;
+    { candidate.has_selection_after } -> std::same_as<bool&>;
+    { candidate.selection_before } -> std::same_as<input::text_range&>;
+    { candidate.selection_after } -> std::same_as<input::text_range&>;
+    { candidate.selection_changed } -> std::same_as<bool&>;
+    { candidate.duration_ms } -> std::same_as<std::int64_t&>;
+    { candidate.start_x } -> std::same_as<float&>;
+    { candidate.start_y } -> std::same_as<float&>;
+    { candidate.x } -> std::same_as<float&>;
+    { candidate.y } -> std::same_as<float&>;
+    { candidate.delta_x } -> std::same_as<float&>;
+    { candidate.delta_y } -> std::same_as<float&>;
+    { candidate.pixel_delta_x } -> std::same_as<float&>;
+    { candidate.pixel_delta_y } -> std::same_as<float&>;
+    { candidate.line_delta_x } -> std::same_as<float&>;
+    { candidate.line_delta_y } -> std::same_as<float&>;
+};
+
+template <typename T>
+concept InputActionCandidateBatchPlanInterface = requires(T batch_plan) {
+    { batch_plan.label } -> std::same_as<std::string&>;
+    { batch_plan.candidates } -> std::same_as<std::vector<input::input_action_candidate>&>;
+    { batch_plan.counts } -> std::same_as<input::input_action_candidate_counts&>;
+};
+
+template <typename T>
+concept InputActionCandidatePlanInterface = requires(T plan) {
+    { plan.batches } -> std::same_as<std::vector<input::input_action_candidate_batch_plan>&>;
+    { plan.candidates } -> std::same_as<std::vector<input::input_action_candidate>&>;
+    { plan.counts } -> std::same_as<input::input_action_candidate_counts&>;
+    { plan.final_state } -> std::same_as<input::normalized_input_replay_end_state&>;
+};
+
+template <typename T>
+concept InputActionCandidatePlanFunctions = requires(
+    input::input_action_candidate_counts& counts,
+    input::input_action_candidate_kind candidate_kind,
+    input::normalized_input_replay_ime_timeline_phase ime_phase,
+    input::normalized_input_replay_pointer_timeline_kind pointer_kind,
+    const input::input_event& event,
+    input::input_action_candidate_plan& plan,
+    input::input_action_candidate_batch_plan& batch_plan,
+    input::input_action_candidate candidate,
+    const input::normalized_input_replay_batch& batch,
+    const input::normalized_input_replay_focus_timeline_entry& focus_entry,
+    const input::normalized_input_replay_ime_timeline_entry& ime_entry,
+    const input::normalized_input_replay_pointer_timeline_entry& pointer_entry,
+    std::span<const input::normalized_input_replay_batch> batches,
+    const input::normalized_input_replay_recording& recording) {
+    { input::count_input_action_candidate_kind(counts, candidate_kind) } -> std::same_as<void>;
+    { input::input_action_candidate_kind_for_ime_phase(ime_phase) }
+        -> std::same_as<input::input_action_candidate_kind>;
+    { input::input_action_candidate_pointer_kind_is_capture(pointer_kind) } -> std::same_as<bool>;
+    { input::input_action_candidate_pointer_kind_is_wheel(pointer_kind) } -> std::same_as<bool>;
+    { input::input_action_candidate_pointer_kind_is_gesture(pointer_kind) } -> std::same_as<bool>;
+    { input::input_action_candidate_timestamp_for_event(event) } -> std::same_as<std::int64_t>;
+    { input::input_action_candidate_timestamp_for_batch(batch) } -> std::same_as<std::int64_t>;
+    { input::input_action_candidate_batch_has_text_edit(batch) } -> std::same_as<bool>;
+    { input::append_input_action_candidate(plan, batch_plan, std::move(candidate)) } -> std::same_as<void>;
+    { input::make_text_edit_input_action_candidate(batch, std::size_t{}) }
+        -> std::same_as<input::input_action_candidate>;
+    { input::make_focus_move_input_action_candidate(batch, focus_entry, std::size_t{}, std::size_t{}) }
+        -> std::same_as<input::input_action_candidate>;
+    { input::make_ime_input_action_candidate(batch, ime_entry, std::size_t{}, std::size_t{}) }
+        -> std::same_as<input::input_action_candidate>;
+    { input::make_pointer_input_action_candidate(batch, pointer_entry, candidate_kind, std::size_t{}, std::size_t{}) }
+        -> std::same_as<input::input_action_candidate>;
+    { input::append_input_action_candidates_for_batch(plan, batch_plan, batch, std::size_t{}) }
+        -> std::same_as<void>;
+    { input::plan_input_action_candidates_for_batch(batch, std::size_t{}) }
+        -> std::same_as<input::input_action_candidate_batch_plan>;
+    { input::plan_input_action_candidates(batches) } -> std::same_as<input::input_action_candidate_plan>;
+    { input::plan_input_action_candidates(recording) } -> std::same_as<input::input_action_candidate_plan>;
+};
+
+template <typename T>
+concept InputActionCandidateResultCountsInterface = requires(T counts) {
+    { counts.selected } -> std::same_as<input::input_action_candidate_counts&>;
+    { counts.supporting_evidence } -> std::same_as<input::input_action_candidate_counts&>;
+    { counts.diagnostic_only } -> std::same_as<input::input_action_candidate_counts&>;
+    { counts.rejected } -> std::same_as<input::input_action_candidate_counts&>;
+    { counts.total } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
+concept InputActionCandidateResultInterface = requires(T result) {
+    { result.candidate } -> std::same_as<input::input_action_candidate&>;
+    { result.status } -> std::same_as<input::input_action_candidate_result_status&>;
+    { result.reason } -> std::same_as<input::input_action_candidate_result_reason&>;
+    { result.candidate_index } -> std::same_as<std::size_t&>;
+    { result.selected_candidate_index } -> std::same_as<std::size_t&>;
+    { result.priority } -> std::same_as<int&>;
+    { result.selected } -> std::same_as<bool&>;
+    { result.supports_selected_candidate } -> std::same_as<bool&>;
+    { result.emits_input_event } -> std::same_as<bool&>;
+    { result.has_text_delta } -> std::same_as<bool&>;
+    { result.has_focus_transition } -> std::same_as<bool&>;
+    { result.has_pointer_capture_transition } -> std::same_as<bool&>;
+    { result.has_gesture_event } -> std::same_as<bool&>;
+    { result.has_wheel_delta } -> std::same_as<bool&>;
+    { result.has_ime_payload } -> std::same_as<bool&>;
+    { result.evidence_clean } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept InputActionCandidateBatchResolutionInterface = requires(T batch_resolution) {
+    { batch_resolution.label } -> std::same_as<std::string&>;
+    { batch_resolution.results } -> std::same_as<std::vector<input::input_action_candidate_result>&>;
+    { batch_resolution.counts } -> std::same_as<input::input_action_candidate_result_counts&>;
+    { batch_resolution.selected_candidate_index } -> std::same_as<std::size_t&>;
+    { batch_resolution.has_selected_candidate } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept InputActionCandidateResolutionInterface = requires(T resolution) {
+    { resolution.batches } -> std::same_as<std::vector<input::input_action_candidate_batch_resolution>&>;
+    { resolution.results } -> std::same_as<std::vector<input::input_action_candidate_result>&>;
+    { resolution.counts } -> std::same_as<input::input_action_candidate_result_counts&>;
+    { resolution.final_state } -> std::same_as<input::normalized_input_replay_end_state&>;
+};
+
+template <typename T>
+concept InputActionCandidateResolutionFunctions = requires(
+    input::input_action_candidate_counts& candidate_counts,
+    const input::input_action_candidate_counts& candidate_count_source,
+    input::input_action_candidate_result_counts& result_counts,
+    const input::input_action_candidate_result_counts& result_count_source,
+    const input::input_action_candidate_result& result,
+    input::input_action_candidate candidate,
+    const input::pointer_capture_snapshot& capture_snapshot,
+    input::gesture_policy_decision gesture_decision,
+    input::input_action_candidate_batch_resolution& batch_resolution,
+    input::input_action_candidate_resolution& resolution,
+    input::input_action_candidate_batch_resolution batch_resolution_value,
+    const input::input_action_candidate_batch_plan& batch_plan,
+    const input::input_action_candidate_plan& plan,
+    std::span<const input::normalized_input_replay_batch> batches,
+    const input::normalized_input_replay_recording& recording) {
+    { input::count_input_action_candidate_result(result_counts, result) } -> std::same_as<void>;
+    { input::accumulate_input_action_candidate_counts(candidate_counts, candidate_count_source) }
+        -> std::same_as<void>;
+    { input::accumulate_input_action_candidate_result_counts(result_counts, result_count_source) }
+        -> std::same_as<void>;
+    { input::input_action_candidate_text_has_delta(candidate) } -> std::same_as<bool>;
+    { input::input_action_candidate_focus_has_transition(candidate) } -> std::same_as<bool>;
+    { input::input_action_candidate_capture_snapshot_changed(capture_snapshot, capture_snapshot) }
+        -> std::same_as<bool>;
+    { input::input_action_candidate_pointer_has_capture_transition(candidate) } -> std::same_as<bool>;
+    { input::input_action_candidate_wheel_has_delta(candidate) } -> std::same_as<bool>;
+    { input::input_action_candidate_gesture_emits_event(candidate) } -> std::same_as<bool>;
+    { input::input_action_candidate_gesture_policy_rejected(gesture_decision) } -> std::same_as<bool>;
+    { input::input_action_candidate_gesture_policy_suppressed(gesture_decision) } -> std::same_as<bool>;
+    { input::input_action_candidate_ime_has_payload(candidate) } -> std::same_as<bool>;
+    { input::input_action_candidate_ime_evidence_clean(candidate) } -> std::same_as<bool>;
+    { input::input_action_candidate_result_priority(candidate.kind) } -> std::same_as<int>;
+    { input::resolve_input_action_candidate(candidate, std::size_t{}) }
+        -> std::same_as<input::input_action_candidate_result>;
+    { input::input_action_candidate_result_is_primary_candidate(result) } -> std::same_as<bool>;
+    { input::input_action_candidate_result_precedes(result, result) } -> std::same_as<bool>;
+    { input::finalize_input_action_candidate_batch_resolution(batch_resolution) } -> std::same_as<void>;
+    { input::resolve_input_action_candidate_batch(batch_plan) }
+        -> std::same_as<input::input_action_candidate_batch_resolution>;
+    { input::append_input_action_candidate_batch_resolution(resolution, std::move(batch_resolution_value)) }
+        -> std::same_as<void>;
+    { input::resolve_input_action_candidate_plan(plan) }
+        -> std::same_as<input::input_action_candidate_resolution>;
+    { input::resolve_input_action_candidates(batches) }
+        -> std::same_as<input::input_action_candidate_resolution>;
+    { input::resolve_input_action_candidates(recording) }
+        -> std::same_as<input::input_action_candidate_resolution>;
+};
+
+template <typename T>
+concept InputActionResolutionResultSummaryInterface = requires(T summary) {
+    { summary.kind } -> std::same_as<input::input_action_candidate_kind&>;
+    { summary.status } -> std::same_as<input::input_action_candidate_result_status&>;
+    { summary.reason } -> std::same_as<input::input_action_candidate_result_reason&>;
+    { summary.batch_label } -> std::same_as<std::string&>;
+    { summary.batch_index } -> std::same_as<std::size_t&>;
+    { summary.candidate_index } -> std::same_as<std::size_t&>;
+    { summary.selected_candidate_index } -> std::same_as<std::size_t&>;
+    { summary.event_index } -> std::same_as<std::size_t&>;
+    { summary.priority } -> std::same_as<int&>;
+    { summary.timestamp_ms } -> std::same_as<std::int64_t&>;
+    { summary.selected } -> std::same_as<bool&>;
+    { summary.supports_selected_candidate } -> std::same_as<bool&>;
+    { summary.emits_input_event } -> std::same_as<bool&>;
+    { summary.evidence_clean } -> std::same_as<bool&>;
+    { summary.has_text_delta } -> std::same_as<bool&>;
+    { summary.has_focus_transition } -> std::same_as<bool&>;
+    { summary.has_pointer_capture_transition } -> std::same_as<bool&>;
+    { summary.has_gesture_event } -> std::same_as<bool&>;
+    { summary.has_wheel_delta } -> std::same_as<bool&>;
+    { summary.has_ime_payload } -> std::same_as<bool&>;
+    { summary.target_id } -> std::same_as<std::string&>;
+    { summary.target_id_before } -> std::same_as<std::string&>;
+    { summary.target_id_after } -> std::same_as<std::string&>;
+    { summary.target_changed } -> std::same_as<bool&>;
+    { summary.had_focus_before } -> std::same_as<bool&>;
+    { summary.has_focus_after } -> std::same_as<bool&>;
+    { summary.focus_kind } -> std::same_as<input::normalized_input_replay_focus_timeline_kind&>;
+    { summary.keyboard_intent } -> std::same_as<input::keyboard_shortcut_intent&>;
+    { summary.text_byte_count } -> std::same_as<std::size_t&>;
+    { summary.text_byte_count_before } -> std::same_as<std::size_t&>;
+    { summary.text_byte_count_after } -> std::same_as<std::size_t&>;
+    { summary.text_byte_delta } -> std::same_as<std::int64_t&>;
+    { summary.caret_before } -> std::same_as<input::text_range&>;
+    { summary.caret_after } -> std::same_as<input::text_range&>;
+    { summary.caret_changed } -> std::same_as<bool&>;
+    { summary.had_selection_before } -> std::same_as<bool&>;
+    { summary.has_selection_after } -> std::same_as<bool&>;
+    { summary.selection_before } -> std::same_as<input::text_range&>;
+    { summary.selection_after } -> std::same_as<input::text_range&>;
+    { summary.selection_changed } -> std::same_as<bool&>;
+    { summary.ime_phase } -> std::same_as<input::normalized_input_replay_ime_timeline_phase&>;
+    { summary.utf8_text_bytes } -> std::same_as<std::size_t&>;
+    { summary.committed_text_bytes } -> std::same_as<std::size_t&>;
+    { summary.preedit_text_valid } -> std::same_as<bool&>;
+    { summary.preedit_range_valid } -> std::same_as<bool&>;
+    { summary.stale_preedit_cleared_after } -> std::same_as<bool&>;
+    { summary.ime_composition_active } -> std::same_as<bool&>;
+    { summary.pointer_kind } -> std::same_as<input::normalized_input_replay_pointer_timeline_kind&>;
+    { summary.pointer_id } -> std::same_as<std::int32_t&>;
+    { summary.event_phase } -> std::same_as<input::pointer_phase&>;
+    { summary.pointer_contact } -> std::same_as<input::pointer_contact_kind&>;
+    { summary.pointer_decision } -> std::same_as<input::pointer_arbitration_decision&>;
+    { summary.capture_before_lifecycle } -> std::same_as<input::pointer_capture_lifecycle&>;
+    { summary.capture_after_lifecycle } -> std::same_as<input::pointer_capture_lifecycle&>;
+    { summary.capture_before_active } -> std::same_as<bool&>;
+    { summary.capture_after_active } -> std::same_as<bool&>;
+    { summary.capture_changed } -> std::same_as<bool&>;
+    { summary.capture_ended_cleanly_after } -> std::same_as<bool&>;
+    { summary.tracked_pointer_count_before } -> std::same_as<std::size_t&>;
+    { summary.tracked_pointer_count_after } -> std::same_as<std::size_t&>;
+    { summary.gesture_decision } -> std::same_as<input::gesture_policy_decision&>;
+    { summary.gesture_direction_hint } -> std::same_as<input::gesture_direction&>;
+    { summary.normalized_event_kind } -> std::same_as<input::input_event_summary_kind&>;
+    { summary.duration_ms } -> std::same_as<std::int64_t&>;
+    { summary.start_x } -> std::same_as<float&>;
+    { summary.start_y } -> std::same_as<float&>;
+    { summary.x } -> std::same_as<float&>;
+    { summary.y } -> std::same_as<float&>;
+    { summary.delta_x } -> std::same_as<float&>;
+    { summary.delta_y } -> std::same_as<float&>;
+    { summary.pixel_delta_x } -> std::same_as<float&>;
+    { summary.pixel_delta_y } -> std::same_as<float&>;
+    { summary.line_delta_x } -> std::same_as<float&>;
+    { summary.line_delta_y } -> std::same_as<float&>;
+};
+
+template <typename T>
+concept InputActionResolutionBatchSummaryInterface = requires(T summary) {
+    { summary.label } -> std::same_as<std::string&>;
+    { summary.selected } -> std::same_as<std::vector<input::input_action_resolution_result_summary>&>;
+    { summary.supporting_evidence }
+        -> std::same_as<std::vector<input::input_action_resolution_result_summary>&>;
+    { summary.rejected } -> std::same_as<std::vector<input::input_action_resolution_result_summary>&>;
+    { summary.diagnostic_only }
+        -> std::same_as<std::vector<input::input_action_resolution_result_summary>&>;
+    { summary.counts } -> std::same_as<input::input_action_candidate_result_counts&>;
+    { summary.selected_candidate_index } -> std::same_as<std::size_t&>;
+    { summary.has_selected_candidate } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept InputActionResolutionReplaySummaryInterface = requires(T summary) {
+    { summary.batches } -> std::same_as<std::vector<input::input_action_resolution_batch_summary>&>;
+    { summary.selected } -> std::same_as<std::vector<input::input_action_resolution_result_summary>&>;
+    { summary.supporting_evidence }
+        -> std::same_as<std::vector<input::input_action_resolution_result_summary>&>;
+    { summary.rejected } -> std::same_as<std::vector<input::input_action_resolution_result_summary>&>;
+    { summary.diagnostic_only }
+        -> std::same_as<std::vector<input::input_action_resolution_result_summary>&>;
+    { summary.counts } -> std::same_as<input::input_action_candidate_result_counts&>;
+    { summary.final_state } -> std::same_as<input::normalized_input_replay_end_state&>;
+};
+
+template <typename T>
+concept InputActionResolutionSummaryFunctions = requires(
+    std::size_t before_count,
+    std::size_t after_count,
+    const input::input_action_candidate_result& result,
+    input::input_action_resolution_batch_summary& batch_summary,
+    input::input_action_resolution_result_summary result_summary,
+    const input::input_action_candidate_batch_resolution& batch_resolution,
+    input::input_action_resolution_replay_summary& replay_summary,
+    input::input_action_resolution_batch_summary batch_summary_value,
+    const input::input_action_candidate_resolution& resolution,
+    std::span<const input::normalized_input_replay_batch> batches,
+    const input::normalized_input_replay_recording& recording) {
+    { input::input_action_resolution_byte_delta(before_count, after_count) }
+        -> std::same_as<std::int64_t>;
+    { input::summarize_input_action_candidate_result(result) }
+        -> std::same_as<input::input_action_resolution_result_summary>;
+    { input::append_input_action_resolution_result_summary(batch_summary, std::move(result_summary)) }
+        -> std::same_as<void>;
+    { input::summarize_input_action_candidate_batch_resolution(batch_resolution) }
+        -> std::same_as<input::input_action_resolution_batch_summary>;
+    { input::append_input_action_resolution_batch_summary(replay_summary, std::move(batch_summary_value)) }
+        -> std::same_as<void>;
+    { input::summarize_input_action_candidate_resolution(resolution) }
+        -> std::same_as<input::input_action_resolution_replay_summary>;
+    { input::summarize_input_action_resolution_replay(batches) }
+        -> std::same_as<input::input_action_resolution_replay_summary>;
+    { input::summarize_input_action_resolution_replay(recording) }
+        -> std::same_as<input::input_action_resolution_replay_summary>;
+};
+
+template <typename T>
+concept InputActionCandidateCountDeltasInterface = requires(T deltas) {
+    { deltas.text_edit } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.focus_move } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.pointer_capture } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.gesture_candidate } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.wheel_scroll } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.ime_composition_start } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.ime_preedit } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.ime_commit } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.ime_cancel } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.total } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept InputActionCandidateResultCountDeltasInterface = requires(T deltas) {
+    { deltas.selected } -> std::same_as<input::input_action_candidate_count_deltas&>;
+    { deltas.supporting_evidence } -> std::same_as<input::input_action_candidate_count_deltas&>;
+    { deltas.diagnostic_only } -> std::same_as<input::input_action_candidate_count_deltas&>;
+    { deltas.rejected } -> std::same_as<input::input_action_candidate_count_deltas&>;
+    { deltas.total } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept InputActionResolutionReasonCountsInterface = requires(T counts) {
+    { counts.text_edit_diff } -> std::same_as<std::size_t&>;
+    { counts.focus_transition } -> std::same_as<std::size_t&>;
+    { counts.pointer_capture_transition } -> std::same_as<std::size_t&>;
+    { counts.pointer_capture_supports_selected } -> std::same_as<std::size_t&>;
+    { counts.wheel_delta } -> std::same_as<std::size_t&>;
+    { counts.gesture_emitted } -> std::same_as<std::size_t&>;
+    { counts.gesture_policy_rejected } -> std::same_as<std::size_t&>;
+    { counts.gesture_policy_suppressed } -> std::same_as<std::size_t&>;
+    { counts.ime_composition_started } -> std::same_as<std::size_t&>;
+    { counts.ime_preedit_valid } -> std::same_as<std::size_t&>;
+    { counts.ime_preedit_invalid } -> std::same_as<std::size_t&>;
+    { counts.ime_committed } -> std::same_as<std::size_t&>;
+    { counts.ime_commit_invalid } -> std::same_as<std::size_t&>;
+    { counts.ime_canceled } -> std::same_as<std::size_t&>;
+    { counts.ime_cancel_invalid } -> std::same_as<std::size_t&>;
+    { counts.coalesced_by_selected_candidate } -> std::same_as<std::size_t&>;
+    { counts.no_observable_delta } -> std::same_as<std::size_t&>;
+    { counts.total } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
+concept InputActionResolutionReasonCountDeltasInterface = requires(T deltas) {
+    { deltas.text_edit_diff } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.focus_transition } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.pointer_capture_transition } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.pointer_capture_supports_selected }
+        -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.wheel_delta } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.gesture_emitted } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.gesture_policy_rejected } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.gesture_policy_suppressed } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.ime_composition_started } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.ime_preedit_valid } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.ime_preedit_invalid } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.ime_committed } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.ime_commit_invalid } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.ime_canceled } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.ime_cancel_invalid } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.coalesced_by_selected_candidate }
+        -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.no_observable_delta } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.total } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { deltas.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept InputActionResolutionTargetSnapshotInterface = requires(T snapshot) {
+    { snapshot.present } -> std::same_as<bool&>;
+    { snapshot.target_id } -> std::same_as<std::string&>;
+};
+
+template <typename T>
+concept InputActionResolutionTargetDeltaInterface = requires(T delta) {
+    { delta.present } -> std::same_as<input::normalized_input_replay_bool_delta&>;
+    { delta.target_id } -> std::same_as<input::normalized_input_replay_string_delta&>;
+    { delta.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept InputActionResolutionReplayClassificationInterface = requires(T classification) {
+    { classification.change_class }
+        -> std::same_as<input::input_action_resolution_replay_change_class&>;
+    { classification.focus_target_churn } -> std::same_as<bool&>;
+    { classification.text_target_churn } -> std::same_as<bool&>;
+    { classification.selected_action_lost } -> std::same_as<bool&>;
+    { classification.selected_action_gained } -> std::same_as<bool&>;
+    { classification.supporting_evidence_lost } -> std::same_as<bool&>;
+    { classification.supporting_evidence_gained } -> std::same_as<bool&>;
+    { classification.rejected_count_changed } -> std::same_as<bool&>;
+    { classification.rejected_count_lost } -> std::same_as<bool&>;
+    { classification.rejected_count_gained } -> std::same_as<bool&>;
+    { classification.no_observable_delta_changed } -> std::same_as<bool&>;
+    { classification.no_observable_delta_lost } -> std::same_as<bool&>;
+    { classification.no_observable_delta_gained } -> std::same_as<bool&>;
+    { classification.has_churn } -> std::same_as<bool&>;
+    { classification.has_regression } -> std::same_as<bool&>;
+    { classification.has_improvement } -> std::same_as<bool&>;
+    { classification.changed } -> std::same_as<bool&>;
+    { classification.churn_count } -> std::same_as<std::size_t&>;
+    { classification.regression_count } -> std::same_as<std::size_t&>;
+    { classification.improvement_count } -> std::same_as<std::size_t&>;
+    { classification.changed_category_count } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
+concept InputActionResolutionReplayClassificationSummaryInterface = requires(T summary) {
+    { summary.category }
+        -> std::same_as<input::input_action_resolution_replay_summary_category&>;
+    { summary.change_class }
+        -> std::same_as<input::input_action_resolution_replay_change_class&>;
+    { summary.reason_fragments }
+        -> std::same_as<std::vector<input::input_action_resolution_replay_summary_fragment>&>;
+    { summary.changed_category_count } -> std::same_as<std::size_t&>;
+    { summary.churn_count } -> std::same_as<std::size_t&>;
+    { summary.regression_count } -> std::same_as<std::size_t&>;
+    { summary.improvement_count } -> std::same_as<std::size_t&>;
+    { summary.reason_fragment_count } -> std::same_as<std::size_t&>;
+    { summary.changed } -> std::same_as<bool&>;
+    { summary.has_churn } -> std::same_as<bool&>;
+    { summary.has_regression } -> std::same_as<bool&>;
+    { summary.has_improvement } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept InputActionResolutionReplaySummaryDiffInterface = requires(T diff) {
+    { diff.batch_count } -> std::same_as<input::normalized_input_replay_count_delta&>;
+    { diff.result_counts } -> std::same_as<input::input_action_candidate_result_count_deltas&>;
+    { diff.action_kinds } -> std::same_as<input::input_action_candidate_count_deltas&>;
+    { diff.reasons } -> std::same_as<input::input_action_resolution_reason_count_deltas&>;
+    { diff.focus_target } -> std::same_as<input::input_action_resolution_target_delta&>;
+    { diff.text_target } -> std::same_as<input::input_action_resolution_target_delta&>;
+    { diff.classification }
+        -> std::same_as<input::input_action_resolution_replay_classification&>;
+    { diff.classification_summary }
+        -> std::same_as<input::input_action_resolution_replay_classification_summary&>;
+    { diff.changed } -> std::same_as<bool&>;
+    { diff.changed_category_count } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
+concept InputActionResolutionDiffFunctions = requires(
+    input::input_action_resolution_reason_counts& reason_counts,
+    input::input_action_candidate_result_reason reason,
+    const input::normalized_input_replay_count_delta& count_delta,
+    const input::input_action_candidate_count_deltas& candidate_deltas,
+    const input::input_action_candidate_counts& candidate_counts,
+    const input::input_action_candidate_result_count_deltas& result_deltas,
+    const input::input_action_candidate_result_counts& result_counts,
+    const input::input_action_resolution_replay_summary& replay_summary,
+    const input::input_action_resolution_replay_summary_diff& replay_summary_diff,
+    const input::input_action_resolution_replay_classification& replay_classification,
+    input::input_action_resolution_replay_summary_category summary_category,
+    input::input_action_resolution_replay_summary_fragment summary_fragment,
+    std::vector<input::input_action_resolution_replay_summary_fragment>& summary_fragments,
+    const std::vector<input::input_action_resolution_result_summary>& result_summaries,
+    const input::input_action_resolution_reason_counts& reason_count_source,
+    const input::input_action_resolution_reason_count_deltas& reason_deltas,
+    const input::input_action_resolution_result_summary& result_summary,
+    input::input_action_resolution_target_snapshot& target_snapshot,
+    const input::input_action_resolution_target_snapshot& target_snapshot_source,
+    std::size_t& changed_category_count,
+    bool changed) {
+    { input::count_input_action_resolution_reason(reason_counts, reason) } -> std::same_as<void>;
+    { input::input_action_candidate_count_deltas_changed(candidate_deltas) } -> std::same_as<bool>;
+    { input::diff_input_action_candidate_counts(candidate_counts, candidate_counts) }
+        -> std::same_as<input::input_action_candidate_count_deltas>;
+    { input::input_action_resolution_all_action_counts(result_counts) }
+        -> std::same_as<input::input_action_candidate_counts>;
+    { input::input_action_candidate_result_count_deltas_changed(result_deltas) }
+        -> std::same_as<bool>;
+    { input::diff_input_action_candidate_result_counts(result_counts, result_counts) }
+        -> std::same_as<input::input_action_candidate_result_count_deltas>;
+    { input::count_input_action_resolution_reasons(reason_counts, result_summaries) }
+        -> std::same_as<void>;
+    { input::summarize_input_action_resolution_reasons(replay_summary) }
+        -> std::same_as<input::input_action_resolution_reason_counts>;
+    { input::input_action_resolution_reason_count_deltas_changed(reason_deltas) }
+        -> std::same_as<bool>;
+    { input::diff_input_action_resolution_reason_counts(reason_count_source, reason_count_source) }
+        -> std::same_as<input::input_action_resolution_reason_count_deltas>;
+    { input::input_action_resolution_summary_is_focus_target_evidence(result_summary) }
+        -> std::same_as<bool>;
+    { input::input_action_resolution_summary_is_text_target_evidence(result_summary) }
+        -> std::same_as<bool>;
+    { input::update_input_action_resolution_focus_target_snapshot(target_snapshot, result_summaries) }
+        -> std::same_as<void>;
+    { input::update_input_action_resolution_text_target_snapshot(target_snapshot, result_summaries) }
+        -> std::same_as<void>;
+    { input::input_action_resolution_focus_target_snapshot(replay_summary) }
+        -> std::same_as<input::input_action_resolution_target_snapshot>;
+    { input::input_action_resolution_text_target_snapshot(replay_summary) }
+        -> std::same_as<input::input_action_resolution_target_snapshot>;
+    { input::diff_input_action_resolution_target_snapshot(target_snapshot_source, target_snapshot_source) }
+        -> std::same_as<input::input_action_resolution_target_delta>;
+    { input::count_input_action_resolution_diff_category(changed, changed_category_count) }
+        -> std::same_as<void>;
+    { input::input_action_resolution_count_delta_gained(count_delta) } -> std::same_as<bool>;
+    { input::input_action_resolution_count_delta_lost(count_delta) } -> std::same_as<bool>;
+    { input::input_action_candidate_count_deltas_gained(candidate_deltas) } -> std::same_as<bool>;
+    { input::input_action_candidate_count_deltas_lost(candidate_deltas) } -> std::same_as<bool>;
+    { input::input_action_resolution_replay_change_class_for(changed, changed, changed) }
+        -> std::same_as<input::input_action_resolution_replay_change_class>;
+    { input::input_action_resolution_replay_change_class_name(
+            input::input_action_resolution_replay_change_class::stable) }
+        -> std::same_as<std::string_view>;
+    { input::classify_input_action_resolution_replay_diff(replay_summary_diff) }
+        -> std::same_as<input::input_action_resolution_replay_classification>;
+    { input::input_action_resolution_replay_summary_category_for(replay_classification) }
+        -> std::same_as<input::input_action_resolution_replay_summary_category>;
+    { input::input_action_resolution_replay_summary_category_name(summary_category) }
+        -> std::same_as<std::string_view>;
+    { input::input_action_resolution_replay_summary_fragment_name(summary_fragment) }
+        -> std::same_as<std::string_view>;
+    { input::append_input_action_resolution_replay_summary_fragment(
+            summary_fragments,
+            changed,
+            summary_fragment) }
+        -> std::same_as<void>;
+    { input::summarize_input_action_resolution_replay_classification(replay_classification) }
+        -> std::same_as<input::input_action_resolution_replay_classification_summary>;
+    { input::summarize_input_action_resolution_replay_diff_classification(replay_summary_diff) }
+        -> std::same_as<input::input_action_resolution_replay_classification_summary>;
+    { input::diff_input_action_resolution_replay_summaries(replay_summary, replay_summary) }
+        -> std::same_as<input::input_action_resolution_replay_summary_diff>;
 };
 
 template <typename T>
@@ -1516,6 +2320,248 @@ concept TextInputPresentationFunctions = requires(
         -> std::same_as<input::text_input_presentation_diff>;
 };
 
+template <typename T>
+concept TextEditTransactionReplayStepInterface = requires(T step) {
+    { step.label } -> std::same_as<std::string&>;
+    { step.operation } -> std::same_as<input::text_edit_transaction_operation&>;
+    { step.text } -> std::same_as<std::string&>;
+    { step.range } -> std::same_as<input::text_range&>;
+};
+
+template <typename T>
+concept TextEditTransactionReplayOperationCountsInterface = requires(T counts) {
+    { counts.none } -> std::same_as<std::size_t&>;
+    { counts.focus } -> std::same_as<std::size_t&>;
+    { counts.clear_focus } -> std::same_as<std::size_t&>;
+    { counts.move_caret_to_start } -> std::same_as<std::size_t&>;
+    { counts.move_caret_to_end } -> std::same_as<std::size_t&>;
+    { counts.move_caret_left } -> std::same_as<std::size_t&>;
+    { counts.move_caret_right } -> std::same_as<std::size_t&>;
+    { counts.extend_selection_left } -> std::same_as<std::size_t&>;
+    { counts.extend_selection_right } -> std::same_as<std::size_t&>;
+    { counts.select_all } -> std::same_as<std::size_t&>;
+    { counts.clear_selection } -> std::same_as<std::size_t&>;
+    { counts.set_selection } -> std::same_as<std::size_t&>;
+    { counts.commit_utf8 } -> std::same_as<std::size_t&>;
+    { counts.backspace } -> std::same_as<std::size_t&>;
+    { counts.delete_forward } -> std::same_as<std::size_t&>;
+    { counts.set_preedit } -> std::same_as<std::size_t&>;
+    { counts.commit_ime } -> std::same_as<std::size_t&>;
+    { counts.cancel_ime } -> std::same_as<std::size_t&>;
+    { counts.submit } -> std::same_as<std::size_t&>;
+};
+
+template <typename T>
+concept TextEditTransactionReplayStepDiagnosticsInterface = requires(T diagnostics) {
+    { diagnostics.label } -> std::same_as<std::string&>;
+    { diagnostics.operation } -> std::same_as<input::text_edit_transaction_operation&>;
+    { diagnostics.transaction } -> std::same_as<input::text_edit_transaction_diagnostics&>;
+    { diagnostics.before_presentation } -> std::same_as<input::text_input_presentation_snapshot&>;
+    { diagnostics.after_presentation } -> std::same_as<input::text_input_presentation_snapshot&>;
+    { diagnostics.presentation_diff } -> std::same_as<input::text_input_presentation_diff&>;
+    { diagnostics.committed_text_bytes_before } -> std::same_as<std::size_t&>;
+    { diagnostics.committed_text_bytes_after } -> std::same_as<std::size_t&>;
+    { diagnostics.display_text_bytes_before } -> std::same_as<std::size_t&>;
+    { diagnostics.display_text_bytes_after } -> std::same_as<std::size_t&>;
+    { diagnostics.caret_before } -> std::same_as<input::text_range&>;
+    { diagnostics.caret_after } -> std::same_as<input::text_range&>;
+    { diagnostics.had_selection_before } -> std::same_as<bool&>;
+    { diagnostics.has_selection_after } -> std::same_as<bool&>;
+    { diagnostics.had_preedit_before } -> std::same_as<bool&>;
+    { diagnostics.has_preedit_after } -> std::same_as<bool&>;
+    { diagnostics.had_submit_before } -> std::same_as<bool&>;
+    { diagnostics.has_submit_after } -> std::same_as<bool&>;
+    { diagnostics.accepted } -> std::same_as<bool&>;
+    { diagnostics.rejected } -> std::same_as<bool&>;
+    { diagnostics.invalid_edit_rejected } -> std::same_as<bool&>;
+    { diagnostics.utf8_boundary_safe } -> std::same_as<bool&>;
+    { diagnostics.selection_replaced_committed_text } -> std::same_as<bool&>;
+    { diagnostics.selection_replaced_display_text } -> std::same_as<bool&>;
+    { diagnostics.selection_deleted } -> std::same_as<bool&>;
+    { diagnostics.selection_cleared } -> std::same_as<bool&>;
+    { diagnostics.ime_preedit_started } -> std::same_as<bool&>;
+    { diagnostics.ime_preedit_updated } -> std::same_as<bool&>;
+    { diagnostics.ime_preedit_cleared } -> std::same_as<bool&>;
+    { diagnostics.ime_committed } -> std::same_as<bool&>;
+    { diagnostics.ime_canceled } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept TextEditTransactionReplayAggregateCountsInterface = requires(T counts) {
+    { counts.operations } -> std::same_as<input::text_edit_transaction_replay_operation_counts&>;
+    { counts.step_count } -> std::same_as<std::size_t&>;
+    { counts.accepted_count } -> std::same_as<std::size_t&>;
+    { counts.rejected_count } -> std::same_as<std::size_t&>;
+    { counts.invalid_edit_rejected_count } -> std::same_as<std::size_t&>;
+    { counts.utf8_boundary_safe_count } -> std::same_as<std::size_t&>;
+    { counts.utf8_boundary_unsafe_count } -> std::same_as<std::size_t&>;
+    { counts.text_changed_count } -> std::same_as<std::size_t&>;
+    { counts.display_text_changed_count } -> std::same_as<std::size_t&>;
+    { counts.caret_changed_count } -> std::same_as<std::size_t&>;
+    { counts.selection_changed_count } -> std::same_as<std::size_t&>;
+    { counts.preedit_changed_count } -> std::same_as<std::size_t&>;
+    { counts.submit_available_after_count } -> std::same_as<std::size_t&>;
+    { counts.selection_replaced_committed_text_count } -> std::same_as<std::size_t&>;
+    { counts.selection_replaced_display_text_count } -> std::same_as<std::size_t&>;
+    { counts.selection_deleted_count } -> std::same_as<std::size_t&>;
+    { counts.selection_cleared_count } -> std::same_as<std::size_t&>;
+    { counts.ime_preedit_started_count } -> std::same_as<std::size_t&>;
+    { counts.ime_preedit_updated_count } -> std::same_as<std::size_t&>;
+    { counts.ime_preedit_cleared_count } -> std::same_as<std::size_t&>;
+    { counts.ime_committed_count } -> std::same_as<std::size_t&>;
+    { counts.ime_canceled_count } -> std::same_as<std::size_t&>;
+    { counts.inserted_byte_count } -> std::same_as<std::size_t&>;
+    { counts.deleted_byte_count } -> std::same_as<std::size_t&>;
+    { counts.replaced_byte_count } -> std::same_as<std::size_t&>;
+    { counts.committed_byte_delta } -> std::same_as<std::int64_t&>;
+    { counts.display_byte_delta } -> std::same_as<std::int64_t&>;
+};
+
+template <typename T>
+concept TextEditTransactionReplaySummaryInterface = requires(T summary) {
+    { summary.steps } -> std::same_as<std::vector<input::text_edit_transaction_replay_step_diagnostics>&>;
+    { summary.counts } -> std::same_as<input::text_edit_transaction_replay_aggregate_counts&>;
+    { summary.final_presentation } -> std::same_as<input::text_input_presentation_snapshot&>;
+    { summary.final_transaction } -> std::same_as<input::text_edit_transaction_diagnostics&>;
+    { summary.final_submit_available } -> std::same_as<bool&>;
+    { summary.final_utf8_boundary_safe } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept TextEditTransactionReplayCountDeltaInterface = requires(T delta) {
+    { delta.before_count } -> std::same_as<std::size_t&>;
+    { delta.after_count } -> std::same_as<std::size_t&>;
+    { delta.delta } -> std::same_as<std::int64_t&>;
+    { delta.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept TextEditTransactionReplayIntDeltaInterface = requires(T delta) {
+    { delta.before_value } -> std::same_as<std::int64_t&>;
+    { delta.after_value } -> std::same_as<std::int64_t&>;
+    { delta.delta } -> std::same_as<std::int64_t&>;
+    { delta.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept TextEditTransactionReplayOperationCountDeltasInterface = requires(T deltas) {
+    { deltas.none } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.focus } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.clear_focus } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.move_caret_to_start } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.move_caret_to_end } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.move_caret_left } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.move_caret_right } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.extend_selection_left } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.extend_selection_right } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.select_all } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.clear_selection } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.set_selection } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.commit_utf8 } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.backspace } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.delete_forward } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.set_preedit } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.commit_ime } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.cancel_ime } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.submit } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept TextEditTransactionReplayAggregateCountDeltasInterface = requires(T deltas) {
+    { deltas.operations } -> std::same_as<input::text_edit_transaction_replay_operation_count_deltas&>;
+    { deltas.step_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.accepted_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.rejected_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.invalid_edit_rejected_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.utf8_boundary_safe_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.utf8_boundary_unsafe_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.text_changed_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.display_text_changed_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.caret_changed_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.selection_changed_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.preedit_changed_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.submit_available_after_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.selection_replaced_committed_text_count }
+        -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.selection_replaced_display_text_count }
+        -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.selection_deleted_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.selection_cleared_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.ime_preedit_started_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.ime_preedit_updated_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.ime_preedit_cleared_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.ime_committed_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.ime_canceled_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.inserted_byte_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.deleted_byte_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.replaced_byte_count } -> std::same_as<input::text_edit_transaction_replay_count_delta&>;
+    { deltas.committed_byte_delta } -> std::same_as<input::text_edit_transaction_replay_int_delta&>;
+    { deltas.display_byte_delta } -> std::same_as<input::text_edit_transaction_replay_int_delta&>;
+    { deltas.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept TextEditTransactionReplayDiffInterface = requires(T diff) {
+    { diff.counts } -> std::same_as<input::text_edit_transaction_replay_aggregate_count_deltas&>;
+    { diff.final_presentation } -> std::same_as<input::text_input_presentation_diff&>;
+    { diff.final_presentation_changed } -> std::same_as<bool&>;
+    { diff.invalid_edit_changed } -> std::same_as<bool&>;
+    { diff.utf8_boundary_changed } -> std::same_as<bool&>;
+    { diff.replacement_changed } -> std::same_as<bool&>;
+    { diff.ime_transition_changed } -> std::same_as<bool&>;
+    { diff.submit_changed } -> std::same_as<bool&>;
+    { diff.changed_category_count } -> std::same_as<std::size_t&>;
+    { diff.changed } -> std::same_as<bool&>;
+};
+
+template <typename T>
+concept TextEditTransactionReplayFunctions = requires(
+    input::text_input_model& model,
+    input::text_edit_transaction_replay_operation_counts& operation_counts,
+    input::text_edit_transaction_replay_aggregate_counts& aggregate_counts,
+    input::text_edit_transaction_operation operation,
+    const input::text_edit_transaction_replay_step& step,
+    const input::text_edit_transaction_replay_step_diagnostics& step_diagnostics,
+    const input::text_input_presentation_snapshot& presentation,
+    const input::text_edit_transaction_replay_operation_counts& before_operations,
+    const input::text_edit_transaction_replay_operation_counts& after_operations,
+    const input::text_edit_transaction_replay_aggregate_counts& before_counts,
+    const input::text_edit_transaction_replay_aggregate_counts& after_counts,
+    const input::text_edit_transaction_replay_operation_count_deltas& operation_deltas,
+    const input::text_edit_transaction_replay_summary& summary,
+    std::span<const input::text_edit_transaction_replay_step> steps) {
+    { input::count_text_edit_transaction_replay_operation(operation_counts, operation) }
+        -> std::same_as<void>;
+    { input::make_text_edit_transaction_replay_snapshot(presentation) }
+        -> std::same_as<input::text_edit_transaction_snapshot>;
+    { input::make_text_edit_transaction_replay_noop_transaction(presentation) }
+        -> std::same_as<input::text_edit_transaction_diagnostics>;
+    { input::apply_text_edit_transaction_replay_step(model, step) } -> std::same_as<void>;
+    { input::record_text_edit_transaction_replay_step(model, step) }
+        -> std::same_as<input::text_edit_transaction_replay_step_diagnostics>;
+    { input::accumulate_text_edit_transaction_replay_counts(aggregate_counts, step_diagnostics) }
+        -> std::same_as<void>;
+    { input::replay_text_edit_transactions(model, steps) }
+        -> std::same_as<input::text_edit_transaction_replay_summary>;
+    { input::replay_text_edit_transactions(steps) }
+        -> std::same_as<input::text_edit_transaction_replay_summary>;
+    { input::text_edit_transaction_replay_size_delta(std::size_t{}, std::size_t{}) }
+        -> std::same_as<std::int64_t>;
+    { input::diff_text_edit_transaction_replay_count(std::size_t{}, std::size_t{}) }
+        -> std::same_as<input::text_edit_transaction_replay_count_delta>;
+    { input::diff_text_edit_transaction_replay_int(std::int64_t{}, std::int64_t{}) }
+        -> std::same_as<input::text_edit_transaction_replay_int_delta>;
+    { input::text_edit_transaction_replay_operation_deltas_changed(operation_deltas) }
+        -> std::same_as<bool>;
+    { input::diff_text_edit_transaction_replay_operation_counts(before_operations, after_operations) }
+        -> std::same_as<input::text_edit_transaction_replay_operation_count_deltas>;
+    { input::diff_text_edit_transaction_replay_aggregate_counts(before_counts, after_counts) }
+        -> std::same_as<input::text_edit_transaction_replay_aggregate_count_deltas>;
+    { input::diff_text_edit_transaction_replay_summaries(summary, summary) }
+        -> std::same_as<input::text_edit_transaction_replay_diff>;
+};
+
 static_assert(ImeCompositionStateInterface<input::ime_composition_state>);
 static_assert(std::is_default_constructible_v<input::ime_composition_state>);
 static_assert(PointerCaptureSnapshotInterface<input::pointer_capture_snapshot>);
@@ -1565,6 +2611,23 @@ static_assert(PlatformInputTranslationResultInterface<input::platform_input_tran
 static_assert(PlatformInputDispatchResultInterface<input::platform_input_dispatch_result>);
 static_assert(PlatformInputDispatchBatchResultInterface<input::platform_input_dispatch_batch_result>);
 static_assert(PlatformInputEngineAdapterFunctions<void>);
+static_assert(PlatformInputReplayStepInterface<input::platform_input_replay_step>);
+static_assert(PlatformInputReplayOptionsInterface<input::platform_input_replay_options>);
+static_assert(PlatformInputReplayEventCountsInterface<input::platform_input_replay_event_counts>);
+static_assert(PlatformInputReplayRejectionCountsInterface<input::platform_input_replay_rejection_counts>);
+static_assert(PlatformInputReplayTranslationCountsInterface<
+    input::platform_input_replay_translation_counts>);
+static_assert(PlatformInputReplayStepDiagnosticsInterface<
+    input::platform_input_replay_step_diagnostics>);
+static_assert(PlatformInputReplaySummaryInterface<input::platform_input_replay_summary>);
+static_assert(PlatformInputReplayEventCountDeltasInterface<
+    input::platform_input_replay_event_count_deltas>);
+static_assert(PlatformInputReplayRejectionCountDeltasInterface<
+    input::platform_input_replay_rejection_count_deltas>);
+static_assert(PlatformInputReplayTranslationCountDeltasInterface<
+    input::platform_input_replay_translation_count_deltas>);
+static_assert(PlatformInputReplayDiffInterface<input::platform_input_replay_diff>);
+static_assert(PlatformInputReplayFunctions<void>);
 static_assert(NormalizedInputReplayEndStateInterface<input::normalized_input_replay_end_state>);
 static_assert(NormalizedInputReplayBatchInterface<input::normalized_input_replay_batch>);
 static_assert(NormalizedInputReplayRecordingInterface<input::normalized_input_replay_recording>);
@@ -1613,10 +2676,55 @@ static_assert(NormalizedInputReplayRegressionSummaryInterface<
     input::normalized_input_replay_regression_summary>);
 static_assert(NormalizedInputReplayDiffInterface<input::normalized_input_replay_diff>);
 static_assert(NormalizedInputReplayFunctions<void>);
+static_assert(InputActionCandidateCountsInterface<input::input_action_candidate_counts>);
+static_assert(InputActionCandidateInterface<input::input_action_candidate>);
+static_assert(InputActionCandidateBatchPlanInterface<input::input_action_candidate_batch_plan>);
+static_assert(InputActionCandidatePlanInterface<input::input_action_candidate_plan>);
+static_assert(InputActionCandidatePlanFunctions<void>);
+static_assert(InputActionCandidateResultCountsInterface<input::input_action_candidate_result_counts>);
+static_assert(InputActionCandidateResultInterface<input::input_action_candidate_result>);
+static_assert(InputActionCandidateBatchResolutionInterface<
+    input::input_action_candidate_batch_resolution>);
+static_assert(InputActionCandidateResolutionInterface<input::input_action_candidate_resolution>);
+static_assert(InputActionCandidateResolutionFunctions<void>);
+static_assert(InputActionResolutionResultSummaryInterface<
+    input::input_action_resolution_result_summary>);
+static_assert(InputActionResolutionBatchSummaryInterface<
+    input::input_action_resolution_batch_summary>);
+static_assert(InputActionResolutionReplaySummaryInterface<
+    input::input_action_resolution_replay_summary>);
+static_assert(InputActionResolutionSummaryFunctions<void>);
+static_assert(InputActionCandidateCountDeltasInterface<input::input_action_candidate_count_deltas>);
+static_assert(InputActionCandidateResultCountDeltasInterface<
+    input::input_action_candidate_result_count_deltas>);
+static_assert(InputActionResolutionReasonCountsInterface<input::input_action_resolution_reason_counts>);
+static_assert(InputActionResolutionReasonCountDeltasInterface<
+    input::input_action_resolution_reason_count_deltas>);
+static_assert(InputActionResolutionTargetSnapshotInterface<
+    input::input_action_resolution_target_snapshot>);
+static_assert(InputActionResolutionTargetDeltaInterface<input::input_action_resolution_target_delta>);
+static_assert(InputActionResolutionReplayClassificationInterface<
+    input::input_action_resolution_replay_classification>);
+static_assert(InputActionResolutionReplayClassificationSummaryInterface<
+    input::input_action_resolution_replay_classification_summary>);
+static_assert(InputActionResolutionReplaySummaryDiffInterface<
+    input::input_action_resolution_replay_summary_diff>);
+static_assert(InputActionResolutionDiffFunctions<void>);
 static_assert(std::is_default_constructible_v<input::platform_input_translation_request>);
 static_assert(std::is_default_constructible_v<input::platform_input_translation_result>);
 static_assert(std::is_default_constructible_v<input::platform_input_dispatch_result>);
 static_assert(std::is_default_constructible_v<input::platform_input_dispatch_batch_result>);
+static_assert(std::is_default_constructible_v<input::platform_input_replay_step>);
+static_assert(std::is_default_constructible_v<input::platform_input_replay_options>);
+static_assert(std::is_default_constructible_v<input::platform_input_replay_event_counts>);
+static_assert(std::is_default_constructible_v<input::platform_input_replay_rejection_counts>);
+static_assert(std::is_default_constructible_v<input::platform_input_replay_translation_counts>);
+static_assert(std::is_default_constructible_v<input::platform_input_replay_step_diagnostics>);
+static_assert(std::is_default_constructible_v<input::platform_input_replay_summary>);
+static_assert(std::is_default_constructible_v<input::platform_input_replay_event_count_deltas>);
+static_assert(std::is_default_constructible_v<input::platform_input_replay_rejection_count_deltas>);
+static_assert(std::is_default_constructible_v<input::platform_input_replay_translation_count_deltas>);
+static_assert(std::is_default_constructible_v<input::platform_input_replay_diff>);
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_time_update>);
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_options>);
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_end_state>);
@@ -1658,6 +2766,27 @@ static_assert(std::is_default_constructible_v<input::normalized_input_replay_foc
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_focus_diff>);
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_regression_summary>);
 static_assert(std::is_default_constructible_v<input::normalized_input_replay_diff>);
+static_assert(std::is_default_constructible_v<input::input_action_candidate_counts>);
+static_assert(std::is_default_constructible_v<input::input_action_candidate>);
+static_assert(std::is_default_constructible_v<input::input_action_candidate_batch_plan>);
+static_assert(std::is_default_constructible_v<input::input_action_candidate_plan>);
+static_assert(std::is_default_constructible_v<input::input_action_candidate_result_counts>);
+static_assert(std::is_default_constructible_v<input::input_action_candidate_result>);
+static_assert(std::is_default_constructible_v<input::input_action_candidate_batch_resolution>);
+static_assert(std::is_default_constructible_v<input::input_action_candidate_resolution>);
+static_assert(std::is_default_constructible_v<input::input_action_resolution_result_summary>);
+static_assert(std::is_default_constructible_v<input::input_action_resolution_batch_summary>);
+static_assert(std::is_default_constructible_v<input::input_action_resolution_replay_summary>);
+static_assert(std::is_default_constructible_v<input::input_action_candidate_count_deltas>);
+static_assert(std::is_default_constructible_v<input::input_action_candidate_result_count_deltas>);
+static_assert(std::is_default_constructible_v<input::input_action_resolution_reason_counts>);
+static_assert(std::is_default_constructible_v<input::input_action_resolution_reason_count_deltas>);
+static_assert(std::is_default_constructible_v<input::input_action_resolution_target_snapshot>);
+static_assert(std::is_default_constructible_v<input::input_action_resolution_target_delta>);
+static_assert(std::is_default_constructible_v<input::input_action_resolution_replay_classification>);
+static_assert(std::is_default_constructible_v<
+    input::input_action_resolution_replay_classification_summary>);
+static_assert(std::is_default_constructible_v<input::input_action_resolution_replay_summary_diff>);
 static_assert(std::is_default_constructible_v<input::input_routing_count_delta>);
 static_assert(std::is_default_constructible_v<input::input_routing_bool_delta>);
 static_assert(std::is_default_constructible_v<input::input_routing_float_delta>);
@@ -1691,12 +2820,26 @@ static_assert(std::is_default_constructible_v<input::text_input_presentation_str
 static_assert(std::is_default_constructible_v<input::text_input_presentation_byte_count_deltas>);
 static_assert(std::is_default_constructible_v<input::text_input_presentation_route_byte_diagnostics_diff>);
 static_assert(std::is_default_constructible_v<input::text_input_presentation_diff>);
+static_assert(std::is_default_constructible_v<input::text_edit_transaction_replay_step>);
+static_assert(std::is_default_constructible_v<input::text_edit_transaction_replay_operation_counts>);
+static_assert(std::is_default_constructible_v<input::text_edit_transaction_replay_step_diagnostics>);
+static_assert(std::is_default_constructible_v<input::text_edit_transaction_replay_aggregate_counts>);
+static_assert(std::is_default_constructible_v<input::text_edit_transaction_replay_summary>);
+static_assert(std::is_default_constructible_v<input::text_edit_transaction_replay_count_delta>);
+static_assert(std::is_default_constructible_v<input::text_edit_transaction_replay_int_delta>);
+static_assert(std::is_default_constructible_v<input::text_edit_transaction_replay_operation_count_deltas>);
+static_assert(std::is_default_constructible_v<input::text_edit_transaction_replay_aggregate_count_deltas>);
+static_assert(std::is_default_constructible_v<input::text_edit_transaction_replay_diff>);
 static_assert(std::is_default_constructible_v<input::keyboard_modifier_state>);
 static_assert(std::is_default_constructible_v<input::keyboard_chord_diagnostic>);
 static_assert(!std::is_polymorphic_v<input::platform_input_translation_request>);
 static_assert(!std::is_polymorphic_v<input::platform_input_translation_result>);
 static_assert(!std::is_polymorphic_v<input::platform_input_dispatch_result>);
 static_assert(!std::is_polymorphic_v<input::platform_input_dispatch_batch_result>);
+static_assert(!std::is_polymorphic_v<input::platform_input_replay_step>);
+static_assert(!std::is_polymorphic_v<input::platform_input_replay_step_diagnostics>);
+static_assert(!std::is_polymorphic_v<input::platform_input_replay_summary>);
+static_assert(!std::is_polymorphic_v<input::platform_input_replay_diff>);
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_step>);
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_batch>);
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_recording>);
@@ -1706,6 +2849,25 @@ static_assert(!std::is_polymorphic_v<input::normalized_input_replay_ime_summary>
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_pointer_summary>);
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_focus_summary>);
 static_assert(!std::is_polymorphic_v<input::normalized_input_replay_diff>);
+static_assert(!std::is_polymorphic_v<input::input_action_candidate>);
+static_assert(!std::is_polymorphic_v<input::input_action_candidate_batch_plan>);
+static_assert(!std::is_polymorphic_v<input::input_action_candidate_plan>);
+static_assert(!std::is_polymorphic_v<input::input_action_candidate_result>);
+static_assert(!std::is_polymorphic_v<input::input_action_candidate_batch_resolution>);
+static_assert(!std::is_polymorphic_v<input::input_action_candidate_resolution>);
+static_assert(!std::is_polymorphic_v<input::input_action_resolution_result_summary>);
+static_assert(!std::is_polymorphic_v<input::input_action_resolution_batch_summary>);
+static_assert(!std::is_polymorphic_v<input::input_action_resolution_replay_summary>);
+static_assert(!std::is_polymorphic_v<input::input_action_candidate_count_deltas>);
+static_assert(!std::is_polymorphic_v<input::input_action_candidate_result_count_deltas>);
+static_assert(!std::is_polymorphic_v<input::input_action_resolution_reason_counts>);
+static_assert(!std::is_polymorphic_v<input::input_action_resolution_reason_count_deltas>);
+static_assert(!std::is_polymorphic_v<input::input_action_resolution_target_snapshot>);
+static_assert(!std::is_polymorphic_v<input::input_action_resolution_target_delta>);
+static_assert(!std::is_polymorphic_v<input::input_action_resolution_replay_classification>);
+static_assert(!std::is_polymorphic_v<
+    input::input_action_resolution_replay_classification_summary>);
+static_assert(!std::is_polymorphic_v<input::input_action_resolution_replay_summary_diff>);
 static_assert(!std::is_polymorphic_v<input::input_routing_diagnostics_diff>);
 static_assert(!std::is_polymorphic_v<input::input_routing_gesture_policy_diff>);
 static_assert(!std::is_polymorphic_v<input::text_edit_transaction_snapshot>);
@@ -1713,6 +2875,9 @@ static_assert(!std::is_polymorphic_v<input::text_edit_transaction_byte_diagnosti
 static_assert(!std::is_polymorphic_v<input::text_edit_transaction_diagnostics>);
 static_assert(!std::is_polymorphic_v<input::text_input_presentation_snapshot>);
 static_assert(!std::is_polymorphic_v<input::text_input_presentation_diff>);
+static_assert(!std::is_polymorphic_v<input::text_edit_transaction_replay_step>);
+static_assert(!std::is_polymorphic_v<input::text_edit_transaction_replay_summary>);
+static_assert(!std::is_polymorphic_v<input::text_edit_transaction_replay_diff>);
 static_assert(std::is_same_v<
     decltype(input::platform_input_translation_result{}.event),
     std::optional<raw_platform_input_event>>);
@@ -1797,6 +2962,22 @@ static_assert(TextInputPresentationRouteByteDiagnosticsDiffInterface<
     input::text_input_presentation_route_byte_diagnostics_diff>);
 static_assert(TextInputPresentationDiffInterface<input::text_input_presentation_diff>);
 static_assert(TextInputPresentationFunctions<void>);
+static_assert(TextEditTransactionReplayStepInterface<input::text_edit_transaction_replay_step>);
+static_assert(TextEditTransactionReplayOperationCountsInterface<
+    input::text_edit_transaction_replay_operation_counts>);
+static_assert(TextEditTransactionReplayStepDiagnosticsInterface<
+    input::text_edit_transaction_replay_step_diagnostics>);
+static_assert(TextEditTransactionReplayAggregateCountsInterface<
+    input::text_edit_transaction_replay_aggregate_counts>);
+static_assert(TextEditTransactionReplaySummaryInterface<input::text_edit_transaction_replay_summary>);
+static_assert(TextEditTransactionReplayCountDeltaInterface<input::text_edit_transaction_replay_count_delta>);
+static_assert(TextEditTransactionReplayIntDeltaInterface<input::text_edit_transaction_replay_int_delta>);
+static_assert(TextEditTransactionReplayOperationCountDeltasInterface<
+    input::text_edit_transaction_replay_operation_count_deltas>);
+static_assert(TextEditTransactionReplayAggregateCountDeltasInterface<
+    input::text_edit_transaction_replay_aggregate_count_deltas>);
+static_assert(TextEditTransactionReplayDiffInterface<input::text_edit_transaction_replay_diff>);
+static_assert(TextEditTransactionReplayFunctions<void>);
 
 constexpr input::text_range text_range_contract{
     .start_byte = 3,

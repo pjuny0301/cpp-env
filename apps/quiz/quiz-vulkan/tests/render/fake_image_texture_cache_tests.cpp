@@ -1049,11 +1049,53 @@ void test_texture_cache_uses_injected_texture_uploader()
     require(uploader.upload_requests.size() == 1, "cache hit does not call uploader again");
 
     const fake_image_texture_upload_snapshot snapshot = uploader.diagnostic_snapshot();
+    const render_decoded_image expected_image{
+        .width = 1,
+        .height = 1,
+        .pixel_format = render_image_pixel_format::rgba8_srgb,
+        .pixels = {
+            std::byte{0x00},
+            std::byte{0x00},
+            std::byte{0xff},
+            std::byte{0xff},
+        },
+    };
+    const render_image_decoded_payload_evidence expected_payload =
+        make_render_image_decoded_payload_evidence(expected_image);
     require(snapshot.upload_count == 1, "injected uploader snapshot records one upload");
     require(snapshot.entries[0].generation_id == 1, "injected uploader snapshot records generation id");
     require(snapshot.entries[0].sampler == request.sampler, "injected uploader snapshot records sampler");
     require(snapshot.entries[0].staging_byte_count == 4, "injected uploader snapshot records staging bytes");
     require(snapshot.entries[0].texture.id == first.texture.id, "injected uploader snapshot matches cache handle");
+    require(snapshot.request_snapshots[0].decoded_payload.payload_valid, "upload snapshot records valid decoded payload evidence");
+    require(
+        snapshot.request_snapshots[0].decoded_payload.stable_byte_hash == expected_payload.stable_byte_hash,
+        "upload snapshot records stable decoded payload hash");
+    require(
+        snapshot.request_snapshots[0].decoded_payload.first_pixel.available,
+        "upload snapshot records first RGBA sample");
+    require(
+        snapshot.request_snapshots[0].decoded_payload.first_pixel.rgba == expected_payload.first_pixel.rgba,
+        "upload snapshot records first RGBA bytes");
+    require(
+        snapshot.request_snapshots[0].decoded_payload.all_alpha_opaque,
+        "upload snapshot records opaque alpha evidence");
+
+    const fake_image_texture_cache_snapshot cache_snapshot = cache.diagnostic_snapshot();
+    require(cache_snapshot.entries.size() == 1, "uploader-backed cache snapshot records one resident texture");
+    require(cache_snapshot.entries[0].access_count == 2, "cache hit increments resident access count");
+    require(
+        cache_snapshot.entries[0].upload_readiness.decoded_payload.stable_byte_hash
+            == snapshot.request_snapshots[0].decoded_payload.stable_byte_hash,
+        "cache snapshot preserves decoded payload evidence from upload request");
+    require(
+        cache_snapshot.entries[0].upload_readiness.decoded_payload.first_pixel.rgba
+            == expected_payload.first_pixel.rgba,
+        "cache snapshot preserves decoded RGBA sample evidence");
+    require(
+        cache_snapshot.entries[0].upload_readiness.decoded_payload.last_pixel.rgba
+            == expected_payload.last_pixel.rgba,
+        "cache snapshot preserves decoded last pixel evidence");
 }
 
 void test_texture_cache_placeholder_policy_reuses_decode_failure_texture()

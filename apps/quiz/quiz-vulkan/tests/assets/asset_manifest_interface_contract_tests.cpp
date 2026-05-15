@@ -221,12 +221,14 @@ static_assert(requires(
 static_assert(requires(
     assets::asset_manifest_version_policy_summary summary,
     const assets::asset_manifest_version_policy_summary& const_summary) {
+    { summary.compatibility_status } -> std::same_as<assets::asset_manifest_version_compatibility_status&>;
     { summary.schema_version } -> std::same_as<std::string&>;
     { summary.expected_schema_version } -> std::same_as<std::string&>;
     { summary.required_features } -> std::same_as<std::vector<std::string>&>;
     { summary.optional_features } -> std::same_as<std::vector<std::string>&>;
     { summary.unsupported_features } ->
         std::same_as<std::vector<assets::asset_manifest_version_unsupported_feature_report>&>;
+    { summary.diagnostic } -> std::same_as<std::string&>;
     { summary.strict_accepted } -> std::same_as<bool&>;
     { summary.compatible_accepted } -> std::same_as<bool&>;
     { const_summary.ok() } -> std::same_as<bool>;

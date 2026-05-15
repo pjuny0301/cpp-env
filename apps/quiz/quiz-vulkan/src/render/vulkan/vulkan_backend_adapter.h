@@ -1906,6 +1906,154 @@ struct vulkan_present_completion_plan_result {
     }
 };
 
+enum class vulkan_native_queue_present_operation_status {
+    not_checked,
+    ready,
+    acquire_operation_unavailable,
+    submit_batch_unavailable,
+    present_completion_unavailable,
+    native_entrypoints_unavailable,
+    required_extension_unavailable,
+    missing_queue_present_symbol,
+    present_queue_unavailable,
+    swapchain_unavailable,
+    acquired_image_unavailable,
+    submitted_frame_unavailable,
+    present_result_unavailable,
+    out_of_date,
+    suboptimal,
+    present_failed_recoverable,
+    present_failed_fatal,
+};
+
+std::string_view native_queue_present_operation_status_name(
+    vulkan_native_queue_present_operation_status status);
+
+struct vulkan_native_queue_present_operation_request {
+    vulkan_native_swapchain_acquire_operation_result acquire_operation;
+    vulkan_submit_batch_plan_result submit_batch;
+    vulkan_present_completion_plan_result present_completion;
+    vulkan_native_swapchain_entrypoint_readiness native_entrypoints;
+    vulkan_swapchain_present_result present_result;
+    bool allow_suboptimal = true;
+};
+
+struct vulkan_native_queue_present_operation_summary {
+    bool checked = false;
+    vulkan_native_queue_present_operation_status status =
+        vulkan_native_queue_present_operation_status::not_checked;
+    std::string entrypoint_name = "vkQueuePresentKHR";
+    bool vk_queue_present_callable = false;
+    bool frame_lifecycle_may_complete = false;
+    vulkan_device_handle device;
+    vulkan_swapchain_handle swapchain;
+    vulkan_queue_handle present_queue;
+    vulkan_swapchain_image_id image_id;
+    vulkan_swapchain_image_handle image_handle;
+    vulkan_command_submit_sync_handle wait_render_finished_semaphore;
+    vulkan_swapchain_present_status present_status =
+        vulkan_swapchain_present_status::not_requested;
+    bool acquire_operation_checked = false;
+    bool acquired_image_ready = false;
+    bool submit_batch_checked = false;
+    bool submit_batch_ready = false;
+    bool present_completion_checked = false;
+    bool present_completion_ready = false;
+    bool native_entrypoints_checked = false;
+    bool required_extensions_ready = false;
+    bool queue_present_symbol_ready = false;
+    bool present_queue_ready = false;
+    bool swapchain_ready = false;
+    bool submitted_frame_ready = false;
+    bool present_request_ready = false;
+    bool present_adapter_result_ready = false;
+    bool present_result_checked = false;
+    bool present_result_completed = false;
+    bool submit_before_present = false;
+    bool out_of_date = false;
+    bool suboptimal = false;
+    bool recoverable_failure = false;
+    bool fatal_failure = false;
+    std::string missing_required_extension;
+    std::string missing_symbol_name;
+    std::string diagnostic;
+
+    bool ready_for_frame_completion() const
+    {
+        return checked && frame_lifecycle_may_complete
+            && (status == vulkan_native_queue_present_operation_status::ready
+                || status == vulkan_native_queue_present_operation_status::suboptimal);
+    }
+};
+
+struct vulkan_native_queue_present_operation_result {
+    bool checked = false;
+    vulkan_native_queue_present_operation_status status =
+        vulkan_native_queue_present_operation_status::not_checked;
+    vulkan_native_swapchain_acquire_operation_result acquire_operation;
+    vulkan_submit_batch_plan_result submit_batch;
+    vulkan_present_completion_plan_result present_completion;
+    vulkan_native_swapchain_entrypoint_readiness native_entrypoints;
+    vulkan_device_handle device;
+    vulkan_swapchain_handle swapchain;
+    vulkan_queue_handle present_queue;
+    vulkan_swapchain_image_id image_id;
+    vulkan_swapchain_image_handle image_handle;
+    vulkan_command_submit_sync_handle wait_render_finished_semaphore;
+    vulkan_swapchain_present_status present_status =
+        vulkan_swapchain_present_status::not_requested;
+    bool acquire_operation_checked = false;
+    bool acquired_image_ready = false;
+    bool submit_batch_checked = false;
+    bool submit_batch_ready = false;
+    bool present_completion_checked = false;
+    bool present_completion_ready = false;
+    bool native_entrypoints_checked = false;
+    bool required_extensions_ready = false;
+    bool queue_present_symbol_ready = false;
+    bool present_queue_ready = false;
+    bool swapchain_ready = false;
+    bool submitted_frame_ready = false;
+    bool present_request_ready = false;
+    bool present_adapter_result_ready = false;
+    bool present_result_checked = false;
+    bool present_result_completed = false;
+    bool submit_before_present = false;
+    bool out_of_date = false;
+    bool suboptimal = false;
+    bool recoverable_failure = false;
+    bool fatal_failure = false;
+    bool vk_queue_present_callable = false;
+    bool frame_lifecycle_may_complete = false;
+    std::string missing_required_extension;
+    std::string missing_symbol_name;
+    std::string diagnostic;
+    vulkan_native_queue_present_operation_summary operation;
+
+    bool can_call_vk_queue_present() const
+    {
+        return checked && vk_queue_present_callable;
+    }
+
+    bool ready_for_frame_completion() const
+    {
+        return checked && operation.ready_for_frame_completion();
+    }
+
+    bool blocked() const
+    {
+        return checked && !ready_for_frame_completion();
+    }
+};
+
+} // namespace quiz_vulkan::render::vulkan_backend
+
+#define QUIZ_VULKAN_BACKEND_NATIVE_FRAME_OPERATION_DEPENDENCIES_READY
+#include "render/vulkan/vulkan_backend_native_frame_operation.h"
+#undef QUIZ_VULKAN_BACKEND_NATIVE_FRAME_OPERATION_DEPENDENCIES_READY
+
+namespace quiz_vulkan::render::vulkan_backend {
+
 struct fake_vulkan_command_packet_executor_options {
     bool fail_begin = false;
     bool fail_end = false;
@@ -1956,6 +2104,40 @@ enum class vulkan_backend_frame_pipeline_handoff_status {
 
 std::string_view frame_pipeline_handoff_status_name(
     vulkan_backend_frame_pipeline_handoff_status status);
+
+struct vulkan_backend_frame_native_execution_summary {
+    bool checked = false;
+    vulkan_native_frame_operation_summary operation;
+    vulkan_native_frame_operation_diff_diagnostics diff;
+    vulkan_native_frame_operation_execution_plan plan;
+    vulkan_native_frame_execution_decision acquire_decision =
+        vulkan_native_frame_execution_decision::not_checked;
+    vulkan_native_frame_execution_decision record_decision =
+        vulkan_native_frame_execution_decision::not_checked;
+    vulkan_native_frame_execution_decision submit_decision =
+        vulkan_native_frame_execution_decision::not_checked;
+    vulkan_native_frame_execution_decision present_decision =
+        vulkan_native_frame_execution_decision::not_checked;
+    bool native_acquire_would_execute = false;
+    bool native_record_would_execute = false;
+    bool native_submit_would_execute = false;
+    bool native_present_would_execute = false;
+
+    bool should_execute_native_frame() const
+    {
+        return checked && plan.should_execute_native_frame();
+    }
+
+    bool should_skip_native_frame() const
+    {
+        return checked && plan.skip_required;
+    }
+
+    bool should_use_cpu_fallback() const
+    {
+        return checked && plan.should_use_cpu_fallback();
+    }
+};
 
 struct vulkan_backend_frame_pipeline_handoff {
     bool checked = false;
@@ -2008,6 +2190,7 @@ struct vulkan_backend_frame_pipeline_handoff {
     vulkan_native_function_table_status native_function_table_status =
         vulkan_native_function_table_status::not_checked;
     std::string missing_native_symbol_name;
+    vulkan_backend_frame_native_execution_summary native_frame_execution;
     bool sdk_native_path_checked = false;
     bool sdk_adapter_ready = false;
     vulkan_sdk_native_path_status sdk_native_path_status =
@@ -2016,6 +2199,10 @@ struct vulkan_backend_frame_pipeline_handoff {
         vulkan_sdk_capability_status::not_checked;
     vulkan_sdk_adapter_fallback_status sdk_adapter_fallback_status =
         vulkan_sdk_adapter_fallback_status::none;
+    vulkan_sdk_external_header_evidence sdk_external_headers;
+    bool sdk_external_headers_checked = false;
+    bool sdk_vulkan_headers_available = false;
+    bool sdk_vma_headers_available = false;
     std::string sdk_diagnostic;
     bool submit_batch_planning_checked = false;
     bool submit_batch_planning_completed = false;
@@ -2267,6 +2454,9 @@ vulkan_present_completion_plan_result build_vulkan_present_completion_plan(
     const vulkan_queue_submit_present_result& queue_present,
     const vulkan_native_function_table_diagnostics& native_functions = {},
     const vulkan_sdk_capability_result& sdk_capabilities = {});
+
+vulkan_native_queue_present_operation_result build_vulkan_native_queue_present_operation_plan(
+    const vulkan_native_queue_present_operation_request& request);
 
 vulkan_backend_frame_result apply_vulkan_sdk_capability_result_to_frame(
     vulkan_backend_frame_result frame,

@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <cstdio>
@@ -45,6 +46,89 @@ std::string read_text_owned_header(const std::string& header_name)
     return std::string(
         std::istreambuf_iterator<char>{input},
         std::istreambuf_iterator<char>{});
+}
+
+std::filesystem::path quiz_vulkan_app_root_from_this_test()
+{
+    const std::filesystem::path test_path = std::filesystem::path(__FILE__);
+    return test_path.parent_path().parent_path().parent_path().parent_path();
+}
+
+std::filesystem::path desktop_external_root()
+{
+    if (const char* external_dir = std::getenv("QUIZ_VULKAN_DESKTOP_EXTERNAL_DIR");
+        external_dir != nullptr && external_dir[0] != '\0') {
+        return std::filesystem::path(external_dir);
+    }
+
+    const std::filesystem::path repo_root =
+        quiz_vulkan_app_root_from_this_test().parent_path().parent_path().parent_path();
+    return repo_root / "build" / "external" / "lib" / "cpp" / "desktop";
+}
+
+std::vector<std::filesystem::path> harfbuzz_real_font_fixture_candidates()
+{
+    const std::filesystem::path external_root = desktop_external_root();
+    return {
+        external_root / "harfbuzz-14.2.0" / "perf" / "fonts" / "Roboto-Regular.ttf",
+        external_root / "harfbuzz-14.2.0" / "test" / "api" / "fonts" / "Mplus1p-Regular.ttf",
+    };
+}
+
+std::filesystem::path first_available_harfbuzz_real_font_fixture()
+{
+    for (const std::filesystem::path& path : harfbuzz_real_font_fixture_candidates()) {
+        if (std::filesystem::exists(path)) {
+            return path;
+        }
+    }
+    return {};
+}
+
+std::vector<std::byte> read_binary_fixture_bytes(const std::filesystem::path& path)
+{
+    std::ifstream input(path, std::ios::binary);
+    require(input.good(), "fixture font file can be opened");
+    std::vector<std::byte> bytes;
+    for (std::istreambuf_iterator<char> iter(input), end; iter != end; ++iter) {
+        bytes.push_back(static_cast<std::byte>(static_cast<unsigned char>(*iter)));
+    }
+    return bytes;
+}
+
+quiz_vulkan::render::render_text_font_source_bytes_load_result source_bytes_for_fixture(
+    const std::filesystem::path& path,
+    std::vector<std::byte> bytes)
+{
+    using namespace quiz_vulkan::render;
+
+    const std::string resolved_path = path.generic_string();
+    return render_text_font_source_bytes_load_result{
+        .status = render_text_font_source_bytes_load_status::loaded,
+        .source = font_source_resolution{
+            .face_id = 41,
+            .family = "Fixture Sans",
+            .source_uri = "file://" + resolved_path,
+            .kind = render_text_font_source_kind::file_path,
+            .resolved_location = resolved_path,
+            .can_attempt_load = true,
+            .virtual_fixture = false,
+        },
+        .readiness = font_source_bytes_readiness{
+            .face_id = 41,
+            .cache_key = "harfbuzz-fixture:" + path.filename().generic_string(),
+            .source_kind = render_text_font_source_kind::file_path,
+            .status = render_text_font_source_bytes_status::pending_file_load,
+            .estimated_byte_count = bytes.size(),
+            .cacheable = true,
+            .requires_io = true,
+            .bytes_available_without_io = false,
+        },
+        .cache_key = "harfbuzz-fixture:" + path.filename().generic_string(),
+        .resolved_path = resolved_path,
+        .bytes = std::move(bytes),
+        .diagnostic = "test fixture font bytes loaded",
+    };
 }
 
 std::vector<quiz_vulkan::render::render_text_external_font_backend_probe_result>
@@ -943,7 +1027,7 @@ void test_external_backend_dependency_metadata_and_header_stay_text_owned()
         "absolute dependency source hint is detected");
 
     const std::string header = read_text_owned_header("font_backend_dependency.h");
-    const std::array<const char*, 10> forbidden_tokens = {
+    const std::array<const char*, 9> forbidden_tokens = {
         "render/vulkan",
         "render/image",
         "src/app",
@@ -953,10 +1037,249 @@ void test_external_backend_dependency_metadata_and_header_stay_text_owned()
         "input/",
         "platform/",
         "build/external",
-        "#include <hb",
     };
     for (const char* token : forbidden_tokens) {
         require(header.find(token) == std::string::npos, "font backend dependency header stays text-owned");
+    }
+}
+
+void test_external_backend_header_probe_reports_compile_time_boundary()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_external_font_backend_header_probe_snapshot snapshot =
+        make_render_text_external_font_backend_header_probe_snapshot();
+    const std::size_t expected_available_count =
+        (QUIZ_VULKAN_HAS_FREETYPE_HEADERS != 0 ? 1U : 0U)
+        + (QUIZ_VULKAN_HAS_HARFBUZZ_HEADERS != 0 ? 1U : 0U)
+        + (QUIZ_VULKAN_HAS_UTF8PROC_HEADERS != 0 ? 1U : 0U);
+
+    require(snapshot.probes.size() == 3U, "header probe snapshot checks the three approved text headers");
+    require(snapshot.fake_fallback_preserved, "header probe snapshot preserves deterministic fake fallback");
+    require(
+        snapshot.available_header_count == expected_available_count,
+        "header probe snapshot mirrors external-header CMake definitions");
+    require(
+        snapshot.freetype_headers_available == (QUIZ_VULKAN_HAS_FREETYPE_HEADERS != 0),
+        "FreeType header availability mirrors CMake definition");
+    require(
+        snapshot.harfbuzz_headers_available == (QUIZ_VULKAN_HAS_HARFBUZZ_HEADERS != 0),
+        "HarfBuzz header availability mirrors CMake definition");
+    require(
+        snapshot.utf8proc_headers_available == (QUIZ_VULKAN_HAS_UTF8PROC_HEADERS != 0),
+        "utf8proc header availability mirrors CMake definition");
+    require(
+        snapshot.any_real_headers_available() == (expected_available_count != 0U),
+        "header probe snapshot reports whether any real header is present");
+    require(
+        snapshot.all_real_headers_available() == (expected_available_count == 3U),
+        "header probe snapshot reports whether all approved headers are present");
+
+    const std::array<render_text_font_backend_library, 3> libraries = {
+        render_text_font_backend_library::freetype,
+        render_text_font_backend_library::harfbuzz,
+        render_text_font_backend_library::utf8proc,
+    };
+    std::size_t expected_feature_count = 0;
+    for (const render_text_font_backend_library library : libraries) {
+        const render_text_external_font_backend_header_probe* probe =
+            find_render_text_external_font_backend_header_probe(snapshot.probes, library);
+        require(probe != nullptr, "header probe snapshot exposes each approved text dependency");
+        require(
+            probe->header_available == render_text_external_font_backend_header_available(library),
+            "header probe availability matches helper");
+        require(
+            probe->approved_header == render_text_external_font_backend_header_path_for(library),
+            "header probe records approved include surface");
+        if (probe->header_available) {
+            expected_feature_count += render_text_external_font_backend_header_features_for(library).size();
+            require(!probe->features.empty(), "available header probe advertises capability evidence");
+            require(
+                probe->diagnostic.find("available") != std::string::npos,
+                "available header probe records availability diagnostic");
+        } else {
+            require(probe->features.empty(), "unavailable header probe does not advertise real features");
+            require(
+                probe->diagnostic.find("unavailable") != std::string::npos,
+                "unavailable header probe records fallback diagnostic");
+        }
+    }
+    require(
+        snapshot.advertised_feature_count == expected_feature_count,
+        "header probe snapshot counts advertised feature evidence");
+    require(
+        snapshot.versioned_header_count <= snapshot.available_header_count,
+        "header probe version evidence is bounded by available headers");
+}
+
+void test_external_backend_header_backed_manifest_preserves_fake_fallback_without_linking()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_external_font_backend_header_probe_snapshot snapshot =
+        make_render_text_external_font_backend_header_probe_snapshot();
+    const render_text_external_font_backend_manifest manifest =
+        make_render_text_header_backed_external_font_backend_manifest();
+
+    require(!manifest.empty(), "header-backed manifest exposes dependency records");
+    require(
+        manifest.dependencies.size() == snapshot.probes.size() + 1U,
+        "header-backed manifest includes real header probes plus deterministic fallback");
+    require(manifest.allow_deterministic_fallback, "header-backed manifest preserves deterministic fallback");
+
+    for (const render_text_external_font_backend_header_probe& probe : snapshot.probes) {
+        const render_text_external_font_backend_dependency* dependency =
+            find_render_text_external_font_backend_dependency(manifest.dependencies, probe.library);
+        require(dependency != nullptr, "header-backed manifest includes each approved dependency");
+        require(
+            dependency->source_available == probe.header_available,
+            "header-backed dependency source availability mirrors header probe");
+        require(!dependency->build_linked, "header-backed dependency does not claim linked library");
+        require(
+            !dependency->adapter_symbols_available,
+            "header-backed dependency does not claim adapter symbols");
+        require(!dependency->adapter_ready(), "header-backed dependency keeps adapter readiness false");
+        require(
+            dependency->metadata_is_portable(),
+            "header-backed dependency metadata stays portable");
+    }
+
+    const manifest_font_backend_dependency_probe probe(manifest);
+    const std::array<render_text_font_backend_selection_purpose, 3> purposes = {
+        render_text_font_backend_selection_purpose::shaping,
+        render_text_font_backend_selection_purpose::rasterization,
+        render_text_font_backend_selection_purpose::unicode_processing,
+    };
+    for (const render_text_font_backend_selection_purpose purpose : purposes) {
+        const std::vector<render_text_font_backend_library> required_libraries =
+            render_text_external_font_backend_default_libraries_for(purpose);
+        require(required_libraries.size() == 1U, "focused text purpose maps to one external dependency");
+
+        const render_text_font_backend_library library = required_libraries.front();
+        const bool header_available = render_text_external_font_backend_header_available(library);
+        const render_text_external_font_backend_probe_result result = probe.probe(
+            render_text_external_font_backend_probe_request{
+                .purpose = purpose,
+            });
+
+        require(result.ok(), "header-backed manifest preserves deterministic fallback path");
+        require(
+            result.status == render_text_font_backend_adapter_readiness_status::fallback_ready,
+            "header-backed manifest reports fallback-ready status");
+        require(result.fallback_ready, "header-backed manifest marks fallback ready");
+        require(result.used_deterministic_fallback, "header-backed manifest uses deterministic fallback");
+        require(!result.adapter_ready, "header-backed manifest does not claim adapter readiness");
+        require(!result.can_attempt_real_backend, "header-backed manifest cannot attempt real backend");
+        require(
+            result.selection.selected.library == render_text_font_backend_library::deterministic_fake,
+            "header-backed manifest selects deterministic fake backend");
+        if (header_available) {
+            require(
+                result.fallback_reason == render_text_font_backend_adapter_readiness_status::adapter_unavailable,
+                "header-backed available headers fall back because adapters are unlinked");
+            require(result.missing_dependencies.empty(), "available header is not reported as missing source");
+            require(
+                result.adapter_unavailable_dependencies.size() == 1U,
+                "available header reports one adapter-unavailable dependency");
+            require(
+                result.adapter_unavailable_dependencies.front() == library,
+                "available header records the adapter-unavailable library");
+        } else {
+            require(
+                result.fallback_reason == render_text_font_backend_adapter_readiness_status::missing_dependency,
+                "missing header falls back because the approved header is unavailable");
+            require(
+                result.missing_dependencies.size() == 1U,
+                "missing header records one missing dependency");
+            require(
+                result.missing_dependencies.front() == library,
+                "missing header records the required library");
+        }
+    }
+}
+
+void test_external_backend_work_readiness_distinguishes_headers_sources_and_linking()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_external_font_backend_header_probe_snapshot headers =
+        make_render_text_external_font_backend_header_probe_snapshot();
+    const std::array<render_text_font_backend_selection_purpose, 3> purposes = {
+        render_text_font_backend_selection_purpose::shaping,
+        render_text_font_backend_selection_purpose::rasterization,
+        render_text_font_backend_selection_purpose::unicode_processing,
+    };
+
+    const std::vector<render_text_external_font_backend_work_readiness> header_only =
+        make_render_text_external_font_backend_work_readiness_records(
+            headers,
+            make_render_text_header_backed_external_font_backend_manifest());
+    require(header_only.size() == purposes.size(), "work readiness records each external text purpose");
+    for (std::size_t index = 0; index < purposes.size(); ++index) {
+        const render_text_external_font_backend_work_readiness& readiness = header_only[index];
+        const render_text_font_backend_library library =
+            render_text_external_font_backend_default_libraries_for(purposes[index]).front();
+
+        require(readiness.purpose == purposes[index], "header-only readiness preserves purpose");
+        require(readiness.library == library, "header-only readiness records required library");
+        require(
+            readiness.header_available == render_text_external_font_backend_header_available(library),
+            "header-only readiness mirrors approved header availability");
+        require(!readiness.build_linked, "header-only readiness does not claim linked libraries");
+        require(!readiness.adapter_symbols_available, "header-only readiness does not claim adapter symbols");
+        require(readiness.fallback_required, "header-only readiness keeps deterministic fallback required");
+        require(!readiness.can_attempt_real_backend, "header-only readiness cannot attempt real backend work");
+        if (readiness.header_available) {
+            require(
+                readiness.status == render_text_external_font_backend_work_readiness_status::header_only,
+                "available approved headers are classified as header-only without linking");
+            require(
+                readiness.header_backed_without_library(),
+                "header-only readiness reports header-backed state");
+        } else {
+            require(
+                readiness.status
+                    == render_text_external_font_backend_work_readiness_status::missing_approved_header,
+                "missing approved headers are classified separately");
+        }
+    }
+
+    const std::vector<render_text_external_font_backend_work_readiness> source_ready =
+        make_render_text_external_font_backend_work_readiness_records(
+            headers,
+            make_render_text_known_external_font_backend_manifest(true, false, false));
+    const std::vector<render_text_external_font_backend_work_readiness> library_linked =
+        make_render_text_external_font_backend_work_readiness_records(
+            headers,
+            make_render_text_known_external_font_backend_manifest(true, true, false));
+    const std::vector<render_text_external_font_backend_work_readiness> adapter_ready =
+        make_render_text_external_font_backend_work_readiness_records(
+            headers,
+            make_render_text_known_external_font_backend_manifest(true, true, true));
+
+    for (std::size_t index = 0; index < purposes.size(); ++index) {
+        require(
+            source_ready[index].status == render_text_external_font_backend_work_readiness_status::source_ready,
+            "source-ready dependencies are distinct from header-only probes");
+        require(source_ready[index].source_available, "source-ready dependency records source availability");
+        require(!source_ready[index].build_linked, "source-ready dependency is not linked yet");
+        require(source_ready[index].fallback_required, "source-ready dependency still requires fallback");
+
+        require(
+            library_linked[index].status == render_text_external_font_backend_work_readiness_status::library_linked,
+            "linked dependencies without adapter symbols are classified as linked");
+        require(library_linked[index].build_linked, "linked readiness records library linkage");
+        require(
+            !library_linked[index].adapter_symbols_available,
+            "linked readiness distinguishes missing adapter symbols");
+        require(!library_linked[index].can_attempt_real_backend, "linked readiness without adapter cannot run backend");
+
+        require(
+            adapter_ready[index].status == render_text_external_font_backend_work_readiness_status::adapter_ready,
+            "adapter-ready dependencies are classified as runnable real backend work");
+        require(adapter_ready[index].ok(), "adapter-ready readiness is ok");
+        require(adapter_ready[index].can_attempt_real_backend, "adapter-ready readiness can attempt real backend");
+        require(!adapter_ready[index].fallback_required, "adapter-ready readiness does not require fallback");
     }
 }
 
@@ -1423,6 +1746,84 @@ void test_real_backend_adapter_rasterizes_and_gates_raster_capability()
     require(gated.can_fallback(), "gated raster failure can fall back");
 }
 
+void test_harfbuzz_real_adapter_shapes_materialized_font_bytes_and_preserves_cluster()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::filesystem::path font_path = first_available_harfbuzz_real_font_fixture();
+    if (font_path.empty()) {
+        return;
+    }
+
+    const std::string text = "a\xcc\x81";
+    render_text_real_font_shaping_adapter_request request =
+        adapter_request_for(text, real_backend_capability(false, false));
+    request.style.font_size = 32.0f;
+    request.source_bytes = source_bytes_for_fixture(font_path, read_binary_fixture_bytes(font_path));
+    request.source_label = font_path.filename().generic_string();
+
+    const function_table_font_backend_adapter adapter(render_text_font_backend_adapter_functions{
+        .shape = harfbuzz_real_font_backend_shape,
+        .rasterize = deterministic_fake_real_font_backend_rasterize,
+        .label = "HarfBuzz",
+    });
+    const render_text_real_font_shaping_adapter_result result = adapter.shape(request);
+
+    if (!render_text_harfbuzz_shaping_adapter_available()) {
+        require(
+            result.status == render_text_font_backend_adapter_status::backend_unavailable,
+            "uncompiled HarfBuzz adapter reports backend unavailable");
+        return;
+    }
+
+    require(result.ok(), "HarfBuzz adapter shapes materialized fixture font bytes");
+    require(!result.glyphs.empty(), "HarfBuzz adapter emits at least one shaped glyph");
+    require(
+        result.has_diagnostic(render_text_font_backend_adapter_status::shaped),
+        "HarfBuzz adapter records shaped diagnostic");
+
+    bool found_positive_advance = false;
+    for (const render_text_shaped_glyph& glyph : result.glyphs) {
+        require(glyph.glyph_id != 0U, "HarfBuzz adapter emits glyph-bearing output");
+        require(glyph.cluster_byte_offset == 0U, "HarfBuzz glyph stays at the combining cluster offset");
+        require(glyph.cluster_byte_count == text.size(), "HarfBuzz glyph spans the full combining cluster bytes");
+        require(glyph.cluster_codepoint_offset == 0U, "HarfBuzz glyph cluster starts at the base codepoint");
+        require(glyph.cluster_codepoint_count == 2U, "HarfBuzz glyph cluster spans base plus combining mark");
+        require(glyph.resolved_face_id == 41U, "HarfBuzz glyph preserves resolved face id evidence");
+        found_positive_advance = found_positive_advance || glyph.advance_x > 0.0f;
+    }
+    require(found_positive_advance, "HarfBuzz shaped glyph positions include font-backed advance");
+}
+
+void test_harfbuzz_real_adapter_reports_missing_materialized_font_bytes()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_real_font_shaping_adapter_request request =
+        adapter_request_for("A", real_backend_capability(false, false));
+    request.source_bytes = render_text_font_source_bytes_load_result{
+        .status = render_text_font_source_bytes_load_status::missing_bytes,
+        .diagnostic = "missing test fixture bytes",
+    };
+
+    const function_table_font_backend_adapter adapter(render_text_font_backend_adapter_functions{
+        .shape = harfbuzz_real_font_backend_shape,
+        .rasterize = deterministic_fake_real_font_backend_rasterize,
+        .label = "HarfBuzz",
+    });
+    const render_text_real_font_shaping_adapter_result result = adapter.shape(request);
+
+    require(!result.ok(), "HarfBuzz adapter does not shape without materialized font bytes");
+    require(
+        result.status == render_text_font_backend_adapter_status::recoverable_backend_failure,
+        "missing HarfBuzz font bytes produce recoverable adapter failure");
+    require(result.can_fallback(), "missing HarfBuzz font bytes can fall back");
+    require(result.diagnostics.size() == 1U, "missing HarfBuzz font bytes record one diagnostic");
+    require(
+        result.diagnostic.find("materialized font bytes") != std::string::npos,
+        "missing HarfBuzz font bytes diagnostic names materialized bytes");
+}
+
 void test_fake_backend_reports_zero_advance_combining_mark_with_cluster_range()
 {
     using namespace quiz_vulkan::render;
@@ -1467,6 +1868,9 @@ int main()
     test_external_backend_dependency_probe_reports_unlinked_adapter_fallback();
     test_external_backend_dependency_probe_reports_version_and_feature_mismatch();
     test_external_backend_dependency_metadata_and_header_stay_text_owned();
+    test_external_backend_header_probe_reports_compile_time_boundary();
+    test_external_backend_header_backed_manifest_preserves_fake_fallback_without_linking();
+    test_external_backend_work_readiness_distinguishes_headers_sources_and_linking();
     test_external_backend_dependency_probe_diff_reports_fake_to_adapter_ready();
     test_external_backend_dependency_probe_diff_reports_unavailable_to_mismatch();
     test_external_backend_dependency_probe_diff_summary_compares_backend_snapshots();
@@ -1483,6 +1887,8 @@ int main()
     test_real_backend_adapter_reports_recoverable_and_fatal_failures();
     test_real_backend_adapter_diagnostics_are_deterministic();
     test_real_backend_adapter_rasterizes_and_gates_raster_capability();
+    test_harfbuzz_real_adapter_shapes_materialized_font_bytes_and_preserves_cluster();
+    test_harfbuzz_real_adapter_reports_missing_materialized_font_bytes();
     test_fake_backend_reports_zero_advance_combining_mark_with_cluster_range();
     return 0;
 }

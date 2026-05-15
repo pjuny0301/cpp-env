@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.25)
 project(
     quiz_vulkan
     VERSION 0.1.0
-    LANGUAGES CXX
+    LANGUAGES C CXX
 )
 
 function(quiz_vulkan_copy_mingw_runtime_dlls target_name)
@@ -23,6 +23,161 @@ function(quiz_vulkan_copy_mingw_runtime_dlls target_name)
         file(COPY ${runtime_dll_paths} DESTINATION "${CMAKE_BINARY_DIR}")
     endif()
 endfunction()
+
+get_filename_component(QUIZ_VULKAN_REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
+set(
+    QUIZ_VULKAN_DESKTOP_EXTERNAL_DIR
+    "${QUIZ_VULKAN_REPO_ROOT}/build/external/lib/cpp/desktop"
+    CACHE PATH
+    "Directory containing optional desktop C++ dependency source snapshots"
+)
+
+add_library(quiz_vulkan_desktop_external_headers INTERFACE)
+
+function(quiz_vulkan_add_optional_external_header define_name relative_dir marker_file)
+    set(external_include_dir "${QUIZ_VULKAN_DESKTOP_EXTERNAL_DIR}/${relative_dir}")
+    if(EXISTS "${external_include_dir}/${marker_file}")
+        target_include_directories(
+            quiz_vulkan_desktop_external_headers
+            SYSTEM
+            INTERFACE
+                "${external_include_dir}"
+        )
+        target_compile_definitions(
+            quiz_vulkan_desktop_external_headers
+            INTERFACE
+                "${define_name}=1"
+        )
+    else()
+        target_compile_definitions(
+            quiz_vulkan_desktop_external_headers
+            INTERFACE
+                "${define_name}=0"
+        )
+    endif()
+endfunction()
+
+quiz_vulkan_add_optional_external_header(
+    QUIZ_VULKAN_HAS_VULKAN_HEADERS
+    "Vulkan-Headers-vulkan-sdk-1.4.341.0/include"
+    "vulkan/vulkan.h"
+)
+quiz_vulkan_add_optional_external_header(
+    QUIZ_VULKAN_HAS_VMA_HEADERS
+    "VulkanMemoryAllocator-v3.3.0/include"
+    "vk_mem_alloc.h"
+)
+quiz_vulkan_add_optional_external_header(
+    QUIZ_VULKAN_HAS_FREETYPE_HEADERS
+    "freetype-2.14.3/include"
+    "ft2build.h"
+)
+quiz_vulkan_add_optional_external_header(
+    QUIZ_VULKAN_HAS_HARFBUZZ_HEADERS
+    "harfbuzz-14.2.0/src"
+    "hb.h"
+)
+quiz_vulkan_add_optional_external_header(
+    QUIZ_VULKAN_HAS_UTF8PROC_HEADERS
+    "utf8proc-v2.11.3"
+    "utf8proc.h"
+)
+quiz_vulkan_add_optional_external_header(
+    QUIZ_VULKAN_HAS_STB_HEADERS
+    "stb-31c1ad3"
+    "stb_image.h"
+)
+quiz_vulkan_add_optional_external_header(
+    QUIZ_VULKAN_HAS_MINIAUDIO_HEADERS
+    "miniaudio-0.11.25"
+    "miniaudio.h"
+)
+
+set(QUIZ_VULKAN_UTF8PROC_EXTERNAL_DIR "${QUIZ_VULKAN_DESKTOP_EXTERNAL_DIR}/utf8proc-v2.11.3")
+if(EXISTS "${QUIZ_VULKAN_UTF8PROC_EXTERNAL_DIR}/utf8proc.c")
+    add_library(quiz_vulkan_utf8proc_external STATIC "${QUIZ_VULKAN_UTF8PROC_EXTERNAL_DIR}/utf8proc.c")
+    target_include_directories(
+        quiz_vulkan_utf8proc_external
+        SYSTEM
+        PUBLIC
+            "${QUIZ_VULKAN_UTF8PROC_EXTERNAL_DIR}"
+    )
+    target_compile_definitions(
+        quiz_vulkan_utf8proc_external
+        PUBLIC
+            UTF8PROC_STATIC
+            QUIZ_VULKAN_HAS_UTF8PROC_EXTERNAL_LIBRARY=1
+    )
+else()
+    add_library(quiz_vulkan_utf8proc_external INTERFACE)
+    target_compile_definitions(
+        quiz_vulkan_utf8proc_external
+        INTERFACE
+            QUIZ_VULKAN_HAS_UTF8PROC_EXTERNAL_LIBRARY=0
+    )
+endif()
+
+set(QUIZ_VULKAN_FREETYPE_EXTERNAL_DIR "${QUIZ_VULKAN_DESKTOP_EXTERNAL_DIR}/freetype-2.14.3")
+if(EXISTS "${QUIZ_VULKAN_FREETYPE_EXTERNAL_DIR}/CMakeLists.txt")
+    set(FT_DISABLE_ZLIB TRUE CACHE BOOL "Disable optional zlib support for quiz-vulkan FreeType" FORCE)
+    set(FT_DISABLE_BZIP2 TRUE CACHE BOOL "Disable optional bzip2 support for quiz-vulkan FreeType" FORCE)
+    set(FT_DISABLE_PNG TRUE CACHE BOOL "Disable optional PNG support for quiz-vulkan FreeType" FORCE)
+    set(FT_DISABLE_HARFBUZZ TRUE CACHE BOOL "Disable optional HarfBuzz support for quiz-vulkan FreeType" FORCE)
+    set(FT_DISABLE_BROTLI TRUE CACHE BOOL "Disable optional Brotli support for quiz-vulkan FreeType" FORCE)
+    set(FT_ENABLE_ERROR_STRINGS TRUE CACHE BOOL "Enable FreeType error strings for diagnostics" FORCE)
+    add_subdirectory(
+        "${QUIZ_VULKAN_FREETYPE_EXTERNAL_DIR}"
+        "${CMAKE_BINARY_DIR}/external/freetype"
+        EXCLUDE_FROM_ALL
+    )
+    add_library(quiz_vulkan_freetype_external INTERFACE)
+    target_link_libraries(quiz_vulkan_freetype_external INTERFACE freetype)
+    target_compile_definitions(
+        quiz_vulkan_freetype_external
+        INTERFACE
+            QUIZ_VULKAN_HAS_FREETYPE_EXTERNAL_LIBRARY=1
+    )
+else()
+    add_library(quiz_vulkan_freetype_external INTERFACE)
+    target_compile_definitions(
+        quiz_vulkan_freetype_external
+        INTERFACE
+            QUIZ_VULKAN_HAS_FREETYPE_EXTERNAL_LIBRARY=0
+    )
+endif()
+
+set(QUIZ_VULKAN_HARFBUZZ_EXTERNAL_DIR "${QUIZ_VULKAN_DESKTOP_EXTERNAL_DIR}/harfbuzz-14.2.0")
+if(EXISTS "${QUIZ_VULKAN_HARFBUZZ_EXTERNAL_DIR}/CMakeLists.txt")
+    set(HB_BUILD_UTILS OFF CACHE BOOL "Disable HarfBuzz command-line utilities for quiz-vulkan" FORCE)
+    set(HB_BUILD_SUBSET OFF CACHE BOOL "Disable HarfBuzz subset library for quiz-vulkan" FORCE)
+    set(HB_BUILD_RASTER OFF CACHE BOOL "Disable HarfBuzz raster library for quiz-vulkan" FORCE)
+    set(HB_BUILD_VECTOR OFF CACHE BOOL "Disable HarfBuzz vector library for quiz-vulkan" FORCE)
+    set(HB_BUILD_GPU OFF CACHE BOOL "Disable HarfBuzz GPU library for quiz-vulkan" FORCE)
+    set(HB_HAVE_CAIRO OFF CACHE BOOL "Disable HarfBuzz Cairo helpers for quiz-vulkan" FORCE)
+    set(HB_HAVE_GRAPHITE2 OFF CACHE BOOL "Disable HarfBuzz Graphite2 helpers for quiz-vulkan" FORCE)
+    set(HB_HAVE_GLIB OFF CACHE BOOL "Disable HarfBuzz GLib helpers for quiz-vulkan" FORCE)
+    set(HB_HAVE_GOBJECT OFF CACHE BOOL "Disable HarfBuzz GObject bindings for quiz-vulkan" FORCE)
+    set(HB_HAVE_ICU OFF CACHE BOOL "Disable HarfBuzz ICU helpers for quiz-vulkan" FORCE)
+    add_subdirectory(
+        "${QUIZ_VULKAN_HARFBUZZ_EXTERNAL_DIR}"
+        "${CMAKE_BINARY_DIR}/external/harfbuzz"
+        EXCLUDE_FROM_ALL
+    )
+    add_library(quiz_vulkan_harfbuzz_external INTERFACE)
+    target_link_libraries(quiz_vulkan_harfbuzz_external INTERFACE harfbuzz)
+    target_compile_definitions(
+        quiz_vulkan_harfbuzz_external
+        INTERFACE
+            QUIZ_VULKAN_HAS_HARFBUZZ_EXTERNAL_LIBRARY=1
+    )
+else()
+    add_library(quiz_vulkan_harfbuzz_external INTERFACE)
+    target_compile_definitions(
+        quiz_vulkan_harfbuzz_external
+        INTERFACE
+            QUIZ_VULKAN_HAS_HARFBUZZ_EXTERNAL_LIBRARY=0
+    )
+endif()
 
 add_library(quiz_vulkan_platform_shell STATIC)
 target_sources(
@@ -79,8 +234,17 @@ target_sources(
         FILE_SET HEADERS
         BASE_DIRS src
         FILES
+            src/assets/asset_bytes_contract.h
+            src/assets/asset_bytes_provider.h
+            src/assets/asset_manifest.h
+            src/assets/asset_manifest_version_policy.h
+            src/assets/asset_pack_index.h
+            src/assets/asset_pack_validation.h
             src/assets/asset_path_policy.h
             src/assets/asset_resolver.h
+            src/assets/asset_runtime_catalog.h
+            src/assets/asset_runtime_resolver_policy.h
+            src/assets/asset_typed_materialized_bytes.h
 )
 target_compile_features(quiz_vulkan_asset_contract INTERFACE cxx_std_23)
 target_include_directories(quiz_vulkan_asset_contract INTERFACE src)
@@ -138,10 +302,17 @@ target_sources(
             src/render/image/image_texture_cache.h
             src/render/image/image_texture_cache_snapshot.h
             src/render/image/image_texture_diagnostics.h
+            src/render/image/image_texture_frame_binding_summary.h
+            src/render/image/image_texture_frame_resource_materialization_diff.h
+            src/render/image/image_texture_frame_resource_packet_materialization.h
+            src/render/image/image_texture_frame_resource_packet_plan.h
             src/render/image/image_texture_frame_snapshot.h
+            src/render/image/image_texture_frame_upload_handoff.h
             src/render/image/image_texture_pipeline.h
             src/render/image/image_texture_placeholder_policy.h
             src/render/image/image_texture_upload.h
+            src/render/image/image_texture_upload_operation_plan.h
+            src/render/image/image_texture_upload_result_diagnostics.h
             src/render/image/image_texture_upload_retry_policy.h
             src/render/image/image_texture_upload_snapshot_diff.h
             src/render/image/image_types.h
@@ -160,8 +331,12 @@ target_sources(
             src/render/text/font_backend_selection.h
             src/render/text/font_coverage_run_segmentation.h
             src/render/text/font_cmap_inspector.h
+            src/render/text/font_fallback_run_planning_diagnostics.h
+            src/render/text/font_fallback_shaping_handoff.h
             src/render/text/font_glyph_atlas.h
             src/render/text/font_glyph_atlas_page_plan.h
+            src/render/text/font_glyph_atlas_upload_result.h
+            src/render/text/font_glyph_atlas_upload_operation_plan.h
             src/render/text/font_glyph_id_resolver.h
             src/render/text/font_rasterizer.h
             src/render/text/font_resolver.h
@@ -174,12 +349,14 @@ target_sources(
             src/render/text/glyph_run.h
             src/render/text/text_frame_draw_plan.h
             src/render/text/text_frame_snapshot.h
+            src/render/text/text_frame_upload_handoff.h
             src/render/text/text_engine.h
             src/render/text/utf8_line_break.h
             src/render/text/utf8_text_run.h
 )
 target_compile_features(quiz_vulkan_render_contract INTERFACE cxx_std_23)
 target_include_directories(quiz_vulkan_render_contract INTERFACE src)
+target_link_libraries(quiz_vulkan_render_contract INTERFACE quiz_vulkan_desktop_external_headers)
 
 add_library(quiz_vulkan_audio_contract INTERFACE)
 target_sources(
@@ -209,11 +386,19 @@ target_sources(
             src/core/input/gesture_recognizer.h
             src/core/input/input_engine.h
             src/core/input/input_event.h
+            src/core/input/input_key_policy.h
+            src/core/input/input_pointer_policy.h
             src/core/input/input_routing_diagnostics.h
+            src/core/input/input_text_route_policy.h
+            src/core/input/input_action_candidate_plan.h
             src/core/input/normalized_input_replay.h
             src/core/input/normalized_input_replay_diff.h
+            src/core/input/normalized_input_replay_diff_policy.h
             src/core/input/platform_input_engine_adapter.h
+            src/core/input/platform_input_replay.h
             src/core/input/platform_input_translator.h
+            src/core/input/text_edit_transaction_diagnostics.h
+            src/core/input/text_edit_transaction_replay.h
             src/core/input/text_input_presentation.h
             src/core/input/text_input_model.h
             src/core/input/text_input_types.h
@@ -274,6 +459,8 @@ add_library(quiz_vulkan_text_engine STATIC)
 target_sources(
     quiz_vulkan_text_engine
     PRIVATE
+        src/render/text/freetype_memory_face_adapter.cpp
+        src/render/text/harfbuzz_shaping_adapter.cpp
         src/render/text/fake_text_engine.cpp
     PUBLIC
         FILE_SET HEADERS
@@ -284,8 +471,30 @@ target_sources(
 )
 target_compile_features(quiz_vulkan_text_engine PUBLIC cxx_std_23)
 target_include_directories(quiz_vulkan_text_engine PUBLIC src)
-target_link_libraries(quiz_vulkan_text_engine PUBLIC quiz_vulkan_render_contract)
+target_link_libraries(
+    quiz_vulkan_text_engine
+    PUBLIC
+        quiz_vulkan_render_contract
+        quiz_vulkan_freetype_external
+        quiz_vulkan_harfbuzz_external
+        quiz_vulkan_utf8proc_external
+)
 target_link_libraries(quiz_vulkan_text_scene_bridge INTERFACE quiz_vulkan_scene quiz_vulkan_render_contract)
+
+add_library(quiz_vulkan_image_engine STATIC)
+target_sources(
+    quiz_vulkan_image_engine
+    PRIVATE
+        src/render/image/third_party_image_decoder_adapter.cpp
+)
+target_compile_features(quiz_vulkan_image_engine PUBLIC cxx_std_23)
+target_include_directories(quiz_vulkan_image_engine PUBLIC src)
+target_link_libraries(quiz_vulkan_image_engine PUBLIC quiz_vulkan_render_contract)
+target_compile_definitions(
+    quiz_vulkan_image_engine
+    PUBLIC
+        QUIZ_VULKAN_HAS_STB_IMAGE_DECODE_BACKEND=1
+)
 
 add_library(quiz_vulkan_ui_renderer STATIC)
 target_sources(
@@ -342,6 +551,7 @@ target_sources(
             src/render/vulkan/vulkan_backend_graphics_pipeline.h
             src/render/vulkan/vulkan_backend_instance.h
             src/render/vulkan/vulkan_backend_loader.h
+            src/render/vulkan/vulkan_backend_native_frame_operation.h
             src/render/vulkan/vulkan_backend_native_readiness.h
             src/render/vulkan/vulkan_backend_native_symbols.h
             src/render/vulkan/vulkan_backend_pipeline_layout.h
@@ -420,6 +630,7 @@ include(CTest)
 if(BUILD_TESTING)
     function(quiz_vulkan_add_test_executable target_name)
         add_executable(${target_name} ${ARGN})
+        target_compile_features(${target_name} PRIVATE cxx_std_23)
         quiz_vulkan_copy_mingw_runtime_dlls(${target_name})
         add_test(NAME ${target_name} COMMAND ${target_name})
     endfunction()
@@ -564,16 +775,17 @@ if(BUILD_TESTING)
     target_link_libraries(
         quiz_vulkan_fake_image_texture_cache_tests
         PRIVATE
-            quiz_vulkan_render_contract
+            quiz_vulkan_image_engine
     )
     quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_fake_image_texture_cache_tests)
     add_test(NAME quiz_vulkan_fake_image_texture_cache_tests COMMAND quiz_vulkan_fake_image_texture_cache_tests)
 
     quiz_vulkan_add_test_directory(tests/render/text LINK_LIBRARIES quiz_vulkan_render_contract quiz_vulkan_scene quiz_vulkan_text_engine quiz_vulkan_text_scene_bridge)
-    quiz_vulkan_add_test_directory(tests/render/image LINK_LIBRARIES quiz_vulkan_render_contract)
+    quiz_vulkan_add_test_directory(tests/render/image LINK_LIBRARIES quiz_vulkan_image_engine)
     quiz_vulkan_add_test_directory(tests/render/vulkan LINK_LIBRARIES quiz_vulkan_renderer)
     quiz_vulkan_add_test_directory(tests/audio LINK_LIBRARIES quiz_vulkan_audio_contract)
     quiz_vulkan_add_test_directory(tests/assets LINK_LIBRARIES quiz_vulkan_asset_contract quiz_vulkan_deck_source_asset_adapter)
+    quiz_vulkan_add_test_directory(tests/external LINK_LIBRARIES quiz_vulkan_utf8proc_external)
 
     add_library(
         quiz_vulkan_interface_contract_compile_tests
@@ -583,4 +795,5 @@ if(BUILD_TESTING)
     )
     target_include_directories(quiz_vulkan_interface_contract_compile_tests PRIVATE src)
     target_compile_features(quiz_vulkan_interface_contract_compile_tests PRIVATE cxx_std_23)
+    target_link_libraries(quiz_vulkan_interface_contract_compile_tests PRIVATE quiz_vulkan_desktop_external_headers)
 endif()

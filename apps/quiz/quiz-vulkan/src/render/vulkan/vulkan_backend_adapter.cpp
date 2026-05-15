@@ -9,6 +9,8 @@
 #include "render/vulkan/vulkan_backend_swapchain.h"
 
 #include <algorithm>
+#include <array>
+#include <cstdint>
 #include <string>
 #include <utility>
 #include <vector>
@@ -90,6 +92,7 @@ vulkan_loader_probe_result make_loader_probe_result(
         .checked = true,
         .status = vulkan_loader_probe_status::library_missing,
         .attempted_library_names = {},
+        .candidate_diagnostics = {},
         .loaded_library_name = {},
         .required_symbol_name = required_symbol_name_for(request),
         .attempted_library_count = 0,
@@ -104,12 +107,53 @@ void record_loader_attempt(
 {
     result.attempted_library_names.push_back(library_name);
     result.attempted_library_count = result.attempted_library_names.size();
+    result.candidate_diagnostics.push_back(vulkan_loader_candidate_diagnostic{
+        .library_name = library_name,
+        .status = vulkan_loader_candidate_status::library_missing,
+        .library_found = false,
+        .required_symbol_found = false,
+    });
+}
+
+void mark_loader_candidate_found(
+    vulkan_loader_probe_result& result,
+    const std::string& library_name)
+{
+    for (vulkan_loader_candidate_diagnostic& candidate :
+         result.candidate_diagnostics) {
+        if (candidate.library_name != library_name) {
+            continue;
+        }
+
+        candidate.status = vulkan_loader_candidate_status::required_symbol_missing;
+        candidate.library_found = true;
+        candidate.required_symbol_found = false;
+        return;
+    }
+}
+
+void mark_loader_candidate_usable(
+    vulkan_loader_probe_result& result,
+    const std::string& library_name)
+{
+    for (vulkan_loader_candidate_diagnostic& candidate :
+         result.candidate_diagnostics) {
+        if (candidate.library_name != library_name) {
+            continue;
+        }
+
+        candidate.status = vulkan_loader_candidate_status::usable;
+        candidate.library_found = true;
+        candidate.required_symbol_found = true;
+        return;
+    }
 }
 
 void mark_loader_library_found(
     vulkan_loader_probe_result& result,
     const std::string& library_name)
 {
+    mark_loader_candidate_found(result, library_name);
     result.library_found = true;
     if (result.loaded_library_name.empty()) {
         result.loaded_library_name = library_name;
@@ -120,6 +164,7 @@ void mark_loader_available(
     vulkan_loader_probe_result& result,
     const std::string& library_name)
 {
+    mark_loader_candidate_usable(result, library_name);
     result.status = vulkan_loader_probe_status::available;
     result.loaded_library_name = library_name;
     result.library_found = true;
@@ -362,6 +407,451 @@ std::vector<std::string> native_symbol_candidate_libraries(
         options.candidate_library_names.begin(),
         options.candidate_library_names.end());
     return candidate_names;
+}
+
+vulkan_native_function_pointer resolve_loader_global_symbol(
+    vulkan_native_function_pointer instance_proc_address,
+    const std::string& symbol_name)
+{
+    if (!instance_proc_address.valid() || symbol_name.empty()) {
+        return {};
+    }
+
+    using vk_void_function = void (*)();
+#if defined(_WIN32)
+    using vk_get_instance_proc_addr = vk_void_function(__stdcall *)(void*, const char*);
+#else
+    using vk_get_instance_proc_addr = vk_void_function (*)(void*, const char*);
+#endif
+    const auto get_instance_proc_address =
+        reinterpret_cast<vk_get_instance_proc_addr>(instance_proc_address.value);
+    if (get_instance_proc_address == nullptr) {
+        return {};
+    }
+
+    const vk_void_function resolved = get_instance_proc_address(nullptr, symbol_name.c_str());
+    return vulkan_native_function_pointer{
+        .value = reinterpret_cast<std::uintptr_t>(resolved),
+    };
+}
+
+vulkan_system_symbol_resolution_result make_system_symbol_resolution_result(
+    std::string_view symbol_name)
+{
+    return vulkan_system_symbol_resolution_result{
+        .checked = true,
+        .symbol_name = std::string{symbol_name},
+        .attempted_library_names = {},
+        .loaded_library_name = {},
+        .loader_library_available = false,
+        .instance_proc_address_available = false,
+        .resolved_via_instance_proc_address = false,
+        .resolved_via_direct_export = false,
+        .pointer = {},
+        .diagnostic = {},
+    };
+}
+
+vulkan_native_instance_function_table make_native_instance_function_table()
+{
+    return vulkan_native_instance_function_table{
+        .checked = true,
+        .status = vulkan_native_instance_function_table_status::not_checked,
+        .get_instance_proc_address = {},
+        .create_instance = {},
+        .destroy_instance = {},
+        .diagnostic = {},
+    };
+}
+
+vulkan_native_instance_create_result make_native_instance_create_result(
+    const vulkan_loader_readiness_state& loader_readiness,
+    const vulkan_native_instance_function_table& function_table,
+    const vulkan_instance_create_request& request)
+{
+    return vulkan_native_instance_create_result{
+        .checked = true,
+        .status = vulkan_native_instance_create_status::not_requested,
+        .loader = loader_readiness,
+        .function_table = function_table,
+        .request = request,
+        .handle = {},
+        .native_result = 0,
+        .diagnostic = {},
+    };
+}
+
+vulkan_native_instance_dispatch_table make_native_instance_dispatch_table(
+    const vulkan_native_instance_create_result& create_result,
+    vulkan_native_instance_symbol_resolver_interface& resolver)
+{
+    return vulkan_native_instance_dispatch_table{
+        .checked = true,
+        .status = vulkan_native_instance_dispatch_table_status::not_checked,
+        .handle = create_result.handle,
+        .get_instance_proc_address = resolver.get_instance_proc_address(),
+        .destroy_instance = {},
+        .missing_symbol_name = {},
+        .diagnostic = {},
+    };
+}
+
+vulkan_native_instance_destroy_result make_native_instance_destroy_result(
+    const vulkan_native_instance_function_table& function_table,
+    vulkan_instance_handle handle)
+{
+    return vulkan_native_instance_destroy_result{
+        .checked = true,
+        .status = vulkan_native_instance_destroy_status::not_requested,
+        .function_table = function_table,
+        .dispatch_table = {},
+        .handle = handle,
+        .used_instance_dispatch = false,
+        .diagnostic = {},
+    };
+}
+
+vulkan_native_physical_device_dispatch_table make_native_physical_device_dispatch_table(
+    const vulkan_native_instance_create_result& create_result,
+    vulkan_native_instance_symbol_resolver_interface& resolver)
+{
+    return vulkan_native_physical_device_dispatch_table{
+        .checked = true,
+        .status = vulkan_native_physical_device_dispatch_table_status::not_checked,
+        .instance = create_result.handle,
+        .get_instance_proc_address = resolver.get_instance_proc_address(),
+        .enumerate_physical_devices = {},
+        .get_physical_device_queue_family_properties = {},
+        .missing_symbol_name = {},
+        .diagnostic = {},
+    };
+}
+
+vulkan_native_physical_device_enumeration_result
+make_native_physical_device_enumeration_result(
+    const vulkan_native_physical_device_dispatch_table& dispatch_table)
+{
+    return vulkan_native_physical_device_enumeration_result{
+        .checked = true,
+        .status = vulkan_native_physical_device_enumeration_status::not_checked,
+        .dispatch_table = dispatch_table,
+        .physical_devices = {},
+        .physical_device_count = 0,
+        .native_result = 0,
+        .diagnostic = {},
+    };
+}
+
+vulkan_native_queue_family_query_result make_native_queue_family_query_result(
+    const vulkan_native_physical_device_enumeration_result& enumeration)
+{
+    return vulkan_native_queue_family_query_result{
+        .checked = true,
+        .status = vulkan_native_queue_family_query_status::not_checked,
+        .enumeration = enumeration,
+        .queue_families = {},
+        .queue_family_count = 0,
+        .diagnostic = {},
+    };
+}
+
+vulkan_native_physical_device_selection_result
+make_native_physical_device_selection_result(
+    const vulkan_native_physical_device_enumeration_result& enumeration,
+    const vulkan_native_queue_family_query_result& queue_family_query,
+    const vulkan_device_create_request& request)
+{
+    return vulkan_native_physical_device_selection_result{
+        .checked = true,
+        .status = vulkan_native_physical_device_selection_status::not_checked,
+        .enumeration = enumeration,
+        .queue_family_query = queue_family_query,
+        .request = request,
+        .selected_physical_device = {},
+        .selected_queue_families = {},
+        .candidates = {},
+        .missing_required_queue = {},
+        .diagnostic = {},
+    };
+}
+
+vulkan_native_device_dispatch_table make_native_device_dispatch_table(
+    const vulkan_native_physical_device_selection_result& selection,
+    vulkan_native_instance_symbol_resolver_interface& resolver)
+{
+    return vulkan_native_device_dispatch_table{
+        .checked = true,
+        .status = vulkan_native_device_dispatch_table_status::not_checked,
+        .instance = selection.enumeration.dispatch_table.instance,
+        .physical_device = selection.selected_physical_device,
+        .get_instance_proc_address = resolver.get_instance_proc_address(),
+        .enumerate_device_extension_properties = {},
+        .create_device = {},
+        .get_device_queue = {},
+        .destroy_device = {},
+        .missing_symbol_name = {},
+        .diagnostic = {},
+    };
+}
+
+vulkan_native_device_extension_query_result make_native_device_extension_query_result(
+    const vulkan_native_device_dispatch_table& dispatch_table,
+    const vulkan_native_physical_device_selection_result& selection)
+{
+    return vulkan_native_device_extension_query_result{
+        .checked = true,
+        .status = vulkan_native_device_extension_query_status::not_checked,
+        .dispatch_table = dispatch_table,
+        .selection = selection,
+        .physical_device = selection.selected_physical_device,
+        .available_extensions = {},
+        .selected_extensions = {},
+        .required_extension_diagnostics = {},
+        .available_extension_count = 0,
+        .required_extension_count = 0,
+        .available_required_extension_count = 0,
+        .missing_required_extension = {},
+        .native_result = 0,
+        .diagnostic = {},
+    };
+}
+
+vulkan_native_device_create_result make_native_device_create_result(
+    const vulkan_native_device_dispatch_table& dispatch_table,
+    const vulkan_native_device_extension_query_result& extension_query,
+    const vulkan_native_physical_device_selection_result& selection)
+{
+    return vulkan_native_device_create_result{
+        .checked = true,
+        .status = vulkan_native_device_create_status::not_requested,
+        .dispatch_table = dispatch_table,
+        .extension_query = extension_query,
+        .selection = selection,
+        .handle = {},
+        .selected_extensions = {},
+        .queue_create_family_indices = {},
+        .selected_queues = {},
+        .queue_create_family_count = 0,
+        .selected_queue_count = 0,
+        .native_result = 0,
+        .diagnostic = {},
+    };
+}
+
+bool contains_queue_family_index(
+    const std::vector<std::size_t>& family_indices,
+    std::size_t family_index)
+{
+    return std::find(family_indices.begin(), family_indices.end(), family_index)
+        != family_indices.end();
+}
+
+std::vector<std::size_t> unique_queue_family_indices(
+    const std::vector<vulkan_native_physical_device_queue_family_selection>& selections)
+{
+    std::vector<std::size_t> family_indices;
+    family_indices.reserve(selections.size());
+    for (const vulkan_native_physical_device_queue_family_selection& selection :
+         selections) {
+        if (!selection.valid()
+            || contains_queue_family_index(family_indices, selection.family_index)) {
+            continue;
+        }
+        family_indices.push_back(selection.family_index);
+    }
+    return family_indices;
+}
+
+std::vector<std::string> selected_native_device_extensions(
+    const vulkan_device_create_request& request,
+    const std::vector<std::string>& available_extensions)
+{
+    std::vector<std::string> selected_extensions;
+    selected_extensions.reserve(
+        request.required_device_extensions.size()
+        + request.optional_device_extensions.size());
+    for (const std::string& extension_name : request.required_device_extensions) {
+        if (device_detail::contains_string(available_extensions, extension_name)) {
+            device_detail::append_unique_string(selected_extensions, extension_name);
+        }
+    }
+    for (const std::string& extension_name : request.optional_device_extensions) {
+        if (device_detail::contains_string(available_extensions, extension_name)) {
+            device_detail::append_unique_string(selected_extensions, extension_name);
+        }
+    }
+    return selected_extensions;
+}
+
+void record_native_device_required_extension_diagnostics(
+    vulkan_native_device_extension_query_result& result)
+{
+    for (const std::string& extension_name :
+         result.selection.request.required_device_extensions) {
+        const bool available = device_detail::contains_string(
+            result.available_extensions,
+            extension_name);
+        result.required_extension_diagnostics.push_back(
+            vulkan_device_extension_diagnostic{
+                .extension_name = extension_name,
+                .required = true,
+                .available = available,
+                .selected = available,
+            });
+        result.required_extension_count =
+            result.required_extension_diagnostics.size();
+        if (available) {
+            ++result.available_required_extension_count;
+        } else if (result.missing_required_extension.empty()) {
+            result.missing_required_extension = extension_name;
+        }
+    }
+}
+
+#if QUIZ_VULKAN_HAS_VULKAN_HEADERS
+vulkan_surface_extent surface_extent_from_vk(VkExtent2D extent)
+{
+    return vulkan_surface_extent{
+        .width = static_cast<std::size_t>(extent.width),
+        .height = static_cast<std::size_t>(extent.height),
+    };
+}
+
+std::vector<vulkan_swapchain_surface_transform> surface_transforms_from_vk(
+    VkSurfaceTransformFlagsKHR flags)
+{
+    std::vector<vulkan_swapchain_surface_transform> transforms;
+    if ((flags & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR) != 0U) {
+        transforms.push_back(vulkan_swapchain_surface_transform::identity);
+    }
+    if ((flags & VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR) != 0U) {
+        transforms.push_back(vulkan_swapchain_surface_transform::rotate_90);
+    }
+    if ((flags & VK_SURFACE_TRANSFORM_ROTATE_180_BIT_KHR) != 0U) {
+        transforms.push_back(vulkan_swapchain_surface_transform::rotate_180);
+    }
+    if ((flags & VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR) != 0U) {
+        transforms.push_back(vulkan_swapchain_surface_transform::rotate_270);
+    }
+    return transforms;
+}
+
+vulkan_swapchain_surface_transform surface_transform_from_vk(
+    VkSurfaceTransformFlagBitsKHR transform)
+{
+    switch (transform) {
+    case VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR:
+        return vulkan_swapchain_surface_transform::rotate_90;
+    case VK_SURFACE_TRANSFORM_ROTATE_180_BIT_KHR:
+        return vulkan_swapchain_surface_transform::rotate_180;
+    case VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR:
+        return vulkan_swapchain_surface_transform::rotate_270;
+    default:
+        return vulkan_swapchain_surface_transform::identity;
+    }
+}
+
+std::vector<vulkan_swapchain_composite_alpha> composite_alpha_from_vk(
+    VkCompositeAlphaFlagsKHR flags)
+{
+    std::vector<vulkan_swapchain_composite_alpha> alphas;
+    if ((flags & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR) != 0U) {
+        alphas.push_back(vulkan_swapchain_composite_alpha::opaque);
+    }
+    if ((flags & VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR) != 0U) {
+        alphas.push_back(vulkan_swapchain_composite_alpha::pre_multiplied);
+    }
+    if ((flags & VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR) != 0U) {
+        alphas.push_back(vulkan_swapchain_composite_alpha::post_multiplied);
+    }
+    if ((flags & VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR) != 0U) {
+        alphas.push_back(vulkan_swapchain_composite_alpha::inherit);
+    }
+    return alphas;
+}
+
+vulkan_swapchain_image_format image_format_from_vk(VkFormat format)
+{
+    switch (format) {
+    case VK_FORMAT_R8G8B8A8_UNORM:
+        return vulkan_swapchain_image_format::rgba8_unorm;
+    case VK_FORMAT_B8G8R8A8_UNORM:
+        return vulkan_swapchain_image_format::bgra8_unorm;
+    default:
+        return vulkan_swapchain_image_format::undefined;
+    }
+}
+
+vulkan_swapchain_color_space color_space_from_vk(VkColorSpaceKHR color_space)
+{
+#ifdef VK_COLOR_SPACE_DISPLAY_P3_NONLINEAR_EXT
+    if (color_space == VK_COLOR_SPACE_DISPLAY_P3_NONLINEAR_EXT) {
+        return vulkan_swapchain_color_space::display_p3_nonlinear;
+    }
+#endif
+    static_cast<void>(color_space);
+    return vulkan_swapchain_color_space::srgb_nonlinear;
+}
+
+vulkan_swapchain_present_mode present_mode_from_vk(VkPresentModeKHR present_mode)
+{
+    switch (present_mode) {
+    case VK_PRESENT_MODE_IMMEDIATE_KHR:
+        return vulkan_swapchain_present_mode::immediate;
+    case VK_PRESENT_MODE_MAILBOX_KHR:
+        return vulkan_swapchain_present_mode::mailbox;
+    case VK_PRESENT_MODE_FIFO_RELAXED_KHR:
+        return vulkan_swapchain_present_mode::fifo_relaxed;
+    default:
+        return vulkan_swapchain_present_mode::fifo;
+    }
+}
+
+vulkan_swapchain_surface_capabilities_snapshot snapshot_from_vk_surface_capabilities(
+    const VkSurfaceCapabilitiesKHR& capabilities)
+{
+    return vulkan_swapchain_surface_capabilities_snapshot{
+        .checked = true,
+        .min_image_count = static_cast<std::size_t>(capabilities.minImageCount),
+        .max_image_count = static_cast<std::size_t>(capabilities.maxImageCount),
+        .current_extent = surface_extent_from_vk(capabilities.currentExtent),
+        .min_extent = surface_extent_from_vk(capabilities.minImageExtent),
+        .max_extent = surface_extent_from_vk(capabilities.maxImageExtent),
+        .supported_transforms =
+            surface_transforms_from_vk(capabilities.supportedTransforms),
+        .current_transform = surface_transform_from_vk(capabilities.currentTransform),
+        .supported_composite_alpha =
+            composite_alpha_from_vk(capabilities.supportedCompositeAlpha),
+        .surface_formats = {},
+        .present_modes = {},
+    };
+}
+#endif
+
+std::vector<vulkan_native_physical_device_queue_family>
+queue_families_for_physical_device(
+    const std::vector<vulkan_native_physical_device_queue_family>& queue_families,
+    vulkan_physical_device_handle physical_device)
+{
+    std::vector<vulkan_native_physical_device_queue_family> matching_families;
+    for (const vulkan_native_physical_device_queue_family& family : queue_families) {
+        if (family.physical_device.value == physical_device.value) {
+            matching_families.push_back(family);
+        }
+    }
+    return matching_families;
+}
+
+vulkan_native_physical_device_queue_family_selection make_queue_family_selection(
+    vulkan_device_queue_capability capability,
+    const vulkan_native_physical_device_queue_family& family)
+{
+    return vulkan_native_physical_device_queue_family_selection{
+        .capability = capability,
+        .physical_device = family.physical_device,
+        .family_index = family.family_index,
+        .queue_count = family.queue_count,
+    };
 }
 
 bool has_visible_area(const render_rect& rect)
@@ -839,6 +1329,577 @@ void block_present_completion(
     plan.frame_status = frame_status;
     plan.fallback_reason = fallback;
     plan.diagnostic = std::move(diagnostic);
+}
+
+bool frame_status_has_submitted_frame(vulkan_frame_completion_status status)
+{
+    switch (status) {
+    case vulkan_frame_completion_status::ready_for_present:
+    case vulkan_frame_completion_status::completed:
+    case vulkan_frame_completion_status::present_unavailable:
+    case vulkan_frame_completion_status::present_failed_recoverable:
+    case vulkan_frame_completion_status::present_failed_fatal:
+        return true;
+    case vulkan_frame_completion_status::not_checked:
+    case vulkan_frame_completion_status::submit_unavailable:
+    case vulkan_frame_completion_status::submit_failed_recoverable:
+    case vulkan_frame_completion_status::submit_failed_fatal:
+        return false;
+    }
+
+    return false;
+}
+
+void finalize_native_queue_present_operation(
+    vulkan_native_queue_present_operation_result& result)
+{
+    result.operation = vulkan_native_queue_present_operation_summary{
+        .checked = result.checked,
+        .status = result.status,
+        .entrypoint_name = "vkQueuePresentKHR",
+        .vk_queue_present_callable = result.vk_queue_present_callable,
+        .frame_lifecycle_may_complete = result.frame_lifecycle_may_complete,
+        .device = result.device,
+        .swapchain = result.swapchain,
+        .present_queue = result.present_queue,
+        .image_id = result.image_id,
+        .image_handle = result.image_handle,
+        .wait_render_finished_semaphore = result.wait_render_finished_semaphore,
+        .present_status = result.present_status,
+        .acquire_operation_checked = result.acquire_operation_checked,
+        .acquired_image_ready = result.acquired_image_ready,
+        .submit_batch_checked = result.submit_batch_checked,
+        .submit_batch_ready = result.submit_batch_ready,
+        .present_completion_checked = result.present_completion_checked,
+        .present_completion_ready = result.present_completion_ready,
+        .native_entrypoints_checked = result.native_entrypoints_checked,
+        .required_extensions_ready = result.required_extensions_ready,
+        .queue_present_symbol_ready = result.queue_present_symbol_ready,
+        .present_queue_ready = result.present_queue_ready,
+        .swapchain_ready = result.swapchain_ready,
+        .submitted_frame_ready = result.submitted_frame_ready,
+        .present_request_ready = result.present_request_ready,
+        .present_adapter_result_ready = result.present_adapter_result_ready,
+        .present_result_checked = result.present_result_checked,
+        .present_result_completed = result.present_result_completed,
+        .submit_before_present = result.submit_before_present,
+        .out_of_date = result.out_of_date,
+        .suboptimal = result.suboptimal,
+        .recoverable_failure = result.recoverable_failure,
+        .fatal_failure = result.fatal_failure,
+        .missing_required_extension = result.missing_required_extension,
+        .missing_symbol_name = result.missing_symbol_name,
+        .diagnostic = result.diagnostic,
+    };
+}
+
+void block_native_queue_present_operation(
+    vulkan_native_queue_present_operation_result& result,
+    vulkan_native_queue_present_operation_status status,
+    std::string diagnostic)
+{
+    result.status = status;
+    result.diagnostic = std::move(diagnostic);
+    finalize_native_queue_present_operation(result);
+}
+
+vulkan_backend_fallback_reason fallback_for_native_function_table(
+    const vulkan_native_function_table_diagnostics& native_functions)
+{
+    if (!native_functions.checked) {
+        return vulkan_backend_fallback_reason::not_requested;
+    }
+    if (native_functions.fallback_reason != vulkan_backend_fallback_reason::none
+        && native_functions.fallback_reason != vulkan_backend_fallback_reason::not_requested) {
+        return native_functions.fallback_reason;
+    }
+
+    switch (native_functions.missing_symbol_stage) {
+    case vulkan_native_entrypoint_stage::command_buffer_recording:
+        return vulkan_backend_fallback_reason::record_commands_failed;
+    case vulkan_native_entrypoint_stage::queue_submit:
+        return vulkan_backend_fallback_reason::submit_frame_failed;
+    case vulkan_native_entrypoint_stage::queue_present:
+        return vulkan_backend_fallback_reason::present_frame_failed;
+    case vulkan_native_entrypoint_stage::swapchain_create:
+    case vulkan_native_entrypoint_stage::swapchain_destroy:
+    case vulkan_native_entrypoint_stage::swapchain_images:
+        return vulkan_backend_fallback_reason::swapchain_unavailable;
+    case vulkan_native_entrypoint_stage::swapchain_acquire:
+        return vulkan_backend_fallback_reason::acquire_image_failed;
+    }
+
+    return vulkan_backend_fallback_reason::not_requested;
+}
+
+vulkan_native_frame_operation_stage_summary make_native_frame_stage_summary(
+    vulkan_native_frame_operation_stage stage,
+    bool checked,
+    bool ready,
+    vulkan_backend_fallback_reason fallback_reason,
+    std::string diagnostic)
+{
+    const bool blocked = !ready;
+    return vulkan_native_frame_operation_stage_summary{
+        .stage = stage,
+        .checked = checked,
+        .ready = ready,
+        .blocked = blocked,
+        .fallback_reason = blocked ? fallback_reason : vulkan_backend_fallback_reason::none,
+        .diagnostic = blocked ? std::move(diagnostic) : std::string{},
+    };
+}
+
+std::vector<vulkan_native_frame_operation_stage_summary> build_native_frame_stage_summaries(
+    const vulkan_native_frame_operation_result& result)
+{
+    return {
+        make_native_frame_stage_summary(
+            vulkan_native_frame_operation_stage::native_function_table,
+            result.native_function_table_checked,
+            result.native_function_table_ready,
+            fallback_for_native_function_table(result.native_functions),
+            result.native_functions.diagnostic.empty()
+                ? "Native Vulkan function table is unavailable for frame operation"
+                : result.native_functions.diagnostic),
+        make_native_frame_stage_summary(
+            vulkan_native_frame_operation_stage::swapchain_create,
+            result.swapchain_create_checked,
+            result.swapchain_create_ready,
+            vulkan_backend_fallback_reason::swapchain_unavailable,
+            result.swapchain_create.diagnostic.empty()
+                ? "Native Vulkan frame operation has no ready swapchain create operation"
+                : result.swapchain_create.diagnostic),
+        make_native_frame_stage_summary(
+            vulkan_native_frame_operation_stage::swapchain_images,
+            result.swapchain_images_checked,
+            result.swapchain_images_ready,
+            vulkan_backend_fallback_reason::swapchain_unavailable,
+            result.swapchain_images.diagnostic.empty()
+                ? "Native Vulkan frame operation has no enumerated swapchain images"
+                : result.swapchain_images.diagnostic),
+        make_native_frame_stage_summary(
+            vulkan_native_frame_operation_stage::acquire,
+            result.acquire_checked,
+            result.acquire_ready,
+            vulkan_backend_fallback_reason::acquire_image_failed,
+            result.acquire_operation.diagnostic.empty()
+                ? "Native Vulkan frame operation has no acquired image"
+                : result.acquire_operation.diagnostic),
+        make_native_frame_stage_summary(
+            vulkan_native_frame_operation_stage::command_recording,
+            result.command_recording_checked,
+            result.command_recording_ready,
+            vulkan_backend_fallback_reason::record_commands_failed,
+            result.command_buffer_recording.diagnostic.empty()
+                ? "Native Vulkan frame operation has no recorded command buffer"
+                : result.command_buffer_recording.diagnostic),
+        make_native_frame_stage_summary(
+            vulkan_native_frame_operation_stage::submit,
+            result.submit_batch_checked,
+            result.submit_batch_ready,
+            vulkan_backend_fallback_reason::submit_frame_failed,
+            result.submit_batch.diagnostic.empty()
+                ? "Native Vulkan frame operation has no submit batch"
+                : result.submit_batch.diagnostic),
+        make_native_frame_stage_summary(
+            vulkan_native_frame_operation_stage::present,
+            result.present_operation_checked,
+            result.present_operation_ready,
+            vulkan_backend_fallback_reason::present_frame_failed,
+            result.present_operation.diagnostic.empty()
+                ? "Native Vulkan frame operation has no queue present operation"
+                : result.present_operation.diagnostic),
+        make_native_frame_stage_summary(
+            vulkan_native_frame_operation_stage::frame_completion,
+            result.present_operation_checked,
+            result.frame_completion_ready,
+            vulkan_backend_fallback_reason::present_frame_failed,
+            result.present_operation.diagnostic.empty()
+                ? "Native Vulkan frame operation did not complete frame lifecycle"
+                : result.present_operation.diagnostic),
+    };
+}
+
+void finalize_native_frame_operation(vulkan_native_frame_operation_result& result)
+{
+    result.cpu_fallback_should_remain_active =
+        result.cpu_fallback_available
+        && result.status != vulkan_native_frame_operation_status::ready;
+    result.operation = vulkan_native_frame_operation_summary{
+        .checked = result.checked,
+        .status = result.status,
+        .reached_stage = result.reached_stage,
+        .blocker_stage = result.blocker_stage,
+        .fallback_reason = result.fallback_reason,
+        .native_function_table_checked = result.native_function_table_checked,
+        .native_function_table_ready = result.native_function_table_ready,
+        .swapchain_create_checked = result.swapchain_create_checked,
+        .swapchain_create_ready = result.swapchain_create_ready,
+        .swapchain_images_checked = result.swapchain_images_checked,
+        .swapchain_images_ready = result.swapchain_images_ready,
+        .acquire_checked = result.acquire_checked,
+        .acquire_ready = result.acquire_ready,
+        .command_recording_checked = result.command_recording_checked,
+        .command_recording_ready = result.command_recording_ready,
+        .submit_batch_checked = result.submit_batch_checked,
+        .submit_batch_ready = result.submit_batch_ready,
+        .present_operation_checked = result.present_operation_checked,
+        .present_operation_ready = result.present_operation_ready,
+        .frame_completion_ready = result.frame_completion_ready,
+        .recoverable_failure = result.recoverable_failure,
+        .fatal_failure = result.fatal_failure,
+        .swapchain_out_of_date = result.swapchain_out_of_date,
+        .suboptimal = result.suboptimal,
+        .cpu_fallback_available = result.cpu_fallback_available,
+        .cpu_fallback_should_remain_active =
+            result.cpu_fallback_should_remain_active,
+        .native_function_table_status = result.native_function_table_status,
+        .missing_required_extension = result.missing_required_extension,
+        .missing_symbol_name = result.missing_symbol_name,
+        .stages = result.stages,
+        .diagnostic = result.diagnostic,
+    };
+}
+
+void block_native_frame_operation(
+    vulkan_native_frame_operation_result& result,
+    vulkan_native_frame_operation_status status,
+    vulkan_native_frame_operation_stage reached_stage,
+    vulkan_native_frame_operation_stage blocker_stage,
+    vulkan_backend_fallback_reason fallback_reason,
+    std::string diagnostic)
+{
+    result.status = status;
+    result.reached_stage = reached_stage;
+    result.blocker_stage = blocker_stage;
+    result.fallback_reason = fallback_reason;
+    result.diagnostic = std::move(diagnostic);
+    finalize_native_frame_operation(result);
+}
+
+constexpr std::array<vulkan_native_frame_operation_stage, 8> k_native_frame_operation_stages{
+    vulkan_native_frame_operation_stage::native_function_table,
+    vulkan_native_frame_operation_stage::swapchain_create,
+    vulkan_native_frame_operation_stage::swapchain_images,
+    vulkan_native_frame_operation_stage::acquire,
+    vulkan_native_frame_operation_stage::command_recording,
+    vulkan_native_frame_operation_stage::submit,
+    vulkan_native_frame_operation_stage::present,
+    vulkan_native_frame_operation_stage::frame_completion,
+};
+
+constexpr std::array<vulkan_native_frame_execution_step, 4> k_native_frame_execution_steps{
+    vulkan_native_frame_execution_step::acquire,
+    vulkan_native_frame_execution_step::record,
+    vulkan_native_frame_execution_step::submit,
+    vulkan_native_frame_execution_step::present,
+};
+
+std::size_t native_frame_operation_stage_order(vulkan_native_frame_operation_stage stage)
+{
+    switch (stage) {
+    case vulkan_native_frame_operation_stage::not_started:
+        return 0;
+    case vulkan_native_frame_operation_stage::native_function_table:
+        return 1;
+    case vulkan_native_frame_operation_stage::swapchain_create:
+        return 2;
+    case vulkan_native_frame_operation_stage::swapchain_images:
+        return 3;
+    case vulkan_native_frame_operation_stage::acquire:
+        return 4;
+    case vulkan_native_frame_operation_stage::command_recording:
+        return 5;
+    case vulkan_native_frame_operation_stage::submit:
+        return 6;
+    case vulkan_native_frame_operation_stage::present:
+        return 7;
+    case vulkan_native_frame_operation_stage::frame_completion:
+        return 8;
+    }
+
+    return 0;
+}
+
+vulkan_native_frame_operation_stage_summary native_frame_stage_summary_or_default(
+    const vulkan_native_frame_operation_summary& summary,
+    vulkan_native_frame_operation_stage stage)
+{
+    const auto found = std::find_if(
+        summary.stages.begin(),
+        summary.stages.end(),
+        [stage](const vulkan_native_frame_operation_stage_summary& candidate) {
+            return candidate.stage == stage;
+        });
+    if (found != summary.stages.end()) {
+        return *found;
+    }
+
+    return vulkan_native_frame_operation_stage_summary{
+        .stage = stage,
+        .checked = false,
+        .ready = false,
+        .blocked = false,
+        .fallback_reason = vulkan_backend_fallback_reason::not_requested,
+        .diagnostic = {},
+    };
+}
+
+vulkan_native_frame_operation_stage_diff_diagnostics native_frame_stage_diff_or_default(
+    const vulkan_native_frame_operation_diff_diagnostics& diff,
+    vulkan_native_frame_operation_stage stage)
+{
+    const auto found = std::find_if(
+        diff.stages.begin(),
+        diff.stages.end(),
+        [stage](const vulkan_native_frame_operation_stage_diff_diagnostics& candidate) {
+            return candidate.stage == stage;
+        });
+    if (found != diff.stages.end()) {
+        return *found;
+    }
+
+    return vulkan_native_frame_operation_stage_diff_diagnostics{
+        .stage = stage,
+        .before_checked = false,
+        .after_checked = false,
+        .before_ready = false,
+        .after_ready = false,
+        .before_blocked = false,
+        .after_blocked = false,
+        .before_fallback_reason = vulkan_backend_fallback_reason::not_requested,
+        .after_fallback_reason = vulkan_backend_fallback_reason::not_requested,
+        .checked_changed = false,
+        .readiness_changed = false,
+        .became_ready = false,
+        .became_blocked = false,
+        .fallback_reason_changed = false,
+        .before_diagnostic = {},
+        .after_diagnostic = {},
+    };
+}
+
+vulkan_native_frame_operation_stage_diff_diagnostics build_native_frame_stage_diff(
+    const vulkan_native_frame_operation_stage_summary& before,
+    const vulkan_native_frame_operation_stage_summary& after)
+{
+    return vulkan_native_frame_operation_stage_diff_diagnostics{
+        .stage = after.stage,
+        .before_checked = before.checked,
+        .after_checked = after.checked,
+        .before_ready = before.ready,
+        .after_ready = after.ready,
+        .before_blocked = before.blocked,
+        .after_blocked = after.blocked,
+        .before_fallback_reason = before.fallback_reason,
+        .after_fallback_reason = after.fallback_reason,
+        .checked_changed = before.checked != after.checked,
+        .readiness_changed =
+            before.ready != after.ready || before.blocked != after.blocked,
+        .became_ready = !before.ready && after.ready,
+        .became_blocked = !before.blocked && after.blocked,
+        .fallback_reason_changed = before.fallback_reason != after.fallback_reason,
+        .before_diagnostic = before.diagnostic,
+        .after_diagnostic = after.diagnostic,
+    };
+}
+
+vulkan_native_frame_operation_stage operation_stage_for_execution_step(
+    vulkan_native_frame_execution_step step)
+{
+    switch (step) {
+    case vulkan_native_frame_execution_step::acquire:
+        return vulkan_native_frame_operation_stage::acquire;
+    case vulkan_native_frame_execution_step::record:
+        return vulkan_native_frame_operation_stage::command_recording;
+    case vulkan_native_frame_execution_step::submit:
+        return vulkan_native_frame_operation_stage::submit;
+    case vulkan_native_frame_execution_step::present:
+        return vulkan_native_frame_operation_stage::present;
+    }
+
+    return vulkan_native_frame_operation_stage::not_started;
+}
+
+bool native_frame_execution_step_checked(
+    const vulkan_native_frame_operation_summary& summary,
+    vulkan_native_frame_execution_step step)
+{
+    switch (step) {
+    case vulkan_native_frame_execution_step::acquire:
+        return summary.acquire_checked;
+    case vulkan_native_frame_execution_step::record:
+        return summary.command_recording_checked;
+    case vulkan_native_frame_execution_step::submit:
+        return summary.submit_batch_checked;
+    case vulkan_native_frame_execution_step::present:
+        return summary.present_operation_checked;
+    }
+
+    return false;
+}
+
+bool native_frame_execution_step_ready(
+    const vulkan_native_frame_operation_summary& summary,
+    vulkan_native_frame_execution_step step)
+{
+    switch (step) {
+    case vulkan_native_frame_execution_step::acquire:
+        return summary.acquire_ready;
+    case vulkan_native_frame_execution_step::record:
+        return summary.command_recording_ready;
+    case vulkan_native_frame_execution_step::submit:
+        return summary.submit_batch_ready;
+    case vulkan_native_frame_execution_step::present:
+        return summary.present_operation_ready && summary.frame_completion_ready;
+    }
+
+    return false;
+}
+
+vulkan_backend_fallback_reason fallback_reason_for_execution_step(
+    vulkan_native_frame_execution_step step)
+{
+    switch (step) {
+    case vulkan_native_frame_execution_step::acquire:
+        return vulkan_backend_fallback_reason::acquire_image_failed;
+    case vulkan_native_frame_execution_step::record:
+        return vulkan_backend_fallback_reason::record_commands_failed;
+    case vulkan_native_frame_execution_step::submit:
+        return vulkan_backend_fallback_reason::submit_frame_failed;
+    case vulkan_native_frame_execution_step::present:
+        return vulkan_backend_fallback_reason::present_frame_failed;
+    }
+
+    return vulkan_backend_fallback_reason::not_requested;
+}
+
+vulkan_backend_fallback_reason native_frame_execution_fallback_reason(
+    const vulkan_native_frame_operation_summary& summary,
+    vulkan_native_frame_execution_step step)
+{
+    if (summary.fallback_reason != vulkan_backend_fallback_reason::none
+        && summary.fallback_reason != vulkan_backend_fallback_reason::not_requested) {
+        return summary.fallback_reason;
+    }
+
+    return fallback_reason_for_execution_step(step);
+}
+
+std::string native_frame_execution_step_diagnostic(
+    vulkan_native_frame_execution_decision decision,
+    vulkan_native_frame_execution_step step)
+{
+    switch (decision) {
+    case vulkan_native_frame_execution_decision::not_checked:
+        return "Native Vulkan frame execution step has no checked summary";
+    case vulkan_native_frame_execution_decision::execute:
+        return "Native Vulkan frame execution step is ready to execute";
+    case vulkan_native_frame_execution_decision::skip:
+        return std::string{"Native Vulkan frame execution step skipped: "}
+            + std::string{native_frame_execution_step_name(step)};
+    case vulkan_native_frame_execution_decision::fallback:
+        return std::string{"Native Vulkan frame execution step falls back: "}
+            + std::string{native_frame_execution_step_name(step)};
+    }
+
+    return "Native Vulkan frame execution step has unknown decision";
+}
+
+vulkan_native_frame_operation_step_execution_decision build_native_frame_step_execution_decision(
+    const vulkan_native_frame_operation_summary& summary,
+    const vulkan_native_frame_operation_diff_diagnostics& diff,
+    vulkan_native_frame_execution_step step,
+    bool blocked_by_previous_step)
+{
+    const vulkan_native_frame_operation_stage operation_stage =
+        operation_stage_for_execution_step(step);
+    const bool stage_checked = native_frame_execution_step_checked(summary, step);
+    const bool stage_ready = native_frame_execution_step_ready(summary, step);
+    const vulkan_native_frame_operation_stage_diff_diagnostics stage_diff =
+        native_frame_stage_diff_or_default(diff, operation_stage);
+    const bool fallback_context =
+        summary.cpu_fallback_should_remain_active
+        || summary.recoverable_failure
+        || summary.fatal_failure
+        || (summary.fallback_reason != vulkan_backend_fallback_reason::none
+            && summary.fallback_reason != vulkan_backend_fallback_reason::not_requested);
+
+    vulkan_native_frame_execution_decision decision =
+        vulkan_native_frame_execution_decision::not_checked;
+    if (!summary.checked) {
+        decision = vulkan_native_frame_execution_decision::not_checked;
+    } else if (blocked_by_previous_step || !stage_checked) {
+        decision = vulkan_native_frame_execution_decision::skip;
+    } else if (stage_ready) {
+        decision = vulkan_native_frame_execution_decision::execute;
+    } else if (summary.cpu_fallback_available && fallback_context) {
+        decision = vulkan_native_frame_execution_decision::fallback;
+    } else {
+        decision = vulkan_native_frame_execution_decision::skip;
+    }
+
+    const bool cpu_fallback_required =
+        decision == vulkan_native_frame_execution_decision::fallback;
+    return vulkan_native_frame_operation_step_execution_decision{
+        .step = step,
+        .operation_stage = operation_stage,
+        .decision = decision,
+        .summary_checked = summary.checked,
+        .stage_checked = stage_checked,
+        .stage_ready = stage_ready,
+        .diff_checked = diff.checked,
+        .diff_changed = stage_diff.changed(),
+        .diff_became_ready = stage_diff.became_ready,
+        .diff_became_blocked = stage_diff.became_blocked,
+        .blocked_by_previous_step = blocked_by_previous_step,
+        .cpu_fallback_available = summary.cpu_fallback_available,
+        .cpu_fallback_required = cpu_fallback_required,
+        .fallback_reason = cpu_fallback_required
+            ? native_frame_execution_fallback_reason(summary, step)
+            : vulkan_backend_fallback_reason::not_requested,
+        .diagnostic = native_frame_execution_step_diagnostic(decision, step),
+    };
+}
+
+vulkan_native_frame_operation_summary native_frame_operation_summary_from_result(
+    const vulkan_native_frame_operation_result& result)
+{
+    return vulkan_native_frame_operation_summary{
+        .checked = result.checked,
+        .status = result.status,
+        .reached_stage = result.reached_stage,
+        .blocker_stage = result.blocker_stage,
+        .fallback_reason = result.fallback_reason,
+        .native_function_table_checked = result.native_function_table_checked,
+        .native_function_table_ready = result.native_function_table_ready,
+        .swapchain_create_checked = result.swapchain_create_checked,
+        .swapchain_create_ready = result.swapchain_create_ready,
+        .swapchain_images_checked = result.swapchain_images_checked,
+        .swapchain_images_ready = result.swapchain_images_ready,
+        .acquire_checked = result.acquire_checked,
+        .acquire_ready = result.acquire_ready,
+        .command_recording_checked = result.command_recording_checked,
+        .command_recording_ready = result.command_recording_ready,
+        .submit_batch_checked = result.submit_batch_checked,
+        .submit_batch_ready = result.submit_batch_ready,
+        .present_operation_checked = result.present_operation_checked,
+        .present_operation_ready = result.present_operation_ready,
+        .frame_completion_ready = result.frame_completion_ready,
+        .recoverable_failure = result.recoverable_failure,
+        .fatal_failure = result.fatal_failure,
+        .swapchain_out_of_date = result.swapchain_out_of_date,
+        .suboptimal = result.suboptimal,
+        .cpu_fallback_available = result.cpu_fallback_available,
+        .cpu_fallback_should_remain_active =
+            result.cpu_fallback_should_remain_active,
+        .native_function_table_status = result.native_function_table_status,
+        .missing_required_extension = result.missing_required_extension,
+        .missing_symbol_name = result.missing_symbol_name,
+        .stages = result.stages,
+        .diagnostic = result.diagnostic,
+    };
 }
 
 template <typename T>
@@ -1569,17 +2630,16 @@ vulkan_loader_probe_result fake_vulkan_loader::probe_loader(
 
     for (const std::string& candidate_name : candidate_names) {
         record_loader_attempt(result, candidate_name);
-    }
 
-    if (candidate_names.empty() || !options_.library_available) {
-        mark_loader_probe_completed(result);
-        return result;
-    }
+        if (!options_.library_available || candidate_name != options_.library_name) {
+            continue;
+        }
 
-    mark_loader_library_found(result, candidate_names.front());
-    if (options_.required_symbol_available) {
-        mark_loader_available(result, candidate_names.front());
-        return result;
+        mark_loader_library_found(result, candidate_name);
+        if (options_.required_symbol_available) {
+            mark_loader_available(result, candidate_name);
+            return result;
+        }
     }
 
     mark_loader_probe_completed(result);
@@ -1731,6 +2791,535 @@ fake_vulkan_native_symbol_resolver::state() const
     return state_;
 }
 
+fake_vulkan_native_instance_symbol_resolver::fake_vulkan_native_instance_symbol_resolver()
+    : fake_vulkan_native_instance_symbol_resolver(
+        fake_vulkan_native_instance_symbol_resolver_options{})
+{
+}
+
+fake_vulkan_native_instance_symbol_resolver::fake_vulkan_native_instance_symbol_resolver(
+    fake_vulkan_native_instance_symbol_resolver_options options)
+    : options_(std::move(options))
+{
+}
+
+vulkan_native_function_pointer
+fake_vulkan_native_instance_symbol_resolver::get_instance_proc_address() const
+{
+    return options_.get_instance_proc_address;
+}
+
+vulkan_native_function_pointer
+fake_vulkan_native_instance_symbol_resolver::resolve_instance_symbol(
+    vulkan_instance_handle instance,
+    std::string_view symbol_name)
+{
+    ++state_.resolve_call_count;
+    state_.requested_instance_handles.push_back(instance.value);
+    state_.requested_symbols.push_back(std::string{symbol_name});
+
+    const bool explicitly_missing =
+        contains_symbol_name(options_.missing_symbols, symbol_name);
+    const bool explicitly_available =
+        contains_symbol_name(options_.available_symbols, symbol_name);
+    const bool available =
+        options_.get_instance_proc_address.valid() && instance.valid() && !explicitly_missing
+        && (options_.default_available || explicitly_available);
+
+    if (!available) {
+        state_.missing_symbols.push_back(std::string{symbol_name});
+        return {};
+    }
+
+    state_.resolved_symbols.push_back(std::string{symbol_name});
+    const std::uintptr_t base =
+        options_.pointer_base.valid() ? options_.pointer_base.value : 2000;
+    return vulkan_native_function_pointer{
+        .value = base + state_.resolve_call_count,
+    };
+}
+
+const fake_vulkan_native_instance_symbol_resolver_state&
+fake_vulkan_native_instance_symbol_resolver::state() const
+{
+    return state_;
+}
+
+fake_vulkan_native_physical_device_enumerator::fake_vulkan_native_physical_device_enumerator()
+    : fake_vulkan_native_physical_device_enumerator(
+        fake_vulkan_native_physical_device_enumerator_options{})
+{
+}
+
+fake_vulkan_native_physical_device_enumerator::fake_vulkan_native_physical_device_enumerator(
+    fake_vulkan_native_physical_device_enumerator_options options)
+    : options_(std::move(options))
+{
+}
+
+vulkan_native_physical_device_enumeration_result
+fake_vulkan_native_physical_device_enumerator::enumerate_physical_devices(
+    const vulkan_native_physical_device_dispatch_table& dispatch_table)
+{
+    vulkan_native_physical_device_enumeration_result result =
+        make_native_physical_device_enumeration_result(dispatch_table);
+
+    if (!dispatch_table.ready_for_enumeration()) {
+        result.status =
+            vulkan_native_physical_device_enumeration_status::dispatch_table_unavailable;
+        result.diagnostic = dispatch_table.diagnostic.empty()
+            ? "Native Vulkan physical device dispatch table is unavailable"
+            : dispatch_table.diagnostic;
+        return result;
+    }
+
+    ++state_.enumerate_call_count;
+    state_.last_instance = dispatch_table.instance;
+    state_.last_enumerate_physical_devices =
+        dispatch_table.enumerate_physical_devices;
+
+    if (options_.fail_enumeration) {
+        result.status = vulkan_native_physical_device_enumeration_status::enumeration_failed;
+        result.native_result = options_.failure_result;
+        result.diagnostic = "Native Vulkan physical device enumeration failed";
+        return result;
+    }
+
+    result.physical_devices = options_.physical_devices;
+    result.physical_device_count = result.physical_devices.size();
+    if (result.physical_devices.empty()) {
+        result.status = vulkan_native_physical_device_enumeration_status::no_devices;
+        result.diagnostic = "Native Vulkan physical device enumeration returned no devices";
+        return result;
+    }
+
+    result.status = vulkan_native_physical_device_enumeration_status::ready;
+    result.diagnostic = "Native Vulkan physical devices enumerated";
+    return result;
+}
+
+const fake_vulkan_native_physical_device_enumerator_state&
+fake_vulkan_native_physical_device_enumerator::state() const
+{
+    return state_;
+}
+
+fake_vulkan_native_queue_family_query::fake_vulkan_native_queue_family_query()
+    : fake_vulkan_native_queue_family_query(
+        fake_vulkan_native_queue_family_query_options{})
+{
+}
+
+fake_vulkan_native_queue_family_query::fake_vulkan_native_queue_family_query(
+    fake_vulkan_native_queue_family_query_options options)
+    : options_(std::move(options))
+{
+}
+
+vulkan_native_queue_family_query_result
+fake_vulkan_native_queue_family_query::query_queue_families(
+    const vulkan_native_physical_device_enumeration_result& enumeration)
+{
+    vulkan_native_queue_family_query_result result =
+        make_native_queue_family_query_result(enumeration);
+
+    if (!enumeration.ready_for_device_selection()) {
+        if (enumeration.status
+            == vulkan_native_physical_device_enumeration_status::no_devices) {
+            result.status = vulkan_native_queue_family_query_status::no_devices;
+            result.diagnostic = "No native Vulkan physical devices are available";
+        } else {
+            result.status =
+                vulkan_native_queue_family_query_status::enumeration_unavailable;
+            result.diagnostic = enumeration.diagnostic.empty()
+                ? "Native Vulkan physical device enumeration is unavailable"
+                : enumeration.diagnostic;
+        }
+        return result;
+    }
+    if (!enumeration.dispatch_table.ready_for_queue_family_query()) {
+        result.status =
+            vulkan_native_queue_family_query_status::dispatch_table_unavailable;
+        result.diagnostic = enumeration.dispatch_table.diagnostic.empty()
+            ? "Native Vulkan queue family dispatch table is unavailable"
+            : enumeration.dispatch_table.diagnostic;
+        return result;
+    }
+
+    ++state_.query_call_count;
+    state_.last_get_physical_device_queue_family_properties =
+        enumeration.dispatch_table.get_physical_device_queue_family_properties;
+
+    for (const vulkan_physical_device_handle physical_device :
+         enumeration.physical_devices) {
+        state_.inspected_physical_devices.push_back(physical_device);
+        std::vector<vulkan_native_physical_device_queue_family> matching_families =
+            queue_families_for_physical_device(options_.queue_families, physical_device);
+        result.queue_families.insert(
+            result.queue_families.end(),
+            matching_families.begin(),
+            matching_families.end());
+    }
+
+    result.queue_family_count = result.queue_families.size();
+    if (result.queue_families.empty()) {
+        result.status = vulkan_native_queue_family_query_status::no_queue_families;
+        result.diagnostic =
+            "Native Vulkan queue family query returned no usable queue families";
+        return result;
+    }
+
+    result.status = vulkan_native_queue_family_query_status::ready;
+    result.diagnostic = "Native Vulkan queue family properties queried";
+    return result;
+}
+
+const fake_vulkan_native_queue_family_query_state&
+fake_vulkan_native_queue_family_query::state() const
+{
+    return state_;
+}
+
+fake_vulkan_native_physical_device_selector::fake_vulkan_native_physical_device_selector()
+    : fake_vulkan_native_physical_device_selector(
+        fake_vulkan_native_physical_device_selector_options{})
+{
+}
+
+fake_vulkan_native_physical_device_selector::fake_vulkan_native_physical_device_selector(
+    fake_vulkan_native_physical_device_selector_options options)
+    : options_(std::move(options))
+{
+}
+
+vulkan_native_physical_device_selection_result
+fake_vulkan_native_physical_device_selector::select_physical_device(
+    const vulkan_native_physical_device_enumeration_result& enumeration,
+    const vulkan_native_queue_family_query_result& queue_family_query,
+    const vulkan_device_create_request& request)
+{
+    vulkan_native_physical_device_selection_result result =
+        make_native_physical_device_selection_result(
+            enumeration,
+            queue_family_query,
+            request);
+    ++state_.select_call_count;
+
+    if (!enumeration.ready_for_device_selection()) {
+        if (enumeration.status
+            == vulkan_native_physical_device_enumeration_status::no_devices) {
+            result.status = vulkan_native_physical_device_selection_status::no_devices;
+            result.diagnostic = "No native Vulkan physical devices are available";
+        } else {
+            result.status =
+                vulkan_native_physical_device_selection_status::enumeration_unavailable;
+            result.diagnostic =
+                "Native Vulkan physical device enumeration is unavailable";
+        }
+        return result;
+    }
+    if (!queue_family_query.ready_for_selection()) {
+        result.status =
+            vulkan_native_physical_device_selection_status::missing_required_queue;
+        result.diagnostic = queue_family_query.diagnostic.empty()
+            ? "Native Vulkan queue family properties are unavailable"
+            : queue_family_query.diagnostic;
+        return result;
+    }
+
+    const std::vector<vulkan_device_queue_capability> required_capabilities =
+        device_detail::requested_queue_capabilities(request);
+    for (const vulkan_physical_device_handle physical_device :
+         enumeration.physical_devices) {
+        state_.inspected_physical_devices.push_back(physical_device);
+
+        vulkan_native_physical_device_selection_candidate candidate{
+            .physical_device = physical_device,
+            .queue_families = queue_families_for_physical_device(
+                queue_family_query.queue_families,
+                physical_device),
+            .selected_queue_families = {},
+            .missing_required_queue = {},
+            .selected = false,
+        };
+
+        for (const vulkan_device_queue_capability capability : required_capabilities) {
+            auto matching_family = std::find_if(
+                candidate.queue_families.begin(),
+                candidate.queue_families.end(),
+                [capability](const vulkan_native_physical_device_queue_family& family) {
+                    return family.usable() && family.supports(capability);
+                });
+            if (matching_family == candidate.queue_families.end()) {
+                candidate.missing_required_queue =
+                    std::string{device_queue_capability_name(capability)};
+                break;
+            }
+
+            candidate.selected_queue_families.push_back(
+                make_queue_family_selection(capability, *matching_family));
+        }
+
+        if (candidate.missing_required_queue.empty()) {
+            candidate.selected = true;
+            result.selected_physical_device = physical_device;
+            result.selected_queue_families = candidate.selected_queue_families;
+            result.missing_required_queue.clear();
+            result.candidates.push_back(candidate);
+            result.status = vulkan_native_physical_device_selection_status::selected;
+            result.diagnostic =
+                "Native Vulkan physical device and queue families selected";
+            return result;
+        }
+
+        if (result.missing_required_queue.empty()) {
+            result.missing_required_queue = candidate.missing_required_queue;
+        }
+        result.candidates.push_back(candidate);
+    }
+
+    result.status = vulkan_native_physical_device_selection_status::missing_required_queue;
+    result.diagnostic =
+        "No native Vulkan physical device exposes the required queue families";
+    return result;
+}
+
+const fake_vulkan_native_physical_device_selector_state&
+fake_vulkan_native_physical_device_selector::state() const
+{
+    return state_;
+}
+
+fake_vulkan_native_device_extension_query::fake_vulkan_native_device_extension_query()
+    : fake_vulkan_native_device_extension_query(
+        fake_vulkan_native_device_extension_query_options{})
+{
+}
+
+fake_vulkan_native_device_extension_query::fake_vulkan_native_device_extension_query(
+    fake_vulkan_native_device_extension_query_options options)
+    : options_(std::move(options))
+{
+}
+
+vulkan_native_device_extension_query_result
+fake_vulkan_native_device_extension_query::query_device_extensions(
+    const vulkan_native_device_dispatch_table& dispatch_table,
+    const vulkan_native_physical_device_selection_result& selection)
+{
+    vulkan_native_device_extension_query_result result =
+        make_native_device_extension_query_result(dispatch_table, selection);
+
+    if (!selection.ready_for_device_create()) {
+        result.status =
+            vulkan_native_device_extension_query_status::selection_unavailable;
+        result.diagnostic = selection.diagnostic.empty()
+            ? "Native Vulkan physical device selection is unavailable"
+            : selection.diagnostic;
+        return result;
+    }
+    if (!dispatch_table.ready_for_create()) {
+        result.status =
+            vulkan_native_device_extension_query_status::dispatch_table_unavailable;
+        result.diagnostic = dispatch_table.diagnostic.empty()
+            ? "Native Vulkan logical device dispatch table is unavailable"
+            : dispatch_table.diagnostic;
+        return result;
+    }
+
+    ++state_.query_call_count;
+    state_.requested_physical_device = selection.selected_physical_device;
+    state_.last_enumerate_device_extension_properties =
+        dispatch_table.enumerate_device_extension_properties;
+
+    if (options_.fail_enumeration) {
+        result.status = vulkan_native_device_extension_query_status::enumeration_failed;
+        result.native_result = options_.failure_result;
+        result.diagnostic = "Native Vulkan device extension enumeration failed";
+        return result;
+    }
+
+    result.available_extensions = options_.available_extensions;
+    result.available_extension_count = result.available_extensions.size();
+    result.selected_extensions = selected_native_device_extensions(
+        selection.request,
+        result.available_extensions);
+    record_native_device_required_extension_diagnostics(result);
+    if (!result.required_extensions_ready()) {
+        result.status =
+            vulkan_native_device_extension_query_status::missing_required_extension;
+        result.diagnostic = device_detail::make_missing_required_device_extension_diagnostic(
+            result.missing_required_extension);
+        return result;
+    }
+
+    result.status = vulkan_native_device_extension_query_status::ready;
+    result.diagnostic = "Native Vulkan device extensions enumerated";
+    return result;
+}
+
+const fake_vulkan_native_device_extension_query_state&
+fake_vulkan_native_device_extension_query::state() const
+{
+    return state_;
+}
+
+fake_vulkan_native_device_creator::fake_vulkan_native_device_creator()
+    : fake_vulkan_native_device_creator(fake_vulkan_native_device_creator_options{})
+{
+}
+
+fake_vulkan_native_device_creator::fake_vulkan_native_device_creator(
+    fake_vulkan_native_device_creator_options options)
+    : options_(std::move(options))
+{
+}
+
+vulkan_native_device_create_result
+fake_vulkan_native_device_creator::create_device(
+    const vulkan_native_device_dispatch_table& dispatch_table,
+    const vulkan_native_device_extension_query_result& extension_query,
+    const vulkan_native_physical_device_selection_result& selection)
+{
+    vulkan_native_device_create_result result =
+        make_native_device_create_result(dispatch_table, extension_query, selection);
+
+    if (!selection.ready_for_device_create()) {
+        result.status = vulkan_native_device_create_status::selection_unavailable;
+        result.diagnostic = selection.diagnostic.empty()
+            ? "Native Vulkan physical device selection is unavailable"
+            : selection.diagnostic;
+        return result;
+    }
+    if (!dispatch_table.ready_for_create()) {
+        result.status = vulkan_native_device_create_status::dispatch_table_unavailable;
+        result.diagnostic = dispatch_table.diagnostic.empty()
+            ? "Native Vulkan logical device dispatch table is unavailable"
+            : dispatch_table.diagnostic;
+        return result;
+    }
+    if (!extension_query.ready_for_create()) {
+        if (!extension_query.missing_required_extension.empty()) {
+            result.status =
+                vulkan_native_device_create_status::missing_required_extension;
+            result.diagnostic =
+                device_detail::make_missing_required_device_extension_diagnostic(
+                    extension_query.missing_required_extension);
+        } else {
+            result.status =
+                vulkan_native_device_create_status::extension_query_unavailable;
+            result.diagnostic = extension_query.diagnostic.empty()
+                ? "Native Vulkan device extension availability is unavailable"
+                : extension_query.diagnostic;
+        }
+        return result;
+    }
+
+    ++state_.create_call_count;
+    state_.requested_physical_device = selection.selected_physical_device;
+    state_.last_create_device = dispatch_table.create_device;
+    state_.last_get_device_queue = dispatch_table.get_device_queue;
+    state_.last_destroy_device = dispatch_table.destroy_device;
+    state_.requested_extensions = extension_query.selected_extensions;
+    result.selected_extensions = state_.requested_extensions;
+    result.queue_create_family_indices =
+        unique_queue_family_indices(selection.selected_queue_families);
+    result.queue_create_family_count = result.queue_create_family_indices.size();
+    for (const vulkan_native_physical_device_queue_family_selection& queue_family :
+         selection.selected_queue_families) {
+        state_.requested_queue_family_indices.push_back(queue_family.family_index);
+    }
+
+    if (options_.fail_creation || !options_.handle.valid()) {
+        result.status = vulkan_native_device_create_status::creation_failed;
+        result.native_result = options_.failure_result;
+        result.diagnostic = options_.fail_creation
+            ? "Native Vulkan logical device creation failed"
+            : "Native Vulkan logical device creation returned an invalid handle";
+        return result;
+    }
+
+    result.handle = options_.handle;
+    for (const vulkan_native_physical_device_queue_family_selection& queue_family :
+         selection.selected_queue_families) {
+        ++state_.get_queue_call_count;
+        if (contains_queue_family_index(
+                options_.unavailable_queue_family_indices,
+                queue_family.family_index)) {
+            ++state_.destroy_call_count;
+            state_.destroyed_device = result.handle;
+            result.handle = {};
+            result.selected_queue_count = result.selected_queues.size();
+            result.status = vulkan_native_device_create_status::queue_unavailable;
+            result.diagnostic =
+                "Native Vulkan logical device queue lookup returned an invalid handle";
+            return result;
+        }
+
+        result.selected_queues.push_back(vulkan_device_queue_selection{
+            .capability = queue_family.capability,
+            .family_index = queue_family.family_index,
+            .queue = vulkan_queue_handle{
+                .value = options_.queue_handle_base + queue_family.family_index + 1,
+            },
+        });
+        result.selected_queue_count = result.selected_queues.size();
+    }
+
+    result.selected_queue_count = result.selected_queues.size();
+    result.status = vulkan_native_device_create_status::created;
+    result.diagnostic = "Native Vulkan logical device created";
+    return result;
+}
+
+const fake_vulkan_native_device_creator_state&
+fake_vulkan_native_device_creator::state() const
+{
+    return state_;
+}
+
+vulkan_native_instance_proc_addr_resolver::vulkan_native_instance_proc_addr_resolver(
+    vulkan_native_function_pointer get_instance_proc_address)
+    : get_instance_proc_address_(get_instance_proc_address)
+{
+}
+
+vulkan_native_function_pointer
+vulkan_native_instance_proc_addr_resolver::get_instance_proc_address() const
+{
+    return get_instance_proc_address_;
+}
+
+vulkan_native_function_pointer
+vulkan_native_instance_proc_addr_resolver::resolve_instance_symbol(
+    vulkan_instance_handle instance,
+    std::string_view symbol_name)
+{
+    if (!get_instance_proc_address_.valid() || !instance.valid() || symbol_name.empty()) {
+        return {};
+    }
+
+#if QUIZ_VULKAN_HAS_VULKAN_HEADERS
+    const auto get_instance_proc_address =
+        reinterpret_cast<PFN_vkGetInstanceProcAddr>(get_instance_proc_address_.value);
+    if (get_instance_proc_address == nullptr) {
+        return {};
+    }
+
+    const std::string symbol_name_value{symbol_name};
+    const PFN_vkVoidFunction resolved = get_instance_proc_address(
+        reinterpret_cast<VkInstance>(instance.value),
+        symbol_name_value.c_str());
+    return vulkan_native_function_pointer{
+        .value = reinterpret_cast<std::uintptr_t>(resolved),
+    };
+#else
+    (void)instance;
+    (void)symbol_name;
+    return {};
+#endif
+}
+
 system_vulkan_native_symbol_resolver::system_vulkan_native_symbol_resolver()
     : system_vulkan_native_symbol_resolver(system_vulkan_native_symbol_resolver_options{})
 {
@@ -1745,20 +3334,1247 @@ system_vulkan_native_symbol_resolver::system_vulkan_native_symbol_resolver(
 vulkan_native_function_pointer system_vulkan_native_symbol_resolver::resolve_symbol(
     std::string_view symbol_name)
 {
+    return resolve_symbol_with_diagnostics(symbol_name).pointer;
+}
+
+vulkan_system_symbol_resolution_result
+system_vulkan_native_symbol_resolver::resolve_symbol_with_diagnostics(
+    std::string_view symbol_name)
+{
+    vulkan_system_symbol_resolution_result result =
+        make_system_symbol_resolution_result(symbol_name);
+
     for (const std::string& candidate_library : native_symbol_candidate_libraries(options_)) {
+        result.attempted_library_names.push_back(candidate_library);
         native_loader_library library(candidate_library);
         if (!library.valid()) {
             continue;
         }
 
-        const vulkan_native_function_pointer pointer =
-            library.resolve_symbol(std::string{symbol_name});
-        if (pointer.valid()) {
-            return pointer;
+        result.loader_library_available = true;
+        if (result.loaded_library_name.empty()) {
+            result.loaded_library_name = candidate_library;
+        }
+
+        const vulkan_native_function_pointer instance_proc_address =
+            library.resolve_symbol(std::string{k_vulkan_loader_required_symbol_name});
+        result.instance_proc_address_available = instance_proc_address.valid();
+        if (instance_proc_address.valid()) {
+            const vulkan_native_function_pointer pointer =
+                resolve_loader_global_symbol(instance_proc_address, result.symbol_name);
+            if (pointer.valid()) {
+                result.pointer = pointer;
+                result.resolved_via_instance_proc_address = true;
+                result.diagnostic =
+                    "Resolved native Vulkan symbol through vkGetInstanceProcAddr: "
+                    + result.symbol_name;
+                return result;
+            }
+        }
+
+        const vulkan_native_function_pointer direct_pointer =
+            library.resolve_symbol(result.symbol_name);
+        if (direct_pointer.valid()) {
+            result.pointer = direct_pointer;
+            result.resolved_via_direct_export = true;
+            result.diagnostic =
+                "Resolved native Vulkan symbol through loader library export: "
+                + result.symbol_name;
+            return result;
         }
     }
 
-    return {};
+    if (!result.loader_library_available) {
+        result.diagnostic =
+            "No Vulkan loader library was available for native symbol resolution";
+    } else if (!result.instance_proc_address_available) {
+        result.diagnostic =
+            "Vulkan loader library did not export vkGetInstanceProcAddr";
+    } else {
+        result.diagnostic = "Native Vulkan symbol was unavailable: " + result.symbol_name;
+    }
+    return result;
+}
+
+vulkan_native_instance_function_table collect_vulkan_native_instance_function_table(
+    vulkan_native_symbol_resolver_interface& resolver)
+{
+    vulkan_native_instance_function_table table = make_native_instance_function_table();
+    table.get_instance_proc_address =
+        resolver.resolve_symbol(std::string{k_vulkan_loader_required_symbol_name});
+    if (!table.get_instance_proc_address.valid()) {
+        table.status =
+            vulkan_native_instance_function_table_status::missing_get_instance_proc_address_symbol;
+        table.diagnostic =
+            "Native Vulkan instance table is missing vkGetInstanceProcAddr";
+        return table;
+    }
+
+    table.create_instance = resolver.resolve_symbol("vkCreateInstance");
+    if (!table.create_instance.valid()) {
+        table.status =
+            vulkan_native_instance_function_table_status::missing_create_instance_symbol;
+        table.diagnostic = "Native Vulkan instance table is missing vkCreateInstance";
+        return table;
+    }
+
+    table.destroy_instance = resolver.resolve_symbol("vkDestroyInstance");
+    if (!table.destroy_instance.valid()) {
+        table.status =
+            vulkan_native_instance_function_table_status::missing_destroy_instance_symbol;
+        table.diagnostic = "Native Vulkan instance table is missing vkDestroyInstance";
+        return table;
+    }
+
+    table.status = vulkan_native_instance_function_table_status::ready;
+    table.diagnostic = "Native Vulkan instance function table is ready";
+    return table;
+}
+
+vulkan_native_instance_dispatch_table collect_vulkan_native_instance_dispatch_table(
+    vulkan_native_instance_symbol_resolver_interface& resolver,
+    const vulkan_native_instance_create_result& create_result)
+{
+    vulkan_native_instance_dispatch_table table =
+        make_native_instance_dispatch_table(create_result, resolver);
+
+    if (!create_result.created()) {
+        table.status = vulkan_native_instance_dispatch_table_status::instance_unavailable;
+        table.diagnostic =
+            "Native Vulkan instance dispatch table requires a created instance";
+        return table;
+    }
+    if (!table.get_instance_proc_address.valid()) {
+        table.status =
+            vulkan_native_instance_dispatch_table_status::get_instance_proc_address_unavailable;
+        table.diagnostic =
+            "Native Vulkan instance dispatch table is missing vkGetInstanceProcAddr";
+        return table;
+    }
+
+    table.destroy_instance =
+        resolver.resolve_instance_symbol(create_result.handle, "vkDestroyInstance");
+    if (!table.destroy_instance.valid()) {
+        table.status =
+            vulkan_native_instance_dispatch_table_status::missing_destroy_instance_symbol;
+        table.missing_symbol_name = "vkDestroyInstance";
+        table.diagnostic =
+            "Native Vulkan instance dispatch table is missing vkDestroyInstance";
+        return table;
+    }
+
+    table.status = vulkan_native_instance_dispatch_table_status::ready;
+    table.diagnostic = "Native Vulkan instance dispatch table is ready";
+    return table;
+}
+
+vulkan_native_physical_device_dispatch_table
+collect_vulkan_native_physical_device_dispatch_table(
+    vulkan_native_instance_symbol_resolver_interface& resolver,
+    const vulkan_native_instance_create_result& create_result)
+{
+    vulkan_native_physical_device_dispatch_table table =
+        make_native_physical_device_dispatch_table(create_result, resolver);
+
+    if (!create_result.created()) {
+        table.status =
+            vulkan_native_physical_device_dispatch_table_status::instance_unavailable;
+        table.diagnostic =
+            "Native Vulkan physical device dispatch table requires a created instance";
+        return table;
+    }
+    if (!table.get_instance_proc_address.valid()) {
+        table.status =
+            vulkan_native_physical_device_dispatch_table_status::get_instance_proc_address_unavailable;
+        table.diagnostic =
+            "Native Vulkan physical device dispatch table is missing vkGetInstanceProcAddr";
+        return table;
+    }
+
+    table.enumerate_physical_devices =
+        resolver.resolve_instance_symbol(create_result.handle, "vkEnumeratePhysicalDevices");
+    if (!table.enumerate_physical_devices.valid()) {
+        table.status =
+            vulkan_native_physical_device_dispatch_table_status::missing_enumerate_physical_devices_symbol;
+        table.missing_symbol_name = "vkEnumeratePhysicalDevices";
+        table.diagnostic =
+            "Native Vulkan physical device dispatch table is missing vkEnumeratePhysicalDevices";
+        return table;
+    }
+
+    table.get_physical_device_queue_family_properties =
+        resolver.resolve_instance_symbol(
+            create_result.handle,
+            "vkGetPhysicalDeviceQueueFamilyProperties");
+    if (!table.get_physical_device_queue_family_properties.valid()) {
+        table.status =
+            vulkan_native_physical_device_dispatch_table_status::missing_get_physical_device_queue_family_properties_symbol;
+        table.missing_symbol_name = "vkGetPhysicalDeviceQueueFamilyProperties";
+        table.diagnostic =
+            "Native Vulkan physical device dispatch table is missing vkGetPhysicalDeviceQueueFamilyProperties";
+        return table;
+    }
+
+    table.status = vulkan_native_physical_device_dispatch_table_status::ready;
+    table.diagnostic = "Native Vulkan physical device dispatch table is ready";
+    return table;
+}
+
+vulkan_native_device_dispatch_table
+collect_vulkan_native_device_dispatch_table(
+    vulkan_native_instance_symbol_resolver_interface& resolver,
+    const vulkan_native_physical_device_selection_result& selection)
+{
+    vulkan_native_device_dispatch_table table =
+        make_native_device_dispatch_table(selection, resolver);
+
+    if (!selection.ready_for_device_create()) {
+        table.status = vulkan_native_device_dispatch_table_status::selection_unavailable;
+        table.diagnostic =
+            "Native Vulkan logical device dispatch table requires selected physical device and queues";
+        return table;
+    }
+    if (!table.get_instance_proc_address.valid()) {
+        table.status =
+            vulkan_native_device_dispatch_table_status::get_instance_proc_address_unavailable;
+        table.diagnostic =
+            "Native Vulkan logical device dispatch table is missing vkGetInstanceProcAddr";
+        return table;
+    }
+
+    table.enumerate_device_extension_properties =
+        resolver.resolve_instance_symbol(
+            table.instance,
+            "vkEnumerateDeviceExtensionProperties");
+    if (!table.enumerate_device_extension_properties.valid()) {
+        table.status =
+            vulkan_native_device_dispatch_table_status::missing_enumerate_device_extension_properties_symbol;
+        table.missing_symbol_name = "vkEnumerateDeviceExtensionProperties";
+        table.diagnostic =
+            "Native Vulkan logical device dispatch table is missing vkEnumerateDeviceExtensionProperties";
+        return table;
+    }
+
+    table.create_device =
+        resolver.resolve_instance_symbol(table.instance, "vkCreateDevice");
+    if (!table.create_device.valid()) {
+        table.status =
+            vulkan_native_device_dispatch_table_status::missing_create_device_symbol;
+        table.missing_symbol_name = "vkCreateDevice";
+        table.diagnostic =
+            "Native Vulkan logical device dispatch table is missing vkCreateDevice";
+        return table;
+    }
+
+    table.get_device_queue =
+        resolver.resolve_instance_symbol(table.instance, "vkGetDeviceQueue");
+    if (!table.get_device_queue.valid()) {
+        table.status =
+            vulkan_native_device_dispatch_table_status::missing_get_device_queue_symbol;
+        table.missing_symbol_name = "vkGetDeviceQueue";
+        table.diagnostic =
+            "Native Vulkan logical device dispatch table is missing vkGetDeviceQueue";
+        return table;
+    }
+
+    table.destroy_device =
+        resolver.resolve_instance_symbol(table.instance, "vkDestroyDevice");
+    if (!table.destroy_device.valid()) {
+        table.status =
+            vulkan_native_device_dispatch_table_status::missing_destroy_device_symbol;
+        table.missing_symbol_name = "vkDestroyDevice";
+        table.diagnostic =
+            "Native Vulkan logical device dispatch table is missing vkDestroyDevice";
+        return table;
+    }
+
+    table.status = vulkan_native_device_dispatch_table_status::ready;
+    table.diagnostic = "Native Vulkan logical device dispatch table is ready";
+    return table;
+}
+
+vulkan_native_physical_device_enumeration_result
+vulkan_native_physical_device_enumerator::enumerate_physical_devices(
+    const vulkan_native_physical_device_dispatch_table& dispatch_table)
+{
+    vulkan_native_physical_device_enumeration_result result =
+        make_native_physical_device_enumeration_result(dispatch_table);
+
+    if (!dispatch_table.ready_for_enumeration()) {
+        result.status =
+            vulkan_native_physical_device_enumeration_status::dispatch_table_unavailable;
+        result.diagnostic = dispatch_table.diagnostic.empty()
+            ? "Native Vulkan physical device dispatch table is unavailable"
+            : dispatch_table.diagnostic;
+        return result;
+    }
+
+#if QUIZ_VULKAN_HAS_VULKAN_HEADERS
+    const auto enumerate_physical_devices =
+        reinterpret_cast<PFN_vkEnumeratePhysicalDevices>(
+            dispatch_table.enumerate_physical_devices.value);
+    if (enumerate_physical_devices == nullptr) {
+        result.status =
+            vulkan_native_physical_device_enumeration_status::dispatch_table_unavailable;
+        result.diagnostic =
+            "Native Vulkan physical device enumeration pointer is invalid";
+        return result;
+    }
+
+    std::uint32_t device_count = 0;
+    VkResult native_result = enumerate_physical_devices(
+        reinterpret_cast<VkInstance>(dispatch_table.instance.value),
+        &device_count,
+        nullptr);
+    result.native_result = static_cast<std::int32_t>(native_result);
+    if (native_result != VK_SUCCESS) {
+        result.status = vulkan_native_physical_device_enumeration_status::enumeration_failed;
+        result.diagnostic = "Native Vulkan physical device count query failed";
+        return result;
+    }
+    if (device_count == 0) {
+        result.status = vulkan_native_physical_device_enumeration_status::no_devices;
+        result.diagnostic =
+            "Native Vulkan physical device enumeration returned no devices";
+        return result;
+    }
+
+    std::vector<VkPhysicalDevice> native_devices(device_count, VK_NULL_HANDLE);
+    native_result = enumerate_physical_devices(
+        reinterpret_cast<VkInstance>(dispatch_table.instance.value),
+        &device_count,
+        native_devices.data());
+    result.native_result = static_cast<std::int32_t>(native_result);
+    if (native_result != VK_SUCCESS) {
+        result.status = vulkan_native_physical_device_enumeration_status::enumeration_failed;
+        result.diagnostic = "Native Vulkan physical device list query failed";
+        return result;
+    }
+
+    result.physical_devices.reserve(device_count);
+    for (const VkPhysicalDevice native_device : native_devices) {
+        if (native_device == VK_NULL_HANDLE) {
+            continue;
+        }
+        result.physical_devices.push_back(vulkan_physical_device_handle{
+            .value = reinterpret_cast<std::uintptr_t>(native_device),
+        });
+    }
+    result.physical_device_count = result.physical_devices.size();
+    if (result.physical_devices.empty()) {
+        result.status = vulkan_native_physical_device_enumeration_status::no_devices;
+        result.diagnostic =
+            "Native Vulkan physical device enumeration returned no valid handles";
+        return result;
+    }
+
+    result.status = vulkan_native_physical_device_enumeration_status::ready;
+    result.diagnostic = "Native Vulkan physical devices enumerated";
+    return result;
+#else
+    result.status = vulkan_native_physical_device_enumeration_status::headers_unavailable;
+    result.diagnostic =
+        "Vulkan headers are unavailable for native physical device enumeration";
+    return result;
+#endif
+}
+
+vulkan_native_physical_device_enumeration_result
+enumerate_native_vulkan_physical_devices(
+    vulkan_native_physical_device_enumerator_interface& enumerator,
+    const vulkan_native_physical_device_dispatch_table& dispatch_table)
+{
+    return enumerator.enumerate_physical_devices(dispatch_table);
+}
+
+vulkan_native_queue_family_query_result
+vulkan_native_queue_family_query::query_queue_families(
+    const vulkan_native_physical_device_enumeration_result& enumeration)
+{
+    vulkan_native_queue_family_query_result result =
+        make_native_queue_family_query_result(enumeration);
+
+    if (!enumeration.ready_for_device_selection()) {
+        if (enumeration.status
+            == vulkan_native_physical_device_enumeration_status::no_devices) {
+            result.status = vulkan_native_queue_family_query_status::no_devices;
+            result.diagnostic = "No native Vulkan physical devices are available";
+        } else {
+            result.status =
+                vulkan_native_queue_family_query_status::enumeration_unavailable;
+            result.diagnostic = enumeration.diagnostic.empty()
+                ? "Native Vulkan physical device enumeration is unavailable"
+                : enumeration.diagnostic;
+        }
+        return result;
+    }
+    if (!enumeration.dispatch_table.ready_for_queue_family_query()) {
+        result.status =
+            vulkan_native_queue_family_query_status::dispatch_table_unavailable;
+        result.diagnostic = enumeration.dispatch_table.diagnostic.empty()
+            ? "Native Vulkan queue family dispatch table is unavailable"
+            : enumeration.dispatch_table.diagnostic;
+        return result;
+    }
+
+#if QUIZ_VULKAN_HAS_VULKAN_HEADERS
+    const auto get_queue_family_properties =
+        reinterpret_cast<PFN_vkGetPhysicalDeviceQueueFamilyProperties>(
+            enumeration.dispatch_table.get_physical_device_queue_family_properties.value);
+    if (get_queue_family_properties == nullptr) {
+        result.status =
+            vulkan_native_queue_family_query_status::dispatch_table_unavailable;
+        result.diagnostic =
+            "Native Vulkan queue family properties pointer is invalid";
+        return result;
+    }
+
+    for (const vulkan_physical_device_handle physical_device :
+         enumeration.physical_devices) {
+        const VkPhysicalDevice native_device =
+            reinterpret_cast<VkPhysicalDevice>(physical_device.value);
+        if (native_device == VK_NULL_HANDLE) {
+            continue;
+        }
+
+        std::uint32_t queue_family_count = 0;
+        get_queue_family_properties(native_device, &queue_family_count, nullptr);
+        if (queue_family_count == 0) {
+            continue;
+        }
+
+        std::vector<VkQueueFamilyProperties> native_properties(queue_family_count);
+        get_queue_family_properties(
+            native_device,
+            &queue_family_count,
+            native_properties.data());
+
+        for (std::uint32_t family_index = 0; family_index < queue_family_count;
+             ++family_index) {
+            const VkQueueFamilyProperties& native_family =
+                native_properties[family_index];
+            std::vector<vulkan_device_queue_capability> capabilities;
+            if ((native_family.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0U) {
+                capabilities.push_back(vulkan_device_queue_capability::graphics);
+            }
+            if ((native_family.queueFlags & VK_QUEUE_COMPUTE_BIT) != 0U) {
+                capabilities.push_back(vulkan_device_queue_capability::compute);
+            }
+            if ((native_family.queueFlags & VK_QUEUE_TRANSFER_BIT) != 0U) {
+                capabilities.push_back(vulkan_device_queue_capability::transfer);
+            }
+            if (native_family.queueCount == 0 || capabilities.empty()) {
+                continue;
+            }
+
+            result.queue_families.push_back(
+                vulkan_native_physical_device_queue_family{
+                    .physical_device = physical_device,
+                    .family_index = static_cast<std::size_t>(family_index),
+                    .queue_count = static_cast<std::size_t>(native_family.queueCount),
+                    .capabilities = std::move(capabilities),
+                });
+        }
+    }
+
+    result.queue_family_count = result.queue_families.size();
+    if (result.queue_families.empty()) {
+        result.status = vulkan_native_queue_family_query_status::no_queue_families;
+        result.diagnostic =
+            "Native Vulkan queue family query returned no usable queue families";
+        return result;
+    }
+
+    result.status = vulkan_native_queue_family_query_status::ready;
+    result.diagnostic = "Native Vulkan queue family properties queried";
+    return result;
+#else
+    result.status = vulkan_native_queue_family_query_status::headers_unavailable;
+    result.diagnostic =
+        "Vulkan headers are unavailable for native queue family query";
+    return result;
+#endif
+}
+
+vulkan_native_queue_family_query_result
+query_native_vulkan_physical_device_queue_families(
+    vulkan_native_queue_family_query_interface& query,
+    const vulkan_native_physical_device_enumeration_result& enumeration)
+{
+    return query.query_queue_families(enumeration);
+}
+
+vulkan_native_physical_device_selection_result
+select_native_vulkan_physical_device(
+    vulkan_native_physical_device_selector_interface& selector,
+    const vulkan_native_physical_device_enumeration_result& enumeration,
+    const vulkan_native_queue_family_query_result& queue_family_query,
+    const vulkan_device_create_request& request)
+{
+    return selector.select_physical_device(enumeration, queue_family_query, request);
+}
+
+vulkan_native_device_extension_query_result
+vulkan_native_device_extension_query::query_device_extensions(
+    const vulkan_native_device_dispatch_table& dispatch_table,
+    const vulkan_native_physical_device_selection_result& selection)
+{
+    vulkan_native_device_extension_query_result result =
+        make_native_device_extension_query_result(dispatch_table, selection);
+
+    if (!selection.ready_for_device_create()) {
+        result.status =
+            vulkan_native_device_extension_query_status::selection_unavailable;
+        result.diagnostic = selection.diagnostic.empty()
+            ? "Native Vulkan physical device selection is unavailable"
+            : selection.diagnostic;
+        return result;
+    }
+    if (!dispatch_table.ready_for_create()) {
+        result.status =
+            vulkan_native_device_extension_query_status::dispatch_table_unavailable;
+        result.diagnostic = dispatch_table.diagnostic.empty()
+            ? "Native Vulkan logical device dispatch table is unavailable"
+            : dispatch_table.diagnostic;
+        return result;
+    }
+
+#if QUIZ_VULKAN_HAS_VULKAN_HEADERS
+    const auto enumerate_device_extension_properties =
+        reinterpret_cast<PFN_vkEnumerateDeviceExtensionProperties>(
+            dispatch_table.enumerate_device_extension_properties.value);
+    if (enumerate_device_extension_properties == nullptr) {
+        result.status =
+            vulkan_native_device_extension_query_status::dispatch_table_unavailable;
+        result.diagnostic =
+            "Native Vulkan device extension enumeration pointer is invalid";
+        return result;
+    }
+
+    std::uint32_t extension_count = 0;
+    VkResult native_result = enumerate_device_extension_properties(
+        reinterpret_cast<VkPhysicalDevice>(selection.selected_physical_device.value),
+        nullptr,
+        &extension_count,
+        nullptr);
+    result.native_result = static_cast<std::int32_t>(native_result);
+    if (native_result != VK_SUCCESS) {
+        result.status = vulkan_native_device_extension_query_status::enumeration_failed;
+        result.diagnostic = "Native Vulkan device extension count query failed";
+        return result;
+    }
+
+    std::vector<VkExtensionProperties> native_extensions(extension_count);
+    if (extension_count > 0) {
+        native_result = enumerate_device_extension_properties(
+            reinterpret_cast<VkPhysicalDevice>(selection.selected_physical_device.value),
+            nullptr,
+            &extension_count,
+            native_extensions.data());
+        result.native_result = static_cast<std::int32_t>(native_result);
+        if (native_result != VK_SUCCESS) {
+            result.status =
+                vulkan_native_device_extension_query_status::enumeration_failed;
+            result.diagnostic = "Native Vulkan device extension list query failed";
+            return result;
+        }
+        if (extension_count < native_extensions.size()) {
+            native_extensions.resize(extension_count);
+        }
+    }
+
+    result.available_extensions.reserve(native_extensions.size());
+    for (const VkExtensionProperties& native_extension : native_extensions) {
+        device_detail::append_unique_string(
+            result.available_extensions,
+            native_extension.extensionName);
+    }
+    result.available_extension_count = result.available_extensions.size();
+    result.selected_extensions = selected_native_device_extensions(
+        selection.request,
+        result.available_extensions);
+    record_native_device_required_extension_diagnostics(result);
+    if (!result.required_extensions_ready()) {
+        result.status =
+            vulkan_native_device_extension_query_status::missing_required_extension;
+        result.diagnostic = device_detail::make_missing_required_device_extension_diagnostic(
+            result.missing_required_extension);
+        return result;
+    }
+
+    result.status = vulkan_native_device_extension_query_status::ready;
+    result.diagnostic = "Native Vulkan device extensions enumerated";
+    return result;
+#else
+    result.status = vulkan_native_device_extension_query_status::headers_unavailable;
+    result.diagnostic =
+        "Vulkan headers are unavailable for native device extension enumeration";
+    return result;
+#endif
+}
+
+vulkan_native_device_extension_query_result
+query_native_vulkan_device_extensions(
+    vulkan_native_device_extension_query_interface& query,
+    const vulkan_native_device_dispatch_table& dispatch_table,
+    const vulkan_native_physical_device_selection_result& selection)
+{
+    return query.query_device_extensions(dispatch_table, selection);
+}
+
+vulkan_native_device_create_result
+vulkan_native_device_creator::create_device(
+    const vulkan_native_device_dispatch_table& dispatch_table,
+    const vulkan_native_device_extension_query_result& extension_query,
+    const vulkan_native_physical_device_selection_result& selection)
+{
+    vulkan_native_device_create_result result =
+        make_native_device_create_result(dispatch_table, extension_query, selection);
+
+    if (!selection.ready_for_device_create()) {
+        result.status = vulkan_native_device_create_status::selection_unavailable;
+        result.diagnostic = selection.diagnostic.empty()
+            ? "Native Vulkan physical device selection is unavailable"
+            : selection.diagnostic;
+        return result;
+    }
+    if (!dispatch_table.ready_for_create()) {
+        result.status = vulkan_native_device_create_status::dispatch_table_unavailable;
+        result.diagnostic = dispatch_table.diagnostic.empty()
+            ? "Native Vulkan logical device dispatch table is unavailable"
+            : dispatch_table.diagnostic;
+        return result;
+    }
+    if (!extension_query.ready_for_create()) {
+        if (!extension_query.missing_required_extension.empty()) {
+            result.status =
+                vulkan_native_device_create_status::missing_required_extension;
+            result.diagnostic =
+                device_detail::make_missing_required_device_extension_diagnostic(
+                    extension_query.missing_required_extension);
+        } else {
+            result.status =
+                vulkan_native_device_create_status::extension_query_unavailable;
+            result.diagnostic = extension_query.diagnostic.empty()
+                ? "Native Vulkan device extension availability is unavailable"
+                : extension_query.diagnostic;
+        }
+        return result;
+    }
+
+    result.selected_extensions = extension_query.selected_extensions;
+    result.queue_create_family_indices =
+        unique_queue_family_indices(selection.selected_queue_families);
+    result.queue_create_family_count = result.queue_create_family_indices.size();
+
+#if QUIZ_VULKAN_HAS_VULKAN_HEADERS
+    const auto create_device =
+        reinterpret_cast<PFN_vkCreateDevice>(dispatch_table.create_device.value);
+    const auto get_device_queue =
+        reinterpret_cast<PFN_vkGetDeviceQueue>(dispatch_table.get_device_queue.value);
+    const auto destroy_device =
+        reinterpret_cast<PFN_vkDestroyDevice>(dispatch_table.destroy_device.value);
+    if (create_device == nullptr || get_device_queue == nullptr
+        || destroy_device == nullptr) {
+        result.status = vulkan_native_device_create_status::dispatch_table_unavailable;
+        result.diagnostic =
+            "Native Vulkan logical device dispatch table has an invalid function pointer";
+        return result;
+    }
+
+    const float queue_priority = 1.0F;
+    std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
+    queue_create_infos.reserve(result.queue_create_family_indices.size());
+    for (const std::size_t family_index : result.queue_create_family_indices) {
+        VkDeviceQueueCreateInfo queue_create_info{};
+        queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+        queue_create_info.queueFamilyIndex = static_cast<std::uint32_t>(family_index);
+        queue_create_info.queueCount = 1;
+        queue_create_info.pQueuePriorities = &queue_priority;
+        queue_create_infos.push_back(queue_create_info);
+    }
+
+    std::vector<const char*> extension_names;
+    extension_names.reserve(result.selected_extensions.size());
+    for (const std::string& extension_name : result.selected_extensions) {
+        extension_names.push_back(extension_name.c_str());
+    }
+
+    VkDeviceCreateInfo create_info{};
+    create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    create_info.queueCreateInfoCount =
+        static_cast<std::uint32_t>(queue_create_infos.size());
+    create_info.pQueueCreateInfos =
+        queue_create_infos.empty() ? nullptr : queue_create_infos.data();
+    create_info.enabledExtensionCount =
+        static_cast<std::uint32_t>(extension_names.size());
+    create_info.ppEnabledExtensionNames =
+        extension_names.empty() ? nullptr : extension_names.data();
+
+    VkDevice native_device = VK_NULL_HANDLE;
+    const VkResult native_result = create_device(
+        reinterpret_cast<VkPhysicalDevice>(selection.selected_physical_device.value),
+        &create_info,
+        nullptr,
+        &native_device);
+    result.native_result = static_cast<std::int32_t>(native_result);
+    if (native_result != VK_SUCCESS || native_device == VK_NULL_HANDLE) {
+        result.status = vulkan_native_device_create_status::creation_failed;
+        result.diagnostic = "Native Vulkan logical device creation failed";
+        return result;
+    }
+
+    result.handle = vulkan_device_handle{
+        .value = reinterpret_cast<std::uintptr_t>(native_device),
+    };
+    for (const vulkan_native_physical_device_queue_family_selection& queue_family :
+         selection.selected_queue_families) {
+        VkQueue native_queue = VK_NULL_HANDLE;
+        get_device_queue(
+            native_device,
+            static_cast<std::uint32_t>(queue_family.family_index),
+            0,
+            &native_queue);
+        if (native_queue == VK_NULL_HANDLE) {
+            destroy_device(native_device, nullptr);
+            result.handle = {};
+            result.selected_queue_count = result.selected_queues.size();
+            result.status = vulkan_native_device_create_status::queue_unavailable;
+            result.diagnostic =
+                "Native Vulkan logical device queue lookup returned an invalid handle";
+            return result;
+        }
+
+        result.selected_queues.push_back(vulkan_device_queue_selection{
+            .capability = queue_family.capability,
+            .family_index = queue_family.family_index,
+            .queue = vulkan_queue_handle{
+                .value = reinterpret_cast<std::uintptr_t>(native_queue),
+            },
+        });
+    }
+
+    result.selected_queue_count = result.selected_queues.size();
+    result.status = vulkan_native_device_create_status::created;
+    result.diagnostic = "Native Vulkan logical device created";
+    return result;
+#else
+    result.status = vulkan_native_device_create_status::headers_unavailable;
+    result.diagnostic =
+        "Vulkan headers are unavailable for native logical device creation";
+    return result;
+#endif
+}
+
+vulkan_native_device_create_result
+create_native_vulkan_device(
+    vulkan_native_device_creator_interface& creator,
+    const vulkan_native_device_dispatch_table& dispatch_table,
+    const vulkan_native_device_extension_query_result& extension_query,
+    const vulkan_native_physical_device_selection_result& selection)
+{
+    return creator.create_device(dispatch_table, extension_query, selection);
+}
+
+vulkan_native_surface_query_dispatch_table
+collect_vulkan_native_surface_query_dispatch_table(
+    vulkan_native_instance_symbol_resolver_interface& resolver,
+    const vulkan_native_device_create_result& device)
+{
+    vulkan_native_surface_query_dispatch_table table{
+        .checked = true,
+        .status = vulkan_native_surface_query_dispatch_table_status::not_checked,
+        .instance = device.dispatch_table.instance,
+        .physical_device = device.selection.selected_physical_device,
+        .get_instance_proc_address = resolver.get_instance_proc_address(),
+        .get_physical_device_surface_support = {},
+        .get_physical_device_surface_capabilities = {},
+        .get_physical_device_surface_formats = {},
+        .get_physical_device_surface_present_modes = {},
+        .missing_symbol_name = {},
+        .diagnostic = {},
+    };
+
+    if (!device.ready_for_backend()) {
+        table.status =
+            vulkan_native_surface_query_dispatch_table_status::device_unavailable;
+        table.diagnostic = device.diagnostic.empty()
+            ? "Native Vulkan device is unavailable for surface query dispatch"
+            : device.diagnostic;
+        return table;
+    }
+    if (!table.get_instance_proc_address.valid()) {
+        table.status =
+            vulkan_native_surface_query_dispatch_table_status::get_instance_proc_address_unavailable;
+        table.missing_symbol_name = "vkGetInstanceProcAddr";
+        table.diagnostic =
+            "Native Vulkan surface query dispatch table has no vkGetInstanceProcAddr";
+        return table;
+    }
+
+    table.get_physical_device_surface_support =
+        resolver.resolve_instance_symbol(
+            table.instance,
+            "vkGetPhysicalDeviceSurfaceSupportKHR");
+    if (!table.get_physical_device_surface_support.valid()) {
+        table.status =
+            vulkan_native_surface_query_dispatch_table_status::missing_surface_support_symbol;
+        table.missing_symbol_name = "vkGetPhysicalDeviceSurfaceSupportKHR";
+        table.diagnostic =
+            "Native Vulkan surface query dispatch table is missing vkGetPhysicalDeviceSurfaceSupportKHR";
+        return table;
+    }
+
+    table.get_physical_device_surface_capabilities =
+        resolver.resolve_instance_symbol(
+            table.instance,
+            "vkGetPhysicalDeviceSurfaceCapabilitiesKHR");
+    if (!table.get_physical_device_surface_capabilities.valid()) {
+        table.status =
+            vulkan_native_surface_query_dispatch_table_status::missing_surface_capabilities_symbol;
+        table.missing_symbol_name = "vkGetPhysicalDeviceSurfaceCapabilitiesKHR";
+        table.diagnostic =
+            "Native Vulkan surface query dispatch table is missing vkGetPhysicalDeviceSurfaceCapabilitiesKHR";
+        return table;
+    }
+
+    table.get_physical_device_surface_formats =
+        resolver.resolve_instance_symbol(
+            table.instance,
+            "vkGetPhysicalDeviceSurfaceFormatsKHR");
+    if (!table.get_physical_device_surface_formats.valid()) {
+        table.status =
+            vulkan_native_surface_query_dispatch_table_status::missing_surface_formats_symbol;
+        table.missing_symbol_name = "vkGetPhysicalDeviceSurfaceFormatsKHR";
+        table.diagnostic =
+            "Native Vulkan surface query dispatch table is missing vkGetPhysicalDeviceSurfaceFormatsKHR";
+        return table;
+    }
+
+    table.get_physical_device_surface_present_modes =
+        resolver.resolve_instance_symbol(
+            table.instance,
+            "vkGetPhysicalDeviceSurfacePresentModesKHR");
+    if (!table.get_physical_device_surface_present_modes.valid()) {
+        table.status =
+            vulkan_native_surface_query_dispatch_table_status::missing_surface_present_modes_symbol;
+        table.missing_symbol_name = "vkGetPhysicalDeviceSurfacePresentModesKHR";
+        table.diagnostic =
+            "Native Vulkan surface query dispatch table is missing vkGetPhysicalDeviceSurfacePresentModesKHR";
+        return table;
+    }
+
+    table.status = vulkan_native_surface_query_dispatch_table_status::ready;
+    table.diagnostic = "Native Vulkan surface query dispatch table is ready";
+    return table;
+}
+
+vulkan_native_surface_capability_query_result
+vulkan_native_surface_capability_query::query_surface_capabilities(
+    const vulkan_native_surface_query_dispatch_table& dispatch_table,
+    const vulkan_native_device_create_result& device,
+    vulkan_surface_handle surface,
+    std::size_t present_queue_family_index)
+{
+    vulkan_native_surface_capability_query_result result =
+        swapchain_detail::make_surface_capability_query_result(
+            dispatch_table,
+            device,
+            surface,
+            present_queue_family_index);
+
+    if (!dispatch_table.ready_for_query()) {
+        result.status =
+            vulkan_native_surface_capability_query_status::dispatch_table_unavailable;
+        result.diagnostic = dispatch_table.diagnostic.empty()
+            ? "Native Vulkan surface query dispatch table is unavailable"
+            : dispatch_table.diagnostic;
+        return result;
+    }
+    if (!device.ready_for_backend()) {
+        result.status = vulkan_native_surface_capability_query_status::device_unavailable;
+        result.diagnostic = device.diagnostic.empty()
+            ? "Native Vulkan device is unavailable for surface capability query"
+            : device.diagnostic;
+        return result;
+    }
+    if (!surface.valid()) {
+        result.status =
+            vulkan_native_surface_capability_query_status::missing_surface_handle;
+        result.diagnostic =
+            "Native Vulkan surface capability query has no valid surface handle";
+        return result;
+    }
+
+#if QUIZ_VULKAN_HAS_VULKAN_HEADERS
+    const auto get_surface_support =
+        reinterpret_cast<PFN_vkGetPhysicalDeviceSurfaceSupportKHR>(
+            dispatch_table.get_physical_device_surface_support.value);
+    const auto get_surface_capabilities =
+        reinterpret_cast<PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR>(
+            dispatch_table.get_physical_device_surface_capabilities.value);
+    const auto get_surface_formats =
+        reinterpret_cast<PFN_vkGetPhysicalDeviceSurfaceFormatsKHR>(
+            dispatch_table.get_physical_device_surface_formats.value);
+    const auto get_surface_present_modes =
+        reinterpret_cast<PFN_vkGetPhysicalDeviceSurfacePresentModesKHR>(
+            dispatch_table.get_physical_device_surface_present_modes.value);
+    if (get_surface_support == nullptr || get_surface_capabilities == nullptr
+        || get_surface_formats == nullptr || get_surface_present_modes == nullptr) {
+        result.status =
+            vulkan_native_surface_capability_query_status::dispatch_table_unavailable;
+        result.diagnostic =
+            "Native Vulkan surface capability query has an invalid function pointer";
+        return result;
+    }
+
+    const VkPhysicalDevice native_physical_device =
+        reinterpret_cast<VkPhysicalDevice>(dispatch_table.physical_device.value);
+    const VkSurfaceKHR native_surface =
+        reinterpret_cast<VkSurfaceKHR>(surface.value);
+
+    VkBool32 surface_supported = VK_FALSE;
+    VkResult native_result = get_surface_support(
+        native_physical_device,
+        static_cast<std::uint32_t>(present_queue_family_index),
+        native_surface,
+        &surface_supported);
+    result.support_query_checked = true;
+    result.native_result = static_cast<std::int32_t>(native_result);
+    if (native_result != VK_SUCCESS) {
+        result.status =
+            vulkan_native_surface_capability_query_status::support_query_failed;
+        result.diagnostic = "Native Vulkan surface support query failed";
+        return result;
+    }
+    result.present_queue_supported = surface_supported == VK_TRUE;
+    if (!result.present_queue_supported) {
+        result.status =
+            vulkan_native_surface_capability_query_status::unsupported_present_queue;
+        result.diagnostic =
+            "Native Vulkan selected queue family does not support presenting to the surface";
+        return result;
+    }
+
+    VkSurfaceCapabilitiesKHR native_capabilities{};
+    native_result = get_surface_capabilities(
+        native_physical_device,
+        native_surface,
+        &native_capabilities);
+    result.capabilities_query_checked = true;
+    result.native_result = static_cast<std::int32_t>(native_result);
+    if (native_result != VK_SUCCESS) {
+        result.status =
+            vulkan_native_surface_capability_query_status::capabilities_query_failed;
+        result.diagnostic = "Native Vulkan surface capabilities query failed";
+        return result;
+    }
+    result.capabilities = snapshot_from_vk_surface_capabilities(native_capabilities);
+
+    std::uint32_t surface_format_count = 0;
+    native_result = get_surface_formats(
+        native_physical_device,
+        native_surface,
+        &surface_format_count,
+        nullptr);
+    result.formats_query_checked = true;
+    result.native_result = static_cast<std::int32_t>(native_result);
+    if (native_result != VK_SUCCESS) {
+        result.status =
+            vulkan_native_surface_capability_query_status::formats_query_failed;
+        result.diagnostic = "Native Vulkan surface format count query failed";
+        return result;
+    }
+    if (surface_format_count == 0) {
+        result.status =
+            vulkan_native_surface_capability_query_status::zero_surface_formats;
+        result.diagnostic =
+            "Native Vulkan surface capability query found no surface formats";
+        return result;
+    }
+
+    std::vector<VkSurfaceFormatKHR> native_surface_formats(surface_format_count);
+    native_result = get_surface_formats(
+        native_physical_device,
+        native_surface,
+        &surface_format_count,
+        native_surface_formats.data());
+    result.native_result = static_cast<std::int32_t>(native_result);
+    if (native_result != VK_SUCCESS) {
+        result.status =
+            vulkan_native_surface_capability_query_status::formats_query_failed;
+        result.diagnostic = "Native Vulkan surface format list query failed";
+        return result;
+    }
+    if (surface_format_count < native_surface_formats.size()) {
+        native_surface_formats.resize(surface_format_count);
+    }
+    result.capabilities.surface_formats.reserve(native_surface_formats.size());
+    for (const VkSurfaceFormatKHR& native_format : native_surface_formats) {
+        result.capabilities.surface_formats.push_back(
+            vulkan_swapchain_surface_format{
+                .format = image_format_from_vk(native_format.format),
+                .color_space = color_space_from_vk(native_format.colorSpace),
+            });
+    }
+    result.surface_format_count = result.capabilities.surface_formats.size();
+    if (result.surface_format_count == 0) {
+        result.status =
+            vulkan_native_surface_capability_query_status::zero_surface_formats;
+        result.diagnostic =
+            "Native Vulkan surface capability query found no surface formats";
+        return result;
+    }
+
+    std::uint32_t present_mode_count = 0;
+    native_result = get_surface_present_modes(
+        native_physical_device,
+        native_surface,
+        &present_mode_count,
+        nullptr);
+    result.present_modes_query_checked = true;
+    result.native_result = static_cast<std::int32_t>(native_result);
+    if (native_result != VK_SUCCESS) {
+        result.status =
+            vulkan_native_surface_capability_query_status::present_modes_query_failed;
+        result.diagnostic = "Native Vulkan present mode count query failed";
+        return result;
+    }
+    if (present_mode_count == 0) {
+        result.status =
+            vulkan_native_surface_capability_query_status::zero_present_modes;
+        result.diagnostic =
+            "Native Vulkan surface capability query found no present modes";
+        return result;
+    }
+
+    std::vector<VkPresentModeKHR> native_present_modes(present_mode_count);
+    native_result = get_surface_present_modes(
+        native_physical_device,
+        native_surface,
+        &present_mode_count,
+        native_present_modes.data());
+    result.native_result = static_cast<std::int32_t>(native_result);
+    if (native_result != VK_SUCCESS) {
+        result.status =
+            vulkan_native_surface_capability_query_status::present_modes_query_failed;
+        result.diagnostic = "Native Vulkan present mode list query failed";
+        return result;
+    }
+    if (present_mode_count < native_present_modes.size()) {
+        native_present_modes.resize(present_mode_count);
+    }
+    result.capabilities.present_modes.reserve(native_present_modes.size());
+    for (const VkPresentModeKHR native_present_mode : native_present_modes) {
+        result.capabilities.present_modes.push_back(
+            present_mode_from_vk(native_present_mode));
+    }
+    result.present_mode_count = result.capabilities.present_modes.size();
+    if (result.present_mode_count == 0) {
+        result.status =
+            vulkan_native_surface_capability_query_status::zero_present_modes;
+        result.diagnostic =
+            "Native Vulkan surface capability query found no present modes";
+        return result;
+    }
+
+    result.status = vulkan_native_surface_capability_query_status::ready;
+    result.diagnostic = "Native Vulkan surface capabilities are ready";
+    return result;
+#else
+    result.status = vulkan_native_surface_capability_query_status::headers_unavailable;
+    result.diagnostic =
+        "Vulkan headers are unavailable for native surface capability query";
+    return result;
+#endif
+}
+
+vulkan_native_surface_capability_query_result
+query_native_vulkan_surface_capabilities(
+    vulkan_native_surface_capability_query_interface& query,
+    const vulkan_native_surface_query_dispatch_table& dispatch_table,
+    const vulkan_native_device_create_result& device,
+    vulkan_surface_handle surface,
+    std::size_t present_queue_family_index)
+{
+    return query.query_surface_capabilities(
+        dispatch_table,
+        device,
+        surface,
+        present_queue_family_index);
+}
+
+vulkan_native_instance_create_result create_native_vulkan_instance(
+    const vulkan_loader_readiness_state& loader_readiness,
+    const vulkan_native_instance_function_table& function_table,
+    const vulkan_instance_create_request& request)
+{
+    vulkan_native_instance_create_result result = make_native_instance_create_result(
+        loader_readiness,
+        function_table,
+        request);
+
+    if (!loader_readiness.ready_for_instance()) {
+        result.status = vulkan_native_instance_create_status::loader_unavailable;
+        result.diagnostic = "Vulkan loader is not ready for native instance creation";
+        return result;
+    }
+    if (!function_table.ready()) {
+        result.status = vulkan_native_instance_create_status::function_table_unavailable;
+        result.diagnostic = function_table.diagnostic.empty()
+            ? "Native Vulkan instance function table is unavailable"
+            : function_table.diagnostic;
+        return result;
+    }
+
+#if QUIZ_VULKAN_HAS_VULKAN_HEADERS
+    const auto create_instance =
+        reinterpret_cast<PFN_vkCreateInstance>(function_table.create_instance.value);
+    if (create_instance == nullptr) {
+        result.status = vulkan_native_instance_create_status::function_table_unavailable;
+        result.diagnostic = "Native Vulkan instance create pointer is invalid";
+        return result;
+    }
+
+    const std::vector<std::string> requested_layers =
+        instance_detail::requested_instance_layers(request);
+    std::vector<const char*> extension_names;
+    extension_names.reserve(request.required_instance_extensions.size());
+    for (const std::string& extension_name : request.required_instance_extensions) {
+        extension_names.push_back(extension_name.c_str());
+    }
+    std::vector<const char*> layer_names;
+    layer_names.reserve(requested_layers.size());
+    for (const std::string& layer_name : requested_layers) {
+        layer_names.push_back(layer_name.c_str());
+    }
+
+    VkApplicationInfo application_info{};
+    application_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    application_info.pApplicationName =
+        request.app_name.empty() ? nullptr : request.app_name.c_str();
+    application_info.applicationVersion = 0;
+    application_info.pEngineName =
+        request.engine_name.empty() ? nullptr : request.engine_name.c_str();
+    application_info.engineVersion = 0;
+    application_info.apiVersion =
+        request.api_version != 0 ? request.api_version : VK_API_VERSION_1_0;
+
+    VkInstanceCreateInfo create_info{};
+    create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    create_info.pApplicationInfo = &application_info;
+    create_info.enabledExtensionCount =
+        static_cast<std::uint32_t>(extension_names.size());
+    create_info.ppEnabledExtensionNames =
+        extension_names.empty() ? nullptr : extension_names.data();
+    create_info.enabledLayerCount =
+        static_cast<std::uint32_t>(layer_names.size());
+    create_info.ppEnabledLayerNames = layer_names.empty() ? nullptr : layer_names.data();
+
+    VkInstance native_instance = VK_NULL_HANDLE;
+    const VkResult native_result = create_instance(&create_info, nullptr, &native_instance);
+    result.native_result = static_cast<std::int32_t>(native_result);
+    if (native_result != VK_SUCCESS || native_instance == VK_NULL_HANDLE) {
+        result.status = vulkan_native_instance_create_status::creation_failed;
+        result.diagnostic = "Native Vulkan instance creation failed";
+        return result;
+    }
+
+    result.status = vulkan_native_instance_create_status::created;
+    result.handle = vulkan_instance_handle{
+        .value = reinterpret_cast<std::uintptr_t>(native_instance),
+    };
+    result.diagnostic = "Native Vulkan instance created";
+    return result;
+#else
+    result.status = vulkan_native_instance_create_status::headers_unavailable;
+    result.diagnostic = "Vulkan headers are unavailable for native instance creation";
+    return result;
+#endif
+}
+
+vulkan_native_instance_destroy_result destroy_native_vulkan_instance(
+    const vulkan_native_instance_dispatch_table& dispatch_table)
+{
+    vulkan_native_instance_destroy_result result =
+        make_native_instance_destroy_result({}, dispatch_table.handle);
+    result.dispatch_table = dispatch_table;
+    result.used_instance_dispatch = true;
+
+    if (!dispatch_table.handle.valid()) {
+        result.status = vulkan_native_instance_destroy_status::invalid_handle;
+        result.diagnostic =
+            "Native Vulkan instance dispatch destroy received an invalid handle";
+        return result;
+    }
+    if (!dispatch_table.ready_for_destroy()) {
+        result.status = vulkan_native_instance_destroy_status::dispatch_table_unavailable;
+        result.diagnostic = dispatch_table.diagnostic.empty()
+            ? "Native Vulkan instance dispatch table is unavailable for destroy"
+            : dispatch_table.diagnostic;
+        return result;
+    }
+
+#if QUIZ_VULKAN_HAS_VULKAN_HEADERS
+    const auto destroy_instance =
+        reinterpret_cast<PFN_vkDestroyInstance>(dispatch_table.destroy_instance.value);
+    if (destroy_instance == nullptr) {
+        result.status = vulkan_native_instance_destroy_status::dispatch_table_unavailable;
+        result.diagnostic =
+            "Native Vulkan instance dispatch destroy pointer is invalid";
+        return result;
+    }
+
+    destroy_instance(reinterpret_cast<VkInstance>(dispatch_table.handle.value), nullptr);
+    result.status = vulkan_native_instance_destroy_status::destroyed;
+    result.diagnostic = "Native Vulkan instance destroyed through instance dispatch";
+    return result;
+#else
+    result.status = vulkan_native_instance_destroy_status::headers_unavailable;
+    result.diagnostic =
+        "Vulkan headers are unavailable for native instance dispatch destroy";
+    return result;
+#endif
+}
+
+vulkan_native_instance_destroy_result destroy_native_vulkan_instance(
+    const vulkan_native_instance_function_table& function_table,
+    vulkan_instance_handle handle)
+{
+    vulkan_native_instance_destroy_result result =
+        make_native_instance_destroy_result(function_table, handle);
+
+    if (!function_table.ready()) {
+        result.status = vulkan_native_instance_destroy_status::function_table_unavailable;
+        result.diagnostic = function_table.diagnostic.empty()
+            ? "Native Vulkan instance function table is unavailable for destroy"
+            : function_table.diagnostic;
+        return result;
+    }
+    if (!handle.valid()) {
+        result.status = vulkan_native_instance_destroy_status::invalid_handle;
+        result.diagnostic = "Native Vulkan instance destroy received an invalid handle";
+        return result;
+    }
+
+#if QUIZ_VULKAN_HAS_VULKAN_HEADERS
+    const auto destroy_instance =
+        reinterpret_cast<PFN_vkDestroyInstance>(function_table.destroy_instance.value);
+    if (destroy_instance == nullptr) {
+        result.status = vulkan_native_instance_destroy_status::function_table_unavailable;
+        result.diagnostic = "Native Vulkan instance destroy pointer is invalid";
+        return result;
+    }
+
+    destroy_instance(reinterpret_cast<VkInstance>(handle.value), nullptr);
+    result.status = vulkan_native_instance_destroy_status::destroyed;
+    result.diagnostic = "Native Vulkan instance destroyed";
+    return result;
+#else
+    result.status = vulkan_native_instance_destroy_status::headers_unavailable;
+    result.diagnostic = "Vulkan headers are unavailable for native instance destroy";
+    return result;
+#endif
 }
 
 std::vector<vulkan_native_entrypoint_symbol_request>
@@ -2897,6 +5713,710 @@ vulkan_present_completion_plan_result build_vulkan_present_completion_plan(
     return plan;
 }
 
+vulkan_native_queue_present_operation_result build_vulkan_native_queue_present_operation_plan(
+    const vulkan_native_queue_present_operation_request& request)
+{
+    const vulkan_present_request_summary& present_request =
+        request.present_completion.request;
+    const vulkan_swapchain_handle selected_swapchain = present_request.swapchain;
+    const vulkan_swapchain_image_id selected_image_id{
+        .value = request.acquire_operation.image_id.value > 0
+            ? request.acquire_operation.image_id.value
+            : present_request.image_id.value,
+    };
+
+    vulkan_native_queue_present_operation_result result{
+        .checked = true,
+        .status = vulkan_native_queue_present_operation_status::not_checked,
+        .acquire_operation = request.acquire_operation,
+        .submit_batch = request.submit_batch,
+        .present_completion = request.present_completion,
+        .native_entrypoints = request.native_entrypoints,
+        .device = request.acquire_operation.device,
+        .swapchain = selected_swapchain,
+        .present_queue = present_request.present_queue,
+        .image_id = selected_image_id,
+        .image_handle = request.acquire_operation.image_handle,
+        .wait_render_finished_semaphore =
+            present_request.wait_render_finished_semaphore,
+        .present_status = request.present_result.status,
+        .acquire_operation_checked = request.acquire_operation.checked,
+        .acquired_image_ready = request.acquire_operation.ready_for_command_recording(),
+        .submit_batch_checked = request.submit_batch.checked,
+        .submit_batch_ready = request.submit_batch.completed(),
+        .present_completion_checked = request.present_completion.checked,
+        .present_completion_ready = request.present_completion.completed(),
+        .native_entrypoints_checked = request.native_entrypoints.checked,
+        .required_extensions_ready = request.native_entrypoints.required_extensions_ready,
+        .queue_present_symbol_ready = request.native_entrypoints.queue_present_ready,
+        .present_queue_ready = present_request.present_queue.valid(),
+        .swapchain_ready =
+            selected_swapchain.valid() && request.acquire_operation.swapchain_valid,
+        .submitted_frame_ready =
+            request.submit_batch.completed() && request.present_completion.submit_batch_ready
+            && frame_status_has_submitted_frame(request.present_completion.frame_status),
+        .present_request_ready = present_request.completed(),
+        .present_adapter_result_ready = request.present_completion.result.completed(),
+        .present_result_checked =
+            request.present_result.status != vulkan_swapchain_present_status::not_requested,
+        .present_result_completed = request.present_result.completed(),
+        .submit_before_present = request.present_completion.result.submit_before_present,
+        .out_of_date =
+            request.present_result.status == vulkan_swapchain_present_status::out_of_date,
+        .suboptimal =
+            request.present_result.status == vulkan_swapchain_present_status::suboptimal,
+        .recoverable_failure = request.present_completion.recoverable_failure
+            || request.present_result.status == vulkan_swapchain_present_status::failed,
+        .fatal_failure = request.present_completion.fatal_failure
+            || request.present_result.status == vulkan_swapchain_present_status::error,
+        .vk_queue_present_callable = false,
+        .frame_lifecycle_may_complete = false,
+        .missing_required_extension =
+            request.native_entrypoints.missing_required_extension,
+        .missing_symbol_name = request.native_entrypoints.missing_symbol_name,
+        .diagnostic = {},
+        .operation = {},
+    };
+
+    if (!result.acquire_operation_checked) {
+        block_native_queue_present_operation(
+            result,
+            vulkan_native_queue_present_operation_status::acquire_operation_unavailable,
+            "Native Vulkan queue present operation has unchecked acquire operation");
+        return result;
+    }
+    if (request.acquire_operation.out_of_date
+        || request.acquire_operation.status
+            == vulkan_native_swapchain_acquire_operation_status::out_of_date) {
+        result.out_of_date = true;
+        block_native_queue_present_operation(
+            result,
+            vulkan_native_queue_present_operation_status::out_of_date,
+            "Native Vulkan queue present operation cannot present an out-of-date acquired image");
+        return result;
+    }
+    if (!result.acquired_image_ready) {
+        block_native_queue_present_operation(
+            result,
+            vulkan_native_queue_present_operation_status::acquired_image_unavailable,
+            request.acquire_operation.diagnostic.empty()
+                ? "Native Vulkan queue present operation has no acquired image"
+                : request.acquire_operation.diagnostic);
+        return result;
+    }
+    if (!result.native_entrypoints_checked) {
+        block_native_queue_present_operation(
+            result,
+            vulkan_native_queue_present_operation_status::native_entrypoints_unavailable,
+            "Native Vulkan queue present operation has unchecked native entrypoints");
+        return result;
+    }
+    if (!result.required_extensions_ready) {
+        block_native_queue_present_operation(
+            result,
+            vulkan_native_queue_present_operation_status::required_extension_unavailable,
+            request.native_entrypoints.diagnostic.empty()
+                ? "Native Vulkan queue present operation is missing VK_KHR_swapchain"
+                : request.native_entrypoints.diagnostic);
+        return result;
+    }
+    if (!result.queue_present_symbol_ready) {
+        block_native_queue_present_operation(
+            result,
+            vulkan_native_queue_present_operation_status::missing_queue_present_symbol,
+            request.native_entrypoints.diagnostic.empty()
+                ? "Native Vulkan queue present operation is missing vkQueuePresentKHR"
+                : request.native_entrypoints.diagnostic);
+        return result;
+    }
+    if (!result.submit_batch_checked || !result.submit_batch_ready) {
+        block_native_queue_present_operation(
+            result,
+            vulkan_native_queue_present_operation_status::submit_batch_unavailable,
+            request.submit_batch.diagnostic.empty()
+                ? "Native Vulkan queue present operation has no ready submit batch"
+                : request.submit_batch.diagnostic);
+        return result;
+    }
+    if (!result.present_completion_checked) {
+        block_native_queue_present_operation(
+            result,
+            vulkan_native_queue_present_operation_status::present_completion_unavailable,
+            "Native Vulkan queue present operation has unchecked present completion plan");
+        return result;
+    }
+    if (!result.present_queue_ready) {
+        block_native_queue_present_operation(
+            result,
+            vulkan_native_queue_present_operation_status::present_queue_unavailable,
+            "Native Vulkan queue present operation has no valid present queue");
+        return result;
+    }
+    if (!result.swapchain_ready) {
+        block_native_queue_present_operation(
+            result,
+            vulkan_native_queue_present_operation_status::swapchain_unavailable,
+            "Native Vulkan queue present operation has no valid swapchain handle");
+        return result;
+    }
+    if (!result.present_request_ready) {
+        block_native_queue_present_operation(
+            result,
+            vulkan_native_queue_present_operation_status::present_completion_unavailable,
+            "Native Vulkan queue present operation has an incomplete present request");
+        return result;
+    }
+    if (!result.submitted_frame_ready) {
+        block_native_queue_present_operation(
+            result,
+            vulkan_native_queue_present_operation_status::submitted_frame_unavailable,
+            request.present_completion.diagnostic.empty()
+                ? "Native Vulkan queue present operation has no submitted frame"
+                : request.present_completion.diagnostic);
+        return result;
+    }
+    if (request.present_completion.status
+        == vulkan_present_completion_plan_status::present_failed_recoverable) {
+        result.recoverable_failure = true;
+        block_native_queue_present_operation(
+            result,
+            vulkan_native_queue_present_operation_status::present_failed_recoverable,
+            request.present_completion.diagnostic.empty()
+                ? "Native Vulkan queue present operation observed recoverable present failure"
+                : request.present_completion.diagnostic);
+        return result;
+    }
+    if (request.present_completion.status
+        == vulkan_present_completion_plan_status::present_failed_fatal) {
+        result.fatal_failure = true;
+        block_native_queue_present_operation(
+            result,
+            vulkan_native_queue_present_operation_status::present_failed_fatal,
+            request.present_completion.diagnostic.empty()
+                ? "Native Vulkan queue present operation observed fatal present failure"
+                : request.present_completion.diagnostic);
+        return result;
+    }
+    if (!result.present_completion_ready) {
+        block_native_queue_present_operation(
+            result,
+            vulkan_native_queue_present_operation_status::present_completion_unavailable,
+            request.present_completion.diagnostic.empty()
+                ? "Native Vulkan queue present operation has no ready present completion plan"
+                : request.present_completion.diagnostic);
+        return result;
+    }
+
+    result.vk_queue_present_callable = true;
+    switch (request.present_result.status) {
+    case vulkan_swapchain_present_status::not_requested:
+        block_native_queue_present_operation(
+            result,
+            vulkan_native_queue_present_operation_status::present_result_unavailable,
+            "Native Vulkan queue present operation has no present result status");
+        return result;
+    case vulkan_swapchain_present_status::presented:
+        result.status = vulkan_native_queue_present_operation_status::ready;
+        result.frame_lifecycle_may_complete = true;
+        result.diagnostic =
+            "Native Vulkan queue present operation completed frame present";
+        break;
+    case vulkan_swapchain_present_status::suboptimal:
+        result.status = vulkan_native_queue_present_operation_status::suboptimal;
+        result.suboptimal = true;
+        result.frame_lifecycle_may_complete = request.allow_suboptimal;
+        result.diagnostic = request.allow_suboptimal
+            ? "Native Vulkan queue present operation completed with suboptimal swapchain"
+            : "Native Vulkan queue present operation blocked suboptimal present";
+        break;
+    case vulkan_swapchain_present_status::out_of_date:
+        result.status = vulkan_native_queue_present_operation_status::out_of_date;
+        result.out_of_date = true;
+        result.diagnostic =
+            "Native Vulkan queue present operation found an out-of-date swapchain";
+        break;
+    case vulkan_swapchain_present_status::failed:
+        result.status =
+            vulkan_native_queue_present_operation_status::present_failed_recoverable;
+        result.recoverable_failure = true;
+        result.diagnostic =
+            "Native Vulkan queue present operation failed recoverably";
+        break;
+    case vulkan_swapchain_present_status::error:
+        result.status = vulkan_native_queue_present_operation_status::present_failed_fatal;
+        result.fatal_failure = true;
+        result.diagnostic = "Native Vulkan queue present operation failed fatally";
+        break;
+    }
+
+    finalize_native_queue_present_operation(result);
+    return result;
+}
+
+vulkan_native_frame_operation_result build_vulkan_native_frame_operation_summary(
+    const vulkan_native_frame_operation_request& request)
+{
+    vulkan_native_frame_operation_result result{
+        .checked = true,
+        .status = vulkan_native_frame_operation_status::not_checked,
+        .native_functions = request.native_functions,
+        .swapchain_create = request.swapchain_create,
+        .swapchain_images = request.swapchain_images,
+        .acquire_operation = request.acquire_operation,
+        .command_buffer_recording = request.command_buffer_recording,
+        .submit_batch = request.submit_batch,
+        .present_operation = request.present_operation,
+        .reached_stage = vulkan_native_frame_operation_stage::not_started,
+        .blocker_stage = vulkan_native_frame_operation_stage::not_started,
+        .fallback_reason = vulkan_backend_fallback_reason::not_requested,
+        .native_function_table_checked = request.native_functions.checked,
+        .native_function_table_ready = request.native_functions.ready_for_backend_path(),
+        .swapchain_create_checked = request.swapchain_create.checked,
+        .swapchain_create_ready = request.swapchain_create.can_call_vk_create_swapchain(),
+        .swapchain_images_checked = request.swapchain_images.checked,
+        .swapchain_images_ready =
+            request.swapchain_images.can_call_vk_get_swapchain_images(),
+        .acquire_checked = request.acquire_operation.checked,
+        .acquire_ready = request.acquire_operation.ready_for_command_recording(),
+        .command_recording_checked = request.command_buffer_recording.checked,
+        .command_recording_ready = request.command_buffer_recording.completed(),
+        .submit_batch_checked = request.submit_batch.checked,
+        .submit_batch_ready = request.submit_batch.completed(),
+        .present_operation_checked = request.present_operation.checked,
+        .present_operation_ready = request.present_operation.ready_for_frame_completion(),
+        .frame_completion_ready =
+            request.present_operation.ready_for_frame_completion()
+            && request.present_operation.frame_lifecycle_may_complete,
+        .recoverable_failure = request.present_operation.recoverable_failure
+            || request.submit_batch.status
+                == vulkan_submit_batch_plan_status::submit_failed_recoverable,
+        .fatal_failure = request.present_operation.fatal_failure
+            || request.submit_batch.status == vulkan_submit_batch_plan_status::submit_failed_fatal,
+        .swapchain_out_of_date = request.acquire_operation.out_of_date
+            || request.present_operation.out_of_date,
+        .suboptimal = request.acquire_operation.suboptimal
+            || request.present_operation.suboptimal,
+        .cpu_fallback_available = request.cpu_fallback_available,
+        .cpu_fallback_should_remain_active = request.cpu_fallback_available,
+        .native_function_table_status = request.native_functions.status,
+        .missing_required_extension = !request.native_functions.missing_required_extension.empty()
+            ? request.native_functions.missing_required_extension
+            : !request.acquire_operation.missing_required_extension.empty()
+                ? request.acquire_operation.missing_required_extension
+                : request.present_operation.missing_required_extension,
+        .missing_symbol_name = !request.native_functions.missing_symbol_name.empty()
+            ? request.native_functions.missing_symbol_name
+            : !request.acquire_operation.missing_symbol_name.empty()
+                ? request.acquire_operation.missing_symbol_name
+                : request.present_operation.missing_symbol_name,
+        .stages = {},
+        .diagnostic = {},
+        .operation = {},
+    };
+    result.stages = build_native_frame_stage_summaries(result);
+
+    if (!result.native_function_table_ready) {
+        block_native_frame_operation(
+            result,
+            vulkan_native_frame_operation_status::native_function_table_unavailable,
+            vulkan_native_frame_operation_stage::not_started,
+            vulkan_native_frame_operation_stage::native_function_table,
+            fallback_for_native_function_table(request.native_functions),
+            request.native_functions.diagnostic.empty()
+                ? "Native Vulkan frame operation has no ready function table"
+                : request.native_functions.diagnostic);
+        return result;
+    }
+    if (!result.swapchain_create_ready) {
+        block_native_frame_operation(
+            result,
+            vulkan_native_frame_operation_status::swapchain_create_unavailable,
+            vulkan_native_frame_operation_stage::native_function_table,
+            vulkan_native_frame_operation_stage::swapchain_create,
+            vulkan_backend_fallback_reason::swapchain_unavailable,
+            request.swapchain_create.diagnostic.empty()
+                ? "Native Vulkan frame operation has no ready swapchain create operation"
+                : request.swapchain_create.diagnostic);
+        return result;
+    }
+    if (!result.swapchain_images_ready) {
+        block_native_frame_operation(
+            result,
+            vulkan_native_frame_operation_status::swapchain_images_unavailable,
+            vulkan_native_frame_operation_stage::swapchain_create,
+            vulkan_native_frame_operation_stage::swapchain_images,
+            vulkan_backend_fallback_reason::swapchain_unavailable,
+            request.swapchain_images.diagnostic.empty()
+                ? "Native Vulkan frame operation has no enumerated swapchain images"
+                : request.swapchain_images.diagnostic);
+        return result;
+    }
+    if (!result.acquire_ready) {
+        block_native_frame_operation(
+            result,
+            vulkan_native_frame_operation_status::acquire_unavailable,
+            vulkan_native_frame_operation_stage::swapchain_images,
+            vulkan_native_frame_operation_stage::acquire,
+            vulkan_backend_fallback_reason::acquire_image_failed,
+            request.acquire_operation.diagnostic.empty()
+                ? "Native Vulkan frame operation has no recordable acquired image"
+                : request.acquire_operation.diagnostic);
+        return result;
+    }
+    if (!result.command_recording_ready) {
+        block_native_frame_operation(
+            result,
+            vulkan_native_frame_operation_status::command_recording_unavailable,
+            vulkan_native_frame_operation_stage::acquire,
+            vulkan_native_frame_operation_stage::command_recording,
+            vulkan_backend_fallback_reason::record_commands_failed,
+            request.command_buffer_recording.diagnostic.empty()
+                ? "Native Vulkan frame operation has no recorded command buffer"
+                : request.command_buffer_recording.diagnostic);
+        return result;
+    }
+    if (request.submit_batch.status == vulkan_submit_batch_plan_status::submit_failed_recoverable) {
+        result.recoverable_failure = true;
+        block_native_frame_operation(
+            result,
+            vulkan_native_frame_operation_status::recoverable_failure,
+            vulkan_native_frame_operation_stage::command_recording,
+            vulkan_native_frame_operation_stage::submit,
+            vulkan_backend_fallback_reason::submit_frame_failed,
+            request.submit_batch.diagnostic.empty()
+                ? "Native Vulkan frame operation observed recoverable submit failure"
+                : request.submit_batch.diagnostic);
+        return result;
+    }
+    if (request.submit_batch.status == vulkan_submit_batch_plan_status::submit_failed_fatal) {
+        result.fatal_failure = true;
+        block_native_frame_operation(
+            result,
+            vulkan_native_frame_operation_status::fatal_failure,
+            vulkan_native_frame_operation_stage::command_recording,
+            vulkan_native_frame_operation_stage::submit,
+            vulkan_backend_fallback_reason::submit_frame_failed,
+            request.submit_batch.diagnostic.empty()
+                ? "Native Vulkan frame operation observed fatal submit failure"
+                : request.submit_batch.diagnostic);
+        return result;
+    }
+    if (!result.submit_batch_ready) {
+        block_native_frame_operation(
+            result,
+            vulkan_native_frame_operation_status::submit_unavailable,
+            vulkan_native_frame_operation_stage::command_recording,
+            vulkan_native_frame_operation_stage::submit,
+            vulkan_backend_fallback_reason::submit_frame_failed,
+            request.submit_batch.diagnostic.empty()
+                ? "Native Vulkan frame operation has no ready submit batch"
+                : request.submit_batch.diagnostic);
+        return result;
+    }
+    if (request.present_operation.recoverable_failure) {
+        result.recoverable_failure = true;
+        block_native_frame_operation(
+            result,
+            vulkan_native_frame_operation_status::recoverable_failure,
+            vulkan_native_frame_operation_stage::submit,
+            vulkan_native_frame_operation_stage::present,
+            vulkan_backend_fallback_reason::present_frame_failed,
+            request.present_operation.diagnostic.empty()
+                ? "Native Vulkan frame operation observed recoverable present failure"
+                : request.present_operation.diagnostic);
+        return result;
+    }
+    if (request.present_operation.fatal_failure) {
+        result.fatal_failure = true;
+        block_native_frame_operation(
+            result,
+            vulkan_native_frame_operation_status::fatal_failure,
+            vulkan_native_frame_operation_stage::submit,
+            vulkan_native_frame_operation_stage::present,
+            vulkan_backend_fallback_reason::present_frame_failed,
+            request.present_operation.diagnostic.empty()
+                ? "Native Vulkan frame operation observed fatal present failure"
+                : request.present_operation.diagnostic);
+        return result;
+    }
+    if (!result.present_operation_ready) {
+        block_native_frame_operation(
+            result,
+            vulkan_native_frame_operation_status::present_unavailable,
+            vulkan_native_frame_operation_stage::submit,
+            vulkan_native_frame_operation_stage::present,
+            vulkan_backend_fallback_reason::present_frame_failed,
+            request.present_operation.diagnostic.empty()
+                ? "Native Vulkan frame operation has no ready queue present operation"
+                : request.present_operation.diagnostic);
+        return result;
+    }
+    if (!result.frame_completion_ready) {
+        block_native_frame_operation(
+            result,
+            vulkan_native_frame_operation_status::frame_completion_unavailable,
+            vulkan_native_frame_operation_stage::present,
+            vulkan_native_frame_operation_stage::frame_completion,
+            vulkan_backend_fallback_reason::present_frame_failed,
+            request.present_operation.diagnostic.empty()
+                ? "Native Vulkan frame operation did not complete frame lifecycle"
+                : request.present_operation.diagnostic);
+        return result;
+    }
+
+    result.status = vulkan_native_frame_operation_status::ready;
+    result.reached_stage = vulkan_native_frame_operation_stage::frame_completion;
+    result.blocker_stage = vulkan_native_frame_operation_stage::not_started;
+    result.fallback_reason = vulkan_backend_fallback_reason::none;
+    result.diagnostic = "Native Vulkan frame operation completed all data-only stages";
+    finalize_native_frame_operation(result);
+    return result;
+}
+
+vulkan_native_frame_operation_diff_diagnostics build_vulkan_native_frame_operation_summary_diff(
+    const vulkan_native_frame_operation_summary& before,
+    const vulkan_native_frame_operation_summary& after)
+{
+    vulkan_native_frame_operation_diff_diagnostics diff{
+        .checked = true,
+        .changed = false,
+        .before_checked = before.checked,
+        .after_checked = after.checked,
+        .before_status = before.status,
+        .after_status = after.status,
+        .status_changed = before.status != after.status,
+        .before_reached_stage = before.reached_stage,
+        .after_reached_stage = after.reached_stage,
+        .reached_stage_changed = before.reached_stage != after.reached_stage,
+        .before_blocker_stage = before.blocker_stage,
+        .after_blocker_stage = after.blocker_stage,
+        .blocker_stage_changed = before.blocker_stage != after.blocker_stage,
+        .blocker_introduced =
+            before.blocker_stage == vulkan_native_frame_operation_stage::not_started
+            && after.blocker_stage != vulkan_native_frame_operation_stage::not_started,
+        .blocker_cleared =
+            before.blocker_stage != vulkan_native_frame_operation_stage::not_started
+            && after.blocker_stage == vulkan_native_frame_operation_stage::not_started,
+        .blocker_moved_forward =
+            before.blocker_stage != vulkan_native_frame_operation_stage::not_started
+            && after.blocker_stage != vulkan_native_frame_operation_stage::not_started
+            && native_frame_operation_stage_order(after.blocker_stage)
+                > native_frame_operation_stage_order(before.blocker_stage),
+        .blocker_moved_backward =
+            before.blocker_stage != vulkan_native_frame_operation_stage::not_started
+            && after.blocker_stage != vulkan_native_frame_operation_stage::not_started
+            && native_frame_operation_stage_order(after.blocker_stage)
+                < native_frame_operation_stage_order(before.blocker_stage),
+        .before_fallback_reason = before.fallback_reason,
+        .after_fallback_reason = after.fallback_reason,
+        .fallback_reason_changed = before.fallback_reason != after.fallback_reason,
+        .before_cpu_fallback_should_remain_active =
+            before.cpu_fallback_should_remain_active,
+        .after_cpu_fallback_should_remain_active =
+            after.cpu_fallback_should_remain_active,
+        .fallback_activation_changed =
+            before.cpu_fallback_should_remain_active
+            != after.cpu_fallback_should_remain_active,
+        .fallback_activated =
+            !before.cpu_fallback_should_remain_active
+            && after.cpu_fallback_should_remain_active,
+        .fallback_deactivated =
+            before.cpu_fallback_should_remain_active
+            && !after.cpu_fallback_should_remain_active,
+        .before_recoverable_failure = before.recoverable_failure,
+        .after_recoverable_failure = after.recoverable_failure,
+        .recoverable_failure_changed =
+            before.recoverable_failure != after.recoverable_failure,
+        .recoverable_failure_started =
+            !before.recoverable_failure && after.recoverable_failure,
+        .recoverable_failure_cleared =
+            before.recoverable_failure && !after.recoverable_failure,
+        .before_fatal_failure = before.fatal_failure,
+        .after_fatal_failure = after.fatal_failure,
+        .fatal_failure_changed = before.fatal_failure != after.fatal_failure,
+        .fatal_failure_started = !before.fatal_failure && after.fatal_failure,
+        .fatal_failure_cleared = before.fatal_failure && !after.fatal_failure,
+        .before_swapchain_out_of_date = before.swapchain_out_of_date,
+        .after_swapchain_out_of_date = after.swapchain_out_of_date,
+        .swapchain_out_of_date_changed =
+            before.swapchain_out_of_date != after.swapchain_out_of_date,
+        .swapchain_out_of_date_started =
+            !before.swapchain_out_of_date && after.swapchain_out_of_date,
+        .swapchain_out_of_date_cleared =
+            before.swapchain_out_of_date && !after.swapchain_out_of_date,
+        .before_suboptimal = before.suboptimal,
+        .after_suboptimal = after.suboptimal,
+        .suboptimal_changed = before.suboptimal != after.suboptimal,
+        .suboptimal_started = !before.suboptimal && after.suboptimal,
+        .suboptimal_cleared = before.suboptimal && !after.suboptimal,
+        .before_frame_completion_ready = before.frame_completion_ready,
+        .after_frame_completion_ready = after.frame_completion_ready,
+        .frame_completion_readiness_changed =
+            before.frame_completion_ready != after.frame_completion_ready,
+        .frame_completion_became_ready =
+            !before.frame_completion_ready && after.frame_completion_ready,
+        .frame_completion_became_unready =
+            before.frame_completion_ready && !after.frame_completion_ready,
+        .before_completed = before.completed(),
+        .after_completed = after.completed(),
+        .completion_readiness_changed = before.completed() != after.completed(),
+        .completion_became_ready = !before.completed() && after.completed(),
+        .completion_became_unready = before.completed() && !after.completed(),
+        .stage_count = 0,
+        .stage_checked_change_count = 0,
+        .stage_readiness_change_count = 0,
+        .stage_ready_gain_count = 0,
+        .stage_ready_loss_count = 0,
+        .stages = {},
+    };
+
+    diff.stages.reserve(k_native_frame_operation_stages.size());
+    for (const vulkan_native_frame_operation_stage stage : k_native_frame_operation_stages) {
+        vulkan_native_frame_operation_stage_diff_diagnostics stage_diff =
+            build_native_frame_stage_diff(
+                native_frame_stage_summary_or_default(before, stage),
+                native_frame_stage_summary_or_default(after, stage));
+        if (stage_diff.checked_changed) {
+            ++diff.stage_checked_change_count;
+        }
+        if (stage_diff.readiness_changed) {
+            ++diff.stage_readiness_change_count;
+        }
+        if (stage_diff.became_ready) {
+            ++diff.stage_ready_gain_count;
+        }
+        if (stage_diff.before_ready && !stage_diff.after_ready) {
+            ++diff.stage_ready_loss_count;
+        }
+        diff.stages.push_back(std::move(stage_diff));
+    }
+    diff.stage_count = diff.stages.size();
+    diff.changed = diff.before_checked != diff.after_checked
+        || diff.status_changed
+        || diff.reached_stage_changed
+        || diff.blocker_stage_changed
+        || diff.fallback_reason_changed
+        || diff.fallback_activation_changed
+        || diff.recoverable_failure_changed
+        || diff.fatal_failure_changed
+        || diff.swapchain_out_of_date_changed
+        || diff.suboptimal_changed
+        || diff.frame_completion_readiness_changed
+        || diff.completion_readiness_changed
+        || diff.stage_checked_change_count > 0
+        || diff.stage_readiness_change_count > 0;
+    return diff;
+}
+
+vulkan_native_frame_operation_diff_diagnostics build_vulkan_native_frame_operation_result_diff(
+    const vulkan_native_frame_operation_result& before,
+    const vulkan_native_frame_operation_result& after)
+{
+    return build_vulkan_native_frame_operation_summary_diff(
+        native_frame_operation_summary_from_result(before),
+        native_frame_operation_summary_from_result(after));
+}
+
+vulkan_native_frame_operation_execution_plan build_vulkan_native_frame_operation_execution_plan(
+    const vulkan_native_frame_operation_execution_request& request)
+{
+    const vulkan_native_frame_operation_summary& summary = request.summary;
+    const vulkan_native_frame_operation_diff_diagnostics& diff = request.diff;
+    vulkan_native_frame_operation_execution_plan plan{
+        .checked = true,
+        .summary_checked = summary.checked,
+        .diff_checked = diff.checked,
+        .diff_changed = diff.changed,
+        .native_execution_ready = false,
+        .cpu_fallback_required = false,
+        .skip_required = false,
+        .fatal_failure = summary.fatal_failure,
+        .recoverable_failure = summary.recoverable_failure,
+        .swapchain_out_of_date = summary.swapchain_out_of_date,
+        .suboptimal = summary.suboptimal,
+        .summary_status = summary.status,
+        .blocker_stage = summary.blocker_stage,
+        .fallback_reason = summary.fallback_reason,
+        .step_count = 0,
+        .execute_step_count = 0,
+        .skip_step_count = 0,
+        .fallback_step_count = 0,
+        .not_checked_step_count = 0,
+        .steps = {},
+        .diagnostic = {},
+    };
+
+    bool terminal_decision_seen = false;
+    plan.steps.reserve(k_native_frame_execution_steps.size());
+    for (const vulkan_native_frame_execution_step step : k_native_frame_execution_steps) {
+        vulkan_native_frame_operation_step_execution_decision step_decision =
+            build_native_frame_step_execution_decision(
+                summary,
+                diff,
+                step,
+                terminal_decision_seen);
+        switch (step_decision.decision) {
+        case vulkan_native_frame_execution_decision::not_checked:
+            ++plan.not_checked_step_count;
+            break;
+        case vulkan_native_frame_execution_decision::execute:
+            ++plan.execute_step_count;
+            break;
+        case vulkan_native_frame_execution_decision::skip:
+            ++plan.skip_step_count;
+            break;
+        case vulkan_native_frame_execution_decision::fallback:
+            ++plan.fallback_step_count;
+            if (plan.fallback_reason == vulkan_backend_fallback_reason::none
+                || plan.fallback_reason == vulkan_backend_fallback_reason::not_requested) {
+                plan.fallback_reason = step_decision.fallback_reason;
+            }
+            break;
+        }
+        if (step_decision.decision != vulkan_native_frame_execution_decision::execute) {
+            terminal_decision_seen = true;
+        }
+        plan.steps.push_back(std::move(step_decision));
+    }
+
+    plan.step_count = plan.steps.size();
+    plan.cpu_fallback_required =
+        plan.fallback_step_count > 0
+        || (summary.checked
+            && summary.cpu_fallback_available
+            && summary.cpu_fallback_should_remain_active);
+    plan.skip_required = plan.skip_step_count > 0 || plan.not_checked_step_count > 0;
+    plan.native_execution_ready =
+        summary.completed()
+        && plan.execute_step_count == plan.step_count
+        && plan.fallback_step_count == 0
+        && plan.skip_step_count == 0
+        && plan.not_checked_step_count == 0;
+    if (!summary.checked) {
+        plan.diagnostic = "Native Vulkan frame execution skipped because summary is unchecked";
+    } else if (plan.native_execution_ready) {
+        plan.diagnostic =
+            "Native Vulkan frame execution will execute acquire, record, submit, and present";
+    } else if (plan.cpu_fallback_required) {
+        plan.diagnostic = "Native Vulkan frame execution requires CPU fallback";
+    } else {
+        plan.diagnostic = "Native Vulkan frame execution skipped by readiness policy";
+    }
+
+    return plan;
+}
+
+vulkan_native_frame_operation_execution_plan build_vulkan_native_frame_operation_execution_plan(
+    const vulkan_native_frame_operation_summary& summary,
+    const vulkan_native_frame_operation_diff_diagnostics& diff)
+{
+    return build_vulkan_native_frame_operation_execution_plan(
+        vulkan_native_frame_operation_execution_request{
+            .summary = summary,
+            .diff = diff,
+        });
+}
+
 vulkan_native_function_table_status native_function_table_status_from_frame(
     const vulkan_backend_frame_result& frame)
 {
@@ -2937,6 +6457,351 @@ std::string missing_native_symbol_from_frame(const vulkan_backend_frame_result& 
     }
 
     return {};
+}
+
+vulkan_backend_fallback_reason native_frame_pipeline_fallback_reason(
+    const vulkan_backend_frame_result& frame,
+    vulkan_backend_fallback_reason fallback)
+{
+    if (frame.fallback_reason != vulkan_backend_fallback_reason::none
+        && frame.fallback_reason != vulkan_backend_fallback_reason::not_requested) {
+        return frame.fallback_reason;
+    }
+
+    return fallback;
+}
+
+void block_native_frame_pipeline_summary(
+    vulkan_native_frame_operation_summary& summary,
+    vulkan_native_frame_operation_status status,
+    vulkan_native_frame_operation_stage reached_stage,
+    vulkan_native_frame_operation_stage blocker_stage,
+    vulkan_backend_fallback_reason fallback_reason,
+    std::string diagnostic)
+{
+    summary.status = status;
+    summary.reached_stage = reached_stage;
+    summary.blocker_stage = blocker_stage;
+    summary.fallback_reason = fallback_reason;
+    summary.cpu_fallback_should_remain_active = summary.cpu_fallback_available;
+    summary.diagnostic = std::move(diagnostic);
+}
+
+void finalize_native_frame_pipeline_summary_stages(
+    vulkan_native_frame_operation_summary& summary)
+{
+    vulkan_native_function_table_diagnostics native_function_table;
+    native_function_table.checked = summary.native_function_table_checked;
+    native_function_table.status = summary.native_function_table_status;
+    native_function_table.fallback_reason = summary.fallback_reason;
+    native_function_table.missing_symbol_name = summary.missing_symbol_name;
+    const vulkan_backend_fallback_reason native_function_table_fallback =
+        fallback_for_native_function_table(native_function_table);
+
+    summary.stages = {
+        make_native_frame_stage_summary(
+            vulkan_native_frame_operation_stage::native_function_table,
+            summary.native_function_table_checked,
+            summary.native_function_table_ready,
+            native_function_table_fallback,
+            summary.native_function_table_ready
+                ? "Native Vulkan frame pipeline function table is ready"
+                : "Native Vulkan frame pipeline function table is unavailable"),
+        make_native_frame_stage_summary(
+            vulkan_native_frame_operation_stage::swapchain_create,
+            summary.swapchain_create_checked,
+            summary.swapchain_create_ready,
+            vulkan_backend_fallback_reason::swapchain_unavailable,
+            summary.swapchain_create_ready
+                ? "Native Vulkan frame pipeline swapchain create data is ready"
+                : "Native Vulkan frame pipeline swapchain create data is unavailable"),
+        make_native_frame_stage_summary(
+            vulkan_native_frame_operation_stage::swapchain_images,
+            summary.swapchain_images_checked,
+            summary.swapchain_images_ready,
+            vulkan_backend_fallback_reason::swapchain_unavailable,
+            summary.swapchain_images_ready
+                ? "Native Vulkan frame pipeline swapchain image data is ready"
+                : "Native Vulkan frame pipeline swapchain image data is unavailable"),
+        make_native_frame_stage_summary(
+            vulkan_native_frame_operation_stage::acquire,
+            summary.acquire_checked,
+            summary.acquire_ready,
+            vulkan_backend_fallback_reason::acquire_image_failed,
+            summary.acquire_ready
+                ? "Native Vulkan frame pipeline acquire step would execute"
+                : "Native Vulkan frame pipeline acquire step would not execute"),
+        make_native_frame_stage_summary(
+            vulkan_native_frame_operation_stage::command_recording,
+            summary.command_recording_checked,
+            summary.command_recording_ready,
+            vulkan_backend_fallback_reason::record_commands_failed,
+            summary.command_recording_ready
+                ? "Native Vulkan frame pipeline record step would execute"
+                : "Native Vulkan frame pipeline record step would not execute"),
+        make_native_frame_stage_summary(
+            vulkan_native_frame_operation_stage::submit,
+            summary.submit_batch_checked,
+            summary.submit_batch_ready,
+            vulkan_backend_fallback_reason::submit_frame_failed,
+            summary.submit_batch_ready
+                ? "Native Vulkan frame pipeline submit step would execute"
+                : "Native Vulkan frame pipeline submit step would not execute"),
+        make_native_frame_stage_summary(
+            vulkan_native_frame_operation_stage::present,
+            summary.present_operation_checked,
+            summary.present_operation_ready,
+            vulkan_backend_fallback_reason::present_frame_failed,
+            summary.present_operation_ready
+                ? "Native Vulkan frame pipeline present step would execute"
+                : "Native Vulkan frame pipeline present step would not execute"),
+        make_native_frame_stage_summary(
+            vulkan_native_frame_operation_stage::frame_completion,
+            summary.present_operation_checked,
+            summary.frame_completion_ready,
+            vulkan_backend_fallback_reason::present_frame_failed,
+            summary.frame_completion_ready
+                ? "Native Vulkan frame pipeline completion is ready"
+                : "Native Vulkan frame pipeline completion is unavailable"),
+    };
+}
+
+vulkan_native_frame_operation_summary build_native_frame_pipeline_operation_summary(
+    const vulkan_backend_frame_result& frame,
+    bool checked,
+    bool native_function_table_checked,
+    bool native_command_buffer_recording_ready,
+    bool native_queue_submit_ready,
+    bool native_queue_present_ready,
+    bool submit_batch_ready_for_queue,
+    bool present_completed,
+    bool frame_completion_ready)
+{
+    const bool native_function_table_ready =
+        native_function_table_checked
+        && native_function_table_status_from_frame(frame)
+            == vulkan_native_function_table_status::ready
+        && native_command_buffer_recording_ready
+        && native_queue_submit_ready
+        && native_queue_present_ready;
+    const bool native_swapchain_ready =
+        native_function_table_ready && frame.lifecycle.effective_swapchain_ready();
+    const bool acquire_checked = frame.swapchain_image_acquire_plan.checked;
+    const bool acquire_ready =
+        native_swapchain_ready
+        && frame.swapchain_image_acquire_plan.ready_for_command_recording();
+    const bool command_recording_checked = frame.command_buffer_recording.checked;
+    const bool command_recording_ready =
+        acquire_ready && frame.command_buffer_recording.completed()
+        && frame.commands_recorded;
+    const bool submit_checked = frame.submit_batch_plan.checked;
+    const bool submit_ready =
+        command_recording_ready && submit_batch_ready_for_queue && frame.frame_submitted;
+    const bool present_checked =
+        frame.present_completion_plan.checked || frame.present_policy.present.checked;
+    const bool present_ready =
+        submit_ready && frame.present_completion_plan.completed() && present_completed;
+    const bool completed =
+        present_ready && frame_completion_ready && frame.lifecycle_policy.completed();
+
+    vulkan_native_frame_operation_summary summary{
+        .checked = checked,
+        .status = vulkan_native_frame_operation_status::not_checked,
+        .reached_stage = vulkan_native_frame_operation_stage::not_started,
+        .blocker_stage = vulkan_native_frame_operation_stage::not_started,
+        .fallback_reason = vulkan_backend_fallback_reason::not_requested,
+        .native_function_table_checked = native_function_table_checked,
+        .native_function_table_ready = native_function_table_ready,
+        .swapchain_create_checked = checked,
+        .swapchain_create_ready = native_swapchain_ready,
+        .swapchain_images_checked = checked,
+        .swapchain_images_ready = native_swapchain_ready,
+        .acquire_checked = acquire_checked,
+        .acquire_ready = acquire_ready,
+        .command_recording_checked = command_recording_checked,
+        .command_recording_ready = command_recording_ready,
+        .submit_batch_checked = submit_checked,
+        .submit_batch_ready = submit_ready,
+        .present_operation_checked = present_checked,
+        .present_operation_ready = present_ready,
+        .frame_completion_ready = completed,
+        .recoverable_failure =
+            frame.fallback_reason == vulkan_backend_fallback_reason::submit_frame_failed
+            || frame.fallback_reason == vulkan_backend_fallback_reason::present_image_failed
+            || frame.fallback_reason == vulkan_backend_fallback_reason::present_frame_failed
+            || frame.submit_batch_plan.status
+                == vulkan_submit_batch_plan_status::submit_failed_recoverable
+            || frame.present_completion_plan.recoverable_failure,
+        .fatal_failure =
+            frame.swapchain_recreate_policy.fatal
+            || frame.submit_batch_plan.status
+                == vulkan_submit_batch_plan_status::submit_failed_fatal
+            || frame.present_completion_plan.fatal_failure,
+        .swapchain_out_of_date =
+            frame.swapchain_image_acquire_plan.out_of_date
+            || frame.swapchain.present.status == vulkan_swapchain_present_status::out_of_date,
+        .suboptimal =
+            frame.swapchain_image_acquire_plan.suboptimal
+            || frame.swapchain.present.status == vulkan_swapchain_present_status::suboptimal,
+        .cpu_fallback_available = true,
+        .cpu_fallback_should_remain_active = checked,
+        .native_function_table_status = native_function_table_status_from_frame(frame),
+        .missing_required_extension = {},
+        .missing_symbol_name = missing_native_symbol_from_frame(frame),
+        .stages = {},
+        .diagnostic = {},
+    };
+
+    if (!checked) {
+        summary.cpu_fallback_should_remain_active = false;
+        summary.diagnostic = "Native Vulkan frame pipeline execution summary is unchecked";
+    } else if (!summary.native_function_table_ready) {
+        block_native_frame_pipeline_summary(
+            summary,
+            vulkan_native_frame_operation_status::native_function_table_unavailable,
+            vulkan_native_frame_operation_stage::not_started,
+            vulkan_native_frame_operation_stage::native_function_table,
+            native_frame_pipeline_fallback_reason(
+                frame,
+                vulkan_backend_fallback_reason::not_requested),
+            "Native Vulkan frame pipeline has no ready function table");
+    } else if (!summary.swapchain_create_ready) {
+        block_native_frame_pipeline_summary(
+            summary,
+            vulkan_native_frame_operation_status::swapchain_create_unavailable,
+            vulkan_native_frame_operation_stage::native_function_table,
+            vulkan_native_frame_operation_stage::swapchain_create,
+            native_frame_pipeline_fallback_reason(
+                frame,
+                vulkan_backend_fallback_reason::swapchain_unavailable),
+            "Native Vulkan frame pipeline has no ready swapchain create data");
+    } else if (!summary.swapchain_images_ready) {
+        block_native_frame_pipeline_summary(
+            summary,
+            vulkan_native_frame_operation_status::swapchain_images_unavailable,
+            vulkan_native_frame_operation_stage::swapchain_create,
+            vulkan_native_frame_operation_stage::swapchain_images,
+            native_frame_pipeline_fallback_reason(
+                frame,
+                vulkan_backend_fallback_reason::swapchain_unavailable),
+            "Native Vulkan frame pipeline has no ready swapchain image data");
+    } else if (!summary.acquire_ready) {
+        block_native_frame_pipeline_summary(
+            summary,
+            vulkan_native_frame_operation_status::acquire_unavailable,
+            vulkan_native_frame_operation_stage::swapchain_images,
+            vulkan_native_frame_operation_stage::acquire,
+            native_frame_pipeline_fallback_reason(
+                frame,
+                vulkan_backend_fallback_reason::acquire_image_failed),
+            "Native Vulkan frame pipeline would not acquire a native image");
+    } else if (!summary.command_recording_ready) {
+        block_native_frame_pipeline_summary(
+            summary,
+            vulkan_native_frame_operation_status::command_recording_unavailable,
+            vulkan_native_frame_operation_stage::acquire,
+            vulkan_native_frame_operation_stage::command_recording,
+            native_frame_pipeline_fallback_reason(
+                frame,
+                vulkan_backend_fallback_reason::record_commands_failed),
+            "Native Vulkan frame pipeline would not record native commands");
+    } else if (!summary.submit_batch_ready) {
+        block_native_frame_pipeline_summary(
+            summary,
+            summary.fatal_failure
+                ? vulkan_native_frame_operation_status::fatal_failure
+                : summary.recoverable_failure
+                    ? vulkan_native_frame_operation_status::recoverable_failure
+                    : vulkan_native_frame_operation_status::submit_unavailable,
+            vulkan_native_frame_operation_stage::command_recording,
+            vulkan_native_frame_operation_stage::submit,
+            native_frame_pipeline_fallback_reason(
+                frame,
+                vulkan_backend_fallback_reason::submit_frame_failed),
+            "Native Vulkan frame pipeline would not submit native work");
+    } else if (!summary.present_operation_ready) {
+        block_native_frame_pipeline_summary(
+            summary,
+            summary.fatal_failure
+                ? vulkan_native_frame_operation_status::fatal_failure
+                : summary.recoverable_failure
+                    ? vulkan_native_frame_operation_status::recoverable_failure
+                    : vulkan_native_frame_operation_status::present_unavailable,
+            vulkan_native_frame_operation_stage::submit,
+            vulkan_native_frame_operation_stage::present,
+            native_frame_pipeline_fallback_reason(
+                frame,
+                vulkan_backend_fallback_reason::present_frame_failed),
+            "Native Vulkan frame pipeline would not present native work");
+    } else if (!summary.frame_completion_ready) {
+        block_native_frame_pipeline_summary(
+            summary,
+            vulkan_native_frame_operation_status::frame_completion_unavailable,
+            vulkan_native_frame_operation_stage::present,
+            vulkan_native_frame_operation_stage::frame_completion,
+            native_frame_pipeline_fallback_reason(
+                frame,
+                vulkan_backend_fallback_reason::present_frame_failed),
+            "Native Vulkan frame pipeline would not complete native frame lifecycle");
+    } else {
+        summary.status = vulkan_native_frame_operation_status::ready;
+        summary.reached_stage = vulkan_native_frame_operation_stage::frame_completion;
+        summary.blocker_stage = vulkan_native_frame_operation_stage::not_started;
+        summary.fallback_reason = vulkan_backend_fallback_reason::none;
+        summary.cpu_fallback_should_remain_active = false;
+        summary.diagnostic =
+            "Native Vulkan frame pipeline would execute acquire, record, submit, and present";
+    }
+
+    finalize_native_frame_pipeline_summary_stages(summary);
+    return summary;
+}
+
+vulkan_backend_frame_native_execution_summary build_native_frame_execution_summary(
+    vulkan_native_frame_operation_summary operation)
+{
+    const vulkan_native_frame_operation_diff_diagnostics diff =
+        build_vulkan_native_frame_operation_summary_diff({}, operation);
+    vulkan_native_frame_operation_execution_plan plan =
+        build_vulkan_native_frame_operation_execution_plan(operation, diff);
+    vulkan_backend_frame_native_execution_summary summary{
+        .checked = plan.checked,
+        .operation = std::move(operation),
+        .diff = diff,
+        .plan = std::move(plan),
+        .acquire_decision = vulkan_native_frame_execution_decision::not_checked,
+        .record_decision = vulkan_native_frame_execution_decision::not_checked,
+        .submit_decision = vulkan_native_frame_execution_decision::not_checked,
+        .present_decision = vulkan_native_frame_execution_decision::not_checked,
+        .native_acquire_would_execute = false,
+        .native_record_would_execute = false,
+        .native_submit_would_execute = false,
+        .native_present_would_execute = false,
+    };
+
+    for (const vulkan_native_frame_operation_step_execution_decision& step :
+         summary.plan.steps) {
+        switch (step.step) {
+        case vulkan_native_frame_execution_step::acquire:
+            summary.acquire_decision = step.decision;
+            summary.native_acquire_would_execute = step.should_execute();
+            break;
+        case vulkan_native_frame_execution_step::record:
+            summary.record_decision = step.decision;
+            summary.native_record_would_execute = step.should_execute();
+            break;
+        case vulkan_native_frame_execution_step::submit:
+            summary.submit_decision = step.decision;
+            summary.native_submit_would_execute = step.should_execute();
+            break;
+        case vulkan_native_frame_execution_step::present:
+            summary.present_decision = step.decision;
+            summary.native_present_would_execute = step.should_execute();
+            break;
+        }
+    }
+
+    return summary;
 }
 
 vulkan_backend_frame_pipeline_handoff summarize_vulkan_frame_pipeline_handoff(
@@ -3005,6 +6870,18 @@ vulkan_backend_frame_pipeline_handoff summarize_vulkan_frame_pipeline_handoff(
         && frame.commands_recorded
         && (!frame.command_buffer_submit.checked
             || frame.command_buffer_submit.recording.completed());
+    const vulkan_backend_frame_native_execution_summary native_frame_execution =
+        build_native_frame_execution_summary(
+            build_native_frame_pipeline_operation_summary(
+                frame,
+                checked,
+                native_function_table_checked,
+                native_command_buffer_recording_ready,
+                native_queue_submit_ready,
+                native_queue_present_ready,
+                submit_batch_ready_for_queue,
+                present_completed,
+                frame_completion_ready));
 
     vulkan_backend_frame_pipeline_handoff handoff{
         .checked = checked,
@@ -3067,11 +6944,16 @@ vulkan_backend_frame_pipeline_handoff summarize_vulkan_frame_pipeline_handoff(
         .native_queue_present_ready = native_queue_present_ready,
         .native_function_table_status = native_function_table_status_from_frame(frame),
         .missing_native_symbol_name = missing_native_symbol_from_frame(frame),
+        .native_frame_execution = native_frame_execution,
         .sdk_native_path_checked = sdk_native_path.checked,
         .sdk_adapter_ready = sdk_native_path.ready(),
         .sdk_native_path_status = sdk_native_path.status,
         .sdk_capability_status = sdk_native_path.sdk_capability_status,
         .sdk_adapter_fallback_status = sdk_native_path.sdk_adapter_fallback_status,
+        .sdk_external_headers = sdk_native_path.external_headers,
+        .sdk_external_headers_checked = sdk_native_path.external_headers_checked,
+        .sdk_vulkan_headers_available = sdk_native_path.vulkan_headers_available,
+        .sdk_vma_headers_available = sdk_native_path.vma_headers_available,
         .sdk_diagnostic = sdk_native_path.diagnostic,
         .submit_batch_planning_checked = frame.submit_batch_plan.checked,
         .submit_batch_planning_completed = submit_batch_planning_completed,

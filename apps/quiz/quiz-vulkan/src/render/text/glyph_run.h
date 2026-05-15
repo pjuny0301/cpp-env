@@ -1,6 +1,7 @@
 #pragma once
 
 #include "render/text/font_backend_capabilities.h"
+#include "render/text/font_unicode_coverage.h"
 #include "render/text/font_source_resolver.h"
 #include "render/text/text_engine.h"
 #include "render/text/utf8_line_break.h"
@@ -345,6 +346,11 @@ struct render_text_glyph_cache_readiness_snapshot {
         render_text_font_backend_capability_status::unavailable;
     bool font_backend_used_deterministic_fallback = false;
     bool font_backend_fallback_only = false;
+    render_text_font_face_byte_readiness_status font_face_byte_readiness_status =
+        render_text_font_face_byte_readiness_status::fallback_required;
+    bool font_face_byte_fallback_required = true;
+    bool font_face_can_attempt_freetype_load = false;
+    bool used_descriptor_coverage_fallback = false;
     bool cacheable = true;
     bool has_atlas_slot = false;
 };
@@ -359,6 +365,11 @@ struct render_text_glyph_cache_readiness_policy_snapshot {
     std::size_t unique_cache_key_count = 0;
     std::size_t unique_face_count = 0;
     std::size_t estimated_rgba_bytes = 0;
+    std::size_t font_face_byte_coverage_ready_count = 0;
+    std::size_t font_face_byte_missing_count = 0;
+    std::size_t font_face_byte_invalid_count = 0;
+    std::size_t font_face_byte_fallback_required_count = 0;
+    std::size_t descriptor_coverage_fallback_cluster_count = 0;
 };
 
 } // namespace quiz_vulkan::render

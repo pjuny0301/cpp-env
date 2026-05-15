@@ -49,6 +49,64 @@ make_native_functions(std::vector<std::string> missing_symbols = {})
         make_ready_loader());
 }
 
+quiz_vulkan::render::vulkan_backend::vulkan_sdk_external_header_evidence
+make_ready_external_header_evidence()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    return vulkan_backend::vulkan_sdk_external_header_evidence{
+        .checked = true,
+        .vulkan = vulkan_backend::vulkan_sdk_vulkan_header_evidence{
+            .available = true,
+            .api_version_macro_available = true,
+            .header_version_macro_available = true,
+            .api_version = vulkan_backend::vulkan_sdk_api_version_1_4(),
+            .header_version = 341,
+            .instance_handle_size = sizeof(void*),
+            .device_handle_size = sizeof(void*),
+            .result_type_size = sizeof(int),
+            .success_constant_available = true,
+            .success_value = 0,
+            .surface_extension_constant_available = true,
+            .swapchain_extension_constant_available = true,
+            .surface_extension_name = "VK_KHR_surface",
+            .swapchain_extension_name = "VK_KHR_swapchain",
+            .diagnostic = "fake Vulkan external headers available",
+        },
+        .vma = vulkan_backend::vulkan_sdk_vma_header_evidence{
+            .available = true,
+            .safe_to_include = true,
+            .vulkan_headers_required = true,
+            .vma_vulkan_version = 1003000,
+            .allocator_handle_size = sizeof(void*),
+            .allocation_handle_size = sizeof(void*),
+            .diagnostic = "fake VMA external headers available",
+        },
+        .diagnostic = "fake external headers available",
+    };
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_sdk_external_header_evidence
+make_missing_external_header_evidence()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    return vulkan_backend::vulkan_sdk_external_header_evidence{
+        .checked = true,
+        .vulkan = vulkan_backend::vulkan_sdk_vulkan_header_evidence{
+            .available = false,
+            .diagnostic = "fake Vulkan external headers missing",
+        },
+        .vma = vulkan_backend::vulkan_sdk_vma_header_evidence{
+            .available = false,
+            .safe_to_include = false,
+            .vulkan_headers_required = true,
+            .diagnostic = "fake VMA external headers missing",
+        },
+        .diagnostic = "fake external headers missing",
+    };
+}
+
 quiz_vulkan::render::vulkan_backend::vulkan_sdk_header_manifest make_ready_sdk_manifest()
 {
     namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
@@ -63,6 +121,7 @@ quiz_vulkan::render::vulkan_backend::vulkan_sdk_header_manifest make_ready_sdk_m
             "VK_KHR_surface",
             "VK_KHR_swapchain",
         },
+        .external_headers = make_ready_external_header_evidence(),
         .diagnostic = "fake Vulkan headers available",
     };
 }
@@ -273,9 +332,19 @@ void test_sdk_capability_threads_into_native_entrypoint_readiness()
     require(
         recording.sdk_native_path.status == vulkan_backend::vulkan_sdk_native_path_status::ready,
         "SDK-aware native readiness stores ready SDK native-path status");
+    require(
+        recording.sdk_native_path.external_headers_checked,
+        "SDK-aware native readiness records external header evidence check");
+    require(
+        recording.sdk_native_path.vulkan_headers_available,
+        "SDK-aware native readiness records Vulkan header availability");
+    require(
+        recording.sdk_native_path.vma_headers_available,
+        "SDK-aware native readiness records VMA header availability");
 
     vulkan_backend::vulkan_sdk_header_manifest missing_manifest;
     missing_manifest.headers_available = false;
+    missing_manifest.external_headers = make_missing_external_header_evidence();
     missing_manifest.diagnostic = "fake Vulkan headers missing";
     const vulkan_backend::vulkan_sdk_capability_result missing_sdk =
         make_sdk_capabilities(native_functions, missing_manifest);
@@ -290,6 +359,12 @@ void test_sdk_capability_threads_into_native_entrypoint_readiness()
         blocked.sdk_native_path.status
             == vulkan_backend::vulkan_sdk_native_path_status::sdk_missing,
         "SDK-aware native readiness stores SDK-missing status");
+    require(
+        blocked.sdk_native_path.external_headers_checked,
+        "SDK-aware native readiness keeps missing external header evidence checked");
+    require(
+        !blocked.sdk_native_path.vulkan_headers_available,
+        "SDK-aware native readiness separates missing Vulkan headers from native symbols");
     require(
         blocked.diagnostic == "fake Vulkan headers missing",
         "SDK-aware native readiness reports SDK diagnostic when headers are missing");

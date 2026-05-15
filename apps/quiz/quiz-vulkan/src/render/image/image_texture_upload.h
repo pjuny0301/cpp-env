@@ -209,6 +209,487 @@ inline render_image_texture_mipmap_upload_plan make_render_image_texture_mipmap_
     return plan;
 }
 
+enum class render_image_texture_staging_payload_plan_status {
+    ready,
+    ready_with_mip_references,
+    blocked_missing_payload,
+    blocked_invalid_layout,
+    blocked_invalid_mipmap_plan,
+    blocked_invalid_alignment,
+    blocked_overflow,
+};
+
+inline std::string render_image_texture_staging_payload_plan_status_name(
+    render_image_texture_staging_payload_plan_status status)
+{
+    switch (status) {
+    case render_image_texture_staging_payload_plan_status::ready:
+        return "ready";
+    case render_image_texture_staging_payload_plan_status::ready_with_mip_references:
+        return "ready_with_mip_references";
+    case render_image_texture_staging_payload_plan_status::blocked_missing_payload:
+        return "blocked_missing_payload";
+    case render_image_texture_staging_payload_plan_status::blocked_invalid_layout:
+        return "blocked_invalid_layout";
+    case render_image_texture_staging_payload_plan_status::blocked_invalid_mipmap_plan:
+        return "blocked_invalid_mipmap_plan";
+    case render_image_texture_staging_payload_plan_status::blocked_invalid_alignment:
+        return "blocked_invalid_alignment";
+    case render_image_texture_staging_payload_plan_status::blocked_overflow:
+        return "blocked_overflow";
+    }
+
+    return "unknown";
+}
+
+struct render_image_texture_staging_row_copy_plan {
+    std::size_t mip_level = 0;
+    std::size_t row_index = 0;
+    std::size_t mip_width = 0;
+    std::size_t mip_height = 0;
+    std::size_t source_byte_offset = 0;
+    std::size_t source_row_stride_byte_count = 0;
+    std::size_t row_payload_byte_count = 0;
+    std::size_t staging_byte_offset = 0;
+    std::size_t staging_row_stride_byte_count = 0;
+    std::size_t row_padding_byte_count = 0;
+    std::size_t alignment_byte_count = 0;
+    bool row_aligned = false;
+    bool decoded_payload_backed = false;
+    bool generated_mip_reference = false;
+};
+
+struct render_image_texture_staging_mip_level_reference {
+    std::size_t mip_level = 0;
+    std::size_t width = 0;
+    std::size_t height = 0;
+    std::size_t pixel_count = 0;
+    std::size_t byte_count = 0;
+    std::size_t mipmap_staging_byte_offset = 0;
+    std::size_t staging_byte_offset = 0;
+    std::size_t row_copy_begin = 0;
+    std::size_t row_copy_count = 0;
+    bool base_level = false;
+    bool decoded_payload_backed = false;
+    bool generated_mip_reference = false;
+};
+
+struct render_image_texture_staging_payload_plan {
+    render_image_texture_staging_payload_plan_status status =
+        render_image_texture_staging_payload_plan_status::blocked_missing_payload;
+    std::string status_name = render_image_texture_staging_payload_plan_status_name(
+        render_image_texture_staging_payload_plan_status::blocked_missing_payload);
+    render_image_texture_key texture_key;
+    render_image_sampler_policy sampler;
+    std::string stable_texture_cache_key;
+    std::string sampler_summary;
+    render_image_pixel_format pixel_format = render_image_pixel_format::rgba8_srgb;
+    std::size_t extent_width = 0;
+    std::size_t extent_height = 0;
+    std::size_t bytes_per_pixel = 0;
+    std::size_t alignment_byte_count = 0;
+    std::size_t base_row_stride_byte_count = 0;
+    std::size_t base_staging_row_stride_byte_count = 0;
+    std::size_t base_row_padding_byte_count = 0;
+    std::size_t row_copy_count = 0;
+    std::size_t mip_level_reference_count = 0;
+    std::size_t total_row_payload_byte_count = 0;
+    std::size_t total_row_padding_byte_count = 0;
+    std::size_t total_staging_byte_count = 0;
+    std::size_t decoded_byte_count = 0;
+    std::size_t referenced_mipmap_byte_count = 0;
+    std::size_t referenced_mipmap_level_count = 0;
+    std::uint64_t decoded_payload_hash = 0;
+    render_image_texture_upload_payload_layout_evidence payload_layout;
+    render_image_texture_mipmap_upload_plan mipmap_upload_plan;
+    std::vector<render_image_texture_staging_row_copy_plan> row_copies;
+    std::vector<render_image_texture_staging_mip_level_reference> mip_level_references;
+    bool layout_ready = false;
+    bool mipmap_plan_ready = false;
+    bool rows_aligned = false;
+    bool has_row_padding = false;
+    bool decoded_payload_available = false;
+    bool mipmaps_referenced = false;
+    bool ready = false;
+    bool blocked = true;
+    std::string blocker_summary;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return ready && !blocked;
+    }
+};
+
+inline std::size_t render_image_texture_default_staging_row_alignment_byte_count()
+{
+    return 4;
+}
+
+inline bool checked_render_image_texture_staging_row_stride(
+    std::size_t row_payload_byte_count,
+    std::size_t alignment_byte_count,
+    std::size_t& aligned_byte_count)
+{
+    if (alignment_byte_count == 0) {
+        aligned_byte_count = 0;
+        return false;
+    }
+    if (row_payload_byte_count == 0) {
+        aligned_byte_count = 0;
+        return true;
+    }
+
+    const std::size_t remainder = row_payload_byte_count % alignment_byte_count;
+    if (remainder == 0) {
+        aligned_byte_count = row_payload_byte_count;
+        return true;
+    }
+
+    const std::size_t padding = alignment_byte_count - remainder;
+    constexpr std::size_t max_size = std::numeric_limits<std::size_t>::max();
+    if (row_payload_byte_count > max_size - padding) {
+        aligned_byte_count = 0;
+        return false;
+    }
+    aligned_byte_count = row_payload_byte_count + padding;
+    return true;
+}
+
+inline bool append_render_image_texture_staging_row_copy_plan(
+    render_image_texture_staging_payload_plan& plan,
+    const render_image_texture_mipmap_level_upload_plan& level,
+    std::size_t row_index,
+    std::size_t level_staging_byte_offset,
+    std::size_t row_payload_byte_count,
+    std::size_t staging_row_stride_byte_count)
+{
+    constexpr std::size_t max_size = std::numeric_limits<std::size_t>::max();
+    if (row_payload_byte_count > staging_row_stride_byte_count) {
+        return false;
+    }
+    if (plan.alignment_byte_count == 0) {
+        return false;
+    }
+    if (row_payload_byte_count == 0 || staging_row_stride_byte_count == 0) {
+        return false;
+    }
+    if (row_index != 0 && row_index > max_size / row_payload_byte_count) {
+        return false;
+    }
+    if (row_index != 0 && row_index > max_size / staging_row_stride_byte_count) {
+        return false;
+    }
+
+    const std::size_t source_row_offset = row_index * row_payload_byte_count;
+    const std::size_t staging_row_offset = row_index * staging_row_stride_byte_count;
+    if (level.staging_byte_offset > max_size - source_row_offset
+        || level_staging_byte_offset > max_size - staging_row_offset
+        || plan.total_row_payload_byte_count > max_size - row_payload_byte_count
+        || plan.total_row_padding_byte_count > max_size - (staging_row_stride_byte_count - row_payload_byte_count)
+        || plan.total_staging_byte_count > max_size - staging_row_stride_byte_count) {
+        return false;
+    }
+
+    const std::size_t row_padding_byte_count = staging_row_stride_byte_count - row_payload_byte_count;
+    plan.row_copies.push_back(render_image_texture_staging_row_copy_plan{
+        .mip_level = level.level,
+        .row_index = row_index,
+        .mip_width = level.width,
+        .mip_height = level.height,
+        .source_byte_offset = level.staging_byte_offset + source_row_offset,
+        .source_row_stride_byte_count = row_payload_byte_count,
+        .row_payload_byte_count = row_payload_byte_count,
+        .staging_byte_offset = level_staging_byte_offset + staging_row_offset,
+        .staging_row_stride_byte_count = staging_row_stride_byte_count,
+        .row_padding_byte_count = row_padding_byte_count,
+        .alignment_byte_count = plan.alignment_byte_count,
+        .row_aligned = staging_row_stride_byte_count % plan.alignment_byte_count == 0,
+        .decoded_payload_backed = level.level == 0,
+        .generated_mip_reference = level.level != 0,
+    });
+    ++plan.row_copy_count;
+    plan.total_row_payload_byte_count += row_payload_byte_count;
+    plan.total_row_padding_byte_count += row_padding_byte_count;
+    plan.total_staging_byte_count += staging_row_stride_byte_count;
+    plan.has_row_padding = plan.has_row_padding || row_padding_byte_count != 0;
+    plan.rows_aligned = plan.rows_aligned && staging_row_stride_byte_count % plan.alignment_byte_count == 0;
+    return true;
+}
+
+inline render_image_texture_staging_payload_plan make_render_image_texture_staging_payload_plan(
+    const render_image_texture_upload_payload_layout_evidence& payload_layout,
+    const render_image_texture_mipmap_upload_plan& mipmap_upload_plan,
+    std::size_t alignment_byte_count = render_image_texture_default_staging_row_alignment_byte_count())
+{
+    render_image_texture_staging_payload_plan plan{
+        .texture_key = payload_layout.texture_key,
+        .sampler = payload_layout.sampler,
+        .stable_texture_cache_key = payload_layout.stable_texture_cache_key,
+        .sampler_summary = payload_layout.sampler_summary,
+        .pixel_format = payload_layout.pixel_format,
+        .extent_width = payload_layout.extent_width,
+        .extent_height = payload_layout.extent_height,
+        .bytes_per_pixel = payload_layout.bytes_per_pixel,
+        .alignment_byte_count = alignment_byte_count,
+        .base_row_stride_byte_count = payload_layout.row_stride_byte_count,
+        .decoded_byte_count = payload_layout.decoded_byte_count,
+        .referenced_mipmap_byte_count = mipmap_upload_plan.total_upload_byte_count,
+        .referenced_mipmap_level_count = mipmap_upload_plan.generated_mip_level_count,
+        .decoded_payload_hash = payload_layout.decoded_payload.stable_byte_hash,
+        .payload_layout = payload_layout,
+        .mipmap_upload_plan = mipmap_upload_plan,
+        .layout_ready = payload_layout.ok(),
+        .mipmap_plan_ready = mipmap_upload_plan.upload_plannable,
+        .rows_aligned = true,
+        .decoded_payload_available = payload_layout.decoded_payload.payload_valid,
+        .mipmaps_referenced = mipmap_upload_plan.generated_mip_level_count > 1,
+    };
+
+    if (alignment_byte_count == 0) {
+        plan.status = render_image_texture_staging_payload_plan_status::blocked_invalid_alignment;
+        plan.status_name = render_image_texture_staging_payload_plan_status_name(plan.status);
+        plan.blocker_summary = "staging row alignment must be non-zero";
+        plan.diagnostic = "image texture staging payload plan blocked: " + plan.blocker_summary;
+        return plan;
+    }
+
+    if (!plan.decoded_payload_available) {
+        plan.status = render_image_texture_staging_payload_plan_status::blocked_missing_payload;
+        plan.status_name = render_image_texture_staging_payload_plan_status_name(plan.status);
+        plan.blocker_summary = "decoded payload bytes are missing or inconsistent";
+        plan.diagnostic = "image texture staging payload plan blocked: " + plan.blocker_summary;
+        return plan;
+    }
+
+    if (!payload_layout.ok()) {
+        plan.status = render_image_texture_staging_payload_plan_status::blocked_invalid_layout;
+        plan.status_name = render_image_texture_staging_payload_plan_status_name(plan.status);
+        plan.blocker_summary = payload_layout.diagnostic;
+        plan.diagnostic = "image texture staging payload plan blocked: " + plan.blocker_summary;
+        return plan;
+    }
+
+    if (!mipmap_upload_plan.upload_plannable) {
+        plan.status = render_image_texture_staging_payload_plan_status::blocked_invalid_mipmap_plan;
+        plan.status_name = render_image_texture_staging_payload_plan_status_name(plan.status);
+        plan.blocker_summary = "mipmap upload plan is not plannable: " + mipmap_upload_plan.status_name;
+        plan.diagnostic = "image texture staging payload plan blocked: " + plan.blocker_summary;
+        return plan;
+    }
+    if (mipmap_upload_plan.pixel_format != payload_layout.pixel_format
+        || mipmap_upload_plan.bytes_per_pixel != payload_layout.bytes_per_pixel
+        || mipmap_upload_plan.base_width != payload_layout.extent_width
+        || mipmap_upload_plan.base_height != payload_layout.extent_height) {
+        plan.status = render_image_texture_staging_payload_plan_status::blocked_invalid_mipmap_plan;
+        plan.status_name = render_image_texture_staging_payload_plan_status_name(plan.status);
+        plan.blocker_summary = "mipmap upload plan does not match payload layout";
+        plan.diagnostic = "image texture staging payload plan blocked: " + plan.blocker_summary;
+        return plan;
+    }
+
+    std::size_t level_staging_byte_offset = 0;
+    for (const render_image_texture_mipmap_level_upload_plan& level : mipmap_upload_plan.levels) {
+        std::size_t row_payload_byte_count = 0;
+        if (!checked_render_image_texture_mipmap_upload_size(
+                level.width,
+                mipmap_upload_plan.bytes_per_pixel,
+                row_payload_byte_count)) {
+            plan.status = render_image_texture_staging_payload_plan_status::blocked_overflow;
+            plan.status_name = render_image_texture_staging_payload_plan_status_name(plan.status);
+            plan.blocker_summary = "staging row payload byte count overflowed";
+            plan.diagnostic = "image texture staging payload plan blocked: " + plan.blocker_summary;
+            return plan;
+        }
+
+        std::size_t staging_row_stride_byte_count = 0;
+        if (!checked_render_image_texture_staging_row_stride(
+                row_payload_byte_count,
+                alignment_byte_count,
+                staging_row_stride_byte_count)) {
+            plan.status = render_image_texture_staging_payload_plan_status::blocked_overflow;
+            plan.status_name = render_image_texture_staging_payload_plan_status_name(plan.status);
+            plan.blocker_summary = "staging row alignment byte count overflowed";
+            plan.diagnostic = "image texture staging payload plan blocked: " + plan.blocker_summary;
+            return plan;
+        }
+
+        const std::size_t row_copy_begin = plan.row_copies.size();
+        plan.mip_level_references.push_back(render_image_texture_staging_mip_level_reference{
+            .mip_level = level.level,
+            .width = level.width,
+            .height = level.height,
+            .pixel_count = level.pixel_count,
+            .byte_count = level.byte_count,
+            .mipmap_staging_byte_offset = level.staging_byte_offset,
+            .staging_byte_offset = level_staging_byte_offset,
+            .row_copy_begin = row_copy_begin,
+            .row_copy_count = level.height,
+            .base_level = level.level == 0,
+            .decoded_payload_backed = level.level == 0,
+            .generated_mip_reference = level.level != 0,
+        });
+        ++plan.mip_level_reference_count;
+
+        if (level.level == 0) {
+            plan.base_staging_row_stride_byte_count = staging_row_stride_byte_count;
+            plan.base_row_padding_byte_count = staging_row_stride_byte_count - row_payload_byte_count;
+        }
+
+        for (std::size_t row_index = 0; row_index < level.height; ++row_index) {
+            if (!append_render_image_texture_staging_row_copy_plan(
+                    plan,
+                    level,
+                    row_index,
+                    level_staging_byte_offset,
+                    row_payload_byte_count,
+                    staging_row_stride_byte_count)) {
+                plan.status = render_image_texture_staging_payload_plan_status::blocked_overflow;
+                plan.status_name = render_image_texture_staging_payload_plan_status_name(plan.status);
+                plan.blocker_summary = "staging row copy byte count overflowed";
+                plan.diagnostic = "image texture staging payload plan blocked: " + plan.blocker_summary;
+                return plan;
+            }
+        }
+
+        constexpr std::size_t max_size = std::numeric_limits<std::size_t>::max();
+        std::size_t level_staging_byte_count = 0;
+        if (!checked_render_image_texture_mipmap_upload_size(
+                level.height,
+                staging_row_stride_byte_count,
+                level_staging_byte_count)
+            || level_staging_byte_offset > max_size - level_staging_byte_count) {
+            plan.status = render_image_texture_staging_payload_plan_status::blocked_overflow;
+            plan.status_name = render_image_texture_staging_payload_plan_status_name(plan.status);
+            plan.blocker_summary = "staging mip level byte count overflowed";
+            plan.diagnostic = "image texture staging payload plan blocked: " + plan.blocker_summary;
+            return plan;
+        }
+        level_staging_byte_offset += level_staging_byte_count;
+    }
+
+    plan.ready = true;
+    plan.blocked = false;
+    plan.status = plan.mipmaps_referenced
+        ? render_image_texture_staging_payload_plan_status::ready_with_mip_references
+        : render_image_texture_staging_payload_plan_status::ready;
+    plan.status_name = render_image_texture_staging_payload_plan_status_name(plan.status);
+    plan.diagnostic = plan.mipmaps_referenced
+        ? "image texture staging payload plan is ready with mip references"
+        : "image texture staging payload plan is ready";
+    return plan;
+}
+
+inline bool render_image_texture_staging_row_copy_plan_equal(
+    const render_image_texture_staging_row_copy_plan& before,
+    const render_image_texture_staging_row_copy_plan& after)
+{
+    return before.mip_level == after.mip_level
+        && before.row_index == after.row_index
+        && before.mip_width == after.mip_width
+        && before.mip_height == after.mip_height
+        && before.source_byte_offset == after.source_byte_offset
+        && before.source_row_stride_byte_count == after.source_row_stride_byte_count
+        && before.row_payload_byte_count == after.row_payload_byte_count
+        && before.staging_byte_offset == after.staging_byte_offset
+        && before.staging_row_stride_byte_count == after.staging_row_stride_byte_count
+        && before.row_padding_byte_count == after.row_padding_byte_count
+        && before.alignment_byte_count == after.alignment_byte_count
+        && before.row_aligned == after.row_aligned
+        && before.decoded_payload_backed == after.decoded_payload_backed
+        && before.generated_mip_reference == after.generated_mip_reference;
+}
+
+inline bool render_image_texture_staging_mip_level_reference_equal(
+    const render_image_texture_staging_mip_level_reference& before,
+    const render_image_texture_staging_mip_level_reference& after)
+{
+    return before.mip_level == after.mip_level
+        && before.width == after.width
+        && before.height == after.height
+        && before.pixel_count == after.pixel_count
+        && before.byte_count == after.byte_count
+        && before.mipmap_staging_byte_offset == after.mipmap_staging_byte_offset
+        && before.staging_byte_offset == after.staging_byte_offset
+        && before.row_copy_begin == after.row_copy_begin
+        && before.row_copy_count == after.row_copy_count
+        && before.base_level == after.base_level
+        && before.decoded_payload_backed == after.decoded_payload_backed
+        && before.generated_mip_reference == after.generated_mip_reference;
+}
+
+inline bool render_image_texture_staging_row_copy_plans_equal(
+    const std::vector<render_image_texture_staging_row_copy_plan>& before,
+    const std::vector<render_image_texture_staging_row_copy_plan>& after)
+{
+    if (before.size() != after.size()) {
+        return false;
+    }
+    for (std::size_t index = 0; index < before.size(); ++index) {
+        if (!render_image_texture_staging_row_copy_plan_equal(before[index], after[index])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+inline bool render_image_texture_staging_mip_level_references_equal(
+    const std::vector<render_image_texture_staging_mip_level_reference>& before,
+    const std::vector<render_image_texture_staging_mip_level_reference>& after)
+{
+    if (before.size() != after.size()) {
+        return false;
+    }
+    for (std::size_t index = 0; index < before.size(); ++index) {
+        if (!render_image_texture_staging_mip_level_reference_equal(before[index], after[index])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+inline bool render_image_texture_staging_payload_plan_equal(
+    const render_image_texture_staging_payload_plan& before,
+    const render_image_texture_staging_payload_plan& after)
+{
+    return before.status == after.status
+        && before.texture_key == after.texture_key
+        && before.sampler == after.sampler
+        && before.stable_texture_cache_key == after.stable_texture_cache_key
+        && before.sampler_summary == after.sampler_summary
+        && before.pixel_format == after.pixel_format
+        && before.extent_width == after.extent_width
+        && before.extent_height == after.extent_height
+        && before.bytes_per_pixel == after.bytes_per_pixel
+        && before.alignment_byte_count == after.alignment_byte_count
+        && before.base_row_stride_byte_count == after.base_row_stride_byte_count
+        && before.base_staging_row_stride_byte_count == after.base_staging_row_stride_byte_count
+        && before.base_row_padding_byte_count == after.base_row_padding_byte_count
+        && before.row_copy_count == after.row_copy_count
+        && before.mip_level_reference_count == after.mip_level_reference_count
+        && before.total_row_payload_byte_count == after.total_row_payload_byte_count
+        && before.total_row_padding_byte_count == after.total_row_padding_byte_count
+        && before.total_staging_byte_count == after.total_staging_byte_count
+        && before.decoded_byte_count == after.decoded_byte_count
+        && before.referenced_mipmap_byte_count == after.referenced_mipmap_byte_count
+        && before.referenced_mipmap_level_count == after.referenced_mipmap_level_count
+        && before.decoded_payload_hash == after.decoded_payload_hash
+        && render_image_texture_upload_payload_layout_evidence_equal(before.payload_layout, after.payload_layout)
+        && render_image_texture_staging_row_copy_plans_equal(before.row_copies, after.row_copies)
+        && render_image_texture_staging_mip_level_references_equal(
+            before.mip_level_references,
+            after.mip_level_references)
+        && before.layout_ready == after.layout_ready
+        && before.mipmap_plan_ready == after.mipmap_plan_ready
+        && before.rows_aligned == after.rows_aligned
+        && before.has_row_padding == after.has_row_padding
+        && before.decoded_payload_available == after.decoded_payload_available
+        && before.mipmaps_referenced == after.mipmaps_referenced
+        && before.ready == after.ready
+        && before.blocked == after.blocked
+        && before.blocker_summary == after.blocker_summary;
+}
+
 struct render_image_texture_upload_result {
     render_image_texture_upload_status status = render_image_texture_upload_status::invalid_image;
     std::uint64_t generation_id = 0;
@@ -220,6 +701,8 @@ struct render_image_texture_upload_result {
     std::size_t decoded_byte_count = 0;
     std::size_t staging_byte_count = 0;
     render_image_texture_mipmap_upload_plan mipmap_upload_plan;
+    render_image_texture_upload_payload_layout_evidence payload_layout;
+    render_image_texture_staging_payload_plan staging_payload_plan;
     std::string diagnostic;
 
     bool ok() const
@@ -247,6 +730,9 @@ struct fake_image_texture_upload_request_snapshot {
     std::size_t pixel_byte_count = 0;
     std::size_t decoded_byte_count = 0;
     std::size_t staging_byte_count = 0;
+    render_image_decoded_payload_evidence decoded_payload;
+    render_image_texture_upload_payload_layout_evidence payload_layout;
+    render_image_texture_staging_payload_plan staging_payload_plan;
     render_image_texture_mipmap_upload_plan mipmap_upload_plan;
     std::size_t enqueue_sequence = 0;
     std::size_t queue_depth_before_enqueue = 0;
@@ -265,6 +751,8 @@ struct fake_image_texture_upload_result_snapshot {
     std::size_t decoded_byte_count = 0;
     std::size_t staging_byte_count = 0;
     render_image_texture_mipmap_upload_plan mipmap_upload_plan;
+    render_image_texture_upload_payload_layout_evidence payload_layout;
+    render_image_texture_staging_payload_plan staging_payload_plan;
     std::string diagnostic;
     std::size_t completion_sequence = 0;
     std::size_t queue_depth_after_completion = 0;
@@ -284,6 +772,8 @@ struct fake_image_texture_upload_snapshot_entry {
     std::size_t decoded_byte_count = 0;
     std::size_t staging_byte_count = 0;
     render_image_texture_mipmap_upload_plan mipmap_upload_plan;
+    render_image_texture_upload_payload_layout_evidence payload_layout;
+    render_image_texture_staging_payload_plan staging_payload_plan;
     std::string diagnostic;
     fake_image_texture_upload_retry_snapshot retry;
 };
@@ -298,6 +788,8 @@ struct fake_image_texture_upload_queue_entry_snapshot {
     bool completed = false;
     std::size_t staging_byte_count = 0;
     render_image_texture_mipmap_upload_plan mipmap_upload_plan;
+    render_image_texture_upload_payload_layout_evidence payload_layout;
+    render_image_texture_staging_payload_plan staging_payload_plan;
     std::size_t queue_depth_before_enqueue = 0;
     std::size_t queue_depth_after_enqueue = 0;
     std::size_t queue_depth_after_completion = 0;
@@ -331,6 +823,8 @@ struct fake_image_texture_upload_snapshot {
 } // namespace quiz_vulkan::render
 
 #include "render/image/image_texture_upload_snapshot_diff.h"
+#include "render/image/image_texture_upload_operation_plan.h"
+#include "render/image/image_texture_upload_result_diagnostics.h"
 
 namespace quiz_vulkan::render {
 
@@ -350,6 +844,13 @@ public:
         const std::size_t decoded_byte_count = request.image.pixels.size();
         const render_image_texture_mipmap_upload_plan mipmap_upload_plan =
             make_render_image_texture_mipmap_upload_plan(request.image, request.sampler);
+        const render_image_texture_upload_payload_layout_evidence payload_layout =
+            make_render_image_texture_upload_payload_layout_evidence(
+                request.key,
+                request.sampler,
+                request.image);
+        const render_image_texture_staging_payload_plan staging_payload_plan =
+            make_render_image_texture_staging_payload_plan(payload_layout, mipmap_upload_plan);
         std::size_t pixel_count = 0;
         if (request.image.width != 0 && request.image.height != 0
             && request.image.width <= std::numeric_limits<std::size_t>::max() / request.image.height) {
@@ -371,6 +872,9 @@ public:
             .pixel_byte_count = pixel_byte_count,
             .decoded_byte_count = decoded_byte_count,
             .staging_byte_count = staging_byte_count,
+            .decoded_payload = make_render_image_decoded_payload_evidence(request.image),
+            .payload_layout = payload_layout,
+            .staging_payload_plan = staging_payload_plan,
             .mipmap_upload_plan = mipmap_upload_plan,
             .enqueue_sequence = enqueue_sequence,
             .queue_depth_before_enqueue = queue_depth_before_enqueue,
@@ -390,6 +894,8 @@ public:
                 .decoded_byte_count = decoded_byte_count,
                 .staging_byte_count = staging_byte_count,
                 .mipmap_upload_plan = mipmap_upload_plan,
+                .payload_layout = payload_layout,
+                .staging_payload_plan = staging_payload_plan,
                 .diagnostic = "image texture upload key is empty or contains control characters",
             },
                 enqueue_sequence,
@@ -409,6 +915,8 @@ public:
                 .decoded_byte_count = decoded_byte_count,
                 .staging_byte_count = staging_byte_count,
                 .mipmap_upload_plan = mipmap_upload_plan,
+                .payload_layout = payload_layout,
+                .staging_payload_plan = staging_payload_plan,
                 .diagnostic = "image texture upload sampler policy is invalid or does not match the texture key",
             },
                 enqueue_sequence,
@@ -428,6 +936,8 @@ public:
                 .decoded_byte_count = decoded_byte_count,
                 .staging_byte_count = staging_byte_count,
                 .mipmap_upload_plan = mipmap_upload_plan,
+                .payload_layout = payload_layout,
+                .staging_payload_plan = staging_payload_plan,
                 .diagnostic = "image texture upload pixel format is unsupported",
             },
                 enqueue_sequence,
@@ -447,6 +957,8 @@ public:
                 .decoded_byte_count = decoded_byte_count,
                 .staging_byte_count = staging_byte_count,
                 .mipmap_upload_plan = mipmap_upload_plan,
+                .payload_layout = payload_layout,
+                .staging_payload_plan = staging_payload_plan,
                 .diagnostic = "image texture upload payload size does not match dimensions and format",
             },
                 enqueue_sequence,
@@ -470,6 +982,8 @@ public:
             .decoded_byte_count = decoded_byte_count,
             .staging_byte_count = staging_byte_count,
             .mipmap_upload_plan = mipmap_upload_plan,
+            .payload_layout = payload_layout,
+            .staging_payload_plan = staging_payload_plan,
             .diagnostic = {},
         },
             enqueue_sequence,
@@ -517,6 +1031,8 @@ public:
                 .decoded_byte_count = result.decoded_byte_count,
                 .staging_byte_count = result.staging_byte_count,
                 .mipmap_upload_plan = result.mipmap_upload_plan,
+                .payload_layout = result.payload_layout,
+                .staging_payload_plan = result.staging_payload_plan,
                 .diagnostic = result.diagnostic,
                 .retry = upload_result_snapshots[index].retry,
             });
@@ -567,6 +1083,8 @@ private:
             .decoded_byte_count = result.decoded_byte_count,
             .staging_byte_count = result.staging_byte_count,
             .mipmap_upload_plan = result.mipmap_upload_plan,
+            .payload_layout = result.payload_layout,
+            .staging_payload_plan = result.staging_payload_plan,
             .diagnostic = result.diagnostic,
             .completion_sequence = completion_sequence,
             .queue_depth_after_completion = queue_depth_after_completion,
@@ -582,6 +1100,8 @@ private:
             .completed = true,
             .staging_byte_count = result.staging_byte_count,
             .mipmap_upload_plan = result.mipmap_upload_plan,
+            .payload_layout = result.payload_layout,
+            .staging_payload_plan = result.staging_payload_plan,
             .queue_depth_before_enqueue = queue_depth_after_enqueue == 0 ? 0 : queue_depth_after_enqueue - 1,
             .queue_depth_after_enqueue = queue_depth_after_enqueue,
             .queue_depth_after_completion = queue_depth_after_completion,

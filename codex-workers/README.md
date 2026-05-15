@@ -10,8 +10,13 @@ The workers are meant to implement behind existing quiz-vulkan interfaces, not r
 - `prompts/<role>.md`: role-specific task scope.
 - `setup-worktrees.sh`: creates role worktrees under `/mnt/c/aa-workers` by default.
 - `run-codex-tmux.sh`: starts one role in a persistent tmux session.
+- `send-worker-prompt.sh`: pastes and submits a prompt file into an existing
+  persistent tmux worker.
 - `with-build-lock.sh`: serializes shared Windows CMake/CTest access so
   parallel workers do not race on the same build directory.
+- `worker-status.sh`: summarizes live Codex tmux sessions, current paths, branch
+  names, dirty-file counts, and ahead/behind counts versus the integration
+  baseline.
 
 ## One-Time Setup
 
@@ -56,6 +61,44 @@ tmux list-sessions
 tmux capture-pane -pt codex-text-engine -S -120
 tmux attach -t codex-text-engine
 ```
+
+Send follow-up work to a long-lived worker without retyping a large prompt:
+
+```bash
+cat > /tmp/text-next.md <<'EOF'
+Continue in this same long-lived session, but start a fresh branch from the
+latest pushed baseline before editing. Keep edits inside the assigned engine
+folder and focused tests. Commit scoped files and report the hash.
+EOF
+/mnt/c/aa/codex-workers/send-worker-prompt.sh codex-text-engine /tmp/text-next.md
+```
+
+For a compact coordinator view:
+
+```bash
+/mnt/c/aa/codex-workers/worker-status.sh /mnt/c/aa
+```
+
+Read `dirty`, `ahead`, and `behind` before assigning more work. A long-lived
+session is useful when it keeps engine-specific context, but new tasks should
+start from the latest pushed baseline when the old worker branch is far behind.
+
+## Current Pipeline Limits
+
+- Long-lived sessions preserve subsystem context, but their checked-out branch
+  can drift behind the integration baseline. For each new task, keep the tmux
+  session alive while switching the worktree to a fresh branch from
+  `origin/codex/quiz-vulkan-remake-baseline`.
+- Worker commits are still review inputs, not merge authority. The integrator
+  verifies them on Windows MinGW, handles top-level CMake and FILE_SET changes,
+  then pushes the baseline before assigning the next batch.
+- If a worker only needs engine-local context, reuse the existing session. If a
+  task changes ownership boundaries or needs a clean comparison, create a fresh
+  branch/worktree and leave the old session available for inspection.
+- Do not let workers duplicate external libraries that already exist under
+  `build/external`. They should inspect approved external dependencies first,
+  consume them behind existing interfaces when possible, and report any
+  integrator-owned CMake wiring that remains.
 
 To detach from a visible tmux worker without stopping it, press:
 

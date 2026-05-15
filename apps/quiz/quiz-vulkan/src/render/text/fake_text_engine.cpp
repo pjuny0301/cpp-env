@@ -71,6 +71,7 @@ struct fake_text_engine_backend_selection_context {
     std::optional<render_text_external_font_backend_probe_result> shaping_dependency;
     std::optional<render_text_external_font_backend_probe_result> rasterization_dependency;
     std::optional<render_text_external_font_backend_probe_result> unicode_dependency;
+    render_text_external_font_backend_header_probe_snapshot header_probe;
     bool dependency_manifest_configured = false;
 };
 
@@ -182,6 +183,7 @@ fake_text_engine_backend_selection_context select_fake_text_engine_font_backends
     const std::optional<render_text_external_font_backend_manifest>& dependency_manifest)
 {
     fake_text_engine_backend_selection_context context;
+    context.header_probe = make_render_text_external_font_backend_header_probe_snapshot();
     if (dependency_manifest.has_value()) {
         context.dependency_manifest_configured = true;
         context.candidates = render_text_external_font_backend_candidates(
@@ -235,11 +237,21 @@ fake_text_engine_backend_selection_context select_fake_text_engine_font_backends
 
 fake_text_engine_font_backend_selection_snapshot fake_text_engine_font_backend_selection_snapshot_for(
     const render_text_font_backend_selection_result& selection,
-    const std::optional<render_text_external_font_backend_probe_result>& dependency)
+    const std::optional<render_text_external_font_backend_probe_result>& dependency,
+    const render_text_external_font_backend_header_probe_snapshot& header_probe)
 {
     const bool selected_fake =
         selection.has_selection
         && selection.selected.library == render_text_font_backend_library::deterministic_fake;
+    const std::vector<render_text_font_backend_library> default_libraries =
+        render_text_external_font_backend_default_libraries_for(selection.purpose);
+    const render_text_font_backend_library default_library = default_libraries.empty()
+        ? render_text_font_backend_library::deterministic_fake
+        : default_libraries.front();
+    const render_text_external_font_backend_header_probe* dependency_header =
+        find_render_text_external_font_backend_header_probe(
+            header_probe.probes,
+            default_library);
     const render_text_font_backend_adapter_readiness_status dependency_status =
         dependency.has_value()
             ? dependency->status
@@ -272,6 +284,14 @@ fake_text_engine_font_backend_selection_snapshot fake_text_engine_font_backend_s
             ? dependency->fallback_ready
             : selection.used_deterministic_fallback,
         .fake_only = selected_fake,
+        .dependency_header_available =
+            dependency_header != nullptr && dependency_header->header_available,
+        .dependency_header_version_available =
+            dependency_header != nullptr && dependency_header->version_available,
+        .dependency_header_version =
+            dependency_header != nullptr ? dependency_header->version : render_text_font_backend_version{},
+        .dependency_header_diagnostic =
+            dependency_header != nullptr ? dependency_header->diagnostic : std::string{},
         .dependency_diagnostic = dependency.has_value() ? dependency->diagnostic : std::string{},
     };
 }
@@ -326,6 +346,21 @@ void record_font_backend_dependency_probe(
     fake_text_engine_diagnostics& diagnostics,
     const fake_text_engine_backend_selection_context& context)
 {
+    diagnostics.font_backend_header_probe = context.header_probe;
+    diagnostics.font_backend_dependency_policy.header_probe_recorded =
+        !context.header_probe.probes.empty();
+    diagnostics.font_backend_dependency_policy.freetype_headers_available =
+        context.header_probe.freetype_headers_available;
+    diagnostics.font_backend_dependency_policy.harfbuzz_headers_available =
+        context.header_probe.harfbuzz_headers_available;
+    diagnostics.font_backend_dependency_policy.utf8proc_headers_available =
+        context.header_probe.utf8proc_headers_available;
+    diagnostics.font_backend_dependency_policy.available_header_count =
+        context.header_probe.available_header_count;
+    diagnostics.font_backend_dependency_policy.versioned_header_count =
+        context.header_probe.versioned_header_count;
+    diagnostics.font_backend_dependency_policy.advertised_header_feature_count =
+        context.header_probe.advertised_feature_count;
     diagnostics.font_backend_dependency_policy.configured =
         context.dependency_manifest_configured;
     if (!context.dependency_manifest_configured
@@ -375,13 +410,16 @@ void record_font_backend_run_selection(
             .style_token = style_token,
             .shaping = fake_text_engine_font_backend_selection_snapshot_for(
                 context.shaping,
-                context.shaping_dependency),
+                context.shaping_dependency,
+                context.header_probe),
             .rasterization = fake_text_engine_font_backend_selection_snapshot_for(
                 context.rasterization,
-                context.rasterization_dependency),
+                context.rasterization_dependency,
+                context.header_probe),
             .unicode_processing = fake_text_engine_font_backend_selection_snapshot_for(
                 context.unicode_processing,
-                context.unicode_dependency),
+                context.unicode_dependency,
+                context.header_probe),
         });
 }
 
@@ -398,6 +436,24 @@ void record_font_fallback_chain_plan(
         request.style_catalog,
         "fake_text_engine",
         0U));
+
+    const render_text_font_fallback_run_plan_request run_plan_request{
+        .items = plan_request.items,
+    };
+    diagnostics.font_fallback_run_plan =
+        plan_render_text_font_fallback_runs(run_plan_request, font_catalog);
+    diagnostics.font_fallback_shaping_handoff =
+        make_render_text_font_fallback_shaping_handoff(diagnostics.font_fallback_run_plan);
+    diagnostics.font_fallback_shaped_glyph_inputs =
+        make_render_text_font_fallback_shaped_glyph_inputs(
+            render_text_font_fallback_shaped_glyph_input_request{
+                .handoff = diagnostics.font_fallback_shaping_handoff,
+                .items = plan_request.items,
+                .font_catalog = font_catalog,
+            });
+    diagnostics.font_fallback_shaped_glyph_executions =
+        execute_render_text_font_fallback_shaped_glyph_inputs(
+            diagnostics.font_fallback_shaped_glyph_inputs);
 
     render_text_font_fallback_chain_plan_snapshot plan =
         plan_render_text_font_fallback_chains(plan_request, font_catalog);
@@ -636,7 +692,7 @@ void record_font_source_bytes_readiness(
     }
 }
 
-void record_font_source_resolution(
+font_source_resolution record_font_source_resolution(
     fake_text_engine_diagnostics& diagnostics,
     const std::size_t run_index,
     const render_style_id& style_token,
@@ -690,6 +746,7 @@ void record_font_source_resolution(
         style_token,
         source,
         source_cache_entries);
+    return source;
 }
 
 bool contains_face_id(const std::vector<font_face_id>& faces, const font_face_id face_id)
@@ -970,6 +1027,140 @@ void record_font_backend_adapter_result(
         result.diagnostics.end());
 }
 
+render_text_font_source_bytes_load_result load_font_source_bytes_for_shaping(
+    const font_source_resolution& source)
+{
+    const filesystem_font_source_bytes_loader loader;
+    return loader.load(render_text_font_source_bytes_load_request{
+        .source = source,
+    });
+}
+
+bool shaping_request_resolves_to_single_face(
+    const render_text_font_shaping_request& request,
+    const font_face_id face_id)
+{
+    if (face_id == 0U) {
+        return false;
+    }
+    return std::all_of(
+        request.font_selections.begin(),
+        request.font_selections.end(),
+        [&](const render_text_font_shaping_codepoint_selection& selection) {
+            return selection.resolved_face_id == face_id && selection.glyph_supported;
+        });
+}
+
+std::vector<render_text_font_shaping_codepoint_selection> harfbuzz_adapter_selections_for(
+    std::vector<render_text_font_shaping_codepoint_selection> selections)
+{
+    for (render_text_font_shaping_codepoint_selection& selection : selections) {
+        selection.glyph_id = 0U;
+        selection.has_glyph_id = false;
+        selection.glyph_id_offset = 0U;
+        selection.glyph_id_matches_codepoint = false;
+    }
+    return selections;
+}
+
+std::string automatic_harfbuzz_fallback_reason(
+    const fake_text_engine_backend_selection_context& backend_selection,
+    const render_text_font_source_bytes_load_result& source_bytes,
+    const bool single_face_run)
+{
+    if (!backend_selection.shaping.has_selection
+        || backend_selection.shaping.selected.library != render_text_font_backend_library::harfbuzz) {
+        return "shaping backend selection did not choose HarfBuzz";
+    }
+    if (!backend_selection.capability.ok()
+        || !backend_selection.capability.supports_feature(render_text_font_backend_feature::glyph_shaping)) {
+        return "font backend capability does not allow HarfBuzz shaping";
+    }
+    if (!render_text_harfbuzz_shaping_adapter_available()) {
+        return "HarfBuzz shaping adapter is not compiled";
+    }
+    if (!source_bytes.ok() || source_bytes.bytes.empty()) {
+        return "materialized font bytes are not loaded for HarfBuzz shaping";
+    }
+    if (!single_face_run) {
+        return "shaping run spans multiple resolved font faces";
+    }
+    return {};
+}
+
+void record_shaping_handoff(
+    fake_text_engine_diagnostics& diagnostics,
+    const render_style_id& style_token,
+    const render_text_font_shaping_result& shaped_run,
+    const render_text_font_backend_capability_snapshot& capability,
+    const render_text_font_source_bytes_load_result& source_bytes,
+    const render_text_font_backend_adapter_status adapter_status,
+    const render_text_font_backend_library backend_library,
+    std::string backend_label,
+    const bool used_adapter,
+    const bool used_harfbuzz,
+    const bool used_deterministic_fallback,
+    std::string fallback_reason,
+    const float line_height)
+{
+    ++diagnostics.shaping_handoff_policy.run_count;
+    if (used_adapter) {
+        ++diagnostics.shaping_handoff_policy.adapter_run_count;
+    }
+    if (used_harfbuzz) {
+        ++diagnostics.shaping_handoff_policy.harfbuzz_run_count;
+    }
+    if (used_deterministic_fallback) {
+        ++diagnostics.shaping_handoff_policy.deterministic_fallback_run_count;
+    }
+    if (source_bytes.ok() && !source_bytes.bytes.empty()) {
+        ++diagnostics.shaping_handoff_policy.materialized_font_byte_run_count;
+    } else {
+        ++diagnostics.shaping_handoff_policy.missing_font_byte_run_count;
+    }
+    if (adapter_status != render_text_font_backend_adapter_status::shaped
+        && adapter_status != render_text_font_backend_adapter_status::backend_unavailable) {
+        ++diagnostics.shaping_handoff_policy.adapter_failure_run_count;
+    }
+
+    for (const render_text_shaped_glyph& glyph : shaped_run.glyphs) {
+        const bool cacheable = glyph.glyph_supported && glyph.advance_x > 0.0f && line_height > 0.0f;
+        ++diagnostics.shaping_handoff_policy.glyph_count;
+        if (cacheable) {
+            ++diagnostics.shaping_handoff_policy.atlas_ready_glyph_count;
+        }
+
+        diagnostics.shaping_handoffs.push_back(fake_text_engine_shaping_handoff_snapshot{
+            .run_index = shaped_run.run_index,
+            .style_token = style_token,
+            .glyph_index = glyph.glyph_index,
+            .byte_offset = glyph.byte_offset,
+            .byte_count = glyph.byte_count,
+            .cluster_byte_offset = glyph.cluster_byte_offset,
+            .cluster_byte_count = glyph.cluster_byte_count,
+            .cluster_codepoint_offset = glyph.cluster_codepoint_offset,
+            .cluster_codepoint_count = glyph.cluster_codepoint_count,
+            .codepoint = glyph.codepoint,
+            .glyph_id = glyph.glyph_id,
+            .resolved_face_id = glyph.resolved_face_id,
+            .advance_x = glyph.advance_x,
+            .backend_library = backend_library,
+            .backend_label = backend_label,
+            .adapter_status = adapter_status,
+            .capability_status = capability.status,
+            .source_bytes_status = source_bytes.status,
+            .materialized_font_bytes = source_bytes.ok() && !source_bytes.bytes.empty(),
+            .used_adapter = used_adapter,
+            .used_harfbuzz = used_harfbuzz,
+            .used_deterministic_fallback = used_deterministic_fallback,
+            .glyph_supported = glyph.glyph_supported,
+            .cacheable = cacheable,
+            .atlas_ready = cacheable,
+            .fallback_reason = fallback_reason,
+        });
+    }
+}
+
 void record_font_glyph_id_resolution(
     fake_text_engine_diagnostics& diagnostics,
     render_text_font_glyph_id_resolution_snapshot resolution)
@@ -1005,7 +1196,7 @@ std::vector<shaped_glyph> shape_request(
         record_font_backend_run_selection(diagnostics, run_index, run.style_token, backend_selection);
         const font_resolver_result font_resolution = font_resolver.resolve(style);
         record_font_face_selection(diagnostics, run_index, run.style_token, font_resolution);
-        record_font_source_resolution(
+        const font_source_resolution run_font_source = record_font_source_resolution(
             diagnostics,
             run_index,
             run.style_token,
@@ -1021,13 +1212,37 @@ std::vector<shaped_glyph> shape_request(
         std::vector<render_text_font_shaping_codepoint_selection> shaping_selections;
         shaping_selections.reserve(codepoints.size());
         const deterministic_font_glyph_id_resolver glyph_id_resolver;
-        for (const utf8_text_codepoint& scalar : codepoints) {
+        std::size_t scalar_cluster_index = 0;
+        for (std::size_t codepoint_index = 0; codepoint_index < codepoints.size(); ++codepoint_index) {
+            const utf8_text_codepoint& scalar = codepoints[codepoint_index];
+            while (scalar_cluster_index + 1U < utf8_clusters.size()
+                && codepoint_index >= utf8_clusters[scalar_cluster_index].codepoint_offset
+                    + utf8_clusters[scalar_cluster_index].codepoint_count) {
+                ++scalar_cluster_index;
+            }
+            const utf8_text_cluster scalar_cluster =
+                scalar_cluster_index < utf8_clusters.size()
+                    ? utf8_clusters[scalar_cluster_index]
+                    : utf8_text_cluster{
+                        .byte_offset = scalar.byte_offset,
+                        .byte_count = scalar.byte_count,
+                        .codepoint_offset = codepoint_index,
+                        .codepoint_count = 1,
+                        .valid = scalar.valid,
+                    };
             const std::uint32_t code_point = scalar.code_point;
             if (!scalar.valid) {
                 ++diagnostics.invalid_utf8_sequence_count;
             }
-            const font_face_resolution glyph_resolution =
-                font_resolver.catalog().resolve_for_face_and_codepoint(font_resolution.resolved_face_id, code_point);
+            const font_face_resolution glyph_resolution = scalar.valid
+                ? resolve_font_face_for_utf8_cluster(
+                    font_resolver.catalog(),
+                    font_resolution.resolved_face_id,
+                    codepoints,
+                    scalar_cluster)
+                : font_resolver.catalog().resolve_for_face_and_codepoint(
+                    font_resolution.resolved_face_id,
+                    code_point);
             const font_face_id requested_face_id =
                 glyph_resolution.requested_face == nullptr ? 0 : glyph_resolution.requested_face->id;
             const font_face_id resolved_face_id = glyph_resolution.resolved_face == nullptr
@@ -1086,6 +1301,18 @@ std::vector<shaped_glyph> shape_request(
             backend_selection.capability);
 
         render_text_font_shaping_result shaped_run;
+        render_text_font_source_bytes_load_result shaping_source_bytes =
+            load_font_source_bytes_for_shaping(run_font_source);
+        render_text_font_backend_adapter_status handoff_adapter_status =
+            render_text_font_backend_adapter_status::backend_unavailable;
+        render_text_font_backend_library handoff_backend_library =
+            render_text_font_backend_library::deterministic_fake;
+        std::string handoff_backend_label = "deterministic fake";
+        bool handoff_used_adapter = false;
+        bool handoff_used_harfbuzz = false;
+        bool handoff_used_deterministic_fallback = true;
+        std::string handoff_fallback_reason;
+
         if (adapter_functions != nullptr) {
             const function_table_font_backend_adapter adapter{*adapter_functions};
             const render_text_real_font_shaping_adapter_result adapter_result = adapter.shape(
@@ -1100,16 +1327,82 @@ std::vector<shaped_glyph> shape_request(
                     .codepoints = shaping_request.codepoints,
                     .clusters = shaping_request.clusters,
                     .font_selections = shaping_request.font_selections,
+                    .source_bytes = shaping_source_bytes,
                     .fallback_glyph_id = shaping_request.fallback_glyph_id,
                     .source_label = "fake_text_engine",
                 });
             record_font_backend_adapter_result(diagnostics, adapter_result);
             shaped_run = font_shaping_result_for_adapter_result(adapter_result, shaping_request);
+            handoff_adapter_status = adapter_result.status;
+            handoff_backend_library = adapter_result.library;
+            handoff_backend_label = adapter_functions->label.empty()
+                ? render_text_font_backend_library_name(adapter_result.library)
+                : adapter_functions->label;
+            handoff_used_adapter = true;
+            handoff_used_harfbuzz = adapter_result.library == render_text_font_backend_library::harfbuzz
+                && adapter_result.ok();
+            handoff_used_deterministic_fallback = false;
+            handoff_fallback_reason = adapter_result.ok() ? std::string{} : adapter_result.diagnostic;
         } else {
-            const deterministic_fake_font_shaping_backend shaping_backend;
-            shaped_run = shaping_backend.shape(shaping_request);
+            const bool single_face_run = shaping_request_resolves_to_single_face(
+                shaping_request,
+                font_resolution.resolved_face_id);
+            handoff_fallback_reason = automatic_harfbuzz_fallback_reason(
+                backend_selection,
+                shaping_source_bytes,
+                single_face_run);
+
+            if (handoff_fallback_reason.empty()) {
+                render_text_real_font_shaping_adapter_request adapter_request{
+                    .capability = backend_selection.capability,
+                    .library = render_text_font_backend_library::harfbuzz,
+                    .run_index = shaping_request.run_index,
+                    .style_token = shaping_request.style_token,
+                    .style = shaping_request.style,
+                    .codepoints = shaping_request.codepoints,
+                    .clusters = shaping_request.clusters,
+                    .font_selections = harfbuzz_adapter_selections_for(shaping_request.font_selections),
+                    .source_bytes = shaping_source_bytes,
+                    .fallback_glyph_id = shaping_request.fallback_glyph_id,
+                    .source_label = font_unicode_coverage_source_label_for(shaping_source_bytes),
+                };
+                const render_text_real_font_shaping_adapter_result adapter_result =
+                    harfbuzz_real_font_backend_shape(adapter_request);
+                if (adapter_result.ok()) {
+                    record_font_backend_adapter_result(diagnostics, adapter_result);
+                    shaped_run = font_shaping_result_for_adapter_result(adapter_result, shaping_request);
+                    handoff_adapter_status = adapter_result.status;
+                    handoff_backend_library = adapter_result.library;
+                    handoff_backend_label = "HarfBuzz";
+                    handoff_used_adapter = true;
+                    handoff_used_harfbuzz = true;
+                    handoff_used_deterministic_fallback = false;
+                } else {
+                    handoff_adapter_status = adapter_result.status;
+                    handoff_fallback_reason = adapter_result.diagnostic;
+                }
+            }
+
+            if (shaped_run.glyphs.empty() && handoff_used_deterministic_fallback) {
+                const deterministic_fake_font_shaping_backend shaping_backend;
+                shaped_run = shaping_backend.shape(shaping_request);
+            }
         }
         record_font_shaping_result(diagnostics, shaped_run);
+        record_shaping_handoff(
+            diagnostics,
+            run.style_token,
+            shaped_run,
+            backend_selection.capability,
+            shaping_source_bytes,
+            handoff_adapter_status,
+            handoff_backend_library,
+            handoff_backend_label,
+            handoff_used_adapter,
+            handoff_used_harfbuzz,
+            handoff_used_deterministic_fallback,
+            handoff_fallback_reason,
+            line_height_for(style));
 
         for (const render_text_shaped_glyph& glyph : shaped_run.glyphs) {
             const float line_height = line_height_for(style);
@@ -1537,9 +1830,90 @@ void record_glyph_atlas_page_diagnostics(
     diagnostics.glyph_atlas_page_policy.repeated_layout_clean_page_count = dirty_page_count == 0 ? pages.size() : 0;
 }
 
+render_text_font_source_bytes_load_status fake_font_face_byte_readiness_load_status_for(
+    const font_source_bytes_readiness& readiness)
+{
+    switch (readiness.status) {
+    case render_text_font_source_bytes_status::available_virtual_fixture:
+        return render_text_font_source_bytes_load_status::available_virtual_fixture;
+    case render_text_font_source_bytes_status::missing_source:
+        return render_text_font_source_bytes_load_status::missing_source;
+    case render_text_font_source_bytes_status::unsupported_source:
+        return render_text_font_source_bytes_load_status::unsupported_source;
+    case render_text_font_source_bytes_status::pending_file_load:
+        return render_text_font_source_bytes_load_status::missing_bytes;
+    }
+
+    return render_text_font_source_bytes_load_status::missing_bytes;
+}
+
+render_text_font_source_bytes_load_result fake_font_face_byte_readiness_load_result_for(
+    const font_face_descriptor& face)
+{
+    const font_source_resolution source = resolve_font_source(face);
+    const font_source_bytes_readiness readiness = inspect_font_source_bytes(source);
+    const render_text_font_source_bytes_load_status status =
+        fake_font_face_byte_readiness_load_status_for(readiness);
+    const std::string diagnostic =
+        status == render_text_font_source_bytes_load_status::available_virtual_fixture
+            ? "virtual fixture source uses deterministic descriptor coverage fallback"
+            : render_text_font_source_bytes_load_status_name(status);
+    return make_font_source_bytes_load_result(
+        status,
+        source,
+        readiness,
+        source.resolved_location,
+        {},
+        diagnostic);
+}
+
+render_text_font_face_byte_readiness fake_font_face_byte_readiness_for_face(
+    const font_face_descriptor* face)
+{
+    if (face == nullptr) {
+        return inspect_render_text_font_face_byte_readiness(render_text_font_source_bytes_load_result{});
+    }
+    return inspect_render_text_font_face_byte_readiness(
+        fake_font_face_byte_readiness_load_result_for(*face));
+}
+
+bool fake_glyph_cluster_uses_descriptor_coverage_fallback(
+    const laid_out_glyph_cluster& cluster,
+    const font_face_descriptor* face,
+    const render_text_font_face_byte_readiness& readiness)
+{
+    return face != nullptr
+        && readiness.fallback_required
+        && cluster.glyph_supported
+        && face->supports_codepoint(cluster.code_point);
+}
+
+void count_font_face_byte_readiness_status(
+    render_text_glyph_cache_readiness_policy_snapshot& policy,
+    const render_text_font_face_byte_readiness_status status)
+{
+    switch (status) {
+    case render_text_font_face_byte_readiness_status::coverage_ready:
+        ++policy.font_face_byte_coverage_ready_count;
+        return;
+    case render_text_font_face_byte_readiness_status::missing_bytes:
+    case render_text_font_face_byte_readiness_status::empty_bytes:
+        ++policy.font_face_byte_missing_count;
+        return;
+    case render_text_font_face_byte_readiness_status::invalid_sfnt:
+    case render_text_font_face_byte_readiness_status::missing_cmap:
+    case render_text_font_face_byte_readiness_status::invalid_cmap:
+        ++policy.font_face_byte_invalid_count;
+        return;
+    case render_text_font_face_byte_readiness_status::fallback_required:
+        return;
+    }
+}
+
 void record_glyph_cache_readiness_diagnostics(
     fake_text_engine_diagnostics& diagnostics,
-    const std::vector<laid_out_glyph_cluster>& clusters)
+    const std::vector<laid_out_glyph_cluster>& clusters,
+    const font_face_catalog& catalog)
 {
     diagnostics.glyph_cache_readiness.clear();
     diagnostics.glyph_cache_readiness.reserve(clusters.size());
@@ -1560,6 +1934,11 @@ void record_glyph_cache_readiness_diagnostics(
         const bool has_shape = cluster.snapshot.advance > 0.0f && cluster.glyph_height > 0.0f;
         const bool cacheable = cluster.cacheable && has_shape;
         const std::size_t estimated_rgba_bytes = cacheable ? atlas_width * atlas_height * 4U : 0U;
+        const font_face_descriptor* face = catalog.find_by_id(cluster.snapshot.resolved_face_id);
+        const render_text_font_face_byte_readiness face_byte_readiness =
+            fake_font_face_byte_readiness_for_face(face);
+        const bool descriptor_coverage_fallback =
+            fake_glyph_cluster_uses_descriptor_coverage_fallback(cluster, face, face_byte_readiness);
 
         diagnostics.glyph_cache_readiness.push_back(render_text_glyph_cache_readiness_snapshot{
             .cluster_index = cluster_index,
@@ -1585,6 +1964,10 @@ void record_glyph_cache_readiness_diagnostics(
             .font_backend_capability_status = cluster.font_backend_capability_status,
             .font_backend_used_deterministic_fallback = cluster.font_backend_used_deterministic_fallback,
             .font_backend_fallback_only = cluster.font_backend_fallback_only,
+            .font_face_byte_readiness_status = face_byte_readiness.status,
+            .font_face_byte_fallback_required = face_byte_readiness.fallback_required,
+            .font_face_can_attempt_freetype_load = face_byte_readiness.can_attempt_freetype_load,
+            .used_descriptor_coverage_fallback = descriptor_coverage_fallback,
             .cacheable = cacheable,
             .has_atlas_slot = cluster.atlas_slot.has_value(),
         });
@@ -1609,6 +1992,15 @@ void record_glyph_cache_readiness_diagnostics(
         }
         if (cluster.snapshot.advance <= 0.0f) {
             ++diagnostics.glyph_cache_readiness_policy.zero_advance_cluster_count;
+        }
+        if (face_byte_readiness.fallback_required) {
+            ++diagnostics.glyph_cache_readiness_policy.font_face_byte_fallback_required_count;
+        }
+        count_font_face_byte_readiness_status(
+            diagnostics.glyph_cache_readiness_policy,
+            face_byte_readiness.status);
+        if (descriptor_coverage_fallback) {
+            ++diagnostics.glyph_cache_readiness_policy.descriptor_coverage_fallback_cluster_count;
         }
     }
 
@@ -1888,6 +2280,32 @@ const render_text_glyph_atlas_placement_snapshot* find_atlas_placement_for_clust
     return match == placements.end() ? nullptr : &*match;
 }
 
+const render_text_glyph_atlas_materialization_snapshot* find_atlas_materialization_for_cluster(
+    const std::vector<render_text_glyph_atlas_materialization_snapshot>& materializations,
+    const std::size_t cluster_index)
+{
+    const auto match = std::find_if(
+        materializations.begin(),
+        materializations.end(),
+        [&](const render_text_glyph_atlas_materialization_snapshot& materialization) {
+            return materialization.cluster_index == cluster_index;
+        });
+    return match == materializations.end() ? nullptr : &*match;
+}
+
+const render_text_shaped_atlas_update_trace_snapshot* find_shaped_atlas_trace_for_cluster(
+    const std::vector<render_text_shaped_atlas_update_trace_snapshot>& traces,
+    const std::size_t cluster_index)
+{
+    const auto match = std::find_if(
+        traces.begin(),
+        traces.end(),
+        [&](const render_text_shaped_atlas_update_trace_snapshot& trace) {
+            return trace.cluster_index == cluster_index;
+        });
+    return match == traces.end() ? nullptr : &*match;
+}
+
 bool shaped_glyph_is_inside_cluster(
     const render_text_shaped_glyph& glyph,
     const render_text_glyph_cache_readiness_snapshot& readiness)
@@ -1912,6 +2330,28 @@ std::vector<std::uint32_t> shaped_glyph_ids_for_cluster(
     return glyph_ids;
 }
 
+bool shaping_handoff_matches_readiness(
+    const fake_text_engine_shaping_handoff_snapshot& handoff,
+    const render_text_glyph_cache_readiness_snapshot& readiness)
+{
+    return handoff.run_index == readiness.run_index
+        && handoff.cluster_byte_offset == readiness.byte_offset
+        && handoff.cluster_byte_count == readiness.byte_count;
+}
+
+std::vector<const fake_text_engine_shaping_handoff_snapshot*> shaping_handoffs_for_readiness(
+    const std::vector<fake_text_engine_shaping_handoff_snapshot>& handoffs,
+    const render_text_glyph_cache_readiness_snapshot& readiness)
+{
+    std::vector<const fake_text_engine_shaping_handoff_snapshot*> matches;
+    for (const fake_text_engine_shaping_handoff_snapshot& handoff : handoffs) {
+        if (shaping_handoff_matches_readiness(handoff, readiness)) {
+            matches.push_back(&handoff);
+        }
+    }
+    return matches;
+}
+
 std::uint32_t combined_shaped_glyph_id_for_cluster(const std::vector<std::uint32_t>& glyph_ids)
 {
     if (glyph_ids.empty()) {
@@ -1932,6 +2372,211 @@ bool readiness_has_cache_key(const render_text_glyph_cache_readiness_snapshot& r
         && readiness.cache_key.face_id != 0U
         && readiness.cache_key.glyph_id != 0U
         && readiness.cache_key.pixel_size != 0U;
+}
+
+bool contains_string(const std::vector<std::string>& values, const std::string& value)
+{
+    return std::find(values.begin(), values.end(), value) != values.end();
+}
+
+std::string stable_page_key_for(
+    const render_text_glyph_atlas_materialization_snapshot* materialization,
+    const render_text_shaped_atlas_update_trace_snapshot* trace)
+{
+    const render_text_atlas_page* page = nullptr;
+    if (trace != nullptr && trace->page.id != 0U) {
+        page = &trace->page;
+    } else if (materialization != nullptr && materialization->page.id != 0U) {
+        page = &materialization->page;
+    }
+    return page == nullptr
+        ? std::string{}
+        : render_text_glyph_atlas_upload_operation_stable_page_id_for(*page);
+}
+
+std::string shaping_atlas_blocker_reason_for(
+    const render_text_glyph_cache_readiness_snapshot& readiness,
+    const render_text_glyph_atlas_materialization_snapshot* materialization,
+    const render_text_shaped_atlas_update_trace_snapshot* trace,
+    const std::vector<const fake_text_engine_shaping_handoff_snapshot*>& handoffs)
+{
+    if (trace != nullptr
+        && (trace->status == render_text_shaped_atlas_update_trace_status::upload_ready_payload_queued
+            || trace->status == render_text_shaped_atlas_update_trace_status::clean_atlas_page_reused)) {
+        return {};
+    }
+    if (!readiness.glyph_supported) {
+        return "glyph is unsupported";
+    }
+    if (!readiness.cacheable) {
+        return "glyph cluster is not cacheable";
+    }
+    if (!readiness_has_cache_key(readiness)) {
+        return "glyph cluster has no cacheable atlas key";
+    }
+    if (trace != nullptr && !trace->diagnostic.empty()) {
+        return trace->diagnostic;
+    }
+    if (materialization != nullptr && !materialization->diagnostic.empty()) {
+        return materialization->diagnostic;
+    }
+    for (const fake_text_engine_shaping_handoff_snapshot* handoff : handoffs) {
+        if (handoff != nullptr && !handoff->fallback_reason.empty()) {
+            return handoff->fallback_reason;
+        }
+    }
+    return handoffs.empty()
+        ? "no shaping handoff record matched atlas readiness"
+        : "atlas handoff is blocked";
+}
+
+void record_shaping_atlas_handoff_diagnostics(fake_text_engine_diagnostics& diagnostics)
+{
+    diagnostics.shaping_atlas_handoffs.clear();
+    diagnostics.shaping_atlas_handoff_policy = {};
+    diagnostics.shaping_atlas_handoffs.reserve(diagnostics.glyph_cache_readiness.size());
+
+    std::vector<glyph_atlas_key> unique_cache_keys;
+    std::vector<std::string> unique_page_keys;
+    unique_cache_keys.reserve(diagnostics.glyph_cache_readiness.size());
+    unique_page_keys.reserve(diagnostics.glyph_cache_readiness.size());
+
+    for (const render_text_glyph_cache_readiness_snapshot& readiness : diagnostics.glyph_cache_readiness) {
+        const std::vector<const fake_text_engine_shaping_handoff_snapshot*> handoffs =
+            shaping_handoffs_for_readiness(diagnostics.shaping_handoffs, readiness);
+        const fake_text_engine_shaping_handoff_snapshot* primary_handoff =
+            handoffs.empty() ? nullptr : handoffs.front();
+        const render_text_glyph_atlas_materialization_snapshot* materialization =
+            find_atlas_materialization_for_cluster(diagnostics.glyph_atlas_materializations, readiness.cluster_index);
+        const render_text_shaped_atlas_update_trace_snapshot* trace =
+            find_shaped_atlas_trace_for_cluster(diagnostics.shaped_atlas_update_traces, readiness.cluster_index);
+        std::vector<std::uint32_t> glyph_ids;
+        glyph_ids.reserve(handoffs.size());
+        for (const fake_text_engine_shaping_handoff_snapshot* handoff : handoffs) {
+            if (handoff != nullptr && handoff->glyph_id != 0U) {
+                glyph_ids.push_back(handoff->glyph_id);
+            }
+        }
+        if (glyph_ids.empty()) {
+            glyph_ids = shaped_glyph_ids_for_cluster(diagnostics.shaped_glyphs, readiness);
+        }
+
+        const bool upload_ready =
+            trace != nullptr
+            && trace->status == render_text_shaped_atlas_update_trace_status::upload_ready_payload_queued;
+        const bool clean_reuse =
+            trace != nullptr
+            && trace->status == render_text_shaped_atlas_update_trace_status::clean_atlas_page_reused;
+        const bool atlas_ready = upload_ready || clean_reuse;
+        const std::string page_key = stable_page_key_for(materialization, trace);
+        const std::string blocker_reason = shaping_atlas_blocker_reason_for(
+            readiness,
+            materialization,
+            trace,
+            handoffs);
+
+        fake_text_engine_shaping_atlas_handoff_snapshot snapshot{
+            .cluster_index = readiness.cluster_index,
+            .run_index = readiness.run_index,
+            .style_token = primary_handoff == nullptr ? render_style_id{} : primary_handoff->style_token,
+            .cluster_byte_offset = readiness.byte_offset,
+            .cluster_byte_count = readiness.byte_count,
+            .cluster_codepoint_offset =
+                primary_handoff == nullptr ? 0U : primary_handoff->cluster_codepoint_offset,
+            .cluster_codepoint_count =
+                primary_handoff == nullptr ? 0U : primary_handoff->cluster_codepoint_count,
+            .shaped_glyph_ids = std::move(glyph_ids),
+            .resolved_glyph_id = readiness.glyph_id,
+            .resolved_face_id = readiness.resolved_face_id,
+            .cache_key = readiness.cache_key,
+            .stable_page_key = page_key,
+            .backend_library = primary_handoff == nullptr
+                ? readiness.font_backend_library
+                : primary_handoff->backend_library,
+            .backend_label = primary_handoff == nullptr
+                ? readiness.font_backend_label
+                : primary_handoff->backend_label,
+            .adapter_status = primary_handoff == nullptr
+                ? render_text_font_backend_adapter_status::backend_unavailable
+                : primary_handoff->adapter_status,
+            .capability_status = primary_handoff == nullptr
+                ? readiness.font_backend_capability_status
+                : primary_handoff->capability_status,
+            .source_bytes_status = primary_handoff == nullptr
+                ? render_text_font_source_bytes_load_status::missing_source
+                : primary_handoff->source_bytes_status,
+            .materialization_status = materialization == nullptr
+                ? render_text_glyph_atlas_materialization_status::skipped_missing_cache_key
+                : materialization->status,
+            .atlas_update_trace_status = trace == nullptr
+                ? render_text_shaped_atlas_update_trace_status::shaped_glyph_without_cache_key
+                : trace->status,
+            .materialized_font_bytes = primary_handoff != nullptr && primary_handoff->materialized_font_bytes,
+            .used_adapter = primary_handoff != nullptr && primary_handoff->used_adapter,
+            .used_harfbuzz = primary_handoff != nullptr && primary_handoff->used_harfbuzz,
+            .used_deterministic_fallback =
+                primary_handoff == nullptr || primary_handoff->used_deterministic_fallback,
+            .glyph_supported = readiness.glyph_supported,
+            .cacheable = readiness.cacheable,
+            .has_cache_key = readiness_has_cache_key(readiness),
+            .has_atlas_placement = trace == nullptr ? readiness.has_atlas_slot : trace->has_atlas_placement,
+            .payload_upload_ready = trace != nullptr && trace->payload_upload_ready,
+            .has_atlas_update = trace != nullptr && trace->has_atlas_update,
+            .atlas_ready = atlas_ready,
+            .blocked = !atlas_ready,
+            .fallback_reason = primary_handoff == nullptr ? std::string{} : primary_handoff->fallback_reason,
+            .blocker_reason = blocker_reason,
+        };
+
+        ++diagnostics.shaping_atlas_handoff_policy.cluster_count;
+        if (snapshot.used_harfbuzz) {
+            ++diagnostics.shaping_atlas_handoff_policy.harfbuzz_cluster_count;
+        }
+        if (snapshot.used_deterministic_fallback) {
+            ++diagnostics.shaping_atlas_handoff_policy.deterministic_fallback_cluster_count;
+        }
+        if (snapshot.materialized_font_bytes) {
+            ++diagnostics.shaping_atlas_handoff_policy.materialized_font_byte_cluster_count;
+        } else {
+            ++diagnostics.shaping_atlas_handoff_policy.missing_font_byte_cluster_count;
+        }
+        if (snapshot.cacheable) {
+            ++diagnostics.shaping_atlas_handoff_policy.cacheable_cluster_count;
+        }
+        if (snapshot.atlas_ready) {
+            ++diagnostics.shaping_atlas_handoff_policy.atlas_ready_cluster_count;
+        } else {
+            ++diagnostics.shaping_atlas_handoff_policy.blocked_cluster_count;
+        }
+        if (upload_ready) {
+            ++diagnostics.shaping_atlas_handoff_policy.upload_ready_cluster_count;
+        }
+        if (clean_reuse) {
+            ++diagnostics.shaping_atlas_handoff_policy.clean_reuse_cluster_count;
+        }
+        if (snapshot.atlas_update_trace_status
+            == render_text_shaped_atlas_update_trace_status::rasterized_payload_skipped) {
+            ++diagnostics.shaping_atlas_handoff_policy.raster_payload_blocked_cluster_count;
+        }
+        if (snapshot.atlas_update_trace_status
+            == render_text_shaped_atlas_update_trace_status::shaped_glyph_without_cache_key) {
+            ++diagnostics.shaping_atlas_handoff_policy.missing_cache_key_cluster_count;
+        }
+        if (!snapshot.fallback_reason.empty()) {
+            ++diagnostics.shaping_atlas_handoff_policy.fallback_reason_cluster_count;
+        }
+        if (snapshot.has_cache_key && !contains_glyph_atlas_key(unique_cache_keys, snapshot.cache_key)) {
+            unique_cache_keys.push_back(snapshot.cache_key);
+        }
+        if (!snapshot.stable_page_key.empty() && !contains_string(unique_page_keys, snapshot.stable_page_key)) {
+            unique_page_keys.push_back(snapshot.stable_page_key);
+        }
+
+        diagnostics.shaping_atlas_handoffs.push_back(std::move(snapshot));
+    }
+
+    diagnostics.shaping_atlas_handoff_policy.unique_cache_key_count = unique_cache_keys.size();
+    diagnostics.shaping_atlas_handoff_policy.unique_page_key_count = unique_page_keys.size();
 }
 
 void record_glyph_atlas_materialization_diagnostics(
@@ -2293,7 +2938,7 @@ void update_atlas_for_clusters(
         });
     }
 
-    record_glyph_cache_readiness_diagnostics(diagnostics, clusters);
+    record_glyph_cache_readiness_diagnostics(diagnostics, clusters, catalog);
     record_rasterized_glyph_atlas_payload_diagnostics(
         diagnostics,
         clusters,
@@ -2308,6 +2953,7 @@ void update_atlas_for_clusters(
 
     record_glyph_atlas_materialization_diagnostics(diagnostics, clusters, dirty_updates);
     record_shaped_atlas_update_trace_diagnostics(diagnostics, dirty_updates);
+    record_shaping_atlas_handoff_diagnostics(diagnostics);
     record_glyph_atlas_page_diagnostics(diagnostics, pages, diagnostics.glyph_atlas_placements, dirty_updates);
 
     diagnostics.glyph_atlas_metrics.page_count_after = pages.size();

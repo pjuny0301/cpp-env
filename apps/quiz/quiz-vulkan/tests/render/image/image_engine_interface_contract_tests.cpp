@@ -3,14 +3,22 @@
 #include "render/image/image_resolver.h"
 #include "render/image/image_source_bytes_loader.h"
 #include "render/image/image_texture_cache.h"
+#include "render/image/image_texture_frame_resource_packet_materialization.h"
+#include "render/image/image_texture_frame_resource_materialization_diff.h"
+#include "render/image/image_texture_frame_resource_packet_plan.h"
+#include "render/image/image_texture_frame_upload_handoff.h"
 #include "render/image/image_texture_pipeline.h"
+#include "render/image/image_texture_upload_operation_plan.h"
+#include "render/image/image_texture_upload_result_diagnostics.h"
 #include "render/image/image_texture_upload_snapshot_diff.h"
 #include "render/render_draw_list.h"
 
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -175,6 +183,9 @@ static_assert(requires(
     { render::expected_render_decoded_image_byte_count(image) } -> std::same_as<std::size_t>;
     { render::has_valid_render_decoded_image_payload(image) } -> std::same_as<bool>;
     { render::render_image_checked_pixel_count(image) } -> std::same_as<std::size_t>;
+    { render::render_image_checked_row_stride_byte_count(image) } -> std::same_as<std::size_t>;
+    { render::make_render_image_texture_upload_payload_layout_evidence(key, key.sampler, image) }
+        -> std::same_as<render::render_image_texture_upload_payload_layout_evidence>;
     { render::make_render_image_upload_readiness_snapshot(key, metadata, image) }
         -> std::same_as<render::render_image_upload_readiness_snapshot>;
 });
@@ -221,6 +232,7 @@ static_assert(requires(
     render::stb_image_decoder_format_matrix_entry stb_format_matrix_entry,
     render::stb_image_decoder_dependency_manifest stb_dependency_manifest,
     render::stb_image_decoder_adapter_selection_result stb_selection,
+    render::stb_image_decoder_header_dependency_probe stb_header_probe,
     render::fake_stb_image_decoder_dependency_probe stb_probe,
     const render::stb_image_decoder_dependency_probe_interface& stb_probe_interface,
     render::render_image_decode_result decode_result,
@@ -238,9 +250,14 @@ static_assert(requires(
     render::render_image_texture_mipmap_upload_plan_status mipmap_upload_plan_status,
     render::render_image_texture_mipmap_level_upload_plan mipmap_level_upload_plan,
     render::render_image_texture_mipmap_upload_plan mipmap_upload_plan,
+    render::render_image_texture_staging_payload_plan_status staging_payload_status,
+    render::render_image_texture_staging_row_copy_plan staging_row_copy_plan,
+    render::render_image_texture_staging_mip_level_reference staging_mip_reference,
+    render::render_image_texture_staging_payload_plan staging_payload_plan,
     render::render_image_sampler_policy_diagnostic sampler_policy,
     render::render_image_texture_key_diagnostic texture_key_diagnostic,
     render::render_image_texture_color_space texture_color_space,
+    render::render_image_texture_upload_payload_layout_evidence upload_payload_layout,
     render::render_image_upload_readiness_snapshot upload_readiness,
     render::fake_image_texture_upload_generation_id upload_generation_id,
     render::fake_image_texture_upload_retry_eligibility upload_retry_eligibility,
@@ -253,6 +270,15 @@ static_assert(requires(
     render::fake_image_texture_upload_snapshot_diff_entry_status upload_snapshot_diff_entry_status,
     render::fake_image_texture_upload_snapshot_entry_diff upload_snapshot_entry_diff,
     render::fake_image_texture_upload_snapshot_diff upload_snapshot_diff,
+    render::render_image_texture_upload_operation_packet_status upload_operation_status,
+    render::render_image_texture_upload_operation_packet upload_operation_packet,
+    render::render_image_texture_upload_operation_plan upload_operation_plan,
+    render::render_image_texture_upload_result_packet_status upload_result_packet_status,
+    render::render_image_texture_upload_result_packet_snapshot upload_result_packet,
+    render::render_image_texture_upload_result_snapshot upload_result_diagnostics_snapshot,
+    render::render_image_texture_upload_result_diff_entry_status upload_result_diff_entry_status,
+    render::render_image_texture_upload_result_packet_diff upload_result_packet_diff,
+    render::render_image_texture_upload_result_snapshot_diff upload_result_diagnostics_snapshot_diff,
     const render::fake_image_texture_uploader& uploader,
     render::render_image_texture_pipeline_request pipeline_request,
     render::render_image_texture_pipeline_result pipeline_result,
@@ -284,6 +310,41 @@ static_assert(requires(
     render::render_image_texture_frame_binding_plan_diff_entry_status texture_frame_binding_diff_entry_status,
     render::render_image_texture_frame_binding_packet_diff texture_frame_binding_packet_diff,
     render::render_image_texture_frame_binding_plan_diff texture_frame_binding_diff,
+    render::render_image_texture_frame_upload_handoff_entry_status texture_frame_upload_handoff_status,
+    render::render_image_texture_frame_upload_handoff_entry texture_frame_upload_handoff_entry,
+    render::render_image_texture_frame_upload_handoff_summary texture_frame_upload_handoff,
+    render::render_image_texture_frame_upload_handoff_diff_entry_status texture_frame_upload_handoff_diff_status,
+    render::render_image_texture_frame_upload_handoff_entry_diff texture_frame_upload_handoff_entry_diff,
+    render::render_image_texture_frame_upload_handoff_summary_diff texture_frame_upload_handoff_diff,
+    render::render_image_texture_frame_binding_summary_status texture_frame_binding_summary_status,
+    render::render_image_texture_frame_binding_summary texture_frame_binding_summary,
+    render::render_image_texture_frame_binding_summary_diff texture_frame_binding_summary_diff,
+    render::render_image_texture_frame_resource_packet_status texture_frame_resource_packet_status,
+    render::render_image_texture_frame_resource_packet_plan_entry texture_frame_resource_packet_entry,
+    render::render_image_texture_frame_resource_packet_plan texture_frame_resource_packet_plan,
+    render::render_image_texture_frame_resource_packet_materialization_status
+        texture_frame_resource_packet_materialization_status,
+    render::render_image_texture_frame_resource_cache_handoff_record texture_frame_resource_cache_handoff,
+    render::render_image_texture_frame_resource_upload_handoff_record texture_frame_resource_upload_handoff,
+    render::render_image_texture_frame_resource_sampler_handoff_record texture_frame_resource_sampler_handoff,
+    render::render_image_texture_frame_resource_packet_materialization_entry
+        texture_frame_resource_packet_materialization_entry,
+    render::render_image_texture_frame_resource_packet_materialization
+        texture_frame_resource_packet_materialization,
+    render::render_image_texture_frame_resource_materialization_diff_entry_status
+        texture_frame_resource_materialization_diff_status,
+    render::render_image_texture_frame_resource_materialization_change_classification
+        texture_frame_resource_materialization_classification,
+    render::render_image_texture_frame_resource_cache_handoff_delta
+        texture_frame_resource_cache_handoff_delta,
+    render::render_image_texture_frame_resource_upload_handoff_delta
+        texture_frame_resource_upload_handoff_delta,
+    render::render_image_texture_frame_resource_sampler_handoff_delta
+        texture_frame_resource_sampler_handoff_delta,
+    render::render_image_texture_frame_resource_materialization_entry_diff
+        texture_frame_resource_materialization_entry_diff,
+    render::render_image_texture_frame_resource_materialization_diff
+        texture_frame_resource_materialization_diff,
     render::fake_image_texture_pipeline_entry_snapshot pipeline_entry,
     render::fake_image_texture_pipeline_snapshot pipeline_snapshot,
     render::standard_image_texture_pipeline_decode_snapshot standard_pipeline_decoder_snapshot,
@@ -380,18 +441,32 @@ static_assert(requires(
     { standard_decoder_chain.decode(request) } -> std::same_as<render::render_image_decode_result>;
     { render::stb_image_decoder_dependency_status_name(stb_dependency_status) } -> std::same_as<std::string>;
     { render::stb_image_decoder_adapter_selection_status_name(stb_selection_status) } -> std::same_as<std::string>;
+    { render::stb_image_decoder_headers_available() } -> std::same_as<bool>;
+    { render::stb_image_decoder_header_version() } -> std::same_as<std::string>;
     { render::make_stb_image_decoder_format_matrix_entry(encoded_format, bool{}, bool{}, bool{}) }
         -> std::same_as<render::stb_image_decoder_format_matrix_entry>;
     { render::make_default_stb_image_decoder_format_matrix() }
         -> std::same_as<std::vector<render::stb_image_decoder_format_matrix_entry>>;
+    { render::make_stb_image_decoder_header_format_matrix() }
+        -> std::same_as<std::vector<render::stb_image_decoder_format_matrix_entry>>;
     { render::stb_image_decoder_format_matrix_entry_for(
         stb_dependency_manifest.supported_format_matrix, encoded_format) }
         -> std::same_as<const render::stb_image_decoder_format_matrix_entry*>;
+    { render::stb_image_decoder_supported_format_count(stb_dependency_manifest.supported_format_matrix) }
+        -> std::same_as<std::size_t>;
+    { render::stb_image_decoder_header_format_count(
+        stb_dependency_manifest.supported_format_matrix,
+        &render::stb_image_decoder_format_matrix_entry::declared_by_header) }
+        -> std::same_as<std::size_t>;
+    { render::make_stb_image_decoder_supported_format_summary(stb_dependency_manifest.supported_format_matrix) }
+        -> std::same_as<std::string>;
     { render::make_missing_stb_image_decoder_dependency_manifest("decoder") }
         -> std::same_as<render::stb_image_decoder_dependency_manifest>;
     { render::make_available_stb_image_decoder_dependency_manifest("decoder") }
         -> std::same_as<render::stb_image_decoder_dependency_manifest>;
     { render::make_mismatched_stb_image_decoder_dependency_manifest("decoder") }
+        -> std::same_as<render::stb_image_decoder_dependency_manifest>;
+    { render::make_stb_image_decoder_header_dependency_manifest("decoder") }
         -> std::same_as<render::stb_image_decoder_dependency_manifest>;
     { render::select_stb_image_decoder_adapter(request, stb_dependency_manifest) }
         -> std::same_as<render::stb_image_decoder_adapter_selection_result>;
@@ -542,6 +617,13 @@ static_assert(requires(
     { external_decoder_selection.selection_status_name } -> std::same_as<std::string&>;
     { external_decoder_selection.detected_format } -> std::same_as<render::render_image_encoded_format&>;
     { external_decoder_selection.detected_format_name } -> std::same_as<std::string&>;
+    { external_decoder_selection.dependency_header_available } -> std::same_as<bool&>;
+    { external_decoder_selection.dependency_implementation_linked } -> std::same_as<bool&>;
+    { external_decoder_selection.dependency_header_probe_used } -> std::same_as<bool&>;
+    { external_decoder_selection.declared_supported_format_count } -> std::same_as<std::size_t&>;
+    { external_decoder_selection.probed_supported_format_count } -> std::same_as<std::size_t&>;
+    { external_decoder_selection.supported_format_summary } -> std::same_as<std::string&>;
+    { external_decoder_selection.fallback_reason } -> std::same_as<std::string&>;
     { external_decoder_selection.dependency_available } -> std::same_as<bool&>;
     { external_decoder_selection.dependency_capability_ready } -> std::same_as<bool&>;
     { external_decoder_selection.format_supported_by_dependency } -> std::same_as<bool&>;
@@ -701,6 +783,31 @@ static_assert(requires(
         -> std::same_as<bool>;
     { render::make_render_image_texture_mipmap_upload_plan(image, upload_request.sampler) }
         -> std::same_as<render::render_image_texture_mipmap_upload_plan>;
+    { render::render_image_texture_staging_payload_plan_status_name(staging_payload_status) }
+        -> std::same_as<std::string>;
+    { render::render_image_texture_default_staging_row_alignment_byte_count() }
+        -> std::same_as<std::size_t>;
+    { render::checked_render_image_texture_staging_row_stride(
+        std::size_t{}, std::size_t{1}, staging_payload_plan.total_staging_byte_count) }
+        -> std::same_as<bool>;
+    { render::append_render_image_texture_staging_row_copy_plan(
+        staging_payload_plan,
+        mipmap_level_upload_plan,
+        std::size_t{},
+        std::size_t{},
+        std::size_t{4},
+        std::size_t{4}) } -> std::same_as<bool>;
+    { render::make_render_image_texture_staging_payload_plan(upload_payload_layout, mipmap_upload_plan) }
+        -> std::same_as<render::render_image_texture_staging_payload_plan>;
+    { render::make_render_image_texture_staging_payload_plan(
+        upload_payload_layout, mipmap_upload_plan, std::size_t{16}) }
+        -> std::same_as<render::render_image_texture_staging_payload_plan>;
+    { render::render_image_texture_staging_row_copy_plan_equal(
+        staging_row_copy_plan, staging_row_copy_plan) } -> std::same_as<bool>;
+    { render::render_image_texture_staging_mip_level_reference_equal(
+        staging_mip_reference, staging_mip_reference) } -> std::same_as<bool>;
+    { render::render_image_texture_staging_payload_plan_equal(
+        staging_payload_plan, staging_payload_plan) } -> std::same_as<bool>;
     { mipmap_level_upload_plan.level } -> std::same_as<std::size_t&>;
     { mipmap_level_upload_plan.width } -> std::same_as<std::size_t&>;
     { mipmap_level_upload_plan.height } -> std::same_as<std::size_t&>;
@@ -726,6 +833,75 @@ static_assert(requires(
         -> std::same_as<std::vector<render::render_image_texture_mipmap_level_upload_plan>&>;
     { mipmap_upload_plan.diagnostic } -> std::same_as<std::string&>;
     { mipmap_upload_plan.ok() } -> std::same_as<bool>;
+    { staging_row_copy_plan.mip_level } -> std::same_as<std::size_t&>;
+    { staging_row_copy_plan.row_index } -> std::same_as<std::size_t&>;
+    { staging_row_copy_plan.mip_width } -> std::same_as<std::size_t&>;
+    { staging_row_copy_plan.mip_height } -> std::same_as<std::size_t&>;
+    { staging_row_copy_plan.source_byte_offset } -> std::same_as<std::size_t&>;
+    { staging_row_copy_plan.source_row_stride_byte_count } -> std::same_as<std::size_t&>;
+    { staging_row_copy_plan.row_payload_byte_count } -> std::same_as<std::size_t&>;
+    { staging_row_copy_plan.staging_byte_offset } -> std::same_as<std::size_t&>;
+    { staging_row_copy_plan.staging_row_stride_byte_count } -> std::same_as<std::size_t&>;
+    { staging_row_copy_plan.row_padding_byte_count } -> std::same_as<std::size_t&>;
+    { staging_row_copy_plan.alignment_byte_count } -> std::same_as<std::size_t&>;
+    { staging_row_copy_plan.row_aligned } -> std::same_as<bool&>;
+    { staging_row_copy_plan.decoded_payload_backed } -> std::same_as<bool&>;
+    { staging_row_copy_plan.generated_mip_reference } -> std::same_as<bool&>;
+    { staging_mip_reference.mip_level } -> std::same_as<std::size_t&>;
+    { staging_mip_reference.width } -> std::same_as<std::size_t&>;
+    { staging_mip_reference.height } -> std::same_as<std::size_t&>;
+    { staging_mip_reference.pixel_count } -> std::same_as<std::size_t&>;
+    { staging_mip_reference.byte_count } -> std::same_as<std::size_t&>;
+    { staging_mip_reference.mipmap_staging_byte_offset } -> std::same_as<std::size_t&>;
+    { staging_mip_reference.staging_byte_offset } -> std::same_as<std::size_t&>;
+    { staging_mip_reference.row_copy_begin } -> std::same_as<std::size_t&>;
+    { staging_mip_reference.row_copy_count } -> std::same_as<std::size_t&>;
+    { staging_mip_reference.base_level } -> std::same_as<bool&>;
+    { staging_mip_reference.decoded_payload_backed } -> std::same_as<bool&>;
+    { staging_mip_reference.generated_mip_reference } -> std::same_as<bool&>;
+    { staging_payload_plan.status }
+        -> std::same_as<render::render_image_texture_staging_payload_plan_status&>;
+    { staging_payload_plan.status_name } -> std::same_as<std::string&>;
+    { staging_payload_plan.texture_key } -> std::same_as<render::render_image_texture_key&>;
+    { staging_payload_plan.sampler } -> std::same_as<render::render_image_sampler_policy&>;
+    { staging_payload_plan.stable_texture_cache_key } -> std::same_as<std::string&>;
+    { staging_payload_plan.sampler_summary } -> std::same_as<std::string&>;
+    { staging_payload_plan.pixel_format } -> std::same_as<render::render_image_pixel_format&>;
+    { staging_payload_plan.extent_width } -> std::same_as<std::size_t&>;
+    { staging_payload_plan.extent_height } -> std::same_as<std::size_t&>;
+    { staging_payload_plan.bytes_per_pixel } -> std::same_as<std::size_t&>;
+    { staging_payload_plan.alignment_byte_count } -> std::same_as<std::size_t&>;
+    { staging_payload_plan.base_row_stride_byte_count } -> std::same_as<std::size_t&>;
+    { staging_payload_plan.base_staging_row_stride_byte_count } -> std::same_as<std::size_t&>;
+    { staging_payload_plan.base_row_padding_byte_count } -> std::same_as<std::size_t&>;
+    { staging_payload_plan.row_copy_count } -> std::same_as<std::size_t&>;
+    { staging_payload_plan.mip_level_reference_count } -> std::same_as<std::size_t&>;
+    { staging_payload_plan.total_row_payload_byte_count } -> std::same_as<std::size_t&>;
+    { staging_payload_plan.total_row_padding_byte_count } -> std::same_as<std::size_t&>;
+    { staging_payload_plan.total_staging_byte_count } -> std::same_as<std::size_t&>;
+    { staging_payload_plan.decoded_byte_count } -> std::same_as<std::size_t&>;
+    { staging_payload_plan.referenced_mipmap_byte_count } -> std::same_as<std::size_t&>;
+    { staging_payload_plan.referenced_mipmap_level_count } -> std::same_as<std::size_t&>;
+    { staging_payload_plan.decoded_payload_hash } -> std::same_as<std::uint64_t&>;
+    { staging_payload_plan.payload_layout }
+        -> std::same_as<render::render_image_texture_upload_payload_layout_evidence&>;
+    { staging_payload_plan.mipmap_upload_plan }
+        -> std::same_as<render::render_image_texture_mipmap_upload_plan&>;
+    { staging_payload_plan.row_copies }
+        -> std::same_as<std::vector<render::render_image_texture_staging_row_copy_plan>&>;
+    { staging_payload_plan.mip_level_references }
+        -> std::same_as<std::vector<render::render_image_texture_staging_mip_level_reference>&>;
+    { staging_payload_plan.layout_ready } -> std::same_as<bool&>;
+    { staging_payload_plan.mipmap_plan_ready } -> std::same_as<bool&>;
+    { staging_payload_plan.rows_aligned } -> std::same_as<bool&>;
+    { staging_payload_plan.has_row_padding } -> std::same_as<bool&>;
+    { staging_payload_plan.decoded_payload_available } -> std::same_as<bool&>;
+    { staging_payload_plan.mipmaps_referenced } -> std::same_as<bool&>;
+    { staging_payload_plan.ready } -> std::same_as<bool&>;
+    { staging_payload_plan.blocked } -> std::same_as<bool&>;
+    { staging_payload_plan.blocker_summary } -> std::same_as<std::string&>;
+    { staging_payload_plan.diagnostic } -> std::same_as<std::string&>;
+    { staging_payload_plan.ok() } -> std::same_as<bool>;
     { upload_retry_snapshot.generation_id }
         -> std::same_as<render::fake_image_texture_upload_generation_id&>;
     { upload_retry_snapshot.key } -> std::same_as<render::render_image_texture_key&>;
@@ -750,6 +926,10 @@ static_assert(requires(
     { upload_result.decoded_byte_count } -> std::same_as<std::size_t&>;
     { upload_result.staging_byte_count } -> std::same_as<std::size_t&>;
     { upload_result.mipmap_upload_plan } -> std::same_as<render::render_image_texture_mipmap_upload_plan&>;
+    { upload_result.payload_layout }
+        -> std::same_as<render::render_image_texture_upload_payload_layout_evidence&>;
+    { upload_result.staging_payload_plan }
+        -> std::same_as<render::render_image_texture_staging_payload_plan&>;
     { upload_result.diagnostic } -> std::same_as<std::string&>;
     { upload_result.ok() } -> std::same_as<bool>;
     { sampler_policy.sampler } -> std::same_as<render::render_image_sampler_policy&>;
@@ -774,6 +954,36 @@ static_assert(requires(
     { texture_key_diagnostic.valid } -> std::same_as<bool&>;
     { texture_key_diagnostic.diagnostic } -> std::same_as<std::string&>;
     texture_color_space;
+    { upload_payload_layout.texture_key } -> std::same_as<render::render_image_texture_key&>;
+    { upload_payload_layout.key_diagnostic } -> std::same_as<render::render_image_texture_key_diagnostic&>;
+    { upload_payload_layout.sampler } -> std::same_as<render::render_image_sampler_policy&>;
+    { upload_payload_layout.stable_texture_cache_key } -> std::same_as<std::string&>;
+    { upload_payload_layout.sampler_summary } -> std::same_as<std::string&>;
+    { upload_payload_layout.pixel_format } -> std::same_as<render::render_image_pixel_format&>;
+    { upload_payload_layout.color_space } -> std::same_as<render::render_image_texture_color_space&>;
+    { upload_payload_layout.color_space_name } -> std::same_as<std::string&>;
+    { upload_payload_layout.extent_width } -> std::same_as<std::size_t&>;
+    { upload_payload_layout.extent_height } -> std::same_as<std::size_t&>;
+    { upload_payload_layout.bytes_per_pixel } -> std::same_as<std::size_t&>;
+    { upload_payload_layout.row_stride_byte_count } -> std::same_as<std::size_t&>;
+    { upload_payload_layout.pixel_count } -> std::same_as<std::size_t&>;
+    { upload_payload_layout.expected_byte_count } -> std::same_as<std::size_t&>;
+    { upload_payload_layout.decoded_byte_count } -> std::same_as<std::size_t&>;
+    { upload_payload_layout.staging_byte_count } -> std::same_as<std::size_t&>;
+    { upload_payload_layout.decoded_payload } -> std::same_as<render::render_image_decoded_payload_evidence&>;
+    { upload_payload_layout.cache_key_valid } -> std::same_as<bool&>;
+    { upload_payload_layout.sampler_valid } -> std::same_as<bool&>;
+    { upload_payload_layout.sampler_matches_texture_key } -> std::same_as<bool&>;
+    { upload_payload_layout.rgba8_format } -> std::same_as<bool&>;
+    { upload_payload_layout.nonzero_extent } -> std::same_as<bool&>;
+    { upload_payload_layout.row_stride_consistent } -> std::same_as<bool&>;
+    { upload_payload_layout.byte_count_consistent } -> std::same_as<bool&>;
+    { upload_payload_layout.staging_byte_count_consistent } -> std::same_as<bool&>;
+    { upload_payload_layout.upload_layout_ready } -> std::same_as<bool&>;
+    { upload_payload_layout.diagnostic } -> std::same_as<std::string&>;
+    { upload_payload_layout.ok() } -> std::same_as<bool>;
+    { render::render_image_texture_upload_payload_layout_evidence_equal(
+        upload_payload_layout, upload_payload_layout) } -> std::same_as<bool>;
     { upload_readiness.key } -> std::same_as<render::render_image_texture_key&>;
     { upload_readiness.key_diagnostic } -> std::same_as<render::render_image_texture_key_diagnostic&>;
     { upload_readiness.sampler_policy } -> std::same_as<render::render_image_sampler_policy_diagnostic&>;
@@ -782,11 +992,18 @@ static_assert(requires(
     { upload_readiness.color_space_name } -> std::same_as<std::string&>;
     { upload_readiness.placeholder_fallback } -> std::same_as<bool&>;
     { upload_readiness.payload_valid } -> std::same_as<bool&>;
+    { upload_readiness.decode_metadata_matches_image } -> std::same_as<bool&>;
     { upload_readiness.upload_ready } -> std::same_as<bool&>;
     { upload_readiness.pixel_count } -> std::same_as<std::size_t&>;
     { upload_readiness.pixel_byte_count } -> std::same_as<std::size_t&>;
     { upload_readiness.decoded_byte_count } -> std::same_as<std::size_t&>;
+    { upload_readiness.metadata_decoded_byte_count } -> std::same_as<std::size_t&>;
+    { upload_readiness.metadata_expected_decoded_byte_count } -> std::same_as<std::size_t&>;
+    { upload_readiness.metadata_actual_decoded_byte_count } -> std::same_as<std::size_t&>;
     { upload_readiness.staging_byte_count } -> std::same_as<std::size_t&>;
+    { upload_readiness.upload_payload_layout }
+        -> std::same_as<render::render_image_texture_upload_payload_layout_evidence&>;
+    { upload_readiness.decode_handoff_diagnostic } -> std::same_as<std::string&>;
     { upload_readiness.diagnostic } -> std::same_as<std::string&>;
     { render::make_render_image_upload_readiness_snapshot(texture_key, metadata, image) }
         -> std::same_as<render::render_image_upload_readiness_snapshot>;
@@ -800,6 +1017,12 @@ static_assert(requires(
     { upload_request_snapshot.pixel_byte_count } -> std::same_as<std::size_t&>;
     { upload_request_snapshot.decoded_byte_count } -> std::same_as<std::size_t&>;
     { upload_request_snapshot.staging_byte_count } -> std::same_as<std::size_t&>;
+    { upload_request_snapshot.decoded_payload }
+        -> std::same_as<render::render_image_decoded_payload_evidence&>;
+    { upload_request_snapshot.payload_layout }
+        -> std::same_as<render::render_image_texture_upload_payload_layout_evidence&>;
+    { upload_request_snapshot.staging_payload_plan }
+        -> std::same_as<render::render_image_texture_staging_payload_plan&>;
     { upload_request_snapshot.mipmap_upload_plan }
         -> std::same_as<render::render_image_texture_mipmap_upload_plan&>;
     { upload_request_snapshot.attempt_count_for_key } -> std::same_as<std::size_t&>;
@@ -814,6 +1037,10 @@ static_assert(requires(
     { upload_result_snapshot.staging_byte_count } -> std::same_as<std::size_t&>;
     { upload_result_snapshot.mipmap_upload_plan }
         -> std::same_as<render::render_image_texture_mipmap_upload_plan&>;
+    { upload_result_snapshot.payload_layout }
+        -> std::same_as<render::render_image_texture_upload_payload_layout_evidence&>;
+    { upload_result_snapshot.staging_payload_plan }
+        -> std::same_as<render::render_image_texture_staging_payload_plan&>;
     { upload_result_snapshot.diagnostic } -> std::same_as<std::string&>;
     { upload_result_snapshot.retry } -> std::same_as<render::fake_image_texture_upload_retry_snapshot&>;
     { upload_entry.generation_id } -> std::same_as<render::fake_image_texture_upload_generation_id&>;
@@ -828,6 +1055,10 @@ static_assert(requires(
     { upload_entry.decoded_byte_count } -> std::same_as<std::size_t&>;
     { upload_entry.staging_byte_count } -> std::same_as<std::size_t&>;
     { upload_entry.mipmap_upload_plan } -> std::same_as<render::render_image_texture_mipmap_upload_plan&>;
+    { upload_entry.payload_layout }
+        -> std::same_as<render::render_image_texture_upload_payload_layout_evidence&>;
+    { upload_entry.staging_payload_plan }
+        -> std::same_as<render::render_image_texture_staging_payload_plan&>;
     { upload_entry.diagnostic } -> std::same_as<std::string&>;
     { upload_entry.retry } -> std::same_as<render::fake_image_texture_upload_retry_snapshot&>;
     { upload_queue_entry.enqueue_sequence } -> std::same_as<std::size_t&>;
@@ -839,6 +1070,10 @@ static_assert(requires(
     { upload_queue_entry.staging_byte_count } -> std::same_as<std::size_t&>;
     { upload_queue_entry.mipmap_upload_plan }
         -> std::same_as<render::render_image_texture_mipmap_upload_plan&>;
+    { upload_queue_entry.payload_layout }
+        -> std::same_as<render::render_image_texture_upload_payload_layout_evidence&>;
+    { upload_queue_entry.staging_payload_plan }
+        -> std::same_as<render::render_image_texture_staging_payload_plan&>;
     { upload_queue_entry.queue_depth_before_enqueue } -> std::same_as<std::size_t&>;
     { upload_queue_entry.queue_depth_after_enqueue } -> std::same_as<std::size_t&>;
     { upload_queue_entry.queue_depth_after_completion } -> std::same_as<std::size_t&>;
@@ -1048,6 +1283,248 @@ static_assert(requires(
         -> std::same_as<std::vector<render::fake_image_texture_upload_snapshot_entry_diff>&>;
     { upload_snapshot_diff.diagnostic } -> std::same_as<std::string&>;
     { upload_snapshot_diff.ok() } -> std::same_as<bool>;
+    { render::render_image_texture_upload_operation_packet_status_name(upload_operation_status) }
+        -> std::same_as<std::string>;
+    { render::render_image_texture_upload_operation_upload_status_name(upload_status) }
+        -> std::same_as<std::string>;
+    { render::append_render_image_texture_upload_operation_blocker(
+        upload_operation_plan.blocker_summary, std::string{}) } -> std::same_as<void>;
+    { render::render_image_texture_upload_operation_plan_for(
+        &upload_request_snapshot, &upload_result_snapshot, &upload_queue_entry) }
+        -> std::same_as<const render::render_image_texture_mipmap_upload_plan&>;
+    { render::render_image_texture_upload_operation_key_for(
+        &upload_request_snapshot, &upload_result_snapshot, &upload_queue_entry) }
+        -> std::same_as<render::render_image_texture_key>;
+    { render::render_image_texture_upload_operation_sampler_for(
+        &upload_request_snapshot, &upload_result_snapshot) }
+        -> std::same_as<render::render_image_sampler_policy>;
+    { render::render_image_texture_upload_operation_payload_layout_for(
+        &upload_request_snapshot, &upload_result_snapshot, &upload_queue_entry) }
+        -> std::same_as<render::render_image_texture_upload_payload_layout_evidence>;
+    { render::render_image_texture_upload_operation_staging_plan_for(
+        &upload_request_snapshot, &upload_result_snapshot, &upload_queue_entry) }
+        -> std::same_as<render::render_image_texture_staging_payload_plan>;
+    { render::make_render_image_texture_upload_operation_packet(
+        &upload_request_snapshot,
+        &upload_result_snapshot,
+        &upload_queue_entry,
+        upload_generation_id,
+        std::size_t{}) } -> std::same_as<render::render_image_texture_upload_operation_packet>;
+    { render::plan_render_image_texture_upload_operations(upload_snapshot) }
+        -> std::same_as<render::render_image_texture_upload_operation_plan>;
+    { upload_operation_packet.packet_index } -> std::same_as<std::size_t&>;
+    { upload_operation_packet.generation_id } -> std::same_as<std::uint64_t&>;
+    { upload_operation_packet.status }
+        -> std::same_as<render::render_image_texture_upload_operation_packet_status&>;
+    { upload_operation_packet.status_name } -> std::same_as<std::string&>;
+    { upload_operation_packet.upload_status } -> std::same_as<render::render_image_texture_upload_status&>;
+    { upload_operation_packet.upload_status_name } -> std::same_as<std::string&>;
+    { upload_operation_packet.texture_key } -> std::same_as<render::render_image_texture_key&>;
+    { upload_operation_packet.texture } -> std::same_as<render::render_image_texture_handle&>;
+    { upload_operation_packet.sampler } -> std::same_as<render::render_image_sampler_policy&>;
+    { upload_operation_packet.mipmap_upload_plan }
+        -> std::same_as<render::render_image_texture_mipmap_upload_plan&>;
+    { upload_operation_packet.decoded_payload }
+        -> std::same_as<render::render_image_decoded_payload_evidence&>;
+    { upload_operation_packet.payload_layout }
+        -> std::same_as<render::render_image_texture_upload_payload_layout_evidence&>;
+    { upload_operation_packet.staging_payload_plan }
+        -> std::same_as<render::render_image_texture_staging_payload_plan&>;
+    { upload_operation_packet.staging_byte_count } -> std::same_as<std::size_t&>;
+    { upload_operation_packet.mip_level_count } -> std::same_as<std::size_t&>;
+    { upload_operation_packet.mipmap_byte_count } -> std::same_as<std::size_t&>;
+    { upload_operation_packet.retry_eligibility_name } -> std::same_as<std::string&>;
+    { upload_operation_packet.attempt_count_for_key } -> std::same_as<std::size_t&>;
+    { upload_operation_packet.failed_attempt_count_for_key } -> std::same_as<std::size_t&>;
+    { upload_operation_packet.retry_after_queue_sequence_delta } -> std::same_as<std::size_t&>;
+    { upload_operation_packet.next_retry_sequence } -> std::same_as<std::size_t&>;
+    { upload_operation_packet.request_snapshot_present } -> std::same_as<bool&>;
+    { upload_operation_packet.result_snapshot_present } -> std::same_as<bool&>;
+    { upload_operation_packet.queue_snapshot_present } -> std::same_as<bool&>;
+    { upload_operation_packet.has_texture_handle } -> std::same_as<bool&>;
+    { upload_operation_packet.placeholder_texture } -> std::same_as<bool&>;
+    { upload_operation_packet.fallback_texture } -> std::same_as<bool&>;
+    { upload_operation_packet.retryable } -> std::same_as<bool&>;
+    { upload_operation_packet.nonretryable_failure } -> std::same_as<bool&>;
+    { upload_operation_packet.ready_for_upload } -> std::same_as<bool&>;
+    { upload_operation_packet.blocked } -> std::same_as<bool&>;
+    { upload_operation_packet.readiness_summary } -> std::same_as<std::string&>;
+    { upload_operation_packet.blocker_summary } -> std::same_as<std::string&>;
+    { upload_operation_packet.diagnostic } -> std::same_as<std::string&>;
+    { upload_operation_packet.ok() } -> std::same_as<bool>;
+    { upload_operation_plan.upload_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.request_snapshot_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.result_snapshot_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.queue_snapshot_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.packet_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.ready_packet_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.placeholder_packet_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.fallback_packet_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.blocked_packet_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.retryable_blocked_packet_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.nonretryable_blocked_packet_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.invalid_mipmap_plan_packet_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.overflow_mipmap_plan_packet_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.unsupported_mipmap_plan_packet_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.missing_snapshot_packet_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.missing_texture_handle_packet_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.total_staging_byte_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.total_mip_level_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.total_mipmap_byte_count } -> std::same_as<std::size_t&>;
+    { upload_operation_plan.all_packets_ready } -> std::same_as<bool&>;
+    { upload_operation_plan.has_blockers } -> std::same_as<bool&>;
+    { upload_operation_plan.blocker_summary } -> std::same_as<std::string&>;
+    { upload_operation_plan.packets }
+        -> std::same_as<std::vector<render::render_image_texture_upload_operation_packet>&>;
+    { upload_operation_plan.diagnostic } -> std::same_as<std::string&>;
+    { upload_operation_plan.ok() } -> std::same_as<bool>;
+    { render::render_image_texture_upload_result_packet_status_name(upload_result_packet_status) }
+        -> std::same_as<std::string>;
+    { render::render_image_texture_upload_result_packet_status_for(upload_operation_packet) }
+        -> std::same_as<render::render_image_texture_upload_result_packet_status>;
+    { render::render_image_texture_upload_result_packet_status_is_accepted(upload_result_packet_status) }
+        -> std::same_as<bool>;
+    { render::make_render_image_texture_upload_result_packet_snapshot(upload_operation_packet) }
+        -> std::same_as<render::render_image_texture_upload_result_packet_snapshot>;
+    { render::append_render_image_texture_upload_result_summary(upload_result_diagnostics_snapshot.diagnostic, std::string{}) }
+        -> std::same_as<void>;
+    { render::make_render_image_texture_upload_result_snapshot(upload_operation_plan) }
+        -> std::same_as<render::render_image_texture_upload_result_snapshot>;
+    { render::make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(upload_snapshot) }
+        -> std::same_as<render::render_image_texture_upload_result_snapshot>;
+    { render::render_image_texture_upload_result_diff_entry_status_name(upload_result_diff_entry_status) }
+        -> std::same_as<std::string>;
+    { render::render_image_texture_upload_result_size_delta(std::size_t{}, std::size_t{}) }
+        -> std::same_as<std::int64_t>;
+    { render::render_image_texture_upload_result_packet_for_request_id(upload_result_diagnostics_snapshot, std::uint64_t{}) }
+        -> std::same_as<const render::render_image_texture_upload_result_packet_snapshot*>;
+    { render::append_render_image_texture_upload_result_request_ids(
+        std::declval<std::map<std::uint64_t, bool>&>(), upload_result_diagnostics_snapshot) } -> std::same_as<void>;
+    { render::render_image_texture_upload_result_packet_equal(upload_result_packet, upload_result_packet) }
+        -> std::same_as<bool>;
+    { render::make_render_image_texture_upload_result_packet_diff(
+        &upload_result_packet, &upload_result_packet, std::uint64_t{}) }
+        -> std::same_as<render::render_image_texture_upload_result_packet_diff>;
+    { render::diff_render_image_texture_upload_result_snapshots(upload_result_diagnostics_snapshot, upload_result_diagnostics_snapshot) }
+        -> std::same_as<render::render_image_texture_upload_result_snapshot_diff>;
+    { upload_result_packet.packet_index } -> std::same_as<std::size_t&>;
+    { upload_result_packet.request_id } -> std::same_as<std::uint64_t&>;
+    { upload_result_packet.generation_id } -> std::same_as<std::uint64_t&>;
+    { upload_result_packet.status }
+        -> std::same_as<render::render_image_texture_upload_result_packet_status&>;
+    { upload_result_packet.status_name } -> std::same_as<std::string&>;
+    { upload_result_packet.operation_status }
+        -> std::same_as<render::render_image_texture_upload_operation_packet_status&>;
+    { upload_result_packet.operation_status_name } -> std::same_as<std::string&>;
+    { upload_result_packet.upload_status } -> std::same_as<render::render_image_texture_upload_status&>;
+    { upload_result_packet.upload_status_name } -> std::same_as<std::string&>;
+    { upload_result_packet.texture_key } -> std::same_as<render::render_image_texture_key&>;
+    { upload_result_packet.stable_cache_key } -> std::same_as<std::string&>;
+    { upload_result_packet.source_key_summary } -> std::same_as<std::string&>;
+    { upload_result_packet.sampler } -> std::same_as<render::render_image_sampler_policy&>;
+    { upload_result_packet.sampler_summary } -> std::same_as<std::string&>;
+    { upload_result_packet.texture } -> std::same_as<render::render_image_texture_handle&>;
+    { upload_result_packet.texture_id } -> std::same_as<render::render_image_texture_id&>;
+    { upload_result_packet.texture_revision } -> std::same_as<render::render_image_revision&>;
+    { upload_result_packet.mip_level_count } -> std::same_as<std::size_t&>;
+    { upload_result_packet.accepted_mip_level_count } -> std::same_as<std::size_t&>;
+    { upload_result_packet.rejected_mip_level_count } -> std::same_as<std::size_t&>;
+    { upload_result_packet.uploaded_byte_count } -> std::same_as<std::size_t&>;
+    { upload_result_packet.planned_staging_byte_count } -> std::same_as<std::size_t&>;
+    { upload_result_packet.planned_mipmap_byte_count } -> std::same_as<std::size_t&>;
+    { upload_result_packet.decoded_payload }
+        -> std::same_as<render::render_image_decoded_payload_evidence&>;
+    { upload_result_packet.payload_layout }
+        -> std::same_as<render::render_image_texture_upload_payload_layout_evidence&>;
+    { upload_result_packet.staging_payload_plan }
+        -> std::same_as<render::render_image_texture_staging_payload_plan&>;
+    { upload_result_packet.accepted } -> std::same_as<bool&>;
+    { upload_result_packet.rejected } -> std::same_as<bool&>;
+    { upload_result_packet.placeholder_texture } -> std::same_as<bool&>;
+    { upload_result_packet.fallback_texture } -> std::same_as<bool&>;
+    { upload_result_packet.retryable } -> std::same_as<bool&>;
+    { upload_result_packet.nonretryable_failure } -> std::same_as<bool&>;
+    { upload_result_packet.blocked } -> std::same_as<bool&>;
+    { upload_result_packet.has_texture_handle } -> std::same_as<bool&>;
+    { upload_result_packet.retry_eligibility_name } -> std::same_as<std::string&>;
+    { upload_result_packet.blocker_summary } -> std::same_as<std::string&>;
+    { upload_result_packet.diagnostic } -> std::same_as<std::string&>;
+    { upload_result_packet.ok() } -> std::same_as<bool>;
+    { upload_result_diagnostics_snapshot.source_upload_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.operation_packet_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.packet_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.accepted_packet_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.rejected_packet_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.placeholder_packet_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.fallback_packet_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.retryable_rejected_packet_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.nonretryable_rejected_packet_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.blocker_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.texture_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.request_id_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.total_mip_level_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.accepted_mip_level_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.rejected_mip_level_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.total_uploaded_byte_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.total_planned_staging_byte_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.total_planned_mipmap_byte_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot.request_ids } -> std::same_as<std::vector<std::uint64_t>&>;
+    { upload_result_diagnostics_snapshot.texture_ids } -> std::same_as<std::vector<render::render_image_texture_id>&>;
+    { upload_result_diagnostics_snapshot.packets }
+        -> std::same_as<std::vector<render::render_image_texture_upload_result_packet_snapshot>&>;
+    { upload_result_diagnostics_snapshot.diagnostic } -> std::same_as<std::string&>;
+    { upload_result_diagnostics_snapshot.ok() } -> std::same_as<bool>;
+    { upload_result_packet_diff.request_id } -> std::same_as<std::uint64_t&>;
+    { upload_result_packet_diff.status }
+        -> std::same_as<render::render_image_texture_upload_result_diff_entry_status&>;
+    { upload_result_packet_diff.status_name } -> std::same_as<std::string&>;
+    { upload_result_packet_diff.before_present } -> std::same_as<bool&>;
+    { upload_result_packet_diff.after_present } -> std::same_as<bool&>;
+    { upload_result_packet_diff.before_accepted } -> std::same_as<bool&>;
+    { upload_result_packet_diff.after_accepted } -> std::same_as<bool&>;
+    { upload_result_packet_diff.accepted_changed } -> std::same_as<bool&>;
+    { upload_result_packet_diff.accepted_to_rejected } -> std::same_as<bool&>;
+    { upload_result_packet_diff.rejected_to_accepted } -> std::same_as<bool&>;
+    { upload_result_packet_diff.texture_changed } -> std::same_as<bool&>;
+    { upload_result_packet_diff.cache_key_changed } -> std::same_as<bool&>;
+    { upload_result_packet_diff.sampler_changed } -> std::same_as<bool&>;
+    { upload_result_packet_diff.placeholder_changed } -> std::same_as<bool&>;
+    { upload_result_packet_diff.retryability_changed } -> std::same_as<bool&>;
+    { upload_result_packet_diff.blocker_changed } -> std::same_as<bool&>;
+    { upload_result_packet_diff.uploaded_byte_delta } -> std::same_as<std::int64_t&>;
+    { upload_result_packet_diff.planned_mipmap_byte_delta } -> std::same_as<std::int64_t&>;
+    { upload_result_packet_diff.regression } -> std::same_as<bool&>;
+    { upload_result_packet_diff.recovery } -> std::same_as<bool&>;
+    { upload_result_packet_diff.diagnostic } -> std::same_as<std::string&>;
+    { upload_result_packet_diff.changed() } -> std::same_as<bool>;
+    { upload_result_packet_diff.ok() } -> std::same_as<bool>;
+    { upload_result_diagnostics_snapshot_diff.before_packet_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot_diff.after_packet_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot_diff.added_packet_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot_diff.removed_packet_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot_diff.changed_packet_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot_diff.accepted_packet_delta } -> std::same_as<std::int64_t&>;
+    { upload_result_diagnostics_snapshot_diff.rejected_packet_delta } -> std::same_as<std::int64_t&>;
+    { upload_result_diagnostics_snapshot_diff.accepted_to_rejected_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot_diff.rejected_to_accepted_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot_diff.texture_changed_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot_diff.cache_key_changed_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot_diff.sampler_changed_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot_diff.placeholder_changed_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot_diff.retryability_changed_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot_diff.blocker_changed_count } -> std::same_as<std::size_t&>;
+    { upload_result_diagnostics_snapshot_diff.uploaded_byte_delta } -> std::same_as<std::int64_t&>;
+    { upload_result_diagnostics_snapshot_diff.planned_mipmap_byte_delta } -> std::same_as<std::int64_t&>;
+    { upload_result_diagnostics_snapshot_diff.has_changes } -> std::same_as<bool&>;
+    { upload_result_diagnostics_snapshot_diff.has_regression } -> std::same_as<bool&>;
+    { upload_result_diagnostics_snapshot_diff.has_recovery } -> std::same_as<bool&>;
+    { upload_result_diagnostics_snapshot_diff.changed_packet_summary } -> std::same_as<std::string&>;
+    { upload_result_diagnostics_snapshot_diff.changed_texture_summary } -> std::same_as<std::string&>;
+    { upload_result_diagnostics_snapshot_diff.regression_summary } -> std::same_as<std::string&>;
+    { upload_result_diagnostics_snapshot_diff.entries }
+        -> std::same_as<std::vector<render::render_image_texture_upload_result_packet_diff>&>;
+    { upload_result_diagnostics_snapshot_diff.diagnostic } -> std::same_as<std::string&>;
+    { upload_result_diagnostics_snapshot_diff.ok() } -> std::same_as<bool>;
     { uploader.diagnostic_snapshot() } -> std::same_as<render::fake_image_texture_upload_snapshot>;
     upload_generation_id;
     upload_status;
@@ -1156,6 +1633,179 @@ static_assert(requires(
         -> std::same_as<render::render_image_texture_frame_binding_packet_diff>;
     { render::diff_render_image_texture_frame_binding_plans(texture_frame_binding_plan, texture_frame_binding_plan) }
         -> std::same_as<render::render_image_texture_frame_binding_plan_diff>;
+    { render::render_image_texture_frame_upload_handoff_entry_status_name(texture_frame_upload_handoff_status) }
+        -> std::same_as<std::string>;
+    { render::render_image_texture_frame_upload_handoff_entry_status_is_blocked(texture_frame_upload_handoff_status) }
+        -> std::same_as<bool>;
+    { render::render_image_texture_upload_result_packet_for_stable_cache_key(
+        upload_result_diagnostics_snapshot, std::string{}) }
+        -> std::same_as<const render::render_image_texture_upload_result_packet_snapshot*>;
+    { render::render_image_texture_frame_upload_result_packet_for_binding_packet(
+        upload_result_diagnostics_snapshot, texture_frame_binding_packet) }
+        -> std::same_as<const render::render_image_texture_upload_result_packet_snapshot*>;
+    { render::render_image_texture_frame_upload_handoff_entry_status_for(
+        texture_frame_binding_packet, &upload_result_packet) }
+        -> std::same_as<render::render_image_texture_frame_upload_handoff_entry_status>;
+    { render::make_render_image_texture_frame_upload_handoff_entry(
+        texture_frame_binding_packet, &upload_result_packet) }
+        -> std::same_as<render::render_image_texture_frame_upload_handoff_entry>;
+    { render::make_render_image_texture_frame_upload_handoff_missing_binding_entry(
+        upload_result_packet, std::size_t{}) }
+        -> std::same_as<render::render_image_texture_frame_upload_handoff_entry>;
+    { render::make_render_image_texture_frame_upload_handoff_summary(
+        texture_frame, texture_frame_binding_plan, upload_result_diagnostics_snapshot) }
+        -> std::same_as<render::render_image_texture_frame_upload_handoff_summary>;
+    { render::make_render_image_texture_frame_upload_handoff_summary(
+        texture_frame, upload_result_diagnostics_snapshot) }
+        -> std::same_as<render::render_image_texture_frame_upload_handoff_summary>;
+    { render::make_render_image_texture_frame_upload_handoff_summary(
+        texture_frame, texture_frame, upload_result_diagnostics_snapshot) }
+        -> std::same_as<render::render_image_texture_frame_upload_handoff_summary>;
+    { render::render_image_texture_frame_upload_handoff_diff_entry_status_name(
+        texture_frame_upload_handoff_diff_status) } -> std::same_as<std::string>;
+    { render::render_image_texture_frame_upload_handoff_entry_for_request_index(
+        texture_frame_upload_handoff, std::size_t{}) }
+        -> std::same_as<const render::render_image_texture_frame_upload_handoff_entry*>;
+    { render::render_image_texture_frame_upload_handoff_entry_equal(
+        texture_frame_upload_handoff_entry, texture_frame_upload_handoff_entry) }
+        -> std::same_as<bool>;
+    { render::make_render_image_texture_frame_upload_handoff_entry_diff(
+        &texture_frame_upload_handoff_entry, &texture_frame_upload_handoff_entry, std::size_t{}) }
+        -> std::same_as<render::render_image_texture_frame_upload_handoff_entry_diff>;
+    { render::diff_render_image_texture_frame_upload_handoff_summaries(
+        texture_frame_upload_handoff, texture_frame_upload_handoff) }
+        -> std::same_as<render::render_image_texture_frame_upload_handoff_summary_diff>;
+    { render::diff_render_image_texture_frame_upload_handoff_summaries(
+        texture_frame, texture_frame, upload_result_diagnostics_snapshot, upload_result_diagnostics_snapshot) }
+        -> std::same_as<render::render_image_texture_frame_upload_handoff_summary_diff>;
+    { render::render_image_texture_frame_binding_summary_status_name(texture_frame_binding_summary_status) }
+        -> std::same_as<std::string>;
+    { render::render_image_texture_frame_binding_summary_status_for(texture_frame_upload_handoff) }
+        -> std::same_as<render::render_image_texture_frame_binding_summary_status>;
+    { render::make_render_image_texture_frame_binding_summary(texture_frame_upload_handoff) }
+        -> std::same_as<render::render_image_texture_frame_binding_summary>;
+    { render::make_render_image_texture_frame_binding_summary(texture_frame, upload_result_diagnostics_snapshot) }
+        -> std::same_as<render::render_image_texture_frame_binding_summary>;
+    { render::diff_render_image_texture_frame_binding_summaries(
+        texture_frame_binding_summary, texture_frame_binding_summary) }
+        -> std::same_as<render::render_image_texture_frame_binding_summary_diff>;
+    { render::diff_render_image_texture_frame_binding_summaries(
+        texture_frame_upload_handoff, texture_frame_upload_handoff) }
+        -> std::same_as<render::render_image_texture_frame_binding_summary_diff>;
+    { render::render_image_texture_frame_resource_packet_status_name(texture_frame_resource_packet_status) }
+        -> std::same_as<std::string>;
+    { render::render_image_texture_frame_resource_packet_status_is_blocked(texture_frame_resource_packet_status) }
+        -> std::same_as<bool>;
+    { render::render_image_texture_frame_resource_packet_status_is_bindable(texture_frame_resource_packet_status) }
+        -> std::same_as<bool>;
+    { render::render_image_texture_frame_resource_packet_status_for(texture_frame_upload_handoff_entry) }
+        -> std::same_as<render::render_image_texture_frame_resource_packet_status>;
+    { render::make_render_image_texture_frame_resource_packet_plan_entry(texture_frame_upload_handoff_entry) }
+        -> std::same_as<render::render_image_texture_frame_resource_packet_plan_entry>;
+    { render::count_render_image_texture_frame_resource_packet_plan_entry(
+        texture_frame_resource_packet_plan, texture_frame_resource_packet_entry) }
+        -> std::same_as<void>;
+    { render::finalize_render_image_texture_frame_resource_packet_plan(
+        texture_frame_resource_packet_plan, texture_frame_binding_summary) }
+        -> std::same_as<void>;
+    { render::make_render_image_texture_frame_resource_packet_plan(texture_frame_upload_handoff) }
+        -> std::same_as<render::render_image_texture_frame_resource_packet_plan>;
+    { render::make_render_image_texture_frame_resource_packet_plan(
+        texture_frame, texture_frame_binding_plan, upload_result_diagnostics_snapshot) }
+        -> std::same_as<render::render_image_texture_frame_resource_packet_plan>;
+    { render::make_render_image_texture_frame_resource_packet_plan(
+        texture_frame, upload_result_diagnostics_snapshot) }
+        -> std::same_as<render::render_image_texture_frame_resource_packet_plan>;
+    { render::render_image_texture_frame_resource_packet_materialization_status_name(
+        texture_frame_resource_packet_materialization_status) } -> std::same_as<std::string>;
+    { render::render_image_texture_frame_resource_packet_materialization_status_is_blocked(
+        texture_frame_resource_packet_materialization_status) } -> std::same_as<bool>;
+    { render::render_image_texture_frame_resource_packet_materialization_status_is_materialized(
+        texture_frame_resource_packet_materialization_status) } -> std::same_as<bool>;
+    { render::render_image_texture_frame_resource_packet_materialization_status_for(
+        texture_frame_resource_packet_status) }
+        -> std::same_as<render::render_image_texture_frame_resource_packet_materialization_status>;
+    { render::render_image_texture_frame_resource_packet_plan_entries_in_materialization_order(
+        texture_frame_resource_packet_plan) }
+        -> std::same_as<
+            std::vector<const render::render_image_texture_frame_resource_packet_plan_entry*>>;
+    { render::make_render_image_texture_frame_resource_cache_handoff_record(
+        texture_frame_resource_packet_entry, std::size_t{}) }
+        -> std::same_as<render::render_image_texture_frame_resource_cache_handoff_record>;
+    { render::make_render_image_texture_frame_resource_upload_handoff_record(
+        texture_frame_resource_packet_entry, std::size_t{}) }
+        -> std::same_as<render::render_image_texture_frame_resource_upload_handoff_record>;
+    { render::make_render_image_texture_frame_resource_sampler_handoff_record(
+        texture_frame_resource_packet_entry, std::size_t{}) }
+        -> std::same_as<render::render_image_texture_frame_resource_sampler_handoff_record>;
+    { render::make_render_image_texture_frame_resource_packet_materialization_entry(
+        texture_frame_resource_packet_entry, std::size_t{}) }
+        -> std::same_as<render::render_image_texture_frame_resource_packet_materialization_entry>;
+    { render::count_render_image_texture_frame_resource_packet_materialization_entry(
+        texture_frame_resource_packet_materialization, texture_frame_resource_packet_materialization_entry) }
+        -> std::same_as<void>;
+    { render::finalize_render_image_texture_frame_resource_packet_materialization(
+        texture_frame_resource_packet_materialization, texture_frame_resource_packet_plan) }
+        -> std::same_as<void>;
+    { render::materialize_render_image_texture_frame_resource_packets(texture_frame_resource_packet_plan) }
+        -> std::same_as<render::render_image_texture_frame_resource_packet_materialization>;
+    { render::materialize_render_image_texture_frame_resource_packets(texture_frame_upload_handoff) }
+        -> std::same_as<render::render_image_texture_frame_resource_packet_materialization>;
+    { render::materialize_render_image_texture_frame_resource_packets(
+        texture_frame, texture_frame_binding_plan, upload_result_diagnostics_snapshot) }
+        -> std::same_as<render::render_image_texture_frame_resource_packet_materialization>;
+    { render::materialize_render_image_texture_frame_resource_packets(
+        texture_frame, upload_result_diagnostics_snapshot) }
+        -> std::same_as<render::render_image_texture_frame_resource_packet_materialization>;
+    { render::render_image_texture_frame_resource_materialization_diff_entry_status_name(
+        texture_frame_resource_materialization_diff_status) } -> std::same_as<std::string>;
+    { render::render_image_texture_frame_resource_materialization_change_classification_name(
+        texture_frame_resource_materialization_classification) } -> std::same_as<std::string>;
+    { render::render_image_texture_frame_resource_materialization_entry_for_request_index(
+        texture_frame_resource_packet_materialization, std::size_t{}) }
+        -> std::same_as<const render::render_image_texture_frame_resource_packet_materialization_entry*>;
+    { render::append_render_image_texture_frame_resource_materialization_request_indexes(
+        std::declval<std::map<std::size_t, bool>&>(), texture_frame_resource_packet_materialization) }
+        -> std::same_as<void>;
+    { render::render_image_texture_frame_resource_materialization_uploaded_byte_count(
+        texture_frame_resource_packet_materialization) } -> std::same_as<std::size_t>;
+    { render::append_render_image_texture_frame_resource_materialization_classification_reason(
+        std::declval<std::string&>(), std::string{}) } -> std::same_as<void>;
+    { render::render_image_texture_frame_resource_cache_handoff_record_equal(
+        texture_frame_resource_cache_handoff, texture_frame_resource_cache_handoff) }
+        -> std::same_as<bool>;
+    { render::render_image_texture_frame_resource_upload_handoff_record_equal(
+        texture_frame_resource_upload_handoff, texture_frame_resource_upload_handoff) }
+        -> std::same_as<bool>;
+    { render::render_image_texture_frame_resource_sampler_handoff_record_equal(
+        texture_frame_resource_sampler_handoff, texture_frame_resource_sampler_handoff) }
+        -> std::same_as<bool>;
+    { render::render_image_texture_frame_resource_materialization_entry_equal(
+        texture_frame_resource_packet_materialization_entry,
+        texture_frame_resource_packet_materialization_entry) } -> std::same_as<bool>;
+    { render::make_render_image_texture_frame_resource_cache_handoff_delta(
+        &texture_frame_resource_cache_handoff,
+        &texture_frame_resource_cache_handoff,
+        std::size_t{}) } -> std::same_as<render::render_image_texture_frame_resource_cache_handoff_delta>;
+    { render::make_render_image_texture_frame_resource_upload_handoff_delta(
+        &texture_frame_resource_upload_handoff,
+        &texture_frame_resource_upload_handoff,
+        std::size_t{}) } -> std::same_as<render::render_image_texture_frame_resource_upload_handoff_delta>;
+    { render::make_render_image_texture_frame_resource_sampler_handoff_delta(
+        &texture_frame_resource_sampler_handoff,
+        &texture_frame_resource_sampler_handoff,
+        std::size_t{}) } -> std::same_as<render::render_image_texture_frame_resource_sampler_handoff_delta>;
+    { render::make_render_image_texture_frame_resource_materialization_entry_diff(
+        &texture_frame_resource_packet_materialization_entry,
+        &texture_frame_resource_packet_materialization_entry,
+        std::size_t{}) } -> std::same_as<render::render_image_texture_frame_resource_materialization_entry_diff>;
+    { render::count_render_image_texture_frame_resource_materialization_diff_entry(
+        texture_frame_resource_materialization_diff,
+        texture_frame_resource_materialization_entry_diff) } -> std::same_as<void>;
+    { render::diff_render_image_texture_frame_resource_materializations(
+        texture_frame_resource_packet_materialization,
+        texture_frame_resource_packet_materialization) }
+        -> std::same_as<render::render_image_texture_frame_resource_materialization_diff>;
     { render::render_image_decoder_capability_candidate_kind_name(decoder_capability_kind) }
         -> std::same_as<std::string>;
     { render::render_image_decoder_capability_candidate_status_name(decoder_capability_status) }
@@ -1202,6 +1852,8 @@ static_assert(requires(
     { stb_format_matrix_entry.internal_decoder_available } -> std::same_as<bool&>;
     { stb_format_matrix_entry.prefer_internal_decoder } -> std::same_as<bool&>;
     { stb_format_matrix_entry.external_decode_enabled } -> std::same_as<bool&>;
+    { stb_format_matrix_entry.declared_by_header } -> std::same_as<bool&>;
+    { stb_format_matrix_entry.probed_by_header } -> std::same_as<bool&>;
     { stb_format_matrix_entry.diagnostic } -> std::same_as<std::string&>;
     { stb_format_matrix_entry.route_to_external() } -> std::same_as<bool>;
     { stb_dependency_manifest.status } -> std::same_as<render::stb_image_decoder_dependency_status&>;
@@ -1209,6 +1861,13 @@ static_assert(requires(
     { stb_dependency_manifest.decoder_id } -> std::same_as<std::string&>;
     { stb_dependency_manifest.dependency_name } -> std::same_as<std::string&>;
     { stb_dependency_manifest.dependency_version } -> std::same_as<std::string&>;
+    { stb_dependency_manifest.header_available } -> std::same_as<bool&>;
+    { stb_dependency_manifest.implementation_linked } -> std::same_as<bool&>;
+    { stb_dependency_manifest.header_probe_used } -> std::same_as<bool&>;
+    { stb_dependency_manifest.declared_supported_format_count } -> std::same_as<std::size_t&>;
+    { stb_dependency_manifest.probed_supported_format_count } -> std::same_as<std::size_t&>;
+    { stb_dependency_manifest.supported_format_summary } -> std::same_as<std::string&>;
+    { stb_dependency_manifest.fallback_reason } -> std::same_as<std::string&>;
     { stb_dependency_manifest.memory_decode_available } -> std::same_as<bool&>;
     { stb_dependency_manifest.info_probe_available } -> std::same_as<bool&>;
     { stb_dependency_manifest.forced_rgba8_decode_available } -> std::same_as<bool&>;
@@ -1226,6 +1885,13 @@ static_assert(requires(
     { stb_selection.detected_format_name } -> std::same_as<std::string&>;
     { stb_selection.dependency_status } -> std::same_as<render::stb_image_decoder_dependency_status&>;
     { stb_selection.dependency_status_name } -> std::same_as<std::string&>;
+    { stb_selection.dependency_header_available } -> std::same_as<bool&>;
+    { stb_selection.dependency_implementation_linked } -> std::same_as<bool&>;
+    { stb_selection.dependency_header_probe_used } -> std::same_as<bool&>;
+    { stb_selection.declared_supported_format_count } -> std::same_as<std::size_t&>;
+    { stb_selection.probed_supported_format_count } -> std::same_as<std::size_t&>;
+    { stb_selection.supported_format_summary } -> std::same_as<std::string&>;
+    { stb_selection.fallback_reason } -> std::same_as<std::string&>;
     { stb_selection.dependency_available } -> std::same_as<bool&>;
     { stb_selection.dependency_capability_ready } -> std::same_as<bool&>;
     { stb_selection.format_supported_by_dependency } -> std::same_as<bool&>;
@@ -1238,6 +1904,7 @@ static_assert(requires(
         -> std::same_as<std::vector<render::stb_image_decoder_format_matrix_entry>&>;
     { stb_selection.diagnostic } -> std::same_as<std::string&>;
     { stb_selection.ok() } -> std::same_as<bool>;
+    { stb_header_probe.probe_dependency() } -> std::same_as<render::stb_image_decoder_dependency_manifest>;
     { stb_probe.set_manifest(stb_dependency_manifest) } -> std::same_as<void>;
     { stb_probe.set_missing("decoder") } -> std::same_as<void>;
     { stb_probe.set_available("decoder") } -> std::same_as<void>;
@@ -1253,6 +1920,9 @@ static_assert(requires(
     texture_frame_diff_entry_status;
     texture_frame_binding_status;
     texture_frame_binding_diff_entry_status;
+    texture_frame_upload_handoff_status;
+    texture_frame_upload_handoff_diff_status;
+    texture_frame_binding_summary_status;
     decoder_capability_kind;
     decoder_capability_status;
     stb_dependency_status;
@@ -1831,6 +2501,487 @@ static_assert(requires(
         -> std::same_as<std::vector<render::render_image_texture_frame_binding_packet_diff>&>;
     { texture_frame_binding_diff.diagnostic } -> std::same_as<std::string&>;
     { texture_frame_binding_diff.ok() } -> std::same_as<bool>;
+    { texture_frame_upload_handoff_entry.sequence } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_entry.request_index } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_entry.status }
+        -> std::same_as<render::render_image_texture_frame_upload_handoff_entry_status&>;
+    { texture_frame_upload_handoff_entry.status_name } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff_entry.render_image_uri } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff_entry.normalized_uri } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff_entry.cache_key } -> std::same_as<render::render_image_cache_key&>;
+    { texture_frame_upload_handoff_entry.sampler } -> std::same_as<render::render_image_sampler_policy&>;
+    { texture_frame_upload_handoff_entry.sampler_key } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff_entry.texture_key } -> std::same_as<render::render_image_texture_key&>;
+    { texture_frame_upload_handoff_entry.stable_texture_cache_key } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff_entry.texture_id } -> std::same_as<render::render_image_texture_id&>;
+    { texture_frame_upload_handoff_entry.upload_request_id } -> std::same_as<std::uint64_t&>;
+    { texture_frame_upload_handoff_entry.upload_result_status }
+        -> std::same_as<render::render_image_texture_upload_result_packet_status&>;
+    { texture_frame_upload_handoff_entry.upload_status }
+        -> std::same_as<render::render_image_texture_upload_status&>;
+    { texture_frame_upload_handoff_entry.mip_level_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_entry.uploaded_byte_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_entry.planned_staging_byte_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_entry.planned_mipmap_byte_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_entry.decoded_payload }
+        -> std::same_as<render::render_image_decoded_payload_evidence&>;
+    { texture_frame_upload_handoff_entry.payload_layout }
+        -> std::same_as<render::render_image_texture_upload_payload_layout_evidence&>;
+    { texture_frame_upload_handoff_entry.staging_payload_plan }
+        -> std::same_as<render::render_image_texture_staging_payload_plan&>;
+    { texture_frame_upload_handoff_entry.requested } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry.upload_result_present } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry.ready } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry.placeholder_texture } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry.blocked } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry.retryable_blocker } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry.missing_upload_result } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry.missing_frame_binding } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry.removed } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry.cache_reused } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry.added_in_frame } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry.changed_in_frame } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry.removed_from_frame } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry.readiness_changed } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry.residency_budget_pressure } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry.cache_key_summary } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff_entry.sampler_summary } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff_entry.blocker_summary } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff_entry.attempt_count_for_key } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_entry.failed_attempt_count_for_key } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_entry.retry_after_queue_sequence_delta } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_entry.next_retry_sequence } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_entry.diagnostic } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff_entry.ok() } -> std::same_as<bool>;
+    { texture_frame_upload_handoff.frame_request_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff.binding_packet_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff.upload_packet_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff.requested_texture_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff.ready_texture_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff.placeholder_texture_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff.blocked_texture_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff.missing_upload_result_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff.missing_frame_binding_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff.retry_blocker_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff.cache_reused_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff.uploaded_byte_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff.total_mip_level_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff.renderer_handoff_ready } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff.has_placeholders } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff.has_blockers } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff.has_frame_delta } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff.entries }
+        -> std::same_as<std::vector<render::render_image_texture_frame_upload_handoff_entry>&>;
+    { texture_frame_upload_handoff.cache_key_summary } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff.sampler_summary } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff.mip_level_summary } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff.frame_delta_summary } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff.diagnostic } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff.ok() } -> std::same_as<bool>;
+    { texture_frame_upload_handoff_entry_diff.request_index } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_entry_diff.status }
+        -> std::same_as<render::render_image_texture_frame_upload_handoff_diff_entry_status&>;
+    { texture_frame_upload_handoff_entry_diff.before_handoff_status }
+        -> std::same_as<render::render_image_texture_frame_upload_handoff_entry_status&>;
+    { texture_frame_upload_handoff_entry_diff.after_handoff_status }
+        -> std::same_as<render::render_image_texture_frame_upload_handoff_entry_status&>;
+    { texture_frame_upload_handoff_entry_diff.before_render_image_uri } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff_entry_diff.after_render_image_uri } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff_entry_diff.before_stable_texture_cache_key } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff_entry_diff.after_stable_texture_cache_key } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff_entry_diff.before_texture_id } -> std::same_as<render::render_image_texture_id&>;
+    { texture_frame_upload_handoff_entry_diff.after_texture_id } -> std::same_as<render::render_image_texture_id&>;
+    { texture_frame_upload_handoff_entry_diff.before_uploaded_byte_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_entry_diff.after_uploaded_byte_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_entry_diff.uploaded_byte_delta } -> std::same_as<std::int64_t&>;
+    { texture_frame_upload_handoff_entry_diff.before_missing_frame_binding } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry_diff.after_missing_frame_binding } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry_diff.readiness_changed } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry_diff.placeholder_changed } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry_diff.blocker_changed } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry_diff.cache_key_changed } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry_diff.sampler_changed } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry_diff.texture_changed } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry_diff.regression } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_entry_diff.diagnostic } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff_entry_diff.changed() } -> std::same_as<bool>;
+    { texture_frame_upload_handoff_entry_diff.ok() } -> std::same_as<bool>;
+    { texture_frame_upload_handoff_diff.before_requested_texture_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_diff.after_requested_texture_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_diff.requested_texture_delta } -> std::same_as<std::int64_t&>;
+    { texture_frame_upload_handoff_diff.before_ready_texture_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_diff.after_ready_texture_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_diff.ready_texture_delta } -> std::same_as<std::int64_t&>;
+    { texture_frame_upload_handoff_diff.placeholder_texture_delta } -> std::same_as<std::int64_t&>;
+    { texture_frame_upload_handoff_diff.blocked_texture_delta } -> std::same_as<std::int64_t&>;
+    { texture_frame_upload_handoff_diff.uploaded_byte_delta } -> std::same_as<std::int64_t&>;
+    { texture_frame_upload_handoff_diff.added_entry_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_diff.changed_entry_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_diff.readiness_regressed_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_diff.blocker_changed_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_diff.renderer_handoff_regressed } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_diff.has_changes } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_diff.has_regression } -> std::same_as<bool&>;
+    { texture_frame_upload_handoff_diff.entries }
+        -> std::same_as<std::vector<render::render_image_texture_frame_upload_handoff_entry_diff>&>;
+    { texture_frame_upload_handoff_diff.regression_summary } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff_diff.diagnostic } -> std::same_as<std::string&>;
+    { texture_frame_upload_handoff_diff.ok() } -> std::same_as<bool>;
+    { texture_frame_binding_summary.status }
+        -> std::same_as<render::render_image_texture_frame_binding_summary_status&>;
+    { texture_frame_binding_summary.status_name } -> std::same_as<std::string&>;
+    { texture_frame_binding_summary.frame_request_count } -> std::same_as<std::size_t&>;
+    { texture_frame_binding_summary.handoff_entry_count } -> std::same_as<std::size_t&>;
+    { texture_frame_binding_summary.requested_texture_count } -> std::same_as<std::size_t&>;
+    { texture_frame_binding_summary.upload_backed_count } -> std::same_as<std::size_t&>;
+    { texture_frame_binding_summary.placeholder_backed_count } -> std::same_as<std::size_t&>;
+    { texture_frame_binding_summary.missing_upload_result_count } -> std::same_as<std::size_t&>;
+    { texture_frame_binding_summary.missing_frame_binding_count } -> std::same_as<std::size_t&>;
+    { texture_frame_binding_summary.retry_backoff_blocked_count } -> std::same_as<std::size_t&>;
+    { texture_frame_binding_summary.blocked_count } -> std::same_as<std::size_t&>;
+    { texture_frame_binding_summary.cache_reused_count } -> std::same_as<std::size_t&>;
+    { texture_frame_binding_summary.uploaded_byte_count } -> std::same_as<std::size_t&>;
+    { texture_frame_binding_summary.mip_level_count } -> std::same_as<std::size_t&>;
+    { texture_frame_binding_summary.max_retry_after_queue_sequence_delta } -> std::same_as<std::size_t&>;
+    { texture_frame_binding_summary.next_retry_sequence } -> std::same_as<std::size_t&>;
+    { texture_frame_binding_summary.fully_upload_backed } -> std::same_as<bool&>;
+    { texture_frame_binding_summary.placeholder_backed } -> std::same_as<bool&>;
+    { texture_frame_binding_summary.missing_upload_result } -> std::same_as<bool&>;
+    { texture_frame_binding_summary.missing_frame_binding } -> std::same_as<bool&>;
+    { texture_frame_binding_summary.retry_backoff_blocked } -> std::same_as<bool&>;
+    { texture_frame_binding_summary.blocked } -> std::same_as<bool&>;
+    { texture_frame_binding_summary.renderer_handoff_ready } -> std::same_as<bool&>;
+    { texture_frame_binding_summary.cache_reused } -> std::same_as<bool&>;
+    { texture_frame_binding_summary.cache_key_summary } -> std::same_as<std::string&>;
+    { texture_frame_binding_summary.sampler_summary } -> std::same_as<std::string&>;
+    { texture_frame_binding_summary.retry_backoff_summary } -> std::same_as<std::string&>;
+    { texture_frame_binding_summary.diagnostic } -> std::same_as<std::string&>;
+    { texture_frame_binding_summary.ok() } -> std::same_as<bool>;
+    { texture_frame_binding_summary_diff.before_status }
+        -> std::same_as<render::render_image_texture_frame_binding_summary_status&>;
+    { texture_frame_binding_summary_diff.after_status }
+        -> std::same_as<render::render_image_texture_frame_binding_summary_status&>;
+    { texture_frame_binding_summary_diff.before_status_name } -> std::same_as<std::string&>;
+    { texture_frame_binding_summary_diff.after_status_name } -> std::same_as<std::string&>;
+    { texture_frame_binding_summary_diff.before_requested_texture_count } -> std::same_as<std::size_t&>;
+    { texture_frame_binding_summary_diff.after_requested_texture_count } -> std::same_as<std::size_t&>;
+    { texture_frame_binding_summary_diff.requested_texture_delta } -> std::same_as<std::int64_t&>;
+    { texture_frame_binding_summary_diff.before_upload_backed_count } -> std::same_as<std::size_t&>;
+    { texture_frame_binding_summary_diff.after_upload_backed_count } -> std::same_as<std::size_t&>;
+    { texture_frame_binding_summary_diff.upload_backed_delta } -> std::same_as<std::int64_t&>;
+    { texture_frame_binding_summary_diff.placeholder_backed_delta } -> std::same_as<std::int64_t&>;
+    { texture_frame_binding_summary_diff.missing_upload_result_delta } -> std::same_as<std::int64_t&>;
+    { texture_frame_binding_summary_diff.missing_frame_binding_delta } -> std::same_as<std::int64_t&>;
+    { texture_frame_binding_summary_diff.retry_backoff_blocked_delta } -> std::same_as<std::int64_t&>;
+    { texture_frame_binding_summary_diff.blocked_delta } -> std::same_as<std::int64_t&>;
+    { texture_frame_binding_summary_diff.uploaded_byte_delta } -> std::same_as<std::int64_t&>;
+    { texture_frame_binding_summary_diff.status_changed } -> std::same_as<bool&>;
+    { texture_frame_binding_summary_diff.upload_backing_changed } -> std::same_as<bool&>;
+    { texture_frame_binding_summary_diff.placeholder_backing_changed } -> std::same_as<bool&>;
+    { texture_frame_binding_summary_diff.missing_upload_result_changed } -> std::same_as<bool&>;
+    { texture_frame_binding_summary_diff.missing_frame_binding_changed } -> std::same_as<bool&>;
+    { texture_frame_binding_summary_diff.retry_backoff_changed } -> std::same_as<bool&>;
+    { texture_frame_binding_summary_diff.blocker_changed } -> std::same_as<bool&>;
+    { texture_frame_binding_summary_diff.cache_key_summary_changed } -> std::same_as<bool&>;
+    { texture_frame_binding_summary_diff.sampler_summary_changed } -> std::same_as<bool&>;
+    { texture_frame_binding_summary_diff.cache_key_or_sampler_changed } -> std::same_as<bool&>;
+    { texture_frame_binding_summary_diff.has_changes } -> std::same_as<bool&>;
+    { texture_frame_binding_summary_diff.has_regression } -> std::same_as<bool&>;
+    { texture_frame_binding_summary_diff.changed_summary } -> std::same_as<std::string&>;
+    { texture_frame_binding_summary_diff.regression_summary } -> std::same_as<std::string&>;
+    { texture_frame_binding_summary_diff.diagnostic } -> std::same_as<std::string&>;
+    { texture_frame_binding_summary_diff.ok() } -> std::same_as<bool>;
+    { texture_frame_resource_packet_entry.request_index } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_entry.status }
+        -> std::same_as<render::render_image_texture_frame_resource_packet_status&>;
+    { texture_frame_resource_packet_entry.status_name } -> std::same_as<std::string&>;
+    { texture_frame_resource_packet_entry.handoff_status }
+        -> std::same_as<render::render_image_texture_frame_upload_handoff_entry_status&>;
+    { texture_frame_resource_packet_entry.render_image_uri } -> std::same_as<std::string&>;
+    { texture_frame_resource_packet_entry.normalized_uri } -> std::same_as<std::string&>;
+    { texture_frame_resource_packet_entry.cache_key } -> std::same_as<render::render_image_cache_key&>;
+    { texture_frame_resource_packet_entry.sampler } -> std::same_as<render::render_image_sampler_policy&>;
+    { texture_frame_resource_packet_entry.sampler_key } -> std::same_as<std::string&>;
+    { texture_frame_resource_packet_entry.texture_key } -> std::same_as<render::render_image_texture_key&>;
+    { texture_frame_resource_packet_entry.stable_texture_cache_key } -> std::same_as<std::string&>;
+    { texture_frame_resource_packet_entry.texture_id } -> std::same_as<render::render_image_texture_id&>;
+    { texture_frame_resource_packet_entry.texture_revision } -> std::same_as<render::render_image_revision&>;
+    { texture_frame_resource_packet_entry.upload_request_id } -> std::same_as<std::uint64_t&>;
+    { texture_frame_resource_packet_entry.upload_generation_id } -> std::same_as<std::uint64_t&>;
+    { texture_frame_resource_packet_entry.mip_level_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_entry.uploaded_byte_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_entry.decoded_payload }
+        -> std::same_as<render::render_image_decoded_payload_evidence&>;
+    { texture_frame_resource_packet_entry.payload_layout }
+        -> std::same_as<render::render_image_texture_upload_payload_layout_evidence&>;
+    { texture_frame_resource_packet_entry.staging_payload_plan }
+        -> std::same_as<render::render_image_texture_staging_payload_plan&>;
+    { texture_frame_resource_packet_entry.requested } -> std::same_as<bool&>;
+    { texture_frame_resource_packet_entry.bindable } -> std::same_as<bool&>;
+    { texture_frame_resource_packet_entry.resource_packet_ready } -> std::same_as<bool&>;
+    { texture_frame_resource_packet_entry.placeholder_backed } -> std::same_as<bool&>;
+    { texture_frame_resource_packet_entry.blocked } -> std::same_as<bool&>;
+    { texture_frame_resource_packet_entry.missing_upload_result } -> std::same_as<bool&>;
+    { texture_frame_resource_packet_entry.missing_frame_binding } -> std::same_as<bool&>;
+    { texture_frame_resource_packet_entry.retry_backoff_blocked } -> std::same_as<bool&>;
+    { texture_frame_resource_packet_entry.renderer_handoff_ready } -> std::same_as<bool&>;
+    { texture_frame_resource_packet_entry.cache_reused } -> std::same_as<bool&>;
+    { texture_frame_resource_packet_entry.retry_after_queue_sequence_delta } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_entry.next_retry_sequence } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_entry.cache_key_summary } -> std::same_as<std::string&>;
+    { texture_frame_resource_packet_entry.sampler_summary } -> std::same_as<std::string&>;
+    { texture_frame_resource_packet_entry.retry_backoff_summary } -> std::same_as<std::string&>;
+    { texture_frame_resource_packet_entry.diagnostic } -> std::same_as<std::string&>;
+    { texture_frame_resource_packet_entry.ok() } -> std::same_as<bool>;
+    { texture_frame_resource_packet_plan.binding_status }
+        -> std::same_as<render::render_image_texture_frame_binding_summary_status&>;
+    { texture_frame_resource_packet_plan.binding_status_name } -> std::same_as<std::string&>;
+    { texture_frame_resource_packet_plan.frame_request_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_plan.handoff_entry_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_plan.requested_texture_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_plan.bindable_packet_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_plan.resource_packet_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_plan.placeholder_backed_packet_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_plan.blocked_packet_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_plan.missing_upload_result_packet_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_plan.missing_frame_binding_packet_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_plan.retry_backoff_blocked_packet_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_plan.unique_texture_cache_key_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_plan.unique_sampler_key_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_plan.resource_binding_ready } -> std::same_as<bool&>;
+    { texture_frame_resource_packet_plan.fully_resource_backed } -> std::same_as<bool&>;
+    { texture_frame_resource_packet_plan.placeholder_backed } -> std::same_as<bool&>;
+    { texture_frame_resource_packet_plan.has_blockers } -> std::same_as<bool&>;
+    { texture_frame_resource_packet_plan.has_retry_backoff } -> std::same_as<bool&>;
+    { texture_frame_resource_packet_plan.renderer_handoff_ready } -> std::same_as<bool&>;
+    { texture_frame_resource_packet_plan.entries }
+        -> std::same_as<std::vector<render::render_image_texture_frame_resource_packet_plan_entry>&>;
+    { texture_frame_resource_packet_plan.cache_key_summary } -> std::same_as<std::string&>;
+    { texture_frame_resource_packet_plan.sampler_summary } -> std::same_as<std::string&>;
+    { texture_frame_resource_packet_plan.retry_backoff_summary } -> std::same_as<std::string&>;
+    { texture_frame_resource_packet_plan.diagnostic } -> std::same_as<std::string&>;
+    { texture_frame_resource_packet_plan.ok() } -> std::same_as<bool>;
+    { texture_frame_resource_cache_handoff.materialization_index } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_cache_handoff.request_index } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_cache_handoff.render_image_uri } -> std::same_as<std::string&>;
+    { texture_frame_resource_cache_handoff.cache_key } -> std::same_as<render::render_image_cache_key&>;
+    { texture_frame_resource_cache_handoff.texture_key } -> std::same_as<render::render_image_texture_key&>;
+    { texture_frame_resource_cache_handoff.stable_texture_cache_key } -> std::same_as<std::string&>;
+    { texture_frame_resource_cache_handoff.texture_id } -> std::same_as<render::render_image_texture_id&>;
+    { texture_frame_resource_cache_handoff.texture_revision } -> std::same_as<render::render_image_revision&>;
+    { texture_frame_resource_cache_handoff.placeholder_backed } -> std::same_as<bool&>;
+    { texture_frame_resource_cache_handoff.renderer_boundary_ready } -> std::same_as<bool&>;
+    { texture_frame_resource_cache_handoff.diagnostic } -> std::same_as<std::string&>;
+    { texture_frame_resource_cache_handoff.ok() } -> std::same_as<bool>;
+    { texture_frame_resource_upload_handoff.materialization_index } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_upload_handoff.request_index } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_upload_handoff.upload_request_id } -> std::same_as<std::uint64_t&>;
+    { texture_frame_resource_upload_handoff.upload_generation_id } -> std::same_as<std::uint64_t&>;
+    { texture_frame_resource_upload_handoff.mip_level_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_upload_handoff.uploaded_byte_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_upload_handoff.decoded_payload }
+        -> std::same_as<render::render_image_decoded_payload_evidence&>;
+    { texture_frame_resource_upload_handoff.payload_layout }
+        -> std::same_as<render::render_image_texture_upload_payload_layout_evidence&>;
+    { texture_frame_resource_upload_handoff.staging_payload_plan }
+        -> std::same_as<render::render_image_texture_staging_payload_plan&>;
+    { texture_frame_resource_upload_handoff.upload_result_present } -> std::same_as<bool&>;
+    { texture_frame_resource_upload_handoff.renderer_boundary_ready } -> std::same_as<bool&>;
+    { texture_frame_resource_upload_handoff.diagnostic } -> std::same_as<std::string&>;
+    { texture_frame_resource_upload_handoff.ok() } -> std::same_as<bool>;
+    { texture_frame_resource_sampler_handoff.materialization_index } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_sampler_handoff.request_index } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_sampler_handoff.sampler } -> std::same_as<render::render_image_sampler_policy&>;
+    { texture_frame_resource_sampler_handoff.sampler_key } -> std::same_as<std::string&>;
+    { texture_frame_resource_sampler_handoff.sampler_summary } -> std::same_as<std::string&>;
+    { texture_frame_resource_sampler_handoff.renderer_boundary_ready } -> std::same_as<bool&>;
+    { texture_frame_resource_sampler_handoff.diagnostic } -> std::same_as<std::string&>;
+    { texture_frame_resource_sampler_handoff.ok() } -> std::same_as<bool>;
+    { texture_frame_resource_packet_materialization_entry.materialization_index } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_materialization_entry.request_index } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_materialization_entry.status }
+        -> std::same_as<render::render_image_texture_frame_resource_packet_materialization_status&>;
+    { texture_frame_resource_packet_materialization_entry.packet_status }
+        -> std::same_as<render::render_image_texture_frame_resource_packet_status&>;
+    { texture_frame_resource_packet_materialization_entry.materialized } -> std::same_as<bool&>;
+    { texture_frame_resource_packet_materialization_entry.placeholder_backed } -> std::same_as<bool&>;
+    { texture_frame_resource_packet_materialization_entry.blocked } -> std::same_as<bool&>;
+    { texture_frame_resource_packet_materialization_entry.cache_record_present } -> std::same_as<bool&>;
+    { texture_frame_resource_packet_materialization_entry.upload_record_present } -> std::same_as<bool&>;
+    { texture_frame_resource_packet_materialization_entry.sampler_record_present } -> std::same_as<bool&>;
+    { texture_frame_resource_packet_materialization_entry.cache_record }
+        -> std::same_as<render::render_image_texture_frame_resource_cache_handoff_record&>;
+    { texture_frame_resource_packet_materialization_entry.upload_record }
+        -> std::same_as<render::render_image_texture_frame_resource_upload_handoff_record&>;
+    { texture_frame_resource_packet_materialization_entry.sampler_record }
+        -> std::same_as<render::render_image_texture_frame_resource_sampler_handoff_record&>;
+    { texture_frame_resource_packet_materialization_entry.diagnostic } -> std::same_as<std::string&>;
+    { texture_frame_resource_packet_materialization_entry.ok() } -> std::same_as<bool>;
+    { texture_frame_resource_packet_materialization.frame_request_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_materialization.planned_packet_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_materialization.materialized_packet_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_materialization.placeholder_packet_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_materialization.blocked_packet_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_materialization.cache_record_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_materialization.upload_record_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_materialization.sampler_record_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_materialization.renderer_boundary_ready } -> std::same_as<bool&>;
+    { texture_frame_resource_packet_materialization.entries }
+        -> std::same_as<
+            std::vector<render::render_image_texture_frame_resource_packet_materialization_entry>&>;
+    { texture_frame_resource_packet_materialization.cache_handoff_records }
+        -> std::same_as<std::vector<render::render_image_texture_frame_resource_cache_handoff_record>&>;
+    { texture_frame_resource_packet_materialization.upload_handoff_records }
+        -> std::same_as<std::vector<render::render_image_texture_frame_resource_upload_handoff_record>&>;
+    { texture_frame_resource_packet_materialization.sampler_handoff_records }
+        -> std::same_as<std::vector<render::render_image_texture_frame_resource_sampler_handoff_record>&>;
+    { texture_frame_resource_packet_materialization.cache_handoff_summary } -> std::same_as<std::string&>;
+    { texture_frame_resource_packet_materialization.upload_handoff_summary } -> std::same_as<std::string&>;
+    { texture_frame_resource_packet_materialization.sampler_handoff_summary } -> std::same_as<std::string&>;
+    { texture_frame_resource_packet_materialization.diagnostic } -> std::same_as<std::string&>;
+    { texture_frame_resource_packet_materialization.ok() } -> std::same_as<bool>;
+    { texture_frame_resource_cache_handoff_delta.request_index } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_cache_handoff_delta.before_present } -> std::same_as<bool&>;
+    { texture_frame_resource_cache_handoff_delta.after_present } -> std::same_as<bool&>;
+    { texture_frame_resource_cache_handoff_delta.before_stable_texture_cache_key }
+        -> std::same_as<std::string&>;
+    { texture_frame_resource_cache_handoff_delta.after_stable_texture_cache_key }
+        -> std::same_as<std::string&>;
+    { texture_frame_resource_cache_handoff_delta.before_texture_id }
+        -> std::same_as<render::render_image_texture_id&>;
+    { texture_frame_resource_cache_handoff_delta.after_texture_id }
+        -> std::same_as<render::render_image_texture_id&>;
+    { texture_frame_resource_cache_handoff_delta.stable_texture_cache_key_changed }
+        -> std::same_as<bool&>;
+    { texture_frame_resource_cache_handoff_delta.texture_handle_changed } -> std::same_as<bool&>;
+    { texture_frame_resource_cache_handoff_delta.changed } -> std::same_as<bool&>;
+    { texture_frame_resource_cache_handoff_delta.diagnostic } -> std::same_as<std::string&>;
+    { texture_frame_resource_cache_handoff_delta.ok() } -> std::same_as<bool>;
+    { texture_frame_resource_upload_handoff_delta.request_index } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_upload_handoff_delta.before_upload_request_id }
+        -> std::same_as<std::uint64_t&>;
+    { texture_frame_resource_upload_handoff_delta.after_upload_request_id }
+        -> std::same_as<std::uint64_t&>;
+    { texture_frame_resource_upload_handoff_delta.upload_request_changed } -> std::same_as<bool&>;
+    { texture_frame_resource_upload_handoff_delta.uploaded_byte_delta } -> std::same_as<std::int64_t&>;
+    { texture_frame_resource_upload_handoff_delta.changed } -> std::same_as<bool&>;
+    { texture_frame_resource_upload_handoff_delta.diagnostic } -> std::same_as<std::string&>;
+    { texture_frame_resource_upload_handoff_delta.ok() } -> std::same_as<bool>;
+    { texture_frame_resource_sampler_handoff_delta.request_index } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_sampler_handoff_delta.before_sampler }
+        -> std::same_as<render::render_image_sampler_policy&>;
+    { texture_frame_resource_sampler_handoff_delta.after_sampler }
+        -> std::same_as<render::render_image_sampler_policy&>;
+    { texture_frame_resource_sampler_handoff_delta.before_sampler_summary } -> std::same_as<std::string&>;
+    { texture_frame_resource_sampler_handoff_delta.after_sampler_summary } -> std::same_as<std::string&>;
+    { texture_frame_resource_sampler_handoff_delta.sampler_changed } -> std::same_as<bool&>;
+    { texture_frame_resource_sampler_handoff_delta.sampler_key_changed } -> std::same_as<bool&>;
+    { texture_frame_resource_sampler_handoff_delta.changed } -> std::same_as<bool&>;
+    { texture_frame_resource_sampler_handoff_delta.diagnostic } -> std::same_as<std::string&>;
+    { texture_frame_resource_sampler_handoff_delta.ok() } -> std::same_as<bool>;
+    { texture_frame_resource_materialization_entry_diff.request_index } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_materialization_entry_diff.status }
+        -> std::same_as<render::render_image_texture_frame_resource_materialization_diff_entry_status&>;
+    { texture_frame_resource_materialization_entry_diff.status_name } -> std::same_as<std::string&>;
+    { texture_frame_resource_materialization_entry_diff.before_present } -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_entry_diff.after_present } -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_entry_diff.before_materialization_status }
+        -> std::same_as<render::render_image_texture_frame_resource_packet_materialization_status&>;
+    { texture_frame_resource_materialization_entry_diff.after_materialization_status }
+        -> std::same_as<render::render_image_texture_frame_resource_packet_materialization_status&>;
+    { texture_frame_resource_materialization_entry_diff.cache_handoff_changed } -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_entry_diff.upload_handoff_changed } -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_entry_diff.sampler_handoff_changed } -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_entry_diff.cache_delta }
+        -> std::same_as<render::render_image_texture_frame_resource_cache_handoff_delta&>;
+    { texture_frame_resource_materialization_entry_diff.upload_delta }
+        -> std::same_as<render::render_image_texture_frame_resource_upload_handoff_delta&>;
+    { texture_frame_resource_materialization_entry_diff.sampler_delta }
+        -> std::same_as<render::render_image_texture_frame_resource_sampler_handoff_delta&>;
+    { texture_frame_resource_materialization_entry_diff.regression } -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_entry_diff.recovery } -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_entry_diff.improvement } -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_entry_diff.churn } -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_entry_diff.placeholder_to_real } -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_entry_diff.real_to_placeholder } -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_entry_diff.cache_key_churn } -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_entry_diff.upload_handoff_lost } -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_entry_diff.upload_handoff_gained } -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_entry_diff.sampler_policy_churn } -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_entry_diff.materialization_failure_added }
+        -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_entry_diff.materialization_failure_removed }
+        -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_entry_diff.materialization_failure_changed }
+        -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_entry_diff.classification }
+        -> std::same_as<render::render_image_texture_frame_resource_materialization_change_classification&>;
+    { texture_frame_resource_materialization_entry_diff.classification_name } -> std::same_as<std::string&>;
+    { texture_frame_resource_materialization_entry_diff.classification_reason } -> std::same_as<std::string&>;
+    { texture_frame_resource_materialization_entry_diff.diagnostic } -> std::same_as<std::string&>;
+    { texture_frame_resource_materialization_entry_diff.changed() } -> std::same_as<bool>;
+    { texture_frame_resource_materialization_entry_diff.ok() } -> std::same_as<bool>;
+    { texture_frame_resource_materialization_diff.before_frame_request_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_materialization_diff.after_frame_request_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_materialization_diff.frame_request_delta } -> std::same_as<std::int64_t&>;
+    { texture_frame_resource_materialization_diff.before_materialized_packet_count }
+        -> std::same_as<std::size_t&>;
+    { texture_frame_resource_materialization_diff.after_materialized_packet_count }
+        -> std::same_as<std::size_t&>;
+    { texture_frame_resource_materialization_diff.materialized_packet_delta }
+        -> std::same_as<std::int64_t&>;
+    { texture_frame_resource_materialization_diff.regression_entry_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_materialization_diff.improvement_entry_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_materialization_diff.churn_entry_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_materialization_diff.cache_handoff_changed_count }
+        -> std::same_as<std::size_t&>;
+    { texture_frame_resource_materialization_diff.upload_handoff_changed_count }
+        -> std::same_as<std::size_t&>;
+    { texture_frame_resource_materialization_diff.sampler_handoff_changed_count }
+        -> std::same_as<std::size_t&>;
+    { texture_frame_resource_materialization_diff.stable_texture_cache_key_changed_count }
+        -> std::same_as<std::size_t&>;
+    { texture_frame_resource_materialization_diff.upload_request_changed_count }
+        -> std::same_as<std::size_t&>;
+    { texture_frame_resource_materialization_diff.sampler_key_changed_count }
+        -> std::same_as<std::size_t&>;
+    { texture_frame_resource_materialization_diff.placeholder_to_real_count }
+        -> std::same_as<std::size_t&>;
+    { texture_frame_resource_materialization_diff.real_to_placeholder_count }
+        -> std::same_as<std::size_t&>;
+    { texture_frame_resource_materialization_diff.cache_key_churn_count }
+        -> std::same_as<std::size_t&>;
+    { texture_frame_resource_materialization_diff.upload_handoff_lost_count }
+        -> std::same_as<std::size_t&>;
+    { texture_frame_resource_materialization_diff.upload_handoff_gained_count }
+        -> std::same_as<std::size_t&>;
+    { texture_frame_resource_materialization_diff.sampler_policy_churn_count }
+        -> std::same_as<std::size_t&>;
+    { texture_frame_resource_materialization_diff.materialization_failure_added_count }
+        -> std::same_as<std::size_t&>;
+    { texture_frame_resource_materialization_diff.materialization_failure_removed_count }
+        -> std::same_as<std::size_t&>;
+    { texture_frame_resource_materialization_diff.materialization_failure_changed_count }
+        -> std::same_as<std::size_t&>;
+    { texture_frame_resource_materialization_diff.before_renderer_boundary_ready }
+        -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_diff.after_renderer_boundary_ready }
+        -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_diff.has_changes } -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_diff.has_regression } -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_diff.has_improvement } -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_diff.has_churn } -> std::same_as<bool&>;
+    { texture_frame_resource_materialization_diff.entries }
+        -> std::same_as<std::vector<render::render_image_texture_frame_resource_materialization_entry_diff>&>;
+    { texture_frame_resource_materialization_diff.cache_handoff_delta_summary } -> std::same_as<std::string&>;
+    { texture_frame_resource_materialization_diff.upload_handoff_delta_summary } -> std::same_as<std::string&>;
+    { texture_frame_resource_materialization_diff.sampler_handoff_delta_summary } -> std::same_as<std::string&>;
+    { texture_frame_resource_materialization_diff.improvement_summary } -> std::same_as<std::string&>;
+    { texture_frame_resource_materialization_diff.churn_summary } -> std::same_as<std::string&>;
+    { texture_frame_resource_materialization_diff.materialization_failure_summary } -> std::same_as<std::string&>;
+    { texture_frame_resource_materialization_diff.classification_summary } -> std::same_as<std::string&>;
+    { texture_frame_resource_materialization_diff.diagnostic } -> std::same_as<std::string&>;
+    { texture_frame_resource_materialization_diff.ok() } -> std::same_as<bool>;
     { pipeline_entry.sequence } -> std::same_as<std::size_t&>;
     { pipeline_entry.request } -> std::same_as<render::render_image_texture_pipeline_request&>;
     { pipeline_entry.status } -> std::same_as<render::render_image_texture_pipeline_status&>;
@@ -2122,6 +3273,26 @@ static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_binding_plan>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_binding_packet_diff>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_binding_plan_diff>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_upload_handoff_entry>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_upload_handoff_summary>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_upload_handoff_entry_diff>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_upload_handoff_summary_diff>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_binding_summary>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_binding_summary_diff>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_resource_packet_plan_entry>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_resource_packet_plan>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_resource_cache_handoff_record>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_resource_upload_handoff_record>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_resource_sampler_handoff_record>);
+static_assert(
+    !ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_resource_packet_materialization_entry>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_resource_packet_materialization>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_resource_cache_handoff_delta>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_resource_upload_handoff_delta>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_resource_sampler_handoff_delta>);
+static_assert(
+    !ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_resource_materialization_entry_diff>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_resource_materialization_diff>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_external_decoder_selection_snapshot>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_external_decoder_selection_entry_diff>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_external_decoder_selection_snapshot_diff>);
@@ -2146,6 +3317,26 @@ static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_textur
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_binding_plan>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_binding_packet_diff>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_binding_plan_diff>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_upload_handoff_entry>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_upload_handoff_summary>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_upload_handoff_entry_diff>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_upload_handoff_summary_diff>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_binding_summary>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_binding_summary_diff>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_resource_packet_plan_entry>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_resource_packet_plan>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_resource_cache_handoff_record>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_resource_upload_handoff_record>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_resource_sampler_handoff_record>);
+static_assert(
+    !ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_resource_packet_materialization_entry>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_resource_packet_materialization>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_resource_cache_handoff_delta>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_resource_upload_handoff_delta>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_resource_sampler_handoff_delta>);
+static_assert(
+    !ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_resource_materialization_entry_diff>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_resource_materialization_diff>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_external_decoder_selection_snapshot>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_external_decoder_selection_entry_diff>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_external_decoder_selection_snapshot_diff>);
@@ -2170,6 +3361,26 @@ static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_binding_plan>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_binding_packet_diff>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_binding_plan_diff>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_upload_handoff_entry>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_upload_handoff_summary>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_upload_handoff_entry_diff>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_upload_handoff_summary_diff>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_binding_summary>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_binding_summary_diff>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_resource_packet_plan_entry>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_resource_packet_plan>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_resource_cache_handoff_record>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_resource_upload_handoff_record>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_resource_sampler_handoff_record>);
+static_assert(
+    !ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_resource_packet_materialization_entry>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_resource_packet_materialization>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_resource_cache_handoff_delta>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_resource_upload_handoff_delta>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_resource_sampler_handoff_delta>);
+static_assert(
+    !ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_resource_materialization_entry_diff>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_resource_materialization_diff>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_external_decoder_selection_snapshot>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_external_decoder_selection_entry_diff>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_external_decoder_selection_snapshot_diff>);
@@ -2184,5 +3395,17 @@ static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_textu
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_snapshot_diff>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_binding_plan>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_binding_plan_diff>);
+static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_upload_handoff_summary>);
+static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_upload_handoff_summary_diff>);
+static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_binding_summary>);
+static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_binding_summary_diff>);
+static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_resource_packet_plan_entry>);
+static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_resource_packet_plan>);
+static_assert(
+    !ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_resource_packet_materialization_entry>);
+static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_resource_packet_materialization>);
+static_assert(
+    !ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_resource_materialization_entry_diff>);
+static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_resource_materialization_diff>);
 
 } // namespace

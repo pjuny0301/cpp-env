@@ -278,6 +278,64 @@ quiz_vulkan::render::vulkan_backend::vulkan_render_pass_create_result make_ready
     };
 }
 
+quiz_vulkan::render::vulkan_backend::vulkan_sdk_external_header_evidence
+make_ready_external_header_evidence()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    return vulkan_backend::vulkan_sdk_external_header_evidence{
+        .checked = true,
+        .vulkan = vulkan_backend::vulkan_sdk_vulkan_header_evidence{
+            .available = true,
+            .api_version_macro_available = true,
+            .header_version_macro_available = true,
+            .api_version = vulkan_backend::vulkan_sdk_api_version_1_4(),
+            .header_version = 341,
+            .instance_handle_size = sizeof(void*),
+            .device_handle_size = sizeof(void*),
+            .result_type_size = sizeof(int),
+            .success_constant_available = true,
+            .success_value = 0,
+            .surface_extension_constant_available = true,
+            .swapchain_extension_constant_available = true,
+            .surface_extension_name = "VK_KHR_surface",
+            .swapchain_extension_name = "VK_KHR_swapchain",
+            .diagnostic = "fake Vulkan external headers available",
+        },
+        .vma = vulkan_backend::vulkan_sdk_vma_header_evidence{
+            .available = true,
+            .safe_to_include = true,
+            .vulkan_headers_required = true,
+            .vma_vulkan_version = 1003000,
+            .allocator_handle_size = sizeof(void*),
+            .allocation_handle_size = sizeof(void*),
+            .diagnostic = "fake VMA external headers available",
+        },
+        .diagnostic = "fake external headers available",
+    };
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_sdk_external_header_evidence
+make_missing_external_header_evidence()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    return vulkan_backend::vulkan_sdk_external_header_evidence{
+        .checked = true,
+        .vulkan = vulkan_backend::vulkan_sdk_vulkan_header_evidence{
+            .available = false,
+            .diagnostic = "fake Vulkan external headers missing",
+        },
+        .vma = vulkan_backend::vulkan_sdk_vma_header_evidence{
+            .available = false,
+            .safe_to_include = false,
+            .vulkan_headers_required = true,
+            .diagnostic = "fake VMA external headers missing",
+        },
+        .diagnostic = "fake external headers missing",
+    };
+}
+
 quiz_vulkan::render::vulkan_backend::vulkan_sdk_capability_result make_ready_sdk_capabilities()
 {
     namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
@@ -287,6 +345,7 @@ quiz_vulkan::render::vulkan_backend::vulkan_sdk_capability_result make_ready_sdk
         .status = vulkan_backend::vulkan_sdk_capability_status::ready,
         .fallback_status = vulkan_backend::vulkan_sdk_adapter_fallback_status::none,
         .minimum_api_version = vulkan_backend::vulkan_sdk_api_version_1_3(),
+        .external_headers = make_ready_external_header_evidence(),
         .headers_available = true,
         .api_version_available = true,
         .api_version_compatible = true,
@@ -308,6 +367,7 @@ quiz_vulkan::render::vulkan_backend::vulkan_sdk_capability_result make_missing_s
         .status = vulkan_backend::vulkan_sdk_capability_status::headers_unavailable,
         .fallback_status = vulkan_backend::vulkan_sdk_adapter_fallback_status::headers_unavailable,
         .minimum_api_version = vulkan_backend::vulkan_sdk_api_version_1_3(),
+        .external_headers = make_missing_external_header_evidence(),
         .headers_available = false,
         .api_version_available = false,
         .api_version_compatible = false,
@@ -332,6 +392,30 @@ void require_handoff_fallback(
     require(handoff.fallback_reason == reason, "frame pipeline handoff records fallback reason");
     require(handoff.status == status, "frame pipeline handoff records status");
     require(handoff.reached_stage == reached_stage, "frame pipeline handoff records reached stage");
+}
+
+void mark_native_frame_execution_ready(
+    quiz_vulkan::render::vulkan_backend::vulkan_backend_frame_result& result)
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    result.command_buffer_recording.native_function_table_checked = true;
+    result.command_buffer_recording.native_command_buffer_recording_ready = true;
+    result.command_buffer_recording.native_function_table_status =
+        vulkan_backend::vulkan_native_function_table_status::ready;
+    result.command_buffer_recording.missing_native_symbol_name.clear();
+
+    result.submit_batch_plan.native_function_table_checked = true;
+    result.submit_batch_plan.native_queue_submit_ready = true;
+    result.submit_batch_plan.native_function_table_status =
+        vulkan_backend::vulkan_native_function_table_status::ready;
+    result.submit_batch_plan.missing_native_symbol_name.clear();
+
+    result.present_completion_plan.native_function_table_checked = true;
+    result.present_completion_plan.native_queue_present_ready = true;
+    result.present_completion_plan.native_function_table_status =
+        vulkan_backend::vulkan_native_function_table_status::ready;
+    result.present_completion_plan.missing_native_symbol_name.clear();
 }
 
 void test_vulkan_frame_pipeline_handoff_status_names_are_stable()
@@ -803,6 +887,18 @@ void test_vulkan_frame_pipeline_handoff_reports_sdk_native_path_summary()
         sdk_ready.pipeline_handoff.sdk_native_path_status
             == vulkan_backend::vulkan_sdk_native_path_status::ready,
         "handoff records SDK-ready native-path status");
+    require(
+        sdk_ready.pipeline_handoff.sdk_external_headers_checked,
+        "handoff records checked external header evidence separately");
+    require(
+        sdk_ready.pipeline_handoff.sdk_vulkan_headers_available,
+        "handoff records Vulkan header availability separately from native functions");
+    require(
+        sdk_ready.pipeline_handoff.sdk_vma_headers_available,
+        "handoff records VMA header availability separately from native functions");
+    require(
+        sdk_ready.pipeline_handoff.sdk_external_headers.vulkan.header_version == 341,
+        "handoff carries Vulkan header version evidence");
 
     const vulkan_backend::vulkan_backend_frame_result sdk_missing =
         vulkan_backend::apply_vulkan_sdk_capability_result_to_frame(
@@ -822,8 +918,150 @@ void test_vulkan_frame_pipeline_handoff_reports_sdk_native_path_summary()
             == vulkan_backend::vulkan_sdk_capability_status::headers_unavailable,
         "handoff records SDK missing-header capability status");
     require(
+        sdk_missing.pipeline_handoff.sdk_external_headers_checked,
+        "handoff records checked missing external header evidence");
+    require(
+        !sdk_missing.pipeline_handoff.sdk_vulkan_headers_available,
+        "handoff reports missing Vulkan headers separately from native function table");
+    require(
+        !sdk_missing.pipeline_handoff.sdk_vma_headers_available,
+        "handoff reports missing VMA headers separately from native function table");
+    require(
         sdk_missing.pipeline_handoff.sdk_diagnostic == "fake Vulkan SDK path missing",
         "handoff records SDK missing diagnostic");
+}
+
+void test_vulkan_frame_pipeline_handoff_reports_cpu_fallback_native_execution_summary()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_vulkan_backend_device device(vulkan_backend::vulkan_surface_extent{.width = 64, .height = 64});
+    const vulkan_backend::vulkan_backend_frame_result result =
+        vulkan_backend::submit_vulkan_backend_frame(
+            device,
+            make_quad_draw_list(),
+            render_rect{0.0f, 0.0f, 64.0f, 64.0f});
+
+    const vulkan_backend::vulkan_backend_frame_native_execution_summary& native_execution =
+        result.pipeline_handoff.native_frame_execution;
+    require(result.completed(), "baseline frame still completes through diagnostic backend");
+    require(native_execution.checked, "handoff checks native frame execution summary");
+    require(native_execution.operation.checked, "native execution summary contains operation summary");
+    require(native_execution.diff.checked, "native execution summary contains diff diagnostics");
+    require(native_execution.plan.checked, "native execution summary contains execution plan");
+    require(
+        native_execution.operation.status
+            == vulkan_backend::vulkan_native_frame_operation_status::native_function_table_unavailable,
+        "native execution summary reports missing native function table");
+    require(
+        native_execution.operation.blocker_stage
+            == vulkan_backend::vulkan_native_frame_operation_stage::native_function_table,
+        "native execution summary records function table blocker");
+    require(native_execution.should_use_cpu_fallback(), "native execution summary selects CPU fallback");
+    require(native_execution.should_skip_native_frame(), "native execution summary skips remaining native steps");
+    require(
+        native_execution.acquire_decision
+            == vulkan_backend::vulkan_native_frame_execution_decision::fallback,
+        "native execution summary falls back at acquire without native functions");
+    require(
+        native_execution.record_decision
+            == vulkan_backend::vulkan_native_frame_execution_decision::skip,
+        "native execution summary skips record after acquire fallback");
+    require(
+        native_execution.submit_decision
+            == vulkan_backend::vulkan_native_frame_execution_decision::skip,
+        "native execution summary skips submit after acquire fallback");
+    require(
+        native_execution.present_decision
+            == vulkan_backend::vulkan_native_frame_execution_decision::skip,
+        "native execution summary skips present after acquire fallback");
+    require(!native_execution.native_acquire_would_execute, "native acquire does not execute");
+    require(!native_execution.native_present_would_execute, "native present does not execute");
+}
+
+void test_vulkan_frame_pipeline_handoff_reports_native_execute_summary_when_ready()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_vulkan_backend_device device(vulkan_backend::vulkan_surface_extent{.width = 64, .height = 64});
+    vulkan_backend::vulkan_backend_frame_result result =
+        vulkan_backend::submit_vulkan_backend_frame(
+            device,
+            make_quad_draw_list(),
+            render_rect{0.0f, 0.0f, 64.0f, 64.0f});
+    mark_native_frame_execution_ready(result);
+    result.pipeline_handoff = vulkan_backend::summarize_vulkan_frame_pipeline_handoff(result);
+
+    const vulkan_backend::vulkan_backend_frame_native_execution_summary& native_execution =
+        result.pipeline_handoff.native_frame_execution;
+    require(result.completed(), "native-ready summary keeps frame completed");
+    require(native_execution.operation.completed(), "native frame operation summary completes");
+    require(native_execution.should_execute_native_frame(), "native execution summary executes frame");
+    require(!native_execution.should_use_cpu_fallback(), "native-ready execution does not fallback");
+    require(!native_execution.should_skip_native_frame(), "native-ready execution does not skip");
+    require(
+        native_execution.acquire_decision
+            == vulkan_backend::vulkan_native_frame_execution_decision::execute,
+        "native execution summary executes acquire");
+    require(
+        native_execution.record_decision
+            == vulkan_backend::vulkan_native_frame_execution_decision::execute,
+        "native execution summary executes record");
+    require(
+        native_execution.submit_decision
+            == vulkan_backend::vulkan_native_frame_execution_decision::execute,
+        "native execution summary executes submit");
+    require(
+        native_execution.present_decision
+            == vulkan_backend::vulkan_native_frame_execution_decision::execute,
+        "native execution summary executes present");
+    require(native_execution.native_acquire_would_execute, "native acquire would execute");
+    require(native_execution.native_record_would_execute, "native record would execute");
+    require(native_execution.native_submit_would_execute, "native submit would execute");
+    require(native_execution.native_present_would_execute, "native present would execute");
+}
+
+void test_vulkan_frame_pipeline_handoff_reports_native_submit_fallback_summary()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_vulkan_backend_device device(vulkan_backend::vulkan_surface_extent{.width = 64, .height = 64});
+    device.submit_succeeds = false;
+    vulkan_backend::vulkan_backend_frame_result result =
+        vulkan_backend::submit_vulkan_backend_frame(
+            device,
+            make_quad_draw_list(),
+            render_rect{0.0f, 0.0f, 64.0f, 64.0f});
+    mark_native_frame_execution_ready(result);
+    result.pipeline_handoff = vulkan_backend::summarize_vulkan_frame_pipeline_handoff(result);
+
+    const vulkan_backend::vulkan_backend_frame_native_execution_summary& native_execution =
+        result.pipeline_handoff.native_frame_execution;
+    require(
+        result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::submit_frame_failed,
+        "frame result records submit fallback");
+    require(native_execution.should_use_cpu_fallback(), "native submit failure uses CPU fallback");
+    require(native_execution.should_skip_native_frame(), "native submit failure skips trailing steps");
+    require(
+        native_execution.acquire_decision
+            == vulkan_backend::vulkan_native_frame_execution_decision::execute,
+        "submit fallback summary executes acquire");
+    require(
+        native_execution.record_decision
+            == vulkan_backend::vulkan_native_frame_execution_decision::execute,
+        "submit fallback summary executes record");
+    require(
+        native_execution.submit_decision
+            == vulkan_backend::vulkan_native_frame_execution_decision::fallback,
+        "submit fallback summary falls back at submit");
+    require(
+        native_execution.present_decision
+            == vulkan_backend::vulkan_native_frame_execution_decision::skip,
+        "submit fallback summary skips present after submit fallback");
+    require(native_execution.native_acquire_would_execute, "submit fallback summary keeps acquire native");
+    require(native_execution.native_record_would_execute, "submit fallback summary keeps record native");
+    require(!native_execution.native_submit_would_execute, "submit fallback summary does not execute submit");
+    require(!native_execution.native_present_would_execute, "submit fallback summary does not execute present");
 }
 
 } // namespace
@@ -838,5 +1076,8 @@ int main()
     test_vulkan_frame_pipeline_handoff_accepts_draw_list_render_data();
     test_vulkan_frame_pipeline_handoff_reports_swapchain_recreate_policy();
     test_vulkan_frame_pipeline_handoff_reports_sdk_native_path_summary();
+    test_vulkan_frame_pipeline_handoff_reports_cpu_fallback_native_execution_summary();
+    test_vulkan_frame_pipeline_handoff_reports_native_execute_summary_when_ready();
+    test_vulkan_frame_pipeline_handoff_reports_native_submit_fallback_summary();
     return 0;
 }

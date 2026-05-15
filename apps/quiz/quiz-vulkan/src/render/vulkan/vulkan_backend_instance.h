@@ -1,8 +1,9 @@
 #pragma once
 
-#include "render/vulkan/vulkan_backend_loader.h"
+#include "render/vulkan/vulkan_backend_native_symbols.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -64,19 +65,204 @@ inline std::string_view vulkan_validation_layer_name()
     return "VK_LAYER_KHRONOS_validation";
 }
 
+struct vulkan_instance_extension_diagnostic {
+    std::string extension_name;
+    bool required = true;
+    bool available = false;
+    bool selected = false;
+
+    bool missing_required() const
+    {
+        return required && !available;
+    }
+};
+
 struct vulkan_instance_create_result {
     bool checked = false;
     vulkan_instance_create_status status = vulkan_instance_create_status::not_requested;
     vulkan_loader_readiness_state loader;
     vulkan_instance_handle handle;
     std::vector<std::string> selected_extensions;
+    std::vector<vulkan_instance_extension_diagnostic> required_extension_diagnostics;
+    std::size_t required_extension_count = 0;
+    std::size_t available_required_extension_count = 0;
+    std::string missing_required_extension;
     std::vector<std::string> enabled_layers;
     std::string diagnostic;
+
+    bool required_extensions_ready() const
+    {
+        return checked && required_extension_count == available_required_extension_count
+            && missing_required_extension.empty();
+    }
 
     bool ready_for_device() const
     {
         return checked && status == vulkan_instance_create_status::created
-            && loader.ready_for_instance() && handle.valid();
+            && loader.ready_for_instance() && handle.valid()
+            && required_extensions_ready();
+    }
+};
+
+enum class vulkan_native_instance_function_table_status {
+    not_checked,
+    ready,
+    missing_get_instance_proc_address_symbol,
+    missing_create_instance_symbol,
+    missing_destroy_instance_symbol,
+};
+
+struct vulkan_native_instance_function_table {
+    bool checked = false;
+    vulkan_native_instance_function_table_status status =
+        vulkan_native_instance_function_table_status::not_checked;
+    vulkan_native_function_pointer get_instance_proc_address;
+    vulkan_native_function_pointer create_instance;
+    vulkan_native_function_pointer destroy_instance;
+    std::string diagnostic;
+
+    bool ready() const
+    {
+        return checked && status == vulkan_native_instance_function_table_status::ready
+            && get_instance_proc_address.valid() && create_instance.valid()
+            && destroy_instance.valid();
+    }
+};
+
+enum class vulkan_native_instance_create_status {
+    not_requested,
+    created,
+    loader_unavailable,
+    function_table_unavailable,
+    headers_unavailable,
+    creation_failed,
+};
+
+struct vulkan_native_instance_create_result {
+    bool checked = false;
+    vulkan_native_instance_create_status status =
+        vulkan_native_instance_create_status::not_requested;
+    vulkan_loader_readiness_state loader;
+    vulkan_native_instance_function_table function_table;
+    vulkan_instance_create_request request;
+    vulkan_instance_handle handle;
+    std::int32_t native_result = 0;
+    std::string diagnostic;
+
+    bool created() const
+    {
+        return checked && status == vulkan_native_instance_create_status::created
+            && handle.valid();
+    }
+};
+
+enum class vulkan_native_instance_dispatch_table_status {
+    not_checked,
+    ready,
+    instance_unavailable,
+    get_instance_proc_address_unavailable,
+    missing_destroy_instance_symbol,
+};
+
+class vulkan_native_instance_symbol_resolver_interface {
+public:
+    virtual ~vulkan_native_instance_symbol_resolver_interface() = default;
+
+    virtual vulkan_native_function_pointer get_instance_proc_address() const = 0;
+    virtual vulkan_native_function_pointer resolve_instance_symbol(
+        vulkan_instance_handle instance,
+        std::string_view symbol_name) = 0;
+};
+
+struct fake_vulkan_native_instance_symbol_resolver_options {
+    bool default_available = true;
+    std::vector<std::string> available_symbols;
+    std::vector<std::string> missing_symbols;
+    vulkan_native_function_pointer get_instance_proc_address{.value = 1500};
+    vulkan_native_function_pointer pointer_base{.value = 2000};
+};
+
+struct fake_vulkan_native_instance_symbol_resolver_state {
+    std::size_t resolve_call_count = 0;
+    std::vector<std::uintptr_t> requested_instance_handles;
+    std::vector<std::string> requested_symbols;
+    std::vector<std::string> resolved_symbols;
+    std::vector<std::string> missing_symbols;
+};
+
+class fake_vulkan_native_instance_symbol_resolver final
+    : public vulkan_native_instance_symbol_resolver_interface {
+public:
+    fake_vulkan_native_instance_symbol_resolver();
+    explicit fake_vulkan_native_instance_symbol_resolver(
+        fake_vulkan_native_instance_symbol_resolver_options options);
+
+    vulkan_native_function_pointer get_instance_proc_address() const override;
+    vulkan_native_function_pointer resolve_instance_symbol(
+        vulkan_instance_handle instance,
+        std::string_view symbol_name) override;
+    const fake_vulkan_native_instance_symbol_resolver_state& state() const;
+
+private:
+    fake_vulkan_native_instance_symbol_resolver_options options_;
+    fake_vulkan_native_instance_symbol_resolver_state state_;
+};
+
+class vulkan_native_instance_proc_addr_resolver final
+    : public vulkan_native_instance_symbol_resolver_interface {
+public:
+    explicit vulkan_native_instance_proc_addr_resolver(
+        vulkan_native_function_pointer get_instance_proc_address);
+
+    vulkan_native_function_pointer get_instance_proc_address() const override;
+    vulkan_native_function_pointer resolve_instance_symbol(
+        vulkan_instance_handle instance,
+        std::string_view symbol_name) override;
+
+private:
+    vulkan_native_function_pointer get_instance_proc_address_;
+};
+
+struct vulkan_native_instance_dispatch_table {
+    bool checked = false;
+    vulkan_native_instance_dispatch_table_status status =
+        vulkan_native_instance_dispatch_table_status::not_checked;
+    vulkan_instance_handle handle;
+    vulkan_native_function_pointer get_instance_proc_address;
+    vulkan_native_function_pointer destroy_instance;
+    std::string missing_symbol_name;
+    std::string diagnostic;
+
+    bool ready_for_destroy() const
+    {
+        return checked && status == vulkan_native_instance_dispatch_table_status::ready
+            && handle.valid() && get_instance_proc_address.valid()
+            && destroy_instance.valid();
+    }
+};
+
+enum class vulkan_native_instance_destroy_status {
+    not_requested,
+    destroyed,
+    function_table_unavailable,
+    dispatch_table_unavailable,
+    headers_unavailable,
+    invalid_handle,
+};
+
+struct vulkan_native_instance_destroy_result {
+    bool checked = false;
+    vulkan_native_instance_destroy_status status =
+        vulkan_native_instance_destroy_status::not_requested;
+    vulkan_native_instance_function_table function_table;
+    vulkan_native_instance_dispatch_table dispatch_table;
+    vulkan_instance_handle handle;
+    bool used_instance_dispatch = false;
+    std::string diagnostic;
+
+    bool destroyed() const
+    {
+        return checked && status == vulkan_native_instance_destroy_status::destroyed;
     }
 };
 
@@ -138,6 +324,10 @@ inline vulkan_instance_create_result make_instance_create_result(
         .loader = loader_readiness,
         .handle = {},
         .selected_extensions = {},
+        .required_extension_diagnostics = {},
+        .required_extension_count = 0,
+        .available_required_extension_count = 0,
+        .missing_required_extension = {},
         .enabled_layers = {},
         .diagnostic = {},
     };
@@ -170,6 +360,26 @@ inline std::string make_missing_requested_layer_diagnostic(
     return "missing requested instance layer: " + layer_name;
 }
 
+inline void record_required_extension_diagnostic(
+    vulkan_instance_create_result& result,
+    const std::string& extension_name,
+    bool available)
+{
+    result.required_extension_diagnostics.push_back(
+        vulkan_instance_extension_diagnostic{
+            .extension_name = extension_name,
+            .required = true,
+            .available = available,
+            .selected = available,
+        });
+    result.required_extension_count = result.required_extension_diagnostics.size();
+    if (available) {
+        ++result.available_required_extension_count;
+    } else if (result.missing_required_extension.empty()) {
+        result.missing_required_extension = extension_name;
+    }
+}
+
 } // namespace instance_detail
 
 inline fake_vulkan_instance_factory::fake_vulkan_instance_factory()
@@ -197,9 +407,14 @@ inline vulkan_instance_create_result fake_vulkan_instance_factory::create_instan
     }
 
     for (const std::string& extension_name : request.required_instance_extensions) {
-        if (!instance_detail::contains_string(
-                options_.supported_instance_extensions,
-                extension_name)) {
+        const bool extension_available = instance_detail::contains_string(
+            options_.supported_instance_extensions,
+            extension_name);
+        instance_detail::record_required_extension_diagnostic(
+            result,
+            extension_name,
+            extension_available);
+        if (!extension_available) {
             result.status = vulkan_instance_create_status::missing_required_extension;
             result.diagnostic =
                 instance_detail::make_missing_required_extension_diagnostic(extension_name);
@@ -247,5 +462,24 @@ inline vulkan_instance_create_result create_vulkan_instance(
 {
     return factory.create_instance(loader_readiness, request);
 }
+
+vulkan_native_instance_function_table collect_vulkan_native_instance_function_table(
+    vulkan_native_symbol_resolver_interface& resolver);
+
+vulkan_native_instance_create_result create_native_vulkan_instance(
+    const vulkan_loader_readiness_state& loader_readiness,
+    const vulkan_native_instance_function_table& function_table,
+    const vulkan_instance_create_request& request = {});
+
+vulkan_native_instance_dispatch_table collect_vulkan_native_instance_dispatch_table(
+    vulkan_native_instance_symbol_resolver_interface& resolver,
+    const vulkan_native_instance_create_result& create_result);
+
+vulkan_native_instance_destroy_result destroy_native_vulkan_instance(
+    const vulkan_native_instance_function_table& function_table,
+    vulkan_instance_handle handle);
+
+vulkan_native_instance_destroy_result destroy_native_vulkan_instance(
+    const vulkan_native_instance_dispatch_table& dispatch_table);
 
 } // namespace quiz_vulkan::render::vulkan_backend

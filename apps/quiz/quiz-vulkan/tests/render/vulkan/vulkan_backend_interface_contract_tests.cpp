@@ -100,7 +100,9 @@ concept VulkanSdkHeaderProbeInterface = requires(
 
 static_assert(VulkanSdkHeaderProbeInterface<render::vulkan_backend::vulkan_sdk_header_probe_interface>);
 static_assert(VulkanSdkHeaderProbeInterface<render::vulkan_backend::fake_vulkan_sdk_header_probe>);
+static_assert(VulkanSdkHeaderProbeInterface<render::vulkan_backend::compile_time_vulkan_sdk_header_probe>);
 static_assert(std::default_initializable<render::vulkan_backend::fake_vulkan_sdk_header_probe>);
+static_assert(std::default_initializable<render::vulkan_backend::compile_time_vulkan_sdk_header_probe>);
 static_assert(std::constructible_from<
     render::vulkan_backend::fake_vulkan_sdk_header_probe,
     render::vulkan_backend::fake_vulkan_sdk_header_probe_options>);
@@ -205,6 +207,42 @@ static_assert(std::same_as<
     render::vulkan_backend::vulkan_instance_create_status>);
 
 static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_instance_function_table_status::not_checked),
+    render::vulkan_backend::vulkan_native_instance_function_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_instance_function_table_status::ready),
+    render::vulkan_backend::vulkan_native_instance_function_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_instance_function_table_status::missing_get_instance_proc_address_symbol),
+    render::vulkan_backend::vulkan_native_instance_function_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_instance_function_table_status::missing_create_instance_symbol),
+    render::vulkan_backend::vulkan_native_instance_function_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_instance_function_table_status::missing_destroy_instance_symbol),
+    render::vulkan_backend::vulkan_native_instance_function_table_status>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_instance_dispatch_table_status::not_checked),
+    render::vulkan_backend::vulkan_native_instance_dispatch_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_instance_dispatch_table_status::ready),
+    render::vulkan_backend::vulkan_native_instance_dispatch_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_instance_dispatch_table_status::instance_unavailable),
+    render::vulkan_backend::vulkan_native_instance_dispatch_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_instance_dispatch_table_status::get_instance_proc_address_unavailable),
+    render::vulkan_backend::vulkan_native_instance_dispatch_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_instance_dispatch_table_status::missing_destroy_instance_symbol),
+    render::vulkan_backend::vulkan_native_instance_dispatch_table_status>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_instance_destroy_status::dispatch_table_unavailable),
+    render::vulkan_backend::vulkan_native_instance_destroy_status>);
+
+static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_device_queue_capability::graphics),
     render::vulkan_backend::vulkan_device_queue_capability>);
 static_assert(std::same_as<
@@ -238,6 +276,157 @@ static_assert(std::same_as<
 static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_device_create_status::creation_failed),
     render::vulkan_backend::vulkan_device_create_status>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_physical_device_dispatch_table_status::not_checked),
+    render::vulkan_backend::vulkan_native_physical_device_dispatch_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_physical_device_dispatch_table_status::ready),
+    render::vulkan_backend::vulkan_native_physical_device_dispatch_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_physical_device_dispatch_table_status::instance_unavailable),
+    render::vulkan_backend::vulkan_native_physical_device_dispatch_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_physical_device_dispatch_table_status::get_instance_proc_address_unavailable),
+    render::vulkan_backend::vulkan_native_physical_device_dispatch_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_physical_device_dispatch_table_status::missing_enumerate_physical_devices_symbol),
+    render::vulkan_backend::vulkan_native_physical_device_dispatch_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_physical_device_dispatch_table_status::missing_get_physical_device_queue_family_properties_symbol),
+    render::vulkan_backend::vulkan_native_physical_device_dispatch_table_status>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_physical_device_enumeration_status::not_checked),
+    render::vulkan_backend::vulkan_native_physical_device_enumeration_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_physical_device_enumeration_status::ready),
+    render::vulkan_backend::vulkan_native_physical_device_enumeration_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_physical_device_enumeration_status::dispatch_table_unavailable),
+    render::vulkan_backend::vulkan_native_physical_device_enumeration_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_physical_device_enumeration_status::headers_unavailable),
+    render::vulkan_backend::vulkan_native_physical_device_enumeration_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_physical_device_enumeration_status::enumeration_failed),
+    render::vulkan_backend::vulkan_native_physical_device_enumeration_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_physical_device_enumeration_status::no_devices),
+    render::vulkan_backend::vulkan_native_physical_device_enumeration_status>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_family_query_status::not_checked),
+    render::vulkan_backend::vulkan_native_queue_family_query_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_family_query_status::ready),
+    render::vulkan_backend::vulkan_native_queue_family_query_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_family_query_status::enumeration_unavailable),
+    render::vulkan_backend::vulkan_native_queue_family_query_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_family_query_status::dispatch_table_unavailable),
+    render::vulkan_backend::vulkan_native_queue_family_query_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_family_query_status::headers_unavailable),
+    render::vulkan_backend::vulkan_native_queue_family_query_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_family_query_status::no_devices),
+    render::vulkan_backend::vulkan_native_queue_family_query_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_family_query_status::no_queue_families),
+    render::vulkan_backend::vulkan_native_queue_family_query_status>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_physical_device_selection_status::not_checked),
+    render::vulkan_backend::vulkan_native_physical_device_selection_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_physical_device_selection_status::selected),
+    render::vulkan_backend::vulkan_native_physical_device_selection_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_physical_device_selection_status::enumeration_unavailable),
+    render::vulkan_backend::vulkan_native_physical_device_selection_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_physical_device_selection_status::no_devices),
+    render::vulkan_backend::vulkan_native_physical_device_selection_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_physical_device_selection_status::missing_required_queue),
+    render::vulkan_backend::vulkan_native_physical_device_selection_status>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_device_dispatch_table_status::not_checked),
+    render::vulkan_backend::vulkan_native_device_dispatch_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_device_dispatch_table_status::ready),
+    render::vulkan_backend::vulkan_native_device_dispatch_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_device_dispatch_table_status::selection_unavailable),
+    render::vulkan_backend::vulkan_native_device_dispatch_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_device_dispatch_table_status::get_instance_proc_address_unavailable),
+    render::vulkan_backend::vulkan_native_device_dispatch_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_device_dispatch_table_status::missing_enumerate_device_extension_properties_symbol),
+    render::vulkan_backend::vulkan_native_device_dispatch_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_device_dispatch_table_status::missing_create_device_symbol),
+    render::vulkan_backend::vulkan_native_device_dispatch_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_device_dispatch_table_status::missing_get_device_queue_symbol),
+    render::vulkan_backend::vulkan_native_device_dispatch_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_device_dispatch_table_status::missing_destroy_device_symbol),
+    render::vulkan_backend::vulkan_native_device_dispatch_table_status>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_device_extension_query_status::not_checked),
+    render::vulkan_backend::vulkan_native_device_extension_query_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_device_extension_query_status::ready),
+    render::vulkan_backend::vulkan_native_device_extension_query_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_device_extension_query_status::selection_unavailable),
+    render::vulkan_backend::vulkan_native_device_extension_query_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_device_extension_query_status::dispatch_table_unavailable),
+    render::vulkan_backend::vulkan_native_device_extension_query_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_device_extension_query_status::headers_unavailable),
+    render::vulkan_backend::vulkan_native_device_extension_query_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_device_extension_query_status::enumeration_failed),
+    render::vulkan_backend::vulkan_native_device_extension_query_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_device_extension_query_status::missing_required_extension),
+    render::vulkan_backend::vulkan_native_device_extension_query_status>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_device_create_status::not_requested),
+    render::vulkan_backend::vulkan_native_device_create_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_device_create_status::created),
+    render::vulkan_backend::vulkan_native_device_create_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_device_create_status::selection_unavailable),
+    render::vulkan_backend::vulkan_native_device_create_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_device_create_status::dispatch_table_unavailable),
+    render::vulkan_backend::vulkan_native_device_create_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_device_create_status::extension_query_unavailable),
+    render::vulkan_backend::vulkan_native_device_create_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_device_create_status::missing_required_extension),
+    render::vulkan_backend::vulkan_native_device_create_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_device_create_status::headers_unavailable),
+    render::vulkan_backend::vulkan_native_device_create_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_device_create_status::creation_failed),
+    render::vulkan_backend::vulkan_native_device_create_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_device_create_status::queue_unavailable),
+    render::vulkan_backend::vulkan_native_device_create_status>);
 
 static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_swapchain_create_status::not_requested),
@@ -703,12 +892,22 @@ static_assert(requires(render::vulkan_backend::vulkan_loader_probe_result result
     { result.checked } -> std::same_as<bool&>;
     { result.status } -> std::same_as<render::vulkan_backend::vulkan_loader_probe_status&>;
     { result.attempted_library_names } -> std::same_as<std::vector<std::string>&>;
+    { result.candidate_diagnostics }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_loader_candidate_diagnostic>&>;
     { result.loaded_library_name } -> std::same_as<std::string&>;
     { result.required_symbol_name } -> std::same_as<std::string&>;
     { result.attempted_library_count } -> std::same_as<std::size_t&>;
     { result.library_found } -> std::same_as<bool&>;
     { result.required_symbol_found } -> std::same_as<bool&>;
     { result.available() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_loader_candidate_diagnostic candidate) {
+    { candidate.library_name } -> std::same_as<std::string&>;
+    { candidate.status } -> std::same_as<render::vulkan_backend::vulkan_loader_candidate_status&>;
+    { candidate.library_found } -> std::same_as<bool&>;
+    { candidate.required_symbol_found } -> std::same_as<bool&>;
+    { candidate.usable() } -> std::same_as<bool>;
 });
 
 static_assert(requires(render::vulkan_backend::vulkan_loader_readiness_state readiness) {
@@ -834,6 +1033,46 @@ static_assert(requires {
         -> std::same_as<render::vulkan_backend::vulkan_sdk_api_version>;
 });
 
+static_assert(requires(render::vulkan_backend::vulkan_sdk_vulkan_header_evidence evidence) {
+    { evidence.available } -> std::same_as<bool&>;
+    { evidence.api_version_macro_available } -> std::same_as<bool&>;
+    { evidence.header_version_macro_available } -> std::same_as<bool&>;
+    { evidence.api_version } -> std::same_as<render::vulkan_backend::vulkan_sdk_api_version&>;
+    { evidence.header_version } -> std::same_as<std::uint32_t&>;
+    { evidence.instance_handle_size } -> std::same_as<std::size_t&>;
+    { evidence.device_handle_size } -> std::same_as<std::size_t&>;
+    { evidence.result_type_size } -> std::same_as<std::size_t&>;
+    { evidence.success_constant_available } -> std::same_as<bool&>;
+    { evidence.success_value } -> std::same_as<std::int32_t&>;
+    { evidence.surface_extension_constant_available } -> std::same_as<bool&>;
+    { evidence.swapchain_extension_constant_available } -> std::same_as<bool&>;
+    { evidence.surface_extension_name } -> std::same_as<std::string&>;
+    { evidence.swapchain_extension_name } -> std::same_as<std::string&>;
+    { evidence.diagnostic } -> std::same_as<std::string&>;
+    { evidence.complete() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_sdk_vma_header_evidence evidence) {
+    { evidence.available } -> std::same_as<bool&>;
+    { evidence.safe_to_include } -> std::same_as<bool&>;
+    { evidence.vulkan_headers_required } -> std::same_as<bool&>;
+    { evidence.vma_vulkan_version } -> std::same_as<std::uint32_t&>;
+    { evidence.allocator_handle_size } -> std::same_as<std::size_t&>;
+    { evidence.allocation_handle_size } -> std::same_as<std::size_t&>;
+    { evidence.diagnostic } -> std::same_as<std::string&>;
+    { evidence.complete() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_sdk_external_header_evidence evidence) {
+    { evidence.checked } -> std::same_as<bool&>;
+    { evidence.vulkan }
+        -> std::same_as<render::vulkan_backend::vulkan_sdk_vulkan_header_evidence&>;
+    { evidence.vma } -> std::same_as<render::vulkan_backend::vulkan_sdk_vma_header_evidence&>;
+    { evidence.diagnostic } -> std::same_as<std::string&>;
+    { evidence.vulkan_headers_available() } -> std::same_as<bool>;
+    { evidence.vma_headers_available() } -> std::same_as<bool>;
+});
+
 static_assert(requires(render::vulkan_backend::vulkan_sdk_header_manifest manifest) {
     { manifest.headers_available } -> std::same_as<bool&>;
     { manifest.api_version } -> std::same_as<render::vulkan_backend::vulkan_sdk_api_version&>;
@@ -841,10 +1080,19 @@ static_assert(requires(render::vulkan_backend::vulkan_sdk_header_manifest manife
     { manifest.sdk_tag } -> std::same_as<std::string&>;
     { manifest.source_label } -> std::same_as<std::string&>;
     { manifest.supported_extensions } -> std::same_as<std::vector<std::string>&>;
+    { manifest.external_headers }
+        -> std::same_as<render::vulkan_backend::vulkan_sdk_external_header_evidence&>;
     { manifest.diagnostic } -> std::same_as<std::string&>;
     { manifest.supports_api_version(render::vulkan_backend::vulkan_sdk_api_version{}) }
         -> std::same_as<bool>;
     { manifest.supports_extension(std::string_view{}) } -> std::same_as<bool>;
+});
+
+static_assert(requires {
+    { render::vulkan_backend::probe_vulkan_sdk_external_headers() }
+        -> std::same_as<render::vulkan_backend::vulkan_sdk_external_header_evidence>;
+    { render::vulkan_backend::make_compile_time_vulkan_sdk_header_manifest() }
+        -> std::same_as<render::vulkan_backend::vulkan_sdk_header_manifest>;
 });
 
 static_assert(requires(render::vulkan_backend::vulkan_sdk_header_probe_request request) {
@@ -885,6 +1133,8 @@ static_assert(requires(render::vulkan_backend::vulkan_sdk_capability_result resu
         -> std::same_as<render::vulkan_backend::vulkan_native_function_table_diagnostics&>;
     { result.minimum_api_version }
         -> std::same_as<render::vulkan_backend::vulkan_sdk_api_version&>;
+    { result.external_headers }
+        -> std::same_as<render::vulkan_backend::vulkan_sdk_external_header_evidence&>;
     { result.headers_available } -> std::same_as<bool&>;
     { result.api_version_available } -> std::same_as<bool&>;
     { result.api_version_compatible } -> std::same_as<bool&>;
@@ -924,6 +1174,11 @@ static_assert(requires(render::vulkan_backend::vulkan_sdk_native_path_readiness 
         -> std::same_as<render::vulkan_backend::vulkan_sdk_capability_status&>;
     { readiness.sdk_adapter_fallback_status }
         -> std::same_as<render::vulkan_backend::vulkan_sdk_adapter_fallback_status&>;
+    { readiness.external_headers }
+        -> std::same_as<render::vulkan_backend::vulkan_sdk_external_header_evidence&>;
+    { readiness.external_headers_checked } -> std::same_as<bool&>;
+    { readiness.vulkan_headers_available } -> std::same_as<bool&>;
+    { readiness.vma_headers_available } -> std::same_as<bool&>;
     { readiness.headers_available } -> std::same_as<bool&>;
     { readiness.api_version_compatible } -> std::same_as<bool&>;
     { readiness.required_extensions_ready } -> std::same_as<bool&>;
@@ -1030,15 +1285,81 @@ static_assert(requires(render::vulkan_backend::vulkan_instance_handle handle) {
     { handle.valid() } -> std::same_as<bool>;
 });
 
+static_assert(requires(render::vulkan_backend::vulkan_instance_extension_diagnostic diagnostic) {
+    { diagnostic.extension_name } -> std::same_as<std::string&>;
+    { diagnostic.required } -> std::same_as<bool&>;
+    { diagnostic.available } -> std::same_as<bool&>;
+    { diagnostic.selected } -> std::same_as<bool&>;
+    { diagnostic.missing_required() } -> std::same_as<bool>;
+});
+
 static_assert(requires(render::vulkan_backend::vulkan_instance_create_result result) {
     { result.checked } -> std::same_as<bool&>;
     { result.status } -> std::same_as<render::vulkan_backend::vulkan_instance_create_status&>;
     { result.loader } -> std::same_as<render::vulkan_backend::vulkan_loader_readiness_state&>;
     { result.handle } -> std::same_as<render::vulkan_backend::vulkan_instance_handle&>;
     { result.selected_extensions } -> std::same_as<std::vector<std::string>&>;
+    { result.required_extension_diagnostics }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_instance_extension_diagnostic>&>;
+    { result.required_extension_count } -> std::same_as<std::size_t&>;
+    { result.available_required_extension_count } -> std::same_as<std::size_t&>;
+    { result.missing_required_extension } -> std::same_as<std::string&>;
     { result.enabled_layers } -> std::same_as<std::vector<std::string>&>;
     { result.diagnostic } -> std::same_as<std::string&>;
+    { result.required_extensions_ready() } -> std::same_as<bool>;
     { result.ready_for_device() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_instance_function_table table) {
+    { table.checked } -> std::same_as<bool&>;
+    { table.status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_instance_function_table_status&>;
+    { table.get_instance_proc_address }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { table.create_instance } -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { table.destroy_instance } -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { table.diagnostic } -> std::same_as<std::string&>;
+    { table.ready() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_instance_create_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.status } -> std::same_as<render::vulkan_backend::vulkan_native_instance_create_status&>;
+    { result.loader } -> std::same_as<render::vulkan_backend::vulkan_loader_readiness_state&>;
+    { result.function_table }
+        -> std::same_as<render::vulkan_backend::vulkan_native_instance_function_table&>;
+    { result.request } -> std::same_as<render::vulkan_backend::vulkan_instance_create_request&>;
+    { result.handle } -> std::same_as<render::vulkan_backend::vulkan_instance_handle&>;
+    { result.native_result } -> std::same_as<std::int32_t&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.created() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_instance_dispatch_table table) {
+    { table.checked } -> std::same_as<bool&>;
+    { table.status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_instance_dispatch_table_status&>;
+    { table.handle } -> std::same_as<render::vulkan_backend::vulkan_instance_handle&>;
+    { table.get_instance_proc_address }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { table.destroy_instance }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { table.missing_symbol_name } -> std::same_as<std::string&>;
+    { table.diagnostic } -> std::same_as<std::string&>;
+    { table.ready_for_destroy() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_instance_destroy_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.status } -> std::same_as<render::vulkan_backend::vulkan_native_instance_destroy_status&>;
+    { result.function_table }
+        -> std::same_as<render::vulkan_backend::vulkan_native_instance_function_table&>;
+    { result.dispatch_table }
+        -> std::same_as<render::vulkan_backend::vulkan_native_instance_dispatch_table&>;
+    { result.handle } -> std::same_as<render::vulkan_backend::vulkan_instance_handle&>;
+    { result.used_instance_dispatch } -> std::same_as<bool&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.destroyed() } -> std::same_as<bool>;
 });
 
 static_assert(requires(render::vulkan_backend::vulkan_device_handle handle) {
@@ -1051,6 +1372,11 @@ static_assert(requires(render::vulkan_backend::vulkan_queue_handle handle) {
     { handle.valid() } -> std::same_as<bool>;
 });
 
+static_assert(requires(render::vulkan_backend::vulkan_physical_device_handle handle) {
+    { handle.value } -> std::same_as<std::uintptr_t&>;
+    { handle.valid() } -> std::same_as<bool>;
+});
+
 static_assert(requires(render::vulkan_backend::vulkan_device_queue_selection selection) {
     { selection.capability }
         -> std::same_as<render::vulkan_backend::vulkan_device_queue_capability&>;
@@ -1059,14 +1385,195 @@ static_assert(requires(render::vulkan_backend::vulkan_device_queue_selection sel
     { selection.valid() } -> std::same_as<bool>;
 });
 
+static_assert(requires(render::vulkan_backend::vulkan_device_extension_diagnostic diagnostic) {
+    { diagnostic.extension_name } -> std::same_as<std::string&>;
+    { diagnostic.required } -> std::same_as<bool&>;
+    { diagnostic.available } -> std::same_as<bool&>;
+    { diagnostic.selected } -> std::same_as<bool&>;
+    { diagnostic.missing_required() } -> std::same_as<bool>;
+});
+
 static_assert(requires(render::vulkan_backend::vulkan_device_create_result result) {
     { result.checked } -> std::same_as<bool&>;
     { result.status } -> std::same_as<render::vulkan_backend::vulkan_device_create_status&>;
     { result.instance } -> std::same_as<render::vulkan_backend::vulkan_instance_create_result&>;
     { result.handle } -> std::same_as<render::vulkan_backend::vulkan_device_handle&>;
     { result.selected_extensions } -> std::same_as<std::vector<std::string>&>;
+    { result.required_extension_diagnostics }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_device_extension_diagnostic>&>;
+    { result.required_extension_count } -> std::same_as<std::size_t&>;
+    { result.available_required_extension_count } -> std::same_as<std::size_t&>;
+    { result.missing_required_extension } -> std::same_as<std::string&>;
     { result.selected_queues }
         -> std::same_as<std::vector<render::vulkan_backend::vulkan_device_queue_selection>&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.required_extensions_ready() } -> std::same_as<bool>;
+    { result.ready_for_backend() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_physical_device_dispatch_table table) {
+    { table.checked } -> std::same_as<bool&>;
+    { table.status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_physical_device_dispatch_table_status&>;
+    { table.instance } -> std::same_as<render::vulkan_backend::vulkan_instance_handle&>;
+    { table.get_instance_proc_address }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { table.enumerate_physical_devices }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { table.get_physical_device_queue_family_properties }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { table.missing_symbol_name } -> std::same_as<std::string&>;
+    { table.diagnostic } -> std::same_as<std::string&>;
+    { table.ready_for_enumeration() } -> std::same_as<bool>;
+    { table.ready_for_queue_family_query() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_physical_device_enumeration_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_physical_device_enumeration_status&>;
+    { result.dispatch_table }
+        -> std::same_as<render::vulkan_backend::vulkan_native_physical_device_dispatch_table&>;
+    { result.physical_devices }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_physical_device_handle>&>;
+    { result.physical_device_count } -> std::same_as<std::size_t&>;
+    { result.native_result } -> std::same_as<std::int32_t&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.ready_for_device_selection() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    render::vulkan_backend::vulkan_native_physical_device_queue_family family,
+    render::vulkan_backend::vulkan_device_queue_capability capability) {
+    { family.physical_device }
+        -> std::same_as<render::vulkan_backend::vulkan_physical_device_handle&>;
+    { family.family_index } -> std::same_as<std::size_t&>;
+    { family.queue_count } -> std::same_as<std::size_t&>;
+    { family.capabilities }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_device_queue_capability>&>;
+    { family.supports(capability) } -> std::same_as<bool>;
+    { family.usable() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_physical_device_queue_family_selection selection) {
+    { selection.capability }
+        -> std::same_as<render::vulkan_backend::vulkan_device_queue_capability&>;
+    { selection.physical_device }
+        -> std::same_as<render::vulkan_backend::vulkan_physical_device_handle&>;
+    { selection.family_index } -> std::same_as<std::size_t&>;
+    { selection.queue_count } -> std::same_as<std::size_t&>;
+    { selection.valid() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_queue_family_query_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_queue_family_query_status&>;
+    { result.enumeration }
+        -> std::same_as<render::vulkan_backend::vulkan_native_physical_device_enumeration_result&>;
+    { result.queue_families }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_physical_device_queue_family>&>;
+    { result.queue_family_count } -> std::same_as<std::size_t&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.ready_for_selection() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_physical_device_selection_candidate candidate) {
+    { candidate.physical_device }
+        -> std::same_as<render::vulkan_backend::vulkan_physical_device_handle&>;
+    { candidate.queue_families }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_physical_device_queue_family>&>;
+    { candidate.selected_queue_families }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_physical_device_queue_family_selection>&>;
+    { candidate.missing_required_queue } -> std::same_as<std::string&>;
+    { candidate.selected } -> std::same_as<bool&>;
+    { candidate.required_queues_ready() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_physical_device_selection_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_physical_device_selection_status&>;
+    { result.enumeration }
+        -> std::same_as<render::vulkan_backend::vulkan_native_physical_device_enumeration_result&>;
+    { result.queue_family_query }
+        -> std::same_as<render::vulkan_backend::vulkan_native_queue_family_query_result&>;
+    { result.request } -> std::same_as<render::vulkan_backend::vulkan_device_create_request&>;
+    { result.selected_physical_device }
+        -> std::same_as<render::vulkan_backend::vulkan_physical_device_handle&>;
+    { result.selected_queue_families }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_physical_device_queue_family_selection>&>;
+    { result.candidates }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_physical_device_selection_candidate>&>;
+    { result.missing_required_queue } -> std::same_as<std::string&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.ready_for_device_create() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_device_dispatch_table table) {
+    { table.checked } -> std::same_as<bool&>;
+    { table.status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_device_dispatch_table_status&>;
+    { table.instance } -> std::same_as<render::vulkan_backend::vulkan_instance_handle&>;
+    { table.physical_device }
+        -> std::same_as<render::vulkan_backend::vulkan_physical_device_handle&>;
+    { table.get_instance_proc_address }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { table.enumerate_device_extension_properties }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { table.create_device }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { table.get_device_queue }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { table.destroy_device }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { table.missing_symbol_name } -> std::same_as<std::string&>;
+    { table.diagnostic } -> std::same_as<std::string&>;
+    { table.ready_for_create() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_device_extension_query_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_device_extension_query_status&>;
+    { result.dispatch_table }
+        -> std::same_as<render::vulkan_backend::vulkan_native_device_dispatch_table&>;
+    { result.selection }
+        -> std::same_as<render::vulkan_backend::vulkan_native_physical_device_selection_result&>;
+    { result.physical_device }
+        -> std::same_as<render::vulkan_backend::vulkan_physical_device_handle&>;
+    { result.available_extensions } -> std::same_as<std::vector<std::string>&>;
+    { result.selected_extensions } -> std::same_as<std::vector<std::string>&>;
+    { result.required_extension_diagnostics }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_device_extension_diagnostic>&>;
+    { result.available_extension_count } -> std::same_as<std::size_t&>;
+    { result.required_extension_count } -> std::same_as<std::size_t&>;
+    { result.available_required_extension_count } -> std::same_as<std::size_t&>;
+    { result.missing_required_extension } -> std::same_as<std::string&>;
+    { result.native_result } -> std::same_as<std::int32_t&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.required_extensions_ready() } -> std::same_as<bool>;
+    { result.ready_for_create() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_device_create_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_device_create_status&>;
+    { result.dispatch_table }
+        -> std::same_as<render::vulkan_backend::vulkan_native_device_dispatch_table&>;
+    { result.extension_query }
+        -> std::same_as<render::vulkan_backend::vulkan_native_device_extension_query_result&>;
+    { result.selection }
+        -> std::same_as<render::vulkan_backend::vulkan_native_physical_device_selection_result&>;
+    { result.handle } -> std::same_as<render::vulkan_backend::vulkan_device_handle&>;
+    { result.selected_extensions } -> std::same_as<std::vector<std::string>&>;
+    { result.queue_create_family_indices } -> std::same_as<std::vector<std::size_t>&>;
+    { result.selected_queues }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_device_queue_selection>&>;
+    { result.queue_create_family_count } -> std::same_as<std::size_t&>;
+    { result.selected_queue_count } -> std::same_as<std::size_t&>;
+    { result.native_result } -> std::same_as<std::int32_t&>;
     { result.diagnostic } -> std::same_as<std::string&>;
     { result.ready_for_backend() } -> std::same_as<bool>;
 });
@@ -1079,6 +1586,17 @@ static_assert(requires(render::vulkan_backend::vulkan_swapchain_handle handle) {
 static_assert(requires(render::vulkan_backend::vulkan_surface_handle handle) {
     { handle.value } -> std::same_as<std::uintptr_t&>;
     { handle.valid() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_swapchain_image_handle handle) {
+    { handle.value } -> std::same_as<std::uintptr_t&>;
+    { handle.valid() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_swapchain_image_binding image) {
+    { image.image_id } -> std::same_as<render::vulkan_backend::vulkan_swapchain_image_id&>;
+    { image.handle } -> std::same_as<render::vulkan_backend::vulkan_swapchain_image_handle&>;
+    { image.valid() } -> std::same_as<bool>;
 });
 
 static_assert(requires(render::vulkan_backend::vulkan_swapchain_create_result result) {
@@ -1352,9 +1870,45 @@ static_assert(requires(render::vulkan_backend::fake_vulkan_native_symbol_resolve
     { state.missing_symbols } -> std::same_as<std::vector<std::string>&>;
 });
 
+static_assert(requires(render::vulkan_backend::fake_vulkan_native_instance_symbol_resolver_options options) {
+    { options.default_available } -> std::same_as<bool&>;
+    { options.available_symbols } -> std::same_as<std::vector<std::string>&>;
+    { options.missing_symbols } -> std::same_as<std::vector<std::string>&>;
+    { options.get_instance_proc_address }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { options.pointer_base } -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+});
+
+static_assert(requires(render::vulkan_backend::fake_vulkan_native_instance_symbol_resolver_state state) {
+    { state.resolve_call_count } -> std::same_as<std::size_t&>;
+    { state.requested_instance_handles } -> std::same_as<std::vector<std::uintptr_t>&>;
+    { state.requested_symbols } -> std::same_as<std::vector<std::string>&>;
+    { state.resolved_symbols } -> std::same_as<std::vector<std::string>&>;
+    { state.missing_symbols } -> std::same_as<std::vector<std::string>&>;
+});
+
 static_assert(requires(render::vulkan_backend::system_vulkan_native_symbol_resolver_options options) {
     { options.candidate_library_names } -> std::same_as<std::vector<std::string>&>;
     { options.use_default_library_names } -> std::same_as<bool&>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_system_symbol_resolution_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.symbol_name } -> std::same_as<std::string&>;
+    { result.attempted_library_names } -> std::same_as<std::vector<std::string>&>;
+    { result.loaded_library_name } -> std::same_as<std::string&>;
+    { result.loader_library_available } -> std::same_as<bool&>;
+    { result.instance_proc_address_available } -> std::same_as<bool&>;
+    { result.resolved_via_instance_proc_address } -> std::same_as<bool&>;
+    { result.resolved_via_direct_export } -> std::same_as<bool&>;
+    { result.pointer } -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.resolved() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::system_vulkan_native_symbol_resolver resolver) {
+    { resolver.resolve_symbol_with_diagnostics("vkCreateInstance") }
+        -> std::same_as<render::vulkan_backend::vulkan_system_symbol_resolution_result>;
 });
 
 static_assert(requires(render::vulkan_backend::fake_vulkan_instance_factory_options options) {
@@ -1372,6 +1926,78 @@ static_assert(requires(render::vulkan_backend::fake_vulkan_device_factory_option
     { options.fail_creation } -> std::same_as<bool&>;
     { options.handle } -> std::same_as<render::vulkan_backend::vulkan_device_handle&>;
     { options.queue_handle_base } -> std::same_as<std::uintptr_t&>;
+});
+
+static_assert(requires(render::vulkan_backend::fake_vulkan_native_physical_device_enumerator_options options) {
+    { options.physical_devices }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_physical_device_handle>&>;
+    { options.fail_enumeration } -> std::same_as<bool&>;
+    { options.failure_result } -> std::same_as<std::int32_t&>;
+});
+
+static_assert(requires(render::vulkan_backend::fake_vulkan_native_physical_device_enumerator_state state) {
+    { state.enumerate_call_count } -> std::same_as<std::size_t&>;
+    { state.last_instance } -> std::same_as<render::vulkan_backend::vulkan_instance_handle&>;
+    { state.last_enumerate_physical_devices }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+});
+
+static_assert(requires(render::vulkan_backend::fake_vulkan_native_queue_family_query_options options) {
+    { options.queue_families }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_physical_device_queue_family>&>;
+});
+
+static_assert(requires(render::vulkan_backend::fake_vulkan_native_queue_family_query_state state) {
+    { state.query_call_count } -> std::same_as<std::size_t&>;
+    { state.inspected_physical_devices }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_physical_device_handle>&>;
+    { state.last_get_physical_device_queue_family_properties }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+});
+
+static_assert(requires(render::vulkan_backend::fake_vulkan_native_physical_device_selector_state state) {
+    { state.select_call_count } -> std::same_as<std::size_t&>;
+    { state.inspected_physical_devices }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_physical_device_handle>&>;
+});
+
+static_assert(requires(render::vulkan_backend::fake_vulkan_native_device_creator_options options) {
+    { options.fail_creation } -> std::same_as<bool&>;
+    { options.failure_result } -> std::same_as<std::int32_t&>;
+    { options.handle } -> std::same_as<render::vulkan_backend::vulkan_device_handle&>;
+    { options.queue_handle_base } -> std::same_as<std::uintptr_t&>;
+    { options.unavailable_queue_family_indices } -> std::same_as<std::vector<std::size_t>&>;
+});
+
+static_assert(requires(render::vulkan_backend::fake_vulkan_native_device_extension_query_options options) {
+    { options.available_extensions } -> std::same_as<std::vector<std::string>&>;
+    { options.fail_enumeration } -> std::same_as<bool&>;
+    { options.failure_result } -> std::same_as<std::int32_t&>;
+});
+
+static_assert(requires(render::vulkan_backend::fake_vulkan_native_device_extension_query_state state) {
+    { state.query_call_count } -> std::same_as<std::size_t&>;
+    { state.requested_physical_device }
+        -> std::same_as<render::vulkan_backend::vulkan_physical_device_handle&>;
+    { state.last_enumerate_device_extension_properties }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+});
+
+static_assert(requires(render::vulkan_backend::fake_vulkan_native_device_creator_state state) {
+    { state.create_call_count } -> std::same_as<std::size_t&>;
+    { state.get_queue_call_count } -> std::same_as<std::size_t&>;
+    { state.destroy_call_count } -> std::same_as<std::size_t&>;
+    { state.requested_physical_device }
+        -> std::same_as<render::vulkan_backend::vulkan_physical_device_handle&>;
+    { state.destroyed_device } -> std::same_as<render::vulkan_backend::vulkan_device_handle&>;
+    { state.last_create_device }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { state.last_get_device_queue }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { state.last_destroy_device }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { state.requested_queue_family_indices } -> std::same_as<std::vector<std::size_t>&>;
+    { state.requested_extensions } -> std::same_as<std::vector<std::string>&>;
 });
 
 static_assert(requires(render::vulkan_backend::fake_vulkan_swapchain_factory_options options) {
@@ -1511,6 +2137,135 @@ static_assert(requires(
         -> std::same_as<const render::vulkan_backend::fake_vulkan_native_symbol_resolver_state&>;
 });
 
+static_assert(std::default_initializable<render::vulkan_backend::fake_vulkan_native_instance_symbol_resolver>);
+static_assert(std::constructible_from<
+    render::vulkan_backend::fake_vulkan_native_instance_symbol_resolver,
+    render::vulkan_backend::fake_vulkan_native_instance_symbol_resolver_options>);
+static_assert(std::constructible_from<
+    render::vulkan_backend::vulkan_native_instance_proc_addr_resolver,
+    render::vulkan_backend::vulkan_native_function_pointer>);
+static_assert(requires(
+    render::vulkan_backend::fake_vulkan_native_instance_symbol_resolver fake,
+    render::vulkan_backend::vulkan_instance_handle instance,
+    std::string_view symbol_name) {
+    { fake.get_instance_proc_address() }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer>;
+    { fake.resolve_instance_symbol(instance, symbol_name) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer>;
+    { fake.state() }
+        -> std::same_as<const render::vulkan_backend::fake_vulkan_native_instance_symbol_resolver_state&>;
+});
+static_assert(requires(
+    render::vulkan_backend::vulkan_native_instance_proc_addr_resolver resolver,
+    render::vulkan_backend::vulkan_instance_handle instance,
+    std::string_view symbol_name) {
+    { resolver.get_instance_proc_address() }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer>;
+    { resolver.resolve_instance_symbol(instance, symbol_name) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer>;
+});
+
+static_assert(std::default_initializable<render::vulkan_backend::fake_vulkan_native_physical_device_enumerator>);
+static_assert(std::constructible_from<
+    render::vulkan_backend::fake_vulkan_native_physical_device_enumerator,
+    render::vulkan_backend::fake_vulkan_native_physical_device_enumerator_options>);
+static_assert(std::default_initializable<render::vulkan_backend::vulkan_native_physical_device_enumerator>);
+static_assert(requires(
+    render::vulkan_backend::fake_vulkan_native_physical_device_enumerator fake,
+    const render::vulkan_backend::vulkan_native_physical_device_dispatch_table& dispatch_table) {
+    { fake.enumerate_physical_devices(dispatch_table) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_physical_device_enumeration_result>;
+    { fake.state() }
+        -> std::same_as<const render::vulkan_backend::fake_vulkan_native_physical_device_enumerator_state&>;
+});
+static_assert(requires(
+    render::vulkan_backend::vulkan_native_physical_device_enumerator enumerator,
+    const render::vulkan_backend::vulkan_native_physical_device_dispatch_table& dispatch_table) {
+    { enumerator.enumerate_physical_devices(dispatch_table) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_physical_device_enumeration_result>;
+});
+
+static_assert(std::default_initializable<render::vulkan_backend::fake_vulkan_native_queue_family_query>);
+static_assert(std::constructible_from<
+    render::vulkan_backend::fake_vulkan_native_queue_family_query,
+    render::vulkan_backend::fake_vulkan_native_queue_family_query_options>);
+static_assert(std::default_initializable<render::vulkan_backend::vulkan_native_queue_family_query>);
+static_assert(requires(
+    render::vulkan_backend::fake_vulkan_native_queue_family_query fake,
+    const render::vulkan_backend::vulkan_native_physical_device_enumeration_result& enumeration) {
+    { fake.query_queue_families(enumeration) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_queue_family_query_result>;
+    { fake.state() }
+        -> std::same_as<const render::vulkan_backend::fake_vulkan_native_queue_family_query_state&>;
+});
+static_assert(requires(
+    render::vulkan_backend::vulkan_native_queue_family_query query,
+    const render::vulkan_backend::vulkan_native_physical_device_enumeration_result& enumeration) {
+    { query.query_queue_families(enumeration) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_queue_family_query_result>;
+});
+
+static_assert(std::default_initializable<render::vulkan_backend::fake_vulkan_native_physical_device_selector>);
+static_assert(std::constructible_from<
+    render::vulkan_backend::fake_vulkan_native_physical_device_selector,
+    render::vulkan_backend::fake_vulkan_native_physical_device_selector_options>);
+static_assert(requires(
+    render::vulkan_backend::fake_vulkan_native_physical_device_selector fake,
+    const render::vulkan_backend::vulkan_native_physical_device_enumeration_result& enumeration,
+    const render::vulkan_backend::vulkan_native_queue_family_query_result& queue_family_query,
+    const render::vulkan_backend::vulkan_device_create_request& request) {
+    { fake.select_physical_device(enumeration, queue_family_query, request) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_physical_device_selection_result>;
+    { fake.state() }
+        -> std::same_as<const render::vulkan_backend::fake_vulkan_native_physical_device_selector_state&>;
+});
+
+static_assert(std::default_initializable<render::vulkan_backend::fake_vulkan_native_device_extension_query>);
+static_assert(std::constructible_from<
+    render::vulkan_backend::fake_vulkan_native_device_extension_query,
+    render::vulkan_backend::fake_vulkan_native_device_extension_query_options>);
+static_assert(std::default_initializable<render::vulkan_backend::vulkan_native_device_extension_query>);
+static_assert(requires(
+    render::vulkan_backend::fake_vulkan_native_device_extension_query fake,
+    const render::vulkan_backend::vulkan_native_device_dispatch_table& dispatch_table,
+    const render::vulkan_backend::vulkan_native_physical_device_selection_result& selection) {
+    { fake.query_device_extensions(dispatch_table, selection) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_device_extension_query_result>;
+    { fake.state() }
+        -> std::same_as<const render::vulkan_backend::fake_vulkan_native_device_extension_query_state&>;
+});
+static_assert(requires(
+    render::vulkan_backend::vulkan_native_device_extension_query query,
+    const render::vulkan_backend::vulkan_native_device_dispatch_table& dispatch_table,
+    const render::vulkan_backend::vulkan_native_physical_device_selection_result& selection) {
+    { query.query_device_extensions(dispatch_table, selection) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_device_extension_query_result>;
+});
+
+static_assert(std::default_initializable<render::vulkan_backend::fake_vulkan_native_device_creator>);
+static_assert(std::constructible_from<
+    render::vulkan_backend::fake_vulkan_native_device_creator,
+    render::vulkan_backend::fake_vulkan_native_device_creator_options>);
+static_assert(std::default_initializable<render::vulkan_backend::vulkan_native_device_creator>);
+static_assert(requires(
+    render::vulkan_backend::fake_vulkan_native_device_creator fake,
+    const render::vulkan_backend::vulkan_native_device_dispatch_table& dispatch_table,
+    const render::vulkan_backend::vulkan_native_device_extension_query_result& extension_query,
+    const render::vulkan_backend::vulkan_native_physical_device_selection_result& selection) {
+    { fake.create_device(dispatch_table, extension_query, selection) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_device_create_result>;
+    { fake.state() }
+        -> std::same_as<const render::vulkan_backend::fake_vulkan_native_device_creator_state&>;
+});
+static_assert(requires(
+    render::vulkan_backend::vulkan_native_device_creator creator,
+    const render::vulkan_backend::vulkan_native_device_dispatch_table& dispatch_table,
+    const render::vulkan_backend::vulkan_native_device_extension_query_result& extension_query,
+    const render::vulkan_backend::vulkan_native_physical_device_selection_result& selection) {
+    { creator.create_device(dispatch_table, extension_query, selection) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_device_create_result>;
+});
+
 static_assert(std::default_initializable<render::vulkan_backend::system_vulkan_native_symbol_resolver>);
 static_assert(std::constructible_from<
     render::vulkan_backend::system_vulkan_native_symbol_resolver,
@@ -1556,6 +2311,8 @@ static_assert(requires(
     render::vulkan_backend::vulkan_loader_interface& loader,
     const render::vulkan_backend::vulkan_loader_probe_request& request) {
     { render::vulkan_backend::vulkan_loader_required_symbol_name() } -> std::same_as<std::string_view>;
+    { render::vulkan_backend::loader_candidate_status_name(
+        render::vulkan_backend::vulkan_loader_candidate_status::usable) } -> std::same_as<std::string_view>;
     { render::vulkan_backend::default_vulkan_loader_library_names() }
         -> std::same_as<std::vector<std::string>>;
     { render::vulkan_backend::probe_vulkan_loader(loader, request) }
@@ -1589,22 +2346,89 @@ static_assert(requires(
 
 static_assert(requires(
     render::vulkan_backend::vulkan_instance_factory_interface& factory,
+    render::vulkan_backend::vulkan_native_symbol_resolver_interface& native_resolver,
+    render::vulkan_backend::vulkan_native_instance_symbol_resolver_interface& native_instance_resolver,
     const render::vulkan_backend::vulkan_loader_readiness_state& loader_readiness,
+    const render::vulkan_backend::vulkan_native_instance_function_table& native_instance_table,
+    const render::vulkan_backend::vulkan_native_instance_create_result& native_instance_create_result,
+    const render::vulkan_backend::vulkan_native_instance_dispatch_table& native_instance_dispatch_table,
     const render::vulkan_backend::vulkan_instance_create_request& request) {
     { render::vulkan_backend::create_vulkan_instance(
         factory,
         loader_readiness,
         request) } -> std::same_as<render::vulkan_backend::vulkan_instance_create_result>;
+    { render::vulkan_backend::collect_vulkan_native_instance_function_table(native_resolver) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_instance_function_table>;
+    { render::vulkan_backend::create_native_vulkan_instance(
+        loader_readiness,
+        native_instance_table,
+        request) } -> std::same_as<render::vulkan_backend::vulkan_native_instance_create_result>;
+    { render::vulkan_backend::collect_vulkan_native_instance_dispatch_table(
+        native_instance_resolver,
+        native_instance_create_result) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_instance_dispatch_table>;
+    { render::vulkan_backend::destroy_native_vulkan_instance(
+        native_instance_table,
+        render::vulkan_backend::vulkan_instance_handle{}) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_instance_destroy_result>;
+    { render::vulkan_backend::destroy_native_vulkan_instance(native_instance_dispatch_table) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_instance_destroy_result>;
 });
 
 static_assert(requires(
     render::vulkan_backend::vulkan_device_factory_interface& factory,
+    render::vulkan_backend::vulkan_native_instance_symbol_resolver_interface& native_instance_resolver,
+    render::vulkan_backend::vulkan_native_physical_device_enumerator_interface& physical_device_enumerator,
+    render::vulkan_backend::vulkan_native_queue_family_query_interface& queue_family_query,
+    render::vulkan_backend::vulkan_native_physical_device_selector_interface& physical_device_selector,
+    render::vulkan_backend::vulkan_native_device_extension_query_interface& native_device_extension_query,
+    render::vulkan_backend::vulkan_native_device_creator_interface& native_device_creator,
     const render::vulkan_backend::vulkan_instance_create_result& instance_result,
+    const render::vulkan_backend::vulkan_native_instance_create_result& native_instance_create_result,
+    const render::vulkan_backend::vulkan_native_physical_device_dispatch_table& physical_device_dispatch_table,
+    const render::vulkan_backend::vulkan_native_physical_device_enumeration_result& physical_device_enumeration,
+    const render::vulkan_backend::vulkan_native_queue_family_query_result& queue_family_query_result,
+    const render::vulkan_backend::vulkan_native_physical_device_selection_result& physical_device_selection,
+    const render::vulkan_backend::vulkan_native_device_dispatch_table& native_device_dispatch_table,
+    const render::vulkan_backend::vulkan_native_device_extension_query_result& native_device_extension_query_result,
     const render::vulkan_backend::vulkan_device_create_request& request) {
     { render::vulkan_backend::create_vulkan_device(
         factory,
         instance_result,
         request) } -> std::same_as<render::vulkan_backend::vulkan_device_create_result>;
+    { render::vulkan_backend::collect_vulkan_native_physical_device_dispatch_table(
+        native_instance_resolver,
+        native_instance_create_result) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_physical_device_dispatch_table>;
+    { render::vulkan_backend::enumerate_native_vulkan_physical_devices(
+        physical_device_enumerator,
+        physical_device_dispatch_table) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_physical_device_enumeration_result>;
+    { render::vulkan_backend::query_native_vulkan_physical_device_queue_families(
+        queue_family_query,
+        physical_device_enumeration) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_queue_family_query_result>;
+    { render::vulkan_backend::select_native_vulkan_physical_device(
+        physical_device_selector,
+        physical_device_enumeration,
+        queue_family_query_result,
+        request) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_physical_device_selection_result>;
+    { render::vulkan_backend::collect_vulkan_native_device_dispatch_table(
+        native_instance_resolver,
+        physical_device_selection) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_device_dispatch_table>;
+    { render::vulkan_backend::query_native_vulkan_device_extensions(
+        native_device_extension_query,
+        native_device_dispatch_table,
+        physical_device_selection) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_device_extension_query_result>;
+    { render::vulkan_backend::create_native_vulkan_device(
+        native_device_creator,
+        native_device_dispatch_table,
+        native_device_extension_query_result,
+        physical_device_selection) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_device_create_result>;
 });
 
 static_assert(requires(
@@ -2075,6 +2899,71 @@ static_assert(std::same_as<
     render::vulkan_backend::vulkan_swapchain_create_plan_status>);
 
 static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_surface_query_dispatch_table_status::not_checked),
+    render::vulkan_backend::vulkan_native_surface_query_dispatch_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_surface_query_dispatch_table_status::ready),
+    render::vulkan_backend::vulkan_native_surface_query_dispatch_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_surface_query_dispatch_table_status::device_unavailable),
+    render::vulkan_backend::vulkan_native_surface_query_dispatch_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_surface_query_dispatch_table_status::get_instance_proc_address_unavailable),
+    render::vulkan_backend::vulkan_native_surface_query_dispatch_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_surface_query_dispatch_table_status::missing_surface_support_symbol),
+    render::vulkan_backend::vulkan_native_surface_query_dispatch_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_surface_query_dispatch_table_status::missing_surface_capabilities_symbol),
+    render::vulkan_backend::vulkan_native_surface_query_dispatch_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_surface_query_dispatch_table_status::missing_surface_formats_symbol),
+    render::vulkan_backend::vulkan_native_surface_query_dispatch_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_surface_query_dispatch_table_status::missing_surface_present_modes_symbol),
+    render::vulkan_backend::vulkan_native_surface_query_dispatch_table_status>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_surface_capability_query_status::not_checked),
+    render::vulkan_backend::vulkan_native_surface_capability_query_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_surface_capability_query_status::ready),
+    render::vulkan_backend::vulkan_native_surface_capability_query_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_surface_capability_query_status::dispatch_table_unavailable),
+    render::vulkan_backend::vulkan_native_surface_capability_query_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_surface_capability_query_status::device_unavailable),
+    render::vulkan_backend::vulkan_native_surface_capability_query_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_surface_capability_query_status::missing_surface_handle),
+    render::vulkan_backend::vulkan_native_surface_capability_query_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_surface_capability_query_status::headers_unavailable),
+    render::vulkan_backend::vulkan_native_surface_capability_query_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_surface_capability_query_status::support_query_failed),
+    render::vulkan_backend::vulkan_native_surface_capability_query_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_surface_capability_query_status::capabilities_query_failed),
+    render::vulkan_backend::vulkan_native_surface_capability_query_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_surface_capability_query_status::formats_query_failed),
+    render::vulkan_backend::vulkan_native_surface_capability_query_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_surface_capability_query_status::present_modes_query_failed),
+    render::vulkan_backend::vulkan_native_surface_capability_query_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_surface_capability_query_status::unsupported_present_queue),
+    render::vulkan_backend::vulkan_native_surface_capability_query_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_surface_capability_query_status::zero_surface_formats),
+    render::vulkan_backend::vulkan_native_surface_capability_query_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_surface_capability_query_status::zero_present_modes),
+    render::vulkan_backend::vulkan_native_surface_capability_query_status>);
+
+static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_native_swapchain_create_operation_status::not_checked),
     render::vulkan_backend::vulkan_native_swapchain_create_operation_status>);
 static_assert(std::same_as<
@@ -2082,6 +2971,9 @@ static_assert(std::same_as<
     render::vulkan_backend::vulkan_native_swapchain_create_operation_status>);
 static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_native_swapchain_create_operation_status::create_plan_unavailable),
+    render::vulkan_backend::vulkan_native_swapchain_create_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_swapchain_create_operation_status::surface_query_unavailable),
     render::vulkan_backend::vulkan_native_swapchain_create_operation_status>);
 static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_native_swapchain_create_operation_status::native_entrypoints_unavailable),
@@ -2108,6 +3000,77 @@ static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_native_swapchain_create_operation_status::recreate_incompatible),
     render::vulkan_backend::vulkan_native_swapchain_create_operation_status>);
 
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_swapchain_images_operation_status::not_checked),
+    render::vulkan_backend::vulkan_native_swapchain_images_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_swapchain_images_operation_status::ready),
+    render::vulkan_backend::vulkan_native_swapchain_images_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_swapchain_images_operation_status::create_operation_unavailable),
+    render::vulkan_backend::vulkan_native_swapchain_images_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_swapchain_images_operation_status::invalid_device),
+    render::vulkan_backend::vulkan_native_swapchain_images_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_swapchain_images_operation_status::missing_swapchain_handle),
+    render::vulkan_backend::vulkan_native_swapchain_images_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_swapchain_images_operation_status::native_entrypoints_unavailable),
+    render::vulkan_backend::vulkan_native_swapchain_images_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_swapchain_images_operation_status::required_extension_unavailable),
+    render::vulkan_backend::vulkan_native_swapchain_images_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_swapchain_images_operation_status::missing_images_symbol),
+    render::vulkan_backend::vulkan_native_swapchain_images_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_swapchain_images_operation_status::image_count_unavailable),
+    render::vulkan_backend::vulkan_native_swapchain_images_operation_status>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_swapchain_acquire_operation_status::not_checked),
+    render::vulkan_backend::vulkan_native_swapchain_acquire_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_swapchain_acquire_operation_status::ready),
+    render::vulkan_backend::vulkan_native_swapchain_acquire_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_swapchain_acquire_operation_status::images_operation_unavailable),
+    render::vulkan_backend::vulkan_native_swapchain_acquire_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_swapchain_acquire_operation_status::acquire_plan_unavailable),
+    render::vulkan_backend::vulkan_native_swapchain_acquire_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_swapchain_acquire_operation_status::invalid_device),
+    render::vulkan_backend::vulkan_native_swapchain_acquire_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_swapchain_acquire_operation_status::missing_swapchain_handle),
+    render::vulkan_backend::vulkan_native_swapchain_acquire_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_swapchain_acquire_operation_status::native_entrypoints_unavailable),
+    render::vulkan_backend::vulkan_native_swapchain_acquire_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_swapchain_acquire_operation_status::required_extension_unavailable),
+    render::vulkan_backend::vulkan_native_swapchain_acquire_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_swapchain_acquire_operation_status::missing_acquire_symbol),
+    render::vulkan_backend::vulkan_native_swapchain_acquire_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_swapchain_acquire_operation_status::image_binding_unavailable),
+    render::vulkan_backend::vulkan_native_swapchain_acquire_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_swapchain_acquire_operation_status::timeout),
+    render::vulkan_backend::vulkan_native_swapchain_acquire_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_swapchain_acquire_operation_status::out_of_date),
+    render::vulkan_backend::vulkan_native_swapchain_acquire_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_swapchain_acquire_operation_status::suboptimal),
+    render::vulkan_backend::vulkan_native_swapchain_acquire_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_swapchain_acquire_operation_status::error),
+    render::vulkan_backend::vulkan_native_swapchain_acquire_operation_status>);
+
 static_assert(requires(
     render::vulkan_backend::vulkan_swapchain_acquire_status acquire_status,
     render::vulkan_backend::vulkan_swapchain_image_acquire_plan_status acquire_plan_status,
@@ -2121,7 +3084,11 @@ static_assert(requires(
     render::vulkan_backend::vulkan_swapchain_image_sharing_mode sharing_mode,
     render::vulkan_backend::vulkan_swapchain_create_plan_status create_plan_status,
     render::vulkan_backend::vulkan_native_swapchain_create_operation_status
-        native_create_status) {
+        native_create_status,
+    render::vulkan_backend::vulkan_native_swapchain_images_operation_status
+        native_images_status,
+    render::vulkan_backend::vulkan_native_swapchain_acquire_operation_status
+        native_acquire_status) {
     { render::vulkan_backend::swapchain_acquire_status_name(acquire_status) } -> std::same_as<std::string_view>;
     { render::vulkan_backend::swapchain_image_acquire_plan_status_name(acquire_plan_status) }
         -> std::same_as<std::string_view>;
@@ -2143,6 +3110,10 @@ static_assert(requires(
         -> std::same_as<std::string_view>;
     { render::vulkan_backend::native_swapchain_create_operation_status_name(
         native_create_status) } -> std::same_as<std::string_view>;
+    { render::vulkan_backend::native_swapchain_images_operation_status_name(
+        native_images_status) } -> std::same_as<std::string_view>;
+    { render::vulkan_backend::native_swapchain_acquire_operation_status_name(
+        native_acquire_status) } -> std::same_as<std::string_view>;
 });
 
 static_assert(requires(render::vulkan_backend::vulkan_swapchain_surface_format surface_format) {
@@ -2168,6 +3139,116 @@ static_assert(requires(render::vulkan_backend::vulkan_swapchain_surface_capabili
         -> std::same_as<std::vector<render::vulkan_backend::vulkan_swapchain_surface_format>&>;
     { capabilities.present_modes }
         -> std::same_as<std::vector<render::vulkan_backend::vulkan_swapchain_present_mode>&>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_surface_query_dispatch_table table) {
+    { table.checked } -> std::same_as<bool&>;
+    { table.status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_surface_query_dispatch_table_status&>;
+    { table.instance } -> std::same_as<render::vulkan_backend::vulkan_instance_handle&>;
+    { table.physical_device }
+        -> std::same_as<render::vulkan_backend::vulkan_physical_device_handle&>;
+    { table.get_instance_proc_address }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { table.get_physical_device_surface_support }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { table.get_physical_device_surface_capabilities }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { table.get_physical_device_surface_formats }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { table.get_physical_device_surface_present_modes }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { table.missing_symbol_name } -> std::same_as<std::string&>;
+    { table.diagnostic } -> std::same_as<std::string&>;
+    { table.ready_for_query() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_surface_capability_query_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_surface_capability_query_status&>;
+    { result.dispatch_table }
+        -> std::same_as<render::vulkan_backend::vulkan_native_surface_query_dispatch_table&>;
+    { result.device }
+        -> std::same_as<render::vulkan_backend::vulkan_native_device_create_result&>;
+    { result.surface } -> std::same_as<render::vulkan_backend::vulkan_surface_handle&>;
+    { result.physical_device }
+        -> std::same_as<render::vulkan_backend::vulkan_physical_device_handle&>;
+    { result.present_queue_family_index } -> std::same_as<std::size_t&>;
+    { result.capabilities }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_surface_capabilities_snapshot&>;
+    { result.support_query_checked } -> std::same_as<bool&>;
+    { result.capabilities_query_checked } -> std::same_as<bool&>;
+    { result.formats_query_checked } -> std::same_as<bool&>;
+    { result.present_modes_query_checked } -> std::same_as<bool&>;
+    { result.present_queue_supported } -> std::same_as<bool&>;
+    { result.surface_format_count } -> std::same_as<std::size_t&>;
+    { result.present_mode_count } -> std::same_as<std::size_t&>;
+    { result.native_result } -> std::same_as<std::int32_t&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.ready_for_swapchain_create() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::fake_vulkan_native_surface_capability_query_options options) {
+    { options.capabilities }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_surface_capabilities_snapshot&>;
+    { options.present_queue_supported } -> std::same_as<bool&>;
+    { options.fail_support_query } -> std::same_as<bool&>;
+    { options.fail_capabilities_query } -> std::same_as<bool&>;
+    { options.fail_formats_query } -> std::same_as<bool&>;
+    { options.fail_present_modes_query } -> std::same_as<bool&>;
+    { options.failure_result } -> std::same_as<std::int32_t&>;
+});
+
+static_assert(requires(render::vulkan_backend::fake_vulkan_native_surface_capability_query_state state) {
+    { state.query_call_count } -> std::same_as<std::size_t&>;
+    { state.requested_surface }
+        -> std::same_as<render::vulkan_backend::vulkan_surface_handle&>;
+    { state.requested_physical_device }
+        -> std::same_as<render::vulkan_backend::vulkan_physical_device_handle&>;
+    { state.requested_present_queue_family_index } -> std::same_as<std::size_t&>;
+    { state.last_get_physical_device_surface_support }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { state.last_get_physical_device_surface_capabilities }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { state.last_get_physical_device_surface_formats }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { state.last_get_physical_device_surface_present_modes }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+});
+
+static_assert(std::default_initializable<render::vulkan_backend::fake_vulkan_native_surface_capability_query>);
+static_assert(std::constructible_from<
+    render::vulkan_backend::fake_vulkan_native_surface_capability_query,
+    render::vulkan_backend::fake_vulkan_native_surface_capability_query_options>);
+static_assert(std::default_initializable<render::vulkan_backend::vulkan_native_surface_capability_query>);
+static_assert(requires(
+    render::vulkan_backend::fake_vulkan_native_surface_capability_query fake,
+    const render::vulkan_backend::vulkan_native_surface_query_dispatch_table& dispatch_table,
+    const render::vulkan_backend::vulkan_native_device_create_result& device,
+    render::vulkan_backend::vulkan_surface_handle surface,
+    std::size_t present_queue_family_index) {
+    { fake.query_surface_capabilities(
+        dispatch_table,
+        device,
+        surface,
+        present_queue_family_index) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_surface_capability_query_result>;
+    { fake.state() }
+        -> std::same_as<const render::vulkan_backend::fake_vulkan_native_surface_capability_query_state&>;
+});
+static_assert(requires(
+    render::vulkan_backend::vulkan_native_surface_capability_query query,
+    const render::vulkan_backend::vulkan_native_surface_query_dispatch_table& dispatch_table,
+    const render::vulkan_backend::vulkan_native_device_create_result& device,
+    render::vulkan_backend::vulkan_surface_handle surface,
+    std::size_t present_queue_family_index) {
+    { query.query_surface_capabilities(
+        dispatch_table,
+        device,
+        surface,
+        present_queue_family_index) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_surface_capability_query_result>;
 });
 
 static_assert(requires(render::vulkan_backend::vulkan_swapchain_create_plan_intent intent) {
@@ -2257,6 +3338,8 @@ static_assert(requires(
         -> std::same_as<render::vulkan_backend::vulkan_native_swapchain_entrypoint_readiness&>;
     { request.device } -> std::same_as<render::vulkan_backend::vulkan_device_handle&>;
     { request.surface } -> std::same_as<render::vulkan_backend::vulkan_surface_handle&>;
+    { request.surface_query }
+        -> std::same_as<render::vulkan_backend::vulkan_native_surface_capability_query_result&>;
     { request.old_swapchain } -> std::same_as<render::vulkan_backend::vulkan_swapchain_handle&>;
     { request.require_recreate_compatibility } -> std::same_as<bool&>;
 });
@@ -2272,6 +3355,11 @@ static_assert(requires(
     { summary.native_entrypoints_ready_for_create } -> std::same_as<bool&>;
     { summary.device_valid } -> std::same_as<bool&>;
     { summary.surface_valid } -> std::same_as<bool&>;
+    { summary.surface_query_checked } -> std::same_as<bool&>;
+    { summary.surface_query_ready } -> std::same_as<bool&>;
+    { summary.present_queue_supported } -> std::same_as<bool&>;
+    { summary.surface_format_count } -> std::same_as<std::size_t&>;
+    { summary.present_mode_count } -> std::same_as<std::size_t&>;
     { summary.device } -> std::same_as<render::vulkan_backend::vulkan_device_handle&>;
     { summary.surface } -> std::same_as<render::vulkan_backend::vulkan_surface_handle&>;
     { summary.old_swapchain } -> std::same_as<render::vulkan_backend::vulkan_swapchain_handle&>;
@@ -2313,6 +3401,8 @@ static_assert(requires(
         -> std::same_as<render::vulkan_backend::vulkan_native_swapchain_entrypoint_readiness&>;
     { result.device } -> std::same_as<render::vulkan_backend::vulkan_device_handle&>;
     { result.surface } -> std::same_as<render::vulkan_backend::vulkan_surface_handle&>;
+    { result.surface_query }
+        -> std::same_as<render::vulkan_backend::vulkan_native_surface_capability_query_result&>;
     { result.old_swapchain } -> std::same_as<render::vulkan_backend::vulkan_swapchain_handle&>;
     { result.selected_extent } -> std::same_as<render::vulkan_backend::vulkan_surface_extent&>;
     { result.selected_surface_format }
@@ -2332,6 +3422,11 @@ static_assert(requires(
     { result.native_entrypoints_ready_for_create } -> std::same_as<bool&>;
     { result.device_valid } -> std::same_as<bool&>;
     { result.surface_valid } -> std::same_as<bool&>;
+    { result.surface_query_checked } -> std::same_as<bool&>;
+    { result.surface_query_ready } -> std::same_as<bool&>;
+    { result.present_queue_supported } -> std::same_as<bool&>;
+    { result.surface_format_count } -> std::same_as<std::size_t&>;
+    { result.present_mode_count } -> std::same_as<std::size_t&>;
     { result.required_extensions_ready } -> std::same_as<bool&>;
     { result.create_symbol_ready } -> std::same_as<bool&>;
     { result.destroy_symbol_ready } -> std::same_as<bool&>;
@@ -2351,14 +3446,224 @@ static_assert(requires(
 });
 
 static_assert(requires(
+    render::vulkan_backend::vulkan_native_swapchain_images_operation_request request) {
+    { request.create_operation }
+        -> std::same_as<render::vulkan_backend::vulkan_native_swapchain_create_operation_result&>;
+    { request.native_entrypoints }
+        -> std::same_as<render::vulkan_backend::vulkan_native_swapchain_entrypoint_readiness&>;
+    { request.swapchain } -> std::same_as<render::vulkan_backend::vulkan_swapchain_handle&>;
+    { request.image_handle_base }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+});
+
+static_assert(requires(
+    render::vulkan_backend::vulkan_native_swapchain_images_operation_summary summary) {
+    { summary.checked } -> std::same_as<bool&>;
+    { summary.status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_swapchain_images_operation_status&>;
+    { summary.entrypoint_name } -> std::same_as<std::string&>;
+    { summary.vk_get_swapchain_images_callable } -> std::same_as<bool&>;
+    { summary.device } -> std::same_as<render::vulkan_backend::vulkan_device_handle&>;
+    { summary.swapchain } -> std::same_as<render::vulkan_backend::vulkan_swapchain_handle&>;
+    { summary.expected_image_count } -> std::same_as<std::size_t&>;
+    { summary.enumerated_image_count } -> std::same_as<std::size_t&>;
+    { summary.images }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_swapchain_image_binding>&>;
+    { summary.selected_extent }
+        -> std::same_as<render::vulkan_backend::vulkan_surface_extent&>;
+    { summary.selected_surface_format }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_surface_format&>;
+    { summary.selected_present_mode }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_present_mode&>;
+    { summary.create_operation_checked } -> std::same_as<bool&>;
+    { summary.create_operation_ready } -> std::same_as<bool&>;
+    { summary.native_entrypoints_checked } -> std::same_as<bool&>;
+    { summary.required_extensions_ready } -> std::same_as<bool&>;
+    { summary.get_images_symbol_ready } -> std::same_as<bool&>;
+    { summary.device_valid } -> std::same_as<bool&>;
+    { summary.swapchain_valid } -> std::same_as<bool&>;
+    { summary.missing_required_extension } -> std::same_as<std::string&>;
+    { summary.missing_symbol_name } -> std::same_as<std::string&>;
+    { summary.diagnostic } -> std::same_as<std::string&>;
+    { summary.ready_for_frame_lifecycle_setup() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    render::vulkan_backend::vulkan_native_swapchain_images_operation_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_swapchain_images_operation_status&>;
+    { result.create_operation }
+        -> std::same_as<render::vulkan_backend::vulkan_native_swapchain_create_operation_result&>;
+    { result.native_entrypoints }
+        -> std::same_as<render::vulkan_backend::vulkan_native_swapchain_entrypoint_readiness&>;
+    { result.device } -> std::same_as<render::vulkan_backend::vulkan_device_handle&>;
+    { result.swapchain } -> std::same_as<render::vulkan_backend::vulkan_swapchain_handle&>;
+    { result.expected_image_count } -> std::same_as<std::size_t&>;
+    { result.enumerated_image_count } -> std::same_as<std::size_t&>;
+    { result.images }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_swapchain_image_binding>&>;
+    { result.selected_extent } -> std::same_as<render::vulkan_backend::vulkan_surface_extent&>;
+    { result.selected_surface_format }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_surface_format&>;
+    { result.selected_present_mode }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_present_mode&>;
+    { result.create_operation_checked } -> std::same_as<bool&>;
+    { result.create_operation_ready } -> std::same_as<bool&>;
+    { result.native_entrypoints_checked } -> std::same_as<bool&>;
+    { result.required_extensions_ready } -> std::same_as<bool&>;
+    { result.get_images_symbol_ready } -> std::same_as<bool&>;
+    { result.device_valid } -> std::same_as<bool&>;
+    { result.swapchain_valid } -> std::same_as<bool&>;
+    { result.vk_get_swapchain_images_callable } -> std::same_as<bool&>;
+    { result.missing_required_extension } -> std::same_as<std::string&>;
+    { result.missing_symbol_name } -> std::same_as<std::string&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.operation }
+        -> std::same_as<render::vulkan_backend::vulkan_native_swapchain_images_operation_summary&>;
+    { result.can_call_vk_get_swapchain_images() } -> std::same_as<bool>;
+    { result.blocked() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    render::vulkan_backend::vulkan_native_swapchain_acquire_operation_request request) {
+    { request.images_operation }
+        -> std::same_as<render::vulkan_backend::vulkan_native_swapchain_images_operation_result&>;
+    { request.acquire_plan }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_image_acquire_plan_result&>;
+    { request.native_entrypoints }
+        -> std::same_as<render::vulkan_backend::vulkan_native_swapchain_entrypoint_readiness&>;
+});
+
+static_assert(requires(
+    render::vulkan_backend::vulkan_native_swapchain_acquire_operation_summary summary) {
+    { summary.checked } -> std::same_as<bool&>;
+    { summary.status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_swapchain_acquire_operation_status&>;
+    { summary.entrypoint_name } -> std::same_as<std::string&>;
+    { summary.vk_acquire_next_image_callable } -> std::same_as<bool&>;
+    { summary.command_recording_may_consume_acquired_image } -> std::same_as<bool&>;
+    { summary.device } -> std::same_as<render::vulkan_backend::vulkan_device_handle&>;
+    { summary.swapchain } -> std::same_as<render::vulkan_backend::vulkan_swapchain_handle&>;
+    { summary.selected_image_index } -> std::same_as<std::size_t&>;
+    { summary.image_id } -> std::same_as<render::vulkan_backend::vulkan_swapchain_image_id&>;
+    { summary.image_handle }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_image_handle&>;
+    { summary.timeout_nanoseconds } -> std::same_as<std::uint64_t&>;
+    { summary.acquire_status }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_acquire_status&>;
+    { summary.acquire_plan_status }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_image_acquire_plan_status&>;
+    { summary.images_operation_checked } -> std::same_as<bool&>;
+    { summary.images_operation_ready } -> std::same_as<bool&>;
+    { summary.acquire_plan_checked } -> std::same_as<bool&>;
+    { summary.acquire_plan_ready_for_command_recording } -> std::same_as<bool&>;
+    { summary.native_entrypoints_checked } -> std::same_as<bool&>;
+    { summary.required_extensions_ready } -> std::same_as<bool&>;
+    { summary.acquire_symbol_ready } -> std::same_as<bool&>;
+    { summary.device_valid } -> std::same_as<bool&>;
+    { summary.swapchain_valid } -> std::same_as<bool&>;
+    { summary.image_binding_ready } -> std::same_as<bool&>;
+    { summary.image_available } -> std::same_as<bool&>;
+    { summary.image_acquired } -> std::same_as<bool&>;
+    { summary.timed_out } -> std::same_as<bool&>;
+    { summary.out_of_date } -> std::same_as<bool&>;
+    { summary.suboptimal } -> std::same_as<bool&>;
+    { summary.error } -> std::same_as<bool&>;
+    { summary.missing_required_extension } -> std::same_as<std::string&>;
+    { summary.missing_symbol_name } -> std::same_as<std::string&>;
+    { summary.diagnostic } -> std::same_as<std::string&>;
+    { summary.ready_for_command_recording() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    render::vulkan_backend::vulkan_native_swapchain_acquire_operation_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_swapchain_acquire_operation_status&>;
+    { result.images_operation }
+        -> std::same_as<render::vulkan_backend::vulkan_native_swapchain_images_operation_result&>;
+    { result.acquire_plan }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_image_acquire_plan_result&>;
+    { result.native_entrypoints }
+        -> std::same_as<render::vulkan_backend::vulkan_native_swapchain_entrypoint_readiness&>;
+    { result.device } -> std::same_as<render::vulkan_backend::vulkan_device_handle&>;
+    { result.swapchain } -> std::same_as<render::vulkan_backend::vulkan_swapchain_handle&>;
+    { result.selected_image_index } -> std::same_as<std::size_t&>;
+    { result.image_id } -> std::same_as<render::vulkan_backend::vulkan_swapchain_image_id&>;
+    { result.image_handle }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_image_handle&>;
+    { result.timeout_nanoseconds } -> std::same_as<std::uint64_t&>;
+    { result.acquire_status }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_acquire_status&>;
+    { result.acquire_plan_status }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_image_acquire_plan_status&>;
+    { result.images_operation_checked } -> std::same_as<bool&>;
+    { result.images_operation_ready } -> std::same_as<bool&>;
+    { result.acquire_plan_checked } -> std::same_as<bool&>;
+    { result.acquire_plan_ready_for_command_recording } -> std::same_as<bool&>;
+    { result.native_entrypoints_checked } -> std::same_as<bool&>;
+    { result.required_extensions_ready } -> std::same_as<bool&>;
+    { result.acquire_symbol_ready } -> std::same_as<bool&>;
+    { result.device_valid } -> std::same_as<bool&>;
+    { result.swapchain_valid } -> std::same_as<bool&>;
+    { result.image_binding_ready } -> std::same_as<bool&>;
+    { result.image_available } -> std::same_as<bool&>;
+    { result.image_acquired } -> std::same_as<bool&>;
+    { result.timed_out } -> std::same_as<bool&>;
+    { result.out_of_date } -> std::same_as<bool&>;
+    { result.suboptimal } -> std::same_as<bool&>;
+    { result.error } -> std::same_as<bool&>;
+    { result.vk_acquire_next_image_callable } -> std::same_as<bool&>;
+    { result.command_recording_may_consume_acquired_image } -> std::same_as<bool&>;
+    { result.missing_required_extension } -> std::same_as<std::string&>;
+    { result.missing_symbol_name } -> std::same_as<std::string&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.operation }
+        -> std::same_as<render::vulkan_backend::vulkan_native_swapchain_acquire_operation_summary&>;
+    { result.ready_for_command_recording() } -> std::same_as<bool>;
+    { result.blocked() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
     render::vulkan_backend::vulkan_swapchain_create_plan_request request,
     render::vulkan_backend::vulkan_native_swapchain_create_operation_request
-        native_request) {
+        native_request,
+    render::vulkan_backend::vulkan_native_swapchain_images_operation_request
+        native_images_request,
+    render::vulkan_backend::vulkan_native_swapchain_acquire_operation_request
+        native_acquire_request,
+    render::vulkan_backend::vulkan_native_instance_symbol_resolver_interface&
+        native_instance_resolver,
+    render::vulkan_backend::vulkan_native_surface_capability_query_interface&
+        surface_query,
+    const render::vulkan_backend::vulkan_native_device_create_result& native_device,
+    const render::vulkan_backend::vulkan_native_surface_query_dispatch_table&
+        surface_dispatch,
+    render::vulkan_backend::vulkan_surface_handle surface,
+    std::size_t present_queue_family_index) {
     { render::vulkan_backend::build_vulkan_swapchain_create_plan(request) }
         -> std::same_as<render::vulkan_backend::vulkan_swapchain_create_plan_result>;
+    { render::vulkan_backend::collect_vulkan_native_surface_query_dispatch_table(
+        native_instance_resolver,
+        native_device) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_surface_query_dispatch_table>;
+    { render::vulkan_backend::query_native_vulkan_surface_capabilities(
+        surface_query,
+        surface_dispatch,
+        native_device,
+        surface,
+        present_queue_family_index) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_surface_capability_query_result>;
     { render::vulkan_backend::build_vulkan_native_swapchain_create_operation_plan(
         native_request) } -> std::same_as<
         render::vulkan_backend::vulkan_native_swapchain_create_operation_result>;
+    { render::vulkan_backend::build_vulkan_native_swapchain_images_operation_plan(
+        native_images_request) } -> std::same_as<
+        render::vulkan_backend::vulkan_native_swapchain_images_operation_result>;
+    { render::vulkan_backend::build_vulkan_native_swapchain_acquire_operation_plan(
+        native_acquire_request) } -> std::same_as<
+        render::vulkan_backend::vulkan_native_swapchain_acquire_operation_result>;
 });
 
 static_assert(requires(render::vulkan_backend::vulkan_swapchain_acquire_result acquire) {
@@ -4743,6 +6048,123 @@ static_assert(std::same_as<
     render::vulkan_backend::vulkan_present_completion_plan_status>);
 
 static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_present_operation_status::not_checked),
+    render::vulkan_backend::vulkan_native_queue_present_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_present_operation_status::ready),
+    render::vulkan_backend::vulkan_native_queue_present_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_present_operation_status::acquire_operation_unavailable),
+    render::vulkan_backend::vulkan_native_queue_present_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_present_operation_status::submit_batch_unavailable),
+    render::vulkan_backend::vulkan_native_queue_present_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_present_operation_status::present_completion_unavailable),
+    render::vulkan_backend::vulkan_native_queue_present_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_present_operation_status::native_entrypoints_unavailable),
+    render::vulkan_backend::vulkan_native_queue_present_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_present_operation_status::required_extension_unavailable),
+    render::vulkan_backend::vulkan_native_queue_present_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_present_operation_status::missing_queue_present_symbol),
+    render::vulkan_backend::vulkan_native_queue_present_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_present_operation_status::present_queue_unavailable),
+    render::vulkan_backend::vulkan_native_queue_present_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_present_operation_status::swapchain_unavailable),
+    render::vulkan_backend::vulkan_native_queue_present_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_present_operation_status::acquired_image_unavailable),
+    render::vulkan_backend::vulkan_native_queue_present_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_present_operation_status::submitted_frame_unavailable),
+    render::vulkan_backend::vulkan_native_queue_present_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_present_operation_status::present_result_unavailable),
+    render::vulkan_backend::vulkan_native_queue_present_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_present_operation_status::out_of_date),
+    render::vulkan_backend::vulkan_native_queue_present_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_present_operation_status::suboptimal),
+    render::vulkan_backend::vulkan_native_queue_present_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_present_operation_status::present_failed_recoverable),
+    render::vulkan_backend::vulkan_native_queue_present_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_queue_present_operation_status::present_failed_fatal),
+    render::vulkan_backend::vulkan_native_queue_present_operation_status>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_operation_stage::not_started),
+    render::vulkan_backend::vulkan_native_frame_operation_stage>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_operation_stage::native_function_table),
+    render::vulkan_backend::vulkan_native_frame_operation_stage>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_operation_stage::swapchain_create),
+    render::vulkan_backend::vulkan_native_frame_operation_stage>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_operation_stage::swapchain_images),
+    render::vulkan_backend::vulkan_native_frame_operation_stage>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_operation_stage::acquire),
+    render::vulkan_backend::vulkan_native_frame_operation_stage>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_operation_stage::command_recording),
+    render::vulkan_backend::vulkan_native_frame_operation_stage>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_operation_stage::submit),
+    render::vulkan_backend::vulkan_native_frame_operation_stage>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_operation_stage::present),
+    render::vulkan_backend::vulkan_native_frame_operation_stage>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_operation_stage::frame_completion),
+    render::vulkan_backend::vulkan_native_frame_operation_stage>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_operation_status::not_checked),
+    render::vulkan_backend::vulkan_native_frame_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_operation_status::ready),
+    render::vulkan_backend::vulkan_native_frame_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_operation_status::native_function_table_unavailable),
+    render::vulkan_backend::vulkan_native_frame_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_operation_status::swapchain_create_unavailable),
+    render::vulkan_backend::vulkan_native_frame_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_operation_status::swapchain_images_unavailable),
+    render::vulkan_backend::vulkan_native_frame_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_operation_status::acquire_unavailable),
+    render::vulkan_backend::vulkan_native_frame_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_operation_status::command_recording_unavailable),
+    render::vulkan_backend::vulkan_native_frame_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_operation_status::submit_unavailable),
+    render::vulkan_backend::vulkan_native_frame_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_operation_status::present_unavailable),
+    render::vulkan_backend::vulkan_native_frame_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_operation_status::frame_completion_unavailable),
+    render::vulkan_backend::vulkan_native_frame_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_operation_status::recoverable_failure),
+    render::vulkan_backend::vulkan_native_frame_operation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_operation_status::fatal_failure),
+    render::vulkan_backend::vulkan_native_frame_operation_status>);
+
+static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_frame_completion_status::not_checked),
     render::vulkan_backend::vulkan_frame_completion_status>);
 static_assert(std::same_as<
@@ -4772,10 +6194,19 @@ static_assert(std::same_as<
 
 static_assert(requires(
     render::vulkan_backend::vulkan_present_completion_plan_status present_status,
-    render::vulkan_backend::vulkan_frame_completion_status frame_status) {
+    render::vulkan_backend::vulkan_frame_completion_status frame_status,
+    render::vulkan_backend::vulkan_native_queue_present_operation_status native_present_status,
+    render::vulkan_backend::vulkan_native_frame_operation_stage native_frame_stage,
+    render::vulkan_backend::vulkan_native_frame_operation_status native_frame_status) {
     { render::vulkan_backend::present_completion_plan_status_name(present_status) }
         -> std::same_as<std::string_view>;
     { render::vulkan_backend::frame_completion_status_name(frame_status) }
+        -> std::same_as<std::string_view>;
+    { render::vulkan_backend::native_queue_present_operation_status_name(native_present_status) }
+        -> std::same_as<std::string_view>;
+    { render::vulkan_backend::native_frame_operation_stage_name(native_frame_stage) }
+        -> std::same_as<std::string_view>;
+    { render::vulkan_backend::native_frame_operation_status_name(native_frame_status) }
         -> std::same_as<std::string_view>;
 });
 
@@ -4924,6 +6355,443 @@ static_assert(requires(render::vulkan_backend::vulkan_present_completion_plan_re
     { plan.blocked() } -> std::same_as<bool>;
 });
 
+static_assert(requires(render::vulkan_backend::vulkan_native_queue_present_operation_request request) {
+    { request.acquire_operation }
+        -> std::same_as<render::vulkan_backend::vulkan_native_swapchain_acquire_operation_result&>;
+    { request.submit_batch }
+        -> std::same_as<render::vulkan_backend::vulkan_submit_batch_plan_result&>;
+    { request.present_completion }
+        -> std::same_as<render::vulkan_backend::vulkan_present_completion_plan_result&>;
+    { request.native_entrypoints }
+        -> std::same_as<render::vulkan_backend::vulkan_native_swapchain_entrypoint_readiness&>;
+    { request.present_result }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_present_result&>;
+    { request.allow_suboptimal } -> std::same_as<bool&>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_queue_present_operation_summary summary) {
+    { summary.checked } -> std::same_as<bool&>;
+    { summary.status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_queue_present_operation_status&>;
+    { summary.entrypoint_name } -> std::same_as<std::string&>;
+    { summary.vk_queue_present_callable } -> std::same_as<bool&>;
+    { summary.frame_lifecycle_may_complete } -> std::same_as<bool&>;
+    { summary.device } -> std::same_as<render::vulkan_backend::vulkan_device_handle&>;
+    { summary.swapchain } -> std::same_as<render::vulkan_backend::vulkan_swapchain_handle&>;
+    { summary.present_queue } -> std::same_as<render::vulkan_backend::vulkan_queue_handle&>;
+    { summary.image_id } -> std::same_as<render::vulkan_backend::vulkan_swapchain_image_id&>;
+    { summary.image_handle } -> std::same_as<render::vulkan_backend::vulkan_swapchain_image_handle&>;
+    { summary.wait_render_finished_semaphore }
+        -> std::same_as<render::vulkan_backend::vulkan_command_submit_sync_handle&>;
+    { summary.present_status }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_present_status&>;
+    { summary.acquire_operation_checked } -> std::same_as<bool&>;
+    { summary.acquired_image_ready } -> std::same_as<bool&>;
+    { summary.submit_batch_checked } -> std::same_as<bool&>;
+    { summary.submit_batch_ready } -> std::same_as<bool&>;
+    { summary.present_completion_checked } -> std::same_as<bool&>;
+    { summary.present_completion_ready } -> std::same_as<bool&>;
+    { summary.native_entrypoints_checked } -> std::same_as<bool&>;
+    { summary.required_extensions_ready } -> std::same_as<bool&>;
+    { summary.queue_present_symbol_ready } -> std::same_as<bool&>;
+    { summary.present_queue_ready } -> std::same_as<bool&>;
+    { summary.swapchain_ready } -> std::same_as<bool&>;
+    { summary.submitted_frame_ready } -> std::same_as<bool&>;
+    { summary.present_request_ready } -> std::same_as<bool&>;
+    { summary.present_adapter_result_ready } -> std::same_as<bool&>;
+    { summary.present_result_checked } -> std::same_as<bool&>;
+    { summary.present_result_completed } -> std::same_as<bool&>;
+    { summary.submit_before_present } -> std::same_as<bool&>;
+    { summary.out_of_date } -> std::same_as<bool&>;
+    { summary.suboptimal } -> std::same_as<bool&>;
+    { summary.recoverable_failure } -> std::same_as<bool&>;
+    { summary.fatal_failure } -> std::same_as<bool&>;
+    { summary.missing_required_extension } -> std::same_as<std::string&>;
+    { summary.missing_symbol_name } -> std::same_as<std::string&>;
+    { summary.diagnostic } -> std::same_as<std::string&>;
+    { summary.ready_for_frame_completion() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_queue_present_operation_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_queue_present_operation_status&>;
+    { result.acquire_operation }
+        -> std::same_as<render::vulkan_backend::vulkan_native_swapchain_acquire_operation_result&>;
+    { result.submit_batch }
+        -> std::same_as<render::vulkan_backend::vulkan_submit_batch_plan_result&>;
+    { result.present_completion }
+        -> std::same_as<render::vulkan_backend::vulkan_present_completion_plan_result&>;
+    { result.native_entrypoints }
+        -> std::same_as<render::vulkan_backend::vulkan_native_swapchain_entrypoint_readiness&>;
+    { result.device } -> std::same_as<render::vulkan_backend::vulkan_device_handle&>;
+    { result.swapchain } -> std::same_as<render::vulkan_backend::vulkan_swapchain_handle&>;
+    { result.present_queue } -> std::same_as<render::vulkan_backend::vulkan_queue_handle&>;
+    { result.image_id } -> std::same_as<render::vulkan_backend::vulkan_swapchain_image_id&>;
+    { result.image_handle } -> std::same_as<render::vulkan_backend::vulkan_swapchain_image_handle&>;
+    { result.wait_render_finished_semaphore }
+        -> std::same_as<render::vulkan_backend::vulkan_command_submit_sync_handle&>;
+    { result.present_status }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_present_status&>;
+    { result.acquire_operation_checked } -> std::same_as<bool&>;
+    { result.acquired_image_ready } -> std::same_as<bool&>;
+    { result.submit_batch_checked } -> std::same_as<bool&>;
+    { result.submit_batch_ready } -> std::same_as<bool&>;
+    { result.present_completion_checked } -> std::same_as<bool&>;
+    { result.present_completion_ready } -> std::same_as<bool&>;
+    { result.native_entrypoints_checked } -> std::same_as<bool&>;
+    { result.required_extensions_ready } -> std::same_as<bool&>;
+    { result.queue_present_symbol_ready } -> std::same_as<bool&>;
+    { result.present_queue_ready } -> std::same_as<bool&>;
+    { result.swapchain_ready } -> std::same_as<bool&>;
+    { result.submitted_frame_ready } -> std::same_as<bool&>;
+    { result.present_request_ready } -> std::same_as<bool&>;
+    { result.present_adapter_result_ready } -> std::same_as<bool&>;
+    { result.present_result_checked } -> std::same_as<bool&>;
+    { result.present_result_completed } -> std::same_as<bool&>;
+    { result.submit_before_present } -> std::same_as<bool&>;
+    { result.out_of_date } -> std::same_as<bool&>;
+    { result.suboptimal } -> std::same_as<bool&>;
+    { result.recoverable_failure } -> std::same_as<bool&>;
+    { result.fatal_failure } -> std::same_as<bool&>;
+    { result.vk_queue_present_callable } -> std::same_as<bool&>;
+    { result.frame_lifecycle_may_complete } -> std::same_as<bool&>;
+    { result.missing_required_extension } -> std::same_as<std::string&>;
+    { result.missing_symbol_name } -> std::same_as<std::string&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.operation }
+        -> std::same_as<render::vulkan_backend::vulkan_native_queue_present_operation_summary&>;
+    { result.can_call_vk_queue_present() } -> std::same_as<bool>;
+    { result.ready_for_frame_completion() } -> std::same_as<bool>;
+    { result.blocked() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_frame_operation_stage_summary stage) {
+    { stage.stage } -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_stage&>;
+    { stage.checked } -> std::same_as<bool&>;
+    { stage.ready } -> std::same_as<bool&>;
+    { stage.blocked } -> std::same_as<bool&>;
+    { stage.fallback_reason } -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
+    { stage.diagnostic } -> std::same_as<std::string&>;
+    { stage.completed() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_frame_operation_request request) {
+    { request.native_functions }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_table_diagnostics&>;
+    { request.swapchain_create }
+        -> std::same_as<render::vulkan_backend::vulkan_native_swapchain_create_operation_result&>;
+    { request.swapchain_images }
+        -> std::same_as<render::vulkan_backend::vulkan_native_swapchain_images_operation_result&>;
+    { request.acquire_operation }
+        -> std::same_as<render::vulkan_backend::vulkan_native_swapchain_acquire_operation_result&>;
+    { request.command_buffer_recording }
+        -> std::same_as<render::vulkan_backend::vulkan_command_buffer_record_result&>;
+    { request.submit_batch }
+        -> std::same_as<render::vulkan_backend::vulkan_submit_batch_plan_result&>;
+    { request.present_operation }
+        -> std::same_as<render::vulkan_backend::vulkan_native_queue_present_operation_result&>;
+    { request.cpu_fallback_available } -> std::same_as<bool&>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_frame_operation_summary summary) {
+    { summary.checked } -> std::same_as<bool&>;
+    { summary.status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_status&>;
+    { summary.reached_stage }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_stage&>;
+    { summary.blocker_stage }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_stage&>;
+    { summary.fallback_reason } -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
+    { summary.native_function_table_checked } -> std::same_as<bool&>;
+    { summary.native_function_table_ready } -> std::same_as<bool&>;
+    { summary.swapchain_create_checked } -> std::same_as<bool&>;
+    { summary.swapchain_create_ready } -> std::same_as<bool&>;
+    { summary.swapchain_images_checked } -> std::same_as<bool&>;
+    { summary.swapchain_images_ready } -> std::same_as<bool&>;
+    { summary.acquire_checked } -> std::same_as<bool&>;
+    { summary.acquire_ready } -> std::same_as<bool&>;
+    { summary.command_recording_checked } -> std::same_as<bool&>;
+    { summary.command_recording_ready } -> std::same_as<bool&>;
+    { summary.submit_batch_checked } -> std::same_as<bool&>;
+    { summary.submit_batch_ready } -> std::same_as<bool&>;
+    { summary.present_operation_checked } -> std::same_as<bool&>;
+    { summary.present_operation_ready } -> std::same_as<bool&>;
+    { summary.frame_completion_ready } -> std::same_as<bool&>;
+    { summary.recoverable_failure } -> std::same_as<bool&>;
+    { summary.fatal_failure } -> std::same_as<bool&>;
+    { summary.swapchain_out_of_date } -> std::same_as<bool&>;
+    { summary.suboptimal } -> std::same_as<bool&>;
+    { summary.cpu_fallback_available } -> std::same_as<bool&>;
+    { summary.cpu_fallback_should_remain_active } -> std::same_as<bool&>;
+    { summary.native_function_table_status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_table_status&>;
+    { summary.missing_required_extension } -> std::same_as<std::string&>;
+    { summary.missing_symbol_name } -> std::same_as<std::string&>;
+    { summary.stages }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_frame_operation_stage_summary>&>;
+    { summary.diagnostic } -> std::same_as<std::string&>;
+    { summary.completed() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_frame_operation_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_status&>;
+    { result.native_functions }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_table_diagnostics&>;
+    { result.swapchain_create }
+        -> std::same_as<render::vulkan_backend::vulkan_native_swapchain_create_operation_result&>;
+    { result.swapchain_images }
+        -> std::same_as<render::vulkan_backend::vulkan_native_swapchain_images_operation_result&>;
+    { result.acquire_operation }
+        -> std::same_as<render::vulkan_backend::vulkan_native_swapchain_acquire_operation_result&>;
+    { result.command_buffer_recording }
+        -> std::same_as<render::vulkan_backend::vulkan_command_buffer_record_result&>;
+    { result.submit_batch }
+        -> std::same_as<render::vulkan_backend::vulkan_submit_batch_plan_result&>;
+    { result.present_operation }
+        -> std::same_as<render::vulkan_backend::vulkan_native_queue_present_operation_result&>;
+    { result.reached_stage }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_stage&>;
+    { result.blocker_stage }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_stage&>;
+    { result.fallback_reason } -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
+    { result.native_function_table_checked } -> std::same_as<bool&>;
+    { result.native_function_table_ready } -> std::same_as<bool&>;
+    { result.swapchain_create_checked } -> std::same_as<bool&>;
+    { result.swapchain_create_ready } -> std::same_as<bool&>;
+    { result.swapchain_images_checked } -> std::same_as<bool&>;
+    { result.swapchain_images_ready } -> std::same_as<bool&>;
+    { result.acquire_checked } -> std::same_as<bool&>;
+    { result.acquire_ready } -> std::same_as<bool&>;
+    { result.command_recording_checked } -> std::same_as<bool&>;
+    { result.command_recording_ready } -> std::same_as<bool&>;
+    { result.submit_batch_checked } -> std::same_as<bool&>;
+    { result.submit_batch_ready } -> std::same_as<bool&>;
+    { result.present_operation_checked } -> std::same_as<bool&>;
+    { result.present_operation_ready } -> std::same_as<bool&>;
+    { result.frame_completion_ready } -> std::same_as<bool&>;
+    { result.recoverable_failure } -> std::same_as<bool&>;
+    { result.fatal_failure } -> std::same_as<bool&>;
+    { result.swapchain_out_of_date } -> std::same_as<bool&>;
+    { result.suboptimal } -> std::same_as<bool&>;
+    { result.cpu_fallback_available } -> std::same_as<bool&>;
+    { result.cpu_fallback_should_remain_active } -> std::same_as<bool&>;
+    { result.native_function_table_status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_table_status&>;
+    { result.missing_required_extension } -> std::same_as<std::string&>;
+    { result.missing_symbol_name } -> std::same_as<std::string&>;
+    { result.stages }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_frame_operation_stage_summary>&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.operation }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_summary&>;
+    { result.completed() } -> std::same_as<bool>;
+    { result.blocked() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_frame_operation_stage_diff_diagnostics diff) {
+    { diff.stage } -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_stage&>;
+    { diff.before_checked } -> std::same_as<bool&>;
+    { diff.after_checked } -> std::same_as<bool&>;
+    { diff.before_ready } -> std::same_as<bool&>;
+    { diff.after_ready } -> std::same_as<bool&>;
+    { diff.before_blocked } -> std::same_as<bool&>;
+    { diff.after_blocked } -> std::same_as<bool&>;
+    { diff.before_fallback_reason } -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
+    { diff.after_fallback_reason } -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
+    { diff.checked_changed } -> std::same_as<bool&>;
+    { diff.readiness_changed } -> std::same_as<bool&>;
+    { diff.became_ready } -> std::same_as<bool&>;
+    { diff.became_blocked } -> std::same_as<bool&>;
+    { diff.fallback_reason_changed } -> std::same_as<bool&>;
+    { diff.before_diagnostic } -> std::same_as<std::string&>;
+    { diff.after_diagnostic } -> std::same_as<std::string&>;
+    { diff.changed() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_frame_operation_diff_diagnostics diff) {
+    { diff.checked } -> std::same_as<bool&>;
+    { diff.changed } -> std::same_as<bool&>;
+    { diff.before_checked } -> std::same_as<bool&>;
+    { diff.after_checked } -> std::same_as<bool&>;
+    { diff.before_status } -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_status&>;
+    { diff.after_status } -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_status&>;
+    { diff.status_changed } -> std::same_as<bool&>;
+    { diff.before_reached_stage } -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_stage&>;
+    { diff.after_reached_stage } -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_stage&>;
+    { diff.reached_stage_changed } -> std::same_as<bool&>;
+    { diff.before_blocker_stage } -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_stage&>;
+    { diff.after_blocker_stage } -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_stage&>;
+    { diff.blocker_stage_changed } -> std::same_as<bool&>;
+    { diff.blocker_introduced } -> std::same_as<bool&>;
+    { diff.blocker_cleared } -> std::same_as<bool&>;
+    { diff.blocker_moved_forward } -> std::same_as<bool&>;
+    { diff.blocker_moved_backward } -> std::same_as<bool&>;
+    { diff.before_fallback_reason } -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
+    { diff.after_fallback_reason } -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
+    { diff.fallback_reason_changed } -> std::same_as<bool&>;
+    { diff.before_cpu_fallback_should_remain_active } -> std::same_as<bool&>;
+    { diff.after_cpu_fallback_should_remain_active } -> std::same_as<bool&>;
+    { diff.fallback_activation_changed } -> std::same_as<bool&>;
+    { diff.fallback_activated } -> std::same_as<bool&>;
+    { diff.fallback_deactivated } -> std::same_as<bool&>;
+    { diff.before_recoverable_failure } -> std::same_as<bool&>;
+    { diff.after_recoverable_failure } -> std::same_as<bool&>;
+    { diff.recoverable_failure_changed } -> std::same_as<bool&>;
+    { diff.recoverable_failure_started } -> std::same_as<bool&>;
+    { diff.recoverable_failure_cleared } -> std::same_as<bool&>;
+    { diff.before_fatal_failure } -> std::same_as<bool&>;
+    { diff.after_fatal_failure } -> std::same_as<bool&>;
+    { diff.fatal_failure_changed } -> std::same_as<bool&>;
+    { diff.fatal_failure_started } -> std::same_as<bool&>;
+    { diff.fatal_failure_cleared } -> std::same_as<bool&>;
+    { diff.before_swapchain_out_of_date } -> std::same_as<bool&>;
+    { diff.after_swapchain_out_of_date } -> std::same_as<bool&>;
+    { diff.swapchain_out_of_date_changed } -> std::same_as<bool&>;
+    { diff.swapchain_out_of_date_started } -> std::same_as<bool&>;
+    { diff.swapchain_out_of_date_cleared } -> std::same_as<bool&>;
+    { diff.before_suboptimal } -> std::same_as<bool&>;
+    { diff.after_suboptimal } -> std::same_as<bool&>;
+    { diff.suboptimal_changed } -> std::same_as<bool&>;
+    { diff.suboptimal_started } -> std::same_as<bool&>;
+    { diff.suboptimal_cleared } -> std::same_as<bool&>;
+    { diff.before_frame_completion_ready } -> std::same_as<bool&>;
+    { diff.after_frame_completion_ready } -> std::same_as<bool&>;
+    { diff.frame_completion_readiness_changed } -> std::same_as<bool&>;
+    { diff.frame_completion_became_ready } -> std::same_as<bool&>;
+    { diff.frame_completion_became_unready } -> std::same_as<bool&>;
+    { diff.before_completed } -> std::same_as<bool&>;
+    { diff.after_completed } -> std::same_as<bool&>;
+    { diff.completion_readiness_changed } -> std::same_as<bool&>;
+    { diff.completion_became_ready } -> std::same_as<bool&>;
+    { diff.completion_became_unready } -> std::same_as<bool&>;
+    { diff.stage_count } -> std::same_as<std::size_t&>;
+    { diff.stage_checked_change_count } -> std::same_as<std::size_t&>;
+    { diff.stage_readiness_change_count } -> std::same_as<std::size_t&>;
+    { diff.stage_ready_gain_count } -> std::same_as<std::size_t&>;
+    { diff.stage_ready_loss_count } -> std::same_as<std::size_t&>;
+    { diff.stages }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_frame_operation_stage_diff_diagnostics>&>;
+});
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_execution_step::acquire),
+    render::vulkan_backend::vulkan_native_frame_execution_step>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_execution_step::record),
+    render::vulkan_backend::vulkan_native_frame_execution_step>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_execution_step::submit),
+    render::vulkan_backend::vulkan_native_frame_execution_step>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_execution_step::present),
+    render::vulkan_backend::vulkan_native_frame_execution_step>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_execution_decision::not_checked),
+    render::vulkan_backend::vulkan_native_frame_execution_decision>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_execution_decision::execute),
+    render::vulkan_backend::vulkan_native_frame_execution_decision>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_execution_decision::skip),
+    render::vulkan_backend::vulkan_native_frame_execution_decision>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_frame_execution_decision::fallback),
+    render::vulkan_backend::vulkan_native_frame_execution_decision>);
+static_assert(requires(
+    render::vulkan_backend::vulkan_native_frame_execution_step step,
+    render::vulkan_backend::vulkan_native_frame_execution_decision decision) {
+    { render::vulkan_backend::native_frame_execution_step_name(step) }
+        -> std::same_as<std::string_view>;
+    { render::vulkan_backend::native_frame_execution_decision_name(decision) }
+        -> std::same_as<std::string_view>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_frame_operation_execution_request request) {
+    { request.summary }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_summary&>;
+    { request.diff }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_diff_diagnostics&>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_frame_operation_step_execution_decision decision) {
+    { decision.step } -> std::same_as<render::vulkan_backend::vulkan_native_frame_execution_step&>;
+    { decision.operation_stage }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_stage&>;
+    { decision.decision }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_execution_decision&>;
+    { decision.summary_checked } -> std::same_as<bool&>;
+    { decision.stage_checked } -> std::same_as<bool&>;
+    { decision.stage_ready } -> std::same_as<bool&>;
+    { decision.diff_checked } -> std::same_as<bool&>;
+    { decision.diff_changed } -> std::same_as<bool&>;
+    { decision.diff_became_ready } -> std::same_as<bool&>;
+    { decision.diff_became_blocked } -> std::same_as<bool&>;
+    { decision.blocked_by_previous_step } -> std::same_as<bool&>;
+    { decision.cpu_fallback_available } -> std::same_as<bool&>;
+    { decision.cpu_fallback_required } -> std::same_as<bool&>;
+    { decision.fallback_reason } -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
+    { decision.diagnostic } -> std::same_as<std::string&>;
+    { decision.should_execute() } -> std::same_as<bool>;
+    { decision.should_fallback() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_frame_operation_execution_plan plan) {
+    { plan.checked } -> std::same_as<bool&>;
+    { plan.summary_checked } -> std::same_as<bool&>;
+    { plan.diff_checked } -> std::same_as<bool&>;
+    { plan.diff_changed } -> std::same_as<bool&>;
+    { plan.native_execution_ready } -> std::same_as<bool&>;
+    { plan.cpu_fallback_required } -> std::same_as<bool&>;
+    { plan.skip_required } -> std::same_as<bool&>;
+    { plan.fatal_failure } -> std::same_as<bool&>;
+    { plan.recoverable_failure } -> std::same_as<bool&>;
+    { plan.swapchain_out_of_date } -> std::same_as<bool&>;
+    { plan.suboptimal } -> std::same_as<bool&>;
+    { plan.summary_status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_status&>;
+    { plan.blocker_stage }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_stage&>;
+    { plan.fallback_reason } -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
+    { plan.step_count } -> std::same_as<std::size_t&>;
+    { plan.execute_step_count } -> std::same_as<std::size_t&>;
+    { plan.skip_step_count } -> std::same_as<std::size_t&>;
+    { plan.fallback_step_count } -> std::same_as<std::size_t&>;
+    { plan.not_checked_step_count } -> std::same_as<std::size_t&>;
+    { plan.steps }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_frame_operation_step_execution_decision>&>;
+    { plan.diagnostic } -> std::same_as<std::string&>;
+    { plan.should_execute_native_frame() } -> std::same_as<bool>;
+    { plan.should_use_cpu_fallback() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_backend_frame_native_execution_summary summary) {
+    { summary.checked } -> std::same_as<bool&>;
+    { summary.operation }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_summary&>;
+    { summary.diff }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_diff_diagnostics&>;
+    { summary.plan }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_execution_plan&>;
+    { summary.acquire_decision }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_execution_decision&>;
+    { summary.record_decision }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_execution_decision&>;
+    { summary.submit_decision }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_execution_decision&>;
+    { summary.present_decision }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_execution_decision&>;
+    { summary.native_acquire_would_execute } -> std::same_as<bool&>;
+    { summary.native_record_would_execute } -> std::same_as<bool&>;
+    { summary.native_submit_would_execute } -> std::same_as<bool&>;
+    { summary.native_present_would_execute } -> std::same_as<bool&>;
+    { summary.should_execute_native_frame() } -> std::same_as<bool>;
+    { summary.should_skip_native_frame() } -> std::same_as<bool>;
+    { summary.should_use_cpu_fallback() } -> std::same_as<bool>;
+});
+
 static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status::not_checked),
     render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status>);
@@ -5020,6 +6888,8 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_frame_pipeline_han
     { handoff.native_function_table_status }
         -> std::same_as<render::vulkan_backend::vulkan_native_function_table_status&>;
     { handoff.missing_native_symbol_name } -> std::same_as<std::string&>;
+    { handoff.native_frame_execution }
+        -> std::same_as<render::vulkan_backend::vulkan_backend_frame_native_execution_summary&>;
     { handoff.sdk_native_path_checked } -> std::same_as<bool&>;
     { handoff.sdk_adapter_ready } -> std::same_as<bool&>;
     { handoff.sdk_native_path_status }
@@ -5028,6 +6898,11 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_frame_pipeline_han
         -> std::same_as<render::vulkan_backend::vulkan_sdk_capability_status&>;
     { handoff.sdk_adapter_fallback_status }
         -> std::same_as<render::vulkan_backend::vulkan_sdk_adapter_fallback_status&>;
+    { handoff.sdk_external_headers }
+        -> std::same_as<render::vulkan_backend::vulkan_sdk_external_header_evidence&>;
+    { handoff.sdk_external_headers_checked } -> std::same_as<bool&>;
+    { handoff.sdk_vulkan_headers_available } -> std::same_as<bool&>;
+    { handoff.sdk_vma_headers_available } -> std::same_as<bool&>;
     { handoff.sdk_diagnostic } -> std::same_as<std::string&>;
     { handoff.submit_batch_planning_checked } -> std::same_as<bool&>;
     { handoff.submit_batch_planning_completed } -> std::same_as<bool&>;
@@ -5194,6 +7069,27 @@ static_assert(requires(
         render::vulkan_backend::vulkan_native_function_table_diagnostics{},
         sdk_capabilities) }
         -> std::same_as<render::vulkan_backend::vulkan_present_completion_plan_result>;
+    { render::vulkan_backend::build_vulkan_native_queue_present_operation_plan(
+        render::vulkan_backend::vulkan_native_queue_present_operation_request{}) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_queue_present_operation_result>;
+    { render::vulkan_backend::build_vulkan_native_frame_operation_summary(
+        render::vulkan_backend::vulkan_native_frame_operation_request{}) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_result>;
+    { render::vulkan_backend::build_vulkan_native_frame_operation_summary_diff(
+        render::vulkan_backend::vulkan_native_frame_operation_summary{},
+        render::vulkan_backend::vulkan_native_frame_operation_summary{}) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_diff_diagnostics>;
+    { render::vulkan_backend::build_vulkan_native_frame_operation_result_diff(
+        render::vulkan_backend::vulkan_native_frame_operation_result{},
+        render::vulkan_backend::vulkan_native_frame_operation_result{}) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_diff_diagnostics>;
+    { render::vulkan_backend::build_vulkan_native_frame_operation_execution_plan(
+        render::vulkan_backend::vulkan_native_frame_operation_execution_request{}) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_execution_plan>;
+    { render::vulkan_backend::build_vulkan_native_frame_operation_execution_plan(
+        render::vulkan_backend::vulkan_native_frame_operation_summary{},
+        render::vulkan_backend::vulkan_native_frame_operation_diff_diagnostics{}) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_frame_operation_execution_plan>;
 });
 
 static_assert(requires(

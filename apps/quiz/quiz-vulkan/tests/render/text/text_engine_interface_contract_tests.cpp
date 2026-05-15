@@ -6,11 +6,15 @@
 #include "render/text/font_backend_selection.h"
 #include "render/text/font_cmap_inspector.h"
 #include "render/text/font_coverage_run_segmentation.h"
+#include "render/text/font_fallback_shaping_handoff.h"
 #include "render/text/font_glyph_id_resolver.h"
 #include "render/text/font_glyph_atlas_page_plan.h"
+#include "render/text/font_glyph_atlas_upload_operation_plan.h"
+#include "render/text/font_glyph_atlas_upload_result.h"
 #include "render/text/font_rasterizer.h"
 #include "render/text/text_frame_snapshot.h"
 #include "render/text/text_frame_draw_plan.h"
+#include "render/text/text_frame_upload_handoff.h"
 #include "render/text/font_shaped_atlas_update.h"
 #include "render/text/font_shaping_backend.h"
 #include "render/text/font_sfnt_inspector.h"
@@ -21,6 +25,7 @@
 #include "render/text/glyph_run.h"
 #include "render/text/scene_text_metrics_adapter.h"
 #include "render/text/text_engine.h"
+#include "render/text/utf8_text_run.h"
 
 #include <concepts>
 #include <cstddef>
@@ -101,6 +106,16 @@ concept FontUnicodeCoverageResolverContract = requires(
 
 static_assert(FontUnicodeCoverageResolverContract<render::font_unicode_coverage_resolver_interface>);
 static_assert(FontUnicodeCoverageResolverContract<render::basic_font_unicode_coverage_resolver>);
+
+static_assert(requires(std::string_view text, std::uint32_t code_point) {
+    { render::utf8_text_run_uses_utf8proc_runtime() } -> std::same_as<bool>;
+    { render::decode_utf8_text_codepoint(text, std::size_t{}) } -> std::same_as<render::utf8_text_codepoint>;
+    { render::is_utf8_combining_mark(code_point) } -> std::same_as<bool>;
+    { render::starts_new_utf8_text_cluster(std::vector<render::utf8_text_codepoint>{}, render::utf8_text_codepoint{}) }
+        -> std::same_as<bool>;
+    { render::iterate_utf8_text_run(text) } -> std::same_as<std::vector<render::utf8_text_codepoint>>;
+    { render::cluster_utf8_text_run(text) } -> std::same_as<std::vector<render::utf8_text_cluster>>;
+});
 
 template <typename T>
 concept FontGlyphIdResolverContract = requires(
@@ -219,6 +234,8 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
         -> std::same_as<render::render_text_external_font_backend_probe_result&>;
     { diagnostics.font_backend_unicode_dependency }
         -> std::same_as<render::render_text_external_font_backend_probe_result&>;
+    { diagnostics.font_backend_header_probe }
+        -> std::same_as<render::render_text_external_font_backend_header_probe_snapshot&>;
     { diagnostics.font_backend_run_selections }
         -> std::same_as<std::vector<render::fake_text_engine_font_backend_run_selection_snapshot>&>;
     { diagnostics.font_fallback_chain_runs }
@@ -232,6 +249,13 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.font_fallback_chain_policy }
         -> std::same_as<render::render_text_font_fallback_chain_plan_policy_snapshot&>;
     { diagnostics.font_fallback_chain_diagnostic } -> std::same_as<std::string&>;
+    { diagnostics.font_fallback_run_plan } -> std::same_as<render::render_text_font_fallback_run_plan_snapshot&>;
+    { diagnostics.font_fallback_shaping_handoff }
+        -> std::same_as<render::render_text_font_fallback_shaping_handoff_snapshot&>;
+    { diagnostics.font_fallback_shaped_glyph_inputs }
+        -> std::same_as<render::render_text_font_fallback_shaped_glyph_input_snapshot&>;
+    { diagnostics.font_fallback_shaped_glyph_executions }
+        -> std::same_as<render::render_text_font_fallback_shaped_glyph_execution_snapshot&>;
     { diagnostics.font_backend_shaping_capability }
         -> std::same_as<render::render_text_font_backend_shaping_capability&>;
     { diagnostics.font_backend_uses_deterministic_shaping } -> std::same_as<bool&>;
@@ -306,9 +330,14 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.has_font_fallback_chain_runs() } -> std::same_as<bool>;
     { diagnostics.has_font_fallback_chain_missing_glyphs() } -> std::same_as<bool>;
     { diagnostics.has_font_fallback_chain_policy() } -> std::same_as<bool>;
+    { diagnostics.has_font_fallback_run_plan() } -> std::same_as<bool>;
+    { diagnostics.has_font_fallback_shaping_handoff() } -> std::same_as<bool>;
+    { diagnostics.has_font_fallback_shaped_glyph_inputs() } -> std::same_as<bool>;
+    { diagnostics.has_font_fallback_shaped_glyph_executions() } -> std::same_as<bool>;
     { diagnostics.has_font_backend_adapter_diagnostics() } -> std::same_as<bool>;
     { diagnostics.has_font_backend_adapter_policy() } -> std::same_as<bool>;
     { diagnostics.has_font_backend_dependency_probe() } -> std::same_as<bool>;
+    { diagnostics.has_font_backend_header_probe() } -> std::same_as<bool>;
     { diagnostics.has_shaped_glyphs() } -> std::same_as<bool>;
     { diagnostics.has_font_shaping_diagnostics() } -> std::same_as<bool>;
     { diagnostics.has_font_shaping_policy() } -> std::same_as<bool>;
@@ -499,8 +528,11 @@ static_assert(requires(
 static_assert(requires(
     render::render_text_font_backend_selection_purpose purpose,
     render::render_text_font_backend_adapter_readiness_status readiness_status,
+    render::render_text_font_backend_library library,
     render::render_text_external_font_backend_dependency dependency,
     render::render_text_external_font_backend_manifest manifest,
+    render::render_text_external_font_backend_header_probe header_probe,
+    render::render_text_external_font_backend_header_probe_snapshot header_probe_snapshot,
     render::render_text_external_font_backend_probe_request request,
     render::render_text_external_font_backend_probe_result result,
     render::render_text_external_font_backend_probe_state_snapshot probe_state,
@@ -539,6 +571,29 @@ static_assert(requires(
     { manifest.dependencies } -> std::same_as<std::vector<render::render_text_external_font_backend_dependency>&>;
     { manifest.allow_deterministic_fallback } -> std::same_as<bool&>;
     { manifest.empty() } -> std::same_as<bool>;
+    { header_probe.library } -> std::same_as<render::render_text_font_backend_library&>;
+    { header_probe.label } -> std::same_as<std::string&>;
+    { header_probe.approved_header } -> std::same_as<std::string&>;
+    { header_probe.header_available } -> std::same_as<bool&>;
+    { header_probe.version_available } -> std::same_as<bool&>;
+    { header_probe.version } -> std::same_as<render::render_text_font_backend_version&>;
+    { header_probe.features } -> std::same_as<std::vector<render::render_text_font_backend_feature>&>;
+    { header_probe.diagnostic } -> std::same_as<std::string&>;
+    { header_probe.supports_feature(render::render_text_font_backend_feature::glyph_shaping) }
+        -> std::same_as<bool>;
+    { header_probe.header_dependency() } -> std::same_as<render::render_text_external_font_backend_dependency>;
+    { header_probe_snapshot.probes }
+        -> std::same_as<std::vector<render::render_text_external_font_backend_header_probe>&>;
+    { header_probe_snapshot.freetype_headers_available } -> std::same_as<bool&>;
+    { header_probe_snapshot.harfbuzz_headers_available } -> std::same_as<bool&>;
+    { header_probe_snapshot.utf8proc_headers_available } -> std::same_as<bool&>;
+    { header_probe_snapshot.fake_fallback_preserved } -> std::same_as<bool&>;
+    { header_probe_snapshot.available_header_count } -> std::same_as<std::size_t&>;
+    { header_probe_snapshot.versioned_header_count } -> std::same_as<std::size_t&>;
+    { header_probe_snapshot.advertised_feature_count } -> std::same_as<std::size_t&>;
+    { header_probe_snapshot.diagnostic } -> std::same_as<std::string&>;
+    { header_probe_snapshot.any_real_headers_available() } -> std::same_as<bool>;
+    { header_probe_snapshot.all_real_headers_available() } -> std::same_as<bool>;
     { request.purpose } -> std::same_as<render::render_text_font_backend_selection_purpose&>;
     { request.required_libraries } -> std::same_as<std::vector<render::render_text_font_backend_library>&>;
     { request.required_features } -> std::same_as<std::vector<render::render_text_font_backend_feature>&>;
@@ -629,6 +684,30 @@ static_assert(requires(
         -> std::same_as<render::render_text_external_font_backend_dependency>;
     { render::make_render_text_deterministic_fake_external_dependency() }
         -> std::same_as<render::render_text_external_font_backend_dependency>;
+    { render::render_text_external_font_backend_header_available(library) } -> std::same_as<bool>;
+    { render::render_text_freetype_header_version() } -> std::same_as<render::render_text_font_backend_version>;
+    { render::render_text_harfbuzz_header_version() } -> std::same_as<render::render_text_font_backend_version>;
+    { render::render_text_utf8proc_header_version() } -> std::same_as<render::render_text_font_backend_version>;
+    { render::render_text_external_font_backend_header_version(library) }
+        -> std::same_as<render::render_text_font_backend_version>;
+    { render::render_text_external_font_backend_header_version_available(library) } -> std::same_as<bool>;
+    { render::render_text_external_font_backend_header_features_for(library) }
+        -> std::same_as<std::vector<render::render_text_font_backend_feature>>;
+    { render::render_text_external_font_backend_header_path_for(library) } -> std::same_as<std::string>;
+    { render::render_text_external_font_backend_header_diagnostic_for(library, bool{}, bool{}) }
+        -> std::same_as<std::string>;
+    { render::make_render_text_external_font_backend_header_probe(library) }
+        -> std::same_as<render::render_text_external_font_backend_header_probe>;
+    { render::find_render_text_external_font_backend_header_probe(header_probe_snapshot.probes, library) }
+        -> std::same_as<const render::render_text_external_font_backend_header_probe*>;
+    { render::append_render_text_external_font_backend_header_probe(header_probe_snapshot, header_probe) }
+        -> std::same_as<void>;
+    { render::make_render_text_external_font_backend_header_probe_snapshot() }
+        -> std::same_as<render::render_text_external_font_backend_header_probe_snapshot>;
+    { render::render_text_external_font_backend_header_dependencies(header_probe_snapshot) }
+        -> std::same_as<std::vector<render::render_text_external_font_backend_dependency>>;
+    { render::make_render_text_header_backed_external_font_backend_manifest() }
+        -> std::same_as<render::render_text_external_font_backend_manifest>;
     { render::make_render_text_known_external_font_backend_manifest() }
         -> std::same_as<render::render_text_external_font_backend_manifest>;
     { render::render_text_external_font_backend_default_libraries_for(purpose) }
@@ -702,6 +781,10 @@ static_assert(requires(render::fake_text_engine_font_backend_dependency_policy_s
     { policy.fake_only } -> std::same_as<bool&>;
     { policy.adapter_ready } -> std::same_as<bool&>;
     { policy.fallback_ready } -> std::same_as<bool&>;
+    { policy.header_probe_recorded } -> std::same_as<bool&>;
+    { policy.freetype_headers_available } -> std::same_as<bool&>;
+    { policy.harfbuzz_headers_available } -> std::same_as<bool&>;
+    { policy.utf8proc_headers_available } -> std::same_as<bool&>;
     { policy.probe_count } -> std::same_as<std::size_t&>;
     { policy.adapter_ready_count } -> std::same_as<std::size_t&>;
     { policy.fallback_ready_count } -> std::same_as<std::size_t&>;
@@ -709,6 +792,9 @@ static_assert(requires(render::fake_text_engine_font_backend_dependency_policy_s
     { policy.adapter_unavailable_count } -> std::same_as<std::size_t&>;
     { policy.version_mismatch_count } -> std::same_as<std::size_t&>;
     { policy.unsupported_feature_count } -> std::same_as<std::size_t&>;
+    { policy.available_header_count } -> std::same_as<std::size_t&>;
+    { policy.versioned_header_count } -> std::same_as<std::size_t&>;
+    { policy.advertised_header_feature_count } -> std::same_as<std::size_t&>;
 });
 
 static_assert(requires(
@@ -730,6 +816,10 @@ static_assert(requires(
     { selection.dependency_adapter_ready } -> std::same_as<bool&>;
     { selection.dependency_fallback_ready } -> std::same_as<bool&>;
     { selection.fake_only } -> std::same_as<bool&>;
+    { selection.dependency_header_available } -> std::same_as<bool&>;
+    { selection.dependency_header_version_available } -> std::same_as<bool&>;
+    { selection.dependency_header_version } -> std::same_as<render::render_text_font_backend_version&>;
+    { selection.dependency_header_diagnostic } -> std::same_as<std::string&>;
     { selection.dependency_diagnostic } -> std::same_as<std::string&>;
     { run_selection.run_index } -> std::same_as<std::size_t&>;
     { run_selection.style_token } -> std::same_as<render::render_style_id&>;
@@ -1463,6 +1553,471 @@ static_assert(requires(
 });
 
 static_assert(requires(
+    render::render_text_font_fallback_run_status status,
+    render::render_text_font_fallback_run_snapshot run,
+    render::render_text_font_fallback_run_plan_policy_snapshot policy,
+    render::render_text_font_fallback_run_plan_request request,
+    render::render_text_font_fallback_run_plan_snapshot plan,
+    render::render_text_font_fallback_run_diff_policy_snapshot diff_policy,
+    render::render_text_font_fallback_run_diff_snapshot run_diff,
+    render::render_text_font_fallback_run_plan_diff_snapshot plan_diff,
+    render::font_face_catalog catalog,
+    render::render_text_style style,
+    std::string_view text,
+    std::vector<render::font_face_id> face_ids) {
+    { render::render_text_font_fallback_run_status_name(status) } -> std::same_as<std::string>;
+    { run.stable_run_key } -> std::same_as<std::string&>;
+    { run.item_index } -> std::same_as<std::size_t&>;
+    { run.source_run_index } -> std::same_as<std::size_t&>;
+    { run.fallback_run_index } -> std::same_as<std::size_t&>;
+    { run.style_token } -> std::same_as<render::render_style_id&>;
+    { run.byte_offset } -> std::same_as<std::size_t&>;
+    { run.byte_count } -> std::same_as<std::size_t&>;
+    { run.codepoint_offset } -> std::same_as<std::size_t&>;
+    { run.codepoint_count } -> std::same_as<std::size_t&>;
+    { run.first_codepoint } -> std::same_as<std::uint32_t&>;
+    { run.last_codepoint } -> std::same_as<std::uint32_t&>;
+    { run.requested_face_id } -> std::same_as<render::font_face_id&>;
+    { run.selected_face_id } -> std::same_as<render::font_face_id&>;
+    { run.selected_family } -> std::same_as<std::string&>;
+    { run.selected_source_uri } -> std::same_as<std::string&>;
+    { run.fallback_order } -> std::same_as<std::size_t&>;
+    { run.attempted_face_ids } -> std::same_as<std::vector<render::font_face_id>&>;
+    { run.valid_utf8 } -> std::same_as<bool&>;
+    { run.glyph_supported } -> std::same_as<bool&>;
+    { run.used_fallback } -> std::same_as<bool&>;
+    { run.status } -> std::same_as<render::render_text_font_fallback_run_status&>;
+    { run.ok() } -> std::same_as<bool>;
+    { run.missing() } -> std::same_as<bool>;
+    { policy.fallback_run_count } -> std::same_as<std::size_t&>;
+    { policy.covered_codepoint_count } -> std::same_as<std::size_t&>;
+    { policy.fallback_codepoint_count } -> std::same_as<std::size_t&>;
+    { policy.missing_glyph_count } -> std::same_as<std::size_t&>;
+    { policy.invalid_utf8_count } -> std::same_as<std::size_t&>;
+    { policy.unique_selected_face_count } -> std::same_as<std::size_t&>;
+    { policy.has_missing_ranges } -> std::same_as<bool&>;
+    { request.items } -> std::same_as<std::vector<render::render_text_font_fallback_chain_plan_item>&>;
+    { plan.runs } -> std::same_as<std::vector<render::render_text_font_fallback_run_snapshot>&>;
+    { plan.missing_runs } -> std::same_as<std::vector<render::render_text_font_fallback_run_snapshot>&>;
+    { plan.selected_face_order } -> std::same_as<std::vector<render::font_face_id>&>;
+    { plan.policy } -> std::same_as<render::render_text_font_fallback_run_plan_policy_snapshot&>;
+    { plan.ok() } -> std::same_as<bool>;
+    { plan.has_missing_ranges() } -> std::same_as<bool>;
+    { diff_policy.fallback_run_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.covered_codepoint_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.missing_glyph_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.selected_face_order_changed } -> std::same_as<bool&>;
+    { run_diff.stable_run_key } -> std::same_as<std::string&>;
+    { run_diff.status_changed } -> std::same_as<bool&>;
+    { run_diff.selected_face_changed } -> std::same_as<bool&>;
+    { plan_diff.policy } -> std::same_as<render::render_text_font_fallback_run_diff_policy_snapshot&>;
+    { plan_diff.run_diffs } -> std::same_as<std::vector<render::render_text_font_fallback_run_diff_snapshot>&>;
+    { plan_diff.changed_run_keys } -> std::same_as<std::vector<std::string>&>;
+    { plan_diff.has_changes() } -> std::same_as<bool>;
+    { render::font_fallback_run_stable_key_for(run) } -> std::same_as<std::string>;
+    { render::font_fallback_run_attempted_faces_equal(face_ids, face_ids) } -> std::same_as<bool>;
+    { render::font_fallback_runs_can_merge(run, run) } -> std::same_as<bool>;
+    { render::plan_render_text_font_fallback_runs(request, catalog) }
+        -> std::same_as<render::render_text_font_fallback_run_plan_snapshot>;
+    { render::plan_render_text_font_fallback_runs(text, catalog, style) }
+        -> std::same_as<render::render_text_font_fallback_run_plan_snapshot>;
+    { render::font_fallback_run_count_delta(std::size_t{}, std::size_t{}) }
+        -> std::same_as<std::ptrdiff_t>;
+    { render::render_text_font_fallback_run_snapshots_equal(run, run) } -> std::same_as<bool>;
+    { render::find_render_text_font_fallback_run_by_key(plan.runs, run.stable_run_key) }
+        -> std::same_as<const render::render_text_font_fallback_run_snapshot*>;
+    { render::font_fallback_run_selected_face_order_equal(face_ids, face_ids) } -> std::same_as<bool>;
+    { render::diff_render_text_font_fallback_runs(&run, &run, run.stable_run_key) }
+        -> std::same_as<render::render_text_font_fallback_run_diff_snapshot>;
+    { render::diff_render_text_font_fallback_run_plans(plan, plan) }
+        -> std::same_as<render::render_text_font_fallback_run_plan_diff_snapshot>;
+});
+
+static_assert(requires(
+    render::render_text_font_fallback_shaping_handoff_status status,
+    render::render_text_font_fallback_shaping_handoff_run_snapshot run,
+    render::render_text_font_fallback_shaping_handoff_policy_snapshot policy,
+    render::render_text_font_fallback_shaping_handoff_request request,
+    render::render_text_font_fallback_shaping_handoff_snapshot handoff,
+    render::render_text_font_fallback_run_snapshot fallback_run,
+    render::render_text_font_fallback_run_plan_snapshot fallback_plan,
+    std::vector<std::string> keys,
+    std::vector<render::render_style_id> style_tokens) {
+    { render::render_text_font_fallback_shaping_handoff_status_name(status) } -> std::same_as<std::string>;
+    { run.stable_run_key } -> std::same_as<std::string&>;
+    { run.stable_page_key } -> std::same_as<std::string&>;
+    { run.item_index } -> std::same_as<std::size_t&>;
+    { run.source_run_index } -> std::same_as<std::size_t&>;
+    { run.fallback_run_index } -> std::same_as<std::size_t&>;
+    { run.style_token } -> std::same_as<render::render_style_id&>;
+    { run.byte_offset } -> std::same_as<std::size_t&>;
+    { run.byte_count } -> std::same_as<std::size_t&>;
+    { run.codepoint_offset } -> std::same_as<std::size_t&>;
+    { run.codepoint_count } -> std::same_as<std::size_t&>;
+    { run.first_codepoint } -> std::same_as<std::uint32_t&>;
+    { run.last_codepoint } -> std::same_as<std::uint32_t&>;
+    { run.requested_face_id } -> std::same_as<render::font_face_id&>;
+    { run.selected_face_id } -> std::same_as<render::font_face_id&>;
+    { run.requested_family } -> std::same_as<std::string&>;
+    { run.selected_family } -> std::same_as<std::string&>;
+    { run.selected_source_uri } -> std::same_as<std::string&>;
+    { run.fallback_order } -> std::same_as<std::size_t&>;
+    { run.attempted_face_ids } -> std::same_as<std::vector<render::font_face_id>&>;
+    { run.valid_utf8 } -> std::same_as<bool&>;
+    { run.glyph_supported } -> std::same_as<bool&>;
+    { run.used_fallback } -> std::same_as<bool&>;
+    { run.fallback_run_status } -> std::same_as<render::render_text_font_fallback_run_status&>;
+    { run.handoff_status } -> std::same_as<render::render_text_font_fallback_shaping_handoff_status&>;
+    { run.ready_to_shape() } -> std::same_as<bool>;
+    { run.blocked() } -> std::same_as<bool>;
+    { policy.run_count } -> std::same_as<std::size_t&>;
+    { policy.ready_run_count } -> std::same_as<std::size_t&>;
+    { policy.blocked_run_count } -> std::same_as<std::size_t&>;
+    { policy.missing_glyph_run_count } -> std::same_as<std::size_t&>;
+    { policy.invalid_utf8_run_count } -> std::same_as<std::size_t&>;
+    { policy.no_selected_face_run_count } -> std::same_as<std::size_t&>;
+    { policy.ready_codepoint_count } -> std::same_as<std::size_t&>;
+    { policy.blocked_codepoint_count } -> std::same_as<std::size_t&>;
+    { policy.unique_page_key_count } -> std::same_as<std::size_t&>;
+    { policy.unique_style_token_count } -> std::same_as<std::size_t&>;
+    { request.fallback_run_plan } -> std::same_as<render::render_text_font_fallback_run_plan_snapshot&>;
+    { handoff.runs } -> std::same_as<std::vector<render::render_text_font_fallback_shaping_handoff_run_snapshot>&>;
+    { handoff.ready_runs } -> std::same_as<std::vector<render::render_text_font_fallback_shaping_handoff_run_snapshot>&>;
+    { handoff.blocked_runs } -> std::same_as<std::vector<render::render_text_font_fallback_shaping_handoff_run_snapshot>&>;
+    { handoff.stable_run_keys } -> std::same_as<std::vector<std::string>&>;
+    { handoff.stable_page_keys } -> std::same_as<std::vector<std::string>&>;
+    { handoff.style_tokens } -> std::same_as<std::vector<render::render_style_id>&>;
+    { handoff.policy } -> std::same_as<render::render_text_font_fallback_shaping_handoff_policy_snapshot&>;
+    { handoff.ok() } -> std::same_as<bool>;
+    { handoff.has_blocked_runs() } -> std::same_as<bool>;
+    { render::font_fallback_shaping_handoff_stable_page_key_for(fallback_run) } -> std::same_as<std::string>;
+    { render::font_fallback_shaping_handoff_status_for(fallback_run) }
+        -> std::same_as<render::render_text_font_fallback_shaping_handoff_status>;
+    { render::font_fallback_shaping_handoff_append_unique_key(keys, run.stable_run_key) } -> std::same_as<void>;
+    { render::font_fallback_shaping_handoff_append_unique_style(style_tokens, run.style_token) } -> std::same_as<void>;
+    { render::make_render_text_font_fallback_shaping_handoff_run(fallback_run) }
+        -> std::same_as<render::render_text_font_fallback_shaping_handoff_run_snapshot>;
+    { render::summarize_render_text_font_fallback_shaping_handoff_policy(handoff) } -> std::same_as<void>;
+    { render::make_render_text_font_fallback_shaping_handoff(fallback_plan) }
+        -> std::same_as<render::render_text_font_fallback_shaping_handoff_snapshot>;
+    { render::make_render_text_font_fallback_shaping_handoff(request) }
+        -> std::same_as<render::render_text_font_fallback_shaping_handoff_snapshot>;
+});
+
+static_assert(requires(
+    render::render_text_font_fallback_shaped_glyph_input_record input,
+    render::render_text_font_fallback_shaped_glyph_input_policy_snapshot policy,
+    render::render_text_font_fallback_shaped_glyph_input_request request,
+    render::render_text_font_fallback_shaped_glyph_input_snapshot snapshot,
+    render::render_text_font_fallback_shaping_handoff_run_snapshot handoff_run,
+    render::render_text_font_fallback_shaping_handoff_snapshot handoff,
+    render::render_text_font_fallback_run_plan_snapshot fallback_plan,
+    render::render_text_font_fallback_chain_plan_item item,
+    std::vector<render::render_text_font_fallback_chain_plan_item> items,
+    render::utf8_text_codepoint scalar,
+    render::render_text_style style,
+    render::font_face_catalog catalog) {
+    { input.stable_input_key } -> std::same_as<std::string&>;
+    { input.stable_run_key } -> std::same_as<std::string&>;
+    { input.stable_page_key } -> std::same_as<std::string&>;
+    { input.item_index } -> std::same_as<std::size_t&>;
+    { input.source_run_index } -> std::same_as<std::size_t&>;
+    { input.fallback_run_index } -> std::same_as<std::size_t&>;
+    { input.glyph_index } -> std::same_as<std::size_t&>;
+    { input.source_codepoint_index } -> std::same_as<std::size_t&>;
+    { input.style_token } -> std::same_as<render::render_style_id&>;
+    { input.byte_offset } -> std::same_as<std::size_t&>;
+    { input.byte_count } -> std::same_as<std::size_t&>;
+    { input.codepoint } -> std::same_as<std::uint32_t&>;
+    { input.glyph_id } -> std::same_as<std::uint32_t&>;
+    { input.requested_face_id } -> std::same_as<render::font_face_id&>;
+    { input.selected_face_id } -> std::same_as<render::font_face_id&>;
+    { input.selected_family } -> std::same_as<std::string&>;
+    { input.selected_source_uri } -> std::same_as<std::string&>;
+    { input.advance_x } -> std::same_as<float&>;
+    { input.line_height } -> std::same_as<float&>;
+    { input.cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { input.has_cache_key } -> std::same_as<bool&>;
+    { input.cacheable } -> std::same_as<bool&>;
+    { input.valid_utf8 } -> std::same_as<bool&>;
+    { input.glyph_supported } -> std::same_as<bool&>;
+    { input.cluster_start } -> std::same_as<bool&>;
+    { input.used_fallback } -> std::same_as<bool&>;
+    { input.glyph_id_from_selection } -> std::same_as<bool&>;
+    { input.glyph_id_matches_codepoint } -> std::same_as<bool&>;
+    { input.glyph_id_offset } -> std::same_as<std::uint32_t&>;
+    { input.font_selection } -> std::same_as<render::render_text_font_shaping_codepoint_selection&>;
+    { input.diagnostic } -> std::same_as<std::string&>;
+    { input.ready_for_shaping() } -> std::same_as<bool>;
+    { input.ready_for_glyph_atlas() } -> std::same_as<bool>;
+    { policy.handoff_run_count } -> std::same_as<std::size_t&>;
+    { policy.ready_run_count } -> std::same_as<std::size_t&>;
+    { policy.blocked_run_count } -> std::same_as<std::size_t&>;
+    { policy.input_count } -> std::same_as<std::size_t&>;
+    { policy.cacheable_input_count } -> std::same_as<std::size_t&>;
+    { policy.uncacheable_input_count } -> std::same_as<std::size_t&>;
+    { policy.fallback_input_count } -> std::same_as<std::size_t&>;
+    { policy.glyph_id_offset_input_count } -> std::same_as<std::size_t&>;
+    { policy.missing_source_run_count } -> std::same_as<std::size_t&>;
+    { policy.missing_codepoint_count } -> std::same_as<std::size_t&>;
+    { policy.fallback_style_count } -> std::same_as<std::size_t&>;
+    { policy.no_selected_face_count } -> std::same_as<std::size_t&>;
+    { policy.unique_page_key_count } -> std::same_as<std::size_t&>;
+    { policy.unique_style_token_count } -> std::same_as<std::size_t&>;
+    { request.handoff } -> std::same_as<render::render_text_font_fallback_shaping_handoff_snapshot&>;
+    { request.items } -> std::same_as<std::vector<render::render_text_font_fallback_chain_plan_item>&>;
+    { request.font_catalog } -> std::same_as<render::font_face_catalog&>;
+    { snapshot.inputs } -> std::same_as<std::vector<render::render_text_font_fallback_shaped_glyph_input_record>&>;
+    { snapshot.blocked_runs }
+        -> std::same_as<std::vector<render::render_text_font_fallback_shaping_handoff_run_snapshot>&>;
+    { snapshot.stable_input_keys } -> std::same_as<std::vector<std::string>&>;
+    { snapshot.stable_page_keys } -> std::same_as<std::vector<std::string>&>;
+    { snapshot.style_tokens } -> std::same_as<std::vector<render::render_style_id>&>;
+    { snapshot.policy } -> std::same_as<render::render_text_font_fallback_shaped_glyph_input_policy_snapshot&>;
+    { snapshot.diagnostic } -> std::same_as<std::string&>;
+    { snapshot.ok() } -> std::same_as<bool>;
+    { snapshot.has_inputs() } -> std::same_as<bool>;
+    { render::font_fallback_shaped_glyph_input_line_height_for(style) } -> std::same_as<float>;
+    { render::font_fallback_shaped_glyph_input_atlas_dimension_for(1.0f) } -> std::same_as<std::size_t>;
+    { render::font_fallback_shaped_glyph_input_stable_key_for(handoff_run, scalar, std::size_t{}) }
+        -> std::same_as<std::string>;
+    { render::find_font_fallback_shaped_glyph_input_item(items, item.item_index) }
+        -> std::same_as<const render::render_text_font_fallback_chain_plan_item*>;
+    { render::make_render_text_font_fallback_shaped_glyph_input(
+        handoff_run,
+        scalar,
+        std::size_t{},
+        std::size_t{},
+        style,
+        catalog) } -> std::same_as<render::render_text_font_fallback_shaped_glyph_input_record>;
+    { render::append_render_text_font_fallback_shaped_glyph_input(snapshot, input) } -> std::same_as<void>;
+    { render::make_render_text_font_fallback_shaped_glyph_inputs(request) }
+        -> std::same_as<render::render_text_font_fallback_shaped_glyph_input_snapshot>;
+    { render::make_render_text_font_fallback_shaped_glyph_inputs(handoff, items, catalog) }
+        -> std::same_as<render::render_text_font_fallback_shaped_glyph_input_snapshot>;
+    { render::make_render_text_font_fallback_shaped_glyph_inputs(fallback_plan, items, catalog) }
+        -> std::same_as<render::render_text_font_fallback_shaped_glyph_input_snapshot>;
+});
+
+static_assert(requires(
+    render::render_text_font_fallback_shaped_glyph_execution_status status,
+    render::render_text_font_fallback_shaped_glyph_execution_record execution,
+    render::render_text_font_fallback_shaped_glyph_execution_policy_snapshot policy,
+    render::render_text_font_fallback_shaped_glyph_execution_request request,
+    render::render_text_font_fallback_shaped_glyph_execution_snapshot snapshot,
+    render::render_text_font_fallback_shaped_glyph_input_record input,
+    render::render_text_font_fallback_shaped_glyph_input_snapshot inputs,
+    std::vector<render::font_face_id> face_ids,
+    std::vector<render::glyph_atlas_key> cache_keys) {
+    { render::render_text_font_fallback_shaped_glyph_execution_status_name(status) }
+        -> std::same_as<std::string>;
+    { execution.stable_execution_key } -> std::same_as<std::string&>;
+    { execution.stable_input_key } -> std::same_as<std::string&>;
+    { execution.stable_run_key } -> std::same_as<std::string&>;
+    { execution.stable_page_key } -> std::same_as<std::string&>;
+    { execution.item_index } -> std::same_as<std::size_t&>;
+    { execution.source_run_index } -> std::same_as<std::size_t&>;
+    { execution.fallback_run_index } -> std::same_as<std::size_t&>;
+    { execution.glyph_index } -> std::same_as<std::size_t&>;
+    { execution.source_codepoint_index } -> std::same_as<std::size_t&>;
+    { execution.style_token } -> std::same_as<render::render_style_id&>;
+    { execution.byte_offset } -> std::same_as<std::size_t&>;
+    { execution.byte_count } -> std::same_as<std::size_t&>;
+    { execution.codepoint } -> std::same_as<std::uint32_t&>;
+    { execution.glyph_id } -> std::same_as<std::uint32_t&>;
+    { execution.requested_face_id } -> std::same_as<render::font_face_id&>;
+    { execution.selected_face_id } -> std::same_as<render::font_face_id&>;
+    { execution.advance_x } -> std::same_as<float&>;
+    { execution.line_height } -> std::same_as<float&>;
+    { execution.cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { execution.has_cache_key } -> std::same_as<bool&>;
+    { execution.cacheable } -> std::same_as<bool&>;
+    { execution.valid_utf8 } -> std::same_as<bool&>;
+    { execution.glyph_supported } -> std::same_as<bool&>;
+    { execution.cluster_start } -> std::same_as<bool&>;
+    { execution.used_fallback } -> std::same_as<bool&>;
+    { execution.glyph_id_from_selection } -> std::same_as<bool&>;
+    { execution.glyph_id_matches_codepoint } -> std::same_as<bool&>;
+    { execution.glyph_id_offset } -> std::same_as<std::uint32_t&>;
+    { execution.status } -> std::same_as<render::render_text_font_fallback_shaped_glyph_execution_status&>;
+    { execution.shaped_glyph } -> std::same_as<render::render_text_shaped_glyph&>;
+    { execution.diagnostic } -> std::same_as<std::string&>;
+    { execution.executed() } -> std::same_as<bool>;
+    { execution.ready_for_glyph_atlas() } -> std::same_as<bool>;
+    { policy.input_count } -> std::same_as<std::size_t&>;
+    { policy.execution_count } -> std::same_as<std::size_t&>;
+    { policy.shaped_count } -> std::same_as<std::size_t&>;
+    { policy.blocked_input_count } -> std::same_as<std::size_t&>;
+    { policy.atlas_ready_count } -> std::same_as<std::size_t&>;
+    { policy.missing_cache_key_count } -> std::same_as<std::size_t&>;
+    { policy.invalid_utf8_count } -> std::same_as<std::size_t&>;
+    { policy.unsupported_glyph_count } -> std::same_as<std::size_t&>;
+    { policy.no_selected_face_count } -> std::same_as<std::size_t&>;
+    { policy.missing_glyph_id_count } -> std::same_as<std::size_t&>;
+    { policy.fallback_execution_count } -> std::same_as<std::size_t&>;
+    { policy.glyph_id_offset_execution_count } -> std::same_as<std::size_t&>;
+    { policy.unique_input_key_count } -> std::same_as<std::size_t&>;
+    { policy.unique_page_key_count } -> std::same_as<std::size_t&>;
+    { policy.unique_cache_key_count } -> std::same_as<std::size_t&>;
+    { policy.unique_selected_face_count } -> std::same_as<std::size_t&>;
+    { policy.unique_style_token_count } -> std::same_as<std::size_t&>;
+    { request.inputs } -> std::same_as<render::render_text_font_fallback_shaped_glyph_input_snapshot&>;
+    { snapshot.executions }
+        -> std::same_as<std::vector<render::render_text_font_fallback_shaped_glyph_execution_record>&>;
+    { snapshot.blocked_runs }
+        -> std::same_as<std::vector<render::render_text_font_fallback_shaping_handoff_run_snapshot>&>;
+    { snapshot.stable_execution_keys } -> std::same_as<std::vector<std::string>&>;
+    { snapshot.stable_input_keys } -> std::same_as<std::vector<std::string>&>;
+    { snapshot.stable_page_keys } -> std::same_as<std::vector<std::string>&>;
+    { snapshot.cache_keys } -> std::same_as<std::vector<render::glyph_atlas_key>&>;
+    { snapshot.selected_face_ids } -> std::same_as<std::vector<render::font_face_id>&>;
+    { snapshot.style_tokens } -> std::same_as<std::vector<render::render_style_id>&>;
+    { snapshot.policy } -> std::same_as<render::render_text_font_fallback_shaped_glyph_execution_policy_snapshot&>;
+    { snapshot.diagnostic } -> std::same_as<std::string&>;
+    { snapshot.ok() } -> std::same_as<bool>;
+    { snapshot.has_executions() } -> std::same_as<bool>;
+    { render::font_fallback_shaped_glyph_execution_stable_key_for(input) } -> std::same_as<std::string>;
+    { render::font_fallback_shaped_glyph_execution_status_for(input) }
+        -> std::same_as<render::render_text_font_fallback_shaped_glyph_execution_status>;
+    { render::make_render_text_font_fallback_shaped_glyph_for_execution(input) }
+        -> std::same_as<render::render_text_shaped_glyph>;
+    { render::execute_render_text_font_fallback_shaped_glyph_input(input) }
+        -> std::same_as<render::render_text_font_fallback_shaped_glyph_execution_record>;
+    { render::font_fallback_shaped_glyph_execution_append_unique_face(face_ids, render::font_face_id{}) }
+        -> std::same_as<void>;
+    { render::font_fallback_shaped_glyph_execution_append_unique_cache_key(cache_keys, execution.cache_key) }
+        -> std::same_as<void>;
+    { render::count_render_text_font_fallback_shaped_glyph_execution_status(policy, status) }
+        -> std::same_as<void>;
+    { render::append_render_text_font_fallback_shaped_glyph_execution(snapshot, execution) }
+        -> std::same_as<void>;
+    { render::execute_render_text_font_fallback_shaped_glyph_inputs(request) }
+        -> std::same_as<render::render_text_font_fallback_shaped_glyph_execution_snapshot>;
+    { render::execute_render_text_font_fallback_shaped_glyph_inputs(inputs) }
+        -> std::same_as<render::render_text_font_fallback_shaped_glyph_execution_snapshot>;
+});
+
+static_assert(requires(
+    render::render_text_font_fallback_shaped_glyph_execution_record execution,
+    render::render_text_font_fallback_shaped_glyph_execution_record_diff execution_diff,
+    render::render_text_font_fallback_shaped_glyph_execution_diff_policy diff_policy,
+    render::render_text_font_fallback_shaped_glyph_execution_diff_snapshot diff_snapshot,
+    render::render_text_font_fallback_shaped_glyph_execution_snapshot snapshot,
+    std::vector<std::string> execution_keys,
+    std::vector<std::string> diagnostic_reasons) {
+    { execution_diff.stable_execution_key } -> std::same_as<std::string&>;
+    { execution_diff.added } -> std::same_as<bool&>;
+    { execution_diff.removed } -> std::same_as<bool&>;
+    { execution_diff.changed } -> std::same_as<bool&>;
+    { execution_diff.status_changed } -> std::same_as<bool&>;
+    { execution_diff.selected_face_changed } -> std::same_as<bool&>;
+    { execution_diff.cache_key_changed } -> std::same_as<bool&>;
+    { execution_diff.page_key_changed } -> std::same_as<bool&>;
+    { execution_diff.style_token_changed } -> std::same_as<bool&>;
+    { execution_diff.glyph_id_changed } -> std::same_as<bool&>;
+    { execution_diff.diagnostic_changed } -> std::same_as<bool&>;
+    { execution_diff.previous_status }
+        -> std::same_as<render::render_text_font_fallback_shaped_glyph_execution_status&>;
+    { execution_diff.current_status }
+        -> std::same_as<render::render_text_font_fallback_shaped_glyph_execution_status&>;
+    { execution_diff.previous_selected_face_id } -> std::same_as<render::font_face_id&>;
+    { execution_diff.current_selected_face_id } -> std::same_as<render::font_face_id&>;
+    { execution_diff.previous_cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { execution_diff.current_cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { execution_diff.previous_page_key } -> std::same_as<std::string&>;
+    { execution_diff.current_page_key } -> std::same_as<std::string&>;
+    { execution_diff.previous_style_token } -> std::same_as<render::render_style_id&>;
+    { execution_diff.current_style_token } -> std::same_as<render::render_style_id&>;
+    { execution_diff.previous_glyph_id } -> std::same_as<std::uint32_t&>;
+    { execution_diff.current_glyph_id } -> std::same_as<std::uint32_t&>;
+    { execution_diff.previous_diagnostic } -> std::same_as<std::string&>;
+    { execution_diff.current_diagnostic } -> std::same_as<std::string&>;
+    { execution_diff.diagnostic_reason } -> std::same_as<std::string&>;
+    { diff_policy.input_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.execution_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.shaped_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.glyph_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.blocked_input_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.blocked_run_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.atlas_ready_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.missing_cache_key_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.invalid_utf8_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.unsupported_glyph_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.no_selected_face_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.missing_glyph_id_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.fallback_execution_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.glyph_id_offset_execution_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.unique_page_key_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.unique_cache_key_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.unique_selected_face_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.unique_style_token_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff_policy.added_execution_count } -> std::same_as<std::size_t&>;
+    { diff_policy.removed_execution_count } -> std::same_as<std::size_t&>;
+    { diff_policy.changed_execution_count } -> std::same_as<std::size_t&>;
+    { diff_policy.unchanged_execution_count } -> std::same_as<std::size_t&>;
+    { diff_policy.status_changed_count } -> std::same_as<std::size_t&>;
+    { diff_policy.selected_face_changed_count } -> std::same_as<std::size_t&>;
+    { diff_policy.cache_key_changed_count } -> std::same_as<std::size_t&>;
+    { diff_policy.page_key_changed_count } -> std::same_as<std::size_t&>;
+    { diff_policy.style_token_changed_count } -> std::same_as<std::size_t&>;
+    { diff_policy.glyph_id_changed_count } -> std::same_as<std::size_t&>;
+    { diff_policy.diagnostic_changed_count } -> std::same_as<std::size_t&>;
+    { diff_policy.added_blocked_run_count } -> std::same_as<std::size_t&>;
+    { diff_policy.removed_blocked_run_count } -> std::same_as<std::size_t&>;
+    { diff_policy.status_counts_changed } -> std::same_as<bool&>;
+    { diff_policy.selected_face_set_changed } -> std::same_as<bool&>;
+    { diff_policy.cache_key_set_changed } -> std::same_as<bool&>;
+    { diff_policy.page_key_set_changed } -> std::same_as<bool&>;
+    { diff_policy.style_token_set_changed } -> std::same_as<bool&>;
+    { diff_policy.blocked_runs_changed } -> std::same_as<bool&>;
+    { diff_policy.glyph_count_changed } -> std::same_as<bool&>;
+    { diff_snapshot.policy }
+        -> std::same_as<render::render_text_font_fallback_shaped_glyph_execution_diff_policy&>;
+    { diff_snapshot.execution_diffs }
+        -> std::same_as<std::vector<render::render_text_font_fallback_shaped_glyph_execution_record_diff>&>;
+    { diff_snapshot.added_execution_keys } -> std::same_as<std::vector<std::string>&>;
+    { diff_snapshot.removed_execution_keys } -> std::same_as<std::vector<std::string>&>;
+    { diff_snapshot.changed_execution_keys } -> std::same_as<std::vector<std::string>&>;
+    { diff_snapshot.added_blocked_run_keys } -> std::same_as<std::vector<std::string>&>;
+    { diff_snapshot.removed_blocked_run_keys } -> std::same_as<std::vector<std::string>&>;
+    { diff_snapshot.diagnostic_reasons } -> std::same_as<std::vector<std::string>&>;
+    { diff_snapshot.diagnostic } -> std::same_as<std::string&>;
+    { diff_snapshot.has_changes() } -> std::same_as<bool>;
+    { render::font_fallback_shaped_glyph_execution_count_delta(std::size_t{}, std::size_t{}) }
+        -> std::same_as<std::ptrdiff_t>;
+    { render::font_fallback_shaped_glyph_execution_append_unique_reason(diagnostic_reasons, std::string{}) }
+        -> std::same_as<void>;
+    { render::find_render_text_font_fallback_shaped_glyph_execution_by_key(
+        snapshot.executions,
+        execution.stable_execution_key) }
+        -> std::same_as<const render::render_text_font_fallback_shaped_glyph_execution_record*>;
+    { render::font_fallback_shaped_glyph_execution_append_unique_execution_key(
+        execution_keys,
+        execution.stable_execution_key) }
+        -> std::same_as<void>;
+    { render::font_fallback_shaped_glyph_execution_blocked_run_keys(snapshot) }
+        -> std::same_as<std::vector<std::string>>;
+    { render::font_fallback_shaped_glyph_execution_key_list_contains(execution_keys, std::string{}) }
+        -> std::same_as<bool>;
+    { render::render_text_font_fallback_shaped_glyph_execution_records_equal(execution, execution) }
+        -> std::same_as<bool>;
+    { render::font_fallback_shaped_glyph_execution_diff_reason_for(execution_diff) }
+        -> std::same_as<std::string>;
+    { render::diff_render_text_font_fallback_shaped_glyph_execution_records(
+        &execution,
+        &execution,
+        execution.stable_execution_key) }
+        -> std::same_as<render::render_text_font_fallback_shaped_glyph_execution_record_diff>;
+    { render::summarize_render_text_font_fallback_shaped_glyph_execution_diff_policy(
+        diff_snapshot,
+        snapshot,
+        snapshot) }
+        -> std::same_as<void>;
+    { render::diff_render_text_font_fallback_shaped_glyph_execution_snapshots(snapshot, snapshot) }
+        -> std::same_as<render::render_text_font_fallback_shaped_glyph_execution_diff_snapshot>;
+});
+
+static_assert(requires(
     render::render_text_font_fallback_chain_entry_snapshot entry,
     render::render_text_font_fallback_chain_missing_glyph_snapshot missing,
     render::render_text_font_fallback_chain_run_snapshot run,
@@ -1709,6 +2264,11 @@ static_assert(requires(render::render_text_glyph_cache_readiness_snapshot readin
         -> std::same_as<render::render_text_font_backend_capability_status&>;
     { readiness.font_backend_used_deterministic_fallback } -> std::same_as<bool&>;
     { readiness.font_backend_fallback_only } -> std::same_as<bool&>;
+    { readiness.font_face_byte_readiness_status }
+        -> std::same_as<render::render_text_font_face_byte_readiness_status&>;
+    { readiness.font_face_byte_fallback_required } -> std::same_as<bool&>;
+    { readiness.font_face_can_attempt_freetype_load } -> std::same_as<bool&>;
+    { readiness.used_descriptor_coverage_fallback } -> std::same_as<bool&>;
     { readiness.cacheable } -> std::same_as<bool&>;
     { readiness.has_atlas_slot } -> std::same_as<bool&>;
 });
@@ -1723,6 +2283,11 @@ static_assert(requires(render::render_text_glyph_cache_readiness_policy_snapshot
     { policy.unique_cache_key_count } -> std::same_as<std::size_t&>;
     { policy.unique_face_count } -> std::same_as<std::size_t&>;
     { policy.estimated_rgba_bytes } -> std::same_as<std::size_t&>;
+    { policy.font_face_byte_coverage_ready_count } -> std::same_as<std::size_t&>;
+    { policy.font_face_byte_missing_count } -> std::same_as<std::size_t&>;
+    { policy.font_face_byte_invalid_count } -> std::same_as<std::size_t&>;
+    { policy.font_face_byte_fallback_required_count } -> std::same_as<std::size_t&>;
+    { policy.descriptor_coverage_fallback_cluster_count } -> std::same_as<std::size_t&>;
 });
 
 static_assert(requires(render::render_text_rasterized_glyph_atlas_payload_snapshot payload) {
@@ -2122,6 +2687,284 @@ static_assert(requires(
 });
 
 static_assert(requires(
+    render::render_text_glyph_atlas_upload_operation_status status,
+    render::render_text_glyph_atlas_upload_operation_packet packet,
+    render::render_text_glyph_atlas_upload_operation_page_summary page,
+    render::render_text_glyph_atlas_upload_operation_policy_snapshot policy,
+    render::render_text_glyph_atlas_upload_operation_plan_request request,
+    render::render_text_glyph_atlas_upload_operation_plan_snapshot plan,
+    render::render_text_glyph_atlas_page_plan_entry_snapshot page_entry,
+    render::render_text_glyph_atlas_materialization_snapshot materialization,
+    const render::render_text_glyph_atlas_materialization_snapshot* materialization_ptr,
+    std::vector<render::render_text_glyph_atlas_materialization_snapshot> materializations,
+    std::vector<render::render_text_glyph_atlas_upload_operation_page_summary> pages,
+    render::render_text_atlas_page atlas_page,
+    render::glyph_atlas_key cache_key,
+    render::render_rect rect,
+    std::size_t operation_index,
+    std::size_t page_plan_entry_index) {
+    { render::render_text_glyph_atlas_upload_operation_status_name(status) } -> std::same_as<std::string>;
+    { packet.operation_id } -> std::same_as<std::string&>;
+    { packet.stable_page_id } -> std::same_as<std::string&>;
+    { packet.operation_index } -> std::same_as<std::size_t&>;
+    { packet.page_plan_entry_index } -> std::same_as<std::size_t&>;
+    { packet.materialization_index } -> std::same_as<std::size_t&>;
+    { packet.materialization_id } -> std::same_as<std::string&>;
+    { packet.run_index } -> std::same_as<std::size_t&>;
+    { packet.cluster_index } -> std::same_as<std::size_t&>;
+    { packet.cluster_byte_offset } -> std::same_as<std::size_t&>;
+    { packet.cluster_byte_count } -> std::same_as<std::size_t&>;
+    { packet.status } -> std::same_as<render::render_text_glyph_atlas_upload_operation_status&>;
+    { packet.page_plan_status } -> std::same_as<render::render_text_glyph_atlas_page_plan_status&>;
+    { packet.materialization_status }
+        -> std::same_as<render::render_text_glyph_atlas_materialization_status&>;
+    { packet.cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { packet.has_cache_key } -> std::same_as<bool&>;
+    { packet.page } -> std::same_as<render::render_text_atlas_page&>;
+    { packet.page_id } -> std::same_as<render::render_text_atlas_page_id&>;
+    { packet.atlas_bounds } -> std::same_as<render::render_rect&>;
+    { packet.has_atlas_bounds } -> std::same_as<bool&>;
+    { packet.update_bounds } -> std::same_as<render::render_rect&>;
+    { packet.has_update_bounds } -> std::same_as<bool&>;
+    { packet.rgba_byte_count } -> std::same_as<std::size_t&>;
+    { packet.dirty_upload } -> std::same_as<bool&>;
+    { packet.clean_reuse } -> std::same_as<bool&>;
+    { packet.skipped } -> std::same_as<bool&>;
+    { packet.blocked } -> std::same_as<bool&>;
+    { packet.overflow } -> std::same_as<bool&>;
+    { packet.payload_byte_count_mismatch } -> std::same_as<bool&>;
+    { packet.blocker_reason } -> std::same_as<std::string&>;
+    { packet.diagnostic } -> std::same_as<std::string&>;
+    { packet.uploadable() } -> std::same_as<bool>;
+    { page.stable_page_id } -> std::same_as<std::string&>;
+    { page.page } -> std::same_as<render::render_text_atlas_page&>;
+    { page.page_id } -> std::same_as<render::render_text_atlas_page_id&>;
+    { page.operation_count } -> std::same_as<std::size_t&>;
+    { page.upload_ready_count } -> std::same_as<std::size_t&>;
+    { page.clean_reuse_count } -> std::same_as<std::size_t&>;
+    { page.blocked_count } -> std::same_as<std::size_t&>;
+    { page.overflow_count } -> std::same_as<std::size_t&>;
+    { page.upload_rgba_bytes } -> std::same_as<std::size_t&>;
+    { page.dirty } -> std::same_as<bool&>;
+    { page.clean_reuse } -> std::same_as<bool&>;
+    { page.has_blockers } -> std::same_as<bool&>;
+    { page.overflow } -> std::same_as<bool&>;
+    { policy.page_plan_entry_count } -> std::same_as<std::size_t&>;
+    { policy.materialization_count } -> std::same_as<std::size_t&>;
+    { policy.operation_count } -> std::same_as<std::size_t&>;
+    { policy.upload_ready_count } -> std::same_as<std::size_t&>;
+    { policy.clean_reuse_count } -> std::same_as<std::size_t&>;
+    { policy.skipped_count } -> std::same_as<std::size_t&>;
+    { policy.blocked_count } -> std::same_as<std::size_t&>;
+    { policy.overflow_count } -> std::same_as<std::size_t&>;
+    { policy.payload_byte_count_mismatch_count } -> std::same_as<std::size_t&>;
+    { policy.dirty_page_count } -> std::same_as<std::size_t&>;
+    { policy.clean_reuse_page_count } -> std::same_as<std::size_t&>;
+    { policy.blocked_page_count } -> std::same_as<std::size_t&>;
+    { policy.page_count } -> std::same_as<std::size_t&>;
+    { policy.total_upload_rgba_bytes } -> std::same_as<std::size_t&>;
+    { policy.has_uploads } -> std::same_as<bool&>;
+    { policy.has_blockers } -> std::same_as<bool&>;
+    { policy.has_overflow } -> std::same_as<bool&>;
+    { policy.diagnostic } -> std::same_as<std::string&>;
+    { request.page_plan } -> std::same_as<render::render_text_glyph_atlas_page_plan_snapshot&>;
+    { request.materializations }
+        -> std::same_as<std::vector<render::render_text_glyph_atlas_materialization_snapshot>&>;
+    { request.emit_clean_reuse_operations } -> std::same_as<bool&>;
+    { request.emit_blocked_operations } -> std::same_as<bool&>;
+    { plan.operations }
+        -> std::same_as<std::vector<render::render_text_glyph_atlas_upload_operation_packet>&>;
+    { plan.pages }
+        -> std::same_as<std::vector<render::render_text_glyph_atlas_upload_operation_page_summary>&>;
+    { plan.policy } -> std::same_as<render::render_text_glyph_atlas_upload_operation_policy_snapshot&>;
+    { plan.ok() } -> std::same_as<bool>;
+    { plan.has_uploads() } -> std::same_as<bool>;
+    { plan.has_blockers() } -> std::same_as<bool>;
+    { render::render_text_glyph_atlas_upload_operation_stable_page_id_for(atlas_page) }
+        -> std::same_as<std::string>;
+    { render::render_text_glyph_atlas_upload_operation_cache_key_id_for(cache_key) }
+        -> std::same_as<std::string>;
+    { render::render_text_glyph_atlas_upload_operation_stable_id_for(page_entry) }
+        -> std::same_as<std::string>;
+    { render::render_text_glyph_atlas_upload_operation_materialization_for(materializations, page_entry) }
+        -> std::same_as<const render::render_text_glyph_atlas_materialization_snapshot*>;
+    { render::render_text_glyph_atlas_upload_operation_has_positive_rect(rect) } -> std::same_as<bool>;
+    { render::render_text_glyph_atlas_upload_operation_status_for(page_entry, materialization_ptr) }
+        -> std::same_as<render::render_text_glyph_atlas_upload_operation_status>;
+    { render::render_text_glyph_atlas_upload_operation_blocker_reason_for(status) }
+        -> std::same_as<std::string>;
+    { render::make_render_text_glyph_atlas_upload_operation(
+        page_entry,
+        materialization_ptr,
+        operation_index,
+        page_plan_entry_index) } -> std::same_as<render::render_text_glyph_atlas_upload_operation_packet>;
+    { render::render_text_glyph_atlas_upload_operation_find_page_summary(pages, atlas_page.id) }
+        -> std::same_as<render::render_text_glyph_atlas_upload_operation_page_summary*>;
+    { render::append_render_text_glyph_atlas_upload_operation(plan, packet) } -> std::same_as<void>;
+    { render::summarize_render_text_glyph_atlas_upload_operation_pages(plan) } -> std::same_as<void>;
+    { render::plan_render_text_glyph_atlas_upload_operations(request) }
+        -> std::same_as<render::render_text_glyph_atlas_upload_operation_plan_snapshot>;
+    { render::plan_render_text_glyph_atlas_upload_operations(request.page_plan, materializations) }
+        -> std::same_as<render::render_text_glyph_atlas_upload_operation_plan_snapshot>;
+});
+
+static_assert(requires(
+    render::render_text_glyph_atlas_upload_result_status status,
+    render::render_text_glyph_atlas_upload_result_packet_snapshot packet,
+    render::render_text_glyph_atlas_upload_result_page_snapshot page,
+    render::render_text_glyph_atlas_upload_result_policy_snapshot policy,
+    render::render_text_glyph_atlas_upload_result_request request,
+    render::render_text_glyph_atlas_upload_result_snapshot result,
+    render::render_text_glyph_atlas_upload_result_diff_status diff_status,
+    render::render_text_glyph_atlas_upload_result_policy_diff_snapshot policy_diff,
+    render::render_text_glyph_atlas_upload_result_packet_diff_snapshot packet_diff,
+    render::render_text_glyph_atlas_upload_result_page_diff_snapshot page_diff,
+    render::render_text_glyph_atlas_upload_result_diff_snapshot diff,
+    render::render_text_glyph_atlas_upload_operation_packet operation_packet,
+    std::vector<render::render_text_glyph_atlas_upload_result_page_snapshot> result_pages,
+    std::vector<render::render_text_glyph_atlas_upload_result_packet_snapshot> result_packets,
+    std::vector<bool> used_flags,
+    std::string stable_page_id,
+    std::size_t count) {
+    { render::render_text_glyph_atlas_upload_result_status_name(status) } -> std::same_as<std::string>;
+    { packet.operation_id } -> std::same_as<std::string&>;
+    { packet.upload_request_id } -> std::same_as<std::string&>;
+    { packet.stable_page_id } -> std::same_as<std::string&>;
+    { packet.operation_index } -> std::same_as<std::size_t&>;
+    { packet.page_plan_entry_index } -> std::same_as<std::size_t&>;
+    { packet.materialization_index } -> std::same_as<std::size_t&>;
+    { packet.materialization_id } -> std::same_as<std::string&>;
+    { packet.run_index } -> std::same_as<std::size_t&>;
+    { packet.cluster_index } -> std::same_as<std::size_t&>;
+    { packet.cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { packet.has_cache_key } -> std::same_as<bool&>;
+    { packet.page } -> std::same_as<render::render_text_atlas_page&>;
+    { packet.page_id } -> std::same_as<render::render_text_atlas_page_id&>;
+    { packet.update_bounds } -> std::same_as<render::render_rect&>;
+    { packet.rgba_byte_count } -> std::same_as<std::size_t&>;
+    { packet.operation_status } -> std::same_as<render::render_text_glyph_atlas_upload_operation_status&>;
+    { packet.result_status } -> std::same_as<render::render_text_glyph_atlas_upload_result_status&>;
+    { packet.accepted } -> std::same_as<bool&>;
+    { packet.rejected } -> std::same_as<bool&>;
+    { packet.upload_accepted } -> std::same_as<bool&>;
+    { packet.clean_reuse_accepted } -> std::same_as<bool&>;
+    { packet.dirty_upload } -> std::same_as<bool&>;
+    { packet.clean_reuse } -> std::same_as<bool&>;
+    { packet.blocked } -> std::same_as<bool&>;
+    { packet.overflow } -> std::same_as<bool&>;
+    { packet.missing_cache_key } -> std::same_as<bool&>;
+    { packet.missing_upload_request_id } -> std::same_as<bool&>;
+    { packet.payload_byte_count_mismatch } -> std::same_as<bool&>;
+    { packet.blocker_reason } -> std::same_as<std::string&>;
+    { packet.diagnostic } -> std::same_as<std::string&>;
+    { page.stable_page_id } -> std::same_as<std::string&>;
+    { page.page } -> std::same_as<render::render_text_atlas_page&>;
+    { page.page_id } -> std::same_as<render::render_text_atlas_page_id&>;
+    { page.packet_count } -> std::same_as<std::size_t&>;
+    { page.accepted_packet_count } -> std::same_as<std::size_t&>;
+    { page.rejected_packet_count } -> std::same_as<std::size_t&>;
+    { page.upload_request_count } -> std::same_as<std::size_t&>;
+    { page.materialized_glyph_count } -> std::same_as<std::size_t&>;
+    { page.reused_glyph_count } -> std::same_as<std::size_t&>;
+    { page.missing_glyph_count } -> std::same_as<std::size_t&>;
+    { page.blocker_count } -> std::same_as<std::size_t&>;
+    { page.overflow_count } -> std::same_as<std::size_t&>;
+    { page.upload_rgba_bytes } -> std::same_as<std::size_t&>;
+    { page.has_uploads } -> std::same_as<bool&>;
+    { page.has_rejections } -> std::same_as<bool&>;
+    { policy.operation_count } -> std::same_as<std::size_t&>;
+    { policy.accepted_packet_count } -> std::same_as<std::size_t&>;
+    { policy.rejected_packet_count } -> std::same_as<std::size_t&>;
+    { policy.accepted_upload_count } -> std::same_as<std::size_t&>;
+    { policy.accepted_clean_reuse_count } -> std::same_as<std::size_t&>;
+    { policy.rejected_blocked_packet_count } -> std::same_as<std::size_t&>;
+    { policy.rejected_missing_upload_request_id_count } -> std::same_as<std::size_t&>;
+    { policy.blocker_count } -> std::same_as<std::size_t&>;
+    { policy.overflow_count } -> std::same_as<std::size_t&>;
+    { policy.payload_byte_count_mismatch_count } -> std::same_as<std::size_t&>;
+    { policy.upload_request_id_count } -> std::same_as<std::size_t&>;
+    { policy.page_count } -> std::same_as<std::size_t&>;
+    { policy.page_with_upload_count } -> std::same_as<std::size_t&>;
+    { policy.page_with_rejection_count } -> std::same_as<std::size_t&>;
+    { policy.materialized_glyph_count } -> std::same_as<std::size_t&>;
+    { policy.reused_glyph_count } -> std::same_as<std::size_t&>;
+    { policy.missing_glyph_count } -> std::same_as<std::size_t&>;
+    { policy.total_upload_rgba_bytes } -> std::same_as<std::size_t&>;
+    { policy.has_uploads } -> std::same_as<bool&>;
+    { policy.has_rejections } -> std::same_as<bool&>;
+    { policy.diagnostic } -> std::same_as<std::string&>;
+    { request.operation_plan } -> std::same_as<render::render_text_glyph_atlas_upload_operation_plan_snapshot&>;
+    { request.upload_request_ids } -> std::same_as<std::vector<std::string>&>;
+    { request.require_upload_request_ids } -> std::same_as<bool&>;
+    { result.packets }
+        -> std::same_as<std::vector<render::render_text_glyph_atlas_upload_result_packet_snapshot>&>;
+    { result.pages }
+        -> std::same_as<std::vector<render::render_text_glyph_atlas_upload_result_page_snapshot>&>;
+    { result.policy } -> std::same_as<render::render_text_glyph_atlas_upload_result_policy_snapshot&>;
+    { result.ok() } -> std::same_as<bool>;
+    { result.has_uploads() } -> std::same_as<bool>;
+    { result.has_rejections() } -> std::same_as<bool>;
+    { render::render_text_glyph_atlas_upload_result_status_for(operation_packet, stable_page_id, true) }
+        -> std::same_as<render::render_text_glyph_atlas_upload_result_status>;
+    { render::render_text_glyph_atlas_upload_result_rejection_reason_for(status, operation_packet) }
+        -> std::same_as<std::string>;
+    { render::make_render_text_glyph_atlas_upload_result_packet(operation_packet, stable_page_id, true) }
+        -> std::same_as<render::render_text_glyph_atlas_upload_result_packet_snapshot>;
+    { render::render_text_glyph_atlas_upload_result_find_page(result_pages, stable_page_id) }
+        -> std::same_as<render::render_text_glyph_atlas_upload_result_page_snapshot*>;
+    { render::append_render_text_glyph_atlas_upload_result_packet(result, packet) } -> std::same_as<void>;
+    { render::summarize_render_text_glyph_atlas_upload_result_pages(result) } -> std::same_as<void>;
+    { render::make_render_text_glyph_atlas_upload_result(request) }
+        -> std::same_as<render::render_text_glyph_atlas_upload_result_snapshot>;
+    { render::render_text_glyph_atlas_upload_result_diff_status_name(diff_status) }
+        -> std::same_as<std::string>;
+    { policy_diff.before } -> std::same_as<render::render_text_glyph_atlas_upload_result_policy_snapshot&>;
+    { policy_diff.after } -> std::same_as<render::render_text_glyph_atlas_upload_result_policy_snapshot&>;
+    { policy_diff.operation_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { policy_diff.accepted_packet_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { policy_diff.rejected_packet_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { policy_diff.accepted_upload_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { policy_diff.accepted_clean_reuse_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { policy_diff.blocker_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { policy_diff.upload_request_id_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { policy_diff.page_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { policy_diff.materialized_glyph_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { policy_diff.reused_glyph_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { policy_diff.missing_glyph_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { policy_diff.total_upload_rgba_bytes_delta } -> std::same_as<std::ptrdiff_t&>;
+    { policy_diff.has_changes } -> std::same_as<bool&>;
+    { packet_diff.operation_id } -> std::same_as<std::string&>;
+    { packet_diff.accepted_changed } -> std::same_as<bool&>;
+    { packet_diff.upload_request_id_changed } -> std::same_as<bool&>;
+    { packet_diff.upload_rgba_bytes_delta } -> std::same_as<std::ptrdiff_t&>;
+    { page_diff.stable_page_id } -> std::same_as<std::string&>;
+    { page_diff.upload_rgba_bytes_delta } -> std::same_as<std::ptrdiff_t&>;
+    { diff.packet_diffs }
+        -> std::same_as<std::vector<render::render_text_glyph_atlas_upload_result_packet_diff_snapshot>&>;
+    { diff.page_diffs }
+        -> std::same_as<std::vector<render::render_text_glyph_atlas_upload_result_page_diff_snapshot>&>;
+    { diff.changed_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { diff.changed_page_ids } -> std::same_as<std::vector<std::string>&>;
+    { diff.policy } -> std::same_as<render::render_text_glyph_atlas_upload_result_policy_diff_snapshot&>;
+    { diff.has_changes() } -> std::same_as<bool>;
+    { render::render_text_glyph_atlas_upload_result_delta(count, count) } -> std::same_as<std::ptrdiff_t>;
+    { render::render_text_glyph_atlas_upload_result_packet_equal(packet, packet) } -> std::same_as<bool>;
+    { render::render_text_glyph_atlas_upload_result_page_equal(page, page) } -> std::same_as<bool>;
+    { render::diff_render_text_glyph_atlas_upload_result_policies(policy, policy) }
+        -> std::same_as<render::render_text_glyph_atlas_upload_result_policy_diff_snapshot>;
+    { render::diff_render_text_glyph_atlas_upload_result_packets(&packet, &packet) }
+        -> std::same_as<render::render_text_glyph_atlas_upload_result_packet_diff_snapshot>;
+    { render::diff_render_text_glyph_atlas_upload_result_pages(&page, &page) }
+        -> std::same_as<render::render_text_glyph_atlas_upload_result_page_diff_snapshot>;
+    { render::find_render_text_glyph_atlas_upload_result_packet(result_packets, stable_page_id, used_flags) }
+        -> std::same_as<const render::render_text_glyph_atlas_upload_result_packet_snapshot*>;
+    { render::find_render_text_glyph_atlas_upload_result_page(result_pages, stable_page_id, used_flags) }
+        -> std::same_as<const render::render_text_glyph_atlas_upload_result_page_snapshot*>;
+    { render::diff_render_text_glyph_atlas_upload_results(result, result) }
+        -> std::same_as<render::render_text_glyph_atlas_upload_result_diff_snapshot>;
+});
+
+static_assert(requires(
     render::render_text_batch_ref text_ref,
     render::render_text_request_batch_item item,
     render::render_text_batch_normalized_style_key style_key,
@@ -2151,6 +2994,17 @@ static_assert(requires(
     render::render_text_frame_draw_plan_snapshot draw_plan,
     render::render_text_frame_draw_plan_diff_policy draw_diff_policy,
     render::render_text_frame_draw_plan_diff draw_diff,
+    render::render_text_glyph_atlas_upload_result_packet_snapshot upload_result_packet,
+    render::render_text_glyph_atlas_upload_result_snapshot upload_result,
+    render::render_text_frame_upload_handoff_packet_snapshot handoff_packet,
+    render::render_text_frame_upload_handoff_page_snapshot handoff_page,
+    render::render_text_frame_upload_handoff_policy_snapshot handoff_policy,
+    render::render_text_frame_upload_handoff_request handoff_request,
+    render::render_text_frame_upload_handoff_snapshot handoff,
+    render::render_text_frame_upload_handoff_diff_policy handoff_diff_policy,
+    render::render_text_frame_upload_handoff_packet_diff handoff_packet_diff,
+    render::render_text_frame_upload_handoff_page_diff handoff_page_diff,
+    render::render_text_frame_upload_handoff_diff_snapshot handoff_diff,
     render::render_text_glyph_atlas_materialization_snapshot snapshot,
     render::render_text_request request,
     render::render_draw_command draw_command,
@@ -2626,6 +3480,116 @@ static_assert(requires(
         -> std::same_as<std::vector<std::string>>;
     { render::diff_render_text_frame_draw_plans(draw_plan, draw_plan) }
         -> std::same_as<render::render_text_frame_draw_plan_diff>;
+    { handoff_packet.handoff_id } -> std::same_as<std::string&>;
+    { handoff_packet.stable_packet_key } -> std::same_as<std::string&>;
+    { handoff_packet.frame_id } -> std::same_as<std::string&>;
+    { handoff_packet.draw_packet_id } -> std::same_as<std::string&>;
+    { handoff_packet.upload_operation_id } -> std::same_as<std::string&>;
+    { handoff_packet.upload_request_id } -> std::same_as<std::string&>;
+    { handoff_packet.stable_page_id } -> std::same_as<std::string&>;
+    { handoff_packet.materialization_index } -> std::same_as<std::size_t&>;
+    { handoff_packet.cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { handoff_packet.resolved_glyph_id } -> std::same_as<std::uint32_t&>;
+    { handoff_packet.resolved_face_id } -> std::same_as<std::uint32_t&>;
+    { handoff_packet.page_id } -> std::same_as<render::render_text_atlas_page_id&>;
+    { handoff_packet.page_revision } -> std::same_as<render::render_text_revision&>;
+    { handoff_packet.layout_bounds } -> std::same_as<render::render_rect&>;
+    { handoff_packet.atlas_bounds } -> std::same_as<render::render_rect&>;
+    { handoff_packet.update_bounds } -> std::same_as<render::render_rect&>;
+    { handoff_packet.draw_status } -> std::same_as<render::render_text_frame_draw_packet_status&>;
+    { handoff_packet.upload_result_status }
+        -> std::same_as<render::render_text_glyph_atlas_upload_result_status&>;
+    { handoff_packet.handoff_status }
+        -> std::same_as<render::render_text_frame_upload_handoff_packet_status&>;
+    { handoff_packet.requested } -> std::same_as<bool&>;
+    { handoff_packet.ready } -> std::same_as<bool&>;
+    { handoff_packet.blocked } -> std::same_as<bool&>;
+    { handoff_packet.uploaded } -> std::same_as<bool&>;
+    { handoff_packet.clean_reuse } -> std::same_as<bool&>;
+    { handoff_packet.missing_upload_result } -> std::same_as<bool&>;
+    { handoff_packet.missing_draw_packet } -> std::same_as<bool&>;
+    { handoff_packet.missing_glyph } -> std::same_as<bool&>;
+    { handoff_packet.missing_materialization } -> std::same_as<bool&>;
+    { handoff_packet.used_deterministic_fallback } -> std::same_as<bool&>;
+    { handoff_packet.used_real_backend } -> std::same_as<bool&>;
+    { handoff_packet.upload_consumed } -> std::same_as<bool&>;
+    { handoff_packet.upload_rgba_bytes } -> std::same_as<std::size_t&>;
+    { handoff_packet.blocker_reason } -> std::same_as<std::string&>;
+    { handoff_packet.upload_ready() } -> std::same_as<bool>;
+    { handoff_page.stable_page_id } -> std::same_as<std::string&>;
+    { handoff_page.page_id } -> std::same_as<render::render_text_atlas_page_id&>;
+    { handoff_page.page_revision } -> std::same_as<render::render_text_revision&>;
+    { handoff_page.ready_packet_count } -> std::same_as<std::size_t&>;
+    { handoff_page.blocked_packet_count } -> std::same_as<std::size_t&>;
+    { handoff_page.missing_draw_packet_count } -> std::same_as<std::size_t&>;
+    { handoff_page.upload_rgba_bytes } -> std::same_as<std::size_t&>;
+    { handoff_page.has_uploads } -> std::same_as<bool&>;
+    { handoff_page.has_blockers } -> std::same_as<bool&>;
+    { handoff_policy.requested_glyph_packet_count } -> std::same_as<std::size_t&>;
+    { handoff_policy.ready_glyph_packet_count } -> std::same_as<std::size_t&>;
+    { handoff_policy.blocked_glyph_packet_count } -> std::same_as<std::size_t&>;
+    { handoff_policy.uploaded_page_count } -> std::same_as<std::size_t&>;
+    { handoff_policy.upload_result_missing_count } -> std::same_as<std::size_t&>;
+    { handoff_policy.draw_packet_missing_count } -> std::same_as<std::size_t&>;
+    { handoff_policy.upload_result_rejected_count } -> std::same_as<std::size_t&>;
+    { handoff_policy.uploaded_glyph_count } -> std::same_as<std::size_t&>;
+    { handoff_policy.clean_reuse_glyph_count } -> std::same_as<std::size_t&>;
+    { handoff_policy.missing_glyph_count } -> std::same_as<std::size_t&>;
+    { handoff_policy.missing_materialization_count } -> std::same_as<std::size_t&>;
+    { handoff_policy.deterministic_fallback_count } -> std::same_as<std::size_t&>;
+    { handoff_policy.real_backend_count } -> std::same_as<std::size_t&>;
+    { handoff_policy.total_upload_rgba_bytes } -> std::same_as<std::size_t&>;
+    { handoff_policy.frame_ready_for_renderer } -> std::same_as<bool&>;
+    { handoff_policy.has_blockers } -> std::same_as<bool&>;
+    { handoff_request.frame } -> std::same_as<render::render_text_frame_snapshot&>;
+    { handoff_request.draw_plan } -> std::same_as<render::render_text_frame_draw_plan_snapshot&>;
+    { handoff_request.upload_result } -> std::same_as<render::render_text_glyph_atlas_upload_result_snapshot&>;
+    { handoff.frame_id } -> std::same_as<std::string&>;
+    { handoff.source_label } -> std::same_as<std::string&>;
+    { handoff.frame_status } -> std::same_as<render::render_text_frame_snapshot_status&>;
+    { handoff.policy } -> std::same_as<render::render_text_frame_upload_handoff_policy_snapshot&>;
+    { handoff.packets } -> std::same_as<std::vector<render::render_text_frame_upload_handoff_packet_snapshot>&>;
+    { handoff.pages } -> std::same_as<std::vector<render::render_text_frame_upload_handoff_page_snapshot>&>;
+    { handoff.uploaded_page_ids } -> std::same_as<std::vector<std::string>&>;
+    { handoff.ready_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { handoff.blocker_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { handoff.ok() } -> std::same_as<bool>;
+    { handoff.has_blockers() } -> std::same_as<bool>;
+    { render::make_render_text_frame_upload_handoff_packet(draw_packet, nullptr) }
+        -> std::same_as<render::render_text_frame_upload_handoff_packet_snapshot>;
+    { render::make_render_text_frame_upload_handoff_missing_draw_packet(frame_snapshot, upload_result_packet) }
+        -> std::same_as<render::render_text_frame_upload_handoff_packet_snapshot>;
+    { render::make_render_text_frame_upload_handoff(handoff_request) }
+        -> std::same_as<render::render_text_frame_upload_handoff_snapshot>;
+    { handoff_diff_policy.ready_glyph_packet_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { handoff_diff_policy.blocked_glyph_packet_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { handoff_diff_policy.draw_packet_missing_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { handoff_diff_policy.total_upload_rgba_bytes_delta } -> std::same_as<std::ptrdiff_t&>;
+    { handoff_diff_policy.frame_ready_changed } -> std::same_as<bool&>;
+    { handoff_diff_policy.blockers_changed } -> std::same_as<bool&>;
+    { handoff_diff_policy.deterministic_fallback_changed } -> std::same_as<bool&>;
+    { handoff_diff_policy.real_backend_changed } -> std::same_as<bool&>;
+    { handoff_packet_diff.stable_packet_key } -> std::same_as<std::string&>;
+    { handoff_packet_diff.added } -> std::same_as<bool&>;
+    { handoff_packet_diff.removed } -> std::same_as<bool&>;
+    { handoff_packet_diff.changed } -> std::same_as<bool&>;
+    { handoff_packet_diff.readiness_changed } -> std::same_as<bool&>;
+    { handoff_packet_diff.upload_rgba_bytes_delta } -> std::same_as<std::ptrdiff_t&>;
+    { handoff_page_diff.stable_page_id } -> std::same_as<std::string&>;
+    { handoff_page_diff.changed } -> std::same_as<bool&>;
+    { handoff_page_diff.upload_rgba_bytes_delta } -> std::same_as<std::ptrdiff_t&>;
+    { handoff_diff.previous_frame_id } -> std::same_as<std::string&>;
+    { handoff_diff.current_frame_id } -> std::same_as<std::string&>;
+    { handoff_diff.policy } -> std::same_as<render::render_text_frame_upload_handoff_diff_policy&>;
+    { handoff_diff.packet_diffs }
+        -> std::same_as<std::vector<render::render_text_frame_upload_handoff_packet_diff>&>;
+    { handoff_diff.page_diffs }
+        -> std::same_as<std::vector<render::render_text_frame_upload_handoff_page_diff>&>;
+    { handoff_diff.changed_packet_keys } -> std::same_as<std::vector<std::string>&>;
+    { handoff_diff.changed_page_ids } -> std::same_as<std::vector<std::string>&>;
+    { handoff_diff.has_changes() } -> std::same_as<bool>;
+    { render::diff_render_text_frame_upload_handoffs(handoff, handoff) }
+        -> std::same_as<render::render_text_frame_upload_handoff_diff_snapshot>;
     { render::render_text_atlas_upload_request_rect_key(atlas_request.atlas_update_bounds) }
         -> std::same_as<std::string>;
     { render::render_text_atlas_upload_request_stable_id_for(atlas_request) }

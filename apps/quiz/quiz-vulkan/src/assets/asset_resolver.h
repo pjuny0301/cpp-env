@@ -44,6 +44,7 @@ enum class asset_cache_key_policy_status {
     missing_type_separator,
     unsupported_asset_type,
     missing_source_uri,
+    unsupported_source_scheme,
     invalid_source_uri,
     noncanonical_source_uri,
     path_traversal,
@@ -118,6 +119,9 @@ struct asset_cache_key_classification {
     asset_cache_key_policy_status status = asset_cache_key_policy_status::empty_key;
     asset_type type = asset_type::generic;
     asset_source_kind source_kind = asset_source_kind::unsupported;
+    std::string type_component;
+    std::string source_component;
+    std::string revision_component;
     std::string normalized_uri;
     std::string source_path;
     std::string cache_revision;
@@ -502,6 +506,9 @@ inline bool asset_cache_revision_is_valid(std::string_view revision)
 
 inline asset_cache_key_policy_status cache_key_status_from_resolve_status(asset_resolve_status status)
 {
+    if (status == asset_resolve_status::unsupported_scheme) {
+        return asset_cache_key_policy_status::unsupported_source_scheme;
+    }
     if (status == asset_resolve_status::path_traversal) {
         return asset_cache_key_policy_status::path_traversal;
     }
@@ -536,7 +543,9 @@ inline asset_cache_key_classification classify_asset_cache_key(std::string_view 
         return classification;
     }
 
-    if (!parse_asset_type_token(cache_key.substr(0U, type_separator), classification.type)) {
+    const std::string_view type_component = cache_key.substr(0U, type_separator);
+    classification.type_component = std::string(type_component);
+    if (!parse_asset_type_token(type_component, classification.type)) {
         classification.status = asset_cache_key_policy_status::unsupported_asset_type;
         classification.diagnostic = "asset cache key type token is not recognized";
         return classification;
@@ -547,6 +556,7 @@ inline asset_cache_key_classification classify_asset_cache_key(std::string_view 
     const std::string_view source_uri = cache_key.substr(
         source_begin,
         revision_separator == std::string_view::npos ? std::string_view::npos : revision_separator - source_begin);
+    classification.source_component = std::string(source_uri);
     if (source_uri.empty()) {
         classification.status = asset_cache_key_policy_status::missing_source_uri;
         classification.diagnostic = "asset cache key requires a source uri";
@@ -556,6 +566,7 @@ inline asset_cache_key_classification classify_asset_cache_key(std::string_view 
     if (revision_separator != std::string_view::npos) {
         constexpr std::string_view revision_prefix = "rev=";
         const std::string_view revision = cache_key.substr(revision_separator + 1U);
+        classification.revision_component = std::string(revision);
         if (!revision.starts_with(revision_prefix)
             || !asset_cache_revision_is_valid(revision.substr(revision_prefix.size()))) {
             classification.status = asset_cache_key_policy_status::invalid_revision;

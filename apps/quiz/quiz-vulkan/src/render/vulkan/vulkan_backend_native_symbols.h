@@ -179,6 +179,25 @@ struct system_vulkan_native_symbol_resolver_options {
     bool use_default_library_names = true;
 };
 
+struct vulkan_system_symbol_resolution_result {
+    bool checked = false;
+    std::string symbol_name;
+    std::vector<std::string> attempted_library_names;
+    std::string loaded_library_name;
+    bool loader_library_available = false;
+    bool instance_proc_address_available = false;
+    bool resolved_via_instance_proc_address = false;
+    bool resolved_via_direct_export = false;
+    vulkan_native_function_pointer pointer;
+    std::string diagnostic;
+
+    bool resolved() const
+    {
+        return checked && pointer.valid()
+            && (resolved_via_instance_proc_address || resolved_via_direct_export);
+    }
+};
+
 class system_vulkan_native_symbol_resolver final
     : public vulkan_native_symbol_resolver_interface {
 public:
@@ -187,6 +206,8 @@ public:
         system_vulkan_native_symbol_resolver_options options);
 
     vulkan_native_function_pointer resolve_symbol(std::string_view symbol_name) override;
+    vulkan_system_symbol_resolution_result resolve_symbol_with_diagnostics(
+        std::string_view symbol_name);
 
 private:
     system_vulkan_native_symbol_resolver_options options_;

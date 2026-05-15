@@ -11,17 +11,27 @@
 
 namespace quiz_vulkan::assets {
 
+enum class asset_manifest_version_compatibility_status {
+    accepted,
+    missing_schema_version,
+    schema_version_mismatch,
+    unsupported_required_features,
+};
+
 struct asset_manifest_version_unsupported_feature_report {
     std::string feature;
     bool required = false;
 };
 
 struct asset_manifest_version_policy_summary {
+    asset_manifest_version_compatibility_status compatibility_status =
+        asset_manifest_version_compatibility_status::missing_schema_version;
     std::string schema_version;
     std::string expected_schema_version;
     std::vector<std::string> required_features;
     std::vector<std::string> optional_features;
     std::vector<asset_manifest_version_unsupported_feature_report> unsupported_features;
+    std::string diagnostic;
     bool strict_accepted = false;
     bool compatible_accepted = false;
 
@@ -94,6 +104,18 @@ inline asset_manifest_version_policy_summary summarize_asset_manifest_version_po
         });
     summary.compatible_accepted = schema_matches && required_features_supported;
     summary.strict_accepted = summary.compatible_accepted && optional_features_supported;
+    if (summary.schema_version.empty()) {
+        summary.compatibility_status = asset_manifest_version_compatibility_status::missing_schema_version;
+        summary.diagnostic = "asset manifest schema_version is required for compatibility checks";
+    } else if (!schema_matches) {
+        summary.compatibility_status = asset_manifest_version_compatibility_status::schema_version_mismatch;
+        summary.diagnostic = "asset manifest schema_version does not match the expected version";
+    } else if (!required_features_supported) {
+        summary.compatibility_status = asset_manifest_version_compatibility_status::unsupported_required_features;
+        summary.diagnostic = "asset manifest requires unsupported features";
+    } else {
+        summary.compatibility_status = asset_manifest_version_compatibility_status::accepted;
+    }
     return summary;
 }
 

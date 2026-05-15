@@ -35,6 +35,9 @@ static_assert(requires(assets::asset_cache_key_classification classification) {
     { classification.status } -> std::same_as<assets::asset_cache_key_policy_status&>;
     { classification.type } -> std::same_as<assets::asset_type&>;
     { classification.source_kind } -> std::same_as<assets::asset_source_kind&>;
+    { classification.type_component } -> std::same_as<std::string&>;
+    { classification.source_component } -> std::same_as<std::string&>;
+    { classification.revision_component } -> std::same_as<std::string&>;
     { classification.normalized_uri } -> std::same_as<std::string&>;
     { classification.source_path } -> std::same_as<std::string&>;
     { classification.cache_revision } -> std::same_as<std::string&>;

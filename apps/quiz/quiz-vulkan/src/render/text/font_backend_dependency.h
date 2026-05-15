@@ -1,6 +1,32 @@
 #pragma once
 
 #include "render/text/font_backend_selection.h"
+#include "render/text/font_unicode_coverage.h"
+
+#ifndef QUIZ_VULKAN_HAS_FREETYPE_HEADERS
+#define QUIZ_VULKAN_HAS_FREETYPE_HEADERS 0
+#endif
+
+#ifndef QUIZ_VULKAN_HAS_HARFBUZZ_HEADERS
+#define QUIZ_VULKAN_HAS_HARFBUZZ_HEADERS 0
+#endif
+
+#ifndef QUIZ_VULKAN_HAS_UTF8PROC_HEADERS
+#define QUIZ_VULKAN_HAS_UTF8PROC_HEADERS 0
+#endif
+
+#if QUIZ_VULKAN_HAS_FREETYPE_HEADERS
+#include <ft2build.h>
+#include FT_FREETYPE_H
+#endif
+
+#if QUIZ_VULKAN_HAS_HARFBUZZ_HEADERS
+#include <hb.h>
+#endif
+
+#if QUIZ_VULKAN_HAS_UTF8PROC_HEADERS
+#include <utf8proc.h>
+#endif
 
 #include <algorithm>
 #include <cstddef>
@@ -35,6 +61,81 @@ inline std::string render_text_font_backend_adapter_readiness_status_name(
         return "version_mismatch";
     case render_text_font_backend_adapter_readiness_status::unsupported_feature:
         return "unsupported_feature";
+    }
+
+    return "unknown";
+}
+
+enum class render_text_external_font_backend_work_readiness_status {
+    missing_approved_header,
+    header_only,
+    source_ready,
+    library_linked,
+    adapter_ready,
+    deterministic_fallback_only,
+};
+
+inline std::string render_text_external_font_backend_work_readiness_status_name(
+    const render_text_external_font_backend_work_readiness_status status)
+{
+    switch (status) {
+    case render_text_external_font_backend_work_readiness_status::missing_approved_header:
+        return "missing_approved_header";
+    case render_text_external_font_backend_work_readiness_status::header_only:
+        return "header_only";
+    case render_text_external_font_backend_work_readiness_status::source_ready:
+        return "source_ready";
+    case render_text_external_font_backend_work_readiness_status::library_linked:
+        return "library_linked";
+    case render_text_external_font_backend_work_readiness_status::adapter_ready:
+        return "adapter_ready";
+    case render_text_external_font_backend_work_readiness_status::deterministic_fallback_only:
+        return "deterministic_fallback_only";
+    }
+
+    return "unknown";
+}
+
+enum class render_text_freetype_face_load_readiness_status {
+    missing_bytes,
+    empty_bytes,
+    invalid_sfnt,
+    missing_cmap,
+    invalid_cmap,
+    missing_approved_header,
+    header_only,
+    source_ready,
+    library_linked,
+    ready_for_load,
+    fallback_required,
+};
+
+inline std::string render_text_freetype_face_load_readiness_status_name(
+    const render_text_freetype_face_load_readiness_status status)
+{
+    switch (status) {
+    case render_text_freetype_face_load_readiness_status::missing_bytes:
+        return "missing_bytes";
+    case render_text_freetype_face_load_readiness_status::empty_bytes:
+        return "empty_bytes";
+    case render_text_freetype_face_load_readiness_status::invalid_sfnt:
+        return "invalid_sfnt";
+    case render_text_freetype_face_load_readiness_status::missing_cmap:
+        return "missing_cmap";
+    case render_text_freetype_face_load_readiness_status::invalid_cmap:
+        return "invalid_cmap";
+    case render_text_freetype_face_load_readiness_status::missing_approved_header:
+        return "missing_approved_header";
+    case render_text_freetype_face_load_readiness_status::header_only:
+        return "header_only";
+    case render_text_freetype_face_load_readiness_status::source_ready:
+        return "source_ready";
+    case render_text_freetype_face_load_readiness_status::library_linked:
+        return "library_linked";
+    case render_text_freetype_face_load_readiness_status::ready_for_load:
+        return "ready_for_load";
+    case render_text_freetype_face_load_readiness_status::fallback_required:
+        return "fallback_required";
     }
 
     return "unknown";
@@ -123,6 +224,68 @@ struct render_text_external_font_backend_manifest {
     bool empty() const
     {
         return dependencies.empty();
+    }
+};
+
+struct render_text_external_font_backend_header_probe {
+    render_text_font_backend_library library =
+        render_text_font_backend_library::deterministic_fake;
+    std::string label;
+    std::string approved_header;
+    bool header_available = false;
+    bool version_available = false;
+    render_text_font_backend_version version;
+    std::vector<render_text_font_backend_feature> features;
+    std::string diagnostic;
+
+    bool supports_feature(const render_text_font_backend_feature feature) const
+    {
+        return std::find(features.begin(), features.end(), feature) != features.end();
+    }
+
+    render_text_external_font_backend_dependency header_dependency() const
+    {
+        return render_text_external_font_backend_dependency{
+            .library = library,
+            .label = label,
+            .version = version,
+            .license = library == render_text_font_backend_library::freetype
+                ? "FreeType License or GPL-2.0-or-later"
+                : library == render_text_font_backend_library::harfbuzz
+                    ? "Old MIT"
+                    : "MIT",
+            .source_hint = "desktop external header boundary",
+            .include_hint = approved_header,
+            .library_hint = "not linked by header probe",
+            .features = features,
+            .source_available = header_available,
+            .build_linked = false,
+            .adapter_symbols_available = false,
+            .fallback_only = false,
+            .diagnostic = diagnostic,
+        };
+    }
+};
+
+struct render_text_external_font_backend_header_probe_snapshot {
+    std::vector<render_text_external_font_backend_header_probe> probes;
+    bool freetype_headers_available = false;
+    bool harfbuzz_headers_available = false;
+    bool utf8proc_headers_available = false;
+    bool fake_fallback_preserved = true;
+    std::size_t available_header_count = 0;
+    std::size_t versioned_header_count = 0;
+    std::size_t advertised_feature_count = 0;
+    std::string diagnostic;
+
+    bool any_real_headers_available() const
+    {
+        return available_header_count != 0U;
+    }
+
+    bool all_real_headers_available() const
+    {
+        return freetype_headers_available && harfbuzz_headers_available && utf8proc_headers_available;
     }
 };
 
@@ -259,6 +422,69 @@ struct render_text_external_font_backend_probe_diff_summary_snapshot {
     }
 };
 
+struct render_text_external_font_backend_work_readiness {
+    render_text_font_backend_selection_purpose purpose =
+        render_text_font_backend_selection_purpose::shaping;
+    render_text_font_backend_library library =
+        render_text_font_backend_library::deterministic_fake;
+    render_text_external_font_backend_work_readiness_status status =
+        render_text_external_font_backend_work_readiness_status::missing_approved_header;
+    std::string label;
+    render_text_font_backend_version header_version;
+    render_text_font_backend_version dependency_version;
+    bool header_available = false;
+    bool header_version_available = false;
+    bool dependency_declared = false;
+    bool source_available = false;
+    bool build_linked = false;
+    bool adapter_symbols_available = false;
+    bool fallback_required = true;
+    bool can_attempt_real_backend = false;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return status == render_text_external_font_backend_work_readiness_status::adapter_ready;
+    }
+
+    bool header_backed_without_library() const
+    {
+        return status == render_text_external_font_backend_work_readiness_status::header_only;
+    }
+};
+
+struct render_text_freetype_face_load_readiness {
+    font_face_id face_id = 0;
+    std::string source_label;
+    render_text_freetype_face_load_readiness_status status =
+        render_text_freetype_face_load_readiness_status::fallback_required;
+    render_text_font_face_byte_readiness_status face_byte_status =
+        render_text_font_face_byte_readiness_status::fallback_required;
+    render_text_external_font_backend_work_readiness_status backend_work_status =
+        render_text_external_font_backend_work_readiness_status::deterministic_fallback_only;
+    render_text_font_sfnt_inspect_status sfnt_status =
+        render_text_font_sfnt_inspect_status::missing_bytes;
+    render_text_font_cmap_inspect_status cmap_status =
+        render_text_font_cmap_inspect_status::missing_cmap_table;
+    std::size_t byte_count = 0;
+    std::size_t coverage_range_count = 0;
+    bool materialized_bytes_ready = false;
+    bool coverage_ready = false;
+    bool freetype_header_available = false;
+    bool freetype_source_available = false;
+    bool freetype_library_linked = false;
+    bool freetype_adapter_ready = false;
+    bool can_call_freetype_new_memory_face = false;
+    bool deterministic_fallback_required = true;
+    std::string required_wiring;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return status == render_text_freetype_face_load_readiness_status::ready_for_load;
+    }
+};
+
 class font_backend_dependency_probe_interface {
 public:
     virtual ~font_backend_dependency_probe_interface() = default;
@@ -335,6 +561,263 @@ inline render_text_external_font_backend_dependency make_render_text_determinist
         true);
 }
 
+inline bool render_text_external_font_backend_header_available(
+    const render_text_font_backend_library library)
+{
+    switch (library) {
+    case render_text_font_backend_library::freetype:
+        return QUIZ_VULKAN_HAS_FREETYPE_HEADERS != 0;
+    case render_text_font_backend_library::harfbuzz:
+        return QUIZ_VULKAN_HAS_HARFBUZZ_HEADERS != 0;
+    case render_text_font_backend_library::utf8proc:
+        return QUIZ_VULKAN_HAS_UTF8PROC_HEADERS != 0;
+    case render_text_font_backend_library::deterministic_fake:
+    case render_text_font_backend_library::directwrite:
+        return false;
+    }
+
+    return false;
+}
+
+inline render_text_font_backend_version render_text_freetype_header_version()
+{
+#if QUIZ_VULKAN_HAS_FREETYPE_HEADERS
+    return render_text_font_backend_version{
+        .major = FREETYPE_MAJOR,
+        .minor = FREETYPE_MINOR,
+        .patch = FREETYPE_PATCH,
+    };
+#else
+    return {};
+#endif
+}
+
+inline render_text_font_backend_version render_text_harfbuzz_header_version()
+{
+#if QUIZ_VULKAN_HAS_HARFBUZZ_HEADERS
+    return render_text_font_backend_version{
+        .major = HB_VERSION_MAJOR,
+        .minor = HB_VERSION_MINOR,
+        .patch = HB_VERSION_MICRO,
+    };
+#else
+    return {};
+#endif
+}
+
+inline render_text_font_backend_version render_text_utf8proc_header_version()
+{
+#if QUIZ_VULKAN_HAS_UTF8PROC_HEADERS \
+    && defined(UTF8PROC_VERSION_MAJOR) \
+    && defined(UTF8PROC_VERSION_MINOR) \
+    && defined(UTF8PROC_VERSION_PATCH)
+    return render_text_font_backend_version{
+        .major = UTF8PROC_VERSION_MAJOR,
+        .minor = UTF8PROC_VERSION_MINOR,
+        .patch = UTF8PROC_VERSION_PATCH,
+    };
+#else
+    return {};
+#endif
+}
+
+inline render_text_font_backend_version render_text_external_font_backend_header_version(
+    const render_text_font_backend_library library)
+{
+    switch (library) {
+    case render_text_font_backend_library::freetype:
+        return render_text_freetype_header_version();
+    case render_text_font_backend_library::harfbuzz:
+        return render_text_harfbuzz_header_version();
+    case render_text_font_backend_library::utf8proc:
+        return render_text_utf8proc_header_version();
+    case render_text_font_backend_library::deterministic_fake:
+    case render_text_font_backend_library::directwrite:
+        return {};
+    }
+
+    return {};
+}
+
+inline bool render_text_external_font_backend_header_version_available(
+    const render_text_font_backend_library library)
+{
+    const render_text_font_backend_version version =
+        render_text_external_font_backend_header_version(library);
+    return version.major != 0U || version.minor != 0U || version.patch != 0U || !version.label.empty();
+}
+
+inline std::vector<render_text_font_backend_feature> render_text_external_font_backend_header_features_for(
+    const render_text_font_backend_library library)
+{
+    switch (library) {
+    case render_text_font_backend_library::freetype:
+        return {
+            render_text_font_backend_feature::font_file_loading,
+            render_text_font_backend_feature::unicode_cmap,
+            render_text_font_backend_feature::glyph_id_mapping,
+            render_text_font_backend_feature::glyph_rasterization,
+        };
+    case render_text_font_backend_library::harfbuzz:
+        return {
+            render_text_font_backend_feature::glyph_id_mapping,
+            render_text_font_backend_feature::glyph_shaping,
+            render_text_font_backend_feature::complex_script_shaping,
+        };
+    case render_text_font_backend_library::utf8proc:
+        return {
+            render_text_font_backend_feature::unicode_normalization,
+            render_text_font_backend_feature::unicode_properties,
+        };
+    case render_text_font_backend_library::deterministic_fake:
+    case render_text_font_backend_library::directwrite:
+        return {};
+    }
+
+    return {};
+}
+
+inline std::string render_text_external_font_backend_header_path_for(
+    const render_text_font_backend_library library)
+{
+    switch (library) {
+    case render_text_font_backend_library::freetype:
+        return "ft2build.h";
+    case render_text_font_backend_library::harfbuzz:
+        return "hb.h";
+    case render_text_font_backend_library::utf8proc:
+        return "utf8proc.h";
+    case render_text_font_backend_library::deterministic_fake:
+    case render_text_font_backend_library::directwrite:
+        return {};
+    }
+
+    return {};
+}
+
+inline std::string render_text_external_font_backend_header_diagnostic_for(
+    const render_text_font_backend_library library,
+    const bool header_available,
+    const bool version_available)
+{
+    const std::string name = render_text_font_backend_library_name(library);
+    if (!header_available) {
+        return name + " approved header is unavailable; deterministic fake text fallback remains usable";
+    }
+    if (!version_available) {
+        return name + " approved header is available without version macro evidence";
+    }
+    return name + " approved header is available with compile-time version evidence";
+}
+
+inline render_text_external_font_backend_header_probe make_render_text_external_font_backend_header_probe(
+    const render_text_font_backend_library library)
+{
+    const bool header_available = render_text_external_font_backend_header_available(library);
+    const bool version_available =
+        header_available && render_text_external_font_backend_header_version_available(library);
+    return render_text_external_font_backend_header_probe{
+        .library = library,
+        .label = render_text_font_backend_library_name(library),
+        .approved_header = render_text_external_font_backend_header_path_for(library),
+        .header_available = header_available,
+        .version_available = version_available,
+        .version = render_text_external_font_backend_header_version(library),
+        .features = header_available
+            ? render_text_external_font_backend_header_features_for(library)
+            : std::vector<render_text_font_backend_feature>{},
+        .diagnostic = render_text_external_font_backend_header_diagnostic_for(
+            library,
+            header_available,
+            version_available),
+    };
+}
+
+inline const render_text_external_font_backend_header_probe*
+find_render_text_external_font_backend_header_probe(
+    const std::vector<render_text_external_font_backend_header_probe>& probes,
+    const render_text_font_backend_library library)
+{
+    const auto match = std::find_if(
+        probes.begin(),
+        probes.end(),
+        [&](const render_text_external_font_backend_header_probe& probe) {
+            return probe.library == library;
+        });
+    return match == probes.end() ? nullptr : &*match;
+}
+
+inline void append_render_text_external_font_backend_header_probe(
+    render_text_external_font_backend_header_probe_snapshot& snapshot,
+    render_text_external_font_backend_header_probe probe)
+{
+    if (probe.header_available) {
+        ++snapshot.available_header_count;
+        snapshot.advertised_feature_count += probe.features.size();
+    }
+    if (probe.version_available) {
+        ++snapshot.versioned_header_count;
+    }
+    switch (probe.library) {
+    case render_text_font_backend_library::freetype:
+        snapshot.freetype_headers_available = probe.header_available;
+        break;
+    case render_text_font_backend_library::harfbuzz:
+        snapshot.harfbuzz_headers_available = probe.header_available;
+        break;
+    case render_text_font_backend_library::utf8proc:
+        snapshot.utf8proc_headers_available = probe.header_available;
+        break;
+    case render_text_font_backend_library::deterministic_fake:
+    case render_text_font_backend_library::directwrite:
+        break;
+    }
+    snapshot.probes.push_back(std::move(probe));
+}
+
+inline render_text_external_font_backend_header_probe_snapshot
+make_render_text_external_font_backend_header_probe_snapshot()
+{
+    render_text_external_font_backend_header_probe_snapshot snapshot;
+    append_render_text_external_font_backend_header_probe(
+        snapshot,
+        make_render_text_external_font_backend_header_probe(render_text_font_backend_library::freetype));
+    append_render_text_external_font_backend_header_probe(
+        snapshot,
+        make_render_text_external_font_backend_header_probe(render_text_font_backend_library::harfbuzz));
+    append_render_text_external_font_backend_header_probe(
+        snapshot,
+        make_render_text_external_font_backend_header_probe(render_text_font_backend_library::utf8proc));
+    snapshot.diagnostic = snapshot.any_real_headers_available()
+        ? "approved desktop text dependency headers are available through the external header boundary"
+        : "approved desktop text dependency headers are unavailable; deterministic fake text fallback is preserved";
+    return snapshot;
+}
+
+inline std::vector<render_text_external_font_backend_dependency>
+render_text_external_font_backend_header_dependencies(
+    const render_text_external_font_backend_header_probe_snapshot& snapshot)
+{
+    std::vector<render_text_external_font_backend_dependency> dependencies;
+    dependencies.reserve(snapshot.probes.size() + 1U);
+    for (const render_text_external_font_backend_header_probe& probe : snapshot.probes) {
+        dependencies.push_back(probe.header_dependency());
+    }
+    dependencies.push_back(make_render_text_deterministic_fake_external_dependency());
+    return dependencies;
+}
+
+inline render_text_external_font_backend_manifest make_render_text_header_backed_external_font_backend_manifest()
+{
+    const render_text_external_font_backend_header_probe_snapshot snapshot =
+        make_render_text_external_font_backend_header_probe_snapshot();
+    return render_text_external_font_backend_manifest{
+        .label = "text-owned external font backend header manifest",
+        .dependencies = render_text_external_font_backend_header_dependencies(snapshot),
+        .allow_deterministic_fallback = snapshot.fake_fallback_preserved,
+    };
+}
+
 inline render_text_external_font_backend_manifest make_render_text_known_external_font_backend_manifest(
     const bool real_sources_available = false,
     const bool real_build_linked = false,
@@ -386,6 +869,247 @@ inline const render_text_external_font_backend_dependency* find_render_text_exte
             return dependency.library == library;
         });
     return match == dependencies.end() ? nullptr : &*match;
+}
+
+inline std::string render_text_external_font_backend_work_readiness_diagnostic_for(
+    const render_text_external_font_backend_work_readiness& readiness)
+{
+    const std::string library = render_text_font_backend_library_name(readiness.library);
+    switch (readiness.status) {
+    case render_text_external_font_backend_work_readiness_status::adapter_ready:
+        return library + " dependency has approved headers, linked library, and adapter symbols";
+    case render_text_external_font_backend_work_readiness_status::library_linked:
+        return library + " dependency is linked but adapter symbols are not available";
+    case render_text_external_font_backend_work_readiness_status::source_ready:
+        return library + " dependency source is present but the library is not linked";
+    case render_text_external_font_backend_work_readiness_status::header_only:
+        return library + " approved header is present, but no linked library or adapter symbols are available";
+    case render_text_external_font_backend_work_readiness_status::deterministic_fallback_only:
+        return "deterministic fake text backend remains the fallback-only implementation";
+    case render_text_external_font_backend_work_readiness_status::missing_approved_header:
+        return library + " approved header is missing, so deterministic fallback remains required";
+    }
+
+    return "unknown text backend work readiness";
+}
+
+inline render_text_external_font_backend_work_readiness_status
+render_text_external_font_backend_work_readiness_status_for(
+    const render_text_external_font_backend_header_probe* header,
+    const render_text_external_font_backend_dependency* dependency,
+    const render_text_font_backend_library library)
+{
+    const bool header_probe_only_dependency =
+        dependency != nullptr
+        && dependency->source_hint == "desktop external header boundary"
+        && dependency->library_hint == "not linked by header probe";
+
+    if (library == render_text_font_backend_library::deterministic_fake) {
+        return render_text_external_font_backend_work_readiness_status::deterministic_fallback_only;
+    }
+    if (dependency != nullptr && dependency->adapter_ready()) {
+        return render_text_external_font_backend_work_readiness_status::adapter_ready;
+    }
+    if (dependency != nullptr && dependency->build_linked) {
+        return render_text_external_font_backend_work_readiness_status::library_linked;
+    }
+    if (dependency != nullptr && dependency->source_available) {
+        return header_probe_only_dependency && header != nullptr && header->header_available
+            ? render_text_external_font_backend_work_readiness_status::header_only
+            : render_text_external_font_backend_work_readiness_status::source_ready;
+    }
+    if (header != nullptr && header->header_available) {
+        return render_text_external_font_backend_work_readiness_status::header_only;
+    }
+    return render_text_external_font_backend_work_readiness_status::missing_approved_header;
+}
+
+inline render_text_external_font_backend_work_readiness make_render_text_external_font_backend_work_readiness(
+    const render_text_external_font_backend_header_probe_snapshot& headers,
+    const render_text_external_font_backend_manifest& manifest,
+    const render_text_font_backend_selection_purpose purpose)
+{
+    const std::vector<render_text_font_backend_library> libraries =
+        render_text_external_font_backend_default_libraries_for(purpose);
+    const render_text_font_backend_library library = libraries.empty()
+        ? render_text_font_backend_library::deterministic_fake
+        : libraries.front();
+    const render_text_external_font_backend_header_probe* header =
+        find_render_text_external_font_backend_header_probe(headers.probes, library);
+    const render_text_external_font_backend_dependency* dependency =
+        find_render_text_external_font_backend_dependency(manifest.dependencies, library);
+    const render_text_external_font_backend_work_readiness_status status =
+        render_text_external_font_backend_work_readiness_status_for(header, dependency, library);
+
+    render_text_external_font_backend_work_readiness readiness{
+        .purpose = purpose,
+        .library = library,
+        .status = status,
+        .label = dependency != nullptr ? dependency->label : render_text_font_backend_library_name(library),
+        .header_version = header != nullptr ? header->version : render_text_font_backend_version{},
+        .dependency_version = dependency != nullptr ? dependency->version : render_text_font_backend_version{},
+        .header_available = header != nullptr && header->header_available,
+        .header_version_available = header != nullptr && header->version_available,
+        .dependency_declared = dependency != nullptr,
+        .source_available = dependency != nullptr && dependency->source_available,
+        .build_linked = dependency != nullptr && dependency->build_linked,
+        .adapter_symbols_available = dependency != nullptr && dependency->adapter_symbols_available,
+        .fallback_required = status != render_text_external_font_backend_work_readiness_status::adapter_ready,
+        .can_attempt_real_backend = status == render_text_external_font_backend_work_readiness_status::adapter_ready,
+    };
+    readiness.diagnostic = render_text_external_font_backend_work_readiness_diagnostic_for(readiness);
+    return readiness;
+}
+
+inline std::vector<render_text_external_font_backend_work_readiness>
+make_render_text_external_font_backend_work_readiness_records(
+    const render_text_external_font_backend_header_probe_snapshot& headers,
+    const render_text_external_font_backend_manifest& manifest)
+{
+    return {
+        make_render_text_external_font_backend_work_readiness(
+            headers,
+            manifest,
+            render_text_font_backend_selection_purpose::shaping),
+        make_render_text_external_font_backend_work_readiness(
+            headers,
+            manifest,
+            render_text_font_backend_selection_purpose::rasterization),
+        make_render_text_external_font_backend_work_readiness(
+            headers,
+            manifest,
+            render_text_font_backend_selection_purpose::unicode_processing),
+    };
+}
+
+inline render_text_freetype_face_load_readiness_status
+render_text_freetype_face_load_readiness_status_for(
+    const render_text_font_face_byte_readiness& face_bytes,
+    const render_text_external_font_backend_work_readiness& backend)
+{
+    switch (face_bytes.status) {
+    case render_text_font_face_byte_readiness_status::missing_bytes:
+        return render_text_freetype_face_load_readiness_status::missing_bytes;
+    case render_text_font_face_byte_readiness_status::empty_bytes:
+        return render_text_freetype_face_load_readiness_status::empty_bytes;
+    case render_text_font_face_byte_readiness_status::invalid_sfnt:
+        return render_text_freetype_face_load_readiness_status::invalid_sfnt;
+    case render_text_font_face_byte_readiness_status::missing_cmap:
+        return render_text_freetype_face_load_readiness_status::missing_cmap;
+    case render_text_font_face_byte_readiness_status::invalid_cmap:
+        return render_text_freetype_face_load_readiness_status::invalid_cmap;
+    case render_text_font_face_byte_readiness_status::fallback_required:
+        return render_text_freetype_face_load_readiness_status::fallback_required;
+    case render_text_font_face_byte_readiness_status::coverage_ready:
+        break;
+    }
+
+    if (backend.library != render_text_font_backend_library::freetype) {
+        return render_text_freetype_face_load_readiness_status::fallback_required;
+    }
+
+    switch (backend.status) {
+    case render_text_external_font_backend_work_readiness_status::adapter_ready:
+        return render_text_freetype_face_load_readiness_status::ready_for_load;
+    case render_text_external_font_backend_work_readiness_status::library_linked:
+        return render_text_freetype_face_load_readiness_status::library_linked;
+    case render_text_external_font_backend_work_readiness_status::source_ready:
+        return render_text_freetype_face_load_readiness_status::source_ready;
+    case render_text_external_font_backend_work_readiness_status::header_only:
+        return render_text_freetype_face_load_readiness_status::header_only;
+    case render_text_external_font_backend_work_readiness_status::missing_approved_header:
+        return render_text_freetype_face_load_readiness_status::missing_approved_header;
+    case render_text_external_font_backend_work_readiness_status::deterministic_fallback_only:
+        return render_text_freetype_face_load_readiness_status::fallback_required;
+    }
+
+    return render_text_freetype_face_load_readiness_status::fallback_required;
+}
+
+inline std::string render_text_freetype_face_load_required_wiring_for(
+    const render_text_freetype_face_load_readiness_status status)
+{
+    switch (status) {
+    case render_text_freetype_face_load_readiness_status::ready_for_load:
+        return {};
+    case render_text_freetype_face_load_readiness_status::missing_approved_header:
+        return "expose the approved FreeType include directory through the desktop external header target";
+    case render_text_freetype_face_load_readiness_status::header_only:
+    case render_text_freetype_face_load_readiness_status::source_ready:
+        return "add a quiz_vulkan_freetype_external library target and link quiz_vulkan_text_engine to it";
+    case render_text_freetype_face_load_readiness_status::library_linked:
+        return "wire FreeType adapter symbols so the text engine can call FT_New_Memory_Face";
+    case render_text_freetype_face_load_readiness_status::missing_bytes:
+    case render_text_freetype_face_load_readiness_status::empty_bytes:
+    case render_text_freetype_face_load_readiness_status::invalid_sfnt:
+    case render_text_freetype_face_load_readiness_status::missing_cmap:
+    case render_text_freetype_face_load_readiness_status::invalid_cmap:
+    case render_text_freetype_face_load_readiness_status::fallback_required:
+        return {};
+    }
+
+    return {};
+}
+
+inline std::string render_text_freetype_face_load_readiness_diagnostic_for(
+    const render_text_freetype_face_load_readiness_status status,
+    const render_text_font_face_byte_readiness& face_bytes,
+    const render_text_external_font_backend_work_readiness& backend)
+{
+    switch (status) {
+    case render_text_freetype_face_load_readiness_status::ready_for_load:
+        return "materialized font bytes and FreeType adapter readiness allow a future FT_New_Memory_Face call";
+    case render_text_freetype_face_load_readiness_status::missing_bytes:
+    case render_text_freetype_face_load_readiness_status::empty_bytes:
+    case render_text_freetype_face_load_readiness_status::invalid_sfnt:
+    case render_text_freetype_face_load_readiness_status::missing_cmap:
+    case render_text_freetype_face_load_readiness_status::invalid_cmap:
+    case render_text_freetype_face_load_readiness_status::fallback_required:
+        return "font face bytes block FreeType face loading: " + face_bytes.diagnostic;
+    case render_text_freetype_face_load_readiness_status::missing_approved_header:
+    case render_text_freetype_face_load_readiness_status::header_only:
+    case render_text_freetype_face_load_readiness_status::source_ready:
+    case render_text_freetype_face_load_readiness_status::library_linked:
+        return "font face bytes are coverage-ready, but FreeType backend work is "
+            + render_text_external_font_backend_work_readiness_status_name(backend.status)
+            + ": " + backend.diagnostic;
+    }
+
+    return "unknown FreeType face load readiness";
+}
+
+inline render_text_freetype_face_load_readiness make_render_text_freetype_face_load_readiness(
+    const render_text_font_face_byte_readiness& face_bytes,
+    const render_text_external_font_backend_work_readiness& backend)
+{
+    const render_text_freetype_face_load_readiness_status status =
+        render_text_freetype_face_load_readiness_status_for(face_bytes, backend);
+    return render_text_freetype_face_load_readiness{
+        .face_id = face_bytes.face_id,
+        .source_label = face_bytes.source_label,
+        .status = status,
+        .face_byte_status = face_bytes.status,
+        .backend_work_status = backend.status,
+        .sfnt_status = face_bytes.sfnt_status,
+        .cmap_status = face_bytes.cmap_status,
+        .byte_count = face_bytes.byte_count,
+        .coverage_range_count = face_bytes.coverage_range_count,
+        .materialized_bytes_ready = face_bytes.source_loaded,
+        .coverage_ready = face_bytes.coverage_ready,
+        .freetype_header_available = backend.header_available,
+        .freetype_source_available = backend.source_available,
+        .freetype_library_linked = backend.build_linked,
+        .freetype_adapter_ready = backend.adapter_symbols_available,
+        .can_call_freetype_new_memory_face =
+            status == render_text_freetype_face_load_readiness_status::ready_for_load,
+        .deterministic_fallback_required =
+            status != render_text_freetype_face_load_readiness_status::ready_for_load,
+        .required_wiring = render_text_freetype_face_load_required_wiring_for(status),
+        .diagnostic = render_text_freetype_face_load_readiness_diagnostic_for(
+            status,
+            face_bytes,
+            backend),
+    };
 }
 
 inline std::vector<render_text_font_backend_library> missing_render_text_external_font_backend_dependencies(

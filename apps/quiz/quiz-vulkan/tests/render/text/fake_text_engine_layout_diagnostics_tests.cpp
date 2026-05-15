@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdio>
+#include <cstdlib>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -20,6 +22,43 @@ void require(bool condition, const char* message)
 bool near(float actual, float expected)
 {
     return std::fabs(actual - expected) < 0.001f;
+}
+
+std::filesystem::path quiz_vulkan_app_root_from_this_test()
+{
+    const std::filesystem::path test_path = std::filesystem::path(__FILE__);
+    return test_path.parent_path().parent_path().parent_path().parent_path();
+}
+
+std::filesystem::path desktop_external_root()
+{
+    if (const char* external_dir = std::getenv("QUIZ_VULKAN_DESKTOP_EXTERNAL_DIR");
+        external_dir != nullptr && external_dir[0] != '\0') {
+        return std::filesystem::path(external_dir);
+    }
+
+    const std::filesystem::path repo_root =
+        quiz_vulkan_app_root_from_this_test().parent_path().parent_path().parent_path();
+    return repo_root / "build" / "external" / "lib" / "cpp" / "desktop";
+}
+
+std::vector<std::filesystem::path> harfbuzz_real_font_fixture_candidates()
+{
+    const std::filesystem::path external_root = desktop_external_root();
+    return {
+        external_root / "harfbuzz-14.2.0" / "perf" / "fonts" / "Roboto-Regular.ttf",
+        external_root / "harfbuzz-14.2.0" / "test" / "api" / "fonts" / "Mplus1p-Regular.ttf",
+    };
+}
+
+std::filesystem::path first_available_harfbuzz_real_font_fixture()
+{
+    for (const std::filesystem::path& path : harfbuzz_real_font_fixture_candidates()) {
+        if (std::filesystem::exists(path)) {
+            return path;
+        }
+    }
+    return {};
 }
 
 quiz_vulkan::render::render_text_style_catalog make_style_catalog()
@@ -144,6 +183,43 @@ std::vector<quiz_vulkan::render::render_text_external_font_backend_probe_result>
     };
 }
 
+std::size_t expected_external_header_count()
+{
+    return (QUIZ_VULKAN_HAS_FREETYPE_HEADERS != 0 ? 1U : 0U)
+        + (QUIZ_VULKAN_HAS_HARFBUZZ_HEADERS != 0 ? 1U : 0U)
+        + (QUIZ_VULKAN_HAS_UTF8PROC_HEADERS != 0 ? 1U : 0U);
+}
+
+void require_header_probe_policy_matches_compile_time(
+    const quiz_vulkan::render::fake_text_engine_diagnostics& diagnostics)
+{
+    require(diagnostics.has_font_backend_header_probe(), "layout diagnostics include external header probe evidence");
+    require(
+        diagnostics.font_backend_header_probe.probes.size() == 3U,
+        "external header probe records the three approved text dependencies");
+    require(
+        diagnostics.font_backend_dependency_policy.header_probe_recorded,
+        "dependency policy records header probe availability");
+    require(
+        diagnostics.font_backend_dependency_policy.available_header_count == expected_external_header_count(),
+        "dependency policy counts available approved headers");
+    require(
+        diagnostics.font_backend_header_probe.available_header_count == expected_external_header_count(),
+        "header probe snapshot counts available approved headers");
+    require(
+        diagnostics.font_backend_dependency_policy.freetype_headers_available
+            == (QUIZ_VULKAN_HAS_FREETYPE_HEADERS != 0),
+        "dependency policy records FreeType header availability");
+    require(
+        diagnostics.font_backend_dependency_policy.harfbuzz_headers_available
+            == (QUIZ_VULKAN_HAS_HARFBUZZ_HEADERS != 0),
+        "dependency policy records HarfBuzz header availability");
+    require(
+        diagnostics.font_backend_dependency_policy.utf8proc_headers_available
+            == (QUIZ_VULKAN_HAS_UTF8PROC_HEADERS != 0),
+        "dependency policy records utf8proc header availability");
+}
+
 void configure_mixed_script_fallback_chain_engine(quiz_vulkan::render::fake_text_engine& engine)
 {
     using namespace quiz_vulkan::render;
@@ -227,6 +303,14 @@ void require_mixed_script_fallback_chain_diagnostics(
 
     require(diagnostics.has_font_fallback_chain_runs(), "diagnostics record fallback-chain run snapshots");
     require(diagnostics.has_font_fallback_chain_policy(), "diagnostics record fallback-chain policy");
+    require(diagnostics.has_font_fallback_run_plan(), "diagnostics record fallback run planning snapshot");
+    require(diagnostics.has_font_fallback_shaping_handoff(), "diagnostics record fallback shaping handoff snapshot");
+    require(
+        diagnostics.has_font_fallback_shaped_glyph_inputs(),
+        "diagnostics record shaped glyph input handoff snapshot");
+    require(
+        diagnostics.has_font_fallback_shaped_glyph_executions(),
+        "diagnostics record shaped glyph execution snapshot");
     require(!diagnostics.has_font_fallback_chain_missing_glyphs(), "covered mixed fixture has no missing glyphs");
     require(diagnostics.font_fallback_chain_runs.size() == 1U, "one text run produces one fallback-chain run");
     require(diagnostics.font_fallback_chain_policy.run_count == 1U, "fallback-chain policy counts one run");
@@ -250,6 +334,101 @@ void require_mixed_script_fallback_chain_diagnostics(
         diagnostics.font_fallback_chain_shaping_selection.selected.library
             == render_text_font_backend_library::harfbuzz,
         "fallback-chain diagnostics carry selected shaping backend");
+    require(diagnostics.font_fallback_run_plan.ok(), "covered mixed fixture has a complete fallback run plan");
+    require(
+        diagnostics.font_fallback_run_plan.policy.fallback_run_count == 3U,
+        "fallback run plan splits mixed script by selected face");
+    require(
+        diagnostics.font_fallback_run_plan.policy.covered_codepoint_count == 3U,
+        "fallback run plan counts all mixed glyphs as covered");
+    require(
+        diagnostics.font_fallback_run_plan.policy.fallback_codepoint_count == 2U,
+        "fallback run plan counts Hangul and emoji fallback codepoints");
+    require(
+        diagnostics.font_fallback_run_plan.selected_face_order.size() == 3U,
+        "fallback run plan records deterministic selected face order");
+    require(diagnostics.font_fallback_run_plan.selected_face_order[0] == 501U, "run plan selected face order starts Latin");
+    require(diagnostics.font_fallback_run_plan.selected_face_order[1] == 502U, "run plan selected face order keeps Hangul");
+    require(diagnostics.font_fallback_run_plan.selected_face_order[2] == 503U, "run plan selected face order keeps emoji");
+
+    require(diagnostics.font_fallback_shaping_handoff.ok(), "covered mixed fixture has complete shaping handoff");
+    require(
+        diagnostics.font_fallback_shaping_handoff.policy.run_count == 3U,
+        "shaping handoff preserves split fallback runs");
+    require(
+        diagnostics.font_fallback_shaping_handoff.policy.ready_run_count == 3U,
+        "all mixed fallback runs are ready to shape");
+    require(
+        diagnostics.font_fallback_shaping_handoff.policy.blocked_run_count == 0U,
+        "covered mixed handoff has no blocked runs");
+    require(
+        diagnostics.font_fallback_shaping_handoff.policy.unique_page_key_count == 3U,
+        "handoff records one stable page key per selected face");
+
+    require(
+        diagnostics.font_fallback_shaped_glyph_inputs.ok(),
+        "covered mixed fixture has complete shaped glyph input handoff");
+    require(
+        diagnostics.font_fallback_shaped_glyph_inputs.policy.input_count == 3U,
+        "shaped glyph input handoff emits one input per scalar");
+    require(
+        diagnostics.font_fallback_shaped_glyph_inputs.policy.cacheable_input_count == 3U,
+        "shaped glyph input handoff marks all mixed glyphs cacheable");
+    require(
+        diagnostics.font_fallback_shaped_glyph_inputs.policy.fallback_input_count == 2U,
+        "shaped glyph input handoff counts Hangul and emoji fallback inputs");
+    require(
+        diagnostics.font_fallback_shaped_glyph_inputs.policy.unique_page_key_count == 3U,
+        "shaped glyph input handoff preserves stable page key evidence");
+    require(
+        diagnostics.font_fallback_shaped_glyph_inputs.stable_input_keys.size() == 3U,
+        "shaped glyph input handoff exposes stable input keys");
+    require(
+        diagnostics.font_fallback_shaped_glyph_inputs.inputs[0].selected_face_id == 501U,
+        "Latin shaped input uses requested face");
+    require(
+        diagnostics.font_fallback_shaped_glyph_inputs.inputs[1].selected_face_id == 502U,
+        "Hangul shaped input uses fallback face");
+    require(
+        diagnostics.font_fallback_shaped_glyph_inputs.inputs[2].selected_face_id == 503U,
+        "emoji shaped input uses fallback face");
+    require(
+        diagnostics.font_fallback_shaped_glyph_inputs.inputs[1].used_fallback,
+        "Hangul shaped input records fallback use");
+    require(
+        diagnostics.font_fallback_shaped_glyph_inputs.inputs[2].cache_key.face_id == 503U,
+        "emoji shaped input cache key uses selected face");
+
+    require(
+        diagnostics.font_fallback_shaped_glyph_executions.ok(),
+        "covered mixed fixture has complete shaped glyph execution snapshot");
+    require(
+        diagnostics.font_fallback_shaped_glyph_executions.policy.input_count == 3U,
+        "shaped glyph execution records input count");
+    require(
+        diagnostics.font_fallback_shaped_glyph_executions.policy.execution_count == 3U,
+        "shaped glyph execution records execution count");
+    require(
+        diagnostics.font_fallback_shaped_glyph_executions.policy.shaped_count == 3U,
+        "shaped glyph execution records shaped count");
+    require(
+        diagnostics.font_fallback_shaped_glyph_executions.policy.atlas_ready_count == 3U,
+        "shaped glyph execution records atlas-ready count");
+    require(
+        diagnostics.font_fallback_shaped_glyph_executions.policy.fallback_execution_count == 2U,
+        "shaped glyph execution counts Hangul and emoji fallback executions");
+    require(
+        diagnostics.font_fallback_shaped_glyph_executions.policy.unique_cache_key_count == 3U,
+        "shaped glyph execution records cache key evidence");
+    require(
+        diagnostics.font_fallback_shaped_glyph_executions.executions[0].shaped_glyph.resolved_face_id == 501U,
+        "Latin execution shaped glyph records requested face");
+    require(
+        diagnostics.font_fallback_shaped_glyph_executions.executions[1].shaped_glyph.resolved_face_id == 502U,
+        "Hangul execution shaped glyph records fallback face");
+    require(
+        diagnostics.font_fallback_shaped_glyph_executions.executions[2].shaped_glyph.resolved_face_id == 503U,
+        "emoji execution shaped glyph records fallback face");
 
     const render_text_font_fallback_chain_run_snapshot& run = diagnostics.font_fallback_chain_runs.front();
     require(run.style_token == "mixed", "fallback-chain run records style token");
@@ -653,6 +832,18 @@ void test_fake_text_engine_records_rasterized_atlas_payloads_for_cacheable_glyph
     const render_text_rasterized_glyph_atlas_payload_snapshot& payload =
         diagnostics.rasterized_glyph_atlas_payloads.front();
     require(readiness.glyph_id == glyph_id_resolution.glyph_id, "cache readiness uses resolved glyph id");
+    require(
+        readiness.font_face_byte_readiness_status == render_text_font_face_byte_readiness_status::fallback_required,
+        "fixture glyph readiness records descriptor fallback byte readiness");
+    require(
+        readiness.font_face_byte_fallback_required,
+        "fixture glyph byte readiness requires deterministic fallback");
+    require(
+        !readiness.font_face_can_attempt_freetype_load,
+        "fixture glyph does not claim FreeType load readiness");
+    require(
+        readiness.used_descriptor_coverage_fallback,
+        "fixture glyph records descriptor coverage fallback");
     require(payload.cluster_index == readiness.cluster_index, "payload records matching cluster index");
     require(payload.run_index == 0 && payload.byte_offset == 0, "payload records glyph run position");
     require(payload.glyph_id == glyph_id_resolution.glyph_id, "raster payload uses resolved glyph id");
@@ -681,6 +872,12 @@ void test_fake_text_engine_records_rasterized_atlas_payloads_for_cacheable_glyph
     require(
         diagnostics.rasterized_glyph_atlas_payload_policy.total_rgba_bytes == 256U,
         "rasterizer payload policy totals RGBA bytes");
+    require(
+        diagnostics.glyph_cache_readiness_policy.font_face_byte_fallback_required_count == 1,
+        "cache readiness policy counts fixture byte fallback");
+    require(
+        diagnostics.glyph_cache_readiness_policy.descriptor_coverage_fallback_cluster_count == 1,
+        "cache readiness policy counts descriptor coverage fallback");
     require(diagnostics.has_shaped_atlas_update_traces(), "rasterized payload fixture records shaped atlas traces");
     require(
         diagnostics.has_shaped_atlas_update_trace_policy(),
@@ -843,6 +1040,7 @@ void test_fake_text_engine_records_fallback_only_backend_capability_for_latin_ha
     require(layout.glyphs[1].glyph_id == 0xd55cU, "fallback-only backend keeps Hangul glyph id");
     require(diagnostics.has_font_backend_capability(), "fallback-only layout records backend capability");
     require(diagnostics.has_font_backend_selection(), "fallback-only layout records backend selection");
+    require_header_probe_policy_matches_compile_time(diagnostics);
     require(
         diagnostics.font_backend_shaping_selection.status == render_text_font_backend_selection_status::fallback_selected,
         "default shaping selection records deterministic fallback");
@@ -891,6 +1089,15 @@ void test_fake_text_engine_records_fallback_only_backend_capability_for_latin_ha
         "run unicode selection records deterministic fake backend");
     require(run_selection.shaping.fake_only, "run shaping snapshot records fake-only path");
     require(!run_selection.shaping.dependency_probe_configured, "run shaping snapshot records no external probe");
+    require(
+        run_selection.shaping.dependency_header_available == (QUIZ_VULKAN_HAS_HARFBUZZ_HEADERS != 0),
+        "run shaping snapshot records HarfBuzz header availability");
+    require(
+        run_selection.rasterization.dependency_header_available == (QUIZ_VULKAN_HAS_FREETYPE_HEADERS != 0),
+        "run raster snapshot records FreeType header availability");
+    require(
+        run_selection.unicode_processing.dependency_header_available == (QUIZ_VULKAN_HAS_UTF8PROC_HEADERS != 0),
+        "run unicode snapshot records utf8proc header availability");
     require(
         run_selection.shaping.dependency_status
             == render_text_font_backend_adapter_readiness_status::fallback_ready,
@@ -1006,6 +1213,67 @@ void test_fake_text_engine_dependency_probe_reports_missing_real_backend_fallbac
         run_selection.shaping.dependency_fallback_reason
             == render_text_font_backend_adapter_readiness_status::missing_dependency,
         "run shaping records missing dependency fallback reason");
+}
+
+void test_fake_text_engine_threads_header_probe_manifest_into_dependency_diagnostics()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    engine.set_font_backend_dependency_manifest(make_render_text_header_backed_external_font_backend_manifest());
+
+    const render_text_layout layout = engine.layout_text(make_single_run_request("A"));
+    const fake_text_engine_diagnostics& diagnostics = engine.last_diagnostics();
+    const std::size_t available_header_count = expected_external_header_count();
+
+    require(layout.glyphs.size() == 1U, "header-backed manifest keeps deterministic layout");
+    require_header_probe_policy_matches_compile_time(diagnostics);
+    require(diagnostics.has_font_backend_dependency_probe(), "header-backed manifest records dependency probes");
+    require(diagnostics.font_backend_dependency_policy.configured, "header-backed manifest is marked configured");
+    require(diagnostics.font_backend_dependency_policy.fake_only, "header-backed manifest preserves fake-only path");
+    require(
+        diagnostics.font_backend_dependency_policy.probe_count == 3U,
+        "header-backed manifest probes all three backend purposes");
+    require(
+        diagnostics.font_backend_dependency_policy.fallback_ready_count == 3U,
+        "header-backed manifest keeps all backend purposes fallback ready");
+    require(
+        diagnostics.font_backend_dependency_policy.adapter_ready_count == 0U,
+        "header-backed manifest does not claim adapter-ready backends");
+    require(
+        diagnostics.font_backend_dependency_policy.adapter_unavailable_count == available_header_count,
+        "header-backed manifest counts available headers as adapter-unavailable without linking");
+    require(
+        diagnostics.font_backend_dependency_policy.missing_dependency_count == 3U - available_header_count,
+        "header-backed manifest counts unavailable approved headers as missing dependencies");
+    require(!diagnostics.font_backend_shaping_dependency.adapter_ready, "header-backed shaping dependency is not ready");
+    require(
+        diagnostics.font_backend_shaping_dependency.used_deterministic_fallback,
+        "header-backed shaping dependency uses deterministic fallback");
+    require(
+        diagnostics.font_backend_rasterization_dependency.used_deterministic_fallback,
+        "header-backed raster dependency uses deterministic fallback");
+    require(
+        diagnostics.font_backend_unicode_dependency.used_deterministic_fallback,
+        "header-backed unicode dependency uses deterministic fallback");
+
+    const fake_text_engine_font_backend_run_selection_snapshot& run_selection =
+        diagnostics.font_backend_run_selections.front();
+    require(run_selection.shaping.dependency_probe_configured, "run shaping records header-backed probe");
+    require(run_selection.shaping.fake_only, "run shaping keeps deterministic fallback with header-backed probe");
+    require(
+        run_selection.shaping.dependency_header_available == (QUIZ_VULKAN_HAS_HARFBUZZ_HEADERS != 0),
+        "run shaping records header-backed HarfBuzz availability");
+    require(
+        run_selection.rasterization.dependency_header_available == (QUIZ_VULKAN_HAS_FREETYPE_HEADERS != 0),
+        "run raster records header-backed FreeType availability");
+    require(
+        run_selection.unicode_processing.dependency_header_available == (QUIZ_VULKAN_HAS_UTF8PROC_HEADERS != 0),
+        "run unicode records header-backed utf8proc availability");
+    require(
+        run_selection.shaping.dependency_header_version_available
+            == render_text_external_font_backend_header_version_available(render_text_font_backend_library::harfbuzz),
+        "run shaping records HarfBuzz header version evidence");
 }
 
 void test_fake_text_engine_dependency_probe_reports_adapter_unavailable_fallback()
@@ -1380,6 +1648,7 @@ void test_fake_text_engine_records_font_fallback_chain_for_mixed_script_layout()
     require(diagnostics.has_glyph_atlas_materializations(), "layout still records atlas materialization diagnostics");
     require(diagnostics.has_shaped_atlas_update_traces(), "layout still records shaped-atlas update traces");
     require(diagnostics.has_line_metrics(), "layout still records line metrics");
+    require_mixed_script_fallback_chain_diagnostics(diagnostics);
 
     require(diagnostics.font_fallback_chain_runs.size() == 1U, "one text run produces one fallback-chain run");
     require(diagnostics.font_fallback_chain_policy.run_count == 1U, "fallback-chain policy counts one run");
@@ -1707,6 +1976,269 @@ void test_fake_text_engine_injected_adapter_shapes_available_complex_script()
     require(diagnostics.shaped_glyphs.front().glyph_id == 0x0627U, "adapter shaped glyph keeps resolved glyph id");
     require(diagnostics.shaped_glyphs.front().glyph_supported, "adapter shaped glyph claims support");
     require(!diagnostics.shaped_glyphs.front().used_fallback_glyph_id, "adapter shaped glyph avoids fallback id");
+}
+
+void test_fake_text_engine_harfbuzz_handoff_shapes_materialized_font_bytes()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::filesystem::path font_path = first_available_harfbuzz_real_font_fixture();
+    if (font_path.empty()) {
+        return;
+    }
+
+    fake_text_engine engine;
+    engine.set_font_backend_capability_components({
+        freetype_component(),
+        harfbuzz_component(),
+    });
+    engine.add_font_face(font_face_descriptor{
+        .id = 620,
+        .family = "Handoff Sans",
+        .source_uri = font_path.generic_string(),
+        .version = "external-fixture",
+        .license = "harfbuzz-test-fixture",
+        .coverage = {
+            font_codepoint_range{.first = U'a', .last = U'a'},
+            font_codepoint_range{.first = 0x0300U, .last = 0x036fU},
+        },
+        .weight = 400,
+    });
+
+    render_text_style_catalog catalog = make_style_catalog();
+    catalog.styles.push_back(render_text_style{
+        .id = "handoff",
+        .font_family = "Handoff Sans",
+        .font_size = 32.0f,
+        .line_height = 36.0f,
+        .font_weight = 400,
+    });
+
+    const std::string text = "a\xcc\x81";
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = text, .style_token = "handoff"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 240.0f, 0.0f};
+    request.style_catalog = catalog;
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    const render_text_layout layout = engine.layout_text(request);
+    const fake_text_engine_diagnostics& diagnostics = engine.last_diagnostics();
+
+    require(!layout.glyphs.empty(), "HarfBuzz handoff lays out shaped fixture glyphs");
+    require(diagnostics.has_shaping_handoffs(), "HarfBuzz handoff records shaping handoff snapshots");
+    require(diagnostics.font_backend_uses_adapter_shaping, "HarfBuzz handoff records adapter shaping use");
+    require(!diagnostics.font_backend_uses_deterministic_shaping, "HarfBuzz handoff bypasses deterministic shaping");
+    require(
+        diagnostics.shaping_handoff_policy.harfbuzz_run_count == 1U,
+        "HarfBuzz handoff policy counts one HarfBuzz-shaped run");
+    require(
+        diagnostics.shaping_handoff_policy.materialized_font_byte_run_count == 1U,
+        "HarfBuzz handoff policy records materialized font bytes");
+    require(
+        diagnostics.shaping_handoff_policy.deterministic_fallback_run_count == 0U,
+        "HarfBuzz handoff policy records no deterministic fallback");
+    require(
+        diagnostics.shaping_handoff_policy.atlas_ready_glyph_count > 0U,
+        "HarfBuzz handoff records atlas-ready glyph evidence");
+    require(
+        diagnostics.shaping_handoffs.size() == layout.glyphs.size(),
+        "HarfBuzz handoff emits one handoff record per layout glyph");
+
+    bool saw_positive_advance = false;
+    for (const fake_text_engine_shaping_handoff_snapshot& handoff : diagnostics.shaping_handoffs) {
+        require(handoff.used_harfbuzz, "handoff record marks HarfBuzz as the shaping backend");
+        require(handoff.used_adapter, "handoff record marks adapter use");
+        require(!handoff.used_deterministic_fallback, "handoff record does not mark deterministic fallback");
+        require(handoff.backend_library == render_text_font_backend_library::harfbuzz, "handoff backend is HarfBuzz");
+        require(handoff.backend_label == "HarfBuzz", "handoff backend label is stable");
+        require(
+            handoff.adapter_status == render_text_font_backend_adapter_status::shaped,
+            "handoff adapter status records shaped");
+        require(
+            handoff.source_bytes_status == render_text_font_source_bytes_load_status::loaded,
+            "handoff source bytes are loaded");
+        require(handoff.materialized_font_bytes, "handoff records materialized font bytes");
+        require(handoff.glyph_id != 0U, "handoff records real shaped glyph id");
+        require(handoff.cluster_byte_offset == 0U, "handoff keeps cluster byte offset");
+        require(handoff.cluster_byte_count == text.size(), "handoff keeps combined cluster byte range");
+        require(handoff.cluster_codepoint_offset == 0U, "handoff keeps cluster codepoint offset");
+        require(handoff.cluster_codepoint_count == 2U, "handoff keeps base plus combining mark codepoint range");
+        saw_positive_advance = saw_positive_advance || handoff.advance_x > 0.0f;
+    }
+    require(saw_positive_advance, "HarfBuzz handoff records font-backed glyph advance");
+
+    require(diagnostics.has_shaping_atlas_handoffs(), "HarfBuzz handoff records atlas handoff bridge");
+    require(
+        diagnostics.shaping_atlas_handoff_policy.harfbuzz_cluster_count
+            == diagnostics.shaping_atlas_handoffs.size(),
+        "atlas handoff bridge counts HarfBuzz-shaped clusters");
+    require(
+        diagnostics.shaping_atlas_handoff_policy.deterministic_fallback_cluster_count == 0U,
+        "atlas handoff bridge records no deterministic shaping fallback");
+    require(
+        diagnostics.shaping_atlas_handoff_policy.materialized_font_byte_cluster_count
+            == diagnostics.shaping_atlas_handoffs.size(),
+        "atlas handoff bridge preserves materialized font byte evidence");
+    require(
+        diagnostics.shaping_atlas_handoff_policy.unique_cache_key_count > 0U,
+        "atlas handoff bridge records cache key coverage");
+    require(
+        diagnostics.shaping_atlas_handoff_policy.unique_page_key_count > 0U,
+        "atlas handoff bridge records stable atlas page keys");
+
+    const fake_text_engine_shaping_atlas_handoff_snapshot& atlas_handoff =
+        diagnostics.shaping_atlas_handoffs.front();
+    require(atlas_handoff.used_harfbuzz, "atlas handoff marks HarfBuzz shaping");
+    require(atlas_handoff.used_adapter, "atlas handoff marks adapter shaping");
+    require(!atlas_handoff.used_deterministic_fallback, "atlas handoff avoids deterministic fallback");
+    require(
+        atlas_handoff.backend_library == render_text_font_backend_library::harfbuzz,
+        "atlas handoff preserves HarfBuzz backend library");
+    require(atlas_handoff.backend_label == "HarfBuzz", "atlas handoff preserves HarfBuzz backend label");
+    require(
+        atlas_handoff.adapter_status == render_text_font_backend_adapter_status::shaped,
+        "atlas handoff preserves shaped adapter status");
+    require(
+        atlas_handoff.source_bytes_status == render_text_font_source_bytes_load_status::loaded,
+        "atlas handoff preserves loaded source byte status");
+    require(atlas_handoff.materialized_font_bytes, "atlas handoff records materialized font bytes");
+    require(!atlas_handoff.shaped_glyph_ids.empty(), "atlas handoff preserves shaped glyph ids");
+    require(atlas_handoff.cluster_byte_offset == 0U, "atlas handoff preserves cluster byte offset");
+    require(atlas_handoff.cluster_byte_count == text.size(), "atlas handoff preserves cluster byte count");
+    require(atlas_handoff.cluster_codepoint_offset == 0U, "atlas handoff preserves cluster codepoint offset");
+    require(atlas_handoff.cluster_codepoint_count == 2U, "atlas handoff preserves cluster codepoint count");
+    require(atlas_handoff.has_cache_key, "atlas handoff records a cache key");
+    require(atlas_handoff.cache_key.glyph_id == atlas_handoff.resolved_glyph_id, "atlas handoff cache key uses shaped glyph id");
+    require(!atlas_handoff.stable_page_key.empty(), "atlas handoff records stable page key");
+    require(atlas_handoff.has_atlas_placement, "atlas handoff links to atlas placement");
+    require(
+        atlas_handoff.blocked == !atlas_handoff.atlas_ready,
+        "atlas handoff summarizes atlas readiness consistently");
+    if (atlas_handoff.blocked) {
+        require(!atlas_handoff.blocker_reason.empty(), "blocked atlas handoff records blocker reason");
+    }
+}
+
+void test_fake_text_engine_harfbuzz_handoff_keeps_deterministic_fallback_without_bytes()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    engine.set_font_backend_capability_components({
+        freetype_component(),
+        harfbuzz_component(),
+    });
+    engine.add_font_face(font_face_descriptor{
+        .id = 621,
+        .family = "Missing Handoff Sans",
+        .source_uri = "fonts/missing-handoff-sans.ttf",
+        .version = "missing-fixture",
+        .license = "test-fixture",
+        .coverage = {
+            font_codepoint_range{.first = U'A', .last = U'A'},
+        },
+        .weight = 400,
+    });
+
+    render_text_style_catalog catalog = make_style_catalog();
+    catalog.styles.push_back(render_text_style{
+        .id = "missing-handoff",
+        .font_family = "Missing Handoff Sans",
+        .font_size = 20.0f,
+        .line_height = 24.0f,
+        .font_weight = 400,
+    });
+
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "A", .style_token = "missing-handoff"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 200.0f, 0.0f};
+    request.style_catalog = catalog;
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    const render_text_layout layout = engine.layout_text(request);
+    const fake_text_engine_diagnostics& diagnostics = engine.last_diagnostics();
+
+    require(layout.glyphs.size() == 1U, "missing HarfBuzz bytes preserve deterministic layout glyph");
+    require(diagnostics.font_backend_uses_deterministic_shaping, "missing bytes keep deterministic shaping active");
+    require(!diagnostics.font_backend_uses_adapter_shaping, "missing bytes do not invoke HarfBuzz adapter");
+    require(diagnostics.has_shaping_handoffs(), "missing bytes still record handoff diagnostics");
+    require(
+        diagnostics.shaping_handoff_policy.deterministic_fallback_run_count == 1U,
+        "missing bytes handoff policy counts deterministic fallback");
+    require(
+        diagnostics.shaping_handoff_policy.missing_font_byte_run_count == 1U,
+        "missing bytes handoff policy counts missing materialized bytes");
+    require(
+        diagnostics.shaping_handoff_policy.harfbuzz_run_count == 0U,
+        "missing bytes handoff policy does not claim HarfBuzz shaping");
+
+    const fake_text_engine_shaping_handoff_snapshot& handoff = diagnostics.shaping_handoffs.front();
+    require(handoff.backend_library == render_text_font_backend_library::deterministic_fake, "fallback backend is deterministic fake");
+    require(handoff.used_deterministic_fallback, "handoff marks deterministic fallback");
+    require(!handoff.used_harfbuzz, "handoff does not mark HarfBuzz for missing bytes");
+    require(!handoff.used_adapter, "handoff does not mark adapter for missing bytes");
+    require(!handoff.materialized_font_bytes, "handoff records missing materialized bytes");
+    require(
+        handoff.source_bytes_status == render_text_font_source_bytes_load_status::missing_bytes,
+        "handoff records missing source byte status");
+    require(
+        handoff.fallback_reason.find("materialized font bytes") != std::string::npos,
+        "handoff fallback reason names missing materialized bytes");
+    require(handoff.atlas_ready, "deterministic fallback handoff remains atlas-ready before raster bytes");
+
+    require(diagnostics.has_shaping_atlas_handoffs(), "missing bytes record atlas handoff bridge");
+    require(
+        diagnostics.shaping_atlas_handoff_policy.deterministic_fallback_cluster_count == 1U,
+        "missing bytes atlas handoff counts deterministic fallback");
+    require(
+        diagnostics.shaping_atlas_handoff_policy.harfbuzz_cluster_count == 0U,
+        "missing bytes atlas handoff does not count HarfBuzz shaping");
+    require(
+        diagnostics.shaping_atlas_handoff_policy.missing_font_byte_cluster_count == 1U,
+        "missing bytes atlas handoff counts missing materialized font bytes");
+    require(
+        diagnostics.shaping_atlas_handoff_policy.fallback_reason_cluster_count == 1U,
+        "missing bytes atlas handoff counts fallback reason");
+
+    const fake_text_engine_shaping_atlas_handoff_snapshot& atlas_handoff =
+        diagnostics.shaping_atlas_handoffs.front();
+    require(
+        atlas_handoff.backend_library == render_text_font_backend_library::deterministic_fake,
+        "missing bytes atlas handoff uses deterministic fake backend");
+    require(atlas_handoff.used_deterministic_fallback, "missing bytes atlas handoff marks deterministic fallback");
+    require(!atlas_handoff.used_harfbuzz, "missing bytes atlas handoff does not mark HarfBuzz shaping");
+    require(!atlas_handoff.materialized_font_bytes, "missing bytes atlas handoff records missing font bytes");
+    require(
+        atlas_handoff.source_bytes_status == render_text_font_source_bytes_load_status::missing_bytes,
+        "missing bytes atlas handoff preserves missing source byte status");
+    require(atlas_handoff.has_cache_key, "missing bytes atlas handoff still records cache key");
+    require(atlas_handoff.cache_key.glyph_id == U'A', "missing bytes atlas handoff preserves fallback glyph id");
+    require(!atlas_handoff.stable_page_key.empty(), "missing bytes atlas handoff records stable page key");
+    require(!atlas_handoff.atlas_ready, "missing bytes atlas handoff is blocked before upload readiness");
+    require(atlas_handoff.blocked, "missing bytes atlas handoff records blocker");
+    require(!atlas_handoff.blocker_reason.empty(), "missing bytes atlas handoff records blocker reason");
+    require(
+        atlas_handoff.fallback_reason.find("materialized font bytes") != std::string::npos,
+        "missing bytes atlas handoff preserves fallback reason");
+    require(
+        atlas_handoff.materialization_status == render_text_glyph_atlas_materialization_status::skipped_raster_payload,
+        "missing bytes atlas handoff links skipped raster payload materialization");
+    require(
+        atlas_handoff.atlas_update_trace_status
+            == render_text_shaped_atlas_update_trace_status::rasterized_payload_skipped,
+        "missing bytes atlas handoff links raster payload blocker trace");
 }
 
 void test_fake_text_engine_injected_adapter_glyph_mismatch_drives_failure_diagnostics()
@@ -2054,10 +2586,32 @@ void test_fake_text_engine_skips_rasterized_payloads_when_font_bytes_are_missing
     const fake_text_engine_diagnostics& diagnostics = engine.last_diagnostics();
     require(diagnostics.glyph_atlas_placements.size() == 1, "missing byte fixture preserves atlas cache placement");
     require(diagnostics.glyph_cache_readiness.size() == 1, "missing byte fixture records cache readiness");
-    require(diagnostics.glyph_cache_readiness.front().cacheable, "missing byte glyph remains cacheable before rasterizer");
+    const render_text_glyph_cache_readiness_snapshot& readiness = diagnostics.glyph_cache_readiness.front();
+    require(readiness.cacheable, "missing byte glyph remains cacheable before rasterizer");
     require(
-        diagnostics.glyph_cache_readiness.front().has_atlas_slot,
+        readiness.has_atlas_slot,
         "missing byte glyph keeps existing atlas readiness behavior");
+    require(
+        readiness.font_face_byte_readiness_status == render_text_font_face_byte_readiness_status::missing_bytes,
+        "missing byte fixture records missing byte readiness before rasterizer");
+    require(
+        readiness.font_face_byte_fallback_required,
+        "missing byte fixture requires deterministic byte fallback");
+    require(
+        !readiness.font_face_can_attempt_freetype_load,
+        "missing byte fixture does not claim FreeType load readiness");
+    require(
+        readiness.used_descriptor_coverage_fallback,
+        "missing byte fixture records descriptor coverage fallback");
+    require(
+        diagnostics.glyph_cache_readiness_policy.font_face_byte_missing_count == 1,
+        "cache readiness policy counts missing font bytes");
+    require(
+        diagnostics.glyph_cache_readiness_policy.font_face_byte_fallback_required_count == 1,
+        "cache readiness policy counts missing byte fallback");
+    require(
+        diagnostics.glyph_cache_readiness_policy.descriptor_coverage_fallback_cluster_count == 1,
+        "cache readiness policy counts descriptor coverage fallback for missing bytes");
     require(
         diagnostics.rasterized_glyph_atlas_payloads.size() == 1,
         "missing byte fixture records one rasterizer payload decision");
@@ -2281,6 +2835,7 @@ int main()
     test_fake_text_engine_records_rasterized_atlas_payloads_for_cacheable_glyphs();
     test_fake_text_engine_records_fallback_only_backend_capability_for_latin_hangul();
     test_fake_text_engine_dependency_probe_reports_missing_real_backend_fallback();
+    test_fake_text_engine_threads_header_probe_manifest_into_dependency_diagnostics();
     test_fake_text_engine_dependency_probe_reports_adapter_unavailable_fallback();
     test_fake_text_engine_dependency_probe_reports_version_mismatch_fallback();
     test_fake_text_engine_dependency_probe_reports_adapter_ready_selection();
@@ -2294,6 +2849,8 @@ int main()
     test_fake_text_engine_uses_default_deterministic_shaping_without_adapter();
     test_fake_text_engine_injected_adapter_unavailable_drives_shaping_diagnostics();
     test_fake_text_engine_injected_adapter_shapes_available_complex_script();
+    test_fake_text_engine_harfbuzz_handoff_shapes_materialized_font_bytes();
+    test_fake_text_engine_harfbuzz_handoff_keeps_deterministic_fallback_without_bytes();
     test_fake_text_engine_injected_adapter_glyph_mismatch_drives_failure_diagnostics();
     test_fake_text_engine_injected_adapter_failure_drives_shaping_diagnostics();
     test_fake_text_engine_wires_resolved_glyph_id_through_atlas_payloads();

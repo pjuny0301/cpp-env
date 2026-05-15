@@ -6,17 +6,28 @@ This project separates quiz domain logic from the UI scene pipeline.
 
 ```text
 platform/app shell
-  -> app_state action dispatcher
-      -> domain services
-      -> app_snapshot
-      <- app_action
-  -> ui subsystem
-      modifier_interface
-      scene_layout_data_modifier
-      scene_layout_data
-      layout_placer
-      ui_renderer
-      vulkan_renderer
+  -> input/app action routing
+      -> app_state action dispatcher
+          -> domain services
+          -> app_snapshot
+          <- app_action
+  -> modifier_interface
+      -> scene_layout_data_modifier
+          -> scene_layout_patch / scene_layout_edit_data
+              -> scene_layout_data
+                  -> layout_placer
+                      -> ui_renderer
+                          -> vulkan_renderer
+```
+
+Dependency direction:
+
+```text
+vulkan_renderer <- ui_renderer <- layout_placer -> scene_layout_data
+                                               ^
+                    scene_layout_data_modifier - writes scene_layout_edit_data
+                                               ^
+                                      modifier_interface <- app/main
 ```
 
 ## Domain Services
@@ -27,7 +38,7 @@ Domain services own quiz data, learning state, quiz session state, persistence, 
 
 ## UI Subsystem
 
-The UI subsystem owns scene data and rendering only. It interprets input into actions, but domain state changes happen outside the UI subsystem.
+The UI subsystem owns scene data and rendering only. Scene nodes may contain action binding data, but input routing and domain dispatch live in the app/input layer outside `src/core/ui`.
 
 `scene_layout_data_modifier` builds scene patches from the latest `app_snapshot`. `layout_placer` resolves node constraints to final rectangles. `ui_renderer` turns placed nodes into draw commands. `vulkan_renderer` submits those draw commands.
 

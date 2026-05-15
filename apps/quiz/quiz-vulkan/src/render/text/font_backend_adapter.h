@@ -248,6 +248,9 @@ bool render_text_freetype_memory_face_adapter_available();
 render_text_freetype_memory_face_load_result load_render_text_freetype_memory_face(
     const render_text_freetype_memory_face_load_request& request);
 
+render_text_real_font_raster_adapter_result freetype_real_font_backend_rasterize(
+    const render_text_real_font_raster_adapter_request& request);
+
 class font_backend_adapter_interface {
 public:
     virtual ~font_backend_adapter_interface() = default;

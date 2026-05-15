@@ -894,18 +894,29 @@ void test_third_party_adapter_header_stays_image_owned()
         "apps/quiz/quiz-vulkan/src/render/image/third_party_image_decoder_adapter.h",
         "src/render/image/third_party_image_decoder_adapter.h");
     require(!header_path.empty(), "third-party image decoder adapter header is discoverable");
+    const std::filesystem::path stb_selection_header_path = locate_source_file(
+        "apps/quiz/quiz-vulkan/src/render/image/stb_image_decoder_selection.inl",
+        "src/render/image/stb_image_decoder_selection.inl");
+    require(!stb_selection_header_path.empty(), "stb image decoder selection fragment is discoverable");
 
     const std::string header = read_text_file(header_path);
+    const std::string stb_selection_header = read_text_file(stb_selection_header_path);
     const std::string unix_host_prefix = std::string{"/mnt"} + "/c/aa";
     const std::string windows_drive_prefix = std::string{"C:"} + "\\";
     require(header.find(unix_host_prefix) == std::string::npos, "third-party adapter header has no host path");
     require(header.find(windows_drive_prefix) == std::string::npos, "third-party adapter header has no Windows host path");
     require(
-        header.find("#include <stb_image.h>") != std::string::npos,
-        "third-party adapter header uses the approved stb header include");
+        header.find("#include \"render/image/stb_image_decoder_selection.inl\"") != std::string::npos,
+        "third-party adapter header aggregates stb selection contracts");
     require(
         header.find("STB_IMAGE_IMPLEMENTATION") == std::string::npos,
         "third-party adapter header does not define the stb implementation");
+    require(
+        stb_selection_header.find("#include <stb_image.h>") != std::string::npos,
+        "stb selection header uses the approved stb header include");
+    require(
+        stb_selection_header.find("STB_IMAGE_IMPLEMENTATION") == std::string::npos,
+        "stb selection header does not define the stb implementation");
 
     const std::vector<std::string_view> forbidden_includes = {
         "#include \"app/",
@@ -927,6 +938,9 @@ void test_third_party_adapter_header_stays_image_owned()
         require(
             header.find(forbidden_include) == std::string::npos,
             "third-party adapter header has no upper-layer include");
+        require(
+            stb_selection_header.find(forbidden_include) == std::string::npos,
+            "stb selection header has no upper-layer include");
     }
 }
 

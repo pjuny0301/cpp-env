@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- `f7ac2e1`: Vulkan backend now creates data/dispatch evidence for swapchain image-view targets, including image-view create/destroy entrypoints, per-image target lifecycle records, missing-symbol diagnostics, and render-target attachment intent while keeping scene/UI/domain out of the backend.
+- current: after `f7ac2e1`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`; focused renderer/Vulkan CTest passed 5/5 and architecture boundary CTest passed 1/1.
 - current: HarfBuzz memory shaping, image upload payload layout evidence, Vulkan device-extension readiness, and asset payload bundle diffs integrated; Windows MinGW focused text/image/Vulkan/asset CTest batches passed.
 - current: after next-worker prompt handoff, Windows MinGW full CTest attempted 103 configured tests; 102 executed tests passed and only the known `quiz_vulkan_font_shaped_atlas_update_tests` host permission BAD_COMMAND remained.
 - `1d1bcb0`: text engine now records line/run evidence for shaped clusters, splitting HarfBuzz advance totals from deterministic fallback advance totals and preserving caret/run-box/backend/fallback diagnostics behind the text engine boundary.

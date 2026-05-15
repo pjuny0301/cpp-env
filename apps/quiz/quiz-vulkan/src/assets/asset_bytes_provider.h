@@ -315,6 +315,162 @@ struct asset_typed_materialized_bytes_diff_summary {
     }
 };
 
+enum class asset_materialized_bytes_handoff_status {
+    ready,
+    materialization_blocked,
+    load_blocked,
+    integrity_blocked,
+};
+
+struct asset_materialized_bytes_handoff_payload {
+    std::string id;
+    asset_type type = asset_type::generic;
+    asset_cache_key cache_key;
+    std::string source_uri;
+    std::filesystem::path materialized_path;
+    std::size_t byte_count = 0U;
+    std::string content_hash;
+    asset_materialized_bytes_handoff_status status =
+        asset_materialized_bytes_handoff_status::materialization_blocked;
+    runtime_materialized_asset_lookup_status materialized_status =
+        runtime_materialized_asset_lookup_status::missing_id;
+    asset_bytes_load_status load_status = asset_bytes_load_status::missing_bytes;
+    std::vector<asset_bytes_integrity_issue> issues;
+    std::string diagnostic;
+
+    [[nodiscard]] bool ready() const
+    {
+        return status == asset_materialized_bytes_handoff_status::ready;
+    }
+};
+
+struct asset_materialized_bytes_handoff_group {
+    std::vector<asset_materialized_bytes_handoff_payload> ready;
+    std::vector<asset_materialized_bytes_handoff_payload> blocked;
+
+    [[nodiscard]] std::size_t payload_count() const
+    {
+        return ready.size() + blocked.size();
+    }
+
+    [[nodiscard]] bool ok() const
+    {
+        return blocked.empty();
+    }
+
+    [[nodiscard]] const asset_materialized_bytes_handoff_payload* find_ready(std::string_view id) const
+    {
+        for (const asset_materialized_bytes_handoff_payload& payload : ready) {
+            if (payload.id == id) {
+                return &payload;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const asset_materialized_bytes_handoff_payload* find_blocked(std::string_view id) const
+    {
+        for (const asset_materialized_bytes_handoff_payload& payload : blocked) {
+            if (payload.id == id) {
+                return &payload;
+            }
+        }
+        return nullptr;
+    }
+};
+
+struct asset_materialized_bytes_handoff_summary {
+    asset_materialized_bytes_handoff_group fonts;
+    asset_materialized_bytes_handoff_group images;
+    asset_materialized_bytes_handoff_group sounds;
+    asset_materialized_bytes_handoff_group shaders;
+    asset_materialized_bytes_handoff_group decks;
+    std::size_t skipped_generic_count = 0U;
+
+    [[nodiscard]] bool ok() const
+    {
+        return blocked_count() == 0U;
+    }
+
+    [[nodiscard]] std::size_t ready_count() const
+    {
+        return fonts.ready.size() + images.ready.size() + sounds.ready.size() + shaders.ready.size()
+            + decks.ready.size();
+    }
+
+    [[nodiscard]] std::size_t blocked_count() const
+    {
+        return fonts.blocked.size() + images.blocked.size() + sounds.blocked.size() + shaders.blocked.size()
+            + decks.blocked.size();
+    }
+
+    [[nodiscard]] std::size_t payload_count() const
+    {
+        return ready_count() + blocked_count();
+    }
+
+    [[nodiscard]] const asset_materialized_bytes_handoff_group& group_for_type(asset_type type) const
+    {
+        switch (type) {
+            case asset_type::font:
+                return fonts;
+            case asset_type::image:
+                return images;
+            case asset_type::sound:
+                return sounds;
+            case asset_type::shader:
+                return shaders;
+            case asset_type::deck:
+                return decks;
+            case asset_type::generic:
+                break;
+        }
+
+        static const asset_materialized_bytes_handoff_group empty_group;
+        return empty_group;
+    }
+
+    [[nodiscard]] const asset_materialized_bytes_handoff_payload* find_ready(std::string_view id) const
+    {
+        if (const asset_materialized_bytes_handoff_payload* payload = fonts.find_ready(id); payload != nullptr) {
+            return payload;
+        }
+        if (const asset_materialized_bytes_handoff_payload* payload = images.find_ready(id); payload != nullptr) {
+            return payload;
+        }
+        if (const asset_materialized_bytes_handoff_payload* payload = sounds.find_ready(id); payload != nullptr) {
+            return payload;
+        }
+        if (const asset_materialized_bytes_handoff_payload* payload = shaders.find_ready(id); payload != nullptr) {
+            return payload;
+        }
+        if (const asset_materialized_bytes_handoff_payload* payload = decks.find_ready(id); payload != nullptr) {
+            return payload;
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const asset_materialized_bytes_handoff_payload* find_blocked(std::string_view id) const
+    {
+        if (const asset_materialized_bytes_handoff_payload* payload = fonts.find_blocked(id); payload != nullptr) {
+            return payload;
+        }
+        if (const asset_materialized_bytes_handoff_payload* payload = images.find_blocked(id); payload != nullptr) {
+            return payload;
+        }
+        if (const asset_materialized_bytes_handoff_payload* payload = sounds.find_blocked(id); payload != nullptr) {
+            return payload;
+        }
+        if (const asset_materialized_bytes_handoff_payload* payload = shaders.find_blocked(id); payload != nullptr) {
+            return payload;
+        }
+        if (const asset_materialized_bytes_handoff_payload* payload = decks.find_blocked(id); payload != nullptr) {
+            return payload;
+        }
+        return nullptr;
+    }
+};
+
 class asset_bytes_provider_interface {
 public:
     virtual ~asset_bytes_provider_interface() = default;
@@ -642,6 +798,73 @@ inline asset_typed_materialized_bytes_diff_entry make_changed_typed_materialized
         .content_hash_changed = before.content_hash != after.content_hash,
         .integrity_status_changed = !typed_materialized_bytes_integrity_status_matches(before, after),
     };
+}
+
+inline asset_materialized_bytes_handoff_status materialized_bytes_handoff_status_for_entry(
+    const asset_typed_materialized_bytes_entry& entry)
+{
+    if (entry.materialized_status != runtime_materialized_asset_lookup_status::materialized) {
+        return asset_materialized_bytes_handoff_status::materialization_blocked;
+    }
+    if (entry.load_status != asset_bytes_load_status::loaded) {
+        return asset_materialized_bytes_handoff_status::load_blocked;
+    }
+    if (!entry.issues.empty()) {
+        return asset_materialized_bytes_handoff_status::integrity_blocked;
+    }
+    return asset_materialized_bytes_handoff_status::ready;
+}
+
+inline asset_materialized_bytes_handoff_payload make_materialized_bytes_handoff_payload(
+    const asset_typed_materialized_bytes_entry& entry)
+{
+    return asset_materialized_bytes_handoff_payload{
+        .id = entry.id,
+        .type = entry.type,
+        .cache_key = entry.cache_key,
+        .source_uri = entry.source_uri,
+        .materialized_path = entry.materialized_path,
+        .byte_count = entry.byte_count,
+        .content_hash = entry.content_hash,
+        .status = materialized_bytes_handoff_status_for_entry(entry),
+        .materialized_status = entry.materialized_status,
+        .load_status = entry.load_status,
+        .issues = entry.issues,
+        .diagnostic = entry.diagnostic,
+    };
+}
+
+inline void add_materialized_bytes_handoff_payload(
+    asset_materialized_bytes_handoff_summary& summary,
+    asset_materialized_bytes_handoff_payload payload)
+{
+    asset_materialized_bytes_handoff_group* group = nullptr;
+    switch (payload.type) {
+        case asset_type::font:
+            group = &summary.fonts;
+            break;
+        case asset_type::image:
+            group = &summary.images;
+            break;
+        case asset_type::sound:
+            group = &summary.sounds;
+            break;
+        case asset_type::shader:
+            group = &summary.shaders;
+            break;
+        case asset_type::deck:
+            group = &summary.decks;
+            break;
+        case asset_type::generic:
+            ++summary.skipped_generic_count;
+            return;
+    }
+
+    if (payload.ready()) {
+        group->ready.push_back(std::move(payload));
+    } else {
+        group->blocked.push_back(std::move(payload));
+    }
 }
 
 } // namespace detail
@@ -1004,6 +1227,24 @@ inline asset_typed_materialized_bytes_diff_summary diff_typed_materialized_asset
     });
 
     return diff;
+}
+
+inline asset_materialized_bytes_handoff_summary make_materialized_asset_bytes_handoff_summary(
+    const asset_typed_materialized_bytes_summary& typed_summary)
+{
+    asset_materialized_bytes_handoff_summary handoff{
+        .skipped_generic_count = typed_summary.skipped_generic_count,
+    };
+
+    detail::for_each_typed_materialized_bytes_entry(
+        typed_summary,
+        [&](const asset_typed_materialized_bytes_entry& entry) {
+            detail::add_materialized_bytes_handoff_payload(
+                handoff,
+                detail::make_materialized_bytes_handoff_payload(entry));
+        });
+
+    return handoff;
 }
 
 } // namespace quiz_vulkan::assets

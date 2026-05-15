@@ -175,6 +175,58 @@ static_assert(requires(
     { const_summary.find_changed(id) } -> std::same_as<const asset_typed_materialized_bytes_diff_entry*>;
 });
 
+static_assert(std::is_enum_v<asset_materialized_bytes_handoff_status>);
+
+static_assert(requires(
+    asset_materialized_bytes_handoff_payload payload,
+    const asset_materialized_bytes_handoff_payload& const_payload) {
+    { payload.id } -> std::same_as<std::string&>;
+    { payload.type } -> std::same_as<asset_type&>;
+    { payload.cache_key } -> std::same_as<asset_cache_key&>;
+    { payload.source_uri } -> std::same_as<std::string&>;
+    { payload.materialized_path } -> std::same_as<std::filesystem::path&>;
+    { payload.byte_count } -> std::same_as<std::size_t&>;
+    { payload.content_hash } -> std::same_as<std::string&>;
+    { payload.status } -> std::same_as<asset_materialized_bytes_handoff_status&>;
+    { payload.materialized_status } -> std::same_as<runtime_materialized_asset_lookup_status&>;
+    { payload.load_status } -> std::same_as<asset_bytes_load_status&>;
+    { payload.issues } -> std::same_as<std::vector<asset_bytes_integrity_issue>&>;
+    { payload.diagnostic } -> std::same_as<std::string&>;
+    { const_payload.ready() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    asset_materialized_bytes_handoff_group group,
+    const asset_materialized_bytes_handoff_group& const_group,
+    std::string_view id) {
+    { group.ready } -> std::same_as<std::vector<asset_materialized_bytes_handoff_payload>&>;
+    { group.blocked } -> std::same_as<std::vector<asset_materialized_bytes_handoff_payload>&>;
+    { const_group.payload_count() } -> std::same_as<std::size_t>;
+    { const_group.ok() } -> std::same_as<bool>;
+    { const_group.find_ready(id) } -> std::same_as<const asset_materialized_bytes_handoff_payload*>;
+    { const_group.find_blocked(id) } -> std::same_as<const asset_materialized_bytes_handoff_payload*>;
+});
+
+static_assert(requires(
+    asset_materialized_bytes_handoff_summary summary,
+    const asset_materialized_bytes_handoff_summary& const_summary,
+    std::string_view id,
+    asset_type type) {
+    { summary.fonts } -> std::same_as<asset_materialized_bytes_handoff_group&>;
+    { summary.images } -> std::same_as<asset_materialized_bytes_handoff_group&>;
+    { summary.sounds } -> std::same_as<asset_materialized_bytes_handoff_group&>;
+    { summary.shaders } -> std::same_as<asset_materialized_bytes_handoff_group&>;
+    { summary.decks } -> std::same_as<asset_materialized_bytes_handoff_group&>;
+    { summary.skipped_generic_count } -> std::same_as<std::size_t&>;
+    { const_summary.ok() } -> std::same_as<bool>;
+    { const_summary.ready_count() } -> std::same_as<std::size_t>;
+    { const_summary.blocked_count() } -> std::same_as<std::size_t>;
+    { const_summary.payload_count() } -> std::same_as<std::size_t>;
+    { const_summary.group_for_type(type) } -> std::same_as<const asset_materialized_bytes_handoff_group&>;
+    { const_summary.find_ready(id) } -> std::same_as<const asset_materialized_bytes_handoff_payload*>;
+    { const_summary.find_blocked(id) } -> std::same_as<const asset_materialized_bytes_handoff_payload*>;
+});
+
 static_assert(std::has_virtual_destructor_v<asset_bytes_provider_interface>);
 static_assert(std::derived_from<fake_asset_bytes_provider, asset_bytes_provider_interface>);
 static_assert(std::derived_from<local_file_asset_bytes_provider, asset_bytes_provider_interface>);
@@ -231,6 +283,8 @@ static_assert(requires(
         std::same_as<asset_typed_materialized_bytes_summary>;
     { diff_typed_materialized_asset_bytes(typed_summary, typed_summary) } ->
         std::same_as<asset_typed_materialized_bytes_diff_summary>;
+    { make_materialized_asset_bytes_handoff_summary(typed_summary) } ->
+        std::same_as<asset_materialized_bytes_handoff_summary>;
 });
 
 } // namespace

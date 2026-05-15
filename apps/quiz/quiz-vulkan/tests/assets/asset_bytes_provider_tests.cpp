@@ -1216,6 +1216,120 @@ void test_typed_materialized_asset_bytes_diff_tracks_engine_entry_deltas()
     require(moved->after->load_status == asset_bytes_load_status::missing_bytes, "typed diff keeps load status");
 }
 
+void test_materialized_asset_bytes_handoff_summary_groups_ready_and_blocked_payloads()
+{
+    using namespace quiz_vulkan::assets;
+
+    asset_typed_materialized_bytes_summary typed_summary;
+    typed_summary.skipped_generic_count = 2U;
+    typed_summary.fonts.push_back(make_typed_summary_entry(
+        "body_font",
+        asset_type::font,
+        "asset://fonts/body.ttf",
+        "/assets/fonts/body.ttf",
+        "hash:font"));
+    typed_summary.sounds.push_back(make_typed_summary_entry(
+        "answer_sound",
+        asset_type::sound,
+        "asset://sounds/correct.ogg",
+        "/assets/sounds/correct.ogg",
+        "hash:sound"));
+    typed_summary.decks.push_back(make_typed_summary_entry(
+        "main_deck",
+        asset_type::deck,
+        "asset://decks/main.quiz",
+        "/assets/decks/main.quiz",
+        "hash:deck"));
+
+    asset_typed_materialized_bytes_entry image = make_typed_summary_entry(
+        "card_front",
+        asset_type::image,
+        "asset://cards/front.png",
+        "/assets/cards/front.png",
+        "hash:image");
+    image.issues.push_back(asset_bytes_integrity_issue{
+        .kind = asset_bytes_integrity_issue_kind::content_hash_mismatch,
+        .id = image.id,
+        .type = image.type,
+        .cache_key = image.cache_key,
+        .expected_cache_key = image.cache_key,
+        .source_uri = image.source_uri,
+        .expected_source_uri = image.source_uri,
+        .reported_byte_count = image.byte_count,
+        .actual_byte_count = image.byte_count,
+        .reported_content_hash = "hash:image",
+        .actual_content_hash = "hash:image-actual",
+        .diagnostic = "test image hash mismatch",
+    });
+    typed_summary.images.push_back(image);
+
+    typed_summary.shaders.push_back(asset_typed_materialized_bytes_entry{
+        .id = "rootless_shader",
+        .type = asset_type::shader,
+        .cache_key = "shader|asset://shaders/ui.vert.spv",
+        .source_uri = "asset://shaders/ui.vert.spv",
+        .materialized_status = runtime_materialized_asset_lookup_status::missing_rooted_path,
+        .load_status = asset_bytes_load_status::source_not_readable,
+        .diagnostic = "shader requires a materialized rooted path",
+    });
+
+    const asset_materialized_bytes_handoff_summary handoff =
+        make_materialized_asset_bytes_handoff_summary(typed_summary);
+
+    require(!handoff.ok(), "handoff summary reports blocked payloads");
+    require(handoff.ready_count() == 3U, "handoff summary counts ready payloads");
+    require(handoff.blocked_count() == 2U, "handoff summary counts blocked payloads");
+    require(handoff.payload_count() == 5U, "handoff summary counts all typed payloads");
+    require(handoff.skipped_generic_count == 2U, "handoff summary preserves skipped generic count");
+    require(handoff.group_for_type(asset_type::generic).payload_count() == 0U, "handoff summary ignores generic groups");
+    require(handoff.fonts.ok(), "handoff summary font group is ready");
+    require(!handoff.images.ok(), "handoff summary image group reports blocked payloads");
+    require(!handoff.shaders.ok(), "handoff summary shader group reports blocked payloads");
+    require(handoff.sounds.ready.size() == 1U, "handoff summary groups ready sounds");
+    require(handoff.decks.ready.size() == 1U, "handoff summary groups ready decks");
+
+    const asset_materialized_bytes_handoff_payload* font = handoff.find_ready("body_font");
+    require(font != nullptr, "handoff summary can find ready font payloads");
+    require(font->ready(), "handoff summary marks ready payloads");
+    require(font->type == asset_type::font, "handoff payload preserves type");
+    require(font->cache_key == "font|asset://fonts/body.ttf", "handoff payload preserves cache key");
+    require(font->source_uri == "asset://fonts/body.ttf", "handoff payload preserves source uri");
+    require(font->materialized_path == std::filesystem::path("/assets/fonts/body.ttf"), "handoff payload preserves path");
+    require(font->byte_count == 11U, "handoff payload preserves byte count");
+    require(font->content_hash == "hash:font", "handoff payload preserves content hash");
+    require(font->status == asset_materialized_bytes_handoff_status::ready, "handoff payload records ready status");
+    require(font->issues.empty(), "handoff ready payload has no issues");
+
+    const asset_materialized_bytes_handoff_payload* blocked_image = handoff.find_blocked("card_front");
+    require(blocked_image != nullptr, "handoff summary can find blocked image payloads");
+    require(!blocked_image->ready(), "handoff summary marks blocked image payloads");
+    require(
+        blocked_image->status == asset_materialized_bytes_handoff_status::integrity_blocked,
+        "handoff payload records integrity blocker status");
+    require(blocked_image->load_status == asset_bytes_load_status::loaded, "handoff payload preserves load status");
+    require(blocked_image->materialized_path == std::filesystem::path("/assets/cards/front.png"), "blocked payload keeps path");
+    require(blocked_image->content_hash == "hash:image", "blocked payload keeps hash evidence");
+    require(blocked_image->issues.size() == 1U, "blocked payload preserves integrity issues");
+    require(blocked_image->diagnostic.empty(), "blocked integrity payload does not invent diagnostics");
+
+    const asset_materialized_bytes_handoff_payload* blocked_shader = handoff.find_blocked("rootless_shader");
+    require(blocked_shader != nullptr, "handoff summary can find blocked shader payloads");
+    require(
+        blocked_shader->status == asset_materialized_bytes_handoff_status::materialization_blocked,
+        "handoff payload records materialization blocker status");
+    require(
+        blocked_shader->materialized_status == runtime_materialized_asset_lookup_status::missing_rooted_path,
+        "handoff payload preserves materialization status");
+    require(
+        blocked_shader->load_status == asset_bytes_load_status::source_not_readable,
+        "handoff payload preserves blocked load status");
+    require(blocked_shader->materialized_path.empty(), "blocked materialization payload keeps empty path");
+    require(
+        blocked_shader->diagnostic == "shader requires a materialized rooted path",
+        "handoff blocked payload preserves diagnostic");
+    require(handoff.find_ready("rootless_shader") == nullptr, "blocked payloads are not exposed as ready");
+}
+
 void test_materialized_asset_bytes_integrity_fails_before_provider_for_unmaterialized_sources()
 {
     using namespace quiz_vulkan::assets;
@@ -1327,6 +1441,7 @@ int main()
     test_materialized_asset_bytes_cache_policy_summary_tracks_hash_and_integrity();
     test_typed_materialized_asset_bytes_summary_groups_engine_assets();
     test_typed_materialized_asset_bytes_diff_tracks_engine_entry_deltas();
+    test_materialized_asset_bytes_handoff_summary_groups_ready_and_blocked_payloads();
     test_materialized_asset_bytes_integrity_fails_before_provider_for_unmaterialized_sources();
     test_materialized_asset_bytes_integrity_fails_after_provider_for_byte_count_mismatch();
     test_materialized_asset_bytes_integrity_fails_after_provider_for_metadata_mismatch();

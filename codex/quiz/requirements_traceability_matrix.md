@@ -6,6 +6,10 @@
 
 최근 baseline 통합 증거:
 
+- current: FreeType glyph raster evidence, asset byte contract split, and CMake source-header registration guard integrated; Windows MinGW focused text/asset/architecture CTest batches passed.
+- `1bd5c71`: text engine now uses FreeType behind the raster adapter contract to produce glyph metrics and 8-bit grayscale bitmap evidence from materialized memory-face bytes while preserving deterministic fallback diagnostics.
+- `84c2149`: asset system split stable byte/materialization contracts into smaller headers while keeping `asset_bytes_provider.h` as the existing include surface and registering the new public headers in CMake.
+- `e32a3ac`: architecture boundary tests now fail when a `src` header is not registered in CMake, reducing worker handoff drift after header splits.
 - current: native Vulkan queue-family dispatch/query readiness integrated; Windows MinGW focused Vulkan/renderer/architecture CTest passed 3/3.
 - `b52990a`: Vulkan backend now resolves `vkGetPhysicalDeviceQueueFamilyProperties`, queries per-device queue family properties, and passes the query result into physical-device selection instead of letting the selector own fake queue data.
 - current: standard image pipeline now prefers the external `stb_image` adapter for standard PNG/BMP/PPM when available; Windows MinGW focused image/architecture CTest passed 4/4.

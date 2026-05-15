@@ -6,6 +6,11 @@
 
 최근 baseline 통합 증거:
 
+- current: HarfBuzz memory shaping, image upload payload layout evidence, Vulkan device-extension readiness, and asset payload bundle diffs integrated; Windows MinGW focused text/image/Vulkan/asset CTest batches passed.
+- `3d438c3`: text engine now shapes materialized memory-font bytes through the approved local HarfBuzz source behind `harfbuzz_real_font_backend_shape`, while preserving deterministic fallback diagnostics when bytes/backend support are missing.
+- `8565527`: image engine now carries upload payload layout evidence, including extent, RGBA layout, row stride, byte counts, cache/sampler identity, and frame-resource handoff diagnostics before Vulkan texture upload.
+- `b38491c`: Vulkan backend now enumerates native device extensions and gates logical device creation with required-extension availability/missing-extension evidence before `vkCreateDevice`.
+- `7ec9b69`: asset system now diffs materialized byte payload bundles by id/type/cache key/content hash/status without embedding payload bytes in the diff entries.
 - current: asset-owned typed materialized byte payload bundles integrated; Windows MinGW focused asset/architecture CTest passed 2/2.
 - `560d786`: asset system now groups actual loaded bytes by font/image/sound/shader/deck type with ready/blocked payloads, cache-policy evidence, and handoff summaries while remaining independent of engine consumers.
 - current: FreeType raster-to-atlas handoff evidence integrated; Windows MinGW built the shaped-atlas target, focused text/architecture CTest passed 3/3, and the shaped-atlas executable still hits the known host permission BAD_COMMAND when run.

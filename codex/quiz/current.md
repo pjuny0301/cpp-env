@@ -14,7 +14,7 @@ Last updated: 2026-05-15
 
 ## Active Worker Queue
 
-- `codex-vulkan-real-backend-probe-20260514`: idle after `f7ac2e1` integration. Do not re-merge `codex/vulkan-swapchain-image-view-targets-20260515`; give this session a fresh baseline branch for the next Vulkan-only task.
+- `codex-vulkan-real-backend-probe-20260514`: working on a fresh Vulkan-only framebuffer/render-target task from latest baseline. Scope is `src/render/vulkan/*` and `tests/render/vulkan/*`; expected output is native/fake `vkCreateFramebuffer`/`vkDestroyFramebuffer` readiness consuming swapchain image-view target evidence.
 - `codex-text-freetype-prototype-20260514`: working on a fresh text-only source split task from latest baseline. Scope is `src/render/text/*` and `tests/render/text/*`; expected output is behavior-preserving private `.inl` extraction for the large fake text engine implementation so future text work reads less code.
 - `codex-asset-unified-cache-key-20260514` and `codex-image-texture-next-20260514` are currently idle on historical ahead commits that are patch-equivalent to integrated baseline work. Do not re-merge those branches; give them fresh baseline tasks only if asset/image becomes the active bottleneck again.
 

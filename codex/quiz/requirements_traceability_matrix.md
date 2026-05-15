@@ -8,6 +8,7 @@
 
 - current: HarfBuzz memory shaping, image upload payload layout evidence, Vulkan device-extension readiness, and asset payload bundle diffs integrated; Windows MinGW focused text/image/Vulkan/asset CTest batches passed.
 - current: after next-worker prompt handoff, Windows MinGW full CTest attempted 103 configured tests; 102 executed tests passed and only the known `quiz_vulkan_font_shaped_atlas_update_tests` host permission BAD_COMMAND remained.
+- `1d1bcb0`: text engine now records line/run evidence for shaped clusters, splitting HarfBuzz advance totals from deterministic fallback advance totals and preserving caret/run-box/backend/fallback diagnostics behind the text engine boundary.
 - `a9f712d`: text engine now exposes HarfBuzz-shaped glyph handoff diagnostics through fake text layout snapshots when materialized font bytes and backend capability are available, with fallback diagnostics preserved for unavailable paths.
 - `4dcc126`: text engine now links HarfBuzz-shaped glyph handoff records to atlas/cache/materialization readiness, preserving backend label/status, fallback, and blocker evidence without renderer/Vulkan coupling.
 - `2e58022`: asset system now evaluates ordered multi-payload request transactions, preserving per-request selection status, compact selected snapshots, and summary counters without copying payload bytes.

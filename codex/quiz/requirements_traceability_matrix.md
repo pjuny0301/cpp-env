@@ -6,6 +6,9 @@
 
 최근 baseline 통합 증거:
 
+- current: FreeType memory-face adapter and asset materialized byte handoff summaries integrated; Windows MinGW focused asset/text/architecture CTest passed 5/5.
+- `291d131`: text engine now creates FreeType memory faces from materialized font bytes through `FT_Init_FreeType`/`FT_New_Memory_Face` behind the text backend contract while preserving byte/readiness/backend fallback diagnostics.
+- `82ef968`: asset system now groups materialized font/image/sound/shader/deck byte payloads into ready/blocked handoff lists for future engine consumers without depending on engine folders.
 - current: native Vulkan physical-device queue-family selection readiness integrated; Windows MinGW focused Vulkan/renderer/architecture CTest passed 3/3.
 - `f677d35`: Vulkan backend now selects a candidate physical device and required queue-family capabilities in data-only form before future logical device creation, preserving selected device, queue family index/count, missing queue blockers, and inspected-candidate evidence.
 - current: typed materialized asset byte diffs and image binding payload evidence summaries integrated; Windows MinGW focused asset/image CTest passed 4/4 and architecture boundary CTest passed 1/1.

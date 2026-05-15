@@ -433,6 +433,67 @@ static_assert(requires(
         std::same_as<const asset_materialized_byte_payload_request_transaction_item*>;
 });
 
+static_assert(requires(
+    asset_materialized_byte_payload_request_transaction_count_delta delta,
+    const asset_materialized_byte_payload_request_transaction_count_delta& const_delta) {
+    { delta.request_delta } -> std::same_as<std::ptrdiff_t&>;
+    { delta.selected_delta } -> std::same_as<std::ptrdiff_t&>;
+    { delta.ready_delta } -> std::same_as<std::ptrdiff_t&>;
+    { delta.blocked_delta } -> std::same_as<std::ptrdiff_t&>;
+    { delta.missing_delta } -> std::same_as<std::ptrdiff_t&>;
+    { delta.wrong_type_delta } -> std::same_as<std::ptrdiff_t&>;
+    { delta.cache_key_mismatch_delta } -> std::same_as<std::ptrdiff_t&>;
+    { delta.integrity_failure_delta } -> std::same_as<std::ptrdiff_t&>;
+    { delta.duplicate_delta } -> std::same_as<std::ptrdiff_t&>;
+    { delta.failed_delta } -> std::same_as<std::ptrdiff_t&>;
+    { const_delta.empty() } -> std::same_as<bool>;
+});
+
+static_assert(std::is_enum_v<asset_materialized_byte_payload_request_transaction_delta_kind>);
+
+static_assert(requires(
+    asset_materialized_byte_payload_request_transaction_diff_entry entry,
+    const asset_materialized_byte_payload_request_transaction_diff_entry& const_entry) {
+    { entry.kind } -> std::same_as<asset_materialized_byte_payload_request_transaction_delta_kind&>;
+    { entry.id } -> std::same_as<std::string&>;
+    { entry.occurrence } -> std::same_as<std::size_t&>;
+    { entry.before_index } -> std::same_as<std::optional<std::size_t>&>;
+    { entry.after_index } -> std::same_as<std::optional<std::size_t>&>;
+    { entry.before_status } -> std::same_as<std::optional<asset_materialized_byte_payload_selection_status>&>;
+    { entry.after_status } -> std::same_as<std::optional<asset_materialized_byte_payload_selection_status>&>;
+    { entry.before_snapshot } -> std::same_as<std::optional<asset_materialized_byte_payload_snapshot>&>;
+    { entry.after_snapshot } -> std::same_as<std::optional<asset_materialized_byte_payload_snapshot>&>;
+    { entry.before_selected_snapshot } -> std::same_as<std::optional<asset_materialized_byte_payload_snapshot>&>;
+    { entry.after_selected_snapshot } -> std::same_as<std::optional<asset_materialized_byte_payload_snapshot>&>;
+    { entry.status_changed } -> std::same_as<bool&>;
+    { entry.selected_snapshot_changed } -> std::same_as<bool&>;
+    { entry.readiness_changed } -> std::same_as<bool&>;
+    { entry.integrity_failure_changed } -> std::same_as<bool&>;
+    { entry.cache_key_mismatch_changed } -> std::same_as<bool&>;
+    { const_entry.has_field_delta() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    asset_materialized_byte_payload_request_transaction_diff_summary summary,
+    const asset_materialized_byte_payload_request_transaction_diff_summary& const_summary,
+    std::string_view id) {
+    { summary.before_summary } -> std::same_as<asset_materialized_byte_payload_request_transaction_summary&>;
+    { summary.after_summary } -> std::same_as<asset_materialized_byte_payload_request_transaction_summary&>;
+    { summary.count_delta } -> std::same_as<asset_materialized_byte_payload_request_transaction_count_delta&>;
+    { summary.added } -> std::same_as<std::vector<asset_materialized_byte_payload_request_transaction_diff_entry>&>;
+    { summary.removed } -> std::same_as<std::vector<asset_materialized_byte_payload_request_transaction_diff_entry>&>;
+    { summary.changed } -> std::same_as<std::vector<asset_materialized_byte_payload_request_transaction_diff_entry>&>;
+    { summary.diagnostic } -> std::same_as<std::string&>;
+    { const_summary.empty() } -> std::same_as<bool>;
+    { const_summary.change_count() } -> std::same_as<std::size_t>;
+    { const_summary.find_added(id) } ->
+        std::same_as<const asset_materialized_byte_payload_request_transaction_diff_entry*>;
+    { const_summary.find_removed(id) } ->
+        std::same_as<const asset_materialized_byte_payload_request_transaction_diff_entry*>;
+    { const_summary.find_changed(id) } ->
+        std::same_as<const asset_materialized_byte_payload_request_transaction_diff_entry*>;
+});
+
 static_assert(std::has_virtual_destructor_v<asset_bytes_provider_interface>);
 static_assert(std::derived_from<fake_asset_bytes_provider, asset_bytes_provider_interface>);
 static_assert(std::derived_from<local_file_asset_bytes_provider, asset_bytes_provider_interface>);
@@ -473,6 +534,7 @@ static_assert(requires(
     const asset_materialized_byte_payload_selection_request& selection_request,
     const asset_materialized_byte_payload_filter& payload_filter,
     const std::vector<asset_materialized_byte_payload_selection_request>& selection_requests,
+    const asset_materialized_byte_payload_request_transaction& payload_transaction,
     asset_materialized_byte_payload_selection_status selection_status,
     const std::vector<asset_bytes_catalog_request>& requests,
     const asset_bytes_catalog_request& request) {
@@ -516,6 +578,8 @@ static_assert(requires(
         std::same_as<asset_materialized_byte_payload_filter_result>;
     { make_materialized_asset_byte_payload_request_transaction(payload_bundle, selection_requests) } ->
         std::same_as<asset_materialized_byte_payload_request_transaction>;
+    { diff_materialized_asset_byte_payload_request_transactions(payload_transaction, payload_transaction) } ->
+        std::same_as<asset_materialized_byte_payload_request_transaction_diff_summary>;
 });
 
 } // namespace

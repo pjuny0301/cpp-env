@@ -2032,6 +2032,219 @@ void test_materialized_asset_byte_payload_request_transaction_preserves_order_an
     require(transaction.find_request("not_requested") == nullptr, "payload transaction reports absent requests");
 }
 
+void test_materialized_asset_byte_payload_request_transaction_diff_tracks_status_and_count_deltas()
+{
+    using namespace quiz_vulkan::assets;
+
+    asset_materialized_byte_payload_bundle before_bundle;
+    before_bundle.images.ready.push_back(make_payload_bundle_entry(
+        "card_front",
+        asset_type::image,
+        "asset://cards/front.png",
+        "/assets/cards/front.png",
+        "image bytes",
+        "hash:image-old"));
+    before_bundle.shaders.blocked.push_back(make_payload_bundle_entry(
+        "rootless_shader",
+        asset_type::shader,
+        "asset://shaders/rootless.vert.spv",
+        "/assets/shaders/rootless.vert.spv",
+        "",
+        "hash:rootless",
+        asset_materialized_bytes_handoff_status::materialization_blocked));
+    before_bundle.decks.blocked.push_back(make_payload_bundle_entry(
+        "main_deck",
+        asset_type::deck,
+        "asset://decks/main.quiz",
+        "/assets/decks/main.quiz",
+        "deck bytes",
+        "hash:deck-bad",
+        asset_materialized_bytes_handoff_status::integrity_blocked));
+
+    asset_materialized_byte_payload_bundle after_bundle;
+    after_bundle.images.ready.push_back(make_payload_bundle_entry(
+        "card_front",
+        asset_type::image,
+        "asset://cards/front.png",
+        "/assets/cards/front.png",
+        "image bytes!",
+        "hash:image-new"));
+    after_bundle.shaders.ready.push_back(make_payload_bundle_entry(
+        "rootless_shader",
+        asset_type::shader,
+        "asset://shaders/rootless.vert.spv",
+        "/assets/shaders/rootless.vert.spv",
+        "shader bytes",
+        "hash:shader-ready"));
+    after_bundle.sounds.ready.push_back(make_payload_bundle_entry(
+        "answer_sound",
+        asset_type::sound,
+        "asset://sounds/correct.ogg",
+        "/assets/sounds/correct.ogg",
+        "sound bytes",
+        "hash:sound"));
+
+    const std::vector<asset_materialized_byte_payload_selection_request> before_requests{
+        asset_materialized_byte_payload_selection_request{
+            .id = "card_front",
+            .expected_type = asset_type::image,
+        },
+        asset_materialized_byte_payload_selection_request{
+            .id = "rootless_shader",
+            .expected_type = asset_type::shader,
+        },
+        asset_materialized_byte_payload_selection_request{
+            .id = "missing_image",
+            .expected_type = asset_type::image,
+        },
+        asset_materialized_byte_payload_selection_request{
+            .id = "card_front",
+            .expected_type = asset_type::image,
+            .expected_cache_key = asset_cache_key{"image|asset://cards/back.png"},
+        },
+        asset_materialized_byte_payload_selection_request{
+            .id = "main_deck",
+            .expected_type = asset_type::deck,
+        },
+    };
+    const std::vector<asset_materialized_byte_payload_selection_request> after_requests{
+        asset_materialized_byte_payload_selection_request{
+            .id = "card_front",
+            .expected_type = asset_type::image,
+        },
+        asset_materialized_byte_payload_selection_request{
+            .id = "rootless_shader",
+            .expected_type = asset_type::shader,
+        },
+        asset_materialized_byte_payload_selection_request{
+            .id = "answer_sound",
+            .expected_type = asset_type::sound,
+        },
+        asset_materialized_byte_payload_selection_request{
+            .id = "card_front",
+            .expected_type = asset_type::image,
+            .expected_cache_key = asset_cache_key{"image|asset://cards/front.png"},
+        },
+    };
+
+    const asset_materialized_byte_payload_request_transaction before =
+        make_materialized_asset_byte_payload_request_transaction(before_bundle, before_requests);
+    const asset_materialized_byte_payload_request_transaction after =
+        make_materialized_asset_byte_payload_request_transaction(after_bundle, after_requests);
+    const asset_materialized_byte_payload_request_transaction_diff_summary diff =
+        diff_materialized_asset_byte_payload_request_transactions(before, after);
+
+    require(!diff.empty(), "payload transaction diff reports request changes");
+    require(diff.change_count() == 6U, "payload transaction diff counts added removed and changed requests");
+    require(diff.added.size() == 1U, "payload transaction diff records added request ids");
+    require(diff.removed.size() == 2U, "payload transaction diff records removed request ids");
+    require(diff.changed.size() == 3U, "payload transaction diff records changed request statuses and snapshots");
+    require(
+        diff.diagnostic == "materialized byte payload request transaction diff computed",
+        "payload transaction diff diagnostic is stable");
+
+    require(diff.before_summary.request_count == 5U, "payload transaction diff preserves before summary");
+    require(diff.after_summary.request_count == 4U, "payload transaction diff preserves after summary");
+    require(diff.count_delta.request_delta == -1, "payload transaction diff tracks request-count delta");
+    require(diff.count_delta.selected_delta == 3, "payload transaction diff tracks selected-count delta");
+    require(diff.count_delta.ready_delta == 3, "payload transaction diff tracks ready-count delta");
+    require(diff.count_delta.blocked_delta == -1, "payload transaction diff tracks blocked-count delta");
+    require(diff.count_delta.missing_delta == -1, "payload transaction diff tracks missing-count delta");
+    require(
+        diff.count_delta.cache_key_mismatch_delta == -1,
+        "payload transaction diff tracks cache-key mismatch delta");
+    require(
+        diff.count_delta.integrity_failure_delta == -1,
+        "payload transaction diff tracks integrity failure delta");
+    require(diff.count_delta.duplicate_delta == 0, "payload transaction diff tracks stable duplicate count");
+    require(diff.count_delta.failed_delta == -4, "payload transaction diff tracks failed-count delta");
+    require(!diff.count_delta.empty(), "payload transaction diff count delta reports changes");
+
+    const asset_materialized_byte_payload_request_transaction_diff_entry* added =
+        diff.find_added("answer_sound");
+    require(added != nullptr, "payload transaction diff can find added requests");
+    require(
+        added->kind == asset_materialized_byte_payload_request_transaction_delta_kind::added_request,
+        "payload transaction diff marks added requests");
+    require(added->after_index.has_value() && *added->after_index == 2U, "added request keeps after index");
+    require(!added->before_index.has_value(), "added request has no before index");
+    require(added->after_status == asset_materialized_byte_payload_selection_status::selected,
+        "added request keeps after status");
+    require(added->after_selected_snapshot.has_value(), "added request keeps selected compact snapshot");
+    require(added->after_selected_snapshot->id == "answer_sound", "added request snapshot keeps id");
+
+    const asset_materialized_byte_payload_request_transaction_diff_entry* removed_missing =
+        diff.find_removed("missing_image");
+    require(removed_missing != nullptr, "payload transaction diff can find removed missing requests");
+    require(
+        removed_missing->kind == asset_materialized_byte_payload_request_transaction_delta_kind::removed_request,
+        "payload transaction diff marks removed requests");
+    require(
+        removed_missing->before_status == asset_materialized_byte_payload_selection_status::missing_id,
+        "removed missing request keeps before status");
+    require(removed_missing->before_index.has_value() && *removed_missing->before_index == 2U,
+        "removed request keeps before index");
+    require(!removed_missing->after_index.has_value(), "removed request has no after index");
+
+    const asset_materialized_byte_payload_request_transaction_diff_entry* removed_integrity =
+        diff.find_removed("main_deck");
+    require(removed_integrity != nullptr, "payload transaction diff can find removed integrity failures");
+    require(
+        removed_integrity->before_status == asset_materialized_byte_payload_selection_status::integrity_failure,
+        "removed integrity request keeps before status");
+    require(removed_integrity->before_snapshot.has_value(), "removed integrity request keeps compact snapshot");
+    require(!removed_integrity->before_selected_snapshot.has_value(), "removed failed request has no selected snapshot");
+
+    const asset_materialized_byte_payload_request_transaction_diff_entry* image = diff.find_changed("card_front");
+    require(image != nullptr, "payload transaction diff can find changed image requests");
+    require(image->occurrence == 0U, "payload transaction diff records first request occurrence");
+    require(!image->status_changed, "payload transaction diff leaves stable selected status unchanged");
+    require(image->selected_snapshot_changed, "payload transaction diff tracks selected snapshot changes");
+    require(!image->readiness_changed, "payload transaction diff leaves stable readiness unchanged");
+    require(image->before_selected_snapshot.has_value(), "changed request keeps before selected snapshot");
+    require(image->after_selected_snapshot.has_value(), "changed request keeps after selected snapshot");
+    require(
+        image->before_selected_snapshot->content_hash == "hash:image-old"
+            && image->after_selected_snapshot->content_hash == "hash:image-new",
+        "payload transaction diff keeps before and after selected hash evidence");
+
+    const asset_materialized_byte_payload_request_transaction_diff_entry* shader =
+        diff.find_changed("rootless_shader");
+    require(shader != nullptr, "payload transaction diff can find changed blocked requests");
+    require(shader->status_changed, "payload transaction diff tracks blocked-to-selected status changes");
+    require(shader->selected_snapshot_changed, "payload transaction diff tracks selected snapshot appearance");
+    require(shader->readiness_changed, "payload transaction diff tracks readiness changes");
+    require(
+        shader->before_status == asset_materialized_byte_payload_selection_status::blocked_payload
+            && shader->after_status == asset_materialized_byte_payload_selection_status::selected,
+        "payload transaction diff keeps before and after statuses");
+    require(shader->before_snapshot.has_value() && !shader->before_snapshot->ready,
+        "payload transaction diff keeps blocked readiness evidence");
+    require(shader->after_snapshot.has_value() && shader->after_snapshot->ready,
+        "payload transaction diff keeps ready evidence");
+
+    const asset_materialized_byte_payload_request_transaction_diff_entry* cache_mismatch = nullptr;
+    for (const asset_materialized_byte_payload_request_transaction_diff_entry& entry : diff.changed) {
+        if (entry.id == "card_front" && entry.occurrence == 1U) {
+            cache_mismatch = &entry;
+            break;
+        }
+    }
+    require(cache_mismatch != nullptr, "payload transaction diff can distinguish repeated request ids");
+    require(cache_mismatch->status_changed, "payload transaction diff tracks cache mismatch status changes");
+    require(
+        cache_mismatch->cache_key_mismatch_changed,
+        "payload transaction diff tracks cache-key mismatch status changes");
+    require(
+        cache_mismatch->before_status == asset_materialized_byte_payload_selection_status::cache_key_mismatch
+            && cache_mismatch->after_status == asset_materialized_byte_payload_selection_status::selected,
+        "payload transaction diff keeps cache mismatch before and after statuses");
+    require(
+        cache_mismatch->before_index.has_value() && *cache_mismatch->before_index == 3U
+            && cache_mismatch->after_index.has_value() && *cache_mismatch->after_index == 3U,
+        "payload transaction diff keeps occurrence indexes for repeated ids");
+}
+
 void test_materialized_asset_bytes_integrity_fails_before_provider_for_unmaterialized_sources()
 {
     using namespace quiz_vulkan::assets;
@@ -2148,6 +2361,7 @@ int main()
     test_materialized_asset_byte_payload_bundle_diff_tracks_snapshot_changes();
     test_materialized_asset_byte_payload_selection_filters_payloads_and_reports_diagnostics();
     test_materialized_asset_byte_payload_request_transaction_preserves_order_and_counts();
+    test_materialized_asset_byte_payload_request_transaction_diff_tracks_status_and_count_deltas();
     test_materialized_asset_bytes_integrity_fails_before_provider_for_unmaterialized_sources();
     test_materialized_asset_bytes_integrity_fails_after_provider_for_byte_count_mismatch();
     test_materialized_asset_bytes_integrity_fails_after_provider_for_metadata_mismatch();

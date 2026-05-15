@@ -755,6 +755,111 @@ struct asset_materialized_byte_payload_request_transaction {
     }
 };
 
+struct asset_materialized_byte_payload_request_transaction_count_delta {
+    std::ptrdiff_t request_delta = 0;
+    std::ptrdiff_t selected_delta = 0;
+    std::ptrdiff_t ready_delta = 0;
+    std::ptrdiff_t blocked_delta = 0;
+    std::ptrdiff_t missing_delta = 0;
+    std::ptrdiff_t wrong_type_delta = 0;
+    std::ptrdiff_t cache_key_mismatch_delta = 0;
+    std::ptrdiff_t integrity_failure_delta = 0;
+    std::ptrdiff_t duplicate_delta = 0;
+    std::ptrdiff_t failed_delta = 0;
+
+    [[nodiscard]] bool empty() const
+    {
+        return request_delta == 0 && selected_delta == 0 && ready_delta == 0 && blocked_delta == 0
+            && missing_delta == 0 && wrong_type_delta == 0 && cache_key_mismatch_delta == 0
+            && integrity_failure_delta == 0 && duplicate_delta == 0 && failed_delta == 0;
+    }
+};
+
+enum class asset_materialized_byte_payload_request_transaction_delta_kind {
+    added_request,
+    removed_request,
+    changed_request,
+};
+
+struct asset_materialized_byte_payload_request_transaction_diff_entry {
+    asset_materialized_byte_payload_request_transaction_delta_kind kind =
+        asset_materialized_byte_payload_request_transaction_delta_kind::changed_request;
+    std::string id;
+    std::size_t occurrence = 0U;
+    std::optional<std::size_t> before_index;
+    std::optional<std::size_t> after_index;
+    std::optional<asset_materialized_byte_payload_selection_status> before_status;
+    std::optional<asset_materialized_byte_payload_selection_status> after_status;
+    std::optional<asset_materialized_byte_payload_snapshot> before_snapshot;
+    std::optional<asset_materialized_byte_payload_snapshot> after_snapshot;
+    std::optional<asset_materialized_byte_payload_snapshot> before_selected_snapshot;
+    std::optional<asset_materialized_byte_payload_snapshot> after_selected_snapshot;
+    bool status_changed = false;
+    bool selected_snapshot_changed = false;
+    bool readiness_changed = false;
+    bool integrity_failure_changed = false;
+    bool cache_key_mismatch_changed = false;
+
+    [[nodiscard]] bool has_field_delta() const
+    {
+        return status_changed || selected_snapshot_changed || readiness_changed || integrity_failure_changed
+            || cache_key_mismatch_changed;
+    }
+};
+
+struct asset_materialized_byte_payload_request_transaction_diff_summary {
+    asset_materialized_byte_payload_request_transaction_summary before_summary;
+    asset_materialized_byte_payload_request_transaction_summary after_summary;
+    asset_materialized_byte_payload_request_transaction_count_delta count_delta;
+    std::vector<asset_materialized_byte_payload_request_transaction_diff_entry> added;
+    std::vector<asset_materialized_byte_payload_request_transaction_diff_entry> removed;
+    std::vector<asset_materialized_byte_payload_request_transaction_diff_entry> changed;
+    std::string diagnostic = "materialized byte payload request transaction diff computed";
+
+    [[nodiscard]] bool empty() const
+    {
+        return added.empty() && removed.empty() && changed.empty() && count_delta.empty();
+    }
+
+    [[nodiscard]] std::size_t change_count() const
+    {
+        return added.size() + removed.size() + changed.size();
+    }
+
+    [[nodiscard]] const asset_materialized_byte_payload_request_transaction_diff_entry* find_added(
+        std::string_view id) const
+    {
+        for (const asset_materialized_byte_payload_request_transaction_diff_entry& entry : added) {
+            if (entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const asset_materialized_byte_payload_request_transaction_diff_entry* find_removed(
+        std::string_view id) const
+    {
+        for (const asset_materialized_byte_payload_request_transaction_diff_entry& entry : removed) {
+            if (entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const asset_materialized_byte_payload_request_transaction_diff_entry* find_changed(
+        std::string_view id) const
+    {
+        for (const asset_materialized_byte_payload_request_transaction_diff_entry& entry : changed) {
+            if (entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+};
+
 namespace detail {
 
 inline bool asset_type_is_engine_facing(asset_type type)
@@ -1152,12 +1257,109 @@ inline void count_materialized_byte_payload_transaction_selection(
     }
 }
 
+inline std::ptrdiff_t materialized_byte_payload_count_delta(std::size_t before, std::size_t after)
+{
+    return static_cast<std::ptrdiff_t>(after) - static_cast<std::ptrdiff_t>(before);
+}
+
+inline asset_materialized_byte_payload_request_transaction_count_delta make_materialized_byte_payload_transaction_count_delta(
+    const asset_materialized_byte_payload_request_transaction_summary& before,
+    const asset_materialized_byte_payload_request_transaction_summary& after)
+{
+    return asset_materialized_byte_payload_request_transaction_count_delta{
+        .request_delta = materialized_byte_payload_count_delta(before.request_count, after.request_count),
+        .selected_delta = materialized_byte_payload_count_delta(before.selected_count, after.selected_count),
+        .ready_delta = materialized_byte_payload_count_delta(before.ready_count, after.ready_count),
+        .blocked_delta = materialized_byte_payload_count_delta(before.blocked_count, after.blocked_count),
+        .missing_delta = materialized_byte_payload_count_delta(before.missing_count, after.missing_count),
+        .wrong_type_delta = materialized_byte_payload_count_delta(before.wrong_type_count, after.wrong_type_count),
+        .cache_key_mismatch_delta =
+            materialized_byte_payload_count_delta(before.cache_key_mismatch_count, after.cache_key_mismatch_count),
+        .integrity_failure_delta =
+            materialized_byte_payload_count_delta(before.integrity_failure_count, after.integrity_failure_count),
+        .duplicate_delta = materialized_byte_payload_count_delta(before.duplicate_count, after.duplicate_count),
+        .failed_delta = materialized_byte_payload_count_delta(before.failed_count(), after.failed_count()),
+    };
+}
+
 inline bool materialized_byte_payload_snapshot_status_matches(
     const asset_materialized_byte_payload_snapshot& before,
     const asset_materialized_byte_payload_snapshot& after)
 {
     return before.status == after.status && before.materialized_status == after.materialized_status
         && before.load_status == after.load_status;
+}
+
+inline bool materialized_byte_payload_snapshot_matches(
+    const asset_materialized_byte_payload_snapshot& before,
+    const asset_materialized_byte_payload_snapshot& after)
+{
+    return before.id == after.id && before.type == after.type && before.cache_key == after.cache_key
+        && before.source_uri == after.source_uri && before.materialized_path == after.materialized_path
+        && before.byte_count == after.byte_count && before.payload_byte_count == after.payload_byte_count
+        && before.content_hash == after.content_hash && before.status == after.status
+        && before.materialized_status == after.materialized_status && before.load_status == after.load_status
+        && before.ready == after.ready;
+}
+
+inline bool materialized_byte_payload_optional_snapshot_matches(
+    const std::optional<asset_materialized_byte_payload_snapshot>& before,
+    const std::optional<asset_materialized_byte_payload_snapshot>& after)
+{
+    if (before.has_value() != after.has_value()) {
+        return false;
+    }
+    if (!before.has_value()) {
+        return true;
+    }
+    return materialized_byte_payload_snapshot_matches(*before, *after);
+}
+
+inline std::optional<bool> materialized_byte_payload_transaction_item_readiness(
+    const asset_materialized_byte_payload_request_transaction_item& item)
+{
+    if (!item.selection.snapshot.has_value()) {
+        return std::nullopt;
+    }
+    return item.selection.snapshot->ready;
+}
+
+inline bool materialized_byte_payload_transaction_item_status_is(
+    const asset_materialized_byte_payload_request_transaction_item& item,
+    asset_materialized_byte_payload_selection_status status)
+{
+    return item.selection.status == status;
+}
+
+inline std::size_t materialized_byte_payload_request_occurrence_at(
+    const asset_materialized_byte_payload_request_transaction& transaction,
+    std::size_t index)
+{
+    std::size_t occurrence = 0U;
+    for (std::size_t current = 0U; current < index && current < transaction.items.size(); ++current) {
+        if (transaction.items[current].request.id == transaction.items[index].request.id) {
+            ++occurrence;
+        }
+    }
+    return occurrence;
+}
+
+inline std::optional<std::size_t> find_materialized_byte_payload_request_index_by_occurrence(
+    const asset_materialized_byte_payload_request_transaction& transaction,
+    std::string_view id,
+    std::size_t occurrence)
+{
+    std::size_t seen = 0U;
+    for (std::size_t index = 0U; index < transaction.items.size(); ++index) {
+        if (transaction.items[index].request.id != id) {
+            continue;
+        }
+        if (seen == occurrence) {
+            return index;
+        }
+        ++seen;
+    }
+    return std::nullopt;
 }
 
 inline asset_materialized_byte_payload_diff_entry make_added_materialized_byte_payload_diff_entry(
@@ -1201,6 +1403,80 @@ inline asset_materialized_byte_payload_diff_entry make_changed_materialized_byte
         .content_hash_changed = before.content_hash != after.content_hash,
         .status_changed = !materialized_byte_payload_snapshot_status_matches(before, after),
         .readiness_changed = before.ready != after.ready,
+    };
+}
+
+inline asset_materialized_byte_payload_request_transaction_diff_entry make_added_materialized_byte_payload_transaction_diff_entry(
+    const asset_materialized_byte_payload_request_transaction_item& after,
+    std::size_t after_index,
+    std::size_t occurrence)
+{
+    return asset_materialized_byte_payload_request_transaction_diff_entry{
+        .kind = asset_materialized_byte_payload_request_transaction_delta_kind::added_request,
+        .id = after.request.id,
+        .occurrence = occurrence,
+        .after_index = after_index,
+        .after_status = after.selection.status,
+        .after_snapshot = after.selection.snapshot,
+        .after_selected_snapshot = after.selected_snapshot,
+    };
+}
+
+inline asset_materialized_byte_payload_request_transaction_diff_entry make_removed_materialized_byte_payload_transaction_diff_entry(
+    const asset_materialized_byte_payload_request_transaction_item& before,
+    std::size_t before_index,
+    std::size_t occurrence)
+{
+    return asset_materialized_byte_payload_request_transaction_diff_entry{
+        .kind = asset_materialized_byte_payload_request_transaction_delta_kind::removed_request,
+        .id = before.request.id,
+        .occurrence = occurrence,
+        .before_index = before_index,
+        .before_status = before.selection.status,
+        .before_snapshot = before.selection.snapshot,
+        .before_selected_snapshot = before.selected_snapshot,
+    };
+}
+
+inline asset_materialized_byte_payload_request_transaction_diff_entry make_changed_materialized_byte_payload_transaction_diff_entry(
+    const asset_materialized_byte_payload_request_transaction_item& before,
+    std::size_t before_index,
+    const asset_materialized_byte_payload_request_transaction_item& after,
+    std::size_t after_index,
+    std::size_t occurrence)
+{
+    const std::optional<bool> before_ready = materialized_byte_payload_transaction_item_readiness(before);
+    const std::optional<bool> after_ready = materialized_byte_payload_transaction_item_readiness(after);
+    return asset_materialized_byte_payload_request_transaction_diff_entry{
+        .kind = asset_materialized_byte_payload_request_transaction_delta_kind::changed_request,
+        .id = after.request.id,
+        .occurrence = occurrence,
+        .before_index = before_index,
+        .after_index = after_index,
+        .before_status = before.selection.status,
+        .after_status = after.selection.status,
+        .before_snapshot = before.selection.snapshot,
+        .after_snapshot = after.selection.snapshot,
+        .before_selected_snapshot = before.selected_snapshot,
+        .after_selected_snapshot = after.selected_snapshot,
+        .status_changed = before.selection.status != after.selection.status,
+        .selected_snapshot_changed =
+            !materialized_byte_payload_optional_snapshot_matches(before.selected_snapshot, after.selected_snapshot),
+        .readiness_changed = before_ready != after_ready,
+        .integrity_failure_changed =
+            materialized_byte_payload_transaction_item_status_is(
+                before,
+                asset_materialized_byte_payload_selection_status::integrity_failure)
+            != materialized_byte_payload_transaction_item_status_is(
+                after,
+                asset_materialized_byte_payload_selection_status::integrity_failure),
+        .cache_key_mismatch_changed =
+            materialized_byte_payload_transaction_item_status_is(
+                before,
+                asset_materialized_byte_payload_selection_status::cache_key_mismatch)
+            != materialized_byte_payload_transaction_item_status_is(
+                after,
+                asset_materialized_byte_payload_selection_status::cache_key_mismatch),
     };
 }
 
@@ -1452,6 +1728,62 @@ inline asset_materialized_byte_payload_request_transaction make_materialized_ass
     }
 
     return transaction;
+}
+
+inline asset_materialized_byte_payload_request_transaction_diff_summary diff_materialized_asset_byte_payload_request_transactions(
+    const asset_materialized_byte_payload_request_transaction& before,
+    const asset_materialized_byte_payload_request_transaction& after)
+{
+    asset_materialized_byte_payload_request_transaction_diff_summary diff{
+        .before_summary = before.summary,
+        .after_summary = after.summary,
+        .count_delta =
+            detail::make_materialized_byte_payload_transaction_count_delta(before.summary, after.summary),
+    };
+
+    for (std::size_t before_index = 0U; before_index < before.items.size(); ++before_index) {
+        const asset_materialized_byte_payload_request_transaction_item& before_item = before.items[before_index];
+        const std::size_t occurrence = detail::materialized_byte_payload_request_occurrence_at(before, before_index);
+        const std::optional<std::size_t> after_index =
+            detail::find_materialized_byte_payload_request_index_by_occurrence(after, before_item.request.id, occurrence);
+        if (!after_index.has_value()) {
+            diff.removed.push_back(detail::make_removed_materialized_byte_payload_transaction_diff_entry(
+                before_item,
+                before_index,
+                occurrence));
+            continue;
+        }
+
+        const asset_materialized_byte_payload_request_transaction_item& after_item = after.items[*after_index];
+        asset_materialized_byte_payload_request_transaction_diff_entry changed =
+            detail::make_changed_materialized_byte_payload_transaction_diff_entry(
+                before_item,
+                before_index,
+                after_item,
+                *after_index,
+                occurrence);
+        if (changed.has_field_delta()) {
+            diff.changed.push_back(std::move(changed));
+        }
+    }
+
+    for (std::size_t after_index = 0U; after_index < after.items.size(); ++after_index) {
+        const asset_materialized_byte_payload_request_transaction_item& after_item = after.items[after_index];
+        const std::size_t occurrence = detail::materialized_byte_payload_request_occurrence_at(after, after_index);
+        if (detail::find_materialized_byte_payload_request_index_by_occurrence(
+                before,
+                after_item.request.id,
+                occurrence)
+                .has_value()) {
+            continue;
+        }
+        diff.added.push_back(detail::make_added_materialized_byte_payload_transaction_diff_entry(
+            after_item,
+            after_index,
+            occurrence));
+    }
+
+    return diff;
 }
 
 } // namespace quiz_vulkan::assets

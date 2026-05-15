@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: native Vulkan queue-family dispatch/query readiness integrated; Windows MinGW focused Vulkan/renderer/architecture CTest passed 3/3.
+- `b52990a`: Vulkan backend now resolves `vkGetPhysicalDeviceQueueFamilyProperties`, queries per-device queue family properties, and passes the query result into physical-device selection instead of letting the selector own fake queue data.
 - current: standard image pipeline now prefers the external `stb_image` adapter for standard PNG/BMP/PPM when available; Windows MinGW focused image/architecture CTest passed 4/4.
 - `573ea36`: image texture pipeline routes PNG/BMP/PPM through `stb_image` first when dependency diagnostics are ready, while preserving internal decoders as fallback diagnostics and keeping renderer ownership out of decode selection.
 - current: FreeType memory-face adapter and asset materialized byte handoff summaries integrated; Windows MinGW focused asset/text/architecture CTest passed 5/5.

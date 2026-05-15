@@ -1881,6 +1881,157 @@ void test_materialized_asset_byte_payload_selection_filters_payloads_and_reports
     require(id_match.match_count() == 2U, "payload filter can intentionally return duplicate ids");
 }
 
+void test_materialized_asset_byte_payload_request_transaction_preserves_order_and_counts()
+{
+    using namespace quiz_vulkan::assets;
+
+    asset_materialized_byte_payload_bundle bundle;
+    bundle.images.ready.push_back(make_payload_bundle_entry(
+        "card_front",
+        asset_type::image,
+        "asset://cards/front.png",
+        "/assets/cards/front.png",
+        "image bytes",
+        ""));
+    bundle.shaders.blocked.push_back(make_payload_bundle_entry(
+        "rootless_shader",
+        asset_type::shader,
+        "asset://shaders/rootless.vert.spv",
+        "/assets/shaders/rootless.vert.spv",
+        "",
+        "hash:rootless",
+        asset_materialized_bytes_handoff_status::materialization_blocked));
+    bundle.decks.blocked.push_back(make_payload_bundle_entry(
+        "main_deck",
+        asset_type::deck,
+        "asset://decks/main.quiz",
+        "/assets/decks/main.quiz",
+        "deck bytes",
+        "hash:deck-bad",
+        asset_materialized_bytes_handoff_status::integrity_blocked));
+    bundle.fonts.ready.push_back(make_payload_bundle_entry(
+        "duplicate_payload",
+        asset_type::font,
+        "asset://fonts/body.ttf",
+        "/assets/fonts/body.ttf",
+        "font bytes",
+        ""));
+    bundle.sounds.ready.push_back(make_payload_bundle_entry(
+        "duplicate_payload",
+        asset_type::sound,
+        "asset://sounds/correct.ogg",
+        "/assets/sounds/correct.ogg",
+        "sound bytes",
+        ""));
+
+    const std::vector<asset_materialized_byte_payload_selection_request> requests{
+        asset_materialized_byte_payload_selection_request{
+            .id = "card_front",
+            .expected_type = asset_type::image,
+            .expected_cache_key = asset_cache_key{"image|asset://cards/front.png"},
+        },
+        asset_materialized_byte_payload_selection_request{
+            .id = "rootless_shader",
+            .expected_type = asset_type::shader,
+        },
+        asset_materialized_byte_payload_selection_request{
+            .id = "missing_image",
+            .expected_type = asset_type::image,
+        },
+        asset_materialized_byte_payload_selection_request{
+            .id = "card_front",
+            .expected_type = asset_type::sound,
+        },
+        asset_materialized_byte_payload_selection_request{
+            .id = "card_front",
+            .expected_type = asset_type::image,
+            .expected_cache_key = asset_cache_key{"image|asset://cards/back.png"},
+        },
+        asset_materialized_byte_payload_selection_request{
+            .id = "main_deck",
+            .expected_type = asset_type::deck,
+        },
+        asset_materialized_byte_payload_selection_request{
+            .id = "duplicate_payload",
+        },
+    };
+
+    const asset_materialized_byte_payload_request_transaction transaction =
+        make_materialized_asset_byte_payload_request_transaction(bundle, requests);
+
+    require(!transaction.ok(), "payload request transaction reports failed requests");
+    require(transaction.request_count() == requests.size(), "payload request transaction preserves request count");
+    require(transaction.items.size() == requests.size(), "payload request transaction creates one item per request");
+    require(transaction.summary.request_count == requests.size(), "payload request transaction summary counts requests");
+    require(transaction.summary.selected_count == 1U, "payload request transaction counts selected payloads");
+    require(transaction.summary.ready_count == 1U, "payload request transaction counts ready selected payloads");
+    require(transaction.summary.blocked_count == 1U, "payload request transaction counts blocked selections");
+    require(transaction.summary.missing_count == 1U, "payload request transaction counts missing ids");
+    require(transaction.summary.wrong_type_count == 1U, "payload request transaction counts wrong types");
+    require(
+        transaction.summary.cache_key_mismatch_count == 1U,
+        "payload request transaction counts cache key mismatches");
+    require(
+        transaction.summary.integrity_failure_count == 1U,
+        "payload request transaction counts integrity failures");
+    require(transaction.summary.duplicate_count == 1U, "payload request transaction counts duplicate ids");
+    require(transaction.summary.failed_count() == 6U, "payload request transaction totals failed requests");
+    require(!transaction.summary.ok(), "payload request transaction summary reports failure");
+
+    for (std::size_t index = 0U; index < requests.size(); ++index) {
+        const asset_materialized_byte_payload_request_transaction_item* item = transaction.item_at(index);
+        require(item != nullptr, "payload request transaction can access items by index");
+        require(item->request_index == index, "payload request transaction records input order");
+        require(item->request.id == requests[index].id, "payload request transaction preserves request id order");
+    }
+    require(transaction.item_at(requests.size()) == nullptr, "payload request transaction rejects out-of-range access");
+
+    const asset_materialized_byte_payload_request_transaction_item& selected = transaction.items[0];
+    require(selected.selected(), "payload request transaction item exposes selected status");
+    require(
+        selected.selection.status == asset_materialized_byte_payload_selection_status::selected,
+        "payload request transaction keeps selected result");
+    require(selected.selection.payload == &bundle.images.ready[0], "payload transaction keeps payload pointer");
+    require(selected.selection.snapshot.has_value(), "payload transaction keeps selection snapshot");
+    require(selected.selected_snapshot.has_value(), "payload transaction exposes selected compact snapshot");
+    require(selected.selected_snapshot->id == "card_front", "payload transaction selected snapshot keeps id");
+    require(
+        selected.selected_snapshot->payload_byte_count == bundle.images.ready[0].bytes.size(),
+        "payload transaction selected snapshot keeps byte count without byte vector copy");
+
+    const asset_materialized_byte_payload_request_transaction_item& blocked = transaction.items[1];
+    require(
+        blocked.selection.status == asset_materialized_byte_payload_selection_status::blocked_payload,
+        "payload transaction keeps blocked result status");
+    require(blocked.selection.snapshot.has_value(), "payload transaction keeps blocked snapshot evidence");
+    require(!blocked.selection.snapshot->ready, "payload transaction blocked snapshot records readiness");
+    require(!blocked.selected_snapshot.has_value(), "payload transaction only stores selected snapshots for successes");
+
+    require(
+        transaction.items[2].selection.status == asset_materialized_byte_payload_selection_status::missing_id,
+        "payload transaction preserves missing-id result order");
+    require(
+        transaction.items[3].selection.status == asset_materialized_byte_payload_selection_status::wrong_type,
+        "payload transaction preserves wrong-type result order");
+    require(
+        transaction.items[4].selection.status
+            == asset_materialized_byte_payload_selection_status::cache_key_mismatch,
+        "payload transaction preserves cache-key mismatch result order");
+    require(
+        transaction.items[5].selection.status
+            == asset_materialized_byte_payload_selection_status::integrity_failure,
+        "payload transaction preserves integrity failure result order");
+    require(
+        transaction.items[6].selection.status == asset_materialized_byte_payload_selection_status::duplicate_id,
+        "payload transaction preserves duplicate-id result order");
+
+    const asset_materialized_byte_payload_request_transaction_item* first_card =
+        transaction.find_request("card_front");
+    require(first_card == &transaction.items[0], "payload transaction finds the first request for an id");
+    require(transaction.find_request("missing_image") == &transaction.items[2], "payload transaction finds failed requests");
+    require(transaction.find_request("not_requested") == nullptr, "payload transaction reports absent requests");
+}
+
 void test_materialized_asset_bytes_integrity_fails_before_provider_for_unmaterialized_sources()
 {
     using namespace quiz_vulkan::assets;
@@ -1996,6 +2147,7 @@ int main()
     test_materialized_asset_byte_payload_bundle_groups_loaded_bytes_by_type();
     test_materialized_asset_byte_payload_bundle_diff_tracks_snapshot_changes();
     test_materialized_asset_byte_payload_selection_filters_payloads_and_reports_diagnostics();
+    test_materialized_asset_byte_payload_request_transaction_preserves_order_and_counts();
     test_materialized_asset_bytes_integrity_fails_before_provider_for_unmaterialized_sources();
     test_materialized_asset_bytes_integrity_fails_after_provider_for_byte_count_mismatch();
     test_materialized_asset_bytes_integrity_fails_after_provider_for_metadata_mismatch();

@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- `348dfb0`: Vulkan backend now records render-pass scope command recording readiness from selected framebuffer target evidence, including command-buffer blockers and begin/end render-pass fake/native dispatch records without drawing UI/domain semantics into the backend.
+- current: after `348dfb0`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`; focused architecture/renderer/Vulkan CTest passed 5/5.
 - `39a3692`: Vulkan backend now carries framebuffer target readiness after swapchain image-view targets, with create/destroy dispatch, per-image framebuffer lifecycle records, render-pass/image-view/extent blockers, and fake/native paths kept inside the Vulkan backend boundary.
 - current: after `39a3692`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`; focused architecture/renderer/Vulkan CTest passed 7/7.
 - current: architecture boundary tests now scan private `.inl` source fragments, so source-only worker splits remain subject to the same dependency-direction guard as `.h/.hpp/.cpp` files.

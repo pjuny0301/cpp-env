@@ -1,10 +1,17 @@
+#include "render/text/font_backend_adapter.h"
 #include "render/text/font_shaped_atlas_update.h"
 #include "render/text/text_frame_draw_plan.h"
 #include "render/text/text_frame_upload_handoff.h"
 
 #include <cassert>
+#include <cstdlib>
 #include <cstddef>
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -19,6 +26,58 @@ void require(bool condition, const char* message)
     assert((condition) && message);
 }
 
+std::filesystem::path quiz_vulkan_app_root_from_this_test()
+{
+    const std::filesystem::path test_path = std::filesystem::path(__FILE__);
+    return test_path.parent_path().parent_path().parent_path().parent_path();
+}
+
+std::filesystem::path desktop_external_root()
+{
+    if (const char* external_root = std::getenv("QUIZ_VULKAN_DESKTOP_EXTERNAL_DIR");
+        external_root != nullptr && *external_root != '\0') {
+        return std::filesystem::path{external_root};
+    }
+
+    const std::filesystem::path app_root = quiz_vulkan_app_root_from_this_test();
+    const std::filesystem::path repo_root =
+        app_root.parent_path().parent_path().parent_path();
+    return repo_root / "build" / "external" / "lib" / "cpp" / "desktop";
+}
+
+std::vector<std::filesystem::path> freetype_real_font_fixture_candidates()
+{
+    const std::filesystem::path external_root = desktop_external_root();
+    return {
+        external_root / "harfbuzz-14.2.0" / "perf" / "fonts" / "Roboto-Regular.ttf",
+        external_root / "harfbuzz-14.2.0" / "test" / "api" / "fonts" / "Mplus1p-Regular.ttf",
+    };
+}
+
+std::filesystem::path first_available_freetype_real_font_fixture()
+{
+    for (const std::filesystem::path& candidate : freetype_real_font_fixture_candidates()) {
+        if (std::filesystem::exists(candidate)) {
+            return candidate;
+        }
+    }
+    return {};
+}
+
+std::vector<std::byte> read_binary_fixture_bytes(const std::filesystem::path& path)
+{
+    std::ifstream input(path, std::ios::binary);
+    require(input.good(), "real font fixture opens for binary read");
+
+    std::vector<std::byte> bytes;
+    for (std::istreambuf_iterator<char> iter{input};
+         iter != std::istreambuf_iterator<char>{};
+         ++iter) {
+        bytes.push_back(static_cast<std::byte>(static_cast<unsigned char>(*iter)));
+    }
+    return bytes;
+}
+
 quiz_vulkan::render::glyph_atlas_key key_for_a()
 {
     return quiz_vulkan::render::glyph_atlas_key{
@@ -26,6 +85,53 @@ quiz_vulkan::render::glyph_atlas_key key_for_a()
         .glyph_id = U'A',
         .pixel_size = 20,
     };
+}
+
+quiz_vulkan::render::font_face_descriptor freetype_fixture_face(
+    const std::filesystem::path& font_path)
+{
+    return quiz_vulkan::render::font_face_descriptor{
+        .id = 77,
+        .family = "FreeType Fixture Sans",
+        .source_uri = font_path.generic_string(),
+        .version = "external-fixture",
+        .license = "external-fixture",
+        .coverage = {
+            quiz_vulkan::render::font_codepoint_range{
+                .first = 0x0041U,
+                .last = 0x005aU,
+            },
+        },
+        .weight = 400,
+    };
+}
+
+quiz_vulkan::render::render_text_font_backend_capability_snapshot freetype_raster_capability()
+{
+    using namespace quiz_vulkan::render;
+
+    return deterministic_fake_font_backend_capability_probe({
+        render_text_font_backend_component{
+            .library = render_text_font_backend_library::freetype,
+            .name = "FreeType",
+            .available = true,
+            .version = render_text_font_backend_version{.major = 2, .minor = 14, .patch = 3},
+            .features = {
+                render_text_font_backend_feature::font_file_loading,
+                render_text_font_backend_feature::unicode_cmap,
+                render_text_font_backend_feature::glyph_id_mapping,
+                render_text_font_backend_feature::glyph_rasterization,
+            },
+            .diagnostic = "FreeType raster fixture capability is available",
+        },
+    }).probe(render_text_font_backend_capability_probe_request{
+        .required_libraries = {
+            render_text_font_backend_library::freetype,
+        },
+        .required_features = {
+            render_text_font_backend_feature::glyph_rasterization,
+        },
+    });
 }
 
 quiz_vulkan::render::render_text_shaped_atlas_update_trace_request upload_ready_request()
@@ -667,6 +773,205 @@ void test_batch_plan_reports_fallback_real_backend_and_skipped_materializations(
     require(plan.atlas_update_requests[0].used_deterministic_fallback, "first request records fallback backend");
     require(plan.atlas_update_requests[1].used_real_backend, "second request records real backend metadata");
     require(plan.atlas_update_requests[2].skipped, "third request records skipped materialization");
+}
+
+void test_freetype_raster_payload_materializes_upload_handoff_when_fixture_is_available()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::filesystem::path font_path = first_available_freetype_real_font_fixture();
+    if (font_path.empty()) {
+        return;
+    }
+
+    const std::vector<std::byte> font_bytes = read_binary_fixture_bytes(font_path);
+    const font_face_descriptor face = freetype_fixture_face(font_path);
+    const glyph_atlas_key requested_key = font_rasterizer_atlas_key_for(face, U'A', 32U);
+    const render_text_font_rasterize_request raster_request =
+        make_font_rasterize_request(
+            face,
+            requested_key,
+            U'A',
+            std::span<const std::byte>{font_bytes},
+            font_path.generic_string());
+    const function_table_font_backend_adapter adapter(render_text_font_backend_adapter_functions{
+        .rasterize = freetype_real_font_backend_rasterize,
+        .label = "FreeType memory-face glyph raster adapter",
+    });
+    const render_text_real_font_raster_adapter_result rasterized = adapter.rasterize(
+        render_text_real_font_raster_adapter_request{
+            .capability = freetype_raster_capability(),
+            .library = render_text_font_backend_library::freetype,
+            .rasterize = raster_request,
+        });
+
+    if (!render_text_freetype_memory_face_adapter_available()) {
+        require(
+            rasterized.status == render_text_font_backend_adapter_status::backend_unavailable,
+            "FreeType atlas handoff fixture reports unavailable backend without compiled FreeType");
+        return;
+    }
+
+    require(rasterized.ok(), "FreeType raster callback produces raster evidence for atlas handoff");
+    require(
+        rasterized.rasterized.key.glyph_id == rasterized.rasterized.glyph_id,
+        "FreeType raster evidence keys atlas payloads by resolved glyph index");
+
+    const render_text_font_atlas_glyph_payload payload =
+        make_font_rasterizer_atlas_payload(rasterized.rasterized);
+    require(payload.upload_ready, "FreeType raster payload is upload-ready before atlas placement");
+
+    glyph_atlas_cache atlas(glyph_atlas_page_config{.width = 128, .height = 128, .padding = 1});
+    const std::optional<glyph_atlas_slot> slot =
+        atlas.cache_glyph(rasterized.rasterized.key, payload.width, payload.height);
+    require(slot.has_value(), "FreeType raster payload receives atlas placement");
+
+    const std::vector<render_text_atlas_update> updates = atlas.consume_dirty_page_updates();
+    require(updates.size() == 1U, "FreeType raster payload produces one dirty atlas update");
+
+    const render_text_glyph_atlas_materialization_snapshot materialization =
+        make_render_text_glyph_atlas_materialization_from_raster_result(
+            render_text_glyph_atlas_materialization_from_raster_request{
+                .cluster_index = 0,
+                .run_index = 0,
+                .cluster_byte_offset = 0,
+                .cluster_byte_count = 1,
+                .shaped_glyph_ids = {rasterized.rasterized.glyph_id},
+                .glyph_id_from_selection = true,
+                .layout_bounds = render_rect{
+                    10.0f,
+                    20.0f,
+                    static_cast<float>(payload.width),
+                    static_cast<float>(payload.height),
+                },
+                .has_layout_bounds = true,
+                .shaping_font_backend_library = render_text_font_backend_library::harfbuzz,
+                .shaping_font_backend_label = "HarfBuzz",
+                .shaping_font_backend_capability_status =
+                    render_text_font_backend_capability_status::available,
+                .raster_font_backend_library = render_text_font_backend_library::freetype,
+                .raster_font_backend_label = "FreeType",
+                .raster_font_backend_capability_status =
+                    render_text_font_backend_capability_status::available,
+                .rasterized = rasterized.rasterized,
+                .has_atlas_placement = true,
+                .page = slot->page,
+                .atlas_bounds = slot->atlas_bounds,
+                .has_atlas_update = true,
+                .atlas_update = updates.front(),
+            });
+
+    require(
+        materialization.status == render_text_glyph_atlas_materialization_status::materialized_upload_ready,
+        "FreeType raster evidence becomes upload-ready atlas materialization");
+    require(materialization.materialized, "FreeType atlas materialization is marked materialized");
+    require(materialization.queued, "FreeType atlas materialization queues an update");
+    require(materialization.raster_payload_matches_cache_key, "FreeType payload matches resolved atlas cache key");
+    require(materialization.payload_alpha_bytes == payload.alpha.size(), "materialization records alpha bytes");
+    require(materialization.payload_rgba_bytes == payload.rgba.size(), "materialization records RGBA bytes");
+    require(
+        materialization.atlas_update_rgba_bytes == updates.front().rgba.size(),
+        "materialization records atlas update bytes");
+    require(
+        render_text_glyph_atlas_materialization_uses_real_backend(materialization),
+        "materialization records real FreeType backend use");
+
+    const render_text_request_batch_plan_snapshot plan =
+        plan_render_text_request_batch({
+            make_render_text_request_batch_item(
+                frame_snapshot_text_request(),
+                {materialization},
+                "freetype-atlas-handoff",
+                "node-freetype"),
+        });
+    require(plan.policy.real_backend_materialization_count == 1U, "batch plan counts FreeType materialization");
+    require(plan.policy.unique_atlas_materialization_count == 1U, "batch plan sees one unique FreeType atlas work item");
+    require(plan.atlas_update_requests.front().used_real_backend, "batch atlas request keeps FreeType backend evidence");
+
+    const render_text_atlas_upload_request_bridge_snapshot bridge =
+        bridge_render_text_atlas_upload_requests(plan);
+    require(bridge.has_upload_requests(), "FreeType materialization produces upload bridge work");
+    require(bridge.policy.upload_request_count == 1U, "upload bridge counts one FreeType upload request");
+    require(
+        bridge.policy.total_upload_rgba_bytes == materialization.atlas_update_rgba_bytes,
+        "upload bridge preserves FreeType atlas update byte evidence");
+    require(
+        bridge.requests.front().status == render_text_atlas_upload_request_status::upload_ready,
+        "upload bridge marks FreeType atlas update ready for handoff");
+}
+
+void test_freetype_raster_payload_handoff_reports_missing_byte_fallback()
+{
+    using namespace quiz_vulkan::render;
+
+    const font_face_descriptor face{
+        .id = 88,
+        .family = "Missing FreeType Sans",
+        .source_uri = "fonts/missing-freetype.ttf",
+        .coverage = {
+            font_codepoint_range{.first = U'A', .last = U'A'},
+        },
+    };
+    const render_text_font_rasterize_request raster_request =
+        make_font_rasterize_request(
+            face,
+            U'A',
+            24U,
+            std::span<const std::byte>{},
+            "missing-freetype.ttf");
+    const render_text_real_font_raster_adapter_result rasterized =
+        freetype_real_font_backend_rasterize(render_text_real_font_raster_adapter_request{
+            .capability = freetype_raster_capability(),
+            .library = render_text_font_backend_library::freetype,
+            .rasterize = raster_request,
+        });
+
+    require(!rasterized.ok(), "missing bytes do not produce FreeType atlas upload evidence");
+    require(
+        rasterized.rasterized.status == render_text_font_rasterizer_status::missing_font_bytes,
+        "missing bytes preserve rasterizer missing-byte status");
+
+    const render_text_glyph_atlas_materialization_snapshot materialization =
+        make_render_text_glyph_atlas_materialization_from_raster_result(
+            render_text_glyph_atlas_materialization_from_raster_request{
+                .cluster_index = 0,
+                .run_index = 0,
+                .cluster_byte_offset = 0,
+                .cluster_byte_count = 1,
+                .shaped_glyph_ids = {U'A'},
+                .raster_font_backend_library = render_text_font_backend_library::freetype,
+                .raster_font_backend_label = "FreeType",
+                .raster_font_backend_capability_status =
+                    render_text_font_backend_capability_status::available,
+                .rasterized = rasterized.rasterized,
+            });
+
+    require(
+        materialization.status == render_text_glyph_atlas_materialization_status::skipped_raster_payload,
+        "missing-byte FreeType raster evidence becomes skipped raster payload materialization");
+    require(!materialization.materialized, "missing-byte materialization is not upload-ready");
+    require(materialization.payload_alpha_bytes == 0U, "missing-byte materialization has no alpha payload");
+    require(materialization.payload_rgba_bytes == 0U, "missing-byte materialization has no RGBA payload");
+    require(
+        materialization.diagnostic.find("raster payload") != std::string::npos,
+        "missing-byte materialization diagnostic names raster payload");
+
+    const render_text_request_batch_plan_snapshot plan =
+        plan_render_text_request_batch({
+            make_render_text_request_batch_item(
+                frame_snapshot_text_request(),
+                {materialization},
+                "missing-freetype-atlas-handoff",
+                "node-missing-freetype"),
+        });
+    require(plan.policy.skipped_materialization_count == 1U, "batch plan counts skipped FreeType materialization");
+
+    const render_text_atlas_upload_request_bridge_snapshot bridge =
+        bridge_render_text_atlas_upload_requests(plan);
+    require(!bridge.has_upload_requests(), "missing-byte FreeType materialization produces no upload request");
+    require(
+        bridge.policy.skipped_materialization_count == 1U,
+        "upload bridge counts skipped FreeType materialization");
 }
 
 void test_glyph_atlas_materialization_diff_reports_stable_key_changes()
@@ -2151,6 +2456,8 @@ int main()
     test_batch_plan_normalizes_style_keys_and_layout_requests();
     test_batch_plan_deduplicates_glyph_atlas_materialization_work();
     test_batch_plan_reports_fallback_real_backend_and_skipped_materializations();
+    test_freetype_raster_payload_materializes_upload_handoff_when_fixture_is_available();
+    test_freetype_raster_payload_handoff_reports_missing_byte_fallback();
     test_glyph_atlas_materialization_diff_reports_stable_key_changes();
     test_glyph_atlas_materialization_policy_diff_reports_byte_and_status_deltas();
     test_glyph_atlas_materialization_batch_diff_reports_regressions_recoveries_and_backend_transitions();

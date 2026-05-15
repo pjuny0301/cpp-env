@@ -91,6 +91,40 @@ struct render_text_glyph_atlas_materialization_request {
     std::size_t atlas_update_rgba_bytes = 0;
 };
 
+struct render_text_glyph_atlas_materialization_from_raster_request {
+    std::size_t cluster_index = 0;
+    std::size_t run_index = 0;
+    std::size_t cluster_byte_offset = 0;
+    std::size_t cluster_byte_count = 0;
+    std::vector<std::uint32_t> shaped_glyph_ids;
+    bool glyph_id_from_selection = true;
+    bool glyph_id_matches_codepoint = false;
+    bool used_fallback_glyph_id = false;
+    std::uint32_t glyph_id_offset = 0;
+    render_rect layout_bounds;
+    bool has_layout_bounds = false;
+    render_text_font_backend_library shaping_font_backend_library =
+        render_text_font_backend_library::deterministic_fake;
+    std::string shaping_font_backend_label;
+    render_text_font_backend_capability_status shaping_font_backend_capability_status =
+        render_text_font_backend_capability_status::unavailable;
+    bool shaping_font_backend_used_deterministic_fallback = false;
+    bool shaping_font_backend_fallback_only = false;
+    render_text_font_backend_library raster_font_backend_library =
+        render_text_font_backend_library::freetype;
+    std::string raster_font_backend_label = "FreeType";
+    render_text_font_backend_capability_status raster_font_backend_capability_status =
+        render_text_font_backend_capability_status::available;
+    bool raster_font_backend_used_deterministic_fallback = false;
+    bool raster_font_backend_fallback_only = false;
+    render_text_font_rasterize_result rasterized;
+    bool has_atlas_placement = false;
+    render_text_atlas_page page;
+    render_rect atlas_bounds;
+    bool has_atlas_update = false;
+    render_text_atlas_update atlas_update;
+};
+
 struct render_text_glyph_atlas_materialization_snapshot {
     render_text_glyph_atlas_materialization_status status =
         render_text_glyph_atlas_materialization_status::skipped_missing_cache_key;
@@ -374,6 +408,83 @@ inline render_text_glyph_atlas_materialization_snapshot make_render_text_glyph_a
         .clean_reuse = status == render_text_glyph_atlas_materialization_status::materialized_clean_reuse,
         .diagnostic = std::move(diagnostic),
     };
+}
+
+inline render_text_glyph_atlas_materialization_snapshot
+make_render_text_glyph_atlas_materialization_from_raster_result(
+    render_text_glyph_atlas_materialization_from_raster_request request)
+{
+    render_text_font_atlas_glyph_payload payload =
+        make_font_rasterizer_atlas_payload(request.rasterized);
+    std::vector<std::uint32_t> shaped_glyph_ids = std::move(request.shaped_glyph_ids);
+    if (shaped_glyph_ids.empty() && request.rasterized.glyph_id != 0U) {
+        shaped_glyph_ids.push_back(request.rasterized.glyph_id);
+    }
+
+    const bool has_cache_key =
+        request.rasterized.key.face_id != 0U
+        && request.rasterized.key.glyph_id != 0U
+        && request.rasterized.key.pixel_size != 0U;
+    const bool glyph_supported =
+        request.rasterized.status != render_text_font_rasterizer_status::unsupported_glyph;
+    const bool raster_payload_matches_cache_key =
+        request.rasterized.ok()
+        && request.rasterized.key.face_id == request.rasterized.face_id
+        && request.rasterized.key.glyph_id == request.rasterized.glyph_id
+        && request.rasterized.key.pixel_size == request.rasterized.pixel_size;
+
+    return make_render_text_glyph_atlas_materialization(
+        render_text_glyph_atlas_materialization_request{
+            .cluster_index = request.cluster_index,
+            .run_index = request.run_index,
+            .cluster_byte_offset = request.cluster_byte_offset,
+            .cluster_byte_count = request.cluster_byte_count,
+            .codepoint = request.rasterized.codepoint,
+            .shaped_glyph_ids = std::move(shaped_glyph_ids),
+            .resolved_glyph_id = request.rasterized.glyph_id,
+            .resolved_face_id = request.rasterized.face_id,
+            .cache_key = request.rasterized.key,
+            .has_cache_key = has_cache_key,
+            .glyph_supported = glyph_supported,
+            .glyph_id_from_selection = request.glyph_id_from_selection,
+            .glyph_id_matches_codepoint =
+                request.glyph_id_matches_codepoint
+                || request.rasterized.glyph_id == request.rasterized.codepoint,
+            .used_fallback_glyph_id = request.used_fallback_glyph_id,
+            .glyph_id_offset = request.glyph_id_offset,
+            .layout_bounds = request.layout_bounds,
+            .has_layout_bounds = request.has_layout_bounds,
+            .shaping_font_backend_library = request.shaping_font_backend_library,
+            .shaping_font_backend_label = std::move(request.shaping_font_backend_label),
+            .shaping_font_backend_capability_status =
+                request.shaping_font_backend_capability_status,
+            .shaping_font_backend_used_deterministic_fallback =
+                request.shaping_font_backend_used_deterministic_fallback,
+            .shaping_font_backend_fallback_only = request.shaping_font_backend_fallback_only,
+            .raster_font_backend_library = request.raster_font_backend_library,
+            .raster_font_backend_label = std::move(request.raster_font_backend_label),
+            .raster_font_backend_capability_status =
+                request.raster_font_backend_capability_status,
+            .raster_font_backend_used_deterministic_fallback =
+                request.raster_font_backend_used_deterministic_fallback,
+            .raster_font_backend_fallback_only = request.raster_font_backend_fallback_only,
+            .rasterizer_status = request.rasterized.status,
+            .raster_payload_matches_cache_key = raster_payload_matches_cache_key,
+            .rasterized_payload_skipped = !payload.upload_ready,
+            .payload_upload_ready = payload.upload_ready,
+            .payload_alpha_bytes = payload.alpha.size(),
+            .payload_rgba_bytes = payload.rgba.size(),
+            .has_atlas_placement = request.has_atlas_placement,
+            .page = request.page,
+            .atlas_bounds = request.atlas_bounds,
+            .has_atlas_update = request.has_atlas_update,
+            .atlas_update_bounds = request.has_atlas_update
+                ? request.atlas_update.updated_bounds
+                : render_rect{},
+            .atlas_update_rgba_bytes = request.has_atlas_update
+                ? request.atlas_update.rgba.size()
+                : 0U,
+        });
 }
 
 inline void append_render_text_glyph_atlas_materialization(

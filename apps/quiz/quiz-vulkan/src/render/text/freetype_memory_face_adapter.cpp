@@ -355,9 +355,12 @@ render_text_real_font_raster_adapter_result freetype_real_font_backend_rasterize
         .bitmap_height = bitmap.height,
     };
 
+    glyph_atlas_key resolved_key = request.rasterize.key;
+    resolved_key.glyph_id = static_cast<std::uint32_t>(glyph_index);
+
     render_text_font_rasterize_result rasterized{
         .status = render_text_font_rasterizer_status::rasterized,
-        .key = request.rasterize.key,
+        .key = resolved_key,
         .face_id = request.rasterize.face.id,
         .glyph_id = static_cast<std::uint32_t>(glyph_index),
         .codepoint = request.rasterize.codepoint,

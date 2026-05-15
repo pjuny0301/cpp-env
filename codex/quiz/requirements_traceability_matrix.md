@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: native Vulkan physical-device queue-family selection readiness integrated; Windows MinGW focused Vulkan/renderer/architecture CTest passed 3/3.
+- `f677d35`: Vulkan backend now selects a candidate physical device and required queue-family capabilities in data-only form before future logical device creation, preserving selected device, queue family index/count, missing queue blockers, and inspected-candidate evidence.
 - current: typed materialized asset byte diffs and image binding payload evidence summaries integrated; Windows MinGW focused asset/image CTest passed 4/4 and architecture boundary CTest passed 1/1.
 - `3f0e99b`: image engine now proves renderer-facing binding packets back to upload handoff payload evidence, including texture/cache identity, sampler key, upload IDs, accepted upload status, placeholder/failure state, decoded byte count, and decoded payload hash.
 - `9e3991e`: asset system now diffs typed materialized byte summaries across font/image/sound/shader/deck entries, preserving before/after records and field-level deltas for cache key, source URI, materialized path, content hash, type, and integrity state.

@@ -296,6 +296,8 @@ vulkan_backend_fallback_reason fallback_for_native_stage(
     case vulkan_native_entrypoint_stage::swapchain_images:
     case vulkan_native_entrypoint_stage::image_view_create:
     case vulkan_native_entrypoint_stage::image_view_destroy:
+    case vulkan_native_entrypoint_stage::framebuffer_create:
+    case vulkan_native_entrypoint_stage::framebuffer_destroy:
         return vulkan_backend_fallback_reason::swapchain_unavailable;
     case vulkan_native_entrypoint_stage::swapchain_acquire:
         return vulkan_backend_fallback_reason::acquire_image_failed;
@@ -326,6 +328,10 @@ vulkan_native_function_table_status missing_status_for_native_stage(
         return vulkan_native_function_table_status::missing_image_view_create_symbol;
     case vulkan_native_entrypoint_stage::image_view_destroy:
         return vulkan_native_function_table_status::missing_image_view_destroy_symbol;
+    case vulkan_native_entrypoint_stage::framebuffer_create:
+        return vulkan_native_function_table_status::missing_framebuffer_create_symbol;
+    case vulkan_native_entrypoint_stage::framebuffer_destroy:
+        return vulkan_native_function_table_status::missing_framebuffer_destroy_symbol;
     case vulkan_native_entrypoint_stage::queue_present:
         return vulkan_native_function_table_status::missing_queue_present_symbol;
     }
@@ -998,6 +1004,37 @@ VkImageView vk_image_view_handle_from(vulkan_swapchain_image_view_handle image_v
 #endif
 }
 
+VkRenderPass vk_render_pass_handle_from(vulkan_render_pass_handle render_pass)
+{
+#if defined(VK_USE_64_BIT_PTR_DEFINES) && VK_USE_64_BIT_PTR_DEFINES
+    return reinterpret_cast<VkRenderPass>(render_pass.value);
+#else
+    return static_cast<VkRenderPass>(render_pass.value);
+#endif
+}
+
+vulkan_framebuffer_handle framebuffer_handle_from_vk(VkFramebuffer framebuffer)
+{
+#if defined(VK_USE_64_BIT_PTR_DEFINES) && VK_USE_64_BIT_PTR_DEFINES
+    return vulkan_framebuffer_handle{
+        .value = reinterpret_cast<std::uintptr_t>(framebuffer),
+    };
+#else
+    return vulkan_framebuffer_handle{
+        .value = static_cast<std::uintptr_t>(framebuffer),
+    };
+#endif
+}
+
+VkFramebuffer vk_framebuffer_handle_from(vulkan_framebuffer_handle framebuffer)
+{
+#if defined(VK_USE_64_BIT_PTR_DEFINES) && VK_USE_64_BIT_PTR_DEFINES
+    return reinterpret_cast<VkFramebuffer>(framebuffer.value);
+#else
+    return static_cast<VkFramebuffer>(framebuffer.value);
+#endif
+}
+
 VkImageAspectFlags vk_image_aspect_flags_from(
     vulkan_swapchain_image_view_aspect_intent aspect)
 {
@@ -1626,6 +1663,8 @@ vulkan_backend_fallback_reason fallback_for_native_function_table(
     case vulkan_native_entrypoint_stage::swapchain_images:
     case vulkan_native_entrypoint_stage::image_view_create:
     case vulkan_native_entrypoint_stage::image_view_destroy:
+    case vulkan_native_entrypoint_stage::framebuffer_create:
+    case vulkan_native_entrypoint_stage::framebuffer_destroy:
         return vulkan_backend_fallback_reason::swapchain_unavailable;
     case vulkan_native_entrypoint_stage::swapchain_acquire:
         return vulkan_backend_fallback_reason::acquire_image_failed;
@@ -5260,6 +5299,227 @@ vulkan_native_swapchain_operation::destroy_image_view_targets(
 #endif
 }
 
+vulkan_native_framebuffer_targets_execution_result
+vulkan_native_framebuffer_operation::create_framebuffer_targets(
+    const vulkan_native_framebuffer_targets_execution_request& request)
+{
+    vulkan_native_framebuffer_targets_execution_result result =
+        render_pass_detail::make_framebuffer_targets_execution_result(request);
+
+    if (!result.image_view_targets_ready) {
+        result.status =
+            vulkan_native_framebuffer_targets_execution_status::image_view_targets_unavailable;
+        result.diagnostic = request.image_view_targets.diagnostic.empty()
+            ? "Native Vulkan framebuffer target creation is missing ready image views"
+            : request.image_view_targets.diagnostic;
+        return result;
+    }
+    if (!request.render_pass.checked
+        || request.render_pass.status != vulkan_render_pass_create_status::created) {
+        result.status =
+            vulkan_native_framebuffer_targets_execution_status::render_pass_unavailable;
+        result.diagnostic = request.render_pass.diagnostic.empty()
+            ? "Native Vulkan framebuffer target creation is missing a created render pass"
+            : request.render_pass.diagnostic;
+        return result;
+    }
+    if (!result.dispatch_table_ready) {
+        result.status =
+            vulkan_native_framebuffer_targets_execution_status::dispatch_table_unavailable;
+        result.diagnostic = request.dispatch_table.diagnostic.empty()
+            ? "Native Vulkan framebuffer target creation is missing framebuffer dispatch"
+            : request.dispatch_table.diagnostic;
+        return result;
+    }
+    if (!result.device.valid()) {
+        result.status = vulkan_native_framebuffer_targets_execution_status::invalid_device;
+        result.diagnostic =
+            "Native Vulkan framebuffer target creation has no valid device handle";
+        return result;
+    }
+    if (!result.render_pass_handle.valid()) {
+        result.status =
+            vulkan_native_framebuffer_targets_execution_status::missing_render_pass;
+        result.diagnostic =
+            "Native Vulkan framebuffer target creation has no valid render pass handle";
+        return result;
+    }
+    if (!result.extent.valid()) {
+        result.status = vulkan_native_framebuffer_targets_execution_status::missing_extent;
+        result.diagnostic =
+            "Native Vulkan framebuffer target creation has no valid framebuffer extent";
+        return result;
+    }
+    if (!result.extent_matches) {
+        result.status = vulkan_native_framebuffer_targets_execution_status::extent_mismatch;
+        result.diagnostic =
+            "Native Vulkan framebuffer target extent does not match the render pass extent";
+        return result;
+    }
+    if (result.layers == 0 || result.attachments.empty()) {
+        result.status = vulkan_native_framebuffer_targets_execution_status::missing_attachments;
+        result.diagnostic =
+            "Native Vulkan framebuffer target creation is missing attachment intent";
+        return result;
+    }
+
+#if QUIZ_VULKAN_HAS_VULKAN_HEADERS
+    const auto create_framebuffer =
+        reinterpret_cast<PFN_vkCreateFramebuffer>(
+            request.dispatch_table.create_framebuffer.value);
+    if (create_framebuffer == nullptr) {
+        result.status =
+            vulkan_native_framebuffer_targets_execution_status::dispatch_table_unavailable;
+        result.diagnostic =
+            "Native Vulkan framebuffer target creation has an invalid create pointer";
+        return result;
+    }
+
+    const VkDevice native_device = reinterpret_cast<VkDevice>(result.device.value);
+    const VkRenderPass native_render_pass =
+        vk_render_pass_handle_from(result.render_pass_handle);
+    result.targets.reserve(request.image_view_targets.targets.size());
+    for (const vulkan_native_swapchain_image_view_target& image_view_target :
+         request.image_view_targets.targets) {
+        vulkan_native_framebuffer_target target =
+            render_pass_detail::make_framebuffer_target(
+                image_view_target,
+                result.render_pass_handle,
+                result.extent,
+                result.layers,
+                result.attachments);
+        if (!target.image_view_ready) {
+            result.status =
+                vulkan_native_framebuffer_targets_execution_status::missing_image_view;
+            result.targets.push_back(target);
+            result.diagnostic =
+                "Native Vulkan framebuffer target creation found a missing image view";
+            return result;
+        }
+
+        const VkImageView attachment = vk_image_view_handle_from(target.image_view);
+        VkFramebufferCreateInfo create_info{};
+        create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        create_info.renderPass = native_render_pass;
+        create_info.attachmentCount = 1;
+        create_info.pAttachments = &attachment;
+        create_info.width = static_cast<std::uint32_t>(target.extent.width);
+        create_info.height = static_cast<std::uint32_t>(target.extent.height);
+        create_info.layers = target.layers;
+
+        VkFramebuffer native_framebuffer = VK_NULL_HANDLE;
+        const VkResult native_result =
+            create_framebuffer(native_device, &create_info, nullptr, &native_framebuffer);
+        result.vk_create_framebuffer_called = true;
+        result.native_result = static_cast<std::int32_t>(native_result);
+        target.vk_create_framebuffer_called = true;
+        target.native_result = static_cast<std::int32_t>(native_result);
+        if (native_result != VK_SUCCESS) {
+            target.lifecycle_status =
+                vulkan_native_framebuffer_target_lifecycle_status::create_failed;
+            result.targets.push_back(target);
+            result.status = vulkan_native_framebuffer_targets_execution_status::create_failed;
+            result.diagnostic = "Native Vulkan framebuffer target creation failed";
+            return result;
+        }
+
+        target.framebuffer = framebuffer_handle_from_vk(native_framebuffer);
+        target.framebuffer_ready = target.framebuffer.valid();
+        target.lifecycle_status = target.framebuffer_ready
+            ? vulkan_native_framebuffer_target_lifecycle_status::ready
+            : vulkan_native_framebuffer_target_lifecycle_status::create_failed;
+        if (!target.ready()) {
+            result.targets.push_back(target);
+            result.status = vulkan_native_framebuffer_targets_execution_status::create_failed;
+            result.diagnostic =
+                "Native Vulkan framebuffer target creation produced an invalid framebuffer";
+            return result;
+        }
+        result.targets.push_back(target);
+    }
+
+    result.ready_framebuffer_count = result.targets.size();
+    result.status = vulkan_native_framebuffer_targets_execution_status::ready;
+    result.diagnostic = "Native Vulkan framebuffer targets are ready";
+    return result;
+#else
+    result.status = vulkan_native_framebuffer_targets_execution_status::headers_unavailable;
+    result.diagnostic =
+        "Vulkan headers are unavailable for native framebuffer target creation";
+    return result;
+#endif
+}
+
+vulkan_native_framebuffer_targets_destroy_result
+vulkan_native_framebuffer_operation::destroy_framebuffer_targets(
+    const vulkan_native_framebuffer_targets_destroy_request& request)
+{
+    vulkan_native_framebuffer_targets_destroy_result result =
+        render_pass_detail::make_framebuffer_targets_destroy_result(request);
+
+    if (!result.targets_ready) {
+        result.status = vulkan_native_framebuffer_targets_destroy_status::targets_unavailable;
+        result.diagnostic = request.targets.diagnostic.empty()
+            ? "Native Vulkan framebuffer target destroy is missing ready framebuffers"
+            : request.targets.diagnostic;
+        return result;
+    }
+    if (!result.dispatch_table_ready) {
+        result.status =
+            vulkan_native_framebuffer_targets_destroy_status::dispatch_table_unavailable;
+        result.diagnostic = request.dispatch_table.diagnostic.empty()
+            ? "Native Vulkan framebuffer target destroy is missing destroy dispatch"
+            : request.dispatch_table.diagnostic;
+        return result;
+    }
+    if (!result.device.valid()) {
+        result.status = vulkan_native_framebuffer_targets_destroy_status::invalid_device;
+        result.diagnostic =
+            "Native Vulkan framebuffer target destroy has no valid device handle";
+        return result;
+    }
+
+#if QUIZ_VULKAN_HAS_VULKAN_HEADERS
+    const auto destroy_framebuffer =
+        reinterpret_cast<PFN_vkDestroyFramebuffer>(
+            request.dispatch_table.destroy_framebuffer.value);
+    if (destroy_framebuffer == nullptr) {
+        result.status =
+            vulkan_native_framebuffer_targets_destroy_status::dispatch_table_unavailable;
+        result.diagnostic =
+            "Native Vulkan framebuffer target destroy has an invalid destroy pointer";
+        return result;
+    }
+
+    const VkDevice native_device = reinterpret_cast<VkDevice>(result.device.value);
+    for (vulkan_native_framebuffer_target& target : result.targets.targets) {
+        if (!target.framebuffer.valid()) {
+            result.status = vulkan_native_framebuffer_targets_destroy_status::targets_unavailable;
+            result.diagnostic =
+                "Native Vulkan framebuffer target destroy found an invalid framebuffer";
+            return result;
+        }
+        destroy_framebuffer(
+            native_device,
+            vk_framebuffer_handle_from(target.framebuffer),
+            nullptr);
+        result.vk_destroy_framebuffer_called = true;
+        target.vk_destroy_framebuffer_called = true;
+        target.lifecycle_status = vulkan_native_framebuffer_target_lifecycle_status::destroyed;
+        ++result.destroyed_framebuffer_count;
+    }
+
+    result.status = vulkan_native_framebuffer_targets_destroy_status::destroyed;
+    result.diagnostic = "Native Vulkan framebuffer targets destroyed";
+    return result;
+#else
+    result.status = vulkan_native_framebuffer_targets_destroy_status::headers_unavailable;
+    result.diagnostic =
+        "Vulkan headers are unavailable for native framebuffer target destroy";
+    return result;
+#endif
+}
+
 vulkan_native_instance_create_result create_native_vulkan_instance(
     const vulkan_loader_readiness_state& loader_readiness,
     const vulkan_native_instance_function_table& function_table,
@@ -5472,6 +5732,23 @@ default_vulkan_native_image_view_entrypoints()
         vulkan_native_entrypoint_symbol_request{
             .stage = vulkan_native_entrypoint_stage::image_view_destroy,
             .name = "vkDestroyImageView",
+            .required = true,
+        },
+    };
+}
+
+std::vector<vulkan_native_entrypoint_symbol_request>
+default_vulkan_native_framebuffer_entrypoints()
+{
+    return {
+        vulkan_native_entrypoint_symbol_request{
+            .stage = vulkan_native_entrypoint_stage::framebuffer_create,
+            .name = "vkCreateFramebuffer",
+            .required = true,
+        },
+        vulkan_native_entrypoint_symbol_request{
+            .stage = vulkan_native_entrypoint_stage::framebuffer_destroy,
+            .name = "vkDestroyFramebuffer",
             .required = true,
         },
     };

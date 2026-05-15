@@ -64,6 +64,10 @@ std::string_view native_entrypoint_stage_name(vulkan_native_entrypoint_stage sta
         return "image_view_create";
     case vulkan_native_entrypoint_stage::image_view_destroy:
         return "image_view_destroy";
+    case vulkan_native_entrypoint_stage::framebuffer_create:
+        return "framebuffer_create";
+    case vulkan_native_entrypoint_stage::framebuffer_destroy:
+        return "framebuffer_destroy";
     case vulkan_native_entrypoint_stage::queue_present:
         return "queue_present";
     }
@@ -99,6 +103,10 @@ std::string_view native_function_table_status_name(
         return "missing_image_view_create_symbol";
     case vulkan_native_function_table_status::missing_image_view_destroy_symbol:
         return "missing_image_view_destroy_symbol";
+    case vulkan_native_function_table_status::missing_framebuffer_create_symbol:
+        return "missing_framebuffer_create_symbol";
+    case vulkan_native_function_table_status::missing_framebuffer_destroy_symbol:
+        return "missing_framebuffer_destroy_symbol";
     case vulkan_native_function_table_status::missing_queue_present_symbol:
         return "missing_queue_present_symbol";
     }

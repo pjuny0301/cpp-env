@@ -366,6 +366,9 @@ static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_native_device_dispatch_table_status::get_instance_proc_address_unavailable),
     render::vulkan_backend::vulkan_native_device_dispatch_table_status>);
 static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_device_dispatch_table_status::missing_enumerate_device_extension_properties_symbol),
+    render::vulkan_backend::vulkan_native_device_dispatch_table_status>);
+static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_native_device_dispatch_table_status::missing_create_device_symbol),
     render::vulkan_backend::vulkan_native_device_dispatch_table_status>);
 static_assert(std::same_as<
@@ -374,6 +377,28 @@ static_assert(std::same_as<
 static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_native_device_dispatch_table_status::missing_destroy_device_symbol),
     render::vulkan_backend::vulkan_native_device_dispatch_table_status>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_device_extension_query_status::not_checked),
+    render::vulkan_backend::vulkan_native_device_extension_query_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_device_extension_query_status::ready),
+    render::vulkan_backend::vulkan_native_device_extension_query_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_device_extension_query_status::selection_unavailable),
+    render::vulkan_backend::vulkan_native_device_extension_query_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_device_extension_query_status::dispatch_table_unavailable),
+    render::vulkan_backend::vulkan_native_device_extension_query_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_device_extension_query_status::headers_unavailable),
+    render::vulkan_backend::vulkan_native_device_extension_query_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_device_extension_query_status::enumeration_failed),
+    render::vulkan_backend::vulkan_native_device_extension_query_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_device_extension_query_status::missing_required_extension),
+    render::vulkan_backend::vulkan_native_device_extension_query_status>);
 
 static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_native_device_create_status::not_requested),
@@ -386,6 +411,12 @@ static_assert(std::same_as<
     render::vulkan_backend::vulkan_native_device_create_status>);
 static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_native_device_create_status::dispatch_table_unavailable),
+    render::vulkan_backend::vulkan_native_device_create_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_device_create_status::extension_query_unavailable),
+    render::vulkan_backend::vulkan_native_device_create_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_device_create_status::missing_required_extension),
     render::vulkan_backend::vulkan_native_device_create_status>);
 static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_native_device_create_status::headers_unavailable),
@@ -1488,6 +1519,8 @@ static_assert(requires(render::vulkan_backend::vulkan_native_device_dispatch_tab
         -> std::same_as<render::vulkan_backend::vulkan_physical_device_handle&>;
     { table.get_instance_proc_address }
         -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { table.enumerate_device_extension_properties }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
     { table.create_device }
         -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
     { table.get_device_queue }
@@ -1499,12 +1532,38 @@ static_assert(requires(render::vulkan_backend::vulkan_native_device_dispatch_tab
     { table.ready_for_create() } -> std::same_as<bool>;
 });
 
+static_assert(requires(render::vulkan_backend::vulkan_native_device_extension_query_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_device_extension_query_status&>;
+    { result.dispatch_table }
+        -> std::same_as<render::vulkan_backend::vulkan_native_device_dispatch_table&>;
+    { result.selection }
+        -> std::same_as<render::vulkan_backend::vulkan_native_physical_device_selection_result&>;
+    { result.physical_device }
+        -> std::same_as<render::vulkan_backend::vulkan_physical_device_handle&>;
+    { result.available_extensions } -> std::same_as<std::vector<std::string>&>;
+    { result.selected_extensions } -> std::same_as<std::vector<std::string>&>;
+    { result.required_extension_diagnostics }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_device_extension_diagnostic>&>;
+    { result.available_extension_count } -> std::same_as<std::size_t&>;
+    { result.required_extension_count } -> std::same_as<std::size_t&>;
+    { result.available_required_extension_count } -> std::same_as<std::size_t&>;
+    { result.missing_required_extension } -> std::same_as<std::string&>;
+    { result.native_result } -> std::same_as<std::int32_t&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.required_extensions_ready() } -> std::same_as<bool>;
+    { result.ready_for_create() } -> std::same_as<bool>;
+});
+
 static_assert(requires(render::vulkan_backend::vulkan_native_device_create_result result) {
     { result.checked } -> std::same_as<bool&>;
     { result.status }
         -> std::same_as<render::vulkan_backend::vulkan_native_device_create_status&>;
     { result.dispatch_table }
         -> std::same_as<render::vulkan_backend::vulkan_native_device_dispatch_table&>;
+    { result.extension_query }
+        -> std::same_as<render::vulkan_backend::vulkan_native_device_extension_query_result&>;
     { result.selection }
         -> std::same_as<render::vulkan_backend::vulkan_native_physical_device_selection_result&>;
     { result.handle } -> std::same_as<render::vulkan_backend::vulkan_device_handle&>;
@@ -1910,6 +1969,20 @@ static_assert(requires(render::vulkan_backend::fake_vulkan_native_device_creator
     { options.unavailable_queue_family_indices } -> std::same_as<std::vector<std::size_t>&>;
 });
 
+static_assert(requires(render::vulkan_backend::fake_vulkan_native_device_extension_query_options options) {
+    { options.available_extensions } -> std::same_as<std::vector<std::string>&>;
+    { options.fail_enumeration } -> std::same_as<bool&>;
+    { options.failure_result } -> std::same_as<std::int32_t&>;
+});
+
+static_assert(requires(render::vulkan_backend::fake_vulkan_native_device_extension_query_state state) {
+    { state.query_call_count } -> std::same_as<std::size_t&>;
+    { state.requested_physical_device }
+        -> std::same_as<render::vulkan_backend::vulkan_physical_device_handle&>;
+    { state.last_enumerate_device_extension_properties }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+});
+
 static_assert(requires(render::vulkan_backend::fake_vulkan_native_device_creator_state state) {
     { state.create_call_count } -> std::same_as<std::size_t&>;
     { state.get_queue_call_count } -> std::same_as<std::size_t&>;
@@ -2147,6 +2220,28 @@ static_assert(requires(
         -> std::same_as<const render::vulkan_backend::fake_vulkan_native_physical_device_selector_state&>;
 });
 
+static_assert(std::default_initializable<render::vulkan_backend::fake_vulkan_native_device_extension_query>);
+static_assert(std::constructible_from<
+    render::vulkan_backend::fake_vulkan_native_device_extension_query,
+    render::vulkan_backend::fake_vulkan_native_device_extension_query_options>);
+static_assert(std::default_initializable<render::vulkan_backend::vulkan_native_device_extension_query>);
+static_assert(requires(
+    render::vulkan_backend::fake_vulkan_native_device_extension_query fake,
+    const render::vulkan_backend::vulkan_native_device_dispatch_table& dispatch_table,
+    const render::vulkan_backend::vulkan_native_physical_device_selection_result& selection) {
+    { fake.query_device_extensions(dispatch_table, selection) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_device_extension_query_result>;
+    { fake.state() }
+        -> std::same_as<const render::vulkan_backend::fake_vulkan_native_device_extension_query_state&>;
+});
+static_assert(requires(
+    render::vulkan_backend::vulkan_native_device_extension_query query,
+    const render::vulkan_backend::vulkan_native_device_dispatch_table& dispatch_table,
+    const render::vulkan_backend::vulkan_native_physical_device_selection_result& selection) {
+    { query.query_device_extensions(dispatch_table, selection) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_device_extension_query_result>;
+});
+
 static_assert(std::default_initializable<render::vulkan_backend::fake_vulkan_native_device_creator>);
 static_assert(std::constructible_from<
     render::vulkan_backend::fake_vulkan_native_device_creator,
@@ -2155,8 +2250,9 @@ static_assert(std::default_initializable<render::vulkan_backend::vulkan_native_d
 static_assert(requires(
     render::vulkan_backend::fake_vulkan_native_device_creator fake,
     const render::vulkan_backend::vulkan_native_device_dispatch_table& dispatch_table,
+    const render::vulkan_backend::vulkan_native_device_extension_query_result& extension_query,
     const render::vulkan_backend::vulkan_native_physical_device_selection_result& selection) {
-    { fake.create_device(dispatch_table, selection) }
+    { fake.create_device(dispatch_table, extension_query, selection) }
         -> std::same_as<render::vulkan_backend::vulkan_native_device_create_result>;
     { fake.state() }
         -> std::same_as<const render::vulkan_backend::fake_vulkan_native_device_creator_state&>;
@@ -2164,8 +2260,9 @@ static_assert(requires(
 static_assert(requires(
     render::vulkan_backend::vulkan_native_device_creator creator,
     const render::vulkan_backend::vulkan_native_device_dispatch_table& dispatch_table,
+    const render::vulkan_backend::vulkan_native_device_extension_query_result& extension_query,
     const render::vulkan_backend::vulkan_native_physical_device_selection_result& selection) {
-    { creator.create_device(dispatch_table, selection) }
+    { creator.create_device(dispatch_table, extension_query, selection) }
         -> std::same_as<render::vulkan_backend::vulkan_native_device_create_result>;
 });
 
@@ -2284,6 +2381,7 @@ static_assert(requires(
     render::vulkan_backend::vulkan_native_physical_device_enumerator_interface& physical_device_enumerator,
     render::vulkan_backend::vulkan_native_queue_family_query_interface& queue_family_query,
     render::vulkan_backend::vulkan_native_physical_device_selector_interface& physical_device_selector,
+    render::vulkan_backend::vulkan_native_device_extension_query_interface& native_device_extension_query,
     render::vulkan_backend::vulkan_native_device_creator_interface& native_device_creator,
     const render::vulkan_backend::vulkan_instance_create_result& instance_result,
     const render::vulkan_backend::vulkan_native_instance_create_result& native_instance_create_result,
@@ -2292,6 +2390,7 @@ static_assert(requires(
     const render::vulkan_backend::vulkan_native_queue_family_query_result& queue_family_query_result,
     const render::vulkan_backend::vulkan_native_physical_device_selection_result& physical_device_selection,
     const render::vulkan_backend::vulkan_native_device_dispatch_table& native_device_dispatch_table,
+    const render::vulkan_backend::vulkan_native_device_extension_query_result& native_device_extension_query_result,
     const render::vulkan_backend::vulkan_device_create_request& request) {
     { render::vulkan_backend::create_vulkan_device(
         factory,
@@ -2319,9 +2418,15 @@ static_assert(requires(
         native_instance_resolver,
         physical_device_selection) }
         -> std::same_as<render::vulkan_backend::vulkan_native_device_dispatch_table>;
+    { render::vulkan_backend::query_native_vulkan_device_extensions(
+        native_device_extension_query,
+        native_device_dispatch_table,
+        physical_device_selection) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_device_extension_query_result>;
     { render::vulkan_backend::create_native_vulkan_device(
         native_device_creator,
         native_device_dispatch_table,
+        native_device_extension_query_result,
         physical_device_selection) }
         -> std::same_as<render::vulkan_backend::vulkan_native_device_create_result>;
 });

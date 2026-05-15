@@ -585,6 +585,7 @@ vulkan_native_device_dispatch_table make_native_device_dispatch_table(
         .instance = selection.enumeration.dispatch_table.instance,
         .physical_device = selection.selected_physical_device,
         .get_instance_proc_address = resolver.get_instance_proc_address(),
+        .enumerate_device_extension_properties = {},
         .create_device = {},
         .get_device_queue = {},
         .destroy_device = {},
@@ -593,14 +594,38 @@ vulkan_native_device_dispatch_table make_native_device_dispatch_table(
     };
 }
 
+vulkan_native_device_extension_query_result make_native_device_extension_query_result(
+    const vulkan_native_device_dispatch_table& dispatch_table,
+    const vulkan_native_physical_device_selection_result& selection)
+{
+    return vulkan_native_device_extension_query_result{
+        .checked = true,
+        .status = vulkan_native_device_extension_query_status::not_checked,
+        .dispatch_table = dispatch_table,
+        .selection = selection,
+        .physical_device = selection.selected_physical_device,
+        .available_extensions = {},
+        .selected_extensions = {},
+        .required_extension_diagnostics = {},
+        .available_extension_count = 0,
+        .required_extension_count = 0,
+        .available_required_extension_count = 0,
+        .missing_required_extension = {},
+        .native_result = 0,
+        .diagnostic = {},
+    };
+}
+
 vulkan_native_device_create_result make_native_device_create_result(
     const vulkan_native_device_dispatch_table& dispatch_table,
+    const vulkan_native_device_extension_query_result& extension_query,
     const vulkan_native_physical_device_selection_result& selection)
 {
     return vulkan_native_device_create_result{
         .checked = true,
         .status = vulkan_native_device_create_status::not_requested,
         .dispatch_table = dispatch_table,
+        .extension_query = extension_query,
         .selection = selection,
         .handle = {},
         .selected_extensions = {},
@@ -638,14 +663,49 @@ std::vector<std::size_t> unique_queue_family_indices(
 }
 
 std::vector<std::string> selected_native_device_extensions(
-    const vulkan_device_create_request& request)
+    const vulkan_device_create_request& request,
+    const std::vector<std::string>& available_extensions)
 {
     std::vector<std::string> selected_extensions;
-    selected_extensions.reserve(request.required_device_extensions.size());
+    selected_extensions.reserve(
+        request.required_device_extensions.size()
+        + request.optional_device_extensions.size());
     for (const std::string& extension_name : request.required_device_extensions) {
-        device_detail::append_unique_string(selected_extensions, extension_name);
+        if (device_detail::contains_string(available_extensions, extension_name)) {
+            device_detail::append_unique_string(selected_extensions, extension_name);
+        }
+    }
+    for (const std::string& extension_name : request.optional_device_extensions) {
+        if (device_detail::contains_string(available_extensions, extension_name)) {
+            device_detail::append_unique_string(selected_extensions, extension_name);
+        }
     }
     return selected_extensions;
+}
+
+void record_native_device_required_extension_diagnostics(
+    vulkan_native_device_extension_query_result& result)
+{
+    for (const std::string& extension_name :
+         result.selection.request.required_device_extensions) {
+        const bool available = device_detail::contains_string(
+            result.available_extensions,
+            extension_name);
+        result.required_extension_diagnostics.push_back(
+            vulkan_device_extension_diagnostic{
+                .extension_name = extension_name,
+                .required = true,
+                .available = available,
+                .selected = available,
+            });
+        result.required_extension_count =
+            result.required_extension_diagnostics.size();
+        if (available) {
+            ++result.available_required_extension_count;
+        } else if (result.missing_required_extension.empty()) {
+            result.missing_required_extension = extension_name;
+        }
+    }
 }
 
 std::vector<vulkan_native_physical_device_queue_family>
@@ -2910,6 +2970,80 @@ fake_vulkan_native_physical_device_selector::state() const
     return state_;
 }
 
+fake_vulkan_native_device_extension_query::fake_vulkan_native_device_extension_query()
+    : fake_vulkan_native_device_extension_query(
+        fake_vulkan_native_device_extension_query_options{})
+{
+}
+
+fake_vulkan_native_device_extension_query::fake_vulkan_native_device_extension_query(
+    fake_vulkan_native_device_extension_query_options options)
+    : options_(std::move(options))
+{
+}
+
+vulkan_native_device_extension_query_result
+fake_vulkan_native_device_extension_query::query_device_extensions(
+    const vulkan_native_device_dispatch_table& dispatch_table,
+    const vulkan_native_physical_device_selection_result& selection)
+{
+    vulkan_native_device_extension_query_result result =
+        make_native_device_extension_query_result(dispatch_table, selection);
+
+    if (!selection.ready_for_device_create()) {
+        result.status =
+            vulkan_native_device_extension_query_status::selection_unavailable;
+        result.diagnostic = selection.diagnostic.empty()
+            ? "Native Vulkan physical device selection is unavailable"
+            : selection.diagnostic;
+        return result;
+    }
+    if (!dispatch_table.ready_for_create()) {
+        result.status =
+            vulkan_native_device_extension_query_status::dispatch_table_unavailable;
+        result.diagnostic = dispatch_table.diagnostic.empty()
+            ? "Native Vulkan logical device dispatch table is unavailable"
+            : dispatch_table.diagnostic;
+        return result;
+    }
+
+    ++state_.query_call_count;
+    state_.requested_physical_device = selection.selected_physical_device;
+    state_.last_enumerate_device_extension_properties =
+        dispatch_table.enumerate_device_extension_properties;
+
+    if (options_.fail_enumeration) {
+        result.status = vulkan_native_device_extension_query_status::enumeration_failed;
+        result.native_result = options_.failure_result;
+        result.diagnostic = "Native Vulkan device extension enumeration failed";
+        return result;
+    }
+
+    result.available_extensions = options_.available_extensions;
+    result.available_extension_count = result.available_extensions.size();
+    result.selected_extensions = selected_native_device_extensions(
+        selection.request,
+        result.available_extensions);
+    record_native_device_required_extension_diagnostics(result);
+    if (!result.required_extensions_ready()) {
+        result.status =
+            vulkan_native_device_extension_query_status::missing_required_extension;
+        result.diagnostic = device_detail::make_missing_required_device_extension_diagnostic(
+            result.missing_required_extension);
+        return result;
+    }
+
+    result.status = vulkan_native_device_extension_query_status::ready;
+    result.diagnostic = "Native Vulkan device extensions enumerated";
+    return result;
+}
+
+const fake_vulkan_native_device_extension_query_state&
+fake_vulkan_native_device_extension_query::state() const
+{
+    return state_;
+}
+
 fake_vulkan_native_device_creator::fake_vulkan_native_device_creator()
     : fake_vulkan_native_device_creator(fake_vulkan_native_device_creator_options{})
 {
@@ -2924,10 +3058,11 @@ fake_vulkan_native_device_creator::fake_vulkan_native_device_creator(
 vulkan_native_device_create_result
 fake_vulkan_native_device_creator::create_device(
     const vulkan_native_device_dispatch_table& dispatch_table,
+    const vulkan_native_device_extension_query_result& extension_query,
     const vulkan_native_physical_device_selection_result& selection)
 {
     vulkan_native_device_create_result result =
-        make_native_device_create_result(dispatch_table, selection);
+        make_native_device_create_result(dispatch_table, extension_query, selection);
 
     if (!selection.ready_for_device_create()) {
         result.status = vulkan_native_device_create_status::selection_unavailable;
@@ -2943,14 +3078,29 @@ fake_vulkan_native_device_creator::create_device(
             : dispatch_table.diagnostic;
         return result;
     }
+    if (!extension_query.ready_for_create()) {
+        if (!extension_query.missing_required_extension.empty()) {
+            result.status =
+                vulkan_native_device_create_status::missing_required_extension;
+            result.diagnostic =
+                device_detail::make_missing_required_device_extension_diagnostic(
+                    extension_query.missing_required_extension);
+        } else {
+            result.status =
+                vulkan_native_device_create_status::extension_query_unavailable;
+            result.diagnostic = extension_query.diagnostic.empty()
+                ? "Native Vulkan device extension availability is unavailable"
+                : extension_query.diagnostic;
+        }
+        return result;
+    }
 
     ++state_.create_call_count;
     state_.requested_physical_device = selection.selected_physical_device;
     state_.last_create_device = dispatch_table.create_device;
     state_.last_get_device_queue = dispatch_table.get_device_queue;
     state_.last_destroy_device = dispatch_table.destroy_device;
-    state_.requested_extensions =
-        selected_native_device_extensions(selection.request);
+    state_.requested_extensions = extension_query.selected_extensions;
     result.selected_extensions = state_.requested_extensions;
     result.queue_create_family_indices =
         unique_queue_family_indices(selection.selected_queue_families);
@@ -3272,6 +3422,19 @@ collect_vulkan_native_device_dispatch_table(
         return table;
     }
 
+    table.enumerate_device_extension_properties =
+        resolver.resolve_instance_symbol(
+            table.instance,
+            "vkEnumerateDeviceExtensionProperties");
+    if (!table.enumerate_device_extension_properties.valid()) {
+        table.status =
+            vulkan_native_device_dispatch_table_status::missing_enumerate_device_extension_properties_symbol;
+        table.missing_symbol_name = "vkEnumerateDeviceExtensionProperties";
+        table.diagnostic =
+            "Native Vulkan logical device dispatch table is missing vkEnumerateDeviceExtensionProperties";
+        return table;
+    }
+
     table.create_device =
         resolver.resolve_instance_symbol(table.instance, "vkCreateDevice");
     if (!table.create_device.valid()) {
@@ -3531,13 +3694,122 @@ select_native_vulkan_physical_device(
     return selector.select_physical_device(enumeration, queue_family_query, request);
 }
 
-vulkan_native_device_create_result
-vulkan_native_device_creator::create_device(
+vulkan_native_device_extension_query_result
+vulkan_native_device_extension_query::query_device_extensions(
     const vulkan_native_device_dispatch_table& dispatch_table,
     const vulkan_native_physical_device_selection_result& selection)
 {
+    vulkan_native_device_extension_query_result result =
+        make_native_device_extension_query_result(dispatch_table, selection);
+
+    if (!selection.ready_for_device_create()) {
+        result.status =
+            vulkan_native_device_extension_query_status::selection_unavailable;
+        result.diagnostic = selection.diagnostic.empty()
+            ? "Native Vulkan physical device selection is unavailable"
+            : selection.diagnostic;
+        return result;
+    }
+    if (!dispatch_table.ready_for_create()) {
+        result.status =
+            vulkan_native_device_extension_query_status::dispatch_table_unavailable;
+        result.diagnostic = dispatch_table.diagnostic.empty()
+            ? "Native Vulkan logical device dispatch table is unavailable"
+            : dispatch_table.diagnostic;
+        return result;
+    }
+
+#if QUIZ_VULKAN_HAS_VULKAN_HEADERS
+    const auto enumerate_device_extension_properties =
+        reinterpret_cast<PFN_vkEnumerateDeviceExtensionProperties>(
+            dispatch_table.enumerate_device_extension_properties.value);
+    if (enumerate_device_extension_properties == nullptr) {
+        result.status =
+            vulkan_native_device_extension_query_status::dispatch_table_unavailable;
+        result.diagnostic =
+            "Native Vulkan device extension enumeration pointer is invalid";
+        return result;
+    }
+
+    std::uint32_t extension_count = 0;
+    VkResult native_result = enumerate_device_extension_properties(
+        reinterpret_cast<VkPhysicalDevice>(selection.selected_physical_device.value),
+        nullptr,
+        &extension_count,
+        nullptr);
+    result.native_result = static_cast<std::int32_t>(native_result);
+    if (native_result != VK_SUCCESS) {
+        result.status = vulkan_native_device_extension_query_status::enumeration_failed;
+        result.diagnostic = "Native Vulkan device extension count query failed";
+        return result;
+    }
+
+    std::vector<VkExtensionProperties> native_extensions(extension_count);
+    if (extension_count > 0) {
+        native_result = enumerate_device_extension_properties(
+            reinterpret_cast<VkPhysicalDevice>(selection.selected_physical_device.value),
+            nullptr,
+            &extension_count,
+            native_extensions.data());
+        result.native_result = static_cast<std::int32_t>(native_result);
+        if (native_result != VK_SUCCESS) {
+            result.status =
+                vulkan_native_device_extension_query_status::enumeration_failed;
+            result.diagnostic = "Native Vulkan device extension list query failed";
+            return result;
+        }
+        if (extension_count < native_extensions.size()) {
+            native_extensions.resize(extension_count);
+        }
+    }
+
+    result.available_extensions.reserve(native_extensions.size());
+    for (const VkExtensionProperties& native_extension : native_extensions) {
+        device_detail::append_unique_string(
+            result.available_extensions,
+            native_extension.extensionName);
+    }
+    result.available_extension_count = result.available_extensions.size();
+    result.selected_extensions = selected_native_device_extensions(
+        selection.request,
+        result.available_extensions);
+    record_native_device_required_extension_diagnostics(result);
+    if (!result.required_extensions_ready()) {
+        result.status =
+            vulkan_native_device_extension_query_status::missing_required_extension;
+        result.diagnostic = device_detail::make_missing_required_device_extension_diagnostic(
+            result.missing_required_extension);
+        return result;
+    }
+
+    result.status = vulkan_native_device_extension_query_status::ready;
+    result.diagnostic = "Native Vulkan device extensions enumerated";
+    return result;
+#else
+    result.status = vulkan_native_device_extension_query_status::headers_unavailable;
+    result.diagnostic =
+        "Vulkan headers are unavailable for native device extension enumeration";
+    return result;
+#endif
+}
+
+vulkan_native_device_extension_query_result
+query_native_vulkan_device_extensions(
+    vulkan_native_device_extension_query_interface& query,
+    const vulkan_native_device_dispatch_table& dispatch_table,
+    const vulkan_native_physical_device_selection_result& selection)
+{
+    return query.query_device_extensions(dispatch_table, selection);
+}
+
+vulkan_native_device_create_result
+vulkan_native_device_creator::create_device(
+    const vulkan_native_device_dispatch_table& dispatch_table,
+    const vulkan_native_device_extension_query_result& extension_query,
+    const vulkan_native_physical_device_selection_result& selection)
+{
     vulkan_native_device_create_result result =
-        make_native_device_create_result(dispatch_table, selection);
+        make_native_device_create_result(dispatch_table, extension_query, selection);
 
     if (!selection.ready_for_device_create()) {
         result.status = vulkan_native_device_create_status::selection_unavailable;
@@ -3553,8 +3825,24 @@ vulkan_native_device_creator::create_device(
             : dispatch_table.diagnostic;
         return result;
     }
+    if (!extension_query.ready_for_create()) {
+        if (!extension_query.missing_required_extension.empty()) {
+            result.status =
+                vulkan_native_device_create_status::missing_required_extension;
+            result.diagnostic =
+                device_detail::make_missing_required_device_extension_diagnostic(
+                    extension_query.missing_required_extension);
+        } else {
+            result.status =
+                vulkan_native_device_create_status::extension_query_unavailable;
+            result.diagnostic = extension_query.diagnostic.empty()
+                ? "Native Vulkan device extension availability is unavailable"
+                : extension_query.diagnostic;
+        }
+        return result;
+    }
 
-    result.selected_extensions = selected_native_device_extensions(selection.request);
+    result.selected_extensions = extension_query.selected_extensions;
     result.queue_create_family_indices =
         unique_queue_family_indices(selection.selected_queue_families);
     result.queue_create_family_count = result.queue_create_family_indices.size();
@@ -3662,9 +3950,10 @@ vulkan_native_device_create_result
 create_native_vulkan_device(
     vulkan_native_device_creator_interface& creator,
     const vulkan_native_device_dispatch_table& dispatch_table,
+    const vulkan_native_device_extension_query_result& extension_query,
     const vulkan_native_physical_device_selection_result& selection)
 {
-    return creator.create_device(dispatch_table, selection);
+    return creator.create_device(dispatch_table, extension_query, selection);
 }
 
 vulkan_native_instance_create_result create_native_vulkan_instance(

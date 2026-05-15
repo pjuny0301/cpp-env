@@ -407,6 +407,7 @@ enum class vulkan_native_device_dispatch_table_status {
     ready,
     selection_unavailable,
     get_instance_proc_address_unavailable,
+    missing_enumerate_device_extension_properties_symbol,
     missing_create_device_symbol,
     missing_get_device_queue_symbol,
     missing_destroy_device_symbol,
@@ -419,6 +420,7 @@ struct vulkan_native_device_dispatch_table {
     vulkan_instance_handle instance;
     vulkan_physical_device_handle physical_device;
     vulkan_native_function_pointer get_instance_proc_address;
+    vulkan_native_function_pointer enumerate_device_extension_properties;
     vulkan_native_function_pointer create_device;
     vulkan_native_function_pointer get_device_queue;
     vulkan_native_function_pointer destroy_device;
@@ -429,9 +431,98 @@ struct vulkan_native_device_dispatch_table {
     {
         return checked && status == vulkan_native_device_dispatch_table_status::ready
             && instance.valid() && physical_device.valid()
-            && get_instance_proc_address.valid() && create_device.valid()
-            && get_device_queue.valid() && destroy_device.valid();
+            && get_instance_proc_address.valid()
+            && enumerate_device_extension_properties.valid()
+            && create_device.valid() && get_device_queue.valid()
+            && destroy_device.valid();
     }
+};
+
+enum class vulkan_native_device_extension_query_status {
+    not_checked,
+    ready,
+    selection_unavailable,
+    dispatch_table_unavailable,
+    headers_unavailable,
+    enumeration_failed,
+    missing_required_extension,
+};
+
+struct vulkan_native_device_extension_query_result {
+    bool checked = false;
+    vulkan_native_device_extension_query_status status =
+        vulkan_native_device_extension_query_status::not_checked;
+    vulkan_native_device_dispatch_table dispatch_table;
+    vulkan_native_physical_device_selection_result selection;
+    vulkan_physical_device_handle physical_device;
+    std::vector<std::string> available_extensions;
+    std::vector<std::string> selected_extensions;
+    std::vector<vulkan_device_extension_diagnostic> required_extension_diagnostics;
+    std::size_t available_extension_count = 0;
+    std::size_t required_extension_count = 0;
+    std::size_t available_required_extension_count = 0;
+    std::string missing_required_extension;
+    std::int32_t native_result = 0;
+    std::string diagnostic;
+
+    bool required_extensions_ready() const
+    {
+        return checked && required_extension_count == available_required_extension_count
+            && missing_required_extension.empty();
+    }
+
+    bool ready_for_create() const
+    {
+        return checked && status == vulkan_native_device_extension_query_status::ready
+            && dispatch_table.ready_for_create() && selection.ready_for_device_create()
+            && physical_device.valid() && required_extensions_ready();
+    }
+};
+
+class vulkan_native_device_extension_query_interface {
+public:
+    virtual ~vulkan_native_device_extension_query_interface() = default;
+
+    virtual vulkan_native_device_extension_query_result query_device_extensions(
+        const vulkan_native_device_dispatch_table& dispatch_table,
+        const vulkan_native_physical_device_selection_result& selection) = 0;
+};
+
+struct fake_vulkan_native_device_extension_query_options {
+    std::vector<std::string> available_extensions{"VK_KHR_swapchain"};
+    bool fail_enumeration = false;
+    std::int32_t failure_result = -1;
+};
+
+struct fake_vulkan_native_device_extension_query_state {
+    std::size_t query_call_count = 0;
+    vulkan_physical_device_handle requested_physical_device;
+    vulkan_native_function_pointer last_enumerate_device_extension_properties;
+};
+
+class fake_vulkan_native_device_extension_query final
+    : public vulkan_native_device_extension_query_interface {
+public:
+    fake_vulkan_native_device_extension_query();
+    explicit fake_vulkan_native_device_extension_query(
+        fake_vulkan_native_device_extension_query_options options);
+
+    vulkan_native_device_extension_query_result query_device_extensions(
+        const vulkan_native_device_dispatch_table& dispatch_table,
+        const vulkan_native_physical_device_selection_result& selection) override;
+    const fake_vulkan_native_device_extension_query_state& state() const;
+
+private:
+    fake_vulkan_native_device_extension_query_options options_;
+    fake_vulkan_native_device_extension_query_state state_;
+};
+
+class vulkan_native_device_extension_query final
+    : public vulkan_native_device_extension_query_interface {
+public:
+    vulkan_native_device_extension_query_result query_device_extensions(
+        const vulkan_native_device_dispatch_table& dispatch_table,
+        const vulkan_native_physical_device_selection_result& selection) override;
 };
 
 enum class vulkan_native_device_create_status {
@@ -439,6 +530,8 @@ enum class vulkan_native_device_create_status {
     created,
     selection_unavailable,
     dispatch_table_unavailable,
+    extension_query_unavailable,
+    missing_required_extension,
     headers_unavailable,
     creation_failed,
     queue_unavailable,
@@ -449,6 +542,7 @@ struct vulkan_native_device_create_result {
     vulkan_native_device_create_status status =
         vulkan_native_device_create_status::not_requested;
     vulkan_native_device_dispatch_table dispatch_table;
+    vulkan_native_device_extension_query_result extension_query;
     vulkan_native_physical_device_selection_result selection;
     vulkan_device_handle handle;
     std::vector<std::string> selected_extensions;
@@ -462,8 +556,10 @@ struct vulkan_native_device_create_result {
     bool ready_for_backend() const
     {
         return checked && status == vulkan_native_device_create_status::created
-            && dispatch_table.ready_for_create() && selection.ready_for_device_create()
-            && handle.valid() && !queue_create_family_indices.empty()
+            && dispatch_table.ready_for_create()
+            && extension_query.ready_for_create()
+            && selection.ready_for_device_create() && handle.valid()
+            && !queue_create_family_indices.empty()
             && queue_create_family_count == queue_create_family_indices.size()
             && selected_queue_count == selected_queues.size()
             && !selected_queues.empty()
@@ -482,6 +578,7 @@ public:
 
     virtual vulkan_native_device_create_result create_device(
         const vulkan_native_device_dispatch_table& dispatch_table,
+        const vulkan_native_device_extension_query_result& extension_query,
         const vulkan_native_physical_device_selection_result& selection) = 0;
 };
 
@@ -515,6 +612,7 @@ public:
 
     vulkan_native_device_create_result create_device(
         const vulkan_native_device_dispatch_table& dispatch_table,
+        const vulkan_native_device_extension_query_result& extension_query,
         const vulkan_native_physical_device_selection_result& selection) override;
     const fake_vulkan_native_device_creator_state& state() const;
 
@@ -527,6 +625,7 @@ class vulkan_native_device_creator final : public vulkan_native_device_creator_i
 public:
     vulkan_native_device_create_result create_device(
         const vulkan_native_device_dispatch_table& dispatch_table,
+        const vulkan_native_device_extension_query_result& extension_query,
         const vulkan_native_physical_device_selection_result& selection) override;
 };
 
@@ -861,10 +960,17 @@ collect_vulkan_native_device_dispatch_table(
     vulkan_native_instance_symbol_resolver_interface& resolver,
     const vulkan_native_physical_device_selection_result& selection);
 
+vulkan_native_device_extension_query_result
+query_native_vulkan_device_extensions(
+    vulkan_native_device_extension_query_interface& query,
+    const vulkan_native_device_dispatch_table& dispatch_table,
+    const vulkan_native_physical_device_selection_result& selection);
+
 vulkan_native_device_create_result
 create_native_vulkan_device(
     vulkan_native_device_creator_interface& creator,
     const vulkan_native_device_dispatch_table& dispatch_table,
+    const vulkan_native_device_extension_query_result& extension_query,
     const vulkan_native_physical_device_selection_result& selection);
 
 } // namespace quiz_vulkan::render::vulkan_backend

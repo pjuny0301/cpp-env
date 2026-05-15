@@ -235,6 +235,29 @@ make_ready_native_device_dispatch_table(
         selection);
 }
 
+quiz_vulkan::render::vulkan_backend::vulkan_native_device_extension_query_result
+make_device_extension_query(
+    const quiz_vulkan::render::vulkan_backend::vulkan_native_device_dispatch_table&
+        dispatch_table,
+    const quiz_vulkan::render::vulkan_backend::vulkan_native_physical_device_selection_result&
+        selection,
+    std::vector<std::string> available_extensions = {
+        "VK_KHR_swapchain",
+        "VK_EXT_memory_budget",
+    })
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::fake_vulkan_native_device_extension_query query(
+        vulkan_backend::fake_vulkan_native_device_extension_query_options{
+            .available_extensions = std::move(available_extensions),
+        });
+    return vulkan_backend::query_native_vulkan_device_extensions(
+        query,
+        dispatch_table,
+        selection);
+}
+
 void test_device_factory_marks_created_instance_device_ready()
 {
     namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
@@ -962,7 +985,7 @@ void require_native_device_dispatch_missing_symbol(
         "native device dispatch requests the missing symbol");
 }
 
-void test_native_device_dispatch_resolves_create_queue_and_destroy()
+void test_native_device_dispatch_resolves_extension_create_queue_and_destroy()
 {
     namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
 
@@ -993,23 +1016,30 @@ void test_native_device_dispatch_resolves_create_queue_and_destroy()
         dispatch_table.physical_device.value == selection.selected_physical_device.value,
         "native device dispatch records the selected physical device handle");
     require(
-        resolver.state().resolve_call_count == 3,
-        "native device dispatch resolves create, get-queue, and destroy symbols");
+        resolver.state().resolve_call_count == 4,
+        "native device dispatch resolves extension, create, get-queue, and destroy symbols");
     require(
-        resolver.state().requested_symbols[0] == "vkCreateDevice",
-        "native device dispatch resolves vkCreateDevice first");
+        resolver.state().requested_symbols[0] == "vkEnumerateDeviceExtensionProperties",
+        "native device dispatch resolves vkEnumerateDeviceExtensionProperties first");
     require(
-        resolver.state().requested_symbols[1] == "vkGetDeviceQueue",
-        "native device dispatch resolves vkGetDeviceQueue second");
+        resolver.state().requested_symbols[1] == "vkCreateDevice",
+        "native device dispatch resolves vkCreateDevice second");
     require(
-        resolver.state().requested_symbols[2] == "vkDestroyDevice",
-        "native device dispatch resolves vkDestroyDevice third");
+        resolver.state().requested_symbols[2] == "vkGetDeviceQueue",
+        "native device dispatch resolves vkGetDeviceQueue third");
+    require(
+        resolver.state().requested_symbols[3] == "vkDestroyDevice",
+        "native device dispatch resolves vkDestroyDevice fourth");
 }
 
 void test_native_device_dispatch_reports_missing_symbols()
 {
     namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
 
+    require_native_device_dispatch_missing_symbol(
+        "vkEnumerateDeviceExtensionProperties",
+        vulkan_backend::vulkan_native_device_dispatch_table_status::missing_enumerate_device_extension_properties_symbol,
+        "native device dispatch maps missing vkEnumerateDeviceExtensionProperties");
     require_native_device_dispatch_missing_symbol(
         "vkCreateDevice",
         vulkan_backend::vulkan_native_device_dispatch_table_status::missing_create_device_symbol,
@@ -1022,6 +1052,135 @@ void test_native_device_dispatch_reports_missing_symbols()
         "vkDestroyDevice",
         vulkan_backend::vulkan_native_device_dispatch_table_status::missing_destroy_device_symbol,
         "native device dispatch maps missing vkDestroyDevice");
+}
+
+void test_native_device_extension_query_records_availability()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_physical_device_selection_result selection =
+        make_selected_physical_device();
+    const vulkan_backend::vulkan_native_device_dispatch_table dispatch_table =
+        make_ready_native_device_dispatch_table(selection);
+    vulkan_backend::fake_vulkan_native_device_extension_query query(
+        vulkan_backend::fake_vulkan_native_device_extension_query_options{
+            .available_extensions = {"VK_KHR_swapchain", "VK_EXT_memory_budget"},
+        });
+
+    const vulkan_backend::vulkan_native_device_extension_query_result result =
+        vulkan_backend::query_native_vulkan_device_extensions(
+            query,
+            dispatch_table,
+            selection);
+
+    require(result.checked, "native device extension query result is checked");
+    require(
+        result.status == vulkan_backend::vulkan_native_device_extension_query_status::ready,
+        "native device extension query reports ready");
+    require(
+        result.ready_for_create(),
+        "native device extension query is ready for logical device create");
+    require(
+        result.physical_device.value == selection.selected_physical_device.value,
+        "native device extension query records selected physical device");
+    require(
+        result.available_extension_count == 2,
+        "native device extension query records available extension count");
+    require(
+        result.available_extensions[0] == "VK_KHR_swapchain",
+        "native device extension query records required swapchain availability");
+    require(
+        result.selected_extensions.size() == 2,
+        "native device extension query selects required and optional available extensions");
+    require(
+        result.selected_extensions[1] == "VK_EXT_memory_budget",
+        "native device extension query selects optional memory budget extension");
+    require(
+        result.required_extension_diagnostics.size() == 1,
+        "native device extension query records required extension diagnostics");
+    require(
+        result.required_extension_diagnostics.front().available,
+        "native device extension query marks required swapchain available");
+    require(
+        result.required_extensions_ready(),
+        "native device extension query records required extensions ready");
+    require(
+        query.state().query_call_count == 1,
+        "native device extension query records one query call");
+    require(
+        query.state().requested_physical_device.value
+            == selection.selected_physical_device.value,
+        "native device extension query records requested physical device");
+    require(
+        query.state().last_enumerate_device_extension_properties.value
+            == dispatch_table.enumerate_device_extension_properties.value,
+        "native device extension query records enumerate extension pointer");
+}
+
+void test_native_device_extension_query_reports_missing_required_extension()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_physical_device_selection_result selection =
+        make_selected_physical_device();
+    const vulkan_backend::vulkan_native_device_dispatch_table dispatch_table =
+        make_ready_native_device_dispatch_table(selection);
+    vulkan_backend::fake_vulkan_native_device_extension_query query(
+        vulkan_backend::fake_vulkan_native_device_extension_query_options{
+            .available_extensions = {"VK_EXT_memory_budget"},
+        });
+
+    const vulkan_backend::vulkan_native_device_extension_query_result result =
+        vulkan_backend::query_native_vulkan_device_extensions(
+            query,
+            dispatch_table,
+            selection);
+
+    require(result.checked, "missing-extension query result is checked");
+    require(
+        result.status
+            == vulkan_backend::vulkan_native_device_extension_query_status::missing_required_extension,
+        "native device extension query maps missing required extension");
+    require(
+        result.missing_required_extension == "VK_KHR_swapchain",
+        "native device extension query records missing swapchain extension");
+    require(
+        !result.required_extensions_ready(),
+        "native device extension query reports required extensions unavailable");
+    require(
+        !result.ready_for_create(),
+        "native device extension query is not ready when required extension is missing");
+}
+
+void test_native_device_extension_query_reports_enumeration_failure()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_physical_device_selection_result selection =
+        make_selected_physical_device();
+    const vulkan_backend::vulkan_native_device_dispatch_table dispatch_table =
+        make_ready_native_device_dispatch_table(selection);
+    vulkan_backend::fake_vulkan_native_device_extension_query query(
+        vulkan_backend::fake_vulkan_native_device_extension_query_options{
+            .fail_enumeration = true,
+            .failure_result = -9,
+        });
+
+    const vulkan_backend::vulkan_native_device_extension_query_result result =
+        vulkan_backend::query_native_vulkan_device_extensions(
+            query,
+            dispatch_table,
+            selection);
+
+    require(result.checked, "extension-enumeration failure result is checked");
+    require(
+        result.status
+            == vulkan_backend::vulkan_native_device_extension_query_status::enumeration_failed,
+        "native device extension query maps enumeration failure");
+    require(result.native_result == -9, "native device extension query records failure result");
+    require(
+        !result.ready_for_create(),
+        "native device extension query is not ready after enumeration failure");
 }
 
 void test_native_device_create_reports_selection_unavailable()
@@ -1048,6 +1207,7 @@ void test_native_device_create_reports_selection_unavailable()
         vulkan_backend::create_native_vulkan_device(
             creator,
             vulkan_backend::vulkan_native_device_dispatch_table{},
+            vulkan_backend::vulkan_native_device_extension_query_result{},
             selection);
 
     require(result.checked, "native device selection-unavailable result is checked");
@@ -1074,6 +1234,7 @@ void test_native_device_create_reports_dispatch_unavailable()
         vulkan_backend::create_native_vulkan_device(
             creator,
             vulkan_backend::vulkan_native_device_dispatch_table{},
+            vulkan_backend::vulkan_native_device_extension_query_result{},
             selection);
 
     require(result.checked, "native device dispatch-unavailable result is checked");
@@ -1094,6 +1255,8 @@ void test_native_device_create_uses_selected_device_and_queue_families()
         make_selected_physical_device();
     const vulkan_backend::vulkan_native_device_dispatch_table dispatch_table =
         make_ready_native_device_dispatch_table(selection);
+    const vulkan_backend::vulkan_native_device_extension_query_result extension_query =
+        make_device_extension_query(dispatch_table, selection);
     vulkan_backend::fake_vulkan_native_device_creator creator(
         vulkan_backend::fake_vulkan_native_device_creator_options{
             .handle = vulkan_backend::vulkan_device_handle{.value = 9900},
@@ -1104,6 +1267,7 @@ void test_native_device_create_uses_selected_device_and_queue_families()
         vulkan_backend::create_native_vulkan_device(
             creator,
             dispatch_table,
+            extension_query,
             selection);
 
     require(result.checked, "native device create result is checked");
@@ -1113,11 +1277,17 @@ void test_native_device_create_uses_selected_device_and_queue_families()
     require(result.ready_for_backend(), "native device create is ready for backend use");
     require(result.handle.value == 9900, "native device create records configured handle");
     require(
-        result.selected_extensions.size() == 1,
-        "native device create records required device extension selection");
+        result.selected_extensions.size() == 2,
+        "native device create records required and optional device extension selection");
     require(
         result.selected_extensions.front() == "VK_KHR_swapchain",
         "native device create records required swapchain extension");
+    require(
+        result.selected_extensions[1] == "VK_EXT_memory_budget",
+        "native device create records optional memory budget extension");
+    require(
+        result.extension_query.required_extensions_ready(),
+        "native device create preserves required extension readiness evidence");
     require(
         result.queue_create_family_indices.size() == 2,
         "native device create records unique queue family create infos");
@@ -1171,6 +1341,38 @@ void test_native_device_create_uses_selected_device_and_queue_families()
         "native device creator records vkDestroyDevice pointer");
 }
 
+void test_native_device_create_blocks_missing_required_extension_before_create()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_physical_device_selection_result selection =
+        make_selected_physical_device();
+    const vulkan_backend::vulkan_native_device_dispatch_table dispatch_table =
+        make_ready_native_device_dispatch_table(selection);
+    const vulkan_backend::vulkan_native_device_extension_query_result extension_query =
+        make_device_extension_query(dispatch_table, selection, {"VK_EXT_memory_budget"});
+    vulkan_backend::fake_vulkan_native_device_creator creator;
+
+    const vulkan_backend::vulkan_native_device_create_result result =
+        vulkan_backend::create_native_vulkan_device(
+            creator,
+            dispatch_table,
+            extension_query,
+            selection);
+
+    require(result.checked, "native device missing-extension create result is checked");
+    require(
+        result.status
+            == vulkan_backend::vulkan_native_device_create_status::missing_required_extension,
+        "native device create blocks missing required extension");
+    require(
+        result.extension_query.missing_required_extension == "VK_KHR_swapchain",
+        "native device create preserves missing extension evidence");
+    require(
+        creator.state().create_call_count == 0,
+        "native device creator does not call create when required extension is missing");
+}
+
 void test_native_device_create_reports_creation_failure()
 {
     namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
@@ -1179,6 +1381,8 @@ void test_native_device_create_reports_creation_failure()
         make_selected_physical_device();
     const vulkan_backend::vulkan_native_device_dispatch_table dispatch_table =
         make_ready_native_device_dispatch_table(selection);
+    const vulkan_backend::vulkan_native_device_extension_query_result extension_query =
+        make_device_extension_query(dispatch_table, selection);
     vulkan_backend::fake_vulkan_native_device_creator creator(
         vulkan_backend::fake_vulkan_native_device_creator_options{
             .fail_creation = true,
@@ -1189,6 +1393,7 @@ void test_native_device_create_reports_creation_failure()
         vulkan_backend::create_native_vulkan_device(
             creator,
             dispatch_table,
+            extension_query,
             selection);
 
     require(result.checked, "native device creation-failure result is checked");
@@ -1213,6 +1418,8 @@ void test_native_device_create_destroys_device_when_queue_lookup_fails()
         make_selected_physical_device();
     const vulkan_backend::vulkan_native_device_dispatch_table dispatch_table =
         make_ready_native_device_dispatch_table(selection);
+    const vulkan_backend::vulkan_native_device_extension_query_result extension_query =
+        make_device_extension_query(dispatch_table, selection);
     vulkan_backend::fake_vulkan_native_device_creator creator(
         vulkan_backend::fake_vulkan_native_device_creator_options{
             .handle = vulkan_backend::vulkan_device_handle{.value = 9900},
@@ -1224,6 +1431,7 @@ void test_native_device_create_destroys_device_when_queue_lookup_fails()
         vulkan_backend::create_native_vulkan_device(
             creator,
             dispatch_table,
+            extension_query,
             selection);
 
     require(result.checked, "native device queue-failure result is checked");
@@ -1327,11 +1535,15 @@ int main()
     test_physical_device_selection_reports_no_devices();
     test_physical_device_selection_reports_missing_required_queue();
     test_physical_device_selection_picks_device_with_graphics_and_present();
-    test_native_device_dispatch_resolves_create_queue_and_destroy();
+    test_native_device_dispatch_resolves_extension_create_queue_and_destroy();
     test_native_device_dispatch_reports_missing_symbols();
+    test_native_device_extension_query_records_availability();
+    test_native_device_extension_query_reports_missing_required_extension();
+    test_native_device_extension_query_reports_enumeration_failure();
     test_native_device_create_reports_selection_unavailable();
     test_native_device_create_reports_dispatch_unavailable();
     test_native_device_create_uses_selected_device_and_queue_families();
+    test_native_device_create_blocks_missing_required_extension_before_create();
     test_native_device_create_reports_creation_failure();
     test_native_device_create_destroys_device_when_queue_lookup_fails();
     test_vulkan_device_status_and_queue_names_are_stable();

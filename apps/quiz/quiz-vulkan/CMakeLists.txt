@@ -201,6 +201,7 @@ target_sources(
         FILE_SET HEADERS
         BASE_DIRS src
         FILES
+            src/assets/asset_bytes_contract.h
             src/assets/asset_bytes_provider.h
             src/assets/asset_manifest.h
             src/assets/asset_manifest_version_policy.h
@@ -210,6 +211,7 @@ target_sources(
             src/assets/asset_resolver.h
             src/assets/asset_runtime_catalog.h
             src/assets/asset_runtime_resolver_policy.h
+            src/assets/asset_typed_materialized_bytes.h
 )
 target_compile_features(quiz_vulkan_asset_contract INTERFACE cxx_std_23)
 target_include_directories(quiz_vulkan_asset_contract INTERFACE src)

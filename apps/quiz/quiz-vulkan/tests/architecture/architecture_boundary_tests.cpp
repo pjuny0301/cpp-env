@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -28,6 +29,12 @@ bool source_extension(const std::filesystem::path& path)
     return extension == ".h" || extension == ".hpp" || extension == ".cpp";
 }
 
+bool header_extension(const std::filesystem::path& path)
+{
+    const std::string extension = path.extension().string();
+    return extension == ".h" || extension == ".hpp";
+}
+
 std::vector<std::filesystem::path> source_files_under(const std::filesystem::path& root)
 {
     std::vector<std::filesystem::path> files;
@@ -42,6 +49,38 @@ std::vector<std::filesystem::path> source_files_under(const std::filesystem::pat
         }
     }
     return files;
+}
+
+std::vector<std::filesystem::path> header_files_under(const std::filesystem::path& root)
+{
+    std::vector<std::filesystem::path> files;
+    if (!std::filesystem::exists(root)) {
+        return files;
+    }
+
+    for (const std::filesystem::directory_entry& entry :
+         std::filesystem::recursive_directory_iterator(root)) {
+        if (entry.is_regular_file() && header_extension(entry.path())) {
+            files.push_back(entry.path());
+        }
+    }
+    return files;
+}
+
+std::string read_file_text(const std::filesystem::path& path)
+{
+    std::ifstream input(path);
+    return std::string{
+        std::istreambuf_iterator<char>{input},
+        std::istreambuf_iterator<char>{},
+    };
+}
+
+std::string generic_relative_path(
+    const std::filesystem::path& root,
+    const std::filesystem::path& file)
+{
+    return std::filesystem::relative(file, root).generic_string();
 }
 
 bool is_excluded_file(
@@ -93,6 +132,28 @@ void require_no_violations(const std::vector<violation>& violations)
     for (const violation& item : violations) {
         std::cerr << item.area << " boundary violation in " << item.file.string()
                   << ':' << item.line << " token `" << item.token << "`\n";
+    }
+    std::exit(1);
+}
+
+void require_source_headers_registered_in_cmake(const std::filesystem::path& source_root)
+{
+    const std::string cmake_text = read_file_text(source_root / "CMakeLists.txt");
+    std::vector<std::string> missing_headers;
+
+    for (const std::filesystem::path& file : header_files_under(source_root / "src")) {
+        const std::string relative_path = generic_relative_path(source_root, file);
+        if (cmake_text.find(relative_path) == std::string::npos) {
+            missing_headers.push_back(relative_path);
+        }
+    }
+
+    if (missing_headers.empty()) {
+        return;
+    }
+
+    for (const std::string& header : missing_headers) {
+        std::cerr << "CMake public header registration missing for " << header << '\n';
     }
     std::exit(1);
 }
@@ -398,5 +459,6 @@ int main()
     }
 
     require_no_violations(violations);
+    require_source_headers_registered_in_cmake(source_root);
     return 0;
 }

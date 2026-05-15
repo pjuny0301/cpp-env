@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: native Vulkan logical-device dispatch/create readiness integrated; Windows MinGW focused Vulkan/renderer/architecture CTest passed 3/3, and full CTest reached 102 executed passes plus the known `quiz_vulkan_font_shaped_atlas_update_tests` host permission BAD_COMMAND.
+- `8b2443a`: Vulkan backend now resolves logical-device create/get-queue/destroy symbols and creates diagnostic native-device results from the selected physical device and queue families while keeping real GPU calls outside default fake-path tests.
 - current: FreeType glyph raster evidence, asset byte contract split, and CMake source-header registration guard integrated; Windows MinGW focused text/asset/architecture CTest batches passed.
 - `1bd5c71`: text engine now uses FreeType behind the raster adapter contract to produce glyph metrics and 8-bit grayscale bitmap evidence from materialized memory-face bytes while preserving deterministic fallback diagnostics.
 - `84c2149`: asset system split stable byte/materialization contracts into smaller headers while keeping `asset_bytes_provider.h` as the existing include surface and registering the new public headers in CMake.

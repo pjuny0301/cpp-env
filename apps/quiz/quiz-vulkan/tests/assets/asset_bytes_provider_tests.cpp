@@ -1681,6 +1681,206 @@ void test_materialized_asset_byte_payload_bundle_diff_tracks_snapshot_changes()
         "payload bundle diff keeps before and after status");
 }
 
+void test_materialized_asset_byte_payload_selection_filters_payloads_and_reports_diagnostics()
+{
+    using namespace quiz_vulkan::assets;
+
+    asset_materialized_byte_payload_bundle bundle;
+    bundle.images.ready.push_back(make_payload_bundle_entry(
+        "card_front",
+        asset_type::image,
+        "asset://cards/front.png",
+        "/assets/cards/front.png",
+        "image bytes",
+        ""));
+    bundle.shaders.blocked.push_back(make_payload_bundle_entry(
+        "rootless_shader",
+        asset_type::shader,
+        "asset://shaders/rootless.vert.spv",
+        "/assets/shaders/rootless.vert.spv",
+        "",
+        "hash:rootless",
+        asset_materialized_bytes_handoff_status::materialization_blocked));
+    bundle.decks.blocked.push_back(make_payload_bundle_entry(
+        "main_deck",
+        asset_type::deck,
+        "asset://decks/main.quiz",
+        "/assets/decks/main.quiz",
+        "deck bytes",
+        "hash:deck-bad",
+        asset_materialized_bytes_handoff_status::integrity_blocked));
+    bundle.fonts.ready.push_back(make_payload_bundle_entry(
+        "duplicate_payload",
+        asset_type::font,
+        "asset://fonts/body.ttf",
+        "/assets/fonts/body.ttf",
+        "font bytes",
+        ""));
+    bundle.sounds.ready.push_back(make_payload_bundle_entry(
+        "duplicate_payload",
+        asset_type::sound,
+        "asset://sounds/correct.ogg",
+        "/assets/sounds/correct.ogg",
+        "sound bytes",
+        ""));
+
+    const asset_cache_key image_key = "image|asset://cards/front.png";
+    const asset_materialized_byte_payload_selection_result selected = select_materialized_asset_byte_payload(
+        bundle,
+        asset_materialized_byte_payload_selection_request{
+            .id = "card_front",
+            .expected_type = asset_type::image,
+            .expected_cache_key = image_key,
+        });
+
+    require(selected.selected(), "payload selection accepts matching ready payloads");
+    require(
+        selected.status == asset_materialized_byte_payload_selection_status::selected,
+        "payload selection reports selected status");
+    require(selected.payload != nullptr, "payload selection returns a selected payload pointer");
+    require(selected.payload->id == "card_front", "payload selection returns the requested payload");
+    require(selected.snapshot.has_value(), "payload selection includes compact snapshot evidence");
+    require(selected.snapshot->content_hash == selected.payload->content_hash, "payload selection snapshot keeps hash");
+    require(selected.snapshot->payload_byte_count == selected.payload->bytes.size(), "payload selection keeps byte count");
+    require(selected.actual_type == asset_type::image, "payload selection records actual type");
+    require(selected.actual_cache_key == image_key, "payload selection records actual cache key");
+    require(selected.match_count == 1U, "payload selection records match count");
+    require(selected.diagnostic == "materialized byte payload selected", "payload selection has stable success diagnostic");
+    require(
+        asset_materialized_byte_payload_selection_status_name(selected.status) == "selected",
+        "payload selection status names are stable");
+    require(
+        materialized_asset_byte_payload_integrity_ok(*selected.payload),
+        "payload selection exposes integrity status helper");
+
+    const asset_materialized_byte_payload_selection_result missing = select_materialized_asset_byte_payload(
+        bundle,
+        asset_materialized_byte_payload_selection_request{.id = "missing_image", .expected_type = asset_type::image});
+    require(!missing.selected(), "payload selection rejects missing ids");
+    require(
+        missing.status == asset_materialized_byte_payload_selection_status::missing_id,
+        "payload selection reports missing id status");
+    require(missing.diagnostic == "materialized byte payload id was not found", "missing id diagnostic is stable");
+
+    const asset_materialized_byte_payload_selection_result wrong_type = select_materialized_asset_byte_payload(
+        bundle,
+        asset_materialized_byte_payload_selection_request{.id = "card_front", .expected_type = asset_type::sound});
+    require(!wrong_type.selected(), "payload selection rejects wrong types");
+    require(
+        wrong_type.status == asset_materialized_byte_payload_selection_status::wrong_type,
+        "payload selection reports wrong type status");
+    require(wrong_type.snapshot.has_value(), "wrong type selection keeps actual snapshot evidence");
+    require(wrong_type.actual_type == asset_type::image, "wrong type selection records actual type");
+    require(
+        wrong_type.diagnostic == "materialized byte payload type does not match the request",
+        "wrong type diagnostic is stable");
+
+    const asset_materialized_byte_payload_selection_result cache_mismatch = select_materialized_asset_byte_payload(
+        bundle,
+        asset_materialized_byte_payload_selection_request{
+            .id = "card_front",
+            .expected_type = asset_type::image,
+            .expected_cache_key = asset_cache_key{"image|asset://cards/back.png"},
+        });
+    require(!cache_mismatch.selected(), "payload selection rejects cache key mismatches");
+    require(
+        cache_mismatch.status == asset_materialized_byte_payload_selection_status::cache_key_mismatch,
+        "payload selection reports cache key mismatch status");
+    require(cache_mismatch.actual_cache_key == image_key, "cache mismatch records actual key");
+    require(
+        cache_mismatch.diagnostic == "materialized byte payload cache key does not match the request",
+        "cache key mismatch diagnostic is stable");
+
+    const asset_materialized_byte_payload_selection_result blocked = select_materialized_asset_byte_payload(
+        bundle,
+        asset_materialized_byte_payload_selection_request{
+            .id = "rootless_shader",
+            .expected_type = asset_type::shader,
+        });
+    require(!blocked.selected(), "payload selection rejects blocked payloads by default");
+    require(
+        blocked.status == asset_materialized_byte_payload_selection_status::blocked_payload,
+        "payload selection reports blocked payload status");
+    require(blocked.snapshot.has_value() && !blocked.snapshot->ready, "blocked selection keeps readiness evidence");
+    require(blocked.diagnostic == "materialized byte payload is blocked", "blocked payload diagnostic is stable");
+
+    const asset_materialized_byte_payload_selection_result blocked_allowed = select_materialized_asset_byte_payload(
+        bundle,
+        asset_materialized_byte_payload_selection_request{
+            .id = "rootless_shader",
+            .expected_type = asset_type::shader,
+            .require_ready = false,
+            .require_integrity_ok = false,
+        });
+    require(blocked_allowed.selected(), "payload selection can explicitly allow blocked payloads");
+    require(blocked_allowed.payload->status == asset_materialized_bytes_handoff_status::materialization_blocked,
+        "blocked-allowed selection preserves blocker status");
+
+    const asset_materialized_byte_payload_selection_result integrity_failure = select_materialized_asset_byte_payload(
+        bundle,
+        asset_materialized_byte_payload_selection_request{
+            .id = "main_deck",
+            .expected_type = asset_type::deck,
+        });
+    require(!integrity_failure.selected(), "payload selection rejects integrity failures by default");
+    require(
+        integrity_failure.status == asset_materialized_byte_payload_selection_status::integrity_failure,
+        "payload selection reports integrity failure status");
+    require(
+        !materialized_asset_byte_payload_integrity_ok(bundle.decks.blocked[0]),
+        "payload integrity helper identifies failed integrity");
+    require(
+        integrity_failure.diagnostic == "materialized byte payload has integrity issues",
+        "integrity failure diagnostic is stable");
+
+    const asset_materialized_byte_payload_selection_result duplicate = select_materialized_asset_byte_payload(
+        bundle,
+        asset_materialized_byte_payload_selection_request{.id = "duplicate_payload"});
+    require(!duplicate.selected(), "payload selection rejects duplicate ids");
+    require(
+        duplicate.status == asset_materialized_byte_payload_selection_status::duplicate_id,
+        "payload selection reports duplicate id status");
+    require(duplicate.match_count == 2U, "payload selection records duplicate count");
+    require(
+        duplicate.diagnostic == "materialized byte payload id matched multiple payloads",
+        "duplicate id diagnostic is stable");
+
+    const asset_materialized_byte_payload_filter_result ready_images = filter_materialized_asset_byte_payloads(
+        bundle,
+        asset_materialized_byte_payload_filter{
+            .type = asset_type::image,
+            .ready = true,
+            .integrity_ok = true,
+        });
+    require(!ready_images.empty(), "payload filter returns ready matching payloads");
+    require(ready_images.match_count() == 1U, "payload filter counts image matches");
+    require(ready_images.first_payload() == &bundle.images.ready[0], "payload filter returns payload pointers");
+    require(ready_images.snapshots.size() == 1U, "payload filter returns compact snapshots");
+    require(ready_images.snapshots[0].id == "card_front", "payload filter snapshot keeps id");
+
+    const asset_materialized_byte_payload_filter_result blocked_payloads = filter_materialized_asset_byte_payloads(
+        bundle,
+        asset_materialized_byte_payload_filter{.ready = false});
+    require(blocked_payloads.match_count() == 2U, "payload filter selects blocked payloads");
+
+    const asset_materialized_byte_payload_filter_result integrity_failures = filter_materialized_asset_byte_payloads(
+        bundle,
+        asset_materialized_byte_payload_filter{.integrity_ok = false});
+    require(integrity_failures.match_count() == 1U, "payload filter selects integrity failures");
+    require(integrity_failures.first_payload()->id == "main_deck", "payload filter returns failed integrity payload");
+
+    const asset_materialized_byte_payload_filter_result cache_match = filter_materialized_asset_byte_payloads(
+        bundle,
+        asset_materialized_byte_payload_filter{.cache_key = image_key});
+    require(cache_match.match_count() == 1U, "payload filter selects cache key matches");
+    require(cache_match.first_payload()->id == "card_front", "payload filter returns cache key match");
+
+    const asset_materialized_byte_payload_filter_result id_match = filter_materialized_asset_byte_payloads(
+        bundle,
+        asset_materialized_byte_payload_filter{.id = std::string{"duplicate_payload"}});
+    require(id_match.match_count() == 2U, "payload filter can intentionally return duplicate ids");
+}
+
 void test_materialized_asset_bytes_integrity_fails_before_provider_for_unmaterialized_sources()
 {
     using namespace quiz_vulkan::assets;
@@ -1795,6 +1995,7 @@ int main()
     test_materialized_asset_bytes_handoff_summary_groups_ready_and_blocked_payloads();
     test_materialized_asset_byte_payload_bundle_groups_loaded_bytes_by_type();
     test_materialized_asset_byte_payload_bundle_diff_tracks_snapshot_changes();
+    test_materialized_asset_byte_payload_selection_filters_payloads_and_reports_diagnostics();
     test_materialized_asset_bytes_integrity_fails_before_provider_for_unmaterialized_sources();
     test_materialized_asset_bytes_integrity_fails_after_provider_for_byte_count_mismatch();
     test_materialized_asset_bytes_integrity_fails_after_provider_for_metadata_mismatch();

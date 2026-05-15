@@ -348,6 +348,50 @@ static_assert(requires(
     { const_summary.find_changed(id) } -> std::same_as<const asset_materialized_byte_payload_diff_entry*>;
 });
 
+static_assert(std::is_enum_v<asset_materialized_byte_payload_selection_status>);
+
+static_assert(requires(asset_materialized_byte_payload_selection_request request) {
+    { request.id } -> std::same_as<std::string&>;
+    { request.expected_type } -> std::same_as<asset_type&>;
+    { request.expected_cache_key } -> std::same_as<std::optional<asset_cache_key>&>;
+    { request.require_ready } -> std::same_as<bool&>;
+    { request.require_integrity_ok } -> std::same_as<bool&>;
+});
+
+static_assert(requires(
+    asset_materialized_byte_payload_selection_result result,
+    const asset_materialized_byte_payload_selection_result& const_result) {
+    { result.status } -> std::same_as<asset_materialized_byte_payload_selection_status&>;
+    { result.payload } -> std::same_as<const asset_materialized_byte_payload*&>;
+    { result.snapshot } -> std::same_as<std::optional<asset_materialized_byte_payload_snapshot>&>;
+    { result.id } -> std::same_as<std::string&>;
+    { result.expected_type } -> std::same_as<asset_type&>;
+    { result.expected_cache_key } -> std::same_as<std::optional<asset_cache_key>&>;
+    { result.actual_type } -> std::same_as<asset_type&>;
+    { result.actual_cache_key } -> std::same_as<asset_cache_key&>;
+    { result.match_count } -> std::same_as<std::size_t&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { const_result.selected() } -> std::same_as<bool>;
+});
+
+static_assert(requires(asset_materialized_byte_payload_filter filter) {
+    { filter.type } -> std::same_as<std::optional<asset_type>&>;
+    { filter.id } -> std::same_as<std::optional<std::string>&>;
+    { filter.cache_key } -> std::same_as<std::optional<asset_cache_key>&>;
+    { filter.ready } -> std::same_as<std::optional<bool>&>;
+    { filter.integrity_ok } -> std::same_as<std::optional<bool>&>;
+});
+
+static_assert(requires(
+    asset_materialized_byte_payload_filter_result result,
+    const asset_materialized_byte_payload_filter_result& const_result) {
+    { result.payloads } -> std::same_as<std::vector<const asset_materialized_byte_payload*>&>;
+    { result.snapshots } -> std::same_as<std::vector<asset_materialized_byte_payload_snapshot>&>;
+    { const_result.empty() } -> std::same_as<bool>;
+    { const_result.match_count() } -> std::same_as<std::size_t>;
+    { const_result.first_payload() } -> std::same_as<const asset_materialized_byte_payload*>;
+});
+
 static_assert(std::has_virtual_destructor_v<asset_bytes_provider_interface>);
 static_assert(std::derived_from<fake_asset_bytes_provider, asset_bytes_provider_interface>);
 static_assert(std::derived_from<local_file_asset_bytes_provider, asset_bytes_provider_interface>);
@@ -385,6 +429,9 @@ static_assert(requires(
     const asset_materialized_byte_payload& payload,
     const asset_materialized_byte_payload_bundle& payload_bundle,
     const asset_materialized_byte_payload_bundle_snapshot& payload_snapshot,
+    const asset_materialized_byte_payload_selection_request& selection_request,
+    const asset_materialized_byte_payload_filter& payload_filter,
+    asset_materialized_byte_payload_selection_status selection_status,
     const std::vector<asset_bytes_catalog_request>& requests,
     const asset_bytes_catalog_request& request) {
     { make_asset_bytes_content_hash(bytes) } -> std::same_as<std::string>;
@@ -419,6 +466,12 @@ static_assert(requires(
         std::same_as<asset_materialized_byte_payload_diff_summary>;
     { diff_materialized_asset_byte_payload_bundles(payload_bundle, payload_bundle) } ->
         std::same_as<asset_materialized_byte_payload_diff_summary>;
+    { asset_materialized_byte_payload_selection_status_name(selection_status) } -> std::same_as<std::string>;
+    { materialized_asset_byte_payload_integrity_ok(payload) } -> std::same_as<bool>;
+    { select_materialized_asset_byte_payload(payload_bundle, selection_request) } ->
+        std::same_as<asset_materialized_byte_payload_selection_result>;
+    { filter_materialized_asset_byte_payloads(payload_bundle, payload_filter) } ->
+        std::same_as<asset_materialized_byte_payload_filter_result>;
 });
 
 } // namespace

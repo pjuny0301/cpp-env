@@ -470,6 +470,155 @@ struct vulkan_swapchain_surface_capabilities_snapshot {
     };
 };
 
+enum class vulkan_native_surface_query_dispatch_table_status {
+    not_checked,
+    ready,
+    device_unavailable,
+    get_instance_proc_address_unavailable,
+    missing_surface_support_symbol,
+    missing_surface_capabilities_symbol,
+    missing_surface_formats_symbol,
+    missing_surface_present_modes_symbol,
+};
+
+struct vulkan_native_surface_query_dispatch_table {
+    bool checked = false;
+    vulkan_native_surface_query_dispatch_table_status status =
+        vulkan_native_surface_query_dispatch_table_status::not_checked;
+    vulkan_instance_handle instance;
+    vulkan_physical_device_handle physical_device;
+    vulkan_native_function_pointer get_instance_proc_address;
+    vulkan_native_function_pointer get_physical_device_surface_support;
+    vulkan_native_function_pointer get_physical_device_surface_capabilities;
+    vulkan_native_function_pointer get_physical_device_surface_formats;
+    vulkan_native_function_pointer get_physical_device_surface_present_modes;
+    std::string missing_symbol_name;
+    std::string diagnostic;
+
+    bool ready_for_query() const
+    {
+        return checked
+            && status == vulkan_native_surface_query_dispatch_table_status::ready
+            && instance.valid() && physical_device.valid()
+            && get_instance_proc_address.valid()
+            && get_physical_device_surface_support.valid()
+            && get_physical_device_surface_capabilities.valid()
+            && get_physical_device_surface_formats.valid()
+            && get_physical_device_surface_present_modes.valid();
+    }
+};
+
+enum class vulkan_native_surface_capability_query_status {
+    not_checked,
+    ready,
+    dispatch_table_unavailable,
+    device_unavailable,
+    missing_surface_handle,
+    headers_unavailable,
+    support_query_failed,
+    capabilities_query_failed,
+    formats_query_failed,
+    present_modes_query_failed,
+    unsupported_present_queue,
+    zero_surface_formats,
+    zero_present_modes,
+};
+
+struct vulkan_native_surface_capability_query_result {
+    bool checked = false;
+    vulkan_native_surface_capability_query_status status =
+        vulkan_native_surface_capability_query_status::not_checked;
+    vulkan_native_surface_query_dispatch_table dispatch_table;
+    vulkan_native_device_create_result device;
+    vulkan_surface_handle surface;
+    vulkan_physical_device_handle physical_device;
+    std::size_t present_queue_family_index = 0;
+    vulkan_swapchain_surface_capabilities_snapshot capabilities;
+    bool support_query_checked = false;
+    bool capabilities_query_checked = false;
+    bool formats_query_checked = false;
+    bool present_modes_query_checked = false;
+    bool present_queue_supported = false;
+    std::size_t surface_format_count = 0;
+    std::size_t present_mode_count = 0;
+    std::int32_t native_result = 0;
+    std::string diagnostic;
+
+    bool ready_for_swapchain_create() const
+    {
+        return checked
+            && status == vulkan_native_surface_capability_query_status::ready
+            && dispatch_table.ready_for_query() && device.ready_for_backend()
+            && surface.valid() && physical_device.valid()
+            && present_queue_supported && capabilities.checked
+            && surface_format_count > 0
+            && surface_format_count == capabilities.surface_formats.size()
+            && present_mode_count > 0
+            && present_mode_count == capabilities.present_modes.size();
+    }
+};
+
+class vulkan_native_surface_capability_query_interface {
+public:
+    virtual ~vulkan_native_surface_capability_query_interface() = default;
+
+    virtual vulkan_native_surface_capability_query_result query_surface_capabilities(
+        const vulkan_native_surface_query_dispatch_table& dispatch_table,
+        const vulkan_native_device_create_result& device,
+        vulkan_surface_handle surface,
+        std::size_t present_queue_family_index) = 0;
+};
+
+struct fake_vulkan_native_surface_capability_query_options {
+    vulkan_swapchain_surface_capabilities_snapshot capabilities;
+    bool present_queue_supported = true;
+    bool fail_support_query = false;
+    bool fail_capabilities_query = false;
+    bool fail_formats_query = false;
+    bool fail_present_modes_query = false;
+    std::int32_t failure_result = -1;
+};
+
+struct fake_vulkan_native_surface_capability_query_state {
+    std::size_t query_call_count = 0;
+    vulkan_surface_handle requested_surface;
+    vulkan_physical_device_handle requested_physical_device;
+    std::size_t requested_present_queue_family_index = 0;
+    vulkan_native_function_pointer last_get_physical_device_surface_support;
+    vulkan_native_function_pointer last_get_physical_device_surface_capabilities;
+    vulkan_native_function_pointer last_get_physical_device_surface_formats;
+    vulkan_native_function_pointer last_get_physical_device_surface_present_modes;
+};
+
+class fake_vulkan_native_surface_capability_query final
+    : public vulkan_native_surface_capability_query_interface {
+public:
+    fake_vulkan_native_surface_capability_query();
+    explicit fake_vulkan_native_surface_capability_query(
+        fake_vulkan_native_surface_capability_query_options options);
+
+    vulkan_native_surface_capability_query_result query_surface_capabilities(
+        const vulkan_native_surface_query_dispatch_table& dispatch_table,
+        const vulkan_native_device_create_result& device,
+        vulkan_surface_handle surface,
+        std::size_t present_queue_family_index) override;
+    const fake_vulkan_native_surface_capability_query_state& state() const;
+
+private:
+    fake_vulkan_native_surface_capability_query_options options_;
+    fake_vulkan_native_surface_capability_query_state state_;
+};
+
+class vulkan_native_surface_capability_query final
+    : public vulkan_native_surface_capability_query_interface {
+public:
+    vulkan_native_surface_capability_query_result query_surface_capabilities(
+        const vulkan_native_surface_query_dispatch_table& dispatch_table,
+        const vulkan_native_device_create_result& device,
+        vulkan_surface_handle surface,
+        std::size_t present_queue_family_index) override;
+};
+
 struct vulkan_swapchain_create_plan_intent {
     bool desired_vsync = true;
     vulkan_surface_extent desired_extent{.width = 1, .height = 1};
@@ -590,6 +739,7 @@ enum class vulkan_native_swapchain_create_operation_status {
     not_checked,
     ready,
     create_plan_unavailable,
+    surface_query_unavailable,
     native_entrypoints_unavailable,
     invalid_device,
     invalid_surface,
@@ -610,6 +760,8 @@ inline std::string_view native_swapchain_create_operation_status_name(
         return "ready";
     case vulkan_native_swapchain_create_operation_status::create_plan_unavailable:
         return "create_plan_unavailable";
+    case vulkan_native_swapchain_create_operation_status::surface_query_unavailable:
+        return "surface_query_unavailable";
     case vulkan_native_swapchain_create_operation_status::native_entrypoints_unavailable:
         return "native_entrypoints_unavailable";
     case vulkan_native_swapchain_create_operation_status::invalid_device:
@@ -636,6 +788,7 @@ struct vulkan_native_swapchain_create_operation_request {
     vulkan_native_swapchain_entrypoint_readiness native_entrypoints;
     vulkan_device_handle device;
     vulkan_surface_handle surface;
+    vulkan_native_surface_capability_query_result surface_query;
     vulkan_swapchain_handle old_swapchain;
     bool require_recreate_compatibility = false;
 };
@@ -650,6 +803,11 @@ struct vulkan_native_swapchain_create_operation_summary {
     bool native_entrypoints_ready_for_create = false;
     bool device_valid = false;
     bool surface_valid = false;
+    bool surface_query_checked = false;
+    bool surface_query_ready = false;
+    bool present_queue_supported = false;
+    std::size_t surface_format_count = 0;
+    std::size_t present_mode_count = 0;
     vulkan_device_handle device;
     vulkan_surface_handle surface;
     vulkan_swapchain_handle old_swapchain;
@@ -691,6 +849,7 @@ struct vulkan_native_swapchain_create_operation_result {
     vulkan_native_swapchain_entrypoint_readiness native_entrypoints;
     vulkan_device_handle device;
     vulkan_surface_handle surface;
+    vulkan_native_surface_capability_query_result surface_query;
     vulkan_swapchain_handle old_swapchain;
     vulkan_surface_extent selected_extent;
     vulkan_swapchain_surface_format selected_surface_format;
@@ -709,6 +868,11 @@ struct vulkan_native_swapchain_create_operation_result {
     bool native_entrypoints_ready_for_create = false;
     bool device_valid = false;
     bool surface_valid = false;
+    bool surface_query_checked = false;
+    bool surface_query_ready = false;
+    bool present_queue_supported = false;
+    std::size_t surface_format_count = 0;
+    std::size_t present_mode_count = 0;
     bool required_extensions_ready = false;
     bool create_symbol_ready = false;
     bool destroy_symbol_ready = false;
@@ -1214,6 +1378,41 @@ inline vulkan_swapchain_create_result make_swapchain_create_result(
     };
 }
 
+inline vulkan_native_surface_capability_query_result make_surface_capability_query_result(
+    const vulkan_native_surface_query_dispatch_table& dispatch_table,
+    const vulkan_native_device_create_result& device,
+    vulkan_surface_handle surface,
+    std::size_t present_queue_family_index)
+{
+    return vulkan_native_surface_capability_query_result{
+        .checked = true,
+        .status = vulkan_native_surface_capability_query_status::not_checked,
+        .dispatch_table = dispatch_table,
+        .device = device,
+        .surface = surface,
+        .physical_device = dispatch_table.physical_device,
+        .present_queue_family_index = present_queue_family_index,
+        .capabilities = {},
+        .support_query_checked = false,
+        .capabilities_query_checked = false,
+        .formats_query_checked = false,
+        .present_modes_query_checked = false,
+        .present_queue_supported = false,
+        .surface_format_count = 0,
+        .present_mode_count = 0,
+        .native_result = 0,
+        .diagnostic = {},
+    };
+}
+
+inline void record_surface_capability_counts(
+    vulkan_native_surface_capability_query_result& result)
+{
+    result.capabilities.checked = true;
+    result.surface_format_count = result.capabilities.surface_formats.size();
+    result.present_mode_count = result.capabilities.present_modes.size();
+}
+
 inline std::size_t selected_image_index_for(
     const vulkan_swapchain_image_acquire_request& request,
     const vulkan_swapchain_acquire_result& acquire)
@@ -1253,6 +1452,141 @@ inline vulkan_native_swapchain_image_binding find_native_swapchain_image_binding
 }
 
 } // namespace swapchain_detail
+
+inline fake_vulkan_native_surface_capability_query::
+    fake_vulkan_native_surface_capability_query()
+    : fake_vulkan_native_surface_capability_query(
+        fake_vulkan_native_surface_capability_query_options{})
+{
+}
+
+inline fake_vulkan_native_surface_capability_query::
+    fake_vulkan_native_surface_capability_query(
+        fake_vulkan_native_surface_capability_query_options options)
+    : options_(std::move(options))
+{
+}
+
+inline vulkan_native_surface_capability_query_result
+fake_vulkan_native_surface_capability_query::query_surface_capabilities(
+    const vulkan_native_surface_query_dispatch_table& dispatch_table,
+    const vulkan_native_device_create_result& device,
+    vulkan_surface_handle surface,
+    std::size_t present_queue_family_index)
+{
+    vulkan_native_surface_capability_query_result result =
+        swapchain_detail::make_surface_capability_query_result(
+            dispatch_table,
+            device,
+            surface,
+            present_queue_family_index);
+
+    if (!dispatch_table.ready_for_query()) {
+        result.status =
+            vulkan_native_surface_capability_query_status::dispatch_table_unavailable;
+        result.diagnostic = dispatch_table.diagnostic.empty()
+            ? "Native Vulkan surface query dispatch table is unavailable"
+            : dispatch_table.diagnostic;
+        return result;
+    }
+    if (!device.ready_for_backend()) {
+        result.status = vulkan_native_surface_capability_query_status::device_unavailable;
+        result.diagnostic = device.diagnostic.empty()
+            ? "Native Vulkan device is unavailable for surface capability query"
+            : device.diagnostic;
+        return result;
+    }
+    if (!surface.valid()) {
+        result.status =
+            vulkan_native_surface_capability_query_status::missing_surface_handle;
+        result.diagnostic =
+            "Native Vulkan surface capability query has no valid surface handle";
+        return result;
+    }
+
+    ++state_.query_call_count;
+    state_.requested_surface = surface;
+    state_.requested_physical_device = dispatch_table.physical_device;
+    state_.requested_present_queue_family_index = present_queue_family_index;
+    state_.last_get_physical_device_surface_support =
+        dispatch_table.get_physical_device_surface_support;
+    state_.last_get_physical_device_surface_capabilities =
+        dispatch_table.get_physical_device_surface_capabilities;
+    state_.last_get_physical_device_surface_formats =
+        dispatch_table.get_physical_device_surface_formats;
+    state_.last_get_physical_device_surface_present_modes =
+        dispatch_table.get_physical_device_surface_present_modes;
+
+    result.support_query_checked = true;
+    if (options_.fail_support_query) {
+        result.status =
+            vulkan_native_surface_capability_query_status::support_query_failed;
+        result.native_result = options_.failure_result;
+        result.diagnostic = "Native Vulkan surface support query failed";
+        return result;
+    }
+    result.present_queue_supported = options_.present_queue_supported;
+    if (!result.present_queue_supported) {
+        result.status =
+            vulkan_native_surface_capability_query_status::unsupported_present_queue;
+        result.diagnostic =
+            "Native Vulkan selected queue family does not support presenting to the surface";
+        return result;
+    }
+
+    result.capabilities_query_checked = true;
+    if (options_.fail_capabilities_query) {
+        result.status =
+            vulkan_native_surface_capability_query_status::capabilities_query_failed;
+        result.native_result = options_.failure_result;
+        result.diagnostic = "Native Vulkan surface capabilities query failed";
+        return result;
+    }
+    result.capabilities = options_.capabilities;
+
+    result.formats_query_checked = true;
+    if (options_.fail_formats_query) {
+        result.status =
+            vulkan_native_surface_capability_query_status::formats_query_failed;
+        result.native_result = options_.failure_result;
+        result.diagnostic = "Native Vulkan surface format query failed";
+        return result;
+    }
+    swapchain_detail::record_surface_capability_counts(result);
+    if (result.surface_format_count == 0) {
+        result.status =
+            vulkan_native_surface_capability_query_status::zero_surface_formats;
+        result.diagnostic =
+            "Native Vulkan surface capability query found no surface formats";
+        return result;
+    }
+
+    result.present_modes_query_checked = true;
+    if (options_.fail_present_modes_query) {
+        result.status =
+            vulkan_native_surface_capability_query_status::present_modes_query_failed;
+        result.native_result = options_.failure_result;
+        result.diagnostic = "Native Vulkan present mode query failed";
+        return result;
+    }
+    if (result.present_mode_count == 0) {
+        result.status =
+            vulkan_native_surface_capability_query_status::zero_present_modes;
+        result.diagnostic =
+            "Native Vulkan surface capability query found no present modes";
+        return result;
+    }
+
+    result.status = vulkan_native_surface_capability_query_status::ready;
+    result.diagnostic = "Native Vulkan surface capabilities are ready";
+    return result;
+}
+
+inline const fake_vulkan_native_surface_capability_query_state&
+fake_vulkan_native_surface_capability_query::state() const
+{
+    return state_;
+}
 
 inline vulkan_swapchain_create_plan_result build_vulkan_swapchain_create_plan(
     const vulkan_swapchain_create_plan_request& request)
@@ -1451,6 +1785,7 @@ build_vulkan_native_swapchain_create_operation_plan(
         .native_entrypoints = request.native_entrypoints,
         .device = request.device,
         .surface = request.surface,
+        .surface_query = request.surface_query,
         .old_swapchain = request.old_swapchain,
         .selected_extent = request.create_plan.selected_extent,
         .selected_surface_format = request.create_plan.selected_surface_format,
@@ -1466,6 +1801,11 @@ build_vulkan_native_swapchain_create_operation_plan(
             request.native_entrypoints.ready_for_swapchain_create(),
         .device_valid = request.device.valid(),
         .surface_valid = request.surface.valid(),
+        .surface_query_checked = request.surface_query.checked,
+        .surface_query_ready = request.surface_query.ready_for_swapchain_create(),
+        .present_queue_supported = request.surface_query.present_queue_supported,
+        .surface_format_count = request.surface_query.surface_format_count,
+        .present_mode_count = request.surface_query.present_mode_count,
         .required_extensions_ready = request.native_entrypoints.required_extensions_ready,
         .create_symbol_ready = request.native_entrypoints.create_swapchain_ready,
         .destroy_symbol_ready = request.native_entrypoints.destroy_swapchain_ready,
@@ -1477,7 +1817,9 @@ build_vulkan_native_swapchain_create_operation_plan(
             request.require_recreate_compatibility
             && !request.create_plan.recreate_compatible,
         .missing_required_extension = request.native_entrypoints.missing_required_extension,
-        .missing_symbol_name = request.native_entrypoints.missing_symbol_name,
+        .missing_symbol_name = request.native_entrypoints.missing_symbol_name.empty()
+            ? request.surface_query.dispatch_table.missing_symbol_name
+            : request.native_entrypoints.missing_symbol_name,
         .diagnostic = {},
         .operation = {},
     };
@@ -1496,6 +1838,12 @@ build_vulkan_native_swapchain_create_operation_plan(
         result.status = vulkan_native_swapchain_create_operation_status::invalid_surface;
         result.diagnostic =
             "Native Vulkan swapchain create operation has no valid surface handle";
+    } else if (!result.surface_query_ready) {
+        result.status =
+            vulkan_native_swapchain_create_operation_status::surface_query_unavailable;
+        result.diagnostic = request.surface_query.diagnostic.empty()
+            ? "Native Vulkan swapchain create operation is missing surface capability readiness"
+            : request.surface_query.diagnostic;
     } else if (!result.native_entrypoints_checked) {
         result.status =
             vulkan_native_swapchain_create_operation_status::native_entrypoints_unavailable;
@@ -1542,6 +1890,11 @@ build_vulkan_native_swapchain_create_operation_plan(
         .native_entrypoints_ready_for_create = result.native_entrypoints_ready_for_create,
         .device_valid = result.device_valid,
         .surface_valid = result.surface_valid,
+        .surface_query_checked = result.surface_query_checked,
+        .surface_query_ready = result.surface_query_ready,
+        .present_queue_supported = result.present_queue_supported,
+        .surface_format_count = result.surface_format_count,
+        .present_mode_count = result.present_mode_count,
         .device = result.device,
         .surface = result.surface,
         .old_swapchain = result.old_swapchain,
@@ -2176,5 +2529,18 @@ inline vulkan_swapchain_create_result create_vulkan_swapchain(
 {
     return factory.create_swapchain(device_result, request);
 }
+
+vulkan_native_surface_query_dispatch_table
+collect_vulkan_native_surface_query_dispatch_table(
+    vulkan_native_instance_symbol_resolver_interface& resolver,
+    const vulkan_native_device_create_result& device);
+
+vulkan_native_surface_capability_query_result
+query_native_vulkan_surface_capabilities(
+    vulkan_native_surface_capability_query_interface& query,
+    const vulkan_native_surface_query_dispatch_table& dispatch_table,
+    const vulkan_native_device_create_result& device,
+    vulkan_surface_handle surface,
+    std::size_t present_queue_family_index);
 
 } // namespace quiz_vulkan::render::vulkan_backend

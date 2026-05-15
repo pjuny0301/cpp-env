@@ -97,6 +97,177 @@ make_capabilities()
     };
 }
 
+quiz_vulkan::render::vulkan_backend::vulkan_native_device_create_result
+make_ready_native_device()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_instance_handle instance{.value = 44};
+    const vulkan_backend::vulkan_physical_device_handle physical_device{.value = 55};
+    const vulkan_backend::vulkan_native_physical_device_dispatch_table physical_dispatch{
+        .checked = true,
+        .status = vulkan_backend::vulkan_native_physical_device_dispatch_table_status::ready,
+        .instance = instance,
+        .get_instance_proc_address = vulkan_backend::vulkan_native_function_pointer{.value = 100},
+        .enumerate_physical_devices = vulkan_backend::vulkan_native_function_pointer{.value = 101},
+        .get_physical_device_queue_family_properties =
+            vulkan_backend::vulkan_native_function_pointer{.value = 102},
+        .diagnostic = "physical device dispatch ready",
+    };
+    const vulkan_backend::vulkan_native_physical_device_enumeration_result enumeration{
+        .checked = true,
+        .status = vulkan_backend::vulkan_native_physical_device_enumeration_status::ready,
+        .dispatch_table = physical_dispatch,
+        .physical_devices = {physical_device},
+        .physical_device_count = 1,
+        .diagnostic = "physical device enumeration ready",
+    };
+    const vulkan_backend::vulkan_native_queue_family_query_result queue_query{
+        .checked = true,
+        .status = vulkan_backend::vulkan_native_queue_family_query_status::ready,
+        .enumeration = enumeration,
+        .queue_families = {
+            vulkan_backend::vulkan_native_physical_device_queue_family{
+                .physical_device = physical_device,
+                .family_index = 3,
+                .queue_count = 1,
+                .capabilities = {vulkan_backend::vulkan_device_queue_capability::graphics},
+            },
+            vulkan_backend::vulkan_native_physical_device_queue_family{
+                .physical_device = physical_device,
+                .family_index = 7,
+                .queue_count = 1,
+                .capabilities = {vulkan_backend::vulkan_device_queue_capability::present},
+            },
+        },
+        .queue_family_count = 2,
+        .diagnostic = "queue families ready",
+    };
+    const vulkan_backend::vulkan_native_physical_device_selection_result selection{
+        .checked = true,
+        .status = vulkan_backend::vulkan_native_physical_device_selection_status::selected,
+        .enumeration = enumeration,
+        .queue_family_query = queue_query,
+        .request = vulkan_backend::vulkan_device_create_request{
+            .required_device_extensions = {"VK_KHR_swapchain"},
+            .required_queue_capabilities = {
+                vulkan_backend::vulkan_device_queue_capability::graphics,
+                vulkan_backend::vulkan_device_queue_capability::present,
+            },
+        },
+        .selected_physical_device = physical_device,
+        .selected_queue_families = {
+            vulkan_backend::vulkan_native_physical_device_queue_family_selection{
+                .capability = vulkan_backend::vulkan_device_queue_capability::graphics,
+                .physical_device = physical_device,
+                .family_index = 3,
+                .queue_count = 1,
+            },
+            vulkan_backend::vulkan_native_physical_device_queue_family_selection{
+                .capability = vulkan_backend::vulkan_device_queue_capability::present,
+                .physical_device = physical_device,
+                .family_index = 7,
+                .queue_count = 1,
+            },
+        },
+        .diagnostic = "physical device selected",
+    };
+    const vulkan_backend::vulkan_native_device_dispatch_table dispatch{
+        .checked = true,
+        .status = vulkan_backend::vulkan_native_device_dispatch_table_status::ready,
+        .instance = instance,
+        .physical_device = physical_device,
+        .get_instance_proc_address = physical_dispatch.get_instance_proc_address,
+        .enumerate_device_extension_properties =
+            vulkan_backend::vulkan_native_function_pointer{.value = 201},
+        .create_device = vulkan_backend::vulkan_native_function_pointer{.value = 202},
+        .get_device_queue = vulkan_backend::vulkan_native_function_pointer{.value = 203},
+        .destroy_device = vulkan_backend::vulkan_native_function_pointer{.value = 204},
+        .diagnostic = "device dispatch ready",
+    };
+    const vulkan_backend::vulkan_native_device_extension_query_result extension_query{
+        .checked = true,
+        .status = vulkan_backend::vulkan_native_device_extension_query_status::ready,
+        .dispatch_table = dispatch,
+        .selection = selection,
+        .physical_device = physical_device,
+        .available_extensions = {"VK_KHR_swapchain"},
+        .selected_extensions = {"VK_KHR_swapchain"},
+        .required_extension_diagnostics = {
+            vulkan_backend::vulkan_device_extension_diagnostic{
+                .extension_name = "VK_KHR_swapchain",
+                .required = true,
+                .available = true,
+                .selected = true,
+            },
+        },
+        .available_extension_count = 1,
+        .required_extension_count = 1,
+        .available_required_extension_count = 1,
+        .diagnostic = "device extensions ready",
+    };
+    return vulkan_backend::vulkan_native_device_create_result{
+        .checked = true,
+        .status = vulkan_backend::vulkan_native_device_create_status::created,
+        .dispatch_table = dispatch,
+        .extension_query = extension_query,
+        .selection = selection,
+        .handle = vulkan_backend::vulkan_device_handle{.value = 77},
+        .selected_extensions = {"VK_KHR_swapchain"},
+        .queue_create_family_indices = {3, 7},
+        .selected_queues = {
+            vulkan_backend::vulkan_device_queue_selection{
+                .capability = vulkan_backend::vulkan_device_queue_capability::graphics,
+                .family_index = 3,
+                .queue = vulkan_backend::vulkan_queue_handle{.value = 301},
+            },
+            vulkan_backend::vulkan_device_queue_selection{
+                .capability = vulkan_backend::vulkan_device_queue_capability::present,
+                .family_index = 7,
+                .queue = vulkan_backend::vulkan_queue_handle{.value = 302},
+            },
+        },
+        .queue_create_family_count = 2,
+        .selected_queue_count = 2,
+        .diagnostic = "native device ready",
+    };
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_native_surface_capability_query_result
+make_ready_surface_query(
+    const quiz_vulkan::render::vulkan_backend::vulkan_native_device_create_result& device,
+    quiz_vulkan::render::vulkan_backend::vulkan_surface_handle surface)
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_surface_query_dispatch_table dispatch{
+        .checked = true,
+        .status = vulkan_backend::vulkan_native_surface_query_dispatch_table_status::ready,
+        .instance = device.dispatch_table.instance,
+        .physical_device = device.selection.selected_physical_device,
+        .get_instance_proc_address = device.dispatch_table.get_instance_proc_address,
+        .get_physical_device_surface_support =
+            vulkan_backend::vulkan_native_function_pointer{.value = 401},
+        .get_physical_device_surface_capabilities =
+            vulkan_backend::vulkan_native_function_pointer{.value = 402},
+        .get_physical_device_surface_formats =
+            vulkan_backend::vulkan_native_function_pointer{.value = 403},
+        .get_physical_device_surface_present_modes =
+            vulkan_backend::vulkan_native_function_pointer{.value = 404},
+        .diagnostic = "surface query dispatch ready",
+    };
+    vulkan_backend::fake_vulkan_native_surface_capability_query query(
+        vulkan_backend::fake_vulkan_native_surface_capability_query_options{
+            .capabilities = make_capabilities(),
+        });
+    return vulkan_backend::query_native_vulkan_surface_capabilities(
+        query,
+        dispatch,
+        device,
+        surface,
+        7);
+}
+
 quiz_vulkan::render::vulkan_backend::vulkan_swapchain_create_plan_intent make_intent()
 {
     namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
@@ -122,6 +293,9 @@ quiz_vulkan::render::vulkan_backend::vulkan_native_swapchain_create_operation_re
 make_ready_swapchain_create()
 {
     namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+    const vulkan_backend::vulkan_native_device_create_result device =
+        make_ready_native_device();
+    const vulkan_backend::vulkan_surface_handle surface{.value = 88};
 
     return vulkan_backend::build_vulkan_native_swapchain_create_operation_plan(
         vulkan_backend::vulkan_native_swapchain_create_operation_request{
@@ -132,8 +306,9 @@ make_ready_swapchain_create()
                     .recreate_reference = {},
                 }),
             .native_entrypoints = make_ready_swapchain_entrypoints(),
-            .device = vulkan_backend::vulkan_device_handle{.value = 77},
-            .surface = vulkan_backend::vulkan_surface_handle{.value = 88},
+            .device = device.handle,
+            .surface = surface,
+            .surface_query = make_ready_surface_query(device, surface),
             .old_swapchain = {},
             .require_recreate_compatibility = false,
         });

@@ -708,6 +708,126 @@ void record_native_device_required_extension_diagnostics(
     }
 }
 
+#if QUIZ_VULKAN_HAS_VULKAN_HEADERS
+vulkan_surface_extent surface_extent_from_vk(VkExtent2D extent)
+{
+    return vulkan_surface_extent{
+        .width = static_cast<std::size_t>(extent.width),
+        .height = static_cast<std::size_t>(extent.height),
+    };
+}
+
+std::vector<vulkan_swapchain_surface_transform> surface_transforms_from_vk(
+    VkSurfaceTransformFlagsKHR flags)
+{
+    std::vector<vulkan_swapchain_surface_transform> transforms;
+    if ((flags & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR) != 0U) {
+        transforms.push_back(vulkan_swapchain_surface_transform::identity);
+    }
+    if ((flags & VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR) != 0U) {
+        transforms.push_back(vulkan_swapchain_surface_transform::rotate_90);
+    }
+    if ((flags & VK_SURFACE_TRANSFORM_ROTATE_180_BIT_KHR) != 0U) {
+        transforms.push_back(vulkan_swapchain_surface_transform::rotate_180);
+    }
+    if ((flags & VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR) != 0U) {
+        transforms.push_back(vulkan_swapchain_surface_transform::rotate_270);
+    }
+    return transforms;
+}
+
+vulkan_swapchain_surface_transform surface_transform_from_vk(
+    VkSurfaceTransformFlagBitsKHR transform)
+{
+    switch (transform) {
+    case VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR:
+        return vulkan_swapchain_surface_transform::rotate_90;
+    case VK_SURFACE_TRANSFORM_ROTATE_180_BIT_KHR:
+        return vulkan_swapchain_surface_transform::rotate_180;
+    case VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR:
+        return vulkan_swapchain_surface_transform::rotate_270;
+    default:
+        return vulkan_swapchain_surface_transform::identity;
+    }
+}
+
+std::vector<vulkan_swapchain_composite_alpha> composite_alpha_from_vk(
+    VkCompositeAlphaFlagsKHR flags)
+{
+    std::vector<vulkan_swapchain_composite_alpha> alphas;
+    if ((flags & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR) != 0U) {
+        alphas.push_back(vulkan_swapchain_composite_alpha::opaque);
+    }
+    if ((flags & VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR) != 0U) {
+        alphas.push_back(vulkan_swapchain_composite_alpha::pre_multiplied);
+    }
+    if ((flags & VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR) != 0U) {
+        alphas.push_back(vulkan_swapchain_composite_alpha::post_multiplied);
+    }
+    if ((flags & VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR) != 0U) {
+        alphas.push_back(vulkan_swapchain_composite_alpha::inherit);
+    }
+    return alphas;
+}
+
+vulkan_swapchain_image_format image_format_from_vk(VkFormat format)
+{
+    switch (format) {
+    case VK_FORMAT_R8G8B8A8_UNORM:
+        return vulkan_swapchain_image_format::rgba8_unorm;
+    case VK_FORMAT_B8G8R8A8_UNORM:
+        return vulkan_swapchain_image_format::bgra8_unorm;
+    default:
+        return vulkan_swapchain_image_format::undefined;
+    }
+}
+
+vulkan_swapchain_color_space color_space_from_vk(VkColorSpaceKHR color_space)
+{
+#ifdef VK_COLOR_SPACE_DISPLAY_P3_NONLINEAR_EXT
+    if (color_space == VK_COLOR_SPACE_DISPLAY_P3_NONLINEAR_EXT) {
+        return vulkan_swapchain_color_space::display_p3_nonlinear;
+    }
+#endif
+    static_cast<void>(color_space);
+    return vulkan_swapchain_color_space::srgb_nonlinear;
+}
+
+vulkan_swapchain_present_mode present_mode_from_vk(VkPresentModeKHR present_mode)
+{
+    switch (present_mode) {
+    case VK_PRESENT_MODE_IMMEDIATE_KHR:
+        return vulkan_swapchain_present_mode::immediate;
+    case VK_PRESENT_MODE_MAILBOX_KHR:
+        return vulkan_swapchain_present_mode::mailbox;
+    case VK_PRESENT_MODE_FIFO_RELAXED_KHR:
+        return vulkan_swapchain_present_mode::fifo_relaxed;
+    default:
+        return vulkan_swapchain_present_mode::fifo;
+    }
+}
+
+vulkan_swapchain_surface_capabilities_snapshot snapshot_from_vk_surface_capabilities(
+    const VkSurfaceCapabilitiesKHR& capabilities)
+{
+    return vulkan_swapchain_surface_capabilities_snapshot{
+        .checked = true,
+        .min_image_count = static_cast<std::size_t>(capabilities.minImageCount),
+        .max_image_count = static_cast<std::size_t>(capabilities.maxImageCount),
+        .current_extent = surface_extent_from_vk(capabilities.currentExtent),
+        .min_extent = surface_extent_from_vk(capabilities.minImageExtent),
+        .max_extent = surface_extent_from_vk(capabilities.maxImageExtent),
+        .supported_transforms =
+            surface_transforms_from_vk(capabilities.supportedTransforms),
+        .current_transform = surface_transform_from_vk(capabilities.currentTransform),
+        .supported_composite_alpha =
+            composite_alpha_from_vk(capabilities.supportedCompositeAlpha),
+        .surface_formats = {},
+        .present_modes = {},
+    };
+}
+#endif
+
 std::vector<vulkan_native_physical_device_queue_family>
 queue_families_for_physical_device(
     const std::vector<vulkan_native_physical_device_queue_family>& queue_families,
@@ -3954,6 +4074,334 @@ create_native_vulkan_device(
     const vulkan_native_physical_device_selection_result& selection)
 {
     return creator.create_device(dispatch_table, extension_query, selection);
+}
+
+vulkan_native_surface_query_dispatch_table
+collect_vulkan_native_surface_query_dispatch_table(
+    vulkan_native_instance_symbol_resolver_interface& resolver,
+    const vulkan_native_device_create_result& device)
+{
+    vulkan_native_surface_query_dispatch_table table{
+        .checked = true,
+        .status = vulkan_native_surface_query_dispatch_table_status::not_checked,
+        .instance = device.dispatch_table.instance,
+        .physical_device = device.selection.selected_physical_device,
+        .get_instance_proc_address = resolver.get_instance_proc_address(),
+        .get_physical_device_surface_support = {},
+        .get_physical_device_surface_capabilities = {},
+        .get_physical_device_surface_formats = {},
+        .get_physical_device_surface_present_modes = {},
+        .missing_symbol_name = {},
+        .diagnostic = {},
+    };
+
+    if (!device.ready_for_backend()) {
+        table.status =
+            vulkan_native_surface_query_dispatch_table_status::device_unavailable;
+        table.diagnostic = device.diagnostic.empty()
+            ? "Native Vulkan device is unavailable for surface query dispatch"
+            : device.diagnostic;
+        return table;
+    }
+    if (!table.get_instance_proc_address.valid()) {
+        table.status =
+            vulkan_native_surface_query_dispatch_table_status::get_instance_proc_address_unavailable;
+        table.missing_symbol_name = "vkGetInstanceProcAddr";
+        table.diagnostic =
+            "Native Vulkan surface query dispatch table has no vkGetInstanceProcAddr";
+        return table;
+    }
+
+    table.get_physical_device_surface_support =
+        resolver.resolve_instance_symbol(
+            table.instance,
+            "vkGetPhysicalDeviceSurfaceSupportKHR");
+    if (!table.get_physical_device_surface_support.valid()) {
+        table.status =
+            vulkan_native_surface_query_dispatch_table_status::missing_surface_support_symbol;
+        table.missing_symbol_name = "vkGetPhysicalDeviceSurfaceSupportKHR";
+        table.diagnostic =
+            "Native Vulkan surface query dispatch table is missing vkGetPhysicalDeviceSurfaceSupportKHR";
+        return table;
+    }
+
+    table.get_physical_device_surface_capabilities =
+        resolver.resolve_instance_symbol(
+            table.instance,
+            "vkGetPhysicalDeviceSurfaceCapabilitiesKHR");
+    if (!table.get_physical_device_surface_capabilities.valid()) {
+        table.status =
+            vulkan_native_surface_query_dispatch_table_status::missing_surface_capabilities_symbol;
+        table.missing_symbol_name = "vkGetPhysicalDeviceSurfaceCapabilitiesKHR";
+        table.diagnostic =
+            "Native Vulkan surface query dispatch table is missing vkGetPhysicalDeviceSurfaceCapabilitiesKHR";
+        return table;
+    }
+
+    table.get_physical_device_surface_formats =
+        resolver.resolve_instance_symbol(
+            table.instance,
+            "vkGetPhysicalDeviceSurfaceFormatsKHR");
+    if (!table.get_physical_device_surface_formats.valid()) {
+        table.status =
+            vulkan_native_surface_query_dispatch_table_status::missing_surface_formats_symbol;
+        table.missing_symbol_name = "vkGetPhysicalDeviceSurfaceFormatsKHR";
+        table.diagnostic =
+            "Native Vulkan surface query dispatch table is missing vkGetPhysicalDeviceSurfaceFormatsKHR";
+        return table;
+    }
+
+    table.get_physical_device_surface_present_modes =
+        resolver.resolve_instance_symbol(
+            table.instance,
+            "vkGetPhysicalDeviceSurfacePresentModesKHR");
+    if (!table.get_physical_device_surface_present_modes.valid()) {
+        table.status =
+            vulkan_native_surface_query_dispatch_table_status::missing_surface_present_modes_symbol;
+        table.missing_symbol_name = "vkGetPhysicalDeviceSurfacePresentModesKHR";
+        table.diagnostic =
+            "Native Vulkan surface query dispatch table is missing vkGetPhysicalDeviceSurfacePresentModesKHR";
+        return table;
+    }
+
+    table.status = vulkan_native_surface_query_dispatch_table_status::ready;
+    table.diagnostic = "Native Vulkan surface query dispatch table is ready";
+    return table;
+}
+
+vulkan_native_surface_capability_query_result
+vulkan_native_surface_capability_query::query_surface_capabilities(
+    const vulkan_native_surface_query_dispatch_table& dispatch_table,
+    const vulkan_native_device_create_result& device,
+    vulkan_surface_handle surface,
+    std::size_t present_queue_family_index)
+{
+    vulkan_native_surface_capability_query_result result =
+        swapchain_detail::make_surface_capability_query_result(
+            dispatch_table,
+            device,
+            surface,
+            present_queue_family_index);
+
+    if (!dispatch_table.ready_for_query()) {
+        result.status =
+            vulkan_native_surface_capability_query_status::dispatch_table_unavailable;
+        result.diagnostic = dispatch_table.diagnostic.empty()
+            ? "Native Vulkan surface query dispatch table is unavailable"
+            : dispatch_table.diagnostic;
+        return result;
+    }
+    if (!device.ready_for_backend()) {
+        result.status = vulkan_native_surface_capability_query_status::device_unavailable;
+        result.diagnostic = device.diagnostic.empty()
+            ? "Native Vulkan device is unavailable for surface capability query"
+            : device.diagnostic;
+        return result;
+    }
+    if (!surface.valid()) {
+        result.status =
+            vulkan_native_surface_capability_query_status::missing_surface_handle;
+        result.diagnostic =
+            "Native Vulkan surface capability query has no valid surface handle";
+        return result;
+    }
+
+#if QUIZ_VULKAN_HAS_VULKAN_HEADERS
+    const auto get_surface_support =
+        reinterpret_cast<PFN_vkGetPhysicalDeviceSurfaceSupportKHR>(
+            dispatch_table.get_physical_device_surface_support.value);
+    const auto get_surface_capabilities =
+        reinterpret_cast<PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR>(
+            dispatch_table.get_physical_device_surface_capabilities.value);
+    const auto get_surface_formats =
+        reinterpret_cast<PFN_vkGetPhysicalDeviceSurfaceFormatsKHR>(
+            dispatch_table.get_physical_device_surface_formats.value);
+    const auto get_surface_present_modes =
+        reinterpret_cast<PFN_vkGetPhysicalDeviceSurfacePresentModesKHR>(
+            dispatch_table.get_physical_device_surface_present_modes.value);
+    if (get_surface_support == nullptr || get_surface_capabilities == nullptr
+        || get_surface_formats == nullptr || get_surface_present_modes == nullptr) {
+        result.status =
+            vulkan_native_surface_capability_query_status::dispatch_table_unavailable;
+        result.diagnostic =
+            "Native Vulkan surface capability query has an invalid function pointer";
+        return result;
+    }
+
+    const VkPhysicalDevice native_physical_device =
+        reinterpret_cast<VkPhysicalDevice>(dispatch_table.physical_device.value);
+    const VkSurfaceKHR native_surface =
+        reinterpret_cast<VkSurfaceKHR>(surface.value);
+
+    VkBool32 surface_supported = VK_FALSE;
+    VkResult native_result = get_surface_support(
+        native_physical_device,
+        static_cast<std::uint32_t>(present_queue_family_index),
+        native_surface,
+        &surface_supported);
+    result.support_query_checked = true;
+    result.native_result = static_cast<std::int32_t>(native_result);
+    if (native_result != VK_SUCCESS) {
+        result.status =
+            vulkan_native_surface_capability_query_status::support_query_failed;
+        result.diagnostic = "Native Vulkan surface support query failed";
+        return result;
+    }
+    result.present_queue_supported = surface_supported == VK_TRUE;
+    if (!result.present_queue_supported) {
+        result.status =
+            vulkan_native_surface_capability_query_status::unsupported_present_queue;
+        result.diagnostic =
+            "Native Vulkan selected queue family does not support presenting to the surface";
+        return result;
+    }
+
+    VkSurfaceCapabilitiesKHR native_capabilities{};
+    native_result = get_surface_capabilities(
+        native_physical_device,
+        native_surface,
+        &native_capabilities);
+    result.capabilities_query_checked = true;
+    result.native_result = static_cast<std::int32_t>(native_result);
+    if (native_result != VK_SUCCESS) {
+        result.status =
+            vulkan_native_surface_capability_query_status::capabilities_query_failed;
+        result.diagnostic = "Native Vulkan surface capabilities query failed";
+        return result;
+    }
+    result.capabilities = snapshot_from_vk_surface_capabilities(native_capabilities);
+
+    std::uint32_t surface_format_count = 0;
+    native_result = get_surface_formats(
+        native_physical_device,
+        native_surface,
+        &surface_format_count,
+        nullptr);
+    result.formats_query_checked = true;
+    result.native_result = static_cast<std::int32_t>(native_result);
+    if (native_result != VK_SUCCESS) {
+        result.status =
+            vulkan_native_surface_capability_query_status::formats_query_failed;
+        result.diagnostic = "Native Vulkan surface format count query failed";
+        return result;
+    }
+    if (surface_format_count == 0) {
+        result.status =
+            vulkan_native_surface_capability_query_status::zero_surface_formats;
+        result.diagnostic =
+            "Native Vulkan surface capability query found no surface formats";
+        return result;
+    }
+
+    std::vector<VkSurfaceFormatKHR> native_surface_formats(surface_format_count);
+    native_result = get_surface_formats(
+        native_physical_device,
+        native_surface,
+        &surface_format_count,
+        native_surface_formats.data());
+    result.native_result = static_cast<std::int32_t>(native_result);
+    if (native_result != VK_SUCCESS) {
+        result.status =
+            vulkan_native_surface_capability_query_status::formats_query_failed;
+        result.diagnostic = "Native Vulkan surface format list query failed";
+        return result;
+    }
+    if (surface_format_count < native_surface_formats.size()) {
+        native_surface_formats.resize(surface_format_count);
+    }
+    result.capabilities.surface_formats.reserve(native_surface_formats.size());
+    for (const VkSurfaceFormatKHR& native_format : native_surface_formats) {
+        result.capabilities.surface_formats.push_back(
+            vulkan_swapchain_surface_format{
+                .format = image_format_from_vk(native_format.format),
+                .color_space = color_space_from_vk(native_format.colorSpace),
+            });
+    }
+    result.surface_format_count = result.capabilities.surface_formats.size();
+    if (result.surface_format_count == 0) {
+        result.status =
+            vulkan_native_surface_capability_query_status::zero_surface_formats;
+        result.diagnostic =
+            "Native Vulkan surface capability query found no surface formats";
+        return result;
+    }
+
+    std::uint32_t present_mode_count = 0;
+    native_result = get_surface_present_modes(
+        native_physical_device,
+        native_surface,
+        &present_mode_count,
+        nullptr);
+    result.present_modes_query_checked = true;
+    result.native_result = static_cast<std::int32_t>(native_result);
+    if (native_result != VK_SUCCESS) {
+        result.status =
+            vulkan_native_surface_capability_query_status::present_modes_query_failed;
+        result.diagnostic = "Native Vulkan present mode count query failed";
+        return result;
+    }
+    if (present_mode_count == 0) {
+        result.status =
+            vulkan_native_surface_capability_query_status::zero_present_modes;
+        result.diagnostic =
+            "Native Vulkan surface capability query found no present modes";
+        return result;
+    }
+
+    std::vector<VkPresentModeKHR> native_present_modes(present_mode_count);
+    native_result = get_surface_present_modes(
+        native_physical_device,
+        native_surface,
+        &present_mode_count,
+        native_present_modes.data());
+    result.native_result = static_cast<std::int32_t>(native_result);
+    if (native_result != VK_SUCCESS) {
+        result.status =
+            vulkan_native_surface_capability_query_status::present_modes_query_failed;
+        result.diagnostic = "Native Vulkan present mode list query failed";
+        return result;
+    }
+    if (present_mode_count < native_present_modes.size()) {
+        native_present_modes.resize(present_mode_count);
+    }
+    result.capabilities.present_modes.reserve(native_present_modes.size());
+    for (const VkPresentModeKHR native_present_mode : native_present_modes) {
+        result.capabilities.present_modes.push_back(
+            present_mode_from_vk(native_present_mode));
+    }
+    result.present_mode_count = result.capabilities.present_modes.size();
+    if (result.present_mode_count == 0) {
+        result.status =
+            vulkan_native_surface_capability_query_status::zero_present_modes;
+        result.diagnostic =
+            "Native Vulkan surface capability query found no present modes";
+        return result;
+    }
+
+    result.status = vulkan_native_surface_capability_query_status::ready;
+    result.diagnostic = "Native Vulkan surface capabilities are ready";
+    return result;
+#else
+    result.status = vulkan_native_surface_capability_query_status::headers_unavailable;
+    result.diagnostic =
+        "Vulkan headers are unavailable for native surface capability query";
+    return result;
+#endif
+}
+
+vulkan_native_surface_capability_query_result
+query_native_vulkan_surface_capabilities(
+    vulkan_native_surface_capability_query_interface& query,
+    const vulkan_native_surface_query_dispatch_table& dispatch_table,
+    const vulkan_native_device_create_result& device,
+    vulkan_surface_handle surface,
+    std::size_t present_queue_family_index)
+{
+    return query.query_surface_capabilities(
+        dispatch_table,
+        device,
+        surface,
+        present_queue_family_index);
 }
 
 vulkan_native_instance_create_result create_native_vulkan_instance(

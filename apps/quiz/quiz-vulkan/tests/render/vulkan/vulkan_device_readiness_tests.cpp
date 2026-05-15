@@ -177,6 +177,64 @@ make_queue_family_query(
         enumeration);
 }
 
+quiz_vulkan::render::vulkan_backend::vulkan_native_physical_device_selection_result
+make_selected_physical_device()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_physical_device_handle first_device{.value = 9101};
+    const vulkan_backend::vulkan_physical_device_handle selected_device{.value = 9102};
+    const vulkan_backend::vulkan_native_physical_device_enumeration_result enumeration =
+        make_physical_device_enumeration({first_device, selected_device});
+    const vulkan_backend::vulkan_native_queue_family_query_result queue_family_result =
+        make_queue_family_query(
+            enumeration,
+            {
+                vulkan_backend::vulkan_native_physical_device_queue_family{
+                    .physical_device = first_device,
+                    .family_index = 1,
+                    .queue_count = 1,
+                    .capabilities = {vulkan_backend::vulkan_device_queue_capability::graphics},
+                },
+                vulkan_backend::vulkan_native_physical_device_queue_family{
+                    .physical_device = selected_device,
+                    .family_index = 4,
+                    .queue_count = 2,
+                    .capabilities = {vulkan_backend::vulkan_device_queue_capability::graphics},
+                },
+                vulkan_backend::vulkan_native_physical_device_queue_family{
+                    .physical_device = selected_device,
+                    .family_index = 7,
+                    .queue_count = 1,
+                    .capabilities = {vulkan_backend::vulkan_device_queue_capability::present},
+                },
+            }
+        );
+    vulkan_backend::fake_vulkan_native_physical_device_selector selector;
+    return vulkan_backend::select_native_vulkan_physical_device(
+        selector,
+        enumeration,
+        queue_family_result,
+        make_device_request());
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_native_device_dispatch_table
+make_ready_native_device_dispatch_table(
+    const quiz_vulkan::render::vulkan_backend::vulkan_native_physical_device_selection_result&
+        selection)
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::fake_vulkan_native_instance_symbol_resolver resolver(
+        vulkan_backend::fake_vulkan_native_instance_symbol_resolver_options{
+            .get_instance_proc_address =
+                selection.enumeration.dispatch_table.get_instance_proc_address,
+        });
+    return vulkan_backend::collect_vulkan_native_device_dispatch_table(
+        resolver,
+        selection);
+}
+
 void test_device_factory_marks_created_instance_device_ready()
 {
     namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
@@ -869,6 +927,326 @@ void test_physical_device_selection_picks_device_with_graphics_and_present()
         "physical device selection stops after selected device");
 }
 
+void require_native_device_dispatch_missing_symbol(
+    const std::string& symbol_name,
+    quiz_vulkan::render::vulkan_backend::vulkan_native_device_dispatch_table_status
+        expected_status,
+    const char* status_message)
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_physical_device_selection_result selection =
+        make_selected_physical_device();
+    vulkan_backend::fake_vulkan_native_instance_symbol_resolver resolver(
+        vulkan_backend::fake_vulkan_native_instance_symbol_resolver_options{
+            .missing_symbols = {symbol_name},
+            .get_instance_proc_address =
+                selection.enumeration.dispatch_table.get_instance_proc_address,
+        });
+
+    const vulkan_backend::vulkan_native_device_dispatch_table dispatch_table =
+        vulkan_backend::collect_vulkan_native_device_dispatch_table(
+            resolver,
+            selection);
+
+    require(dispatch_table.checked, "native device dispatch missing-symbol result is checked");
+    require(dispatch_table.status == expected_status, status_message);
+    require(
+        dispatch_table.missing_symbol_name == symbol_name,
+        "native device dispatch records missing symbol name");
+    require(
+        !dispatch_table.ready_for_create(),
+        "native device dispatch is not ready when a required symbol is missing");
+    require(
+        resolver.state().requested_symbols.back() == symbol_name,
+        "native device dispatch requests the missing symbol");
+}
+
+void test_native_device_dispatch_resolves_create_queue_and_destroy()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_physical_device_selection_result selection =
+        make_selected_physical_device();
+    vulkan_backend::fake_vulkan_native_instance_symbol_resolver resolver(
+        vulkan_backend::fake_vulkan_native_instance_symbol_resolver_options{
+            .get_instance_proc_address =
+                selection.enumeration.dispatch_table.get_instance_proc_address,
+        });
+
+    const vulkan_backend::vulkan_native_device_dispatch_table dispatch_table =
+        vulkan_backend::collect_vulkan_native_device_dispatch_table(
+            resolver,
+            selection);
+
+    require(dispatch_table.checked, "native device dispatch result is checked");
+    require(
+        dispatch_table.status == vulkan_backend::vulkan_native_device_dispatch_table_status::ready,
+        "native device dispatch reports ready");
+    require(
+        dispatch_table.ready_for_create(),
+        "native device dispatch is ready for logical device creation");
+    require(
+        dispatch_table.instance.value == selection.enumeration.dispatch_table.instance.value,
+        "native device dispatch records the selected instance handle");
+    require(
+        dispatch_table.physical_device.value == selection.selected_physical_device.value,
+        "native device dispatch records the selected physical device handle");
+    require(
+        resolver.state().resolve_call_count == 3,
+        "native device dispatch resolves create, get-queue, and destroy symbols");
+    require(
+        resolver.state().requested_symbols[0] == "vkCreateDevice",
+        "native device dispatch resolves vkCreateDevice first");
+    require(
+        resolver.state().requested_symbols[1] == "vkGetDeviceQueue",
+        "native device dispatch resolves vkGetDeviceQueue second");
+    require(
+        resolver.state().requested_symbols[2] == "vkDestroyDevice",
+        "native device dispatch resolves vkDestroyDevice third");
+}
+
+void test_native_device_dispatch_reports_missing_symbols()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    require_native_device_dispatch_missing_symbol(
+        "vkCreateDevice",
+        vulkan_backend::vulkan_native_device_dispatch_table_status::missing_create_device_symbol,
+        "native device dispatch maps missing vkCreateDevice");
+    require_native_device_dispatch_missing_symbol(
+        "vkGetDeviceQueue",
+        vulkan_backend::vulkan_native_device_dispatch_table_status::missing_get_device_queue_symbol,
+        "native device dispatch maps missing vkGetDeviceQueue");
+    require_native_device_dispatch_missing_symbol(
+        "vkDestroyDevice",
+        vulkan_backend::vulkan_native_device_dispatch_table_status::missing_destroy_device_symbol,
+        "native device dispatch maps missing vkDestroyDevice");
+}
+
+void test_native_device_create_reports_selection_unavailable()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_physical_device_enumeration_result enumeration =
+        make_physical_device_enumeration({});
+    vulkan_backend::fake_vulkan_native_queue_family_query queue_family_query;
+    const vulkan_backend::vulkan_native_queue_family_query_result queue_family_result =
+        vulkan_backend::query_native_vulkan_physical_device_queue_families(
+            queue_family_query,
+            enumeration);
+    vulkan_backend::fake_vulkan_native_physical_device_selector selector;
+    const vulkan_backend::vulkan_native_physical_device_selection_result selection =
+        vulkan_backend::select_native_vulkan_physical_device(
+            selector,
+            enumeration,
+            queue_family_result,
+            make_device_request());
+
+    vulkan_backend::fake_vulkan_native_device_creator creator;
+    const vulkan_backend::vulkan_native_device_create_result result =
+        vulkan_backend::create_native_vulkan_device(
+            creator,
+            vulkan_backend::vulkan_native_device_dispatch_table{},
+            selection);
+
+    require(result.checked, "native device selection-unavailable result is checked");
+    require(
+        result.status
+            == vulkan_backend::vulkan_native_device_create_status::selection_unavailable,
+        "native device create maps unavailable physical-device selection");
+    require(
+        !result.ready_for_backend(),
+        "native device create is not ready without physical-device selection");
+    require(
+        creator.state().create_call_count == 0,
+        "native device creator does not call vkCreateDevice without selection");
+}
+
+void test_native_device_create_reports_dispatch_unavailable()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_physical_device_selection_result selection =
+        make_selected_physical_device();
+    vulkan_backend::fake_vulkan_native_device_creator creator;
+    const vulkan_backend::vulkan_native_device_create_result result =
+        vulkan_backend::create_native_vulkan_device(
+            creator,
+            vulkan_backend::vulkan_native_device_dispatch_table{},
+            selection);
+
+    require(result.checked, "native device dispatch-unavailable result is checked");
+    require(
+        result.status
+            == vulkan_backend::vulkan_native_device_create_status::dispatch_table_unavailable,
+        "native device create maps unavailable dispatch table");
+    require(
+        creator.state().create_call_count == 0,
+        "native device creator does not call vkCreateDevice without dispatch");
+}
+
+void test_native_device_create_uses_selected_device_and_queue_families()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_physical_device_selection_result selection =
+        make_selected_physical_device();
+    const vulkan_backend::vulkan_native_device_dispatch_table dispatch_table =
+        make_ready_native_device_dispatch_table(selection);
+    vulkan_backend::fake_vulkan_native_device_creator creator(
+        vulkan_backend::fake_vulkan_native_device_creator_options{
+            .handle = vulkan_backend::vulkan_device_handle{.value = 9900},
+            .queue_handle_base = 10000,
+        });
+
+    const vulkan_backend::vulkan_native_device_create_result result =
+        vulkan_backend::create_native_vulkan_device(
+            creator,
+            dispatch_table,
+            selection);
+
+    require(result.checked, "native device create result is checked");
+    require(
+        result.status == vulkan_backend::vulkan_native_device_create_status::created,
+        "native device create reports created");
+    require(result.ready_for_backend(), "native device create is ready for backend use");
+    require(result.handle.value == 9900, "native device create records configured handle");
+    require(
+        result.selected_extensions.size() == 1,
+        "native device create records required device extension selection");
+    require(
+        result.selected_extensions.front() == "VK_KHR_swapchain",
+        "native device create records required swapchain extension");
+    require(
+        result.queue_create_family_indices.size() == 2,
+        "native device create records unique queue family create infos");
+    require(
+        result.queue_create_family_indices[0] == 4,
+        "native device create records graphics queue create family");
+    require(
+        result.queue_create_family_indices[1] == 7,
+        "native device create records present queue create family");
+    require(result.selected_queues.size() == 2, "native device create records selected queues");
+    require(result.selected_queue_count == 2, "native device create counts selected queues");
+    require(
+        result.selected_queues[0].family_index == 4,
+        "native device create records graphics queue family index");
+    require(
+        result.selected_queues[0].queue.value == 10005,
+        "native device create records stable graphics queue handle");
+    require(
+        result.selected_queues[1].family_index == 7,
+        "native device create records present queue family index");
+    require(
+        result.selected_queues[1].queue.value == 10008,
+        "native device create records stable present queue handle");
+    require(
+        creator.state().create_call_count == 1,
+        "native device creator calls create once");
+    require(
+        creator.state().get_queue_call_count == 2,
+        "native device creator resolves two selected queues");
+    require(
+        creator.state().destroy_call_count == 0,
+        "native device creator does not destroy a successful device");
+    require(
+        creator.state().requested_physical_device.value
+            == selection.selected_physical_device.value,
+        "native device creator records selected physical device");
+    require(
+        creator.state().requested_queue_family_indices.size() == 2,
+        "native device creator records requested queue families");
+    require(
+        creator.state().requested_extensions.front() == "VK_KHR_swapchain",
+        "native device creator records required extension request");
+    require(
+        creator.state().last_create_device.value == dispatch_table.create_device.value,
+        "native device creator records vkCreateDevice pointer");
+    require(
+        creator.state().last_get_device_queue.value == dispatch_table.get_device_queue.value,
+        "native device creator records vkGetDeviceQueue pointer");
+    require(
+        creator.state().last_destroy_device.value == dispatch_table.destroy_device.value,
+        "native device creator records vkDestroyDevice pointer");
+}
+
+void test_native_device_create_reports_creation_failure()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_physical_device_selection_result selection =
+        make_selected_physical_device();
+    const vulkan_backend::vulkan_native_device_dispatch_table dispatch_table =
+        make_ready_native_device_dispatch_table(selection);
+    vulkan_backend::fake_vulkan_native_device_creator creator(
+        vulkan_backend::fake_vulkan_native_device_creator_options{
+            .fail_creation = true,
+            .failure_result = -7,
+        });
+
+    const vulkan_backend::vulkan_native_device_create_result result =
+        vulkan_backend::create_native_vulkan_device(
+            creator,
+            dispatch_table,
+            selection);
+
+    require(result.checked, "native device creation-failure result is checked");
+    require(
+        result.status == vulkan_backend::vulkan_native_device_create_status::creation_failed,
+        "native device create maps creation failure");
+    require(result.native_result == -7, "native device create records native failure result");
+    require(!result.handle.valid(), "native device create returns no handle on failure");
+    require(
+        creator.state().create_call_count == 1,
+        "native device creator attempts create before reporting failure");
+    require(
+        creator.state().get_queue_call_count == 0,
+        "native device creator does not query queues after create failure");
+}
+
+void test_native_device_create_destroys_device_when_queue_lookup_fails()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_physical_device_selection_result selection =
+        make_selected_physical_device();
+    const vulkan_backend::vulkan_native_device_dispatch_table dispatch_table =
+        make_ready_native_device_dispatch_table(selection);
+    vulkan_backend::fake_vulkan_native_device_creator creator(
+        vulkan_backend::fake_vulkan_native_device_creator_options{
+            .handle = vulkan_backend::vulkan_device_handle{.value = 9900},
+            .queue_handle_base = 10000,
+            .unavailable_queue_family_indices = {7},
+        });
+
+    const vulkan_backend::vulkan_native_device_create_result result =
+        vulkan_backend::create_native_vulkan_device(
+            creator,
+            dispatch_table,
+            selection);
+
+    require(result.checked, "native device queue-failure result is checked");
+    require(
+        result.status == vulkan_backend::vulkan_native_device_create_status::queue_unavailable,
+        "native device create maps queue lookup failure");
+    require(
+        !result.handle.valid(),
+        "native device create clears handle after queue lookup failure");
+    require(
+        result.selected_queue_count == 1,
+        "native device create records queues found before failure");
+    require(
+        creator.state().get_queue_call_count == 2,
+        "native device creator queries queues until the failing family");
+    require(
+        creator.state().destroy_call_count == 1,
+        "native device creator destroys device when queue lookup fails");
+    require(
+        creator.state().destroyed_device.value == 9900,
+        "native device creator records destroyed logical device handle");
+}
+
 void test_vulkan_device_status_and_queue_names_are_stable()
 {
     namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
@@ -949,6 +1327,13 @@ int main()
     test_physical_device_selection_reports_no_devices();
     test_physical_device_selection_reports_missing_required_queue();
     test_physical_device_selection_picks_device_with_graphics_and_present();
+    test_native_device_dispatch_resolves_create_queue_and_destroy();
+    test_native_device_dispatch_reports_missing_symbols();
+    test_native_device_create_reports_selection_unavailable();
+    test_native_device_create_reports_dispatch_unavailable();
+    test_native_device_create_uses_selected_device_and_queue_families();
+    test_native_device_create_reports_creation_failure();
+    test_native_device_create_destroys_device_when_queue_lookup_fails();
     test_vulkan_device_status_and_queue_names_are_stable();
     return 0;
 }

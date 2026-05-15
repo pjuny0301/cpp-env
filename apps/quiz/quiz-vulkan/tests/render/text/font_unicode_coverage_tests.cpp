@@ -1,10 +1,14 @@
-#include "render/text/font_unicode_coverage.h"
+#include "render/text/font_backend_adapter.h"
 #include "render/text/font_backend_dependency.h"
+#include "render/text/font_unicode_coverage.h"
 
 #include <cassert>
 #include <cstddef>
 #include <cstdio>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <limits>
 #include <span>
 #include <string>
@@ -35,6 +39,49 @@ void require(bool condition, const char* message)
         std::fprintf(stderr, "Requirement failed: %s\n", message);
     }
     assert((condition) && message);
+}
+
+std::filesystem::path quiz_vulkan_app_root_from_this_test()
+{
+    const std::filesystem::path test_path = std::filesystem::path(__FILE__);
+    return test_path.parent_path().parent_path().parent_path().parent_path();
+}
+
+std::vector<std::filesystem::path> freetype_real_font_fixture_candidates()
+{
+    const std::filesystem::path app_root = quiz_vulkan_app_root_from_this_test();
+    const std::filesystem::path repo_root =
+        app_root.parent_path().parent_path().parent_path();
+    return {
+        repo_root / "build" / "external" / "lib" / "cpp" / "desktop"
+            / "harfbuzz-14.2.0" / "perf" / "fonts" / "Roboto-Regular.ttf",
+        repo_root / "build" / "external" / "lib" / "cpp" / "desktop"
+            / "harfbuzz-14.2.0" / "test" / "api" / "fonts" / "Mplus1p-Regular.ttf",
+    };
+}
+
+std::filesystem::path first_available_freetype_real_font_fixture()
+{
+    for (const std::filesystem::path& candidate : freetype_real_font_fixture_candidates()) {
+        if (std::filesystem::exists(candidate)) {
+            return candidate;
+        }
+    }
+    return {};
+}
+
+std::vector<std::byte> read_binary_fixture_bytes(const std::filesystem::path& path)
+{
+    std::ifstream input(path, std::ios::binary);
+    require(input.good(), "real font fixture opens for binary read");
+
+    std::vector<std::byte> bytes;
+    for (std::istreambuf_iterator<char> iter{input};
+         iter != std::istreambuf_iterator<char>{};
+         ++iter) {
+        bytes.push_back(static_cast<std::byte>(static_cast<unsigned char>(*iter)));
+    }
+    return bytes;
 }
 
 void append_byte(std::vector<std::byte>& bytes, unsigned char value)
@@ -743,6 +790,135 @@ void test_freetype_face_load_readiness_keeps_byte_failures_ahead_of_backend_work
     require(missing_cmap.deterministic_fallback_required, "byte failure keeps deterministic fallback required");
 }
 
+void test_freetype_memory_face_adapter_preserves_byte_readiness_failures()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_freetype_memory_face_load_result missing =
+        load_render_text_freetype_memory_face(render_text_freetype_memory_face_load_request{
+            .source_bytes = font_source_bytes_result_for(
+                {},
+                render_text_font_source_bytes_load_status::missing_bytes),
+        });
+    require(
+        missing.status == render_text_freetype_memory_face_load_status::missing_bytes,
+        "FreeType adapter preserves missing-byte readiness before backend calls");
+    require(
+        missing.face_byte_status == render_text_font_face_byte_readiness_status::missing_bytes,
+        "FreeType adapter records missing-byte face readiness");
+    require(!missing.face_created, "missing bytes do not create a FreeType face");
+
+    const render_text_freetype_memory_face_load_result empty =
+        load_render_text_freetype_memory_face(render_text_freetype_memory_face_load_request{
+            .source_bytes = font_source_bytes_result_for(
+                {},
+                render_text_font_source_bytes_load_status::empty_bytes),
+        });
+    require(
+        empty.status == render_text_freetype_memory_face_load_status::empty_bytes,
+        "FreeType adapter preserves empty-byte readiness before backend calls");
+    require(!empty.face_created, "empty bytes do not create a FreeType face");
+
+    const std::vector<std::byte> truncated_sfnt{std::byte{'O'}, std::byte{'T'}, std::byte{'T'}, std::byte{'O'}};
+    const render_text_freetype_memory_face_load_result invalid_sfnt =
+        load_render_text_freetype_memory_face(render_text_freetype_memory_face_load_request{
+            .source_bytes = font_source_bytes_result_for(truncated_sfnt),
+        });
+    require(
+        invalid_sfnt.status == render_text_freetype_memory_face_load_status::invalid_sfnt,
+        "FreeType adapter preserves invalid-SFNT readiness before backend calls");
+    require(
+        invalid_sfnt.sfnt_status == render_text_font_sfnt_inspect_status::truncated_header,
+        "FreeType adapter reports SFNT inspector status for invalid bytes");
+
+    const std::vector<std::byte> missing_cmap_bytes = make_sfnt_bytes(
+        std::string_view{"\0\1\0\0", 4U},
+        required_truetype_tables_without_cmap());
+    const render_text_freetype_memory_face_load_result missing_cmap =
+        load_render_text_freetype_memory_face(render_text_freetype_memory_face_load_request{
+            .source_bytes = font_source_bytes_result_for(missing_cmap_bytes),
+        });
+    require(
+        missing_cmap.status == render_text_freetype_memory_face_load_status::missing_cmap,
+        "FreeType adapter preserves missing-cmap readiness before backend calls");
+    require(
+        missing_cmap.face_byte_status == render_text_font_face_byte_readiness_status::missing_cmap,
+        "FreeType adapter records missing-cmap face readiness");
+}
+
+void test_freetype_memory_face_adapter_loads_real_fixture_or_classifies_minimal_sfnt_failure()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::filesystem::path real_fixture = first_available_freetype_real_font_fixture();
+    if (!real_fixture.empty()) {
+        render_text_font_source_bytes_load_result source =
+            font_source_bytes_result_for(read_binary_fixture_bytes(real_fixture));
+        source.source.family = "FreeType Fixture";
+        source.source.source_uri = real_fixture.generic_string();
+        source.source.resolved_location = real_fixture.generic_string();
+        source.cache_key = real_fixture.generic_string();
+        source.resolved_path = real_fixture.generic_string();
+
+        const render_text_freetype_memory_face_load_result loaded =
+            load_render_text_freetype_memory_face(render_text_freetype_memory_face_load_request{
+                .source_bytes = std::move(source),
+            });
+
+        if (render_text_freetype_memory_face_adapter_available()) {
+            require(loaded.ok(), "real font fixture creates a FreeType memory face");
+            require(
+                loaded.status == render_text_freetype_memory_face_load_status::loaded,
+                "real font fixture reports loaded FreeType status");
+            require(loaded.face_created, "real font fixture records created FreeType face");
+            require(loaded.face_count > 0, "real font fixture records FreeType face count");
+            require(loaded.glyph_count > 0, "real font fixture records FreeType glyph count");
+            require(
+                loaded.face_byte_status == render_text_font_face_byte_readiness_status::coverage_ready,
+                "real font fixture consumes coverage-ready byte evidence");
+            require(!loaded.deterministic_fallback_required, "loaded FreeType face does not require fallback");
+        } else {
+            require(
+                loaded.status == render_text_freetype_memory_face_load_status::backend_unavailable,
+                "real font fixture reports backend unavailable when FreeType is not compiled in");
+            require(
+                loaded.face_byte_status == render_text_font_face_byte_readiness_status::coverage_ready,
+                "real font fixture still reaches byte coverage readiness without the adapter");
+            require(loaded.deterministic_fallback_required, "missing compiled adapter preserves fallback");
+        }
+        return;
+    }
+
+    const std::vector<std::byte> minimal_sfnt_bytes = make_font_bytes_with_cmap(
+        wrap_cmap_subtable(
+            3U,
+            1U,
+            make_format4_subtable({
+                cmap_format4_fixture_range{.first_codepoint = 0x0041U, .last_codepoint = 0x005aU},
+            })));
+    const render_text_freetype_memory_face_load_result minimal =
+        load_render_text_freetype_memory_face(render_text_freetype_memory_face_load_request{
+            .source_bytes = font_source_bytes_result_for(minimal_sfnt_bytes),
+            .source_label = "minimal-sfnt-cmap-fixture.ttf",
+        });
+
+    require(
+        minimal.face_byte_status == render_text_font_face_byte_readiness_status::coverage_ready,
+        "minimal SFNT fixture reaches coverage-ready byte evidence");
+    if (render_text_freetype_memory_face_adapter_available()) {
+        require(
+            minimal.status == render_text_freetype_memory_face_load_status::freetype_new_memory_face_failed,
+            "minimal SFNT fixture reaches FreeType and reports deterministic load failure");
+        require(minimal.freetype_error != 0, "minimal SFNT FreeType failure records FT error code");
+    } else {
+        require(
+            minimal.status == render_text_freetype_memory_face_load_status::backend_unavailable,
+            "minimal SFNT fixture reports backend unavailable when FreeType is not compiled in");
+    }
+    require(!minimal.face_created, "minimal SFNT failure does not leak a created FreeType face");
+    require(minimal.deterministic_fallback_required, "minimal SFNT failure preserves fallback requirement");
+}
+
 void test_catalog_adapter_converts_valid_coverage_to_descriptor_ranges()
 {
     using namespace quiz_vulkan::render;
@@ -938,6 +1114,8 @@ int main()
     test_font_face_byte_readiness_classifies_future_freetype_load_states();
     test_freetype_face_load_readiness_combines_materialized_bytes_and_backend_work();
     test_freetype_face_load_readiness_keeps_byte_failures_ahead_of_backend_work();
+    test_freetype_memory_face_adapter_preserves_byte_readiness_failures();
+    test_freetype_memory_face_adapter_loads_real_fixture_or_classifies_minimal_sfnt_failure();
     test_catalog_adapter_converts_valid_coverage_to_descriptor_ranges();
     test_catalog_adapter_keeps_missing_and_invalid_coverage_known_empty();
     test_catalog_adapter_lets_font_catalog_pick_fallback_from_adapted_coverage();

@@ -424,6 +424,7 @@ add_library(quiz_vulkan_text_engine STATIC)
 target_sources(
     quiz_vulkan_text_engine
     PRIVATE
+        src/render/text/freetype_memory_face_adapter.cpp
         src/render/text/fake_text_engine.cpp
     PUBLIC
         FILE_SET HEADERS

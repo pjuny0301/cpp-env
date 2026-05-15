@@ -1,6 +1,7 @@
 #pragma once
 
 #include "render/text/font_backend_capabilities.h"
+#include "render/text/font_unicode_coverage.h"
 #include "render/text/font_rasterizer.h"
 
 #include <algorithm>
@@ -154,6 +155,98 @@ struct render_text_real_font_raster_adapter_result {
             || status == render_text_font_backend_adapter_status::recoverable_backend_failure;
     }
 };
+
+enum class render_text_freetype_memory_face_load_status {
+    loaded,
+    backend_unavailable,
+    missing_bytes,
+    empty_bytes,
+    invalid_sfnt,
+    missing_cmap,
+    invalid_cmap,
+    fallback_required,
+    byte_count_overflow,
+    freetype_init_failed,
+    freetype_new_memory_face_failed,
+};
+
+inline std::string render_text_freetype_memory_face_load_status_name(
+    const render_text_freetype_memory_face_load_status status)
+{
+    switch (status) {
+    case render_text_freetype_memory_face_load_status::loaded:
+        return "loaded";
+    case render_text_freetype_memory_face_load_status::backend_unavailable:
+        return "backend_unavailable";
+    case render_text_freetype_memory_face_load_status::missing_bytes:
+        return "missing_bytes";
+    case render_text_freetype_memory_face_load_status::empty_bytes:
+        return "empty_bytes";
+    case render_text_freetype_memory_face_load_status::invalid_sfnt:
+        return "invalid_sfnt";
+    case render_text_freetype_memory_face_load_status::missing_cmap:
+        return "missing_cmap";
+    case render_text_freetype_memory_face_load_status::invalid_cmap:
+        return "invalid_cmap";
+    case render_text_freetype_memory_face_load_status::fallback_required:
+        return "fallback_required";
+    case render_text_freetype_memory_face_load_status::byte_count_overflow:
+        return "byte_count_overflow";
+    case render_text_freetype_memory_face_load_status::freetype_init_failed:
+        return "freetype_init_failed";
+    case render_text_freetype_memory_face_load_status::freetype_new_memory_face_failed:
+        return "freetype_new_memory_face_failed";
+    }
+
+    return "unknown";
+}
+
+struct render_text_freetype_memory_face_load_request {
+    render_text_font_source_bytes_load_result source_bytes;
+    long face_index = 0;
+    std::string source_label;
+};
+
+struct render_text_freetype_memory_face_load_result {
+    render_text_freetype_memory_face_load_status status =
+        render_text_freetype_memory_face_load_status::backend_unavailable;
+    font_face_id face_id = 0;
+    std::string source_label;
+    long face_index = 0;
+    render_text_font_source_bytes_load_status source_bytes_status =
+        render_text_font_source_bytes_load_status::missing_source;
+    render_text_font_face_byte_readiness_status face_byte_status =
+        render_text_font_face_byte_readiness_status::missing_bytes;
+    render_text_font_sfnt_inspect_status sfnt_status =
+        render_text_font_sfnt_inspect_status::missing_bytes;
+    render_text_font_cmap_inspect_status cmap_status =
+        render_text_font_cmap_inspect_status::missing_cmap_table;
+    std::size_t byte_count = 0;
+    std::size_t coverage_range_count = 0;
+    int freetype_error = 0;
+    long face_count = 0;
+    long glyph_count = 0;
+    std::string family_name;
+    std::string style_name;
+    bool backend_available = false;
+    bool materialized_bytes_ready = false;
+    bool coverage_ready = false;
+    bool face_created = false;
+    bool scalable = false;
+    bool fixed_size = false;
+    bool deterministic_fallback_required = true;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return status == render_text_freetype_memory_face_load_status::loaded;
+    }
+};
+
+bool render_text_freetype_memory_face_adapter_available();
+
+render_text_freetype_memory_face_load_result load_render_text_freetype_memory_face(
+    const render_text_freetype_memory_face_load_request& request);
 
 class font_backend_adapter_interface {
 public:

@@ -489,6 +489,140 @@ struct asset_materialized_byte_payload_bundle {
     }
 };
 
+struct asset_materialized_byte_payload_snapshot {
+    std::string id;
+    asset_type type = asset_type::generic;
+    asset_cache_key cache_key;
+    std::string source_uri;
+    std::filesystem::path materialized_path;
+    std::size_t byte_count = 0U;
+    std::size_t payload_byte_count = 0U;
+    std::string content_hash;
+    asset_materialized_bytes_handoff_status status =
+        asset_materialized_bytes_handoff_status::materialization_blocked;
+    runtime_materialized_asset_lookup_status materialized_status =
+        runtime_materialized_asset_lookup_status::missing_id;
+    asset_bytes_load_status load_status = asset_bytes_load_status::missing_bytes;
+    bool ready = false;
+};
+
+struct asset_materialized_byte_payload_bundle_snapshot {
+    std::vector<asset_materialized_byte_payload_snapshot> payloads;
+    std::size_t skipped_generic_count = 0U;
+
+    [[nodiscard]] bool ok() const
+    {
+        return blocked_count() == 0U;
+    }
+
+    [[nodiscard]] std::size_t ready_count() const
+    {
+        std::size_t count = 0U;
+        for (const asset_materialized_byte_payload_snapshot& payload : payloads) {
+            if (payload.ready) {
+                ++count;
+            }
+        }
+        return count;
+    }
+
+    [[nodiscard]] std::size_t blocked_count() const
+    {
+        return payloads.size() - ready_count();
+    }
+
+    [[nodiscard]] std::size_t payload_count() const
+    {
+        return payloads.size();
+    }
+
+    [[nodiscard]] const asset_materialized_byte_payload_snapshot* find_payload(std::string_view id) const
+    {
+        for (const asset_materialized_byte_payload_snapshot& payload : payloads) {
+            if (payload.id == id) {
+                return &payload;
+            }
+        }
+        return nullptr;
+    }
+};
+
+enum class asset_materialized_byte_payload_delta_kind {
+    added,
+    removed,
+    changed,
+};
+
+struct asset_materialized_byte_payload_diff_entry {
+    asset_materialized_byte_payload_delta_kind kind = asset_materialized_byte_payload_delta_kind::changed;
+    std::string id;
+    asset_type type = asset_type::generic;
+    std::optional<asset_materialized_byte_payload_snapshot> before;
+    std::optional<asset_materialized_byte_payload_snapshot> after;
+    bool type_changed = false;
+    bool cache_key_changed = false;
+    bool source_uri_changed = false;
+    bool materialized_path_changed = false;
+    bool byte_count_changed = false;
+    bool payload_byte_count_changed = false;
+    bool content_hash_changed = false;
+    bool status_changed = false;
+    bool readiness_changed = false;
+
+    [[nodiscard]] bool has_field_delta() const
+    {
+        return type_changed || cache_key_changed || source_uri_changed || materialized_path_changed
+            || byte_count_changed || payload_byte_count_changed || content_hash_changed || status_changed
+            || readiness_changed;
+    }
+};
+
+struct asset_materialized_byte_payload_diff_summary {
+    std::vector<asset_materialized_byte_payload_diff_entry> added;
+    std::vector<asset_materialized_byte_payload_diff_entry> removed;
+    std::vector<asset_materialized_byte_payload_diff_entry> changed;
+
+    [[nodiscard]] bool empty() const
+    {
+        return added.empty() && removed.empty() && changed.empty();
+    }
+
+    [[nodiscard]] std::size_t change_count() const
+    {
+        return added.size() + removed.size() + changed.size();
+    }
+
+    [[nodiscard]] const asset_materialized_byte_payload_diff_entry* find_added(std::string_view id) const
+    {
+        for (const asset_materialized_byte_payload_diff_entry& entry : added) {
+            if (entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const asset_materialized_byte_payload_diff_entry* find_removed(std::string_view id) const
+    {
+        for (const asset_materialized_byte_payload_diff_entry& entry : removed) {
+            if (entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const asset_materialized_byte_payload_diff_entry* find_changed(std::string_view id) const
+    {
+        for (const asset_materialized_byte_payload_diff_entry& entry : changed) {
+            if (entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+};
+
 namespace detail {
 
 inline bool asset_type_is_engine_facing(asset_type type)
@@ -770,6 +904,98 @@ inline void add_materialized_byte_payload(
     }
 }
 
+template <typename Visitor>
+inline void for_each_materialized_byte_payload(
+    const asset_materialized_byte_payload_bundle& bundle,
+    Visitor&& visitor)
+{
+    const auto visit_group = [&](const asset_materialized_byte_payload_group& group) {
+        for (const asset_materialized_byte_payload& payload : group.ready) {
+            visitor(payload);
+        }
+        for (const asset_materialized_byte_payload& payload : group.blocked) {
+            visitor(payload);
+        }
+    };
+
+    visit_group(bundle.fonts);
+    visit_group(bundle.images);
+    visit_group(bundle.sounds);
+    visit_group(bundle.shaders);
+    visit_group(bundle.decks);
+}
+
+inline asset_materialized_byte_payload_snapshot make_materialized_byte_payload_snapshot(
+    const asset_materialized_byte_payload& payload)
+{
+    return asset_materialized_byte_payload_snapshot{
+        .id = payload.id,
+        .type = payload.type,
+        .cache_key = payload.cache_key,
+        .source_uri = payload.source_uri,
+        .materialized_path = payload.materialized_path,
+        .byte_count = payload.byte_count,
+        .payload_byte_count = payload.bytes.size(),
+        .content_hash = payload.content_hash,
+        .status = payload.status,
+        .materialized_status = payload.materialized_status,
+        .load_status = payload.load_status,
+        .ready = payload.ready(),
+    };
+}
+
+inline bool materialized_byte_payload_snapshot_status_matches(
+    const asset_materialized_byte_payload_snapshot& before,
+    const asset_materialized_byte_payload_snapshot& after)
+{
+    return before.status == after.status && before.materialized_status == after.materialized_status
+        && before.load_status == after.load_status;
+}
+
+inline asset_materialized_byte_payload_diff_entry make_added_materialized_byte_payload_diff_entry(
+    const asset_materialized_byte_payload_snapshot& after)
+{
+    return asset_materialized_byte_payload_diff_entry{
+        .kind = asset_materialized_byte_payload_delta_kind::added,
+        .id = after.id,
+        .type = after.type,
+        .after = after,
+    };
+}
+
+inline asset_materialized_byte_payload_diff_entry make_removed_materialized_byte_payload_diff_entry(
+    const asset_materialized_byte_payload_snapshot& before)
+{
+    return asset_materialized_byte_payload_diff_entry{
+        .kind = asset_materialized_byte_payload_delta_kind::removed,
+        .id = before.id,
+        .type = before.type,
+        .before = before,
+    };
+}
+
+inline asset_materialized_byte_payload_diff_entry make_changed_materialized_byte_payload_diff_entry(
+    const asset_materialized_byte_payload_snapshot& before,
+    const asset_materialized_byte_payload_snapshot& after)
+{
+    return asset_materialized_byte_payload_diff_entry{
+        .kind = asset_materialized_byte_payload_delta_kind::changed,
+        .id = after.id,
+        .type = after.type,
+        .before = before,
+        .after = after,
+        .type_changed = before.type != after.type,
+        .cache_key_changed = before.cache_key != after.cache_key,
+        .source_uri_changed = before.source_uri != after.source_uri,
+        .materialized_path_changed = before.materialized_path != after.materialized_path,
+        .byte_count_changed = before.byte_count != after.byte_count,
+        .payload_byte_count_changed = before.payload_byte_count != after.payload_byte_count,
+        .content_hash_changed = before.content_hash != after.content_hash,
+        .status_changed = !materialized_byte_payload_snapshot_status_matches(before, after),
+        .readiness_changed = before.ready != after.ready,
+    };
+}
+
 } // namespace detail
 
 inline asset_typed_materialized_bytes_diff_summary diff_typed_materialized_asset_bytes(
@@ -817,6 +1043,65 @@ inline asset_materialized_bytes_handoff_summary make_materialized_asset_bytes_ha
         });
 
     return handoff;
+}
+
+inline asset_materialized_byte_payload_snapshot make_materialized_asset_byte_payload_snapshot(
+    const asset_materialized_byte_payload& payload)
+{
+    return detail::make_materialized_byte_payload_snapshot(payload);
+}
+
+inline asset_materialized_byte_payload_bundle_snapshot snapshot_materialized_asset_byte_payload_bundle(
+    const asset_materialized_byte_payload_bundle& bundle)
+{
+    asset_materialized_byte_payload_bundle_snapshot snapshot{
+        .skipped_generic_count = bundle.skipped_generic_count,
+    };
+    snapshot.payloads.reserve(bundle.payload_count());
+    detail::for_each_materialized_byte_payload(
+        bundle,
+        [&](const asset_materialized_byte_payload& payload) {
+            snapshot.payloads.push_back(detail::make_materialized_byte_payload_snapshot(payload));
+        });
+    return snapshot;
+}
+
+inline asset_materialized_byte_payload_diff_summary diff_materialized_asset_byte_payload_snapshots(
+    const asset_materialized_byte_payload_bundle_snapshot& before,
+    const asset_materialized_byte_payload_bundle_snapshot& after)
+{
+    asset_materialized_byte_payload_diff_summary diff;
+
+    for (const asset_materialized_byte_payload_snapshot& before_payload : before.payloads) {
+        const asset_materialized_byte_payload_snapshot* after_payload = after.find_payload(before_payload.id);
+        if (after_payload == nullptr) {
+            diff.removed.push_back(detail::make_removed_materialized_byte_payload_diff_entry(before_payload));
+            continue;
+        }
+
+        asset_materialized_byte_payload_diff_entry changed =
+            detail::make_changed_materialized_byte_payload_diff_entry(before_payload, *after_payload);
+        if (changed.has_field_delta()) {
+            diff.changed.push_back(std::move(changed));
+        }
+    }
+
+    for (const asset_materialized_byte_payload_snapshot& after_payload : after.payloads) {
+        if (before.find_payload(after_payload.id) == nullptr) {
+            diff.added.push_back(detail::make_added_materialized_byte_payload_diff_entry(after_payload));
+        }
+    }
+
+    return diff;
+}
+
+inline asset_materialized_byte_payload_diff_summary diff_materialized_asset_byte_payload_bundles(
+    const asset_materialized_byte_payload_bundle& before,
+    const asset_materialized_byte_payload_bundle& after)
+{
+    return diff_materialized_asset_byte_payload_snapshots(
+        snapshot_materialized_asset_byte_payload_bundle(before),
+        snapshot_materialized_asset_byte_payload_bundle(after));
 }
 
 } // namespace quiz_vulkan::assets

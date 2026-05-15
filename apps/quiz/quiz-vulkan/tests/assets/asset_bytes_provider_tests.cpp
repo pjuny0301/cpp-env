@@ -133,6 +133,69 @@ quiz_vulkan::assets::asset_typed_materialized_bytes_entry make_typed_summary_ent
     return entry;
 }
 
+quiz_vulkan::assets::asset_materialized_byte_payload make_payload_bundle_entry(
+    std::string id,
+    quiz_vulkan::assets::asset_type type,
+    std::string source_uri,
+    std::filesystem::path materialized_path,
+    std::string bytes_text,
+    std::string content_hash,
+    quiz_vulkan::assets::asset_materialized_bytes_handoff_status status =
+        quiz_vulkan::assets::asset_materialized_bytes_handoff_status::ready)
+{
+    using namespace quiz_vulkan::assets;
+
+    std::vector<std::byte> bytes = detail::make_asset_byte_vector(bytes_text);
+    if (content_hash.empty()) {
+        content_hash = make_asset_bytes_content_hash(bytes);
+    }
+
+    asset_materialized_byte_payload payload{
+        .id = std::move(id),
+        .type = type,
+        .cache_key = make_asset_cache_key(type, source_uri),
+        .source_uri = std::move(source_uri),
+        .rooted_path = materialized_path.lexically_normal(),
+        .materialized_source_path = materialized_path.filename().string(),
+        .materialized_path = std::move(materialized_path).lexically_normal(),
+        .byte_count = bytes.size(),
+        .content_hash = std::move(content_hash),
+        .bytes = std::move(bytes),
+        .status = status,
+        .materialized_status = runtime_materialized_asset_lookup_status::materialized,
+        .load_status = asset_bytes_load_status::loaded,
+    };
+
+    if (status == asset_materialized_bytes_handoff_status::materialization_blocked) {
+        payload.rooted_path.reset();
+        payload.materialized_source_path.clear();
+        payload.materialized_path.clear();
+        payload.byte_count = 0U;
+        payload.materialized_status = runtime_materialized_asset_lookup_status::missing_rooted_path;
+        payload.load_status = asset_bytes_load_status::source_not_readable;
+        payload.diagnostic = "test payload is missing a rooted path";
+    }
+
+    if (status == asset_materialized_bytes_handoff_status::integrity_blocked) {
+        payload.issues.push_back(asset_bytes_integrity_issue{
+            .kind = asset_bytes_integrity_issue_kind::content_hash_mismatch,
+            .id = payload.id,
+            .type = payload.type,
+            .cache_key = payload.cache_key,
+            .expected_cache_key = payload.cache_key,
+            .source_uri = payload.source_uri,
+            .expected_source_uri = payload.source_uri,
+            .reported_byte_count = payload.byte_count,
+            .actual_byte_count = payload.bytes.size(),
+            .reported_content_hash = payload.content_hash,
+            .actual_content_hash = make_asset_bytes_content_hash(payload.bytes),
+            .diagnostic = "test payload intentionally fails integrity",
+        });
+    }
+
+    return payload;
+}
+
 quiz_vulkan::assets::runtime_asset_catalog_snapshot make_card_front_snapshot(
     const std::filesystem::path& fixture_root)
 {
@@ -1474,6 +1537,150 @@ void test_materialized_asset_byte_payload_bundle_groups_loaded_bytes_by_type()
     require(bundle.cache_policy.find_entry("rootless_shader") != nullptr, "payload bundle preserves cache policy entries");
 }
 
+void test_materialized_asset_byte_payload_bundle_diff_tracks_snapshot_changes()
+{
+    using namespace quiz_vulkan::assets;
+
+    asset_materialized_byte_payload_bundle before;
+    before.skipped_generic_count = 1U;
+    before.fonts.ready.push_back(make_payload_bundle_entry(
+        "body_font",
+        asset_type::font,
+        "asset://fonts/body.ttf",
+        "/assets/fonts/body.ttf",
+        "font bytes",
+        "hash:font"));
+    before.images.ready.push_back(make_payload_bundle_entry(
+        "card_front",
+        asset_type::image,
+        "asset://cards/front.png",
+        "/assets/cards/front.png",
+        "image bytes",
+        "hash:image-old"));
+    before.shaders.blocked.push_back(make_payload_bundle_entry(
+        "ui_shader",
+        asset_type::shader,
+        "asset://shaders/ui.vert.spv",
+        "/assets/shaders/ui.vert.spv",
+        "",
+        "hash:shader-missing",
+        asset_materialized_bytes_handoff_status::materialization_blocked));
+
+    asset_materialized_byte_payload_bundle after;
+    after.skipped_generic_count = 1U;
+    asset_materialized_byte_payload changed_image = make_payload_bundle_entry(
+        "card_front",
+        asset_type::image,
+        "asset://cards/front.png",
+        "/assets/cards/front.png",
+        "image bytes!",
+        "hash:image-new");
+    changed_image.cache_key = "image|asset://cards/front.png|rev=2";
+    after.images.ready.push_back(std::move(changed_image));
+    after.sounds.ready.push_back(make_payload_bundle_entry(
+        "answer_sound",
+        asset_type::sound,
+        "asset://sounds/correct.ogg",
+        "/assets/sounds/correct.ogg",
+        "sound bytes",
+        "hash:sound"));
+    after.shaders.ready.push_back(make_payload_bundle_entry(
+        "ui_shader",
+        asset_type::shader,
+        "asset://shaders/ui.vert.spv",
+        "/assets/shaders/ui.vert.spv",
+        "shader bytes",
+        "hash:shader-ready"));
+
+    const asset_materialized_byte_payload_bundle_snapshot before_snapshot =
+        snapshot_materialized_asset_byte_payload_bundle(before);
+    const asset_materialized_byte_payload_bundle_snapshot after_snapshot =
+        snapshot_materialized_asset_byte_payload_bundle(after);
+
+    require(!before_snapshot.ok(), "payload snapshot reports blocked payloads");
+    require(before_snapshot.payload_count() == 3U, "payload snapshot counts all before payloads");
+    require(before_snapshot.ready_count() == 2U, "payload snapshot counts ready before payloads");
+    require(before_snapshot.blocked_count() == 1U, "payload snapshot counts blocked before payloads");
+    require(before_snapshot.skipped_generic_count == 1U, "payload snapshot preserves skipped generic count");
+
+    const asset_materialized_byte_payload_snapshot* before_image = before_snapshot.find_payload("card_front");
+    require(before_image != nullptr, "payload snapshot can find image payloads");
+    require(before_image->type == asset_type::image, "payload snapshot keeps type evidence");
+    require(before_image->cache_key == "image|asset://cards/front.png", "payload snapshot keeps cache key");
+    require(before_image->content_hash == "hash:image-old", "payload snapshot keeps content hash evidence");
+    require(before_image->byte_count == 11U, "payload snapshot keeps reported byte count");
+    require(before_image->payload_byte_count == 11U, "payload snapshot keeps owned byte count");
+    require(before_image->ready, "payload snapshot keeps readiness evidence");
+
+    const asset_materialized_byte_payload_snapshot single_snapshot =
+        make_materialized_asset_byte_payload_snapshot(before.images.ready[0]);
+    require(
+        single_snapshot.payload_byte_count == before.images.ready[0].bytes.size(),
+        "single payload snapshot records byte-vector size without copying bytes");
+
+    const asset_materialized_byte_payload_diff_summary diff =
+        diff_materialized_asset_byte_payload_snapshots(before_snapshot, after_snapshot);
+    const asset_materialized_byte_payload_diff_summary bundle_diff =
+        diff_materialized_asset_byte_payload_bundles(before, after);
+
+    require(!diff.empty(), "payload bundle diff reports changes");
+    require(diff.change_count() == 4U, "payload bundle diff counts added removed and changed entries");
+    require(bundle_diff.change_count() == diff.change_count(), "bundle diff matches snapshot diff");
+    require(diff.added.size() == 1U, "payload bundle diff records added payloads");
+    require(diff.removed.size() == 1U, "payload bundle diff records removed payloads");
+    require(diff.changed.size() == 2U, "payload bundle diff records changed payloads");
+
+    const asset_materialized_byte_payload_diff_entry* added = diff.find_added("answer_sound");
+    require(added != nullptr, "payload bundle diff finds added sound payloads");
+    require(
+        added->kind == asset_materialized_byte_payload_delta_kind::added,
+        "payload bundle diff marks added payloads");
+    require(added->type == asset_type::sound, "payload bundle diff records added type");
+    require(!added->before.has_value() && added->after.has_value(), "added payload diff only keeps after snapshot");
+    require(added->after->content_hash == "hash:sound", "added payload diff keeps content hash evidence");
+    require(added->after->payload_byte_count == 11U, "added payload diff keeps byte-count evidence");
+
+    const asset_materialized_byte_payload_diff_entry* removed = diff.find_removed("body_font");
+    require(removed != nullptr, "payload bundle diff finds removed font payloads");
+    require(
+        removed->kind == asset_materialized_byte_payload_delta_kind::removed,
+        "payload bundle diff marks removed payloads");
+    require(removed->type == asset_type::font, "payload bundle diff records removed type");
+    require(removed->before.has_value() && !removed->after.has_value(), "removed payload diff only keeps before snapshot");
+    require(removed->before->cache_key == "font|asset://fonts/body.ttf", "removed payload diff keeps cache key");
+
+    const asset_materialized_byte_payload_diff_entry* image = diff.find_changed("card_front");
+    require(image != nullptr, "payload bundle diff finds changed image payloads");
+    require(
+        image->kind == asset_materialized_byte_payload_delta_kind::changed,
+        "payload bundle diff marks changed payloads");
+    require(!image->type_changed, "payload bundle diff leaves stable types unchanged");
+    require(image->cache_key_changed, "payload bundle diff tracks cache-key changes");
+    require(!image->source_uri_changed, "payload bundle diff leaves stable source uri unchanged");
+    require(!image->materialized_path_changed, "payload bundle diff leaves stable materialized path unchanged");
+    require(image->byte_count_changed, "payload bundle diff tracks reported byte-count changes");
+    require(image->payload_byte_count_changed, "payload bundle diff tracks owned-byte-count changes");
+    require(image->content_hash_changed, "payload bundle diff tracks content-hash changes");
+    require(!image->status_changed, "payload bundle diff leaves stable status unchanged");
+    require(!image->readiness_changed, "payload bundle diff leaves stable readiness unchanged");
+    require(image->has_field_delta(), "payload bundle diff reports changed fields");
+    require(
+        image->before->content_hash == "hash:image-old" && image->after->content_hash == "hash:image-new",
+        "payload bundle diff keeps before and after hash evidence");
+
+    const asset_materialized_byte_payload_diff_entry* shader = diff.find_changed("ui_shader");
+    require(shader != nullptr, "payload bundle diff finds readiness changes");
+    require(shader->status_changed, "payload bundle diff tracks blocker status changes");
+    require(shader->readiness_changed, "payload bundle diff tracks readiness changes");
+    require(shader->content_hash_changed, "payload bundle diff tracks blocker content hash changes");
+    require(shader->payload_byte_count_changed, "payload bundle diff tracks bytes appearing after materialization");
+    require(!shader->before->ready && shader->after->ready, "payload bundle diff keeps before and after readiness");
+    require(
+        shader->before->status == asset_materialized_bytes_handoff_status::materialization_blocked
+            && shader->after->status == asset_materialized_bytes_handoff_status::ready,
+        "payload bundle diff keeps before and after status");
+}
+
 void test_materialized_asset_bytes_integrity_fails_before_provider_for_unmaterialized_sources()
 {
     using namespace quiz_vulkan::assets;
@@ -1587,6 +1794,7 @@ int main()
     test_typed_materialized_asset_bytes_diff_tracks_engine_entry_deltas();
     test_materialized_asset_bytes_handoff_summary_groups_ready_and_blocked_payloads();
     test_materialized_asset_byte_payload_bundle_groups_loaded_bytes_by_type();
+    test_materialized_asset_byte_payload_bundle_diff_tracks_snapshot_changes();
     test_materialized_asset_bytes_integrity_fails_before_provider_for_unmaterialized_sources();
     test_materialized_asset_bytes_integrity_fails_after_provider_for_byte_count_mismatch();
     test_materialized_asset_bytes_integrity_fails_after_provider_for_metadata_mismatch();

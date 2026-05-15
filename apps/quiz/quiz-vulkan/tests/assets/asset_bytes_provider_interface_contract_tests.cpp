@@ -284,6 +284,70 @@ static_assert(requires(
     { const_bundle.find_blocked(id) } -> std::same_as<const asset_materialized_byte_payload*>;
 });
 
+static_assert(requires(asset_materialized_byte_payload_snapshot snapshot) {
+    { snapshot.id } -> std::same_as<std::string&>;
+    { snapshot.type } -> std::same_as<asset_type&>;
+    { snapshot.cache_key } -> std::same_as<asset_cache_key&>;
+    { snapshot.source_uri } -> std::same_as<std::string&>;
+    { snapshot.materialized_path } -> std::same_as<std::filesystem::path&>;
+    { snapshot.byte_count } -> std::same_as<std::size_t&>;
+    { snapshot.payload_byte_count } -> std::same_as<std::size_t&>;
+    { snapshot.content_hash } -> std::same_as<std::string&>;
+    { snapshot.status } -> std::same_as<asset_materialized_bytes_handoff_status&>;
+    { snapshot.materialized_status } -> std::same_as<runtime_materialized_asset_lookup_status&>;
+    { snapshot.load_status } -> std::same_as<asset_bytes_load_status&>;
+    { snapshot.ready } -> std::same_as<bool&>;
+});
+
+static_assert(requires(
+    asset_materialized_byte_payload_bundle_snapshot snapshot,
+    const asset_materialized_byte_payload_bundle_snapshot& const_snapshot,
+    std::string_view id) {
+    { snapshot.payloads } -> std::same_as<std::vector<asset_materialized_byte_payload_snapshot>&>;
+    { snapshot.skipped_generic_count } -> std::same_as<std::size_t&>;
+    { const_snapshot.ok() } -> std::same_as<bool>;
+    { const_snapshot.ready_count() } -> std::same_as<std::size_t>;
+    { const_snapshot.blocked_count() } -> std::same_as<std::size_t>;
+    { const_snapshot.payload_count() } -> std::same_as<std::size_t>;
+    { const_snapshot.find_payload(id) } -> std::same_as<const asset_materialized_byte_payload_snapshot*>;
+});
+
+static_assert(std::is_enum_v<asset_materialized_byte_payload_delta_kind>);
+
+static_assert(requires(
+    asset_materialized_byte_payload_diff_entry entry,
+    const asset_materialized_byte_payload_diff_entry& const_entry) {
+    { entry.kind } -> std::same_as<asset_materialized_byte_payload_delta_kind&>;
+    { entry.id } -> std::same_as<std::string&>;
+    { entry.type } -> std::same_as<asset_type&>;
+    { entry.before } -> std::same_as<std::optional<asset_materialized_byte_payload_snapshot>&>;
+    { entry.after } -> std::same_as<std::optional<asset_materialized_byte_payload_snapshot>&>;
+    { entry.type_changed } -> std::same_as<bool&>;
+    { entry.cache_key_changed } -> std::same_as<bool&>;
+    { entry.source_uri_changed } -> std::same_as<bool&>;
+    { entry.materialized_path_changed } -> std::same_as<bool&>;
+    { entry.byte_count_changed } -> std::same_as<bool&>;
+    { entry.payload_byte_count_changed } -> std::same_as<bool&>;
+    { entry.content_hash_changed } -> std::same_as<bool&>;
+    { entry.status_changed } -> std::same_as<bool&>;
+    { entry.readiness_changed } -> std::same_as<bool&>;
+    { const_entry.has_field_delta() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    asset_materialized_byte_payload_diff_summary summary,
+    const asset_materialized_byte_payload_diff_summary& const_summary,
+    std::string_view id) {
+    { summary.added } -> std::same_as<std::vector<asset_materialized_byte_payload_diff_entry>&>;
+    { summary.removed } -> std::same_as<std::vector<asset_materialized_byte_payload_diff_entry>&>;
+    { summary.changed } -> std::same_as<std::vector<asset_materialized_byte_payload_diff_entry>&>;
+    { const_summary.empty() } -> std::same_as<bool>;
+    { const_summary.change_count() } -> std::same_as<std::size_t>;
+    { const_summary.find_added(id) } -> std::same_as<const asset_materialized_byte_payload_diff_entry*>;
+    { const_summary.find_removed(id) } -> std::same_as<const asset_materialized_byte_payload_diff_entry*>;
+    { const_summary.find_changed(id) } -> std::same_as<const asset_materialized_byte_payload_diff_entry*>;
+});
+
 static_assert(std::has_virtual_destructor_v<asset_bytes_provider_interface>);
 static_assert(std::derived_from<fake_asset_bytes_provider, asset_bytes_provider_interface>);
 static_assert(std::derived_from<local_file_asset_bytes_provider, asset_bytes_provider_interface>);
@@ -318,6 +382,9 @@ static_assert(requires(
     const runtime_asset_catalog& catalog,
     const asset_bytes_integrity_request& integrity_request,
     const asset_typed_materialized_bytes_summary& typed_summary,
+    const asset_materialized_byte_payload& payload,
+    const asset_materialized_byte_payload_bundle& payload_bundle,
+    const asset_materialized_byte_payload_bundle_snapshot& payload_snapshot,
     const std::vector<asset_bytes_catalog_request>& requests,
     const asset_bytes_catalog_request& request) {
     { make_asset_bytes_content_hash(bytes) } -> std::same_as<std::string>;
@@ -344,6 +411,14 @@ static_assert(requires(
         std::same_as<asset_materialized_bytes_handoff_summary>;
     { make_materialized_asset_byte_payload_bundle(provider, catalog) } ->
         std::same_as<asset_materialized_byte_payload_bundle>;
+    { make_materialized_asset_byte_payload_snapshot(payload) } ->
+        std::same_as<asset_materialized_byte_payload_snapshot>;
+    { snapshot_materialized_asset_byte_payload_bundle(payload_bundle) } ->
+        std::same_as<asset_materialized_byte_payload_bundle_snapshot>;
+    { diff_materialized_asset_byte_payload_snapshots(payload_snapshot, payload_snapshot) } ->
+        std::same_as<asset_materialized_byte_payload_diff_summary>;
+    { diff_materialized_asset_byte_payload_bundles(payload_bundle, payload_bundle) } ->
+        std::same_as<asset_materialized_byte_payload_diff_summary>;
 });
 
 } // namespace

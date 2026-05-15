@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: asset-owned typed materialized byte payload bundles integrated; Windows MinGW focused asset/architecture CTest passed 2/2.
+- `560d786`: asset system now groups actual loaded bytes by font/image/sound/shader/deck type with ready/blocked payloads, cache-policy evidence, and handoff summaries while remaining independent of engine consumers.
 - current: FreeType raster-to-atlas handoff evidence integrated; Windows MinGW built the shaped-atlas target, focused text/architecture CTest passed 3/3, and the shaped-atlas executable still hits the known host permission BAD_COMMAND when run.
 - `987753f`: text engine maps FreeType raster results into existing glyph-atlas materialization/upload-handoff evidence, including resolved glyph-index cache keys and fallback diagnostics for missing raster payloads.
 - current: third-party image decoder adapter cohesion split integrated; Windows MinGW focused image/architecture CTest passed 3/3.

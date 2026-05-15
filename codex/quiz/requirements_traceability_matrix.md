@@ -12,6 +12,8 @@
 - `4dcc126`: text engine now links HarfBuzz-shaped glyph handoff records to atlas/cache/materialization readiness, preserving backend label/status, fallback, and blocker evidence without renderer/Vulkan coupling.
 - `2e58022`: asset system now evaluates ordered multi-payload request transactions, preserving per-request selection status, compact selected snapshots, and summary counters without copying payload bytes.
 - `78fd030`: asset system now compares ordered payload request transactions with deterministic added/removed ids, changed statuses, selected snapshot deltas, readiness/integrity/cache-key deltas, and summary count changes.
+- `9eae4c4`: image engine now compares staging payload plans across uploads/results, reporting row-copy, alignment, padding, staging-byte, cache/sampler, mip-readiness, blocker, regression, and recovery changes.
+- `8512fb8`: Vulkan backend now has a native swapchain create/destroy adapter boundary with dispatch readiness, fake execution, selected surface format/present mode/extent evidence, and old-swapchain handoff diagnostics.
 - `be5533d`: Vulkan backend now records native surface capability readiness for support, capabilities, formats, and present modes, and blocks native swapchain create planning when surface evidence is missing or unusable.
 - `9d6a8fd`: image engine now plans decoded texture staging payloads with row-copy, alignment, total byte, sampler/cache identity, and blocker evidence before any Vulkan upload path exists.
 - `e428459`: asset system now selects materialized byte payloads by id/type/cache key/readiness/integrity status and reports stable diagnostics for missing, wrong-type, blocked, duplicate, cache-key mismatch, and integrity-failure cases.

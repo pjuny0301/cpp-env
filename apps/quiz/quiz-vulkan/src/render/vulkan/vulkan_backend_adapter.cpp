@@ -826,6 +826,127 @@ vulkan_swapchain_surface_capabilities_snapshot snapshot_from_vk_surface_capabili
         .present_modes = {},
     };
 }
+
+VkFormat vk_format_from_swapchain_format(vulkan_swapchain_image_format format)
+{
+    switch (format) {
+    case vulkan_swapchain_image_format::rgba8_unorm:
+        return VK_FORMAT_R8G8B8A8_UNORM;
+    case vulkan_swapchain_image_format::bgra8_unorm:
+        return VK_FORMAT_B8G8R8A8_UNORM;
+    case vulkan_swapchain_image_format::undefined:
+        return VK_FORMAT_UNDEFINED;
+    }
+
+    return VK_FORMAT_UNDEFINED;
+}
+
+VkColorSpaceKHR vk_color_space_from_swapchain_color_space(
+    vulkan_swapchain_color_space color_space)
+{
+    switch (color_space) {
+    case vulkan_swapchain_color_space::srgb_nonlinear:
+        return VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+    case vulkan_swapchain_color_space::display_p3_nonlinear:
+#ifdef VK_COLOR_SPACE_DISPLAY_P3_NONLINEAR_EXT
+        return VK_COLOR_SPACE_DISPLAY_P3_NONLINEAR_EXT;
+#else
+        return VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+#endif
+    }
+
+    return VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+}
+
+VkPresentModeKHR vk_present_mode_from_swapchain_present_mode(
+    vulkan_swapchain_present_mode present_mode)
+{
+    switch (present_mode) {
+    case vulkan_swapchain_present_mode::immediate:
+        return VK_PRESENT_MODE_IMMEDIATE_KHR;
+    case vulkan_swapchain_present_mode::mailbox:
+        return VK_PRESENT_MODE_MAILBOX_KHR;
+    case vulkan_swapchain_present_mode::fifo:
+        return VK_PRESENT_MODE_FIFO_KHR;
+    case vulkan_swapchain_present_mode::fifo_relaxed:
+        return VK_PRESENT_MODE_FIFO_RELAXED_KHR;
+    }
+
+    return VK_PRESENT_MODE_FIFO_KHR;
+}
+
+VkSurfaceTransformFlagBitsKHR vk_transform_from_swapchain_transform(
+    vulkan_swapchain_surface_transform transform)
+{
+    switch (transform) {
+    case vulkan_swapchain_surface_transform::rotate_90:
+        return VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR;
+    case vulkan_swapchain_surface_transform::rotate_180:
+        return VK_SURFACE_TRANSFORM_ROTATE_180_BIT_KHR;
+    case vulkan_swapchain_surface_transform::rotate_270:
+        return VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR;
+    case vulkan_swapchain_surface_transform::identity:
+        return VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+    }
+
+    return VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+}
+
+VkCompositeAlphaFlagBitsKHR vk_composite_alpha_from_swapchain_alpha(
+    vulkan_swapchain_composite_alpha alpha)
+{
+    switch (alpha) {
+    case vulkan_swapchain_composite_alpha::pre_multiplied:
+        return VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR;
+    case vulkan_swapchain_composite_alpha::post_multiplied:
+        return VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR;
+    case vulkan_swapchain_composite_alpha::inherit:
+        return VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
+    case vulkan_swapchain_composite_alpha::opaque:
+        return VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    }
+
+    return VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+}
+
+VkSharingMode vk_sharing_mode_from_swapchain_sharing_mode(
+    vulkan_swapchain_image_sharing_mode sharing_mode)
+{
+    return sharing_mode == vulkan_swapchain_image_sharing_mode::concurrent
+        ? VK_SHARING_MODE_CONCURRENT
+        : VK_SHARING_MODE_EXCLUSIVE;
+}
+
+VkSurfaceKHR vk_surface_handle_from(vulkan_surface_handle surface)
+{
+#if defined(VK_USE_64_BIT_PTR_DEFINES) && VK_USE_64_BIT_PTR_DEFINES
+    return reinterpret_cast<VkSurfaceKHR>(surface.value);
+#else
+    return static_cast<VkSurfaceKHR>(surface.value);
+#endif
+}
+
+VkSwapchainKHR vk_swapchain_handle_from(vulkan_swapchain_handle swapchain)
+{
+#if defined(VK_USE_64_BIT_PTR_DEFINES) && VK_USE_64_BIT_PTR_DEFINES
+    return reinterpret_cast<VkSwapchainKHR>(swapchain.value);
+#else
+    return static_cast<VkSwapchainKHR>(swapchain.value);
+#endif
+}
+
+vulkan_swapchain_handle swapchain_handle_from_vk(VkSwapchainKHR swapchain)
+{
+#if defined(VK_USE_64_BIT_PTR_DEFINES) && VK_USE_64_BIT_PTR_DEFINES
+    return vulkan_swapchain_handle{
+        .value = reinterpret_cast<std::uintptr_t>(swapchain),
+    };
+#else
+    return vulkan_swapchain_handle{
+        .value = static_cast<std::uintptr_t>(swapchain),
+    };
+#endif
+}
 #endif
 
 std::vector<vulkan_native_physical_device_queue_family>
@@ -4402,6 +4523,172 @@ query_native_vulkan_surface_capabilities(
         device,
         surface,
         present_queue_family_index);
+}
+
+vulkan_native_swapchain_create_execution_result
+vulkan_native_swapchain_operation::create_swapchain(
+    const vulkan_native_swapchain_create_execution_request& request)
+{
+    vulkan_native_swapchain_create_execution_result result =
+        swapchain_detail::make_swapchain_create_execution_result(request);
+
+    if (!result.create_operation_ready) {
+        result.status =
+            vulkan_native_swapchain_create_execution_status::create_operation_unavailable;
+        result.diagnostic = request.create_operation.diagnostic.empty()
+            ? "Native Vulkan swapchain create execution is missing a ready create operation"
+            : request.create_operation.diagnostic;
+        return result;
+    }
+    if (!result.dispatch_table_ready) {
+        result.status =
+            vulkan_native_swapchain_create_execution_status::dispatch_table_unavailable;
+        result.diagnostic = request.dispatch_table.diagnostic.empty()
+            ? "Native Vulkan swapchain create execution is missing create/destroy dispatch"
+            : request.dispatch_table.diagnostic;
+        return result;
+    }
+
+#if QUIZ_VULKAN_HAS_VULKAN_HEADERS
+    const auto create_swapchain =
+        reinterpret_cast<PFN_vkCreateSwapchainKHR>(
+            request.dispatch_table.create_swapchain.value);
+    if (create_swapchain == nullptr) {
+        result.status =
+            vulkan_native_swapchain_create_execution_status::dispatch_table_unavailable;
+        result.diagnostic =
+            "Native Vulkan swapchain create execution has an invalid create pointer";
+        return result;
+    }
+
+    std::vector<std::uint32_t> queue_family_indices;
+    queue_family_indices.reserve(result.selected_queue_family_indices.size());
+    for (std::size_t queue_family_index : result.selected_queue_family_indices) {
+        queue_family_indices.push_back(static_cast<std::uint32_t>(queue_family_index));
+    }
+
+    VkSwapchainCreateInfoKHR create_info{};
+    create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+    create_info.surface = vk_surface_handle_from(result.surface);
+    create_info.minImageCount =
+        static_cast<std::uint32_t>(result.selected_image_count);
+    create_info.imageFormat =
+        vk_format_from_swapchain_format(result.selected_surface_format.format);
+    create_info.imageColorSpace = vk_color_space_from_swapchain_color_space(
+        result.selected_surface_format.color_space);
+    create_info.imageExtent = VkExtent2D{
+        .width = static_cast<std::uint32_t>(result.selected_extent.width),
+        .height = static_cast<std::uint32_t>(result.selected_extent.height),
+    };
+    create_info.imageArrayLayers = 1;
+    create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    create_info.imageSharingMode =
+        vk_sharing_mode_from_swapchain_sharing_mode(result.selected_sharing_mode);
+    create_info.queueFamilyIndexCount =
+        create_info.imageSharingMode == VK_SHARING_MODE_CONCURRENT
+        ? static_cast<std::uint32_t>(queue_family_indices.size())
+        : 0U;
+    create_info.pQueueFamilyIndices =
+        create_info.queueFamilyIndexCount > 0 ? queue_family_indices.data() : nullptr;
+    create_info.preTransform =
+        vk_transform_from_swapchain_transform(result.selected_transform);
+    create_info.compositeAlpha =
+        vk_composite_alpha_from_swapchain_alpha(result.selected_composite_alpha);
+    create_info.presentMode =
+        vk_present_mode_from_swapchain_present_mode(result.selected_present_mode);
+    create_info.clipped = VK_TRUE;
+    create_info.oldSwapchain = result.old_swapchain.valid()
+        ? vk_swapchain_handle_from(result.old_swapchain)
+        : VK_NULL_HANDLE;
+
+    VkSwapchainKHR native_swapchain = VK_NULL_HANDLE;
+    const VkResult native_result = create_swapchain(
+        reinterpret_cast<VkDevice>(result.device.value),
+        &create_info,
+        nullptr,
+        &native_swapchain);
+    result.vk_create_swapchain_called = true;
+    result.native_result = static_cast<std::int32_t>(native_result);
+    if (native_result != VK_SUCCESS) {
+        result.status = vulkan_native_swapchain_create_execution_status::creation_failed;
+        result.diagnostic = "Native Vulkan swapchain creation failed";
+        return result;
+    }
+
+    result.created_swapchain = swapchain_handle_from_vk(native_swapchain);
+    if (!result.created_swapchain.valid()) {
+        result.status =
+            vulkan_native_swapchain_create_execution_status::invalid_created_handle;
+        result.diagnostic = "Native Vulkan swapchain creation returned an invalid handle";
+        return result;
+    }
+
+    result.status = vulkan_native_swapchain_create_execution_status::created;
+    result.diagnostic = result.old_swapchain_handoff
+        ? "Native Vulkan swapchain created with old-swapchain handoff"
+        : "Native Vulkan swapchain created";
+    return result;
+#else
+    result.status = vulkan_native_swapchain_create_execution_status::headers_unavailable;
+    result.diagnostic = "Vulkan headers are unavailable for native swapchain creation";
+    return result;
+#endif
+}
+
+vulkan_native_swapchain_destroy_execution_result
+vulkan_native_swapchain_operation::destroy_swapchain(
+    const vulkan_native_swapchain_destroy_execution_request& request)
+{
+    vulkan_native_swapchain_destroy_execution_result result =
+        swapchain_detail::make_swapchain_destroy_execution_result(request);
+
+    if (!result.dispatch_table_ready) {
+        result.status =
+            vulkan_native_swapchain_destroy_execution_status::dispatch_table_unavailable;
+        result.diagnostic = request.dispatch_table.diagnostic.empty()
+            ? "Native Vulkan swapchain destroy execution is missing destroy dispatch"
+            : request.dispatch_table.diagnostic;
+        return result;
+    }
+    if (!result.device.valid()) {
+        result.status = vulkan_native_swapchain_destroy_execution_status::invalid_device;
+        result.diagnostic =
+            "Native Vulkan swapchain destroy execution has no valid device handle";
+        return result;
+    }
+    if (!result.swapchain.valid()) {
+        result.status =
+            vulkan_native_swapchain_destroy_execution_status::missing_swapchain_handle;
+        result.diagnostic =
+            "Native Vulkan swapchain destroy execution has no valid swapchain handle";
+        return result;
+    }
+
+#if QUIZ_VULKAN_HAS_VULKAN_HEADERS
+    const auto destroy_swapchain =
+        reinterpret_cast<PFN_vkDestroySwapchainKHR>(
+            request.dispatch_table.destroy_swapchain.value);
+    if (destroy_swapchain == nullptr) {
+        result.status =
+            vulkan_native_swapchain_destroy_execution_status::dispatch_table_unavailable;
+        result.diagnostic =
+            "Native Vulkan swapchain destroy execution has an invalid destroy pointer";
+        return result;
+    }
+
+    destroy_swapchain(
+        reinterpret_cast<VkDevice>(result.device.value),
+        vk_swapchain_handle_from(result.swapchain),
+        nullptr);
+    result.vk_destroy_swapchain_called = true;
+    result.status = vulkan_native_swapchain_destroy_execution_status::destroyed;
+    result.diagnostic = "Native Vulkan swapchain destroyed";
+    return result;
+#else
+    result.status = vulkan_native_swapchain_destroy_execution_status::headers_unavailable;
+    result.diagnostic = "Vulkan headers are unavailable for native swapchain destroy";
+    return result;
+#endif
 }
 
 vulkan_native_instance_create_result create_native_vulkan_instance(

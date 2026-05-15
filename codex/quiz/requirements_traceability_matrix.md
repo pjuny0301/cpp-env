@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: FreeType raster-to-atlas handoff evidence integrated; Windows MinGW built the shaped-atlas target, focused text/architecture CTest passed 3/3, and the shaped-atlas executable still hits the known host permission BAD_COMMAND when run.
+- `987753f`: text engine maps FreeType raster results into existing glyph-atlas materialization/upload-handoff evidence, including resolved glyph-index cache keys and fallback diagnostics for missing raster payloads.
 - current: third-party image decoder adapter cohesion split integrated; Windows MinGW focused image/architecture CTest passed 3/3.
 - `9673e3b`: image engine keeps `third_party_image_decoder_adapter.h` as the public aggregator while moving generic adapter contracts, `stb_image` selection diagnostics, and decoder capability manifest code into image-owned `.inl` fragments.
 - current: native Vulkan logical-device dispatch/create readiness integrated; Windows MinGW focused Vulkan/renderer/architecture CTest passed 3/3, and full CTest reached 102 executed passes plus the known `quiz_vulkan_font_shaped_atlas_update_tests` host permission BAD_COMMAND.

@@ -1397,11 +1397,11 @@ std::vector<shaped_glyph> shape_request(
             shaping_source_bytes,
             handoff_adapter_status,
             handoff_backend_library,
-            std::move(handoff_backend_label),
+            handoff_backend_label,
             handoff_used_adapter,
             handoff_used_harfbuzz,
             handoff_used_deterministic_fallback,
-            std::move(handoff_fallback_reason),
+            handoff_fallback_reason,
             line_height_for(style));
 
         for (const render_text_shaped_glyph& glyph : shaped_run.glyphs) {
@@ -2280,6 +2280,32 @@ const render_text_glyph_atlas_placement_snapshot* find_atlas_placement_for_clust
     return match == placements.end() ? nullptr : &*match;
 }
 
+const render_text_glyph_atlas_materialization_snapshot* find_atlas_materialization_for_cluster(
+    const std::vector<render_text_glyph_atlas_materialization_snapshot>& materializations,
+    const std::size_t cluster_index)
+{
+    const auto match = std::find_if(
+        materializations.begin(),
+        materializations.end(),
+        [&](const render_text_glyph_atlas_materialization_snapshot& materialization) {
+            return materialization.cluster_index == cluster_index;
+        });
+    return match == materializations.end() ? nullptr : &*match;
+}
+
+const render_text_shaped_atlas_update_trace_snapshot* find_shaped_atlas_trace_for_cluster(
+    const std::vector<render_text_shaped_atlas_update_trace_snapshot>& traces,
+    const std::size_t cluster_index)
+{
+    const auto match = std::find_if(
+        traces.begin(),
+        traces.end(),
+        [&](const render_text_shaped_atlas_update_trace_snapshot& trace) {
+            return trace.cluster_index == cluster_index;
+        });
+    return match == traces.end() ? nullptr : &*match;
+}
+
 bool shaped_glyph_is_inside_cluster(
     const render_text_shaped_glyph& glyph,
     const render_text_glyph_cache_readiness_snapshot& readiness)
@@ -2304,6 +2330,28 @@ std::vector<std::uint32_t> shaped_glyph_ids_for_cluster(
     return glyph_ids;
 }
 
+bool shaping_handoff_matches_readiness(
+    const fake_text_engine_shaping_handoff_snapshot& handoff,
+    const render_text_glyph_cache_readiness_snapshot& readiness)
+{
+    return handoff.run_index == readiness.run_index
+        && handoff.cluster_byte_offset == readiness.byte_offset
+        && handoff.cluster_byte_count == readiness.byte_count;
+}
+
+std::vector<const fake_text_engine_shaping_handoff_snapshot*> shaping_handoffs_for_readiness(
+    const std::vector<fake_text_engine_shaping_handoff_snapshot>& handoffs,
+    const render_text_glyph_cache_readiness_snapshot& readiness)
+{
+    std::vector<const fake_text_engine_shaping_handoff_snapshot*> matches;
+    for (const fake_text_engine_shaping_handoff_snapshot& handoff : handoffs) {
+        if (shaping_handoff_matches_readiness(handoff, readiness)) {
+            matches.push_back(&handoff);
+        }
+    }
+    return matches;
+}
+
 std::uint32_t combined_shaped_glyph_id_for_cluster(const std::vector<std::uint32_t>& glyph_ids)
 {
     if (glyph_ids.empty()) {
@@ -2324,6 +2372,211 @@ bool readiness_has_cache_key(const render_text_glyph_cache_readiness_snapshot& r
         && readiness.cache_key.face_id != 0U
         && readiness.cache_key.glyph_id != 0U
         && readiness.cache_key.pixel_size != 0U;
+}
+
+bool contains_string(const std::vector<std::string>& values, const std::string& value)
+{
+    return std::find(values.begin(), values.end(), value) != values.end();
+}
+
+std::string stable_page_key_for(
+    const render_text_glyph_atlas_materialization_snapshot* materialization,
+    const render_text_shaped_atlas_update_trace_snapshot* trace)
+{
+    const render_text_atlas_page* page = nullptr;
+    if (trace != nullptr && trace->page.id != 0U) {
+        page = &trace->page;
+    } else if (materialization != nullptr && materialization->page.id != 0U) {
+        page = &materialization->page;
+    }
+    return page == nullptr
+        ? std::string{}
+        : render_text_glyph_atlas_upload_operation_stable_page_id_for(*page);
+}
+
+std::string shaping_atlas_blocker_reason_for(
+    const render_text_glyph_cache_readiness_snapshot& readiness,
+    const render_text_glyph_atlas_materialization_snapshot* materialization,
+    const render_text_shaped_atlas_update_trace_snapshot* trace,
+    const std::vector<const fake_text_engine_shaping_handoff_snapshot*>& handoffs)
+{
+    if (trace != nullptr
+        && (trace->status == render_text_shaped_atlas_update_trace_status::upload_ready_payload_queued
+            || trace->status == render_text_shaped_atlas_update_trace_status::clean_atlas_page_reused)) {
+        return {};
+    }
+    if (!readiness.glyph_supported) {
+        return "glyph is unsupported";
+    }
+    if (!readiness.cacheable) {
+        return "glyph cluster is not cacheable";
+    }
+    if (!readiness_has_cache_key(readiness)) {
+        return "glyph cluster has no cacheable atlas key";
+    }
+    if (trace != nullptr && !trace->diagnostic.empty()) {
+        return trace->diagnostic;
+    }
+    if (materialization != nullptr && !materialization->diagnostic.empty()) {
+        return materialization->diagnostic;
+    }
+    for (const fake_text_engine_shaping_handoff_snapshot* handoff : handoffs) {
+        if (handoff != nullptr && !handoff->fallback_reason.empty()) {
+            return handoff->fallback_reason;
+        }
+    }
+    return handoffs.empty()
+        ? "no shaping handoff record matched atlas readiness"
+        : "atlas handoff is blocked";
+}
+
+void record_shaping_atlas_handoff_diagnostics(fake_text_engine_diagnostics& diagnostics)
+{
+    diagnostics.shaping_atlas_handoffs.clear();
+    diagnostics.shaping_atlas_handoff_policy = {};
+    diagnostics.shaping_atlas_handoffs.reserve(diagnostics.glyph_cache_readiness.size());
+
+    std::vector<glyph_atlas_key> unique_cache_keys;
+    std::vector<std::string> unique_page_keys;
+    unique_cache_keys.reserve(diagnostics.glyph_cache_readiness.size());
+    unique_page_keys.reserve(diagnostics.glyph_cache_readiness.size());
+
+    for (const render_text_glyph_cache_readiness_snapshot& readiness : diagnostics.glyph_cache_readiness) {
+        const std::vector<const fake_text_engine_shaping_handoff_snapshot*> handoffs =
+            shaping_handoffs_for_readiness(diagnostics.shaping_handoffs, readiness);
+        const fake_text_engine_shaping_handoff_snapshot* primary_handoff =
+            handoffs.empty() ? nullptr : handoffs.front();
+        const render_text_glyph_atlas_materialization_snapshot* materialization =
+            find_atlas_materialization_for_cluster(diagnostics.glyph_atlas_materializations, readiness.cluster_index);
+        const render_text_shaped_atlas_update_trace_snapshot* trace =
+            find_shaped_atlas_trace_for_cluster(diagnostics.shaped_atlas_update_traces, readiness.cluster_index);
+        std::vector<std::uint32_t> glyph_ids;
+        glyph_ids.reserve(handoffs.size());
+        for (const fake_text_engine_shaping_handoff_snapshot* handoff : handoffs) {
+            if (handoff != nullptr && handoff->glyph_id != 0U) {
+                glyph_ids.push_back(handoff->glyph_id);
+            }
+        }
+        if (glyph_ids.empty()) {
+            glyph_ids = shaped_glyph_ids_for_cluster(diagnostics.shaped_glyphs, readiness);
+        }
+
+        const bool upload_ready =
+            trace != nullptr
+            && trace->status == render_text_shaped_atlas_update_trace_status::upload_ready_payload_queued;
+        const bool clean_reuse =
+            trace != nullptr
+            && trace->status == render_text_shaped_atlas_update_trace_status::clean_atlas_page_reused;
+        const bool atlas_ready = upload_ready || clean_reuse;
+        const std::string page_key = stable_page_key_for(materialization, trace);
+        const std::string blocker_reason = shaping_atlas_blocker_reason_for(
+            readiness,
+            materialization,
+            trace,
+            handoffs);
+
+        fake_text_engine_shaping_atlas_handoff_snapshot snapshot{
+            .cluster_index = readiness.cluster_index,
+            .run_index = readiness.run_index,
+            .style_token = primary_handoff == nullptr ? render_style_id{} : primary_handoff->style_token,
+            .cluster_byte_offset = readiness.byte_offset,
+            .cluster_byte_count = readiness.byte_count,
+            .cluster_codepoint_offset =
+                primary_handoff == nullptr ? 0U : primary_handoff->cluster_codepoint_offset,
+            .cluster_codepoint_count =
+                primary_handoff == nullptr ? 0U : primary_handoff->cluster_codepoint_count,
+            .shaped_glyph_ids = std::move(glyph_ids),
+            .resolved_glyph_id = readiness.glyph_id,
+            .resolved_face_id = readiness.resolved_face_id,
+            .cache_key = readiness.cache_key,
+            .stable_page_key = page_key,
+            .backend_library = primary_handoff == nullptr
+                ? readiness.font_backend_library
+                : primary_handoff->backend_library,
+            .backend_label = primary_handoff == nullptr
+                ? readiness.font_backend_label
+                : primary_handoff->backend_label,
+            .adapter_status = primary_handoff == nullptr
+                ? render_text_font_backend_adapter_status::backend_unavailable
+                : primary_handoff->adapter_status,
+            .capability_status = primary_handoff == nullptr
+                ? readiness.font_backend_capability_status
+                : primary_handoff->capability_status,
+            .source_bytes_status = primary_handoff == nullptr
+                ? render_text_font_source_bytes_load_status::missing_source
+                : primary_handoff->source_bytes_status,
+            .materialization_status = materialization == nullptr
+                ? render_text_glyph_atlas_materialization_status::skipped_missing_cache_key
+                : materialization->status,
+            .atlas_update_trace_status = trace == nullptr
+                ? render_text_shaped_atlas_update_trace_status::shaped_glyph_without_cache_key
+                : trace->status,
+            .materialized_font_bytes = primary_handoff != nullptr && primary_handoff->materialized_font_bytes,
+            .used_adapter = primary_handoff != nullptr && primary_handoff->used_adapter,
+            .used_harfbuzz = primary_handoff != nullptr && primary_handoff->used_harfbuzz,
+            .used_deterministic_fallback =
+                primary_handoff == nullptr || primary_handoff->used_deterministic_fallback,
+            .glyph_supported = readiness.glyph_supported,
+            .cacheable = readiness.cacheable,
+            .has_cache_key = readiness_has_cache_key(readiness),
+            .has_atlas_placement = trace == nullptr ? readiness.has_atlas_slot : trace->has_atlas_placement,
+            .payload_upload_ready = trace != nullptr && trace->payload_upload_ready,
+            .has_atlas_update = trace != nullptr && trace->has_atlas_update,
+            .atlas_ready = atlas_ready,
+            .blocked = !atlas_ready,
+            .fallback_reason = primary_handoff == nullptr ? std::string{} : primary_handoff->fallback_reason,
+            .blocker_reason = blocker_reason,
+        };
+
+        ++diagnostics.shaping_atlas_handoff_policy.cluster_count;
+        if (snapshot.used_harfbuzz) {
+            ++diagnostics.shaping_atlas_handoff_policy.harfbuzz_cluster_count;
+        }
+        if (snapshot.used_deterministic_fallback) {
+            ++diagnostics.shaping_atlas_handoff_policy.deterministic_fallback_cluster_count;
+        }
+        if (snapshot.materialized_font_bytes) {
+            ++diagnostics.shaping_atlas_handoff_policy.materialized_font_byte_cluster_count;
+        } else {
+            ++diagnostics.shaping_atlas_handoff_policy.missing_font_byte_cluster_count;
+        }
+        if (snapshot.cacheable) {
+            ++diagnostics.shaping_atlas_handoff_policy.cacheable_cluster_count;
+        }
+        if (snapshot.atlas_ready) {
+            ++diagnostics.shaping_atlas_handoff_policy.atlas_ready_cluster_count;
+        } else {
+            ++diagnostics.shaping_atlas_handoff_policy.blocked_cluster_count;
+        }
+        if (upload_ready) {
+            ++diagnostics.shaping_atlas_handoff_policy.upload_ready_cluster_count;
+        }
+        if (clean_reuse) {
+            ++diagnostics.shaping_atlas_handoff_policy.clean_reuse_cluster_count;
+        }
+        if (snapshot.atlas_update_trace_status
+            == render_text_shaped_atlas_update_trace_status::rasterized_payload_skipped) {
+            ++diagnostics.shaping_atlas_handoff_policy.raster_payload_blocked_cluster_count;
+        }
+        if (snapshot.atlas_update_trace_status
+            == render_text_shaped_atlas_update_trace_status::shaped_glyph_without_cache_key) {
+            ++diagnostics.shaping_atlas_handoff_policy.missing_cache_key_cluster_count;
+        }
+        if (!snapshot.fallback_reason.empty()) {
+            ++diagnostics.shaping_atlas_handoff_policy.fallback_reason_cluster_count;
+        }
+        if (snapshot.has_cache_key && !contains_glyph_atlas_key(unique_cache_keys, snapshot.cache_key)) {
+            unique_cache_keys.push_back(snapshot.cache_key);
+        }
+        if (!snapshot.stable_page_key.empty() && !contains_string(unique_page_keys, snapshot.stable_page_key)) {
+            unique_page_keys.push_back(snapshot.stable_page_key);
+        }
+
+        diagnostics.shaping_atlas_handoffs.push_back(std::move(snapshot));
+    }
+
+    diagnostics.shaping_atlas_handoff_policy.unique_cache_key_count = unique_cache_keys.size();
+    diagnostics.shaping_atlas_handoff_policy.unique_page_key_count = unique_page_keys.size();
 }
 
 void record_glyph_atlas_materialization_diagnostics(
@@ -2700,6 +2953,7 @@ void update_atlas_for_clusters(
 
     record_glyph_atlas_materialization_diagnostics(diagnostics, clusters, dirty_updates);
     record_shaped_atlas_update_trace_diagnostics(diagnostics, dirty_updates);
+    record_shaping_atlas_handoff_diagnostics(diagnostics);
     record_glyph_atlas_page_diagnostics(diagnostics, pages, diagnostics.glyph_atlas_placements, dirty_updates);
 
     diagnostics.glyph_atlas_metrics.page_count_after = pages.size();

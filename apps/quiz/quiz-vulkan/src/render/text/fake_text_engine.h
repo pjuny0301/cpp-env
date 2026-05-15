@@ -156,6 +156,66 @@ struct fake_text_engine_shaping_handoff_policy_snapshot {
     std::size_t atlas_ready_glyph_count = 0;
 };
 
+struct fake_text_engine_shaping_atlas_handoff_snapshot {
+    std::size_t cluster_index = 0;
+    std::size_t run_index = 0;
+    render_style_id style_token;
+    std::size_t cluster_byte_offset = 0;
+    std::size_t cluster_byte_count = 0;
+    std::size_t cluster_codepoint_offset = 0;
+    std::size_t cluster_codepoint_count = 0;
+    std::vector<std::uint32_t> shaped_glyph_ids;
+    std::uint32_t resolved_glyph_id = 0;
+    font_face_id resolved_face_id = 0;
+    glyph_atlas_key cache_key;
+    std::string stable_page_key;
+    render_text_font_backend_library backend_library =
+        render_text_font_backend_library::deterministic_fake;
+    std::string backend_label;
+    render_text_font_backend_adapter_status adapter_status =
+        render_text_font_backend_adapter_status::backend_unavailable;
+    render_text_font_backend_capability_status capability_status =
+        render_text_font_backend_capability_status::unavailable;
+    render_text_font_source_bytes_load_status source_bytes_status =
+        render_text_font_source_bytes_load_status::missing_source;
+    render_text_glyph_atlas_materialization_status materialization_status =
+        render_text_glyph_atlas_materialization_status::skipped_missing_cache_key;
+    render_text_shaped_atlas_update_trace_status atlas_update_trace_status =
+        render_text_shaped_atlas_update_trace_status::shaped_glyph_without_cache_key;
+    bool materialized_font_bytes = false;
+    bool used_adapter = false;
+    bool used_harfbuzz = false;
+    bool used_deterministic_fallback = true;
+    bool glyph_supported = true;
+    bool cacheable = false;
+    bool has_cache_key = false;
+    bool has_atlas_placement = false;
+    bool payload_upload_ready = false;
+    bool has_atlas_update = false;
+    bool atlas_ready = false;
+    bool blocked = true;
+    std::string fallback_reason;
+    std::string blocker_reason;
+};
+
+struct fake_text_engine_shaping_atlas_handoff_policy_snapshot {
+    std::size_t cluster_count = 0;
+    std::size_t harfbuzz_cluster_count = 0;
+    std::size_t deterministic_fallback_cluster_count = 0;
+    std::size_t materialized_font_byte_cluster_count = 0;
+    std::size_t missing_font_byte_cluster_count = 0;
+    std::size_t cacheable_cluster_count = 0;
+    std::size_t atlas_ready_cluster_count = 0;
+    std::size_t blocked_cluster_count = 0;
+    std::size_t upload_ready_cluster_count = 0;
+    std::size_t clean_reuse_cluster_count = 0;
+    std::size_t raster_payload_blocked_cluster_count = 0;
+    std::size_t missing_cache_key_cluster_count = 0;
+    std::size_t fallback_reason_cluster_count = 0;
+    std::size_t unique_cache_key_count = 0;
+    std::size_t unique_page_key_count = 0;
+};
+
 struct fake_text_engine_diagnostics {
     std::vector<fake_text_engine_style_fallback> style_fallbacks;
     std::vector<fake_text_engine_font_fallback> font_fallbacks;
@@ -201,6 +261,8 @@ struct fake_text_engine_diagnostics {
     fake_text_engine_font_backend_dependency_policy_snapshot font_backend_dependency_policy;
     std::vector<fake_text_engine_shaping_handoff_snapshot> shaping_handoffs;
     fake_text_engine_shaping_handoff_policy_snapshot shaping_handoff_policy;
+    std::vector<fake_text_engine_shaping_atlas_handoff_snapshot> shaping_atlas_handoffs;
+    fake_text_engine_shaping_atlas_handoff_policy_snapshot shaping_atlas_handoff_policy;
     std::vector<render_text_shaped_glyph> shaped_glyphs;
     std::vector<render_text_font_shaping_diagnostic> font_shaping_diagnostics;
     render_text_font_shaping_policy_snapshot font_shaping_policy;
@@ -380,6 +442,11 @@ struct fake_text_engine_diagnostics {
     bool has_shaping_handoffs() const
     {
         return !shaping_handoffs.empty() || shaping_handoff_policy.run_count > 0;
+    }
+
+    bool has_shaping_atlas_handoffs() const
+    {
+        return !shaping_atlas_handoffs.empty() || shaping_atlas_handoff_policy.cluster_count > 0;
     }
 
     bool has_font_backend_dependency_probe() const

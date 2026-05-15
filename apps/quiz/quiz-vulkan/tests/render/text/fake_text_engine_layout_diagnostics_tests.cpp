@@ -2072,6 +2072,57 @@ void test_fake_text_engine_harfbuzz_handoff_shapes_materialized_font_bytes()
         saw_positive_advance = saw_positive_advance || handoff.advance_x > 0.0f;
     }
     require(saw_positive_advance, "HarfBuzz handoff records font-backed glyph advance");
+
+    require(diagnostics.has_shaping_atlas_handoffs(), "HarfBuzz handoff records atlas handoff bridge");
+    require(
+        diagnostics.shaping_atlas_handoff_policy.harfbuzz_cluster_count
+            == diagnostics.shaping_atlas_handoffs.size(),
+        "atlas handoff bridge counts HarfBuzz-shaped clusters");
+    require(
+        diagnostics.shaping_atlas_handoff_policy.deterministic_fallback_cluster_count == 0U,
+        "atlas handoff bridge records no deterministic shaping fallback");
+    require(
+        diagnostics.shaping_atlas_handoff_policy.materialized_font_byte_cluster_count
+            == diagnostics.shaping_atlas_handoffs.size(),
+        "atlas handoff bridge preserves materialized font byte evidence");
+    require(
+        diagnostics.shaping_atlas_handoff_policy.unique_cache_key_count > 0U,
+        "atlas handoff bridge records cache key coverage");
+    require(
+        diagnostics.shaping_atlas_handoff_policy.unique_page_key_count > 0U,
+        "atlas handoff bridge records stable atlas page keys");
+
+    const fake_text_engine_shaping_atlas_handoff_snapshot& atlas_handoff =
+        diagnostics.shaping_atlas_handoffs.front();
+    require(atlas_handoff.used_harfbuzz, "atlas handoff marks HarfBuzz shaping");
+    require(atlas_handoff.used_adapter, "atlas handoff marks adapter shaping");
+    require(!atlas_handoff.used_deterministic_fallback, "atlas handoff avoids deterministic fallback");
+    require(
+        atlas_handoff.backend_library == render_text_font_backend_library::harfbuzz,
+        "atlas handoff preserves HarfBuzz backend library");
+    require(atlas_handoff.backend_label == "HarfBuzz", "atlas handoff preserves HarfBuzz backend label");
+    require(
+        atlas_handoff.adapter_status == render_text_font_backend_adapter_status::shaped,
+        "atlas handoff preserves shaped adapter status");
+    require(
+        atlas_handoff.source_bytes_status == render_text_font_source_bytes_load_status::loaded,
+        "atlas handoff preserves loaded source byte status");
+    require(atlas_handoff.materialized_font_bytes, "atlas handoff records materialized font bytes");
+    require(!atlas_handoff.shaped_glyph_ids.empty(), "atlas handoff preserves shaped glyph ids");
+    require(atlas_handoff.cluster_byte_offset == 0U, "atlas handoff preserves cluster byte offset");
+    require(atlas_handoff.cluster_byte_count == text.size(), "atlas handoff preserves cluster byte count");
+    require(atlas_handoff.cluster_codepoint_offset == 0U, "atlas handoff preserves cluster codepoint offset");
+    require(atlas_handoff.cluster_codepoint_count == 2U, "atlas handoff preserves cluster codepoint count");
+    require(atlas_handoff.has_cache_key, "atlas handoff records a cache key");
+    require(atlas_handoff.cache_key.glyph_id == atlas_handoff.resolved_glyph_id, "atlas handoff cache key uses shaped glyph id");
+    require(!atlas_handoff.stable_page_key.empty(), "atlas handoff records stable page key");
+    require(atlas_handoff.has_atlas_placement, "atlas handoff links to atlas placement");
+    require(
+        atlas_handoff.blocked == !atlas_handoff.atlas_ready,
+        "atlas handoff summarizes atlas readiness consistently");
+    if (atlas_handoff.blocked) {
+        require(!atlas_handoff.blocker_reason.empty(), "blocked atlas handoff records blocker reason");
+    }
 }
 
 void test_fake_text_engine_harfbuzz_handoff_keeps_deterministic_fallback_without_bytes()
@@ -2146,6 +2197,48 @@ void test_fake_text_engine_harfbuzz_handoff_keeps_deterministic_fallback_without
         handoff.fallback_reason.find("materialized font bytes") != std::string::npos,
         "handoff fallback reason names missing materialized bytes");
     require(handoff.atlas_ready, "deterministic fallback handoff remains atlas-ready before raster bytes");
+
+    require(diagnostics.has_shaping_atlas_handoffs(), "missing bytes record atlas handoff bridge");
+    require(
+        diagnostics.shaping_atlas_handoff_policy.deterministic_fallback_cluster_count == 1U,
+        "missing bytes atlas handoff counts deterministic fallback");
+    require(
+        diagnostics.shaping_atlas_handoff_policy.harfbuzz_cluster_count == 0U,
+        "missing bytes atlas handoff does not count HarfBuzz shaping");
+    require(
+        diagnostics.shaping_atlas_handoff_policy.missing_font_byte_cluster_count == 1U,
+        "missing bytes atlas handoff counts missing materialized font bytes");
+    require(
+        diagnostics.shaping_atlas_handoff_policy.fallback_reason_cluster_count == 1U,
+        "missing bytes atlas handoff counts fallback reason");
+
+    const fake_text_engine_shaping_atlas_handoff_snapshot& atlas_handoff =
+        diagnostics.shaping_atlas_handoffs.front();
+    require(
+        atlas_handoff.backend_library == render_text_font_backend_library::deterministic_fake,
+        "missing bytes atlas handoff uses deterministic fake backend");
+    require(atlas_handoff.used_deterministic_fallback, "missing bytes atlas handoff marks deterministic fallback");
+    require(!atlas_handoff.used_harfbuzz, "missing bytes atlas handoff does not mark HarfBuzz shaping");
+    require(!atlas_handoff.materialized_font_bytes, "missing bytes atlas handoff records missing font bytes");
+    require(
+        atlas_handoff.source_bytes_status == render_text_font_source_bytes_load_status::missing_bytes,
+        "missing bytes atlas handoff preserves missing source byte status");
+    require(atlas_handoff.has_cache_key, "missing bytes atlas handoff still records cache key");
+    require(atlas_handoff.cache_key.glyph_id == U'A', "missing bytes atlas handoff preserves fallback glyph id");
+    require(!atlas_handoff.stable_page_key.empty(), "missing bytes atlas handoff records stable page key");
+    require(!atlas_handoff.atlas_ready, "missing bytes atlas handoff is blocked before upload readiness");
+    require(atlas_handoff.blocked, "missing bytes atlas handoff records blocker");
+    require(!atlas_handoff.blocker_reason.empty(), "missing bytes atlas handoff records blocker reason");
+    require(
+        atlas_handoff.fallback_reason.find("materialized font bytes") != std::string::npos,
+        "missing bytes atlas handoff preserves fallback reason");
+    require(
+        atlas_handoff.materialization_status == render_text_glyph_atlas_materialization_status::skipped_raster_payload,
+        "missing bytes atlas handoff links skipped raster payload materialization");
+    require(
+        atlas_handoff.atlas_update_trace_status
+            == render_text_shaped_atlas_update_trace_status::rasterized_payload_skipped,
+        "missing bytes atlas handoff links raster payload blocker trace");
 }
 
 void test_fake_text_engine_injected_adapter_glyph_mismatch_drives_failure_diagnostics()

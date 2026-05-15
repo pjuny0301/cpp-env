@@ -26,7 +26,8 @@ struct violation {
 bool source_extension(const std::filesystem::path& path)
 {
     const std::string extension = path.extension().string();
-    return extension == ".h" || extension == ".hpp" || extension == ".cpp";
+    return extension == ".h" || extension == ".hpp" || extension == ".cpp"
+        || extension == ".inl";
 }
 
 bool header_extension(const std::filesystem::path& path)

@@ -6,6 +6,7 @@
 
 최근 baseline 통합 증거:
 
+- current: architecture boundary tests now scan private `.inl` source fragments, so source-only worker splits remain subject to the same dependency-direction guard as `.h/.hpp/.cpp` files.
 - `bf7a207`: text engine source layout now keeps line/run atlas-upload diagnostics in a private text-owned `.inl` fragment, reducing future worker read cost without changing public contracts, CMake, renderer wiring, or behavior.
 - `f7ac2e1`: Vulkan backend now creates data/dispatch evidence for swapchain image-view targets, including image-view create/destroy entrypoints, per-image target lifecycle records, missing-symbol diagnostics, and render-target attachment intent while keeping scene/UI/domain out of the backend.
 - current: after `f7ac2e1`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`; focused renderer/Vulkan CTest passed 5/5 and architecture boundary CTest passed 1/1.

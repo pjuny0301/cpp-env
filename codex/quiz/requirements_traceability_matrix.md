@@ -14,6 +14,7 @@
 - `78fd030`: asset system now compares ordered payload request transactions with deterministic added/removed ids, changed statuses, selected snapshot deltas, readiness/integrity/cache-key deltas, and summary count changes.
 - `9eae4c4`: image engine now compares staging payload plans across uploads/results, reporting row-copy, alignment, padding, staging-byte, cache/sampler, mip-readiness, blocker, regression, and recovery changes.
 - `8512fb8`: Vulkan backend now has a native swapchain create/destroy adapter boundary with dispatch readiness, fake execution, selected surface format/present mode/extent evidence, and old-swapchain handoff diagnostics.
+- current: after native swapchain and image staging diff integration, Windows MinGW full CTest attempted 103 configured tests; 102 executed tests passed and only the known `quiz_vulkan_font_shaped_atlas_update_tests` host permission BAD_COMMAND remained.
 - `be5533d`: Vulkan backend now records native surface capability readiness for support, capabilities, formats, and present modes, and blocks native swapchain create planning when surface evidence is missing or unusable.
 - `9d6a8fd`: image engine now plans decoded texture staging payloads with row-copy, alignment, total byte, sampler/cache identity, and blocker evidence before any Vulkan upload path exists.
 - `e428459`: asset system now selects materialized byte payloads by id/type/cache key/readiness/integrity status and reports stable diagnostics for missing, wrong-type, blocked, duplicate, cache-key mismatch, and integrity-failure cases.

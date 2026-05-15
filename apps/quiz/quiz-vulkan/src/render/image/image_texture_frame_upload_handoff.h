@@ -85,6 +85,7 @@ struct render_image_texture_frame_upload_handoff_entry {
     std::size_t planned_staging_byte_count = 0;
     std::size_t planned_mipmap_byte_count = 0;
     render_image_decoded_payload_evidence decoded_payload;
+    render_image_texture_upload_payload_layout_evidence payload_layout;
     bool requested = false;
     bool upload_result_present = false;
     bool ready = false;
@@ -321,6 +322,7 @@ inline render_image_texture_frame_upload_handoff_entry make_render_image_texture
         entry.planned_staging_byte_count = upload_packet->planned_staging_byte_count;
         entry.planned_mipmap_byte_count = upload_packet->planned_mipmap_byte_count;
         entry.decoded_payload = upload_packet->decoded_payload;
+        entry.payload_layout = upload_packet->payload_layout;
         entry.placeholder_texture = entry.placeholder_texture || upload_packet->placeholder_texture;
         entry.retryable_blocker = upload_packet->retryable && upload_packet->rejected;
         entry.nonretryable_blocker = upload_packet->nonretryable_failure && upload_packet->rejected;
@@ -385,6 +387,7 @@ inline render_image_texture_frame_upload_handoff_entry make_render_image_texture
         .planned_staging_byte_count = upload_packet.planned_staging_byte_count,
         .planned_mipmap_byte_count = upload_packet.planned_mipmap_byte_count,
         .decoded_payload = upload_packet.decoded_payload,
+        .payload_layout = upload_packet.payload_layout,
         .requested = false,
         .upload_result_present = true,
         .ready = false,
@@ -811,6 +814,9 @@ inline bool render_image_texture_frame_upload_handoff_entry_equal(
         && before.upload_request_id == after.upload_request_id
         && before.mip_level_count == after.mip_level_count
         && before.uploaded_byte_count == after.uploaded_byte_count
+        && render_image_texture_upload_payload_layout_evidence_equal(
+            before.payload_layout,
+            after.payload_layout)
         && before.ready == after.ready
         && before.placeholder_texture == after.placeholder_texture
         && before.blocked == after.blocked

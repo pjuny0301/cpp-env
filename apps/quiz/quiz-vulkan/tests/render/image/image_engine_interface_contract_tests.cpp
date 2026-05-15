@@ -183,6 +183,9 @@ static_assert(requires(
     { render::expected_render_decoded_image_byte_count(image) } -> std::same_as<std::size_t>;
     { render::has_valid_render_decoded_image_payload(image) } -> std::same_as<bool>;
     { render::render_image_checked_pixel_count(image) } -> std::same_as<std::size_t>;
+    { render::render_image_checked_row_stride_byte_count(image) } -> std::same_as<std::size_t>;
+    { render::make_render_image_texture_upload_payload_layout_evidence(key, key.sampler, image) }
+        -> std::same_as<render::render_image_texture_upload_payload_layout_evidence>;
     { render::make_render_image_upload_readiness_snapshot(key, metadata, image) }
         -> std::same_as<render::render_image_upload_readiness_snapshot>;
 });
@@ -250,6 +253,7 @@ static_assert(requires(
     render::render_image_sampler_policy_diagnostic sampler_policy,
     render::render_image_texture_key_diagnostic texture_key_diagnostic,
     render::render_image_texture_color_space texture_color_space,
+    render::render_image_texture_upload_payload_layout_evidence upload_payload_layout,
     render::render_image_upload_readiness_snapshot upload_readiness,
     render::fake_image_texture_upload_generation_id upload_generation_id,
     render::fake_image_texture_upload_retry_eligibility upload_retry_eligibility,
@@ -824,6 +828,8 @@ static_assert(requires(
     { upload_result.decoded_byte_count } -> std::same_as<std::size_t&>;
     { upload_result.staging_byte_count } -> std::same_as<std::size_t&>;
     { upload_result.mipmap_upload_plan } -> std::same_as<render::render_image_texture_mipmap_upload_plan&>;
+    { upload_result.payload_layout }
+        -> std::same_as<render::render_image_texture_upload_payload_layout_evidence&>;
     { upload_result.diagnostic } -> std::same_as<std::string&>;
     { upload_result.ok() } -> std::same_as<bool>;
     { sampler_policy.sampler } -> std::same_as<render::render_image_sampler_policy&>;
@@ -848,6 +854,36 @@ static_assert(requires(
     { texture_key_diagnostic.valid } -> std::same_as<bool&>;
     { texture_key_diagnostic.diagnostic } -> std::same_as<std::string&>;
     texture_color_space;
+    { upload_payload_layout.texture_key } -> std::same_as<render::render_image_texture_key&>;
+    { upload_payload_layout.key_diagnostic } -> std::same_as<render::render_image_texture_key_diagnostic&>;
+    { upload_payload_layout.sampler } -> std::same_as<render::render_image_sampler_policy&>;
+    { upload_payload_layout.stable_texture_cache_key } -> std::same_as<std::string&>;
+    { upload_payload_layout.sampler_summary } -> std::same_as<std::string&>;
+    { upload_payload_layout.pixel_format } -> std::same_as<render::render_image_pixel_format&>;
+    { upload_payload_layout.color_space } -> std::same_as<render::render_image_texture_color_space&>;
+    { upload_payload_layout.color_space_name } -> std::same_as<std::string&>;
+    { upload_payload_layout.extent_width } -> std::same_as<std::size_t&>;
+    { upload_payload_layout.extent_height } -> std::same_as<std::size_t&>;
+    { upload_payload_layout.bytes_per_pixel } -> std::same_as<std::size_t&>;
+    { upload_payload_layout.row_stride_byte_count } -> std::same_as<std::size_t&>;
+    { upload_payload_layout.pixel_count } -> std::same_as<std::size_t&>;
+    { upload_payload_layout.expected_byte_count } -> std::same_as<std::size_t&>;
+    { upload_payload_layout.decoded_byte_count } -> std::same_as<std::size_t&>;
+    { upload_payload_layout.staging_byte_count } -> std::same_as<std::size_t&>;
+    { upload_payload_layout.decoded_payload } -> std::same_as<render::render_image_decoded_payload_evidence&>;
+    { upload_payload_layout.cache_key_valid } -> std::same_as<bool&>;
+    { upload_payload_layout.sampler_valid } -> std::same_as<bool&>;
+    { upload_payload_layout.sampler_matches_texture_key } -> std::same_as<bool&>;
+    { upload_payload_layout.rgba8_format } -> std::same_as<bool&>;
+    { upload_payload_layout.nonzero_extent } -> std::same_as<bool&>;
+    { upload_payload_layout.row_stride_consistent } -> std::same_as<bool&>;
+    { upload_payload_layout.byte_count_consistent } -> std::same_as<bool&>;
+    { upload_payload_layout.staging_byte_count_consistent } -> std::same_as<bool&>;
+    { upload_payload_layout.upload_layout_ready } -> std::same_as<bool&>;
+    { upload_payload_layout.diagnostic } -> std::same_as<std::string&>;
+    { upload_payload_layout.ok() } -> std::same_as<bool>;
+    { render::render_image_texture_upload_payload_layout_evidence_equal(
+        upload_payload_layout, upload_payload_layout) } -> std::same_as<bool>;
     { upload_readiness.key } -> std::same_as<render::render_image_texture_key&>;
     { upload_readiness.key_diagnostic } -> std::same_as<render::render_image_texture_key_diagnostic&>;
     { upload_readiness.sampler_policy } -> std::same_as<render::render_image_sampler_policy_diagnostic&>;
@@ -865,6 +901,8 @@ static_assert(requires(
     { upload_readiness.metadata_expected_decoded_byte_count } -> std::same_as<std::size_t&>;
     { upload_readiness.metadata_actual_decoded_byte_count } -> std::same_as<std::size_t&>;
     { upload_readiness.staging_byte_count } -> std::same_as<std::size_t&>;
+    { upload_readiness.upload_payload_layout }
+        -> std::same_as<render::render_image_texture_upload_payload_layout_evidence&>;
     { upload_readiness.decode_handoff_diagnostic } -> std::same_as<std::string&>;
     { upload_readiness.diagnostic } -> std::same_as<std::string&>;
     { render::make_render_image_upload_readiness_snapshot(texture_key, metadata, image) }
@@ -879,6 +917,10 @@ static_assert(requires(
     { upload_request_snapshot.pixel_byte_count } -> std::same_as<std::size_t&>;
     { upload_request_snapshot.decoded_byte_count } -> std::same_as<std::size_t&>;
     { upload_request_snapshot.staging_byte_count } -> std::same_as<std::size_t&>;
+    { upload_request_snapshot.decoded_payload }
+        -> std::same_as<render::render_image_decoded_payload_evidence&>;
+    { upload_request_snapshot.payload_layout }
+        -> std::same_as<render::render_image_texture_upload_payload_layout_evidence&>;
     { upload_request_snapshot.mipmap_upload_plan }
         -> std::same_as<render::render_image_texture_mipmap_upload_plan&>;
     { upload_request_snapshot.attempt_count_for_key } -> std::same_as<std::size_t&>;
@@ -893,6 +935,8 @@ static_assert(requires(
     { upload_result_snapshot.staging_byte_count } -> std::same_as<std::size_t&>;
     { upload_result_snapshot.mipmap_upload_plan }
         -> std::same_as<render::render_image_texture_mipmap_upload_plan&>;
+    { upload_result_snapshot.payload_layout }
+        -> std::same_as<render::render_image_texture_upload_payload_layout_evidence&>;
     { upload_result_snapshot.diagnostic } -> std::same_as<std::string&>;
     { upload_result_snapshot.retry } -> std::same_as<render::fake_image_texture_upload_retry_snapshot&>;
     { upload_entry.generation_id } -> std::same_as<render::fake_image_texture_upload_generation_id&>;
@@ -907,6 +951,8 @@ static_assert(requires(
     { upload_entry.decoded_byte_count } -> std::same_as<std::size_t&>;
     { upload_entry.staging_byte_count } -> std::same_as<std::size_t&>;
     { upload_entry.mipmap_upload_plan } -> std::same_as<render::render_image_texture_mipmap_upload_plan&>;
+    { upload_entry.payload_layout }
+        -> std::same_as<render::render_image_texture_upload_payload_layout_evidence&>;
     { upload_entry.diagnostic } -> std::same_as<std::string&>;
     { upload_entry.retry } -> std::same_as<render::fake_image_texture_upload_retry_snapshot&>;
     { upload_queue_entry.enqueue_sequence } -> std::same_as<std::size_t&>;
@@ -918,6 +964,8 @@ static_assert(requires(
     { upload_queue_entry.staging_byte_count } -> std::same_as<std::size_t&>;
     { upload_queue_entry.mipmap_upload_plan }
         -> std::same_as<render::render_image_texture_mipmap_upload_plan&>;
+    { upload_queue_entry.payload_layout }
+        -> std::same_as<render::render_image_texture_upload_payload_layout_evidence&>;
     { upload_queue_entry.queue_depth_before_enqueue } -> std::same_as<std::size_t&>;
     { upload_queue_entry.queue_depth_after_enqueue } -> std::same_as<std::size_t&>;
     { upload_queue_entry.queue_depth_after_completion } -> std::same_as<std::size_t&>;
@@ -1142,6 +1190,9 @@ static_assert(requires(
     { render::render_image_texture_upload_operation_sampler_for(
         &upload_request_snapshot, &upload_result_snapshot) }
         -> std::same_as<render::render_image_sampler_policy>;
+    { render::render_image_texture_upload_operation_payload_layout_for(
+        &upload_request_snapshot, &upload_result_snapshot, &upload_queue_entry) }
+        -> std::same_as<render::render_image_texture_upload_payload_layout_evidence>;
     { render::make_render_image_texture_upload_operation_packet(
         &upload_request_snapshot,
         &upload_result_snapshot,
@@ -1162,6 +1213,10 @@ static_assert(requires(
     { upload_operation_packet.sampler } -> std::same_as<render::render_image_sampler_policy&>;
     { upload_operation_packet.mipmap_upload_plan }
         -> std::same_as<render::render_image_texture_mipmap_upload_plan&>;
+    { upload_operation_packet.decoded_payload }
+        -> std::same_as<render::render_image_decoded_payload_evidence&>;
+    { upload_operation_packet.payload_layout }
+        -> std::same_as<render::render_image_texture_upload_payload_layout_evidence&>;
     { upload_operation_packet.staging_byte_count } -> std::same_as<std::size_t&>;
     { upload_operation_packet.mip_level_count } -> std::same_as<std::size_t&>;
     { upload_operation_packet.mipmap_byte_count } -> std::same_as<std::size_t&>;
@@ -1264,6 +1319,10 @@ static_assert(requires(
     { upload_result_packet.uploaded_byte_count } -> std::same_as<std::size_t&>;
     { upload_result_packet.planned_staging_byte_count } -> std::same_as<std::size_t&>;
     { upload_result_packet.planned_mipmap_byte_count } -> std::same_as<std::size_t&>;
+    { upload_result_packet.decoded_payload }
+        -> std::same_as<render::render_image_decoded_payload_evidence&>;
+    { upload_result_packet.payload_layout }
+        -> std::same_as<render::render_image_texture_upload_payload_layout_evidence&>;
     { upload_result_packet.accepted } -> std::same_as<bool&>;
     { upload_result_packet.rejected } -> std::same_as<bool&>;
     { upload_result_packet.placeholder_texture } -> std::same_as<bool&>;
@@ -2349,6 +2408,10 @@ static_assert(requires(
     { texture_frame_upload_handoff_entry.uploaded_byte_count } -> std::same_as<std::size_t&>;
     { texture_frame_upload_handoff_entry.planned_staging_byte_count } -> std::same_as<std::size_t&>;
     { texture_frame_upload_handoff_entry.planned_mipmap_byte_count } -> std::same_as<std::size_t&>;
+    { texture_frame_upload_handoff_entry.decoded_payload }
+        -> std::same_as<render::render_image_decoded_payload_evidence&>;
+    { texture_frame_upload_handoff_entry.payload_layout }
+        -> std::same_as<render::render_image_texture_upload_payload_layout_evidence&>;
     { texture_frame_upload_handoff_entry.requested } -> std::same_as<bool&>;
     { texture_frame_upload_handoff_entry.upload_result_present } -> std::same_as<bool&>;
     { texture_frame_upload_handoff_entry.ready } -> std::same_as<bool&>;
@@ -2530,6 +2593,10 @@ static_assert(requires(
     { texture_frame_resource_packet_entry.upload_generation_id } -> std::same_as<std::uint64_t&>;
     { texture_frame_resource_packet_entry.mip_level_count } -> std::same_as<std::size_t&>;
     { texture_frame_resource_packet_entry.uploaded_byte_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_entry.decoded_payload }
+        -> std::same_as<render::render_image_decoded_payload_evidence&>;
+    { texture_frame_resource_packet_entry.payload_layout }
+        -> std::same_as<render::render_image_texture_upload_payload_layout_evidence&>;
     { texture_frame_resource_packet_entry.requested } -> std::same_as<bool&>;
     { texture_frame_resource_packet_entry.bindable } -> std::same_as<bool&>;
     { texture_frame_resource_packet_entry.resource_packet_ready } -> std::same_as<bool&>;
@@ -2593,6 +2660,10 @@ static_assert(requires(
     { texture_frame_resource_upload_handoff.upload_generation_id } -> std::same_as<std::uint64_t&>;
     { texture_frame_resource_upload_handoff.mip_level_count } -> std::same_as<std::size_t&>;
     { texture_frame_resource_upload_handoff.uploaded_byte_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_upload_handoff.decoded_payload }
+        -> std::same_as<render::render_image_decoded_payload_evidence&>;
+    { texture_frame_resource_upload_handoff.payload_layout }
+        -> std::same_as<render::render_image_texture_upload_payload_layout_evidence&>;
     { texture_frame_resource_upload_handoff.upload_result_present } -> std::same_as<bool&>;
     { texture_frame_resource_upload_handoff.renderer_boundary_ready } -> std::same_as<bool&>;
     { texture_frame_resource_upload_handoff.diagnostic } -> std::same_as<std::string&>;

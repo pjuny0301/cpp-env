@@ -373,6 +373,82 @@ void test_mipmap_upload_plan_calculates_levels_and_failure_states()
         "mipmap upload plan status helper is stable");
 }
 
+void test_upload_payload_layout_evidence_records_extent_stride_and_identity()
+{
+    using namespace quiz_vulkan::render;
+
+    render_image_sampler_policy sampler;
+    sampler.min_filter = render_image_filter::nearest;
+    sampler.mag_filter = render_image_filter::nearest;
+    const render_image_texture_key key{
+        .source_key = "textures/layout.ppm",
+        .sampler = sampler,
+    };
+
+    const render_image_texture_upload_payload_layout_evidence layout =
+        make_render_image_texture_upload_payload_layout_evidence(
+            key,
+            sampler,
+            make_rgba_2x1_decoded_image());
+
+    require(layout.ok(), "upload payload layout evidence is ready for valid RGBA8 image");
+    require(layout.extent_width == 2, "upload payload layout records extent width");
+    require(layout.extent_height == 1, "upload payload layout records extent height");
+    require(layout.bytes_per_pixel == 4, "upload payload layout records RGBA8 byte size");
+    require(layout.row_stride_byte_count == 8, "upload payload layout records row stride");
+    require(layout.pixel_count == 2, "upload payload layout records pixel count");
+    require(layout.expected_byte_count == 8, "upload payload layout records expected byte count");
+    require(layout.decoded_byte_count == 8, "upload payload layout records decoded byte count");
+    require(layout.staging_byte_count == 8, "upload payload layout records staging bytes");
+    require(layout.cache_key_valid, "upload payload layout records valid cache identity");
+    require(layout.sampler_valid, "upload payload layout records valid sampler");
+    require(layout.sampler_matches_texture_key, "upload payload layout records sampler identity match");
+    require(layout.rgba8_format, "upload payload layout records RGBA8 format");
+    require(layout.nonzero_extent, "upload payload layout records non-zero extent");
+    require(layout.row_stride_consistent, "upload payload layout records row-stride consistency");
+    require(layout.byte_count_consistent, "upload payload layout records byte-count consistency");
+    require(layout.staging_byte_count_consistent, "upload payload layout records staging consistency");
+    require(
+        layout.stable_texture_cache_key.find("textures/layout.ppm") != std::string::npos,
+        "upload payload layout preserves stable cache key");
+    require(
+        layout.sampler_summary == render_image_sampler_policy_stable_fragment(sampler),
+        "upload payload layout preserves sampler summary");
+    require(
+        layout.decoded_payload.stable_byte_hash
+            == make_render_image_decoded_payload_evidence(make_rgba_2x1_decoded_image()).stable_byte_hash,
+        "upload payload layout preserves decoded payload hash");
+    require(
+        layout.diagnostic == "image texture upload payload layout is ready",
+        "upload payload layout ready diagnostic is stable");
+
+    render_decoded_image invalid_payload = make_rgba_2x1_decoded_image();
+    invalid_payload.pixels.pop_back();
+    const render_image_texture_upload_payload_layout_evidence invalid_layout =
+        make_render_image_texture_upload_payload_layout_evidence(key, sampler, invalid_payload);
+    require(!invalid_layout.ok(), "upload payload layout rejects inconsistent byte count");
+    require(invalid_layout.row_stride_byte_count == 8, "invalid layout still records deterministic row stride");
+    require(invalid_layout.expected_byte_count == 8, "invalid layout still records expected bytes");
+    require(invalid_layout.decoded_byte_count == 7, "invalid layout records actual decoded bytes");
+    require(!invalid_layout.byte_count_consistent, "invalid layout records byte-count mismatch");
+    require(
+        invalid_layout.diagnostic == "image texture upload payload layout byte count does not match extent",
+        "invalid layout byte-count diagnostic is stable");
+
+    render_image_sampler_policy mismatched_sampler = sampler;
+    mismatched_sampler.wrap_u = render_image_wrap_mode::repeat;
+    const render_image_texture_upload_payload_layout_evidence mismatched_layout =
+        make_render_image_texture_upload_payload_layout_evidence(
+            key,
+            mismatched_sampler,
+            make_rgba_2x1_decoded_image());
+    require(!mismatched_layout.ok(), "upload payload layout rejects sampler mismatch");
+    require(!mismatched_layout.sampler_matches_texture_key, "sampler mismatch is recorded");
+    require(
+        mismatched_layout.diagnostic == "image texture upload payload layout sampler does not match texture key",
+        "sampler mismatch diagnostic is stable");
+}
+
 void test_texture_uploader_uploads_valid_decoded_image()
 {
     using namespace quiz_vulkan::render;
@@ -411,6 +487,15 @@ void test_texture_uploader_uploads_valid_decoded_image()
     require(uploader.upload_request_snapshots[0].generation_id == 1, "request snapshot records generation id");
     require(uploader.upload_request_snapshots[0].sampler == render_image_sampler_policy{}, "request snapshot records sampler");
     require(uploader.upload_request_snapshots[0].staging_byte_count == 8, "request snapshot records staging bytes");
+    require(uploader.upload_request_snapshots[0].payload_layout.ok(), "request snapshot records ready payload layout");
+    require(uploader.upload_request_snapshots[0].payload_layout.extent_width == 2, "request payload layout records width");
+    require(uploader.upload_request_snapshots[0].payload_layout.extent_height == 1, "request payload layout records height");
+    require(uploader.upload_request_snapshots[0].payload_layout.row_stride_byte_count == 8, "request payload layout records row stride");
+    require(uploader.upload_request_snapshots[0].payload_layout.byte_count_consistent, "request payload layout records byte consistency");
+    require(
+        uploader.upload_request_snapshots[0].payload_layout.stable_texture_cache_key
+            == make_render_image_texture_key_diagnostic(key).stable_cache_key,
+        "request payload layout records stable cache key");
     require(
         uploader.upload_request_snapshots[0].mipmap_upload_plan.status
             == render_image_texture_mipmap_upload_plan_status::no_mipmaps_requested,
@@ -421,6 +506,8 @@ void test_texture_uploader_uploads_valid_decoded_image()
     require(uploader.upload_result_snapshots[0].generation_id == 1, "result snapshot records generation id");
     require(uploader.upload_result_snapshots[0].status == render_image_texture_upload_status::uploaded, "result snapshot records status");
     require(uploader.upload_result_snapshots[0].staging_byte_count == 8, "result snapshot records staging bytes");
+    require(uploader.upload_result_snapshots[0].payload_layout.ok(), "result snapshot records ready payload layout");
+    require(uploader.upload_result_snapshots[0].payload_layout.row_stride_byte_count == 8, "result payload layout records row stride");
     require(
         uploader.upload_result_snapshots[0].mipmap_upload_plan.total_upload_byte_count == 8,
         "result snapshot records mipmap upload bytes");
@@ -453,17 +540,23 @@ void test_texture_uploader_uploads_valid_decoded_image()
     require(
         snapshot.queue_entries[0].mipmap_upload_plan.generated_mip_level_count == 1,
         "queue entry records mipmap plan");
+    require(snapshot.queue_entries[0].payload_layout.ok(), "queue entry records ready payload layout");
+    require(snapshot.queue_entries[0].payload_layout.staging_byte_count == 8, "queue payload layout records staging bytes");
     require(snapshot.entries[0].generation_id == 1, "texture uploader snapshot records generation id");
     require(snapshot.entries[0].key == key, "texture uploader snapshot records key");
     require(snapshot.entries[0].sampler == render_image_sampler_policy{}, "texture uploader snapshot records sampler");
     require(snapshot.entries[0].texture.id == uploaded.texture.id, "texture uploader snapshot records handle");
     require(snapshot.entries[0].status == render_image_texture_upload_status::uploaded, "snapshot records status");
     require(snapshot.entries[0].staging_byte_count == 8, "texture uploader snapshot records staging bytes");
+    require(snapshot.entries[0].payload_layout.ok(), "texture uploader snapshot records ready payload layout");
+    require(snapshot.entries[0].payload_layout.row_stride_byte_count == 8, "snapshot entry payload layout records row stride");
     require(
         snapshot.entries[0].mipmap_upload_plan.total_staging_byte_count == 8,
         "texture uploader snapshot entry records mipmap staging bytes");
     require(snapshot.entries[0].request.generation_id == 1, "entry request snapshot records generation id");
+    require(snapshot.entries[0].request.payload_layout.ok(), "entry request snapshot preserves payload layout");
     require(snapshot.entries[0].result.texture.id == uploaded.texture.id, "entry result snapshot records handle");
+    require(snapshot.entries[0].result.payload_layout.ok(), "entry result snapshot preserves payload layout");
 }
 
 void test_texture_uploader_records_mipmap_upload_plan()
@@ -1376,6 +1469,7 @@ void test_texture_uploader_rejects_invalid_inputs()
 int main()
 {
     test_mipmap_upload_plan_calculates_levels_and_failure_states();
+    test_upload_payload_layout_evidence_records_extent_stride_and_identity();
     test_texture_uploader_uploads_valid_decoded_image();
     test_texture_uploader_records_mipmap_upload_plan();
     test_texture_uploader_reports_deterministic_queue_lifecycle();

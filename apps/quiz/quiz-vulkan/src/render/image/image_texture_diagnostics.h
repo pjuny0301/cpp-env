@@ -303,6 +303,41 @@ struct render_image_decoded_payload_evidence {
     std::string diagnostic;
 };
 
+struct render_image_texture_upload_payload_layout_evidence {
+    render_image_texture_key texture_key;
+    render_image_texture_key_diagnostic key_diagnostic;
+    render_image_sampler_policy sampler;
+    std::string stable_texture_cache_key;
+    std::string sampler_summary;
+    render_image_pixel_format pixel_format = render_image_pixel_format::rgba8_srgb;
+    render_image_texture_color_space color_space = render_image_texture_color_space::unknown;
+    std::string color_space_name;
+    std::size_t extent_width = 0;
+    std::size_t extent_height = 0;
+    std::size_t bytes_per_pixel = 0;
+    std::size_t row_stride_byte_count = 0;
+    std::size_t pixel_count = 0;
+    std::size_t expected_byte_count = 0;
+    std::size_t decoded_byte_count = 0;
+    std::size_t staging_byte_count = 0;
+    render_image_decoded_payload_evidence decoded_payload;
+    bool cache_key_valid = false;
+    bool sampler_valid = false;
+    bool sampler_matches_texture_key = false;
+    bool rgba8_format = false;
+    bool nonzero_extent = false;
+    bool row_stride_consistent = false;
+    bool byte_count_consistent = false;
+    bool staging_byte_count_consistent = false;
+    bool upload_layout_ready = false;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return upload_layout_ready;
+    }
+};
+
 struct render_image_upload_readiness_snapshot {
     render_image_texture_key key;
     render_image_texture_key_diagnostic key_diagnostic;
@@ -322,6 +357,7 @@ struct render_image_upload_readiness_snapshot {
     std::size_t metadata_actual_decoded_byte_count = 0;
     std::size_t staging_byte_count = 0;
     render_image_decoded_payload_evidence decoded_payload;
+    render_image_texture_upload_payload_layout_evidence upload_payload_layout;
     std::string decode_handoff_diagnostic;
     std::string diagnostic;
 };
@@ -429,6 +465,142 @@ inline render_image_decoded_payload_evidence make_render_image_decoded_payload_e
     };
 }
 
+inline std::size_t render_image_checked_row_stride_byte_count(const render_decoded_image& image)
+{
+    const std::size_t bytes_per_pixel = render_image_pixel_format_byte_count(image.pixel_format);
+    if (bytes_per_pixel == 0 || image.width == 0) {
+        return 0;
+    }
+
+    constexpr std::size_t max_size = std::numeric_limits<std::size_t>::max();
+    if (image.width > max_size / bytes_per_pixel) {
+        return 0;
+    }
+    return image.width * bytes_per_pixel;
+}
+
+inline render_image_texture_upload_payload_layout_evidence
+make_render_image_texture_upload_payload_layout_evidence(
+    const render_image_texture_key& key,
+    const render_image_sampler_policy& sampler,
+    const render_decoded_image& image)
+{
+    render_image_texture_key_diagnostic key_diagnostic = make_render_image_texture_key_diagnostic(key);
+    render_image_sampler_policy_diagnostic sampler_diagnostic =
+        make_render_image_sampler_policy_diagnostic(sampler);
+    render_image_decoded_payload_evidence decoded_payload =
+        make_render_image_decoded_payload_evidence(image);
+    const render_image_texture_color_space color_space =
+        render_image_texture_color_space_for(image.pixel_format);
+    const std::size_t bytes_per_pixel = render_image_pixel_format_byte_count(image.pixel_format);
+    const std::size_t row_stride_byte_count = render_image_checked_row_stride_byte_count(image);
+    const std::size_t pixel_count = render_image_checked_pixel_count(image);
+    const std::size_t expected_byte_count = expected_render_decoded_image_byte_count(image);
+    const std::size_t decoded_byte_count = image.pixels.size();
+    const bool sampler_matches_texture_key = key.sampler == sampler;
+    const bool cache_key_valid = key_diagnostic.valid;
+    const std::string stable_texture_cache_key = key_diagnostic.stable_cache_key;
+    const bool rgba8_format = bytes_per_pixel == 4 && color_space != render_image_texture_color_space::unknown;
+    const bool nonzero_extent = image.width != 0 && image.height != 0;
+    const bool row_stride_consistent = nonzero_extent && row_stride_byte_count != 0;
+    const bool byte_count_consistent = expected_byte_count != 0
+        && decoded_byte_count == expected_byte_count
+        && decoded_payload.payload_valid;
+    const std::size_t staging_byte_count = byte_count_consistent ? decoded_byte_count : 0;
+    const bool staging_byte_count_consistent =
+        byte_count_consistent && staging_byte_count == expected_byte_count;
+    const bool upload_layout_ready = cache_key_valid
+        && sampler_diagnostic.valid
+        && sampler_matches_texture_key
+        && rgba8_format
+        && nonzero_extent
+        && row_stride_consistent
+        && byte_count_consistent
+        && staging_byte_count_consistent;
+
+    std::string diagnostic;
+    if (!key_diagnostic.valid) {
+        diagnostic = key_diagnostic.diagnostic;
+    } else if (!sampler_diagnostic.valid) {
+        diagnostic = sampler_diagnostic.diagnostic;
+    } else if (!sampler_matches_texture_key) {
+        diagnostic = "image texture upload payload layout sampler does not match texture key";
+    } else if (!rgba8_format) {
+        diagnostic = "image texture upload payload layout requires RGBA8 pixel format";
+    } else if (!nonzero_extent) {
+        diagnostic = "image texture upload payload layout requires non-zero extent";
+    } else if (!row_stride_consistent) {
+        diagnostic = "image texture upload payload layout row stride overflows";
+    } else if (!byte_count_consistent) {
+        diagnostic = "image texture upload payload layout byte count does not match extent";
+    } else if (!staging_byte_count_consistent) {
+        diagnostic = "image texture upload payload layout staging byte count is inconsistent";
+    } else {
+        diagnostic = "image texture upload payload layout is ready";
+    }
+
+    return render_image_texture_upload_payload_layout_evidence{
+        .texture_key = key,
+        .key_diagnostic = std::move(key_diagnostic),
+        .sampler = sampler,
+        .stable_texture_cache_key = stable_texture_cache_key,
+        .sampler_summary = render_image_sampler_policy_stable_fragment(sampler),
+        .pixel_format = image.pixel_format,
+        .color_space = color_space,
+        .color_space_name = render_image_texture_color_space_name(color_space),
+        .extent_width = image.width,
+        .extent_height = image.height,
+        .bytes_per_pixel = bytes_per_pixel,
+        .row_stride_byte_count = row_stride_byte_count,
+        .pixel_count = pixel_count,
+        .expected_byte_count = expected_byte_count,
+        .decoded_byte_count = decoded_byte_count,
+        .staging_byte_count = staging_byte_count,
+        .decoded_payload = std::move(decoded_payload),
+        .cache_key_valid = cache_key_valid,
+        .sampler_valid = sampler_diagnostic.valid,
+        .sampler_matches_texture_key = sampler_matches_texture_key,
+        .rgba8_format = rgba8_format,
+        .nonzero_extent = nonzero_extent,
+        .row_stride_consistent = row_stride_consistent,
+        .byte_count_consistent = byte_count_consistent,
+        .staging_byte_count_consistent = staging_byte_count_consistent,
+        .upload_layout_ready = upload_layout_ready,
+        .diagnostic = std::move(diagnostic),
+    };
+}
+
+inline bool render_image_texture_upload_payload_layout_evidence_equal(
+    const render_image_texture_upload_payload_layout_evidence& before,
+    const render_image_texture_upload_payload_layout_evidence& after)
+{
+    return before.texture_key == after.texture_key
+        && before.sampler == after.sampler
+        && before.stable_texture_cache_key == after.stable_texture_cache_key
+        && before.sampler_summary == after.sampler_summary
+        && before.pixel_format == after.pixel_format
+        && before.color_space == after.color_space
+        && before.extent_width == after.extent_width
+        && before.extent_height == after.extent_height
+        && before.bytes_per_pixel == after.bytes_per_pixel
+        && before.row_stride_byte_count == after.row_stride_byte_count
+        && before.pixel_count == after.pixel_count
+        && before.expected_byte_count == after.expected_byte_count
+        && before.decoded_byte_count == after.decoded_byte_count
+        && before.staging_byte_count == after.staging_byte_count
+        && before.decoded_payload.stable_byte_hash == after.decoded_payload.stable_byte_hash
+        && before.decoded_payload.payload_valid == after.decoded_payload.payload_valid
+        && before.cache_key_valid == after.cache_key_valid
+        && before.sampler_valid == after.sampler_valid
+        && before.sampler_matches_texture_key == after.sampler_matches_texture_key
+        && before.rgba8_format == after.rgba8_format
+        && before.nonzero_extent == after.nonzero_extent
+        && before.row_stride_consistent == after.row_stride_consistent
+        && before.byte_count_consistent == after.byte_count_consistent
+        && before.staging_byte_count_consistent == after.staging_byte_count_consistent
+        && before.upload_layout_ready == after.upload_layout_ready;
+}
+
 inline render_image_upload_readiness_snapshot make_render_image_upload_readiness_snapshot(
     const render_image_texture_key& key,
     const render_image_decode_metadata& decode_metadata,
@@ -436,6 +608,8 @@ inline render_image_upload_readiness_snapshot make_render_image_upload_readiness
 {
     render_image_texture_key_diagnostic key_diagnostic = make_render_image_texture_key_diagnostic(key);
     render_image_sampler_policy_diagnostic sampler_policy = key_diagnostic.sampler_policy;
+    render_image_texture_upload_payload_layout_evidence upload_payload_layout =
+        make_render_image_texture_upload_payload_layout_evidence(key, key.sampler, image);
     const render_image_texture_color_space color_space =
         render_image_texture_color_space_for(image.pixel_format);
     const bool payload_valid = has_valid_render_decoded_image_payload(image);
@@ -477,7 +651,8 @@ inline render_image_upload_readiness_snapshot make_render_image_upload_readiness
     }
     const bool upload_ready = key_diagnostic.valid && payload_valid
         && color_space != render_image_texture_color_space::unknown
-        && decode_metadata_matches_image;
+        && decode_metadata_matches_image
+        && upload_payload_layout.upload_layout_ready;
 
     return render_image_upload_readiness_snapshot{
         .key = key,
@@ -500,6 +675,7 @@ inline render_image_upload_readiness_snapshot make_render_image_upload_readiness
             decode_metadata.size_validation.actual_decoded_byte_count,
         .staging_byte_count = payload_valid ? decoded_byte_count : 0,
         .decoded_payload = make_render_image_decoded_payload_evidence(image),
+        .upload_payload_layout = std::move(upload_payload_layout),
         .decode_handoff_diagnostic = std::move(decode_handoff_diagnostic),
         .diagnostic = std::move(diagnostic),
     };

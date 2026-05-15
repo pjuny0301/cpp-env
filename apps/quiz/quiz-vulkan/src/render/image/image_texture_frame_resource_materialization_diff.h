@@ -429,6 +429,9 @@ inline bool render_image_texture_frame_resource_upload_handoff_record_equal(
         && before.upload_generation_id == after.upload_generation_id
         && before.mip_level_count == after.mip_level_count
         && before.uploaded_byte_count == after.uploaded_byte_count
+        && render_image_texture_upload_payload_layout_evidence_equal(
+            before.payload_layout,
+            after.payload_layout)
         && before.upload_result_present == after.upload_result_present
         && before.placeholder_backed == after.placeholder_backed
         && before.renderer_boundary_ready == after.renderer_boundary_ready;

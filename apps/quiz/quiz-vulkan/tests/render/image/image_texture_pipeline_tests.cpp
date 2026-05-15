@@ -2906,6 +2906,19 @@ void test_texture_frame_upload_handoff_links_bindings_to_upload_results()
     require(first_payload.last_pixel.rgba[2] == 0x00, "upload result packet last pixel preserves blue");
     require(first_payload.last_pixel.rgba[3] == 0xff, "upload result packet last pixel preserves alpha");
     require(first_payload.all_alpha_opaque, "upload result packet preserves alpha opacity evidence");
+    const render_image_texture_upload_payload_layout_evidence& first_layout =
+        upload_result.packets[0].payload_layout;
+    require(first_layout.ok(), "upload result packet preserves upload payload layout readiness");
+    require(first_layout.extent_width == 2, "upload result packet layout preserves extent width");
+    require(first_layout.extent_height == 1, "upload result packet layout preserves extent height");
+    require(first_layout.row_stride_byte_count == 8, "upload result packet layout records row stride");
+    require(first_layout.byte_count_consistent, "upload result packet layout records byte consistency");
+    require(
+        first_layout.decoded_payload.stable_byte_hash == first_payload.stable_byte_hash,
+        "upload result packet layout preserves decoded payload hash");
+    require(
+        first_layout.stable_texture_cache_key == upload_result.packets[0].stable_cache_key,
+        "upload result packet layout preserves stable cache identity");
 
     const render_image_texture_frame_upload_handoff_summary handoff =
         make_render_image_texture_frame_upload_handoff_summary(frame, binding_plan, upload_result);
@@ -2955,6 +2968,11 @@ void test_texture_frame_upload_handoff_links_bindings_to_upload_results()
     require(
         first.decoded_payload.first_pixel.rgba == first_payload.first_pixel.rgba,
         "first handoff entry preserves decoded first pixel sample");
+    require(first.payload_layout.ok(), "first handoff entry preserves upload payload layout readiness");
+    require(first.payload_layout.row_stride_byte_count == first_layout.row_stride_byte_count, "first handoff entry preserves row stride");
+    require(
+        first.payload_layout.stable_texture_cache_key == first_layout.stable_texture_cache_key,
+        "first handoff entry preserves payload layout cache identity");
     require(!first.placeholder_texture, "first handoff entry is not placeholder");
     require(!first.blocked, "first handoff entry is not blocked");
 
@@ -2967,6 +2985,9 @@ void test_texture_frame_upload_handoff_links_bindings_to_upload_results()
     require(
         second.decoded_payload.stable_byte_hash == first_payload.stable_byte_hash,
         "cache-hit handoff entry reuses decoded payload hash from original upload");
+    require(
+        second.payload_layout.stable_texture_cache_key == first.payload_layout.stable_texture_cache_key,
+        "cache-hit handoff entry reuses upload payload layout identity");
 
     const render_image_texture_frame_upload_handoff_entry& third = handoff.entries[2];
     require(third.ok(), "sampler-separated handoff entry is ready");
@@ -2974,6 +2995,10 @@ void test_texture_frame_upload_handoff_links_bindings_to_upload_results()
     require(third.texture_id != first.texture_id, "sampler-separated handoff entry records distinct texture id");
     require(third.stable_texture_cache_key != first.stable_texture_cache_key, "sampler-separated handoff entry has distinct key");
     require(third.decoded_payload.payload_valid, "sampler-separated handoff entry preserves decoded payload evidence");
+    require(third.payload_layout.ok(), "sampler-separated handoff entry preserves payload layout evidence");
+    require(
+        third.payload_layout.sampler_summary != first.payload_layout.sampler_summary,
+        "sampler-separated handoff entry preserves distinct layout sampler identity");
 
     const render_image_texture_frame_binding_payload_evidence_summary binding_evidence =
         make_render_image_texture_frame_binding_payload_evidence_summary(binding_plan, handoff);
@@ -3064,6 +3089,10 @@ void test_texture_frame_upload_handoff_links_bindings_to_upload_results()
     require(
         resource_plan.entries[0].decoded_payload.first_pixel.rgba == first_payload.first_pixel.rgba,
         "resource packet plan preserves decoded first pixel sample");
+    require(resource_plan.entries[0].payload_layout.ok(), "resource packet plan preserves upload payload layout");
+    require(
+        resource_plan.entries[0].payload_layout.row_stride_byte_count == first_layout.row_stride_byte_count,
+        "resource packet plan preserves upload payload row stride");
     require(resource_plan.entries[1].cache_reused, "resource packet plan preserves cache reuse state");
     require(
         resource_plan.entries[1].decoded_payload.stable_byte_hash == first_payload.stable_byte_hash,
@@ -3083,9 +3112,21 @@ void test_texture_frame_upload_handoff_links_bindings_to_upload_results()
             == first_payload.last_pixel.rgba,
         "materialized upload handoff preserves decoded last pixel sample");
     require(
+        materialization.upload_handoff_records[0].payload_layout.stable_texture_cache_key
+            == first_layout.stable_texture_cache_key,
+        "materialized upload handoff preserves payload layout cache identity");
+    require(
+        materialization.upload_handoff_records[0].payload_layout.row_stride_byte_count
+            == first_layout.row_stride_byte_count,
+        "materialized upload handoff preserves payload layout row stride");
+    require(
         materialization.entries[1].upload_record.decoded_payload.stable_byte_hash
             == first_payload.stable_byte_hash,
         "materialized cache-hit entry preserves decoded payload evidence");
+    require(
+        materialization.entries[1].upload_record.payload_layout.stable_texture_cache_key
+            == first_layout.stable_texture_cache_key,
+        "materialized cache-hit entry preserves payload layout identity");
 
     require(
         render_image_texture_frame_upload_result_packet_for_binding_packet(upload_result, binding_plan.packets[1])

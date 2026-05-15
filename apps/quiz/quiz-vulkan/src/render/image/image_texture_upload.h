@@ -220,6 +220,7 @@ struct render_image_texture_upload_result {
     std::size_t decoded_byte_count = 0;
     std::size_t staging_byte_count = 0;
     render_image_texture_mipmap_upload_plan mipmap_upload_plan;
+    render_image_texture_upload_payload_layout_evidence payload_layout;
     std::string diagnostic;
 
     bool ok() const
@@ -248,6 +249,7 @@ struct fake_image_texture_upload_request_snapshot {
     std::size_t decoded_byte_count = 0;
     std::size_t staging_byte_count = 0;
     render_image_decoded_payload_evidence decoded_payload;
+    render_image_texture_upload_payload_layout_evidence payload_layout;
     render_image_texture_mipmap_upload_plan mipmap_upload_plan;
     std::size_t enqueue_sequence = 0;
     std::size_t queue_depth_before_enqueue = 0;
@@ -266,6 +268,7 @@ struct fake_image_texture_upload_result_snapshot {
     std::size_t decoded_byte_count = 0;
     std::size_t staging_byte_count = 0;
     render_image_texture_mipmap_upload_plan mipmap_upload_plan;
+    render_image_texture_upload_payload_layout_evidence payload_layout;
     std::string diagnostic;
     std::size_t completion_sequence = 0;
     std::size_t queue_depth_after_completion = 0;
@@ -285,6 +288,7 @@ struct fake_image_texture_upload_snapshot_entry {
     std::size_t decoded_byte_count = 0;
     std::size_t staging_byte_count = 0;
     render_image_texture_mipmap_upload_plan mipmap_upload_plan;
+    render_image_texture_upload_payload_layout_evidence payload_layout;
     std::string diagnostic;
     fake_image_texture_upload_retry_snapshot retry;
 };
@@ -299,6 +303,7 @@ struct fake_image_texture_upload_queue_entry_snapshot {
     bool completed = false;
     std::size_t staging_byte_count = 0;
     render_image_texture_mipmap_upload_plan mipmap_upload_plan;
+    render_image_texture_upload_payload_layout_evidence payload_layout;
     std::size_t queue_depth_before_enqueue = 0;
     std::size_t queue_depth_after_enqueue = 0;
     std::size_t queue_depth_after_completion = 0;
@@ -353,6 +358,11 @@ public:
         const std::size_t decoded_byte_count = request.image.pixels.size();
         const render_image_texture_mipmap_upload_plan mipmap_upload_plan =
             make_render_image_texture_mipmap_upload_plan(request.image, request.sampler);
+        const render_image_texture_upload_payload_layout_evidence payload_layout =
+            make_render_image_texture_upload_payload_layout_evidence(
+                request.key,
+                request.sampler,
+                request.image);
         std::size_t pixel_count = 0;
         if (request.image.width != 0 && request.image.height != 0
             && request.image.width <= std::numeric_limits<std::size_t>::max() / request.image.height) {
@@ -375,6 +385,7 @@ public:
             .decoded_byte_count = decoded_byte_count,
             .staging_byte_count = staging_byte_count,
             .decoded_payload = make_render_image_decoded_payload_evidence(request.image),
+            .payload_layout = payload_layout,
             .mipmap_upload_plan = mipmap_upload_plan,
             .enqueue_sequence = enqueue_sequence,
             .queue_depth_before_enqueue = queue_depth_before_enqueue,
@@ -394,6 +405,7 @@ public:
                 .decoded_byte_count = decoded_byte_count,
                 .staging_byte_count = staging_byte_count,
                 .mipmap_upload_plan = mipmap_upload_plan,
+                .payload_layout = payload_layout,
                 .diagnostic = "image texture upload key is empty or contains control characters",
             },
                 enqueue_sequence,
@@ -413,6 +425,7 @@ public:
                 .decoded_byte_count = decoded_byte_count,
                 .staging_byte_count = staging_byte_count,
                 .mipmap_upload_plan = mipmap_upload_plan,
+                .payload_layout = payload_layout,
                 .diagnostic = "image texture upload sampler policy is invalid or does not match the texture key",
             },
                 enqueue_sequence,
@@ -432,6 +445,7 @@ public:
                 .decoded_byte_count = decoded_byte_count,
                 .staging_byte_count = staging_byte_count,
                 .mipmap_upload_plan = mipmap_upload_plan,
+                .payload_layout = payload_layout,
                 .diagnostic = "image texture upload pixel format is unsupported",
             },
                 enqueue_sequence,
@@ -451,6 +465,7 @@ public:
                 .decoded_byte_count = decoded_byte_count,
                 .staging_byte_count = staging_byte_count,
                 .mipmap_upload_plan = mipmap_upload_plan,
+                .payload_layout = payload_layout,
                 .diagnostic = "image texture upload payload size does not match dimensions and format",
             },
                 enqueue_sequence,
@@ -474,6 +489,7 @@ public:
             .decoded_byte_count = decoded_byte_count,
             .staging_byte_count = staging_byte_count,
             .mipmap_upload_plan = mipmap_upload_plan,
+            .payload_layout = payload_layout,
             .diagnostic = {},
         },
             enqueue_sequence,
@@ -521,6 +537,7 @@ public:
                 .decoded_byte_count = result.decoded_byte_count,
                 .staging_byte_count = result.staging_byte_count,
                 .mipmap_upload_plan = result.mipmap_upload_plan,
+                .payload_layout = result.payload_layout,
                 .diagnostic = result.diagnostic,
                 .retry = upload_result_snapshots[index].retry,
             });
@@ -571,6 +588,7 @@ private:
             .decoded_byte_count = result.decoded_byte_count,
             .staging_byte_count = result.staging_byte_count,
             .mipmap_upload_plan = result.mipmap_upload_plan,
+            .payload_layout = result.payload_layout,
             .diagnostic = result.diagnostic,
             .completion_sequence = completion_sequence,
             .queue_depth_after_completion = queue_depth_after_completion,
@@ -586,6 +604,7 @@ private:
             .completed = true,
             .staging_byte_count = result.staging_byte_count,
             .mipmap_upload_plan = result.mipmap_upload_plan,
+            .payload_layout = result.payload_layout,
             .queue_depth_before_enqueue = queue_depth_after_enqueue == 0 ? 0 : queue_depth_after_enqueue - 1,
             .queue_depth_after_enqueue = queue_depth_after_enqueue,
             .queue_depth_after_completion = queue_depth_after_completion,

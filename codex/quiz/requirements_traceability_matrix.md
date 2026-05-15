@@ -10,6 +10,7 @@
 - current: after next-worker prompt handoff, Windows MinGW full CTest attempted 103 configured tests; 102 executed tests passed and only the known `quiz_vulkan_font_shaped_atlas_update_tests` host permission BAD_COMMAND remained.
 - `a9f712d`: text engine now exposes HarfBuzz-shaped glyph handoff diagnostics through fake text layout snapshots when materialized font bytes and backend capability are available, with fallback diagnostics preserved for unavailable paths.
 - `2e58022`: asset system now evaluates ordered multi-payload request transactions, preserving per-request selection status, compact selected snapshots, and summary counters without copying payload bytes.
+- `78fd030`: asset system now compares ordered payload request transactions with deterministic added/removed ids, changed statuses, selected snapshot deltas, readiness/integrity/cache-key deltas, and summary count changes.
 - `be5533d`: Vulkan backend now records native surface capability readiness for support, capabilities, formats, and present modes, and blocks native swapchain create planning when surface evidence is missing or unusable.
 - `9d6a8fd`: image engine now plans decoded texture staging payloads with row-copy, alignment, total byte, sampler/cache identity, and blocker evidence before any Vulkan upload path exists.
 - `e428459`: asset system now selects materialized byte payloads by id/type/cache key/readiness/integrity status and reports stable diagnostics for missing, wrong-type, blocked, duplicate, cache-key mismatch, and integrity-failure cases.

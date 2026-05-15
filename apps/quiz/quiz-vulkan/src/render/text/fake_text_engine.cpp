@@ -2579,6 +2579,209 @@ void record_shaping_atlas_handoff_diagnostics(fake_text_engine_diagnostics& diag
     diagnostics.shaping_atlas_handoff_policy.unique_page_key_count = unique_page_keys.size();
 }
 
+bool shaping_handoff_matches_cluster(
+    const fake_text_engine_shaping_handoff_snapshot& handoff,
+    const laid_out_glyph_cluster& cluster)
+{
+    return handoff.run_index == cluster.snapshot.run_index
+        && handoff.cluster_byte_offset == cluster.snapshot.byte_offset
+        && handoff.cluster_byte_count == cluster.snapshot.byte_count;
+}
+
+std::vector<const fake_text_engine_shaping_handoff_snapshot*> shaping_handoffs_for_cluster(
+    const std::vector<fake_text_engine_shaping_handoff_snapshot>& handoffs,
+    const laid_out_glyph_cluster& cluster)
+{
+    std::vector<const fake_text_engine_shaping_handoff_snapshot*> matches;
+    for (const fake_text_engine_shaping_handoff_snapshot& handoff : handoffs) {
+        if (shaping_handoff_matches_cluster(handoff, cluster)) {
+            matches.push_back(&handoff);
+        }
+    }
+    return matches;
+}
+
+const render_text_line_metrics_snapshot* find_line_metrics_for_cluster(
+    const std::vector<render_text_line_metrics_snapshot>& metrics,
+    const laid_out_glyph_cluster& cluster)
+{
+    const auto match = std::find_if(
+        metrics.begin(),
+        metrics.end(),
+        [&](const render_text_line_metrics_snapshot& line) {
+            return line.line_index == cluster.snapshot.line_index;
+        });
+    return match == metrics.end() ? nullptr : &*match;
+}
+
+bool line_run_box_contains_cluster(
+    const render_text_line_run_box_snapshot& box,
+    const laid_out_glyph_cluster& cluster)
+{
+    const float box_right = box.bounds.x + box.bounds.width;
+    const float cluster_right = cluster.bounds.x + cluster.bounds.width;
+    return box.line_index == cluster.snapshot.line_index
+        && box.run_index == cluster.snapshot.run_index
+        && cluster.bounds.x >= box.bounds.x
+        && cluster_right <= box_right;
+}
+
+const render_text_line_run_box_snapshot* find_line_run_box_for_cluster(
+    const std::vector<render_text_line_run_box_snapshot>& boxes,
+    const laid_out_glyph_cluster& cluster,
+    std::size_t& box_index)
+{
+    for (std::size_t index = 0; index < boxes.size(); ++index) {
+        if (line_run_box_contains_cluster(boxes[index], cluster)) {
+            box_index = index;
+            return &boxes[index];
+        }
+    }
+    const auto match = std::find_if(
+        boxes.begin(),
+        boxes.end(),
+        [&](const render_text_line_run_box_snapshot& box) {
+            return box.line_index == cluster.snapshot.line_index
+                && box.run_index == cluster.snapshot.run_index;
+        });
+    if (match == boxes.end()) {
+        box_index = 0;
+        return nullptr;
+    }
+    box_index = static_cast<std::size_t>(match - boxes.begin());
+    return &*match;
+}
+
+std::vector<std::uint32_t> shaped_glyph_ids_for_handoffs_or_cluster(
+    const std::vector<const fake_text_engine_shaping_handoff_snapshot*>& handoffs,
+    const laid_out_glyph_cluster& cluster)
+{
+    std::vector<std::uint32_t> glyph_ids;
+    glyph_ids.reserve(handoffs.size());
+    for (const fake_text_engine_shaping_handoff_snapshot* handoff : handoffs) {
+        if (handoff != nullptr && handoff->glyph_id != 0U) {
+            glyph_ids.push_back(handoff->glyph_id);
+        }
+    }
+    if (glyph_ids.empty() && cluster.glyph_id != 0U) {
+        glyph_ids.push_back(cluster.glyph_id);
+    }
+    return glyph_ids;
+}
+
+void record_shaping_line_run_evidence_diagnostics(
+    fake_text_engine_diagnostics& diagnostics,
+    const std::vector<laid_out_glyph_cluster>& clusters)
+{
+    diagnostics.shaping_line_run_evidence.clear();
+    diagnostics.shaping_line_run_evidence_policy = fake_text_engine_shaping_line_run_evidence_policy_snapshot{
+        .line_count = diagnostics.line_metrics.size(),
+        .run_box_count = diagnostics.line_run_boxes.size(),
+    };
+    diagnostics.shaping_line_run_evidence.reserve(clusters.size());
+
+    for (std::size_t cluster_index = 0; cluster_index < clusters.size(); ++cluster_index) {
+        const laid_out_glyph_cluster& cluster = clusters[cluster_index];
+        const std::vector<const fake_text_engine_shaping_handoff_snapshot*> handoffs =
+            shaping_handoffs_for_cluster(diagnostics.shaping_handoffs, cluster);
+        const fake_text_engine_shaping_handoff_snapshot* primary_handoff =
+            handoffs.empty() ? nullptr : handoffs.front();
+        const render_text_line_metrics_snapshot* line =
+            find_line_metrics_for_cluster(diagnostics.line_metrics, cluster);
+        std::size_t run_box_index = 0;
+        const render_text_line_run_box_snapshot* run_box =
+            find_line_run_box_for_cluster(diagnostics.line_run_boxes, cluster, run_box_index);
+        const bool used_harfbuzz = primary_handoff != nullptr && primary_handoff->used_harfbuzz;
+        const bool used_deterministic_fallback =
+            primary_handoff == nullptr || primary_handoff->used_deterministic_fallback;
+
+        fake_text_engine_shaping_line_run_evidence_snapshot snapshot{
+            .cluster_index = cluster_index,
+            .line_index = cluster.snapshot.line_index,
+            .run_index = cluster.snapshot.run_index,
+            .style_token = primary_handoff == nullptr ? render_style_id{} : primary_handoff->style_token,
+            .cluster_byte_offset = cluster.snapshot.byte_offset,
+            .cluster_byte_count = cluster.snapshot.byte_count,
+            .cluster_codepoint_offset =
+                primary_handoff == nullptr ? 0U : primary_handoff->cluster_codepoint_offset,
+            .cluster_codepoint_count =
+                primary_handoff == nullptr ? 0U : primary_handoff->cluster_codepoint_count,
+            .shaped_glyph_ids = shaped_glyph_ids_for_handoffs_or_cluster(handoffs, cluster),
+            .resolved_glyph_id = cluster.glyph_id,
+            .resolved_face_id = cluster.snapshot.resolved_face_id,
+            .cluster_advance = cluster.snapshot.advance,
+            .harfbuzz_advance = used_harfbuzz ? cluster.snapshot.advance : 0.0f,
+            .deterministic_fallback_advance =
+                used_deterministic_fallback ? cluster.snapshot.advance : 0.0f,
+            .line_advance = line == nullptr ? 0.0f : line->width,
+            .run_box_advance = run_box == nullptr ? 0.0f : run_box->bounds.width,
+            .line_caret_stop_count = line == nullptr ? 0U : line->caret_stop_count,
+            .line_caret_safe = line == nullptr || line->caret_safe,
+            .caret_start_byte_offset = cluster.snapshot.byte_offset,
+            .caret_end_byte_offset = cluster.snapshot.byte_offset + cluster.snapshot.byte_count,
+            .caret_start_x = cluster.bounds.x,
+            .caret_end_x = cluster.bounds.x + cluster.bounds.width,
+            .run_box_index = run_box_index,
+            .has_run_box = run_box != nullptr,
+            .run_box_cluster_count = run_box == nullptr ? 0U : run_box->cluster_count,
+            .run_box_bounds = run_box == nullptr ? render_rect{} : run_box->bounds,
+            .backend_library = primary_handoff == nullptr
+                ? cluster.font_backend_library
+                : primary_handoff->backend_library,
+            .backend_label = primary_handoff == nullptr
+                ? cluster.font_backend_label
+                : primary_handoff->backend_label,
+            .adapter_status = primary_handoff == nullptr
+                ? render_text_font_backend_adapter_status::backend_unavailable
+                : primary_handoff->adapter_status,
+            .capability_status = primary_handoff == nullptr
+                ? cluster.font_backend_capability_status
+                : primary_handoff->capability_status,
+            .source_bytes_status = primary_handoff == nullptr
+                ? render_text_font_source_bytes_load_status::missing_source
+                : primary_handoff->source_bytes_status,
+            .materialized_font_bytes = primary_handoff != nullptr && primary_handoff->materialized_font_bytes,
+            .used_adapter = primary_handoff != nullptr && primary_handoff->used_adapter,
+            .used_harfbuzz = used_harfbuzz,
+            .used_deterministic_fallback = used_deterministic_fallback,
+            .glyph_supported = cluster.glyph_supported,
+            .cacheable = cluster.cacheable,
+            .fallback_reason = primary_handoff == nullptr ? std::string{} : primary_handoff->fallback_reason,
+        };
+
+        ++diagnostics.shaping_line_run_evidence_policy.cluster_count;
+        diagnostics.shaping_line_run_evidence_policy.total_cluster_advance += snapshot.cluster_advance;
+        diagnostics.shaping_line_run_evidence_policy.harfbuzz_advance += snapshot.harfbuzz_advance;
+        diagnostics.shaping_line_run_evidence_policy.deterministic_fallback_advance +=
+            snapshot.deterministic_fallback_advance;
+        if (snapshot.used_harfbuzz) {
+            ++diagnostics.shaping_line_run_evidence_policy.harfbuzz_cluster_count;
+        }
+        if (snapshot.used_deterministic_fallback) {
+            ++diagnostics.shaping_line_run_evidence_policy.deterministic_fallback_cluster_count;
+        }
+        if (snapshot.used_adapter) {
+            ++diagnostics.shaping_line_run_evidence_policy.adapter_cluster_count;
+        }
+        if (snapshot.materialized_font_bytes) {
+            ++diagnostics.shaping_line_run_evidence_policy.materialized_font_byte_cluster_count;
+        } else {
+            ++diagnostics.shaping_line_run_evidence_policy.missing_font_byte_cluster_count;
+        }
+        if (!snapshot.fallback_reason.empty()) {
+            ++diagnostics.shaping_line_run_evidence_policy.fallback_reason_cluster_count;
+        }
+        if (snapshot.line_caret_safe) {
+            ++diagnostics.shaping_line_run_evidence_policy.caret_safe_cluster_count;
+        }
+        if (snapshot.has_run_box) {
+            ++diagnostics.shaping_line_run_evidence_policy.run_box_linked_cluster_count;
+        }
+
+        diagnostics.shaping_line_run_evidence.push_back(std::move(snapshot));
+    }
+}
+
 void record_glyph_atlas_materialization_diagnostics(
     fake_text_engine_diagnostics& diagnostics,
     const std::vector<laid_out_glyph_cluster>& clusters,
@@ -3047,6 +3250,7 @@ render_text_layout fake_text_engine::layout_text(const render_text_request& requ
         collect_glyph_cluster_layouts(request, shaped_glyphs, lines);
     record_glyph_cluster_diagnostics(diagnostics_, cluster_layouts);
     record_line_run_box_diagnostics(diagnostics_, cluster_layouts);
+    record_shaping_line_run_evidence_diagnostics(diagnostics_, cluster_layouts);
     update_atlas_for_clusters(
         cluster_layouts,
         glyph_atlas_cache_,

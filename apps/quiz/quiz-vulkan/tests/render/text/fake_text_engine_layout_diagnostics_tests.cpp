@@ -2123,6 +2123,73 @@ void test_fake_text_engine_harfbuzz_handoff_shapes_materialized_font_bytes()
     if (atlas_handoff.blocked) {
         require(!atlas_handoff.blocker_reason.empty(), "blocked atlas handoff records blocker reason");
     }
+
+    require(diagnostics.has_shaping_line_run_evidence(), "HarfBuzz handoff records line/run evidence");
+    require(
+        diagnostics.shaping_line_run_evidence_policy.harfbuzz_cluster_count
+            == diagnostics.shaping_line_run_evidence.size(),
+        "line/run evidence counts HarfBuzz-shaped clusters");
+    require(
+        diagnostics.shaping_line_run_evidence_policy.deterministic_fallback_cluster_count == 0U,
+        "line/run evidence records no deterministic fallback for HarfBuzz shaping");
+    require(
+        diagnostics.shaping_line_run_evidence_policy.adapter_cluster_count
+            == diagnostics.shaping_line_run_evidence.size(),
+        "line/run evidence counts adapter-shaped clusters");
+    require(
+        diagnostics.shaping_line_run_evidence_policy.harfbuzz_advance > 0.0f,
+        "line/run evidence records HarfBuzz advance total");
+    require(
+        near(
+            diagnostics.shaping_line_run_evidence_policy.total_cluster_advance,
+            diagnostics.shaping_line_run_evidence_policy.harfbuzz_advance),
+        "line/run evidence attributes total advance to HarfBuzz");
+    require(
+        near(diagnostics.shaping_line_run_evidence_policy.deterministic_fallback_advance, 0.0f),
+        "line/run evidence records no deterministic fallback advance");
+
+    const fake_text_engine_shaping_line_run_evidence_snapshot& line_evidence =
+        diagnostics.shaping_line_run_evidence.front();
+    require(line_evidence.used_harfbuzz, "line/run evidence marks HarfBuzz shaping");
+    require(line_evidence.used_adapter, "line/run evidence marks adapter shaping");
+    require(!line_evidence.used_deterministic_fallback, "line/run evidence avoids deterministic fallback");
+    require(
+        line_evidence.backend_library == render_text_font_backend_library::harfbuzz,
+        "line/run evidence preserves HarfBuzz backend");
+    require(line_evidence.backend_label == "HarfBuzz", "line/run evidence preserves backend label");
+    require(
+        line_evidence.adapter_status == render_text_font_backend_adapter_status::shaped,
+        "line/run evidence preserves adapter status");
+    require(line_evidence.line_index == 0U, "line/run evidence preserves line index");
+    require(line_evidence.run_index == 0U, "line/run evidence preserves run id");
+    require(line_evidence.style_token == "handoff", "line/run evidence preserves style token");
+    require(line_evidence.cluster_byte_offset == 0U, "line/run evidence preserves cluster byte offset");
+    require(line_evidence.cluster_byte_count == text.size(), "line/run evidence preserves cluster byte count");
+    require(line_evidence.cluster_codepoint_offset == 0U, "line/run evidence preserves cluster codepoint offset");
+    require(line_evidence.cluster_codepoint_count == 2U, "line/run evidence preserves cluster codepoint count");
+    require(!line_evidence.shaped_glyph_ids.empty(), "line/run evidence preserves shaped glyph ids");
+    require(line_evidence.cluster_advance > 0.0f, "line/run evidence records cluster advance");
+    require(
+        near(line_evidence.harfbuzz_advance, line_evidence.cluster_advance),
+        "line/run evidence attributes cluster advance to HarfBuzz");
+    require(
+        near(line_evidence.deterministic_fallback_advance, 0.0f),
+        "line/run evidence records no deterministic fallback cluster advance");
+    require(
+        line_evidence.line_advance >= line_evidence.cluster_advance,
+        "line/run evidence links cluster to line advance");
+    require(line_evidence.line_caret_safe, "line/run evidence records caret-safe line impact");
+    require(
+        line_evidence.caret_start_byte_offset == 0U && line_evidence.caret_end_byte_offset == text.size(),
+        "line/run evidence preserves caret byte span");
+    require(
+        near(line_evidence.caret_end_x - line_evidence.caret_start_x, line_evidence.cluster_advance),
+        "line/run evidence records caret x impact from shaped advance");
+    require(line_evidence.has_run_box, "line/run evidence links to a run box");
+    require(
+        line_evidence.run_box_advance >= line_evidence.cluster_advance,
+        "line/run evidence records run-box advance impact");
+    require(line_evidence.fallback_reason.empty(), "line/run evidence has no fallback reason for HarfBuzz success");
 }
 
 void test_fake_text_engine_harfbuzz_handoff_keeps_deterministic_fallback_without_bytes()
@@ -2239,6 +2306,60 @@ void test_fake_text_engine_harfbuzz_handoff_keeps_deterministic_fallback_without
         atlas_handoff.atlas_update_trace_status
             == render_text_shaped_atlas_update_trace_status::rasterized_payload_skipped,
         "missing bytes atlas handoff links raster payload blocker trace");
+
+    require(diagnostics.has_shaping_line_run_evidence(), "missing bytes record line/run evidence");
+    require(
+        diagnostics.shaping_line_run_evidence_policy.deterministic_fallback_cluster_count == 1U,
+        "missing bytes line/run evidence counts deterministic fallback");
+    require(
+        diagnostics.shaping_line_run_evidence_policy.harfbuzz_cluster_count == 0U,
+        "missing bytes line/run evidence does not count HarfBuzz shaping");
+    require(
+        diagnostics.shaping_line_run_evidence_policy.missing_font_byte_cluster_count == 1U,
+        "missing bytes line/run evidence counts missing materialized bytes");
+    require(
+        diagnostics.shaping_line_run_evidence_policy.fallback_reason_cluster_count == 1U,
+        "missing bytes line/run evidence counts fallback reason");
+    require(
+        diagnostics.shaping_line_run_evidence_policy.deterministic_fallback_advance > 0.0f,
+        "missing bytes line/run evidence records fallback advance total");
+    require(
+        near(
+            diagnostics.shaping_line_run_evidence_policy.total_cluster_advance,
+            diagnostics.shaping_line_run_evidence_policy.deterministic_fallback_advance),
+        "missing bytes line/run evidence attributes total advance to deterministic fallback");
+
+    const fake_text_engine_shaping_line_run_evidence_snapshot& line_evidence =
+        diagnostics.shaping_line_run_evidence.front();
+    require(
+        line_evidence.backend_library == render_text_font_backend_library::deterministic_fake,
+        "missing bytes line/run evidence preserves deterministic backend");
+    require(line_evidence.used_deterministic_fallback, "missing bytes line/run evidence marks deterministic fallback");
+    require(!line_evidence.used_harfbuzz, "missing bytes line/run evidence does not mark HarfBuzz");
+    require(!line_evidence.materialized_font_bytes, "missing bytes line/run evidence records missing font bytes");
+    require(
+        line_evidence.source_bytes_status == render_text_font_source_bytes_load_status::missing_bytes,
+        "missing bytes line/run evidence preserves missing source byte status");
+    require(line_evidence.line_index == 0U, "missing bytes line/run evidence preserves line index");
+    require(line_evidence.run_index == 0U, "missing bytes line/run evidence preserves run id");
+    require(line_evidence.style_token == "missing-handoff", "missing bytes line/run evidence preserves style token");
+    require(line_evidence.cluster_byte_offset == 0U, "missing bytes line/run evidence preserves byte offset");
+    require(line_evidence.cluster_byte_count == 1U, "missing bytes line/run evidence preserves byte count");
+    require(line_evidence.cluster_advance > 0.0f, "missing bytes line/run evidence records fallback advance");
+    require(
+        near(line_evidence.deterministic_fallback_advance, line_evidence.cluster_advance),
+        "missing bytes line/run evidence attributes cluster advance to fallback");
+    require(
+        near(line_evidence.harfbuzz_advance, 0.0f),
+        "missing bytes line/run evidence records no HarfBuzz advance");
+    require(line_evidence.has_run_box, "missing bytes line/run evidence links to run box");
+    require(line_evidence.line_caret_safe, "missing bytes line/run evidence records caret safety");
+    require(
+        near(line_evidence.caret_end_x - line_evidence.caret_start_x, line_evidence.cluster_advance),
+        "missing bytes line/run evidence records caret x impact");
+    require(
+        line_evidence.fallback_reason.find("materialized font bytes") != std::string::npos,
+        "missing bytes line/run evidence preserves fallback reason");
 }
 
 void test_fake_text_engine_injected_adapter_glyph_mismatch_drives_failure_diagnostics()

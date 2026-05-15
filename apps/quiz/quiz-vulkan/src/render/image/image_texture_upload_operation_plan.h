@@ -80,6 +80,7 @@ struct render_image_texture_upload_operation_packet {
     render_image_texture_mipmap_upload_plan mipmap_upload_plan;
     render_image_decoded_payload_evidence decoded_payload;
     render_image_texture_upload_payload_layout_evidence payload_layout;
+    render_image_texture_staging_payload_plan staging_payload_plan;
     std::size_t staging_byte_count = 0;
     std::size_t mip_level_count = 0;
     std::size_t mipmap_byte_count = 0;
@@ -221,6 +222,23 @@ render_image_texture_upload_operation_payload_layout_for(
     return {};
 }
 
+inline render_image_texture_staging_payload_plan render_image_texture_upload_operation_staging_plan_for(
+    const fake_image_texture_upload_request_snapshot* request,
+    const fake_image_texture_upload_result_snapshot* result,
+    const fake_image_texture_upload_queue_entry_snapshot* queue_entry)
+{
+    if (request != nullptr) {
+        return request->staging_payload_plan;
+    }
+    if (result != nullptr) {
+        return result->staging_payload_plan;
+    }
+    if (queue_entry != nullptr) {
+        return queue_entry->staging_payload_plan;
+    }
+    return {};
+}
+
 inline render_image_texture_upload_operation_packet make_render_image_texture_upload_operation_packet(
     const fake_image_texture_upload_request_snapshot* request,
     const fake_image_texture_upload_result_snapshot* result,
@@ -240,6 +258,10 @@ inline render_image_texture_upload_operation_packet make_render_image_texture_up
             ? request->decoded_payload
             : render_image_decoded_payload_evidence{},
         .payload_layout = render_image_texture_upload_operation_payload_layout_for(
+            request,
+            result,
+            queue_entry),
+        .staging_payload_plan = render_image_texture_upload_operation_staging_plan_for(
             request,
             result,
             queue_entry),

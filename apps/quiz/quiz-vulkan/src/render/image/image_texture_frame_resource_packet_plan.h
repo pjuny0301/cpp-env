@@ -118,6 +118,7 @@ struct render_image_texture_frame_resource_packet_plan_entry {
     std::size_t uploaded_byte_count = 0;
     render_image_decoded_payload_evidence decoded_payload;
     render_image_texture_upload_payload_layout_evidence payload_layout;
+    render_image_texture_staging_payload_plan staging_payload_plan;
     bool requested = false;
     bool bindable = false;
     bool resource_packet_ready = false;
@@ -218,6 +219,7 @@ make_render_image_texture_frame_resource_packet_plan_entry(
         .uploaded_byte_count = handoff_entry.uploaded_byte_count,
         .decoded_payload = handoff_entry.decoded_payload,
         .payload_layout = handoff_entry.payload_layout,
+        .staging_payload_plan = handoff_entry.staging_payload_plan,
         .requested = handoff_entry.requested,
         .bindable = bindable,
         .resource_packet_ready =

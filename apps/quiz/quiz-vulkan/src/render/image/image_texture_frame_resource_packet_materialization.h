@@ -120,6 +120,7 @@ struct render_image_texture_frame_resource_upload_handoff_record {
     std::size_t uploaded_byte_count = 0;
     render_image_decoded_payload_evidence decoded_payload;
     render_image_texture_upload_payload_layout_evidence payload_layout;
+    render_image_texture_staging_payload_plan staging_payload_plan;
     bool upload_result_present = false;
     bool placeholder_backed = false;
     bool renderer_boundary_ready = false;
@@ -282,6 +283,7 @@ make_render_image_texture_frame_resource_upload_handoff_record(
         .uploaded_byte_count = packet.uploaded_byte_count,
         .decoded_payload = packet.decoded_payload,
         .payload_layout = packet.payload_layout,
+        .staging_payload_plan = packet.staging_payload_plan,
         .upload_result_present = packet.upload_request_id != 0 || packet.upload_generation_id != 0,
         .placeholder_backed = packet.placeholder_backed,
         .renderer_boundary_ready = packet.bindable,

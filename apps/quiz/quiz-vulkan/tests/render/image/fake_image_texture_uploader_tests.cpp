@@ -449,6 +449,128 @@ void test_upload_payload_layout_evidence_records_extent_stride_and_identity()
         "sampler mismatch diagnostic is stable");
 }
 
+void test_staging_payload_plan_records_rows_alignment_and_blockers()
+{
+    using namespace quiz_vulkan::render;
+
+    render_image_sampler_policy sampler;
+    sampler.min_filter = render_image_filter::nearest;
+    sampler.mag_filter = render_image_filter::nearest;
+    const render_image_texture_key key{
+        .source_key = "textures/staging.ppm",
+        .sampler = sampler,
+    };
+    const render_decoded_image base_image = make_rgba_2x1_decoded_image();
+    const render_image_texture_upload_payload_layout_evidence layout =
+        make_render_image_texture_upload_payload_layout_evidence(key, sampler, base_image);
+    const render_image_texture_mipmap_upload_plan base_mipmap_plan =
+        make_render_image_texture_mipmap_upload_plan(base_image, sampler);
+
+    const render_image_texture_staging_payload_plan base_plan =
+        make_render_image_texture_staging_payload_plan(layout, base_mipmap_plan);
+    require(base_plan.ok(), "staging payload plan accepts valid base decoded bytes");
+    require(
+        base_plan.status == render_image_texture_staging_payload_plan_status::ready,
+        "base staging payload plan reports ready status");
+    require(base_plan.status_name == "ready", "base staging payload plan status name is stable");
+    require(base_plan.stable_texture_cache_key == layout.stable_texture_cache_key, "staging plan preserves cache identity");
+    require(base_plan.sampler_summary == layout.sampler_summary, "staging plan preserves sampler identity");
+    require(base_plan.alignment_byte_count == 4, "staging plan records default row alignment");
+    require(base_plan.base_row_stride_byte_count == 8, "staging plan records base row payload stride");
+    require(base_plan.base_staging_row_stride_byte_count == 8, "staging plan records aligned base row stride");
+    require(base_plan.base_row_padding_byte_count == 0, "staging plan records base row padding");
+    require(base_plan.row_copy_count == 1, "staging plan records row copy count");
+    require(base_plan.mip_level_reference_count == 1, "staging plan records base mip reference");
+    require(base_plan.total_row_payload_byte_count == 8, "staging plan records row payload bytes");
+    require(base_plan.total_row_padding_byte_count == 0, "staging plan records row padding bytes");
+    require(base_plan.total_staging_byte_count == 8, "staging plan records total staging bytes");
+    require(base_plan.decoded_byte_count == 8, "staging plan records decoded byte count");
+    require(base_plan.referenced_mipmap_byte_count == 8, "staging plan records referenced mip bytes");
+    require(base_plan.decoded_payload_hash == layout.decoded_payload.stable_byte_hash, "staging plan preserves payload hash");
+    require(base_plan.layout_ready, "staging plan records layout readiness");
+    require(base_plan.mipmap_plan_ready, "staging plan records mipmap readiness");
+    require(base_plan.rows_aligned, "staging plan records row alignment success");
+    require(!base_plan.has_row_padding, "staging plan records no padding for aligned RGBA row");
+    require(base_plan.decoded_payload_available, "staging plan records decoded payload availability");
+    require(!base_plan.mipmaps_referenced, "base staging plan records no generated mip references");
+    require(base_plan.row_copies.size() == 1, "staging plan exposes row copy diagnostics");
+    require(base_plan.row_copies[0].mip_level == 0, "staging row copy records mip level");
+    require(base_plan.row_copies[0].row_index == 0, "staging row copy records row index");
+    require(base_plan.row_copies[0].source_byte_offset == 0, "staging row copy records source offset");
+    require(base_plan.row_copies[0].staging_byte_offset == 0, "staging row copy records staging offset");
+    require(base_plan.row_copies[0].row_payload_byte_count == 8, "staging row copy records payload bytes");
+    require(base_plan.row_copies[0].staging_row_stride_byte_count == 8, "staging row copy records aligned stride");
+    require(base_plan.row_copies[0].row_padding_byte_count == 0, "staging row copy records padding");
+    require(base_plan.row_copies[0].decoded_payload_backed, "base row copy is decoded-payload backed");
+    require(!base_plan.row_copies[0].generated_mip_reference, "base row copy is not generated mip reference");
+    require(base_plan.mip_level_references[0].base_level, "base mip reference records base level");
+    require(
+        base_plan.diagnostic == "image texture staging payload plan is ready",
+        "base staging plan diagnostic is stable");
+
+    const render_image_texture_staging_payload_plan aligned_plan =
+        make_render_image_texture_staging_payload_plan(layout, base_mipmap_plan, 16);
+    require(aligned_plan.ok(), "staging payload plan accepts wider row alignment");
+    require(aligned_plan.alignment_byte_count == 16, "aligned staging plan records requested alignment");
+    require(aligned_plan.base_staging_row_stride_byte_count == 16, "aligned staging plan pads base row stride");
+    require(aligned_plan.base_row_padding_byte_count == 8, "aligned staging plan records base padding");
+    require(aligned_plan.total_staging_byte_count == 16, "aligned staging plan records padded total bytes");
+    require(aligned_plan.total_row_padding_byte_count == 8, "aligned staging plan records row padding bytes");
+    require(aligned_plan.has_row_padding, "aligned staging plan records padding evidence");
+
+    render_image_sampler_policy mipmapped_sampler = sampler;
+    mipmapped_sampler.mipmap_mode = render_image_mipmap_mode::linear;
+    const render_image_texture_key mipmapped_key{
+        .source_key = "textures/staging-mips.ppm",
+        .sampler = mipmapped_sampler,
+    };
+    const render_decoded_image mipmapped_image = make_rgba_4x4_decoded_image();
+    const render_image_texture_upload_payload_layout_evidence mipmapped_layout =
+        make_render_image_texture_upload_payload_layout_evidence(
+            mipmapped_key,
+            mipmapped_sampler,
+            mipmapped_image);
+    const render_image_texture_mipmap_upload_plan mipmapped_upload_plan =
+        make_render_image_texture_mipmap_upload_plan(mipmapped_image, mipmapped_sampler);
+    const render_image_texture_staging_payload_plan mipmapped_plan =
+        make_render_image_texture_staging_payload_plan(mipmapped_layout, mipmapped_upload_plan, 16);
+    require(mipmapped_plan.ok(), "staging payload plan accepts mipmapped decoded texture");
+    require(
+        mipmapped_plan.status == render_image_texture_staging_payload_plan_status::ready_with_mip_references,
+        "mipmapped staging plan reports mip-reference readiness");
+    require(mipmapped_plan.row_copy_count == 7, "mipmapped staging plan records rows across levels");
+    require(mipmapped_plan.mip_level_reference_count == 3, "mipmapped staging plan records mip references");
+    require(mipmapped_plan.total_row_payload_byte_count == 84, "mipmapped staging plan records unpadded payload bytes");
+    require(mipmapped_plan.total_row_padding_byte_count == 28, "mipmapped staging plan records padded bytes");
+    require(mipmapped_plan.total_staging_byte_count == 112, "mipmapped staging plan records aligned staging bytes");
+    require(mipmapped_plan.referenced_mipmap_byte_count == 84, "mipmapped staging plan preserves mipmap byte references");
+    require(mipmapped_plan.mipmaps_referenced, "mipmapped staging plan records generated mip references");
+    require(mipmapped_plan.mip_level_references[1].mip_level == 1, "mipmapped staging plan records level one");
+    require(!mipmapped_plan.mip_level_references[1].decoded_payload_backed, "generated mip reference is not decoded-backed");
+    require(mipmapped_plan.mip_level_references[1].generated_mip_reference, "generated mip reference is explicit");
+    require(mipmapped_plan.row_copies[4].mip_level == 1, "mipmapped row copy begins level one after base rows");
+    require(mipmapped_plan.row_copies[6].mip_level == 2, "mipmapped row copy records terminal level");
+
+    render_decoded_image invalid_payload = base_image;
+    invalid_payload.pixels.pop_back();
+    const render_image_texture_upload_payload_layout_evidence invalid_layout =
+        make_render_image_texture_upload_payload_layout_evidence(key, sampler, invalid_payload);
+    const render_image_texture_mipmap_upload_plan invalid_mipmap_plan =
+        make_render_image_texture_mipmap_upload_plan(invalid_payload, sampler);
+    const render_image_texture_staging_payload_plan blocked_plan =
+        make_render_image_texture_staging_payload_plan(invalid_layout, invalid_mipmap_plan);
+    require(!blocked_plan.ok(), "staging payload plan preserves blocked state for missing decoded bytes");
+    require(
+        blocked_plan.status == render_image_texture_staging_payload_plan_status::blocked_missing_payload,
+        "staging payload plan reports missing payload blocker");
+    require(blocked_plan.total_staging_byte_count == 0, "blocked staging plan records no staging bytes");
+    require(blocked_plan.row_copy_count == 0, "blocked staging plan records no row copies");
+    require(
+        blocked_plan.diagnostic
+            == "image texture staging payload plan blocked: decoded payload bytes are missing or inconsistent",
+        "blocked staging plan diagnostic is stable");
+}
+
 void test_texture_uploader_uploads_valid_decoded_image()
 {
     using namespace quiz_vulkan::render;
@@ -476,6 +598,9 @@ void test_texture_uploader_uploads_valid_decoded_image()
     require(uploaded.pixel_byte_count == 8, "texture uploader reports expected pixel bytes");
     require(uploaded.decoded_byte_count == 8, "texture uploader reports decoded byte count");
     require(uploaded.staging_byte_count == 8, "texture uploader reports staging byte count");
+    require(uploaded.staging_payload_plan.ok(), "texture uploader result records ready staging payload plan");
+    require(uploaded.staging_payload_plan.total_staging_byte_count == 8, "texture uploader result records staging plan bytes");
+    require(uploaded.staging_payload_plan.row_copy_count == 1, "texture uploader result records staging row copy");
     require(
         uploaded.mipmap_upload_plan.status == render_image_texture_mipmap_upload_plan_status::no_mipmaps_requested,
         "texture uploader result records no-mipmap plan");
@@ -492,6 +617,10 @@ void test_texture_uploader_uploads_valid_decoded_image()
     require(uploader.upload_request_snapshots[0].payload_layout.extent_height == 1, "request payload layout records height");
     require(uploader.upload_request_snapshots[0].payload_layout.row_stride_byte_count == 8, "request payload layout records row stride");
     require(uploader.upload_request_snapshots[0].payload_layout.byte_count_consistent, "request payload layout records byte consistency");
+    require(uploader.upload_request_snapshots[0].staging_payload_plan.ok(), "request snapshot records ready staging plan");
+    require(
+        uploader.upload_request_snapshots[0].staging_payload_plan.total_staging_byte_count == 8,
+        "request staging plan records total bytes");
     require(
         uploader.upload_request_snapshots[0].payload_layout.stable_texture_cache_key
             == make_render_image_texture_key_diagnostic(key).stable_cache_key,
@@ -508,6 +637,8 @@ void test_texture_uploader_uploads_valid_decoded_image()
     require(uploader.upload_result_snapshots[0].staging_byte_count == 8, "result snapshot records staging bytes");
     require(uploader.upload_result_snapshots[0].payload_layout.ok(), "result snapshot records ready payload layout");
     require(uploader.upload_result_snapshots[0].payload_layout.row_stride_byte_count == 8, "result payload layout records row stride");
+    require(uploader.upload_result_snapshots[0].staging_payload_plan.ok(), "result snapshot records ready staging plan");
+    require(uploader.upload_result_snapshots[0].staging_payload_plan.row_copies.size() == 1, "result staging plan records row copy");
     require(
         uploader.upload_result_snapshots[0].mipmap_upload_plan.total_upload_byte_count == 8,
         "result snapshot records mipmap upload bytes");
@@ -542,6 +673,8 @@ void test_texture_uploader_uploads_valid_decoded_image()
         "queue entry records mipmap plan");
     require(snapshot.queue_entries[0].payload_layout.ok(), "queue entry records ready payload layout");
     require(snapshot.queue_entries[0].payload_layout.staging_byte_count == 8, "queue payload layout records staging bytes");
+    require(snapshot.queue_entries[0].staging_payload_plan.ok(), "queue entry records ready staging plan");
+    require(snapshot.queue_entries[0].staging_payload_plan.row_copies[0].row_payload_byte_count == 8, "queue staging plan records row bytes");
     require(snapshot.entries[0].generation_id == 1, "texture uploader snapshot records generation id");
     require(snapshot.entries[0].key == key, "texture uploader snapshot records key");
     require(snapshot.entries[0].sampler == render_image_sampler_policy{}, "texture uploader snapshot records sampler");
@@ -550,13 +683,17 @@ void test_texture_uploader_uploads_valid_decoded_image()
     require(snapshot.entries[0].staging_byte_count == 8, "texture uploader snapshot records staging bytes");
     require(snapshot.entries[0].payload_layout.ok(), "texture uploader snapshot records ready payload layout");
     require(snapshot.entries[0].payload_layout.row_stride_byte_count == 8, "snapshot entry payload layout records row stride");
+    require(snapshot.entries[0].staging_payload_plan.ok(), "texture uploader snapshot records ready staging plan");
+    require(snapshot.entries[0].staging_payload_plan.total_staging_byte_count == 8, "snapshot entry staging plan records bytes");
     require(
         snapshot.entries[0].mipmap_upload_plan.total_staging_byte_count == 8,
         "texture uploader snapshot entry records mipmap staging bytes");
     require(snapshot.entries[0].request.generation_id == 1, "entry request snapshot records generation id");
     require(snapshot.entries[0].request.payload_layout.ok(), "entry request snapshot preserves payload layout");
+    require(snapshot.entries[0].request.staging_payload_plan.ok(), "entry request snapshot preserves staging plan");
     require(snapshot.entries[0].result.texture.id == uploaded.texture.id, "entry result snapshot records handle");
     require(snapshot.entries[0].result.payload_layout.ok(), "entry result snapshot preserves payload layout");
+    require(snapshot.entries[0].result.staging_payload_plan.ok(), "entry result snapshot preserves staging plan");
 }
 
 void test_texture_uploader_records_mipmap_upload_plan()
@@ -581,6 +718,11 @@ void test_texture_uploader_records_mipmap_upload_plan()
     require(uploaded.pixel_byte_count == 64, "mipmapped upload result records base pixel bytes");
     require(uploaded.decoded_byte_count == 64, "mipmapped upload result records decoded source bytes");
     require(uploaded.staging_byte_count == 84, "mipmapped upload result records planned staging bytes");
+    require(uploaded.staging_payload_plan.ok(), "mipmapped upload result records ready staging plan");
+    require(uploaded.staging_payload_plan.status == render_image_texture_staging_payload_plan_status::ready_with_mip_references, "mipmapped upload result records staging mip references");
+    require(uploaded.staging_payload_plan.total_staging_byte_count == 84, "mipmapped upload result records unpadded staging plan bytes");
+    require(uploaded.staging_payload_plan.row_copy_count == 7, "mipmapped upload result records staging rows");
+    require(uploaded.staging_payload_plan.mip_level_reference_count == 3, "mipmapped upload result records staging mip references");
     require(
         uploaded.mipmap_upload_plan.status == render_image_texture_mipmap_upload_plan_status::ready,
         "mipmapped upload result records ready plan");
@@ -595,6 +737,7 @@ void test_texture_uploader_records_mipmap_upload_plan()
     require(snapshot.result_snapshots[0].mipmap_upload_plan.total_upload_byte_count == 84, "result snapshot records mip upload bytes");
     require(snapshot.queue_entries[0].mipmap_upload_plan.levels[1].byte_count == 16, "queue snapshot records mip level bytes");
     require(snapshot.entries[0].mipmap_upload_plan.mipmap_mode == render_image_mipmap_mode::linear, "entry snapshot records mipmap mode");
+    require(snapshot.entries[0].staging_payload_plan.mipmaps_referenced, "entry snapshot records staging mip references");
 }
 
 void test_texture_uploader_reports_deterministic_queue_lifecycle()
@@ -839,6 +982,11 @@ void test_texture_upload_operation_plan_reports_ready_placeholder_and_retryable_
     require(base_packet.texture.id == uploaded.texture.id, "operation packet records texture handle id");
     require(base_packet.generation_id == 1, "operation packet records generation id");
     require(base_packet.staging_byte_count == 8, "operation packet records base staging bytes");
+    require(base_packet.staging_payload_plan.ok(), "operation packet records ready staging plan");
+    require(base_packet.staging_payload_plan.row_copy_count == 1, "operation packet records staging row copies");
+    require(
+        base_packet.staging_payload_plan.stable_texture_cache_key == base_packet.payload_layout.stable_texture_cache_key,
+        "operation packet staging plan preserves cache identity");
     require(base_packet.mip_level_count == 1, "operation packet records base mip level count");
     require(!base_packet.placeholder_texture, "base upload packet is not placeholder");
     require(base_packet.ready_for_upload, "base upload packet is ready for backend upload");
@@ -856,6 +1004,9 @@ void test_texture_upload_operation_plan_reports_ready_placeholder_and_retryable_
     require(placeholder_packet.sampler == mipmapped_sampler, "placeholder packet preserves sampler policy");
     require(placeholder_packet.mip_level_count == 3, "placeholder packet records mipmapped level count");
     require(placeholder_packet.staging_byte_count == 84, "placeholder packet records mipmapped staging bytes");
+    require(placeholder_packet.staging_payload_plan.ok(), "placeholder packet records ready staging plan");
+    require(placeholder_packet.staging_payload_plan.mipmaps_referenced, "placeholder staging plan records mip references");
+    require(placeholder_packet.staging_payload_plan.total_staging_byte_count == 84, "placeholder staging plan records staging bytes");
     require(
         placeholder_packet.readiness_summary == "placeholder texture upload packet is ready",
         "placeholder packet has stable readiness summary");
@@ -875,6 +1026,11 @@ void test_texture_upload_operation_plan_reports_ready_placeholder_and_retryable_
         "failed upload packet carries retry backoff sequence delta");
     require(failed_packet.blocked, "failed upload packet is blocked");
     require(!failed_packet.has_texture_handle, "failed upload packet has no texture handle");
+    require(!failed_packet.staging_payload_plan.ok(), "failed upload packet records blocked staging plan");
+    require(
+        failed_packet.staging_payload_plan.status
+            == render_image_texture_staging_payload_plan_status::blocked_missing_payload,
+        "failed upload packet preserves staging blocker");
     require(
         failed_packet.blocker_summary == "upload failed but can retry: invalid_image",
         "failed upload packet has stable blocker summary");
@@ -1026,6 +1182,8 @@ void test_texture_upload_result_snapshot_reports_accepted_rejected_and_placehold
     require(base_packet.stable_cache_key.find("textures/result-base.ppm") != std::string::npos, "base result packet records stable cache key");
     require(base_packet.sampler_summary == render_image_sampler_policy_stable_fragment(render_image_sampler_policy{}), "base result packet records sampler summary");
     require(base_packet.uploaded_byte_count == 8, "base result packet records uploaded bytes");
+    require(base_packet.staging_payload_plan.ok(), "base result packet preserves staging plan");
+    require(base_packet.staging_payload_plan.total_staging_byte_count == 8, "base result packet staging plan records bytes");
     require(base_packet.accepted_mip_level_count == 1, "base result packet records accepted mip count");
     require(!base_packet.placeholder_texture, "base result packet is not placeholder");
 
@@ -1040,6 +1198,8 @@ void test_texture_upload_result_snapshot_reports_accepted_rejected_and_placehold
     require(placeholder_packet.texture_id == placeholder.texture.id, "placeholder result packet records texture id");
     require(placeholder_packet.mip_level_count == 3, "placeholder result packet records mip levels");
     require(placeholder_packet.uploaded_byte_count == 84, "placeholder result packet records uploaded bytes");
+    require(placeholder_packet.staging_payload_plan.ok(), "placeholder result packet preserves staging plan");
+    require(placeholder_packet.staging_payload_plan.mip_level_reference_count == 3, "placeholder result packet records staging mip references");
 
     const render_image_texture_upload_result_packet_snapshot& failed_packet = result_snapshot.packets[2];
     require(!failed_packet.ok(), "failed result packet is rejected");
@@ -1050,6 +1210,7 @@ void test_texture_upload_result_snapshot_reports_accepted_rejected_and_placehold
     require(failed_packet.retryable, "failed result packet keeps retryable flag");
     require(failed_packet.uploaded_byte_count == 0, "failed result packet has no uploaded bytes");
     require(failed_packet.planned_mipmap_byte_count == 8, "failed result packet preserves planned mipmap bytes");
+    require(!failed_packet.staging_payload_plan.ok(), "failed result packet preserves blocked staging plan");
     require(failed_packet.blocker_summary == "upload failed but can retry: invalid_image", "failed result packet keeps blocker summary");
     require(
         render_image_texture_upload_result_packet_status_name(
@@ -1470,6 +1631,7 @@ int main()
 {
     test_mipmap_upload_plan_calculates_levels_and_failure_states();
     test_upload_payload_layout_evidence_records_extent_stride_and_identity();
+    test_staging_payload_plan_records_rows_alignment_and_blockers();
     test_texture_uploader_uploads_valid_decoded_image();
     test_texture_uploader_records_mipmap_upload_plan();
     test_texture_uploader_reports_deterministic_queue_lifecycle();

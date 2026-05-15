@@ -2919,6 +2919,17 @@ void test_texture_frame_upload_handoff_links_bindings_to_upload_results()
     require(
         first_layout.stable_texture_cache_key == upload_result.packets[0].stable_cache_key,
         "upload result packet layout preserves stable cache identity");
+    const render_image_texture_staging_payload_plan& first_staging_plan =
+        upload_result.packets[0].staging_payload_plan;
+    require(first_staging_plan.ok(), "upload result packet preserves staging payload plan readiness");
+    require(first_staging_plan.row_copy_count == 1, "upload result packet staging plan records row copy count");
+    require(first_staging_plan.total_staging_byte_count == 8, "upload result packet staging plan records bytes");
+    require(
+        first_staging_plan.stable_texture_cache_key == first_layout.stable_texture_cache_key,
+        "upload result packet staging plan preserves stable cache identity");
+    require(
+        first_staging_plan.decoded_payload_hash == first_payload.stable_byte_hash,
+        "upload result packet staging plan preserves decoded payload hash");
 
     const render_image_texture_frame_upload_handoff_summary handoff =
         make_render_image_texture_frame_upload_handoff_summary(frame, binding_plan, upload_result);
@@ -2973,6 +2984,10 @@ void test_texture_frame_upload_handoff_links_bindings_to_upload_results()
     require(
         first.payload_layout.stable_texture_cache_key == first_layout.stable_texture_cache_key,
         "first handoff entry preserves payload layout cache identity");
+    require(first.staging_payload_plan.ok(), "first handoff entry preserves staging payload plan readiness");
+    require(
+        first.staging_payload_plan.total_staging_byte_count == first_staging_plan.total_staging_byte_count,
+        "first handoff entry preserves staging payload byte count");
     require(!first.placeholder_texture, "first handoff entry is not placeholder");
     require(!first.blocked, "first handoff entry is not blocked");
 
@@ -2988,6 +3003,9 @@ void test_texture_frame_upload_handoff_links_bindings_to_upload_results()
     require(
         second.payload_layout.stable_texture_cache_key == first.payload_layout.stable_texture_cache_key,
         "cache-hit handoff entry reuses upload payload layout identity");
+    require(
+        second.staging_payload_plan.stable_texture_cache_key == first.staging_payload_plan.stable_texture_cache_key,
+        "cache-hit handoff entry reuses staging payload plan identity");
 
     const render_image_texture_frame_upload_handoff_entry& third = handoff.entries[2];
     require(third.ok(), "sampler-separated handoff entry is ready");
@@ -2999,6 +3017,10 @@ void test_texture_frame_upload_handoff_links_bindings_to_upload_results()
     require(
         third.payload_layout.sampler_summary != first.payload_layout.sampler_summary,
         "sampler-separated handoff entry preserves distinct layout sampler identity");
+    require(third.staging_payload_plan.ok(), "sampler-separated handoff entry preserves staging payload plan");
+    require(
+        third.staging_payload_plan.sampler_summary != first.staging_payload_plan.sampler_summary,
+        "sampler-separated handoff entry preserves distinct staging sampler identity");
 
     const render_image_texture_frame_binding_payload_evidence_summary binding_evidence =
         make_render_image_texture_frame_binding_payload_evidence_summary(binding_plan, handoff);
@@ -3093,6 +3115,11 @@ void test_texture_frame_upload_handoff_links_bindings_to_upload_results()
     require(
         resource_plan.entries[0].payload_layout.row_stride_byte_count == first_layout.row_stride_byte_count,
         "resource packet plan preserves upload payload row stride");
+    require(resource_plan.entries[0].staging_payload_plan.ok(), "resource packet plan preserves staging payload plan");
+    require(
+        resource_plan.entries[0].staging_payload_plan.total_staging_byte_count
+            == first_staging_plan.total_staging_byte_count,
+        "resource packet plan preserves staging payload byte count");
     require(resource_plan.entries[1].cache_reused, "resource packet plan preserves cache reuse state");
     require(
         resource_plan.entries[1].decoded_payload.stable_byte_hash == first_payload.stable_byte_hash,
@@ -3120,6 +3147,10 @@ void test_texture_frame_upload_handoff_links_bindings_to_upload_results()
             == first_layout.row_stride_byte_count,
         "materialized upload handoff preserves payload layout row stride");
     require(
+        materialization.upload_handoff_records[0].staging_payload_plan.total_staging_byte_count
+            == first_staging_plan.total_staging_byte_count,
+        "materialized upload handoff preserves staging payload bytes");
+    require(
         materialization.entries[1].upload_record.decoded_payload.stable_byte_hash
             == first_payload.stable_byte_hash,
         "materialized cache-hit entry preserves decoded payload evidence");
@@ -3127,6 +3158,10 @@ void test_texture_frame_upload_handoff_links_bindings_to_upload_results()
         materialization.entries[1].upload_record.payload_layout.stable_texture_cache_key
             == first_layout.stable_texture_cache_key,
         "materialized cache-hit entry preserves payload layout identity");
+    require(
+        materialization.entries[1].upload_record.staging_payload_plan.stable_texture_cache_key
+            == first_staging_plan.stable_texture_cache_key,
+        "materialized cache-hit entry preserves staging payload identity");
 
     require(
         render_image_texture_frame_upload_result_packet_for_binding_packet(upload_result, binding_plan.packets[1])

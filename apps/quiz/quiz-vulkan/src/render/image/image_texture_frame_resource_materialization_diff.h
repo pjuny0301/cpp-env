@@ -432,6 +432,9 @@ inline bool render_image_texture_frame_resource_upload_handoff_record_equal(
         && render_image_texture_upload_payload_layout_evidence_equal(
             before.payload_layout,
             after.payload_layout)
+        && render_image_texture_staging_payload_plan_equal(
+            before.staging_payload_plan,
+            after.staging_payload_plan)
         && before.upload_result_present == after.upload_result_present
         && before.placeholder_backed == after.placeholder_backed
         && before.renderer_boundary_ready == after.renderer_boundary_ready;

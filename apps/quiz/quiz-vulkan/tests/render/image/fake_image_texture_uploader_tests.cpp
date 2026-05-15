@@ -133,6 +133,41 @@ void set_upload_snapshot_plan_for_generation(
     }
 }
 
+void set_upload_snapshot_staging_plan_for_generation(
+    quiz_vulkan::render::fake_image_texture_upload_snapshot& snapshot,
+    quiz_vulkan::render::fake_image_texture_upload_generation_id generation_id,
+    const quiz_vulkan::render::render_image_texture_staging_payload_plan& plan)
+{
+    for (quiz_vulkan::render::fake_image_texture_upload_request_snapshot& request : snapshot.request_snapshots) {
+        if (request.generation_id == generation_id) {
+            request.staging_payload_plan = plan;
+            request.staging_byte_count = plan.total_staging_byte_count;
+        }
+    }
+    for (quiz_vulkan::render::fake_image_texture_upload_result_snapshot& result : snapshot.result_snapshots) {
+        if (result.generation_id == generation_id) {
+            result.staging_payload_plan = plan;
+            result.staging_byte_count = plan.total_staging_byte_count;
+        }
+    }
+    for (quiz_vulkan::render::fake_image_texture_upload_queue_entry_snapshot& queue_entry : snapshot.queue_entries) {
+        if (queue_entry.generation_id == generation_id) {
+            queue_entry.staging_payload_plan = plan;
+            queue_entry.staging_byte_count = plan.total_staging_byte_count;
+        }
+    }
+    for (quiz_vulkan::render::fake_image_texture_upload_snapshot_entry& entry : snapshot.entries) {
+        if (entry.generation_id == generation_id) {
+            entry.staging_payload_plan = plan;
+            entry.staging_byte_count = plan.total_staging_byte_count;
+            entry.request.staging_payload_plan = plan;
+            entry.request.staging_byte_count = plan.total_staging_byte_count;
+            entry.result.staging_payload_plan = plan;
+            entry.result.staging_byte_count = plan.total_staging_byte_count;
+        }
+    }
+}
+
 void set_upload_snapshot_status_for_generation(
     quiz_vulkan::render::fake_image_texture_upload_snapshot& snapshot,
     quiz_vulkan::render::fake_image_texture_upload_generation_id generation_id,
@@ -517,6 +552,24 @@ void test_staging_payload_plan_records_rows_alignment_and_blockers()
     require(aligned_plan.total_staging_byte_count == 16, "aligned staging plan records padded total bytes");
     require(aligned_plan.total_row_padding_byte_count == 8, "aligned staging plan records row padding bytes");
     require(aligned_plan.has_row_padding, "aligned staging plan records padding evidence");
+    const render_image_texture_staging_payload_plan_diff aligned_diff =
+        diff_render_image_texture_staging_payload_plans(base_plan, aligned_plan);
+    require(aligned_diff.ok(), "aligned staging diff is not a readiness regression");
+    require(aligned_diff.changed(), "aligned staging diff reports a compact change");
+    require(
+        aligned_diff.status == render_image_texture_staging_payload_plan_diff_status::changed,
+        "aligned staging diff status is changed");
+    require(aligned_diff.before_row_copy_count == 1, "aligned staging diff records before row copy count");
+    require(aligned_diff.after_row_copy_count == 1, "aligned staging diff records after row copy count");
+    require(aligned_diff.alignment_changed, "aligned staging diff records alignment changes");
+    require(aligned_diff.padding_changed, "aligned staging diff records padding changes");
+    require(aligned_diff.total_staging_byte_count_changed, "aligned staging diff records staging byte changes");
+    require(aligned_diff.alignment_byte_delta == 12, "aligned staging diff records alignment delta");
+    require(aligned_diff.row_padding_byte_delta == 8, "aligned staging diff records padding delta");
+    require(aligned_diff.total_staging_byte_delta == 8, "aligned staging diff records staging byte delta");
+    require(
+        aligned_diff.diagnostic == "image texture staging payload plan changed staging bytes",
+        "aligned staging diff diagnostic is stable");
 
     render_image_sampler_policy mipmapped_sampler = sampler;
     mipmapped_sampler.mipmap_mode = render_image_mipmap_mode::linear;
@@ -1283,6 +1336,13 @@ void test_texture_upload_result_diff_reports_added_changed_and_regressed_packets
     require(added_diff.mip_level_count_delta == 4, "added upload result diff records mip level delta");
     require(added_diff.uploaded_byte_delta == 84, "added upload result diff records uploaded byte delta");
     require(added_diff.planned_mipmap_byte_delta == 92, "added upload result diff records planned mipmap byte delta");
+    require(added_diff.before_staging_payload_byte_count == 8, "added upload result diff records before staging plan bytes");
+    require(added_diff.after_staging_payload_byte_count == 92, "added upload result diff records after staging plan bytes");
+    require(added_diff.staging_payload_byte_delta == 84, "added upload result diff records staging plan byte delta");
+    require(added_diff.staging_payload_plan_changed_count == 2, "added upload result diff counts added staging plans");
+    require(
+        added_diff.staging_payload_summary.find("request=2:staging_bytes=0->84") != std::string::npos,
+        "added upload result diff summarizes added staging payload bytes");
     require(
         added_diff.changed_packet_summary.find("request=2:added") != std::string::npos,
         "added upload result diff summarizes added packet");
@@ -1309,6 +1369,53 @@ void test_texture_upload_result_diff_reports_added_changed_and_regressed_packets
         texture_diff.changed_texture_summary == "request=1:texture=1->42",
         "texture handle diff emits stable texture summary");
 
+    fake_image_texture_upload_snapshot staging_changed_fake_snapshot = before_fake_snapshot;
+    render_image_texture_staging_payload_plan changed_staging =
+        make_render_image_texture_staging_payload_plan(
+            before_fake_snapshot.request_snapshots[0].payload_layout,
+            before_fake_snapshot.request_snapshots[0].mipmap_upload_plan,
+            16);
+    changed_staging.stable_texture_cache_key = "mutated-cache-key";
+    changed_staging.sampler_summary = "mutated-sampler";
+    set_upload_snapshot_staging_plan_for_generation(
+        staging_changed_fake_snapshot,
+        base_upload.generation_id,
+        changed_staging);
+    const render_image_texture_upload_result_snapshot staging_changed =
+        make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(staging_changed_fake_snapshot);
+    const render_image_texture_upload_result_snapshot_diff staging_diff =
+        diff_render_image_texture_upload_result_snapshots(before, staging_changed);
+
+    require(staging_diff.ok(), "staging payload diff keeps ready aligned plan non-regressive");
+    require(staging_diff.changed_packet_count == 1, "staging payload diff counts changed packet");
+    require(staging_diff.staging_payload_plan_changed_count == 1, "staging payload diff counts plan change");
+    require(staging_diff.staging_alignment_changed_count == 1, "staging payload diff counts alignment change");
+    require(staging_diff.staging_padding_changed_count == 1, "staging payload diff counts padding change");
+    require(staging_diff.staging_byte_count_changed_count == 1, "staging payload diff counts byte change");
+    require(staging_diff.staging_cache_key_changed_count == 1, "staging payload diff counts cache-key change");
+    require(staging_diff.staging_sampler_changed_count == 1, "staging payload diff counts sampler change");
+    require(staging_diff.before_staging_payload_byte_count == 8, "staging payload diff records before aggregate bytes");
+    require(staging_diff.after_staging_payload_byte_count == 16, "staging payload diff records after aggregate bytes");
+    require(staging_diff.staging_payload_byte_delta == 8, "staging payload diff records aggregate byte delta");
+    require(
+        staging_diff.staging_payload_summary == "request=1:staging_bytes=8->16",
+        "staging payload diff emits compact staging byte summary");
+    require(
+        staging_diff.entries[0].staging_payload_plan_diff.alignment_changed,
+        "staging payload packet diff records alignment evidence");
+    require(
+        staging_diff.entries[0].staging_payload_plan_diff.padding_changed,
+        "staging payload packet diff records padding evidence");
+    require(
+        staging_diff.entries[0].staging_payload_plan_diff.total_staging_byte_delta == 8,
+        "staging payload packet diff records staging byte delta");
+    require(
+        staging_diff.entries[0].staging_payload_plan_diff.cache_key_changed,
+        "staging payload packet diff records cache identity change");
+    require(
+        staging_diff.entries[0].staging_payload_plan_diff.sampler_changed,
+        "staging payload packet diff records sampler identity change");
+
     fake_image_texture_upload_snapshot regressed_fake_snapshot = before_fake_snapshot;
     set_upload_snapshot_status_for_generation(
         regressed_fake_snapshot,
@@ -1329,6 +1436,43 @@ void test_texture_upload_result_diff_reports_added_changed_and_regressed_packets
     require(
         regression_diff.regression_summary.find("changed") != std::string::npos,
         "upload result diff exposes regression summary");
+
+    fake_image_texture_upload_snapshot staging_regressed_fake_snapshot = before_fake_snapshot;
+    render_image_texture_staging_payload_plan blocked_staging =
+        before_fake_snapshot.request_snapshots[0].staging_payload_plan;
+    blocked_staging.status = render_image_texture_staging_payload_plan_status::blocked_invalid_layout;
+    blocked_staging.status_name = render_image_texture_staging_payload_plan_status_name(blocked_staging.status);
+    blocked_staging.ready = false;
+    blocked_staging.blocked = true;
+    blocked_staging.blocker_summary = "mutated staging blocker";
+    blocked_staging.diagnostic = "image texture staging payload plan blocked: mutated staging blocker";
+    set_upload_snapshot_staging_plan_for_generation(
+        staging_regressed_fake_snapshot,
+        base_upload.generation_id,
+        blocked_staging);
+    const render_image_texture_upload_result_snapshot staging_regressed =
+        make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(staging_regressed_fake_snapshot);
+    const render_image_texture_upload_result_snapshot_diff staging_regression_diff =
+        diff_render_image_texture_upload_result_snapshots(before, staging_regressed);
+
+    require(!staging_regression_diff.ok(), "ready-to-blocked staging plan diff is a regression");
+    require(staging_regression_diff.has_regression, "staging regression diff exposes regression flag");
+    require(
+        staging_regression_diff.staging_payload_plan_changed_count == 1,
+        "staging regression diff counts changed staging plan");
+    require(
+        staging_regression_diff.staging_blocker_changed_count == 1,
+        "staging regression diff counts blocker transition");
+    require(
+        staging_regression_diff.staging_regression_count == 1,
+        "staging regression diff counts staging regression");
+    require(
+        staging_regression_diff.entries[0].staging_payload_plan_diff.ready_regressed,
+        "staging regression packet diff records ready regression");
+    require(
+        staging_regression_diff.entries[0].staging_payload_plan_diff.after_blocker_summary
+            == "mutated staging blocker",
+        "staging regression packet diff preserves blocker summary");
 }
 
 void test_texture_upload_snapshot_diff_reports_added_uploads_and_byte_deltas()

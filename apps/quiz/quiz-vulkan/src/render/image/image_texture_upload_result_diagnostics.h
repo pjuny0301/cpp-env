@@ -380,6 +380,7 @@ struct render_image_texture_upload_result_packet_diff {
     bool placeholder_changed = false;
     bool retryability_changed = false;
     bool blocker_changed = false;
+    render_image_texture_staging_payload_plan_diff staging_payload_plan_diff;
     render_image_texture_upload_result_packet_status before_packet_status =
         render_image_texture_upload_result_packet_status::rejected_missing_snapshot;
     render_image_texture_upload_result_packet_status after_packet_status =
@@ -403,6 +404,9 @@ struct render_image_texture_upload_result_packet_diff {
     std::size_t before_planned_mipmap_byte_count = 0;
     std::size_t after_planned_mipmap_byte_count = 0;
     std::int64_t planned_mipmap_byte_delta = 0;
+    std::size_t before_staging_payload_byte_count = 0;
+    std::size_t after_staging_payload_byte_count = 0;
+    std::int64_t staging_payload_byte_delta = 0;
     bool before_placeholder_texture = false;
     bool after_placeholder_texture = false;
     bool before_retryable = false;
@@ -445,6 +449,17 @@ struct render_image_texture_upload_result_snapshot_diff {
     std::size_t placeholder_changed_count = 0;
     std::size_t retryability_changed_count = 0;
     std::size_t blocker_changed_count = 0;
+    std::size_t staging_payload_plan_changed_count = 0;
+    std::size_t staging_row_copy_count_changed_count = 0;
+    std::size_t staging_alignment_changed_count = 0;
+    std::size_t staging_padding_changed_count = 0;
+    std::size_t staging_byte_count_changed_count = 0;
+    std::size_t staging_cache_key_changed_count = 0;
+    std::size_t staging_sampler_changed_count = 0;
+    std::size_t staging_mip_level_readiness_changed_count = 0;
+    std::size_t staging_blocker_changed_count = 0;
+    std::size_t staging_regression_count = 0;
+    std::size_t staging_recovery_count = 0;
     std::size_t before_texture_count = 0;
     std::size_t after_texture_count = 0;
     std::int64_t texture_count_delta = 0;
@@ -466,11 +481,15 @@ struct render_image_texture_upload_result_snapshot_diff {
     std::size_t before_planned_mipmap_byte_count = 0;
     std::size_t after_planned_mipmap_byte_count = 0;
     std::int64_t planned_mipmap_byte_delta = 0;
+    std::size_t before_staging_payload_byte_count = 0;
+    std::size_t after_staging_payload_byte_count = 0;
+    std::int64_t staging_payload_byte_delta = 0;
     bool has_changes = false;
     bool has_regression = false;
     bool has_recovery = false;
     std::string changed_packet_summary;
     std::string changed_texture_summary;
+    std::string staging_payload_summary;
     std::string regression_summary;
     std::vector<render_image_texture_upload_result_packet_diff> entries;
     std::string diagnostic;
@@ -517,6 +536,16 @@ inline void append_render_image_texture_upload_result_request_ids(
     for (const render_image_texture_upload_result_packet_snapshot& packet : snapshot.packets) {
         request_ids.emplace(packet.request_id, true);
     }
+}
+
+inline std::size_t render_image_texture_upload_result_staging_payload_byte_count(
+    const render_image_texture_upload_result_snapshot& snapshot)
+{
+    std::size_t byte_count = 0;
+    for (const render_image_texture_upload_result_packet_snapshot& packet : snapshot.packets) {
+        byte_count += packet.staging_payload_plan.total_staging_byte_count;
+    }
+    return byte_count;
 }
 
 inline bool render_image_texture_upload_result_packet_equal(
@@ -570,6 +599,7 @@ make_render_image_texture_upload_result_packet_diff(
         diff.before_mip_level_count = before->mip_level_count;
         diff.before_uploaded_byte_count = before->uploaded_byte_count;
         diff.before_planned_mipmap_byte_count = before->planned_mipmap_byte_count;
+        diff.before_staging_payload_byte_count = before->staging_payload_plan.total_staging_byte_count;
         diff.before_placeholder_texture = before->placeholder_texture;
         diff.before_retryable = before->retryable;
         diff.before_blocker_summary = before->blocker_summary;
@@ -585,10 +615,15 @@ make_render_image_texture_upload_result_packet_diff(
         diff.after_mip_level_count = after->mip_level_count;
         diff.after_uploaded_byte_count = after->uploaded_byte_count;
         diff.after_planned_mipmap_byte_count = after->planned_mipmap_byte_count;
+        diff.after_staging_payload_byte_count = after->staging_payload_plan.total_staging_byte_count;
         diff.after_placeholder_texture = after->placeholder_texture;
         diff.after_retryable = after->retryable;
         diff.after_blocker_summary = after->blocker_summary;
     }
+
+    diff.staging_payload_plan_diff = make_render_image_texture_staging_payload_plan_diff(
+        before == nullptr ? nullptr : &before->staging_payload_plan,
+        after == nullptr ? nullptr : &after->staging_payload_plan);
 
     diff.mip_level_count_delta = render_image_texture_upload_result_size_delta(
         diff.before_mip_level_count,
@@ -599,6 +634,9 @@ make_render_image_texture_upload_result_packet_diff(
     diff.planned_mipmap_byte_delta = render_image_texture_upload_result_size_delta(
         diff.before_planned_mipmap_byte_count,
         diff.after_planned_mipmap_byte_count);
+    diff.staging_payload_byte_delta = render_image_texture_upload_result_size_delta(
+        diff.before_staging_payload_byte_count,
+        diff.after_staging_payload_byte_count);
     diff.accepted_changed = diff.before_accepted != diff.after_accepted;
     diff.accepted_to_rejected = diff.before_present && diff.after_present
         && diff.before_accepted && !diff.after_accepted;
@@ -612,6 +650,12 @@ make_render_image_texture_upload_result_packet_diff(
     diff.blocker_changed = diff.before_blocker_summary != diff.after_blocker_summary;
     diff.regression = diff.accepted_to_rejected;
     diff.recovery = diff.rejected_to_accepted;
+    if (diff.staging_payload_plan_diff.regression) {
+        diff.regression = true;
+    }
+    if (diff.staging_payload_plan_diff.recovery) {
+        diff.recovery = true;
+    }
 
     if (before == nullptr && after != nullptr) {
         diff.status = render_image_texture_upload_result_diff_entry_status::added;
@@ -693,7 +737,14 @@ diff_render_image_texture_upload_result_snapshots(
         .planned_mipmap_byte_delta = render_image_texture_upload_result_size_delta(
             before.total_planned_mipmap_byte_count,
             after.total_planned_mipmap_byte_count),
+        .before_staging_payload_byte_count =
+            render_image_texture_upload_result_staging_payload_byte_count(before),
+        .after_staging_payload_byte_count =
+            render_image_texture_upload_result_staging_payload_byte_count(after),
     };
+    diff.staging_payload_byte_delta = render_image_texture_upload_result_size_delta(
+        diff.before_staging_payload_byte_count,
+        diff.after_staging_payload_byte_count);
 
     std::map<std::uint64_t, bool> request_ids;
     append_render_image_texture_upload_result_request_ids(request_ids, before);
@@ -750,6 +801,46 @@ diff_render_image_texture_upload_result_snapshots(
         if (entry.blocker_changed) {
             ++diff.blocker_changed_count;
         }
+        if (entry.staging_payload_plan_diff.changed()) {
+            ++diff.staging_payload_plan_changed_count;
+            append_render_image_texture_upload_result_summary(
+                diff.staging_payload_summary,
+                "request=" + std::to_string(entry.request_id)
+                    + ":staging_bytes="
+                    + std::to_string(entry.before_staging_payload_byte_count)
+                    + "->"
+                    + std::to_string(entry.after_staging_payload_byte_count));
+        }
+        if (entry.staging_payload_plan_diff.row_copy_count_changed) {
+            ++diff.staging_row_copy_count_changed_count;
+        }
+        if (entry.staging_payload_plan_diff.alignment_changed) {
+            ++diff.staging_alignment_changed_count;
+        }
+        if (entry.staging_payload_plan_diff.padding_changed) {
+            ++diff.staging_padding_changed_count;
+        }
+        if (entry.staging_payload_plan_diff.total_staging_byte_count_changed) {
+            ++diff.staging_byte_count_changed_count;
+        }
+        if (entry.staging_payload_plan_diff.cache_key_changed) {
+            ++diff.staging_cache_key_changed_count;
+        }
+        if (entry.staging_payload_plan_diff.sampler_changed) {
+            ++diff.staging_sampler_changed_count;
+        }
+        if (entry.staging_payload_plan_diff.mip_level_readiness_changed) {
+            ++diff.staging_mip_level_readiness_changed_count;
+        }
+        if (entry.staging_payload_plan_diff.blocker_changed) {
+            ++diff.staging_blocker_changed_count;
+        }
+        if (entry.staging_payload_plan_diff.regression) {
+            ++diff.staging_regression_count;
+        }
+        if (entry.staging_payload_plan_diff.recovery) {
+            ++diff.staging_recovery_count;
+        }
         if (entry.regression) {
             diff.has_regression = true;
             append_render_image_texture_upload_result_summary(diff.regression_summary, entry.diagnostic);
@@ -772,6 +863,9 @@ diff_render_image_texture_upload_result_snapshots(
     }
     if (diff.changed_texture_summary.empty()) {
         diff.changed_texture_summary = "no texture handle changes";
+    }
+    if (diff.staging_payload_summary.empty()) {
+        diff.staging_payload_summary = "no staging payload plan changes";
     }
     if (diff.regression_summary.empty()) {
         diff.regression_summary = "no upload result regressions";

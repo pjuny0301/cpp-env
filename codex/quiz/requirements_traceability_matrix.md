@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: third-party image decoder adapter cohesion split integrated; Windows MinGW focused image/architecture CTest passed 3/3.
+- `9673e3b`: image engine keeps `third_party_image_decoder_adapter.h` as the public aggregator while moving generic adapter contracts, `stb_image` selection diagnostics, and decoder capability manifest code into image-owned `.inl` fragments.
 - current: native Vulkan logical-device dispatch/create readiness integrated; Windows MinGW focused Vulkan/renderer/architecture CTest passed 3/3, and full CTest reached 102 executed passes plus the known `quiz_vulkan_font_shaped_atlas_update_tests` host permission BAD_COMMAND.
 - `8b2443a`: Vulkan backend now resolves logical-device create/get-queue/destroy symbols and creates diagnostic native-device results from the selected physical device and queue families while keeping real GPU calls outside default fake-path tests.
 - current: FreeType glyph raster evidence, asset byte contract split, and CMake source-header registration guard integrated; Windows MinGW focused text/asset/architecture CTest batches passed.

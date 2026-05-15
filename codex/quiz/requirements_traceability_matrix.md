@@ -1,11 +1,12 @@
 # Quiz 요구사항 추적 매트릭스
 
-마지막 갱신: 2026-05-15
+마지막 갱신: 2026-05-16
 
 이 문서는 요구사항 번호를 실행 순서가 아니라 추적 ID로 관리한다. 실제 구현 순서는 `big_plan.md`의 의존관계 기반 단계가 기준이며, 각 행은 루트 구현 문서, 하위 프로젝트 문서, 현재 C++/문서 증거를 연결한다.
 
 최근 baseline 통합 증거:
 
+- current: after `348dfb0`, Windows MinGW full CTest attempted 103 configured tests; 102 executed tests passed and only the known `quiz_vulkan_font_shaped_atlas_update_tests` host permission BAD_COMMAND remained.
 - `348dfb0`: Vulkan backend now records render-pass scope command recording readiness from selected framebuffer target evidence, including command-buffer blockers and begin/end render-pass fake/native dispatch records without drawing UI/domain semantics into the backend.
 - current: after `348dfb0`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`; focused architecture/renderer/Vulkan CTest passed 5/5.
 - `39a3692`: Vulkan backend now carries framebuffer target readiness after swapchain image-view targets, with create/destroy dispatch, per-image framebuffer lifecycle records, render-pass/image-view/extent blockers, and fake/native paths kept inside the Vulkan backend boundary.

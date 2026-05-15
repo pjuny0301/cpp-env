@@ -77,6 +77,7 @@ struct render_text_real_font_shaping_adapter_request {
     std::vector<utf8_text_codepoint> codepoints;
     std::vector<utf8_text_cluster> clusters;
     std::vector<render_text_font_shaping_codepoint_selection> font_selections;
+    render_text_font_source_bytes_load_result source_bytes;
     std::uint32_t fallback_glyph_id = 0;
     std::string source_label;
 };
@@ -245,8 +246,13 @@ struct render_text_freetype_memory_face_load_result {
 
 bool render_text_freetype_memory_face_adapter_available();
 
+bool render_text_harfbuzz_shaping_adapter_available();
+
 render_text_freetype_memory_face_load_result load_render_text_freetype_memory_face(
     const render_text_freetype_memory_face_load_request& request);
+
+render_text_real_font_shaping_adapter_result harfbuzz_real_font_backend_shape(
+    const render_text_real_font_shaping_adapter_request& request);
 
 render_text_real_font_raster_adapter_result freetype_real_font_backend_rasterize(
     const render_text_real_font_raster_adapter_request& request);

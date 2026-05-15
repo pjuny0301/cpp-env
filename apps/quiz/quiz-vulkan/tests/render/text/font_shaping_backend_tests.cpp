@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <cstdio>
@@ -45,6 +46,89 @@ std::string read_text_owned_header(const std::string& header_name)
     return std::string(
         std::istreambuf_iterator<char>{input},
         std::istreambuf_iterator<char>{});
+}
+
+std::filesystem::path quiz_vulkan_app_root_from_this_test()
+{
+    const std::filesystem::path test_path = std::filesystem::path(__FILE__);
+    return test_path.parent_path().parent_path().parent_path().parent_path();
+}
+
+std::filesystem::path desktop_external_root()
+{
+    if (const char* external_dir = std::getenv("QUIZ_VULKAN_DESKTOP_EXTERNAL_DIR");
+        external_dir != nullptr && external_dir[0] != '\0') {
+        return std::filesystem::path(external_dir);
+    }
+
+    const std::filesystem::path repo_root =
+        quiz_vulkan_app_root_from_this_test().parent_path().parent_path().parent_path();
+    return repo_root / "build" / "external" / "lib" / "cpp" / "desktop";
+}
+
+std::vector<std::filesystem::path> harfbuzz_real_font_fixture_candidates()
+{
+    const std::filesystem::path external_root = desktop_external_root();
+    return {
+        external_root / "harfbuzz-14.2.0" / "perf" / "fonts" / "Roboto-Regular.ttf",
+        external_root / "harfbuzz-14.2.0" / "test" / "api" / "fonts" / "Mplus1p-Regular.ttf",
+    };
+}
+
+std::filesystem::path first_available_harfbuzz_real_font_fixture()
+{
+    for (const std::filesystem::path& path : harfbuzz_real_font_fixture_candidates()) {
+        if (std::filesystem::exists(path)) {
+            return path;
+        }
+    }
+    return {};
+}
+
+std::vector<std::byte> read_binary_fixture_bytes(const std::filesystem::path& path)
+{
+    std::ifstream input(path, std::ios::binary);
+    require(input.good(), "fixture font file can be opened");
+    std::vector<std::byte> bytes;
+    for (std::istreambuf_iterator<char> iter(input), end; iter != end; ++iter) {
+        bytes.push_back(static_cast<std::byte>(static_cast<unsigned char>(*iter)));
+    }
+    return bytes;
+}
+
+quiz_vulkan::render::render_text_font_source_bytes_load_result source_bytes_for_fixture(
+    const std::filesystem::path& path,
+    std::vector<std::byte> bytes)
+{
+    using namespace quiz_vulkan::render;
+
+    const std::string resolved_path = path.generic_string();
+    return render_text_font_source_bytes_load_result{
+        .status = render_text_font_source_bytes_load_status::loaded,
+        .source = font_source_resolution{
+            .face_id = 41,
+            .family = "Fixture Sans",
+            .source_uri = "file://" + resolved_path,
+            .kind = render_text_font_source_kind::file_path,
+            .resolved_location = resolved_path,
+            .can_attempt_load = true,
+            .virtual_fixture = false,
+        },
+        .readiness = font_source_bytes_readiness{
+            .face_id = 41,
+            .cache_key = "harfbuzz-fixture:" + path.filename().generic_string(),
+            .source_kind = render_text_font_source_kind::file_path,
+            .status = render_text_font_source_bytes_status::pending_file_load,
+            .estimated_byte_count = bytes.size(),
+            .cacheable = true,
+            .requires_io = true,
+            .bytes_available_without_io = false,
+        },
+        .cache_key = "harfbuzz-fixture:" + path.filename().generic_string(),
+        .resolved_path = resolved_path,
+        .bytes = std::move(bytes),
+        .diagnostic = "test fixture font bytes loaded",
+    };
 }
 
 std::vector<quiz_vulkan::render::render_text_external_font_backend_probe_result>
@@ -1662,6 +1746,84 @@ void test_real_backend_adapter_rasterizes_and_gates_raster_capability()
     require(gated.can_fallback(), "gated raster failure can fall back");
 }
 
+void test_harfbuzz_real_adapter_shapes_materialized_font_bytes_and_preserves_cluster()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::filesystem::path font_path = first_available_harfbuzz_real_font_fixture();
+    if (font_path.empty()) {
+        return;
+    }
+
+    const std::string text = "a\xcc\x81";
+    render_text_real_font_shaping_adapter_request request =
+        adapter_request_for(text, real_backend_capability(false, false));
+    request.style.font_size = 32.0f;
+    request.source_bytes = source_bytes_for_fixture(font_path, read_binary_fixture_bytes(font_path));
+    request.source_label = font_path.filename().generic_string();
+
+    const function_table_font_backend_adapter adapter(render_text_font_backend_adapter_functions{
+        .shape = harfbuzz_real_font_backend_shape,
+        .rasterize = deterministic_fake_real_font_backend_rasterize,
+        .label = "HarfBuzz",
+    });
+    const render_text_real_font_shaping_adapter_result result = adapter.shape(request);
+
+    if (!render_text_harfbuzz_shaping_adapter_available()) {
+        require(
+            result.status == render_text_font_backend_adapter_status::backend_unavailable,
+            "uncompiled HarfBuzz adapter reports backend unavailable");
+        return;
+    }
+
+    require(result.ok(), "HarfBuzz adapter shapes materialized fixture font bytes");
+    require(!result.glyphs.empty(), "HarfBuzz adapter emits at least one shaped glyph");
+    require(
+        result.has_diagnostic(render_text_font_backend_adapter_status::shaped),
+        "HarfBuzz adapter records shaped diagnostic");
+
+    bool found_positive_advance = false;
+    for (const render_text_shaped_glyph& glyph : result.glyphs) {
+        require(glyph.glyph_id != 0U, "HarfBuzz adapter emits glyph-bearing output");
+        require(glyph.cluster_byte_offset == 0U, "HarfBuzz glyph stays at the combining cluster offset");
+        require(glyph.cluster_byte_count == text.size(), "HarfBuzz glyph spans the full combining cluster bytes");
+        require(glyph.cluster_codepoint_offset == 0U, "HarfBuzz glyph cluster starts at the base codepoint");
+        require(glyph.cluster_codepoint_count == 2U, "HarfBuzz glyph cluster spans base plus combining mark");
+        require(glyph.resolved_face_id == 41U, "HarfBuzz glyph preserves resolved face id evidence");
+        found_positive_advance = found_positive_advance || glyph.advance_x > 0.0f;
+    }
+    require(found_positive_advance, "HarfBuzz shaped glyph positions include font-backed advance");
+}
+
+void test_harfbuzz_real_adapter_reports_missing_materialized_font_bytes()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_real_font_shaping_adapter_request request =
+        adapter_request_for("A", real_backend_capability(false, false));
+    request.source_bytes = render_text_font_source_bytes_load_result{
+        .status = render_text_font_source_bytes_load_status::missing_bytes,
+        .diagnostic = "missing test fixture bytes",
+    };
+
+    const function_table_font_backend_adapter adapter(render_text_font_backend_adapter_functions{
+        .shape = harfbuzz_real_font_backend_shape,
+        .rasterize = deterministic_fake_real_font_backend_rasterize,
+        .label = "HarfBuzz",
+    });
+    const render_text_real_font_shaping_adapter_result result = adapter.shape(request);
+
+    require(!result.ok(), "HarfBuzz adapter does not shape without materialized font bytes");
+    require(
+        result.status == render_text_font_backend_adapter_status::recoverable_backend_failure,
+        "missing HarfBuzz font bytes produce recoverable adapter failure");
+    require(result.can_fallback(), "missing HarfBuzz font bytes can fall back");
+    require(result.diagnostics.size() == 1U, "missing HarfBuzz font bytes record one diagnostic");
+    require(
+        result.diagnostic.find("materialized font bytes") != std::string::npos,
+        "missing HarfBuzz font bytes diagnostic names materialized bytes");
+}
+
 void test_fake_backend_reports_zero_advance_combining_mark_with_cluster_range()
 {
     using namespace quiz_vulkan::render;
@@ -1725,6 +1887,8 @@ int main()
     test_real_backend_adapter_reports_recoverable_and_fatal_failures();
     test_real_backend_adapter_diagnostics_are_deterministic();
     test_real_backend_adapter_rasterizes_and_gates_raster_capability();
+    test_harfbuzz_real_adapter_shapes_materialized_font_bytes_and_preserves_cluster();
+    test_harfbuzz_real_adapter_reports_missing_materialized_font_bytes();
     test_fake_backend_reports_zero_advance_combining_mark_with_cluster_range();
     return 0;
 }

@@ -146,6 +146,39 @@ else()
     )
 endif()
 
+set(QUIZ_VULKAN_HARFBUZZ_EXTERNAL_DIR "${QUIZ_VULKAN_DESKTOP_EXTERNAL_DIR}/harfbuzz-14.2.0")
+if(EXISTS "${QUIZ_VULKAN_HARFBUZZ_EXTERNAL_DIR}/CMakeLists.txt")
+    set(HB_BUILD_UTILS OFF CACHE BOOL "Disable HarfBuzz command-line utilities for quiz-vulkan" FORCE)
+    set(HB_BUILD_SUBSET OFF CACHE BOOL "Disable HarfBuzz subset library for quiz-vulkan" FORCE)
+    set(HB_BUILD_RASTER OFF CACHE BOOL "Disable HarfBuzz raster library for quiz-vulkan" FORCE)
+    set(HB_BUILD_VECTOR OFF CACHE BOOL "Disable HarfBuzz vector library for quiz-vulkan" FORCE)
+    set(HB_BUILD_GPU OFF CACHE BOOL "Disable HarfBuzz GPU library for quiz-vulkan" FORCE)
+    set(HB_HAVE_CAIRO OFF CACHE BOOL "Disable HarfBuzz Cairo helpers for quiz-vulkan" FORCE)
+    set(HB_HAVE_GRAPHITE2 OFF CACHE BOOL "Disable HarfBuzz Graphite2 helpers for quiz-vulkan" FORCE)
+    set(HB_HAVE_GLIB OFF CACHE BOOL "Disable HarfBuzz GLib helpers for quiz-vulkan" FORCE)
+    set(HB_HAVE_GOBJECT OFF CACHE BOOL "Disable HarfBuzz GObject bindings for quiz-vulkan" FORCE)
+    set(HB_HAVE_ICU OFF CACHE BOOL "Disable HarfBuzz ICU helpers for quiz-vulkan" FORCE)
+    add_subdirectory(
+        "${QUIZ_VULKAN_HARFBUZZ_EXTERNAL_DIR}"
+        "${CMAKE_BINARY_DIR}/external/harfbuzz"
+        EXCLUDE_FROM_ALL
+    )
+    add_library(quiz_vulkan_harfbuzz_external INTERFACE)
+    target_link_libraries(quiz_vulkan_harfbuzz_external INTERFACE harfbuzz)
+    target_compile_definitions(
+        quiz_vulkan_harfbuzz_external
+        INTERFACE
+            QUIZ_VULKAN_HAS_HARFBUZZ_EXTERNAL_LIBRARY=1
+    )
+else()
+    add_library(quiz_vulkan_harfbuzz_external INTERFACE)
+    target_compile_definitions(
+        quiz_vulkan_harfbuzz_external
+        INTERFACE
+            QUIZ_VULKAN_HAS_HARFBUZZ_EXTERNAL_LIBRARY=0
+    )
+endif()
+
 add_library(quiz_vulkan_platform_shell STATIC)
 target_sources(
     quiz_vulkan_platform_shell
@@ -427,6 +460,7 @@ target_sources(
     quiz_vulkan_text_engine
     PRIVATE
         src/render/text/freetype_memory_face_adapter.cpp
+        src/render/text/harfbuzz_shaping_adapter.cpp
         src/render/text/fake_text_engine.cpp
     PUBLIC
         FILE_SET HEADERS
@@ -442,6 +476,7 @@ target_link_libraries(
     PUBLIC
         quiz_vulkan_render_contract
         quiz_vulkan_freetype_external
+        quiz_vulkan_harfbuzz_external
         quiz_vulkan_utf8proc_external
 )
 target_link_libraries(quiz_vulkan_text_scene_bridge INTERFACE quiz_vulkan_scene quiz_vulkan_render_contract)

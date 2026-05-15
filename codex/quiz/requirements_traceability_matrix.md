@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: standard image pipeline now prefers the external `stb_image` adapter for standard PNG/BMP/PPM when available; Windows MinGW focused image/architecture CTest passed 4/4.
+- `573ea36`: image texture pipeline routes PNG/BMP/PPM through `stb_image` first when dependency diagnostics are ready, while preserving internal decoders as fallback diagnostics and keeping renderer ownership out of decode selection.
 - current: FreeType memory-face adapter and asset materialized byte handoff summaries integrated; Windows MinGW focused asset/text/architecture CTest passed 5/5.
 - `291d131`: text engine now creates FreeType memory faces from materialized font bytes through `FT_Init_FreeType`/`FT_New_Memory_Face` behind the text backend contract while preserving byte/readiness/backend fallback diagnostics.
 - `82ef968`: asset system now groups materialized font/image/sound/shader/deck byte payloads into ready/blocked handoff lists for future engine consumers without depending on engine folders.

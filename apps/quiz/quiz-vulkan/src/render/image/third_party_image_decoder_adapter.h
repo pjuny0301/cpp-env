@@ -510,17 +510,17 @@ inline std::vector<stb_image_decoder_format_matrix_entry> make_default_stb_image
             render_image_encoded_format::png,
             true,
             true,
-            true),
+            false),
         make_stb_image_decoder_format_matrix_entry(
             render_image_encoded_format::bmp,
             true,
             true,
-            true),
+            false),
         make_stb_image_decoder_format_matrix_entry(
             render_image_encoded_format::ppm,
             true,
             true,
-            true),
+            false),
     };
 }
 

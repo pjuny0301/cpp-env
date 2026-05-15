@@ -324,7 +324,7 @@ void test_stb_dependency_selection_ready_for_jpeg()
     require(capability.supports_decode(), "ready stb capability supports decode");
 }
 
-void test_stb_dependency_selection_preserves_internal_decoders()
+void test_stb_dependency_selection_routes_supported_internal_formats_to_adapter()
 {
     using namespace quiz_vulkan::render;
 
@@ -337,17 +337,17 @@ void test_stb_dependency_selection_preserves_internal_decoders()
             probe);
     require_stb_selection_status(
         png_selection,
-        stb_image_decoder_adapter_selection_status::fallback_internal_decoder_preferred,
-        false,
-        true);
+        stb_image_decoder_adapter_selection_status::ready,
+        true,
+        false);
     require(png_selection.detected_format == render_image_encoded_format::png, "PNG selection detects PNG");
     require(png_selection.format_supported_by_dependency, "PNG selection records stb support");
-    require(png_selection.internal_decoder_available, "PNG selection records internal decoder ownership");
-    require(png_selection.prefer_internal_decoder, "PNG selection preserves internal decoder");
-    require(!png_selection.external_decode_enabled, "PNG selection keeps external route disabled");
+    require(png_selection.internal_decoder_available, "PNG selection records internal fallback availability");
+    require(!png_selection.prefer_internal_decoder, "PNG selection no longer prefers internal decoder");
+    require(png_selection.external_decode_enabled, "PNG selection enables external route");
     require(
-        png_selection.diagnostic == "stb_image adapter preserves internal png decoder",
-        "PNG internal preservation diagnostic is stable");
+        png_selection.diagnostic == "stb_image adapter selected for external png decode",
+        "PNG external selection diagnostic is stable");
 
     const stb_image_decoder_adapter_selection_result bmp_selection =
         select_stb_image_decoder_adapter(
@@ -355,12 +355,29 @@ void test_stb_dependency_selection_preserves_internal_decoders()
             probe);
     require_stb_selection_status(
         bmp_selection,
-        stb_image_decoder_adapter_selection_status::fallback_internal_decoder_preferred,
-        false,
-        true);
+        stb_image_decoder_adapter_selection_status::ready,
+        true,
+        false);
     require(bmp_selection.detected_format == render_image_encoded_format::bmp, "BMP selection detects BMP");
     require(bmp_selection.format_supported_by_dependency, "BMP selection records stb support");
-    require(bmp_selection.prefer_internal_decoder, "BMP selection preserves internal decoder");
+    require(bmp_selection.internal_decoder_available, "BMP selection records internal fallback availability");
+    require(!bmp_selection.prefer_internal_decoder, "BMP selection no longer prefers internal decoder");
+    require(bmp_selection.external_decode_enabled, "BMP selection enables external route");
+
+    const stb_image_decoder_adapter_selection_result ppm_selection =
+        select_stb_image_decoder_adapter(
+            make_decode_request("textures/card.ppm", make_ppm_bytes()),
+            probe);
+    require_stb_selection_status(
+        ppm_selection,
+        stb_image_decoder_adapter_selection_status::ready,
+        true,
+        false);
+    require(ppm_selection.detected_format == render_image_encoded_format::ppm, "PPM selection detects PPM");
+    require(ppm_selection.format_supported_by_dependency, "PPM selection records stb support");
+    require(ppm_selection.internal_decoder_available, "PPM selection records internal fallback availability");
+    require(!ppm_selection.prefer_internal_decoder, "PPM selection no longer prefers internal decoder");
+    require(ppm_selection.external_decode_enabled, "PPM selection enables external route");
 }
 
 void test_stb_dependency_selection_mismatched_capability_falls_back()
@@ -920,7 +937,7 @@ int main()
     test_adapter_decodes_matching_format_and_sets_metadata();
     test_stb_dependency_selection_missing_falls_back();
     test_stb_dependency_selection_ready_for_jpeg();
-    test_stb_dependency_selection_preserves_internal_decoders();
+    test_stb_dependency_selection_routes_supported_internal_formats_to_adapter();
     test_stb_dependency_selection_mismatched_capability_falls_back();
     test_stb_header_dependency_probe_reports_compile_time_boundary();
     test_stb_header_dependency_selection_is_data_only_fallback();

@@ -956,7 +956,7 @@ void test_unavailable_optional_adapter_keeps_diagnostics_without_upload()
     require(snapshot.entries[0].upload_count_after == 0, "snapshot records no upload after unavailable adapter");
 }
 
-void test_stb_selection_preserves_internal_bmp_decoder_diagnostics()
+void test_stb_selection_prefers_adapter_for_bmp_when_available()
 {
     using namespace quiz_vulkan::render;
 
@@ -978,38 +978,39 @@ void test_stb_selection_preserves_internal_bmp_decoder_diagnostics()
     const render_image_texture_pipeline_result result = pipeline.acquire_texture(
         render_image_texture_pipeline_request{.uri = "asset://textures/card.bmp"});
 
-    require(result.ok(), "internal BMP fallback succeeds through optional decoder chain");
-    require(result.texture.decode_metadata.decoder_id == "bmp_image_decoder", "internal BMP decoder remains selected");
-    require(result.texture.decode_metadata.width == 1, "internal BMP decode records width");
-    require(result.texture.decode_metadata.height == 1, "internal BMP decode records height");
+    require(result.ok(), "BMP succeeds through preferred adapter route");
+    require(result.texture.decode_metadata.decoder_id == "fake_stb_decoder", "BMP decoder selects adapter backend");
+    require(result.texture.decode_metadata.width == 1, "adapter BMP decode records width");
+    require(result.texture.decode_metadata.height == 1, "adapter BMP decode records height");
     require(result.texture.external_decoder_selection.diagnostics_available, "BMP path exposes stb selection diagnostics");
     require(
-        result.texture.external_decoder_selection.selection_status_name == "fallback_internal_decoder_preferred",
-        "BMP path records internal decoder preference");
-    require(result.texture.external_decoder_selection.used_internal_decoder, "BMP path records internal decoder use");
-    require(!result.texture.external_decoder_selection.used_third_party_adapter, "BMP path does not report adapter use");
-    require(result.texture.external_decoder_selection.fallback_to_standard_decoder_chain, "BMP path records standard fallback");
-    require(result.texture.external_decoder_selection.prefer_internal_decoder, "BMP path records matrix preference");
-    require(result.texture.external_decoder_selection.internal_decoder_available, "BMP path records internal availability");
+        result.texture.external_decoder_selection.selection_status_name == "ready",
+        "BMP path records adapter-ready selection");
+    require(!result.texture.external_decoder_selection.used_internal_decoder, "BMP path does not report internal decoder use");
+    require(result.texture.external_decoder_selection.used_third_party_adapter, "BMP path reports adapter use");
+    require(!result.texture.external_decoder_selection.fallback_to_standard_decoder_chain, "BMP path records no standard fallback");
+    require(!result.texture.external_decoder_selection.prefer_internal_decoder, "BMP path records no internal preference");
+    require(result.texture.external_decoder_selection.internal_decoder_available, "BMP path records internal fallback availability");
+    require(result.texture.external_decoder_selection.ready_for_external_decode, "BMP path records external readiness");
     require(
         result.texture.external_decoder_selection.detected_format == render_image_encoded_format::bmp,
         "BMP path records detected format");
-    require(backend.decode_requests.empty(), "internal BMP path does not call third-party backend");
-    require(uploader.upload_requests.size() == 1, "internal BMP path uploads decoded texture");
-    require(probe.probe_count == 1, "internal BMP path probes stb dependency once");
+    require(backend.decode_requests.size() == 1, "adapter BMP path calls third-party backend");
+    require(uploader.upload_requests.size() == 1, "adapter BMP path uploads decoded texture");
+    require(probe.probe_count == 1, "adapter BMP path probes stb dependency once");
 
     const fake_image_texture_pipeline_snapshot snapshot = pipeline.diagnostic_snapshot();
-    require(snapshot.entries[0].selected_decoder_id == "bmp_image_decoder", "pipeline entry records BMP decoder");
+    require(snapshot.entries[0].selected_decoder_id == "fake_stb_decoder", "pipeline entry records adapter decoder");
     require(
-        snapshot.entries[0].external_decoder_selection.used_internal_decoder,
-        "pipeline entry carries internal decoder selection");
+        snapshot.entries[0].external_decoder_selection.used_third_party_adapter,
+        "pipeline entry carries adapter selection");
     require(
-        snapshot.entries[0].decoder_capability_manifest.external_decoder_selection.used_internal_decoder,
-        "capability manifest carries internal decoder selection");
+        snapshot.entries[0].decoder_capability_manifest.external_decoder_selection.used_third_party_adapter,
+        "capability manifest carries adapter selection");
     require(
-        snapshot.entries[0].decoder_capability_manifest.terminal_decoder_id == "bmp_image_decoder",
-        "capability manifest records BMP terminal decoder");
-    require(snapshot.entries[0].decoder_capability_manifest.fallback_used, "capability manifest records adapter fallback");
+        snapshot.entries[0].decoder_capability_manifest.terminal_decoder_id == "fake_stb_decoder",
+        "capability manifest records adapter terminal decoder");
+    require(!snapshot.entries[0].decoder_capability_manifest.fallback_used, "capability manifest records no fallback");
 }
 
 void test_stb_selection_missing_and_mismatched_fallback_diagnostics_reach_pipeline()
@@ -1130,7 +1131,7 @@ void test_stb_selection_survives_placeholder_fallback()
         "placeholder manifest carries missing dependency fallback flag");
 }
 
-void test_external_decoder_selection_diff_reports_adapter_internal_and_placeholder_states()
+void test_external_decoder_selection_diff_reports_adapter_format_and_placeholder_states()
 {
     using namespace quiz_vulkan::render;
 
@@ -1143,39 +1144,41 @@ void test_external_decoder_selection_diff_reports_adapter_internal_and_placehold
         make_bmp_24_bit_1x1_fixture_bytes(),
         make_available_stb_image_decoder_dependency_manifest("fake_stb_decoder"));
 
-    const render_image_external_decoder_selection_snapshot_diff internal_diff =
+    const render_image_external_decoder_selection_snapshot_diff format_diff =
         diff_render_image_external_decoder_selection_snapshots(adapter_snapshot, internal_snapshot);
 
-    require(internal_diff.has_changes, "external selection diff detects adapter to internal change");
-    require(!internal_diff.has_regression, "adapter to internal decoder change is not a fallback regression");
-    require(internal_diff.before_adapter_ready_count == 1, "external selection diff counts adapter-ready before");
-    require(internal_diff.after_adapter_ready_count == 0, "external selection diff counts no adapter-ready after");
-    require(internal_diff.before_internal_decoder_count == 0, "external selection diff counts no internal before");
-    require(internal_diff.after_internal_decoder_count == 1, "external selection diff counts internal after");
-    require(internal_diff.before_fallback_count == 0, "external selection diff counts no fallback before");
-    require(internal_diff.after_fallback_count == 1, "external selection diff counts internal standard fallback after");
-    require(internal_diff.changed_entry_count == 1, "external selection diff records one changed entry");
-    require(internal_diff.state_changed_count == 1, "external selection diff counts state change");
-    require(internal_diff.selected_decoder_changed_count == 1, "external selection diff counts selected decoder change");
-    require(internal_diff.selection_status_changed_count == 1, "external selection diff counts selection status change");
+    require(format_diff.has_changes, "external selection diff detects adapter format change");
+    require(!format_diff.has_regression, "adapter format change is not a fallback regression");
+    require(format_diff.before_adapter_ready_count == 1, "external selection diff counts adapter-ready before");
+    require(format_diff.after_adapter_ready_count == 1, "external selection diff keeps adapter-ready after");
+    require(format_diff.before_internal_decoder_count == 0, "external selection diff counts no internal before");
+    require(format_diff.after_internal_decoder_count == 0, "external selection diff counts no internal after");
+    require(format_diff.before_fallback_count == 0, "external selection diff counts no fallback before");
+    require(format_diff.after_fallback_count == 0, "external selection diff counts no standard fallback after");
+    require(format_diff.changed_entry_count == 1, "external selection diff records one changed entry");
+    require(format_diff.state_changed_count == 0, "external selection diff keeps adapter state stable");
+    require(format_diff.selected_decoder_changed_count == 0, "external selection diff keeps adapter decoder stable");
+    require(format_diff.selection_status_changed_count == 0, "external selection diff keeps selection status stable");
     require(
-        internal_diff.diagnostic == "external decoder selection diff reports changes",
+        format_diff.diagnostic == "external decoder selection diff reports changes",
         "external selection diff reports neutral changes");
 
-    const render_image_external_decoder_selection_entry_diff& internal_entry = internal_diff.entries[0];
+    const render_image_external_decoder_selection_entry_diff& format_entry = format_diff.entries[0];
     require(
-        internal_entry.before_state == render_image_external_decoder_selection_diff_state::adapter_ready,
+        format_entry.before_state == render_image_external_decoder_selection_diff_state::adapter_ready,
         "external selection entry records adapter-ready before state");
     require(
-        internal_entry.after_state == render_image_external_decoder_selection_diff_state::internal_decoder,
-        "external selection entry records internal decoder after state");
-    require(internal_entry.before_state_name == "adapter_ready", "adapter-ready state name is stable");
-    require(internal_entry.after_state_name == "internal_decoder", "internal decoder state name is stable");
-    require(internal_entry.before_selected_decoder_id == "fake_stb_decoder", "entry records before adapter decoder");
-    require(internal_entry.after_selected_decoder_id == "bmp_image_decoder", "entry records after BMP decoder");
-    require(internal_entry.before_ready_for_external_decode, "entry records before adapter readiness");
-    require(internal_entry.after_used_internal_decoder, "entry records after internal decoder flag");
-    require(!internal_entry.regression, "internal decoder route is not a severity regression");
+        format_entry.after_state == render_image_external_decoder_selection_diff_state::adapter_ready,
+        "external selection entry records adapter-ready after state");
+    require(format_entry.before_state_name == "adapter_ready", "adapter-ready state name is stable");
+    require(format_entry.after_state_name == "adapter_ready", "adapter-ready after state name is stable");
+    require(format_entry.before_selected_decoder_id == "fake_stb_decoder", "entry records before adapter decoder");
+    require(format_entry.after_selected_decoder_id == "fake_stb_decoder", "entry records after adapter decoder");
+    require(format_entry.before_ready_for_external_decode, "entry records before adapter readiness");
+    require(format_entry.after_ready_for_external_decode, "entry records after adapter readiness");
+    require(format_entry.detected_format_changed, "entry records detected format change");
+    require(!format_entry.after_used_internal_decoder, "entry records no internal decoder flag after");
+    require(!format_entry.regression, "adapter route remains non-regressive");
 
     const fake_image_texture_pipeline_snapshot placeholder_snapshot = make_optional_stb_pipeline_snapshot(
         "asset://textures/card.jpg",
@@ -3836,10 +3839,10 @@ int main()
     test_pipeline_uses_optional_third_party_decoder_through_interface();
     test_optional_adapter_failure_falls_back_before_texture_upload();
     test_unavailable_optional_adapter_keeps_diagnostics_without_upload();
-    test_stb_selection_preserves_internal_bmp_decoder_diagnostics();
+    test_stb_selection_prefers_adapter_for_bmp_when_available();
     test_stb_selection_missing_and_mismatched_fallback_diagnostics_reach_pipeline();
     test_stb_selection_survives_placeholder_fallback();
-    test_external_decoder_selection_diff_reports_adapter_internal_and_placeholder_states();
+    test_external_decoder_selection_diff_reports_adapter_format_and_placeholder_states();
     test_external_decoder_selection_diff_reports_missing_and_version_mismatch_fallbacks();
     test_pipeline_decoder_manifest_reports_placeholder_outcome();
     test_batch_plan_normalizes_and_deduplicates_texture_requests();

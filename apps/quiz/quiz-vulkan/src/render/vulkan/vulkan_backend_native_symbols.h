@@ -28,6 +28,8 @@ enum class vulkan_native_entrypoint_stage {
     swapchain_destroy,
     swapchain_images,
     swapchain_acquire,
+    image_view_create,
+    image_view_destroy,
     queue_present,
 };
 
@@ -44,6 +46,8 @@ enum class vulkan_native_function_table_status {
     missing_swapchain_destroy_symbol,
     missing_swapchain_images_symbol,
     missing_swapchain_acquire_symbol,
+    missing_image_view_create_symbol,
+    missing_image_view_destroy_symbol,
     missing_queue_present_symbol,
 };
 
@@ -218,6 +222,9 @@ default_vulkan_native_backend_entrypoints();
 
 std::vector<vulkan_native_entrypoint_symbol_request>
 default_vulkan_native_swapchain_entrypoints();
+
+std::vector<vulkan_native_entrypoint_symbol_request>
+default_vulkan_native_image_view_entrypoints();
 
 std::vector<std::string> default_vulkan_native_swapchain_extensions();
 

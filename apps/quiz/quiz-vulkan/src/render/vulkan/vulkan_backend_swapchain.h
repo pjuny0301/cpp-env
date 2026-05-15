@@ -1348,6 +1348,342 @@ struct vulkan_native_swapchain_acquire_execution_result {
     }
 };
 
+enum class vulkan_swapchain_image_view_usage_intent {
+    color_attachment,
+};
+
+inline std::string_view swapchain_image_view_usage_intent_name(
+    vulkan_swapchain_image_view_usage_intent intent)
+{
+    switch (intent) {
+    case vulkan_swapchain_image_view_usage_intent::color_attachment:
+        return "color_attachment";
+    }
+
+    return "unknown";
+}
+
+enum class vulkan_swapchain_image_view_aspect_intent {
+    color,
+};
+
+inline std::string_view swapchain_image_view_aspect_intent_name(
+    vulkan_swapchain_image_view_aspect_intent intent)
+{
+    switch (intent) {
+    case vulkan_swapchain_image_view_aspect_intent::color:
+        return "color";
+    }
+
+    return "unknown";
+}
+
+struct vulkan_swapchain_image_view_handle {
+    std::uintptr_t value = 0;
+
+    bool valid() const
+    {
+        return value != 0;
+    }
+};
+
+struct vulkan_swapchain_image_view_target_intent {
+    vulkan_swapchain_image_view_usage_intent usage =
+        vulkan_swapchain_image_view_usage_intent::color_attachment;
+    vulkan_swapchain_image_view_aspect_intent aspect =
+        vulkan_swapchain_image_view_aspect_intent::color;
+};
+
+enum class vulkan_native_image_view_dispatch_table_status {
+    not_checked,
+    ready,
+    function_table_unavailable,
+    missing_create_symbol,
+    missing_destroy_symbol,
+};
+
+inline std::string_view native_image_view_dispatch_table_status_name(
+    vulkan_native_image_view_dispatch_table_status status)
+{
+    switch (status) {
+    case vulkan_native_image_view_dispatch_table_status::not_checked:
+        return "not_checked";
+    case vulkan_native_image_view_dispatch_table_status::ready:
+        return "ready";
+    case vulkan_native_image_view_dispatch_table_status::function_table_unavailable:
+        return "function_table_unavailable";
+    case vulkan_native_image_view_dispatch_table_status::missing_create_symbol:
+        return "missing_create_symbol";
+    case vulkan_native_image_view_dispatch_table_status::missing_destroy_symbol:
+        return "missing_destroy_symbol";
+    }
+
+    return "unknown";
+}
+
+struct vulkan_native_image_view_dispatch_table {
+    bool checked = false;
+    vulkan_native_image_view_dispatch_table_status status =
+        vulkan_native_image_view_dispatch_table_status::not_checked;
+    vulkan_native_function_table_status function_table_status =
+        vulkan_native_function_table_status::not_checked;
+    bool function_table_checked = false;
+    vulkan_native_function_pointer create_image_view;
+    vulkan_native_function_pointer destroy_image_view;
+    std::string missing_symbol_name;
+    std::string diagnostic;
+
+    bool ready_for_create() const
+    {
+        return checked && status == vulkan_native_image_view_dispatch_table_status::ready
+            && create_image_view.valid() && destroy_image_view.valid();
+    }
+
+    bool ready_for_destroy() const
+    {
+        return checked && status == vulkan_native_image_view_dispatch_table_status::ready
+            && destroy_image_view.valid();
+    }
+};
+
+vulkan_native_image_view_dispatch_table collect_vulkan_native_image_view_dispatch_table(
+    const vulkan_native_function_table_diagnostics& diagnostics);
+
+enum class vulkan_native_swapchain_image_view_target_lifecycle_status {
+    not_checked,
+    ready,
+    image_unavailable,
+    create_failed,
+    destroyed,
+    destroy_failed,
+    headers_unavailable,
+};
+
+inline std::string_view native_swapchain_image_view_target_lifecycle_status_name(
+    vulkan_native_swapchain_image_view_target_lifecycle_status status)
+{
+    switch (status) {
+    case vulkan_native_swapchain_image_view_target_lifecycle_status::not_checked:
+        return "not_checked";
+    case vulkan_native_swapchain_image_view_target_lifecycle_status::ready:
+        return "ready";
+    case vulkan_native_swapchain_image_view_target_lifecycle_status::image_unavailable:
+        return "image_unavailable";
+    case vulkan_native_swapchain_image_view_target_lifecycle_status::create_failed:
+        return "create_failed";
+    case vulkan_native_swapchain_image_view_target_lifecycle_status::destroyed:
+        return "destroyed";
+    case vulkan_native_swapchain_image_view_target_lifecycle_status::destroy_failed:
+        return "destroy_failed";
+    case vulkan_native_swapchain_image_view_target_lifecycle_status::headers_unavailable:
+        return "headers_unavailable";
+    }
+
+    return "unknown";
+}
+
+struct vulkan_native_swapchain_image_view_target {
+    std::size_t image_index = 0;
+    vulkan_swapchain_image_id image_id;
+    vulkan_swapchain_image_handle image_handle;
+    vulkan_swapchain_image_format selected_image_format =
+        vulkan_swapchain_image_format::undefined;
+    vulkan_surface_extent extent;
+    vulkan_swapchain_image_view_usage_intent usage_intent =
+        vulkan_swapchain_image_view_usage_intent::color_attachment;
+    vulkan_swapchain_image_view_aspect_intent aspect_intent =
+        vulkan_swapchain_image_view_aspect_intent::color;
+    vulkan_swapchain_image_view_handle image_view;
+    vulkan_native_swapchain_image_view_target_lifecycle_status lifecycle_status =
+        vulkan_native_swapchain_image_view_target_lifecycle_status::not_checked;
+    bool image_ready = false;
+    bool image_view_ready = false;
+    bool render_target_ready = false;
+    bool vk_create_image_view_called = false;
+    bool vk_destroy_image_view_called = false;
+    std::int32_t native_result = 0;
+
+    bool ready() const
+    {
+        return image_ready && image_view_ready && render_target_ready
+            && lifecycle_status == vulkan_native_swapchain_image_view_target_lifecycle_status::ready
+            && image_id.value > 0 && image_handle.valid() && image_view.valid()
+            && selected_image_format != vulkan_swapchain_image_format::undefined
+            && extent.valid();
+    }
+};
+
+enum class vulkan_native_swapchain_image_view_targets_execution_status {
+    not_requested,
+    ready,
+    images_execution_unavailable,
+    dispatch_table_unavailable,
+    invalid_device,
+    missing_swapchain_handle,
+    missing_image_format,
+    missing_extent,
+    no_images,
+    image_unavailable,
+    create_failed,
+    headers_unavailable,
+};
+
+inline std::string_view native_swapchain_image_view_targets_execution_status_name(
+    vulkan_native_swapchain_image_view_targets_execution_status status)
+{
+    switch (status) {
+    case vulkan_native_swapchain_image_view_targets_execution_status::not_requested:
+        return "not_requested";
+    case vulkan_native_swapchain_image_view_targets_execution_status::ready:
+        return "ready";
+    case vulkan_native_swapchain_image_view_targets_execution_status::images_execution_unavailable:
+        return "images_execution_unavailable";
+    case vulkan_native_swapchain_image_view_targets_execution_status::dispatch_table_unavailable:
+        return "dispatch_table_unavailable";
+    case vulkan_native_swapchain_image_view_targets_execution_status::invalid_device:
+        return "invalid_device";
+    case vulkan_native_swapchain_image_view_targets_execution_status::missing_swapchain_handle:
+        return "missing_swapchain_handle";
+    case vulkan_native_swapchain_image_view_targets_execution_status::missing_image_format:
+        return "missing_image_format";
+    case vulkan_native_swapchain_image_view_targets_execution_status::missing_extent:
+        return "missing_extent";
+    case vulkan_native_swapchain_image_view_targets_execution_status::no_images:
+        return "no_images";
+    case vulkan_native_swapchain_image_view_targets_execution_status::image_unavailable:
+        return "image_unavailable";
+    case vulkan_native_swapchain_image_view_targets_execution_status::create_failed:
+        return "create_failed";
+    case vulkan_native_swapchain_image_view_targets_execution_status::headers_unavailable:
+        return "headers_unavailable";
+    }
+
+    return "unknown";
+}
+
+struct vulkan_native_swapchain_image_view_targets_execution_request {
+    vulkan_native_swapchain_images_execution_result images_execution;
+    vulkan_native_image_view_dispatch_table dispatch_table;
+    vulkan_swapchain_image_view_target_intent intent;
+};
+
+struct vulkan_native_swapchain_image_view_targets_execution_result {
+    bool checked = false;
+    vulkan_native_swapchain_image_view_targets_execution_status status =
+        vulkan_native_swapchain_image_view_targets_execution_status::not_requested;
+    vulkan_native_swapchain_images_execution_result images_execution;
+    vulkan_native_image_view_dispatch_table dispatch_table;
+    vulkan_device_handle device;
+    vulkan_swapchain_handle swapchain;
+    vulkan_surface_extent extent;
+    vulkan_swapchain_image_format selected_image_format =
+        vulkan_swapchain_image_format::undefined;
+    vulkan_swapchain_image_view_usage_intent usage_intent =
+        vulkan_swapchain_image_view_usage_intent::color_attachment;
+    vulkan_swapchain_image_view_aspect_intent aspect_intent =
+        vulkan_swapchain_image_view_aspect_intent::color;
+    std::size_t image_count = 0;
+    std::size_t ready_image_view_count = 0;
+    std::vector<vulkan_native_swapchain_image_view_target> targets;
+    vulkan_native_function_pointer create_image_view_symbol;
+    vulkan_native_function_pointer destroy_image_view_symbol;
+    bool images_execution_ready = false;
+    bool dispatch_table_ready = false;
+    bool vk_create_image_view_called = false;
+    std::int32_t native_result = 0;
+    std::string diagnostic;
+
+    bool ready_for_render_targets() const
+    {
+        return checked
+            && status == vulkan_native_swapchain_image_view_targets_execution_status::ready
+            && images_execution_ready && dispatch_table_ready && device.valid()
+            && swapchain.valid() && extent.valid()
+            && selected_image_format != vulkan_swapchain_image_format::undefined
+            && image_count > 0 && ready_image_view_count == image_count
+            && targets.size() == image_count
+            && std::all_of(
+                targets.begin(),
+                targets.end(),
+                [](const vulkan_native_swapchain_image_view_target& target) {
+                    return target.ready();
+                });
+    }
+
+    bool blocked() const
+    {
+        return checked && !ready_for_render_targets();
+    }
+};
+
+enum class vulkan_native_swapchain_image_view_targets_destroy_status {
+    not_requested,
+    destroyed,
+    targets_unavailable,
+    dispatch_table_unavailable,
+    invalid_device,
+    destroy_failed,
+    headers_unavailable,
+};
+
+inline std::string_view native_swapchain_image_view_targets_destroy_status_name(
+    vulkan_native_swapchain_image_view_targets_destroy_status status)
+{
+    switch (status) {
+    case vulkan_native_swapchain_image_view_targets_destroy_status::not_requested:
+        return "not_requested";
+    case vulkan_native_swapchain_image_view_targets_destroy_status::destroyed:
+        return "destroyed";
+    case vulkan_native_swapchain_image_view_targets_destroy_status::targets_unavailable:
+        return "targets_unavailable";
+    case vulkan_native_swapchain_image_view_targets_destroy_status::dispatch_table_unavailable:
+        return "dispatch_table_unavailable";
+    case vulkan_native_swapchain_image_view_targets_destroy_status::invalid_device:
+        return "invalid_device";
+    case vulkan_native_swapchain_image_view_targets_destroy_status::destroy_failed:
+        return "destroy_failed";
+    case vulkan_native_swapchain_image_view_targets_destroy_status::headers_unavailable:
+        return "headers_unavailable";
+    }
+
+    return "unknown";
+}
+
+struct vulkan_native_swapchain_image_view_targets_destroy_request {
+    vulkan_native_swapchain_image_view_targets_execution_result targets;
+    vulkan_native_image_view_dispatch_table dispatch_table;
+};
+
+struct vulkan_native_swapchain_image_view_targets_destroy_result {
+    bool checked = false;
+    vulkan_native_swapchain_image_view_targets_destroy_status status =
+        vulkan_native_swapchain_image_view_targets_destroy_status::not_requested;
+    vulkan_native_swapchain_image_view_targets_execution_result targets;
+    vulkan_native_image_view_dispatch_table dispatch_table;
+    vulkan_device_handle device;
+    std::size_t requested_image_view_count = 0;
+    std::size_t destroyed_image_view_count = 0;
+    vulkan_native_function_pointer destroy_image_view_symbol;
+    bool targets_ready = false;
+    bool dispatch_table_ready = false;
+    bool vk_destroy_image_view_called = false;
+    std::int32_t native_result = 0;
+    std::string diagnostic;
+
+    bool destroyed() const
+    {
+        return checked
+            && status == vulkan_native_swapchain_image_view_targets_destroy_status::destroyed
+            && targets_ready && dispatch_table_ready
+            && destroyed_image_view_count == requested_image_view_count;
+    }
+
+    bool blocked() const
+    {
+        return checked && !destroyed();
+    }
+};
+
 class vulkan_native_swapchain_operation_interface {
 public:
     virtual ~vulkan_native_swapchain_operation_interface() = default;
@@ -1360,12 +1696,20 @@ public:
         const vulkan_native_swapchain_images_execution_request& request) = 0;
     virtual vulkan_native_swapchain_acquire_execution_result acquire_next_image(
         const vulkan_native_swapchain_acquire_execution_request& request) = 0;
+    virtual vulkan_native_swapchain_image_view_targets_execution_result
+    create_image_view_targets(
+        const vulkan_native_swapchain_image_view_targets_execution_request& request) = 0;
+    virtual vulkan_native_swapchain_image_view_targets_destroy_result
+    destroy_image_view_targets(
+        const vulkan_native_swapchain_image_view_targets_destroy_request& request) = 0;
 };
 
 struct fake_vulkan_native_swapchain_operation_options {
     vulkan_swapchain_handle created_swapchain{.value = 7000};
     std::vector<vulkan_swapchain_image_handle> image_handles;
     vulkan_native_function_pointer image_handle_base{.value = 8000};
+    std::vector<vulkan_swapchain_image_view_handle> image_view_handles;
+    vulkan_native_function_pointer image_view_handle_base{.value = 9000};
     vulkan_swapchain_acquire_status acquire_status =
         vulkan_swapchain_acquire_status::acquired;
     std::size_t acquired_image_index = 1;
@@ -1375,9 +1719,13 @@ struct fake_vulkan_native_swapchain_operation_options {
     bool fail_image_enumeration = false;
     bool return_zero_images = false;
     bool fail_acquire = false;
+    bool fail_image_view_create = false;
+    bool fail_image_view_destroy = false;
     std::int32_t create_failure_result = -1;
     std::int32_t image_failure_result = -2;
     std::int32_t acquire_failure_result = -3;
+    std::int32_t image_view_create_failure_result = -4;
+    std::int32_t image_view_destroy_failure_result = -5;
 };
 
 struct fake_vulkan_native_swapchain_operation_state {
@@ -1385,6 +1733,8 @@ struct fake_vulkan_native_swapchain_operation_state {
     std::size_t destroy_call_count = 0;
     std::size_t image_enumeration_call_count = 0;
     std::size_t acquire_call_count = 0;
+    std::size_t image_view_create_call_count = 0;
+    std::size_t image_view_destroy_call_count = 0;
     vulkan_device_handle requested_device;
     vulkan_surface_handle requested_surface;
     vulkan_swapchain_handle requested_swapchain;
@@ -1395,12 +1745,16 @@ struct fake_vulkan_native_swapchain_operation_state {
     vulkan_native_function_pointer last_destroy_swapchain_symbol;
     vulkan_native_function_pointer last_get_swapchain_images_symbol;
     vulkan_native_function_pointer last_acquire_next_image_symbol;
+    vulkan_native_function_pointer last_create_image_view_symbol;
+    vulkan_native_function_pointer last_destroy_image_view_symbol;
     vulkan_surface_extent selected_extent;
     vulkan_swapchain_surface_format selected_surface_format;
     vulkan_swapchain_present_mode selected_present_mode =
         vulkan_swapchain_present_mode::fifo;
     std::vector<std::size_t> selected_queue_family_indices;
     std::vector<vulkan_native_swapchain_image_binding> enumerated_images;
+    std::vector<vulkan_native_swapchain_image_view_target> created_image_view_targets;
+    std::vector<vulkan_swapchain_image_view_handle> destroyed_image_views;
     std::size_t acquired_image_index = 0;
     vulkan_swapchain_image_id acquired_image_id;
     std::uint64_t acquire_timeout_nanoseconds = 0;
@@ -1421,6 +1775,10 @@ public:
         const vulkan_native_swapchain_images_execution_request& request) override;
     vulkan_native_swapchain_acquire_execution_result acquire_next_image(
         const vulkan_native_swapchain_acquire_execution_request& request) override;
+    vulkan_native_swapchain_image_view_targets_execution_result create_image_view_targets(
+        const vulkan_native_swapchain_image_view_targets_execution_request& request) override;
+    vulkan_native_swapchain_image_view_targets_destroy_result destroy_image_view_targets(
+        const vulkan_native_swapchain_image_view_targets_destroy_request& request) override;
     const fake_vulkan_native_swapchain_operation_state& state() const;
 
 private:
@@ -1439,6 +1797,10 @@ public:
         const vulkan_native_swapchain_images_execution_request& request) override;
     vulkan_native_swapchain_acquire_execution_result acquire_next_image(
         const vulkan_native_swapchain_acquire_execution_request& request) override;
+    vulkan_native_swapchain_image_view_targets_execution_result create_image_view_targets(
+        const vulkan_native_swapchain_image_view_targets_execution_request& request) override;
+    vulkan_native_swapchain_image_view_targets_destroy_result destroy_image_view_targets(
+        const vulkan_native_swapchain_image_view_targets_destroy_request& request) override;
 };
 
 vulkan_native_swapchain_create_execution_result create_native_vulkan_swapchain(
@@ -1456,6 +1818,16 @@ vulkan_native_swapchain_images_execution_result enumerate_native_vulkan_swapchai
 vulkan_native_swapchain_acquire_execution_result acquire_native_vulkan_swapchain_image(
     vulkan_native_swapchain_operation_interface& operation,
     const vulkan_native_swapchain_acquire_execution_request& request);
+
+vulkan_native_swapchain_image_view_targets_execution_result
+create_native_vulkan_swapchain_image_view_targets(
+    vulkan_native_swapchain_operation_interface& operation,
+    const vulkan_native_swapchain_image_view_targets_execution_request& request);
+
+vulkan_native_swapchain_image_view_targets_destroy_result
+destroy_native_vulkan_swapchain_image_view_targets(
+    vulkan_native_swapchain_operation_interface& operation,
+    const vulkan_native_swapchain_image_view_targets_destroy_request& request);
 
 enum class vulkan_native_swapchain_images_operation_status {
     not_checked,
@@ -2032,6 +2404,50 @@ inline vulkan_native_swapchain_image_binding find_native_swapchain_image_binding
         vulkan_swapchain_image_id{.value = image_index + 1});
 }
 
+inline std::vector<vulkan_swapchain_image_view_handle> make_swapchain_image_view_handles(
+    std::size_t image_count,
+    vulkan_native_function_pointer image_view_handle_base)
+{
+    const std::uintptr_t base =
+        image_view_handle_base.valid() ? image_view_handle_base.value : 4000;
+    std::vector<vulkan_swapchain_image_view_handle> handles;
+    handles.reserve(image_count);
+    for (std::size_t image_index = 0; image_index < image_count; ++image_index) {
+        handles.push_back(vulkan_swapchain_image_view_handle{
+            .value = base + image_index + 1,
+        });
+    }
+    return handles;
+}
+
+inline vulkan_native_swapchain_image_view_target make_image_view_target(
+    const vulkan_native_swapchain_images_execution_result& images_execution,
+    const vulkan_native_swapchain_image_binding& image,
+    std::size_t image_index,
+    vulkan_swapchain_image_view_target_intent intent)
+{
+    const bool image_ready = image.valid();
+    return vulkan_native_swapchain_image_view_target{
+        .image_index = image_index,
+        .image_id = image.image_id,
+        .image_handle = image.handle,
+        .selected_image_format = images_execution.selected_surface_format.format,
+        .extent = images_execution.selected_extent,
+        .usage_intent = intent.usage,
+        .aspect_intent = intent.aspect,
+        .image_view = {},
+        .lifecycle_status = image_ready
+            ? vulkan_native_swapchain_image_view_target_lifecycle_status::not_checked
+            : vulkan_native_swapchain_image_view_target_lifecycle_status::image_unavailable,
+        .image_ready = image_ready,
+        .image_view_ready = false,
+        .render_target_ready = false,
+        .vk_create_image_view_called = false,
+        .vk_destroy_image_view_called = false,
+        .native_result = 0,
+    };
+}
+
 inline vulkan_native_function_pointer find_native_symbol_pointer(
     const vulkan_native_function_table_diagnostics& diagnostics,
     vulkan_native_entrypoint_stage stage)
@@ -2188,6 +2604,55 @@ make_swapchain_acquire_execution_result(
     };
 }
 
+inline vulkan_native_swapchain_image_view_targets_execution_result
+make_image_view_targets_execution_result(
+    const vulkan_native_swapchain_image_view_targets_execution_request& request)
+{
+    return vulkan_native_swapchain_image_view_targets_execution_result{
+        .checked = true,
+        .status = vulkan_native_swapchain_image_view_targets_execution_status::not_requested,
+        .images_execution = request.images_execution,
+        .dispatch_table = request.dispatch_table,
+        .device = request.images_execution.device,
+        .swapchain = request.images_execution.swapchain,
+        .extent = request.images_execution.selected_extent,
+        .selected_image_format = request.images_execution.selected_surface_format.format,
+        .usage_intent = request.intent.usage,
+        .aspect_intent = request.intent.aspect,
+        .image_count = request.images_execution.images.size(),
+        .ready_image_view_count = 0,
+        .targets = {},
+        .create_image_view_symbol = request.dispatch_table.create_image_view,
+        .destroy_image_view_symbol = request.dispatch_table.destroy_image_view,
+        .images_execution_ready = request.images_execution.ready_for_acquire(),
+        .dispatch_table_ready = request.dispatch_table.ready_for_create(),
+        .vk_create_image_view_called = false,
+        .native_result = 0,
+        .diagnostic = {},
+    };
+}
+
+inline vulkan_native_swapchain_image_view_targets_destroy_result
+make_image_view_targets_destroy_result(
+    const vulkan_native_swapchain_image_view_targets_destroy_request& request)
+{
+    return vulkan_native_swapchain_image_view_targets_destroy_result{
+        .checked = true,
+        .status = vulkan_native_swapchain_image_view_targets_destroy_status::not_requested,
+        .targets = request.targets,
+        .dispatch_table = request.dispatch_table,
+        .device = request.targets.device,
+        .requested_image_view_count = request.targets.targets.size(),
+        .destroyed_image_view_count = 0,
+        .destroy_image_view_symbol = request.dispatch_table.destroy_image_view,
+        .targets_ready = request.targets.ready_for_render_targets(),
+        .dispatch_table_ready = request.dispatch_table.ready_for_destroy(),
+        .vk_destroy_image_view_called = false,
+        .native_result = 0,
+        .diagnostic = {},
+    };
+}
+
 } // namespace swapchain_detail
 
 inline vulkan_native_swapchain_operation_dispatch_table
@@ -2279,6 +2744,64 @@ collect_vulkan_native_swapchain_operation_dispatch_table(
 
     dispatch.status = vulkan_native_swapchain_operation_dispatch_table_status::ready;
     dispatch.diagnostic = "Native Vulkan swapchain operation dispatch table is ready";
+    return dispatch;
+}
+
+inline vulkan_native_image_view_dispatch_table collect_vulkan_native_image_view_dispatch_table(
+    const vulkan_native_function_table_diagnostics& diagnostics)
+{
+    vulkan_native_image_view_dispatch_table dispatch{
+        .checked = true,
+        .status = vulkan_native_image_view_dispatch_table_status::not_checked,
+        .function_table_status = diagnostics.status,
+        .function_table_checked = diagnostics.checked,
+        .create_image_view = swapchain_detail::find_native_symbol_pointer(
+            diagnostics,
+            vulkan_native_entrypoint_stage::image_view_create),
+        .destroy_image_view = swapchain_detail::find_native_symbol_pointer(
+            diagnostics,
+            vulkan_native_entrypoint_stage::image_view_destroy),
+        .missing_symbol_name = diagnostics.missing_symbol_name,
+        .diagnostic = {},
+    };
+
+    if (!diagnostics.checked) {
+        dispatch.status = vulkan_native_image_view_dispatch_table_status::function_table_unavailable;
+        dispatch.diagnostic = diagnostics.diagnostic.empty()
+            ? "Native Vulkan image view dispatch table has unavailable function diagnostics"
+            : diagnostics.diagnostic;
+        return dispatch;
+    }
+    if (!dispatch.create_image_view.valid()) {
+        dispatch.status = vulkan_native_image_view_dispatch_table_status::missing_create_symbol;
+        dispatch.missing_symbol_name = dispatch.missing_symbol_name.empty()
+            ? "vkCreateImageView"
+            : dispatch.missing_symbol_name;
+        dispatch.diagnostic = diagnostics.diagnostic.empty()
+            ? "Native Vulkan image view dispatch table is missing vkCreateImageView"
+            : diagnostics.diagnostic;
+        return dispatch;
+    }
+    if (!dispatch.destroy_image_view.valid()) {
+        dispatch.status = vulkan_native_image_view_dispatch_table_status::missing_destroy_symbol;
+        dispatch.missing_symbol_name = dispatch.missing_symbol_name.empty()
+            ? "vkDestroyImageView"
+            : dispatch.missing_symbol_name;
+        dispatch.diagnostic = diagnostics.diagnostic.empty()
+            ? "Native Vulkan image view dispatch table is missing vkDestroyImageView"
+            : diagnostics.diagnostic;
+        return dispatch;
+    }
+    if (diagnostics.status != vulkan_native_function_table_status::ready) {
+        dispatch.status = vulkan_native_image_view_dispatch_table_status::function_table_unavailable;
+        dispatch.diagnostic = diagnostics.diagnostic.empty()
+            ? "Native Vulkan image view dispatch table has unavailable function diagnostics"
+            : diagnostics.diagnostic;
+        return dispatch;
+    }
+
+    dispatch.status = vulkan_native_image_view_dispatch_table_status::ready;
+    dispatch.diagnostic = "Native Vulkan image view dispatch table is ready";
     return dispatch;
 }
 
@@ -2756,6 +3279,184 @@ fake_vulkan_native_swapchain_operation::acquire_next_image(
     return result;
 }
 
+inline vulkan_native_swapchain_image_view_targets_execution_result
+fake_vulkan_native_swapchain_operation::create_image_view_targets(
+    const vulkan_native_swapchain_image_view_targets_execution_request& request)
+{
+    vulkan_native_swapchain_image_view_targets_execution_result result =
+        swapchain_detail::make_image_view_targets_execution_result(request);
+
+    if (!result.images_execution_ready) {
+        result.status =
+            vulkan_native_swapchain_image_view_targets_execution_status::images_execution_unavailable;
+        result.diagnostic = request.images_execution.diagnostic.empty()
+            ? "Native Vulkan image view target creation is missing enumerated swapchain images"
+            : request.images_execution.diagnostic;
+        return result;
+    }
+    if (!result.dispatch_table_ready) {
+        result.status =
+            vulkan_native_swapchain_image_view_targets_execution_status::dispatch_table_unavailable;
+        result.diagnostic = request.dispatch_table.diagnostic.empty()
+            ? "Native Vulkan image view target creation is missing image view dispatch"
+            : request.dispatch_table.diagnostic;
+        return result;
+    }
+    if (!result.device.valid()) {
+        result.status = vulkan_native_swapchain_image_view_targets_execution_status::invalid_device;
+        result.diagnostic =
+            "Native Vulkan image view target creation has no valid device handle";
+        return result;
+    }
+    if (!result.swapchain.valid()) {
+        result.status =
+            vulkan_native_swapchain_image_view_targets_execution_status::missing_swapchain_handle;
+        result.diagnostic =
+            "Native Vulkan image view target creation has no valid swapchain handle";
+        return result;
+    }
+    if (result.selected_image_format == vulkan_swapchain_image_format::undefined) {
+        result.status =
+            vulkan_native_swapchain_image_view_targets_execution_status::missing_image_format;
+        result.diagnostic =
+            "Native Vulkan image view target creation has no selected image format";
+        return result;
+    }
+    if (!result.extent.valid()) {
+        result.status = vulkan_native_swapchain_image_view_targets_execution_status::missing_extent;
+        result.diagnostic =
+            "Native Vulkan image view target creation has no selected extent";
+        return result;
+    }
+    if (request.images_execution.images.empty()) {
+        result.status = vulkan_native_swapchain_image_view_targets_execution_status::no_images;
+        result.diagnostic =
+            "Native Vulkan image view target creation has no swapchain images";
+        return result;
+    }
+
+    ++state_.image_view_create_call_count;
+    state_.requested_device = result.device;
+    state_.requested_swapchain = result.swapchain;
+    state_.last_create_image_view_symbol = result.create_image_view_symbol;
+    state_.last_destroy_image_view_symbol = result.destroy_image_view_symbol;
+    result.vk_create_image_view_called = true;
+
+    if (options_.fail_image_view_create) {
+        result.status = vulkan_native_swapchain_image_view_targets_execution_status::create_failed;
+        result.native_result = options_.image_view_create_failure_result;
+        result.diagnostic = "Native Vulkan image view target creation failed";
+        return result;
+    }
+
+    std::vector<vulkan_swapchain_image_view_handle> image_views =
+        options_.image_view_handles.empty()
+        ? swapchain_detail::make_swapchain_image_view_handles(
+              request.images_execution.images.size(),
+              options_.image_view_handle_base)
+        : options_.image_view_handles;
+    if (image_views.size() != request.images_execution.images.size()) {
+        result.status =
+            vulkan_native_swapchain_image_view_targets_execution_status::image_unavailable;
+        result.diagnostic =
+            "Native Vulkan image view target creation has mismatched image view evidence";
+        return result;
+    }
+
+    result.targets.reserve(request.images_execution.images.size());
+    for (std::size_t image_index = 0; image_index < request.images_execution.images.size();
+         ++image_index) {
+        vulkan_native_swapchain_image_view_target target =
+            swapchain_detail::make_image_view_target(
+                request.images_execution,
+                request.images_execution.images[image_index],
+                image_index,
+                request.intent);
+        if (!target.image_ready) {
+            result.status =
+                vulkan_native_swapchain_image_view_targets_execution_status::image_unavailable;
+            result.targets.push_back(target);
+            result.diagnostic =
+                "Native Vulkan image view target creation found an invalid image handle";
+            return result;
+        }
+        target.image_view = image_views[image_index];
+        target.image_view_ready = target.image_view.valid();
+        target.render_target_ready = target.image_view_ready;
+        target.vk_create_image_view_called = true;
+        target.lifecycle_status = target.image_view_ready
+            ? vulkan_native_swapchain_image_view_target_lifecycle_status::ready
+            : vulkan_native_swapchain_image_view_target_lifecycle_status::create_failed;
+        if (!target.ready()) {
+            result.status =
+                vulkan_native_swapchain_image_view_targets_execution_status::create_failed;
+            result.targets.push_back(target);
+            result.diagnostic =
+                "Native Vulkan image view target creation produced an invalid image view";
+            return result;
+        }
+        result.targets.push_back(target);
+    }
+
+    result.ready_image_view_count = result.targets.size();
+    state_.created_image_view_targets = result.targets;
+    result.status = vulkan_native_swapchain_image_view_targets_execution_status::ready;
+    result.diagnostic = "Native Vulkan image view targets are ready";
+    return result;
+}
+
+inline vulkan_native_swapchain_image_view_targets_destroy_result
+fake_vulkan_native_swapchain_operation::destroy_image_view_targets(
+    const vulkan_native_swapchain_image_view_targets_destroy_request& request)
+{
+    vulkan_native_swapchain_image_view_targets_destroy_result result =
+        swapchain_detail::make_image_view_targets_destroy_result(request);
+
+    if (!result.targets_ready) {
+        result.status =
+            vulkan_native_swapchain_image_view_targets_destroy_status::targets_unavailable;
+        result.diagnostic = request.targets.diagnostic.empty()
+            ? "Native Vulkan image view target destroy is missing ready image views"
+            : request.targets.diagnostic;
+        return result;
+    }
+    if (!result.dispatch_table_ready) {
+        result.status =
+            vulkan_native_swapchain_image_view_targets_destroy_status::dispatch_table_unavailable;
+        result.diagnostic = request.dispatch_table.diagnostic.empty()
+            ? "Native Vulkan image view target destroy is missing destroy dispatch"
+            : request.dispatch_table.diagnostic;
+        return result;
+    }
+    if (!result.device.valid()) {
+        result.status = vulkan_native_swapchain_image_view_targets_destroy_status::invalid_device;
+        result.diagnostic =
+            "Native Vulkan image view target destroy has no valid device handle";
+        return result;
+    }
+
+    ++state_.image_view_destroy_call_count;
+    state_.requested_device = result.device;
+    state_.last_destroy_image_view_symbol = result.destroy_image_view_symbol;
+    result.vk_destroy_image_view_called = true;
+
+    if (options_.fail_image_view_destroy) {
+        result.status = vulkan_native_swapchain_image_view_targets_destroy_status::destroy_failed;
+        result.native_result = options_.image_view_destroy_failure_result;
+        result.diagnostic = "Native Vulkan image view target destroy failed";
+        return result;
+    }
+
+    result.destroyed_image_view_count = request.targets.targets.size();
+    state_.destroyed_image_views.clear();
+    for (const vulkan_native_swapchain_image_view_target& target : request.targets.targets) {
+        state_.destroyed_image_views.push_back(target.image_view);
+    }
+    result.status = vulkan_native_swapchain_image_view_targets_destroy_status::destroyed;
+    result.diagnostic = "Native Vulkan image view targets destroyed";
+    return result;
+}
+
 inline const fake_vulkan_native_swapchain_operation_state&
 fake_vulkan_native_swapchain_operation::state() const
 {
@@ -2789,6 +3490,22 @@ inline vulkan_native_swapchain_acquire_execution_result acquire_native_vulkan_sw
     const vulkan_native_swapchain_acquire_execution_request& request)
 {
     return operation.acquire_next_image(request);
+}
+
+inline vulkan_native_swapchain_image_view_targets_execution_result
+create_native_vulkan_swapchain_image_view_targets(
+    vulkan_native_swapchain_operation_interface& operation,
+    const vulkan_native_swapchain_image_view_targets_execution_request& request)
+{
+    return operation.create_image_view_targets(request);
+}
+
+inline vulkan_native_swapchain_image_view_targets_destroy_result
+destroy_native_vulkan_swapchain_image_view_targets(
+    vulkan_native_swapchain_operation_interface& operation,
+    const vulkan_native_swapchain_image_view_targets_destroy_request& request)
+{
+    return operation.destroy_image_view_targets(request);
 }
 
 inline vulkan_swapchain_create_plan_result build_vulkan_swapchain_create_plan(

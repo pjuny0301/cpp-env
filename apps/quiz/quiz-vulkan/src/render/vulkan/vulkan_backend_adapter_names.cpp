@@ -60,6 +60,10 @@ std::string_view native_entrypoint_stage_name(vulkan_native_entrypoint_stage sta
         return "swapchain_images";
     case vulkan_native_entrypoint_stage::swapchain_acquire:
         return "swapchain_acquire";
+    case vulkan_native_entrypoint_stage::image_view_create:
+        return "image_view_create";
+    case vulkan_native_entrypoint_stage::image_view_destroy:
+        return "image_view_destroy";
     case vulkan_native_entrypoint_stage::queue_present:
         return "queue_present";
     }
@@ -91,6 +95,10 @@ std::string_view native_function_table_status_name(
         return "missing_swapchain_images_symbol";
     case vulkan_native_function_table_status::missing_swapchain_acquire_symbol:
         return "missing_swapchain_acquire_symbol";
+    case vulkan_native_function_table_status::missing_image_view_create_symbol:
+        return "missing_image_view_create_symbol";
+    case vulkan_native_function_table_status::missing_image_view_destroy_symbol:
+        return "missing_image_view_destroy_symbol";
     case vulkan_native_function_table_status::missing_queue_present_symbol:
         return "missing_queue_present_symbol";
     }

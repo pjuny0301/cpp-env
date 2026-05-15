@@ -14,7 +14,7 @@ Last updated: 2026-05-15
 
 ## Active Worker Queue
 
-- `codex-vulkan-real-backend-probe-20260514`: working on a fresh Vulkan-only framebuffer/render-target task from latest baseline. Scope is `src/render/vulkan/*` and `tests/render/vulkan/*`; expected output is native/fake `vkCreateFramebuffer`/`vkDestroyFramebuffer` readiness consuming swapchain image-view target evidence.
+- `codex-vulkan-real-backend-probe-20260514`: idle after `39a3692` integration. Do not re-merge `codex/vulkan-image-view-framebuffer-targets-20260515-r1`; give this session a fresh baseline branch for the next Vulkan-only task.
 - `codex-text-freetype-prototype-20260514`: idle after `bf7a207` integration. Do not re-merge `codex/text-fake-engine-source-split-20260515`; give this session a fresh baseline branch for the next text-only task.
 - `codex-asset-unified-cache-key-20260514` and `codex-image-texture-next-20260514` are currently idle on historical ahead commits that are patch-equivalent to integrated baseline work. Do not re-merge those branches; give them fresh baseline tasks only if asset/image becomes the active bottleneck again.
 
@@ -49,6 +49,7 @@ Last updated: 2026-05-15
 - Worker pipeline rule: keep tasks bounded to one engine-owned surface plus focused tests. If a worker discovers a cross-engine or app/CMake need, it should finish the engine-local patch and hand off the wiring need instead of editing integrator-owned files.
 - Worker pipeline rule: focused tests are enough for worker handoff; the integrator runs Windows focused verification after cherry-pick and full CTest only after meaningful batches. This keeps throughput without hiding boundary regressions.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
+- Latest integration note: `39a3692` adds native/fake Vulkan framebuffer target readiness after swapchain image-view targets, including `vkCreateFramebuffer`/`vkDestroyFramebuffer` dispatch evidence, per-image framebuffer lifecycle records, render-pass/image-view/extent blockers, and per-target destroy evidence; Windows MinGW built the interface contract target and focused Vulkan/renderer/architecture CTest passed 7/7.
 - Latest integration note: architecture boundary scanning now covers private `.inl` source fragments as well as `.h/.hpp/.cpp`, preventing worker file splits from bypassing dependency-direction checks; Windows MinGW architecture CTest passed 1/1.
 - Latest integration note: `bf7a207` splits line/run atlas-upload diagnostics out of `fake_text_engine.cpp` into a private text-owned `.inl` fragment without changing public interfaces or CMake; Windows MinGW built the interface contract target and focused text/architecture CTest passed 3/3.
 - Latest integration note: `f7ac2e1` adds native/fake Vulkan swapchain image-view target readiness behind the backend boundary, including image-view create/destroy dispatch evidence, per-image target lifecycle records, missing-symbol diagnostics, and render-target attachment intent data; Windows MinGW built the interface contract target and focused Vulkan/renderer/architecture CTest passed 6/6.

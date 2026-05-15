@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- `39a3692`: Vulkan backend now carries framebuffer target readiness after swapchain image-view targets, with create/destroy dispatch, per-image framebuffer lifecycle records, render-pass/image-view/extent blockers, and fake/native paths kept inside the Vulkan backend boundary.
+- current: after `39a3692`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`; focused architecture/renderer/Vulkan CTest passed 7/7.
 - current: architecture boundary tests now scan private `.inl` source fragments, so source-only worker splits remain subject to the same dependency-direction guard as `.h/.hpp/.cpp` files.
 - `bf7a207`: text engine source layout now keeps line/run atlas-upload diagnostics in a private text-owned `.inl` fragment, reducing future worker read cost without changing public contracts, CMake, renderer wiring, or behavior.
 - `f7ac2e1`: Vulkan backend now creates data/dispatch evidence for swapchain image-view targets, including image-view create/destroy entrypoints, per-image target lifecycle records, missing-symbol diagnostics, and render-target attachment intent while keeping scene/UI/domain out of the backend.

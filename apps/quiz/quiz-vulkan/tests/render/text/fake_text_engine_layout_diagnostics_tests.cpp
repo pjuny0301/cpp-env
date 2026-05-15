@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdio>
+#include <cstdlib>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -20,6 +22,43 @@ void require(bool condition, const char* message)
 bool near(float actual, float expected)
 {
     return std::fabs(actual - expected) < 0.001f;
+}
+
+std::filesystem::path quiz_vulkan_app_root_from_this_test()
+{
+    const std::filesystem::path test_path = std::filesystem::path(__FILE__);
+    return test_path.parent_path().parent_path().parent_path().parent_path();
+}
+
+std::filesystem::path desktop_external_root()
+{
+    if (const char* external_dir = std::getenv("QUIZ_VULKAN_DESKTOP_EXTERNAL_DIR");
+        external_dir != nullptr && external_dir[0] != '\0') {
+        return std::filesystem::path(external_dir);
+    }
+
+    const std::filesystem::path repo_root =
+        quiz_vulkan_app_root_from_this_test().parent_path().parent_path().parent_path();
+    return repo_root / "build" / "external" / "lib" / "cpp" / "desktop";
+}
+
+std::vector<std::filesystem::path> harfbuzz_real_font_fixture_candidates()
+{
+    const std::filesystem::path external_root = desktop_external_root();
+    return {
+        external_root / "harfbuzz-14.2.0" / "perf" / "fonts" / "Roboto-Regular.ttf",
+        external_root / "harfbuzz-14.2.0" / "test" / "api" / "fonts" / "Mplus1p-Regular.ttf",
+    };
+}
+
+std::filesystem::path first_available_harfbuzz_real_font_fixture()
+{
+    for (const std::filesystem::path& path : harfbuzz_real_font_fixture_candidates()) {
+        if (std::filesystem::exists(path)) {
+            return path;
+        }
+    }
+    return {};
 }
 
 quiz_vulkan::render::render_text_style_catalog make_style_catalog()
@@ -1939,6 +1978,176 @@ void test_fake_text_engine_injected_adapter_shapes_available_complex_script()
     require(!diagnostics.shaped_glyphs.front().used_fallback_glyph_id, "adapter shaped glyph avoids fallback id");
 }
 
+void test_fake_text_engine_harfbuzz_handoff_shapes_materialized_font_bytes()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::filesystem::path font_path = first_available_harfbuzz_real_font_fixture();
+    if (font_path.empty()) {
+        return;
+    }
+
+    fake_text_engine engine;
+    engine.set_font_backend_capability_components({
+        freetype_component(),
+        harfbuzz_component(),
+    });
+    engine.add_font_face(font_face_descriptor{
+        .id = 620,
+        .family = "Handoff Sans",
+        .source_uri = font_path.generic_string(),
+        .version = "external-fixture",
+        .license = "harfbuzz-test-fixture",
+        .coverage = {
+            font_codepoint_range{.first = U'a', .last = U'a'},
+            font_codepoint_range{.first = 0x0300U, .last = 0x036fU},
+        },
+        .weight = 400,
+    });
+
+    render_text_style_catalog catalog = make_style_catalog();
+    catalog.styles.push_back(render_text_style{
+        .id = "handoff",
+        .font_family = "Handoff Sans",
+        .font_size = 32.0f,
+        .line_height = 36.0f,
+        .font_weight = 400,
+    });
+
+    const std::string text = "a\xcc\x81";
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = text, .style_token = "handoff"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 240.0f, 0.0f};
+    request.style_catalog = catalog;
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    const render_text_layout layout = engine.layout_text(request);
+    const fake_text_engine_diagnostics& diagnostics = engine.last_diagnostics();
+
+    require(!layout.glyphs.empty(), "HarfBuzz handoff lays out shaped fixture glyphs");
+    require(diagnostics.has_shaping_handoffs(), "HarfBuzz handoff records shaping handoff snapshots");
+    require(diagnostics.font_backend_uses_adapter_shaping, "HarfBuzz handoff records adapter shaping use");
+    require(!diagnostics.font_backend_uses_deterministic_shaping, "HarfBuzz handoff bypasses deterministic shaping");
+    require(
+        diagnostics.shaping_handoff_policy.harfbuzz_run_count == 1U,
+        "HarfBuzz handoff policy counts one HarfBuzz-shaped run");
+    require(
+        diagnostics.shaping_handoff_policy.materialized_font_byte_run_count == 1U,
+        "HarfBuzz handoff policy records materialized font bytes");
+    require(
+        diagnostics.shaping_handoff_policy.deterministic_fallback_run_count == 0U,
+        "HarfBuzz handoff policy records no deterministic fallback");
+    require(
+        diagnostics.shaping_handoff_policy.atlas_ready_glyph_count > 0U,
+        "HarfBuzz handoff records atlas-ready glyph evidence");
+    require(
+        diagnostics.shaping_handoffs.size() == layout.glyphs.size(),
+        "HarfBuzz handoff emits one handoff record per layout glyph");
+
+    bool saw_positive_advance = false;
+    for (const fake_text_engine_shaping_handoff_snapshot& handoff : diagnostics.shaping_handoffs) {
+        require(handoff.used_harfbuzz, "handoff record marks HarfBuzz as the shaping backend");
+        require(handoff.used_adapter, "handoff record marks adapter use");
+        require(!handoff.used_deterministic_fallback, "handoff record does not mark deterministic fallback");
+        require(handoff.backend_library == render_text_font_backend_library::harfbuzz, "handoff backend is HarfBuzz");
+        require(handoff.backend_label == "HarfBuzz", "handoff backend label is stable");
+        require(
+            handoff.adapter_status == render_text_font_backend_adapter_status::shaped,
+            "handoff adapter status records shaped");
+        require(
+            handoff.source_bytes_status == render_text_font_source_bytes_load_status::loaded,
+            "handoff source bytes are loaded");
+        require(handoff.materialized_font_bytes, "handoff records materialized font bytes");
+        require(handoff.glyph_id != 0U, "handoff records real shaped glyph id");
+        require(handoff.cluster_byte_offset == 0U, "handoff keeps cluster byte offset");
+        require(handoff.cluster_byte_count == text.size(), "handoff keeps combined cluster byte range");
+        require(handoff.cluster_codepoint_offset == 0U, "handoff keeps cluster codepoint offset");
+        require(handoff.cluster_codepoint_count == 2U, "handoff keeps base plus combining mark codepoint range");
+        saw_positive_advance = saw_positive_advance || handoff.advance_x > 0.0f;
+    }
+    require(saw_positive_advance, "HarfBuzz handoff records font-backed glyph advance");
+}
+
+void test_fake_text_engine_harfbuzz_handoff_keeps_deterministic_fallback_without_bytes()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_text_engine engine;
+    engine.set_font_backend_capability_components({
+        freetype_component(),
+        harfbuzz_component(),
+    });
+    engine.add_font_face(font_face_descriptor{
+        .id = 621,
+        .family = "Missing Handoff Sans",
+        .source_uri = "fonts/missing-handoff-sans.ttf",
+        .version = "missing-fixture",
+        .license = "test-fixture",
+        .coverage = {
+            font_codepoint_range{.first = U'A', .last = U'A'},
+        },
+        .weight = 400,
+    });
+
+    render_text_style_catalog catalog = make_style_catalog();
+    catalog.styles.push_back(render_text_style{
+        .id = "missing-handoff",
+        .font_family = "Missing Handoff Sans",
+        .font_size = 20.0f,
+        .line_height = 24.0f,
+        .font_weight = 400,
+    });
+
+    render_text_request request;
+    request.text_runs = {
+        render_text_run{.text = "A", .style_token = "missing-handoff"},
+    };
+    request.bounds = render_rect{0.0f, 0.0f, 200.0f, 0.0f};
+    request.style_catalog = catalog;
+    request.options = render_text_options{
+        .wrap = render_text_wrap_mode::no_wrap,
+        .alignment = render_text_alignment::start,
+        .max_lines = 0,
+    };
+
+    const render_text_layout layout = engine.layout_text(request);
+    const fake_text_engine_diagnostics& diagnostics = engine.last_diagnostics();
+
+    require(layout.glyphs.size() == 1U, "missing HarfBuzz bytes preserve deterministic layout glyph");
+    require(diagnostics.font_backend_uses_deterministic_shaping, "missing bytes keep deterministic shaping active");
+    require(!diagnostics.font_backend_uses_adapter_shaping, "missing bytes do not invoke HarfBuzz adapter");
+    require(diagnostics.has_shaping_handoffs(), "missing bytes still record handoff diagnostics");
+    require(
+        diagnostics.shaping_handoff_policy.deterministic_fallback_run_count == 1U,
+        "missing bytes handoff policy counts deterministic fallback");
+    require(
+        diagnostics.shaping_handoff_policy.missing_font_byte_run_count == 1U,
+        "missing bytes handoff policy counts missing materialized bytes");
+    require(
+        diagnostics.shaping_handoff_policy.harfbuzz_run_count == 0U,
+        "missing bytes handoff policy does not claim HarfBuzz shaping");
+
+    const fake_text_engine_shaping_handoff_snapshot& handoff = diagnostics.shaping_handoffs.front();
+    require(handoff.backend_library == render_text_font_backend_library::deterministic_fake, "fallback backend is deterministic fake");
+    require(handoff.used_deterministic_fallback, "handoff marks deterministic fallback");
+    require(!handoff.used_harfbuzz, "handoff does not mark HarfBuzz for missing bytes");
+    require(!handoff.used_adapter, "handoff does not mark adapter for missing bytes");
+    require(!handoff.materialized_font_bytes, "handoff records missing materialized bytes");
+    require(
+        handoff.source_bytes_status == render_text_font_source_bytes_load_status::missing_bytes,
+        "handoff records missing source byte status");
+    require(
+        handoff.fallback_reason.find("materialized font bytes") != std::string::npos,
+        "handoff fallback reason names missing materialized bytes");
+    require(handoff.atlas_ready, "deterministic fallback handoff remains atlas-ready before raster bytes");
+}
+
 void test_fake_text_engine_injected_adapter_glyph_mismatch_drives_failure_diagnostics()
 {
     using namespace quiz_vulkan::render;
@@ -2547,6 +2756,8 @@ int main()
     test_fake_text_engine_uses_default_deterministic_shaping_without_adapter();
     test_fake_text_engine_injected_adapter_unavailable_drives_shaping_diagnostics();
     test_fake_text_engine_injected_adapter_shapes_available_complex_script();
+    test_fake_text_engine_harfbuzz_handoff_shapes_materialized_font_bytes();
+    test_fake_text_engine_harfbuzz_handoff_keeps_deterministic_fallback_without_bytes();
     test_fake_text_engine_injected_adapter_glyph_mismatch_drives_failure_diagnostics();
     test_fake_text_engine_injected_adapter_failure_drives_shaping_diagnostics();
     test_fake_text_engine_wires_resolved_glyph_id_through_atlas_payloads();

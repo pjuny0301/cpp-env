@@ -15,7 +15,7 @@ Last updated: 2026-05-15
 ## Active Worker Queue
 
 - `codex-vulkan-real-backend-probe-20260514`: working on a fresh Vulkan-only framebuffer/render-target task from latest baseline. Scope is `src/render/vulkan/*` and `tests/render/vulkan/*`; expected output is native/fake `vkCreateFramebuffer`/`vkDestroyFramebuffer` readiness consuming swapchain image-view target evidence.
-- `codex-text-freetype-prototype-20260514`: working on a fresh text-only source split task from latest baseline. Scope is `src/render/text/*` and `tests/render/text/*`; expected output is behavior-preserving private `.inl` extraction for the large fake text engine implementation so future text work reads less code.
+- `codex-text-freetype-prototype-20260514`: idle after `bf7a207` integration. Do not re-merge `codex/text-fake-engine-source-split-20260515`; give this session a fresh baseline branch for the next text-only task.
 - `codex-asset-unified-cache-key-20260514` and `codex-image-texture-next-20260514` are currently idle on historical ahead commits that are patch-equivalent to integrated baseline work. Do not re-merge those branches; give them fresh baseline tasks only if asset/image becomes the active bottleneck again.
 
 ## Active requirement IDs
@@ -48,6 +48,7 @@ Last updated: 2026-05-15
 - Worker pipeline rule: keep tasks bounded to one engine-owned surface plus focused tests. If a worker discovers a cross-engine or app/CMake need, it should finish the engine-local patch and hand off the wiring need instead of editing integrator-owned files.
 - Worker pipeline rule: focused tests are enough for worker handoff; the integrator runs Windows focused verification after cherry-pick and full CTest only after meaningful batches. This keeps throughput without hiding boundary regressions.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
+- Latest integration note: `bf7a207` splits line/run atlas-upload diagnostics out of `fake_text_engine.cpp` into a private text-owned `.inl` fragment without changing public interfaces or CMake; Windows MinGW built the interface contract target and focused text/architecture CTest passed 3/3.
 - Latest integration note: `f7ac2e1` adds native/fake Vulkan swapchain image-view target readiness behind the backend boundary, including image-view create/destroy dispatch evidence, per-image target lifecycle records, missing-symbol diagnostics, and render-target attachment intent data; Windows MinGW built the interface contract target and focused Vulkan/renderer/architecture CTest passed 6/6.
 - Latest integration note: `3d438c3` adds a HarfBuzz memory shaping adapter behind the text backend contract and links the approved local `harfbuzz-14.2.0` source through `quiz_vulkan_harfbuzz_external`; Windows MinGW configure/build succeeded and focused text/architecture CTest passed 3/3.
 - Latest integration note: `a9f712d` threads HarfBuzz-shaped output into fake text layout diagnostics when materialized font bytes and backend capability are present, while preserving deterministic fallback shaping for unavailable/missing-byte cases; Windows MinGW focused text CTest passed 3/3.

@@ -233,6 +233,9 @@ default_vulkan_native_image_view_entrypoints();
 std::vector<vulkan_native_entrypoint_symbol_request>
 default_vulkan_native_framebuffer_entrypoints();
 
+std::vector<vulkan_native_entrypoint_symbol_request>
+default_vulkan_native_render_pass_scope_entrypoints();
+
 std::vector<std::string> default_vulkan_native_swapchain_extensions();
 
 vulkan_native_function_table_diagnostics collect_vulkan_native_function_table(

@@ -190,6 +190,28 @@ static_assert(std::default_initializable<
               render::vulkan_backend::vulkan_native_framebuffer_operation>);
 
 template <typename T>
+concept VulkanNativeRenderPassScopeRecorderInterface = requires(
+    T& recorder,
+    const render::vulkan_backend::vulkan_native_render_pass_scope_record_request& request) {
+    { recorder.record_render_pass_scope(request) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_render_pass_scope_record_result>;
+};
+
+static_assert(VulkanNativeRenderPassScopeRecorderInterface<
+              render::vulkan_backend::vulkan_native_render_pass_scope_recorder_interface>);
+static_assert(VulkanNativeRenderPassScopeRecorderInterface<
+              render::vulkan_backend::fake_vulkan_native_render_pass_scope_recorder>);
+static_assert(VulkanNativeRenderPassScopeRecorderInterface<
+              render::vulkan_backend::vulkan_native_render_pass_scope_recorder>);
+static_assert(std::default_initializable<
+              render::vulkan_backend::fake_vulkan_native_render_pass_scope_recorder>);
+static_assert(std::constructible_from<
+    render::vulkan_backend::fake_vulkan_native_render_pass_scope_recorder,
+    render::vulkan_backend::fake_vulkan_native_render_pass_scope_recorder_options>);
+static_assert(std::default_initializable<
+              render::vulkan_backend::vulkan_native_render_pass_scope_recorder>);
+
+template <typename T>
 concept VulkanCommandRecordingReadinessFactoryInterface = requires(
     T& factory,
     const render::vulkan_backend::vulkan_render_pass_create_result& render_pass_result,
@@ -2572,6 +2594,8 @@ static_assert(requires(
     { render::vulkan_backend::default_vulkan_native_image_view_entrypoints() }
         -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_entrypoint_symbol_request>>;
     { render::vulkan_backend::default_vulkan_native_framebuffer_entrypoints() }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_entrypoint_symbol_request>>;
+    { render::vulkan_backend::default_vulkan_native_render_pass_scope_entrypoints() }
         -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_entrypoint_symbol_request>>;
     { render::vulkan_backend::default_vulkan_native_swapchain_extensions() }
         -> std::same_as<std::vector<std::string>>;
@@ -6618,6 +6642,111 @@ static_assert(requires(render::vulkan_backend::vulkan_command_recorder_operation
 });
 
 static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_render_pass_scope_dispatch_table_status::ready),
+    render::vulkan_backend::vulkan_native_render_pass_scope_dispatch_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_render_pass_scope_dispatch_table_status::missing_begin_render_pass_symbol),
+    render::vulkan_backend::vulkan_native_render_pass_scope_dispatch_table_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_render_pass_scope_record_status::recorded),
+    render::vulkan_backend::vulkan_native_render_pass_scope_record_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_render_pass_scope_record_status::extent_mismatch),
+    render::vulkan_backend::vulkan_native_render_pass_scope_record_status>);
+static_assert(requires(
+    render::vulkan_backend::vulkan_native_render_pass_scope_dispatch_table dispatch) {
+    { dispatch.checked } -> std::same_as<bool&>;
+    { dispatch.status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_render_pass_scope_dispatch_table_status&>;
+    { dispatch.function_table_status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_table_status&>;
+    { dispatch.function_table_checked } -> std::same_as<bool&>;
+    { dispatch.begin_render_pass }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { dispatch.end_render_pass }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { dispatch.missing_symbol_name } -> std::same_as<std::string&>;
+    { dispatch.diagnostic } -> std::same_as<std::string&>;
+    { dispatch.ready_for_render_pass_scope() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    render::vulkan_backend::vulkan_native_render_pass_scope_record_request request) {
+    { request.framebuffer_targets } -> std::same_as<
+        render::vulkan_backend::vulkan_native_framebuffer_targets_execution_result&>;
+    { request.command_recording }
+        -> std::same_as<render::vulkan_backend::vulkan_command_recording_readiness_result&>;
+    { request.dispatch_table }
+        -> std::same_as<render::vulkan_backend::vulkan_native_render_pass_scope_dispatch_table&>;
+    { request.framebuffer_target_index } -> std::same_as<std::size_t&>;
+});
+
+static_assert(requires(
+    render::vulkan_backend::vulkan_native_render_pass_scope_record_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_render_pass_scope_record_status&>;
+    { result.framebuffer_targets } -> std::same_as<
+        render::vulkan_backend::vulkan_native_framebuffer_targets_execution_result&>;
+    { result.command_recording }
+        -> std::same_as<render::vulkan_backend::vulkan_command_recording_readiness_result&>;
+    { result.dispatch_table }
+        -> std::same_as<render::vulkan_backend::vulkan_native_render_pass_scope_dispatch_table&>;
+    { result.selected_framebuffer_target_index } -> std::same_as<std::size_t&>;
+    { result.framebuffer_target_count } -> std::same_as<std::size_t&>;
+    { result.image_id } -> std::same_as<render::vulkan_backend::vulkan_swapchain_image_id&>;
+    { result.command_buffer }
+        -> std::same_as<render::vulkan_backend::vulkan_command_recording_command_buffer_handle&>;
+    { result.render_pass } -> std::same_as<render::vulkan_backend::vulkan_render_pass_handle&>;
+    { result.framebuffer } -> std::same_as<render::vulkan_backend::vulkan_framebuffer_handle&>;
+    { result.extent } -> std::same_as<render::vulkan_backend::vulkan_surface_extent&>;
+    { result.begin_render_pass_symbol }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { result.end_render_pass_symbol }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { result.framebuffer_targets_ready } -> std::same_as<bool&>;
+    { result.command_buffer_ready } -> std::same_as<bool&>;
+    { result.render_pass_ready } -> std::same_as<bool&>;
+    { result.framebuffer_ready } -> std::same_as<bool&>;
+    { result.extent_ready } -> std::same_as<bool&>;
+    { result.extent_matches } -> std::same_as<bool&>;
+    { result.dispatch_table_ready } -> std::same_as<bool&>;
+    { result.vk_cmd_begin_render_pass_called } -> std::same_as<bool&>;
+    { result.vk_cmd_end_render_pass_called } -> std::same_as<bool&>;
+    { result.native_result } -> std::same_as<std::int32_t&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.ready_for_draw_commands() } -> std::same_as<bool>;
+    { result.blocked() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    render::vulkan_backend::fake_vulkan_native_render_pass_scope_recorder_options options) {
+    { options.fail_begin } -> std::same_as<bool&>;
+    { options.fail_end } -> std::same_as<bool&>;
+    { options.begin_failure_result } -> std::same_as<std::int32_t&>;
+    { options.end_failure_result } -> std::same_as<std::int32_t&>;
+});
+
+static_assert(requires(
+    render::vulkan_backend::fake_vulkan_native_render_pass_scope_recorder_state state) {
+    { state.record_call_count } -> std::same_as<std::size_t&>;
+    { state.requested_framebuffer_target_index } -> std::same_as<std::size_t&>;
+    { state.requested_command_buffer }
+        -> std::same_as<render::vulkan_backend::vulkan_command_recording_command_buffer_handle&>;
+    { state.requested_render_pass }
+        -> std::same_as<render::vulkan_backend::vulkan_render_pass_handle&>;
+    { state.requested_framebuffer }
+        -> std::same_as<render::vulkan_backend::vulkan_framebuffer_handle&>;
+    { state.requested_extent } -> std::same_as<render::vulkan_backend::vulkan_surface_extent&>;
+    { state.last_begin_render_pass_symbol }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { state.last_end_render_pass_symbol }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { state.last_result }
+        -> std::same_as<render::vulkan_backend::vulkan_native_render_pass_scope_record_result&>;
+});
+
+static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_command_buffer_record_result_status::not_checked),
     render::vulkan_backend::vulkan_command_buffer_record_result_status>);
 static_assert(std::same_as<
@@ -6747,6 +6876,22 @@ static_assert(std::default_initializable<
 static_assert(std::constructible_from<
     render::vulkan_backend::fake_vulkan_command_buffer_operation_recorder,
     render::vulkan_backend::fake_vulkan_command_buffer_operation_recorder_options>);
+static_assert(requires(
+    render::vulkan_backend::vulkan_native_render_pass_scope_recorder_interface&
+        render_pass_scope_recorder,
+    const render::vulkan_backend::vulkan_native_function_table_diagnostics&
+        native_function_diagnostics,
+    const render::vulkan_backend::vulkan_native_render_pass_scope_record_request&
+        render_pass_scope_request) {
+    { render::vulkan_backend::collect_vulkan_native_render_pass_scope_dispatch_table(
+        native_function_diagnostics) } -> std::same_as<
+        render::vulkan_backend::vulkan_native_render_pass_scope_dispatch_table>;
+    { render::vulkan_backend::record_native_vulkan_render_pass_scope(
+        render_pass_scope_recorder,
+        render_pass_scope_request) } -> std::same_as<
+        render::vulkan_backend::vulkan_native_render_pass_scope_record_result>;
+});
+
 static_assert(requires(
     render::vulkan_backend::vulkan_command_buffer_operation_recorder_interface& recorder,
     render::vulkan_backend::vulkan_command_buffer_id command_buffer,

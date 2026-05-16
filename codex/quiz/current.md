@@ -1,11 +1,11 @@
 # Quiz Current Handoff
 
-Last updated: 2026-05-16
+Last updated: 2026-05-17
 
 ## Top priorities
 
 - Keep the native C++/Vulkan remake aligned with the Android quiz UX baseline while routing UX actions through app/domain actions.
-- Current Vulkan bottleneck: `build_vulkan_native_command_packet_executor_evidence` can now derive command buffer, pipeline, pipeline layout, and viewport evidence from a backend frame, but descriptor set handles remain intentionally unavailable until a Vulkan-owned descriptor allocation/upload evidence path supplies them.
+- Current Vulkan bottleneck: fake descriptor set allocation now consumes completed resource-binding evidence plus image texture materialization evidence, including sampler-key matching, before native command-packet execution can receive descriptor handles. The next Vulkan-owned gap is real `VkWriteDescriptorSet` payload handoff for native image views, samplers, image layouts, and descriptor write records.
 - Treat long press as the unknown-question path: UI button contract `mark_question_unknown`, app input route `mark_question_unknown`, domain payload `mark_question_unknown_action`.
 - Keep test status counts derived from the configured build with `ctest -N`; do not freeze global CTest totals in docs.
 - Build the engine stack in dependency order: Vulkan backend implementation, image decode/texture path, text layout/atlas, asset materialization, and input/IME. Audio/backend wiring is intentionally deferred for now.
@@ -16,7 +16,8 @@ Last updated: 2026-05-16
 ## Active Worker Queue
 
 - `codex-vulkan-real-backend-probe-20260514`: idle after `2f97c8b` integration. Do not re-merge `codex/vulkan-default-scoped-packet-frame-20260516`; give this session a fresh baseline branch for the next Vulkan-only task.
-- `codex-vulkan-native-command-packet-executor-20260516`: latest baseline prompt queued via `ff33706` for Vulkan-only native descriptor set evidence. Keep the session alive; do not interrupt old in-flight work.
+- `codex-vulkan-native-descriptor-set-evidence-20260516`: `afb0051` integrated as `bd934a2`, then integrator follow-up `ef822d5` tightened image sampler materialization matching. Session is idle and must stay alive; give it a fresh baseline branch for the next Vulkan-only descriptor-write/image-view task.
+- `codex-vulkan-native-command-packet-executor-20260516`: idle after older native command packet executor work. Keep the session alive; give it a fresh baseline branch before any new task.
 - `codex-text-freetype-raster-payload-handoff-20260516`: `5e74a26` integrated as `e78cd75`; keep the session alive for inspection or a fresh text-only branch.
 - `codex-asset-unified-cache-key-20260514` and `codex-image-texture-next-20260514` are currently idle on historical ahead commits that are patch-equivalent to integrated baseline work. Do not re-merge those branches; give them fresh baseline tasks only if asset/image becomes the active bottleneck again.
 
@@ -54,6 +55,9 @@ Last updated: 2026-05-16
 - Worker pipeline rule: keep tasks bounded to one engine-owned surface plus focused tests. If a worker discovers a cross-engine or app/CMake need, it should finish the engine-local patch and hand off the wiring need instead of editing integrator-owned files.
 - Worker pipeline rule: focused tests are enough for worker handoff; the integrator runs Windows focused verification after cherry-pick and full CTest only after meaningful batches. This keeps throughput without hiding boundary regressions.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
+- Latest integration note: `bd934a2` adds a Vulkan-owned materialization-aware descriptor allocation overload that blocks image descriptor allocation when image texture cache/upload/sampler handoff evidence is missing, blocked, or mismatched.
+- Latest integration note: `ef822d5` tightens that descriptor gate so image sampler bindings must match the materialized sampler handoff record, not only the texture resource id.
+- Latest verification note: after `ef822d5`, Windows MinGW built `quiz_vulkan_vulkan_command_packet_execution_tests`, `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_renderer_tests`, and `quiz_vulkan_architecture_boundary_tests`; focused architecture/renderer/Vulkan CTest passed 3/3.
 - Latest integration note: `0ed2aa1` adds a Vulkan-owned fake descriptor set allocation result and merge/build path for native command-packet executor evidence. Default frame evidence still leaves descriptor handles unavailable unless completed allocation evidence is passed explicitly.
 - Latest verification note: after `0ed2aa1`, Windows MinGW built `quiz_vulkan_vulkan_command_packet_execution_tests`, `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_renderer_tests`, and `quiz_vulkan_architecture_boundary_tests`; focused architecture/renderer/Vulkan CTest passed 3/3.
 - Latest verification note: after `f808516`, Windows MinGW full CTest passed 104/104 from `C:/aa/build/out/quiz/quiz-vulkan/windows-mingw-ascii`.

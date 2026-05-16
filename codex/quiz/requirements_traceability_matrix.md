@@ -1,11 +1,14 @@
 # Quiz 요구사항 추적 매트릭스
 
-마지막 갱신: 2026-05-16
+마지막 갱신: 2026-05-17
 
 이 문서는 요구사항 번호를 실행 순서가 아니라 추적 ID로 관리한다. 실제 구현 순서는 `big_plan.md`의 의존관계 기반 단계가 기준이며, 각 행은 루트 구현 문서, 하위 프로젝트 문서, 현재 C++/문서 증거를 연결한다.
 
 최근 baseline 통합 증거:
 
+- `bd934a2`: Vulkan descriptor allocation now consumes image texture frame resource packet materialization evidence before supplying descriptor handles for native command-packet execution, blocking missing, blocked, or mismatched image handoff records instead of treating image resources as ready by resource id alone.
+- `ef822d5`: Vulkan descriptor allocation now also validates image sampler binding ids against materialized sampler handoff records, closing the sampler/texture mismatch gap found during integrator review.
+- current: after `ef822d5`, Windows MinGW built `quiz_vulkan_vulkan_command_packet_execution_tests`, `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_renderer_tests`, and `quiz_vulkan_architecture_boundary_tests`; focused architecture/renderer/Vulkan CTest passed 3/3.
 - `0ed2aa1`: Vulkan backend now has a fake/data descriptor set allocation result plus explicit merge/build API for native command-packet executor evidence, so completed resource-binding evidence can supply stable descriptor handles while the default frame evidence path still refuses to fabricate handles.
 - current: after `0ed2aa1`, Windows MinGW built `quiz_vulkan_vulkan_command_packet_execution_tests`, `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_renderer_tests`, and `quiz_vulkan_architecture_boundary_tests`; focused architecture/renderer/Vulkan CTest passed 3/3.
 - current: after `f808516`, Windows MinGW full CTest passed 104/104 from `C:/aa/build/out/quiz/quiz-vulkan/windows-mingw-ascii`.

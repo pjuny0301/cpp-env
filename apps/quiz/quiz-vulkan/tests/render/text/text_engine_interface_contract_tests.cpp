@@ -3013,6 +3013,12 @@ static_assert(requires(
     render::render_text_frame_upload_handoff_packet_diff handoff_packet_diff,
     render::render_text_frame_upload_handoff_page_diff handoff_page_diff,
     render::render_text_frame_upload_handoff_diff_snapshot handoff_diff,
+    render::render_text_frame_resource_packet_materialization_status resource_packet_status,
+    render::render_text_frame_resource_packet_materialization_entry resource_packet,
+    render::render_text_frame_resource_packet_materialization_page_snapshot resource_page,
+    render::render_text_frame_resource_packet_materialization_policy_snapshot resource_policy,
+    render::render_text_frame_resource_packet_materialization_request resource_request,
+    render::render_text_frame_resource_packet_materialization resource_materialization,
     render::render_text_glyph_atlas_materialization_snapshot snapshot,
     render::render_text_request request,
     render::render_draw_command draw_command,
@@ -3569,6 +3575,152 @@ static_assert(requires(
         -> std::same_as<render::render_text_frame_upload_handoff_packet_snapshot>;
     { render::make_render_text_frame_upload_handoff(handoff_request) }
         -> std::same_as<render::render_text_frame_upload_handoff_snapshot>;
+    { render::render_text_frame_resource_packet_materialization_status_name(resource_packet_status) }
+        -> std::same_as<std::string>;
+    { resource_packet.resource_packet_id } -> std::same_as<std::string&>;
+    { resource_packet.stable_packet_key } -> std::same_as<std::string&>;
+    { resource_packet.frame_id } -> std::same_as<std::string&>;
+    { resource_packet.source_label } -> std::same_as<std::string&>;
+    { resource_packet.draw_packet_id } -> std::same_as<std::string&>;
+    { resource_packet.upload_handoff_id } -> std::same_as<std::string&>;
+    { resource_packet.upload_operation_id } -> std::same_as<std::string&>;
+    { resource_packet.upload_request_id } -> std::same_as<std::string&>;
+    { resource_packet.stable_page_id } -> std::same_as<std::string&>;
+    { resource_packet.sampler_key } -> std::same_as<std::string&>;
+    { resource_packet.sampler_summary } -> std::same_as<std::string&>;
+    { resource_packet.packet_index } -> std::same_as<std::size_t&>;
+    { resource_packet.materialization_index } -> std::same_as<std::size_t&>;
+    { resource_packet.run_index } -> std::same_as<std::size_t&>;
+    { resource_packet.cluster_byte_offset } -> std::same_as<std::size_t&>;
+    { resource_packet.cluster_byte_count } -> std::same_as<std::size_t&>;
+    { resource_packet.cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { resource_packet.resolved_glyph_id } -> std::same_as<std::uint32_t&>;
+    { resource_packet.resolved_face_id } -> std::same_as<render::font_face_id&>;
+    { resource_packet.page_id } -> std::same_as<render::render_text_atlas_page_id&>;
+    { resource_packet.page_revision } -> std::same_as<render::render_text_revision&>;
+    { resource_packet.page_width } -> std::same_as<std::size_t&>;
+    { resource_packet.page_height } -> std::same_as<std::size_t&>;
+    { resource_packet.layout_bounds } -> std::same_as<render::render_rect&>;
+    { resource_packet.atlas_bounds } -> std::same_as<render::render_rect&>;
+    { resource_packet.update_bounds } -> std::same_as<render::render_rect&>;
+    { resource_packet.uv_bounds } -> std::same_as<render::render_text_frame_draw_uv_rect&>;
+    { resource_packet.draw_status } -> std::same_as<render::render_text_frame_draw_packet_status&>;
+    { resource_packet.handoff_status }
+        -> std::same_as<render::render_text_frame_upload_handoff_packet_status&>;
+    { resource_packet.upload_result_status }
+        -> std::same_as<render::render_text_glyph_atlas_upload_result_status&>;
+    { resource_packet.status }
+        -> std::same_as<render::render_text_frame_resource_packet_materialization_status&>;
+    { resource_packet.has_upload_handoff } -> std::same_as<bool&>;
+    { resource_packet.has_draw_packet } -> std::same_as<bool&>;
+    { resource_packet.ready } -> std::same_as<bool&>;
+    { resource_packet.blocked } -> std::same_as<bool&>;
+    { resource_packet.renderer_boundary_ready } -> std::same_as<bool&>;
+    { resource_packet.uploaded } -> std::same_as<bool&>;
+    { resource_packet.clean_reuse } -> std::same_as<bool&>;
+    { resource_packet.missing_upload_handoff } -> std::same_as<bool&>;
+    { resource_packet.missing_draw_packet } -> std::same_as<bool&>;
+    { resource_packet.upload_rejected } -> std::same_as<bool&>;
+    { resource_packet.frame_not_ready } -> std::same_as<bool&>;
+    { resource_packet.missing_atlas_page } -> std::same_as<bool&>;
+    { resource_packet.missing_atlas_bounds } -> std::same_as<bool&>;
+    { resource_packet.missing_page_extent } -> std::same_as<bool&>;
+    { resource_packet.duplicate_packet } -> std::same_as<bool&>;
+    { resource_packet.used_deterministic_fallback } -> std::same_as<bool&>;
+    { resource_packet.used_real_backend } -> std::same_as<bool&>;
+    { resource_packet.glyph_supported } -> std::same_as<bool&>;
+    { resource_packet.upload_consumed } -> std::same_as<bool&>;
+    { resource_packet.upload_rgba_bytes } -> std::same_as<std::size_t&>;
+    { resource_packet.blocker_summary } -> std::same_as<std::string&>;
+    { resource_packet.diagnostic } -> std::same_as<std::string&>;
+    { resource_packet.ok() } -> std::same_as<bool>;
+    { resource_page.stable_page_id } -> std::same_as<std::string&>;
+    { resource_page.sampler_key } -> std::same_as<std::string&>;
+    { resource_page.sampler_summary } -> std::same_as<std::string&>;
+    { resource_page.page_id } -> std::same_as<render::render_text_atlas_page_id&>;
+    { resource_page.page_revision } -> std::same_as<render::render_text_revision&>;
+    { resource_page.page_width } -> std::same_as<std::size_t&>;
+    { resource_page.page_height } -> std::same_as<std::size_t&>;
+    { resource_page.packet_count } -> std::same_as<std::size_t&>;
+    { resource_page.ready_packet_count } -> std::same_as<std::size_t&>;
+    { resource_page.blocked_packet_count } -> std::same_as<std::size_t&>;
+    { resource_page.uploaded_packet_count } -> std::same_as<std::size_t&>;
+    { resource_page.clean_reuse_packet_count } -> std::same_as<std::size_t&>;
+    { resource_page.duplicate_packet_count } -> std::same_as<std::size_t&>;
+    { resource_page.upload_rgba_bytes } -> std::same_as<std::size_t&>;
+    { resource_page.has_uploads } -> std::same_as<bool&>;
+    { resource_page.has_clean_reuse } -> std::same_as<bool&>;
+    { resource_page.has_blockers } -> std::same_as<bool&>;
+    { resource_policy.draw_packet_count } -> std::same_as<std::size_t&>;
+    { resource_policy.handoff_packet_count } -> std::same_as<std::size_t&>;
+    { resource_policy.resource_packet_count } -> std::same_as<std::size_t&>;
+    { resource_policy.ready_packet_count } -> std::same_as<std::size_t&>;
+    { resource_policy.blocked_packet_count } -> std::same_as<std::size_t&>;
+    { resource_policy.uploaded_packet_count } -> std::same_as<std::size_t&>;
+    { resource_policy.clean_reuse_packet_count } -> std::same_as<std::size_t&>;
+    { resource_policy.missing_upload_handoff_count } -> std::same_as<std::size_t&>;
+    { resource_policy.rejected_upload_count } -> std::same_as<std::size_t&>;
+    { resource_policy.frame_not_ready_count } -> std::same_as<std::size_t&>;
+    { resource_policy.draw_packet_blocked_count } -> std::same_as<std::size_t&>;
+    { resource_policy.missing_draw_packet_count } -> std::same_as<std::size_t&>;
+    { resource_policy.missing_atlas_page_count } -> std::same_as<std::size_t&>;
+    { resource_policy.missing_atlas_bounds_count } -> std::same_as<std::size_t&>;
+    { resource_policy.missing_page_extent_count } -> std::same_as<std::size_t&>;
+    { resource_policy.duplicate_packet_id_count } -> std::same_as<std::size_t&>;
+    { resource_policy.deterministic_fallback_count } -> std::same_as<std::size_t&>;
+    { resource_policy.real_backend_count } -> std::same_as<std::size_t&>;
+    { resource_policy.consumed_upload_count } -> std::same_as<std::size_t&>;
+    { resource_policy.total_upload_rgba_bytes } -> std::same_as<std::size_t&>;
+    { resource_policy.page_count } -> std::same_as<std::size_t&>;
+    { resource_policy.sampler_count } -> std::same_as<std::size_t&>;
+    { resource_policy.frame_ready_for_renderer } -> std::same_as<bool&>;
+    { resource_policy.has_blockers } -> std::same_as<bool&>;
+    { resource_policy.has_uploads } -> std::same_as<bool&>;
+    { resource_policy.has_clean_reuse } -> std::same_as<bool&>;
+    { resource_policy.used_deterministic_fallback } -> std::same_as<bool&>;
+    { resource_policy.used_real_backend } -> std::same_as<bool&>;
+    { resource_request.draw_plan } -> std::same_as<render::render_text_frame_draw_plan_snapshot&>;
+    { resource_request.upload_handoff }
+        -> std::same_as<render::render_text_frame_upload_handoff_snapshot&>;
+    { resource_materialization.frame_id } -> std::same_as<std::string&>;
+    { resource_materialization.source_label } -> std::same_as<std::string&>;
+    { resource_materialization.frame_status } -> std::same_as<render::render_text_frame_snapshot_status&>;
+    { resource_materialization.frame_ready_for_renderer } -> std::same_as<bool&>;
+    { resource_materialization.policy }
+        -> std::same_as<render::render_text_frame_resource_packet_materialization_policy_snapshot&>;
+    { resource_materialization.entries }
+        -> std::same_as<std::vector<render::render_text_frame_resource_packet_materialization_entry>&>;
+    { resource_materialization.pages }
+        -> std::same_as<std::vector<render::render_text_frame_resource_packet_materialization_page_snapshot>&>;
+    { resource_materialization.ready_resource_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { resource_materialization.blocker_resource_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { resource_materialization.duplicate_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { resource_materialization.sampler_summary } -> std::same_as<std::string&>;
+    { resource_materialization.blocker_summary } -> std::same_as<std::string&>;
+    { resource_materialization.diagnostic } -> std::same_as<std::string&>;
+    { resource_materialization.ok() } -> std::same_as<bool>;
+    { resource_materialization.has_blockers() } -> std::same_as<bool>;
+    { render::render_text_frame_resource_packet_sampler_key_for(draw_packet.page_id, draw_packet.page_revision) }
+        -> std::same_as<std::string>;
+    { render::render_text_frame_resource_packet_sampler_summary_for(
+        draw_packet.page_id,
+        draw_packet.page_revision,
+        draw_packet.page_width,
+        draw_packet.page_height) } -> std::same_as<std::string>;
+    { render::render_text_frame_resource_packet_id_for(frame_snapshot.frame_id, draw_packet.packet_id) }
+        -> std::same_as<std::string>;
+    { render::render_text_frame_resource_packet_missing_draw_id_for(frame_snapshot.frame_id, handoff_packet.handoff_id) }
+        -> std::same_as<std::string>;
+    { render::render_text_frame_resource_packet_find_handoff_packet(handoff.packets, draw_packet.packet_id) }
+        -> std::same_as<const render::render_text_frame_upload_handoff_packet_snapshot*>;
+    { render::render_text_frame_resource_packet_materialization_status_for(&draw_packet, &handoff_packet, duplicate) }
+        -> std::same_as<render::render_text_frame_resource_packet_materialization_status>;
+    { render::make_render_text_frame_resource_packet_materialization_entry(draw_packet, &handoff_packet, std::size_t{}, duplicate) }
+        -> std::same_as<render::render_text_frame_resource_packet_materialization_entry>;
+    { render::make_render_text_frame_resource_packet_materialization_missing_draw_entry(handoff_packet, std::size_t{}) }
+        -> std::same_as<render::render_text_frame_resource_packet_materialization_entry>;
+    { render::materialize_render_text_frame_resource_packets(resource_request) }
+        -> std::same_as<render::render_text_frame_resource_packet_materialization>;
     { handoff_diff_policy.ready_glyph_packet_count_delta } -> std::same_as<std::ptrdiff_t&>;
     { handoff_diff_policy.blocked_glyph_packet_count_delta } -> std::same_as<std::ptrdiff_t&>;
     { handoff_diff_policy.draw_packet_missing_count_delta } -> std::same_as<std::ptrdiff_t&>;

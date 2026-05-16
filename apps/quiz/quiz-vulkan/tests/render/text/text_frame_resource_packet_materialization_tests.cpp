@@ -1,0 +1,399 @@
+#include "render/text/text_frame_upload_handoff.h"
+
+#include <cassert>
+#include <cstdio>
+#include <cstdint>
+#include <string>
+#include <utility>
+#include <vector>
+
+namespace {
+
+void require(const bool condition, const char* message)
+{
+    if (!condition) {
+        std::fprintf(stderr, "Requirement failed: %s\n", message);
+    }
+    assert((condition) && message);
+}
+
+quiz_vulkan::render::glyph_atlas_key key_for(const std::uint32_t glyph_id)
+{
+    return quiz_vulkan::render::glyph_atlas_key{
+        .face_id = 7,
+        .glyph_id = glyph_id,
+        .pixel_size = 20,
+    };
+}
+
+quiz_vulkan::render::render_text_frame_draw_packet_snapshot ready_draw_packet(
+    std::string packet_id,
+    const std::uint32_t glyph_id,
+    const std::size_t materialization_index)
+{
+    using namespace quiz_vulkan::render;
+
+    const glyph_atlas_key cache_key = key_for(glyph_id);
+    return render_text_frame_draw_packet_snapshot{
+        .packet_id = std::move(packet_id),
+        .frame_id = "frame-1",
+        .source_label = "text-resource-test",
+        .atlas_upload_request_id = "upload-" + std::to_string(materialization_index),
+        .status = render_text_frame_draw_packet_status::draw_ready,
+        .item_index = 0,
+        .materialization_index = materialization_index,
+        .run_index = 1,
+        .requested_style_token = "body",
+        .resolved_style_id = "body",
+        .cluster_byte_offset = 4 + materialization_index,
+        .cluster_byte_count = 1,
+        .cache_key = cache_key,
+        .resolved_glyph_id = glyph_id,
+        .resolved_face_id = cache_key.face_id,
+        .page_id = 2,
+        .page_revision = 5,
+        .page_width = 64,
+        .page_height = 64,
+        .layout_bounds = render_rect{10.0f + static_cast<float>(materialization_index), 20.0f, 8.0f, 8.0f},
+        .has_layout_bounds = true,
+        .atlas_bounds = render_rect{1.0f + static_cast<float>(materialization_index), 2.0f, 8.0f, 8.0f},
+        .has_atlas_bounds = true,
+        .uv_bounds = render_text_frame_draw_uv_rect{.u0 = 0.015625f, .v0 = 0.03125f, .u1 = 0.140625f, .v1 = 0.15625f, .valid = true},
+        .frame_ready_for_renderer = true,
+        .used_deterministic_fallback = glyph_id == U'A',
+        .used_real_backend = glyph_id == U'R',
+        .glyph_supported = true,
+        .stable_cache_key = true,
+        .upload_consumed = true,
+        .diagnostic = "draw packet ready",
+    };
+}
+
+quiz_vulkan::render::render_text_frame_upload_handoff_packet_snapshot
+handoff_packet_for_draw(
+    const quiz_vulkan::render::render_text_frame_draw_packet_snapshot& draw_packet,
+    const quiz_vulkan::render::render_text_frame_upload_handoff_packet_status status,
+    std::string blocker_reason = {})
+{
+    using namespace quiz_vulkan::render;
+
+    const bool ready = status == render_text_frame_upload_handoff_packet_status::ready_uploaded
+        || status == render_text_frame_upload_handoff_packet_status::ready_clean_reuse;
+    const bool uploaded = status == render_text_frame_upload_handoff_packet_status::ready_uploaded;
+    const bool clean_reuse = status == render_text_frame_upload_handoff_packet_status::ready_clean_reuse;
+    const bool rejected = status == render_text_frame_upload_handoff_packet_status::blocked_upload_rejected;
+    return render_text_frame_upload_handoff_packet_snapshot{
+        .handoff_id = "handoff-" + draw_packet.packet_id,
+        .stable_packet_key = "stable-" + draw_packet.packet_id,
+        .frame_id = draw_packet.frame_id,
+        .source_label = draw_packet.source_label,
+        .draw_packet_id = draw_packet.packet_id,
+        .upload_operation_id = "operation-" + draw_packet.packet_id,
+        .upload_request_id = draw_packet.atlas_upload_request_id,
+        .stable_page_id = "page:" + std::to_string(draw_packet.page_id),
+        .materialization_index = draw_packet.materialization_index,
+        .run_index = draw_packet.run_index,
+        .cluster_byte_offset = draw_packet.cluster_byte_offset,
+        .cluster_byte_count = draw_packet.cluster_byte_count,
+        .cache_key = draw_packet.cache_key,
+        .resolved_glyph_id = draw_packet.resolved_glyph_id,
+        .resolved_face_id = draw_packet.resolved_face_id,
+        .page_id = draw_packet.page_id,
+        .page_revision = draw_packet.page_revision,
+        .layout_bounds = draw_packet.layout_bounds,
+        .atlas_bounds = draw_packet.atlas_bounds,
+        .update_bounds = draw_packet.atlas_bounds,
+        .draw_status = draw_packet.status,
+        .upload_result_status = clean_reuse
+            ? render_text_glyph_atlas_upload_result_status::accepted_clean_reuse
+            : (rejected ? render_text_glyph_atlas_upload_result_status::rejected_missing_upload_request_id
+                        : render_text_glyph_atlas_upload_result_status::accepted_upload),
+        .handoff_status = status,
+        .has_upload_result = true,
+        .requested = true,
+        .ready = ready,
+        .blocked = !ready,
+        .drawable = draw_packet.drawable(),
+        .uploaded = uploaded,
+        .clean_reuse = clean_reuse,
+        .used_deterministic_fallback = draw_packet.used_deterministic_fallback,
+        .used_real_backend = draw_packet.used_real_backend,
+        .glyph_supported = draw_packet.glyph_supported,
+        .upload_consumed = draw_packet.upload_consumed,
+        .upload_rgba_bytes = uploaded ? 256U : 0U,
+        .blocker_reason = std::move(blocker_reason),
+        .diagnostic = ready ? "handoff ready" : "handoff blocked",
+    };
+}
+
+quiz_vulkan::render::render_text_frame_draw_plan_snapshot draw_plan_for(
+    std::vector<quiz_vulkan::render::render_text_frame_draw_packet_snapshot> packets,
+    const bool frame_ready = true)
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_frame_draw_plan_snapshot plan{
+        .frame_id = "frame-1",
+        .source_label = "text-resource-test",
+        .frame_status = frame_ready ? render_text_frame_snapshot_status::ready
+                                    : render_text_frame_snapshot_status::pending_atlas_updates,
+        .frame_ready_for_renderer = frame_ready,
+        .packets = std::move(packets),
+        .diagnostic = "test draw plan",
+    };
+    plan.policy.packet_count = plan.packets.size();
+    for (const auto& packet : plan.packets) {
+        if (packet.status == render_text_frame_draw_packet_status::draw_ready) {
+            ++plan.policy.draw_ready_count;
+        }
+    }
+    return plan;
+}
+
+quiz_vulkan::render::render_text_frame_upload_handoff_snapshot handoff_for(
+    std::vector<quiz_vulkan::render::render_text_frame_upload_handoff_packet_snapshot> packets,
+    const bool frame_ready = true)
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_frame_upload_handoff_snapshot handoff{
+        .frame_id = "frame-1",
+        .source_label = "text-resource-test",
+        .frame_status = frame_ready ? render_text_frame_snapshot_status::ready
+                                    : render_text_frame_snapshot_status::pending_atlas_updates,
+        .packets = std::move(packets),
+        .diagnostic = "test upload handoff",
+    };
+    handoff.policy.frame_ready_for_renderer = frame_ready;
+    for (const auto& packet : handoff.packets) {
+        if (packet.ready) {
+            ++handoff.policy.ready_glyph_packet_count;
+        }
+        if (packet.blocked) {
+            ++handoff.policy.blocked_glyph_packet_count;
+            handoff.policy.has_blockers = true;
+        }
+    }
+    return handoff;
+}
+
+quiz_vulkan::render::render_text_frame_resource_packet_materialization materialize(
+    const quiz_vulkan::render::render_text_frame_draw_plan_snapshot& draw_plan,
+    const quiz_vulkan::render::render_text_frame_upload_handoff_snapshot& handoff)
+{
+    return quiz_vulkan::render::materialize_render_text_frame_resource_packets(
+        quiz_vulkan::render::render_text_frame_resource_packet_materialization_request{
+            .draw_plan = draw_plan,
+            .upload_handoff = handoff,
+        });
+}
+
+void test_resource_packets_materialize_upload_and_clean_reuse()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_frame_draw_packet_snapshot uploaded_draw =
+        ready_draw_packet("draw-uploaded", U'A', 0);
+    const render_text_frame_draw_packet_snapshot clean_draw =
+        ready_draw_packet("draw-clean", U'C', 1);
+    const render_text_frame_draw_packet_snapshot real_draw =
+        ready_draw_packet("draw-real", U'R', 2);
+    const render_text_frame_draw_plan_snapshot draw_plan =
+        draw_plan_for({uploaded_draw, clean_draw, real_draw});
+    const render_text_frame_upload_handoff_snapshot handoff = handoff_for({
+        handoff_packet_for_draw(
+            uploaded_draw,
+            render_text_frame_upload_handoff_packet_status::ready_uploaded),
+        handoff_packet_for_draw(
+            clean_draw,
+            render_text_frame_upload_handoff_packet_status::ready_clean_reuse),
+        handoff_packet_for_draw(
+            real_draw,
+            render_text_frame_upload_handoff_packet_status::ready_uploaded),
+    });
+
+    const render_text_frame_resource_packet_materialization packets =
+        materialize(draw_plan, handoff);
+
+    require(packets.ok(), "uploaded and clean-reuse resource packets are renderer-boundary ready");
+    require(packets.entries.size() == 3U, "materialization preserves each draw packet");
+    require(packets.policy.ready_packet_count == 3U, "all packets are counted ready");
+    require(packets.policy.uploaded_packet_count == 2U, "uploaded payload packets are counted");
+    require(packets.policy.clean_reuse_packet_count == 1U, "clean reuse packet is counted");
+    require(packets.policy.total_upload_rgba_bytes == 512U, "uploaded bytes total only upload payloads");
+    require(packets.policy.used_deterministic_fallback, "deterministic fallback flag is preserved");
+    require(packets.policy.used_real_backend, "real backend flag is preserved");
+    require(!packets.entries.front().sampler_key.empty(), "resource packet exposes a text atlas sampler key");
+    require(packets.entries.front().uv_bounds.valid, "resource packet preserves UV bounds");
+    require(packets.entries.front().renderer_boundary_ready, "ready upload packet is renderer-boundary ready");
+    require(
+        packets.entries.front().status
+            == render_text_frame_resource_packet_materialization_status::materialized_uploaded,
+        "upload packet reports uploaded materialization status");
+    require(
+        packets.entries[1].status
+            == render_text_frame_resource_packet_materialization_status::materialized_clean_reuse,
+        "clean packet reports clean reuse materialization status");
+    require(packets.pages.size() == 1U, "page summary groups packets by atlas page");
+    require(packets.pages.front().ready_packet_count == 3U, "page summary counts ready packets");
+    require(packets.policy.sampler_count == 1U, "policy counts referenced text atlas sampler");
+}
+
+void test_resource_packets_report_missing_upload_handoff_and_rejected_upload()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_frame_draw_packet_snapshot draw =
+        ready_draw_packet("draw-missing-upload", U'A', 0);
+    const render_text_frame_resource_packet_materialization missing =
+        materialize(draw_plan_for({draw}), handoff_for({}));
+
+    require(!missing.ok(), "missing upload handoff blocks resource materialization");
+    require(missing.policy.missing_upload_handoff_count == 1U, "missing handoff is counted");
+    require(
+        missing.entries.front().status
+            == render_text_frame_resource_packet_materialization_status::blocked_missing_upload_handoff,
+        "missing upload handoff status is explicit");
+    require(!missing.entries.front().blocker_summary.empty(), "missing handoff carries blocker summary");
+
+    const render_text_frame_draw_packet_snapshot rejected_draw =
+        ready_draw_packet("draw-rejected", U'B', 1);
+    const render_text_frame_resource_packet_materialization rejected =
+        materialize(
+            draw_plan_for({rejected_draw}),
+            handoff_for({handoff_packet_for_draw(
+                rejected_draw,
+                render_text_frame_upload_handoff_packet_status::blocked_upload_rejected,
+                "upload request id missing")}));
+
+    require(!rejected.ok(), "rejected upload blocks resource materialization");
+    require(rejected.policy.rejected_upload_count == 1U, "rejected upload is counted");
+    require(
+        rejected.entries.front().status
+            == render_text_frame_resource_packet_materialization_status::blocked_upload_rejected,
+        "rejected upload status is explicit");
+    require(rejected.entries.front().upload_rejected, "entry preserves rejected upload flag");
+}
+
+void test_resource_packets_report_draw_and_page_blockers()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_frame_draw_packet_snapshot frame_not_ready =
+        ready_draw_packet("draw-pending-frame", U'A', 0);
+    frame_not_ready.status = render_text_frame_draw_packet_status::frame_not_ready;
+    frame_not_ready.frame_ready_for_renderer = false;
+    render_text_frame_resource_packet_materialization pending =
+        materialize(
+            draw_plan_for({frame_not_ready}, false),
+            handoff_for({handoff_packet_for_draw(
+                frame_not_ready,
+                render_text_frame_upload_handoff_packet_status::ready_uploaded)},
+                false));
+    require(!pending.ok(), "frame-not-ready draw packet blocks resource materialization");
+    require(pending.policy.frame_not_ready_count == 1U, "frame-not-ready blocker is counted");
+    require(
+        pending.entries.front().status
+            == render_text_frame_resource_packet_materialization_status::blocked_frame_not_ready,
+        "frame-not-ready status is explicit");
+
+    render_text_frame_draw_packet_snapshot missing_page =
+        ready_draw_packet("draw-missing-page", U'B', 1);
+    missing_page.page_id = 0;
+    render_text_frame_resource_packet_materialization missing_page_packets =
+        materialize(
+            draw_plan_for({missing_page}),
+            handoff_for({handoff_packet_for_draw(
+                missing_page,
+                render_text_frame_upload_handoff_packet_status::ready_uploaded)}));
+    require(missing_page_packets.policy.missing_atlas_page_count == 1U, "missing atlas page is counted");
+    require(
+        missing_page_packets.entries.front().status
+            == render_text_frame_resource_packet_materialization_status::blocked_missing_atlas_page,
+        "missing atlas page status is explicit");
+
+    render_text_frame_draw_packet_snapshot missing_bounds =
+        ready_draw_packet("draw-missing-bounds", U'C', 2);
+    missing_bounds.has_atlas_bounds = false;
+    render_text_frame_resource_packet_materialization missing_bounds_packets =
+        materialize(
+            draw_plan_for({missing_bounds}),
+            handoff_for({handoff_packet_for_draw(
+                missing_bounds,
+                render_text_frame_upload_handoff_packet_status::ready_uploaded)}));
+    require(missing_bounds_packets.policy.missing_atlas_bounds_count == 1U, "missing atlas bounds is counted");
+    require(
+        missing_bounds_packets.entries.front().status
+            == render_text_frame_resource_packet_materialization_status::blocked_missing_atlas_bounds,
+        "missing atlas bounds status is explicit");
+
+    render_text_frame_draw_packet_snapshot missing_extent =
+        ready_draw_packet("draw-missing-extent", U'D', 3);
+    missing_extent.page_width = 0;
+    missing_extent.uv_bounds.valid = false;
+    render_text_frame_resource_packet_materialization missing_extent_packets =
+        materialize(
+            draw_plan_for({missing_extent}),
+            handoff_for({handoff_packet_for_draw(
+                missing_extent,
+                render_text_frame_upload_handoff_packet_status::ready_uploaded)}));
+    require(missing_extent_packets.policy.missing_page_extent_count == 1U, "missing page extent is counted");
+    require(
+        missing_extent_packets.entries.front().status
+            == render_text_frame_resource_packet_materialization_status::blocked_missing_page_extent,
+        "missing page extent status is explicit");
+}
+
+void test_resource_packets_report_missing_draw_and_duplicate_packet_ids()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_frame_draw_packet_snapshot draw =
+        ready_draw_packet("draw-duplicate", U'A', 0);
+    const render_text_frame_resource_packet_materialization duplicates =
+        materialize(
+            draw_plan_for({draw, draw}),
+            handoff_for({handoff_packet_for_draw(
+                draw,
+                render_text_frame_upload_handoff_packet_status::ready_uploaded)}));
+
+    require(!duplicates.ok(), "duplicate draw packet ids block resource materialization");
+    require(duplicates.policy.duplicate_packet_id_count == 1U, "duplicate packet id is counted");
+    require(duplicates.duplicate_packet_ids.size() == 1U, "duplicate packet id is exposed");
+    require(
+        duplicates.entries.back().status
+            == render_text_frame_resource_packet_materialization_status::duplicate_packet_id,
+        "duplicate packet status is explicit");
+
+    render_text_frame_upload_handoff_packet_snapshot orphan =
+        handoff_packet_for_draw(draw, render_text_frame_upload_handoff_packet_status::ready_uploaded);
+    orphan.handoff_id = "handoff-orphan";
+    orphan.draw_packet_id = {};
+    orphan.missing_draw_packet = true;
+    orphan.handoff_status = render_text_frame_upload_handoff_packet_status::blocked_missing_draw_packet;
+    orphan.ready = false;
+    orphan.blocked = true;
+    orphan.uploaded = false;
+    orphan.upload_rgba_bytes = 0U;
+    const render_text_frame_resource_packet_materialization missing_draw =
+        materialize(draw_plan_for({}), handoff_for({orphan}));
+
+    require(!missing_draw.ok(), "orphan upload handoff blocks resource materialization");
+    require(missing_draw.policy.missing_draw_packet_count == 1U, "missing draw packet is counted");
+    require(
+        missing_draw.entries.front().status
+            == render_text_frame_resource_packet_materialization_status::blocked_missing_draw_packet,
+        "missing draw packet status is explicit");
+    require(!missing_draw.entries.front().has_draw_packet, "orphan entry records missing draw packet");
+}
+
+}  // namespace
+
+int main()
+{
+    test_resource_packets_materialize_upload_and_clean_reuse();
+    test_resource_packets_report_missing_upload_handoff_and_rejected_upload();
+    test_resource_packets_report_draw_and_page_blockers();
+    test_resource_packets_report_missing_draw_and_duplicate_packet_ids();
+    return 0;
+}

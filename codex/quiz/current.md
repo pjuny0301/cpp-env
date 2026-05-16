@@ -14,7 +14,7 @@ Last updated: 2026-05-16
 
 ## Active Worker Queue
 
-- `codex-vulkan-real-backend-probe-20260514`: queued for fresh Vulkan-only default scoped packet frame attachment work from latest baseline. Scope is `src/render/vulkan/*` and `tests/render/vulkan/*`.
+- `codex-vulkan-real-backend-probe-20260514`: idle after `2f97c8b` integration. Do not re-merge `codex/vulkan-default-scoped-packet-frame-20260516`; give this session a fresh baseline branch for the next Vulkan-only task.
 - `codex-text-freetype-prototype-20260514`: idle after `bf7a207` integration. Do not re-merge `codex/text-fake-engine-source-split-20260515`; give this session a fresh baseline branch for the next text-only task.
 - `codex-asset-unified-cache-key-20260514` and `codex-image-texture-next-20260514` are currently idle on historical ahead commits that are patch-equivalent to integrated baseline work. Do not re-merge those branches; give them fresh baseline tasks only if asset/image becomes the active bottleneck again.
 
@@ -49,6 +49,8 @@ Last updated: 2026-05-16
 - Worker pipeline rule: keep tasks bounded to one engine-owned surface plus focused tests. If a worker discovers a cross-engine or app/CMake need, it should finish the engine-local patch and hand off the wiring need instead of editing integrator-owned files.
 - Worker pipeline rule: focused tests are enough for worker handoff; the integrator runs Windows focused verification after cherry-pick and full CTest only after meaningful batches. This keeps throughput without hiding boundary regressions.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
+- Latest verification note: after `2f97c8b`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`; focused architecture/renderer/Vulkan CTest passed 7/7.
+- Latest integration note: `2f97c8b` attaches default scoped Vulkan command-packet execution evidence to backend frame submission before device command recording, including ready/failure/empty summaries in frame pipeline handoff without app/UI/domain coupling.
 - Latest verification note: after `f783f6f`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`; focused architecture/renderer/Vulkan CTest passed 7/7.
 - Latest integration note: `f783f6f` threads scoped command-packet execution results into Vulkan backend frame result and frame pipeline handoff summaries, including ready/failure state, selected framebuffer/command-buffer evidence, per-category packet counts, first failed packet evidence, and command-recording readiness gating without app/UI/domain coupling.
 - Latest verification note: after `81b2039`, Windows MinGW full CTest passed 103/103. The previous `quiz_vulkan_font_shaped_atlas_update_tests` host permission BAD_COMMAND is resolved by keeping the CTest name stable while shortening the Windows executable output name to `qv_text_atlas_tests.exe`.

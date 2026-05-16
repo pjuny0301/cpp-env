@@ -6,6 +6,7 @@
 
 최근 baseline 통합 증거:
 
+- current: after `f808516`, Windows MinGW full CTest passed 104/104 from `C:/aa/build/out/quiz/quiz-vulkan/windows-mingw-ascii`.
 - current: after `a629aff`, Windows MinGW built `quiz_vulkan_vulkan_command_packet_execution_tests`, `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_vulkan_frame_pipeline_handoff_tests`, `quiz_vulkan_renderer_tests`, and `quiz_vulkan_architecture_boundary_tests`; focused architecture/renderer/Vulkan CTest passed 4/4.
 - `a629aff`: Vulkan backend frame results now expose native command-packet evidence for command buffer, graphics pipeline, pipeline layout, and viewport while intentionally preserving descriptor set handles as unavailable until a Vulkan-owned descriptor allocation/upload evidence path supplies them.
 - `ff33706`: queued the next long-lived Vulkan worker prompt for native descriptor set evidence from the latest pushed baseline.

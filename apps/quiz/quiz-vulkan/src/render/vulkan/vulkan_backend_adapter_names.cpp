@@ -385,6 +385,25 @@ std::string_view native_command_packet_call_kind_name(
     return "unknown";
 }
 
+std::string_view native_descriptor_set_allocation_status_name(
+    vulkan_native_descriptor_set_allocation_status status)
+{
+    switch (status) {
+    case vulkan_native_descriptor_set_allocation_status::not_checked:
+        return "not_checked";
+    case vulkan_native_descriptor_set_allocation_status::ready:
+        return "ready";
+    case vulkan_native_descriptor_set_allocation_status::packet_bridge_unavailable:
+        return "packet_bridge_unavailable";
+    case vulkan_native_descriptor_set_allocation_status::resource_binding_unavailable:
+        return "resource_binding_unavailable";
+    case vulkan_native_descriptor_set_allocation_status::resource_binding_mismatch:
+        return "resource_binding_mismatch";
+    }
+
+    return "unknown";
+}
+
 std::string_view scoped_command_packet_execution_status_name(
     vulkan_scoped_command_packet_execution_status status)
 {

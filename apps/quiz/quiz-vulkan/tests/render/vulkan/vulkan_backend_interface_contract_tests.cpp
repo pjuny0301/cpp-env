@@ -6580,6 +6580,44 @@ static_assert(requires(render::vulkan_backend::vulkan_native_command_packet_desc
     { descriptor_set.completed() } -> std::same_as<bool>;
 });
 
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_descriptor_set_allocation_status::ready),
+    render::vulkan_backend::vulkan_native_descriptor_set_allocation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_descriptor_set_allocation_status::
+                 resource_binding_mismatch),
+    render::vulkan_backend::vulkan_native_descriptor_set_allocation_status>);
+static_assert(requires(render::vulkan_backend::vulkan_native_descriptor_set_allocation_status status) {
+    { render::vulkan_backend::native_descriptor_set_allocation_status_name(status) }
+        -> std::same_as<std::string_view>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_descriptor_set_fake_allocator_options options) {
+    { options.first_descriptor_set_handle } -> std::same_as<std::uintptr_t&>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_descriptor_set_allocation_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_descriptor_set_allocation_status&>;
+    { result.fallback_reason }
+        -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
+    { result.packet_bridge_checked } -> std::same_as<bool&>;
+    { result.packet_bridge_ready } -> std::same_as<bool&>;
+    { result.resource_bindings_checked } -> std::same_as<bool&>;
+    { result.resource_bindings_ready } -> std::same_as<bool&>;
+    { result.planned_packet_count } -> std::same_as<std::size_t&>;
+    { result.planned_descriptor_set_count } -> std::same_as<std::size_t&>;
+    { result.allocated_descriptor_set_count } -> std::same_as<std::size_t&>;
+    { result.failed_packet_index } -> std::same_as<std::size_t&>;
+    { result.failed_command_index } -> std::same_as<std::size_t&>;
+    { result.failed_set } -> std::same_as<std::size_t&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.descriptor_sets }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_command_packet_descriptor_set>&>;
+    { result.completed() } -> std::same_as<bool>;
+});
+
 static_assert(requires(render::vulkan_backend::vulkan_native_command_packet_executor_evidence evidence) {
     { evidence.native_functions }
         -> std::same_as<render::vulkan_backend::vulkan_native_function_table_diagnostics&>;
@@ -6593,6 +6631,30 @@ static_assert(requires(render::vulkan_backend::vulkan_native_command_packet_exec
     { evidence.viewport_available } -> std::same_as<bool&>;
     { evidence.descriptor_sets }
         -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_command_packet_descriptor_set>&>;
+});
+
+static_assert(requires(
+    const render::vulkan_backend::vulkan_command_packet_bridge_result& bridge,
+    const render::vulkan_backend::vulkan_backend_resource_binding_state& resource_bindings,
+    render::vulkan_backend::vulkan_native_descriptor_set_fake_allocator_options options,
+    render::vulkan_backend::vulkan_native_command_packet_executor_evidence evidence,
+    const render::vulkan_backend::vulkan_native_descriptor_set_allocation_result& allocation,
+    const render::vulkan_backend::vulkan_backend_frame_result& frame,
+    const render::vulkan_backend::vulkan_native_function_table_diagnostics& native_functions) {
+    { render::vulkan_backend::build_fake_vulkan_native_descriptor_set_allocation_result(
+        bridge,
+        resource_bindings,
+        options) } -> std::same_as<
+        render::vulkan_backend::vulkan_native_descriptor_set_allocation_result>;
+    { render::vulkan_backend::merge_vulkan_native_descriptor_set_allocation_result(
+        evidence,
+        allocation) } -> std::same_as<
+        render::vulkan_backend::vulkan_native_command_packet_executor_evidence>;
+    { render::vulkan_backend::build_vulkan_native_command_packet_executor_evidence(
+        frame,
+        allocation,
+        native_functions) } -> std::same_as<
+        render::vulkan_backend::vulkan_native_command_packet_executor_evidence>;
 });
 
 static_assert(requires(render::vulkan_backend::vulkan_native_command_packet_call_evidence call) {

@@ -1463,6 +1463,74 @@ struct vulkan_native_command_packet_descriptor_set {
     }
 };
 
+enum class vulkan_native_descriptor_set_allocation_status {
+    not_checked,
+    ready,
+    packet_bridge_unavailable,
+    resource_binding_unavailable,
+    resource_binding_mismatch,
+};
+
+std::string_view native_descriptor_set_allocation_status_name(
+    vulkan_native_descriptor_set_allocation_status status);
+
+struct vulkan_native_descriptor_set_fake_allocator_options {
+    std::uintptr_t first_descriptor_set_handle = 7000;
+};
+
+struct vulkan_native_descriptor_set_allocation_result {
+    bool checked = false;
+    vulkan_native_descriptor_set_allocation_status status =
+        vulkan_native_descriptor_set_allocation_status::not_checked;
+    vulkan_backend_fallback_reason fallback_reason = vulkan_backend_fallback_reason::not_requested;
+    bool packet_bridge_checked = false;
+    bool packet_bridge_ready = false;
+    bool resource_bindings_checked = false;
+    bool resource_bindings_ready = false;
+    std::size_t planned_packet_count = 0;
+    std::size_t planned_descriptor_set_count = 0;
+    std::size_t allocated_descriptor_set_count = 0;
+    std::size_t failed_packet_index = 0;
+    std::size_t failed_command_index = 0;
+    std::size_t failed_set = 0;
+    std::string diagnostic;
+    std::vector<vulkan_native_command_packet_descriptor_set> descriptor_sets;
+
+    bool completed() const
+    {
+        if (!checked || status != vulkan_native_descriptor_set_allocation_status::ready
+            || fallback_reason != vulkan_backend_fallback_reason::none
+            || !packet_bridge_checked || !packet_bridge_ready
+            || !resource_bindings_checked || !resource_bindings_ready
+            || allocated_descriptor_set_count != planned_descriptor_set_count
+            || descriptor_sets.size() != allocated_descriptor_set_count) {
+            return false;
+        }
+
+        for (std::size_t descriptor_index = 0;
+             descriptor_index < descriptor_sets.size();
+             ++descriptor_index) {
+            const vulkan_native_command_packet_descriptor_set& descriptor_set =
+                descriptor_sets[descriptor_index];
+            if (!descriptor_set.completed()) {
+                return false;
+            }
+            for (std::size_t next_index = descriptor_index + 1;
+                 next_index < descriptor_sets.size();
+                 ++next_index) {
+                const vulkan_native_command_packet_descriptor_set& next_descriptor_set =
+                    descriptor_sets[next_index];
+                if (descriptor_set.packet_index == next_descriptor_set.packet_index
+                    && descriptor_set.set == next_descriptor_set.set) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+};
+
 struct vulkan_native_command_packet_executor_evidence {
     vulkan_native_function_table_diagnostics native_functions;
     vulkan_command_recording_command_buffer_handle command_buffer;
@@ -2748,6 +2816,20 @@ vulkan_command_packet_bridge_result build_vulkan_command_packet_bridge(
 
 vulkan_native_command_packet_executor_evidence build_vulkan_native_command_packet_executor_evidence(
     const vulkan_backend_frame_result& frame,
+    const vulkan_native_function_table_diagnostics& native_functions = {});
+
+vulkan_native_descriptor_set_allocation_result build_fake_vulkan_native_descriptor_set_allocation_result(
+    const vulkan_command_packet_bridge_result& bridge,
+    const vulkan_backend_resource_binding_state& resource_bindings,
+    vulkan_native_descriptor_set_fake_allocator_options options = {});
+
+vulkan_native_command_packet_executor_evidence merge_vulkan_native_descriptor_set_allocation_result(
+    vulkan_native_command_packet_executor_evidence evidence,
+    const vulkan_native_descriptor_set_allocation_result& descriptor_set_allocation);
+
+vulkan_native_command_packet_executor_evidence build_vulkan_native_command_packet_executor_evidence(
+    const vulkan_backend_frame_result& frame,
+    const vulkan_native_descriptor_set_allocation_result& descriptor_set_allocation,
     const vulkan_native_function_table_diagnostics& native_functions = {});
 
 vulkan_command_recorder_operation_plan build_vulkan_command_recorder_operation_plan(

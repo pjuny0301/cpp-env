@@ -33,7 +33,7 @@ Hard rules:
 Useful commands:
 - `git status --short --branch`
 - `git pull --ff-only`
-- `"/mnt/c/Program Files/CMake/bin/cmake.exe" --preset windows-mingw-ascii`
+- `/mnt/c/aa/codex-workers/configure-quiz-vulkan-worker-build.sh "$(pwd)" windows-mingw-ascii`
 - `/mnt/c/aa/codex-workers/with-build-lock.sh "/mnt/c/Program Files/CMake/bin/cmake.exe" --build "C:\\aa\\build\\out\\quiz\\quiz-vulkan\\windows-mingw-ascii" --target quiz_vulkan_interface_contract_compile_tests`
 - `/mnt/c/aa/codex-workers/with-build-lock.sh "/mnt/c/Program Files/CMake/bin/ctest.exe" --test-dir "C:\\aa\\build\\out\\quiz\\quiz-vulkan\\windows-mingw-ascii" -R "<focused_test_regex>" --output-on-failure`
 - `git diff --check`

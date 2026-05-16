@@ -12,6 +12,9 @@ The workers are meant to implement behind existing quiz-vulkan interfaces, not r
 - `run-codex-tmux.sh`: starts one role in a persistent tmux session.
 - `send-worker-prompt.sh`: pastes and submits a prompt file into an existing
   persistent tmux worker.
+- `configure-quiz-vulkan-worker-build.sh`: configures a worker worktree build
+  while pointing CMake at the central approved dependency checkout under
+  `/mnt/c/aa/build/external/lib/cpp/desktop`.
 - `with-build-lock.sh`: serializes shared Windows CMake/CTest access so
   parallel workers do not race on the same build directory.
 - `worker-status.sh`: summarizes live Codex tmux sessions, current paths, branch
@@ -72,6 +75,19 @@ folder and focused tests. Commit scoped files and report the hash.
 EOF
 /mnt/c/aa/codex-workers/send-worker-prompt.sh codex-text-engine /tmp/text-next.md
 ```
+
+Configure a worker-local quiz-vulkan build with the central external
+dependencies:
+
+```bash
+/mnt/c/aa/codex-workers/configure-quiz-vulkan-worker-build.sh \
+  /mnt/c/aa-workers/text-engine \
+  windows-mingw-ascii
+```
+
+This keeps build output inside the worker worktree's `build/out` while avoiding
+duplicate or missing FreeType, HarfBuzz, Vulkan, stb, utf8proc, and miniaudio
+source snapshots.
 
 For a compact coordinator view:
 

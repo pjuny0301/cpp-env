@@ -2055,6 +2055,198 @@ std::vector<std::byte> fake_rasterizer_font_bytes_for(const font_face_descriptor
     return bytes;
 }
 
+struct rasterized_glyph_atlas_payload_handoff_result {
+    render_text_font_rasterize_result rasterized;
+    render_text_font_atlas_glyph_payload payload;
+    render_text_font_source_bytes_load_status source_bytes_status =
+        render_text_font_source_bytes_load_status::missing_source;
+    bool materialized_font_bytes = false;
+    bool used_freetype_rasterizer = false;
+    bool uses_deterministic_rasterizer = true;
+    std::string deterministic_fallback_reason;
+};
+
+bool rasterization_selection_chose_freetype(
+    const render_text_font_backend_selection_result& rasterization_selection)
+{
+    return rasterization_selection.has_selection
+        && rasterization_selection.selected.library == render_text_font_backend_library::freetype;
+}
+
+render_text_font_source_bytes_load_result load_font_source_bytes_for_raster_payload(
+    const font_face_descriptor& face)
+{
+    const filesystem_font_source_bytes_loader loader;
+    return loader.load(render_text_font_source_bytes_load_request{
+        .source = resolve_font_source(face),
+    });
+}
+
+std::string font_source_bytes_label_for_raster_payload(
+    const render_text_font_source_bytes_load_result& source_bytes)
+{
+    if (!source_bytes.resolved_path.empty()) {
+        return source_bytes.resolved_path;
+    }
+    if (!source_bytes.cache_key.empty()) {
+        return source_bytes.cache_key;
+    }
+    return source_bytes.source.source_uri;
+}
+
+std::string freetype_raster_payload_preflight_fallback_reason(
+    const render_text_font_backend_capability_snapshot& font_backend_capability,
+    const render_text_font_backend_selection_result& rasterization_selection)
+{
+    if (!rasterization_selection_chose_freetype(rasterization_selection)) {
+        return "rasterization backend selection did not choose FreeType";
+    }
+    if (!render_text_font_backend_adapter_capability_allows_rasterization(font_backend_capability)) {
+        return "font backend capability does not allow FreeType glyph rasterization";
+    }
+    return {};
+}
+
+std::string freetype_raster_payload_source_fallback_reason(
+    const render_text_font_source_bytes_load_result& source_bytes)
+{
+    if (!source_bytes.ok()) {
+        return "materialized font bytes are not loaded for FreeType rasterization: "
+            + render_text_font_source_bytes_load_status_name(source_bytes.status);
+    }
+    if (source_bytes.bytes.empty()) {
+        return "materialized font bytes are empty for FreeType rasterization";
+    }
+    return {};
+}
+
+rasterized_glyph_atlas_payload_handoff_result make_deterministic_raster_payload_handoff(
+    const font_face_descriptor& face,
+    const glyph_atlas_key& key,
+    const std::uint32_t codepoint,
+    std::string fallback_reason,
+    const render_text_font_source_bytes_load_result* source_bytes = nullptr)
+{
+    const deterministic_fake_font_rasterizer rasterizer;
+    std::vector<std::byte> fake_font_bytes;
+    std::span<const std::byte> font_bytes;
+    render_text_font_source_bytes_load_status bytes_status =
+        render_text_font_source_bytes_load_status::missing_source;
+    std::string source_label;
+    bool materialized_font_bytes = false;
+
+    if (source_bytes != nullptr && source_bytes->ok() && !source_bytes->bytes.empty()) {
+        font_bytes = std::span<const std::byte>{source_bytes->bytes.data(), source_bytes->bytes.size()};
+        bytes_status = source_bytes->status;
+        source_label = font_source_bytes_label_for_raster_payload(*source_bytes);
+        materialized_font_bytes = true;
+    } else {
+        bytes_status = fake_rasterizer_font_bytes_status_for(face);
+        fake_font_bytes = fake_rasterizer_font_bytes_for(face);
+        font_bytes = std::span<const std::byte>{fake_font_bytes.data(), fake_font_bytes.size()};
+        if (source_bytes != nullptr) {
+            source_label = font_source_bytes_label_for_raster_payload(*source_bytes);
+        }
+    }
+
+    render_text_font_rasterize_request request = make_font_rasterize_request(
+        face,
+        key,
+        codepoint,
+        font_bytes,
+        std::move(source_label));
+    request.font_bytes_status = bytes_status;
+
+    render_text_font_rasterize_result result = rasterizer.rasterize(request);
+    render_text_font_atlas_glyph_payload payload = make_font_rasterizer_atlas_payload(result);
+    return rasterized_glyph_atlas_payload_handoff_result{
+        .rasterized = std::move(result),
+        .payload = std::move(payload),
+        .source_bytes_status = source_bytes == nullptr ? bytes_status : source_bytes->status,
+        .materialized_font_bytes = materialized_font_bytes,
+        .used_freetype_rasterizer = false,
+        .uses_deterministic_rasterizer = true,
+        .deterministic_fallback_reason = std::move(fallback_reason),
+    };
+}
+
+rasterized_glyph_atlas_payload_handoff_result rasterize_glyph_atlas_payload_with_handoff(
+    const font_face_descriptor& face,
+    const glyph_atlas_key& key,
+    const std::uint32_t codepoint,
+    const render_text_font_backend_capability_snapshot& font_backend_capability,
+    const render_text_font_backend_selection_result& rasterization_selection)
+{
+    std::string fallback_reason = freetype_raster_payload_preflight_fallback_reason(
+        font_backend_capability,
+        rasterization_selection);
+    if (!fallback_reason.empty()) {
+        return make_deterministic_raster_payload_handoff(
+            face,
+            key,
+            codepoint,
+            std::move(fallback_reason));
+    }
+
+    render_text_font_source_bytes_load_result source_bytes =
+        load_font_source_bytes_for_raster_payload(face);
+    fallback_reason = freetype_raster_payload_source_fallback_reason(source_bytes);
+    if (!fallback_reason.empty()) {
+        return make_deterministic_raster_payload_handoff(
+            face,
+            key,
+            codepoint,
+            std::move(fallback_reason),
+            &source_bytes);
+    }
+
+    if (!render_text_freetype_memory_face_adapter_available()) {
+        return make_deterministic_raster_payload_handoff(
+            face,
+            key,
+            codepoint,
+            "FreeType memory-face raster adapter is not compiled",
+            &source_bytes);
+    }
+
+    render_text_font_rasterize_request request = make_font_rasterize_request(
+        face,
+        key,
+        codepoint,
+        std::span<const std::byte>{source_bytes.bytes.data(), source_bytes.bytes.size()},
+        font_source_bytes_label_for_raster_payload(source_bytes));
+    request.font_bytes_status = source_bytes.status;
+
+    const render_text_real_font_raster_adapter_result adapter_result =
+        freetype_real_font_backend_rasterize(render_text_real_font_raster_adapter_request{
+            .capability = font_backend_capability,
+            .library = render_text_font_backend_library::freetype,
+            .rasterize = request,
+        });
+    render_text_font_atlas_glyph_payload payload =
+        make_font_rasterizer_atlas_payload(adapter_result.rasterized);
+    if (adapter_result.ok() && payload.upload_ready) {
+        return rasterized_glyph_atlas_payload_handoff_result{
+            .rasterized = adapter_result.rasterized,
+            .payload = std::move(payload),
+            .source_bytes_status = source_bytes.status,
+            .materialized_font_bytes = true,
+            .used_freetype_rasterizer = true,
+            .uses_deterministic_rasterizer = false,
+        };
+    }
+
+    fallback_reason = adapter_result.diagnostic.empty()
+        ? "FreeType raster adapter did not produce an upload-ready glyph bitmap"
+        : "FreeType raster adapter fallback: " + adapter_result.diagnostic;
+    return make_deterministic_raster_payload_handoff(
+        face,
+        key,
+        codepoint,
+        std::move(fallback_reason),
+        &source_bytes);
+}
+
 void count_rasterized_glyph_atlas_payload_status(
     render_text_rasterized_glyph_atlas_payload_policy_snapshot& policy,
     const render_text_font_rasterizer_status status)
@@ -2094,6 +2286,18 @@ void append_rasterized_glyph_atlas_payload_snapshot(
     count_rasterized_glyph_atlas_payload_status(
         diagnostics.rasterized_glyph_atlas_payload_policy,
         snapshot.status);
+    if (snapshot.uses_deterministic_rasterizer) {
+        ++diagnostics.rasterized_glyph_atlas_payload_policy.deterministic_rasterizer_count;
+    }
+    if (snapshot.used_freetype_rasterizer) {
+        ++diagnostics.rasterized_glyph_atlas_payload_policy.freetype_rasterizer_count;
+    }
+    if (snapshot.materialized_font_bytes) {
+        ++diagnostics.rasterized_glyph_atlas_payload_policy.materialized_font_bytes_count;
+    }
+    if (!snapshot.deterministic_fallback_reason.empty()) {
+        ++diagnostics.rasterized_glyph_atlas_payload_policy.deterministic_fallback_reason_count;
+    }
     diagnostics.rasterized_glyph_atlas_payloads.push_back(std::move(snapshot));
 }
 
@@ -2107,8 +2311,6 @@ void record_rasterized_glyph_atlas_payload_diagnostics(
     diagnostics.rasterized_glyph_atlas_payloads.clear();
     diagnostics.rasterized_glyph_atlas_payloads.reserve(clusters.size());
     diagnostics.rasterized_glyph_atlas_payload_policy = {};
-
-    const deterministic_fake_font_rasterizer rasterizer;
 
     for (std::size_t cluster_index = 0; cluster_index < clusters.size(); ++cluster_index) {
         const laid_out_glyph_cluster& cluster = clusters[cluster_index];
@@ -2147,7 +2349,12 @@ void record_rasterized_glyph_atlas_payload_diagnostics(
                     .font_backend_supports_rasterization =
                         font_backend_capability.supports_feature(
                             render_text_font_backend_feature::glyph_rasterization),
+                    .source_bytes_status = render_text_font_source_bytes_load_status::missing_source,
+                    .materialized_font_bytes = false,
+                    .used_freetype_rasterizer = false,
                     .uses_deterministic_rasterizer = true,
+                    .deterministic_fallback_reason =
+                        "glyph cluster was not resolved to a supported font face",
                     .cacheable = false,
                     .upload_ready = false,
                     .skipped = true,
@@ -2190,7 +2397,12 @@ void record_rasterized_glyph_atlas_payload_diagnostics(
                     .font_backend_supports_rasterization =
                         font_backend_capability.supports_feature(
                             render_text_font_backend_feature::glyph_rasterization),
+                    .source_bytes_status = render_text_font_source_bytes_load_status::missing_source,
+                    .materialized_font_bytes = false,
+                    .used_freetype_rasterizer = false,
                     .uses_deterministic_rasterizer = true,
+                    .deterministic_fallback_reason =
+                        "resolved font face is not present in the text font catalog",
                     .cacheable = true,
                     .upload_ready = false,
                     .skipped = true,
@@ -2198,18 +2410,13 @@ void record_rasterized_glyph_atlas_payload_diagnostics(
             continue;
         }
 
-        const render_text_font_source_bytes_load_status bytes_status =
-            fake_rasterizer_font_bytes_status_for(*face);
-        const std::vector<std::byte> font_bytes = fake_rasterizer_font_bytes_for(*face);
-        render_text_font_rasterize_request request = make_font_rasterize_request(
-            *face,
-            key,
-            cluster.code_point,
-            std::span<const std::byte>{font_bytes.data(), font_bytes.size()});
-        request.font_bytes_status = bytes_status;
-
-        const render_text_font_rasterize_result result = rasterizer.rasterize(request);
-        const render_text_font_atlas_glyph_payload payload = make_font_rasterizer_atlas_payload(result);
+        const rasterized_glyph_atlas_payload_handoff_result handoff =
+            rasterize_glyph_atlas_payload_with_handoff(
+                *face,
+                key,
+                cluster.code_point,
+                font_backend_capability,
+                rasterization_selection);
         append_rasterized_glyph_atlas_payload_snapshot(
             diagnostics,
             render_text_rasterized_glyph_atlas_payload_snapshot{
@@ -2221,14 +2428,14 @@ void record_rasterized_glyph_atlas_payload_diagnostics(
                 .glyph_id = cluster.glyph_id,
                 .resolved_face_id = cluster.snapshot.resolved_face_id,
                 .cache_key = key,
-                .status = result.status,
-                .metrics = result.metrics,
-                .bitmap_width = payload.width,
-                .bitmap_height = payload.height,
-                .alpha_bytes = payload.alpha.size(),
-                .rgba_bytes = payload.rgba.size(),
-                .source_label = result.source_label,
-                .diagnostic = result.diagnostic,
+                .status = handoff.rasterized.status,
+                .metrics = handoff.rasterized.metrics,
+                .bitmap_width = handoff.payload.width,
+                .bitmap_height = handoff.payload.height,
+                .alpha_bytes = handoff.payload.alpha.size(),
+                .rgba_bytes = handoff.payload.rgba.size(),
+                .source_label = handoff.rasterized.source_label,
+                .diagnostic = handoff.rasterized.diagnostic,
                 .glyph_id_from_selection = cluster.glyph_id_from_selection,
                 .glyph_id_matches_codepoint = cluster.glyph_id_matches_codepoint,
                 .used_fallback_glyph_id = cluster.used_fallback_glyph_id,
@@ -2246,10 +2453,14 @@ void record_rasterized_glyph_atlas_payload_diagnostics(
                 .font_backend_supports_rasterization =
                     font_backend_capability.supports_feature(
                         render_text_font_backend_feature::glyph_rasterization),
-                .uses_deterministic_rasterizer = true,
+                .source_bytes_status = handoff.source_bytes_status,
+                .materialized_font_bytes = handoff.materialized_font_bytes,
+                .used_freetype_rasterizer = handoff.used_freetype_rasterizer,
+                .uses_deterministic_rasterizer = handoff.uses_deterministic_rasterizer,
+                .deterministic_fallback_reason = handoff.deterministic_fallback_reason,
                 .cacheable = true,
-                .upload_ready = payload.upload_ready,
-                .skipped = !payload.upload_ready,
+                .upload_ready = handoff.payload.upload_ready,
+                .skipped = !handoff.payload.upload_ready,
             });
     }
 }

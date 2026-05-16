@@ -139,7 +139,12 @@ struct render_text_rasterized_glyph_atlas_payload_snapshot {
     bool font_backend_used_deterministic_fallback = false;
     bool font_backend_fallback_only = false;
     bool font_backend_supports_rasterization = false;
+    render_text_font_source_bytes_load_status source_bytes_status =
+        render_text_font_source_bytes_load_status::missing_source;
+    bool materialized_font_bytes = false;
+    bool used_freetype_rasterizer = false;
     bool uses_deterministic_rasterizer = true;
+    std::string deterministic_fallback_reason;
     bool cacheable = false;
     bool upload_ready = false;
     bool skipped = true;
@@ -154,6 +159,10 @@ struct render_text_rasterized_glyph_atlas_payload_policy_snapshot {
     std::size_t missing_font_bytes_count = 0;
     std::size_t unsupported_glyph_count = 0;
     std::size_t invalid_pixel_size_count = 0;
+    std::size_t deterministic_rasterizer_count = 0;
+    std::size_t freetype_rasterizer_count = 0;
+    std::size_t materialized_font_bytes_count = 0;
+    std::size_t deterministic_fallback_reason_count = 0;
     std::size_t total_alpha_bytes = 0;
     std::size_t total_rgba_bytes = 0;
 };

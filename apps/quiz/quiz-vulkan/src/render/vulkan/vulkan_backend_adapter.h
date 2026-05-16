@@ -24,6 +24,12 @@
 #include <string_view>
 #include <vector>
 
+namespace quiz_vulkan::render {
+
+struct render_image_texture_frame_resource_packet_materialization;
+
+} // namespace quiz_vulkan::render
+
 namespace quiz_vulkan::render::vulkan_backend {
 
 enum class vulkan_backend_fallback_reason {
@@ -1469,6 +1475,9 @@ enum class vulkan_native_descriptor_set_allocation_status {
     packet_bridge_unavailable,
     resource_binding_unavailable,
     resource_binding_mismatch,
+    image_materialization_unavailable,
+    image_materialization_blocked,
+    image_materialization_mismatch,
 };
 
 std::string_view native_descriptor_set_allocation_status_name(
@@ -1487,12 +1496,17 @@ struct vulkan_native_descriptor_set_allocation_result {
     bool packet_bridge_ready = false;
     bool resource_bindings_checked = false;
     bool resource_bindings_ready = false;
+    bool image_materialization_checked = false;
+    bool image_materialization_ready = false;
     std::size_t planned_packet_count = 0;
     std::size_t planned_descriptor_set_count = 0;
     std::size_t allocated_descriptor_set_count = 0;
+    std::size_t required_image_materialization_count = 0;
+    std::size_t materialized_image_resource_count = 0;
     std::size_t failed_packet_index = 0;
     std::size_t failed_command_index = 0;
     std::size_t failed_set = 0;
+    std::string failed_resource_id;
     std::string diagnostic;
     std::vector<vulkan_native_command_packet_descriptor_set> descriptor_sets;
 
@@ -1504,6 +1518,11 @@ struct vulkan_native_descriptor_set_allocation_result {
             || !resource_bindings_checked || !resource_bindings_ready
             || allocated_descriptor_set_count != planned_descriptor_set_count
             || descriptor_sets.size() != allocated_descriptor_set_count) {
+            return false;
+        }
+        if (required_image_materialization_count != 0
+            && (!image_materialization_checked || !image_materialization_ready
+                || materialized_image_resource_count != required_image_materialization_count)) {
             return false;
         }
 
@@ -2821,6 +2840,12 @@ vulkan_native_command_packet_executor_evidence build_vulkan_native_command_packe
 vulkan_native_descriptor_set_allocation_result build_fake_vulkan_native_descriptor_set_allocation_result(
     const vulkan_command_packet_bridge_result& bridge,
     const vulkan_backend_resource_binding_state& resource_bindings,
+    vulkan_native_descriptor_set_fake_allocator_options options = {});
+
+vulkan_native_descriptor_set_allocation_result build_fake_vulkan_native_descriptor_set_allocation_result(
+    const vulkan_command_packet_bridge_result& bridge,
+    const vulkan_backend_resource_binding_state& resource_bindings,
+    const render_image_texture_frame_resource_packet_materialization& image_materialization,
     vulkan_native_descriptor_set_fake_allocator_options options = {});
 
 vulkan_native_command_packet_executor_evidence merge_vulkan_native_descriptor_set_allocation_result(

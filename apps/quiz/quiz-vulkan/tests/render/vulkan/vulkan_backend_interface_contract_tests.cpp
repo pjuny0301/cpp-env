@@ -6587,6 +6587,18 @@ static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_native_descriptor_set_allocation_status::
                  resource_binding_mismatch),
     render::vulkan_backend::vulkan_native_descriptor_set_allocation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_descriptor_set_allocation_status::
+                 image_materialization_unavailable),
+    render::vulkan_backend::vulkan_native_descriptor_set_allocation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_descriptor_set_allocation_status::
+                 image_materialization_blocked),
+    render::vulkan_backend::vulkan_native_descriptor_set_allocation_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_descriptor_set_allocation_status::
+                 image_materialization_mismatch),
+    render::vulkan_backend::vulkan_native_descriptor_set_allocation_status>);
 static_assert(requires(render::vulkan_backend::vulkan_native_descriptor_set_allocation_status status) {
     { render::vulkan_backend::native_descriptor_set_allocation_status_name(status) }
         -> std::same_as<std::string_view>;
@@ -6606,12 +6618,17 @@ static_assert(requires(render::vulkan_backend::vulkan_native_descriptor_set_allo
     { result.packet_bridge_ready } -> std::same_as<bool&>;
     { result.resource_bindings_checked } -> std::same_as<bool&>;
     { result.resource_bindings_ready } -> std::same_as<bool&>;
+    { result.image_materialization_checked } -> std::same_as<bool&>;
+    { result.image_materialization_ready } -> std::same_as<bool&>;
     { result.planned_packet_count } -> std::same_as<std::size_t&>;
     { result.planned_descriptor_set_count } -> std::same_as<std::size_t&>;
     { result.allocated_descriptor_set_count } -> std::same_as<std::size_t&>;
+    { result.required_image_materialization_count } -> std::same_as<std::size_t&>;
+    { result.materialized_image_resource_count } -> std::same_as<std::size_t&>;
     { result.failed_packet_index } -> std::same_as<std::size_t&>;
     { result.failed_command_index } -> std::same_as<std::size_t&>;
     { result.failed_set } -> std::same_as<std::size_t&>;
+    { result.failed_resource_id } -> std::same_as<std::string&>;
     { result.diagnostic } -> std::same_as<std::string&>;
     { result.descriptor_sets }
         -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_command_packet_descriptor_set>&>;
@@ -6637,6 +6654,7 @@ static_assert(requires(
     const render::vulkan_backend::vulkan_command_packet_bridge_result& bridge,
     const render::vulkan_backend::vulkan_backend_resource_binding_state& resource_bindings,
     render::vulkan_backend::vulkan_native_descriptor_set_fake_allocator_options options,
+    const render::render_image_texture_frame_resource_packet_materialization& image_materialization,
     render::vulkan_backend::vulkan_native_command_packet_executor_evidence evidence,
     const render::vulkan_backend::vulkan_native_descriptor_set_allocation_result& allocation,
     const render::vulkan_backend::vulkan_backend_frame_result& frame,
@@ -6644,6 +6662,12 @@ static_assert(requires(
     { render::vulkan_backend::build_fake_vulkan_native_descriptor_set_allocation_result(
         bridge,
         resource_bindings,
+        options) } -> std::same_as<
+        render::vulkan_backend::vulkan_native_descriptor_set_allocation_result>;
+    { render::vulkan_backend::build_fake_vulkan_native_descriptor_set_allocation_result(
+        bridge,
+        resource_bindings,
+        image_materialization,
         options) } -> std::same_as<
         render::vulkan_backend::vulkan_native_descriptor_set_allocation_result>;
     { render::vulkan_backend::merge_vulkan_native_descriptor_set_allocation_result(

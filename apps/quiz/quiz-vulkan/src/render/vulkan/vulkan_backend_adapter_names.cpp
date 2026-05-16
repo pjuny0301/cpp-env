@@ -399,6 +399,12 @@ std::string_view native_descriptor_set_allocation_status_name(
         return "resource_binding_unavailable";
     case vulkan_native_descriptor_set_allocation_status::resource_binding_mismatch:
         return "resource_binding_mismatch";
+    case vulkan_native_descriptor_set_allocation_status::image_materialization_unavailable:
+        return "image_materialization_unavailable";
+    case vulkan_native_descriptor_set_allocation_status::image_materialization_blocked:
+        return "image_materialization_blocked";
+    case vulkan_native_descriptor_set_allocation_status::image_materialization_mismatch:
+        return "image_materialization_mismatch";
     }
 
     return "unknown";

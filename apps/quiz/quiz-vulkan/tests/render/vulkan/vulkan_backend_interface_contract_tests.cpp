@@ -7821,6 +7821,48 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_frame_native_execu
     { summary.should_use_cpu_fallback() } -> std::same_as<bool>;
 });
 
+static_assert(requires(
+    render::vulkan_backend::vulkan_backend_frame_scoped_command_packet_summary summary) {
+    { summary.checked } -> std::same_as<bool&>;
+    { summary.status }
+        -> std::same_as<render::vulkan_backend::vulkan_scoped_command_packet_execution_status&>;
+    { summary.fallback_reason }
+        -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
+    { summary.render_pass_scope_ready } -> std::same_as<bool&>;
+    { summary.command_buffer_ready } -> std::same_as<bool&>;
+    { summary.packet_bridge_ready } -> std::same_as<bool&>;
+    { summary.packet_execution_ready } -> std::same_as<bool&>;
+    { summary.operation_plan_ready } -> std::same_as<bool&>;
+    { summary.render_pass_begin_completed } -> std::same_as<bool&>;
+    { summary.render_pass_end_completed } -> std::same_as<bool&>;
+    { summary.render_pass_end_skipped } -> std::same_as<bool&>;
+    { summary.scoped_execution_empty } -> std::same_as<bool&>;
+    { summary.packets_executed_inside_render_pass_scope } -> std::same_as<bool&>;
+    { summary.has_failed_packet } -> std::same_as<bool&>;
+    { summary.first_failed_category }
+        -> std::same_as<render::vulkan_backend::vulkan_command_packet_category&>;
+    { summary.first_failed_batch_kind }
+        -> std::same_as<render::vulkan_backend::vulkan_batch_kind&>;
+    { summary.first_failed_packet_index } -> std::same_as<std::size_t&>;
+    { summary.first_failed_command_index } -> std::same_as<std::size_t&>;
+    { summary.render_pass_scope_id } -> std::same_as<std::size_t&>;
+    { summary.selected_framebuffer_target_index } -> std::same_as<std::size_t&>;
+    { summary.image_id } -> std::same_as<render::vulkan_backend::vulkan_swapchain_image_id&>;
+    { summary.framebuffer } -> std::same_as<render::vulkan_backend::vulkan_framebuffer_handle&>;
+    { summary.command_buffer }
+        -> std::same_as<render::vulkan_backend::vulkan_command_recording_command_buffer_handle&>;
+    { summary.planned_packet_count } -> std::same_as<std::size_t&>;
+    { summary.attempted_packet_count } -> std::same_as<std::size_t&>;
+    { summary.executed_packet_count } -> std::same_as<std::size_t&>;
+    { summary.rect_packet_count } -> std::same_as<std::size_t&>;
+    { summary.text_packet_count } -> std::same_as<std::size_t&>;
+    { summary.image_packet_count } -> std::same_as<std::size_t&>;
+    { summary.debug_bounds_packet_count } -> std::same_as<std::size_t&>;
+    { summary.diagnostic } -> std::same_as<std::string&>;
+    { summary.completed() } -> std::same_as<bool>;
+    { summary.failed() } -> std::same_as<bool>;
+});
+
 static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status::not_checked),
     render::vulkan_backend::vulkan_backend_frame_pipeline_handoff_status>);
@@ -7919,6 +7961,8 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_frame_pipeline_han
     { handoff.missing_native_symbol_name } -> std::same_as<std::string&>;
     { handoff.native_frame_execution }
         -> std::same_as<render::vulkan_backend::vulkan_backend_frame_native_execution_summary&>;
+    { handoff.scoped_command_packets }
+        -> std::same_as<render::vulkan_backend::vulkan_backend_frame_scoped_command_packet_summary&>;
     { handoff.sdk_native_path_checked } -> std::same_as<bool&>;
     { handoff.sdk_adapter_ready } -> std::same_as<bool&>;
     { handoff.sdk_native_path_status }
@@ -7985,6 +8029,8 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_frame_result resul
     { result.command_packets } -> std::same_as<render::vulkan_backend::vulkan_command_packet_bridge_result&>;
     { result.command_packet_execution }
         -> std::same_as<render::vulkan_backend::vulkan_command_packet_execution_result&>;
+    { result.scoped_command_packet_execution }
+        -> std::same_as<render::vulkan_backend::vulkan_scoped_command_packet_execution_result&>;
     { result.command_recorder_operations }
         -> std::same_as<render::vulkan_backend::vulkan_command_recorder_operation_plan&>;
     { result.command_buffer_recording }
@@ -8124,12 +8170,16 @@ static_assert(requires(
 static_assert(requires(
     render::vulkan_backend::vulkan_backend_frame_result frame,
     render::vulkan_backend::vulkan_queue_submit_present_result queue_submit,
+    render::vulkan_backend::vulkan_scoped_command_packet_execution_result scoped_command_packets,
     render::vulkan_backend::vulkan_sdk_capability_result sdk_capabilities) {
     { render::vulkan_backend::summarize_vulkan_queue_submit_adapter_result(queue_submit) }
         -> std::same_as<render::vulkan_backend::vulkan_backend_queue_submit_adapter_summary>;
     { render::vulkan_backend::apply_vulkan_queue_submit_adapter_result_to_frame(
         frame,
         queue_submit) } -> std::same_as<render::vulkan_backend::vulkan_backend_frame_result>;
+    { render::vulkan_backend::apply_vulkan_scoped_command_packet_execution_result_to_frame(
+        frame,
+        scoped_command_packets) } -> std::same_as<render::vulkan_backend::vulkan_backend_frame_result>;
     { render::vulkan_backend::apply_vulkan_sdk_capability_result_to_frame(
         frame,
         sdk_capabilities) } -> std::same_as<render::vulkan_backend::vulkan_backend_frame_result>;

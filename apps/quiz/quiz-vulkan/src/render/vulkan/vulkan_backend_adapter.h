@@ -2225,6 +2225,60 @@ struct vulkan_backend_frame_native_execution_summary {
     }
 };
 
+struct vulkan_backend_frame_scoped_command_packet_summary {
+    bool checked = false;
+    vulkan_scoped_command_packet_execution_status status =
+        vulkan_scoped_command_packet_execution_status::not_checked;
+    vulkan_backend_fallback_reason fallback_reason = vulkan_backend_fallback_reason::not_requested;
+    bool render_pass_scope_ready = false;
+    bool command_buffer_ready = false;
+    bool packet_bridge_ready = false;
+    bool packet_execution_ready = false;
+    bool operation_plan_ready = false;
+    bool render_pass_begin_completed = false;
+    bool render_pass_end_completed = false;
+    bool render_pass_end_skipped = false;
+    bool scoped_execution_empty = false;
+    bool packets_executed_inside_render_pass_scope = false;
+    bool has_failed_packet = false;
+    vulkan_command_packet_category first_failed_category = vulkan_command_packet_category::rect;
+    vulkan_batch_kind first_failed_batch_kind = vulkan_batch_kind::quad;
+    std::size_t first_failed_packet_index = 0;
+    std::size_t first_failed_command_index = 0;
+    std::size_t render_pass_scope_id = 0;
+    std::size_t selected_framebuffer_target_index = 0;
+    vulkan_swapchain_image_id image_id;
+    vulkan_framebuffer_handle framebuffer;
+    vulkan_command_recording_command_buffer_handle command_buffer;
+    std::size_t planned_packet_count = 0;
+    std::size_t attempted_packet_count = 0;
+    std::size_t executed_packet_count = 0;
+    std::size_t rect_packet_count = 0;
+    std::size_t text_packet_count = 0;
+    std::size_t image_packet_count = 0;
+    std::size_t debug_bounds_packet_count = 0;
+    std::string diagnostic;
+
+    bool completed() const
+    {
+        return checked && status == vulkan_scoped_command_packet_execution_status::completed
+            && fallback_reason == vulkan_backend_fallback_reason::none
+            && render_pass_scope_ready && command_buffer_ready && packet_bridge_ready
+            && packet_execution_ready && operation_plan_ready
+            && render_pass_begin_completed && render_pass_end_completed
+            && !render_pass_end_skipped && !has_failed_packet
+            && planned_packet_count == executed_packet_count
+            && attempted_packet_count == planned_packet_count;
+    }
+
+    bool failed() const
+    {
+        return checked
+            && status != vulkan_scoped_command_packet_execution_status::not_checked
+            && status != vulkan_scoped_command_packet_execution_status::completed;
+    }
+};
+
 struct vulkan_backend_frame_pipeline_handoff {
     bool checked = false;
     vulkan_backend_frame_pipeline_handoff_status status =
@@ -2277,6 +2331,7 @@ struct vulkan_backend_frame_pipeline_handoff {
         vulkan_native_function_table_status::not_checked;
     std::string missing_native_symbol_name;
     vulkan_backend_frame_native_execution_summary native_frame_execution;
+    vulkan_backend_frame_scoped_command_packet_summary scoped_command_packets;
     bool sdk_native_path_checked = false;
     bool sdk_adapter_ready = false;
     vulkan_sdk_native_path_status sdk_native_path_status =
@@ -2334,6 +2389,7 @@ struct vulkan_backend_frame_pipeline_handoff {
             && (!native_function_table_checked
                 || (native_command_buffer_recording_ready && native_queue_submit_ready
                     && native_queue_present_ready))
+            && (!scoped_command_packets.checked || scoped_command_packets.completed())
             && (!sdk_native_path_checked || sdk_adapter_ready)
             && submit_batch_planning_completed && submit_batch_ready_for_queue
             && present_completion_planning_completed && frame_completion_ready
@@ -2396,6 +2452,7 @@ struct vulkan_backend_frame_result {
     vulkan_backend_pipeline_state pipeline;
     vulkan_command_packet_bridge_result command_packets;
     vulkan_command_packet_execution_result command_packet_execution;
+    vulkan_scoped_command_packet_execution_result scoped_command_packet_execution;
     vulkan_command_recorder_operation_plan command_recorder_operations;
     vulkan_command_buffer_record_result command_buffer_recording;
     vulkan_submit_batch_plan_result submit_batch_plan;
@@ -2442,6 +2499,8 @@ struct vulkan_backend_frame_result {
             && (!pipeline_handoff.checked || pipeline_handoff.completed())
             && command_packets.completed()
             && command_packet_execution.completed()
+            && (!scoped_command_packet_execution.checked
+                || scoped_command_packet_execution.completed())
             && command_recorder_operations.completed()
             && command_buffer_recording.completed()
             && submit_batch_plan.completed()
@@ -2518,6 +2577,10 @@ vulkan_backend_queue_submit_adapter_summary summarize_vulkan_queue_submit_adapte
 vulkan_backend_frame_result apply_vulkan_queue_submit_adapter_result_to_frame(
     vulkan_backend_frame_result frame,
     vulkan_queue_submit_present_result queue_submit);
+
+vulkan_backend_frame_result apply_vulkan_scoped_command_packet_execution_result_to_frame(
+    vulkan_backend_frame_result frame,
+    vulkan_scoped_command_packet_execution_result scoped_command_packets);
 
 vulkan_command_packet_bridge_result build_vulkan_command_packet_bridge(
     const vulkan_frame_plan& plan,

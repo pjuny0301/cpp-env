@@ -1255,6 +1255,58 @@ void count_handoff_batches_from_frame(
     }
 }
 
+vulkan_backend_frame_scoped_command_packet_summary
+summarize_scoped_command_packet_execution_for_frame(
+    const vulkan_scoped_command_packet_execution_result& execution)
+{
+    vulkan_backend_frame_scoped_command_packet_summary summary{
+        .checked = execution.checked,
+        .status = execution.status,
+        .fallback_reason = execution.fallback_reason,
+        .render_pass_scope_ready = execution.render_pass_scope_ready,
+        .command_buffer_ready = execution.command_buffer_ready,
+        .packet_bridge_ready = execution.packet_bridge_ready,
+        .packet_execution_ready = execution.packet_execution_ready,
+        .operation_plan_ready = execution.operation_plan_ready,
+        .render_pass_begin_completed = execution.render_pass_begin_completed,
+        .render_pass_end_completed = execution.render_pass_end_completed,
+        .render_pass_end_skipped = execution.render_pass_end_skipped,
+        .scoped_execution_empty = execution.scoped_execution_empty,
+        .packets_executed_inside_render_pass_scope =
+            execution.completed() && !execution.scoped_execution_empty,
+        .has_failed_packet = execution.has_failed_packet,
+        .first_failed_category = execution.first_failed_category,
+        .first_failed_batch_kind = execution.first_failed_batch_kind,
+        .first_failed_packet_index = execution.first_failed_packet_index,
+        .first_failed_command_index = execution.first_failed_command_index,
+        .render_pass_scope_id = execution.render_pass_scope_id,
+        .selected_framebuffer_target_index = execution.selected_framebuffer_target_index,
+        .image_id = execution.image_id,
+        .framebuffer = execution.framebuffer,
+        .command_buffer = execution.command_buffer,
+        .planned_packet_count = execution.planned_packet_count,
+        .attempted_packet_count = execution.attempted_packet_count,
+        .executed_packet_count = execution.executed_packet_count,
+        .rect_packet_count = execution.rect_packet_count,
+        .text_packet_count = execution.text_packet_count,
+        .image_packet_count = execution.image_packet_count,
+        .debug_bounds_packet_count = execution.debug_bounds_packet_count,
+        .diagnostic = execution.diagnostic,
+    };
+
+    if (summary.checked && summary.diagnostic.empty()) {
+        if (summary.completed()) {
+            summary.diagnostic =
+                "Scoped Vulkan command packets executed inside render pass scope";
+        } else if (summary.failed()) {
+            summary.diagnostic =
+                "Scoped Vulkan command packet execution did not complete";
+        }
+    }
+
+    return summary;
+}
+
 vulkan_command_packet_category command_packet_category_for(vulkan_batch_kind kind)
 {
     switch (kind) {
@@ -8013,7 +8065,9 @@ vulkan_native_frame_operation_summary build_native_frame_pipeline_operation_summ
     const bool command_recording_checked = frame.command_buffer_recording.checked;
     const bool command_recording_ready =
         acquire_ready && frame.command_buffer_recording.completed()
-        && frame.commands_recorded;
+        && frame.commands_recorded
+        && (!frame.scoped_command_packet_execution.checked
+            || frame.scoped_command_packet_execution.completed());
     const bool submit_checked = frame.submit_batch_plan.checked;
     const bool submit_ready =
         command_recording_ready && submit_batch_ready_for_queue && frame.frame_submitted;
@@ -8250,6 +8304,9 @@ vulkan_backend_frame_pipeline_handoff summarize_vulkan_frame_pipeline_handoff(
         frame.command_recorder_operations.completed();
     const bool command_buffer_recording_completed =
         frame.command_buffer_recording.completed();
+    const bool scoped_command_packet_execution_completed =
+        !frame.scoped_command_packet_execution.checked
+        || frame.scoped_command_packet_execution.completed();
     const bool command_buffer_ready_for_submit = command_buffer_recording_completed;
     const bool native_function_table_checked =
         frame.command_buffer_recording.native_function_table_checked
@@ -8282,6 +8339,7 @@ vulkan_backend_frame_pipeline_handoff summarize_vulkan_frame_pipeline_handoff(
         && resource_registry_completed
         && command_packets_completed
         && command_packet_execution_completed
+        && scoped_command_packet_execution_completed
         && command_recorder_operations_completed
         && command_buffer_recording_completed
         && submit_batch_planning_completed
@@ -8365,6 +8423,8 @@ vulkan_backend_frame_pipeline_handoff summarize_vulkan_frame_pipeline_handoff(
         .native_function_table_status = native_function_table_status_from_frame(frame),
         .missing_native_symbol_name = missing_native_symbol_from_frame(frame),
         .native_frame_execution = native_frame_execution,
+        .scoped_command_packets = summarize_scoped_command_packet_execution_for_frame(
+            frame.scoped_command_packet_execution),
         .sdk_native_path_checked = sdk_native_path.checked,
         .sdk_adapter_ready = sdk_native_path.ready(),
         .sdk_native_path_status = sdk_native_path.status,
@@ -8417,6 +8477,15 @@ vulkan_backend_frame_result apply_vulkan_queue_submit_adapter_result_to_frame(
                 {},
                 frame.sdk_capabilities);
     }
+    frame.pipeline_handoff = summarize_vulkan_frame_pipeline_handoff(frame);
+    return frame;
+}
+
+vulkan_backend_frame_result apply_vulkan_scoped_command_packet_execution_result_to_frame(
+    vulkan_backend_frame_result frame,
+    vulkan_scoped_command_packet_execution_result scoped_command_packets)
+{
+    frame.scoped_command_packet_execution = std::move(scoped_command_packets);
     frame.pipeline_handoff = summarize_vulkan_frame_pipeline_handoff(frame);
     return frame;
 }

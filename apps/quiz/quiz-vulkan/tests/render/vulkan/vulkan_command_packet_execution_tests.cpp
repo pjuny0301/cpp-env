@@ -158,7 +158,9 @@ quiz_vulkan::render::vulkan_backend::vulkan_command_packet_bridge_result make_re
 }
 
 quiz_vulkan::render::vulkan_backend::vulkan_command_packet_bridge_result
-make_ready_image_resource_bridge(std::string image_resource_id = "fixture://renderer/card.png")
+make_ready_image_resource_bridge(
+    std::string image_resource_id = "fixture://renderer/card.png",
+    std::string sampler_resource_id = "image_sampler:1:1:0:0:0")
 {
     namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
 
@@ -191,7 +193,7 @@ make_ready_image_resource_bridge(std::string image_resource_id = "fixture://rend
         make_binding(
             2,
             vulkan_backend::vulkan_resource_binding_kind::image_sampler,
-            "image_sampler:1:1:0:0:0"),
+            std::move(sampler_resource_id)),
     };
     packet.binding_count = packet.bindings.size();
     packet.descriptor_set_count = 1;
@@ -1079,6 +1081,36 @@ void test_vulkan_native_descriptor_set_allocation_blocks_mismatched_image_materi
         "mismatched image materialization records requested image resource id");
 }
 
+void test_vulkan_native_descriptor_set_allocation_blocks_mismatched_image_sampler_materialization()
+{
+    using namespace quiz_vulkan::render;
+
+    const vulkan_backend::vulkan_command_packet_bridge_result bridge =
+        make_ready_image_resource_bridge(
+            "fixture://renderer/card.png",
+            "image_sampler:mismatched");
+    const vulkan_backend::vulkan_backend_resource_binding_state resource_bindings =
+        make_ready_resource_bindings(bridge);
+    const render_image_texture_frame_resource_packet_materialization materialization =
+        make_image_materialization("fixture://renderer/card.png");
+    const vulkan_backend::vulkan_native_descriptor_set_allocation_result allocation =
+        vulkan_backend::build_fake_vulkan_native_descriptor_set_allocation_result(
+            bridge,
+            resource_bindings,
+            materialization);
+
+    require(materialization.ok(), "sampler mismatch materialization evidence can be otherwise ready");
+    require(!allocation.completed(), "sampler mismatch does not allocate descriptors");
+    require(
+        allocation.status
+            == vulkan_backend::vulkan_native_descriptor_set_allocation_status::
+                image_materialization_mismatch,
+        "sampler mismatch reports materialization mismatch");
+    require(
+        allocation.failed_resource_id == "image_sampler:mismatched",
+        "sampler mismatch records requested sampler resource id");
+}
+
 void test_vulkan_native_descriptor_set_allocation_uses_image_materialization()
 {
     using namespace quiz_vulkan::render;
@@ -1599,6 +1631,7 @@ int main()
     test_vulkan_native_descriptor_set_allocation_blocks_image_without_materialization();
     test_vulkan_native_descriptor_set_allocation_blocks_blocked_image_materialization();
     test_vulkan_native_descriptor_set_allocation_blocks_mismatched_image_materialization();
+    test_vulkan_native_descriptor_set_allocation_blocks_mismatched_image_sampler_materialization();
     test_vulkan_native_descriptor_set_allocation_uses_image_materialization();
     test_vulkan_native_command_packet_evidence_preserves_descriptor_handle_gap();
     test_vulkan_native_command_packet_executor_blocks_incomplete_descriptor_evidence();

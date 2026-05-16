@@ -2509,6 +2509,17 @@ const vulkan_resource_binding_snapshot* find_image_texture_binding_for_packet(
     return nullptr;
 }
 
+const vulkan_resource_binding_snapshot* find_image_sampler_binding_for_packet(
+    const vulkan_command_packet& packet)
+{
+    for (const vulkan_resource_binding_snapshot& binding : packet.bindings) {
+        if (binding.kind == vulkan_resource_binding_kind::image_sampler) {
+            return &binding;
+        }
+    }
+    return nullptr;
+}
+
 bool packet_requires_image_materialization(
     const vulkan_command_packet& packet)
 {
@@ -2565,6 +2576,17 @@ bool materialization_entry_has_complete_descriptor_handoff(
         && entry.cache_record.ok()
         && entry.upload_record.ok()
         && entry.sampler_record.ok();
+}
+
+bool materialization_entry_matches_sampler_binding(
+    const render_image_texture_frame_resource_packet_materialization_entry& entry,
+    const vulkan_resource_binding_snapshot* sampler_binding)
+{
+    if (sampler_binding == nullptr || sampler_binding->resource_id.empty()) {
+        return true;
+    }
+    return entry.sampler_record.sampler_key == sampler_binding->resource_id
+        || entry.sampler_record.sampler_summary == sampler_binding->resource_id;
 }
 
 void mark_descriptor_allocation_image_materialization_blocker(
@@ -2672,6 +2694,18 @@ bool image_materialization_allows_descriptor_allocation(
                 packet,
                 texture_binding->resource_id,
                 "Native Vulkan descriptor set allocation found incomplete image materialization handoff records");
+            return false;
+        }
+
+        const vulkan_resource_binding_snapshot* sampler_binding =
+            find_image_sampler_binding_for_packet(packet);
+        if (!materialization_entry_matches_sampler_binding(*entry, sampler_binding)) {
+            mark_descriptor_allocation_image_materialization_blocker(
+                allocation,
+                vulkan_native_descriptor_set_allocation_status::image_materialization_mismatch,
+                packet,
+                sampler_binding == nullptr ? std::string{} : sampler_binding->resource_id,
+                "Native Vulkan descriptor set allocation could not match image sampler materialization resource id");
             return false;
         }
 

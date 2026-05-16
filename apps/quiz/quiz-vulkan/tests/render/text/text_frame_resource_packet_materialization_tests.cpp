@@ -387,6 +387,179 @@ void test_resource_packets_report_missing_draw_and_duplicate_packet_ids()
     require(!missing_draw.entries.front().has_draw_packet, "orphan entry records missing draw packet");
 }
 
+void test_resource_packet_consumption_diff_reports_stable_no_change()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_frame_draw_packet_snapshot draw =
+        ready_draw_packet("draw-stable", U'A', 0);
+    const render_text_frame_resource_packet_materialization packets =
+        materialize(
+            draw_plan_for({draw}),
+            handoff_for({handoff_packet_for_draw(
+                draw,
+                render_text_frame_upload_handoff_packet_status::ready_uploaded)}));
+
+    const render_text_frame_resource_packet_consumption_diff_snapshot diff =
+        diff_render_text_frame_resource_packet_materializations(packets, packets);
+
+    require(!diff.has_changes(), "identical resource packet materializations report no changes");
+    require(diff.stable_no_change(), "identical resource packets mark stable no-change");
+    require(diff.policy.unchanged_packet_count == packets.entries.size(), "unchanged packet count is preserved");
+    require(diff.policy.added_packet_count == 0U, "stable diff has no added packets");
+    require(diff.policy.removed_packet_count == 0U, "stable diff has no removed packets");
+    require(diff.policy.changed_packet_count == 0U, "stable diff has no changed packets");
+    require(diff.unchanged_resource_packet_ids.size() == 1U, "stable diff exposes unchanged packet identity");
+    require(!diff.summary.empty(), "stable diff carries compact summary text");
+}
+
+void test_resource_packet_consumption_diff_reports_added_removed_and_changed_identity_fields()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_frame_draw_packet_snapshot removed_draw =
+        ready_draw_packet("draw-removed", U'A', 0);
+    const render_text_frame_draw_packet_snapshot kept_draw =
+        ready_draw_packet("draw-kept", U'C', 1);
+    const render_text_frame_draw_packet_snapshot added_draw =
+        ready_draw_packet("draw-added", U'R', 2);
+
+    const render_text_frame_resource_packet_materialization before =
+        materialize(
+            draw_plan_for({removed_draw, kept_draw}),
+            handoff_for({
+                handoff_packet_for_draw(
+                    removed_draw,
+                    render_text_frame_upload_handoff_packet_status::ready_uploaded),
+                handoff_packet_for_draw(
+                    kept_draw,
+                    render_text_frame_upload_handoff_packet_status::ready_uploaded),
+            }));
+    render_text_frame_resource_packet_materialization after =
+        materialize(
+            draw_plan_for({kept_draw, added_draw}),
+            handoff_for({
+                handoff_packet_for_draw(
+                    kept_draw,
+                    render_text_frame_upload_handoff_packet_status::ready_uploaded),
+                handoff_packet_for_draw(
+                    added_draw,
+                    render_text_frame_upload_handoff_packet_status::ready_uploaded),
+            }));
+    render_text_frame_resource_packet_materialization_entry& kept_after =
+        after.entries.front();
+    kept_after.stable_packet_key += ":changed";
+    kept_after.page_id = 9;
+    kept_after.page_revision = 11;
+    kept_after.page_width = 128;
+    kept_after.page_height = 128;
+    kept_after.sampler_key += ":changed";
+    kept_after.uv_bounds.u1 = 0.5f;
+    kept_after.layout_bounds.x += 3.0f;
+    kept_after.upload_request_id += ":changed";
+    kept_after.upload_operation_id += ":changed";
+    kept_after.upload_rgba_bytes += 64U;
+    kept_after.used_deterministic_fallback = !kept_after.used_deterministic_fallback;
+    kept_after.used_real_backend = !kept_after.used_real_backend;
+    after.pages.front().page_width = 128U;
+    after.pages.front().page_height = 128U;
+    after.pages.front().sampler_key += ":page-changed";
+
+    const render_text_frame_resource_packet_consumption_diff_snapshot diff =
+        diff_render_text_frame_resource_packet_materializations(before, after);
+
+    require(diff.has_changes(), "changed resource packet materialization reports changes");
+    require(diff.policy.added_packet_count == 1U, "diff counts added resource packet");
+    require(diff.policy.removed_packet_count == 1U, "diff counts removed resource packet");
+    require(diff.policy.changed_packet_count == 1U, "diff counts changed resource packet");
+    require(diff.policy.unchanged_packet_count == 0U, "diff has no unchanged matched packet after mutation");
+    require(diff.added_resource_packet_ids.size() == 1U, "diff exposes added packet identity");
+    require(diff.removed_resource_packet_ids.size() == 1U, "diff exposes removed packet identity");
+    require(diff.changed_resource_packet_ids.size() == 1U, "diff exposes changed packet identity");
+    require(diff.policy.stable_packet_key_changed_count == 1U, "diff counts stable packet key changes");
+    require(diff.policy.page_id_changed_count == 1U, "diff counts page id changes");
+    require(diff.policy.page_revision_changed_count == 1U, "diff counts page revision changes");
+    require(diff.policy.page_extent_changed_count == 1U, "diff counts page extent changes");
+    require(diff.policy.sampler_key_changed_count == 1U, "diff counts sampler key changes");
+    require(diff.policy.uv_bounds_changed_count == 1U, "diff counts UV bound changes");
+    require(diff.policy.layout_bounds_changed_count == 1U, "diff counts layout bound changes");
+    require(diff.policy.upload_request_id_changed_count == 1U, "diff counts upload request id changes");
+    require(diff.policy.upload_operation_id_changed_count == 1U, "diff counts upload operation id changes");
+    require(diff.policy.uploaded_byte_count_changed_count == 1U, "diff counts upload byte changes");
+    require(diff.policy.fallback_flag_changed_count == 1U, "diff counts deterministic fallback flag changes");
+    require(diff.policy.backend_flag_changed_count == 1U, "diff counts real backend flag changes");
+    require(diff.policy.changed_page_count == 1U, "diff counts changed page summaries");
+    require(diff.changed_page_ids.size() == 1U, "diff exposes changed page id");
+}
+
+void test_resource_packet_consumption_diff_reports_readiness_regressions_and_improvements()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_frame_draw_packet_snapshot draw =
+        ready_draw_packet("draw-readiness", U'A', 0);
+    const render_text_frame_resource_packet_materialization ready_packets =
+        materialize(
+            draw_plan_for({draw}),
+            handoff_for({handoff_packet_for_draw(
+                draw,
+                render_text_frame_upload_handoff_packet_status::ready_uploaded)}));
+    render_text_frame_resource_packet_materialization blocked_packets =
+        ready_packets;
+    render_text_frame_resource_packet_materialization_entry& blocked_entry =
+        blocked_packets.entries.front();
+    blocked_entry.ready = false;
+    blocked_entry.blocked = true;
+    blocked_entry.renderer_boundary_ready = false;
+    blocked_entry.status =
+        render_text_frame_resource_packet_materialization_status::blocked_upload_rejected;
+    blocked_entry.blocker_summary = "upload rejected after renderer boundary packet was planned";
+    blocked_packets.policy.has_blockers = true;
+
+    const render_text_frame_resource_packet_consumption_diff_snapshot regression =
+        diff_render_text_frame_resource_packet_materializations(ready_packets, blocked_packets);
+    const render_text_frame_resource_packet_consumption_diff_snapshot improvement =
+        diff_render_text_frame_resource_packet_materializations(blocked_packets, ready_packets);
+
+    require(regression.policy.readiness_regression_count == 1U, "diff counts ready-to-blocked regression");
+    require(regression.policy.readiness_or_blocker_status_changed_count == 1U, "diff counts readiness/blocker status change");
+    require(regression.readiness_regressed_resource_packet_ids.size() == 1U, "diff exposes regressed packet identity");
+    require(improvement.policy.readiness_improvement_count == 1U, "diff counts blocked-to-ready improvement");
+    require(improvement.readiness_improved_resource_packet_ids.size() == 1U, "diff exposes improved packet identity");
+}
+
+void test_resource_packet_consumption_diff_reports_duplicate_and_missing_identities()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_frame_draw_packet_snapshot draw =
+        ready_draw_packet("draw-identity", U'A', 0);
+    const render_text_frame_resource_packet_materialization before =
+        materialize(
+            draw_plan_for({draw}),
+            handoff_for({handoff_packet_for_draw(
+                draw,
+                render_text_frame_upload_handoff_packet_status::ready_uploaded)}));
+    render_text_frame_resource_packet_materialization duplicate_after = before;
+    duplicate_after.entries.push_back(duplicate_after.entries.front());
+
+    const render_text_frame_resource_packet_consumption_diff_snapshot duplicate_diff =
+        diff_render_text_frame_resource_packet_materializations(before, duplicate_after);
+
+    require(duplicate_diff.policy.duplicate_identity_count >= 1U, "diff counts duplicate resource packet identities");
+    require(!duplicate_diff.duplicate_identity_resource_packet_ids.empty(), "diff exposes duplicate resource packet id");
+
+    render_text_frame_resource_packet_materialization missing_after = before;
+    missing_after.entries.front().resource_packet_id.clear();
+
+    const render_text_frame_resource_packet_consumption_diff_snapshot missing_diff =
+        diff_render_text_frame_resource_packet_materializations(before, missing_after);
+
+    require(missing_diff.policy.missing_identity_count == 1U, "diff counts missing resource packet identity");
+    require(missing_diff.policy.added_packet_count == 1U, "missing current identity is treated as an unmatched packet");
+    require(missing_diff.policy.removed_packet_count == 1U, "previous stable identity is reported removed");
+}
+
 }  // namespace
 
 int main()
@@ -395,5 +568,9 @@ int main()
     test_resource_packets_report_missing_upload_handoff_and_rejected_upload();
     test_resource_packets_report_draw_and_page_blockers();
     test_resource_packets_report_missing_draw_and_duplicate_packet_ids();
+    test_resource_packet_consumption_diff_reports_stable_no_change();
+    test_resource_packet_consumption_diff_reports_added_removed_and_changed_identity_fields();
+    test_resource_packet_consumption_diff_reports_readiness_regressions_and_improvements();
+    test_resource_packet_consumption_diff_reports_duplicate_and_missing_identities();
     return 0;
 }

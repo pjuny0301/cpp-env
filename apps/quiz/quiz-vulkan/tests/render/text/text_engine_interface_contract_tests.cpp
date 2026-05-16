@@ -3019,6 +3019,10 @@ static_assert(requires(
     render::render_text_frame_resource_packet_materialization_policy_snapshot resource_policy,
     render::render_text_frame_resource_packet_materialization_request resource_request,
     render::render_text_frame_resource_packet_materialization resource_materialization,
+    render::render_text_frame_resource_packet_consumption_diff_policy resource_consumption_policy,
+    render::render_text_frame_resource_packet_consumption_packet_diff resource_consumption_packet_diff,
+    render::render_text_frame_resource_packet_consumption_page_diff resource_consumption_page_diff,
+    render::render_text_frame_resource_packet_consumption_diff_snapshot resource_consumption_diff,
     render::render_text_glyph_atlas_materialization_snapshot snapshot,
     render::render_text_request request,
     render::render_draw_command draw_command,
@@ -3721,6 +3725,138 @@ static_assert(requires(
         -> std::same_as<render::render_text_frame_resource_packet_materialization_entry>;
     { render::materialize_render_text_frame_resource_packets(resource_request) }
         -> std::same_as<render::render_text_frame_resource_packet_materialization>;
+    { resource_consumption_policy.resource_packet_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { resource_consumption_policy.ready_packet_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { resource_consumption_policy.blocked_packet_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { resource_consumption_policy.uploaded_packet_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { resource_consumption_policy.clean_reuse_packet_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { resource_consumption_policy.page_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { resource_consumption_policy.sampler_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { resource_consumption_policy.deterministic_fallback_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { resource_consumption_policy.real_backend_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { resource_consumption_policy.total_upload_rgba_bytes_delta } -> std::same_as<std::ptrdiff_t&>;
+    { resource_consumption_policy.added_packet_count } -> std::same_as<std::size_t&>;
+    { resource_consumption_policy.removed_packet_count } -> std::same_as<std::size_t&>;
+    { resource_consumption_policy.changed_packet_count } -> std::same_as<std::size_t&>;
+    { resource_consumption_policy.unchanged_packet_count } -> std::same_as<std::size_t&>;
+    { resource_consumption_policy.added_page_count } -> std::same_as<std::size_t&>;
+    { resource_consumption_policy.removed_page_count } -> std::same_as<std::size_t&>;
+    { resource_consumption_policy.changed_page_count } -> std::same_as<std::size_t&>;
+    { resource_consumption_policy.unchanged_page_count } -> std::same_as<std::size_t&>;
+    { resource_consumption_policy.readiness_regression_count } -> std::same_as<std::size_t&>;
+    { resource_consumption_policy.readiness_improvement_count } -> std::same_as<std::size_t&>;
+    { resource_consumption_policy.stable_packet_key_changed_count } -> std::same_as<std::size_t&>;
+    { resource_consumption_policy.page_id_changed_count } -> std::same_as<std::size_t&>;
+    { resource_consumption_policy.page_revision_changed_count } -> std::same_as<std::size_t&>;
+    { resource_consumption_policy.page_extent_changed_count } -> std::same_as<std::size_t&>;
+    { resource_consumption_policy.sampler_key_changed_count } -> std::same_as<std::size_t&>;
+    { resource_consumption_policy.uv_bounds_changed_count } -> std::same_as<std::size_t&>;
+    { resource_consumption_policy.layout_bounds_changed_count } -> std::same_as<std::size_t&>;
+    { resource_consumption_policy.upload_request_id_changed_count } -> std::same_as<std::size_t&>;
+    { resource_consumption_policy.upload_operation_id_changed_count } -> std::same_as<std::size_t&>;
+    { resource_consumption_policy.uploaded_byte_count_changed_count } -> std::same_as<std::size_t&>;
+    { resource_consumption_policy.fallback_flag_changed_count } -> std::same_as<std::size_t&>;
+    { resource_consumption_policy.backend_flag_changed_count } -> std::same_as<std::size_t&>;
+    { resource_consumption_policy.readiness_or_blocker_status_changed_count } -> std::same_as<std::size_t&>;
+    { resource_consumption_policy.duplicate_identity_count } -> std::same_as<std::size_t&>;
+    { resource_consumption_policy.missing_identity_count } -> std::same_as<std::size_t&>;
+    { resource_consumption_policy.frame_id_changed } -> std::same_as<bool&>;
+    { resource_consumption_policy.frame_ready_changed } -> std::same_as<bool&>;
+    { resource_consumption_policy.blockers_changed } -> std::same_as<bool&>;
+    { resource_consumption_policy.stable_no_change } -> std::same_as<bool&>;
+    { resource_consumption_packet_diff.resource_packet_id } -> std::same_as<std::string&>;
+    { resource_consumption_packet_diff.previous_stable_packet_key } -> std::same_as<std::string&>;
+    { resource_consumption_packet_diff.current_stable_packet_key } -> std::same_as<std::string&>;
+    { resource_consumption_packet_diff.previous_upload_request_id } -> std::same_as<std::string&>;
+    { resource_consumption_packet_diff.current_upload_request_id } -> std::same_as<std::string&>;
+    { resource_consumption_packet_diff.previous_upload_operation_id } -> std::same_as<std::string&>;
+    { resource_consumption_packet_diff.current_upload_operation_id } -> std::same_as<std::string&>;
+    { resource_consumption_packet_diff.added } -> std::same_as<bool&>;
+    { resource_consumption_packet_diff.removed } -> std::same_as<bool&>;
+    { resource_consumption_packet_diff.changed } -> std::same_as<bool&>;
+    { resource_consumption_packet_diff.unchanged } -> std::same_as<bool&>;
+    { resource_consumption_packet_diff.missing_identity } -> std::same_as<bool&>;
+    { resource_consumption_packet_diff.duplicate_identity } -> std::same_as<bool&>;
+    { resource_consumption_packet_diff.stable_packet_key_changed } -> std::same_as<bool&>;
+    { resource_consumption_packet_diff.page_id_changed } -> std::same_as<bool&>;
+    { resource_consumption_packet_diff.page_revision_changed } -> std::same_as<bool&>;
+    { resource_consumption_packet_diff.page_extent_changed } -> std::same_as<bool&>;
+    { resource_consumption_packet_diff.sampler_key_changed } -> std::same_as<bool&>;
+    { resource_consumption_packet_diff.uv_bounds_changed } -> std::same_as<bool&>;
+    { resource_consumption_packet_diff.layout_bounds_changed } -> std::same_as<bool&>;
+    { resource_consumption_packet_diff.upload_request_id_changed } -> std::same_as<bool&>;
+    { resource_consumption_packet_diff.upload_operation_id_changed } -> std::same_as<bool&>;
+    { resource_consumption_packet_diff.uploaded_byte_count_changed } -> std::same_as<bool&>;
+    { resource_consumption_packet_diff.fallback_flag_changed } -> std::same_as<bool&>;
+    { resource_consumption_packet_diff.backend_flag_changed } -> std::same_as<bool&>;
+    { resource_consumption_packet_diff.readiness_changed } -> std::same_as<bool&>;
+    { resource_consumption_packet_diff.readiness_regressed } -> std::same_as<bool&>;
+    { resource_consumption_packet_diff.readiness_improved } -> std::same_as<bool&>;
+    { resource_consumption_packet_diff.blocker_status_changed } -> std::same_as<bool&>;
+    { resource_consumption_packet_diff.status_changed } -> std::same_as<bool&>;
+    { resource_consumption_packet_diff.upload_rgba_bytes_delta } -> std::same_as<std::ptrdiff_t&>;
+    { resource_consumption_packet_diff.previous_page_id } -> std::same_as<render::render_text_atlas_page_id&>;
+    { resource_consumption_packet_diff.current_page_id } -> std::same_as<render::render_text_atlas_page_id&>;
+    { resource_consumption_packet_diff.previous_page_revision } -> std::same_as<render::render_text_revision&>;
+    { resource_consumption_packet_diff.current_page_revision } -> std::same_as<render::render_text_revision&>;
+    { resource_consumption_packet_diff.previous_page_width } -> std::same_as<std::size_t&>;
+    { resource_consumption_packet_diff.previous_page_height } -> std::same_as<std::size_t&>;
+    { resource_consumption_packet_diff.current_page_width } -> std::same_as<std::size_t&>;
+    { resource_consumption_packet_diff.current_page_height } -> std::same_as<std::size_t&>;
+    { resource_consumption_packet_diff.previous_status }
+        -> std::same_as<render::render_text_frame_resource_packet_materialization_status&>;
+    { resource_consumption_packet_diff.current_status }
+        -> std::same_as<render::render_text_frame_resource_packet_materialization_status&>;
+    { resource_consumption_page_diff.stable_page_id } -> std::same_as<std::string&>;
+    { resource_consumption_page_diff.previous_sampler_key } -> std::same_as<std::string&>;
+    { resource_consumption_page_diff.current_sampler_key } -> std::same_as<std::string&>;
+    { resource_consumption_page_diff.added } -> std::same_as<bool&>;
+    { resource_consumption_page_diff.removed } -> std::same_as<bool&>;
+    { resource_consumption_page_diff.changed } -> std::same_as<bool&>;
+    { resource_consumption_page_diff.unchanged } -> std::same_as<bool&>;
+    { resource_consumption_page_diff.missing_identity } -> std::same_as<bool&>;
+    { resource_consumption_page_diff.page_id_changed } -> std::same_as<bool&>;
+    { resource_consumption_page_diff.page_revision_changed } -> std::same_as<bool&>;
+    { resource_consumption_page_diff.page_extent_changed } -> std::same_as<bool&>;
+    { resource_consumption_page_diff.sampler_key_changed } -> std::same_as<bool&>;
+    { resource_consumption_page_diff.readiness_changed } -> std::same_as<bool&>;
+    { resource_consumption_page_diff.blocker_changed } -> std::same_as<bool&>;
+    { resource_consumption_page_diff.packet_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { resource_consumption_page_diff.ready_packet_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { resource_consumption_page_diff.blocked_packet_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { resource_consumption_page_diff.upload_rgba_bytes_delta } -> std::same_as<std::ptrdiff_t&>;
+    { resource_consumption_page_diff.previous_page_id } -> std::same_as<render::render_text_atlas_page_id&>;
+    { resource_consumption_page_diff.current_page_id } -> std::same_as<render::render_text_atlas_page_id&>;
+    { resource_consumption_page_diff.previous_page_revision } -> std::same_as<render::render_text_revision&>;
+    { resource_consumption_page_diff.current_page_revision } -> std::same_as<render::render_text_revision&>;
+    { resource_consumption_page_diff.previous_page_width } -> std::same_as<std::size_t&>;
+    { resource_consumption_page_diff.previous_page_height } -> std::same_as<std::size_t&>;
+    { resource_consumption_page_diff.current_page_width } -> std::same_as<std::size_t&>;
+    { resource_consumption_page_diff.current_page_height } -> std::same_as<std::size_t&>;
+    { resource_consumption_diff.previous_frame_id } -> std::same_as<std::string&>;
+    { resource_consumption_diff.current_frame_id } -> std::same_as<std::string&>;
+    { resource_consumption_diff.previous_ready_for_renderer } -> std::same_as<bool&>;
+    { resource_consumption_diff.current_ready_for_renderer } -> std::same_as<bool&>;
+    { resource_consumption_diff.policy }
+        -> std::same_as<render::render_text_frame_resource_packet_consumption_diff_policy&>;
+    { resource_consumption_diff.packet_diffs }
+        -> std::same_as<std::vector<render::render_text_frame_resource_packet_consumption_packet_diff>&>;
+    { resource_consumption_diff.page_diffs }
+        -> std::same_as<std::vector<render::render_text_frame_resource_packet_consumption_page_diff>&>;
+    { resource_consumption_diff.added_resource_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { resource_consumption_diff.removed_resource_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { resource_consumption_diff.changed_resource_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { resource_consumption_diff.unchanged_resource_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { resource_consumption_diff.readiness_regressed_resource_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { resource_consumption_diff.readiness_improved_resource_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { resource_consumption_diff.duplicate_identity_resource_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { resource_consumption_diff.missing_identity_resource_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { resource_consumption_diff.changed_page_ids } -> std::same_as<std::vector<std::string>&>;
+    { resource_consumption_diff.summary } -> std::same_as<std::string&>;
+    { resource_consumption_diff.has_changes() } -> std::same_as<bool>;
+    { resource_consumption_diff.stable_no_change() } -> std::same_as<bool>;
+    { render::diff_render_text_frame_resource_packet_materializations(resource_materialization, resource_materialization) }
+        -> std::same_as<render::render_text_frame_resource_packet_consumption_diff_snapshot>;
     { handoff_diff_policy.ready_glyph_packet_count_delta } -> std::same_as<std::ptrdiff_t&>;
     { handoff_diff_policy.blocked_glyph_packet_count_delta } -> std::same_as<std::ptrdiff_t&>;
     { handoff_diff_policy.draw_packet_missing_count_delta } -> std::same_as<std::ptrdiff_t&>;

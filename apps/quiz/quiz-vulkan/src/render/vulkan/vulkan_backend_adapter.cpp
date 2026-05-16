@@ -1261,6 +1261,7 @@ summarize_scoped_command_packet_execution_for_frame(
 {
     vulkan_backend_frame_scoped_command_packet_summary summary{
         .checked = execution.checked,
+        .ready = execution.completed(),
         .status = execution.status,
         .fallback_reason = execution.fallback_reason,
         .render_pass_scope_ready = execution.render_pass_scope_ready,
@@ -1305,6 +1306,164 @@ summarize_scoped_command_packet_execution_for_frame(
     }
 
     return summary;
+}
+
+vulkan_command_recording_command_buffer_handle
+default_scoped_command_buffer_handle_for_frame(const vulkan_backend_frame_result& frame)
+{
+    if (frame.lifecycle.command_submit.checked
+        && frame.lifecycle.command_submit.command_buffer.valid()) {
+        return frame.lifecycle.command_submit.command_buffer;
+    }
+    if (frame.lifecycle.command_recording.checked
+        && frame.lifecycle.command_recording.command_buffer.valid()) {
+        return frame.lifecycle.command_recording.command_buffer;
+    }
+    if (frame.command_buffer_recording.command_buffer.valid()) {
+        return vulkan_command_recording_command_buffer_handle{
+            .value = static_cast<std::uintptr_t>(
+                9000 + frame.command_buffer_recording.command_buffer.value),
+        };
+    }
+    if (frame.command_buffer_submit.recording.command_buffer.valid()) {
+        return vulkan_command_recording_command_buffer_handle{
+            .value = static_cast<std::uintptr_t>(
+                9000 + frame.command_buffer_submit.recording.command_buffer.value),
+        };
+    }
+
+    return {};
+}
+
+vulkan_render_pass_handle default_scoped_render_pass_handle_for_frame(
+    const vulkan_backend_frame_result& frame)
+{
+    if (frame.lifecycle.command_submit.checked
+        && frame.lifecycle.command_submit.command_recording.render_pass.render_pass.valid()) {
+        return frame.lifecycle.command_submit.command_recording.render_pass.render_pass;
+    }
+    if (frame.lifecycle.command_recording.checked
+        && frame.lifecycle.command_recording.render_pass.render_pass.valid()) {
+        return frame.lifecycle.command_recording.render_pass.render_pass;
+    }
+    if (frame.lifecycle.render_pass.checked && frame.lifecycle.render_pass.render_pass.valid()) {
+        return frame.lifecycle.render_pass.render_pass;
+    }
+    if (frame.lifecycle.effective_render_pass_ready()
+        && frame.swapchain.acquire.image.id.value > 0) {
+        return vulkan_render_pass_handle{
+            .value = static_cast<std::uintptr_t>(
+                300 + frame.swapchain.acquire.image.id.value),
+        };
+    }
+
+    return {};
+}
+
+vulkan_framebuffer_handle default_scoped_framebuffer_handle_for_frame(
+    const vulkan_backend_frame_result& frame)
+{
+    if (frame.lifecycle.command_submit.checked
+        && frame.lifecycle.command_submit.command_recording.render_pass.framebuffer.valid()) {
+        return frame.lifecycle.command_submit.command_recording.render_pass.framebuffer;
+    }
+    if (frame.lifecycle.command_recording.checked
+        && frame.lifecycle.command_recording.render_pass.framebuffer.valid()) {
+        return frame.lifecycle.command_recording.render_pass.framebuffer;
+    }
+    if (frame.lifecycle.render_pass.checked && frame.lifecycle.render_pass.framebuffer.valid()) {
+        return frame.lifecycle.render_pass.framebuffer;
+    }
+    if (frame.lifecycle.effective_render_pass_ready()
+        && frame.swapchain.acquire.image.id.value > 0) {
+        return vulkan_framebuffer_handle{
+            .value = static_cast<std::uintptr_t>(
+                13000 + frame.swapchain.acquire.image.id.value),
+        };
+    }
+
+    return {};
+}
+
+bool default_scoped_command_packet_execution_ready(const vulkan_backend_frame_result& frame)
+{
+    return frame.frame_begun
+        && frame.surface.valid()
+        && frame.lifecycle.effective_render_pass_ready()
+        && frame.swapchain_image_acquire_plan.ready_for_command_recording()
+        && frame.swapchain.acquire.image.id.value > 0
+        && frame.command_packets.completed()
+        && frame.command_packet_execution.completed()
+        && frame.command_recorder_operations.completed()
+        && frame.command_buffer_recording.completed()
+        && frame.command_recorder.completed()
+        && default_scoped_command_buffer_handle_for_frame(frame).valid()
+        && default_scoped_render_pass_handle_for_frame(frame).valid()
+        && default_scoped_framebuffer_handle_for_frame(frame).valid();
+}
+
+vulkan_native_render_pass_scope_record_result
+make_default_scoped_render_pass_scope_for_frame(const vulkan_backend_frame_result& frame)
+{
+    const std::size_t selected_index =
+        frame.swapchain.acquire.image.id.value > 0
+            ? frame.swapchain.acquire.image.id.value - 1
+            : 0;
+    const vulkan_command_recording_command_buffer_handle command_buffer =
+        default_scoped_command_buffer_handle_for_frame(frame);
+    const vulkan_render_pass_handle render_pass =
+        default_scoped_render_pass_handle_for_frame(frame);
+    const vulkan_framebuffer_handle framebuffer =
+        default_scoped_framebuffer_handle_for_frame(frame);
+    const bool ready = default_scoped_command_packet_execution_ready(frame);
+
+    return vulkan_native_render_pass_scope_record_result{
+        .checked = true,
+        .status = ready
+            ? vulkan_native_render_pass_scope_record_status::recorded
+            : vulkan_native_render_pass_scope_record_status::framebuffer_targets_unavailable,
+        .framebuffer_targets = {},
+        .command_recording = {},
+        .dispatch_table = {},
+        .selected_framebuffer_target_index = selected_index,
+        .framebuffer_target_count = selected_index + 1,
+        .image_id = frame.swapchain.acquire.image.id,
+        .command_buffer = command_buffer,
+        .render_pass = render_pass,
+        .framebuffer = framebuffer,
+        .extent = frame.surface,
+        .begin_render_pass_symbol = vulkan_native_function_pointer{.value = 1401},
+        .end_render_pass_symbol = vulkan_native_function_pointer{.value = 1402},
+        .framebuffer_targets_ready = ready,
+        .command_buffer_ready = command_buffer.valid(),
+        .render_pass_ready = render_pass.valid(),
+        .framebuffer_ready = framebuffer.valid(),
+        .extent_ready = frame.surface.valid(),
+        .extent_matches = frame.surface.valid(),
+        .dispatch_table_ready = ready,
+        .vk_cmd_begin_render_pass_called = ready,
+        .vk_cmd_end_render_pass_called = ready,
+        .diagnostic = ready
+            ? "Default scoped Vulkan render pass scope recorded from frame submission data"
+            : "Default scoped Vulkan render pass scope is missing frame submission data",
+    };
+}
+
+vulkan_scoped_command_packet_execution_result
+execute_default_scoped_command_packets_for_frame(
+    vulkan_command_packet_executor_interface& executor,
+    const vulkan_backend_frame_result& frame)
+{
+    if (!default_scoped_command_packet_execution_ready(frame)) {
+        return {};
+    }
+
+    return execute_vulkan_scoped_command_packets(
+        executor,
+        vulkan_scoped_command_packet_execution_request{
+            .render_pass_scope = make_default_scoped_render_pass_scope_for_frame(frame),
+            .packet_bridge = frame.command_packets,
+        });
 }
 
 vulkan_command_packet_category command_packet_category_for(vulkan_batch_kind kind)
@@ -8458,6 +8617,8 @@ vulkan_backend_frame_pipeline_handoff summarize_vulkan_frame_pipeline_handoff(
         .clipped_draw_call_count = frame.clipped_draw_call_count,
         .discarded_draw_call_count = frame.discarded_draw_call_count,
     };
+    handoff.scoped_command_packets.commands_recorded_gated_by_scoped_execution =
+        frame.commands_recorded_gated_by_scoped_execution;
     count_handoff_batches_from_frame(handoff, frame);
     return handoff;
 }
@@ -8752,7 +8913,14 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
 {
     diagnostic_vulkan_pipeline_cache pipeline_cache;
     diagnostic_vulkan_command_recorder command_recorder;
-    return submit_vulkan_backend_frame(device, pipeline_cache, command_recorder, draw_list, viewport);
+    fake_vulkan_command_packet_executor scoped_command_packet_executor;
+    return submit_vulkan_backend_frame(
+        device,
+        pipeline_cache,
+        command_recorder,
+        scoped_command_packet_executor,
+        draw_list,
+        viewport);
 }
 
 vulkan_backend_frame_result submit_vulkan_backend_frame(
@@ -8762,13 +8930,38 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     render_rect viewport)
 {
     diagnostic_vulkan_pipeline_cache pipeline_cache;
-    return submit_vulkan_backend_frame(device, pipeline_cache, command_recorder, draw_list, viewport);
+    fake_vulkan_command_packet_executor scoped_command_packet_executor;
+    return submit_vulkan_backend_frame(
+        device,
+        pipeline_cache,
+        command_recorder,
+        scoped_command_packet_executor,
+        draw_list,
+        viewport);
 }
 
 vulkan_backend_frame_result submit_vulkan_backend_frame(
     vulkan_backend_device_interface& device,
     vulkan_pipeline_cache_interface& pipeline_cache,
     vulkan_command_recorder_interface& command_recorder,
+    const render_draw_list& draw_list,
+    render_rect viewport)
+{
+    fake_vulkan_command_packet_executor scoped_command_packet_executor;
+    return submit_vulkan_backend_frame(
+        device,
+        pipeline_cache,
+        command_recorder,
+        scoped_command_packet_executor,
+        draw_list,
+        viewport);
+}
+
+vulkan_backend_frame_result submit_vulkan_backend_frame(
+    vulkan_backend_device_interface& device,
+    vulkan_pipeline_cache_interface& pipeline_cache,
+    vulkan_command_recorder_interface& command_recorder,
+    vulkan_command_packet_executor_interface& scoped_command_packet_executor,
     const render_draw_list& draw_list,
     render_rect viewport)
 {
@@ -9009,6 +9202,20 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     mark_command_buffer_recording_finished(
         result.command_buffer_submit,
         result.command_recorder);
+
+    result.scoped_command_packet_execution =
+        execute_default_scoped_command_packets_for_frame(
+            scoped_command_packet_executor,
+            result);
+    if (result.scoped_command_packet_execution.checked) {
+        result.commands_recorded_gated_by_scoped_execution = true;
+        if (!result.scoped_command_packet_execution.completed()) {
+            fail_frame_lifecycle(
+                vulkan_frame_lifecycle_step::render,
+                vulkan_backend_fallback_reason::record_commands_failed);
+            return finish_frame();
+        }
+    }
 
     result.commands_recorded = device.record_frame_commands(plan);
     if (!result.commands_recorded) {

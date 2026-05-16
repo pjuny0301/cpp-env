@@ -7824,6 +7824,7 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_frame_native_execu
 static_assert(requires(
     render::vulkan_backend::vulkan_backend_frame_scoped_command_packet_summary summary) {
     { summary.checked } -> std::same_as<bool&>;
+    { summary.ready } -> std::same_as<bool&>;
     { summary.status }
         -> std::same_as<render::vulkan_backend::vulkan_scoped_command_packet_execution_status&>;
     { summary.fallback_reason }
@@ -7838,6 +7839,7 @@ static_assert(requires(
     { summary.render_pass_end_skipped } -> std::same_as<bool&>;
     { summary.scoped_execution_empty } -> std::same_as<bool&>;
     { summary.packets_executed_inside_render_pass_scope } -> std::same_as<bool&>;
+    { summary.commands_recorded_gated_by_scoped_execution } -> std::same_as<bool&>;
     { summary.has_failed_packet } -> std::same_as<bool&>;
     { summary.first_failed_category }
         -> std::same_as<render::vulkan_backend::vulkan_command_packet_category&>;
@@ -8057,6 +8059,7 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_frame_result resul
     { result.surface_ready } -> std::same_as<bool&>;
     { result.frame_begun } -> std::same_as<bool&>;
     { result.commands_recorded } -> std::same_as<bool&>;
+    { result.commands_recorded_gated_by_scoped_execution } -> std::same_as<bool&>;
     { result.frame_submitted } -> std::same_as<bool&>;
     { result.frame_presented } -> std::same_as<bool&>;
     { result.attempted } -> std::same_as<bool&>;
@@ -8073,6 +8076,7 @@ static_assert(requires(
     render::vulkan_backend::vulkan_backend_device_interface& device,
     render::vulkan_backend::vulkan_pipeline_cache_interface& pipeline_cache,
     render::vulkan_backend::vulkan_command_recorder_interface& command_recorder,
+    render::vulkan_backend::vulkan_command_packet_executor_interface& scoped_command_packet_executor,
     const render::render_draw_list& draw_list,
     render::render_rect viewport,
     render::vulkan_backend::vulkan_sdk_capability_result sdk_capabilities) {
@@ -8082,6 +8086,13 @@ static_assert(requires(
         -> std::same_as<render::vulkan_backend::vulkan_backend_frame_result>;
     { render::vulkan_backend::submit_vulkan_backend_frame(device, pipeline_cache, command_recorder, draw_list, viewport) }
         -> std::same_as<render::vulkan_backend::vulkan_backend_frame_result>;
+    { render::vulkan_backend::submit_vulkan_backend_frame(
+        device,
+        pipeline_cache,
+        command_recorder,
+        scoped_command_packet_executor,
+        draw_list,
+        viewport) } -> std::same_as<render::vulkan_backend::vulkan_backend_frame_result>;
     { render::vulkan_backend::build_vulkan_resource_binding_state(
         draw_list,
         render::vulkan_backend::vulkan_frame_plan{}) }

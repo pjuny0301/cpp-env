@@ -2227,6 +2227,7 @@ struct vulkan_backend_frame_native_execution_summary {
 
 struct vulkan_backend_frame_scoped_command_packet_summary {
     bool checked = false;
+    bool ready = false;
     vulkan_scoped_command_packet_execution_status status =
         vulkan_scoped_command_packet_execution_status::not_checked;
     vulkan_backend_fallback_reason fallback_reason = vulkan_backend_fallback_reason::not_requested;
@@ -2240,6 +2241,7 @@ struct vulkan_backend_frame_scoped_command_packet_summary {
     bool render_pass_end_skipped = false;
     bool scoped_execution_empty = false;
     bool packets_executed_inside_render_pass_scope = false;
+    bool commands_recorded_gated_by_scoped_execution = false;
     bool has_failed_packet = false;
     vulkan_command_packet_category first_failed_category = vulkan_command_packet_category::rect;
     vulkan_batch_kind first_failed_batch_kind = vulkan_batch_kind::quad;
@@ -2263,7 +2265,7 @@ struct vulkan_backend_frame_scoped_command_packet_summary {
     {
         return checked && status == vulkan_scoped_command_packet_execution_status::completed
             && fallback_reason == vulkan_backend_fallback_reason::none
-            && render_pass_scope_ready && command_buffer_ready && packet_bridge_ready
+            && ready && render_pass_scope_ready && command_buffer_ready && packet_bridge_ready
             && packet_execution_ready && operation_plan_ready
             && render_pass_begin_completed && render_pass_end_completed
             && !render_pass_end_skipped && !has_failed_packet
@@ -2470,6 +2472,7 @@ struct vulkan_backend_frame_result {
     bool surface_ready = false;
     bool frame_begun = false;
     bool commands_recorded = false;
+    bool commands_recorded_gated_by_scoped_execution = false;
     bool frame_submitted = false;
     bool frame_presented = false;
     bool attempted = false;
@@ -2629,6 +2632,14 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
     vulkan_backend_device_interface& device,
     vulkan_pipeline_cache_interface& pipeline_cache,
     vulkan_command_recorder_interface& command_recorder,
+    const render_draw_list& draw_list,
+    render_rect viewport);
+
+vulkan_backend_frame_result submit_vulkan_backend_frame(
+    vulkan_backend_device_interface& device,
+    vulkan_pipeline_cache_interface& pipeline_cache,
+    vulkan_command_recorder_interface& command_recorder,
+    vulkan_command_packet_executor_interface& scoped_command_packet_executor,
     const render_draw_list& draw_list,
     render_rect viewport);
 

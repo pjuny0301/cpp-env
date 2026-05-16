@@ -2,7 +2,6 @@
 
 #include <cassert>
 #include <cstdio>
-#include <cstdint>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -419,63 +418,6 @@ void mark_native_frame_execution_ready(
     result.present_completion_plan.missing_native_symbol_name.clear();
 }
 
-quiz_vulkan::render::vulkan_backend::vulkan_native_render_pass_scope_record_result
-make_ready_render_pass_scope_for_frame(
-    const quiz_vulkan::render::vulkan_backend::vulkan_backend_frame_result& frame)
-{
-    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
-
-    const std::size_t selected_index =
-        frame.swapchain.acquire.image.id.value > 0
-            ? frame.swapchain.acquire.image.id.value - 1
-            : 0;
-
-    return vulkan_backend::vulkan_native_render_pass_scope_record_result{
-        .checked = true,
-        .status = vulkan_backend::vulkan_native_render_pass_scope_record_status::recorded,
-        .selected_framebuffer_target_index = selected_index,
-        .framebuffer_target_count = selected_index + 1,
-        .image_id = frame.swapchain.acquire.image.id,
-        .command_buffer =
-            vulkan_backend::vulkan_command_recording_command_buffer_handle{
-                .value = static_cast<std::uintptr_t>(
-                    9000 + frame.command_buffer_submit.recording.command_buffer.value),
-            },
-        .render_pass = vulkan_backend::vulkan_render_pass_handle{.value = 300},
-        .framebuffer =
-            vulkan_backend::vulkan_framebuffer_handle{.value = 13000 + selected_index + 1},
-        .extent = frame.surface,
-        .begin_render_pass_symbol = vulkan_backend::vulkan_native_function_pointer{.value = 1401},
-        .end_render_pass_symbol = vulkan_backend::vulkan_native_function_pointer{.value = 1402},
-        .framebuffer_targets_ready = true,
-        .command_buffer_ready = true,
-        .render_pass_ready = true,
-        .framebuffer_ready = true,
-        .extent_ready = true,
-        .extent_matches = true,
-        .dispatch_table_ready = true,
-        .vk_cmd_begin_render_pass_called = true,
-        .vk_cmd_end_render_pass_called = true,
-        .diagnostic = "Scoped frame render pass recorded",
-    };
-}
-
-quiz_vulkan::render::vulkan_backend::vulkan_scoped_command_packet_execution_result
-execute_scoped_packets_for_frame(
-    const quiz_vulkan::render::vulkan_backend::vulkan_backend_frame_result& frame,
-    quiz_vulkan::render::vulkan_backend::fake_vulkan_command_packet_executor_options options = {})
-{
-    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
-
-    vulkan_backend::fake_vulkan_command_packet_executor executor(options);
-    return vulkan_backend::execute_vulkan_scoped_command_packets(
-        executor,
-        vulkan_backend::vulkan_scoped_command_packet_execution_request{
-            .render_pass_scope = make_ready_render_pass_scope_for_frame(frame),
-            .packet_bridge = frame.command_packets,
-        });
-}
-
 void test_vulkan_frame_pipeline_handoff_status_names_are_stable()
 {
     using namespace quiz_vulkan::render;
@@ -816,6 +758,44 @@ void test_vulkan_frame_pipeline_handoff_accepts_draw_list_render_data()
     require(handoff.command_packets_completed, "handoff requires completed command packets before command recording");
     require(handoff.command_packet_execution_checked, "handoff checks command packet execution before command recording");
     require(handoff.command_packet_execution_completed, "handoff requires completed packet execution before command recording");
+    require(result.scoped_command_packet_execution.completed(), "frame records scoped packet execution by default");
+    require(handoff.scoped_command_packets.checked, "handoff checks default scoped packet execution");
+    require(handoff.scoped_command_packets.ready, "handoff records default scoped packet readiness");
+    require(handoff.scoped_command_packets.completed(), "handoff completes default scoped packet execution");
+    require(
+        handoff.scoped_command_packets.status
+            == vulkan_backend::vulkan_scoped_command_packet_execution_status::completed,
+        "handoff records default scoped packet status");
+    require(
+        handoff.scoped_command_packets.fallback_reason
+            == vulkan_backend::vulkan_backend_fallback_reason::none,
+        "handoff records no scoped packet fallback");
+    require(
+        handoff.scoped_command_packets.commands_recorded_gated_by_scoped_execution,
+        "handoff reports frame command recording gated by scoped execution");
+    require(
+        handoff.scoped_command_packets.packets_executed_inside_render_pass_scope,
+        "handoff reports packets executed inside render pass scope");
+    require(handoff.scoped_command_packets.render_pass_scope_ready, "handoff records ready default render pass scope");
+    require(handoff.scoped_command_packets.command_buffer_ready, "handoff records default scoped command buffer");
+    require(handoff.scoped_command_packets.packet_bridge_ready, "handoff records scoped packet bridge readiness");
+    require(handoff.scoped_command_packets.packet_execution_ready, "handoff records scoped packet execution readiness");
+    require(handoff.scoped_command_packets.operation_plan_ready, "handoff records scoped operation plan readiness");
+    require(handoff.scoped_command_packets.render_pass_scope_id == device.next_image_id.value, "handoff records default scope id");
+    require(
+        handoff.scoped_command_packets.selected_framebuffer_target_index == device.next_image_id.value - 1,
+        "handoff records default framebuffer target index");
+    require(handoff.scoped_command_packets.image_id.value == device.next_image_id.value, "handoff records scoped image id");
+    require(handoff.scoped_command_packets.framebuffer.valid(), "handoff records scoped framebuffer handle");
+    require(handoff.scoped_command_packets.command_buffer.valid(), "handoff records scoped command buffer handle");
+    require(handoff.scoped_command_packets.planned_packet_count == 3, "handoff records scoped planned packets");
+    require(handoff.scoped_command_packets.attempted_packet_count == 3, "handoff records scoped attempted packets");
+    require(handoff.scoped_command_packets.executed_packet_count == 3, "handoff records scoped executed packets");
+    require(handoff.scoped_command_packets.rect_packet_count == 1, "handoff records scoped rect packet count");
+    require(handoff.scoped_command_packets.text_packet_count == 1, "handoff records scoped text packet count");
+    require(handoff.scoped_command_packets.image_packet_count == 1, "handoff records scoped image packet count");
+    require(handoff.scoped_command_packets.debug_bounds_packet_count == 0, "handoff records scoped debug packet count");
+    require(!handoff.scoped_command_packets.has_failed_packet, "handoff records no scoped packet failure");
     require(handoff.command_recorder_operations_checked, "handoff checks command recorder operation plan");
     require(handoff.command_recorder_operations_completed, "handoff requires completed recorder operation plan");
     require(
@@ -1132,21 +1112,14 @@ void test_vulkan_frame_pipeline_handoff_reports_scoped_command_packet_summary()
             device,
             make_quad_draw_list(),
             render_rect{0.0f, 0.0f, 64.0f, 64.0f});
-    require(frame.completed(), "baseline submitted frame completes before scoped packet summary");
-    require(
-        !frame.pipeline_handoff.scoped_command_packets.checked,
-        "baseline handoff leaves scoped packet summary unchecked");
-
-    const vulkan_backend::vulkan_backend_frame_result scoped_frame =
-        vulkan_backend::apply_vulkan_scoped_command_packet_execution_result_to_frame(
-            frame,
-            execute_scoped_packets_for_frame(frame));
     const vulkan_backend::vulkan_backend_frame_scoped_command_packet_summary& summary =
-        scoped_frame.pipeline_handoff.scoped_command_packets;
+        frame.pipeline_handoff.scoped_command_packets;
 
-    require(scoped_frame.completed(), "scoped packet summary keeps submitted frame completed");
-    require(scoped_frame.scoped_command_packet_execution.completed(), "frame owns scoped packet execution result");
+    require(frame.completed(), "default scoped packet summary keeps submitted frame completed");
+    require(frame.commands_recorded_gated_by_scoped_execution, "frame records commands gated by scoped execution");
+    require(frame.scoped_command_packet_execution.completed(), "frame owns default scoped packet execution result");
     require(summary.checked, "handoff checks scoped packet execution");
+    require(summary.ready, "handoff records scoped packet execution readiness");
     require(summary.completed(), "handoff records completed scoped packet execution");
     require(
         summary.status == vulkan_backend::vulkan_scoped_command_packet_execution_status::completed,
@@ -1154,6 +1127,9 @@ void test_vulkan_frame_pipeline_handoff_reports_scoped_command_packet_summary()
     require(
         summary.packets_executed_inside_render_pass_scope,
         "handoff reports packets executed inside selected render pass scope");
+    require(
+        summary.commands_recorded_gated_by_scoped_execution,
+        "handoff reports frame commands gated by scoped execution");
     require(!summary.scoped_execution_empty, "handoff records non-empty scoped execution");
     require(summary.render_pass_scope_ready, "handoff records ready render pass scope");
     require(summary.command_buffer_ready, "handoff records scoped command buffer readiness");
@@ -1190,26 +1166,34 @@ void test_vulkan_frame_pipeline_handoff_reports_scoped_packet_failure()
     using namespace quiz_vulkan::render;
 
     fake_vulkan_backend_device device(vulkan_backend::vulkan_surface_extent{.width = 64, .height = 64});
-    const vulkan_backend::vulkan_backend_frame_result frame =
+    vulkan_backend::diagnostic_vulkan_pipeline_cache pipeline_cache;
+    vulkan_backend::diagnostic_vulkan_command_recorder command_recorder;
+    vulkan_backend::fake_vulkan_command_packet_executor scoped_packet_executor(
+        vulkan_backend::fake_vulkan_command_packet_executor_options{
+            .fail_packet = true,
+            .fail_packet_index = 0,
+        });
+    const vulkan_backend::vulkan_backend_frame_result scoped_frame =
         vulkan_backend::submit_vulkan_backend_frame(
             device,
+            pipeline_cache,
+            command_recorder,
+            scoped_packet_executor,
             make_quad_draw_list(),
             render_rect{0.0f, 0.0f, 64.0f, 64.0f});
-    const vulkan_backend::vulkan_backend_frame_result scoped_frame =
-        vulkan_backend::apply_vulkan_scoped_command_packet_execution_result_to_frame(
-            frame,
-            execute_scoped_packets_for_frame(
-                frame,
-                vulkan_backend::fake_vulkan_command_packet_executor_options{
-                    .fail_packet = true,
-                    .fail_packet_index = 0,
-                }));
     const vulkan_backend::vulkan_backend_frame_scoped_command_packet_summary& summary =
         scoped_frame.pipeline_handoff.scoped_command_packets;
 
-    require(!scoped_frame.completed(), "failed scoped packet execution prevents frame completion summary");
+    require(!scoped_frame.completed(), "failed scoped packet execution prevents submitted frame completion");
+    require(scoped_frame.commands_recorded_gated_by_scoped_execution, "frame records scoped gate before command recording");
+    require(!scoped_frame.commands_recorded, "frame command recording is skipped after scoped packet failure");
+    require(
+        scoped_frame.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::record_commands_failed,
+        "frame records command recording fallback for scoped packet failure");
+    require(scoped_frame.scoped_command_packet_execution.failed(), "frame owns failed scoped execution result");
     require(!scoped_frame.pipeline_handoff.completed(), "handoff does not complete with scoped packet failure");
     require(summary.checked, "handoff checks failed scoped packet execution");
+    require(!summary.ready, "handoff records scoped packet execution not ready");
     require(summary.failed(), "handoff records failed scoped packet execution");
     require(
         summary.status == vulkan_backend::vulkan_scoped_command_packet_execution_status::packet_failed,
@@ -1217,12 +1201,53 @@ void test_vulkan_frame_pipeline_handoff_reports_scoped_packet_failure()
     require(
         !summary.packets_executed_inside_render_pass_scope,
         "handoff does not report scoped packet execution after failure");
+    require(
+        summary.commands_recorded_gated_by_scoped_execution,
+        "handoff reports command recording gated by failed scoped execution");
     require(summary.has_failed_packet, "handoff records failed scoped packet evidence");
     require(summary.first_failed_packet_index == 0, "handoff records first failed packet index");
     require(summary.first_failed_command_index == 0, "handoff records first failed command index");
     require(summary.attempted_packet_count == 1, "handoff records attempted failing packet");
     require(summary.executed_packet_count == 0, "handoff records no executed packets after failure");
     require(!scoped_frame.pipeline_handoff.command_recording_ready, "handoff blocks command recording readiness");
+    require(device.calls.size() == 2, "backend stops before device command recording after scoped packet failure");
+    require(device.calls[0] == "acquire", "backend acquires before scoped packet failure");
+    require(device.calls[1] == "begin", "backend begins frame before scoped packet failure");
+}
+
+void test_vulkan_frame_pipeline_handoff_reports_empty_default_scoped_packet_scope()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_vulkan_backend_device device(vulkan_backend::vulkan_surface_extent{.width = 64, .height = 64});
+    const vulkan_backend::vulkan_backend_frame_result frame =
+        vulkan_backend::submit_vulkan_backend_frame(
+            device,
+            render_draw_list{},
+            render_rect{0.0f, 0.0f, 64.0f, 64.0f});
+    const vulkan_backend::vulkan_backend_frame_scoped_command_packet_summary& summary =
+        frame.pipeline_handoff.scoped_command_packets;
+
+    require(frame.completed(), "empty draw frame completes with default scoped packet summary");
+    require(frame.commands_recorded_gated_by_scoped_execution, "empty frame records scoped command gate");
+    require(summary.checked, "empty frame handoff checks scoped packet execution");
+    require(summary.ready, "empty frame scoped packet execution is ready");
+    require(summary.completed(), "empty frame scoped packet execution completes");
+    require(summary.scoped_execution_empty, "empty frame records empty scoped execution");
+    require(
+        !summary.packets_executed_inside_render_pass_scope,
+        "empty frame does not report packet execution inside scope");
+    require(summary.commands_recorded_gated_by_scoped_execution, "empty frame handoff records scoped gate");
+    require(summary.planned_packet_count == 0, "empty frame records no planned scoped packets");
+    require(summary.attempted_packet_count == 0, "empty frame records no attempted scoped packets");
+    require(summary.executed_packet_count == 0, "empty frame records no executed scoped packets");
+    require(summary.rect_packet_count == 0, "empty frame records no rect packets");
+    require(summary.text_packet_count == 0, "empty frame records no text packets");
+    require(summary.image_packet_count == 0, "empty frame records no image packets");
+    require(summary.debug_bounds_packet_count == 0, "empty frame records no debug packets");
+    require(summary.render_pass_scope_id == device.next_image_id.value, "empty frame records scope id");
+    require(summary.framebuffer.valid(), "empty frame records framebuffer handle");
+    require(summary.command_buffer.valid(), "empty frame records command buffer handle");
 }
 
 } // namespace
@@ -1242,5 +1267,6 @@ int main()
     test_vulkan_frame_pipeline_handoff_reports_native_submit_fallback_summary();
     test_vulkan_frame_pipeline_handoff_reports_scoped_command_packet_summary();
     test_vulkan_frame_pipeline_handoff_reports_scoped_packet_failure();
+    test_vulkan_frame_pipeline_handoff_reports_empty_default_scoped_packet_scope();
     return 0;
 }

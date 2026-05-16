@@ -1,5 +1,6 @@
 #include "render/vulkan/vulkan_backend_adapter.h"
 
+#include <array>
 #include <cassert>
 #include <cstdio>
 #include <string>
@@ -29,6 +30,17 @@ quiz_vulkan::render::vulkan_backend::vulkan_resource_binding_snapshot make_bindi
     };
 }
 
+std::array<quiz_vulkan::render::vulkan_backend::vulkan_quad_vertex, 4>
+make_packet_vertices()
+{
+    return {
+        quiz_vulkan::render::vulkan_backend::vulkan_quad_vertex{.x = 0.0f, .y = 0.0f},
+        quiz_vulkan::render::vulkan_backend::vulkan_quad_vertex{.x = 10.0f, .y = 0.0f},
+        quiz_vulkan::render::vulkan_backend::vulkan_quad_vertex{.x = 10.0f, .y = 10.0f},
+        quiz_vulkan::render::vulkan_backend::vulkan_quad_vertex{.x = 0.0f, .y = 10.0f},
+    };
+}
+
 quiz_vulkan::render::vulkan_backend::vulkan_command_packet make_packet(
     quiz_vulkan::render::vulkan_backend::vulkan_command_packet_category category,
     quiz_vulkan::render::vulkan_backend::vulkan_batch_kind batch_kind,
@@ -49,7 +61,7 @@ quiz_vulkan::render::vulkan_backend::vulkan_command_packet make_packet(
             .width = 10,
             .height = 10,
         },
-        .vertices = {},
+        .vertices = make_packet_vertices(),
         .descriptor_set_count = 1,
         .binding_count = 1,
         .bindings = {make_binding()},
@@ -175,6 +187,89 @@ make_ready_render_pass_scope(std::size_t selected_index = 1)
     };
 }
 
+quiz_vulkan::render::vulkan_backend::vulkan_loader_readiness_state make_ready_loader()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    return vulkan_backend::vulkan_loader_readiness_state{
+        .checked = true,
+        .status = vulkan_backend::vulkan_loader_readiness_status::ready,
+        .probe_status = vulkan_backend::vulkan_loader_probe_status::available,
+        .loader_library_available = true,
+        .instance_proc_address_available = true,
+        .instance_ready = true,
+        .loaded_library_name = "fake-vulkan-loader",
+        .required_symbol_name = std::string{vulkan_backend::vulkan_loader_required_symbol_name()},
+        .attempted_library_count = 1,
+    };
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_native_function_table_diagnostics
+make_native_functions(std::vector<std::string> missing_symbols = {})
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::fake_vulkan_native_symbol_resolver resolver(
+        vulkan_backend::fake_vulkan_native_symbol_resolver_options{
+            .missing_symbols = std::move(missing_symbols),
+        });
+    return vulkan_backend::collect_vulkan_native_function_table(
+        resolver,
+        make_ready_loader());
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_native_command_packet_executor_evidence
+make_native_packet_evidence(
+    quiz_vulkan::render::vulkan_backend::vulkan_native_function_table_diagnostics
+        native_functions = make_native_functions())
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    return vulkan_backend::vulkan_native_command_packet_executor_evidence{
+        .native_functions = std::move(native_functions),
+        .command_buffer =
+            vulkan_backend::vulkan_command_recording_command_buffer_handle{.value = 909},
+        .pipeline = vulkan_backend::vulkan_graphics_pipeline_handle{.value = 4400},
+        .pipeline_layout = vulkan_backend::vulkan_pipeline_layout_handle{.value = 5500},
+        .viewport = quiz_vulkan::render::render_rect{0.0f, 0.0f, 1280.0f, 720.0f},
+        .viewport_available = true,
+        .descriptor_sets = {
+            vulkan_backend::vulkan_native_command_packet_descriptor_set{
+                .packet_index = 0,
+                .set = 0,
+                .descriptor_set =
+                    vulkan_backend::vulkan_native_descriptor_set_handle{.value = 7000},
+                .required = true,
+                .available = true,
+            },
+            vulkan_backend::vulkan_native_command_packet_descriptor_set{
+                .packet_index = 1,
+                .set = 0,
+                .descriptor_set =
+                    vulkan_backend::vulkan_native_descriptor_set_handle{.value = 7001},
+                .required = true,
+                .available = true,
+            },
+            vulkan_backend::vulkan_native_command_packet_descriptor_set{
+                .packet_index = 2,
+                .set = 0,
+                .descriptor_set =
+                    vulkan_backend::vulkan_native_descriptor_set_handle{.value = 7002},
+                .required = true,
+                .available = true,
+            },
+            vulkan_backend::vulkan_native_command_packet_descriptor_set{
+                .packet_index = 3,
+                .set = 0,
+                .descriptor_set =
+                    vulkan_backend::vulkan_native_descriptor_set_handle{.value = 7003},
+                .required = true,
+                .available = true,
+            },
+        },
+    };
+}
+
 void test_vulkan_command_packet_execution_names_are_stable()
 {
     using namespace quiz_vulkan::render;
@@ -224,6 +319,31 @@ void test_vulkan_command_packet_execution_names_are_stable()
             vulkan_backend::vulkan_command_packet_execution_event::end)
             == std::string_view{"end"},
         "execution event name for end is stable");
+    require(
+        vulkan_backend::native_command_packet_execution_status_name(
+            vulkan_backend::vulkan_native_command_packet_execution_status::completed)
+            == std::string_view{"completed"},
+        "native packet execution status name for completed is stable");
+    require(
+        vulkan_backend::native_command_packet_execution_status_name(
+            vulkan_backend::vulkan_native_command_packet_execution_status::native_command_symbol_unavailable)
+            == std::string_view{"native_command_symbol_unavailable"},
+        "native packet execution status name for missing symbol is stable");
+    require(
+        vulkan_backend::native_command_packet_execution_status_name(
+            vulkan_backend::vulkan_native_command_packet_execution_status::invalid_packet_data)
+            == std::string_view{"invalid_packet_data"},
+        "native packet execution status name for invalid packet data is stable");
+    require(
+        vulkan_backend::native_command_packet_call_kind_name(
+            vulkan_backend::vulkan_native_command_packet_call_kind::bind_pipeline)
+            == std::string_view{"bind_pipeline"},
+        "native packet call kind name for bind pipeline is stable");
+    require(
+        vulkan_backend::native_command_packet_call_kind_name(
+            vulkan_backend::vulkan_native_command_packet_call_kind::draw)
+            == std::string_view{"draw"},
+        "native packet call kind name for draw is stable");
     require(
         vulkan_backend::scoped_command_packet_execution_status_name(
             vulkan_backend::vulkan_scoped_command_packet_execution_status::completed)
@@ -385,6 +505,200 @@ void test_vulkan_command_packet_execution_records_successful_empty_lifecycle()
     require(
         result.events[1].event == vulkan_backend::vulkan_command_packet_execution_event::end,
         "empty packet execution final event is end");
+}
+
+void test_vulkan_native_command_packet_executor_translates_packets_to_native_calls()
+{
+    using namespace quiz_vulkan::render;
+
+    const vulkan_backend::vulkan_command_packet_bridge_result bridge = make_ready_bridge();
+    vulkan_backend::vulkan_native_command_packet_executor executor(
+        make_native_packet_evidence());
+    const vulkan_backend::vulkan_command_packet_execution_result result =
+        executor.execute_packets(bridge);
+    const vulkan_backend::vulkan_native_command_packet_execution_result native_result =
+        executor.native_execution_result();
+
+    require(result.checked, "native packet executor result is checked");
+    require(result.completed(), "native packet executor completes interface execution");
+    require(result.events.size() == 6, "native packet executor records begin, packets, and end");
+    require(
+        result.events.front().event == vulkan_backend::vulkan_command_packet_execution_event::begin,
+        "native packet executor first interface event is begin");
+    require(
+        result.events.back().event == vulkan_backend::vulkan_command_packet_execution_event::end,
+        "native packet executor final interface event is end");
+    require(native_result.checked, "native packet translation result is checked");
+    require(native_result.completed(), "native packet translation completes");
+    require(!native_result.failed(), "native packet translation reports no failure");
+    require(
+        native_result.status
+            == vulkan_backend::vulkan_native_command_packet_execution_status::completed,
+        "native packet translation status is completed");
+    require(
+        native_result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::none,
+        "native packet translation has no fallback");
+    require(native_result.packet_bridge_checked, "native packet translation records bridge check");
+    require(native_result.packet_bridge_ready, "native packet translation records ready bridge");
+    require(
+        native_result.native_function_table_checked,
+        "native packet translation records checked function table");
+    require(
+        native_result.native_command_symbols_ready,
+        "native packet translation records native command symbols ready");
+    require(native_result.command_buffer_ready, "native packet translation records command buffer ready");
+    require(native_result.pipeline_ready, "native packet translation records pipeline ready");
+    require(
+        native_result.pipeline_layout_ready,
+        "native packet translation records pipeline layout ready");
+    require(native_result.viewport_ready, "native packet translation records viewport ready");
+    require(
+        native_result.descriptor_sets_ready,
+        "native packet translation records descriptor set handles ready");
+    require(native_result.planned_packet_count == 4, "native packet translation records planned packets");
+    require(
+        native_result.attempted_packet_count == 4,
+        "native packet translation records attempted packets");
+    require(
+        native_result.translated_packet_count == 4,
+        "native packet translation records translated packets");
+    require(
+        native_result.attempted_native_call_count == 20,
+        "native packet translation attempts five native calls per packet");
+    require(
+        native_result.completed_native_call_count == 20,
+        "native packet translation completes five native calls per packet");
+    require(native_result.calls.size() == 20, "native packet translation records native call evidence");
+    require(
+        native_result.calls[0].kind
+            == vulkan_backend::vulkan_native_command_packet_call_kind::bind_pipeline,
+        "native packet translation starts each packet by binding the pipeline");
+    require(
+        native_result.calls[1].kind
+            == vulkan_backend::vulkan_native_command_packet_call_kind::bind_descriptor_sets,
+        "native packet translation binds descriptor sets");
+    require(
+        native_result.calls[2].kind
+            == vulkan_backend::vulkan_native_command_packet_call_kind::set_viewport,
+        "native packet translation sets the viewport");
+    require(
+        native_result.calls[3].kind
+            == vulkan_backend::vulkan_native_command_packet_call_kind::set_scissor,
+        "native packet translation sets the packet scissor");
+    require(
+        native_result.calls[4].kind
+            == vulkan_backend::vulkan_native_command_packet_call_kind::draw,
+        "native packet translation emits a draw call");
+    require(native_result.calls[4].symbol_name == "vkCmdDraw", "draw call records symbol name");
+    require(native_result.calls[4].vertex_count == 4, "draw call records quad vertex count");
+    require(native_result.calls[4].packet_index == 0, "draw call records packet index");
+    for (const vulkan_backend::vulkan_native_command_packet_call_evidence& call :
+         native_result.calls) {
+        require(call.successful(), "each native command packet call reports success");
+    }
+    require(
+        executor.execution_result().completed(),
+        "native packet executor retains completed interface result");
+}
+
+void test_vulkan_native_command_packet_executor_blocks_missing_draw_symbol()
+{
+    using namespace quiz_vulkan::render;
+
+    vulkan_backend::vulkan_native_command_packet_executor executor(
+        make_native_packet_evidence(make_native_functions({"vkCmdDraw"})));
+    const vulkan_backend::vulkan_command_packet_execution_result result =
+        executor.execute_packets(make_ready_bridge());
+    const vulkan_backend::vulkan_native_command_packet_execution_result native_result =
+        executor.native_execution_result();
+
+    require(result.checked, "missing draw result is checked");
+    require(!result.completed(), "missing draw does not complete interface execution");
+    require(
+        result.status == vulkan_backend::vulkan_command_packet_execution_status::begin_failed,
+        "missing draw fails before packet translation begins");
+    require(result.begin_attempted, "missing draw records begin attempt");
+    require(!result.begin_completed, "missing draw does not complete begin");
+    require(result.events.size() == 1, "missing draw records only failed begin event");
+    require(result.events.front().failed, "missing draw marks begin event failed");
+    require(native_result.failed(), "missing draw reports native failure");
+    require(
+        native_result.status
+            == vulkan_backend::vulkan_native_command_packet_execution_status::native_command_symbol_unavailable,
+        "missing draw reports native command symbol unavailable");
+    require(
+        native_result.missing_native_symbol_name == "vkCmdDraw",
+        "missing draw records missing symbol name");
+    require(!native_result.native_command_symbols_ready, "missing draw records symbols not ready");
+    require(native_result.calls.empty(), "missing draw records no native calls");
+    require(
+        native_result.diagnostic.find("vkCmdDraw") != std::string::npos,
+        "missing draw diagnostic names missing draw symbol");
+}
+
+void test_vulkan_native_command_packet_executor_blocks_invalid_command_buffer()
+{
+    using namespace quiz_vulkan::render;
+
+    vulkan_backend::vulkan_native_command_packet_executor_evidence evidence =
+        make_native_packet_evidence();
+    evidence.command_buffer = {};
+    vulkan_backend::vulkan_native_command_packet_executor executor(std::move(evidence));
+    const vulkan_backend::vulkan_command_packet_execution_result result =
+        executor.execute_packets(make_ready_bridge());
+    const vulkan_backend::vulkan_native_command_packet_execution_result native_result =
+        executor.native_execution_result();
+
+    require(!result.completed(), "invalid command buffer does not complete interface execution");
+    require(
+        result.status == vulkan_backend::vulkan_command_packet_execution_status::begin_failed,
+        "invalid command buffer maps to begin failure");
+    require(native_result.failed(), "invalid command buffer reports native failure");
+    require(
+        native_result.status
+            == vulkan_backend::vulkan_native_command_packet_execution_status::command_buffer_unavailable,
+        "invalid command buffer records unavailable command buffer status");
+    require(!native_result.command_buffer_ready, "invalid command buffer records command buffer not ready");
+    require(native_result.calls.empty(), "invalid command buffer records no native calls");
+    require(
+        native_result.diagnostic.find("command buffer") != std::string::npos,
+        "invalid command buffer diagnostic names command buffer");
+}
+
+void test_vulkan_native_command_packet_executor_blocks_invalid_packet_scissor()
+{
+    using namespace quiz_vulkan::render;
+
+    vulkan_backend::vulkan_command_packet_bridge_result bridge = make_ready_bridge();
+    bridge.packets[1].scissor = {};
+    vulkan_backend::vulkan_native_command_packet_executor executor(
+        make_native_packet_evidence());
+    const vulkan_backend::vulkan_command_packet_execution_result result =
+        executor.execute_packets(bridge);
+    const vulkan_backend::vulkan_native_command_packet_execution_result native_result =
+        executor.native_execution_result();
+
+    require(!result.completed(), "invalid scissor does not complete interface execution");
+    require(
+        result.status == vulkan_backend::vulkan_command_packet_execution_status::packet_failed,
+        "invalid scissor maps to packet failure");
+    require(result.has_failed_packet, "invalid scissor records failed packet");
+    require(
+        result.first_failed_category == vulkan_backend::vulkan_command_packet_category::text,
+        "invalid scissor records failed packet category");
+    require(result.attempted_packet_count == 2, "invalid scissor attempts packets through failure");
+    require(result.executed_packet_count == 1, "invalid scissor translates only prior packet");
+    require(native_result.failed(), "invalid scissor reports native failure");
+    require(
+        native_result.status
+            == vulkan_backend::vulkan_native_command_packet_execution_status::invalid_packet_data,
+        "invalid scissor records invalid packet data status");
+    require(
+        native_result.calls.size() == 5,
+        "invalid scissor keeps native call evidence for completed prior packet");
+    require(
+        native_result.diagnostic.find("scissor") != std::string::npos,
+        "invalid scissor diagnostic names scissor data");
 }
 
 void test_vulkan_scoped_command_packet_execution_records_scope_and_packets()
@@ -559,6 +873,10 @@ int main()
     test_vulkan_command_packet_execution_records_successful_lifecycle();
     test_vulkan_command_packet_execution_records_first_packet_failure();
     test_vulkan_command_packet_execution_records_successful_empty_lifecycle();
+    test_vulkan_native_command_packet_executor_translates_packets_to_native_calls();
+    test_vulkan_native_command_packet_executor_blocks_missing_draw_symbol();
+    test_vulkan_native_command_packet_executor_blocks_invalid_command_buffer();
+    test_vulkan_native_command_packet_executor_blocks_invalid_packet_scissor();
     test_vulkan_scoped_command_packet_execution_records_scope_and_packets();
     test_vulkan_scoped_command_packet_execution_accepts_empty_scope();
     test_vulkan_scoped_command_packet_execution_reports_scope_and_bridge_blockers();

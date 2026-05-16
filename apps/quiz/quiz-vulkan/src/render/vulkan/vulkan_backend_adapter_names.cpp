@@ -337,6 +337,54 @@ std::string_view command_packet_execution_event_name(
     return "unknown";
 }
 
+std::string_view native_command_packet_execution_status_name(
+    vulkan_native_command_packet_execution_status status)
+{
+    switch (status) {
+    case vulkan_native_command_packet_execution_status::not_checked:
+        return "not_checked";
+    case vulkan_native_command_packet_execution_status::completed:
+        return "completed";
+    case vulkan_native_command_packet_execution_status::packet_bridge_unavailable:
+        return "packet_bridge_unavailable";
+    case vulkan_native_command_packet_execution_status::native_function_table_unavailable:
+        return "native_function_table_unavailable";
+    case vulkan_native_command_packet_execution_status::native_command_symbol_unavailable:
+        return "native_command_symbol_unavailable";
+    case vulkan_native_command_packet_execution_status::command_buffer_unavailable:
+        return "command_buffer_unavailable";
+    case vulkan_native_command_packet_execution_status::pipeline_unavailable:
+        return "pipeline_unavailable";
+    case vulkan_native_command_packet_execution_status::pipeline_layout_unavailable:
+        return "pipeline_layout_unavailable";
+    case vulkan_native_command_packet_execution_status::descriptor_sets_unavailable:
+        return "descriptor_sets_unavailable";
+    case vulkan_native_command_packet_execution_status::invalid_packet_data:
+        return "invalid_packet_data";
+    }
+
+    return "unknown";
+}
+
+std::string_view native_command_packet_call_kind_name(
+    vulkan_native_command_packet_call_kind kind)
+{
+    switch (kind) {
+    case vulkan_native_command_packet_call_kind::bind_pipeline:
+        return "bind_pipeline";
+    case vulkan_native_command_packet_call_kind::bind_descriptor_sets:
+        return "bind_descriptor_sets";
+    case vulkan_native_command_packet_call_kind::set_viewport:
+        return "set_viewport";
+    case vulkan_native_command_packet_call_kind::set_scissor:
+        return "set_scissor";
+    case vulkan_native_command_packet_call_kind::draw:
+        return "draw";
+    }
+
+    return "unknown";
+}
+
 std::string_view scoped_command_packet_execution_status_name(
     vulkan_scoped_command_packet_execution_status status)
 {

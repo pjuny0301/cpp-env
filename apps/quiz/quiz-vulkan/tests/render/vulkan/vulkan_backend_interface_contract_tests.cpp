@@ -6540,6 +6540,122 @@ static_assert(requires(render::vulkan_backend::vulkan_command_packet_execution_r
     { result.failed() } -> std::same_as<bool>;
 });
 
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_command_packet_execution_status::completed),
+    render::vulkan_backend::vulkan_native_command_packet_execution_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_command_packet_execution_status::native_command_symbol_unavailable),
+    render::vulkan_backend::vulkan_native_command_packet_execution_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_command_packet_execution_status::invalid_packet_data),
+    render::vulkan_backend::vulkan_native_command_packet_execution_status>);
+static_assert(requires(render::vulkan_backend::vulkan_native_command_packet_execution_status status) {
+    { render::vulkan_backend::native_command_packet_execution_status_name(status) }
+        -> std::same_as<std::string_view>;
+});
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_command_packet_call_kind::bind_pipeline),
+    render::vulkan_backend::vulkan_native_command_packet_call_kind>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_command_packet_call_kind::draw),
+    render::vulkan_backend::vulkan_native_command_packet_call_kind>);
+static_assert(requires(render::vulkan_backend::vulkan_native_command_packet_call_kind kind) {
+    { render::vulkan_backend::native_command_packet_call_kind_name(kind) }
+        -> std::same_as<std::string_view>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_descriptor_set_handle handle) {
+    { handle.value } -> std::same_as<std::uintptr_t&>;
+    { handle.valid() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_command_packet_descriptor_set descriptor_set) {
+    { descriptor_set.packet_index } -> std::same_as<std::size_t&>;
+    { descriptor_set.set } -> std::same_as<std::size_t&>;
+    { descriptor_set.descriptor_set }
+        -> std::same_as<render::vulkan_backend::vulkan_native_descriptor_set_handle&>;
+    { descriptor_set.required } -> std::same_as<bool&>;
+    { descriptor_set.available } -> std::same_as<bool&>;
+    { descriptor_set.completed() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_command_packet_executor_evidence evidence) {
+    { evidence.native_functions }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_table_diagnostics&>;
+    { evidence.command_buffer }
+        -> std::same_as<render::vulkan_backend::vulkan_command_recording_command_buffer_handle&>;
+    { evidence.pipeline }
+        -> std::same_as<render::vulkan_backend::vulkan_graphics_pipeline_handle&>;
+    { evidence.pipeline_layout }
+        -> std::same_as<render::vulkan_backend::vulkan_pipeline_layout_handle&>;
+    { evidence.viewport } -> std::same_as<render::render_rect&>;
+    { evidence.viewport_available } -> std::same_as<bool&>;
+    { evidence.descriptor_sets }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_command_packet_descriptor_set>&>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_command_packet_call_evidence call) {
+    { call.kind }
+        -> std::same_as<render::vulkan_backend::vulkan_native_command_packet_call_kind&>;
+    { call.symbol_name } -> std::same_as<std::string&>;
+    { call.command_buffer }
+        -> std::same_as<render::vulkan_backend::vulkan_command_recording_command_buffer_handle&>;
+    { call.pipeline }
+        -> std::same_as<render::vulkan_backend::vulkan_graphics_pipeline_handle&>;
+    { call.pipeline_layout }
+        -> std::same_as<render::vulkan_backend::vulkan_pipeline_layout_handle&>;
+    { call.packet_index } -> std::same_as<std::size_t&>;
+    { call.command_index } -> std::same_as<std::size_t&>;
+    { call.descriptor_set_count } -> std::same_as<std::size_t&>;
+    { call.vertex_count } -> std::same_as<std::size_t&>;
+    { call.viewport } -> std::same_as<render::render_rect&>;
+    { call.scissor } -> std::same_as<render::vulkan_backend::vulkan_scissor_rect&>;
+    { call.attempted } -> std::same_as<bool&>;
+    { call.completed } -> std::same_as<bool&>;
+    { call.failed } -> std::same_as<bool&>;
+    { call.successful() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_command_packet_execution_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_command_packet_execution_status&>;
+    { result.fallback_reason }
+        -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
+    { result.packet_bridge_checked } -> std::same_as<bool&>;
+    { result.packet_bridge_ready } -> std::same_as<bool&>;
+    { result.native_function_table_checked } -> std::same_as<bool&>;
+    { result.native_command_symbols_ready } -> std::same_as<bool&>;
+    { result.native_function_table_status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_table_status&>;
+    { result.missing_native_symbol_name } -> std::same_as<std::string&>;
+    { result.command_buffer }
+        -> std::same_as<render::vulkan_backend::vulkan_command_recording_command_buffer_handle&>;
+    { result.command_buffer_ready } -> std::same_as<bool&>;
+    { result.pipeline_ready } -> std::same_as<bool&>;
+    { result.pipeline_layout_ready } -> std::same_as<bool&>;
+    { result.viewport_ready } -> std::same_as<bool&>;
+    { result.descriptor_sets_ready } -> std::same_as<bool&>;
+    { result.has_failed_packet } -> std::same_as<bool&>;
+    { result.first_failed_category }
+        -> std::same_as<render::vulkan_backend::vulkan_command_packet_category&>;
+    { result.first_failed_batch_kind }
+        -> std::same_as<render::vulkan_backend::vulkan_batch_kind&>;
+    { result.first_failed_packet_index } -> std::same_as<std::size_t&>;
+    { result.first_failed_command_index } -> std::same_as<std::size_t&>;
+    { result.planned_packet_count } -> std::same_as<std::size_t&>;
+    { result.attempted_packet_count } -> std::same_as<std::size_t&>;
+    { result.translated_packet_count } -> std::same_as<std::size_t&>;
+    { result.attempted_native_call_count } -> std::same_as<std::size_t&>;
+    { result.completed_native_call_count } -> std::same_as<std::size_t&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.calls }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_command_packet_call_evidence>&>;
+    { result.completed() } -> std::same_as<bool>;
+    { result.failed() } -> std::same_as<bool>;
+});
+
 static_assert(requires(render::vulkan_backend::fake_vulkan_command_packet_executor_options options) {
     { options.fail_begin } -> std::same_as<bool&>;
     { options.fail_end } -> std::same_as<bool&>;
@@ -6561,10 +6677,19 @@ static_assert(VulkanCommandPacketExecutorInterface<
               render::vulkan_backend::vulkan_command_packet_executor_interface>);
 static_assert(VulkanCommandPacketExecutorInterface<
               render::vulkan_backend::fake_vulkan_command_packet_executor>);
+static_assert(VulkanCommandPacketExecutorInterface<
+              render::vulkan_backend::vulkan_native_command_packet_executor>);
 static_assert(std::default_initializable<render::vulkan_backend::fake_vulkan_command_packet_executor>);
 static_assert(std::constructible_from<
     render::vulkan_backend::fake_vulkan_command_packet_executor,
     render::vulkan_backend::fake_vulkan_command_packet_executor_options>);
+static_assert(std::constructible_from<
+    render::vulkan_backend::vulkan_native_command_packet_executor,
+    render::vulkan_backend::vulkan_native_command_packet_executor_evidence>);
+static_assert(requires(render::vulkan_backend::vulkan_native_command_packet_executor executor) {
+    { executor.native_execution_result() }
+        -> std::same_as<const render::vulkan_backend::vulkan_native_command_packet_execution_result&>;
+});
 
 static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_scoped_command_packet_execution_status::completed),

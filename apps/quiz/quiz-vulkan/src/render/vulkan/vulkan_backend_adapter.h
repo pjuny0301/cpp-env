@@ -19,6 +19,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -1413,6 +1414,142 @@ struct vulkan_command_packet_execution_result {
     }
 };
 
+enum class vulkan_native_command_packet_execution_status {
+    not_checked,
+    completed,
+    packet_bridge_unavailable,
+    native_function_table_unavailable,
+    native_command_symbol_unavailable,
+    command_buffer_unavailable,
+    pipeline_unavailable,
+    pipeline_layout_unavailable,
+    descriptor_sets_unavailable,
+    invalid_packet_data,
+};
+
+std::string_view native_command_packet_execution_status_name(
+    vulkan_native_command_packet_execution_status status);
+
+enum class vulkan_native_command_packet_call_kind {
+    bind_pipeline,
+    bind_descriptor_sets,
+    set_viewport,
+    set_scissor,
+    draw,
+};
+
+std::string_view native_command_packet_call_kind_name(
+    vulkan_native_command_packet_call_kind kind);
+
+struct vulkan_native_descriptor_set_handle {
+    std::uintptr_t value = 0;
+
+    bool valid() const
+    {
+        return value != 0;
+    }
+};
+
+struct vulkan_native_command_packet_descriptor_set {
+    std::size_t packet_index = 0;
+    std::size_t set = 0;
+    vulkan_native_descriptor_set_handle descriptor_set;
+    bool required = true;
+    bool available = false;
+
+    bool completed() const
+    {
+        return !required || (available && descriptor_set.valid());
+    }
+};
+
+struct vulkan_native_command_packet_executor_evidence {
+    vulkan_native_function_table_diagnostics native_functions;
+    vulkan_command_recording_command_buffer_handle command_buffer;
+    vulkan_graphics_pipeline_handle pipeline;
+    vulkan_pipeline_layout_handle pipeline_layout;
+    render_rect viewport;
+    bool viewport_available = false;
+    std::vector<vulkan_native_command_packet_descriptor_set> descriptor_sets;
+};
+
+struct vulkan_native_command_packet_call_evidence {
+    vulkan_native_command_packet_call_kind kind =
+        vulkan_native_command_packet_call_kind::bind_pipeline;
+    std::string symbol_name;
+    vulkan_command_recording_command_buffer_handle command_buffer;
+    vulkan_graphics_pipeline_handle pipeline;
+    vulkan_pipeline_layout_handle pipeline_layout;
+    std::size_t packet_index = 0;
+    std::size_t command_index = 0;
+    std::size_t descriptor_set_count = 0;
+    std::size_t vertex_count = 0;
+    render_rect viewport;
+    vulkan_scissor_rect scissor;
+    bool attempted = false;
+    bool completed = false;
+    bool failed = false;
+
+    bool successful() const
+    {
+        return command_buffer.valid() && attempted && completed && !failed
+            && !symbol_name.empty();
+    }
+};
+
+struct vulkan_native_command_packet_execution_result {
+    bool checked = false;
+    vulkan_native_command_packet_execution_status status =
+        vulkan_native_command_packet_execution_status::not_checked;
+    vulkan_backend_fallback_reason fallback_reason = vulkan_backend_fallback_reason::not_requested;
+    bool packet_bridge_checked = false;
+    bool packet_bridge_ready = false;
+    bool native_function_table_checked = false;
+    bool native_command_symbols_ready = false;
+    vulkan_native_function_table_status native_function_table_status =
+        vulkan_native_function_table_status::not_checked;
+    std::string missing_native_symbol_name;
+    vulkan_command_recording_command_buffer_handle command_buffer;
+    bool command_buffer_ready = false;
+    bool pipeline_ready = false;
+    bool pipeline_layout_ready = false;
+    bool viewport_ready = false;
+    bool descriptor_sets_ready = false;
+    bool has_failed_packet = false;
+    vulkan_command_packet_category first_failed_category = vulkan_command_packet_category::rect;
+    vulkan_batch_kind first_failed_batch_kind = vulkan_batch_kind::quad;
+    std::size_t first_failed_packet_index = 0;
+    std::size_t first_failed_command_index = 0;
+    std::size_t planned_packet_count = 0;
+    std::size_t attempted_packet_count = 0;
+    std::size_t translated_packet_count = 0;
+    std::size_t attempted_native_call_count = 0;
+    std::size_t completed_native_call_count = 0;
+    std::string diagnostic;
+    std::vector<vulkan_native_command_packet_call_evidence> calls;
+
+    bool completed() const
+    {
+        return checked && status == vulkan_native_command_packet_execution_status::completed
+            && fallback_reason == vulkan_backend_fallback_reason::none
+            && packet_bridge_checked && packet_bridge_ready
+            && native_function_table_checked && native_command_symbols_ready
+            && command_buffer_ready && pipeline_ready && pipeline_layout_ready
+            && viewport_ready && descriptor_sets_ready && !has_failed_packet
+            && attempted_packet_count == planned_packet_count
+            && translated_packet_count == planned_packet_count
+            && attempted_native_call_count == completed_native_call_count
+            && attempted_native_call_count == calls.size();
+    }
+
+    bool failed() const
+    {
+        return checked
+            && status != vulkan_native_command_packet_execution_status::not_checked
+            && status != vulkan_native_command_packet_execution_status::completed;
+    }
+};
+
 enum class vulkan_command_recorder_operation_plan_status {
     not_checked,
     ready,
@@ -2083,6 +2220,23 @@ public:
 private:
     fake_vulkan_command_packet_executor_options options_;
     vulkan_command_packet_execution_result result_;
+};
+
+class vulkan_native_command_packet_executor final
+    : public vulkan_command_packet_executor_interface {
+public:
+    explicit vulkan_native_command_packet_executor(
+        vulkan_native_command_packet_executor_evidence evidence);
+
+    vulkan_command_packet_execution_result execute_packets(
+        const vulkan_command_packet_bridge_result& bridge) override;
+    const vulkan_command_packet_execution_result& execution_result() const override;
+    const vulkan_native_command_packet_execution_result& native_execution_result() const;
+
+private:
+    vulkan_native_command_packet_executor_evidence evidence_;
+    vulkan_command_packet_execution_result result_;
+    vulkan_native_command_packet_execution_result native_result_;
 };
 
 enum class vulkan_scoped_command_packet_execution_status {

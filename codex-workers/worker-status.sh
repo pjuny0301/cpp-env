@@ -3,6 +3,8 @@ set -euo pipefail
 
 repo_root="${1:-/mnt/c/aa}"
 base_ref="${QUIZ_CODEX_BASE_REF:-origin/codex/quiz-vulkan-remake-baseline}"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+queue_root="${QUIZ_CODEX_WORKER_QUEUE_ROOT:-${script_dir}/queued}"
 
 if ! command -v tmux >/dev/null 2>&1; then
   echo "tmux is required" >&2
@@ -56,10 +58,20 @@ worker_state() {
   echo "unknown"
 }
 
+queued_prompt_count() {
+  local session="$1"
+  local session_queue="${queue_root}/${session}"
+  if [[ ! -d "${session_queue}" ]]; then
+    echo "0"
+    return
+  fi
+  find "${session_queue}" -maxdepth 1 -type f | wc -l | tr -d ' '
+}
+
 echo "base_ref=${base_ref}"
 echo "main ${repo_root} $(print_git_status "${repo_root}")"
 echo
-printf '%-52s %-8s %-10s %-70s %s\n' "session" "state" "command" "path" "git"
+printf '%-52s %-8s %-6s %-10s %-70s %s\n' "session" "state" "queued" "command" "path" "git"
 
 tmux list-panes -a -F '#{session_name}|#{pane_current_command}|#{pane_current_path}' |
 while IFS='|' read -r session command path; do
@@ -68,9 +80,10 @@ while IFS='|' read -r session command path; do
     *) continue ;;
   esac
 
-  printf '%-52s %-8s %-10s %-70s %s\n' \
+  printf '%-52s %-8s %-6s %-10s %-70s %s\n' \
     "${session}" \
     "$(worker_state "${session}")" \
+    "$(queued_prompt_count "${session}")" \
     "${command}" \
     "${path}" \
     "$(print_git_status "${path}")"

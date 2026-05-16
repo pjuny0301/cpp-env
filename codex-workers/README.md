@@ -81,6 +81,11 @@ EOF
 /mnt/c/aa/codex-workers/send-worker-prompt.sh codex-text-engine /tmp/text-next.md
 ```
 
+If the Codex terminal UI leaves a long pasted prompt in the input box, tune
+`QUIZ_CODEX_WORKER_SUBMIT_ENTER_COUNT` rather than manually editing the script.
+The default sends four Enter keystrokes after paste because the UI sometimes
+keeps the first one or two as multiline input.
+
 If the worker is still processing a previous task, the command writes a queued
 prompt file and leaves the tmux session untouched. After the worker reports idle,
 send the queued file explicitly:

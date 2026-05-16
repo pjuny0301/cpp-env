@@ -42,8 +42,8 @@ queue_root="${QUIZ_CODEX_WORKER_QUEUE_ROOT:-${script_dir}/queued}"
 
 session_busy() {
   local pane
-  pane="$(tmux capture-pane -pt "${session}:0" -S -80 2>/dev/null || true)"
-  grep -Eq 'Working \(|esc to interrupt|background terminal running' <<<"${pane}"
+  pane="$(tmux capture-pane -pt "${session}:0" -S -30 2>/dev/null || true)"
+  grep -Eq 'Working \(|Waiting for background terminal|esc to interrupt|background terminal running' <<<"${pane}"
 }
 
 queue_prompt() {

@@ -11,7 +11,10 @@ The workers are meant to implement behind existing quiz-vulkan interfaces, not r
 - `setup-worktrees.sh`: creates role worktrees under `/mnt/c/aa-workers` by default.
 - `run-codex-tmux.sh`: starts one role in a persistent tmux session.
 - `send-worker-prompt.sh`: pastes and submits a prompt file into an existing
-  persistent tmux worker.
+  persistent tmux worker. When the worker pane looks busy, it queues the prompt
+  under `codex-workers/queued/<session>/` instead of pasting into an active
+  Codex input box; use `--force` only when you have inspected the pane and want
+  immediate submission.
 - `configure-quiz-vulkan-worker-build.sh`: configures a worker worktree build
   while pointing CMake at the central approved dependency checkout under
   `/mnt/c/aa/build/external/lib/cpp/desktop`.
@@ -76,6 +79,16 @@ latest pushed baseline before editing. Keep edits inside the assigned engine
 folder and focused tests. Commit scoped files and report the hash.
 EOF
 /mnt/c/aa/codex-workers/send-worker-prompt.sh codex-text-engine /tmp/text-next.md
+```
+
+If the worker is still processing a previous task, the command writes a queued
+prompt file and leaves the tmux session untouched. After the worker reports idle,
+send the queued file explicitly:
+
+```bash
+/mnt/c/aa/codex-workers/send-worker-prompt.sh \
+  codex-text-engine \
+  /mnt/c/aa/codex-workers/queued/codex-text-engine/<queued-prompt>.md
 ```
 
 Configure a worker-local quiz-vulkan build with the central external

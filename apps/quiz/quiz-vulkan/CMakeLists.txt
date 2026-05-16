@@ -633,6 +633,11 @@ if(BUILD_TESTING)
         target_compile_features(${target_name} PRIVATE cxx_std_23)
         quiz_vulkan_copy_mingw_runtime_dlls(${target_name})
         add_test(NAME ${target_name} COMMAND ${target_name})
+        set_tests_properties(
+            ${target_name}
+            PROPERTIES
+                ENVIRONMENT "QUIZ_VULKAN_DESKTOP_EXTERNAL_DIR=${QUIZ_VULKAN_DESKTOP_EXTERNAL_DIR}"
+        )
     endfunction()
 
     function(quiz_vulkan_add_test_directory test_dir)

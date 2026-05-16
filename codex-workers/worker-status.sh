@@ -41,10 +41,25 @@ print_git_status() {
   echo "branch=${branch} ahead=${ahead} behind=${behind} dirty=${dirty} head=${head}"
 }
 
+worker_state() {
+  local session="$1"
+  local pane
+  pane="$(tmux capture-pane -pt "${session}:0" -S -30 2>/dev/null || true)"
+  if grep -Eq 'Working \(|Waiting for background terminal|esc to interrupt|background terminal running' <<<"${pane}"; then
+    echo "busy"
+    return
+  fi
+  if grep -Eq '^› ' <<<"${pane}"; then
+    echo "idle"
+    return
+  fi
+  echo "unknown"
+}
+
 echo "base_ref=${base_ref}"
 echo "main ${repo_root} $(print_git_status "${repo_root}")"
 echo
-printf '%-52s %-10s %-70s %s\n' "session" "command" "path" "git"
+printf '%-52s %-8s %-10s %-70s %s\n' "session" "state" "command" "path" "git"
 
 tmux list-panes -a -F '#{session_name}|#{pane_current_command}|#{pane_current_path}' |
 while IFS='|' read -r session command path; do
@@ -53,8 +68,9 @@ while IFS='|' read -r session command path; do
     *) continue ;;
   esac
 
-  printf '%-52s %-10s %-70s %s\n' \
+  printf '%-52s %-8s %-10s %-70s %s\n' \
     "${session}" \
+    "$(worker_state "${session}")" \
     "${command}" \
     "${path}" \
     "$(print_git_status "${path}")"

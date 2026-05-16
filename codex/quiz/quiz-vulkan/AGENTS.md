@@ -7,3 +7,6 @@
 - Read `../AGENTS.md`, `../../common/agent/token_budget.json`, and `../../../apps/quiz/quiz-vulkan/AGENTS.md` before broad scans.
 - For cross-project source context, read `../app-context/AGENTS.md` and `../app-context/CODEMAP.md` first.
 - Keep domain, scene, layout, UI, render, and platform owner boundaries clear.
+- Preserve the engine dependency direction:
+  `main -> modifier_interface -> scene_layout_data_modifier -> scene_layout_edit_data -> scene_layout_patch -> scene_layout_data -> layout_placer -> ui_renderer -> vulkan_renderer`.
+  Modifiers write only through `scene_layout_edit_data`; layout/UI/Vulkan are downstream consumers and must not reach back into app/domain state.

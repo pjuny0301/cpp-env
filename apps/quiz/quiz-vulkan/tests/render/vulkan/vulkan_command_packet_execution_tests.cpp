@@ -1,5 +1,6 @@
 #include "render/vulkan/vulkan_backend_adapter.h"
 
+#include <array>
 #include <cassert>
 #include <cstdio>
 #include <string>
@@ -29,6 +30,17 @@ quiz_vulkan::render::vulkan_backend::vulkan_resource_binding_snapshot make_bindi
     };
 }
 
+std::array<quiz_vulkan::render::vulkan_backend::vulkan_quad_vertex, 4>
+make_packet_vertices()
+{
+    return {
+        quiz_vulkan::render::vulkan_backend::vulkan_quad_vertex{.x = 0.0f, .y = 0.0f},
+        quiz_vulkan::render::vulkan_backend::vulkan_quad_vertex{.x = 10.0f, .y = 0.0f},
+        quiz_vulkan::render::vulkan_backend::vulkan_quad_vertex{.x = 10.0f, .y = 10.0f},
+        quiz_vulkan::render::vulkan_backend::vulkan_quad_vertex{.x = 0.0f, .y = 10.0f},
+    };
+}
+
 quiz_vulkan::render::vulkan_backend::vulkan_command_packet make_packet(
     quiz_vulkan::render::vulkan_backend::vulkan_command_packet_category category,
     quiz_vulkan::render::vulkan_backend::vulkan_batch_kind batch_kind,
@@ -49,7 +61,7 @@ quiz_vulkan::render::vulkan_backend::vulkan_command_packet make_packet(
             .width = 10,
             .height = 10,
         },
-        .vertices = {},
+        .vertices = make_packet_vertices(),
         .descriptor_set_count = 1,
         .binding_count = 1,
         .bindings = {make_binding()},
@@ -144,6 +156,215 @@ quiz_vulkan::render::vulkan_backend::vulkan_command_packet_bridge_result make_em
     };
 }
 
+quiz_vulkan::render::vulkan_backend::vulkan_native_render_pass_scope_record_result
+make_ready_render_pass_scope(std::size_t selected_index = 1)
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    return vulkan_backend::vulkan_native_render_pass_scope_record_result{
+        .checked = true,
+        .status = vulkan_backend::vulkan_native_render_pass_scope_record_status::recorded,
+        .selected_framebuffer_target_index = selected_index,
+        .framebuffer_target_count = 2,
+        .image_id = vulkan_backend::vulkan_swapchain_image_id{.value = selected_index + 1},
+        .command_buffer =
+            vulkan_backend::vulkan_command_recording_command_buffer_handle{.value = 909},
+        .render_pass = vulkan_backend::vulkan_render_pass_handle{.value = 300},
+        .framebuffer = vulkan_backend::vulkan_framebuffer_handle{.value = 13000 + selected_index + 1},
+        .extent = vulkan_backend::vulkan_surface_extent{.width = 1280, .height = 720},
+        .begin_render_pass_symbol = vulkan_backend::vulkan_native_function_pointer{.value = 1401},
+        .end_render_pass_symbol = vulkan_backend::vulkan_native_function_pointer{.value = 1402},
+        .framebuffer_targets_ready = true,
+        .command_buffer_ready = true,
+        .render_pass_ready = true,
+        .framebuffer_ready = true,
+        .extent_ready = true,
+        .extent_matches = true,
+        .dispatch_table_ready = true,
+        .vk_cmd_begin_render_pass_called = true,
+        .vk_cmd_end_render_pass_called = true,
+        .diagnostic = "Native Vulkan render pass scope recorded",
+    };
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_loader_readiness_state make_ready_loader()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    return vulkan_backend::vulkan_loader_readiness_state{
+        .checked = true,
+        .status = vulkan_backend::vulkan_loader_readiness_status::ready,
+        .probe_status = vulkan_backend::vulkan_loader_probe_status::available,
+        .loader_library_available = true,
+        .instance_proc_address_available = true,
+        .instance_ready = true,
+        .loaded_library_name = "fake-vulkan-loader",
+        .required_symbol_name = std::string{vulkan_backend::vulkan_loader_required_symbol_name()},
+        .attempted_library_count = 1,
+    };
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_native_function_table_diagnostics
+make_native_functions(std::vector<std::string> missing_symbols = {})
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::fake_vulkan_native_symbol_resolver resolver(
+        vulkan_backend::fake_vulkan_native_symbol_resolver_options{
+            .missing_symbols = std::move(missing_symbols),
+        });
+    return vulkan_backend::collect_vulkan_native_function_table(
+        resolver,
+        make_ready_loader());
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_native_command_packet_executor_evidence
+make_native_packet_evidence(
+    quiz_vulkan::render::vulkan_backend::vulkan_native_function_table_diagnostics
+        native_functions = make_native_functions())
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    return vulkan_backend::vulkan_native_command_packet_executor_evidence{
+        .native_functions = std::move(native_functions),
+        .command_buffer =
+            vulkan_backend::vulkan_command_recording_command_buffer_handle{.value = 909},
+        .pipeline = vulkan_backend::vulkan_graphics_pipeline_handle{.value = 4400},
+        .pipeline_layout = vulkan_backend::vulkan_pipeline_layout_handle{.value = 5500},
+        .viewport = quiz_vulkan::render::render_rect{0.0f, 0.0f, 1280.0f, 720.0f},
+        .viewport_available = true,
+        .descriptor_sets = {
+            vulkan_backend::vulkan_native_command_packet_descriptor_set{
+                .packet_index = 0,
+                .set = 0,
+                .descriptor_set =
+                    vulkan_backend::vulkan_native_descriptor_set_handle{.value = 7000},
+                .required = true,
+                .available = true,
+            },
+            vulkan_backend::vulkan_native_command_packet_descriptor_set{
+                .packet_index = 1,
+                .set = 0,
+                .descriptor_set =
+                    vulkan_backend::vulkan_native_descriptor_set_handle{.value = 7001},
+                .required = true,
+                .available = true,
+            },
+            vulkan_backend::vulkan_native_command_packet_descriptor_set{
+                .packet_index = 2,
+                .set = 0,
+                .descriptor_set =
+                    vulkan_backend::vulkan_native_descriptor_set_handle{.value = 7002},
+                .required = true,
+                .available = true,
+            },
+            vulkan_backend::vulkan_native_command_packet_descriptor_set{
+                .packet_index = 3,
+                .set = 0,
+                .descriptor_set =
+                    vulkan_backend::vulkan_native_descriptor_set_handle{.value = 7003},
+                .required = true,
+                .available = true,
+            },
+        },
+    };
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_backend_frame_result
+make_native_packet_frame_without_descriptor_handles()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::vulkan_backend_frame_result frame;
+    frame.surface = vulkan_backend::vulkan_surface_extent{.width = 1280, .height = 720};
+    frame.viewport = quiz_vulkan::render::render_rect{4.0f, 8.0f, 640.0f, 360.0f};
+    frame.command_buffer_recording.command_buffer =
+        vulkan_backend::vulkan_command_buffer_id{.value = 44};
+    frame.pipeline.pipeline_layout.pipeline_layout =
+        vulkan_backend::vulkan_pipeline_layout_handle{.value = 5500};
+    frame.pipeline.graphics_pipeline.pipeline =
+        vulkan_backend::vulkan_graphics_pipeline_handle{.value = 4400};
+    frame.command_packets = make_ready_bridge();
+    return frame;
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_backend_resource_binding_state
+make_ready_resource_bindings(
+    const quiz_vulkan::render::vulkan_backend::vulkan_command_packet_bridge_result& bridge)
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::vulkan_backend_resource_binding_state state{
+        .checked = true,
+        .planned_batch_count = bridge.packet_count,
+        .descriptor_validation =
+            vulkan_backend::vulkan_backend_descriptor_validation_state{
+                .checked = true,
+                .planned_batch_count = bridge.packet_count,
+            },
+    };
+    state.batch_snapshots.reserve(bridge.packets.size());
+    state.descriptor_validation.descriptor_sets.reserve(bridge.packets.size());
+
+    for (const vulkan_backend::vulkan_command_packet& packet : bridge.packets) {
+        state.descriptor_set_count += packet.descriptor_set_count;
+        state.binding_count += packet.binding_count;
+        state.batch_snapshots.push_back(
+            vulkan_backend::vulkan_batch_resource_binding_snapshot{
+                .batch_kind = packet.batch_kind,
+                .command_index = packet.command_index,
+                .node_id = packet.node_id,
+                .descriptor_set_count = packet.descriptor_set_count,
+                .binding_count = packet.binding_count,
+                .missing_resource = false,
+                .bindings = packet.bindings,
+            });
+
+        std::vector<vulkan_backend::vulkan_descriptor_binding_validation_snapshot>
+            binding_validations;
+        binding_validations.reserve(packet.bindings.size());
+        for (const vulkan_backend::vulkan_resource_binding_snapshot& binding : packet.bindings) {
+            binding_validations.push_back(
+                vulkan_backend::vulkan_descriptor_binding_validation_snapshot{
+                    .set = binding.set,
+                    .binding = binding.binding,
+                    .kind = binding.kind,
+                    .resource_id = binding.resource_id,
+                    .required = binding.required,
+                    .available = binding.available,
+                    .bound = binding.bound(),
+                    .binding_index_matches_order = true,
+                    .duplicate_binding = false,
+                    .status = vulkan_backend::vulkan_descriptor_validation_status::valid,
+                });
+        }
+
+        state.descriptor_validation.descriptor_set_count += packet.descriptor_set_count;
+        ++state.descriptor_validation.valid_descriptor_set_count;
+        state.descriptor_validation.requested_binding_count += packet.binding_count;
+        state.descriptor_validation.valid_binding_count += packet.binding_count;
+        state.descriptor_validation.descriptor_sets.push_back(
+            vulkan_backend::vulkan_descriptor_set_validation_snapshot{
+                .batch_kind = packet.batch_kind,
+                .command_index = packet.command_index,
+                .node_id = packet.node_id,
+                .set = packet.bindings.empty() ? 0 : packet.bindings.front().set,
+                .expected_binding_count = packet.binding_count,
+                .actual_binding_count = packet.bindings.size(),
+                .checked = true,
+                .descriptor_set_declared = packet.descriptor_set_count > 0,
+                .binding_count_matches = packet.binding_count == packet.bindings.size(),
+                .missing_required_resource = false,
+                .duplicate_binding = false,
+                .invalid_layout = false,
+                .status = vulkan_backend::vulkan_descriptor_validation_status::valid,
+                .bindings = std::move(binding_validations),
+            });
+    }
+
+    return state;
+}
+
 void test_vulkan_command_packet_execution_names_are_stable()
 {
     using namespace quiz_vulkan::render;
@@ -193,6 +414,57 @@ void test_vulkan_command_packet_execution_names_are_stable()
             vulkan_backend::vulkan_command_packet_execution_event::end)
             == std::string_view{"end"},
         "execution event name for end is stable");
+    require(
+        vulkan_backend::native_command_packet_execution_status_name(
+            vulkan_backend::vulkan_native_command_packet_execution_status::completed)
+            == std::string_view{"completed"},
+        "native packet execution status name for completed is stable");
+    require(
+        vulkan_backend::native_command_packet_execution_status_name(
+            vulkan_backend::vulkan_native_command_packet_execution_status::native_command_symbol_unavailable)
+            == std::string_view{"native_command_symbol_unavailable"},
+        "native packet execution status name for missing symbol is stable");
+    require(
+        vulkan_backend::native_command_packet_execution_status_name(
+            vulkan_backend::vulkan_native_command_packet_execution_status::invalid_packet_data)
+            == std::string_view{"invalid_packet_data"},
+        "native packet execution status name for invalid packet data is stable");
+    require(
+        vulkan_backend::native_command_packet_call_kind_name(
+            vulkan_backend::vulkan_native_command_packet_call_kind::bind_pipeline)
+            == std::string_view{"bind_pipeline"},
+        "native packet call kind name for bind pipeline is stable");
+    require(
+        vulkan_backend::native_command_packet_call_kind_name(
+            vulkan_backend::vulkan_native_command_packet_call_kind::draw)
+            == std::string_view{"draw"},
+        "native packet call kind name for draw is stable");
+    require(
+        vulkan_backend::native_descriptor_set_allocation_status_name(
+            vulkan_backend::vulkan_native_descriptor_set_allocation_status::ready)
+            == std::string_view{"ready"},
+        "native descriptor set allocation ready name is stable");
+    require(
+        vulkan_backend::native_descriptor_set_allocation_status_name(
+            vulkan_backend::vulkan_native_descriptor_set_allocation_status::
+                resource_binding_mismatch)
+            == std::string_view{"resource_binding_mismatch"},
+        "native descriptor set allocation mismatch name is stable");
+    require(
+        vulkan_backend::scoped_command_packet_execution_status_name(
+            vulkan_backend::vulkan_scoped_command_packet_execution_status::completed)
+            == std::string_view{"completed"},
+        "scoped execution status name for completed is stable");
+    require(
+        vulkan_backend::scoped_command_packet_execution_status_name(
+            vulkan_backend::vulkan_scoped_command_packet_execution_status::render_pass_scope_unavailable)
+            == std::string_view{"render_pass_scope_unavailable"},
+        "scoped execution status name for unavailable render pass scope is stable");
+    require(
+        vulkan_backend::scoped_command_packet_execution_status_name(
+            vulkan_backend::vulkan_scoped_command_packet_execution_status::packet_failed)
+            == std::string_view{"packet_failed"},
+        "scoped execution status name for packet failure is stable");
 }
 
 void test_vulkan_command_packet_execution_records_successful_lifecycle()
@@ -341,6 +613,645 @@ void test_vulkan_command_packet_execution_records_successful_empty_lifecycle()
         "empty packet execution final event is end");
 }
 
+void test_vulkan_native_command_packet_executor_translates_packets_to_native_calls()
+{
+    using namespace quiz_vulkan::render;
+
+    const vulkan_backend::vulkan_command_packet_bridge_result bridge = make_ready_bridge();
+    vulkan_backend::vulkan_native_command_packet_executor executor(
+        make_native_packet_evidence());
+    const vulkan_backend::vulkan_command_packet_execution_result result =
+        executor.execute_packets(bridge);
+    const vulkan_backend::vulkan_native_command_packet_execution_result native_result =
+        executor.native_execution_result();
+
+    require(result.checked, "native packet executor result is checked");
+    require(result.completed(), "native packet executor completes interface execution");
+    require(result.events.size() == 6, "native packet executor records begin, packets, and end");
+    require(
+        result.events.front().event == vulkan_backend::vulkan_command_packet_execution_event::begin,
+        "native packet executor first interface event is begin");
+    require(
+        result.events.back().event == vulkan_backend::vulkan_command_packet_execution_event::end,
+        "native packet executor final interface event is end");
+    require(native_result.checked, "native packet translation result is checked");
+    require(native_result.completed(), "native packet translation completes");
+    require(!native_result.failed(), "native packet translation reports no failure");
+    require(
+        native_result.status
+            == vulkan_backend::vulkan_native_command_packet_execution_status::completed,
+        "native packet translation status is completed");
+    require(
+        native_result.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::none,
+        "native packet translation has no fallback");
+    require(native_result.packet_bridge_checked, "native packet translation records bridge check");
+    require(native_result.packet_bridge_ready, "native packet translation records ready bridge");
+    require(
+        native_result.native_function_table_checked,
+        "native packet translation records checked function table");
+    require(
+        native_result.native_command_symbols_ready,
+        "native packet translation records native command symbols ready");
+    require(native_result.command_buffer_ready, "native packet translation records command buffer ready");
+    require(native_result.pipeline_ready, "native packet translation records pipeline ready");
+    require(
+        native_result.pipeline_layout_ready,
+        "native packet translation records pipeline layout ready");
+    require(native_result.viewport_ready, "native packet translation records viewport ready");
+    require(
+        native_result.descriptor_sets_ready,
+        "native packet translation records descriptor set handles ready");
+    require(native_result.planned_packet_count == 4, "native packet translation records planned packets");
+    require(
+        native_result.attempted_packet_count == 4,
+        "native packet translation records attempted packets");
+    require(
+        native_result.translated_packet_count == 4,
+        "native packet translation records translated packets");
+    require(
+        native_result.attempted_native_call_count == 20,
+        "native packet translation attempts five native calls per packet");
+    require(
+        native_result.completed_native_call_count == 20,
+        "native packet translation completes five native calls per packet");
+    require(native_result.calls.size() == 20, "native packet translation records native call evidence");
+    require(
+        native_result.calls[0].kind
+            == vulkan_backend::vulkan_native_command_packet_call_kind::bind_pipeline,
+        "native packet translation starts each packet by binding the pipeline");
+    require(
+        native_result.calls[1].kind
+            == vulkan_backend::vulkan_native_command_packet_call_kind::bind_descriptor_sets,
+        "native packet translation binds descriptor sets");
+    require(
+        native_result.calls[2].kind
+            == vulkan_backend::vulkan_native_command_packet_call_kind::set_viewport,
+        "native packet translation sets the viewport");
+    require(
+        native_result.calls[3].kind
+            == vulkan_backend::vulkan_native_command_packet_call_kind::set_scissor,
+        "native packet translation sets the packet scissor");
+    require(
+        native_result.calls[4].kind
+            == vulkan_backend::vulkan_native_command_packet_call_kind::draw,
+        "native packet translation emits a draw call");
+    require(native_result.calls[4].symbol_name == "vkCmdDraw", "draw call records symbol name");
+    require(native_result.calls[4].vertex_count == 4, "draw call records quad vertex count");
+    require(native_result.calls[4].packet_index == 0, "draw call records packet index");
+    for (const vulkan_backend::vulkan_native_command_packet_call_evidence& call :
+         native_result.calls) {
+        require(call.successful(), "each native command packet call reports success");
+    }
+    require(
+        executor.execution_result().completed(),
+        "native packet executor retains completed interface result");
+}
+
+void test_vulkan_native_descriptor_set_allocation_builds_fake_handles()
+{
+    using namespace quiz_vulkan::render;
+
+    const vulkan_backend::vulkan_command_packet_bridge_result bridge = make_ready_bridge();
+    const vulkan_backend::vulkan_backend_resource_binding_state resource_bindings =
+        make_ready_resource_bindings(bridge);
+    const vulkan_backend::vulkan_native_descriptor_set_allocation_result allocation =
+        vulkan_backend::build_fake_vulkan_native_descriptor_set_allocation_result(
+            bridge,
+            resource_bindings,
+            vulkan_backend::vulkan_native_descriptor_set_fake_allocator_options{
+                .first_descriptor_set_handle = 8100,
+            });
+
+    require(allocation.checked, "descriptor set allocation result is checked");
+    require(allocation.completed(), "descriptor set allocation completes");
+    require(
+        allocation.status == vulkan_backend::vulkan_native_descriptor_set_allocation_status::ready,
+        "descriptor set allocation status is ready");
+    require(
+        allocation.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::none,
+        "descriptor set allocation has no fallback");
+    require(allocation.packet_bridge_ready, "descriptor set allocation consumes ready bridge");
+    require(
+        allocation.resource_bindings_ready,
+        "descriptor set allocation consumes ready resource bindings");
+    require(
+        allocation.planned_descriptor_set_count == 4,
+        "descriptor set allocation records planned descriptor sets");
+    require(
+        allocation.allocated_descriptor_set_count == 4,
+        "descriptor set allocation records allocated descriptor sets");
+    require(allocation.descriptor_sets.size() == 4, "descriptor set allocation stores handles");
+    require(
+        allocation.descriptor_sets.front().packet_index == 0,
+        "descriptor set allocation records packet ownership");
+    require(allocation.descriptor_sets.front().set == 0, "descriptor set allocation records set");
+    require(
+        allocation.descriptor_sets.front().descriptor_set.value == 8100,
+        "descriptor set allocation starts from fake allocator base handle");
+    require(
+        allocation.descriptor_sets.back().descriptor_set.value == 8103,
+        "descriptor set allocation assigns stable sequential fake handles");
+    for (const vulkan_backend::vulkan_native_command_packet_descriptor_set& descriptor_set :
+         allocation.descriptor_sets) {
+        require(descriptor_set.completed(), "each allocated descriptor set is complete");
+    }
+}
+
+void test_vulkan_native_command_packet_executor_completes_with_allocated_descriptor_handles()
+{
+    using namespace quiz_vulkan::render;
+
+    const vulkan_backend::vulkan_backend_frame_result frame =
+        make_native_packet_frame_without_descriptor_handles();
+    const vulkan_backend::vulkan_backend_resource_binding_state resource_bindings =
+        make_ready_resource_bindings(frame.command_packets);
+    const vulkan_backend::vulkan_native_descriptor_set_allocation_result allocation =
+        vulkan_backend::build_fake_vulkan_native_descriptor_set_allocation_result(
+            frame.command_packets,
+            resource_bindings);
+    const vulkan_backend::vulkan_native_command_packet_executor_evidence evidence =
+        vulkan_backend::build_vulkan_native_command_packet_executor_evidence(
+            frame,
+            allocation,
+            make_native_functions());
+
+    require(allocation.completed(), "allocated descriptor evidence is complete");
+    require(
+        evidence.descriptor_sets.front().descriptor_set.valid(),
+        "merged native packet evidence receives descriptor handles");
+    require(
+        evidence.descriptor_sets.front().available,
+        "merged native packet evidence marks descriptor handles available");
+
+    vulkan_backend::vulkan_native_command_packet_executor executor(evidence);
+    const vulkan_backend::vulkan_command_packet_execution_result result =
+        executor.execute_packets(frame.command_packets);
+    const vulkan_backend::vulkan_native_command_packet_execution_result native_result =
+        executor.native_execution_result();
+
+    require(result.completed(), "allocated descriptor evidence completes interface execution");
+    require(native_result.completed(), "allocated descriptor evidence completes native execution");
+    require(native_result.descriptor_sets_ready, "allocated descriptor evidence is ready");
+    require(native_result.calls.size() == 20, "allocated descriptor evidence emits native calls");
+    require(
+        native_result.calls[1].kind
+            == vulkan_backend::vulkan_native_command_packet_call_kind::bind_descriptor_sets,
+        "allocated descriptor evidence binds descriptor sets");
+    require(
+        native_result.calls[1].descriptor_set_count == 1,
+        "allocated descriptor evidence records descriptor set count");
+}
+
+void test_vulkan_native_command_packet_evidence_preserves_descriptor_handle_gap()
+{
+    using namespace quiz_vulkan::render;
+
+    const vulkan_backend::vulkan_backend_frame_result frame =
+        make_native_packet_frame_without_descriptor_handles();
+    const vulkan_backend::vulkan_native_command_packet_executor_evidence evidence =
+        vulkan_backend::build_vulkan_native_command_packet_executor_evidence(
+            frame,
+            make_native_functions());
+
+    require(evidence.native_functions.checked, "native packet evidence keeps function diagnostics");
+    require(
+        evidence.command_buffer.value == 9044,
+        "native packet evidence derives scoped command buffer from frame recording");
+    require(evidence.pipeline.value == 4400, "native packet evidence keeps graphics pipeline handle");
+    require(
+        evidence.pipeline_layout.value == 5500,
+        "native packet evidence keeps pipeline layout handle");
+    require(evidence.viewport_available, "native packet evidence keeps visible viewport");
+    require(evidence.viewport.x == 4.0f, "native packet evidence keeps viewport x");
+    require(evidence.viewport.y == 8.0f, "native packet evidence keeps viewport y");
+    require(evidence.viewport.width == 640.0f, "native packet evidence keeps viewport width");
+    require(evidence.viewport.height == 360.0f, "native packet evidence keeps viewport height");
+    require(
+        evidence.descriptor_sets.size() == 4,
+        "native packet evidence records one pending descriptor set per packet");
+    require(
+        evidence.descriptor_sets.front().packet_index == 0,
+        "native packet evidence records first packet descriptor owner");
+    require(evidence.descriptor_sets.front().set == 0, "native packet evidence records set index");
+    require(
+        evidence.descriptor_sets.front().required,
+        "native packet evidence records descriptor set requirement");
+    require(
+        !evidence.descriptor_sets.front().available,
+        "native packet evidence does not fabricate descriptor set availability");
+    require(
+        !evidence.descriptor_sets.front().descriptor_set.valid(),
+        "native packet evidence does not fabricate native descriptor set handles");
+
+    vulkan_backend::vulkan_native_command_packet_executor executor(evidence);
+    const vulkan_backend::vulkan_command_packet_execution_result result =
+        executor.execute_packets(frame.command_packets);
+    const vulkan_backend::vulkan_native_command_packet_execution_result native_result =
+        executor.native_execution_result();
+
+    require(result.checked, "descriptor gap result is checked");
+    require(!result.completed(), "descriptor gap does not complete native packet execution");
+    require(
+        result.status == vulkan_backend::vulkan_command_packet_execution_status::packet_failed,
+        "descriptor gap fails inside packet execution");
+    require(
+        native_result.status
+            == vulkan_backend::vulkan_native_command_packet_execution_status::descriptor_sets_unavailable,
+        "descriptor gap reports unavailable native descriptor sets");
+    require(!native_result.descriptor_sets_ready, "descriptor gap keeps descriptor sets unready");
+    require(native_result.first_failed_packet_index == 0, "descriptor gap blocks first packet");
+}
+
+void test_vulkan_native_command_packet_executor_blocks_incomplete_descriptor_evidence()
+{
+    using namespace quiz_vulkan::render;
+
+    const vulkan_backend::vulkan_backend_frame_result frame =
+        make_native_packet_frame_without_descriptor_handles();
+    const vulkan_backend::vulkan_backend_resource_binding_state resource_bindings =
+        make_ready_resource_bindings(frame.command_packets);
+    vulkan_backend::vulkan_native_descriptor_set_allocation_result allocation =
+        vulkan_backend::build_fake_vulkan_native_descriptor_set_allocation_result(
+            frame.command_packets,
+            resource_bindings);
+    allocation.descriptor_sets.front().available = false;
+
+    const vulkan_backend::vulkan_native_command_packet_executor_evidence evidence =
+        vulkan_backend::build_vulkan_native_command_packet_executor_evidence(
+            frame,
+            allocation,
+            make_native_functions());
+    vulkan_backend::vulkan_native_command_packet_executor executor(evidence);
+    const vulkan_backend::vulkan_command_packet_execution_result result =
+        executor.execute_packets(frame.command_packets);
+    const vulkan_backend::vulkan_native_command_packet_execution_result native_result =
+        executor.native_execution_result();
+
+    require(!allocation.completed(), "incomplete allocation evidence is not complete");
+    require(!result.completed(), "incomplete descriptor evidence does not complete");
+    require(
+        native_result.status
+            == vulkan_backend::vulkan_native_command_packet_execution_status::descriptor_sets_unavailable,
+        "incomplete descriptor evidence reports unavailable descriptor sets");
+    require(native_result.first_failed_packet_index == 0, "incomplete descriptor evidence blocks first packet");
+}
+
+void test_vulkan_native_command_packet_executor_blocks_duplicate_descriptor_evidence()
+{
+    using namespace quiz_vulkan::render;
+
+    const vulkan_backend::vulkan_backend_frame_result frame =
+        make_native_packet_frame_without_descriptor_handles();
+    const vulkan_backend::vulkan_backend_resource_binding_state resource_bindings =
+        make_ready_resource_bindings(frame.command_packets);
+    const vulkan_backend::vulkan_native_descriptor_set_allocation_result allocation =
+        vulkan_backend::build_fake_vulkan_native_descriptor_set_allocation_result(
+            frame.command_packets,
+            resource_bindings);
+    vulkan_backend::vulkan_native_command_packet_executor_evidence evidence =
+        vulkan_backend::build_vulkan_native_command_packet_executor_evidence(
+            frame,
+            allocation,
+            make_native_functions());
+    evidence.descriptor_sets.push_back(evidence.descriptor_sets.front());
+
+    vulkan_backend::vulkan_native_command_packet_executor executor(evidence);
+    const vulkan_backend::vulkan_command_packet_execution_result result =
+        executor.execute_packets(frame.command_packets);
+    const vulkan_backend::vulkan_native_command_packet_execution_result native_result =
+        executor.native_execution_result();
+
+    require(!result.completed(), "duplicated descriptor evidence does not complete");
+    require(
+        native_result.status
+            == vulkan_backend::vulkan_native_command_packet_execution_status::descriptor_sets_unavailable,
+        "duplicated descriptor evidence reports unavailable descriptor sets");
+    require(native_result.first_failed_packet_index == 0, "duplicated descriptor evidence blocks first packet");
+}
+
+void test_vulkan_native_command_packet_executor_blocks_wrong_packet_descriptor_evidence()
+{
+    using namespace quiz_vulkan::render;
+
+    const vulkan_backend::vulkan_backend_frame_result frame =
+        make_native_packet_frame_without_descriptor_handles();
+    const vulkan_backend::vulkan_backend_resource_binding_state resource_bindings =
+        make_ready_resource_bindings(frame.command_packets);
+    const vulkan_backend::vulkan_native_descriptor_set_allocation_result allocation =
+        vulkan_backend::build_fake_vulkan_native_descriptor_set_allocation_result(
+            frame.command_packets,
+            resource_bindings);
+    vulkan_backend::vulkan_native_command_packet_executor_evidence evidence =
+        vulkan_backend::build_vulkan_native_command_packet_executor_evidence(
+            frame,
+            allocation,
+            make_native_functions());
+    evidence.descriptor_sets.front().packet_index = 99;
+
+    vulkan_backend::vulkan_native_command_packet_executor executor(evidence);
+    const vulkan_backend::vulkan_command_packet_execution_result result =
+        executor.execute_packets(frame.command_packets);
+    const vulkan_backend::vulkan_native_command_packet_execution_result native_result =
+        executor.native_execution_result();
+
+    require(!result.completed(), "wrong-packet descriptor evidence does not complete");
+    require(
+        native_result.status
+            == vulkan_backend::vulkan_native_command_packet_execution_status::descriptor_sets_unavailable,
+        "wrong-packet descriptor evidence reports unavailable descriptor sets");
+    require(native_result.first_failed_packet_index == 0, "wrong-packet descriptor evidence blocks first packet");
+}
+
+void test_vulkan_native_descriptor_set_allocation_blocks_incomplete_resource_bindings()
+{
+    using namespace quiz_vulkan::render;
+
+    const vulkan_backend::vulkan_command_packet_bridge_result bridge = make_ready_bridge();
+    vulkan_backend::vulkan_backend_resource_binding_state resource_bindings =
+        make_ready_resource_bindings(bridge);
+    resource_bindings.batch_snapshots.front().bindings.front().available = false;
+
+    const vulkan_backend::vulkan_native_descriptor_set_allocation_result allocation =
+        vulkan_backend::build_fake_vulkan_native_descriptor_set_allocation_result(
+            bridge,
+            resource_bindings);
+
+    require(resource_bindings.completed(), "mutated resource binding evidence still claims completion");
+    require(!allocation.completed(), "incomplete resource bindings do not allocate descriptor sets");
+    require(
+        allocation.status
+            == vulkan_backend::vulkan_native_descriptor_set_allocation_status::resource_binding_mismatch,
+        "incomplete resource bindings report descriptor allocation mismatch");
+    require(
+        allocation.fallback_reason
+            == vulkan_backend::vulkan_backend_fallback_reason::resource_binding_unavailable,
+        "incomplete resource bindings map to resource binding fallback");
+}
+
+void test_vulkan_native_command_packet_executor_blocks_missing_draw_symbol()
+{
+    using namespace quiz_vulkan::render;
+
+    vulkan_backend::vulkan_native_command_packet_executor executor(
+        make_native_packet_evidence(make_native_functions({"vkCmdDraw"})));
+    const vulkan_backend::vulkan_command_packet_execution_result result =
+        executor.execute_packets(make_ready_bridge());
+    const vulkan_backend::vulkan_native_command_packet_execution_result native_result =
+        executor.native_execution_result();
+
+    require(result.checked, "missing draw result is checked");
+    require(!result.completed(), "missing draw does not complete interface execution");
+    require(
+        result.status == vulkan_backend::vulkan_command_packet_execution_status::begin_failed,
+        "missing draw fails before packet translation begins");
+    require(result.begin_attempted, "missing draw records begin attempt");
+    require(!result.begin_completed, "missing draw does not complete begin");
+    require(result.events.size() == 1, "missing draw records only failed begin event");
+    require(result.events.front().failed, "missing draw marks begin event failed");
+    require(native_result.failed(), "missing draw reports native failure");
+    require(
+        native_result.status
+            == vulkan_backend::vulkan_native_command_packet_execution_status::native_command_symbol_unavailable,
+        "missing draw reports native command symbol unavailable");
+    require(
+        native_result.missing_native_symbol_name == "vkCmdDraw",
+        "missing draw records missing symbol name");
+    require(!native_result.native_command_symbols_ready, "missing draw records symbols not ready");
+    require(native_result.calls.empty(), "missing draw records no native calls");
+    require(
+        native_result.diagnostic.find("vkCmdDraw") != std::string::npos,
+        "missing draw diagnostic names missing draw symbol");
+}
+
+void test_vulkan_native_command_packet_executor_blocks_invalid_command_buffer()
+{
+    using namespace quiz_vulkan::render;
+
+    vulkan_backend::vulkan_native_command_packet_executor_evidence evidence =
+        make_native_packet_evidence();
+    evidence.command_buffer = {};
+    vulkan_backend::vulkan_native_command_packet_executor executor(std::move(evidence));
+    const vulkan_backend::vulkan_command_packet_execution_result result =
+        executor.execute_packets(make_ready_bridge());
+    const vulkan_backend::vulkan_native_command_packet_execution_result native_result =
+        executor.native_execution_result();
+
+    require(!result.completed(), "invalid command buffer does not complete interface execution");
+    require(
+        result.status == vulkan_backend::vulkan_command_packet_execution_status::begin_failed,
+        "invalid command buffer maps to begin failure");
+    require(native_result.failed(), "invalid command buffer reports native failure");
+    require(
+        native_result.status
+            == vulkan_backend::vulkan_native_command_packet_execution_status::command_buffer_unavailable,
+        "invalid command buffer records unavailable command buffer status");
+    require(!native_result.command_buffer_ready, "invalid command buffer records command buffer not ready");
+    require(native_result.calls.empty(), "invalid command buffer records no native calls");
+    require(
+        native_result.diagnostic.find("command buffer") != std::string::npos,
+        "invalid command buffer diagnostic names command buffer");
+}
+
+void test_vulkan_native_command_packet_executor_blocks_invalid_packet_scissor()
+{
+    using namespace quiz_vulkan::render;
+
+    vulkan_backend::vulkan_command_packet_bridge_result bridge = make_ready_bridge();
+    bridge.packets[1].scissor = {};
+    vulkan_backend::vulkan_native_command_packet_executor executor(
+        make_native_packet_evidence());
+    const vulkan_backend::vulkan_command_packet_execution_result result =
+        executor.execute_packets(bridge);
+    const vulkan_backend::vulkan_native_command_packet_execution_result native_result =
+        executor.native_execution_result();
+
+    require(!result.completed(), "invalid scissor does not complete interface execution");
+    require(
+        result.status == vulkan_backend::vulkan_command_packet_execution_status::packet_failed,
+        "invalid scissor maps to packet failure");
+    require(result.has_failed_packet, "invalid scissor records failed packet");
+    require(
+        result.first_failed_category == vulkan_backend::vulkan_command_packet_category::text,
+        "invalid scissor records failed packet category");
+    require(result.attempted_packet_count == 2, "invalid scissor attempts packets through failure");
+    require(result.executed_packet_count == 1, "invalid scissor translates only prior packet");
+    require(native_result.failed(), "invalid scissor reports native failure");
+    require(
+        native_result.status
+            == vulkan_backend::vulkan_native_command_packet_execution_status::invalid_packet_data,
+        "invalid scissor records invalid packet data status");
+    require(
+        native_result.calls.size() == 5,
+        "invalid scissor keeps native call evidence for completed prior packet");
+    require(
+        native_result.diagnostic.find("scissor") != std::string::npos,
+        "invalid scissor diagnostic names scissor data");
+}
+
+void test_vulkan_scoped_command_packet_execution_records_scope_and_packets()
+{
+    using namespace quiz_vulkan::render;
+
+    vulkan_backend::fake_vulkan_command_packet_executor executor;
+    const vulkan_backend::vulkan_scoped_command_packet_execution_result result =
+        vulkan_backend::execute_vulkan_scoped_command_packets(
+            executor,
+            vulkan_backend::vulkan_scoped_command_packet_execution_request{
+                .render_pass_scope = make_ready_render_pass_scope(1),
+                .packet_bridge = make_ready_bridge(),
+            });
+
+    require(result.checked, "scoped packet execution is checked");
+    require(result.completed(), "scoped packet execution completes");
+    require(!result.failed(), "scoped packet execution reports no failure");
+    require(
+        result.status == vulkan_backend::vulkan_scoped_command_packet_execution_status::completed,
+        "scoped packet execution reports completed");
+    require(result.render_pass_scope_id == 2, "scoped packet execution records scope id");
+    require(result.selected_framebuffer_target_index == 1, "scoped packet execution records target index");
+    require(result.image_id.value == 2, "scoped packet execution records image id");
+    require(result.framebuffer.value == 13002, "scoped packet execution records framebuffer handle");
+    require(result.command_buffer.value == 909, "scoped packet execution records command buffer");
+    require(result.render_pass_scope_checked, "scoped packet execution records checked scope");
+    require(result.render_pass_scope_ready, "scoped packet execution records ready scope");
+    require(result.command_buffer_ready, "scoped packet execution records command buffer readiness");
+    require(result.packet_bridge_checked, "scoped packet execution records checked packet bridge");
+    require(result.packet_bridge_ready, "scoped packet execution records ready packet bridge");
+    require(!result.scoped_execution_empty, "scoped packet execution records non-empty scope");
+    require(result.render_pass_begin_attempted, "scoped packet execution records render pass begin attempt");
+    require(result.render_pass_begin_completed, "scoped packet execution records render pass begin completion");
+    require(result.render_pass_end_attempted, "scoped packet execution records render pass end attempt");
+    require(result.render_pass_end_completed, "scoped packet execution records render pass end completion");
+    require(!result.render_pass_end_skipped, "scoped packet execution does not skip render pass end");
+    require(result.packet_execution_ready, "scoped packet execution records packet execution readiness");
+    require(result.operation_plan_ready, "scoped packet execution records operation plan readiness");
+    require(result.planned_packet_count == 4, "scoped packet execution records planned packets");
+    require(result.attempted_packet_count == 4, "scoped packet execution records attempted packets");
+    require(result.executed_packet_count == 4, "scoped packet execution records executed packets");
+    require(result.rect_packet_count == 1, "scoped packet execution counts rect packets");
+    require(result.text_packet_count == 1, "scoped packet execution counts text packets");
+    require(result.image_packet_count == 1, "scoped packet execution counts image packets");
+    require(result.debug_bounds_packet_count == 1, "scoped packet execution counts debug packets");
+    require(result.packet_execution.events.size() == 6, "scoped packet execution keeps packet events");
+    require(result.operation_plan.operation_count == 4, "scoped packet execution builds recorder operations");
+    require(executor.execution_result().completed(), "scoped packet execution uses packet executor");
+}
+
+void test_vulkan_scoped_command_packet_execution_accepts_empty_scope()
+{
+    using namespace quiz_vulkan::render;
+
+    vulkan_backend::fake_vulkan_command_packet_executor executor;
+    const vulkan_backend::vulkan_scoped_command_packet_execution_result result =
+        vulkan_backend::execute_vulkan_scoped_command_packets(
+            executor,
+            vulkan_backend::vulkan_scoped_command_packet_execution_request{
+                .render_pass_scope = make_ready_render_pass_scope(0),
+                .packet_bridge = make_empty_bridge(),
+            });
+
+    require(result.checked, "empty scoped packet execution is checked");
+    require(result.completed(), "empty scoped packet execution completes");
+    require(result.scoped_execution_empty, "empty scoped packet execution records empty scope");
+    require(result.render_pass_scope_id == 1, "empty scoped packet execution records scope id");
+    require(result.planned_packet_count == 0, "empty scoped packet execution records no planned packets");
+    require(result.attempted_packet_count == 0, "empty scoped packet execution records no attempted packets");
+    require(result.executed_packet_count == 0, "empty scoped packet execution records no executed packets");
+    require(result.packet_execution.events.size() == 2, "empty scoped packet execution keeps begin and end events");
+    require(result.operation_plan.completed(), "empty scoped packet execution builds an empty operation plan");
+}
+
+void test_vulkan_scoped_command_packet_execution_reports_scope_and_bridge_blockers()
+{
+    using namespace quiz_vulkan::render;
+
+    vulkan_backend::fake_vulkan_command_packet_executor executor;
+
+    vulkan_backend::vulkan_native_render_pass_scope_record_result begin_failed_scope =
+        make_ready_render_pass_scope(0);
+    begin_failed_scope.status =
+        vulkan_backend::vulkan_native_render_pass_scope_record_status::begin_failed;
+    begin_failed_scope.vk_cmd_end_render_pass_called = false;
+    begin_failed_scope.diagnostic = "Native Vulkan render pass scope begin failed";
+    const vulkan_backend::vulkan_scoped_command_packet_execution_result begin_failed =
+        vulkan_backend::execute_vulkan_scoped_command_packets(
+            executor,
+            vulkan_backend::vulkan_scoped_command_packet_execution_request{
+                .render_pass_scope = begin_failed_scope,
+                .packet_bridge = make_ready_bridge(),
+            });
+    require(
+        begin_failed.status == vulkan_backend::vulkan_scoped_command_packet_execution_status::begin_failed,
+        "scoped packet execution reports render pass begin failure");
+    require(begin_failed.render_pass_end_skipped, "scoped packet execution skips render pass end after begin failure");
+    require(!begin_failed.packet_execution_checked, "scoped packet execution does not execute packets after begin failure");
+
+    const vulkan_backend::vulkan_command_packet_bridge_result unavailable_bridge{
+        .checked = true,
+        .status = vulkan_backend::vulkan_command_packet_bridge_status::pipeline_unavailable,
+        .fallback_reason = vulkan_backend::vulkan_backend_fallback_reason::pipeline_unavailable,
+        .pipeline_checked = true,
+        .pipeline_ready = false,
+        .planned_batch_count = 4,
+    };
+    const vulkan_backend::vulkan_scoped_command_packet_execution_result bridge_blocked =
+        vulkan_backend::execute_vulkan_scoped_command_packets(
+            executor,
+            vulkan_backend::vulkan_scoped_command_packet_execution_request{
+                .render_pass_scope = make_ready_render_pass_scope(0),
+                .packet_bridge = unavailable_bridge,
+            });
+    require(
+        bridge_blocked.status
+            == vulkan_backend::vulkan_scoped_command_packet_execution_status::packet_bridge_unavailable,
+        "scoped packet execution reports unavailable packet bridge");
+    require(
+        bridge_blocked.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::pipeline_unavailable,
+        "scoped packet execution preserves bridge fallback");
+}
+
+void test_vulkan_scoped_command_packet_execution_reports_first_packet_failure_inside_scope()
+{
+    using namespace quiz_vulkan::render;
+
+    vulkan_backend::fake_vulkan_command_packet_executor executor(
+        vulkan_backend::fake_vulkan_command_packet_executor_options{
+            .fail_packet = true,
+            .fail_packet_index = 2,
+        });
+    const vulkan_backend::vulkan_scoped_command_packet_execution_result result =
+        vulkan_backend::execute_vulkan_scoped_command_packets(
+            executor,
+            vulkan_backend::vulkan_scoped_command_packet_execution_request{
+                .render_pass_scope = make_ready_render_pass_scope(1),
+                .packet_bridge = make_ready_bridge(),
+            });
+
+    require(result.checked, "failed scoped packet execution is checked");
+    require(!result.completed(), "failed scoped packet execution does not complete");
+    require(result.failed(), "failed scoped packet execution reports failure");
+    require(
+        result.status == vulkan_backend::vulkan_scoped_command_packet_execution_status::packet_failed,
+        "scoped packet execution reports packet failure");
+    require(result.has_failed_packet, "scoped packet execution records failed packet");
+    require(
+        result.first_failed_category == vulkan_backend::vulkan_command_packet_category::image,
+        "scoped packet execution records first failed category");
+    require(
+        result.first_failed_batch_kind == vulkan_backend::vulkan_batch_kind::image,
+        "scoped packet execution records first failed batch kind");
+    require(result.first_failed_packet_index == 2, "scoped packet execution records first failed packet index");
+    require(result.first_failed_command_index == 12, "scoped packet execution records first failed command index");
+    require(result.attempted_packet_count == 3, "scoped packet execution records attempted packets through failure");
+    require(result.executed_packet_count == 2, "scoped packet execution records packets before failure");
+    require(result.rect_packet_count == 1, "scoped packet execution counts completed rect packet");
+    require(result.text_packet_count == 1, "scoped packet execution counts completed text packet");
+    require(result.image_packet_count == 0, "scoped packet execution does not count failed packet as executed");
+    require(result.render_pass_begin_completed, "scoped packet execution records render pass scope began");
+    require(result.render_pass_end_completed, "scoped packet execution preserves render pass scope end evidence");
+    require(!result.operation_plan_ready, "scoped packet execution blocks operation plan after packet failure");
+}
+
 } // namespace
 
 int main()
@@ -349,5 +1260,20 @@ int main()
     test_vulkan_command_packet_execution_records_successful_lifecycle();
     test_vulkan_command_packet_execution_records_first_packet_failure();
     test_vulkan_command_packet_execution_records_successful_empty_lifecycle();
+    test_vulkan_native_command_packet_executor_translates_packets_to_native_calls();
+    test_vulkan_native_descriptor_set_allocation_builds_fake_handles();
+    test_vulkan_native_command_packet_executor_completes_with_allocated_descriptor_handles();
+    test_vulkan_native_command_packet_evidence_preserves_descriptor_handle_gap();
+    test_vulkan_native_command_packet_executor_blocks_incomplete_descriptor_evidence();
+    test_vulkan_native_command_packet_executor_blocks_duplicate_descriptor_evidence();
+    test_vulkan_native_command_packet_executor_blocks_wrong_packet_descriptor_evidence();
+    test_vulkan_native_descriptor_set_allocation_blocks_incomplete_resource_bindings();
+    test_vulkan_native_command_packet_executor_blocks_missing_draw_symbol();
+    test_vulkan_native_command_packet_executor_blocks_invalid_command_buffer();
+    test_vulkan_native_command_packet_executor_blocks_invalid_packet_scissor();
+    test_vulkan_scoped_command_packet_execution_records_scope_and_packets();
+    test_vulkan_scoped_command_packet_execution_accepts_empty_scope();
+    test_vulkan_scoped_command_packet_execution_reports_scope_and_bridge_blockers();
+    test_vulkan_scoped_command_packet_execution_reports_first_packet_failure_inside_scope();
     return 0;
 }

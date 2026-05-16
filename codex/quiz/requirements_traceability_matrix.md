@@ -1,17 +1,43 @@
 # Quiz 요구사항 추적 매트릭스
 
-마지막 갱신: 2026-05-15
+마지막 갱신: 2026-05-16
 
 이 문서는 요구사항 번호를 실행 순서가 아니라 추적 ID로 관리한다. 실제 구현 순서는 `big_plan.md`의 의존관계 기반 단계가 기준이며, 각 행은 루트 구현 문서, 하위 프로젝트 문서, 현재 C++/문서 증거를 연결한다.
 
 최근 baseline 통합 증거:
 
+- `0ed2aa1`: Vulkan backend now has a fake/data descriptor set allocation result plus explicit merge/build API for native command-packet executor evidence, so completed resource-binding evidence can supply stable descriptor handles while the default frame evidence path still refuses to fabricate handles.
+- current: after `0ed2aa1`, Windows MinGW built `quiz_vulkan_vulkan_command_packet_execution_tests`, `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_renderer_tests`, and `quiz_vulkan_architecture_boundary_tests`; focused architecture/renderer/Vulkan CTest passed 3/3.
+- current: after `f808516`, Windows MinGW full CTest passed 104/104 from `C:/aa/build/out/quiz/quiz-vulkan/windows-mingw-ascii`.
+- current: after `a629aff`, Windows MinGW built `quiz_vulkan_vulkan_command_packet_execution_tests`, `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_vulkan_frame_pipeline_handoff_tests`, `quiz_vulkan_renderer_tests`, and `quiz_vulkan_architecture_boundary_tests`; focused architecture/renderer/Vulkan CTest passed 4/4.
+- `a629aff`: Vulkan backend frame results now expose native command-packet evidence for command buffer, graphics pipeline, pipeline layout, and viewport while intentionally preserving descriptor set handles as unavailable until a Vulkan-owned descriptor allocation/upload evidence path supplies them.
+- `ff33706`: queued the next long-lived Vulkan worker prompt for native descriptor set evidence from the latest pushed baseline.
+- current: after `f783f6f`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`; focused architecture/renderer/Vulkan CTest passed 7/7.
+- `f783f6f`: Vulkan backend frame results and frame pipeline handoff summaries now carry scoped command-packet execution evidence, including readiness, selected framebuffer/command-buffer data, packet counts, failed packet details, and frame completion gating while staying inside the Vulkan backend boundary.
+- current: after `81b2039`, Windows MinGW full CTest passed 103/103. The previous `quiz_vulkan_font_shaped_atlas_update_tests` host permission BAD_COMMAND is resolved by keeping the test name stable and shortening only the Windows executable output name.
+- current: after `d5ffb54`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`; focused architecture/renderer/Vulkan CTest passed 5/5.
+- `d5ffb54`: Vulkan backend now composes render-pass scope readiness with command-packet execution summaries, preserving selected framebuffer target, command buffer, packet bridge readiness, per-category packet counts, first failed packet evidence, and empty-scope diagnostics inside the backend boundary.
+- current: after `348dfb0`, Windows MinGW full CTest attempted 103 configured tests; 102 executed tests passed and only the known `quiz_vulkan_font_shaped_atlas_update_tests` host permission BAD_COMMAND remained.
+- `348dfb0`: Vulkan backend now records render-pass scope command recording readiness from selected framebuffer target evidence, including command-buffer blockers and begin/end render-pass fake/native dispatch records without drawing UI/domain semantics into the backend.
+- current: after `348dfb0`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`; focused architecture/renderer/Vulkan CTest passed 5/5.
+- `39a3692`: Vulkan backend now carries framebuffer target readiness after swapchain image-view targets, with create/destroy dispatch, per-image framebuffer lifecycle records, render-pass/image-view/extent blockers, and fake/native paths kept inside the Vulkan backend boundary.
+- current: after `39a3692`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`; focused architecture/renderer/Vulkan CTest passed 7/7.
+- current: architecture boundary tests now scan private `.inl` source fragments, so source-only worker splits remain subject to the same dependency-direction guard as `.h/.hpp/.cpp` files.
+- `bf7a207`: text engine source layout now keeps line/run atlas-upload diagnostics in a private text-owned `.inl` fragment, reducing future worker read cost without changing public contracts, CMake, renderer wiring, or behavior.
+- `f7ac2e1`: Vulkan backend now creates data/dispatch evidence for swapchain image-view targets, including image-view create/destroy entrypoints, per-image target lifecycle records, missing-symbol diagnostics, and render-target attachment intent while keeping scene/UI/domain out of the backend.
+- current: after `f7ac2e1`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`; focused renderer/Vulkan CTest passed 5/5 and architecture boundary CTest passed 1/1.
 - current: HarfBuzz memory shaping, image upload payload layout evidence, Vulkan device-extension readiness, and asset payload bundle diffs integrated; Windows MinGW focused text/image/Vulkan/asset CTest batches passed.
 - current: after next-worker prompt handoff, Windows MinGW full CTest attempted 103 configured tests; 102 executed tests passed and only the known `quiz_vulkan_font_shaped_atlas_update_tests` host permission BAD_COMMAND remained.
+- `1d1bcb0`: text engine now records line/run evidence for shaped clusters, splitting HarfBuzz advance totals from deterministic fallback advance totals and preserving caret/run-box/backend/fallback diagnostics behind the text engine boundary.
+- `cd836f8`: Vulkan backend now executes swapchain image enumeration and image acquire through native/fake operation boundaries, preserving created swapchain handle, image bindings, acquire result flags, sync readiness, and recordable-image diagnostics without scene/UI/domain coupling.
+- current: after text line/run and Vulkan image-acquire integration, Windows MinGW full CTest attempted 103 configured tests; 102 executed tests passed and only the known `quiz_vulkan_font_shaped_atlas_update_tests` host permission BAD_COMMAND remained.
 - `a9f712d`: text engine now exposes HarfBuzz-shaped glyph handoff diagnostics through fake text layout snapshots when materialized font bytes and backend capability are available, with fallback diagnostics preserved for unavailable paths.
 - `4dcc126`: text engine now links HarfBuzz-shaped glyph handoff records to atlas/cache/materialization readiness, preserving backend label/status, fallback, and blocker evidence without renderer/Vulkan coupling.
 - `2e58022`: asset system now evaluates ordered multi-payload request transactions, preserving per-request selection status, compact selected snapshots, and summary counters without copying payload bytes.
 - `78fd030`: asset system now compares ordered payload request transactions with deterministic added/removed ids, changed statuses, selected snapshot deltas, readiness/integrity/cache-key deltas, and summary count changes.
+- `9eae4c4`: image engine now compares staging payload plans across uploads/results, reporting row-copy, alignment, padding, staging-byte, cache/sampler, mip-readiness, blocker, regression, and recovery changes.
+- `8512fb8`: Vulkan backend now has a native swapchain create/destroy adapter boundary with dispatch readiness, fake execution, selected surface format/present mode/extent evidence, and old-swapchain handoff diagnostics.
+- current: after native swapchain and image staging diff integration, Windows MinGW full CTest attempted 103 configured tests; 102 executed tests passed and only the known `quiz_vulkan_font_shaped_atlas_update_tests` host permission BAD_COMMAND remained.
 - `be5533d`: Vulkan backend now records native surface capability readiness for support, capabilities, formats, and present modes, and blocks native swapchain create planning when surface evidence is missing or unusable.
 - `9d6a8fd`: image engine now plans decoded texture staging payloads with row-copy, alignment, total byte, sampler/cache identity, and blocker evidence before any Vulkan upload path exists.
 - `e428459`: asset system now selects materialized byte payloads by id/type/cache key/readiness/integrity status and reports stable diagnostics for missing, wrong-type, blocked, duplicate, cache-key mismatch, and integrity-failure cases.

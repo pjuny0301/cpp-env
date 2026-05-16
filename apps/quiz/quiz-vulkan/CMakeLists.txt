@@ -633,6 +633,11 @@ if(BUILD_TESTING)
         target_compile_features(${target_name} PRIVATE cxx_std_23)
         quiz_vulkan_copy_mingw_runtime_dlls(${target_name})
         add_test(NAME ${target_name} COMMAND ${target_name})
+        set_tests_properties(
+            ${target_name}
+            PROPERTIES
+                ENVIRONMENT "QUIZ_VULKAN_DESKTOP_EXTERNAL_DIR=${QUIZ_VULKAN_DESKTOP_EXTERNAL_DIR}"
+        )
     endfunction()
 
     function(quiz_vulkan_add_test_directory test_dir)
@@ -781,6 +786,12 @@ if(BUILD_TESTING)
     add_test(NAME quiz_vulkan_fake_image_texture_cache_tests COMMAND quiz_vulkan_fake_image_texture_cache_tests)
 
     quiz_vulkan_add_test_directory(tests/render/text LINK_LIBRARIES quiz_vulkan_render_contract quiz_vulkan_scene quiz_vulkan_text_engine quiz_vulkan_text_scene_bridge)
+    if(WIN32 AND TARGET quiz_vulkan_font_shaped_atlas_update_tests)
+        set_target_properties(
+            quiz_vulkan_font_shaped_atlas_update_tests
+            PROPERTIES OUTPUT_NAME qv_text_atlas_tests
+        )
+    endif()
     quiz_vulkan_add_test_directory(tests/render/image LINK_LIBRARIES quiz_vulkan_image_engine)
     quiz_vulkan_add_test_directory(tests/render/vulkan LINK_LIBRARIES quiz_vulkan_renderer)
     quiz_vulkan_add_test_directory(tests/audio LINK_LIBRARIES quiz_vulkan_audio_contract)

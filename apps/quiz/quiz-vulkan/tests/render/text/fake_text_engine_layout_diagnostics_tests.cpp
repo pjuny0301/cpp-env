@@ -950,6 +950,73 @@ void test_fake_text_engine_records_rasterized_atlas_payloads_for_cacheable_glyph
         diagnostics.queued_atlas_upload_request_ids.front()
             == diagnostics.atlas_upload_request_bridge.requests.front().request_id,
         "queued atlas upload id matches bridge request id");
+    require(
+        diagnostics.has_line_run_atlas_uploads(),
+        "layout records line/run atlas upload readiness diagnostics");
+    require(diagnostics.line_run_atlas_uploads.size() == 1U, "one glyph records one line/run upload bridge");
+    require(
+        diagnostics.line_run_atlas_upload_policy.cluster_count == 1U,
+        "line/run upload policy counts one cluster");
+    require(
+        diagnostics.line_run_atlas_upload_policy.raster_payload_cluster_count == 1U,
+        "line/run upload policy counts uploadable raster payload");
+    require(
+        diagnostics.line_run_atlas_upload_policy.raster_payload_upload_ready_cluster_count == 1U,
+        "line/run upload policy counts upload-ready raster payload");
+    require(
+        diagnostics.line_run_atlas_upload_policy.upload_ready_cluster_count == 1U,
+        "line/run upload policy counts renderer upload readiness");
+    require(
+        diagnostics.line_run_atlas_upload_policy.blocked_cluster_count == 0U,
+        "line/run upload policy records no blocked upload-ready clusters");
+    require(
+        diagnostics.line_run_atlas_upload_policy.unique_cache_key_count == 1U,
+        "line/run upload policy preserves atlas cache key coverage");
+    require(
+        diagnostics.line_run_atlas_upload_policy.unique_page_key_count == 1U,
+        "line/run upload policy preserves atlas page coverage");
+    require(
+        diagnostics.line_run_atlas_upload_policy.total_payload_rgba_bytes == 256U,
+        "line/run upload policy totals raster payload bytes");
+    require(
+        diagnostics.line_run_atlas_upload_policy.total_upload_rgba_bytes
+            == diagnostics.atlas_upload_request_bridge.requests.front().actual_upload_rgba_bytes,
+        "line/run upload policy totals renderer upload bytes");
+
+    const fake_text_engine_line_run_atlas_upload_snapshot& line_upload =
+        diagnostics.line_run_atlas_uploads.front();
+    require(line_upload.has_line_run_evidence, "line/run upload links to line evidence");
+    require(line_upload.line_index == 0U && line_upload.run_index == 0U, "line/run upload preserves line and run ids");
+    require(line_upload.cluster_index == readiness.cluster_index, "line/run upload preserves cluster id");
+    require(line_upload.cluster_byte_offset == 0U && line_upload.cluster_byte_count == 1U, "line/run upload preserves byte span");
+    require(line_upload.cache_key == materialization.cache_key, "line/run upload preserves atlas cache key");
+    require(line_upload.has_cache_key, "line/run upload records cache key readiness");
+    require(line_upload.page.id == materialization.page.id, "line/run upload preserves atlas page id");
+    require(!line_upload.stable_page_key.empty(), "line/run upload records stable atlas page key");
+    require(line_upload.has_materialization, "line/run upload links atlas materialization");
+    require(line_upload.has_raster_payload, "line/run upload records raster payload presence");
+    require(line_upload.raster_payload_upload_ready, "line/run upload records raster payload readiness");
+    require(line_upload.has_upload_request, "line/run upload links renderer upload request");
+    require(line_upload.upload_ready, "line/run upload marks renderer upload ready");
+    require(!line_upload.blocked, "line/run upload is not blocked for fixture payload");
+    require(!line_upload.reused, "first upload-ready line/run is not a reuse");
+    require(line_upload.blocker_reason.empty(), "upload-ready line/run has no blocker");
+    require(
+        line_upload.upload_request_id == diagnostics.queued_atlas_upload_request_ids.front(),
+        "line/run upload preserves stable upload request id");
+    require(
+        line_upload.upload_status == render_text_atlas_upload_request_status::upload_ready,
+        "line/run upload records upload-ready status");
+    require(
+        line_upload.materialization_status
+            == render_text_glyph_atlas_materialization_status::materialized_upload_ready,
+        "line/run upload records materialized upload-ready status");
+    require(
+        line_upload.rasterizer_status == render_text_font_rasterizer_status::rasterized,
+        "line/run upload records rasterized status");
+    require(line_upload.payload_rgba_bytes == 256U, "line/run upload records payload bytes");
+    require(line_upload.upload_rgba_bytes > 0U, "line/run upload records upload bytes");
+
     require(diagnostics.has_text_frame_snapshot(), "layout records compact text frame snapshot");
     require(
         diagnostics.text_frame_snapshot.status == render_text_frame_snapshot_status::pending_atlas_updates,
@@ -2123,6 +2190,135 @@ void test_fake_text_engine_harfbuzz_handoff_shapes_materialized_font_bytes()
     if (atlas_handoff.blocked) {
         require(!atlas_handoff.blocker_reason.empty(), "blocked atlas handoff records blocker reason");
     }
+
+    require(diagnostics.has_shaping_line_run_evidence(), "HarfBuzz handoff records line/run evidence");
+    require(
+        diagnostics.shaping_line_run_evidence_policy.harfbuzz_cluster_count
+            == diagnostics.shaping_line_run_evidence.size(),
+        "line/run evidence counts HarfBuzz-shaped clusters");
+    require(
+        diagnostics.shaping_line_run_evidence_policy.deterministic_fallback_cluster_count == 0U,
+        "line/run evidence records no deterministic fallback for HarfBuzz shaping");
+    require(
+        diagnostics.shaping_line_run_evidence_policy.adapter_cluster_count
+            == diagnostics.shaping_line_run_evidence.size(),
+        "line/run evidence counts adapter-shaped clusters");
+    require(
+        diagnostics.shaping_line_run_evidence_policy.harfbuzz_advance > 0.0f,
+        "line/run evidence records HarfBuzz advance total");
+    require(
+        near(
+            diagnostics.shaping_line_run_evidence_policy.total_cluster_advance,
+            diagnostics.shaping_line_run_evidence_policy.harfbuzz_advance),
+        "line/run evidence attributes total advance to HarfBuzz");
+    require(
+        near(diagnostics.shaping_line_run_evidence_policy.deterministic_fallback_advance, 0.0f),
+        "line/run evidence records no deterministic fallback advance");
+
+    const fake_text_engine_shaping_line_run_evidence_snapshot& line_evidence =
+        diagnostics.shaping_line_run_evidence.front();
+    require(line_evidence.used_harfbuzz, "line/run evidence marks HarfBuzz shaping");
+    require(line_evidence.used_adapter, "line/run evidence marks adapter shaping");
+    require(!line_evidence.used_deterministic_fallback, "line/run evidence avoids deterministic fallback");
+    require(
+        line_evidence.backend_library == render_text_font_backend_library::harfbuzz,
+        "line/run evidence preserves HarfBuzz backend");
+    require(line_evidence.backend_label == "HarfBuzz", "line/run evidence preserves backend label");
+    require(
+        line_evidence.adapter_status == render_text_font_backend_adapter_status::shaped,
+        "line/run evidence preserves adapter status");
+    require(line_evidence.line_index == 0U, "line/run evidence preserves line index");
+    require(line_evidence.run_index == 0U, "line/run evidence preserves run id");
+    require(line_evidence.style_token == "handoff", "line/run evidence preserves style token");
+    require(line_evidence.cluster_byte_offset == 0U, "line/run evidence preserves cluster byte offset");
+    require(line_evidence.cluster_byte_count == text.size(), "line/run evidence preserves cluster byte count");
+    require(line_evidence.cluster_codepoint_offset == 0U, "line/run evidence preserves cluster codepoint offset");
+    require(line_evidence.cluster_codepoint_count == 2U, "line/run evidence preserves cluster codepoint count");
+    require(!line_evidence.shaped_glyph_ids.empty(), "line/run evidence preserves shaped glyph ids");
+    require(line_evidence.cluster_advance > 0.0f, "line/run evidence records cluster advance");
+    require(
+        near(line_evidence.harfbuzz_advance, line_evidence.cluster_advance),
+        "line/run evidence attributes cluster advance to HarfBuzz");
+    require(
+        near(line_evidence.deterministic_fallback_advance, 0.0f),
+        "line/run evidence records no deterministic fallback cluster advance");
+    require(
+        line_evidence.line_advance >= line_evidence.cluster_advance,
+        "line/run evidence links cluster to line advance");
+    require(line_evidence.line_caret_safe, "line/run evidence records caret-safe line impact");
+    require(
+        line_evidence.caret_start_byte_offset == 0U && line_evidence.caret_end_byte_offset == text.size(),
+        "line/run evidence preserves caret byte span");
+    require(
+        near(line_evidence.caret_end_x - line_evidence.caret_start_x, line_evidence.cluster_advance),
+        "line/run evidence records caret x impact from shaped advance");
+    require(line_evidence.has_run_box, "line/run evidence links to a run box");
+    require(
+        line_evidence.run_box_advance >= line_evidence.cluster_advance,
+        "line/run evidence records run-box advance impact");
+    require(line_evidence.fallback_reason.empty(), "line/run evidence has no fallback reason for HarfBuzz success");
+
+    require(
+        diagnostics.has_line_run_atlas_uploads(),
+        "HarfBuzz handoff records line/run atlas upload readiness");
+    require(
+        diagnostics.line_run_atlas_upload_policy.cluster_count
+            == diagnostics.shaping_line_run_evidence.size(),
+        "line/run upload bridge covers every line/run evidence cluster");
+    require(
+        diagnostics.line_run_atlas_upload_policy.harfbuzz_cluster_count
+            == diagnostics.line_run_atlas_uploads.size(),
+        "line/run upload bridge counts HarfBuzz-shaped clusters");
+    require(
+        diagnostics.line_run_atlas_upload_policy.deterministic_fallback_cluster_count == 0U,
+        "line/run upload bridge records no deterministic fallback for HarfBuzz shaping");
+    require(
+        diagnostics.line_run_atlas_upload_policy.materialized_font_byte_cluster_count
+            == diagnostics.line_run_atlas_uploads.size(),
+        "line/run upload bridge preserves materialized font byte evidence");
+    require(
+        diagnostics.line_run_atlas_upload_policy.unique_cache_key_count > 0U,
+        "line/run upload bridge records atlas cache key coverage");
+    require(
+        diagnostics.line_run_atlas_upload_policy.unique_page_key_count > 0U,
+        "line/run upload bridge records atlas page key coverage");
+
+    const fake_text_engine_line_run_atlas_upload_snapshot& line_upload =
+        diagnostics.line_run_atlas_uploads.front();
+    require(line_upload.has_line_run_evidence, "line/run upload links HarfBuzz line evidence");
+    require(line_upload.used_harfbuzz, "line/run upload marks HarfBuzz shaping");
+    require(!line_upload.used_deterministic_fallback, "line/run upload avoids deterministic shaping fallback");
+    require(
+        line_upload.shaping_backend_library == render_text_font_backend_library::harfbuzz,
+        "line/run upload preserves HarfBuzz shaping backend");
+    require(line_upload.shaping_backend_label == "HarfBuzz", "line/run upload preserves shaping backend label");
+    require(
+        line_upload.adapter_status == render_text_font_backend_adapter_status::shaped,
+        "line/run upload preserves shaped adapter status");
+    require(line_upload.materialized_font_bytes, "line/run upload records materialized font bytes");
+    require(line_upload.line_index == 0U && line_upload.run_index == 0U, "line/run upload preserves line/run ids");
+    require(line_upload.style_token == "handoff", "line/run upload preserves style token");
+    require(line_upload.cluster_byte_offset == 0U, "line/run upload preserves cluster byte offset");
+    require(line_upload.cluster_byte_count == text.size(), "line/run upload preserves cluster byte count");
+    require(line_upload.cluster_codepoint_offset == 0U, "line/run upload preserves cluster codepoint offset");
+    require(line_upload.cluster_codepoint_count == 2U, "line/run upload preserves cluster codepoint count");
+    require(!line_upload.shaped_glyph_ids.empty(), "line/run upload preserves shaped glyph ids");
+    require(line_upload.has_cache_key, "line/run upload records atlas cache key requirement");
+    require(line_upload.cache_key.glyph_id == line_upload.resolved_glyph_id, "line/run upload cache key uses shaped glyph id");
+    require(!line_upload.stable_page_key.empty(), "line/run upload records stable atlas page key");
+    require(line_upload.has_materialization, "line/run upload links atlas materialization");
+    require(line_upload.has_atlas_placement, "line/run upload links atlas placement");
+    require(
+        line_upload.has_raster_payload == line_upload.raster_payload_upload_ready,
+        "line/run upload distinguishes raster payload presence from blocked upload");
+    if (line_upload.blocked) {
+        require(!line_upload.blocker_reason.empty(), "blocked HarfBuzz line/run upload records blocker reason");
+        require(!line_upload.upload_ready, "blocked HarfBuzz line/run upload is not upload-ready");
+    } else {
+        require(
+            line_upload.upload_ready || line_upload.reused,
+            "unblocked HarfBuzz line/run upload is upload-ready or reused");
+    }
 }
 
 void test_fake_text_engine_harfbuzz_handoff_keeps_deterministic_fallback_without_bytes()
@@ -2239,6 +2435,132 @@ void test_fake_text_engine_harfbuzz_handoff_keeps_deterministic_fallback_without
         atlas_handoff.atlas_update_trace_status
             == render_text_shaped_atlas_update_trace_status::rasterized_payload_skipped,
         "missing bytes atlas handoff links raster payload blocker trace");
+
+    require(diagnostics.has_shaping_line_run_evidence(), "missing bytes record line/run evidence");
+    require(
+        diagnostics.shaping_line_run_evidence_policy.deterministic_fallback_cluster_count == 1U,
+        "missing bytes line/run evidence counts deterministic fallback");
+    require(
+        diagnostics.shaping_line_run_evidence_policy.harfbuzz_cluster_count == 0U,
+        "missing bytes line/run evidence does not count HarfBuzz shaping");
+    require(
+        diagnostics.shaping_line_run_evidence_policy.missing_font_byte_cluster_count == 1U,
+        "missing bytes line/run evidence counts missing materialized bytes");
+    require(
+        diagnostics.shaping_line_run_evidence_policy.fallback_reason_cluster_count == 1U,
+        "missing bytes line/run evidence counts fallback reason");
+    require(
+        diagnostics.shaping_line_run_evidence_policy.deterministic_fallback_advance > 0.0f,
+        "missing bytes line/run evidence records fallback advance total");
+    require(
+        near(
+            diagnostics.shaping_line_run_evidence_policy.total_cluster_advance,
+            diagnostics.shaping_line_run_evidence_policy.deterministic_fallback_advance),
+        "missing bytes line/run evidence attributes total advance to deterministic fallback");
+
+    const fake_text_engine_shaping_line_run_evidence_snapshot& line_evidence =
+        diagnostics.shaping_line_run_evidence.front();
+    require(
+        line_evidence.backend_library == render_text_font_backend_library::deterministic_fake,
+        "missing bytes line/run evidence preserves deterministic backend");
+    require(line_evidence.used_deterministic_fallback, "missing bytes line/run evidence marks deterministic fallback");
+    require(!line_evidence.used_harfbuzz, "missing bytes line/run evidence does not mark HarfBuzz");
+    require(!line_evidence.materialized_font_bytes, "missing bytes line/run evidence records missing font bytes");
+    require(
+        line_evidence.source_bytes_status == render_text_font_source_bytes_load_status::missing_bytes,
+        "missing bytes line/run evidence preserves missing source byte status");
+    require(line_evidence.line_index == 0U, "missing bytes line/run evidence preserves line index");
+    require(line_evidence.run_index == 0U, "missing bytes line/run evidence preserves run id");
+    require(line_evidence.style_token == "missing-handoff", "missing bytes line/run evidence preserves style token");
+    require(line_evidence.cluster_byte_offset == 0U, "missing bytes line/run evidence preserves byte offset");
+    require(line_evidence.cluster_byte_count == 1U, "missing bytes line/run evidence preserves byte count");
+    require(line_evidence.cluster_advance > 0.0f, "missing bytes line/run evidence records fallback advance");
+    require(
+        near(line_evidence.deterministic_fallback_advance, line_evidence.cluster_advance),
+        "missing bytes line/run evidence attributes cluster advance to fallback");
+    require(
+        near(line_evidence.harfbuzz_advance, 0.0f),
+        "missing bytes line/run evidence records no HarfBuzz advance");
+    require(line_evidence.has_run_box, "missing bytes line/run evidence links to run box");
+    require(line_evidence.line_caret_safe, "missing bytes line/run evidence records caret safety");
+    require(
+        near(line_evidence.caret_end_x - line_evidence.caret_start_x, line_evidence.cluster_advance),
+        "missing bytes line/run evidence records caret x impact");
+    require(
+        line_evidence.fallback_reason.find("materialized font bytes") != std::string::npos,
+        "missing bytes line/run evidence preserves fallback reason");
+
+    require(
+        diagnostics.has_line_run_atlas_uploads(),
+        "missing bytes record line/run atlas upload readiness");
+    require(
+        diagnostics.line_run_atlas_upload_policy.cluster_count == 1U,
+        "missing bytes line/run upload policy counts one cluster");
+    require(
+        diagnostics.line_run_atlas_upload_policy.deterministic_fallback_cluster_count == 1U,
+        "missing bytes line/run upload policy counts deterministic fallback");
+    require(
+        diagnostics.line_run_atlas_upload_policy.harfbuzz_cluster_count == 0U,
+        "missing bytes line/run upload policy does not count HarfBuzz shaping");
+    require(
+        diagnostics.line_run_atlas_upload_policy.missing_font_byte_cluster_count == 1U,
+        "missing bytes line/run upload policy counts missing materialized bytes");
+    require(
+        diagnostics.line_run_atlas_upload_policy.materialized_cluster_count == 1U,
+        "missing bytes line/run upload policy links skipped materialization");
+    require(
+        diagnostics.line_run_atlas_upload_policy.missing_raster_payload_cluster_count == 1U,
+        "missing bytes line/run upload policy counts missing raster payload bytes");
+    require(
+        diagnostics.line_run_atlas_upload_policy.blocked_cluster_count == 1U,
+        "missing bytes line/run upload policy counts blocked upload");
+    require(
+        diagnostics.line_run_atlas_upload_policy.skipped_cluster_count == 1U,
+        "missing bytes line/run upload policy counts skipped upload handoff");
+    require(
+        diagnostics.line_run_atlas_upload_policy.fallback_reason_cluster_count == 1U,
+        "missing bytes line/run upload policy preserves fallback reason count");
+
+    const fake_text_engine_line_run_atlas_upload_snapshot& line_upload =
+        diagnostics.line_run_atlas_uploads.front();
+    require(line_upload.has_line_run_evidence, "missing bytes line/run upload links line evidence");
+    require(
+        line_upload.shaping_backend_library == render_text_font_backend_library::deterministic_fake,
+        "missing bytes line/run upload preserves deterministic shaping backend");
+    require(line_upload.used_deterministic_fallback, "missing bytes line/run upload marks deterministic fallback");
+    require(!line_upload.used_harfbuzz, "missing bytes line/run upload does not mark HarfBuzz");
+    require(!line_upload.materialized_font_bytes, "missing bytes line/run upload records missing font bytes");
+    require(
+        line_upload.source_bytes_status == render_text_font_source_bytes_load_status::missing_bytes,
+        "missing bytes line/run upload preserves missing byte status");
+    require(line_upload.line_index == 0U && line_upload.run_index == 0U, "missing bytes line/run upload preserves line/run ids");
+    require(line_upload.cluster_index == 0U, "missing bytes line/run upload preserves cluster index");
+    require(line_upload.cluster_byte_offset == 0U && line_upload.cluster_byte_count == 1U, "missing bytes line/run upload preserves byte span");
+    require(line_upload.has_cache_key, "missing bytes line/run upload records atlas cache key requirement");
+    require(line_upload.cache_key.glyph_id == U'A', "missing bytes line/run upload preserves fallback glyph id");
+    require(!line_upload.stable_page_key.empty(), "missing bytes line/run upload records stable page key");
+    require(line_upload.has_materialization, "missing bytes line/run upload links skipped materialization");
+    require(!line_upload.has_raster_payload, "missing bytes line/run upload records no raster payload bytes");
+    require(!line_upload.raster_payload_upload_ready, "missing bytes line/run upload is not raster upload-ready");
+    require(!line_upload.has_upload_request, "missing bytes line/run upload emits no renderer upload request");
+    require(!line_upload.upload_ready, "missing bytes line/run upload is not upload-ready");
+    require(line_upload.skipped, "missing bytes line/run upload records skipped bridge status");
+    require(line_upload.blocked, "missing bytes line/run upload records blocked status");
+    require(!line_upload.blocker_reason.empty(), "missing bytes line/run upload records blocker reason");
+    require(
+        line_upload.blocker_reason.find("missing_bytes") != std::string::npos,
+        "missing bytes line/run upload blocker preserves byte readiness reason");
+    require(
+        line_upload.materialization_status == render_text_glyph_atlas_materialization_status::skipped_raster_payload,
+        "missing bytes line/run upload records skipped raster materialization");
+    require(
+        line_upload.upload_status == render_text_atlas_upload_request_status::skipped_materialization,
+        "missing bytes line/run upload records skipped upload status");
+    require(
+        line_upload.rasterizer_status == render_text_font_rasterizer_status::missing_font_bytes,
+        "missing bytes line/run upload records rasterizer missing bytes");
+    require(line_upload.payload_rgba_bytes == 0U, "missing bytes line/run upload records zero payload bytes");
+    require(line_upload.upload_rgba_bytes == 0U, "missing bytes line/run upload records zero upload bytes");
 }
 
 void test_fake_text_engine_injected_adapter_glyph_mismatch_drives_failure_diagnostics()

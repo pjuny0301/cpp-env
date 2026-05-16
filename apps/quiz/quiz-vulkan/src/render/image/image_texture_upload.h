@@ -690,6 +690,226 @@ inline bool render_image_texture_staging_payload_plan_equal(
         && before.blocker_summary == after.blocker_summary;
 }
 
+enum class render_image_texture_staging_payload_plan_diff_status {
+    unchanged,
+    added,
+    removed,
+    changed,
+};
+
+inline std::string render_image_texture_staging_payload_plan_diff_status_name(
+    render_image_texture_staging_payload_plan_diff_status status)
+{
+    switch (status) {
+    case render_image_texture_staging_payload_plan_diff_status::unchanged:
+        return "unchanged";
+    case render_image_texture_staging_payload_plan_diff_status::added:
+        return "added";
+    case render_image_texture_staging_payload_plan_diff_status::removed:
+        return "removed";
+    case render_image_texture_staging_payload_plan_diff_status::changed:
+        return "changed";
+    }
+
+    return "unknown";
+}
+
+struct render_image_texture_staging_payload_plan_diff {
+    render_image_texture_staging_payload_plan_diff_status status =
+        render_image_texture_staging_payload_plan_diff_status::unchanged;
+    std::string status_name = render_image_texture_staging_payload_plan_diff_status_name(
+        render_image_texture_staging_payload_plan_diff_status::unchanged);
+    bool before_present = false;
+    bool after_present = false;
+    render_image_texture_staging_payload_plan_status before_plan_status =
+        render_image_texture_staging_payload_plan_status::blocked_missing_payload;
+    render_image_texture_staging_payload_plan_status after_plan_status =
+        render_image_texture_staging_payload_plan_status::blocked_missing_payload;
+    std::string before_plan_status_name;
+    std::string after_plan_status_name;
+    std::string before_stable_texture_cache_key;
+    std::string after_stable_texture_cache_key;
+    std::string before_sampler_summary;
+    std::string after_sampler_summary;
+    std::size_t before_row_copy_count = 0;
+    std::size_t after_row_copy_count = 0;
+    std::int64_t row_copy_count_delta = 0;
+    std::size_t before_alignment_byte_count = 0;
+    std::size_t after_alignment_byte_count = 0;
+    std::int64_t alignment_byte_delta = 0;
+    std::size_t before_total_row_padding_byte_count = 0;
+    std::size_t after_total_row_padding_byte_count = 0;
+    std::int64_t row_padding_byte_delta = 0;
+    std::size_t before_total_staging_byte_count = 0;
+    std::size_t after_total_staging_byte_count = 0;
+    std::int64_t total_staging_byte_delta = 0;
+    std::size_t before_mip_level_reference_count = 0;
+    std::size_t after_mip_level_reference_count = 0;
+    std::int64_t mip_level_reference_delta = 0;
+    bool before_ready = false;
+    bool after_ready = false;
+    bool before_blocked = false;
+    bool after_blocked = false;
+    bool before_mipmap_plan_ready = false;
+    bool after_mipmap_plan_ready = false;
+    bool before_mipmaps_referenced = false;
+    bool after_mipmaps_referenced = false;
+    std::string before_blocker_summary;
+    std::string after_blocker_summary;
+    bool row_copy_count_changed = false;
+    bool alignment_changed = false;
+    bool padding_changed = false;
+    bool total_staging_byte_count_changed = false;
+    bool cache_key_changed = false;
+    bool sampler_changed = false;
+    bool mip_level_readiness_changed = false;
+    bool blocker_changed = false;
+    bool ready_regressed = false;
+    bool ready_recovered = false;
+    bool regression = false;
+    bool recovery = false;
+    std::string diagnostic;
+
+    bool changed() const
+    {
+        return status != render_image_texture_staging_payload_plan_diff_status::unchanged;
+    }
+
+    bool ok() const
+    {
+        return !regression;
+    }
+};
+
+inline std::int64_t render_image_texture_staging_payload_plan_size_delta(
+    std::size_t before_value,
+    std::size_t after_value)
+{
+    constexpr auto max_delta = static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max());
+    if (after_value >= before_value) {
+        const std::size_t magnitude = after_value - before_value;
+        return magnitude > max_delta ? std::numeric_limits<std::int64_t>::max()
+                                     : static_cast<std::int64_t>(magnitude);
+    }
+
+    const std::size_t magnitude = before_value - after_value;
+    return magnitude > max_delta ? std::numeric_limits<std::int64_t>::min()
+                                 : -static_cast<std::int64_t>(magnitude);
+}
+
+inline render_image_texture_staging_payload_plan_diff
+make_render_image_texture_staging_payload_plan_diff(
+    const render_image_texture_staging_payload_plan* before,
+    const render_image_texture_staging_payload_plan* after)
+{
+    render_image_texture_staging_payload_plan_diff diff{
+        .before_present = before != nullptr,
+        .after_present = after != nullptr,
+    };
+
+    if (before != nullptr) {
+        diff.before_plan_status = before->status;
+        diff.before_plan_status_name = before->status_name;
+        diff.before_stable_texture_cache_key = before->stable_texture_cache_key;
+        diff.before_sampler_summary = before->sampler_summary;
+        diff.before_row_copy_count = before->row_copy_count;
+        diff.before_alignment_byte_count = before->alignment_byte_count;
+        diff.before_total_row_padding_byte_count = before->total_row_padding_byte_count;
+        diff.before_total_staging_byte_count = before->total_staging_byte_count;
+        diff.before_mip_level_reference_count = before->mip_level_reference_count;
+        diff.before_ready = before->ready;
+        diff.before_blocked = before->blocked;
+        diff.before_mipmap_plan_ready = before->mipmap_plan_ready;
+        diff.before_mipmaps_referenced = before->mipmaps_referenced;
+        diff.before_blocker_summary = before->blocker_summary;
+    }
+    if (after != nullptr) {
+        diff.after_plan_status = after->status;
+        diff.after_plan_status_name = after->status_name;
+        diff.after_stable_texture_cache_key = after->stable_texture_cache_key;
+        diff.after_sampler_summary = after->sampler_summary;
+        diff.after_row_copy_count = after->row_copy_count;
+        diff.after_alignment_byte_count = after->alignment_byte_count;
+        diff.after_total_row_padding_byte_count = after->total_row_padding_byte_count;
+        diff.after_total_staging_byte_count = after->total_staging_byte_count;
+        diff.after_mip_level_reference_count = after->mip_level_reference_count;
+        diff.after_ready = after->ready;
+        diff.after_blocked = after->blocked;
+        diff.after_mipmap_plan_ready = after->mipmap_plan_ready;
+        diff.after_mipmaps_referenced = after->mipmaps_referenced;
+        diff.after_blocker_summary = after->blocker_summary;
+    }
+
+    diff.row_copy_count_delta = render_image_texture_staging_payload_plan_size_delta(
+        diff.before_row_copy_count,
+        diff.after_row_copy_count);
+    diff.alignment_byte_delta = render_image_texture_staging_payload_plan_size_delta(
+        diff.before_alignment_byte_count,
+        diff.after_alignment_byte_count);
+    diff.row_padding_byte_delta = render_image_texture_staging_payload_plan_size_delta(
+        diff.before_total_row_padding_byte_count,
+        diff.after_total_row_padding_byte_count);
+    diff.total_staging_byte_delta = render_image_texture_staging_payload_plan_size_delta(
+        diff.before_total_staging_byte_count,
+        diff.after_total_staging_byte_count);
+    diff.mip_level_reference_delta = render_image_texture_staging_payload_plan_size_delta(
+        diff.before_mip_level_reference_count,
+        diff.after_mip_level_reference_count);
+    diff.row_copy_count_changed = diff.before_row_copy_count != diff.after_row_copy_count;
+    diff.alignment_changed = diff.before_alignment_byte_count != diff.after_alignment_byte_count;
+    diff.padding_changed = diff.before_total_row_padding_byte_count != diff.after_total_row_padding_byte_count;
+    diff.total_staging_byte_count_changed =
+        diff.before_total_staging_byte_count != diff.after_total_staging_byte_count;
+    diff.cache_key_changed = diff.before_stable_texture_cache_key != diff.after_stable_texture_cache_key;
+    diff.sampler_changed = diff.before_sampler_summary != diff.after_sampler_summary;
+    diff.mip_level_readiness_changed = diff.before_mipmap_plan_ready != diff.after_mipmap_plan_ready
+        || diff.before_mipmaps_referenced != diff.after_mipmaps_referenced
+        || diff.before_mip_level_reference_count != diff.after_mip_level_reference_count;
+    diff.blocker_changed = diff.before_blocked != diff.after_blocked
+        || diff.before_blocker_summary != diff.after_blocker_summary;
+    diff.ready_regressed = before != nullptr && before->ready && (after == nullptr || !after->ready);
+    diff.ready_recovered = before != nullptr && after != nullptr && !before->ready && after->ready;
+    diff.regression = diff.ready_regressed
+        || (before != nullptr && after != nullptr && !before->blocked && after->blocked);
+    diff.recovery = diff.ready_recovered
+        || (before != nullptr && after != nullptr && before->blocked && !after->blocked);
+
+    if (before == nullptr && after != nullptr) {
+        diff.status = render_image_texture_staging_payload_plan_diff_status::added;
+    } else if (before != nullptr && after == nullptr) {
+        diff.status = render_image_texture_staging_payload_plan_diff_status::removed;
+    } else if (before != nullptr && after != nullptr
+        && !render_image_texture_staging_payload_plan_equal(*before, *after)) {
+        diff.status = render_image_texture_staging_payload_plan_diff_status::changed;
+    } else {
+        diff.status = render_image_texture_staging_payload_plan_diff_status::unchanged;
+    }
+    diff.status_name = render_image_texture_staging_payload_plan_diff_status_name(diff.status);
+
+    if (diff.status == render_image_texture_staging_payload_plan_diff_status::unchanged) {
+        diff.diagnostic = "image texture staging payload plan unchanged";
+    } else if (diff.regression) {
+        diff.diagnostic = "image texture staging payload plan changed with regression";
+    } else if (diff.recovery) {
+        diff.diagnostic = "image texture staging payload plan changed with recovery";
+    } else if (diff.blocker_changed) {
+        diff.diagnostic = "image texture staging payload plan changed blocker state";
+    } else if (diff.total_staging_byte_count_changed) {
+        diff.diagnostic = "image texture staging payload plan changed staging bytes";
+    } else {
+        diff.diagnostic = "image texture staging payload plan changed";
+    }
+    return diff;
+}
+
+inline render_image_texture_staging_payload_plan_diff
+diff_render_image_texture_staging_payload_plans(
+    const render_image_texture_staging_payload_plan& before,
+    const render_image_texture_staging_payload_plan& after)
+{
+    return make_render_image_texture_staging_payload_plan_diff(&before, &after);
+}
+
 struct render_image_texture_upload_result {
     render_image_texture_upload_status status = render_image_texture_upload_status::invalid_image;
     std::uint64_t generation_id = 0;

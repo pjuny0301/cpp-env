@@ -60,6 +60,14 @@ std::string_view native_entrypoint_stage_name(vulkan_native_entrypoint_stage sta
         return "swapchain_images";
     case vulkan_native_entrypoint_stage::swapchain_acquire:
         return "swapchain_acquire";
+    case vulkan_native_entrypoint_stage::image_view_create:
+        return "image_view_create";
+    case vulkan_native_entrypoint_stage::image_view_destroy:
+        return "image_view_destroy";
+    case vulkan_native_entrypoint_stage::framebuffer_create:
+        return "framebuffer_create";
+    case vulkan_native_entrypoint_stage::framebuffer_destroy:
+        return "framebuffer_destroy";
     case vulkan_native_entrypoint_stage::queue_present:
         return "queue_present";
     }
@@ -91,6 +99,14 @@ std::string_view native_function_table_status_name(
         return "missing_swapchain_images_symbol";
     case vulkan_native_function_table_status::missing_swapchain_acquire_symbol:
         return "missing_swapchain_acquire_symbol";
+    case vulkan_native_function_table_status::missing_image_view_create_symbol:
+        return "missing_image_view_create_symbol";
+    case vulkan_native_function_table_status::missing_image_view_destroy_symbol:
+        return "missing_image_view_destroy_symbol";
+    case vulkan_native_function_table_status::missing_framebuffer_create_symbol:
+        return "missing_framebuffer_create_symbol";
+    case vulkan_native_function_table_status::missing_framebuffer_destroy_symbol:
+        return "missing_framebuffer_destroy_symbol";
     case vulkan_native_function_table_status::missing_queue_present_symbol:
         return "missing_queue_present_symbol";
     }
@@ -316,6 +332,96 @@ std::string_view command_packet_execution_event_name(
         return "packet";
     case vulkan_command_packet_execution_event::end:
         return "end";
+    }
+
+    return "unknown";
+}
+
+std::string_view native_command_packet_execution_status_name(
+    vulkan_native_command_packet_execution_status status)
+{
+    switch (status) {
+    case vulkan_native_command_packet_execution_status::not_checked:
+        return "not_checked";
+    case vulkan_native_command_packet_execution_status::completed:
+        return "completed";
+    case vulkan_native_command_packet_execution_status::packet_bridge_unavailable:
+        return "packet_bridge_unavailable";
+    case vulkan_native_command_packet_execution_status::native_function_table_unavailable:
+        return "native_function_table_unavailable";
+    case vulkan_native_command_packet_execution_status::native_command_symbol_unavailable:
+        return "native_command_symbol_unavailable";
+    case vulkan_native_command_packet_execution_status::command_buffer_unavailable:
+        return "command_buffer_unavailable";
+    case vulkan_native_command_packet_execution_status::pipeline_unavailable:
+        return "pipeline_unavailable";
+    case vulkan_native_command_packet_execution_status::pipeline_layout_unavailable:
+        return "pipeline_layout_unavailable";
+    case vulkan_native_command_packet_execution_status::descriptor_sets_unavailable:
+        return "descriptor_sets_unavailable";
+    case vulkan_native_command_packet_execution_status::invalid_packet_data:
+        return "invalid_packet_data";
+    }
+
+    return "unknown";
+}
+
+std::string_view native_command_packet_call_kind_name(
+    vulkan_native_command_packet_call_kind kind)
+{
+    switch (kind) {
+    case vulkan_native_command_packet_call_kind::bind_pipeline:
+        return "bind_pipeline";
+    case vulkan_native_command_packet_call_kind::bind_descriptor_sets:
+        return "bind_descriptor_sets";
+    case vulkan_native_command_packet_call_kind::set_viewport:
+        return "set_viewport";
+    case vulkan_native_command_packet_call_kind::set_scissor:
+        return "set_scissor";
+    case vulkan_native_command_packet_call_kind::draw:
+        return "draw";
+    }
+
+    return "unknown";
+}
+
+std::string_view native_descriptor_set_allocation_status_name(
+    vulkan_native_descriptor_set_allocation_status status)
+{
+    switch (status) {
+    case vulkan_native_descriptor_set_allocation_status::not_checked:
+        return "not_checked";
+    case vulkan_native_descriptor_set_allocation_status::ready:
+        return "ready";
+    case vulkan_native_descriptor_set_allocation_status::packet_bridge_unavailable:
+        return "packet_bridge_unavailable";
+    case vulkan_native_descriptor_set_allocation_status::resource_binding_unavailable:
+        return "resource_binding_unavailable";
+    case vulkan_native_descriptor_set_allocation_status::resource_binding_mismatch:
+        return "resource_binding_mismatch";
+    }
+
+    return "unknown";
+}
+
+std::string_view scoped_command_packet_execution_status_name(
+    vulkan_scoped_command_packet_execution_status status)
+{
+    switch (status) {
+    case vulkan_scoped_command_packet_execution_status::not_checked:
+        return "not_checked";
+    case vulkan_scoped_command_packet_execution_status::completed:
+        return "completed";
+    case vulkan_scoped_command_packet_execution_status::render_pass_scope_unavailable:
+        return "render_pass_scope_unavailable";
+    case vulkan_scoped_command_packet_execution_status::packet_bridge_unavailable:
+        return "packet_bridge_unavailable";
+    case vulkan_scoped_command_packet_execution_status::begin_failed:
+        return "begin_failed";
+    case vulkan_scoped_command_packet_execution_status::packet_failed:
+        return "packet_failed";
+    case vulkan_scoped_command_packet_execution_status::end_failed:
+        return "end_failed";
     }
 
     return "unknown";

@@ -45,6 +45,17 @@ inline bool native_entrypoint_ready_for_stage(
         return diagnostics.swapchain_images_ready;
     case vulkan_native_entrypoint_stage::swapchain_acquire:
         return diagnostics.swapchain_acquire_ready;
+    case vulkan_native_entrypoint_stage::image_view_create:
+    case vulkan_native_entrypoint_stage::image_view_destroy:
+    case vulkan_native_entrypoint_stage::framebuffer_create:
+    case vulkan_native_entrypoint_stage::framebuffer_destroy:
+        for (const vulkan_native_entrypoint_symbol_diagnostics& symbol :
+             diagnostics.symbols) {
+            if (symbol.stage == stage && symbol.required) {
+                return symbol.completed();
+            }
+        }
+        return false;
     case vulkan_native_entrypoint_stage::queue_present:
         return diagnostics.queue_present_ready;
     }

@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -108,6 +109,87 @@ make_ready_native_swapchain_entrypoints()
         .available_required_extension_count = 1,
         .diagnostic = "native swapchain entrypoints ready",
     };
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_loader_readiness_state
+make_ready_loader()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    return vulkan_backend::vulkan_loader_readiness_state{
+        .checked = true,
+        .status = vulkan_backend::vulkan_loader_readiness_status::ready,
+        .probe_status = vulkan_backend::vulkan_loader_probe_status::available,
+        .loader_library_available = true,
+        .instance_proc_address_available = true,
+        .instance_ready = true,
+        .loaded_library_name = "fake-vulkan-loader",
+        .required_symbol_name = "vkGetInstanceProcAddr",
+        .attempted_library_count = 1,
+    };
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_native_function_table_diagnostics
+make_swapchain_function_table(
+    const std::vector<std::string>& missing_symbols = {},
+    bool include_swapchain_extension = true)
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::fake_vulkan_native_symbol_resolver resolver(
+        vulkan_backend::fake_vulkan_native_symbol_resolver_options{
+            .missing_symbols = missing_symbols,
+            .pointer_base = vulkan_backend::vulkan_native_function_pointer{.value = 900},
+        });
+    return vulkan_backend::collect_vulkan_native_function_table(
+        resolver,
+        make_ready_loader(),
+        vulkan_backend::vulkan_native_function_table_request{
+            .symbols = vulkan_backend::default_vulkan_native_swapchain_entrypoints(),
+            .include_default_backend_entrypoints = false,
+            .available_extensions =
+                include_swapchain_extension
+                ? std::vector<std::string>{"VK_KHR_swapchain"}
+                : std::vector<std::string>{},
+            .include_default_swapchain_extension = true,
+        });
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_native_function_table_diagnostics
+make_image_view_function_table(const std::vector<std::string>& missing_symbols = {})
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::fake_vulkan_native_symbol_resolver resolver(
+        vulkan_backend::fake_vulkan_native_symbol_resolver_options{
+            .missing_symbols = missing_symbols,
+            .pointer_base = vulkan_backend::vulkan_native_function_pointer{.value = 950},
+        });
+    return vulkan_backend::collect_vulkan_native_function_table(
+        resolver,
+        make_ready_loader(),
+        vulkan_backend::vulkan_native_function_table_request{
+            .symbols = vulkan_backend::default_vulkan_native_image_view_entrypoints(),
+            .include_default_backend_entrypoints = false,
+        });
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_native_swapchain_operation_dispatch_table
+make_ready_native_swapchain_operation_dispatch_table()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    return vulkan_backend::collect_vulkan_native_swapchain_operation_dispatch_table(
+        make_swapchain_function_table());
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_native_image_view_dispatch_table
+make_ready_native_image_view_dispatch_table()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    return vulkan_backend::collect_vulkan_native_image_view_dispatch_table(
+        make_image_view_function_table());
 }
 
 quiz_vulkan::render::vulkan_backend::vulkan_native_physical_device_selection_result
@@ -327,6 +409,41 @@ make_ready_native_swapchain_create_operation()
 
     return vulkan_backend::build_vulkan_native_swapchain_create_operation_plan(
         make_ready_native_swapchain_create_operation_request());
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_native_swapchain_create_execution_result
+make_ready_native_swapchain_create_execution()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::fake_vulkan_native_swapchain_operation operation(
+        vulkan_backend::fake_vulkan_native_swapchain_operation_options{
+            .created_swapchain = vulkan_backend::vulkan_swapchain_handle{.value = 123},
+        });
+    return vulkan_backend::create_native_vulkan_swapchain(
+        operation,
+        vulkan_backend::vulkan_native_swapchain_create_execution_request{
+            .create_operation = make_ready_native_swapchain_create_operation(),
+            .dispatch_table = make_ready_native_swapchain_operation_dispatch_table(),
+        });
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_native_swapchain_images_execution_result
+make_ready_native_swapchain_images_execution()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::fake_vulkan_native_swapchain_operation operation(
+        vulkan_backend::fake_vulkan_native_swapchain_operation_options{
+            .created_swapchain = vulkan_backend::vulkan_swapchain_handle{.value = 123},
+            .image_handle_base = vulkan_backend::vulkan_native_function_pointer{.value = 6000},
+        });
+    return vulkan_backend::enumerate_native_vulkan_swapchain_images(
+        operation,
+        vulkan_backend::vulkan_native_swapchain_images_execution_request{
+            .create_execution = make_ready_native_swapchain_create_execution(),
+            .dispatch_table = make_ready_native_swapchain_operation_dispatch_table(),
+        });
 }
 
 quiz_vulkan::render::vulkan_backend::vulkan_native_swapchain_images_operation_request
@@ -1063,6 +1180,766 @@ void test_native_swapchain_create_operation_blocks_native_extension_and_symbols(
         "native operation blocks missing get-images symbol");
 }
 
+void test_native_swapchain_operation_dispatch_table_resolves_create_destroy_symbols()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_swapchain_operation_dispatch_table dispatch =
+        make_ready_native_swapchain_operation_dispatch_table();
+
+    require(dispatch.checked, "swapchain operation dispatch table is checked");
+    require(
+        dispatch.status
+            == vulkan_backend::vulkan_native_swapchain_operation_dispatch_table_status::ready,
+        "swapchain operation dispatch table reports ready");
+    require(dispatch.ready_for_create(), "swapchain operation dispatch reaches create gate");
+    require(dispatch.ready_for_destroy(), "swapchain operation dispatch reaches destroy gate");
+    require(dispatch.ready_for_images(), "swapchain operation dispatch reaches images gate");
+    require(dispatch.ready_for_acquire(), "swapchain operation dispatch reaches acquire gate");
+    require(
+        dispatch.create_swapchain.value == 901,
+        "swapchain operation dispatch records create symbol pointer");
+    require(
+        dispatch.destroy_swapchain.value == 902,
+        "swapchain operation dispatch records destroy symbol pointer");
+    require(
+        dispatch.get_swapchain_images.value == 903,
+        "swapchain operation dispatch records images symbol pointer");
+    require(
+        dispatch.acquire_next_image.value == 904,
+        "swapchain operation dispatch records acquire symbol pointer");
+
+    const vulkan_backend::vulkan_native_swapchain_operation_dispatch_table missing_extension =
+        vulkan_backend::collect_vulkan_native_swapchain_operation_dispatch_table(
+            make_swapchain_function_table({}, false));
+    require(
+        missing_extension.status
+            == vulkan_backend::vulkan_native_swapchain_operation_dispatch_table_status::required_extension_unavailable,
+        "swapchain operation dispatch reports missing required extension");
+    require(
+        missing_extension.missing_required_extension == "VK_KHR_swapchain",
+        "swapchain operation dispatch records missing extension name");
+
+    const vulkan_backend::vulkan_native_swapchain_operation_dispatch_table missing_create =
+        vulkan_backend::collect_vulkan_native_swapchain_operation_dispatch_table(
+            make_swapchain_function_table({"vkCreateSwapchainKHR"}));
+    require(
+        missing_create.status
+            == vulkan_backend::vulkan_native_swapchain_operation_dispatch_table_status::missing_create_symbol,
+        "swapchain operation dispatch reports missing create symbol");
+    require(
+        missing_create.missing_symbol_name == "vkCreateSwapchainKHR",
+        "swapchain operation dispatch records missing create symbol");
+
+    const vulkan_backend::vulkan_native_swapchain_operation_dispatch_table missing_destroy =
+        vulkan_backend::collect_vulkan_native_swapchain_operation_dispatch_table(
+            make_swapchain_function_table({"vkDestroySwapchainKHR"}));
+    require(
+        missing_destroy.status
+            == vulkan_backend::vulkan_native_swapchain_operation_dispatch_table_status::missing_destroy_symbol,
+        "swapchain operation dispatch reports missing destroy symbol");
+    require(
+        missing_destroy.missing_symbol_name == "vkDestroySwapchainKHR",
+        "swapchain operation dispatch records missing destroy symbol");
+
+    const vulkan_backend::vulkan_native_swapchain_operation_dispatch_table missing_images =
+        vulkan_backend::collect_vulkan_native_swapchain_operation_dispatch_table(
+            make_swapchain_function_table({"vkGetSwapchainImagesKHR"}));
+    require(
+        missing_images.status
+            == vulkan_backend::vulkan_native_swapchain_operation_dispatch_table_status::missing_images_symbol,
+        "swapchain operation dispatch reports missing images symbol");
+    require(
+        missing_images.missing_symbol_name == "vkGetSwapchainImagesKHR",
+        "swapchain operation dispatch records missing images symbol");
+
+    const vulkan_backend::vulkan_native_swapchain_operation_dispatch_table missing_acquire =
+        vulkan_backend::collect_vulkan_native_swapchain_operation_dispatch_table(
+            make_swapchain_function_table({"vkAcquireNextImageKHR"}));
+    require(
+        missing_acquire.status
+            == vulkan_backend::vulkan_native_swapchain_operation_dispatch_table_status::missing_acquire_symbol,
+        "swapchain operation dispatch reports missing acquire symbol");
+    require(
+        missing_acquire.missing_symbol_name == "vkAcquireNextImageKHR",
+        "swapchain operation dispatch records missing acquire symbol");
+}
+
+void test_native_swapchain_create_destroy_fake_operation_records_handoff()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::fake_vulkan_native_swapchain_operation operation(
+        vulkan_backend::fake_vulkan_native_swapchain_operation_options{
+            .created_swapchain = vulkan_backend::vulkan_swapchain_handle{.value = 222},
+        });
+    const vulkan_backend::vulkan_native_swapchain_operation_dispatch_table dispatch =
+        make_ready_native_swapchain_operation_dispatch_table();
+    const vulkan_backend::vulkan_native_swapchain_create_operation_result create_operation =
+        make_ready_native_swapchain_create_operation();
+
+    const vulkan_backend::vulkan_native_swapchain_create_execution_result created =
+        vulkan_backend::create_native_vulkan_swapchain(
+            operation,
+            vulkan_backend::vulkan_native_swapchain_create_execution_request{
+                .create_operation = create_operation,
+                .dispatch_table = dispatch,
+            });
+
+    require(created.checked, "native swapchain fake create execution is checked");
+    require(
+        created.status
+            == vulkan_backend::vulkan_native_swapchain_create_execution_status::created,
+        "native swapchain fake create execution reports created");
+    require(created.ready_for_images(), "native swapchain fake create reaches image gate");
+    require(!created.blocked(), "native swapchain fake create is not blocked");
+    require(created.created_swapchain.value == 222, "fake create returns stable swapchain handle");
+    require(created.old_swapchain.value == 99, "fake create preserves old swapchain handle");
+    require(created.old_swapchain_handoff, "fake create records old swapchain handoff");
+    require(created.selected_extent.width == 1280, "fake create preserves selected extent width");
+    require(
+        created.selected_surface_format.format
+            == vulkan_backend::vulkan_swapchain_image_format::bgra8_unorm,
+        "fake create preserves selected surface format");
+    require(
+        created.selected_present_mode == vulkan_backend::vulkan_swapchain_present_mode::mailbox,
+        "fake create preserves selected present mode");
+    require(created.selected_image_count == 3, "fake create preserves selected image count");
+    require(
+        created.selected_queue_family_count == 2,
+        "fake create records selected queue family count");
+    require(
+        created.selected_queue_family_indices[0] == 0
+            && created.selected_queue_family_indices[1] == 1,
+        "fake create records graphics and present queue families");
+    require(created.create_swapchain_symbol.value == 901, "fake create records create pointer");
+    require(created.destroy_swapchain_symbol.value == 902, "fake create records destroy pointer");
+    require(operation.state().create_call_count == 1, "fake create was called once");
+    require(
+        operation.state().requested_old_swapchain.value == 99,
+        "fake create state records old swapchain handoff");
+    require(
+        operation.state().selected_present_mode
+            == vulkan_backend::vulkan_swapchain_present_mode::mailbox,
+        "fake create state records selected present mode");
+
+    const vulkan_backend::vulkan_native_swapchain_destroy_execution_result destroyed =
+        vulkan_backend::destroy_native_vulkan_swapchain(
+            operation,
+            vulkan_backend::vulkan_native_swapchain_destroy_execution_request{
+                .dispatch_table = dispatch,
+                .device = created.device,
+                .swapchain = created.created_swapchain,
+            });
+
+    require(destroyed.checked, "native swapchain fake destroy execution is checked");
+    require(
+        destroyed.status
+            == vulkan_backend::vulkan_native_swapchain_destroy_execution_status::destroyed,
+        "native swapchain fake destroy execution reports destroyed");
+    require(destroyed.destroyed(), "native swapchain fake destroy reaches destroyed gate");
+    require(destroyed.destroy_swapchain_symbol.value == 902, "fake destroy records destroy pointer");
+    require(operation.state().destroy_call_count == 1, "fake destroy was called once");
+    require(
+        operation.state().destroyed_swapchain.value == 222,
+        "fake destroy state records destroyed swapchain");
+}
+
+void test_native_swapchain_create_destroy_fake_operation_reports_blockers()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_swapchain_operation_dispatch_table dispatch =
+        make_ready_native_swapchain_operation_dispatch_table();
+    vulkan_backend::fake_vulkan_native_swapchain_operation operation;
+
+    const vulkan_backend::vulkan_native_swapchain_create_execution_result missing_operation =
+        vulkan_backend::create_native_vulkan_swapchain(
+            operation,
+            vulkan_backend::vulkan_native_swapchain_create_execution_request{
+                .create_operation = {},
+                .dispatch_table = dispatch,
+            });
+    require(
+        missing_operation.status
+            == vulkan_backend::vulkan_native_swapchain_create_execution_status::create_operation_unavailable,
+        "fake create blocks missing create operation");
+    require(
+        operation.state().create_call_count == 0,
+        "fake create does not call native boundary when operation is missing");
+
+    const vulkan_backend::vulkan_native_swapchain_create_execution_result missing_dispatch =
+        vulkan_backend::create_native_vulkan_swapchain(
+            operation,
+            vulkan_backend::vulkan_native_swapchain_create_execution_request{
+                .create_operation = make_ready_native_swapchain_create_operation(),
+                .dispatch_table = {},
+            });
+    require(
+        missing_dispatch.status
+            == vulkan_backend::vulkan_native_swapchain_create_execution_status::dispatch_table_unavailable,
+        "fake create blocks missing dispatch table");
+
+    vulkan_backend::fake_vulkan_native_swapchain_operation failing_create(
+        vulkan_backend::fake_vulkan_native_swapchain_operation_options{
+            .fail_create = true,
+            .create_failure_result = -7,
+        });
+    const vulkan_backend::vulkan_native_swapchain_create_execution_result failed_create =
+        vulkan_backend::create_native_vulkan_swapchain(
+            failing_create,
+            vulkan_backend::vulkan_native_swapchain_create_execution_request{
+                .create_operation = make_ready_native_swapchain_create_operation(),
+                .dispatch_table = dispatch,
+            });
+    require(
+        failed_create.status
+            == vulkan_backend::vulkan_native_swapchain_create_execution_status::creation_failed,
+        "fake create reports create failure");
+    require(failed_create.native_result == -7, "fake create records native failure result");
+
+    const vulkan_backend::vulkan_native_swapchain_destroy_execution_result missing_swapchain =
+        vulkan_backend::destroy_native_vulkan_swapchain(
+            operation,
+            vulkan_backend::vulkan_native_swapchain_destroy_execution_request{
+                .dispatch_table = dispatch,
+                .device = vulkan_backend::vulkan_device_handle{.value = 77},
+                .swapchain = {},
+            });
+    require(
+        missing_swapchain.status
+            == vulkan_backend::vulkan_native_swapchain_destroy_execution_status::missing_swapchain_handle,
+        "fake destroy blocks missing swapchain handle");
+
+    vulkan_backend::fake_vulkan_native_swapchain_operation failing_destroy(
+        vulkan_backend::fake_vulkan_native_swapchain_operation_options{
+            .fail_destroy = true,
+        });
+    const vulkan_backend::vulkan_native_swapchain_destroy_execution_result failed_destroy =
+        vulkan_backend::destroy_native_vulkan_swapchain(
+            failing_destroy,
+            vulkan_backend::vulkan_native_swapchain_destroy_execution_request{
+                .dispatch_table = dispatch,
+                .device = vulkan_backend::vulkan_device_handle{.value = 77},
+                .swapchain = vulkan_backend::vulkan_swapchain_handle{.value = 222},
+            });
+    require(
+        failed_destroy.status
+            == vulkan_backend::vulkan_native_swapchain_destroy_execution_status::destroy_failed,
+        "fake destroy reports destroy failure");
+}
+
+void test_native_swapchain_image_execution_enumerates_created_swapchain_images()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::fake_vulkan_native_swapchain_operation operation(
+        vulkan_backend::fake_vulkan_native_swapchain_operation_options{
+            .created_swapchain = vulkan_backend::vulkan_swapchain_handle{.value = 222},
+            .image_handle_base = vulkan_backend::vulkan_native_function_pointer{.value = 6000},
+        });
+    const vulkan_backend::vulkan_native_swapchain_operation_dispatch_table dispatch =
+        make_ready_native_swapchain_operation_dispatch_table();
+    const vulkan_backend::vulkan_native_swapchain_create_execution_result created =
+        vulkan_backend::create_native_vulkan_swapchain(
+            operation,
+            vulkan_backend::vulkan_native_swapchain_create_execution_request{
+                .create_operation = make_ready_native_swapchain_create_operation(),
+                .dispatch_table = dispatch,
+            });
+
+    const vulkan_backend::vulkan_native_swapchain_images_execution_result images =
+        vulkan_backend::enumerate_native_vulkan_swapchain_images(
+            operation,
+            vulkan_backend::vulkan_native_swapchain_images_execution_request{
+                .create_execution = created,
+                .dispatch_table = dispatch,
+            });
+
+    require(images.checked, "native swapchain image execution is checked");
+    require(
+        images.status
+            == vulkan_backend::vulkan_native_swapchain_images_execution_status::enumerated,
+        "native swapchain image execution reports enumerated");
+    require(images.ready_for_acquire(), "native swapchain image execution reaches acquire gate");
+    require(!images.blocked(), "native swapchain image execution is not blocked");
+    require(images.device.value == 77, "image execution preserves device handle");
+    require(images.swapchain.value == 222, "image execution consumes created swapchain handle");
+    require(images.expected_image_count == 3, "image execution preserves expected image count");
+    require(images.enumerated_image_count == 3, "image execution records enumerated image count");
+    require(images.images.size() == 3, "image execution stores image bindings");
+    require(images.images[0].image_id.value == 1, "image execution assigns first image id");
+    require(images.images[0].handle.value == 6001, "image execution records first image handle");
+    require(images.images[2].image_id.value == 3, "image execution assigns last image id");
+    require(images.images[2].handle.value == 6003, "image execution records last image handle");
+    require(
+        images.get_swapchain_images_symbol.value == 903,
+        "image execution records get-images dispatch pointer");
+    require(
+        operation.state().image_enumeration_call_count == 1,
+        "fake image enumeration was called once");
+    require(
+        operation.state().requested_swapchain.value == 222,
+        "fake image enumeration records requested swapchain");
+    require(
+        operation.state().last_get_swapchain_images_symbol.value == 903,
+        "fake image enumeration records get-images pointer");
+}
+
+void test_native_swapchain_acquire_execution_reports_acquired_and_suboptimal_images()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_swapchain_operation_dispatch_table dispatch =
+        make_ready_native_swapchain_operation_dispatch_table();
+    vulkan_backend::fake_vulkan_native_swapchain_operation acquired_operation(
+        vulkan_backend::fake_vulkan_native_swapchain_operation_options{
+            .created_swapchain = vulkan_backend::vulkan_swapchain_handle{.value = 222},
+            .image_handle_base = vulkan_backend::vulkan_native_function_pointer{.value = 6000},
+            .acquire_status = vulkan_backend::vulkan_swapchain_acquire_status::acquired,
+            .acquired_image_index = 1,
+        });
+    const vulkan_backend::vulkan_native_swapchain_images_execution_result images =
+        vulkan_backend::enumerate_native_vulkan_swapchain_images(
+            acquired_operation,
+            vulkan_backend::vulkan_native_swapchain_images_execution_request{
+                .create_execution = vulkan_backend::create_native_vulkan_swapchain(
+                    acquired_operation,
+                    vulkan_backend::vulkan_native_swapchain_create_execution_request{
+                        .create_operation = make_ready_native_swapchain_create_operation(),
+                        .dispatch_table = dispatch,
+                    }),
+                .dispatch_table = dispatch,
+            });
+
+    const vulkan_backend::vulkan_native_swapchain_acquire_execution_result acquired =
+        vulkan_backend::acquire_native_vulkan_swapchain_image(
+            acquired_operation,
+            vulkan_backend::vulkan_native_swapchain_acquire_execution_request{
+                .images_execution = images,
+                .acquire_plan =
+                    make_acquire_plan(vulkan_backend::vulkan_swapchain_acquire_status::acquired),
+                .dispatch_table = dispatch,
+            });
+
+    require(acquired.checked, "native acquire execution is checked");
+    require(
+        acquired.status
+            == vulkan_backend::vulkan_native_swapchain_acquire_execution_status::acquired,
+        "native acquire execution reports acquired");
+    require(
+        acquired.ready_for_command_recording(),
+        "native acquire execution reaches command recording gate");
+    require(acquired.selected_image_index == 1, "native acquire execution records image index");
+    require(acquired.image_id.value == 2, "native acquire execution records image id");
+    require(acquired.image_handle.value == 6002, "native acquire execution records image handle");
+    require(acquired.timeout_nanoseconds == 16000000, "native acquire preserves timeout");
+    require(acquired.image_available, "native acquire records image availability");
+    require(acquired.image_acquired, "native acquire records image acquired");
+    require(
+        acquired.acquire_next_image_symbol.value == 904,
+        "native acquire records acquire dispatch pointer");
+    require(
+        acquired_operation.state().acquire_call_count == 1,
+        "fake acquire was called once");
+    require(
+        acquired_operation.state().acquired_image_id.value == 2,
+        "fake acquire state records acquired image id");
+
+    vulkan_backend::fake_vulkan_native_swapchain_operation suboptimal_operation(
+        vulkan_backend::fake_vulkan_native_swapchain_operation_options{
+            .created_swapchain = vulkan_backend::vulkan_swapchain_handle{.value = 333},
+            .image_handle_base = vulkan_backend::vulkan_native_function_pointer{.value = 7000},
+            .acquire_status = vulkan_backend::vulkan_swapchain_acquire_status::suboptimal,
+            .acquired_image_index = 2,
+        });
+    const vulkan_backend::vulkan_native_swapchain_images_execution_result suboptimal_images =
+        vulkan_backend::enumerate_native_vulkan_swapchain_images(
+            suboptimal_operation,
+            vulkan_backend::vulkan_native_swapchain_images_execution_request{
+                .create_execution = vulkan_backend::create_native_vulkan_swapchain(
+                    suboptimal_operation,
+                    vulkan_backend::vulkan_native_swapchain_create_execution_request{
+                        .create_operation = make_ready_native_swapchain_create_operation(),
+                        .dispatch_table = dispatch,
+                    }),
+                .dispatch_table = dispatch,
+            });
+    const vulkan_backend::vulkan_native_swapchain_acquire_execution_result suboptimal =
+        vulkan_backend::acquire_native_vulkan_swapchain_image(
+            suboptimal_operation,
+            vulkan_backend::vulkan_native_swapchain_acquire_execution_request{
+                .images_execution = suboptimal_images,
+                .acquire_plan =
+                    make_acquire_plan(vulkan_backend::vulkan_swapchain_acquire_status::acquired),
+                .dispatch_table = dispatch,
+            });
+
+    require(
+        suboptimal.status
+            == vulkan_backend::vulkan_native_swapchain_acquire_execution_status::suboptimal,
+        "native acquire execution reports suboptimal");
+    require(suboptimal.ready_for_command_recording(), "suboptimal acquire remains recordable");
+    require(suboptimal.suboptimal, "native acquire execution records suboptimal flag");
+    require(suboptimal.image_id.value == 3, "suboptimal acquire records selected image id");
+    require(suboptimal.image_handle.value == 7003, "suboptimal acquire records selected handle");
+}
+
+void test_native_swapchain_image_acquire_execution_reports_blockers_and_results()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_swapchain_operation_dispatch_table dispatch =
+        make_ready_native_swapchain_operation_dispatch_table();
+    vulkan_backend::fake_vulkan_native_swapchain_operation operation;
+
+    const vulkan_backend::vulkan_native_swapchain_images_execution_result missing_create =
+        vulkan_backend::enumerate_native_vulkan_swapchain_images(
+            operation,
+            vulkan_backend::vulkan_native_swapchain_images_execution_request{
+                .create_execution = {},
+                .dispatch_table = dispatch,
+            });
+    require(
+        missing_create.status
+            == vulkan_backend::vulkan_native_swapchain_images_execution_status::create_execution_unavailable,
+        "image execution blocks missing create execution");
+    require(
+        operation.state().image_enumeration_call_count == 0,
+        "image execution does not call fake boundary when create execution is missing");
+
+    vulkan_backend::fake_vulkan_native_swapchain_operation zero_images_operation(
+        vulkan_backend::fake_vulkan_native_swapchain_operation_options{
+            .return_zero_images = true,
+        });
+    const vulkan_backend::vulkan_native_swapchain_images_execution_result zero_images =
+        vulkan_backend::enumerate_native_vulkan_swapchain_images(
+            zero_images_operation,
+            vulkan_backend::vulkan_native_swapchain_images_execution_request{
+                .create_execution = make_ready_native_swapchain_create_execution(),
+                .dispatch_table = dispatch,
+            });
+    require(
+        zero_images.status
+            == vulkan_backend::vulkan_native_swapchain_images_execution_status::zero_images,
+        "image execution reports zero images");
+
+    const vulkan_backend::vulkan_native_swapchain_images_execution_result images =
+        make_ready_native_swapchain_images_execution();
+    vulkan_backend::fake_vulkan_native_swapchain_operation timeout_operation(
+        vulkan_backend::fake_vulkan_native_swapchain_operation_options{
+            .acquire_status = vulkan_backend::vulkan_swapchain_acquire_status::timeout,
+        });
+    const vulkan_backend::vulkan_native_swapchain_acquire_execution_result timeout =
+        vulkan_backend::acquire_native_vulkan_swapchain_image(
+            timeout_operation,
+            vulkan_backend::vulkan_native_swapchain_acquire_execution_request{
+                .images_execution = images,
+                .acquire_plan =
+                    make_acquire_plan(vulkan_backend::vulkan_swapchain_acquire_status::acquired),
+                .dispatch_table = dispatch,
+            });
+    require(
+        timeout.status
+            == vulkan_backend::vulkan_native_swapchain_acquire_execution_status::timeout,
+        "acquire execution reports timeout");
+    require(timeout.timed_out, "acquire execution records timeout flag");
+    require(!timeout.ready_for_command_recording(), "timeout acquire is not recordable");
+
+    vulkan_backend::fake_vulkan_native_swapchain_operation out_of_date_operation(
+        vulkan_backend::fake_vulkan_native_swapchain_operation_options{
+            .acquire_status = vulkan_backend::vulkan_swapchain_acquire_status::out_of_date,
+        });
+    const vulkan_backend::vulkan_native_swapchain_acquire_execution_result out_of_date =
+        vulkan_backend::acquire_native_vulkan_swapchain_image(
+            out_of_date_operation,
+            vulkan_backend::vulkan_native_swapchain_acquire_execution_request{
+                .images_execution = images,
+                .acquire_plan =
+                    make_acquire_plan(vulkan_backend::vulkan_swapchain_acquire_status::acquired),
+                .dispatch_table = dispatch,
+            });
+    require(
+        out_of_date.status
+            == vulkan_backend::vulkan_native_swapchain_acquire_execution_status::out_of_date,
+        "acquire execution reports out-of-date");
+    require(out_of_date.out_of_date, "acquire execution records out-of-date flag");
+
+    vulkan_backend::fake_vulkan_native_swapchain_operation failing_acquire(
+        vulkan_backend::fake_vulkan_native_swapchain_operation_options{
+            .fail_acquire = true,
+            .acquire_failure_result = -9,
+        });
+    const vulkan_backend::vulkan_native_swapchain_acquire_execution_result failed =
+        vulkan_backend::acquire_native_vulkan_swapchain_image(
+            failing_acquire,
+            vulkan_backend::vulkan_native_swapchain_acquire_execution_request{
+                .images_execution = images,
+                .acquire_plan =
+                    make_acquire_plan(vulkan_backend::vulkan_swapchain_acquire_status::acquired),
+                .dispatch_table = dispatch,
+            });
+    require(
+        failed.status
+            == vulkan_backend::vulkan_native_swapchain_acquire_execution_status::acquire_failed,
+        "acquire execution reports failure");
+    require(failed.native_result == -9, "acquire execution records native failure result");
+
+    vulkan_backend::fake_vulkan_native_swapchain_operation missing_binding_operation(
+        vulkan_backend::fake_vulkan_native_swapchain_operation_options{
+            .acquire_status = vulkan_backend::vulkan_swapchain_acquire_status::acquired,
+            .acquired_image_index = 9,
+        });
+    const vulkan_backend::vulkan_native_swapchain_acquire_execution_result missing_binding =
+        vulkan_backend::acquire_native_vulkan_swapchain_image(
+            missing_binding_operation,
+            vulkan_backend::vulkan_native_swapchain_acquire_execution_request{
+                .images_execution = images,
+                .acquire_plan =
+                    make_acquire_plan(vulkan_backend::vulkan_swapchain_acquire_status::acquired),
+                .dispatch_table = dispatch,
+            });
+    require(
+        missing_binding.status
+            == vulkan_backend::vulkan_native_swapchain_acquire_execution_status::image_binding_unavailable,
+        "acquire execution reports missing image binding");
+}
+
+void test_native_image_view_dispatch_table_resolves_create_destroy_symbols()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_image_view_dispatch_table dispatch =
+        make_ready_native_image_view_dispatch_table();
+    require(dispatch.checked, "image view dispatch table is checked");
+    require(
+        dispatch.status == vulkan_backend::vulkan_native_image_view_dispatch_table_status::ready,
+        "image view dispatch table reports ready");
+    require(dispatch.ready_for_create(), "image view dispatch reaches create gate");
+    require(dispatch.ready_for_destroy(), "image view dispatch reaches destroy gate");
+    require(dispatch.create_image_view.value == 951, "image view dispatch records create pointer");
+    require(dispatch.destroy_image_view.value == 952, "image view dispatch records destroy pointer");
+
+    const vulkan_backend::vulkan_native_image_view_dispatch_table missing_create =
+        vulkan_backend::collect_vulkan_native_image_view_dispatch_table(
+            make_image_view_function_table({"vkCreateImageView"}));
+    require(
+        missing_create.status
+            == vulkan_backend::vulkan_native_image_view_dispatch_table_status::missing_create_symbol,
+        "image view dispatch reports missing create symbol");
+    require(
+        missing_create.missing_symbol_name == "vkCreateImageView",
+        "image view dispatch records missing create symbol");
+
+    const vulkan_backend::vulkan_native_image_view_dispatch_table missing_destroy =
+        vulkan_backend::collect_vulkan_native_image_view_dispatch_table(
+            make_image_view_function_table({"vkDestroyImageView"}));
+    require(
+        missing_destroy.status
+            == vulkan_backend::vulkan_native_image_view_dispatch_table_status::missing_destroy_symbol,
+        "image view dispatch reports missing destroy symbol");
+    require(
+        missing_destroy.missing_symbol_name == "vkDestroyImageView",
+        "image view dispatch records missing destroy symbol");
+}
+
+void test_native_swapchain_image_view_targets_create_and_destroy_fake_handles()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_swapchain_images_execution_result images =
+        make_ready_native_swapchain_images_execution();
+    const vulkan_backend::vulkan_native_image_view_dispatch_table dispatch =
+        make_ready_native_image_view_dispatch_table();
+    vulkan_backend::fake_vulkan_native_swapchain_operation operation(
+        vulkan_backend::fake_vulkan_native_swapchain_operation_options{
+            .image_view_handle_base =
+                vulkan_backend::vulkan_native_function_pointer{.value = 10000},
+        });
+
+    const vulkan_backend::vulkan_native_swapchain_image_view_targets_execution_result targets =
+        vulkan_backend::create_native_vulkan_swapchain_image_view_targets(
+            operation,
+            vulkan_backend::vulkan_native_swapchain_image_view_targets_execution_request{
+                .images_execution = images,
+                .dispatch_table = dispatch,
+                .intent = vulkan_backend::vulkan_swapchain_image_view_target_intent{
+                    .usage =
+                        vulkan_backend::vulkan_swapchain_image_view_usage_intent::color_attachment,
+                    .aspect = vulkan_backend::vulkan_swapchain_image_view_aspect_intent::color,
+                },
+            });
+
+    require(targets.checked, "image view target execution is checked");
+    require(
+        targets.status
+            == vulkan_backend::vulkan_native_swapchain_image_view_targets_execution_status::ready,
+        "image view target execution reports ready");
+    require(targets.ready_for_render_targets(), "image view targets reach render target gate");
+    require(!targets.blocked(), "ready image view targets are not blocked");
+    require(targets.device.value == 77, "image view targets preserve device handle");
+    require(targets.swapchain.value == 123, "image view targets preserve swapchain handle");
+    require(targets.image_count == 3, "image view targets preserve image count");
+    require(targets.ready_image_view_count == 3, "image view targets record ready count");
+    require(targets.extent.width == 1280, "image view targets preserve selected width");
+    require(targets.extent.height == 720, "image view targets preserve selected height");
+    require(
+        targets.selected_image_format == vulkan_backend::vulkan_swapchain_image_format::bgra8_unorm,
+        "image view targets preserve selected format");
+    require(
+        targets.create_image_view_symbol.value == 951,
+        "image view targets record create dispatch pointer");
+    require(
+        targets.destroy_image_view_symbol.value == 952,
+        "image view targets record destroy dispatch pointer");
+    require(targets.targets.size() == 3, "image view targets store per-image records");
+    require(targets.targets[0].image_index == 0, "first image view target records index");
+    require(targets.targets[0].image_id.value == 1, "first image view target records image id");
+    require(
+        targets.targets[0].image_handle.value == 6001,
+        "first image view target records swapchain image handle");
+    require(
+        targets.targets[0].image_view.value == 10001,
+        "first image view target records image view handle");
+    require(
+        targets.targets[0].lifecycle_status
+            == vulkan_backend::vulkan_native_swapchain_image_view_target_lifecycle_status::ready,
+        "first image view target records ready lifecycle");
+    require(targets.targets[0].ready(), "first image view target is render-ready");
+    require(
+        operation.state().image_view_create_call_count == 1,
+        "fake image view creation was called once");
+    require(
+        operation.state().last_create_image_view_symbol.value == 951,
+        "fake image view creation records create pointer");
+    require(
+        operation.state().created_image_view_targets.size() == 3,
+        "fake image view creation records created targets");
+
+    const vulkan_backend::vulkan_native_swapchain_image_view_targets_destroy_result destroyed =
+        vulkan_backend::destroy_native_vulkan_swapchain_image_view_targets(
+            operation,
+            vulkan_backend::vulkan_native_swapchain_image_view_targets_destroy_request{
+                .targets = targets,
+                .dispatch_table = dispatch,
+            });
+    require(destroyed.checked, "image view destroy execution is checked");
+    require(
+        destroyed.status
+            == vulkan_backend::vulkan_native_swapchain_image_view_targets_destroy_status::destroyed,
+        "image view destroy reports destroyed");
+    require(destroyed.destroyed(), "image view destroy reaches destroyed gate");
+    require(destroyed.requested_image_view_count == 3, "destroy records requested view count");
+    require(destroyed.destroyed_image_view_count == 3, "destroy records destroyed view count");
+    require(
+        operation.state().image_view_destroy_call_count == 1,
+        "fake image view destroy was called once");
+    require(
+        operation.state().destroyed_image_views[0].value == 10001,
+        "fake image view destroy records first destroyed view");
+}
+
+void test_native_swapchain_image_view_targets_report_blockers_and_failures()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_native_image_view_dispatch_table dispatch =
+        make_ready_native_image_view_dispatch_table();
+    const vulkan_backend::vulkan_native_swapchain_images_execution_result images =
+        make_ready_native_swapchain_images_execution();
+    vulkan_backend::fake_vulkan_native_swapchain_operation operation;
+
+    const vulkan_backend::vulkan_native_swapchain_image_view_targets_execution_result
+        missing_images = vulkan_backend::create_native_vulkan_swapchain_image_view_targets(
+            operation,
+            vulkan_backend::vulkan_native_swapchain_image_view_targets_execution_request{
+                .images_execution = {},
+                .dispatch_table = dispatch,
+            });
+    require(
+        missing_images.status
+            == vulkan_backend::vulkan_native_swapchain_image_view_targets_execution_status::images_execution_unavailable,
+        "image view targets block missing image enumeration");
+    require(
+        operation.state().image_view_create_call_count == 0,
+        "missing image enumeration does not call fake image view boundary");
+
+    const vulkan_backend::vulkan_native_image_view_dispatch_table missing_dispatch =
+        vulkan_backend::collect_vulkan_native_image_view_dispatch_table(
+            make_image_view_function_table({"vkCreateImageView"}));
+    const vulkan_backend::vulkan_native_swapchain_image_view_targets_execution_result
+        dispatch_blocked = vulkan_backend::create_native_vulkan_swapchain_image_view_targets(
+            operation,
+            vulkan_backend::vulkan_native_swapchain_image_view_targets_execution_request{
+                .images_execution = images,
+                .dispatch_table = missing_dispatch,
+            });
+    require(
+        dispatch_blocked.status
+            == vulkan_backend::vulkan_native_swapchain_image_view_targets_execution_status::dispatch_table_unavailable,
+        "image view targets block missing dispatch");
+
+    vulkan_backend::vulkan_native_swapchain_images_execution_result missing_format = images;
+    missing_format.selected_surface_format.format =
+        vulkan_backend::vulkan_swapchain_image_format::undefined;
+    const vulkan_backend::vulkan_native_swapchain_image_view_targets_execution_result
+        format_blocked = vulkan_backend::create_native_vulkan_swapchain_image_view_targets(
+            operation,
+            vulkan_backend::vulkan_native_swapchain_image_view_targets_execution_request{
+                .images_execution = missing_format,
+                .dispatch_table = dispatch,
+            });
+    require(
+        format_blocked.status
+            == vulkan_backend::vulkan_native_swapchain_image_view_targets_execution_status::missing_image_format,
+        "image view targets block missing selected format");
+
+    vulkan_backend::fake_vulkan_native_swapchain_operation failing_create(
+        vulkan_backend::fake_vulkan_native_swapchain_operation_options{
+            .fail_image_view_create = true,
+            .image_view_create_failure_result = -11,
+        });
+    const vulkan_backend::vulkan_native_swapchain_image_view_targets_execution_result failed =
+        vulkan_backend::create_native_vulkan_swapchain_image_view_targets(
+            failing_create,
+            vulkan_backend::vulkan_native_swapchain_image_view_targets_execution_request{
+                .images_execution = images,
+                .dispatch_table = dispatch,
+            });
+    require(
+        failed.status
+            == vulkan_backend::vulkan_native_swapchain_image_view_targets_execution_status::create_failed,
+        "image view targets report create failure");
+    require(failed.native_result == -11, "image view targets record native create failure");
+
+    const vulkan_backend::vulkan_native_swapchain_image_view_targets_execution_result ready =
+        vulkan_backend::create_native_vulkan_swapchain_image_view_targets(
+            operation,
+            vulkan_backend::vulkan_native_swapchain_image_view_targets_execution_request{
+                .images_execution = images,
+                .dispatch_table = dispatch,
+            });
+    vulkan_backend::fake_vulkan_native_swapchain_operation failing_destroy(
+        vulkan_backend::fake_vulkan_native_swapchain_operation_options{
+            .fail_image_view_destroy = true,
+            .image_view_destroy_failure_result = -12,
+        });
+    const vulkan_backend::vulkan_native_swapchain_image_view_targets_destroy_result
+        destroy_failed = vulkan_backend::destroy_native_vulkan_swapchain_image_view_targets(
+            failing_destroy,
+            vulkan_backend::vulkan_native_swapchain_image_view_targets_destroy_request{
+                .targets = ready,
+                .dispatch_table = dispatch,
+            });
+    require(
+        destroy_failed.status
+            == vulkan_backend::vulkan_native_swapchain_image_view_targets_destroy_status::destroy_failed,
+        "image view target destroy reports failure");
+    require(
+        destroy_failed.native_result == -12,
+        "image view target destroy records native destroy failure");
+}
+
 void test_native_swapchain_images_operation_reports_ready_operation_summary()
 {
     namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
@@ -1417,6 +2294,61 @@ void test_swapchain_create_plan_names_are_stable()
             == std::string_view{"recreate_incompatible"},
         "native swapchain create operation recreate status name is stable");
     require(
+        vulkan_backend::native_swapchain_operation_dispatch_table_status_name(
+            vulkan_backend::vulkan_native_swapchain_operation_dispatch_table_status::missing_create_symbol)
+            == std::string_view{"missing_create_symbol"},
+        "native swapchain operation dispatch missing create status name is stable");
+    require(
+        vulkan_backend::native_swapchain_create_execution_status_name(
+            vulkan_backend::vulkan_native_swapchain_create_execution_status::created)
+            == std::string_view{"created"},
+        "native swapchain create execution created status name is stable");
+    require(
+        vulkan_backend::native_swapchain_destroy_execution_status_name(
+            vulkan_backend::vulkan_native_swapchain_destroy_execution_status::destroyed)
+            == std::string_view{"destroyed"},
+        "native swapchain destroy execution destroyed status name is stable");
+    require(
+        vulkan_backend::native_swapchain_images_execution_status_name(
+            vulkan_backend::vulkan_native_swapchain_images_execution_status::enumerated)
+            == std::string_view{"enumerated"},
+        "native swapchain images execution enumerated status name is stable");
+    require(
+        vulkan_backend::native_swapchain_acquire_execution_status_name(
+            vulkan_backend::vulkan_native_swapchain_acquire_execution_status::out_of_date)
+            == std::string_view{"out_of_date"},
+        "native swapchain acquire execution out-of-date status name is stable");
+    require(
+        vulkan_backend::native_image_view_dispatch_table_status_name(
+            vulkan_backend::vulkan_native_image_view_dispatch_table_status::missing_create_symbol)
+            == std::string_view{"missing_create_symbol"},
+        "native image view dispatch missing create status name is stable");
+    require(
+        vulkan_backend::swapchain_image_view_usage_intent_name(
+            vulkan_backend::vulkan_swapchain_image_view_usage_intent::color_attachment)
+            == std::string_view{"color_attachment"},
+        "image view usage intent name is stable");
+    require(
+        vulkan_backend::swapchain_image_view_aspect_intent_name(
+            vulkan_backend::vulkan_swapchain_image_view_aspect_intent::color)
+            == std::string_view{"color"},
+        "image view aspect intent name is stable");
+    require(
+        vulkan_backend::native_swapchain_image_view_target_lifecycle_status_name(
+            vulkan_backend::vulkan_native_swapchain_image_view_target_lifecycle_status::ready)
+            == std::string_view{"ready"},
+        "image view target lifecycle ready status name is stable");
+    require(
+        vulkan_backend::native_swapchain_image_view_targets_execution_status_name(
+            vulkan_backend::vulkan_native_swapchain_image_view_targets_execution_status::create_failed)
+            == std::string_view{"create_failed"},
+        "image view target create failure status name is stable");
+    require(
+        vulkan_backend::native_swapchain_image_view_targets_destroy_status_name(
+            vulkan_backend::vulkan_native_swapchain_image_view_targets_destroy_status::destroyed)
+            == std::string_view{"destroyed"},
+        "image view target destroy status name is stable");
+    require(
         vulkan_backend::native_swapchain_images_operation_status_name(
             vulkan_backend::vulkan_native_swapchain_images_operation_status::ready)
             == std::string_view{"ready"},
@@ -1466,6 +2398,15 @@ int main()
     test_native_swapchain_create_operation_blocks_plan_and_recreate_compatibility();
     test_native_swapchain_create_operation_blocks_invalid_device_and_surface();
     test_native_swapchain_create_operation_blocks_native_extension_and_symbols();
+    test_native_swapchain_operation_dispatch_table_resolves_create_destroy_symbols();
+    test_native_swapchain_create_destroy_fake_operation_records_handoff();
+    test_native_swapchain_create_destroy_fake_operation_reports_blockers();
+    test_native_swapchain_image_execution_enumerates_created_swapchain_images();
+    test_native_swapchain_acquire_execution_reports_acquired_and_suboptimal_images();
+    test_native_swapchain_image_acquire_execution_reports_blockers_and_results();
+    test_native_image_view_dispatch_table_resolves_create_destroy_symbols();
+    test_native_swapchain_image_view_targets_create_and_destroy_fake_handles();
+    test_native_swapchain_image_view_targets_report_blockers_and_failures();
     test_native_swapchain_images_operation_reports_ready_operation_summary();
     test_native_swapchain_images_operation_blocks_create_and_swapchain_prerequisites();
     test_native_swapchain_images_operation_blocks_native_extension_and_entrypoint();

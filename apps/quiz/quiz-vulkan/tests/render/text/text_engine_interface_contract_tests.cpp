@@ -2318,7 +2318,11 @@ static_assert(requires(render::render_text_rasterized_glyph_atlas_payload_snapsh
     { payload.font_backend_used_deterministic_fallback } -> std::same_as<bool&>;
     { payload.font_backend_fallback_only } -> std::same_as<bool&>;
     { payload.font_backend_supports_rasterization } -> std::same_as<bool&>;
+    { payload.source_bytes_status } -> std::same_as<render::render_text_font_source_bytes_load_status&>;
+    { payload.materialized_font_bytes } -> std::same_as<bool&>;
+    { payload.used_freetype_rasterizer } -> std::same_as<bool&>;
     { payload.uses_deterministic_rasterizer } -> std::same_as<bool&>;
+    { payload.deterministic_fallback_reason } -> std::same_as<std::string&>;
     { payload.cacheable } -> std::same_as<bool&>;
     { payload.upload_ready } -> std::same_as<bool&>;
     { payload.skipped } -> std::same_as<bool&>;
@@ -2333,6 +2337,10 @@ static_assert(requires(render::render_text_rasterized_glyph_atlas_payload_policy
     { policy.missing_font_bytes_count } -> std::same_as<std::size_t&>;
     { policy.unsupported_glyph_count } -> std::same_as<std::size_t&>;
     { policy.invalid_pixel_size_count } -> std::same_as<std::size_t&>;
+    { policy.deterministic_rasterizer_count } -> std::same_as<std::size_t&>;
+    { policy.freetype_rasterizer_count } -> std::same_as<std::size_t&>;
+    { policy.materialized_font_bytes_count } -> std::same_as<std::size_t&>;
+    { policy.deterministic_fallback_reason_count } -> std::same_as<std::size_t&>;
     { policy.total_alpha_bytes } -> std::same_as<std::size_t&>;
     { policy.total_rgba_bytes } -> std::same_as<std::size_t&>;
 });

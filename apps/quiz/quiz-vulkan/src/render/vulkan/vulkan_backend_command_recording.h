@@ -371,4 +371,489 @@ inline vulkan_command_recording_readiness_result check_vulkan_command_recording_
     return factory.check_command_recording_readiness(render_pass_result, request);
 }
 
+enum class vulkan_native_render_pass_scope_dispatch_table_status {
+    not_checked,
+    ready,
+    function_table_unavailable,
+    missing_begin_render_pass_symbol,
+    missing_end_render_pass_symbol,
+};
+
+inline std::string_view native_render_pass_scope_dispatch_table_status_name(
+    vulkan_native_render_pass_scope_dispatch_table_status status)
+{
+    switch (status) {
+    case vulkan_native_render_pass_scope_dispatch_table_status::not_checked:
+        return "not_checked";
+    case vulkan_native_render_pass_scope_dispatch_table_status::ready:
+        return "ready";
+    case vulkan_native_render_pass_scope_dispatch_table_status::function_table_unavailable:
+        return "function_table_unavailable";
+    case vulkan_native_render_pass_scope_dispatch_table_status::missing_begin_render_pass_symbol:
+        return "missing_begin_render_pass_symbol";
+    case vulkan_native_render_pass_scope_dispatch_table_status::missing_end_render_pass_symbol:
+        return "missing_end_render_pass_symbol";
+    }
+
+    return "unknown";
+}
+
+struct vulkan_native_render_pass_scope_dispatch_table {
+    bool checked = false;
+    vulkan_native_render_pass_scope_dispatch_table_status status =
+        vulkan_native_render_pass_scope_dispatch_table_status::not_checked;
+    vulkan_native_function_table_status function_table_status =
+        vulkan_native_function_table_status::not_checked;
+    bool function_table_checked = false;
+    vulkan_native_function_pointer begin_render_pass;
+    vulkan_native_function_pointer end_render_pass;
+    std::string missing_symbol_name;
+    std::string diagnostic;
+
+    bool ready_for_render_pass_scope() const
+    {
+        return checked
+            && status == vulkan_native_render_pass_scope_dispatch_table_status::ready
+            && begin_render_pass.valid() && end_render_pass.valid();
+    }
+};
+
+vulkan_native_render_pass_scope_dispatch_table
+collect_vulkan_native_render_pass_scope_dispatch_table(
+    const vulkan_native_function_table_diagnostics& diagnostics);
+
+enum class vulkan_native_render_pass_scope_record_status {
+    not_requested,
+    recorded,
+    framebuffer_targets_unavailable,
+    target_index_unavailable,
+    command_buffer_unavailable,
+    dispatch_table_unavailable,
+    missing_render_pass,
+    missing_framebuffer,
+    missing_extent,
+    extent_mismatch,
+    begin_failed,
+    end_failed,
+    headers_unavailable,
+};
+
+inline std::string_view native_render_pass_scope_record_status_name(
+    vulkan_native_render_pass_scope_record_status status)
+{
+    switch (status) {
+    case vulkan_native_render_pass_scope_record_status::not_requested:
+        return "not_requested";
+    case vulkan_native_render_pass_scope_record_status::recorded:
+        return "recorded";
+    case vulkan_native_render_pass_scope_record_status::framebuffer_targets_unavailable:
+        return "framebuffer_targets_unavailable";
+    case vulkan_native_render_pass_scope_record_status::target_index_unavailable:
+        return "target_index_unavailable";
+    case vulkan_native_render_pass_scope_record_status::command_buffer_unavailable:
+        return "command_buffer_unavailable";
+    case vulkan_native_render_pass_scope_record_status::dispatch_table_unavailable:
+        return "dispatch_table_unavailable";
+    case vulkan_native_render_pass_scope_record_status::missing_render_pass:
+        return "missing_render_pass";
+    case vulkan_native_render_pass_scope_record_status::missing_framebuffer:
+        return "missing_framebuffer";
+    case vulkan_native_render_pass_scope_record_status::missing_extent:
+        return "missing_extent";
+    case vulkan_native_render_pass_scope_record_status::extent_mismatch:
+        return "extent_mismatch";
+    case vulkan_native_render_pass_scope_record_status::begin_failed:
+        return "begin_failed";
+    case vulkan_native_render_pass_scope_record_status::end_failed:
+        return "end_failed";
+    case vulkan_native_render_pass_scope_record_status::headers_unavailable:
+        return "headers_unavailable";
+    }
+
+    return "unknown";
+}
+
+struct vulkan_native_render_pass_scope_record_request {
+    vulkan_native_framebuffer_targets_execution_result framebuffer_targets;
+    vulkan_command_recording_readiness_result command_recording;
+    vulkan_native_render_pass_scope_dispatch_table dispatch_table;
+    std::size_t framebuffer_target_index = 0;
+};
+
+struct vulkan_native_render_pass_scope_record_result {
+    bool checked = false;
+    vulkan_native_render_pass_scope_record_status status =
+        vulkan_native_render_pass_scope_record_status::not_requested;
+    vulkan_native_framebuffer_targets_execution_result framebuffer_targets;
+    vulkan_command_recording_readiness_result command_recording;
+    vulkan_native_render_pass_scope_dispatch_table dispatch_table;
+    std::size_t selected_framebuffer_target_index = 0;
+    std::size_t framebuffer_target_count = 0;
+    vulkan_swapchain_image_id image_id;
+    vulkan_command_recording_command_buffer_handle command_buffer;
+    vulkan_render_pass_handle render_pass;
+    vulkan_framebuffer_handle framebuffer;
+    vulkan_surface_extent extent;
+    vulkan_native_function_pointer begin_render_pass_symbol;
+    vulkan_native_function_pointer end_render_pass_symbol;
+    bool framebuffer_targets_ready = false;
+    bool command_buffer_ready = false;
+    bool render_pass_ready = false;
+    bool framebuffer_ready = false;
+    bool extent_ready = false;
+    bool extent_matches = false;
+    bool dispatch_table_ready = false;
+    bool vk_cmd_begin_render_pass_called = false;
+    bool vk_cmd_end_render_pass_called = false;
+    std::int32_t native_result = 0;
+    std::string diagnostic;
+
+    bool ready_for_draw_commands() const
+    {
+        return checked && status == vulkan_native_render_pass_scope_record_status::recorded
+            && framebuffer_targets_ready && command_buffer_ready && render_pass_ready
+            && framebuffer_ready && extent_ready && extent_matches && dispatch_table_ready
+            && image_id.value > 0 && command_buffer.valid() && render_pass.valid()
+            && framebuffer.valid() && extent.valid()
+            && vk_cmd_begin_render_pass_called && vk_cmd_end_render_pass_called;
+    }
+
+    bool blocked() const
+    {
+        return checked && !ready_for_draw_commands();
+    }
+};
+
+class vulkan_native_render_pass_scope_recorder_interface {
+public:
+    virtual ~vulkan_native_render_pass_scope_recorder_interface() = default;
+
+    virtual vulkan_native_render_pass_scope_record_result record_render_pass_scope(
+        const vulkan_native_render_pass_scope_record_request& request) = 0;
+};
+
+struct fake_vulkan_native_render_pass_scope_recorder_options {
+    bool fail_begin = false;
+    bool fail_end = false;
+    std::int32_t begin_failure_result = -1;
+    std::int32_t end_failure_result = -2;
+};
+
+struct fake_vulkan_native_render_pass_scope_recorder_state {
+    std::size_t record_call_count = 0;
+    std::size_t requested_framebuffer_target_index = 0;
+    vulkan_command_recording_command_buffer_handle requested_command_buffer;
+    vulkan_render_pass_handle requested_render_pass;
+    vulkan_framebuffer_handle requested_framebuffer;
+    vulkan_surface_extent requested_extent;
+    vulkan_native_function_pointer last_begin_render_pass_symbol;
+    vulkan_native_function_pointer last_end_render_pass_symbol;
+    vulkan_native_render_pass_scope_record_result last_result;
+};
+
+class fake_vulkan_native_render_pass_scope_recorder final
+    : public vulkan_native_render_pass_scope_recorder_interface {
+public:
+    fake_vulkan_native_render_pass_scope_recorder();
+    explicit fake_vulkan_native_render_pass_scope_recorder(
+        fake_vulkan_native_render_pass_scope_recorder_options options);
+
+    vulkan_native_render_pass_scope_record_result record_render_pass_scope(
+        const vulkan_native_render_pass_scope_record_request& request) override;
+    const fake_vulkan_native_render_pass_scope_recorder_state& state() const;
+
+private:
+    fake_vulkan_native_render_pass_scope_recorder_options options_;
+    fake_vulkan_native_render_pass_scope_recorder_state state_;
+};
+
+class vulkan_native_render_pass_scope_recorder final
+    : public vulkan_native_render_pass_scope_recorder_interface {
+public:
+    vulkan_native_render_pass_scope_record_result record_render_pass_scope(
+        const vulkan_native_render_pass_scope_record_request& request) override;
+};
+
+vulkan_native_render_pass_scope_record_result record_native_vulkan_render_pass_scope(
+    vulkan_native_render_pass_scope_recorder_interface& recorder,
+    const vulkan_native_render_pass_scope_record_request& request);
+
+namespace command_recording_detail {
+
+inline vulkan_native_function_pointer find_native_symbol_pointer_by_name(
+    const vulkan_native_function_table_diagnostics& diagnostics,
+    std::string_view name)
+{
+    const auto found = std::find_if(
+        diagnostics.symbols.begin(),
+        diagnostics.symbols.end(),
+        [name](const vulkan_native_entrypoint_symbol_diagnostics& symbol) {
+            return symbol.name == name && symbol.completed();
+        });
+    return found == diagnostics.symbols.end()
+        ? vulkan_native_function_pointer{}
+        : found->pointer;
+}
+
+inline bool same_extent(vulkan_surface_extent lhs, vulkan_surface_extent rhs)
+{
+    return lhs.width == rhs.width && lhs.height == rhs.height;
+}
+
+inline bool render_pass_scope_extent_matches(
+    vulkan_surface_extent selected_extent,
+    const vulkan_native_framebuffer_targets_execution_result& framebuffer_targets,
+    const vulkan_command_recording_readiness_result& command_recording)
+{
+    if (!selected_extent.valid()) {
+        return false;
+    }
+    if (framebuffer_targets.extent.valid()
+        && !same_extent(selected_extent, framebuffer_targets.extent)) {
+        return false;
+    }
+    if (command_recording.render_pass.selected_extent.valid()
+        && !same_extent(selected_extent, command_recording.render_pass.selected_extent)) {
+        return false;
+    }
+
+    return true;
+}
+
+inline vulkan_native_render_pass_scope_record_result make_render_pass_scope_record_result(
+    const vulkan_native_render_pass_scope_record_request& request)
+{
+    vulkan_native_render_pass_scope_record_result result{
+        .checked = true,
+        .status = vulkan_native_render_pass_scope_record_status::not_requested,
+        .framebuffer_targets = request.framebuffer_targets,
+        .command_recording = request.command_recording,
+        .dispatch_table = request.dispatch_table,
+        .selected_framebuffer_target_index = request.framebuffer_target_index,
+        .framebuffer_target_count = request.framebuffer_targets.targets.size(),
+        .image_id = {},
+        .command_buffer = request.command_recording.command_buffer,
+        .render_pass = request.framebuffer_targets.render_pass_handle,
+        .framebuffer = {},
+        .extent = request.framebuffer_targets.extent,
+        .begin_render_pass_symbol = request.dispatch_table.begin_render_pass,
+        .end_render_pass_symbol = request.dispatch_table.end_render_pass,
+        .framebuffer_targets_ready = request.framebuffer_targets.checked
+            && request.framebuffer_targets.status
+                == vulkan_native_framebuffer_targets_execution_status::ready
+            && !request.framebuffer_targets.targets.empty(),
+        .command_buffer_ready = request.command_recording.command_buffer_ready(),
+        .render_pass_ready = request.framebuffer_targets.render_pass_ready
+            && request.framebuffer_targets.render_pass_handle.valid(),
+        .framebuffer_ready = false,
+        .extent_ready = request.framebuffer_targets.extent.valid(),
+        .extent_matches = false,
+        .dispatch_table_ready = request.dispatch_table.ready_for_render_pass_scope(),
+        .vk_cmd_begin_render_pass_called = false,
+        .vk_cmd_end_render_pass_called = false,
+        .native_result = 0,
+        .diagnostic = {},
+    };
+
+    if (request.framebuffer_target_index < request.framebuffer_targets.targets.size()) {
+        const vulkan_native_framebuffer_target& target =
+            request.framebuffer_targets.targets[request.framebuffer_target_index];
+        result.image_id = target.image_id;
+        result.render_pass = target.render_pass;
+        result.framebuffer = target.framebuffer;
+        result.extent = target.extent;
+        result.render_pass_ready = target.render_pass_ready && target.render_pass.valid();
+        result.framebuffer_ready = target.framebuffer_ready && target.framebuffer.valid();
+        result.extent_ready = target.extent_ready && target.extent.valid();
+        result.extent_matches = render_pass_scope_extent_matches(
+            target.extent,
+            request.framebuffer_targets,
+            request.command_recording);
+    }
+
+    return result;
+}
+
+} // namespace command_recording_detail
+
+inline vulkan_native_render_pass_scope_dispatch_table
+collect_vulkan_native_render_pass_scope_dispatch_table(
+    const vulkan_native_function_table_diagnostics& diagnostics)
+{
+    vulkan_native_render_pass_scope_dispatch_table dispatch{
+        .checked = true,
+        .status = vulkan_native_render_pass_scope_dispatch_table_status::not_checked,
+        .function_table_status = diagnostics.status,
+        .function_table_checked = diagnostics.checked,
+        .begin_render_pass = command_recording_detail::find_native_symbol_pointer_by_name(
+            diagnostics,
+            "vkCmdBeginRenderPass"),
+        .end_render_pass = command_recording_detail::find_native_symbol_pointer_by_name(
+            diagnostics,
+            "vkCmdEndRenderPass"),
+        .missing_symbol_name = diagnostics.missing_symbol_name,
+        .diagnostic = {},
+    };
+
+    if (!diagnostics.checked) {
+        dispatch.status =
+            vulkan_native_render_pass_scope_dispatch_table_status::function_table_unavailable;
+        dispatch.diagnostic = diagnostics.diagnostic.empty()
+            ? "Native Vulkan render pass scope dispatch table has unchecked function diagnostics"
+            : diagnostics.diagnostic;
+        return dispatch;
+    }
+    if (!dispatch.begin_render_pass.valid()) {
+        dispatch.status =
+            vulkan_native_render_pass_scope_dispatch_table_status::missing_begin_render_pass_symbol;
+        dispatch.missing_symbol_name = dispatch.missing_symbol_name.empty()
+            ? "vkCmdBeginRenderPass"
+            : dispatch.missing_symbol_name;
+        dispatch.diagnostic = diagnostics.diagnostic.empty()
+            ? "Native Vulkan render pass scope dispatch table is missing vkCmdBeginRenderPass"
+            : diagnostics.diagnostic;
+        return dispatch;
+    }
+    if (!dispatch.end_render_pass.valid()) {
+        dispatch.status =
+            vulkan_native_render_pass_scope_dispatch_table_status::missing_end_render_pass_symbol;
+        dispatch.missing_symbol_name = dispatch.missing_symbol_name.empty()
+            ? "vkCmdEndRenderPass"
+            : dispatch.missing_symbol_name;
+        dispatch.diagnostic = diagnostics.diagnostic.empty()
+            ? "Native Vulkan render pass scope dispatch table is missing vkCmdEndRenderPass"
+            : diagnostics.diagnostic;
+        return dispatch;
+    }
+
+    dispatch.status = vulkan_native_render_pass_scope_dispatch_table_status::ready;
+    dispatch.diagnostic = "Native Vulkan render pass scope dispatch table is ready";
+    return dispatch;
+}
+
+inline fake_vulkan_native_render_pass_scope_recorder::
+    fake_vulkan_native_render_pass_scope_recorder()
+    : fake_vulkan_native_render_pass_scope_recorder(
+        fake_vulkan_native_render_pass_scope_recorder_options{})
+{
+}
+
+inline fake_vulkan_native_render_pass_scope_recorder::
+    fake_vulkan_native_render_pass_scope_recorder(
+        fake_vulkan_native_render_pass_scope_recorder_options options)
+    : options_(options)
+{
+}
+
+inline vulkan_native_render_pass_scope_record_result
+fake_vulkan_native_render_pass_scope_recorder::record_render_pass_scope(
+    const vulkan_native_render_pass_scope_record_request& request)
+{
+    vulkan_native_render_pass_scope_record_result result =
+        command_recording_detail::make_render_pass_scope_record_result(request);
+
+    if (!result.framebuffer_targets_ready) {
+        result.status =
+            vulkan_native_render_pass_scope_record_status::framebuffer_targets_unavailable;
+        result.diagnostic = request.framebuffer_targets.diagnostic.empty()
+            ? "Native Vulkan render pass scope is missing ready framebuffer targets"
+            : request.framebuffer_targets.diagnostic;
+        state_.last_result = result;
+        return result;
+    }
+    if (request.framebuffer_target_index >= request.framebuffer_targets.targets.size()) {
+        result.status =
+            vulkan_native_render_pass_scope_record_status::target_index_unavailable;
+        result.diagnostic =
+            "Native Vulkan render pass scope selected framebuffer target index is unavailable";
+        state_.last_result = result;
+        return result;
+    }
+    if (!result.command_buffer_ready) {
+        result.status =
+            vulkan_native_render_pass_scope_record_status::command_buffer_unavailable;
+        result.diagnostic = "Native Vulkan render pass scope is missing a command buffer";
+        state_.last_result = result;
+        return result;
+    }
+    if (!result.render_pass_ready) {
+        result.status = vulkan_native_render_pass_scope_record_status::missing_render_pass;
+        result.diagnostic = "Native Vulkan render pass scope is missing a render pass";
+        state_.last_result = result;
+        return result;
+    }
+    if (!result.framebuffer_ready) {
+        result.status = vulkan_native_render_pass_scope_record_status::missing_framebuffer;
+        result.diagnostic = "Native Vulkan render pass scope is missing a framebuffer";
+        state_.last_result = result;
+        return result;
+    }
+    if (!result.extent_ready) {
+        result.status = vulkan_native_render_pass_scope_record_status::missing_extent;
+        result.diagnostic = "Native Vulkan render pass scope is missing a framebuffer extent";
+        state_.last_result = result;
+        return result;
+    }
+    if (!result.extent_matches) {
+        result.status = vulkan_native_render_pass_scope_record_status::extent_mismatch;
+        result.diagnostic =
+            "Native Vulkan render pass scope extent does not match framebuffer evidence";
+        state_.last_result = result;
+        return result;
+    }
+    if (!result.dispatch_table_ready) {
+        result.status = vulkan_native_render_pass_scope_record_status::dispatch_table_unavailable;
+        result.diagnostic = request.dispatch_table.diagnostic.empty()
+            ? "Native Vulkan render pass scope is missing begin/end dispatch"
+            : request.dispatch_table.diagnostic;
+        state_.last_result = result;
+        return result;
+    }
+
+    ++state_.record_call_count;
+    state_.requested_framebuffer_target_index = request.framebuffer_target_index;
+    state_.requested_command_buffer = result.command_buffer;
+    state_.requested_render_pass = result.render_pass;
+    state_.requested_framebuffer = result.framebuffer;
+    state_.requested_extent = result.extent;
+    state_.last_begin_render_pass_symbol = result.begin_render_pass_symbol;
+    state_.last_end_render_pass_symbol = result.end_render_pass_symbol;
+
+    result.vk_cmd_begin_render_pass_called = true;
+    if (options_.fail_begin) {
+        result.status = vulkan_native_render_pass_scope_record_status::begin_failed;
+        result.native_result = options_.begin_failure_result;
+        result.diagnostic = "Native Vulkan render pass scope begin failed";
+        state_.last_result = result;
+        return result;
+    }
+
+    result.vk_cmd_end_render_pass_called = true;
+    if (options_.fail_end) {
+        result.status = vulkan_native_render_pass_scope_record_status::end_failed;
+        result.native_result = options_.end_failure_result;
+        result.diagnostic = "Native Vulkan render pass scope end failed";
+        state_.last_result = result;
+        return result;
+    }
+
+    result.status = vulkan_native_render_pass_scope_record_status::recorded;
+    result.diagnostic = "Native Vulkan render pass scope recorded";
+    state_.last_result = result;
+    return result;
+}
+
+inline const fake_vulkan_native_render_pass_scope_recorder_state&
+fake_vulkan_native_render_pass_scope_recorder::state() const
+{
+    return state_;
+}
+
+inline vulkan_native_render_pass_scope_record_result record_native_vulkan_render_pass_scope(
+    vulkan_native_render_pass_scope_recorder_interface& recorder,
+    const vulkan_native_render_pass_scope_record_request& request)
+{
+    return recorder.record_render_pass_scope(request);
+}
+
 } // namespace quiz_vulkan::render::vulkan_backend

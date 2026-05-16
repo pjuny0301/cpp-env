@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 codex/common/mcp/
+codex-workers/queued/
 build/out/
 build/external/quiz/.vs/
 build/external/quiz/.vscode/

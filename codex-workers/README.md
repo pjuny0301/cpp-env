@@ -11,7 +11,15 @@ The workers are meant to implement behind existing quiz-vulkan interfaces, not r
 - `setup-worktrees.sh`: creates role worktrees under `/mnt/c/aa-workers` by default.
 - `run-codex-tmux.sh`: starts one role in a persistent tmux session.
 - `send-worker-prompt.sh`: pastes and submits a prompt file into an existing
-  persistent tmux worker.
+  persistent tmux worker. When the worker pane looks busy, it queues the prompt
+  under `codex-workers/queued/<session>/` instead of pasting into an active
+  Codex input box; use `--force` only when you have inspected the pane and want
+  immediate submission.
+- `configure-quiz-vulkan-worker-build.sh`: configures a worker worktree build
+  while pointing CMake at the central approved dependency checkout under
+  `/mnt/c/aa/build/external/lib/cpp/desktop`.
+- `quiz-vulkan-worker-build-dir.sh`: prints the worker-local build directory in
+  a path format accepted by Windows CTest.
 - `with-build-lock.sh`: serializes shared Windows CMake/CTest access so
   parallel workers do not race on the same build directory.
 - `worker-status.sh`: summarizes live Codex tmux sessions, current paths, branch
@@ -71,6 +79,48 @@ latest pushed baseline before editing. Keep edits inside the assigned engine
 folder and focused tests. Commit scoped files and report the hash.
 EOF
 /mnt/c/aa/codex-workers/send-worker-prompt.sh codex-text-engine /tmp/text-next.md
+```
+
+If the worker is still processing a previous task, the command writes a queued
+prompt file and leaves the tmux session untouched. After the worker reports idle,
+send the queued file explicitly:
+
+```bash
+/mnt/c/aa/codex-workers/send-worker-prompt.sh \
+  codex-text-engine \
+  /mnt/c/aa/codex-workers/queued/codex-text-engine/<queued-prompt>.md
+```
+
+Configure a worker-local quiz-vulkan build with the central external
+dependencies:
+
+```bash
+/mnt/c/aa/codex-workers/configure-quiz-vulkan-worker-build.sh \
+  /mnt/c/aa-workers/text-engine \
+  windows-mingw-ascii
+```
+
+This keeps build output inside the worker worktree's `build/out` while avoiding
+duplicate or missing FreeType, HarfBuzz, Vulkan, stb, utf8proc, and miniaudio
+source snapshots.
+
+Build and test the worker-local tree:
+
+```bash
+cd /mnt/c/aa-workers/text-engine/apps/quiz/quiz-vulkan
+/mnt/c/aa/codex-workers/with-build-lock.sh \
+  "/mnt/c/Program Files/CMake/bin/cmake.exe" \
+  --build --preset windows-mingw-ascii-debug \
+  --target quiz_vulkan_interface_contract_compile_tests
+
+build_dir="$(/mnt/c/aa/codex-workers/quiz-vulkan-worker-build-dir.sh \
+  /mnt/c/aa-workers/text-engine \
+  windows-mingw-ascii)"
+/mnt/c/aa/codex-workers/with-build-lock.sh \
+  "/mnt/c/Program Files/CMake/bin/ctest.exe" \
+  --test-dir "$build_dir" \
+  -R "<focused_test_regex>" \
+  --output-on-failure
 ```
 
 For a compact coordinator view:

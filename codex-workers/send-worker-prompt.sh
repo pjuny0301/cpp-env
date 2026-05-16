@@ -63,9 +63,12 @@ fi
 
 tmux load-buffer "${prompt_file}"
 tmux paste-buffer -t "${session}:0"
-sleep 0.2
+paste_delay="${QUIZ_CODEX_WORKER_PASTE_DELAY_SECONDS:-0.8}"
+submit_delay="${QUIZ_CODEX_WORKER_SUBMIT_DELAY_SECONDS:-0.8}"
+
+sleep "${paste_delay}"
 tmux send-keys -t "${session}:0" Enter
-sleep 0.2
+sleep "${submit_delay}"
 tmux send-keys -t "${session}:0" Enter
 
 echo "sent prompt to ${session}"

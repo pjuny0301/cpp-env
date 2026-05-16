@@ -494,6 +494,62 @@ static_assert(requires(
         std::same_as<const asset_materialized_byte_payload_request_transaction_diff_entry*>;
 });
 
+static_assert(std::is_enum_v<asset_shader_materialized_byte_issue_kind>);
+
+static_assert(requires(asset_shader_materialized_byte_issue issue) {
+    { issue.kind } -> std::same_as<asset_shader_materialized_byte_issue_kind&>;
+    { issue.id } -> std::same_as<std::string&>;
+    { issue.cache_key } -> std::same_as<asset_cache_key&>;
+    { issue.source_uri } -> std::same_as<std::string&>;
+    { issue.materialized_path } -> std::same_as<std::filesystem::path&>;
+    { issue.diagnostic } -> std::same_as<std::string&>;
+});
+
+static_assert(requires(
+    asset_shader_materialized_byte_pipeline_entry entry,
+    const asset_shader_materialized_byte_pipeline_entry& const_entry) {
+    { entry.id } -> std::same_as<std::string&>;
+    { entry.type } -> std::same_as<asset_type&>;
+    { entry.cache_key } -> std::same_as<asset_cache_key&>;
+    { entry.source_uri } -> std::same_as<std::string&>;
+    { entry.materialized_path } -> std::same_as<std::filesystem::path&>;
+    { entry.byte_count } -> std::same_as<std::size_t&>;
+    { entry.payload_byte_count } -> std::same_as<std::size_t&>;
+    { entry.content_hash } -> std::same_as<std::string&>;
+    { entry.payload_status } -> std::same_as<asset_materialized_bytes_handoff_status&>;
+    { entry.materialized_status } -> std::same_as<runtime_materialized_asset_lookup_status&>;
+    { entry.load_status } -> std::same_as<asset_bytes_load_status&>;
+    { entry.spirv_expected } -> std::same_as<bool&>;
+    { entry.spirv_magic_checked } -> std::same_as<bool&>;
+    { entry.spirv_magic_valid } -> std::same_as<bool&>;
+    { entry.duplicate_count } -> std::same_as<std::size_t&>;
+    { entry.issues } -> std::same_as<std::vector<asset_shader_materialized_byte_issue>&>;
+    { entry.diagnostic } -> std::same_as<std::string&>;
+    { const_entry.ready() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    asset_shader_materialized_byte_pipeline_summary summary,
+    const asset_shader_materialized_byte_pipeline_summary& const_summary,
+    std::string_view id) {
+    { summary.ready } -> std::same_as<std::vector<asset_shader_materialized_byte_pipeline_entry>&>;
+    { summary.blocked } -> std::same_as<std::vector<asset_shader_materialized_byte_pipeline_entry>&>;
+    { summary.input_shader_count } -> std::same_as<std::size_t&>;
+    { summary.blocked_materialization_count } -> std::same_as<std::size_t&>;
+    { summary.blocked_byte_load_count } -> std::same_as<std::size_t&>;
+    { summary.integrity_failure_count } -> std::same_as<std::size_t&>;
+    { summary.empty_shader_bytes_count } -> std::same_as<std::size_t&>;
+    { summary.non_spirv_magic_count } -> std::same_as<std::size_t&>;
+    { summary.duplicate_id_count } -> std::same_as<std::size_t&>;
+    { const_summary.ok() } -> std::same_as<bool>;
+    { const_summary.ready_count() } -> std::same_as<std::size_t>;
+    { const_summary.blocked_count() } -> std::same_as<std::size_t>;
+    { const_summary.entry_count() } -> std::same_as<std::size_t>;
+    { const_summary.find_ready(id) } -> std::same_as<const asset_shader_materialized_byte_pipeline_entry*>;
+    { const_summary.find_blocked(id) } -> std::same_as<const asset_shader_materialized_byte_pipeline_entry*>;
+    { const_summary.find_entry(id) } -> std::same_as<const asset_shader_materialized_byte_pipeline_entry*>;
+});
+
 static_assert(std::has_virtual_destructor_v<asset_bytes_provider_interface>);
 static_assert(std::derived_from<fake_asset_bytes_provider, asset_bytes_provider_interface>);
 static_assert(std::derived_from<local_file_asset_bytes_provider, asset_bytes_provider_interface>);
@@ -580,6 +636,8 @@ static_assert(requires(
         std::same_as<asset_materialized_byte_payload_request_transaction>;
     { diff_materialized_asset_byte_payload_request_transactions(payload_transaction, payload_transaction) } ->
         std::same_as<asset_materialized_byte_payload_request_transaction_diff_summary>;
+    { summarize_shader_materialized_byte_pipeline(payload_bundle) } ->
+        std::same_as<asset_shader_materialized_byte_pipeline_summary>;
 });
 
 } // namespace

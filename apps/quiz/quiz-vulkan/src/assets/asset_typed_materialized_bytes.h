@@ -860,6 +860,115 @@ struct asset_materialized_byte_payload_request_transaction_diff_summary {
     }
 };
 
+enum class asset_shader_materialized_byte_issue_kind {
+    blocked_materialization,
+    blocked_byte_load,
+    integrity_failure,
+    empty_shader_bytes,
+    non_spirv_magic,
+    duplicate_id,
+};
+
+struct asset_shader_materialized_byte_issue {
+    asset_shader_materialized_byte_issue_kind kind =
+        asset_shader_materialized_byte_issue_kind::blocked_materialization;
+    std::string id;
+    asset_cache_key cache_key;
+    std::string source_uri;
+    std::filesystem::path materialized_path;
+    std::string diagnostic;
+};
+
+struct asset_shader_materialized_byte_pipeline_entry {
+    std::string id;
+    asset_type type = asset_type::shader;
+    asset_cache_key cache_key;
+    std::string source_uri;
+    std::filesystem::path materialized_path;
+    std::size_t byte_count = 0U;
+    std::size_t payload_byte_count = 0U;
+    std::string content_hash;
+    asset_materialized_bytes_handoff_status payload_status =
+        asset_materialized_bytes_handoff_status::materialization_blocked;
+    runtime_materialized_asset_lookup_status materialized_status =
+        runtime_materialized_asset_lookup_status::missing_id;
+    asset_bytes_load_status load_status = asset_bytes_load_status::missing_bytes;
+    bool spirv_expected = false;
+    bool spirv_magic_checked = false;
+    bool spirv_magic_valid = false;
+    std::size_t duplicate_count = 0U;
+    std::vector<asset_shader_materialized_byte_issue> issues;
+    std::string diagnostic;
+
+    [[nodiscard]] bool ready() const
+    {
+        return issues.empty();
+    }
+};
+
+struct asset_shader_materialized_byte_pipeline_summary {
+    std::vector<asset_shader_materialized_byte_pipeline_entry> ready;
+    std::vector<asset_shader_materialized_byte_pipeline_entry> blocked;
+    std::size_t input_shader_count = 0U;
+    std::size_t blocked_materialization_count = 0U;
+    std::size_t blocked_byte_load_count = 0U;
+    std::size_t integrity_failure_count = 0U;
+    std::size_t empty_shader_bytes_count = 0U;
+    std::size_t non_spirv_magic_count = 0U;
+    std::size_t duplicate_id_count = 0U;
+
+    [[nodiscard]] bool ok() const
+    {
+        return blocked.empty();
+    }
+
+    [[nodiscard]] std::size_t ready_count() const
+    {
+        return ready.size();
+    }
+
+    [[nodiscard]] std::size_t blocked_count() const
+    {
+        return blocked.size();
+    }
+
+    [[nodiscard]] std::size_t entry_count() const
+    {
+        return ready_count() + blocked_count();
+    }
+
+    [[nodiscard]] const asset_shader_materialized_byte_pipeline_entry* find_ready(
+        std::string_view id) const
+    {
+        for (const asset_shader_materialized_byte_pipeline_entry& entry : ready) {
+            if (entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const asset_shader_materialized_byte_pipeline_entry* find_blocked(
+        std::string_view id) const
+    {
+        for (const asset_shader_materialized_byte_pipeline_entry& entry : blocked) {
+            if (entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const asset_shader_materialized_byte_pipeline_entry* find_entry(
+        std::string_view id) const
+    {
+        if (const asset_shader_materialized_byte_pipeline_entry* entry = find_ready(id); entry != nullptr) {
+            return entry;
+        }
+        return find_blocked(id);
+    }
+};
+
 namespace detail {
 
 inline bool asset_type_is_engine_facing(asset_type type)
@@ -1362,6 +1471,172 @@ inline std::optional<std::size_t> find_materialized_byte_payload_request_index_b
     return std::nullopt;
 }
 
+inline bool asset_shader_string_ends_with(std::string_view text, std::string_view suffix)
+{
+    return text.size() >= suffix.size() && text.substr(text.size() - suffix.size()) == suffix;
+}
+
+inline bool asset_shader_payload_expects_spirv(const asset_materialized_byte_payload& payload)
+{
+    return asset_shader_string_ends_with(payload.source_uri, ".spv")
+        || payload.materialized_path.extension() == ".spv";
+}
+
+inline bool asset_shader_payload_has_spirv_magic(const asset_materialized_byte_payload& payload)
+{
+    return payload.bytes.size() >= 4U && std::to_integer<unsigned char>(payload.bytes[0]) == 0x03U
+        && std::to_integer<unsigned char>(payload.bytes[1]) == 0x02U
+        && std::to_integer<unsigned char>(payload.bytes[2]) == 0x23U
+        && std::to_integer<unsigned char>(payload.bytes[3]) == 0x07U;
+}
+
+inline std::size_t count_shader_materialized_byte_payload_id(
+    const asset_materialized_byte_payload_group& shaders,
+    std::string_view id)
+{
+    std::size_t count = 0U;
+    for (const asset_materialized_byte_payload& payload : shaders.ready) {
+        if (payload.id == id) {
+            ++count;
+        }
+    }
+    for (const asset_materialized_byte_payload& payload : shaders.blocked) {
+        if (payload.id == id) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+inline void add_shader_materialized_byte_issue(
+    asset_shader_materialized_byte_pipeline_entry& entry,
+    asset_shader_materialized_byte_issue_kind kind,
+    std::string diagnostic)
+{
+    entry.issues.push_back(asset_shader_materialized_byte_issue{
+        .kind = kind,
+        .id = entry.id,
+        .cache_key = entry.cache_key,
+        .source_uri = entry.source_uri,
+        .materialized_path = entry.materialized_path,
+        .diagnostic = std::move(diagnostic),
+    });
+}
+
+inline asset_shader_materialized_byte_pipeline_entry make_shader_materialized_byte_pipeline_entry(
+    const asset_materialized_byte_payload& payload,
+    std::size_t duplicate_count)
+{
+    asset_shader_materialized_byte_pipeline_entry entry{
+        .id = payload.id,
+        .type = payload.type,
+        .cache_key = payload.cache_key,
+        .source_uri = payload.source_uri,
+        .materialized_path = payload.materialized_path,
+        .byte_count = payload.byte_count,
+        .payload_byte_count = payload.bytes.size(),
+        .content_hash = payload.content_hash,
+        .payload_status = payload.status,
+        .materialized_status = payload.materialized_status,
+        .load_status = payload.load_status,
+        .spirv_expected = asset_shader_payload_expects_spirv(payload),
+        .duplicate_count = duplicate_count,
+        .diagnostic = payload.diagnostic,
+    };
+
+    entry.spirv_magic_checked =
+        entry.spirv_expected && payload.load_status == asset_bytes_load_status::loaded && !payload.bytes.empty();
+    entry.spirv_magic_valid = entry.spirv_magic_checked && asset_shader_payload_has_spirv_magic(payload);
+
+    if (payload.materialized_status != runtime_materialized_asset_lookup_status::materialized
+        || payload.status == asset_materialized_bytes_handoff_status::materialization_blocked) {
+        add_shader_materialized_byte_issue(
+            entry,
+            asset_shader_materialized_byte_issue_kind::blocked_materialization,
+            "shader materialized bytes are blocked before local materialization");
+    } else if (payload.load_status != asset_bytes_load_status::loaded
+               || payload.status == asset_materialized_bytes_handoff_status::load_blocked) {
+        add_shader_materialized_byte_issue(
+            entry,
+            asset_shader_materialized_byte_issue_kind::blocked_byte_load,
+            "shader materialized bytes are blocked before byte load");
+    } else if (payload.status == asset_materialized_bytes_handoff_status::integrity_blocked
+               || !payload.issues.empty()) {
+        add_shader_materialized_byte_issue(
+            entry,
+            asset_shader_materialized_byte_issue_kind::integrity_failure,
+            "shader materialized bytes have integrity issues");
+    }
+
+    if (payload.load_status == asset_bytes_load_status::loaded && payload.bytes.empty()) {
+        add_shader_materialized_byte_issue(
+            entry,
+            asset_shader_materialized_byte_issue_kind::empty_shader_bytes,
+            "shader materialized bytes are empty");
+    }
+
+    if (entry.spirv_expected && entry.spirv_magic_checked && !entry.spirv_magic_valid) {
+        add_shader_materialized_byte_issue(
+            entry,
+            asset_shader_materialized_byte_issue_kind::non_spirv_magic,
+            "shader .spv bytes do not start with SPIR-V magic");
+    }
+
+    if (duplicate_count > 1U) {
+        add_shader_materialized_byte_issue(
+            entry,
+            asset_shader_materialized_byte_issue_kind::duplicate_id,
+            "shader asset id appears multiple times in materialized byte payloads");
+    }
+
+    if (entry.diagnostic.empty()) {
+        entry.diagnostic =
+            entry.issues.empty() ? "shader materialized byte payload ready" : entry.issues.front().diagnostic;
+    }
+
+    return entry;
+}
+
+inline void count_shader_materialized_byte_pipeline_entry(
+    asset_shader_materialized_byte_pipeline_summary& summary,
+    const asset_shader_materialized_byte_pipeline_entry& entry)
+{
+    for (const asset_shader_materialized_byte_issue& issue : entry.issues) {
+        switch (issue.kind) {
+            case asset_shader_materialized_byte_issue_kind::blocked_materialization:
+                ++summary.blocked_materialization_count;
+                break;
+            case asset_shader_materialized_byte_issue_kind::blocked_byte_load:
+                ++summary.blocked_byte_load_count;
+                break;
+            case asset_shader_materialized_byte_issue_kind::integrity_failure:
+                ++summary.integrity_failure_count;
+                break;
+            case asset_shader_materialized_byte_issue_kind::empty_shader_bytes:
+                ++summary.empty_shader_bytes_count;
+                break;
+            case asset_shader_materialized_byte_issue_kind::non_spirv_magic:
+                ++summary.non_spirv_magic_count;
+                break;
+            case asset_shader_materialized_byte_issue_kind::duplicate_id:
+                ++summary.duplicate_id_count;
+                break;
+        }
+    }
+}
+
+inline void add_shader_materialized_byte_pipeline_entry(
+    asset_shader_materialized_byte_pipeline_summary& summary,
+    asset_shader_materialized_byte_pipeline_entry entry)
+{
+    count_shader_materialized_byte_pipeline_entry(summary, entry);
+    if (entry.ready()) {
+        summary.ready.push_back(std::move(entry));
+    } else {
+        summary.blocked.push_back(std::move(entry));
+    }
+}
+
 inline asset_materialized_byte_payload_diff_entry make_added_materialized_byte_payload_diff_entry(
     const asset_materialized_byte_payload_snapshot& after)
 {
@@ -1586,6 +1861,31 @@ inline asset_materialized_byte_payload_diff_summary diff_materialized_asset_byte
     return diff_materialized_asset_byte_payload_snapshots(
         snapshot_materialized_asset_byte_payload_bundle(before),
         snapshot_materialized_asset_byte_payload_bundle(after));
+}
+
+inline asset_shader_materialized_byte_pipeline_summary summarize_shader_materialized_byte_pipeline(
+    const asset_materialized_byte_payload_bundle& bundle)
+{
+    asset_shader_materialized_byte_pipeline_summary summary{
+        .input_shader_count = bundle.shaders.payload_count(),
+    };
+
+    const auto add_shader_payload = [&](const asset_materialized_byte_payload& payload) {
+        detail::add_shader_materialized_byte_pipeline_entry(
+            summary,
+            detail::make_shader_materialized_byte_pipeline_entry(
+                payload,
+                detail::count_shader_materialized_byte_payload_id(bundle.shaders, payload.id)));
+    };
+
+    for (const asset_materialized_byte_payload& payload : bundle.shaders.ready) {
+        add_shader_payload(payload);
+    }
+    for (const asset_materialized_byte_payload& payload : bundle.shaders.blocked) {
+        add_shader_payload(payload);
+    }
+
+    return summary;
 }
 
 inline std::string asset_materialized_byte_payload_selection_status_name(

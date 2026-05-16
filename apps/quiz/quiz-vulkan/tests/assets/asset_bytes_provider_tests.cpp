@@ -196,6 +196,52 @@ quiz_vulkan::assets::asset_materialized_byte_payload make_payload_bundle_entry(
     return payload;
 }
 
+std::vector<std::byte> make_spirv_fixture_bytes()
+{
+    return std::vector<std::byte>{
+        static_cast<std::byte>(0x03U),
+        static_cast<std::byte>(0x02U),
+        static_cast<std::byte>(0x23U),
+        static_cast<std::byte>(0x07U),
+        static_cast<std::byte>(0x00U),
+        static_cast<std::byte>(0x00U),
+        static_cast<std::byte>(0x00U),
+        static_cast<std::byte>(0x00U),
+    };
+}
+
+quiz_vulkan::assets::asset_materialized_byte_payload make_shader_payload_bundle_entry(
+    std::string id,
+    std::string source_uri,
+    std::filesystem::path materialized_path,
+    std::vector<std::byte> bytes,
+    quiz_vulkan::assets::asset_materialized_bytes_handoff_status status =
+        quiz_vulkan::assets::asset_materialized_bytes_handoff_status::ready)
+{
+    using namespace quiz_vulkan::assets;
+
+    asset_materialized_byte_payload payload = make_payload_bundle_entry(
+        std::move(id),
+        asset_type::shader,
+        std::move(source_uri),
+        std::move(materialized_path),
+        "",
+        "",
+        status);
+    payload.bytes = std::move(bytes);
+    payload.byte_count = payload.bytes.size();
+    payload.content_hash = make_asset_bytes_content_hash(payload.bytes);
+    return payload;
+}
+
+bool shader_pipeline_issue_at(
+    const quiz_vulkan::assets::asset_shader_materialized_byte_pipeline_entry& entry,
+    std::size_t index,
+    quiz_vulkan::assets::asset_shader_materialized_byte_issue_kind kind)
+{
+    return entry.issues.size() > index && entry.issues[index].kind == kind;
+}
+
 quiz_vulkan::assets::runtime_asset_catalog_snapshot make_card_front_snapshot(
     const std::filesystem::path& fixture_root)
 {
@@ -1681,6 +1727,184 @@ void test_materialized_asset_byte_payload_bundle_diff_tracks_snapshot_changes()
         "payload bundle diff keeps before and after status");
 }
 
+void test_shader_materialized_byte_pipeline_summary_classifies_shader_payloads()
+{
+    using namespace quiz_vulkan::assets;
+
+    asset_materialized_byte_payload_bundle bundle;
+    bundle.images.ready.push_back(make_payload_bundle_entry(
+        "card_front",
+        asset_type::image,
+        "asset://cards/front.png",
+        "/assets/cards/front.png",
+        "image bytes",
+        ""));
+
+    bundle.shaders.ready.push_back(make_shader_payload_bundle_entry(
+        "ui_shader",
+        "asset://shaders/ui.vert.spv",
+        "/assets/shaders/ui.vert.spv",
+        make_spirv_fixture_bytes()));
+
+    bundle.shaders.blocked.push_back(make_shader_payload_bundle_entry(
+        "rootless_shader",
+        "asset://shaders/rootless.vert.spv",
+        "/assets/shaders/rootless.vert.spv",
+        {},
+        asset_materialized_bytes_handoff_status::materialization_blocked));
+
+    asset_materialized_byte_payload blocked_load = make_shader_payload_bundle_entry(
+        "missing_shader_bytes",
+        "asset://shaders/missing.frag.spv",
+        "/assets/shaders/missing.frag.spv",
+        {},
+        asset_materialized_bytes_handoff_status::load_blocked);
+    blocked_load.materialized_status = runtime_materialized_asset_lookup_status::materialized;
+    blocked_load.load_status = asset_bytes_load_status::missing_bytes;
+    blocked_load.diagnostic = "test provider did not return shader bytes";
+    bundle.shaders.blocked.push_back(std::move(blocked_load));
+
+    asset_materialized_byte_payload integrity_failure = make_shader_payload_bundle_entry(
+        "corrupt_shader",
+        "asset://shaders/corrupt.comp.spv",
+        "/assets/shaders/corrupt.comp.spv",
+        make_spirv_fixture_bytes(),
+        asset_materialized_bytes_handoff_status::integrity_blocked);
+    bundle.shaders.blocked.push_back(std::move(integrity_failure));
+
+    bundle.shaders.ready.push_back(make_shader_payload_bundle_entry(
+        "empty_shader",
+        "asset://shaders/empty.vert.spv",
+        "/assets/shaders/empty.vert.spv",
+        {}));
+    bundle.shaders.ready.push_back(make_shader_payload_bundle_entry(
+        "text_shader",
+        "asset://shaders/text.vert.spv",
+        "/assets/shaders/text.vert.spv",
+        detail::make_asset_byte_vector("not spirv")));
+    bundle.shaders.ready.push_back(make_shader_payload_bundle_entry(
+        "duplicate_shader",
+        "asset://shaders/duplicate_a.vert.spv",
+        "/assets/shaders/duplicate_a.vert.spv",
+        make_spirv_fixture_bytes()));
+    bundle.shaders.ready.push_back(make_shader_payload_bundle_entry(
+        "duplicate_shader",
+        "asset://shaders/duplicate_b.vert.spv",
+        "/assets/shaders/duplicate_b.vert.spv",
+        make_spirv_fixture_bytes()));
+
+    const asset_shader_materialized_byte_pipeline_summary summary =
+        summarize_shader_materialized_byte_pipeline(bundle);
+
+    require(!summary.ok(), "shader pipeline summary reports blocked shader payloads");
+    require(summary.input_shader_count == 8U, "shader pipeline summary counts input shader payloads");
+    require(summary.entry_count() == 8U, "shader pipeline summary emits one entry per shader payload");
+    require(summary.ready_count() == 1U, "shader pipeline summary keeps only valid shader bytes ready");
+    require(summary.blocked_count() == 7U, "shader pipeline summary blocks invalid shader payloads");
+    require(summary.blocked_materialization_count == 1U, "shader pipeline counts blocked materialization");
+    require(summary.blocked_byte_load_count == 1U, "shader pipeline counts blocked byte loads");
+    require(summary.integrity_failure_count == 1U, "shader pipeline counts integrity failures");
+    require(summary.empty_shader_bytes_count == 1U, "shader pipeline counts empty shader bytes");
+    require(summary.non_spirv_magic_count == 1U, "shader pipeline counts non-SPIR-V-looking .spv bytes");
+    require(summary.duplicate_id_count == 2U, "shader pipeline counts duplicate shader id entries");
+    require(summary.find_entry("card_front") == nullptr, "shader pipeline ignores non-shader payload groups");
+
+    const asset_shader_materialized_byte_pipeline_entry* ready = summary.find_ready("ui_shader");
+    require(ready != nullptr, "shader pipeline can find ready shader payloads");
+    require(ready->ready(), "shader pipeline marks valid shader bytes ready");
+    require(ready->type == asset_type::shader, "shader pipeline preserves shader type");
+    require(ready->cache_key == "shader|asset://shaders/ui.vert.spv", "shader pipeline preserves cache key");
+    require(ready->source_uri == "asset://shaders/ui.vert.spv", "shader pipeline preserves source uri");
+    require(
+        ready->materialized_path == std::filesystem::path("/assets/shaders/ui.vert.spv"),
+        "shader pipeline preserves materialized path");
+    require(ready->byte_count == 8U, "shader pipeline preserves reported byte count");
+    require(ready->payload_byte_count == 8U, "shader pipeline records owned shader byte count");
+    require(
+        ready->content_hash == make_asset_bytes_content_hash(make_spirv_fixture_bytes()),
+        "shader pipeline preserves content hash evidence");
+    require(ready->payload_status == asset_materialized_bytes_handoff_status::ready, "ready shader keeps status");
+    require(ready->spirv_expected, "shader pipeline recognizes .spv shader payloads");
+    require(ready->spirv_magic_checked, "shader pipeline checks SPIR-V magic for non-empty .spv payloads");
+    require(ready->spirv_magic_valid, "shader pipeline accepts SPIR-V magic bytes");
+    require(ready->issues.empty(), "ready shader has no validation issues");
+    require(ready->diagnostic == "shader materialized byte payload ready", "ready shader diagnostic is stable");
+
+    const asset_shader_materialized_byte_pipeline_entry* rootless = summary.find_blocked("rootless_shader");
+    require(rootless != nullptr, "shader pipeline can find materialization blockers");
+    require(!rootless->ready(), "shader pipeline blocks unmaterialized shader payloads");
+    require(
+        shader_pipeline_issue_at(
+            *rootless,
+            0U,
+            asset_shader_materialized_byte_issue_kind::blocked_materialization),
+        "shader pipeline reports blocked materialization issue");
+    require(
+        rootless->materialized_status == runtime_materialized_asset_lookup_status::missing_rooted_path,
+        "shader pipeline preserves materialization blocker status");
+    require(rootless->payload_byte_count == 0U, "blocked materialization has no owned shader bytes");
+
+    const asset_shader_materialized_byte_pipeline_entry* missing_bytes =
+        summary.find_blocked("missing_shader_bytes");
+    require(missing_bytes != nullptr, "shader pipeline can find byte-load blockers");
+    require(
+        shader_pipeline_issue_at(
+            *missing_bytes,
+            0U,
+            asset_shader_materialized_byte_issue_kind::blocked_byte_load),
+        "shader pipeline reports blocked byte-load issue");
+    require(
+        missing_bytes->load_status == asset_bytes_load_status::missing_bytes,
+        "shader pipeline preserves blocked byte-load status");
+
+    const asset_shader_materialized_byte_pipeline_entry* corrupt = summary.find_blocked("corrupt_shader");
+    require(corrupt != nullptr, "shader pipeline can find integrity failures");
+    require(
+        shader_pipeline_issue_at(
+            *corrupt,
+            0U,
+            asset_shader_materialized_byte_issue_kind::integrity_failure),
+        "shader pipeline reports integrity failure issue");
+    require(
+        corrupt->payload_status == asset_materialized_bytes_handoff_status::integrity_blocked,
+        "shader pipeline preserves integrity blocker status");
+
+    const asset_shader_materialized_byte_pipeline_entry* empty = summary.find_blocked("empty_shader");
+    require(empty != nullptr, "shader pipeline can find empty shader bytes");
+    require(
+        shader_pipeline_issue_at(*empty, 0U, asset_shader_materialized_byte_issue_kind::empty_shader_bytes),
+        "shader pipeline reports empty shader bytes issue");
+    require(empty->payload_byte_count == 0U, "empty shader records zero payload bytes");
+    require(empty->spirv_expected, "empty .spv shader records SPIR-V expectation");
+    require(!empty->spirv_magic_checked, "empty shader bytes do not produce a magic check");
+
+    const asset_shader_materialized_byte_pipeline_entry* text_shader = summary.find_blocked("text_shader");
+    require(text_shader != nullptr, "shader pipeline can find non-SPIR-V-looking bytes");
+    require(
+        shader_pipeline_issue_at(
+            *text_shader,
+            0U,
+            asset_shader_materialized_byte_issue_kind::non_spirv_magic),
+        "shader pipeline reports non-SPIR-V magic issue");
+    require(text_shader->spirv_magic_checked, "non-empty .spv shader bytes are magic checked");
+    require(!text_shader->spirv_magic_valid, "text shader bytes fail SPIR-V magic validation");
+
+    const asset_shader_materialized_byte_pipeline_entry* duplicate = summary.find_blocked("duplicate_shader");
+    require(duplicate != nullptr, "shader pipeline can find duplicate shader ids");
+    require(duplicate->duplicate_count == 2U, "shader pipeline records duplicate match count");
+    require(
+        shader_pipeline_issue_at(*duplicate, 0U, asset_shader_materialized_byte_issue_kind::duplicate_id),
+        "shader pipeline reports duplicate shader id issue");
+
+    std::size_t duplicate_entries = 0U;
+    for (const asset_shader_materialized_byte_pipeline_entry& entry : summary.blocked) {
+        if (entry.id == "duplicate_shader") {
+            ++duplicate_entries;
+        }
+    }
+    require(duplicate_entries == 2U, "shader pipeline keeps both duplicate shader entries as blocked evidence");
+}
+
 void test_materialized_asset_byte_payload_selection_filters_payloads_and_reports_diagnostics()
 {
     using namespace quiz_vulkan::assets;
@@ -2359,6 +2583,7 @@ int main()
     test_materialized_asset_bytes_handoff_summary_groups_ready_and_blocked_payloads();
     test_materialized_asset_byte_payload_bundle_groups_loaded_bytes_by_type();
     test_materialized_asset_byte_payload_bundle_diff_tracks_snapshot_changes();
+    test_shader_materialized_byte_pipeline_summary_classifies_shader_payloads();
     test_materialized_asset_byte_payload_selection_filters_payloads_and_reports_diagnostics();
     test_materialized_asset_byte_payload_request_transaction_preserves_order_and_counts();
     test_materialized_asset_byte_payload_request_transaction_diff_tracks_status_and_count_deltas();

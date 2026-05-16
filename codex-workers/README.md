@@ -15,6 +15,8 @@ The workers are meant to implement behind existing quiz-vulkan interfaces, not r
 - `configure-quiz-vulkan-worker-build.sh`: configures a worker worktree build
   while pointing CMake at the central approved dependency checkout under
   `/mnt/c/aa/build/external/lib/cpp/desktop`.
+- `quiz-vulkan-worker-build-dir.sh`: prints the worker-local build directory in
+  a path format accepted by Windows CTest.
 - `with-build-lock.sh`: serializes shared Windows CMake/CTest access so
   parallel workers do not race on the same build directory.
 - `worker-status.sh`: summarizes live Codex tmux sessions, current paths, branch
@@ -88,6 +90,25 @@ dependencies:
 This keeps build output inside the worker worktree's `build/out` while avoiding
 duplicate or missing FreeType, HarfBuzz, Vulkan, stb, utf8proc, and miniaudio
 source snapshots.
+
+Build and test the worker-local tree:
+
+```bash
+cd /mnt/c/aa-workers/text-engine/apps/quiz/quiz-vulkan
+/mnt/c/aa/codex-workers/with-build-lock.sh \
+  "/mnt/c/Program Files/CMake/bin/cmake.exe" \
+  --build --preset windows-mingw-ascii-debug \
+  --target quiz_vulkan_interface_contract_compile_tests
+
+build_dir="$(/mnt/c/aa/codex-workers/quiz-vulkan-worker-build-dir.sh \
+  /mnt/c/aa-workers/text-engine \
+  windows-mingw-ascii)"
+/mnt/c/aa/codex-workers/with-build-lock.sh \
+  "/mnt/c/Program Files/CMake/bin/ctest.exe" \
+  --test-dir "$build_dir" \
+  -R "<focused_test_regex>" \
+  --output-on-failure
+```
 
 For a compact coordinator view:
 

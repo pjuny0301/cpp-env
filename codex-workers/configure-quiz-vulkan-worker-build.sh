@@ -28,7 +28,11 @@ worktree="${1:-$(pwd)}"
 preset="${2:-windows-mingw-ascii}"
 cmake_exe="${CMAKE_EXE:-/mnt/c/Program Files/CMake/bin/cmake.exe}"
 external_dir="${QUIZ_CODEX_EXTERNAL_DIR:-/mnt/c/aa/build/external/lib/cpp/desktop}"
-source_dir="${worktree}/apps/quiz/quiz-vulkan"
+if [[ -f "${worktree}/CMakePresets.json" ]]; then
+  source_dir="${worktree}"
+else
+  source_dir="${worktree}/apps/quiz/quiz-vulkan"
+fi
 
 if [[ ! -d "${source_dir}" ]]; then
   echo "missing quiz-vulkan source dir: ${source_dir}" >&2

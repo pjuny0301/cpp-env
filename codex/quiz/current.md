@@ -6,6 +6,7 @@ Last updated: 2026-05-17
 
 - Keep the native C++/Vulkan remake aligned with the Android quiz UX baseline while routing UX actions through app/domain actions.
 - Current Vulkan bottleneck: fake descriptor set allocation now consumes completed resource-binding evidence plus image texture materialization evidence, including sampler-key matching, before native command-packet execution can receive descriptor handles. The next Vulkan-owned gap is real `VkWriteDescriptorSet` payload handoff for native image views, samplers, image layouts, and descriptor write records.
+- Current asset support: shader materialized-byte pipeline summaries now classify ready/blocked shader payloads before Vulkan shader-module consumption, including empty bytes, non-SPIR-V `.spv` magic, integrity failures, blocked loads, blocked materialization, and duplicate shader ids.
 - Treat long press as the unknown-question path: UI button contract `mark_question_unknown`, app input route `mark_question_unknown`, domain payload `mark_question_unknown_action`.
 - Keep test status counts derived from the configured build with `ctest -N`; do not freeze global CTest totals in docs.
 - Build the engine stack in dependency order: Vulkan backend implementation, image decode/texture path, text layout/atlas, asset materialization, and input/IME. Audio/backend wiring is intentionally deferred for now.
@@ -56,6 +57,9 @@ Last updated: 2026-05-17
 - Worker pipeline rule: focused tests are enough for worker handoff; the integrator runs Windows focused verification after cherry-pick and full CTest only after meaningful batches. This keeps throughput without hiding boundary regressions.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
 - Latest integration note: `bd934a2` adds a Vulkan-owned materialization-aware descriptor allocation overload that blocks image descriptor allocation when image texture cache/upload/sampler handoff evidence is missing, blocked, or mismatched.
+- Latest integration note: `48b0d50` adds an asset-owned shader materialized-byte pipeline summary over existing typed payload bundles so later Vulkan shader-module wiring can consume stable shader id/cache/source/path/hash/readiness evidence without direct file IO or hard-coded paths.
+- Latest verification note: after `48b0d50`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests` and `quiz_vulkan_asset_bytes_provider_tests`; focused asset CTest passed 1/1.
+- Latest build note: `9756b8d` adds MinGW `-Wa,-mbig-obj` only to `quiz_vulkan_renderer`, allowing the large Vulkan renderer translation units to rebuild after public header changes without hitting the COFF section/object-size failure seen in worker builds.
 - Latest integration note: `ef822d5` tightens that descriptor gate so image sampler bindings must match the materialized sampler handoff record, not only the texture resource id.
 - Latest verification note: after `ef822d5`, Windows MinGW built `quiz_vulkan_vulkan_command_packet_execution_tests`, `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_renderer_tests`, and `quiz_vulkan_architecture_boundary_tests`; focused architecture/renderer/Vulkan CTest passed 3/3.
 - Latest integration note: `0ed2aa1` adds a Vulkan-owned fake descriptor set allocation result and merge/build path for native command-packet executor evidence. Default frame evidence still leaves descriptor handles unavailable unless completed allocation evidence is passed explicitly.

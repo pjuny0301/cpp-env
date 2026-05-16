@@ -6,6 +6,9 @@
 
 최근 baseline 통합 증거:
 
+- `48b0d50`: Asset system now summarizes shader materialized-byte payload readiness from existing typed payload bundles, exposing stable shader id/cache key/source URI/materialized path/byte count/content hash plus blockers for materialization, byte load, integrity, empty bytes, non-SPIR-V `.spv` magic, and duplicate shader ids before Vulkan shader-module consumption.
+- current: after `48b0d50`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests` and `quiz_vulkan_asset_bytes_provider_tests`; focused asset CTest passed 1/1.
+- `9756b8d`: MinGW builds now pass `-Wa,-mbig-obj` to `quiz_vulkan_renderer` only, avoiding large Vulkan renderer object rebuild failures without changing engine ownership boundaries.
 - `bd934a2`: Vulkan descriptor allocation now consumes image texture frame resource packet materialization evidence before supplying descriptor handles for native command-packet execution, blocking missing, blocked, or mismatched image handoff records instead of treating image resources as ready by resource id alone.
 - `ef822d5`: Vulkan descriptor allocation now also validates image sampler binding ids against materialized sampler handoff records, closing the sampler/texture mismatch gap found during integrator review.
 - current: after `ef822d5`, Windows MinGW built `quiz_vulkan_vulkan_command_packet_execution_tests`, `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_renderer_tests`, and `quiz_vulkan_architecture_boundary_tests`; focused architecture/renderer/Vulkan CTest passed 3/3.

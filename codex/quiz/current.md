@@ -14,7 +14,7 @@ Last updated: 2026-05-16
 
 ## Active Worker Queue
 
-- `codex-vulkan-real-backend-probe-20260514`: working on a fresh Vulkan-only scoped command-packet execution task from latest baseline. Scope is `src/render/vulkan/*` and `tests/render/vulkan/*`; expected output is render-pass scope evidence composed with the existing command packet execution/recorder path.
+- `codex-vulkan-real-backend-probe-20260514`: idle after `d5ffb54` integration. Do not re-merge `codex/vulkan-scoped-command-packet-execution-20260516`; give this session a fresh baseline branch for the next Vulkan-only task.
 - `codex-text-freetype-prototype-20260514`: idle after `bf7a207` integration. Do not re-merge `codex/text-fake-engine-source-split-20260515`; give this session a fresh baseline branch for the next text-only task.
 - `codex-asset-unified-cache-key-20260514` and `codex-image-texture-next-20260514` are currently idle on historical ahead commits that are patch-equivalent to integrated baseline work. Do not re-merge those branches; give them fresh baseline tasks only if asset/image becomes the active bottleneck again.
 
@@ -49,6 +49,8 @@ Last updated: 2026-05-16
 - Worker pipeline rule: keep tasks bounded to one engine-owned surface plus focused tests. If a worker discovers a cross-engine or app/CMake need, it should finish the engine-local patch and hand off the wiring need instead of editing integrator-owned files.
 - Worker pipeline rule: focused tests are enough for worker handoff; the integrator runs Windows focused verification after cherry-pick and full CTest only after meaningful batches. This keeps throughput without hiding boundary regressions.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
+- Latest verification note: after `d5ffb54`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`; focused architecture/renderer/Vulkan CTest passed 5/5.
+- Latest integration note: `d5ffb54` adds scoped Vulkan command-packet execution summaries that compose ready render-pass scope evidence with the packet bridge/executor path, including per-category packet counts, selected framebuffer/command-buffer evidence, first failed packet details, and empty-scope diagnostics without scene/UI/domain coupling.
 - Latest verification note: after `348dfb0`, Windows MinGW full CTest attempted 103 configured tests; 102 executed tests passed and `quiz_vulkan_font_shaped_atlas_update_tests` remained blocked by the known host `permission denied` BAD_COMMAND before process start.
 - Latest integration note: `348dfb0` adds native/fake Vulkan render-pass scope recording readiness after framebuffer target selection, including selected framebuffer/render-pass/extent evidence, command-buffer blockers, begin/end render-pass dispatch records, and narrow empty-scope lifecycle diagnostics; Windows MinGW built the interface contract target and focused Vulkan/renderer/architecture CTest passed 5/5.
 - Latest integration note: `39a3692` adds native/fake Vulkan framebuffer target readiness after swapchain image-view targets, including `vkCreateFramebuffer`/`vkDestroyFramebuffer` dispatch evidence, per-image framebuffer lifecycle records, render-pass/image-view/extent blockers, and per-target destroy evidence; Windows MinGW built the interface contract target and focused Vulkan/renderer/architecture CTest passed 7/7.

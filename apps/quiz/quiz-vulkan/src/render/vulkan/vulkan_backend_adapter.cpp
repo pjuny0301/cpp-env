@@ -6403,6 +6403,42 @@ vulkan_command_packet_bridge_result build_vulkan_command_packet_bridge(
     return bridge;
 }
 
+vulkan_native_command_packet_executor_evidence build_vulkan_native_command_packet_executor_evidence(
+    const vulkan_backend_frame_result& frame,
+    const vulkan_native_function_table_diagnostics& native_functions)
+{
+    vulkan_native_command_packet_executor_evidence evidence{
+        .native_functions = native_functions,
+        .command_buffer = default_scoped_command_buffer_handle_for_frame(frame),
+        .pipeline = frame.pipeline.graphics_pipeline.pipeline,
+        .pipeline_layout = frame.pipeline.pipeline_layout.pipeline_layout,
+        .viewport = frame.viewport,
+        .viewport_available = has_visible_area(frame.viewport),
+        .descriptor_sets = {},
+    };
+
+    for (const vulkan_command_packet& packet : frame.command_packets.packets) {
+        for (std::size_t descriptor_index = 0;
+             descriptor_index < packet.descriptor_set_count;
+             ++descriptor_index) {
+            std::size_t set = descriptor_index;
+            if (descriptor_index < packet.bindings.size()) {
+                set = packet.bindings[descriptor_index].set;
+            }
+            evidence.descriptor_sets.push_back(
+                vulkan_native_command_packet_descriptor_set{
+                    .packet_index = packet.packet_index,
+                    .set = set,
+                    .descriptor_set = {},
+                    .required = true,
+                    .available = false,
+                });
+        }
+    }
+
+    return evidence;
+}
+
 fake_vulkan_command_packet_executor::fake_vulkan_command_packet_executor() = default;
 
 fake_vulkan_command_packet_executor::fake_vulkan_command_packet_executor(
@@ -9394,6 +9430,7 @@ vulkan_backend_frame_result submit_vulkan_backend_frame(
 {
     vulkan_backend_frame_result result;
     result.attempted = true;
+    result.viewport = viewport;
     result.reached_stage = vulkan_backend_frame_stage::backend_attempted;
     const auto finish_frame = [&result]() -> vulkan_backend_frame_result {
         result.pipeline_handoff = summarize_vulkan_frame_pipeline_handoff(result);

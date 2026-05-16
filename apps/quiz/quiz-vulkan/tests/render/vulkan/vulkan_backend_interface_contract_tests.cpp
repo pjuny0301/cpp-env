@@ -8136,6 +8136,7 @@ static_assert(requires(render::vulkan_backend::vulkan_backend_frame_pipeline_han
 
 static_assert(requires(render::vulkan_backend::vulkan_backend_frame_result result) {
     { result.surface } -> std::same_as<render::vulkan_backend::vulkan_surface_extent&>;
+    { result.viewport } -> std::same_as<render::render_rect&>;
     { result.lifecycle } -> std::same_as<render::vulkan_backend::vulkan_backend_lifecycle_readiness&>;
     { result.swapchain } -> std::same_as<render::vulkan_backend::vulkan_backend_swapchain_lifecycle_state&>;
     { result.swapchain_policy } -> std::same_as<render::vulkan_backend::vulkan_backend_swapchain_policy_state&>;
@@ -8233,6 +8234,10 @@ static_assert(requires(
         render::vulkan_backend::vulkan_backend_resource_binding_state{},
         render::vulkan_backend::vulkan_backend_resource_registry_state{}) }
         -> std::same_as<render::vulkan_backend::vulkan_command_packet_bridge_result>;
+    { render::vulkan_backend::build_vulkan_native_command_packet_executor_evidence(
+        render::vulkan_backend::vulkan_backend_frame_result{},
+        render::vulkan_backend::vulkan_native_function_table_diagnostics{}) }
+        -> std::same_as<render::vulkan_backend::vulkan_native_command_packet_executor_evidence>;
     { render::vulkan_backend::build_vulkan_command_recorder_operation_plan(
         render::vulkan_backend::vulkan_command_packet_bridge_result{},
         render::vulkan_backend::vulkan_command_packet_execution_result{}) }

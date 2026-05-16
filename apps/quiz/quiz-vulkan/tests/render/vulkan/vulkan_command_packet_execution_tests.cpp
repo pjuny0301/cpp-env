@@ -270,6 +270,24 @@ make_native_packet_evidence(
     };
 }
 
+quiz_vulkan::render::vulkan_backend::vulkan_backend_frame_result
+make_native_packet_frame_without_descriptor_handles()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::vulkan_backend_frame_result frame;
+    frame.surface = vulkan_backend::vulkan_surface_extent{.width = 1280, .height = 720};
+    frame.viewport = quiz_vulkan::render::render_rect{4.0f, 8.0f, 640.0f, 360.0f};
+    frame.command_buffer_recording.command_buffer =
+        vulkan_backend::vulkan_command_buffer_id{.value = 44};
+    frame.pipeline.pipeline_layout.pipeline_layout =
+        vulkan_backend::vulkan_pipeline_layout_handle{.value = 5500};
+    frame.pipeline.graphics_pipeline.pipeline =
+        vulkan_backend::vulkan_graphics_pipeline_handle{.value = 4400};
+    frame.command_packets = make_ready_bridge();
+    return frame;
+}
+
 void test_vulkan_command_packet_execution_names_are_stable()
 {
     using namespace quiz_vulkan::render;
@@ -601,6 +619,66 @@ void test_vulkan_native_command_packet_executor_translates_packets_to_native_cal
         "native packet executor retains completed interface result");
 }
 
+void test_vulkan_native_command_packet_evidence_preserves_descriptor_handle_gap()
+{
+    using namespace quiz_vulkan::render;
+
+    const vulkan_backend::vulkan_backend_frame_result frame =
+        make_native_packet_frame_without_descriptor_handles();
+    const vulkan_backend::vulkan_native_command_packet_executor_evidence evidence =
+        vulkan_backend::build_vulkan_native_command_packet_executor_evidence(
+            frame,
+            make_native_functions());
+
+    require(evidence.native_functions.checked, "native packet evidence keeps function diagnostics");
+    require(
+        evidence.command_buffer.value == 9044,
+        "native packet evidence derives scoped command buffer from frame recording");
+    require(evidence.pipeline.value == 4400, "native packet evidence keeps graphics pipeline handle");
+    require(
+        evidence.pipeline_layout.value == 5500,
+        "native packet evidence keeps pipeline layout handle");
+    require(evidence.viewport_available, "native packet evidence keeps visible viewport");
+    require(evidence.viewport.x == 4.0f, "native packet evidence keeps viewport x");
+    require(evidence.viewport.y == 8.0f, "native packet evidence keeps viewport y");
+    require(evidence.viewport.width == 640.0f, "native packet evidence keeps viewport width");
+    require(evidence.viewport.height == 360.0f, "native packet evidence keeps viewport height");
+    require(
+        evidence.descriptor_sets.size() == 4,
+        "native packet evidence records one pending descriptor set per packet");
+    require(
+        evidence.descriptor_sets.front().packet_index == 0,
+        "native packet evidence records first packet descriptor owner");
+    require(evidence.descriptor_sets.front().set == 0, "native packet evidence records set index");
+    require(
+        evidence.descriptor_sets.front().required,
+        "native packet evidence records descriptor set requirement");
+    require(
+        !evidence.descriptor_sets.front().available,
+        "native packet evidence does not fabricate descriptor set availability");
+    require(
+        !evidence.descriptor_sets.front().descriptor_set.valid(),
+        "native packet evidence does not fabricate native descriptor set handles");
+
+    vulkan_backend::vulkan_native_command_packet_executor executor(evidence);
+    const vulkan_backend::vulkan_command_packet_execution_result result =
+        executor.execute_packets(frame.command_packets);
+    const vulkan_backend::vulkan_native_command_packet_execution_result native_result =
+        executor.native_execution_result();
+
+    require(result.checked, "descriptor gap result is checked");
+    require(!result.completed(), "descriptor gap does not complete native packet execution");
+    require(
+        result.status == vulkan_backend::vulkan_command_packet_execution_status::packet_failed,
+        "descriptor gap fails inside packet execution");
+    require(
+        native_result.status
+            == vulkan_backend::vulkan_native_command_packet_execution_status::descriptor_sets_unavailable,
+        "descriptor gap reports unavailable native descriptor sets");
+    require(!native_result.descriptor_sets_ready, "descriptor gap keeps descriptor sets unready");
+    require(native_result.first_failed_packet_index == 0, "descriptor gap blocks first packet");
+}
+
 void test_vulkan_native_command_packet_executor_blocks_missing_draw_symbol()
 {
     using namespace quiz_vulkan::render;
@@ -874,6 +952,7 @@ int main()
     test_vulkan_command_packet_execution_records_first_packet_failure();
     test_vulkan_command_packet_execution_records_successful_empty_lifecycle();
     test_vulkan_native_command_packet_executor_translates_packets_to_native_calls();
+    test_vulkan_native_command_packet_evidence_preserves_descriptor_handle_gap();
     test_vulkan_native_command_packet_executor_blocks_missing_draw_symbol();
     test_vulkan_native_command_packet_executor_blocks_invalid_command_buffer();
     test_vulkan_native_command_packet_executor_blocks_invalid_packet_scissor();

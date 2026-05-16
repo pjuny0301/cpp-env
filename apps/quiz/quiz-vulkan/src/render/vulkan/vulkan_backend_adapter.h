@@ -2594,6 +2594,7 @@ private:
 
 struct vulkan_backend_frame_result {
     vulkan_surface_extent surface;
+    render_rect viewport;
     vulkan_backend_lifecycle_readiness lifecycle;
     vulkan_backend_swapchain_lifecycle_state swapchain;
     vulkan_backend_swapchain_policy_state swapchain_policy;
@@ -2744,6 +2745,10 @@ vulkan_command_packet_bridge_result build_vulkan_command_packet_bridge(
     const vulkan_backend_pipeline_state& pipeline,
     const vulkan_backend_resource_binding_state& resource_bindings,
     const vulkan_backend_resource_registry_state& resource_registry);
+
+vulkan_native_command_packet_executor_evidence build_vulkan_native_command_packet_executor_evidence(
+    const vulkan_backend_frame_result& frame,
+    const vulkan_native_function_table_diagnostics& native_functions = {});
 
 vulkan_command_recorder_operation_plan build_vulkan_command_recorder_operation_plan(
     const vulkan_command_packet_bridge_result& bridge,

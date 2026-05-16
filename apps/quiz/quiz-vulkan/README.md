@@ -1,6 +1,6 @@
 # Vulkan Quiz App
 
-Native C++ quiz app rewrite with a Vulkan-backed UI renderer.
+Native C++23 quiz app rewrite with a Vulkan-backed UI renderer.
 
 ## Scope
 
@@ -9,18 +9,20 @@ The first target is the quiz playing app. The existing Tauri/React editor remain
 ## Architecture
 
 ```text
-platform/app shell
-  -> domain services
-      -> app_snapshot
-      <- app_action
-  -> ui subsystem
-      modifier_interface
-      scene_layout_data_modifier
-      scene_layout_data
-      layout_placer
-      ui_renderer
-      vulkan_renderer
+main/app shell
+  -> modifier_interface
+      -> scene_layout_data_modifier
+          -> scene_layout_edit_data
+              -> scene_layout_patch
+                  -> scene_layout_data
+                      -> layout_placer
+                          -> ui_renderer
+                              -> vulkan_renderer
 ```
+
+Modifiers may write only through `scene_layout_edit_data`. The layout placer,
+UI renderer, and Vulkan renderer are downstream consumers and must not reach
+back into app/domain state or mutate the scene.
 
 ## Current Status
 
@@ -30,7 +32,7 @@ platform/app shell
 
 ## Build
 
-Requires a modern C++ toolchain with C++20 support. The preferred local Windows path avoids user-profile and Korean paths by pinning GCC and Ninja to ASCII-only paths.
+Requires a modern C++ toolchain with C++23 support. The preferred local Windows path avoids user-profile and Korean paths by pinning GCC and Ninja to ASCII-only paths.
 
 Use the checked-in script for local builds:
 

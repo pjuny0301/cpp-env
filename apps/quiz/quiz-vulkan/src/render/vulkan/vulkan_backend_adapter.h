@@ -2085,6 +2085,92 @@ private:
     vulkan_command_packet_execution_result result_;
 };
 
+enum class vulkan_scoped_command_packet_execution_status {
+    not_checked,
+    completed,
+    render_pass_scope_unavailable,
+    packet_bridge_unavailable,
+    begin_failed,
+    packet_failed,
+    end_failed,
+};
+
+std::string_view scoped_command_packet_execution_status_name(
+    vulkan_scoped_command_packet_execution_status status);
+
+struct vulkan_scoped_command_packet_execution_request {
+    vulkan_native_render_pass_scope_record_result render_pass_scope;
+    vulkan_command_packet_bridge_result packet_bridge;
+};
+
+struct vulkan_scoped_command_packet_execution_result {
+    bool checked = false;
+    vulkan_scoped_command_packet_execution_status status =
+        vulkan_scoped_command_packet_execution_status::not_checked;
+    vulkan_backend_fallback_reason fallback_reason = vulkan_backend_fallback_reason::not_requested;
+    vulkan_native_render_pass_scope_record_result render_pass_scope;
+    vulkan_command_packet_bridge_result packet_bridge;
+    vulkan_command_packet_execution_result packet_execution;
+    vulkan_command_recorder_operation_plan operation_plan;
+    std::size_t render_pass_scope_id = 0;
+    std::size_t selected_framebuffer_target_index = 0;
+    vulkan_swapchain_image_id image_id;
+    vulkan_framebuffer_handle framebuffer;
+    vulkan_command_recording_command_buffer_handle command_buffer;
+    bool render_pass_scope_checked = false;
+    bool render_pass_scope_ready = false;
+    bool command_buffer_ready = false;
+    bool packet_bridge_checked = false;
+    bool packet_bridge_ready = false;
+    bool scoped_execution_empty = false;
+    bool render_pass_begin_attempted = false;
+    bool render_pass_begin_completed = false;
+    bool render_pass_end_attempted = false;
+    bool render_pass_end_completed = false;
+    bool render_pass_end_skipped = false;
+    bool packet_execution_checked = false;
+    bool packet_execution_ready = false;
+    bool operation_plan_checked = false;
+    bool operation_plan_ready = false;
+    bool has_failed_packet = false;
+    vulkan_command_packet_category first_failed_category = vulkan_command_packet_category::rect;
+    vulkan_batch_kind first_failed_batch_kind = vulkan_batch_kind::quad;
+    std::size_t first_failed_packet_index = 0;
+    std::size_t first_failed_command_index = 0;
+    std::size_t planned_packet_count = 0;
+    std::size_t attempted_packet_count = 0;
+    std::size_t executed_packet_count = 0;
+    std::size_t rect_packet_count = 0;
+    std::size_t text_packet_count = 0;
+    std::size_t image_packet_count = 0;
+    std::size_t debug_bounds_packet_count = 0;
+    std::string diagnostic;
+
+    bool completed() const
+    {
+        return checked && status == vulkan_scoped_command_packet_execution_status::completed
+            && fallback_reason == vulkan_backend_fallback_reason::none
+            && render_pass_scope_ready && command_buffer_ready
+            && packet_bridge_ready && packet_execution_ready && operation_plan_ready
+            && render_pass_begin_attempted && render_pass_begin_completed
+            && render_pass_end_attempted && render_pass_end_completed
+            && !render_pass_end_skipped && !has_failed_packet
+            && planned_packet_count == packet_bridge.packet_count
+            && executed_packet_count == planned_packet_count;
+    }
+
+    bool failed() const
+    {
+        return checked
+            && status != vulkan_scoped_command_packet_execution_status::not_checked
+            && status != vulkan_scoped_command_packet_execution_status::completed;
+    }
+};
+
+vulkan_scoped_command_packet_execution_result execute_vulkan_scoped_command_packets(
+    vulkan_command_packet_executor_interface& executor,
+    const vulkan_scoped_command_packet_execution_request& request);
+
 enum class vulkan_backend_frame_pipeline_handoff_status {
     not_checked,
     ready,

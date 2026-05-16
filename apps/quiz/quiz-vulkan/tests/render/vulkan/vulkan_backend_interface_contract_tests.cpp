@@ -6567,6 +6567,88 @@ static_assert(std::constructible_from<
     render::vulkan_backend::fake_vulkan_command_packet_executor_options>);
 
 static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_scoped_command_packet_execution_status::completed),
+    render::vulkan_backend::vulkan_scoped_command_packet_execution_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_scoped_command_packet_execution_status::packet_failed),
+    render::vulkan_backend::vulkan_scoped_command_packet_execution_status>);
+static_assert(requires(
+    render::vulkan_backend::vulkan_scoped_command_packet_execution_status status) {
+    { render::vulkan_backend::scoped_command_packet_execution_status_name(status) }
+        -> std::same_as<std::string_view>;
+});
+
+static_assert(requires(
+    render::vulkan_backend::vulkan_scoped_command_packet_execution_request request) {
+    { request.render_pass_scope }
+        -> std::same_as<render::vulkan_backend::vulkan_native_render_pass_scope_record_result&>;
+    { request.packet_bridge }
+        -> std::same_as<render::vulkan_backend::vulkan_command_packet_bridge_result&>;
+});
+
+static_assert(requires(
+    render::vulkan_backend::vulkan_scoped_command_packet_execution_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.status }
+        -> std::same_as<render::vulkan_backend::vulkan_scoped_command_packet_execution_status&>;
+    { result.fallback_reason }
+        -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
+    { result.render_pass_scope }
+        -> std::same_as<render::vulkan_backend::vulkan_native_render_pass_scope_record_result&>;
+    { result.packet_bridge }
+        -> std::same_as<render::vulkan_backend::vulkan_command_packet_bridge_result&>;
+    { result.packet_execution }
+        -> std::same_as<render::vulkan_backend::vulkan_command_packet_execution_result&>;
+    { result.operation_plan }
+        -> std::same_as<render::vulkan_backend::vulkan_command_recorder_operation_plan&>;
+    { result.render_pass_scope_id } -> std::same_as<std::size_t&>;
+    { result.selected_framebuffer_target_index } -> std::same_as<std::size_t&>;
+    { result.image_id } -> std::same_as<render::vulkan_backend::vulkan_swapchain_image_id&>;
+    { result.framebuffer } -> std::same_as<render::vulkan_backend::vulkan_framebuffer_handle&>;
+    { result.command_buffer }
+        -> std::same_as<render::vulkan_backend::vulkan_command_recording_command_buffer_handle&>;
+    { result.render_pass_scope_checked } -> std::same_as<bool&>;
+    { result.render_pass_scope_ready } -> std::same_as<bool&>;
+    { result.command_buffer_ready } -> std::same_as<bool&>;
+    { result.packet_bridge_checked } -> std::same_as<bool&>;
+    { result.packet_bridge_ready } -> std::same_as<bool&>;
+    { result.scoped_execution_empty } -> std::same_as<bool&>;
+    { result.render_pass_begin_attempted } -> std::same_as<bool&>;
+    { result.render_pass_begin_completed } -> std::same_as<bool&>;
+    { result.render_pass_end_attempted } -> std::same_as<bool&>;
+    { result.render_pass_end_completed } -> std::same_as<bool&>;
+    { result.render_pass_end_skipped } -> std::same_as<bool&>;
+    { result.packet_execution_checked } -> std::same_as<bool&>;
+    { result.packet_execution_ready } -> std::same_as<bool&>;
+    { result.operation_plan_checked } -> std::same_as<bool&>;
+    { result.operation_plan_ready } -> std::same_as<bool&>;
+    { result.has_failed_packet } -> std::same_as<bool&>;
+    { result.first_failed_category }
+        -> std::same_as<render::vulkan_backend::vulkan_command_packet_category&>;
+    { result.first_failed_batch_kind }
+        -> std::same_as<render::vulkan_backend::vulkan_batch_kind&>;
+    { result.first_failed_packet_index } -> std::same_as<std::size_t&>;
+    { result.first_failed_command_index } -> std::same_as<std::size_t&>;
+    { result.planned_packet_count } -> std::same_as<std::size_t&>;
+    { result.attempted_packet_count } -> std::same_as<std::size_t&>;
+    { result.executed_packet_count } -> std::same_as<std::size_t&>;
+    { result.rect_packet_count } -> std::same_as<std::size_t&>;
+    { result.text_packet_count } -> std::same_as<std::size_t&>;
+    { result.image_packet_count } -> std::same_as<std::size_t&>;
+    { result.debug_bounds_packet_count } -> std::same_as<std::size_t&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.completed() } -> std::same_as<bool>;
+    { result.failed() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    render::vulkan_backend::vulkan_command_packet_executor_interface& executor,
+    const render::vulkan_backend::vulkan_scoped_command_packet_execution_request& request) {
+    { render::vulkan_backend::execute_vulkan_scoped_command_packets(executor, request) }
+        -> std::same_as<render::vulkan_backend::vulkan_scoped_command_packet_execution_result>;
+});
+
+static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_command_recorder_operation_plan_status::not_checked),
     render::vulkan_backend::vulkan_command_recorder_operation_plan_status>);
 static_assert(std::same_as<

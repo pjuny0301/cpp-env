@@ -6283,6 +6283,147 @@ fake_vulkan_command_packet_executor::execution_result() const
     return result_;
 }
 
+vulkan_scoped_command_packet_execution_result execute_vulkan_scoped_command_packets(
+    vulkan_command_packet_executor_interface& executor,
+    const vulkan_scoped_command_packet_execution_request& request)
+{
+    vulkan_scoped_command_packet_execution_result result{
+        .checked = true,
+        .status = vulkan_scoped_command_packet_execution_status::not_checked,
+        .fallback_reason = vulkan_backend_fallback_reason::not_requested,
+        .render_pass_scope = request.render_pass_scope,
+        .packet_bridge = request.packet_bridge,
+        .packet_execution = {},
+        .operation_plan = {},
+        .render_pass_scope_id = request.render_pass_scope.selected_framebuffer_target_index + 1,
+        .selected_framebuffer_target_index =
+            request.render_pass_scope.selected_framebuffer_target_index,
+        .image_id = request.render_pass_scope.image_id,
+        .framebuffer = request.render_pass_scope.framebuffer,
+        .command_buffer = request.render_pass_scope.command_buffer,
+        .render_pass_scope_checked = request.render_pass_scope.checked,
+        .render_pass_scope_ready = request.render_pass_scope.ready_for_draw_commands(),
+        .command_buffer_ready = request.render_pass_scope.command_buffer_ready,
+        .packet_bridge_checked = request.packet_bridge.checked,
+        .packet_bridge_ready = request.packet_bridge.completed(),
+        .scoped_execution_empty = request.packet_bridge.packet_count == 0,
+        .render_pass_begin_attempted = request.render_pass_scope.vk_cmd_begin_render_pass_called,
+        .render_pass_begin_completed = request.render_pass_scope.ready_for_draw_commands(),
+        .render_pass_end_attempted = request.render_pass_scope.vk_cmd_end_render_pass_called,
+        .render_pass_end_completed = request.render_pass_scope.ready_for_draw_commands(),
+        .render_pass_end_skipped =
+            request.render_pass_scope.checked
+            && request.render_pass_scope.status
+                == vulkan_native_render_pass_scope_record_status::begin_failed
+            && !request.render_pass_scope.vk_cmd_end_render_pass_called,
+        .packet_execution_checked = false,
+        .packet_execution_ready = false,
+        .operation_plan_checked = false,
+        .operation_plan_ready = false,
+        .planned_packet_count = request.packet_bridge.packet_count,
+        .diagnostic = {},
+    };
+
+    if (!result.render_pass_scope_ready) {
+        if (request.render_pass_scope.status
+            == vulkan_native_render_pass_scope_record_status::begin_failed) {
+            result.status = vulkan_scoped_command_packet_execution_status::begin_failed;
+            result.fallback_reason = vulkan_backend_fallback_reason::record_commands_failed;
+            result.diagnostic = request.render_pass_scope.diagnostic.empty()
+                ? "Scoped Vulkan command packet execution could not begin render pass scope"
+                : request.render_pass_scope.diagnostic;
+            return result;
+        }
+        if (request.render_pass_scope.status
+            == vulkan_native_render_pass_scope_record_status::end_failed) {
+            result.status = vulkan_scoped_command_packet_execution_status::end_failed;
+            result.fallback_reason = vulkan_backend_fallback_reason::record_commands_failed;
+            result.diagnostic = request.render_pass_scope.diagnostic.empty()
+                ? "Scoped Vulkan command packet execution could not end render pass scope"
+                : request.render_pass_scope.diagnostic;
+            return result;
+        }
+
+        result.status =
+            vulkan_scoped_command_packet_execution_status::render_pass_scope_unavailable;
+        result.fallback_reason = vulkan_backend_fallback_reason::render_pass_unavailable;
+        result.diagnostic = request.render_pass_scope.diagnostic.empty()
+            ? "Scoped Vulkan command packet execution is missing a ready render pass scope"
+            : request.render_pass_scope.diagnostic;
+        return result;
+    }
+
+    if (!result.packet_bridge_ready) {
+        result.status = vulkan_scoped_command_packet_execution_status::packet_bridge_unavailable;
+        result.fallback_reason = request.packet_bridge.fallback_reason
+            == vulkan_backend_fallback_reason::none
+            ? vulkan_backend_fallback_reason::record_commands_failed
+            : request.packet_bridge.fallback_reason;
+        result.diagnostic =
+            "Scoped Vulkan command packet execution is missing ready command packets";
+        return result;
+    }
+
+    result.packet_execution = executor.execute_packets(request.packet_bridge);
+    result.operation_plan =
+        build_vulkan_command_recorder_operation_plan(request.packet_bridge, result.packet_execution);
+    result.packet_execution_checked = result.packet_execution.checked;
+    result.packet_execution_ready = result.packet_execution.completed();
+    result.operation_plan_checked = result.operation_plan.checked;
+    result.operation_plan_ready = result.operation_plan.completed();
+    result.has_failed_packet = result.packet_execution.has_failed_packet;
+    result.first_failed_category = result.packet_execution.first_failed_category;
+    result.first_failed_batch_kind = result.packet_execution.first_failed_batch_kind;
+    result.first_failed_packet_index = result.packet_execution.first_failed_packet_index;
+    result.first_failed_command_index = result.packet_execution.first_failed_command_index;
+    result.attempted_packet_count = result.packet_execution.attempted_packet_count;
+    result.executed_packet_count = result.packet_execution.executed_packet_count;
+    result.rect_packet_count = result.packet_execution.rect_packet_count;
+    result.text_packet_count = result.packet_execution.text_packet_count;
+    result.image_packet_count = result.packet_execution.image_packet_count;
+    result.debug_bounds_packet_count = result.packet_execution.debug_bounds_packet_count;
+
+    if (result.packet_execution.completed()) {
+        result.status = vulkan_scoped_command_packet_execution_status::completed;
+        result.fallback_reason = vulkan_backend_fallback_reason::none;
+        result.diagnostic = result.scoped_execution_empty
+            ? "Scoped Vulkan command packet execution completed with an empty scope"
+            : "Scoped Vulkan command packet execution completed";
+        return result;
+    }
+
+    result.fallback_reason = result.packet_execution.fallback_reason
+        == vulkan_backend_fallback_reason::none
+        ? vulkan_backend_fallback_reason::record_commands_failed
+        : result.packet_execution.fallback_reason;
+    switch (result.packet_execution.status) {
+    case vulkan_command_packet_execution_status::begin_failed:
+        result.status = vulkan_scoped_command_packet_execution_status::begin_failed;
+        result.diagnostic = "Scoped Vulkan command packet execution begin failed";
+        break;
+    case vulkan_command_packet_execution_status::packet_failed:
+        result.status = vulkan_scoped_command_packet_execution_status::packet_failed;
+        result.diagnostic = "Scoped Vulkan command packet execution failed inside render pass scope";
+        break;
+    case vulkan_command_packet_execution_status::end_failed:
+        result.status = vulkan_scoped_command_packet_execution_status::end_failed;
+        result.diagnostic = "Scoped Vulkan command packet execution end failed";
+        break;
+    case vulkan_command_packet_execution_status::packet_bridge_unavailable:
+        result.status = vulkan_scoped_command_packet_execution_status::packet_bridge_unavailable;
+        result.diagnostic =
+            "Scoped Vulkan command packet execution is missing ready command packets";
+        break;
+    case vulkan_command_packet_execution_status::not_checked:
+    case vulkan_command_packet_execution_status::completed:
+        result.status = vulkan_scoped_command_packet_execution_status::packet_failed;
+        result.diagnostic = "Scoped Vulkan command packet execution did not complete";
+        break;
+    }
+
+    return result;
+}
+
 vulkan_command_recorder_operation_plan build_vulkan_command_recorder_operation_plan(
     const vulkan_command_packet_bridge_result& bridge,
     const vulkan_command_packet_execution_result& execution)

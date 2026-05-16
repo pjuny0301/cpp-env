@@ -144,6 +144,37 @@ quiz_vulkan::render::vulkan_backend::vulkan_command_packet_bridge_result make_em
     };
 }
 
+quiz_vulkan::render::vulkan_backend::vulkan_native_render_pass_scope_record_result
+make_ready_render_pass_scope(std::size_t selected_index = 1)
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    return vulkan_backend::vulkan_native_render_pass_scope_record_result{
+        .checked = true,
+        .status = vulkan_backend::vulkan_native_render_pass_scope_record_status::recorded,
+        .selected_framebuffer_target_index = selected_index,
+        .framebuffer_target_count = 2,
+        .image_id = vulkan_backend::vulkan_swapchain_image_id{.value = selected_index + 1},
+        .command_buffer =
+            vulkan_backend::vulkan_command_recording_command_buffer_handle{.value = 909},
+        .render_pass = vulkan_backend::vulkan_render_pass_handle{.value = 300},
+        .framebuffer = vulkan_backend::vulkan_framebuffer_handle{.value = 13000 + selected_index + 1},
+        .extent = vulkan_backend::vulkan_surface_extent{.width = 1280, .height = 720},
+        .begin_render_pass_symbol = vulkan_backend::vulkan_native_function_pointer{.value = 1401},
+        .end_render_pass_symbol = vulkan_backend::vulkan_native_function_pointer{.value = 1402},
+        .framebuffer_targets_ready = true,
+        .command_buffer_ready = true,
+        .render_pass_ready = true,
+        .framebuffer_ready = true,
+        .extent_ready = true,
+        .extent_matches = true,
+        .dispatch_table_ready = true,
+        .vk_cmd_begin_render_pass_called = true,
+        .vk_cmd_end_render_pass_called = true,
+        .diagnostic = "Native Vulkan render pass scope recorded",
+    };
+}
+
 void test_vulkan_command_packet_execution_names_are_stable()
 {
     using namespace quiz_vulkan::render;
@@ -193,6 +224,21 @@ void test_vulkan_command_packet_execution_names_are_stable()
             vulkan_backend::vulkan_command_packet_execution_event::end)
             == std::string_view{"end"},
         "execution event name for end is stable");
+    require(
+        vulkan_backend::scoped_command_packet_execution_status_name(
+            vulkan_backend::vulkan_scoped_command_packet_execution_status::completed)
+            == std::string_view{"completed"},
+        "scoped execution status name for completed is stable");
+    require(
+        vulkan_backend::scoped_command_packet_execution_status_name(
+            vulkan_backend::vulkan_scoped_command_packet_execution_status::render_pass_scope_unavailable)
+            == std::string_view{"render_pass_scope_unavailable"},
+        "scoped execution status name for unavailable render pass scope is stable");
+    require(
+        vulkan_backend::scoped_command_packet_execution_status_name(
+            vulkan_backend::vulkan_scoped_command_packet_execution_status::packet_failed)
+            == std::string_view{"packet_failed"},
+        "scoped execution status name for packet failure is stable");
 }
 
 void test_vulkan_command_packet_execution_records_successful_lifecycle()
@@ -341,6 +387,170 @@ void test_vulkan_command_packet_execution_records_successful_empty_lifecycle()
         "empty packet execution final event is end");
 }
 
+void test_vulkan_scoped_command_packet_execution_records_scope_and_packets()
+{
+    using namespace quiz_vulkan::render;
+
+    vulkan_backend::fake_vulkan_command_packet_executor executor;
+    const vulkan_backend::vulkan_scoped_command_packet_execution_result result =
+        vulkan_backend::execute_vulkan_scoped_command_packets(
+            executor,
+            vulkan_backend::vulkan_scoped_command_packet_execution_request{
+                .render_pass_scope = make_ready_render_pass_scope(1),
+                .packet_bridge = make_ready_bridge(),
+            });
+
+    require(result.checked, "scoped packet execution is checked");
+    require(result.completed(), "scoped packet execution completes");
+    require(!result.failed(), "scoped packet execution reports no failure");
+    require(
+        result.status == vulkan_backend::vulkan_scoped_command_packet_execution_status::completed,
+        "scoped packet execution reports completed");
+    require(result.render_pass_scope_id == 2, "scoped packet execution records scope id");
+    require(result.selected_framebuffer_target_index == 1, "scoped packet execution records target index");
+    require(result.image_id.value == 2, "scoped packet execution records image id");
+    require(result.framebuffer.value == 13002, "scoped packet execution records framebuffer handle");
+    require(result.command_buffer.value == 909, "scoped packet execution records command buffer");
+    require(result.render_pass_scope_checked, "scoped packet execution records checked scope");
+    require(result.render_pass_scope_ready, "scoped packet execution records ready scope");
+    require(result.command_buffer_ready, "scoped packet execution records command buffer readiness");
+    require(result.packet_bridge_checked, "scoped packet execution records checked packet bridge");
+    require(result.packet_bridge_ready, "scoped packet execution records ready packet bridge");
+    require(!result.scoped_execution_empty, "scoped packet execution records non-empty scope");
+    require(result.render_pass_begin_attempted, "scoped packet execution records render pass begin attempt");
+    require(result.render_pass_begin_completed, "scoped packet execution records render pass begin completion");
+    require(result.render_pass_end_attempted, "scoped packet execution records render pass end attempt");
+    require(result.render_pass_end_completed, "scoped packet execution records render pass end completion");
+    require(!result.render_pass_end_skipped, "scoped packet execution does not skip render pass end");
+    require(result.packet_execution_ready, "scoped packet execution records packet execution readiness");
+    require(result.operation_plan_ready, "scoped packet execution records operation plan readiness");
+    require(result.planned_packet_count == 4, "scoped packet execution records planned packets");
+    require(result.attempted_packet_count == 4, "scoped packet execution records attempted packets");
+    require(result.executed_packet_count == 4, "scoped packet execution records executed packets");
+    require(result.rect_packet_count == 1, "scoped packet execution counts rect packets");
+    require(result.text_packet_count == 1, "scoped packet execution counts text packets");
+    require(result.image_packet_count == 1, "scoped packet execution counts image packets");
+    require(result.debug_bounds_packet_count == 1, "scoped packet execution counts debug packets");
+    require(result.packet_execution.events.size() == 6, "scoped packet execution keeps packet events");
+    require(result.operation_plan.operation_count == 4, "scoped packet execution builds recorder operations");
+    require(executor.execution_result().completed(), "scoped packet execution uses packet executor");
+}
+
+void test_vulkan_scoped_command_packet_execution_accepts_empty_scope()
+{
+    using namespace quiz_vulkan::render;
+
+    vulkan_backend::fake_vulkan_command_packet_executor executor;
+    const vulkan_backend::vulkan_scoped_command_packet_execution_result result =
+        vulkan_backend::execute_vulkan_scoped_command_packets(
+            executor,
+            vulkan_backend::vulkan_scoped_command_packet_execution_request{
+                .render_pass_scope = make_ready_render_pass_scope(0),
+                .packet_bridge = make_empty_bridge(),
+            });
+
+    require(result.checked, "empty scoped packet execution is checked");
+    require(result.completed(), "empty scoped packet execution completes");
+    require(result.scoped_execution_empty, "empty scoped packet execution records empty scope");
+    require(result.render_pass_scope_id == 1, "empty scoped packet execution records scope id");
+    require(result.planned_packet_count == 0, "empty scoped packet execution records no planned packets");
+    require(result.attempted_packet_count == 0, "empty scoped packet execution records no attempted packets");
+    require(result.executed_packet_count == 0, "empty scoped packet execution records no executed packets");
+    require(result.packet_execution.events.size() == 2, "empty scoped packet execution keeps begin and end events");
+    require(result.operation_plan.completed(), "empty scoped packet execution builds an empty operation plan");
+}
+
+void test_vulkan_scoped_command_packet_execution_reports_scope_and_bridge_blockers()
+{
+    using namespace quiz_vulkan::render;
+
+    vulkan_backend::fake_vulkan_command_packet_executor executor;
+
+    vulkan_backend::vulkan_native_render_pass_scope_record_result begin_failed_scope =
+        make_ready_render_pass_scope(0);
+    begin_failed_scope.status =
+        vulkan_backend::vulkan_native_render_pass_scope_record_status::begin_failed;
+    begin_failed_scope.vk_cmd_end_render_pass_called = false;
+    begin_failed_scope.diagnostic = "Native Vulkan render pass scope begin failed";
+    const vulkan_backend::vulkan_scoped_command_packet_execution_result begin_failed =
+        vulkan_backend::execute_vulkan_scoped_command_packets(
+            executor,
+            vulkan_backend::vulkan_scoped_command_packet_execution_request{
+                .render_pass_scope = begin_failed_scope,
+                .packet_bridge = make_ready_bridge(),
+            });
+    require(
+        begin_failed.status == vulkan_backend::vulkan_scoped_command_packet_execution_status::begin_failed,
+        "scoped packet execution reports render pass begin failure");
+    require(begin_failed.render_pass_end_skipped, "scoped packet execution skips render pass end after begin failure");
+    require(!begin_failed.packet_execution_checked, "scoped packet execution does not execute packets after begin failure");
+
+    const vulkan_backend::vulkan_command_packet_bridge_result unavailable_bridge{
+        .checked = true,
+        .status = vulkan_backend::vulkan_command_packet_bridge_status::pipeline_unavailable,
+        .fallback_reason = vulkan_backend::vulkan_backend_fallback_reason::pipeline_unavailable,
+        .pipeline_checked = true,
+        .pipeline_ready = false,
+        .planned_batch_count = 4,
+    };
+    const vulkan_backend::vulkan_scoped_command_packet_execution_result bridge_blocked =
+        vulkan_backend::execute_vulkan_scoped_command_packets(
+            executor,
+            vulkan_backend::vulkan_scoped_command_packet_execution_request{
+                .render_pass_scope = make_ready_render_pass_scope(0),
+                .packet_bridge = unavailable_bridge,
+            });
+    require(
+        bridge_blocked.status
+            == vulkan_backend::vulkan_scoped_command_packet_execution_status::packet_bridge_unavailable,
+        "scoped packet execution reports unavailable packet bridge");
+    require(
+        bridge_blocked.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::pipeline_unavailable,
+        "scoped packet execution preserves bridge fallback");
+}
+
+void test_vulkan_scoped_command_packet_execution_reports_first_packet_failure_inside_scope()
+{
+    using namespace quiz_vulkan::render;
+
+    vulkan_backend::fake_vulkan_command_packet_executor executor(
+        vulkan_backend::fake_vulkan_command_packet_executor_options{
+            .fail_packet = true,
+            .fail_packet_index = 2,
+        });
+    const vulkan_backend::vulkan_scoped_command_packet_execution_result result =
+        vulkan_backend::execute_vulkan_scoped_command_packets(
+            executor,
+            vulkan_backend::vulkan_scoped_command_packet_execution_request{
+                .render_pass_scope = make_ready_render_pass_scope(1),
+                .packet_bridge = make_ready_bridge(),
+            });
+
+    require(result.checked, "failed scoped packet execution is checked");
+    require(!result.completed(), "failed scoped packet execution does not complete");
+    require(result.failed(), "failed scoped packet execution reports failure");
+    require(
+        result.status == vulkan_backend::vulkan_scoped_command_packet_execution_status::packet_failed,
+        "scoped packet execution reports packet failure");
+    require(result.has_failed_packet, "scoped packet execution records failed packet");
+    require(
+        result.first_failed_category == vulkan_backend::vulkan_command_packet_category::image,
+        "scoped packet execution records first failed category");
+    require(
+        result.first_failed_batch_kind == vulkan_backend::vulkan_batch_kind::image,
+        "scoped packet execution records first failed batch kind");
+    require(result.first_failed_packet_index == 2, "scoped packet execution records first failed packet index");
+    require(result.first_failed_command_index == 12, "scoped packet execution records first failed command index");
+    require(result.attempted_packet_count == 3, "scoped packet execution records attempted packets through failure");
+    require(result.executed_packet_count == 2, "scoped packet execution records packets before failure");
+    require(result.rect_packet_count == 1, "scoped packet execution counts completed rect packet");
+    require(result.text_packet_count == 1, "scoped packet execution counts completed text packet");
+    require(result.image_packet_count == 0, "scoped packet execution does not count failed packet as executed");
+    require(result.render_pass_begin_completed, "scoped packet execution records render pass scope began");
+    require(result.render_pass_end_completed, "scoped packet execution preserves render pass scope end evidence");
+    require(!result.operation_plan_ready, "scoped packet execution blocks operation plan after packet failure");
+}
+
 } // namespace
 
 int main()
@@ -349,5 +559,9 @@ int main()
     test_vulkan_command_packet_execution_records_successful_lifecycle();
     test_vulkan_command_packet_execution_records_first_packet_failure();
     test_vulkan_command_packet_execution_records_successful_empty_lifecycle();
+    test_vulkan_scoped_command_packet_execution_records_scope_and_packets();
+    test_vulkan_scoped_command_packet_execution_accepts_empty_scope();
+    test_vulkan_scoped_command_packet_execution_reports_scope_and_bridge_blockers();
+    test_vulkan_scoped_command_packet_execution_reports_first_packet_failure_inside_scope();
     return 0;
 }

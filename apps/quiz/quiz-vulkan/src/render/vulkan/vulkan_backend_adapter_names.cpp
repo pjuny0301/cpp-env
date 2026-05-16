@@ -337,6 +337,29 @@ std::string_view command_packet_execution_event_name(
     return "unknown";
 }
 
+std::string_view scoped_command_packet_execution_status_name(
+    vulkan_scoped_command_packet_execution_status status)
+{
+    switch (status) {
+    case vulkan_scoped_command_packet_execution_status::not_checked:
+        return "not_checked";
+    case vulkan_scoped_command_packet_execution_status::completed:
+        return "completed";
+    case vulkan_scoped_command_packet_execution_status::render_pass_scope_unavailable:
+        return "render_pass_scope_unavailable";
+    case vulkan_scoped_command_packet_execution_status::packet_bridge_unavailable:
+        return "packet_bridge_unavailable";
+    case vulkan_scoped_command_packet_execution_status::begin_failed:
+        return "begin_failed";
+    case vulkan_scoped_command_packet_execution_status::packet_failed:
+        return "packet_failed";
+    case vulkan_scoped_command_packet_execution_status::end_failed:
+        return "end_failed";
+    }
+
+    return "unknown";
+}
+
 std::string_view command_recorder_operation_plan_status_name(
     vulkan_command_recorder_operation_plan_status status)
 {

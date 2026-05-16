@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- current: after `f783f6f`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`; focused architecture/renderer/Vulkan CTest passed 7/7.
+- `f783f6f`: Vulkan backend frame results and frame pipeline handoff summaries now carry scoped command-packet execution evidence, including readiness, selected framebuffer/command-buffer data, packet counts, failed packet details, and frame completion gating while staying inside the Vulkan backend boundary.
 - current: after `81b2039`, Windows MinGW full CTest passed 103/103. The previous `quiz_vulkan_font_shaped_atlas_update_tests` host permission BAD_COMMAND is resolved by keeping the test name stable and shortening only the Windows executable output name.
 - current: after `d5ffb54`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`; focused architecture/renderer/Vulkan CTest passed 5/5.
 - `d5ffb54`: Vulkan backend now composes render-pass scope readiness with command-packet execution summaries, preserving selected framebuffer target, command buffer, packet bridge readiness, per-category packet counts, first failed packet evidence, and empty-scope diagnostics inside the backend boundary.

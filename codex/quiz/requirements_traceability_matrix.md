@@ -6,6 +6,9 @@
 
 최근 baseline 통합 증거:
 
+- current: after `a629aff`, Windows MinGW built `quiz_vulkan_vulkan_command_packet_execution_tests`, `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_vulkan_frame_pipeline_handoff_tests`, `quiz_vulkan_renderer_tests`, and `quiz_vulkan_architecture_boundary_tests`; focused architecture/renderer/Vulkan CTest passed 4/4.
+- `a629aff`: Vulkan backend frame results now expose native command-packet evidence for command buffer, graphics pipeline, pipeline layout, and viewport while intentionally preserving descriptor set handles as unavailable until a Vulkan-owned descriptor allocation/upload evidence path supplies them.
+- `ff33706`: queued the next long-lived Vulkan worker prompt for native descriptor set evidence from the latest pushed baseline.
 - current: after `f783f6f`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`; focused architecture/renderer/Vulkan CTest passed 7/7.
 - `f783f6f`: Vulkan backend frame results and frame pipeline handoff summaries now carry scoped command-packet execution evidence, including readiness, selected framebuffer/command-buffer data, packet counts, failed packet details, and frame completion gating while staying inside the Vulkan backend boundary.
 - current: after `81b2039`, Windows MinGW full CTest passed 103/103. The previous `quiz_vulkan_font_shaped_atlas_update_tests` host permission BAD_COMMAND is resolved by keeping the test name stable and shortening only the Windows executable output name.

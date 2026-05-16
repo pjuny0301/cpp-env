@@ -5,6 +5,7 @@ Last updated: 2026-05-16
 ## Top priorities
 
 - Keep the native C++/Vulkan remake aligned with the Android quiz UX baseline while routing UX actions through app/domain actions.
+- Current Vulkan bottleneck: `build_vulkan_native_command_packet_executor_evidence` can now derive command buffer, pipeline, pipeline layout, and viewport evidence from a backend frame, but descriptor set handles remain intentionally unavailable until a Vulkan-owned descriptor allocation/upload evidence path supplies them.
 - Treat long press as the unknown-question path: UI button contract `mark_question_unknown`, app input route `mark_question_unknown`, domain payload `mark_question_unknown_action`.
 - Keep test status counts derived from the configured build with `ctest -N`; do not freeze global CTest totals in docs.
 - Build the engine stack in dependency order: Vulkan backend implementation, image decode/texture path, text layout/atlas, asset materialization, and input/IME. Audio/backend wiring is intentionally deferred for now.
@@ -15,7 +16,7 @@ Last updated: 2026-05-16
 ## Active Worker Queue
 
 - `codex-vulkan-real-backend-probe-20260514`: idle after `2f97c8b` integration. Do not re-merge `codex/vulkan-default-scoped-packet-frame-20260516`; give this session a fresh baseline branch for the next Vulkan-only task.
-- `codex-vulkan-native-command-packet-executor-20260516`: `c856f85` integrated as `082e9bd`; keep the session alive for inspection or a fresh Vulkan-only branch.
+- `codex-vulkan-native-command-packet-executor-20260516`: latest baseline prompt queued via `ff33706` for Vulkan-only native descriptor set evidence. Keep the session alive; do not interrupt old in-flight work.
 - `codex-text-freetype-raster-payload-handoff-20260516`: `5e74a26` integrated as `e78cd75`; keep the session alive for inspection or a fresh text-only branch.
 - `codex-asset-unified-cache-key-20260514` and `codex-image-texture-next-20260514` are currently idle on historical ahead commits that are patch-equivalent to integrated baseline work. Do not re-merge those branches; give them fresh baseline tasks only if asset/image becomes the active bottleneck again.
 
@@ -50,6 +51,9 @@ Last updated: 2026-05-16
 - Worker pipeline rule: keep tasks bounded to one engine-owned surface plus focused tests. If a worker discovers a cross-engine or app/CMake need, it should finish the engine-local patch and hand off the wiring need instead of editing integrator-owned files.
 - Worker pipeline rule: focused tests are enough for worker handoff; the integrator runs Windows focused verification after cherry-pick and full CTest only after meaningful batches. This keeps throughput without hiding boundary regressions.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
+- Latest integration note: `a629aff` exposes the native Vulkan command packet evidence gap from backend frame data: command buffer, graphics pipeline, pipeline layout, and viewport now flow into `vulkan_native_command_packet_executor_evidence`, while descriptor set handles stay unavailable instead of being fabricated.
+- Latest verification note: after `a629aff`, Windows MinGW built `quiz_vulkan_vulkan_command_packet_execution_tests`, `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_vulkan_frame_pipeline_handoff_tests`, `quiz_vulkan_renderer_tests`, and `quiz_vulkan_architecture_boundary_tests`; focused architecture/renderer/Vulkan CTest passed 4/4.
+- Latest worker note: `ff33706` records the next Vulkan worker prompt for native descriptor set evidence and pushes it to `origin/codex/quiz-vulkan-remake-baseline`.
 - Latest verification note: after `2f97c8b`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`; focused architecture/renderer/Vulkan CTest passed 7/7.
 - Latest integration note: `e78cd75` routes fake text-engine raster payload diagnostics through the FreeType memory-face adapter when file-backed font bytes and backend capability are available, preserving deterministic fallback evidence for missing bytes or unavailable adapters.
 - Latest verification note: after `e78cd75`, Windows MinGW configured the main build, built `quiz_vulkan_fake_text_engine_freetype_raster_payload_tests` and `quiz_vulkan_interface_contract_compile_tests`, and focused text CTest passed 3/3.

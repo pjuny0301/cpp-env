@@ -15,6 +15,7 @@ Last updated: 2026-05-16
 ## Active Worker Queue
 
 - `codex-vulkan-real-backend-probe-20260514`: idle after `2f97c8b` integration. Do not re-merge `codex/vulkan-default-scoped-packet-frame-20260516`; give this session a fresh baseline branch for the next Vulkan-only task.
+- Next Vulkan-only worker task is queued as `codex-workers/prompts/next-vulkan-native-command-packet-executor.md`: move scoped command packet execution closer to native `vkCmd*` command-call evidence without app/UI/domain coupling.
 - `codex-text-freetype-prototype-20260514`: queued for fresh text-only FreeType raster payload handoff work from latest baseline. Scope is `src/render/text/*` and `tests/render/text/*`; it must not edit app, renderer/Vulkan, or top-level CMake.
 - `codex-asset-unified-cache-key-20260514` and `codex-image-texture-next-20260514` are currently idle on historical ahead commits that are patch-equivalent to integrated baseline work. Do not re-merge those branches; give them fresh baseline tasks only if asset/image becomes the active bottleneck again.
 

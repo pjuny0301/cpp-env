@@ -16,7 +16,7 @@ Last updated: 2026-05-16
 
 - `codex-vulkan-real-backend-probe-20260514`: idle after `2f97c8b` integration. Do not re-merge `codex/vulkan-default-scoped-packet-frame-20260516`; give this session a fresh baseline branch for the next Vulkan-only task.
 - Next Vulkan-only worker task is queued as `codex-workers/prompts/next-vulkan-native-command-packet-executor.md`: move scoped command packet execution closer to native `vkCmd*` command-call evidence without app/UI/domain coupling.
-- `codex-text-freetype-prototype-20260514`: queued for fresh text-only FreeType raster payload handoff work from latest baseline. Scope is `src/render/text/*` and `tests/render/text/*`; it must not edit app, renderer/Vulkan, or top-level CMake.
+- `codex-text-freetype-raster-payload-handoff-20260516`: `5e74a26` integrated as `e78cd75`; keep the session alive for inspection or a fresh text-only branch.
 - `codex-asset-unified-cache-key-20260514` and `codex-image-texture-next-20260514` are currently idle on historical ahead commits that are patch-equivalent to integrated baseline work. Do not re-merge those branches; give them fresh baseline tasks only if asset/image becomes the active bottleneck again.
 
 ## Active requirement IDs
@@ -51,6 +51,8 @@ Last updated: 2026-05-16
 - Worker pipeline rule: focused tests are enough for worker handoff; the integrator runs Windows focused verification after cherry-pick and full CTest only after meaningful batches. This keeps throughput without hiding boundary regressions.
 - Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
 - Latest verification note: after `2f97c8b`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`; focused architecture/renderer/Vulkan CTest passed 7/7.
+- Latest integration note: `e78cd75` routes fake text-engine raster payload diagnostics through the FreeType memory-face adapter when file-backed font bytes and backend capability are available, preserving deterministic fallback evidence for missing bytes or unavailable adapters.
+- Latest verification note: after `e78cd75`, Windows MinGW configured the main build, built `quiz_vulkan_fake_text_engine_freetype_raster_payload_tests` and `quiz_vulkan_interface_contract_compile_tests`, and focused text CTest passed 3/3.
 - Latest integration note: `2f97c8b` attaches default scoped Vulkan command-packet execution evidence to backend frame submission before device command recording, including ready/failure/empty summaries in frame pipeline handoff without app/UI/domain coupling.
 - Latest verification note: after `f783f6f`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`; focused architecture/renderer/Vulkan CTest passed 7/7.
 - Latest integration note: `f783f6f` threads scoped command-packet execution results into Vulkan backend frame result and frame pipeline handoff summaries, including ready/failure state, selected framebuffer/command-buffer evidence, per-category packet counts, first failed packet evidence, and command-recording readiness gating without app/UI/domain coupling.

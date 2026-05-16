@@ -17,11 +17,12 @@ Last updated: 2026-05-17
 
 ## Active Worker Queue
 
-- `codex-vulkan-real-backend-probe-20260514`: idle after `2f97c8b` integration. Do not re-merge `codex/vulkan-default-scoped-packet-frame-20260516`; give this session a fresh baseline branch for the next Vulkan-only task.
-- `codex-vulkan-native-descriptor-set-evidence-20260516`: `afb0051` integrated as `bd934a2`, then integrator follow-up `ef822d5` tightened image sampler materialization matching. Session is idle and must stay alive; give it a fresh baseline branch for the next Vulkan-only descriptor-write/image-view task.
-- `codex-vulkan-native-command-packet-executor-20260516`: idle after older native command packet executor work. Keep the session alive; give it a fresh baseline branch before any new task.
-- `codex-text-freetype-raster-payload-handoff-20260516`: `5e74a26` integrated as `e78cd75`; keep the session alive for inspection or a fresh text-only branch.
-- `codex-asset-unified-cache-key-20260514` and `codex-image-texture-next-20260514` are currently idle on historical ahead commits that are patch-equivalent to integrated baseline work. Do not re-merge those branches; give them fresh baseline tasks only if asset/image becomes the active bottleneck again.
+- `codex-image-texture-next-20260514`: busy on `codex/image-resource-packet-consumption-diff-20260517`, scoped to image resource packet consumption diff evidence. The branch is behind the latest baseline only by README/documentation work; do not interrupt, and inspect/merge only after the worker reports completion or commits.
+- `codex-text-freetype-prototype-20260514`: busy on `codex/text-resource-packet-consumption-diff-20260517`, scoped to text resource packet consumption diff evidence. The branch is behind the latest baseline only by README/documentation work; do not interrupt, and inspect/merge only after the worker reports completion or commits.
+- `codex-vulkan-native-descriptor-set-evidence-20260516`: busy on `codex/vulkan-descriptor-write-payload-handoff-20260517`, scoped to Vulkan descriptor write payload handoff evidence. It is working around a worker-local Windows/Ninja archive/link artifact issue; do not interrupt.
+- `codex-asset-unified-cache-key-20260514`: idle on an already-integrated historical branch. Do not re-merge; assign a fresh baseline branch only if asset becomes the active bottleneck.
+- `codex-text-freetype-raster-payload-handoff-20260516`: idle after integrated raster payload handoff work. Keep alive for future text-only tasks.
+- `codex-vulkan-native-command-packet-executor-20260516` and `codex-vulkan-real-backend-probe-20260514`: idle on historical Vulkan branches. Keep alive; give fresh baseline branches before any new Vulkan-only task.
 
 ## Active requirement IDs
 

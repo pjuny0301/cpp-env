@@ -477,6 +477,41 @@ std::string_view command_recorder_operation_plan_status_name(
     return "unknown";
 }
 
+std::string_view native_descriptor_payload_command_recording_status_name(
+    vulkan_native_descriptor_payload_command_recording_status status)
+{
+    switch (status) {
+    case vulkan_native_descriptor_payload_command_recording_status::not_checked:
+        return "not_checked";
+    case vulkan_native_descriptor_payload_command_recording_status::ready:
+        return "ready";
+    case vulkan_native_descriptor_payload_command_recording_status::packet_bridge_unavailable:
+        return "packet_bridge_unavailable";
+    case vulkan_native_descriptor_payload_command_recording_status::
+        descriptor_set_allocation_unavailable:
+        return "descriptor_set_allocation_unavailable";
+    case vulkan_native_descriptor_payload_command_recording_status::
+        descriptor_write_payload_unavailable:
+        return "descriptor_write_payload_unavailable";
+    case vulkan_native_descriptor_payload_command_recording_status::operation_plan_unavailable:
+        return "operation_plan_unavailable";
+    case vulkan_native_descriptor_payload_command_recording_status::
+        missing_descriptor_write_payload:
+        return "missing_descriptor_write_payload";
+    case vulkan_native_descriptor_payload_command_recording_status::
+        duplicate_descriptor_write_payload:
+        return "duplicate_descriptor_write_payload";
+    case vulkan_native_descriptor_payload_command_recording_status::
+        incomplete_descriptor_write_payload:
+        return "incomplete_descriptor_write_payload";
+    case vulkan_native_descriptor_payload_command_recording_status::
+        descriptor_write_payload_mismatch:
+        return "descriptor_write_payload_mismatch";
+    }
+
+    return "unknown";
+}
+
 std::string_view command_recorder_operation_kind_name(
     vulkan_command_recorder_operation_kind kind)
 {

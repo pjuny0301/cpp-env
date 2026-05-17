@@ -1106,6 +1106,158 @@ bool attach_native_image_descriptor_resource_to_payload(
     return true;
 }
 
+const vulkan_command_recorder_operation_summary* find_operation_for_packet(
+    const vulkan_command_recorder_operation_plan& operation_plan,
+    const vulkan_command_packet& packet)
+{
+    for (const vulkan_command_recorder_operation_summary& operation :
+         operation_plan.operations) {
+        if (operation.packet_index == packet.packet_index
+            && operation.command_index == packet.command_index
+            && operation.category == packet.category
+            && operation.batch_kind == packet.batch_kind) {
+            return &operation;
+        }
+    }
+    return nullptr;
+}
+
+std::size_t descriptor_write_payload_count_for_binding(
+    const vulkan_native_descriptor_write_payload_handoff_result& handoff,
+    const vulkan_command_packet& packet,
+    const vulkan_resource_binding_snapshot& binding)
+{
+    std::size_t count = 0;
+    for (const vulkan_native_descriptor_write_payload& payload : handoff.payloads) {
+        if (payload.packet_index == packet.packet_index
+            && payload.set == binding.set
+            && payload.binding == binding.binding) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+const vulkan_native_descriptor_write_payload* find_descriptor_write_payload_for_binding(
+    const vulkan_native_descriptor_write_payload_handoff_result& handoff,
+    const vulkan_command_packet& packet,
+    const vulkan_resource_binding_snapshot& binding)
+{
+    for (const vulkan_native_descriptor_write_payload& payload : handoff.payloads) {
+        if (payload.packet_index == packet.packet_index
+            && payload.set == binding.set
+            && payload.binding == binding.binding) {
+            return &payload;
+        }
+    }
+    return nullptr;
+}
+
+bool descriptor_write_payloads_contain_duplicate_key(
+    const vulkan_native_descriptor_write_payload_handoff_result& handoff)
+{
+    for (std::size_t payload_index = 0;
+         payload_index < handoff.payloads.size();
+         ++payload_index) {
+        const vulkan_native_descriptor_write_payload& payload =
+            handoff.payloads[payload_index];
+        for (std::size_t next_index = payload_index + 1;
+             next_index < handoff.payloads.size();
+             ++next_index) {
+            const vulkan_native_descriptor_write_payload& next_payload =
+                handoff.payloads[next_index];
+            if (payload.packet_index == next_payload.packet_index
+                && payload.set == next_payload.set
+                && payload.binding == next_payload.binding) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool descriptor_write_payload_matches_binding(
+    const vulkan_native_descriptor_write_payload& payload,
+    const vulkan_command_packet& packet,
+    const vulkan_resource_binding_snapshot& binding)
+{
+    return payload.packet_index == packet.packet_index
+        && payload.command_index == packet.command_index
+        && payload.set == binding.set
+        && payload.binding == binding.binding
+        && payload.descriptor_kind == binding.kind
+        && payload.resource_id == binding.resource_id
+        && payload.required == binding.required;
+}
+
+bool descriptor_write_payload_has_image_handles(
+    const vulkan_native_descriptor_write_payload& payload)
+{
+    if (payload.descriptor_kind == vulkan_resource_binding_kind::image_texture) {
+        return payload.image_view.valid() && payload.sampler.valid()
+            && payload.image_layout.valid();
+    }
+    if (payload.descriptor_kind == vulkan_resource_binding_kind::image_sampler) {
+        return payload.sampler.valid();
+    }
+    return true;
+}
+
+void mark_descriptor_payload_command_recording_blocker(
+    vulkan_native_descriptor_payload_command_recording_result& result,
+    vulkan_native_descriptor_payload_command_recording_status status,
+    const vulkan_command_packet& packet,
+    const vulkan_command_recorder_operation_summary* operation,
+    const vulkan_resource_binding_snapshot* binding,
+    std::string resource_id,
+    std::string diagnostic)
+{
+    result.status = status;
+    result.fallback_reason = vulkan_backend_fallback_reason::record_commands_failed;
+    result.failed_operation_index = operation == nullptr ? 0 : operation->operation_index;
+    result.failed_packet_index = packet.packet_index;
+    result.failed_command_index = packet.command_index;
+    result.failed_set = binding == nullptr ? 0 : binding->set;
+    result.failed_binding = binding == nullptr ? 0 : binding->binding;
+    result.failed_resource_id = std::move(resource_id);
+    result.failed_category = packet.category;
+    result.failed_batch_kind = packet.batch_kind;
+    result.failed_operation_kind = operation == nullptr
+        ? vulkan_command_recorder_operation_kind::draw_rect
+        : operation->kind;
+    result.packet_count = result.packets.size();
+    result.diagnostic = std::move(diagnostic);
+}
+
+vulkan_native_descriptor_payload_command_recording_packet
+make_descriptor_payload_command_recording_packet(
+    const vulkan_command_packet& packet,
+    const vulkan_command_recorder_operation_summary& operation)
+{
+    return vulkan_native_descriptor_payload_command_recording_packet{
+        .operation_index = operation.operation_index,
+        .packet_index = packet.packet_index,
+        .command_index = packet.command_index,
+        .category = packet.category,
+        .batch_kind = packet.batch_kind,
+        .operation_kind = operation.kind,
+        .descriptor_set_count = 0,
+        .descriptor_write_payload_count = 0,
+        .image_descriptor_write_payload_count = 0,
+        .ready_image_descriptor_write_payload_count = 0,
+        .operation_ready = operation.completed(),
+        .descriptor_sets_ready = false,
+        .descriptor_write_payloads_ready = false,
+        .image_descriptor_payloads_ready = false,
+        .bind_ready = false,
+        .draw_ready = false,
+        .blocked = false,
+        .diagnostic = {},
+        .descriptor_sets = {},
+        .descriptor_write_payloads = {},
+    };
+}
+
 } // namespace
 
 vulkan_backend_resource_binding_state build_vulkan_resource_binding_state(
@@ -1366,6 +1518,374 @@ merge_vulkan_native_descriptor_write_payload_handoff_result(
 
     evidence.descriptor_write_payloads = descriptor_write_payloads.payloads;
     return evidence;
+}
+
+vulkan_native_descriptor_payload_command_recording_result
+build_vulkan_native_descriptor_payload_command_recording_result(
+    const vulkan_command_packet_bridge_result& bridge,
+    const vulkan_native_descriptor_set_allocation_result& descriptor_set_allocation,
+    const vulkan_native_descriptor_write_payload_handoff_result& descriptor_write_payloads,
+    const vulkan_command_recorder_operation_plan& operation_plan)
+{
+    vulkan_native_descriptor_payload_command_recording_result result{
+        .checked = true,
+        .status = vulkan_native_descriptor_payload_command_recording_status::not_checked,
+        .fallback_reason = vulkan_backend_fallback_reason::not_requested,
+        .packet_bridge_checked = bridge.checked,
+        .packet_bridge_ready = bridge.completed(),
+        .descriptor_set_allocation_checked = descriptor_set_allocation.checked,
+        .descriptor_set_allocation_ready = descriptor_set_allocation.completed(),
+        .descriptor_write_payload_checked = descriptor_write_payloads.checked,
+        .descriptor_write_payload_ready = descriptor_write_payloads.completed(),
+        .operation_plan_checked = operation_plan.checked,
+        .operation_plan_ready = operation_plan.completed(),
+        .planned_packet_count = bridge.packet_count,
+        .planned_operation_count = operation_plan.operation_count,
+        .planned_descriptor_set_count =
+            descriptor_set_allocation.planned_descriptor_set_count,
+        .planned_descriptor_write_payload_count =
+            descriptor_write_payloads.planned_payload_count,
+        .packet_count = 0,
+        .ready_packet_count = 0,
+        .bind_ready_packet_count = 0,
+        .draw_ready_packet_count = 0,
+        .descriptor_set_count = 0,
+        .descriptor_write_payload_count = 0,
+        .image_descriptor_write_payload_count = 0,
+        .ready_image_descriptor_write_payload_count = 0,
+        .failed_operation_index = 0,
+        .failed_packet_index = 0,
+        .failed_command_index = 0,
+        .failed_set = 0,
+        .failed_binding = 0,
+        .failed_resource_id = {},
+        .failed_category = vulkan_command_packet_category::rect,
+        .failed_batch_kind = vulkan_batch_kind::quad,
+        .failed_operation_kind = vulkan_command_recorder_operation_kind::draw_rect,
+        .diagnostic = {},
+        .packets = {},
+    };
+
+    if (!bridge.completed()) {
+        result.status =
+            vulkan_native_descriptor_payload_command_recording_status::
+                packet_bridge_unavailable;
+        result.fallback_reason = bridge.fallback_reason == vulkan_backend_fallback_reason::none
+            ? vulkan_backend_fallback_reason::record_commands_failed
+            : bridge.fallback_reason;
+        result.diagnostic =
+            "Native Vulkan descriptor payload command recording is missing completed command packet bridge evidence";
+        return result;
+    }
+
+    if (!descriptor_set_allocation.completed()) {
+        result.status =
+            vulkan_native_descriptor_payload_command_recording_status::
+                descriptor_set_allocation_unavailable;
+        result.fallback_reason =
+            descriptor_set_allocation.fallback_reason == vulkan_backend_fallback_reason::none
+            ? vulkan_backend_fallback_reason::record_commands_failed
+            : descriptor_set_allocation.fallback_reason;
+        result.failed_packet_index = descriptor_set_allocation.failed_packet_index;
+        result.failed_command_index = descriptor_set_allocation.failed_command_index;
+        result.failed_set = descriptor_set_allocation.failed_set;
+        result.failed_resource_id = descriptor_set_allocation.failed_resource_id;
+        result.diagnostic =
+            "Native Vulkan descriptor payload command recording is missing completed descriptor set allocation evidence";
+        return result;
+    }
+
+    if (!operation_plan.completed()) {
+        result.status =
+            vulkan_native_descriptor_payload_command_recording_status::
+                operation_plan_unavailable;
+        result.fallback_reason =
+            operation_plan.fallback_reason == vulkan_backend_fallback_reason::none
+            ? vulkan_backend_fallback_reason::record_commands_failed
+            : operation_plan.fallback_reason;
+        result.failed_packet_index = operation_plan.blocked_packet_index;
+        result.failed_command_index = operation_plan.blocked_command_index;
+        result.failed_category = operation_plan.blocked_category;
+        result.failed_batch_kind = operation_plan.blocked_batch_kind;
+        result.diagnostic =
+            "Native Vulkan descriptor payload command recording is missing completed recorder operation plan evidence";
+        return result;
+    }
+
+    if (!descriptor_write_payloads.checked) {
+        result.status =
+            vulkan_native_descriptor_payload_command_recording_status::
+                descriptor_write_payload_unavailable;
+        result.fallback_reason = vulkan_backend_fallback_reason::record_commands_failed;
+        result.diagnostic =
+            "Native Vulkan descriptor payload command recording is missing checked descriptor write payload evidence";
+        return result;
+    }
+
+    if (descriptor_write_payloads.status
+            == vulkan_native_descriptor_write_payload_status::duplicate_payload
+        || descriptor_write_payloads_contain_duplicate_key(descriptor_write_payloads)) {
+        result.status =
+            vulkan_native_descriptor_payload_command_recording_status::
+                duplicate_descriptor_write_payload;
+        result.fallback_reason = vulkan_backend_fallback_reason::record_commands_failed;
+        result.failed_packet_index = descriptor_write_payloads.failed_packet_index;
+        result.failed_command_index = descriptor_write_payloads.failed_command_index;
+        result.failed_set = descriptor_write_payloads.failed_set;
+        result.failed_binding = descriptor_write_payloads.failed_binding;
+        result.failed_resource_id = descriptor_write_payloads.failed_resource_id;
+        result.diagnostic =
+            "Native Vulkan descriptor payload command recording found duplicate descriptor write payload evidence";
+        return result;
+    }
+
+    if (descriptor_write_payloads.status
+            != vulkan_native_descriptor_write_payload_status::ready
+        || descriptor_write_payloads.fallback_reason
+            != vulkan_backend_fallback_reason::none) {
+        result.status =
+            vulkan_native_descriptor_payload_command_recording_status::
+                descriptor_write_payload_unavailable;
+        result.fallback_reason =
+            descriptor_write_payloads.fallback_reason == vulkan_backend_fallback_reason::none
+            ? vulkan_backend_fallback_reason::record_commands_failed
+            : descriptor_write_payloads.fallback_reason;
+        result.failed_packet_index = descriptor_write_payloads.failed_packet_index;
+        result.failed_command_index = descriptor_write_payloads.failed_command_index;
+        result.failed_set = descriptor_write_payloads.failed_set;
+        result.failed_binding = descriptor_write_payloads.failed_binding;
+        result.failed_resource_id = descriptor_write_payloads.failed_resource_id;
+        result.diagnostic = descriptor_write_payloads.diagnostic.empty()
+            ? "Native Vulkan descriptor payload command recording is missing completed descriptor write payload evidence"
+            : descriptor_write_payloads.diagnostic;
+        return result;
+    }
+
+    result.packets.reserve(bridge.packets.size());
+    for (const vulkan_command_packet& packet : bridge.packets) {
+        const vulkan_command_recorder_operation_summary* operation =
+            find_operation_for_packet(operation_plan, packet);
+        if (operation == nullptr || !operation->completed()) {
+            mark_descriptor_payload_command_recording_blocker(
+                result,
+                vulkan_native_descriptor_payload_command_recording_status::
+                    operation_plan_unavailable,
+                packet,
+                operation,
+                nullptr,
+                {},
+                "Native Vulkan descriptor payload command recording could not match packet operation evidence");
+            return result;
+        }
+
+        vulkan_native_descriptor_payload_command_recording_packet packet_record =
+            make_descriptor_payload_command_recording_packet(packet, *operation);
+        const std::vector<std::size_t> required_descriptor_sets =
+            required_descriptor_sets_for_packet(packet);
+        if (required_descriptor_sets.size() != packet.descriptor_set_count) {
+            packet_record.blocked = true;
+            packet_record.diagnostic =
+                "Native Vulkan descriptor payload command recording found mismatched descriptor set requirements";
+            result.packets.push_back(std::move(packet_record));
+            mark_descriptor_payload_command_recording_blocker(
+                result,
+                vulkan_native_descriptor_payload_command_recording_status::
+                    descriptor_set_allocation_unavailable,
+                packet,
+                operation,
+                nullptr,
+                {},
+                "Native Vulkan descriptor payload command recording found mismatched descriptor set requirements");
+            return result;
+        }
+
+        packet_record.descriptor_sets.reserve(required_descriptor_sets.size());
+        for (std::size_t set : required_descriptor_sets) {
+            const vulkan_native_command_packet_descriptor_set* descriptor_set =
+                find_descriptor_set_allocation_for_payload(
+                    descriptor_set_allocation,
+                    packet,
+                    set);
+            if (descriptor_set == nullptr) {
+                packet_record.blocked = true;
+                packet_record.diagnostic =
+                    "Native Vulkan descriptor payload command recording could not match descriptor set allocation";
+                result.packets.push_back(std::move(packet_record));
+                mark_descriptor_payload_command_recording_blocker(
+                    result,
+                    vulkan_native_descriptor_payload_command_recording_status::
+                        descriptor_set_allocation_unavailable,
+                    packet,
+                    operation,
+                    nullptr,
+                    {},
+                    "Native Vulkan descriptor payload command recording could not match descriptor set allocation");
+                result.failed_set = set;
+                return result;
+            }
+            packet_record.descriptor_sets.push_back(*descriptor_set);
+        }
+        packet_record.descriptor_set_count = packet_record.descriptor_sets.size();
+        packet_record.descriptor_sets_ready =
+            packet_record.descriptor_set_count == packet.descriptor_set_count;
+
+        packet_record.descriptor_write_payloads.reserve(packet.bindings.size());
+        for (const vulkan_resource_binding_snapshot& binding : packet.bindings) {
+            const std::size_t payload_count =
+                descriptor_write_payload_count_for_binding(
+                    descriptor_write_payloads,
+                    packet,
+                    binding);
+            if (payload_count == 0) {
+                packet_record.blocked = true;
+                packet_record.diagnostic =
+                    "Native Vulkan descriptor payload command recording is missing descriptor write payload evidence";
+                result.packets.push_back(std::move(packet_record));
+                mark_descriptor_payload_command_recording_blocker(
+                    result,
+                    vulkan_native_descriptor_payload_command_recording_status::
+                        missing_descriptor_write_payload,
+                    packet,
+                    operation,
+                    &binding,
+                    binding.resource_id,
+                    "Native Vulkan descriptor payload command recording is missing descriptor write payload evidence");
+                return result;
+            }
+            if (payload_count != 1) {
+                packet_record.blocked = true;
+                packet_record.diagnostic =
+                    "Native Vulkan descriptor payload command recording found duplicate descriptor write payload evidence";
+                result.packets.push_back(std::move(packet_record));
+                mark_descriptor_payload_command_recording_blocker(
+                    result,
+                    vulkan_native_descriptor_payload_command_recording_status::
+                        duplicate_descriptor_write_payload,
+                    packet,
+                    operation,
+                    &binding,
+                    binding.resource_id,
+                    "Native Vulkan descriptor payload command recording found duplicate descriptor write payload evidence");
+                return result;
+            }
+
+            const vulkan_native_descriptor_write_payload* payload =
+                find_descriptor_write_payload_for_binding(
+                    descriptor_write_payloads,
+                    packet,
+                    binding);
+            if (payload == nullptr || !payload->completed()
+                || !descriptor_write_payload_has_image_handles(*payload)) {
+                packet_record.blocked = true;
+                packet_record.diagnostic =
+                    "Native Vulkan descriptor payload command recording found incomplete descriptor write payload evidence";
+                result.packets.push_back(std::move(packet_record));
+                mark_descriptor_payload_command_recording_blocker(
+                    result,
+                    vulkan_native_descriptor_payload_command_recording_status::
+                        incomplete_descriptor_write_payload,
+                    packet,
+                    operation,
+                    &binding,
+                    binding.resource_id,
+                    "Native Vulkan descriptor payload command recording found incomplete descriptor write payload evidence");
+                return result;
+            }
+
+            const vulkan_native_command_packet_descriptor_set* descriptor_set =
+                find_descriptor_set_allocation_for_payload(
+                    descriptor_set_allocation,
+                    packet,
+                    binding.set);
+            if (descriptor_set == nullptr
+                || payload->descriptor_set.value != descriptor_set->descriptor_set.value
+                || !descriptor_write_payload_matches_binding(*payload, packet, binding)) {
+                packet_record.blocked = true;
+                packet_record.diagnostic =
+                    "Native Vulkan descriptor payload command recording found mismatched descriptor write payload evidence";
+                result.packets.push_back(std::move(packet_record));
+                mark_descriptor_payload_command_recording_blocker(
+                    result,
+                    vulkan_native_descriptor_payload_command_recording_status::
+                        descriptor_write_payload_mismatch,
+                    packet,
+                    operation,
+                    &binding,
+                    binding.resource_id,
+                    "Native Vulkan descriptor payload command recording found mismatched descriptor write payload evidence");
+                return result;
+            }
+
+            if (resource_binding_kind_requires_native_image_descriptor_resource(binding.kind)) {
+                ++packet_record.image_descriptor_write_payload_count;
+                ++result.image_descriptor_write_payload_count;
+                if (descriptor_write_payload_has_image_handles(*payload)) {
+                    ++packet_record.ready_image_descriptor_write_payload_count;
+                    ++result.ready_image_descriptor_write_payload_count;
+                }
+            }
+            packet_record.descriptor_write_payloads.push_back(*payload);
+        }
+
+        packet_record.descriptor_write_payload_count =
+            packet_record.descriptor_write_payloads.size();
+        packet_record.descriptor_write_payloads_ready =
+            packet_record.descriptor_write_payload_count == packet.bindings.size();
+        packet_record.image_descriptor_payloads_ready =
+            packet_record.ready_image_descriptor_write_payload_count
+            == packet_record.image_descriptor_write_payload_count;
+        packet_record.bind_ready = packet_record.operation_ready
+            && packet_record.descriptor_sets_ready
+            && packet_record.descriptor_write_payloads_ready
+            && packet_record.image_descriptor_payloads_ready;
+        packet_record.draw_ready = packet_record.bind_ready && operation->completed();
+        packet_record.diagnostic =
+            "Native Vulkan descriptor payload command recording packet is ready";
+
+        if (!packet_record.completed()) {
+            packet_record.blocked = true;
+            packet_record.diagnostic =
+                "Native Vulkan descriptor payload command recording packet is incomplete";
+            result.packets.push_back(std::move(packet_record));
+            mark_descriptor_payload_command_recording_blocker(
+                result,
+                vulkan_native_descriptor_payload_command_recording_status::
+                    incomplete_descriptor_write_payload,
+                packet,
+                operation,
+                nullptr,
+                {},
+                "Native Vulkan descriptor payload command recording packet is incomplete");
+            return result;
+        }
+
+        result.descriptor_set_count += packet_record.descriptor_set_count;
+        result.descriptor_write_payload_count +=
+            packet_record.descriptor_write_payload_count;
+        ++result.ready_packet_count;
+        ++result.bind_ready_packet_count;
+        ++result.draw_ready_packet_count;
+        result.packets.push_back(std::move(packet_record));
+    }
+
+    result.packet_count = result.packets.size();
+    result.descriptor_write_payload_ready = descriptor_write_payloads.completed();
+    result.status =
+        vulkan_native_descriptor_payload_command_recording_status::ready;
+    result.fallback_reason = vulkan_backend_fallback_reason::none;
+    if (!result.completed()) {
+        result.status =
+            vulkan_native_descriptor_payload_command_recording_status::
+                incomplete_descriptor_write_payload;
+        result.fallback_reason = vulkan_backend_fallback_reason::record_commands_failed;
+        result.diagnostic =
+            "Native Vulkan descriptor payload command recording could not produce complete packet evidence";
+        return result;
+    }
+
+    result.diagnostic =
+        "Native Vulkan descriptor payload command recording evidence is ready";
+    return result;
 }
 
 } // namespace quiz_vulkan::render::vulkan_backend

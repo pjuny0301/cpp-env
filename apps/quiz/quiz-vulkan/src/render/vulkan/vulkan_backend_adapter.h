@@ -1908,6 +1908,123 @@ struct vulkan_command_recorder_operation_plan {
     }
 };
 
+enum class vulkan_native_descriptor_payload_command_recording_status {
+    not_checked,
+    ready,
+    packet_bridge_unavailable,
+    descriptor_set_allocation_unavailable,
+    descriptor_write_payload_unavailable,
+    operation_plan_unavailable,
+    missing_descriptor_write_payload,
+    duplicate_descriptor_write_payload,
+    incomplete_descriptor_write_payload,
+    descriptor_write_payload_mismatch,
+};
+
+std::string_view native_descriptor_payload_command_recording_status_name(
+    vulkan_native_descriptor_payload_command_recording_status status);
+
+struct vulkan_native_descriptor_payload_command_recording_packet {
+    std::size_t operation_index = 0;
+    std::size_t packet_index = 0;
+    std::size_t command_index = 0;
+    vulkan_command_packet_category category = vulkan_command_packet_category::rect;
+    vulkan_batch_kind batch_kind = vulkan_batch_kind::quad;
+    vulkan_command_recorder_operation_kind operation_kind =
+        vulkan_command_recorder_operation_kind::draw_rect;
+    std::size_t descriptor_set_count = 0;
+    std::size_t descriptor_write_payload_count = 0;
+    std::size_t image_descriptor_write_payload_count = 0;
+    std::size_t ready_image_descriptor_write_payload_count = 0;
+    bool operation_ready = false;
+    bool descriptor_sets_ready = false;
+    bool descriptor_write_payloads_ready = false;
+    bool image_descriptor_payloads_ready = false;
+    bool bind_ready = false;
+    bool draw_ready = false;
+    bool blocked = false;
+    std::string diagnostic;
+    std::vector<vulkan_native_command_packet_descriptor_set> descriptor_sets;
+    std::vector<vulkan_native_descriptor_write_payload> descriptor_write_payloads;
+
+    bool completed() const
+    {
+        return operation_ready && descriptor_sets_ready && descriptor_write_payloads_ready
+            && image_descriptor_payloads_ready && bind_ready && draw_ready && !blocked
+            && descriptor_sets.size() == descriptor_set_count
+            && descriptor_write_payloads.size() == descriptor_write_payload_count
+            && ready_image_descriptor_write_payload_count
+                == image_descriptor_write_payload_count;
+    }
+};
+
+struct vulkan_native_descriptor_payload_command_recording_result {
+    bool checked = false;
+    vulkan_native_descriptor_payload_command_recording_status status =
+        vulkan_native_descriptor_payload_command_recording_status::not_checked;
+    vulkan_backend_fallback_reason fallback_reason = vulkan_backend_fallback_reason::not_requested;
+    bool packet_bridge_checked = false;
+    bool packet_bridge_ready = false;
+    bool descriptor_set_allocation_checked = false;
+    bool descriptor_set_allocation_ready = false;
+    bool descriptor_write_payload_checked = false;
+    bool descriptor_write_payload_ready = false;
+    bool operation_plan_checked = false;
+    bool operation_plan_ready = false;
+    std::size_t planned_packet_count = 0;
+    std::size_t planned_operation_count = 0;
+    std::size_t planned_descriptor_set_count = 0;
+    std::size_t planned_descriptor_write_payload_count = 0;
+    std::size_t packet_count = 0;
+    std::size_t ready_packet_count = 0;
+    std::size_t bind_ready_packet_count = 0;
+    std::size_t draw_ready_packet_count = 0;
+    std::size_t descriptor_set_count = 0;
+    std::size_t descriptor_write_payload_count = 0;
+    std::size_t image_descriptor_write_payload_count = 0;
+    std::size_t ready_image_descriptor_write_payload_count = 0;
+    std::size_t failed_operation_index = 0;
+    std::size_t failed_packet_index = 0;
+    std::size_t failed_command_index = 0;
+    std::size_t failed_set = 0;
+    std::size_t failed_binding = 0;
+    std::string failed_resource_id;
+    vulkan_command_packet_category failed_category = vulkan_command_packet_category::rect;
+    vulkan_batch_kind failed_batch_kind = vulkan_batch_kind::quad;
+    vulkan_command_recorder_operation_kind failed_operation_kind =
+        vulkan_command_recorder_operation_kind::draw_rect;
+    std::string diagnostic;
+    std::vector<vulkan_native_descriptor_payload_command_recording_packet> packets;
+
+    bool completed() const
+    {
+        if (!checked
+            || status != vulkan_native_descriptor_payload_command_recording_status::ready
+            || fallback_reason != vulkan_backend_fallback_reason::none
+            || !packet_bridge_checked || !packet_bridge_ready
+            || !descriptor_set_allocation_checked || !descriptor_set_allocation_ready
+            || !descriptor_write_payload_checked || !descriptor_write_payload_ready
+            || !operation_plan_checked || !operation_plan_ready
+            || packet_count != planned_packet_count
+            || ready_packet_count != planned_packet_count
+            || bind_ready_packet_count != planned_packet_count
+            || draw_ready_packet_count != planned_packet_count
+            || packets.size() != packet_count
+            || ready_image_descriptor_write_payload_count
+                != image_descriptor_write_payload_count) {
+            return false;
+        }
+
+        for (const vulkan_native_descriptor_payload_command_recording_packet& packet :
+             packets) {
+            if (!packet.completed()) {
+                return false;
+            }
+        }
+        return true;
+    }
+};
+
 enum class vulkan_command_buffer_record_result_status {
     not_checked,
     recorded,
@@ -3059,6 +3176,13 @@ vulkan_native_command_packet_executor_evidence merge_vulkan_native_descriptor_wr
 vulkan_command_recorder_operation_plan build_vulkan_command_recorder_operation_plan(
     const vulkan_command_packet_bridge_result& bridge,
     const vulkan_command_packet_execution_result& execution);
+
+vulkan_native_descriptor_payload_command_recording_result
+build_vulkan_native_descriptor_payload_command_recording_result(
+    const vulkan_command_packet_bridge_result& bridge,
+    const vulkan_native_descriptor_set_allocation_result& descriptor_set_allocation,
+    const vulkan_native_descriptor_write_payload_handoff_result& descriptor_write_payloads,
+    const vulkan_command_recorder_operation_plan& operation_plan);
 
 vulkan_submit_batch_plan_result build_vulkan_submit_batch_plan(
     const vulkan_command_buffer_record_result& command_buffer_recording,

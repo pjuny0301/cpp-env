@@ -576,6 +576,7 @@ target_sources(
         src/app/app.cpp
         src/app/app_deck_loader.cpp
         src/app/app_demo.cpp
+        src/app/app_image_texture_payloads.cpp
         src/app/app_input_router.cpp
         src/app/app_state.cpp
         src/app/main.cpp
@@ -587,6 +588,7 @@ target_sources(
             src/app/app.h
             src/app/app_deck_loader.h
             src/app/app_demo.h
+            src/app/app_image_texture_payloads.h
             src/app/app_input_router.h
             src/app/app_render_pipeline.h
             src/app/app_sound_router.h
@@ -734,7 +736,13 @@ if(BUILD_TESTING)
     quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_app_quiz_screens_tests)
     add_test(NAME quiz_vulkan_app_quiz_screens_tests COMMAND quiz_vulkan_app_quiz_screens_tests)
 
-    add_executable(quiz_vulkan_app_demo_tests tests/app/app_demo_tests.cpp src/app/app_demo.cpp src/app/app_state.cpp)
+    add_executable(
+        quiz_vulkan_app_demo_tests
+        tests/app/app_demo_tests.cpp
+        src/app/app_demo.cpp
+        src/app/app_image_texture_payloads.cpp
+        src/app/app_state.cpp
+    )
     target_link_libraries(
         quiz_vulkan_app_demo_tests
         PRIVATE

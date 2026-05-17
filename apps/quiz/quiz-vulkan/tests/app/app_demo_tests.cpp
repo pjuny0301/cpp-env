@@ -111,6 +111,19 @@ int main()
     assert(image_frame.report.image_texture_renderer_handoff_ready);
     assert(image_frame.report.image_texture_ready_count == 1);
     assert(image_frame.report.image_texture_mapped_count == 1);
+    assert(image_frame.report.image_texture_frame_entry_count == 1);
+    assert(image_frame.report.image_texture_upload_result_available);
+    assert(image_frame.report.image_texture_resource_packets_ready);
+    assert(image_frame.report.image_texture_resource_packet_count == 1);
+    assert(image_frame.report.image_texture_resource_ready_count == 1);
+    assert(image_frame.report.image_texture_quad_packets_ready);
+    assert(image_frame.report.image_texture_quad_packet_count == 1);
+    assert(image_frame.report.image_texture_quad_ready_count == 1);
+    assert(image_frame.report.image_texture_draw_payloads_ready);
+    assert(image_frame.report.image_texture_payload_count == 1);
+    assert(image_frame.report.image_texture_payload_ready_count == 1);
+    assert(image_frame.report.image_texture_payload_placeholder_count == 0);
+    assert(image_frame.report.image_texture_payload_blocked_count == 0);
     assert(image_pipeline.image_texture_pipeline().diagnostic_snapshot().ready_count == 1);
     assert(image_pipeline.image_source_bytes_loader().base_directory() == image_fixture.parent_path());
 

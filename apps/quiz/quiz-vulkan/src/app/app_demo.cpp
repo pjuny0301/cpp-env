@@ -1,10 +1,12 @@
 #include "app/app_demo.h"
 
+#include "app/app_image_texture_payloads.h"
 #include "core/layout/layout_placer.h"
 #include "core/scene/modifier_interface.h"
 #include "app/app_quiz_screens.h"
 #include "core/ui/ui_renderer.h"
 #include "render/image/image_resolver.h"
+#include "render/image/image_texture_frame_snapshot.h"
 #include "render/image/image_texture_pipeline.h"
 #include "render/text/fake_text_engine.h"
 #include "render/text/scene_text_metrics_adapter.h"
@@ -136,13 +138,36 @@ void prepare_image_textures_for_frame(
         render::execute_render_image_texture_batch_plan(plan, *image_texture_pipeline);
     const render::render_image_texture_handle_map_diagnostics handle_map =
         render::make_render_image_texture_handle_map_diagnostics(plan, execution);
+    const render::render_image_texture_frame_snapshot texture_frame =
+        render::make_render_image_texture_frame_snapshot(plan, execution, handle_map);
 
     report.image_texture_pipeline_ran = true;
     report.image_texture_ready_count = execution.ready_count;
     report.image_texture_failure_count = execution.failure_count;
     report.image_texture_mapped_count = handle_map.mapped_count;
+    report.image_texture_frame_entry_count = texture_frame.entries.size();
     report.image_texture_renderer_handoff_ready = handle_map.ok();
-    report.image_texture_diagnostic = handle_map.ok() ? handle_map.diagnostic : execution.diagnostic;
+    report.image_texture_diagnostic = handle_map.ok() ? texture_frame.diagnostic : execution.diagnostic;
+    if (!handle_map.ok()) {
+        return;
+    }
+
+    const app_image_texture_payload_report payload_report =
+        prepare_app_image_texture_payloads(handoff, plan, texture_frame, *image_texture_pipeline);
+    report.image_texture_resource_packet_count = payload_report.resource_packet_count;
+    report.image_texture_resource_ready_count = payload_report.resource_ready_count;
+    report.image_texture_quad_packet_count = payload_report.quad_packet_count;
+    report.image_texture_quad_ready_count = payload_report.quad_ready_count;
+    report.image_texture_payload_count = payload_report.payload_count;
+    report.image_texture_payload_ready_count = payload_report.payload_ready_count;
+    report.image_texture_payload_placeholder_count = payload_report.payload_placeholder_count;
+    report.image_texture_payload_blocked_count = payload_report.payload_blocked_count;
+    report.image_texture_upload_result_available = payload_report.upload_result_available;
+    report.image_texture_resource_packets_ready = payload_report.resource_packets_ready;
+    report.image_texture_quad_packets_ready = payload_report.quad_packets_ready;
+    report.image_texture_draw_payloads_ready = payload_report.draw_payloads_ready;
+    report.image_texture_renderer_handoff_ready = payload_report.draw_payloads_ready;
+    report.image_texture_diagnostic = payload_report.diagnostic;
 }
 
 } // namespace
@@ -291,6 +316,7 @@ std::string format_render_report(std::string_view label, const app_render_report
            << " commands=" << report.frame_stats.command_count
            << " draw_calls=" << report.frame_stats.draw_call_count
            << " image_textures=" << report.image_texture_ready_count << "/" << report.image_texture_request_count
+           << " image_payloads=" << report.image_texture_payload_ready_count << "/" << report.image_texture_payload_count
            << " shaded_pixels=" << report.frame_summary.shaded_pixel_count
            << " nonblank=" << (report.frame_summary.nonblank() ? "true" : "false");
     return stream.str();

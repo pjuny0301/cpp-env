@@ -6635,6 +6635,125 @@ static_assert(requires(render::vulkan_backend::vulkan_native_descriptor_set_allo
     { result.completed() } -> std::same_as<bool>;
 });
 
+static_assert(requires(render::vulkan_backend::vulkan_native_descriptor_image_view_handle handle) {
+    { handle.value } -> std::same_as<std::uintptr_t&>;
+    { handle.valid() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_descriptor_sampler_handle handle) {
+    { handle.value } -> std::same_as<std::uintptr_t&>;
+    { handle.valid() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_descriptor_image_layout layout) {
+    { layout.value } -> std::same_as<std::uint32_t&>;
+    { layout.valid() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_image_descriptor_resource resource) {
+    { resource.texture_resource_id } -> std::same_as<std::string&>;
+    { resource.sampler_resource_id } -> std::same_as<std::string&>;
+    { resource.image_view }
+        -> std::same_as<render::vulkan_backend::vulkan_native_descriptor_image_view_handle&>;
+    { resource.sampler }
+        -> std::same_as<render::vulkan_backend::vulkan_native_descriptor_sampler_handle&>;
+    { resource.image_layout }
+        -> std::same_as<render::vulkan_backend::vulkan_native_descriptor_image_layout&>;
+    { resource.available } -> std::same_as<bool&>;
+    { resource.diagnostic } -> std::same_as<std::string&>;
+    { resource.completed() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_image_descriptor_resource_evidence evidence) {
+    { evidence.checked } -> std::same_as<bool&>;
+    { evidence.resources }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_image_descriptor_resource>&>;
+    { evidence.diagnostic } -> std::same_as<std::string&>;
+    { evidence.completed() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_descriptor_write_payload payload) {
+    { payload.packet_index } -> std::same_as<std::size_t&>;
+    { payload.command_index } -> std::same_as<std::size_t&>;
+    { payload.set } -> std::same_as<std::size_t&>;
+    { payload.binding } -> std::same_as<std::size_t&>;
+    { payload.descriptor_kind }
+        -> std::same_as<render::vulkan_backend::vulkan_resource_binding_kind&>;
+    { payload.resource_id } -> std::same_as<std::string&>;
+    { payload.descriptor_set }
+        -> std::same_as<render::vulkan_backend::vulkan_native_descriptor_set_handle&>;
+    { payload.image_view }
+        -> std::same_as<render::vulkan_backend::vulkan_native_descriptor_image_view_handle&>;
+    { payload.sampler }
+        -> std::same_as<render::vulkan_backend::vulkan_native_descriptor_sampler_handle&>;
+    { payload.image_layout }
+        -> std::same_as<render::vulkan_backend::vulkan_native_descriptor_image_layout&>;
+    { payload.required } -> std::same_as<bool&>;
+    { payload.available } -> std::same_as<bool&>;
+    { payload.blocked } -> std::same_as<bool&>;
+    { payload.diagnostic } -> std::same_as<std::string&>;
+    { payload.completed() } -> std::same_as<bool>;
+});
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_descriptor_write_payload_status::ready),
+    render::vulkan_backend::vulkan_native_descriptor_write_payload_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_descriptor_write_payload_status::
+                 descriptor_set_allocation_unavailable),
+    render::vulkan_backend::vulkan_native_descriptor_write_payload_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_descriptor_write_payload_status::
+                 image_descriptor_resource_unavailable),
+    render::vulkan_backend::vulkan_native_descriptor_write_payload_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_descriptor_write_payload_status::
+                 image_descriptor_texture_mismatch),
+    render::vulkan_backend::vulkan_native_descriptor_write_payload_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_descriptor_write_payload_status::
+                 image_descriptor_sampler_mismatch),
+    render::vulkan_backend::vulkan_native_descriptor_write_payload_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_descriptor_write_payload_status::
+                 image_descriptor_resource_incomplete),
+    render::vulkan_backend::vulkan_native_descriptor_write_payload_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_descriptor_write_payload_status::duplicate_payload),
+    render::vulkan_backend::vulkan_native_descriptor_write_payload_status>);
+static_assert(requires(render::vulkan_backend::vulkan_native_descriptor_write_payload_status status) {
+    { render::vulkan_backend::native_descriptor_write_payload_status_name(status) }
+        -> std::same_as<std::string_view>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_descriptor_write_payload_handoff_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_descriptor_write_payload_status&>;
+    { result.fallback_reason }
+        -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
+    { result.packet_bridge_checked } -> std::same_as<bool&>;
+    { result.packet_bridge_ready } -> std::same_as<bool&>;
+    { result.descriptor_set_allocation_checked } -> std::same_as<bool&>;
+    { result.descriptor_set_allocation_ready } -> std::same_as<bool&>;
+    { result.image_descriptor_resources_checked } -> std::same_as<bool&>;
+    { result.image_descriptor_resources_ready } -> std::same_as<bool&>;
+    { result.planned_packet_count } -> std::same_as<std::size_t&>;
+    { result.planned_payload_count } -> std::same_as<std::size_t&>;
+    { result.payload_count } -> std::same_as<std::size_t&>;
+    { result.required_image_descriptor_payload_count } -> std::same_as<std::size_t&>;
+    { result.ready_image_descriptor_payload_count } -> std::same_as<std::size_t&>;
+    { result.failed_packet_index } -> std::same_as<std::size_t&>;
+    { result.failed_command_index } -> std::same_as<std::size_t&>;
+    { result.failed_set } -> std::same_as<std::size_t&>;
+    { result.failed_binding } -> std::same_as<std::size_t&>;
+    { result.failed_resource_id } -> std::same_as<std::string&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.payloads }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_descriptor_write_payload>&>;
+    { result.completed() } -> std::same_as<bool>;
+});
+
 static_assert(requires(render::vulkan_backend::vulkan_native_command_packet_executor_evidence evidence) {
     { evidence.native_functions }
         -> std::same_as<render::vulkan_backend::vulkan_native_function_table_diagnostics&>;
@@ -6648,6 +6767,8 @@ static_assert(requires(render::vulkan_backend::vulkan_native_command_packet_exec
     { evidence.viewport_available } -> std::same_as<bool&>;
     { evidence.descriptor_sets }
         -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_command_packet_descriptor_set>&>;
+    { evidence.descriptor_write_payloads }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_descriptor_write_payload>&>;
 });
 
 static_assert(requires(
@@ -6655,8 +6776,10 @@ static_assert(requires(
     const render::vulkan_backend::vulkan_backend_resource_binding_state& resource_bindings,
     render::vulkan_backend::vulkan_native_descriptor_set_fake_allocator_options options,
     const render::render_image_texture_frame_resource_packet_materialization& image_materialization,
+    const render::vulkan_backend::vulkan_native_image_descriptor_resource_evidence& image_descriptor_resources,
     render::vulkan_backend::vulkan_native_command_packet_executor_evidence evidence,
     const render::vulkan_backend::vulkan_native_descriptor_set_allocation_result& allocation,
+    const render::vulkan_backend::vulkan_native_descriptor_write_payload_handoff_result& descriptor_write_payloads,
     const render::vulkan_backend::vulkan_backend_frame_result& frame,
     const render::vulkan_backend::vulkan_native_function_table_diagnostics& native_functions) {
     { render::vulkan_backend::build_fake_vulkan_native_descriptor_set_allocation_result(
@@ -6678,6 +6801,15 @@ static_assert(requires(
         frame,
         allocation,
         native_functions) } -> std::same_as<
+        render::vulkan_backend::vulkan_native_command_packet_executor_evidence>;
+    { render::vulkan_backend::build_vulkan_native_descriptor_write_payload_handoff_result(
+        bridge,
+        allocation,
+        image_descriptor_resources) } -> std::same_as<
+        render::vulkan_backend::vulkan_native_descriptor_write_payload_handoff_result>;
+    { render::vulkan_backend::merge_vulkan_native_descriptor_write_payload_handoff_result(
+        evidence,
+        descriptor_write_payloads) } -> std::same_as<
         render::vulkan_backend::vulkan_native_command_packet_executor_evidence>;
 });
 

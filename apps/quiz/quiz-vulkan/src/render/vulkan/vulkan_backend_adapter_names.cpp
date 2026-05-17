@@ -410,6 +410,33 @@ std::string_view native_descriptor_set_allocation_status_name(
     return "unknown";
 }
 
+std::string_view native_descriptor_write_payload_status_name(
+    vulkan_native_descriptor_write_payload_status status)
+{
+    switch (status) {
+    case vulkan_native_descriptor_write_payload_status::not_checked:
+        return "not_checked";
+    case vulkan_native_descriptor_write_payload_status::ready:
+        return "ready";
+    case vulkan_native_descriptor_write_payload_status::packet_bridge_unavailable:
+        return "packet_bridge_unavailable";
+    case vulkan_native_descriptor_write_payload_status::descriptor_set_allocation_unavailable:
+        return "descriptor_set_allocation_unavailable";
+    case vulkan_native_descriptor_write_payload_status::image_descriptor_resource_unavailable:
+        return "image_descriptor_resource_unavailable";
+    case vulkan_native_descriptor_write_payload_status::image_descriptor_texture_mismatch:
+        return "image_descriptor_texture_mismatch";
+    case vulkan_native_descriptor_write_payload_status::image_descriptor_sampler_mismatch:
+        return "image_descriptor_sampler_mismatch";
+    case vulkan_native_descriptor_write_payload_status::image_descriptor_resource_incomplete:
+        return "image_descriptor_resource_incomplete";
+    case vulkan_native_descriptor_write_payload_status::duplicate_payload:
+        return "duplicate_payload";
+    }
+
+    return "unknown";
+}
+
 std::string_view scoped_command_packet_execution_status_name(
     vulkan_scoped_command_packet_execution_status status)
 {

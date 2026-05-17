@@ -80,6 +80,20 @@ int main()
     assert(pipeline.renderer().last_frame_stats().command_count == pipeline_frame.report.frame_stats.command_count);
     assert(pipeline.renderer().last_draw_list().size() == pipeline_frame.report.frame_stats.command_count);
 
+    default_app_render_pipeline cpu_pipeline(default_app_render_pipeline_config{
+        .image_base_directory = {},
+        .renderer_options = quiz_vulkan::render::vulkan_renderer_options{
+            .prefer_vulkan = false,
+        },
+    });
+    app_render_frame cpu_pipeline_frame = cpu_pipeline.render(app_render_request{
+        .snapshot = &active_snapshot,
+    });
+    assert(cpu_pipeline_frame.report.screen_id == "quiz_active");
+    assert(!cpu_pipeline.renderer().last_frame_summary().backend_attempted);
+    assert(cpu_pipeline.renderer().last_frame_summary().backend_fallback_reason
+        == quiz_vulkan::render::vulkan_backend::vulkan_backend_fallback_reason::not_requested);
+
     const std::filesystem::path image_fixture = write_ppm_image_fixture();
     app_state image_state({make_image_demo_deck(image_fixture.filename().generic_string())});
     image_state.dispatch(domain::make_select_deck_action("demo_deck"));
@@ -88,6 +102,7 @@ int main()
     domain::app_snapshot image_snapshot = image_state.snapshot();
     default_app_render_pipeline image_pipeline(default_app_render_pipeline_config{
         .image_base_directory = image_fixture.parent_path(),
+        .renderer_options = {},
     });
     app_render_frame image_frame = image_pipeline.render(app_render_request{
         .snapshot = &image_snapshot,

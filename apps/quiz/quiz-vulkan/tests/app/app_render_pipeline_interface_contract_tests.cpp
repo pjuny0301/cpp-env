@@ -26,6 +26,7 @@ static_assert(requires(app_render_request request) {
 
 static_assert(requires(default_app_render_pipeline_config config) {
     { config.image_base_directory } -> std::same_as<std::filesystem::path&>;
+    { config.renderer_options } -> std::same_as<render::vulkan_renderer_options&>;
 });
 
 static_assert(requires(default_app_render_pipeline pipeline) {

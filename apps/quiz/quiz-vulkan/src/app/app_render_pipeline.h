@@ -14,6 +14,7 @@ namespace quiz_vulkan {
 
 struct default_app_render_pipeline_config {
     std::filesystem::path image_base_directory;
+    render::vulkan_renderer_options renderer_options;
 };
 
 struct app_render_request {
@@ -39,6 +40,7 @@ public:
     default_app_render_pipeline() = default;
 
     explicit default_app_render_pipeline(default_app_render_pipeline_config config)
+        : renderer_(std::move(config.renderer_options))
     {
         image_source_bytes_loader_.set_base_directory(std::move(config.image_base_directory));
     }

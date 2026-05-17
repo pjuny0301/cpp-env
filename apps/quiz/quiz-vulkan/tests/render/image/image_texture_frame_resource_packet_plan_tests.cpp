@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -20,8 +21,20 @@ concept HasFakeUploadSnapshotField = requires(T value) {
 
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_frame_resource_packet_plan_entry>);
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_frame_resource_packet_plan>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_draw_list_texture_frame_composition_entry>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_draw_list_texture_frame_composition>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_renderer_texture_quad_packet>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_renderer_texture_quad_packet_summary>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_renderer_texture_quad_packet_diff_entry>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_renderer_texture_quad_packet_summary_diff>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_resource_packet_plan_entry>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_resource_packet_plan>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_draw_list_texture_frame_composition_entry>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_draw_list_texture_frame_composition>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_renderer_texture_quad_packet>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_renderer_texture_quad_packet_summary>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_renderer_texture_quad_packet_diff_entry>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_renderer_texture_quad_packet_summary_diff>);
 
 void require(bool condition, const char* message)
 {
@@ -115,6 +128,244 @@ quiz_vulkan::render::render_image_texture_frame_upload_handoff_entry make_blocke
     entry.blocker_summary = "blocked image ref";
     entry.diagnostic = "image frame upload handoff entry is blocked";
     return entry;
+}
+
+quiz_vulkan::render::render_image_texture_batch_execution_diagnostics make_ready_batch_execution(
+    const quiz_vulkan::render::render_image_texture_batch_plan& batch_plan)
+{
+    using namespace quiz_vulkan::render;
+
+    render_image_texture_batch_execution_diagnostics execution;
+    execution.request_count = batch_plan.request_count;
+    execution.planned_request_count = batch_plan.planned_request_count;
+    execution.invalid_request_count = batch_plan.invalid_request_count;
+    execution.all_planned_requests_executed = batch_plan.invalid_request_count == 0;
+
+    for (const render_image_texture_batch_plan_entry& plan_entry : batch_plan.entries) {
+        if (!plan_entry.ok()) {
+            continue;
+        }
+        render_image_texture_batch_execution_entry entry{
+            .sequence = plan_entry.request_index + 1,
+            .request_index = plan_entry.request_index,
+            .plan_status = plan_entry.status,
+            .status = render_image_texture_batch_execution_entry_status::ready,
+            .request = plan_entry.pipeline_request,
+            .pipeline_status = render_image_texture_pipeline_status::ready,
+            .source_bytes_status = render_image_source_bytes_load_status::loaded,
+            .texture_status = render_image_texture_status::ready,
+            .texture_key = plan_entry.texture_key,
+            .texture = render_image_texture_handle{
+                .id = 700 + plan_entry.request_index,
+                .revision = 3,
+                .width = 64 + plan_entry.request_index,
+                .height = 32,
+            },
+            .executed = true,
+            .ready = true,
+            .expected_cache_reuse = plan_entry.expects_cache_reuse,
+            .cache_reuse_expectation_matched = true,
+            .diagnostic = "test frame execution entry is ready",
+        };
+        execution.entries.push_back(entry);
+        ++execution.executed_request_count;
+        ++execution.ready_count;
+    }
+
+    execution.diagnostic = "test frame execution is data-only ready";
+    return execution;
+}
+
+quiz_vulkan::render::render_image_texture_frame_resource_packet_plan make_ready_resource_packet_plan(
+    const quiz_vulkan::render::render_image_texture_batch_plan& batch_plan)
+{
+    using namespace quiz_vulkan::render;
+
+    render_image_texture_frame_upload_handoff_summary handoff;
+    handoff.frame_request_count = batch_plan.request_count;
+    handoff.binding_packet_count = batch_plan.planned_request_count;
+    handoff.current_binding_packet_count = batch_plan.planned_request_count;
+    handoff.upload_packet_count = batch_plan.planned_request_count;
+    handoff.requested_texture_count = batch_plan.planned_request_count;
+    handoff.ready_texture_count = batch_plan.planned_request_count;
+    handoff.renderer_handoff_ready = true;
+
+    for (const render_image_texture_batch_plan_entry& plan_entry : batch_plan.entries) {
+        if (!plan_entry.ok()) {
+            continue;
+        }
+        const std::string sampler_key = render_image_sampler_policy_stable_fragment(plan_entry.sampler);
+        render_image_texture_frame_upload_handoff_entry entry;
+        entry.sequence = plan_entry.request_index + 1;
+        entry.request_index = plan_entry.request_index;
+        entry.status = render_image_texture_frame_upload_handoff_entry_status::ready;
+        entry.status_name = render_image_texture_frame_upload_handoff_entry_status_name(entry.status);
+        entry.render_image_uri = plan_entry.image.uri;
+        entry.normalized_uri = plan_entry.pipeline_request.uri;
+        entry.cache_key = plan_entry.normalized_source_key;
+        entry.source_kind = plan_entry.source_kind;
+        entry.sampler = plan_entry.sampler;
+        entry.sampler_key = sampler_key;
+        entry.texture_key = plan_entry.texture_key;
+        entry.stable_texture_cache_key = plan_entry.stable_texture_cache_key;
+        entry.texture_id = 700 + plan_entry.request_index;
+        entry.texture_revision = 3;
+        entry.texture_width = 64 + plan_entry.request_index;
+        entry.texture_height = 32;
+        entry.upload_request_id = 900 + plan_entry.request_index;
+        entry.upload_generation_id = 11;
+        entry.upload_result_status = render_image_texture_upload_result_packet_status::accepted;
+        entry.upload_result_status_name = render_image_texture_upload_result_packet_status_name(
+            entry.upload_result_status);
+        entry.upload_status = render_image_texture_upload_status::uploaded;
+        entry.upload_status_name = render_image_texture_upload_operation_upload_status_name(entry.upload_status);
+        entry.mip_level_count = 1;
+        entry.accepted_mip_level_count = 1;
+        entry.uploaded_byte_count = 64;
+        entry.requested = true;
+        entry.upload_result_present = true;
+        entry.ready = true;
+        entry.blocked = false;
+        entry.missing_upload_result = false;
+        entry.renderer_handoff_ready = true;
+        entry.expected_cache_reuse = plan_entry.expects_cache_reuse;
+        entry.cache_key_summary = plan_entry.stable_texture_cache_key;
+        entry.sampler_summary = sampler_key;
+        entry.diagnostic = "test upload handoff entry is ready";
+        handoff.entries.push_back(entry);
+        handoff.uploaded_byte_count += entry.uploaded_byte_count;
+        handoff.total_mip_level_count += entry.mip_level_count;
+        handoff.accepted_mip_level_count += entry.accepted_mip_level_count;
+    }
+
+    return make_render_image_texture_frame_resource_packet_plan(handoff);
+}
+
+quiz_vulkan::render::render_image_renderer_texture_quad_packet make_test_renderer_texture_quad_packet(
+    std::string node_id,
+    std::size_t packet_index,
+    bool ready)
+{
+    using namespace quiz_vulkan::render;
+
+    const render_image_sampler_policy sampler;
+    const std::string sampler_key = render_image_sampler_policy_stable_fragment(sampler);
+    const std::string texture_uri = "asset://textures/" + node_id + ".ppm";
+    const std::string stable_draw_identity = "frame=diff-frame|node=" + node_id + "|parent=root";
+    const std::string stable_texture_cache_key = texture_uri + "|" + sampler_key;
+    render_image_renderer_texture_quad_packet packet{
+        .packet_index = packet_index,
+        .frame_label = "diff-frame",
+        .draw_command_index = packet_index,
+        .image_command_index = packet_index,
+        .texture_request_index = packet_index,
+        .node_id = node_id,
+        .parent_node_id = "root",
+        .bounds = render_rect{
+            .x = static_cast<float>(packet_index * 10),
+            .y = 4.0f,
+            .width = 32.0f,
+            .height = 16.0f,
+        },
+        .content_bounds = render_rect{
+            .x = static_cast<float>(packet_index * 10 + 1),
+            .y = 5.0f,
+            .width = 30.0f,
+            .height = 14.0f,
+        },
+        .image = render_image_ref{
+            .uri = texture_uri,
+            .alt_text = node_id,
+            .aspect_ratio = 2.0f,
+            .sampler = sampler,
+        },
+        .uri = texture_uri,
+        .alt_text = node_id,
+        .aspect_ratio = 2.0f,
+        .sampler = sampler,
+        .sampler_policy = make_render_image_sampler_policy_diagnostic(sampler),
+        .sampler_key = sampler_key,
+        .texture_key = render_image_texture_key{.source_key = texture_uri, .sampler = sampler},
+        .texture_key_diagnostic = make_render_image_texture_key_diagnostic(
+            render_image_texture_key{.source_key = texture_uri, .sampler = sampler}),
+        .stable_draw_command_identity = stable_draw_identity,
+        .stable_texture_cache_key = stable_texture_cache_key,
+        .stable_quad_packet_identity = stable_draw_identity + "|texture=" + stable_texture_cache_key,
+        .composition_status = ready
+            ? render_image_draw_list_texture_frame_composition_entry_status::ready
+            : render_image_draw_list_texture_frame_composition_entry_status::resource_packet_blocked,
+        .composition_status_name = render_image_draw_list_texture_frame_composition_entry_status_name(
+            ready
+                ? render_image_draw_list_texture_frame_composition_entry_status::ready
+                : render_image_draw_list_texture_frame_composition_entry_status::resource_packet_blocked),
+        .resource_packet_status = ready
+            ? render_image_texture_frame_resource_packet_status::resource_packet_ready
+            : render_image_texture_frame_resource_packet_status::blocked,
+        .resource_packet_status_name = render_image_texture_frame_resource_packet_status_name(
+            ready
+                ? render_image_texture_frame_resource_packet_status::resource_packet_ready
+                : render_image_texture_frame_resource_packet_status::blocked),
+        .texture_id = 900 + packet_index,
+        .texture_revision = 4,
+        .texture_width = 64,
+        .texture_height = 32,
+        .upload_request_id = 1200 + packet_index,
+        .upload_generation_id = 8,
+        .uploaded_byte_count = 128,
+        .entered_texture_batch = true,
+        .frame_entry_present = true,
+        .resource_packet_present = true,
+        .resource_packet_ready = ready,
+        .renderer_handoff_ready = ready,
+        .blocker_summary = ready ? "" : "resource packet blocked renderer texture quad packet",
+    };
+    finalize_render_image_renderer_texture_quad_packet(packet);
+    return packet;
+}
+
+quiz_vulkan::render::render_image_renderer_texture_quad_packet_summary make_test_renderer_texture_quad_summary(
+    std::vector<quiz_vulkan::render::render_image_renderer_texture_quad_packet> packets)
+{
+    using namespace quiz_vulkan::render;
+
+    render_image_renderer_texture_quad_packet_summary summary{
+        .frame_label = "diff-frame",
+        .draw_command_count = packets.size(),
+        .image_command_count = packets.size(),
+    };
+
+    for (render_image_renderer_texture_quad_packet& packet : packets) {
+        packet.packet_index = summary.packets.size();
+        count_render_image_renderer_texture_quad_packet(summary, packet);
+        summary.packets.push_back(packet);
+    }
+
+    summary.packet_count = summary.packets.size();
+    summary.renderer_quad_packets_ready = summary.packet_count != 0 && !summary.has_blockers;
+    summary.status = summary.packet_count == 0
+        ? render_image_renderer_texture_quad_packet_summary_status::empty
+        : (summary.has_blockers
+            ? render_image_renderer_texture_quad_packet_summary_status::blocked
+            : render_image_renderer_texture_quad_packet_summary_status::ready);
+    summary.status_name = render_image_renderer_texture_quad_packet_summary_status_name(summary.status);
+    summary.diagnostic = summary.has_blockers
+        ? "test renderer texture quad packet summary has blockers"
+        : "test renderer texture quad packet summary is ready";
+    return summary;
+}
+
+const quiz_vulkan::render::render_image_renderer_texture_quad_packet_diff_entry*
+find_quad_packet_diff_entry(
+    const quiz_vulkan::render::render_image_renderer_texture_quad_packet_summary_diff& diff,
+    const std::string& identity_fragment)
+{
+    for (const quiz_vulkan::render::render_image_renderer_texture_quad_packet_diff_entry& entry :
+         diff.entries) {
+        if (entry.stable_diff_identity.find(identity_fragment) != std::string::npos) {
+            return &entry;
+        }
+    }
+    return nullptr;
 }
 
 void test_resource_packet_plan_reports_ready_and_placeholder_entries()
@@ -269,6 +520,698 @@ void test_resource_packet_plan_reports_missing_binding_upload_and_retry_blockers
     require(plan.entries[2].next_retry_sequence == 11, "retry entry preserves next retry sequence");
 }
 
+void test_draw_list_texture_frame_composition_links_ready_commands_to_resources()
+{
+    using namespace quiz_vulkan::render;
+
+    render_image_sampler_policy nearest_sampler;
+    nearest_sampler.min_filter = render_image_filter::nearest;
+    nearest_sampler.wrap_u = render_image_wrap_mode::repeat;
+
+    const render_rect first_bounds{.x = 10.0f, .y = 20.0f, .width = 64.0f, .height = 32.0f};
+    const render_rect first_content{.x = 12.0f, .y = 22.0f, .width = 60.0f, .height = 28.0f};
+    const render_rect second_bounds{.x = 90.0f, .y = 20.0f, .width = 40.0f, .height = 40.0f};
+    render_draw_list draw_list;
+    draw_list.commands = {
+        render_draw_command{
+            .type = render_draw_command_type::quad,
+            .node_id = "background",
+            .bounds = render_rect{.x = 0.0f, .y = 0.0f, .width = 160.0f, .height = 90.0f},
+            .content_bounds = render_rect{.x = 0.0f, .y = 0.0f, .width = 160.0f, .height = 90.0f},
+        },
+        render_draw_command{
+            .type = render_draw_command_type::image,
+            .node_id = "card-image",
+            .parent_node_id = "card",
+            .bounds = first_bounds,
+            .content_bounds = first_content,
+            .image = render_image_ref{
+                .uri = "asset://textures/card-front.ppm",
+                .alt_text = "front",
+                .aspect_ratio = 2.0f,
+                .sampler = nearest_sampler,
+            },
+        },
+        render_draw_command{
+            .type = render_draw_command_type::image,
+            .node_id = "badge-image",
+            .parent_node_id = "card",
+            .bounds = second_bounds,
+            .content_bounds = second_bounds,
+            .image = render_image_ref{
+                .uri = "asset://textures/badge.ppm",
+                .alt_text = "badge",
+                .aspect_ratio = 1.0f,
+            },
+        },
+    };
+
+    const render_image_draw_list_frame_handoff_snapshot handoff =
+        make_render_image_draw_list_frame_handoff_snapshot(draw_list, "composition-frame");
+    const render_image_texture_batch_plan batch_plan = plan_render_image_texture_batch(handoff);
+    const render_image_texture_frame_snapshot frame =
+        make_render_image_texture_frame_snapshot(batch_plan, make_ready_batch_execution(batch_plan));
+    const render_image_texture_frame_resource_packet_plan resources =
+        make_ready_resource_packet_plan(batch_plan);
+
+    const render_image_draw_list_texture_frame_composition composition =
+        make_render_image_draw_list_texture_frame_composition(handoff, batch_plan, frame, resources);
+
+    require(composition.ok(), "draw-list texture frame composition is ready");
+    require(
+        composition.status == render_image_draw_list_texture_frame_composition_status::ready,
+        "composition records ready status");
+    require(composition.status_name == "ready", "composition ready status name is stable");
+    require(composition.frame_label == "composition-frame", "composition preserves frame label");
+    require(composition.draw_command_count == 3, "composition records draw command count");
+    require(composition.non_image_command_count == 1, "composition records skipped non-image commands");
+    require(composition.image_command_count == 2, "composition records image command count");
+    require(composition.handoff_entry_count == 2, "composition records image handoff entries");
+    require(composition.texture_batch_request_count == 2, "composition records texture batch requests");
+    require(composition.batch_planned_request_count == 2, "composition records planned batch requests");
+    require(composition.frame_entry_count == 2, "composition records frame entries");
+    require(composition.resource_packet_count == 2, "composition records resource packet entries");
+    require(composition.ready_entry_count == 2, "composition records ready composed entries");
+    require(composition.blocked_entry_count == 0, "composition has no blockers");
+    require(
+        composition.skipped_command_summary == "skipped non-image draw commands=1",
+        "composition keeps non-image skip evidence");
+    require(
+        composition.diagnostic == "image draw-list texture frame composition ready",
+        "composition ready diagnostic is stable");
+
+    const render_image_draw_list_texture_frame_composition_entry& first = composition.entries[0];
+    require(first.ok(), "first composed image entry is ready");
+    require(first.draw_command_index == 1, "first composed entry preserves draw command index");
+    require(first.image_command_index == 0, "first composed entry preserves image command order");
+    require(first.texture_request_index == 0, "first composed entry preserves texture request index");
+    require(first.node_id == "card-image", "first composed entry preserves node id");
+    require(first.parent_node_id == "card", "first composed entry preserves parent node id");
+    require(first.bounds.x == first_bounds.x && first.bounds.width == first_bounds.width, "first entry preserves bounds");
+    require(
+        first.content_bounds.x == first_content.x && first.content_bounds.width == first_content.width,
+        "first entry preserves content bounds");
+    require(first.uri == "asset://textures/card-front.ppm", "first entry preserves image uri");
+    require(first.alt_text == "front", "first entry preserves alt text");
+    require(first.aspect_ratio == 2.0f, "first entry preserves aspect ratio");
+    require(first.sampler.min_filter == render_image_filter::nearest, "first entry preserves sampler filter");
+    require(first.sampler.wrap_u == render_image_wrap_mode::repeat, "first entry preserves sampler wrap");
+    require(first.texture_request.uri == "asset://textures/card-front.ppm", "first entry carries batch request uri");
+    require(first.batch_entry_present, "first entry links batch plan evidence");
+    require(first.batch_request_planned, "first entry records planned batch request");
+    require(first.frame_entry_present, "first entry links frame snapshot evidence");
+    require(first.frame_renderer_handoff_ready, "first entry records frame handoff readiness");
+    require(first.resource_packet_present, "first entry links resource packet evidence");
+    require(first.resource_packet_ready, "first entry records resource packet readiness");
+    require(first.texture_id == 700, "first entry carries resource texture id");
+    require(first.upload_request_id == 900, "first entry carries upload request id evidence");
+    require(first.uploaded_byte_count == 64, "first entry carries uploaded byte count evidence");
+    require(
+        first.stable_draw_command_identity == "frame=composition-frame|node=card-image|parent=card",
+        "first entry preserves stable draw command identity");
+    require(
+        first.stable_texture_cache_key.find("card-front.ppm") != std::string::npos,
+        "first entry preserves stable texture cache key");
+
+    const render_image_draw_list_texture_frame_composition_entry& second = composition.entries[1];
+    require(second.ok(), "second composed image entry is ready");
+    require(second.draw_command_index == 2, "second composed entry preserves draw command index");
+    require(second.image_command_index == 1, "second composed entry preserves image command order");
+    require(second.texture_request_index == 1, "second composed entry preserves texture request index");
+    require(second.node_id == "badge-image", "second composed entry preserves node id");
+    require(second.resource_packet_present, "second entry links resource packet evidence");
+    require(second.texture_id == 701, "second entry carries second texture id");
+}
+
+void test_draw_list_texture_frame_composition_keeps_blocked_handoff_out_of_batch()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_rect bounds{.x = 0.0f, .y = 0.0f, .width = 16.0f, .height = 16.0f};
+    render_draw_list draw_list;
+    draw_list.commands = {
+        render_draw_command{
+            .type = render_draw_command_type::image,
+            .node_id = "ready-image",
+            .parent_node_id = "root",
+            .bounds = bounds,
+            .content_bounds = bounds,
+            .image = render_image_ref{.uri = "asset://textures/ready.ppm"},
+        },
+        render_draw_command{
+            .type = render_draw_command_type::text,
+            .node_id = "caption",
+            .parent_node_id = "root",
+            .bounds = bounds,
+            .content_bounds = bounds,
+        },
+        render_draw_command{
+            .type = render_draw_command_type::image,
+            .node_id = "blocked-image",
+            .parent_node_id = "root",
+            .bounds = bounds,
+            .content_bounds = bounds,
+            .image = render_image_ref{.uri = "   "},
+        },
+    };
+
+    const render_image_draw_list_frame_handoff_snapshot handoff =
+        make_render_image_draw_list_frame_handoff_snapshot(draw_list, "blocked-composition");
+    const render_image_texture_batch_plan batch_plan = plan_render_image_texture_batch(handoff);
+    const render_image_texture_frame_snapshot frame =
+        make_render_image_texture_frame_snapshot(batch_plan, make_ready_batch_execution(batch_plan));
+    const render_image_texture_frame_resource_packet_plan resources =
+        make_ready_resource_packet_plan(batch_plan);
+
+    const render_image_draw_list_texture_frame_composition composition =
+        make_render_image_draw_list_texture_frame_composition(handoff, batch_plan, frame, resources);
+
+    require(!composition.ok(), "composition with blocked handoff entry is blocked");
+    require(
+        composition.status == render_image_draw_list_texture_frame_composition_status::blocked,
+        "blocked composition records blocked status");
+    require(composition.image_command_count == 2, "blocked composition sees two image commands");
+    require(composition.non_image_command_count == 1, "blocked composition skips non-image command");
+    require(composition.handoff_entry_count == 2, "blocked composition has image-only entries");
+    require(composition.texture_batch_request_count == 1, "blocked handoff entry does not enter batch plan");
+    require(composition.batch_planned_request_count == 1, "only ready handoff entry becomes planned batch request");
+    require(composition.ready_entry_count == 1, "blocked composition keeps ready entry ready");
+    require(composition.blocked_entry_count == 1, "blocked composition counts blocked handoff entry");
+    require(composition.handoff_blocked_count == 1, "blocked composition records handoff blocker");
+    require(composition.missing_batch_request_count == 0, "blocked handoff is not reported as missing batch request");
+    require(
+        composition.diagnostic == "image draw-list texture frame composition has blocked image commands",
+        "blocked composition diagnostic is stable");
+
+    const render_image_draw_list_texture_frame_composition_entry& ready = composition.entries[0];
+    require(ready.ok(), "ready entry still reaches texture frame resources");
+    require(ready.batch_entry_present, "ready entry links batch plan");
+    require(ready.frame_entry_present, "ready entry links frame snapshot");
+    require(ready.resource_packet_present, "ready entry links resource packet");
+
+    const render_image_draw_list_texture_frame_composition_entry& blocked = composition.entries[1];
+    require(
+        blocked.status == render_image_draw_list_texture_frame_composition_entry_status::handoff_blocked,
+        "blocked handoff entry keeps handoff blocked status");
+    require(blocked.handoff_blocked, "blocked entry records handoff blocker");
+    require(!blocked.batch_entry_present, "blocked handoff entry does not link a batch entry");
+    require(!blocked.entered_texture_batch, "blocked handoff entry does not enter texture batch");
+    require(!blocked.frame_entry_present, "blocked handoff entry does not link frame evidence");
+    require(!blocked.resource_packet_present, "blocked handoff entry does not link resource packet evidence");
+    require(blocked.draw_command_index == 2, "blocked entry preserves draw command index");
+    require(blocked.node_id == "blocked-image", "blocked entry preserves node id");
+    require(blocked.handoff_blocker_summary == "image draw command uri is empty", "blocked entry keeps blocker summary");
+    require(
+        blocked.diagnostic
+            == "image draw command texture frame composition blocked by draw-list handoff: "
+               "image draw command uri is empty",
+        "blocked entry diagnostic is stable");
+}
+
+void test_renderer_texture_quad_packets_preserve_ready_composed_evidence()
+{
+    using namespace quiz_vulkan::render;
+
+    render_image_sampler_policy nearest_sampler;
+    nearest_sampler.min_filter = render_image_filter::nearest;
+    nearest_sampler.wrap_u = render_image_wrap_mode::repeat;
+
+    const render_rect image_bounds{.x = 10.0f, .y = 20.0f, .width = 64.0f, .height = 32.0f};
+    const render_rect image_content{.x = 12.0f, .y = 22.0f, .width = 60.0f, .height = 28.0f};
+    const render_rect badge_bounds{.x = 90.0f, .y = 20.0f, .width = 40.0f, .height = 40.0f};
+    render_draw_list draw_list;
+    draw_list.commands = {
+        render_draw_command{
+            .type = render_draw_command_type::quad,
+            .node_id = "background",
+            .bounds = render_rect{.x = 0.0f, .y = 0.0f, .width = 160.0f, .height = 90.0f},
+            .content_bounds = render_rect{.x = 0.0f, .y = 0.0f, .width = 160.0f, .height = 90.0f},
+        },
+        render_draw_command{
+            .type = render_draw_command_type::image,
+            .node_id = "card-image",
+            .parent_node_id = "card",
+            .bounds = image_bounds,
+            .content_bounds = image_content,
+            .image = render_image_ref{
+                .uri = "asset://textures/card-front.ppm",
+                .alt_text = "front",
+                .aspect_ratio = 2.0f,
+                .sampler = nearest_sampler,
+            },
+        },
+        render_draw_command{
+            .type = render_draw_command_type::image,
+            .node_id = "badge-image",
+            .parent_node_id = "card",
+            .bounds = badge_bounds,
+            .content_bounds = badge_bounds,
+            .image = render_image_ref{
+                .uri = "asset://textures/badge.ppm",
+                .alt_text = "badge",
+                .aspect_ratio = 1.0f,
+            },
+        },
+    };
+
+    const render_image_draw_list_frame_handoff_snapshot handoff =
+        make_render_image_draw_list_frame_handoff_snapshot(draw_list, "quad-frame");
+    const render_image_texture_batch_plan batch_plan = plan_render_image_texture_batch(handoff);
+    const render_image_texture_frame_snapshot frame =
+        make_render_image_texture_frame_snapshot(batch_plan, make_ready_batch_execution(batch_plan));
+    const render_image_texture_frame_resource_packet_plan resources =
+        make_ready_resource_packet_plan(batch_plan);
+    const render_image_draw_list_texture_frame_composition composition =
+        make_render_image_draw_list_texture_frame_composition(handoff, batch_plan, frame, resources);
+
+    const render_image_renderer_texture_quad_packet_summary summary =
+        make_render_image_renderer_texture_quad_packet_summary(composition);
+
+    require(summary.ok(), "renderer texture quad packet summary is ready");
+    require(
+        summary.status == render_image_renderer_texture_quad_packet_summary_status::ready,
+        "renderer quad summary records ready status");
+    require(summary.status_name == "ready", "renderer quad summary ready status name is stable");
+    require(summary.frame_label == "quad-frame", "renderer quad summary preserves frame label");
+    require(summary.draw_command_count == 3, "renderer quad summary preserves draw command count");
+    require(summary.non_image_command_count == 1, "renderer quad summary preserves skipped command count");
+    require(summary.image_command_count == 2, "renderer quad summary preserves image command count");
+    require(summary.packet_count == 2, "renderer quad summary emits one packet per image command");
+    require(summary.ready_packet_count == 2, "renderer quad summary counts ready packets");
+    require(summary.blocked_packet_count == 0, "renderer quad summary has no blocked packets");
+    require(summary.unique_stable_quad_packet_identity_count == 2, "renderer quad summary records unique packet ids");
+    require(summary.unique_texture_cache_key_count == 2, "renderer quad summary records unique texture cache keys");
+    require(summary.unique_sampler_key_count == 2, "renderer quad summary records unique sampler keys");
+    require(summary.uploaded_byte_count == 128, "renderer quad summary records uploaded byte evidence");
+    require(summary.renderer_quad_packets_ready, "renderer quad summary records renderer readiness");
+    require(
+        summary.skipped_command_summary == "skipped non-image draw commands=1",
+        "renderer quad summary keeps non-image evidence");
+    require(
+        summary.diagnostic == "image renderer texture quad packet summary is ready",
+        "renderer quad summary ready diagnostic is stable");
+
+    const render_image_renderer_texture_quad_packet& first = summary.packets[0];
+    require(first.ok(), "first renderer quad packet is ready");
+    require(first.packet_index == 0, "first renderer quad packet index is deterministic");
+    require(first.draw_command_index == 1, "first renderer quad packet preserves draw command index");
+    require(first.image_command_index == 0, "first renderer quad packet preserves image command order");
+    require(first.texture_request_index == 0, "first renderer quad packet preserves texture request index");
+    require(first.node_id == "card-image", "first renderer quad packet preserves node id");
+    require(first.parent_node_id == "card", "first renderer quad packet preserves parent node id");
+    require(first.bounds.x == image_bounds.x && first.bounds.width == image_bounds.width, "first renderer quad packet preserves bounds");
+    require(
+        first.content_bounds.x == image_content.x && first.content_bounds.width == image_content.width,
+        "first renderer quad packet preserves content bounds");
+    require(first.uri == "asset://textures/card-front.ppm", "first renderer quad packet preserves image uri");
+    require(first.image.uri == "asset://textures/card-front.ppm", "first renderer quad packet preserves image ref");
+    require(first.alt_text == "front", "first renderer quad packet preserves alt text");
+    require(first.aspect_ratio == 2.0f, "first renderer quad packet preserves aspect ratio");
+    require(first.sampler.min_filter == render_image_filter::nearest, "first renderer quad packet preserves sampler filter");
+    require(first.sampler.wrap_u == render_image_wrap_mode::repeat, "first renderer quad packet preserves sampler wrap");
+    require(first.sampler_key.find("min=nearest") != std::string::npos, "first renderer quad packet records sampler identity");
+    require(
+        first.stable_draw_command_identity == "frame=quad-frame|node=card-image|parent=card",
+        "first renderer quad packet preserves stable draw command identity");
+    require(
+        first.stable_texture_cache_key.find("card-front.ppm") != std::string::npos,
+        "first renderer quad packet preserves stable texture cache key");
+    require(
+        first.stable_quad_packet_identity.find("texture=") != std::string::npos,
+        "first renderer quad packet materializes stable packet identity");
+    require(first.entered_texture_batch, "first renderer quad packet records texture batch entry");
+    require(first.frame_entry_present, "first renderer quad packet records frame evidence");
+    require(first.resource_packet_present, "first renderer quad packet records resource packet evidence");
+    require(first.resource_packet_ready, "first renderer quad packet records resource packet readiness");
+    require(first.renderer_handoff_ready, "first renderer quad packet records renderer handoff readiness");
+    require(first.texture_id == 700, "first renderer quad packet carries texture id");
+    require(first.texture_revision == 3, "first renderer quad packet carries texture revision");
+    require(first.texture_width == 64, "first renderer quad packet carries texture width");
+    require(first.texture_height == 32, "first renderer quad packet carries texture height");
+    require(first.upload_request_id == 900, "first renderer quad packet carries upload request id");
+    require(first.upload_generation_id == 11, "first renderer quad packet carries upload generation id");
+    require(first.uploaded_byte_count == 64, "first renderer quad packet carries uploaded byte count");
+    require(
+        first.status == render_image_renderer_texture_quad_packet_status::ready,
+        "first renderer quad packet status is ready");
+    require(first.status_name == "ready", "first renderer quad packet status name is stable");
+    require(
+        first.diagnostic == "image renderer texture quad packet is ready",
+        "first renderer quad packet ready diagnostic is stable");
+
+    const render_image_renderer_texture_quad_packet& second = summary.packets[1];
+    require(second.ok(), "second renderer quad packet is ready");
+    require(second.packet_index == 1, "second renderer quad packet index is deterministic");
+    require(second.draw_command_index == 2, "second renderer quad packet preserves command order");
+    require(second.texture_id == 701, "second renderer quad packet carries second texture id");
+    require(second.uri == "asset://textures/badge.ppm", "second renderer quad packet preserves uri");
+}
+
+void test_renderer_texture_quad_packets_keep_blockers_and_identity_diagnostics()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_rect bounds{.x = 0.0f, .y = 0.0f, .width = 16.0f, .height = 16.0f};
+    render_draw_list draw_list;
+    draw_list.commands = {
+        render_draw_command{
+            .type = render_draw_command_type::image,
+            .parent_node_id = "root",
+            .bounds = bounds,
+            .content_bounds = bounds,
+            .image = render_image_ref{.uri = "asset://textures/missing-identity.ppm"},
+        },
+        render_draw_command{
+            .type = render_draw_command_type::image,
+            .node_id = "shared-image",
+            .parent_node_id = "root",
+            .bounds = bounds,
+            .content_bounds = bounds,
+            .image = render_image_ref{.uri = "asset://textures/shared.ppm"},
+        },
+        render_draw_command{
+            .type = render_draw_command_type::image,
+            .node_id = "shared-image",
+            .parent_node_id = "root",
+            .bounds = bounds,
+            .content_bounds = bounds,
+            .image = render_image_ref{.uri = "asset://textures/shared.ppm"},
+        },
+        render_draw_command{
+            .type = render_draw_command_type::text,
+            .node_id = "caption",
+            .parent_node_id = "root",
+            .bounds = bounds,
+            .content_bounds = bounds,
+        },
+    };
+
+    const render_image_draw_list_frame_handoff_snapshot handoff =
+        make_render_image_draw_list_frame_handoff_snapshot(draw_list, "quad-blocked-frame");
+    const render_image_texture_batch_plan batch_plan = plan_render_image_texture_batch(handoff);
+    const render_image_texture_frame_snapshot frame =
+        make_render_image_texture_frame_snapshot(batch_plan, make_ready_batch_execution(batch_plan));
+    const render_image_texture_frame_resource_packet_plan resources =
+        make_ready_resource_packet_plan(batch_plan);
+    const render_image_draw_list_texture_frame_composition composition =
+        make_render_image_draw_list_texture_frame_composition(handoff, batch_plan, frame, resources);
+
+    const render_image_renderer_texture_quad_packet_summary summary =
+        make_render_image_renderer_texture_quad_packet_summary(composition);
+
+    require(!summary.ok(), "renderer texture quad summary with identity blockers is blocked");
+    require(
+        summary.status == render_image_renderer_texture_quad_packet_summary_status::blocked,
+        "renderer quad summary records blocked status");
+    require(summary.packet_count == 3, "renderer quad summary emits image-only packets");
+    require(summary.ready_packet_count == 0, "renderer quad summary blocks duplicate identity packets");
+    require(summary.blocked_packet_count == 3, "renderer quad summary counts blocked packets");
+    require(summary.missing_stable_identity_count == 1, "renderer quad summary counts missing stable identity");
+    require(summary.duplicate_stable_identity_count == 2, "renderer quad summary counts duplicate stable identities");
+    require(summary.has_missing_stable_identities, "renderer quad summary flags missing identities");
+    require(summary.has_duplicate_stable_identities, "renderer quad summary flags duplicate identities");
+    require(summary.non_image_command_count == 1, "renderer quad summary keeps non-image skip count");
+    require(
+        summary.diagnostic == "image renderer texture quad packet summary has blocked image packets",
+        "renderer quad summary blocked diagnostic is stable");
+
+    const render_image_renderer_texture_quad_packet& missing = summary.packets[0];
+    require(
+        missing.status == render_image_renderer_texture_quad_packet_status::blocked_missing_stable_identity,
+        "missing identity packet reports missing identity blocker");
+    require(missing.missing_stable_identity, "missing identity packet carries missing identity flag");
+    require(!missing.entered_texture_batch, "missing identity packet does not enter texture batch");
+    require(!missing.resource_packet_present, "missing identity packet has no resource packet");
+    require(missing.draw_command_index == 0, "missing identity packet preserves draw command index");
+    require(
+        missing.diagnostic == "image renderer texture quad packet is blocked by missing stable identity",
+        "missing identity packet diagnostic is stable");
+
+    const render_image_renderer_texture_quad_packet& first_duplicate = summary.packets[1];
+    require(
+        first_duplicate.status == render_image_renderer_texture_quad_packet_status::blocked_duplicate_stable_identity,
+        "first duplicate packet is blocked by summary duplicate detection");
+    require(first_duplicate.duplicate_stable_identity, "first duplicate packet carries duplicate flag");
+    require(first_duplicate.entered_texture_batch, "first duplicate packet still records batch evidence");
+    require(first_duplicate.frame_entry_present, "first duplicate packet still records frame evidence");
+    require(first_duplicate.resource_packet_present, "first duplicate packet still records resource evidence");
+    require(first_duplicate.draw_command_index == 1, "first duplicate packet preserves draw command index");
+
+    const render_image_renderer_texture_quad_packet& second_duplicate = summary.packets[2];
+    require(
+        second_duplicate.status
+            == render_image_renderer_texture_quad_packet_status::blocked_duplicate_stable_identity,
+        "second duplicate packet keeps duplicate blocker");
+    require(second_duplicate.duplicate_stable_identity, "second duplicate packet carries duplicate flag");
+    require(!second_duplicate.entered_texture_batch, "second duplicate packet does not enter texture batch");
+    require(!second_duplicate.resource_packet_present, "second duplicate packet has no resource packet");
+    require(second_duplicate.draw_command_index == 2, "second duplicate packet preserves draw command index");
+    require(
+        second_duplicate.blocker_summary == "renderer texture quad packet has duplicate stable identity",
+        "second duplicate packet blocker summary is stable");
+}
+
+void test_renderer_texture_quad_packet_diff_reports_noop_for_identical_summaries()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_image_renderer_texture_quad_packet_summary before =
+        make_test_renderer_texture_quad_summary({
+            make_test_renderer_texture_quad_packet("card", 0, true),
+            make_test_renderer_texture_quad_packet("badge", 1, true),
+        });
+    const render_image_renderer_texture_quad_packet_summary after = before;
+
+    const render_image_renderer_texture_quad_packet_summary_diff diff =
+        diff_render_image_renderer_texture_quad_packet_summaries(before, after);
+
+    require(diff.ok(), "unchanged renderer texture quad diff is ok");
+    require(
+        diff.status == render_image_renderer_texture_quad_packet_summary_diff_status::unchanged,
+        "unchanged renderer texture quad diff records unchanged status");
+    require(diff.status_name == "unchanged", "unchanged renderer texture quad diff status name is stable");
+    require(!diff.has_changes, "unchanged renderer texture quad diff has no changes");
+    require(diff.before_packet_count == 2, "unchanged renderer texture quad diff records before count");
+    require(diff.after_packet_count == 2, "unchanged renderer texture quad diff records after count");
+    require(diff.packet_count_delta == 0, "unchanged renderer texture quad diff records zero packet delta");
+    require(diff.entries.size() == 2, "unchanged renderer texture quad diff keeps entry evidence");
+    require(diff.unchanged_packet_count == 2, "unchanged renderer texture quad diff counts unchanged packets");
+    require(diff.changed_packet_count == 0, "unchanged renderer texture quad diff has no changed packets");
+    require(diff.added_packet_count == 0, "unchanged renderer texture quad diff has no added packets");
+    require(diff.removed_packet_count == 0, "unchanged renderer texture quad diff has no removed packets");
+    require(diff.regression_count == 0, "unchanged renderer texture quad diff has no regressions");
+    require(diff.recovery_count == 0, "unchanged renderer texture quad diff has no recoveries");
+    require(
+        diff.changed_identity_summary == "no renderer texture quad packet identity changes",
+        "unchanged renderer texture quad diff identity summary is stable");
+    require(
+        diff.diagnostic == "image renderer texture quad packet summary diff is unchanged",
+        "unchanged renderer texture quad diff diagnostic is stable");
+
+    const render_image_renderer_texture_quad_packet_diff_entry& first = diff.entries[0];
+    require(
+        first.status == render_image_renderer_texture_quad_packet_diff_entry_status::unchanged,
+        "unchanged renderer texture quad diff entry status is unchanged");
+    require(first.classification_name == "neutral", "unchanged renderer texture quad diff entry is neutral");
+    require(!first.changed(), "unchanged renderer texture quad diff entry reports no change");
+}
+
+void test_renderer_texture_quad_packet_diff_classifies_ready_blocked_transitions()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_image_renderer_texture_quad_packet_summary before =
+        make_test_renderer_texture_quad_summary({
+            make_test_renderer_texture_quad_packet("ready-then-blocked", 0, true),
+            make_test_renderer_texture_quad_packet("blocked-then-ready", 1, false),
+        });
+    const render_image_renderer_texture_quad_packet_summary after =
+        make_test_renderer_texture_quad_summary({
+            make_test_renderer_texture_quad_packet("ready-then-blocked", 0, false),
+            make_test_renderer_texture_quad_packet("blocked-then-ready", 1, true),
+        });
+
+    const render_image_renderer_texture_quad_packet_summary_diff diff =
+        diff_render_image_renderer_texture_quad_packet_summaries(before, after);
+
+    require(!diff.ok(), "renderer texture quad diff with regression is not ok");
+    require(diff.has_changes, "renderer texture quad transition diff records changes");
+    require(diff.changed_packet_count == 2, "renderer texture quad transition diff counts changed packets");
+    require(diff.readiness_changed_count == 2, "renderer texture quad transition diff counts readiness changes");
+    require(diff.blocker_changed_count == 2, "renderer texture quad transition diff counts blocker changes");
+    require(diff.regression_count == 1, "renderer texture quad transition diff counts ready to blocked regression");
+    require(diff.recovery_count == 1, "renderer texture quad transition diff counts blocked to ready recovery");
+    require(diff.has_regressions, "renderer texture quad transition diff flags regressions");
+    require(diff.has_recoveries, "renderer texture quad transition diff flags recoveries");
+
+    const render_image_renderer_texture_quad_packet_diff_entry* regression =
+        find_quad_packet_diff_entry(diff, "ready-then-blocked");
+    require(regression != nullptr, "renderer texture quad transition diff exposes regression entry");
+    require(regression->regression, "renderer texture quad transition entry marks regression");
+    require(
+        regression->classification
+            == render_image_renderer_texture_quad_packet_diff_classification::regression,
+        "renderer texture quad transition entry classification is regression");
+    require(regression->before_ready, "renderer texture quad regression entry records before ready");
+    require(regression->after_blocked, "renderer texture quad regression entry records after blocked");
+    require(
+        regression->diagnostic == "image renderer texture quad packet regressed from ready to blocked",
+        "renderer texture quad regression diagnostic is stable");
+
+    const render_image_renderer_texture_quad_packet_diff_entry* recovery =
+        find_quad_packet_diff_entry(diff, "blocked-then-ready");
+    require(recovery != nullptr, "renderer texture quad transition diff exposes recovery entry");
+    require(recovery->recovery, "renderer texture quad transition entry marks recovery");
+    require(
+        recovery->classification
+            == render_image_renderer_texture_quad_packet_diff_classification::recovery,
+        "renderer texture quad transition entry classification is recovery");
+    require(recovery->before_blocked, "renderer texture quad recovery entry records before blocked");
+    require(recovery->after_ready, "renderer texture quad recovery entry records after ready");
+    require(
+        recovery->diagnostic == "image renderer texture quad packet recovered from blocked to ready",
+        "renderer texture quad recovery diagnostic is stable");
+}
+
+void test_renderer_texture_quad_packet_diff_counts_layout_texture_sampler_cache_and_upload_changes()
+{
+    using namespace quiz_vulkan::render;
+
+    render_image_renderer_texture_quad_packet before_packet =
+        make_test_renderer_texture_quad_packet("mutable", 0, true);
+    render_image_renderer_texture_quad_packet after_packet = before_packet;
+    after_packet.bounds.width += 3.0f;
+    after_packet.content_bounds.x += 2.0f;
+    after_packet.texture_id += 10;
+    after_packet.texture_revision += 1;
+    after_packet.texture_width += 8;
+    after_packet.sampler.min_filter = render_image_filter::nearest;
+    after_packet.sampler_key = render_image_sampler_policy_stable_fragment(after_packet.sampler);
+    after_packet.stable_texture_cache_key = "asset://textures/mutable-updated.ppm|" + after_packet.sampler_key;
+    after_packet.stable_quad_packet_identity =
+        after_packet.stable_draw_command_identity + "|texture=" + after_packet.stable_texture_cache_key;
+    after_packet.upload_request_id += 20;
+    after_packet.upload_generation_id += 2;
+    after_packet.uploaded_byte_count += 32;
+    finalize_render_image_renderer_texture_quad_packet(after_packet);
+
+    const render_image_renderer_texture_quad_packet_summary before =
+        make_test_renderer_texture_quad_summary({before_packet});
+    const render_image_renderer_texture_quad_packet_summary after =
+        make_test_renderer_texture_quad_summary({after_packet});
+
+    const render_image_renderer_texture_quad_packet_summary_diff diff =
+        diff_render_image_renderer_texture_quad_packet_summaries(before, after);
+
+    require(diff.ok(), "renderer texture quad mutation diff without regression is ok");
+    require(diff.has_changes, "renderer texture quad mutation diff records changes");
+    require(diff.changed_packet_count == 1, "renderer texture quad mutation diff counts changed packet");
+    require(diff.stable_quad_packet_identity_changed_count == 1, "renderer texture quad mutation diff counts packet identity change");
+    require(diff.bounds_changed_count == 1, "renderer texture quad mutation diff counts bounds change");
+    require(diff.content_bounds_changed_count == 1, "renderer texture quad mutation diff counts content bounds change");
+    require(diff.texture_id_changed_count == 1, "renderer texture quad mutation diff counts texture id change");
+    require(diff.texture_revision_changed_count == 1, "renderer texture quad mutation diff counts texture revision change");
+    require(diff.texture_size_changed_count == 1, "renderer texture quad mutation diff counts texture size change");
+    require(diff.sampler_changed_count == 1, "renderer texture quad mutation diff counts sampler change");
+    require(diff.cache_key_changed_count == 1, "renderer texture quad mutation diff counts cache key change");
+    require(diff.upload_request_changed_count == 1, "renderer texture quad mutation diff counts upload request change");
+    require(diff.upload_generation_changed_count == 1, "renderer texture quad mutation diff counts upload generation change");
+    require(diff.uploaded_byte_count_changed_count == 1, "renderer texture quad mutation diff counts uploaded bytes change");
+    require(diff.has_identity_changes, "renderer texture quad mutation diff flags identity changes");
+    require(diff.has_layout_changes, "renderer texture quad mutation diff flags layout changes");
+    require(diff.has_texture_changes, "renderer texture quad mutation diff flags texture changes");
+    require(diff.has_sampler_or_cache_changes, "renderer texture quad mutation diff flags sampler/cache changes");
+    require(diff.has_upload_changes, "renderer texture quad mutation diff flags upload changes");
+
+    const render_image_renderer_texture_quad_packet_diff_entry* entry =
+        find_quad_packet_diff_entry(diff, "mutable");
+    require(entry != nullptr, "renderer texture quad mutation diff exposes changed entry");
+    require(entry->changed(), "renderer texture quad mutation diff entry reports changed");
+    require(entry->classification_name == "churn", "renderer texture quad mutation diff entry is churn");
+    require(entry->uploaded_byte_delta == 32, "renderer texture quad mutation diff entry records byte delta");
+    require(
+        entry->diagnostic == "image renderer texture quad packet changed",
+        "renderer texture quad mutation diff diagnostic is stable");
+}
+
+void test_renderer_texture_quad_packet_diff_reports_added_removed_duplicate_and_missing_identity_changes()
+{
+    using namespace quiz_vulkan::render;
+
+    render_image_renderer_texture_quad_packet missing_before =
+        make_test_renderer_texture_quad_packet("missing-id", 2, true);
+    missing_before.missing_stable_identity = true;
+    finalize_render_image_renderer_texture_quad_packet(missing_before);
+
+    render_image_renderer_texture_quad_packet duplicate_before =
+        make_test_renderer_texture_quad_packet("duplicate-id", 3, true);
+    duplicate_before.duplicate_stable_identity = true;
+    finalize_render_image_renderer_texture_quad_packet(duplicate_before);
+
+    const render_image_renderer_texture_quad_packet_summary before =
+        make_test_renderer_texture_quad_summary({
+            make_test_renderer_texture_quad_packet("stable", 0, true),
+            make_test_renderer_texture_quad_packet("removed", 1, true),
+            missing_before,
+            duplicate_before,
+        });
+    const render_image_renderer_texture_quad_packet_summary after =
+        make_test_renderer_texture_quad_summary({
+            make_test_renderer_texture_quad_packet("stable", 0, true),
+            make_test_renderer_texture_quad_packet("added", 1, true),
+            make_test_renderer_texture_quad_packet("missing-id", 2, true),
+            make_test_renderer_texture_quad_packet("duplicate-id", 3, true),
+        });
+
+    const render_image_renderer_texture_quad_packet_summary_diff diff =
+        diff_render_image_renderer_texture_quad_packet_summaries(before, after);
+
+    require(diff.has_changes, "renderer texture quad identity diff records changes");
+    require(diff.entries.size() == 5, "renderer texture quad identity diff records deterministic union entries");
+    require(diff.unchanged_packet_count == 1, "renderer texture quad identity diff counts unchanged packet");
+    require(diff.added_packet_count == 1, "renderer texture quad identity diff counts added packet");
+    require(diff.removed_packet_count == 1, "renderer texture quad identity diff counts removed packet");
+    require(diff.changed_packet_count == 2, "renderer texture quad identity diff counts changed identity packets");
+    require(diff.missing_stable_identity_changed_count == 1, "renderer texture quad identity diff counts missing identity transition");
+    require(diff.duplicate_stable_identity_changed_count == 1, "renderer texture quad identity diff counts duplicate identity transition");
+    require(diff.recovery_count == 2, "renderer texture quad identity diff treats identity blocker removals as recovery");
+    require(diff.has_identity_changes, "renderer texture quad identity diff flags identity changes");
+    require(
+        diff.entries[0].stable_diff_identity <= diff.entries[1].stable_diff_identity
+            && diff.entries[1].stable_diff_identity <= diff.entries[2].stable_diff_identity
+            && diff.entries[2].stable_diff_identity <= diff.entries[3].stable_diff_identity
+            && diff.entries[3].stable_diff_identity <= diff.entries[4].stable_diff_identity,
+        "renderer texture quad identity diff order is deterministic");
+
+    const render_image_renderer_texture_quad_packet_diff_entry* added =
+        find_quad_packet_diff_entry(diff, "added");
+    require(added != nullptr, "renderer texture quad identity diff exposes added packet");
+    require(
+        added->status == render_image_renderer_texture_quad_packet_diff_entry_status::added,
+        "renderer texture quad identity diff added packet status is stable");
+    require(!added->before_present && added->after_present, "renderer texture quad added packet records presence");
+
+    const render_image_renderer_texture_quad_packet_diff_entry* removed =
+        find_quad_packet_diff_entry(diff, "removed");
+    require(removed != nullptr, "renderer texture quad identity diff exposes removed packet");
+    require(
+        removed->status == render_image_renderer_texture_quad_packet_diff_entry_status::removed,
+        "renderer texture quad identity diff removed packet status is stable");
+    require(removed->before_present && !removed->after_present, "renderer texture quad removed packet records presence");
+
+    const render_image_renderer_texture_quad_packet_diff_entry* missing =
+        find_quad_packet_diff_entry(diff, "missing-id");
+    require(missing != nullptr, "renderer texture quad identity diff exposes missing identity transition");
+    require(missing->missing_stable_identity_changed, "renderer texture quad identity diff records missing identity change");
+    require(missing->recovery, "renderer texture quad identity diff classifies missing identity removal as recovery");
+
+    const render_image_renderer_texture_quad_packet_diff_entry* duplicate =
+        find_quad_packet_diff_entry(diff, "duplicate-id");
+    require(duplicate != nullptr, "renderer texture quad identity diff exposes duplicate identity transition");
+    require(duplicate->duplicate_stable_identity_changed, "renderer texture quad identity diff records duplicate identity change");
+    require(duplicate->recovery, "renderer texture quad identity diff classifies duplicate identity removal as recovery");
+}
+
 void test_resource_packet_status_helpers_are_stable()
 {
     using namespace quiz_vulkan::render;
@@ -286,6 +1229,35 @@ void test_resource_packet_status_helpers_are_stable()
         render_image_texture_frame_resource_packet_status_is_blocked(
             render_image_texture_frame_resource_packet_status::blocked_retry_backoff),
         "retry backoff status is blocked");
+    require(
+        render_image_renderer_texture_quad_packet_status_name(
+            render_image_renderer_texture_quad_packet_status::blocked_missing_resource_packet)
+            == "blocked_missing_resource_packet",
+        "renderer texture quad missing resource status name is stable");
+    require(
+        render_image_renderer_texture_quad_packet_status_is_blocked(
+            render_image_renderer_texture_quad_packet_status::blocked_duplicate_stable_identity),
+        "renderer texture quad duplicate identity status is blocked");
+    require(
+        render_image_renderer_texture_quad_packet_summary_status_name(
+            render_image_renderer_texture_quad_packet_summary_status::ready)
+            == "ready",
+        "renderer texture quad summary status name is stable");
+    require(
+        render_image_renderer_texture_quad_packet_diff_entry_status_name(
+            render_image_renderer_texture_quad_packet_diff_entry_status::changed)
+            == "changed",
+        "renderer texture quad diff entry status name is stable");
+    require(
+        render_image_renderer_texture_quad_packet_diff_classification_name(
+            render_image_renderer_texture_quad_packet_diff_classification::recovery)
+            == "recovery",
+        "renderer texture quad diff classification name is stable");
+    require(
+        render_image_renderer_texture_quad_packet_summary_diff_status_name(
+            render_image_renderer_texture_quad_packet_summary_diff_status::unchanged)
+            == "unchanged",
+        "renderer texture quad summary diff status name is stable");
 }
 
 } // namespace
@@ -294,6 +1266,14 @@ int main()
 {
     test_resource_packet_plan_reports_ready_and_placeholder_entries();
     test_resource_packet_plan_reports_missing_binding_upload_and_retry_blockers();
+    test_draw_list_texture_frame_composition_links_ready_commands_to_resources();
+    test_draw_list_texture_frame_composition_keeps_blocked_handoff_out_of_batch();
+    test_renderer_texture_quad_packets_preserve_ready_composed_evidence();
+    test_renderer_texture_quad_packets_keep_blockers_and_identity_diagnostics();
+    test_renderer_texture_quad_packet_diff_reports_noop_for_identical_summaries();
+    test_renderer_texture_quad_packet_diff_classifies_ready_blocked_transitions();
+    test_renderer_texture_quad_packet_diff_counts_layout_texture_sampler_cache_and_upload_changes();
+    test_renderer_texture_quad_packet_diff_reports_added_removed_duplicate_and_missing_identity_changes();
     test_resource_packet_status_helpers_are_stable();
     return 0;
 }

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/layout/layout_placer.h"
+#include "core/scene/placed_scene.h"
 
 namespace quiz_vulkan {
 

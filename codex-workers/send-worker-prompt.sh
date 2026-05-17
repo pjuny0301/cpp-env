@@ -65,10 +65,16 @@ tmux load-buffer "${prompt_file}"
 tmux paste-buffer -t "${session}:0"
 paste_delay="${QUIZ_CODEX_WORKER_PASTE_DELAY_SECONDS:-0.8}"
 submit_delay="${QUIZ_CODEX_WORKER_SUBMIT_DELAY_SECONDS:-0.8}"
+submit_enter_count="${QUIZ_CODEX_WORKER_SUBMIT_ENTER_COUNT:-4}"
+if ! [[ "${submit_enter_count}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "QUIZ_CODEX_WORKER_SUBMIT_ENTER_COUNT must be a positive integer" >&2
+  exit 1
+fi
 
 sleep "${paste_delay}"
-tmux send-keys -t "${session}:0" Enter
-sleep "${submit_delay}"
-tmux send-keys -t "${session}:0" Enter
+for ((submit_index = 0; submit_index < submit_enter_count; ++submit_index)); do
+  tmux send-keys -t "${session}:0" Enter
+  sleep "${submit_delay}"
+done
 
 echo "sent prompt to ${session}"

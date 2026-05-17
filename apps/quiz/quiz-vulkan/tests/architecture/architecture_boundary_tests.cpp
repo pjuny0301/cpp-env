@@ -201,6 +201,18 @@ int main()
             },
         },
         boundary_rule{
+            .area = "ui-renderer-to-layout-placer",
+            .roots = {
+                "src/core/ui",
+            },
+            .excluded_files = {},
+            .forbidden_tokens = {
+                "#include \"core/layout/",
+                "#include <core/layout/",
+                "layout_placer",
+            },
+        },
+        boundary_rule{
             .area = "layout-placer-to-ui-renderer",
             .roots = {
                 "src/core/layout",

@@ -1,11 +1,69 @@
 # Quiz 요구사항 추적 매트릭스
 
-마지막 갱신: 2026-05-16
+마지막 갱신: 2026-05-17
 
 이 문서는 요구사항 번호를 실행 순서가 아니라 추적 ID로 관리한다. 실제 구현 순서는 `big_plan.md`의 의존관계 기반 단계가 기준이며, 각 행은 루트 구현 문서, 하위 프로젝트 문서, 현재 C++/문서 증거를 연결한다.
 
 최근 baseline 통합 증거:
 
+- `5f35d5a`: Image engine now diffs renderer texture quad packet summaries,
+  tracking added/removed/changed/unchanged stable packet identities plus layout,
+  texture, sampler, cache, upload, blocker, regression, recovery, duplicate
+  identity, and missing identity transitions before renderer/Vulkan consumption.
+- current: after `5f35d5a`, Windows MinGW built
+  `quiz_vulkan_interface_contract_compile_tests` and
+  `quiz_vulkan_image_texture_frame_resource_packet_plan_tests`; focused image
+  CTest passed 1/1.
+- `ea2aa04`: Input engine now emits diagnostic-only IME cancel and focus-loss
+  route policy records when programmatic text focus changes or clears while
+  stale preedit/selection state exists, preserving UTF-8-safe caret/selection
+  before/after snapshots without app/domain dispatch.
+- current: after `ea2aa04`, Windows MinGW built
+  `quiz_vulkan_interface_contract_compile_tests`,
+  `quiz_vulkan_input_engine_ime_tests`, `quiz_vulkan_input_engine_tests`, and
+  `quiz_vulkan_text_input_model_tests`; focused input CTest passed 3/3.
+- `51e6a40`: UI renderer no longer includes the layout placer implementation
+  header; placed scene output is a scene-owned contract, and architecture
+  boundary tests now reject `src/core/ui` dependencies on `core/layout`.
+- current: after `51e6a40`, Windows MinGW built
+  `quiz_vulkan_interface_contract_compile_tests`,
+  `quiz_vulkan_architecture_boundary_tests`, `quiz_vulkan_renderer_tests`, and
+  `quiz_vulkan_app_demo_tests`; focused app/architecture/renderer CTest passed
+  3/3.
+- current: after the text/image/input/Vulkan packet and diagnostics batch
+  through `c84ceba`, Windows MinGW full CTest passed `108/108` from
+  `C:/aa/build/out/quiz/quiz-vulkan/windows-mingw-ascii`.
+- `89b2477`: Image engine now produces renderer texture quad packet evidence from draw-list texture frame composition, preserving source command/node, bounds, image URI/alt/aspect, texture id/revision/size, sampler/cache identity, stable quad identity, and blocker diagnostics.
+- current: after `89b2477`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests` and `quiz_vulkan_image_texture_frame_resource_packet_plan_tests`; focused image CTest passed 1/1.
+- `769d5a9`: Input engine now records suppressed route diagnostics for raw text and shortcut attempts during active IME composition, preserving preedit state, target id, byte counts, keyboard intent, repeat policy, and composition evidence without emitting app/domain actions.
+- current: after `769d5a9`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_gesture_recognizer_tests`, `quiz_vulkan_text_input_model_tests`, `quiz_vulkan_input_engine_tests`, and `quiz_vulkan_input_engine_ime_tests`; focused input CTest passed 4/4.
+- `a15ebf5`: Text engine now diffs renderer glyph quad packet snapshots, tracking added/removed/changed/unchanged packet ids plus layout, atlas, UV, page revision, sampler, upload, readiness regression/recovery, duplicate identity, and missing identity changes before renderer/Vulkan consumption.
+- current: after `a15ebf5`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests` and `quiz_vulkan_text_renderer_glyph_quad_packet_tests`; focused text CTest passed 1/1.
+- `d6aa9cd`: Vulkan backend now builds native descriptor write payload handoff evidence from command packets, descriptor set allocation, and native image descriptor resources, preserving image view/sampler/layout handles and blocking texture/sampler/resource mismatches before native command packet execution.
+- current: after `d6aa9cd`, Windows MinGW built `quiz_vulkan_vulkan_command_packet_execution_tests`, `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_renderer_tests`, and `quiz_vulkan_architecture_boundary_tests`; focused architecture/renderer/Vulkan CTest passed 3/3.
+- `3677875`: Image engine now composes draw-list image handoff entries into texture batch, frame snapshot, and texture resource packet evidence, preserving command/node/bounds/image/sampler/cache identity plus blocked handoff, batch, frame, and resource packet diagnostics before Vulkan consumption.
+- current: after `3677875`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_image_texture_frame_resource_packet_plan_tests`, and `quiz_vulkan_image_texture_pipeline_tests`; focused image CTest passed 2/2.
+- `7889fa1`: Text engine now produces renderer-facing glyph quad packet evidence from resource packet materialization, preserving source labels/node hints, layout/atlas/UV bounds, atlas page revision, sampler/page/upload identities, readiness, duplicates, and blocker diagnostics before Vulkan consumption.
+- current: after `7889fa1`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_text_frame_resource_packet_materialization_tests`, and `quiz_vulkan_text_renderer_glyph_quad_packet_tests`; focused text CTest passed 2/2.
+- `f7c658f`: Text engine now composes draw-list text handoff entries into the existing text request batch/frame path, preserving command order, node identity, bounds/content bounds, style/options evidence, and blocked-entry diagnostics before text frame snapshot/materialization work.
+- current: after `f7c658f`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_text_draw_list_frame_handoff_tests`, and `quiz_vulkan_text_draw_list_frame_composition_tests`; focused text CTest passed 2/2.
+- `431c34c`: Image engine now has a draw-list-to-image-frame handoff that preserves image draw command index, node/parent identity, bounds/content bounds, URI, alt text, aspect ratio, sampler policy, normalized request/cache identity, and deterministic blockers for empty/invalid URI, invalid bounds, invalid sampler, missing stable id, duplicate stable id, and duplicate texture key before texture planning/cache/upload consumption.
+- current: after `431c34c`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests` and `quiz_vulkan_image_texture_pipeline_tests`; focused image CTest passed 1/1.
+- `bf47c3d`: Text engine now has a draw-list-to-text-frame handoff that preserves text draw command index, node/parent identity, bounds/content bounds, text runs, style fallback evidence, text options, and deterministic blockers for empty text, missing style, invalid bounds, missing stable id, and duplicate stable id before shaping/layout/atlas consumption.
+- current: after `bf47c3d`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests` and `quiz_vulkan_text_draw_list_frame_handoff_tests`; focused text CTest passed 1/1.
+- `76b15da`: Text engine now compares renderer-boundary resource packet materialization snapshots, exposing added/removed/changed packet ids, page deltas, sampler/layout/upload/readiness/blocker changes, duplicate or missing identities, and readiness regressions/improvements before Vulkan consumption.
+- current: after `76b15da`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests` and `quiz_vulkan_text_frame_resource_packet_materialization_tests`; focused text CTest passed 1/1.
+- `aa9550b`: Image engine now compares renderer-boundary texture resource packet materialization snapshots, exposing stable texture/cache/sampler/upload/placeholder/readiness/blocker deltas, duplicate or missing identities, and ready regression/recovery evidence before Vulkan consumption.
+- current: after `aa9550b`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_image_texture_frame_resource_packet_materialization_tests`, `quiz_vulkan_image_texture_frame_resource_materialization_diff_tests`, and `quiz_vulkan_image_texture_pipeline_tests`; focused image CTest passed 3/3.
+- current: after the text/image resource-packet consumption batch and worker build command update, Windows MinGW full CTest passed 105/105 from `C:/aa/build/out/quiz/quiz-vulkan/windows-mingw-ascii`.
+- `48b0d50`: Asset system now summarizes shader materialized-byte payload readiness from existing typed payload bundles, exposing stable shader id/cache key/source URI/materialized path/byte count/content hash plus blockers for materialization, byte load, integrity, empty bytes, non-SPIR-V `.spv` magic, and duplicate shader ids before Vulkan shader-module consumption.
+- current: after `48b0d50`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests` and `quiz_vulkan_asset_bytes_provider_tests`; focused asset CTest passed 1/1.
+- `deed0b7`: Text engine now materializes atlas resource packet evidence from frame draw-plan plus upload-handoff records, preserving frame/packet/page ids, sampler summaries, UV/layout/page bounds, uploaded vs clean-reuse readiness, fallback/backend flags, blocker summaries, duplicate packet ids, and missing draw/upload/page data before renderer/Vulkan consumption.
+- current: after `deed0b7`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_font_shaped_atlas_update_tests`, and `quiz_vulkan_text_frame_resource_packet_materialization_tests`; focused text CTest passed 2/2.
+- `9756b8d`: MinGW builds now pass `-Wa,-mbig-obj` to `quiz_vulkan_renderer` only, avoiding large Vulkan renderer object rebuild failures without changing engine ownership boundaries.
+- `bd934a2`: Vulkan descriptor allocation now consumes image texture frame resource packet materialization evidence before supplying descriptor handles for native command-packet execution, blocking missing, blocked, or mismatched image handoff records instead of treating image resources as ready by resource id alone.
+- `ef822d5`: Vulkan descriptor allocation now also validates image sampler binding ids against materialized sampler handoff records, closing the sampler/texture mismatch gap found during integrator review.
+- current: after `ef822d5`, Windows MinGW built `quiz_vulkan_vulkan_command_packet_execution_tests`, `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_renderer_tests`, and `quiz_vulkan_architecture_boundary_tests`; focused architecture/renderer/Vulkan CTest passed 3/3.
 - `0ed2aa1`: Vulkan backend now has a fake/data descriptor set allocation result plus explicit merge/build API for native command-packet executor evidence, so completed resource-binding evidence can supply stable descriptor handles while the default frame evidence path still refuses to fabricate handles.
 - current: after `0ed2aa1`, Windows MinGW built `quiz_vulkan_vulkan_command_packet_execution_tests`, `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_renderer_tests`, and `quiz_vulkan_architecture_boundary_tests`; focused architecture/renderer/Vulkan CTest passed 3/3.
 - current: after `f808516`, Windows MinGW full CTest passed 104/104 from `C:/aa/build/out/quiz/quiz-vulkan/windows-mingw-ascii`.

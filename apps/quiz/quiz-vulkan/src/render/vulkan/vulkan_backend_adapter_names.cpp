@@ -399,6 +399,39 @@ std::string_view native_descriptor_set_allocation_status_name(
         return "resource_binding_unavailable";
     case vulkan_native_descriptor_set_allocation_status::resource_binding_mismatch:
         return "resource_binding_mismatch";
+    case vulkan_native_descriptor_set_allocation_status::image_materialization_unavailable:
+        return "image_materialization_unavailable";
+    case vulkan_native_descriptor_set_allocation_status::image_materialization_blocked:
+        return "image_materialization_blocked";
+    case vulkan_native_descriptor_set_allocation_status::image_materialization_mismatch:
+        return "image_materialization_mismatch";
+    }
+
+    return "unknown";
+}
+
+std::string_view native_descriptor_write_payload_status_name(
+    vulkan_native_descriptor_write_payload_status status)
+{
+    switch (status) {
+    case vulkan_native_descriptor_write_payload_status::not_checked:
+        return "not_checked";
+    case vulkan_native_descriptor_write_payload_status::ready:
+        return "ready";
+    case vulkan_native_descriptor_write_payload_status::packet_bridge_unavailable:
+        return "packet_bridge_unavailable";
+    case vulkan_native_descriptor_write_payload_status::descriptor_set_allocation_unavailable:
+        return "descriptor_set_allocation_unavailable";
+    case vulkan_native_descriptor_write_payload_status::image_descriptor_resource_unavailable:
+        return "image_descriptor_resource_unavailable";
+    case vulkan_native_descriptor_write_payload_status::image_descriptor_texture_mismatch:
+        return "image_descriptor_texture_mismatch";
+    case vulkan_native_descriptor_write_payload_status::image_descriptor_sampler_mismatch:
+        return "image_descriptor_sampler_mismatch";
+    case vulkan_native_descriptor_write_payload_status::image_descriptor_resource_incomplete:
+        return "image_descriptor_resource_incomplete";
+    case vulkan_native_descriptor_write_payload_status::duplicate_payload:
+        return "duplicate_payload";
     }
 
     return "unknown";

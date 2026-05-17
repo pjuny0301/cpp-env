@@ -277,6 +277,7 @@ target_sources(
         BASE_DIRS src
         FILES
             src/core/scene/modifier_interface.h
+            src/core/scene/placed_scene.h
             src/core/scene/scene_layout_data.h
             src/core/scene/scene_layout_edit_data.h
             src/core/scene/scene_layout_patch.h
@@ -624,6 +625,9 @@ else()
     target_compile_options(quiz_vulkan_ui_renderer PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(quiz_vulkan_renderer PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(quiz_vulkan PRIVATE -Wall -Wextra -Wpedantic)
+    if(MINGW)
+        target_compile_options(quiz_vulkan_renderer PRIVATE -Wa,-mbig-obj)
+    endif()
 endif()
 
 include(CTest)

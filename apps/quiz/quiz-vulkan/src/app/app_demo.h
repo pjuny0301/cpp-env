@@ -2,7 +2,7 @@
 
 #include "core/domain/app_snapshot.hpp"
 #include "core/domain/quiz_model.hpp"
-#include "core/layout/layout_placer.h"
+#include "core/scene/placed_scene.h"
 #include "core/scene/scene_layout_data.h"
 #include "render/vulkan/vulkan_renderer.h"
 

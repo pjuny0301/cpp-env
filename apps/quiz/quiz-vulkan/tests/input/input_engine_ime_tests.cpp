@@ -334,6 +334,304 @@ void test_ime_composition_suppresses_text_and_key_events()
         "ime commit policy records committed caret after commit");
 }
 
+void test_ime_suppressed_text_and_shortcuts_emit_route_diagnostics()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    engine.focus_text_target("answer");
+
+    require(engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 100, "draft")).size() == 1,
+        "suppressed route setup starts preedit");
+    require(engine.text_model().ime_composition().active, "suppressed route setup has active composition");
+
+    const std::string duplicate_text = "duplicate";
+    std::vector<input_event> events = engine.process_raw_event(text(110, duplicate_text));
+    require(events.empty(), "duplicate raw text during ime emits no text event");
+    require(engine.text_model().text().empty(), "duplicate raw text during ime does not commit");
+    require(engine.text_model().preedit_text() == "draft", "duplicate raw text during ime preserves preedit");
+    require(engine.routing_diagnostics().action_routes.size() == 1,
+        "duplicate raw text during ime emits one suppressed route policy");
+    const action_route_policy_diagnostic& text_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::text_commit_boundary,
+        "duplicate raw text during ime emits commit-boundary diagnostic");
+    require(!text_policy.emits_input_event, "duplicate raw text policy emits no input event");
+    require(text_policy.target_id == "answer", "duplicate raw text policy preserves target id");
+    require(text_policy.text_byte_count == duplicate_text.size(),
+        "duplicate raw text policy records suppressed byte count");
+    require(text_policy.text_byte_count_before == 0,
+        "duplicate raw text policy records committed byte count before suppression");
+    require(text_policy.text_byte_count_after == 0,
+        "duplicate raw text policy records unchanged committed byte count after suppression");
+    require_range(text_policy.caret_before, 5, 5, "duplicate raw text policy records preedit caret before");
+    require_range(text_policy.caret_after, 5, 5, "duplicate raw text policy records unchanged preedit caret after");
+    require(text_policy.composition.active, "duplicate raw text policy carries active composition");
+    require(text_policy.composition.preedit_text == "draft",
+        "duplicate raw text policy carries current preedit text");
+    require(engine.routing_diagnostics().summary.routes.text == 1,
+        "duplicate raw text summary counts one text route");
+    require(engine.routing_diagnostics().summary.routes.ime == 0,
+        "duplicate raw text summary does not count an ime route");
+    require(!engine.routing_diagnostics().summary.preedit_ended_cleanly,
+        "duplicate raw text summary reports active preedit remains");
+
+    events = engine.process_raw_event(key(120, "Enter"));
+    require(events.empty(), "submit shortcut during ime emits no text event");
+    require(engine.text_model().preedit_text() == "draft", "submit shortcut during ime preserves preedit");
+    const action_route_policy_diagnostic& submit_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::text_submit_boundary,
+        "submit shortcut during ime emits submit diagnostic");
+    require(!submit_policy.emits_input_event, "submit shortcut ime policy emits no input event");
+    require(submit_policy.keyboard.intent == keyboard_shortcut_intent::submit,
+        "submit shortcut ime policy records submit intent");
+    require(submit_policy.keyboard.repeat_policy == keyboard_repeat_policy::not_repeat,
+        "submit shortcut ime policy records non-repeat policy");
+    require(submit_policy.composition.preedit_text == "draft",
+        "submit shortcut ime policy carries active preedit");
+
+    events = engine.process_raw_event(key(125, "Enter", true));
+    require(events.empty(), "repeat submit shortcut during ime emits no text event");
+    const action_route_policy_diagnostic& repeat_submit_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::text_submit_boundary,
+        "repeat submit shortcut during ime emits submit diagnostic");
+    require(!repeat_submit_policy.emits_input_event, "repeat submit ime policy emits no input event");
+    require(repeat_submit_policy.keyboard.intent == keyboard_shortcut_intent::submit,
+        "repeat submit ime policy records submit intent");
+    require(repeat_submit_policy.keyboard.repeat, "repeat submit ime policy records repeat state");
+    require(repeat_submit_policy.keyboard.repeat_policy == keyboard_repeat_policy::ignored,
+        "repeat submit ime policy records ignored repeat policy");
+    require(repeat_submit_policy.composition.preedit_text == "draft",
+        "repeat submit ime policy carries active preedit");
+
+    events = engine.process_raw_event(key(130, "Backspace", true));
+    require(events.empty(), "repeat backspace during ime emits no text event");
+    require(engine.text_model().preedit_text() == "draft", "repeat backspace during ime preserves preedit");
+    const action_route_policy_diagnostic& backspace_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::text_backspace_boundary,
+        "repeat backspace during ime emits backspace diagnostic");
+    require(!backspace_policy.emits_input_event, "repeat backspace ime policy emits no input event");
+    require(backspace_policy.keyboard.intent == keyboard_shortcut_intent::delete_backward,
+        "repeat backspace ime policy records delete backward intent");
+    require(backspace_policy.keyboard.repeat, "repeat backspace ime policy records repeat state");
+    require(backspace_policy.keyboard.repeat_policy == keyboard_repeat_policy::allowed,
+        "repeat backspace ime policy records repeat allowance");
+    require(backspace_policy.composition.preedit_text == "draft",
+        "repeat backspace ime policy carries active preedit");
+
+    events = engine.process_raw_event(key(140, "a", false, raw_platform_key_phase::down, true));
+    require(events.empty(), "select-all shortcut during ime emits no selection event");
+    require(!engine.text_model().selection_range().has_value(),
+        "select-all shortcut during ime does not create selection");
+    const action_route_policy_diagnostic& select_all_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::selection_changed,
+        "select-all shortcut during ime emits selection diagnostic");
+    require(!select_all_policy.emits_input_event, "select-all ime policy emits no input event");
+    require(select_all_policy.keyboard.intent == keyboard_shortcut_intent::select_all,
+        "select-all ime policy records select-all intent");
+    require(select_all_policy.keyboard.modifiers.ctrl, "select-all ime policy records ctrl modifier");
+    require(select_all_policy.composition.preedit_text == "draft",
+        "select-all ime policy carries active preedit");
+
+    events = engine.process_raw_event(ime(raw_platform_ime_phase::commit, 150, "final"));
+    require(events.size() == 1, "ime commit succeeds after suppressed text and shortcuts");
+    const ime_event& commit = require_event<ime_event>(events, 0);
+    require(commit.kind == ime_event_kind::commit, "post-suppression ime event commits");
+    require(commit.composition.preedit_text == "draft",
+        "post-suppression commit carries original preedit snapshot");
+    require(engine.text_model().text() == "final", "post-suppression commit updates text model");
+    require(engine.text_model().preedit_text().empty(), "post-suppression commit clears preedit");
+}
+
+void test_focus_target_change_clears_stale_preedit_with_diagnostics()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    engine.focus_text_target("first");
+    const std::string selected = utf8(u8"한");
+    const std::string base = std::string("A") + selected + "B";
+    const std::string preedit_text = "draft";
+
+    require(engine.process_raw_event(text(100, base)).size() == 1,
+        "target change base text commits");
+    require(engine.process_raw_event(key(110, "Home")).size() == 1,
+        "target change home moves caret");
+    require(engine.process_raw_event(key(120, "ArrowRight")).size() == 1,
+        "target change arrow moves past ascii");
+    require(engine.process_raw_event(key(130, "ArrowRight", false, raw_platform_key_phase::down, false, true)).size() == 1,
+        "target change shift arrow selects utf8 codepoint");
+    std::optional<text_range> selection = engine.text_model().selection_range();
+    require(selection.has_value(), "target change selection is active");
+    require_range(*selection, 1, 1 + selected.size(), "target change selection covers utf8 codepoint");
+
+    require(engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 140, preedit_text)).size() == 1,
+        "target change selected preedit starts");
+    require(engine.text_model().display_text() == std::string("A") + preedit_text + "B",
+        "target change preedit replaces selected display range");
+
+    engine.focus_text_target("second");
+
+    require(engine.has_text_focus(), "target change keeps text focus active");
+    require(engine.text_focus_id() == "second", "target change moves focus to new target");
+    require(engine.text_model().text() == base, "target change preserves committed text");
+    require(engine.text_model().display_text() == base, "target change clears stale display preedit");
+    require(engine.text_model().preedit_text().empty(), "target change clears stale preedit text");
+    require(!engine.text_model().ime_composition().active, "target change clears composition state");
+    require(!engine.text_model().selection_range().has_value(), "target change clears old target selection");
+    require(engine.text_model().caret_byte_offset() == base.size(),
+        "target change places caret on utf8-safe committed boundary");
+
+    const input_routing_diagnostics& diagnostics = engine.routing_diagnostics();
+    require(diagnostics.normalized_events.empty(), "target change emits no normalized gesture events");
+    require(diagnostics.action_routes.size() == 2,
+        "target change emits ime cancel and focus cleanup diagnostics");
+    const action_route_policy_diagnostic& ime_policy = require_policy(
+        diagnostics,
+        0,
+        action_route_policy_kind::ime_cancel,
+        "target change first policy records ime cancellation");
+    require(!ime_policy.emits_input_event, "target change ime cancel is diagnostic-only");
+    require(ime_policy.target_id == "first", "target change ime cancel records old target");
+    require(ime_policy.composition.active, "target change ime cancel carries active composition snapshot");
+    require(ime_policy.composition.preedit_text == preedit_text,
+        "target change ime cancel carries stale preedit text");
+    require_range(ime_policy.composition.replacement_range, 1, 1 + selected.size(),
+        "target change ime cancel replacement range covers selected utf8");
+    require_range(ime_policy.composition.preedit_range, 1, 1 + preedit_text.size(),
+        "target change ime cancel preedit range records display bytes");
+    require(ime_policy.had_selection_before, "target change ime cancel records prior selection");
+    require(!ime_policy.has_selection_after, "target change ime cancel records cleared selection");
+    require_range(ime_policy.selection_before, 1, 1 + selected.size(),
+        "target change ime cancel selection is utf8-safe before");
+    require_range(ime_policy.caret_before, 1 + preedit_text.size(), 1 + preedit_text.size(),
+        "target change ime cancel records display caret before cleanup");
+    require_range(ime_policy.caret_after, base.size(), base.size(),
+        "target change ime cancel records committed caret after cleanup");
+
+    const action_route_policy_diagnostic& focus_policy = require_policy(
+        diagnostics,
+        1,
+        action_route_policy_kind::focus_loss,
+        "target change second policy records old target focus loss");
+    require(!focus_policy.emits_input_event, "target change focus loss is diagnostic-only");
+    require(focus_policy.target_id == "first", "target change focus loss records old target");
+    require(focus_policy.composition.preedit_text == preedit_text,
+        "target change focus loss carries stale composition snapshot");
+    require(focus_policy.had_selection_before, "target change focus loss records prior selection");
+    require(!focus_policy.has_selection_after, "target change focus loss records cleared selection");
+    require_range(focus_policy.selection_before, 1, 1 + selected.size(),
+        "target change focus loss selection is utf8-safe before");
+    require_range(focus_policy.caret_after, base.size(), base.size(),
+        "target change focus loss records utf8-safe caret after");
+
+    const input_diagnostic_summary& summary = diagnostics.summary;
+    require(summary.normalized_event_count == 0, "target change summary has no normalized input events");
+    require(summary.routes.ime == 1, "target change summary counts ime cleanup");
+    require(summary.routes.focus == 1, "target change summary counts focus cleanup");
+    require(summary.routes.text == 0, "target change summary counts no text or submit route");
+    require(summary.routes.pointer == 0, "target change summary counts no pointer route");
+    require(summary.routes.total == 2, "target change summary counts only cleanup diagnostics");
+    require(summary.focus_ended_cleanly, "target change summary leaves focus state clean");
+    require(summary.preedit_ended_cleanly, "target change summary leaves preedit state clean");
+    require(summary.pointer_capture_ended_cleanly, "target change summary has no pointer capture");
+    require(!engine.text_model().has_submit_text(), "target change does not submit text");
+
+    std::vector<input_event> events = engine.process_raw_event(text(150, "x"));
+    require(events.size() == 1, "new target accepts text after stale preedit cleanup");
+    require(engine.text_focus_id() == "second", "post-cleanup text remains on new target");
+    require(engine.text_model().text() == base + "x", "post-cleanup text appends without stale preedit");
+}
+
+void test_clear_text_focus_diagnoses_preedit_and_selection_cleanup()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    engine.focus_text_target("answer");
+    const std::string selected = utf8(u8"한");
+    const std::string base = std::string("A") + selected + "B";
+    const std::string preedit_text = "draft";
+
+    require(engine.process_raw_event(text(200, base)).size() == 1,
+        "clear focus base text commits");
+    require(engine.process_raw_event(key(210, "Home")).size() == 1,
+        "clear focus home moves caret");
+    require(engine.process_raw_event(key(220, "ArrowRight")).size() == 1,
+        "clear focus arrow moves past ascii");
+    require(engine.process_raw_event(key(230, "ArrowRight", false, raw_platform_key_phase::down, false, true)).size() == 1,
+        "clear focus shift arrow selects utf8 codepoint");
+    require(engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 240, preedit_text)).size() == 1,
+        "clear focus preedit starts");
+
+    engine.clear_text_focus();
+
+    require(!engine.has_text_focus(), "clear focus removes text focus");
+    require(engine.text_focus_id().empty(), "clear focus clears target id");
+    require(engine.text_model().text() == base, "clear focus preserves committed text");
+    require(engine.text_model().display_text() == base, "clear focus removes preedit display");
+    require(engine.text_model().preedit_text().empty(), "clear focus clears preedit text");
+    require(!engine.text_model().ime_composition().active, "clear focus clears composition state");
+    require(!engine.text_model().selection_range().has_value(), "clear focus clears selection");
+    require(engine.text_model().caret_byte_offset() == 1 + selected.size(),
+        "clear focus keeps caret on utf8-safe committed boundary");
+
+    const input_routing_diagnostics& diagnostics = engine.routing_diagnostics();
+    require(diagnostics.normalized_events.empty(), "clear focus emits no normalized gesture events");
+    require(diagnostics.action_routes.size() == 2,
+        "clear focus emits ime cancel and focus loss diagnostics");
+    const action_route_policy_diagnostic& ime_policy = require_policy(
+        diagnostics,
+        0,
+        action_route_policy_kind::ime_cancel,
+        "clear focus first policy records ime cancellation");
+    require(!ime_policy.emits_input_event, "clear focus ime cancel is diagnostic-only");
+    require(ime_policy.target_id == "answer", "clear focus ime cancel preserves target id");
+    require(ime_policy.composition.preedit_text == preedit_text,
+        "clear focus ime cancel carries stale preedit text");
+    require_range(ime_policy.selection_before, 1, 1 + selected.size(),
+        "clear focus ime cancel selection is utf8-safe before");
+    require_range(ime_policy.caret_after, 1 + selected.size(), 1 + selected.size(),
+        "clear focus ime cancel records utf8-safe caret after");
+
+    const action_route_policy_diagnostic& focus_policy = require_policy(
+        diagnostics,
+        1,
+        action_route_policy_kind::focus_loss,
+        "clear focus second policy records focus loss");
+    require(!focus_policy.emits_input_event, "clear focus loss is diagnostic-only");
+    require(focus_policy.target_id == "answer", "clear focus loss preserves target id");
+    require(focus_policy.composition.preedit_text == preedit_text,
+        "clear focus loss carries stale preedit snapshot");
+    require(focus_policy.had_selection_before, "clear focus loss records selection before");
+    require(!focus_policy.has_selection_after, "clear focus loss records selection cleared");
+
+    const input_diagnostic_summary& summary = diagnostics.summary;
+    require(summary.normalized_event_count == 0, "clear focus summary has no normalized input events");
+    require(summary.routes.ime == 1, "clear focus summary counts ime cleanup");
+    require(summary.routes.focus == 1, "clear focus summary counts focus cleanup");
+    require(summary.routes.text == 0, "clear focus summary distinguishes cleanup from text submit");
+    require(summary.routes.total == 2, "clear focus summary counts only cleanup routes");
+    require(summary.focus_ended_cleanly, "clear focus summary ends with clean focus");
+    require(summary.preedit_ended_cleanly, "clear focus summary ends with clean preedit");
+    require(!engine.text_model().has_submit_text(), "clear focus does not submit text");
+
+    require(engine.process_raw_event(text(250, "ignored")).empty(),
+        "clear focus does not route text without a new focus target");
+}
+
 void test_ime_preedit_commit_edges()
 {
     using namespace quiz_vulkan;
@@ -711,6 +1009,9 @@ int main()
     test_keyboard_navigation_diagnostics_preserve_ime_composition();
     test_text_edit_boundary_diagnostics_replace_utf8_selection();
     test_ime_composition_suppresses_text_and_key_events();
+    test_ime_suppressed_text_and_shortcuts_emit_route_diagnostics();
+    test_focus_target_change_clears_stale_preedit_with_diagnostics();
+    test_clear_text_focus_diagnoses_preedit_and_selection_cleanup();
     test_ime_preedit_commit_edges();
     test_ime_composition_restart_cancels_visible_preedit();
     test_empty_ime_commit_and_end_cancel_preedit();

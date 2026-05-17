@@ -2395,60 +2395,6 @@ const vulkan_batch_resource_binding_snapshot* find_binding_snapshot_for_batch(
     return nullptr;
 }
 
-const vulkan_batch_resource_binding_snapshot* find_binding_snapshot_for_packet(
-    const vulkan_backend_resource_binding_state& resource_bindings,
-    const vulkan_command_packet& packet)
-{
-    if (packet.packet_index < resource_bindings.batch_snapshots.size()) {
-        const vulkan_batch_resource_binding_snapshot& snapshot =
-            resource_bindings.batch_snapshots[packet.packet_index];
-        if (snapshot.command_index == packet.command_index
-            && snapshot.batch_kind == packet.batch_kind) {
-            return &snapshot;
-        }
-    }
-
-    for (const vulkan_batch_resource_binding_snapshot& snapshot :
-         resource_bindings.batch_snapshots) {
-        if (snapshot.command_index == packet.command_index
-            && snapshot.batch_kind == packet.batch_kind) {
-            return &snapshot;
-        }
-    }
-    return nullptr;
-}
-
-bool resource_binding_snapshot_matches_packet(
-    const vulkan_batch_resource_binding_snapshot& snapshot,
-    const vulkan_command_packet& packet)
-{
-    if (!snapshot.completed()
-        || snapshot.batch_kind != packet.batch_kind
-        || snapshot.command_index != packet.command_index
-        || snapshot.descriptor_set_count != packet.descriptor_set_count
-        || snapshot.binding_count != packet.binding_count
-        || snapshot.bindings.size() != packet.bindings.size()) {
-        return false;
-    }
-
-    for (std::size_t binding_index = 0;
-         binding_index < packet.bindings.size();
-         ++binding_index) {
-        const vulkan_resource_binding_snapshot& packet_binding = packet.bindings[binding_index];
-        const vulkan_resource_binding_snapshot& snapshot_binding = snapshot.bindings[binding_index];
-        if (packet_binding.set != snapshot_binding.set
-            || packet_binding.binding != snapshot_binding.binding
-            || packet_binding.kind != snapshot_binding.kind
-            || packet_binding.resource_id != snapshot_binding.resource_id
-            || packet_binding.required != snapshot_binding.required
-            || packet_binding.available != snapshot_binding.available) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
 bool descriptor_set_list_contains(
     const std::vector<std::size_t>& descriptor_sets,
     std::size_t set)
@@ -2478,16 +2424,6 @@ std::vector<std::size_t> required_descriptor_sets_for_packet(
     }
 
     return descriptor_sets;
-}
-
-std::size_t planned_descriptor_set_count_for_bridge(
-    const vulkan_command_packet_bridge_result& bridge)
-{
-    std::size_t descriptor_set_count = 0;
-    for (const vulkan_command_packet& packet : bridge.packets) {
-        descriptor_set_count += packet.descriptor_set_count;
-    }
-    return descriptor_set_count;
 }
 
 vulkan_command_packet make_command_packet(
@@ -6510,6 +6446,7 @@ vulkan_native_command_packet_executor_evidence build_vulkan_native_command_packe
         .viewport = frame.viewport,
         .viewport_available = has_visible_area(frame.viewport),
         .descriptor_sets = {},
+        .descriptor_write_payloads = {},
     };
 
     for (const vulkan_command_packet& packet : frame.command_packets.packets) {
@@ -6532,103 +6469,6 @@ vulkan_native_command_packet_executor_evidence build_vulkan_native_command_packe
     }
 
     return evidence;
-}
-
-vulkan_native_descriptor_set_allocation_result build_fake_vulkan_native_descriptor_set_allocation_result(
-    const vulkan_command_packet_bridge_result& bridge,
-    const vulkan_backend_resource_binding_state& resource_bindings,
-    vulkan_native_descriptor_set_fake_allocator_options options)
-{
-    vulkan_native_descriptor_set_allocation_result allocation{
-        .checked = true,
-        .status = vulkan_native_descriptor_set_allocation_status::not_checked,
-        .fallback_reason = vulkan_backend_fallback_reason::not_requested,
-        .packet_bridge_checked = bridge.checked,
-        .packet_bridge_ready = bridge.completed(),
-        .resource_bindings_checked = resource_bindings.checked,
-        .resource_bindings_ready = resource_bindings.completed(),
-        .planned_packet_count = bridge.packet_count,
-        .planned_descriptor_set_count = planned_descriptor_set_count_for_bridge(bridge),
-        .allocated_descriptor_set_count = 0,
-        .diagnostic = {},
-        .descriptor_sets = {},
-    };
-
-    if (!bridge.completed()) {
-        allocation.status =
-            vulkan_native_descriptor_set_allocation_status::packet_bridge_unavailable;
-        allocation.fallback_reason = bridge.fallback_reason == vulkan_backend_fallback_reason::none
-            ? vulkan_backend_fallback_reason::resource_binding_unavailable
-            : bridge.fallback_reason;
-        allocation.diagnostic =
-            "Native Vulkan descriptor set allocation is missing completed command packet bridge evidence";
-        return allocation;
-    }
-
-    if (!resource_bindings.completed()) {
-        allocation.status =
-            vulkan_native_descriptor_set_allocation_status::resource_binding_unavailable;
-        allocation.fallback_reason = vulkan_backend_fallback_reason::resource_binding_unavailable;
-        allocation.failed_command_index = resource_bindings.missing_command_index;
-        allocation.diagnostic =
-            "Native Vulkan descriptor set allocation is missing completed resource binding evidence";
-        return allocation;
-    }
-
-    allocation.descriptor_sets.reserve(allocation.planned_descriptor_set_count);
-    for (const vulkan_command_packet& packet : bridge.packets) {
-        const vulkan_batch_resource_binding_snapshot* bindings =
-            find_binding_snapshot_for_packet(resource_bindings, packet);
-        const std::vector<std::size_t> descriptor_sets =
-            required_descriptor_sets_for_packet(packet);
-
-        if (bindings == nullptr
-            || !resource_binding_snapshot_matches_packet(*bindings, packet)
-            || descriptor_sets.size() != packet.descriptor_set_count) {
-            allocation.status =
-                vulkan_native_descriptor_set_allocation_status::resource_binding_mismatch;
-            allocation.fallback_reason = vulkan_backend_fallback_reason::resource_binding_unavailable;
-            allocation.failed_packet_index = packet.packet_index;
-            allocation.failed_command_index = packet.command_index;
-            allocation.failed_set = descriptor_sets.empty() ? 0 : descriptor_sets.front();
-            allocation.descriptor_sets.clear();
-            allocation.allocated_descriptor_set_count = 0;
-            allocation.diagnostic =
-                "Native Vulkan descriptor set allocation found mismatched packet resource binding evidence";
-            return allocation;
-        }
-
-        for (std::size_t set : descriptor_sets) {
-            allocation.descriptor_sets.push_back(
-                vulkan_native_command_packet_descriptor_set{
-                    .packet_index = packet.packet_index,
-                    .set = set,
-                    .descriptor_set =
-                        vulkan_native_descriptor_set_handle{
-                            .value = options.first_descriptor_set_handle
-                                + allocation.descriptor_sets.size(),
-                        },
-                    .required = true,
-                    .available = options.first_descriptor_set_handle != 0,
-                });
-        }
-    }
-
-    allocation.allocated_descriptor_set_count = allocation.descriptor_sets.size();
-    allocation.status = vulkan_native_descriptor_set_allocation_status::ready;
-    allocation.fallback_reason = vulkan_backend_fallback_reason::none;
-    if (!allocation.completed()) {
-        allocation.status =
-            vulkan_native_descriptor_set_allocation_status::resource_binding_mismatch;
-        allocation.fallback_reason = vulkan_backend_fallback_reason::resource_binding_unavailable;
-        allocation.diagnostic =
-            "Native Vulkan descriptor set allocation could not produce valid descriptor handles";
-        return allocation;
-    }
-
-    allocation.diagnostic =
-        "Native Vulkan descriptor set allocation produced fake descriptor handles";
-    return allocation;
 }
 
 vulkan_native_command_packet_executor_evidence merge_vulkan_native_descriptor_set_allocation_result(

@@ -81,6 +81,11 @@ EOF
 /mnt/c/aa/codex-workers/send-worker-prompt.sh codex-text-engine /tmp/text-next.md
 ```
 
+If the Codex terminal UI leaves a long pasted prompt in the input box, tune
+`QUIZ_CODEX_WORKER_SUBMIT_ENTER_COUNT` rather than manually editing the script.
+The default sends four Enter keystrokes after paste because the UI sometimes
+keeps the first one or two as multiline input.
+
 If the worker is still processing a previous task, the command writes a queued
 prompt file and leaves the tmux session untouched. After the worker reports idle,
 send the queued file explicitly:
@@ -108,14 +113,14 @@ Build and test the worker-local tree:
 
 ```bash
 cd /mnt/c/aa-workers/text-engine/apps/quiz/quiz-vulkan
-/mnt/c/aa/codex-workers/with-build-lock.sh \
-  "/mnt/c/Program Files/CMake/bin/cmake.exe" \
-  --build --preset windows-mingw-ascii-debug \
-  --target quiz_vulkan_interface_contract_compile_tests
-
 build_dir="$(/mnt/c/aa/codex-workers/quiz-vulkan-worker-build-dir.sh \
   /mnt/c/aa-workers/text-engine \
   windows-mingw-ascii)"
+/mnt/c/aa/codex-workers/with-build-lock.sh \
+  "/mnt/c/Program Files/CMake/bin/cmake.exe" \
+  --build "$build_dir" \
+  --target quiz_vulkan_interface_contract_compile_tests
+
 /mnt/c/aa/codex-workers/with-build-lock.sh \
   "/mnt/c/Program Files/CMake/bin/ctest.exe" \
   --test-dir "$build_dir" \

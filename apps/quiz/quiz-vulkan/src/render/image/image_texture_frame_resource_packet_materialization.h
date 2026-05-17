@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -532,6 +533,735 @@ materialize_render_image_texture_frame_resource_packets(
 {
     return materialize_render_image_texture_frame_resource_packets(
         make_render_image_texture_frame_resource_packet_plan(frame, upload_result));
+}
+
+enum class render_image_texture_frame_resource_packet_consumption_diff_entry_status {
+    unchanged,
+    added,
+    removed,
+    changed,
+};
+
+inline std::string render_image_texture_frame_resource_packet_consumption_diff_entry_status_name(
+    render_image_texture_frame_resource_packet_consumption_diff_entry_status status)
+{
+    switch (status) {
+    case render_image_texture_frame_resource_packet_consumption_diff_entry_status::unchanged:
+        return "unchanged";
+    case render_image_texture_frame_resource_packet_consumption_diff_entry_status::added:
+        return "added";
+    case render_image_texture_frame_resource_packet_consumption_diff_entry_status::removed:
+        return "removed";
+    case render_image_texture_frame_resource_packet_consumption_diff_entry_status::changed:
+        return "changed";
+    }
+
+    return "unknown";
+}
+
+struct render_image_texture_frame_resource_packet_consumption_entry {
+    std::size_t materialization_index = 0;
+    std::size_t request_index = 0;
+    std::string stable_packet_identity;
+    bool stable_packet_identity_present = false;
+    bool duplicate_stable_packet_identity = false;
+    render_image_texture_frame_resource_packet_materialization_status materialization_status =
+        render_image_texture_frame_resource_packet_materialization_status::blocked;
+    std::string materialization_status_name = render_image_texture_frame_resource_packet_materialization_status_name(
+        render_image_texture_frame_resource_packet_materialization_status::blocked);
+    render_image_texture_frame_resource_packet_status packet_status =
+        render_image_texture_frame_resource_packet_status::blocked;
+    std::string packet_status_name;
+    std::string stable_texture_cache_key;
+    render_image_texture_id texture_id = 0;
+    render_image_revision texture_revision = 0;
+    std::size_t texture_width = 0;
+    std::size_t texture_height = 0;
+    std::string sampler_key;
+    std::uint64_t upload_request_id = 0;
+    std::uint64_t upload_generation_id = 0;
+    std::size_t uploaded_byte_count = 0;
+    bool materialized = false;
+    bool placeholder_backed = false;
+    bool blocked = true;
+    bool removed = false;
+    bool renderer_boundary_ready = false;
+    std::string blocker_summary;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return materialized && !blocked;
+    }
+};
+
+struct render_image_texture_frame_resource_packet_consumption_summary {
+    std::size_t frame_request_count = 0;
+    std::size_t packet_count = 0;
+    std::size_t materialized_packet_count = 0;
+    std::size_t placeholder_packet_count = 0;
+    std::size_t blocked_packet_count = 0;
+    std::size_t removed_packet_count = 0;
+    std::size_t stable_packet_identity_count = 0;
+    std::size_t duplicate_stable_packet_identity_count = 0;
+    std::size_t missing_stable_packet_identity_count = 0;
+    bool renderer_boundary_ready = false;
+    bool has_placeholders = false;
+    bool has_blockers = false;
+    bool has_duplicate_stable_packet_identity = false;
+    bool has_missing_stable_packet_identity = false;
+    std::vector<render_image_texture_frame_resource_packet_consumption_entry> entries;
+    std::string identity_summary;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return renderer_boundary_ready && !has_blockers;
+    }
+};
+
+struct render_image_texture_frame_resource_packet_consumption_entry_diff {
+    std::size_t request_index = 0;
+    render_image_texture_frame_resource_packet_consumption_diff_entry_status status =
+        render_image_texture_frame_resource_packet_consumption_diff_entry_status::unchanged;
+    std::string status_name = render_image_texture_frame_resource_packet_consumption_diff_entry_status_name(
+        render_image_texture_frame_resource_packet_consumption_diff_entry_status::unchanged);
+    bool before_present = false;
+    bool after_present = false;
+    std::string before_stable_packet_identity;
+    std::string after_stable_packet_identity;
+    render_image_texture_frame_resource_packet_materialization_status before_materialization_status =
+        render_image_texture_frame_resource_packet_materialization_status::blocked;
+    render_image_texture_frame_resource_packet_materialization_status after_materialization_status =
+        render_image_texture_frame_resource_packet_materialization_status::blocked;
+    std::string before_materialization_status_name;
+    std::string after_materialization_status_name;
+    std::string before_stable_texture_cache_key;
+    std::string after_stable_texture_cache_key;
+    render_image_texture_id before_texture_id = 0;
+    render_image_texture_id after_texture_id = 0;
+    render_image_revision before_texture_revision = 0;
+    render_image_revision after_texture_revision = 0;
+    std::size_t before_texture_width = 0;
+    std::size_t after_texture_width = 0;
+    std::size_t before_texture_height = 0;
+    std::size_t after_texture_height = 0;
+    std::string before_sampler_key;
+    std::string after_sampler_key;
+    std::uint64_t before_upload_request_id = 0;
+    std::uint64_t after_upload_request_id = 0;
+    std::uint64_t before_upload_generation_id = 0;
+    std::uint64_t after_upload_generation_id = 0;
+    std::size_t before_uploaded_byte_count = 0;
+    std::size_t after_uploaded_byte_count = 0;
+    std::int64_t uploaded_byte_delta = 0;
+    bool before_ready = false;
+    bool after_ready = false;
+    bool before_placeholder_backed = false;
+    bool after_placeholder_backed = false;
+    bool before_blocked = false;
+    bool after_blocked = false;
+    bool before_removed = false;
+    bool after_removed = false;
+    bool before_stable_packet_identity_present = false;
+    bool after_stable_packet_identity_present = false;
+    bool before_duplicate_stable_packet_identity = false;
+    bool after_duplicate_stable_packet_identity = false;
+    std::string before_blocker_summary;
+    std::string after_blocker_summary;
+    bool stable_packet_identity_changed = false;
+    bool stable_texture_cache_key_changed = false;
+    bool texture_handle_changed = false;
+    bool texture_extent_changed = false;
+    bool sampler_key_changed = false;
+    bool upload_request_changed = false;
+    bool upload_generation_changed = false;
+    bool uploaded_byte_count_changed = false;
+    bool placeholder_changed = false;
+    bool readiness_changed = false;
+    bool blocker_changed = false;
+    bool stable_packet_identity_quality_changed = false;
+    bool ready_regressed = false;
+    bool ready_recovered = false;
+    bool regression = false;
+    bool improvement = false;
+    std::string diagnostic;
+
+    bool changed() const
+    {
+        return status != render_image_texture_frame_resource_packet_consumption_diff_entry_status::unchanged;
+    }
+
+    bool ok() const
+    {
+        return !regression;
+    }
+};
+
+struct render_image_texture_frame_resource_packet_consumption_diff {
+    std::size_t before_frame_request_count = 0;
+    std::size_t after_frame_request_count = 0;
+    std::int64_t frame_request_delta = 0;
+    std::size_t before_packet_count = 0;
+    std::size_t after_packet_count = 0;
+    std::int64_t packet_delta = 0;
+    std::size_t before_materialized_packet_count = 0;
+    std::size_t after_materialized_packet_count = 0;
+    std::int64_t materialized_packet_delta = 0;
+    std::size_t before_blocked_packet_count = 0;
+    std::size_t after_blocked_packet_count = 0;
+    std::int64_t blocked_packet_delta = 0;
+    std::size_t before_placeholder_packet_count = 0;
+    std::size_t after_placeholder_packet_count = 0;
+    std::int64_t placeholder_packet_delta = 0;
+    std::size_t before_removed_packet_count = 0;
+    std::size_t after_removed_packet_count = 0;
+    std::int64_t removed_packet_delta = 0;
+    std::size_t before_stable_packet_identity_count = 0;
+    std::size_t after_stable_packet_identity_count = 0;
+    std::int64_t stable_packet_identity_delta = 0;
+    std::size_t before_duplicate_stable_packet_identity_count = 0;
+    std::size_t after_duplicate_stable_packet_identity_count = 0;
+    std::int64_t duplicate_stable_packet_identity_delta = 0;
+    std::size_t before_missing_stable_packet_identity_count = 0;
+    std::size_t after_missing_stable_packet_identity_count = 0;
+    std::int64_t missing_stable_packet_identity_delta = 0;
+    std::size_t unchanged_packet_count = 0;
+    std::size_t added_packet_count = 0;
+    std::size_t removed_packet_count = 0;
+    std::size_t changed_packet_count = 0;
+    std::size_t stable_packet_identity_changed_count = 0;
+    std::size_t stable_texture_cache_key_changed_count = 0;
+    std::size_t texture_handle_changed_count = 0;
+    std::size_t texture_extent_changed_count = 0;
+    std::size_t sampler_key_changed_count = 0;
+    std::size_t upload_request_changed_count = 0;
+    std::size_t upload_generation_changed_count = 0;
+    std::size_t uploaded_byte_count_changed_count = 0;
+    std::size_t placeholder_changed_count = 0;
+    std::size_t readiness_changed_count = 0;
+    std::size_t blocker_changed_count = 0;
+    std::size_t stable_packet_identity_quality_changed_count = 0;
+    std::size_t ready_regression_count = 0;
+    std::size_t ready_recovery_count = 0;
+    bool before_renderer_boundary_ready = false;
+    bool after_renderer_boundary_ready = false;
+    bool renderer_boundary_regressed = false;
+    bool renderer_boundary_recovered = false;
+    bool stable_no_change_frame = false;
+    bool has_changes = false;
+    bool has_regression = false;
+    bool has_improvement = false;
+    bool has_duplicate_or_missing_identity_change = false;
+    std::string changed_summary;
+    std::string identity_summary;
+    std::string regression_summary;
+    std::string improvement_summary;
+    std::vector<render_image_texture_frame_resource_packet_consumption_entry_diff> entries;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return !has_regression;
+    }
+};
+
+inline std::string render_image_texture_frame_resource_packet_consumption_stable_identity_for(
+    const render_image_texture_frame_resource_packet_materialization_entry& entry)
+{
+    if (!entry.cache_record_present || !entry.upload_record_present || !entry.sampler_record_present) {
+        return {};
+    }
+
+    return entry.cache_record.stable_texture_cache_key
+        + "|sampler=" + entry.sampler_record.sampler_key
+        + "|texture=" + std::to_string(entry.cache_record.texture_id)
+        + ":" + std::to_string(entry.cache_record.texture_revision)
+        + "|upload=" + std::to_string(entry.upload_record.upload_request_id)
+        + ":" + std::to_string(entry.upload_record.upload_generation_id);
+}
+
+inline render_image_texture_frame_resource_packet_consumption_entry
+make_render_image_texture_frame_resource_packet_consumption_entry(
+    const render_image_texture_frame_resource_packet_materialization_entry& entry)
+{
+    render_image_texture_frame_resource_packet_consumption_entry consumption{
+        .materialization_index = entry.materialization_index,
+        .request_index = entry.request_index,
+        .stable_packet_identity =
+            render_image_texture_frame_resource_packet_consumption_stable_identity_for(entry),
+        .materialization_status = entry.status,
+        .materialization_status_name = entry.status_name,
+        .packet_status = entry.packet_status,
+        .packet_status_name = entry.packet_status_name,
+        .materialized = entry.materialized,
+        .placeholder_backed = entry.placeholder_backed,
+        .blocked = entry.blocked,
+        .removed = entry.removed,
+        .renderer_boundary_ready = entry.ok(),
+        .blocker_summary = entry.blocker_summary,
+    };
+    consumption.stable_packet_identity_present = !consumption.stable_packet_identity.empty();
+
+    if (entry.cache_record_present) {
+        consumption.stable_texture_cache_key = entry.cache_record.stable_texture_cache_key;
+        consumption.texture_id = entry.cache_record.texture_id;
+        consumption.texture_revision = entry.cache_record.texture_revision;
+        consumption.texture_width = entry.cache_record.texture_width;
+        consumption.texture_height = entry.cache_record.texture_height;
+    }
+    if (entry.upload_record_present) {
+        consumption.upload_request_id = entry.upload_record.upload_request_id;
+        consumption.upload_generation_id = entry.upload_record.upload_generation_id;
+        consumption.uploaded_byte_count = entry.upload_record.uploaded_byte_count;
+    }
+    if (entry.sampler_record_present) {
+        consumption.sampler_key = entry.sampler_record.sampler_key;
+    }
+
+    if (!consumption.stable_packet_identity_present) {
+        consumption.diagnostic = "image frame resource packet consumption identity is missing";
+    } else if (consumption.placeholder_backed) {
+        consumption.diagnostic = "image frame resource packet consumption identity uses placeholder";
+    } else if (consumption.ok()) {
+        consumption.diagnostic = "image frame resource packet consumption identity is ready";
+    } else {
+        consumption.diagnostic = "image frame resource packet consumption identity is blocked";
+    }
+    return consumption;
+}
+
+inline render_image_texture_frame_resource_packet_consumption_summary
+make_render_image_texture_frame_resource_packet_consumption_summary(
+    const render_image_texture_frame_resource_packet_materialization& materialization)
+{
+    render_image_texture_frame_resource_packet_consumption_summary summary{
+        .frame_request_count = materialization.frame_request_count,
+        .packet_count = materialization.entries.size(),
+        .materialized_packet_count = materialization.materialized_packet_count,
+        .placeholder_packet_count = materialization.placeholder_packet_count,
+        .blocked_packet_count = materialization.blocked_packet_count,
+        .removed_packet_count = materialization.removed_packet_count,
+        .renderer_boundary_ready = materialization.renderer_boundary_ready,
+        .has_placeholders = materialization.has_placeholders,
+        .has_blockers = materialization.has_blockers,
+    };
+
+    std::map<std::string, std::size_t> identity_counts;
+    for (const render_image_texture_frame_resource_packet_materialization_entry& entry : materialization.entries) {
+        render_image_texture_frame_resource_packet_consumption_entry consumption =
+            make_render_image_texture_frame_resource_packet_consumption_entry(entry);
+        if (consumption.stable_packet_identity_present) {
+            ++identity_counts[consumption.stable_packet_identity];
+        } else {
+            ++summary.missing_stable_packet_identity_count;
+            summary.has_missing_stable_packet_identity = true;
+        }
+        summary.entries.push_back(std::move(consumption));
+    }
+
+    summary.stable_packet_identity_count = identity_counts.size();
+    for (render_image_texture_frame_resource_packet_consumption_entry& entry : summary.entries) {
+        const auto count = identity_counts.find(entry.stable_packet_identity);
+        if (entry.stable_packet_identity_present && count != identity_counts.end() && count->second > 1) {
+            entry.duplicate_stable_packet_identity = true;
+            ++summary.duplicate_stable_packet_identity_count;
+            summary.has_duplicate_stable_packet_identity = true;
+            entry.diagnostic = "image frame resource packet consumption identity is duplicated";
+        }
+    }
+
+    summary.identity_summary = "packets=" + std::to_string(summary.packet_count)
+        + "; identities=" + std::to_string(summary.stable_packet_identity_count)
+        + "; duplicate_identities=" + std::to_string(summary.duplicate_stable_packet_identity_count)
+        + "; missing_identities=" + std::to_string(summary.missing_stable_packet_identity_count);
+    if (summary.packet_count == 0) {
+        summary.diagnostic = "image frame resource packet consumption summary has no packets";
+    } else if (summary.has_missing_stable_packet_identity) {
+        summary.diagnostic = "image frame resource packet consumption summary has missing packet identities";
+    } else if (summary.has_duplicate_stable_packet_identity) {
+        summary.diagnostic = "image frame resource packet consumption summary has duplicate packet identities";
+    } else if (summary.has_blockers) {
+        summary.diagnostic = "image frame resource packet consumption summary has blocked packets";
+    } else if (summary.has_placeholders) {
+        summary.diagnostic = "image frame resource packet consumption summary is placeholder-backed";
+    } else {
+        summary.diagnostic = "image frame resource packet consumption summary is ready";
+    }
+    return summary;
+}
+
+inline const render_image_texture_frame_resource_packet_consumption_entry*
+render_image_texture_frame_resource_packet_consumption_entry_for_request_index(
+    const render_image_texture_frame_resource_packet_consumption_summary& summary,
+    std::size_t request_index)
+{
+    for (const render_image_texture_frame_resource_packet_consumption_entry& entry : summary.entries) {
+        if (entry.request_index == request_index) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
+inline void append_render_image_texture_frame_resource_packet_consumption_request_indexes(
+    std::map<std::size_t, bool>& request_indexes,
+    const render_image_texture_frame_resource_packet_consumption_summary& summary)
+{
+    for (const render_image_texture_frame_resource_packet_consumption_entry& entry : summary.entries) {
+        request_indexes.emplace(entry.request_index, true);
+    }
+}
+
+inline bool render_image_texture_frame_resource_packet_consumption_entry_equal(
+    const render_image_texture_frame_resource_packet_consumption_entry& before,
+    const render_image_texture_frame_resource_packet_consumption_entry& after)
+{
+    return before.request_index == after.request_index
+        && before.stable_packet_identity == after.stable_packet_identity
+        && before.stable_packet_identity_present == after.stable_packet_identity_present
+        && before.duplicate_stable_packet_identity == after.duplicate_stable_packet_identity
+        && before.materialization_status == after.materialization_status
+        && before.packet_status == after.packet_status
+        && before.stable_texture_cache_key == after.stable_texture_cache_key
+        && before.texture_id == after.texture_id
+        && before.texture_revision == after.texture_revision
+        && before.texture_width == after.texture_width
+        && before.texture_height == after.texture_height
+        && before.sampler_key == after.sampler_key
+        && before.upload_request_id == after.upload_request_id
+        && before.upload_generation_id == after.upload_generation_id
+        && before.uploaded_byte_count == after.uploaded_byte_count
+        && before.materialized == after.materialized
+        && before.placeholder_backed == after.placeholder_backed
+        && before.blocked == after.blocked
+        && before.removed == after.removed
+        && before.renderer_boundary_ready == after.renderer_boundary_ready
+        && before.blocker_summary == after.blocker_summary;
+}
+
+inline render_image_texture_frame_resource_packet_consumption_entry_diff
+make_render_image_texture_frame_resource_packet_consumption_entry_diff(
+    const render_image_texture_frame_resource_packet_consumption_entry* before,
+    const render_image_texture_frame_resource_packet_consumption_entry* after,
+    std::size_t request_index)
+{
+    render_image_texture_frame_resource_packet_consumption_entry_diff diff{
+        .request_index = request_index,
+        .before_present = before != nullptr,
+        .after_present = after != nullptr,
+    };
+
+    if (before != nullptr) {
+        diff.before_stable_packet_identity = before->stable_packet_identity;
+        diff.before_materialization_status = before->materialization_status;
+        diff.before_materialization_status_name = before->materialization_status_name;
+        diff.before_stable_texture_cache_key = before->stable_texture_cache_key;
+        diff.before_texture_id = before->texture_id;
+        diff.before_texture_revision = before->texture_revision;
+        diff.before_texture_width = before->texture_width;
+        diff.before_texture_height = before->texture_height;
+        diff.before_sampler_key = before->sampler_key;
+        diff.before_upload_request_id = before->upload_request_id;
+        diff.before_upload_generation_id = before->upload_generation_id;
+        diff.before_uploaded_byte_count = before->uploaded_byte_count;
+        diff.before_ready = before->ok();
+        diff.before_placeholder_backed = before->placeholder_backed;
+        diff.before_blocked = before->blocked;
+        diff.before_removed = before->removed;
+        diff.before_stable_packet_identity_present = before->stable_packet_identity_present;
+        diff.before_duplicate_stable_packet_identity = before->duplicate_stable_packet_identity;
+        diff.before_blocker_summary = before->blocker_summary;
+    }
+    if (after != nullptr) {
+        diff.after_stable_packet_identity = after->stable_packet_identity;
+        diff.after_materialization_status = after->materialization_status;
+        diff.after_materialization_status_name = after->materialization_status_name;
+        diff.after_stable_texture_cache_key = after->stable_texture_cache_key;
+        diff.after_texture_id = after->texture_id;
+        diff.after_texture_revision = after->texture_revision;
+        diff.after_texture_width = after->texture_width;
+        diff.after_texture_height = after->texture_height;
+        diff.after_sampler_key = after->sampler_key;
+        diff.after_upload_request_id = after->upload_request_id;
+        diff.after_upload_generation_id = after->upload_generation_id;
+        diff.after_uploaded_byte_count = after->uploaded_byte_count;
+        diff.after_ready = after->ok();
+        diff.after_placeholder_backed = after->placeholder_backed;
+        diff.after_blocked = after->blocked;
+        diff.after_removed = after->removed;
+        diff.after_stable_packet_identity_present = after->stable_packet_identity_present;
+        diff.after_duplicate_stable_packet_identity = after->duplicate_stable_packet_identity;
+        diff.after_blocker_summary = after->blocker_summary;
+    }
+
+    diff.uploaded_byte_delta = render_image_texture_upload_result_size_delta(
+        diff.before_uploaded_byte_count,
+        diff.after_uploaded_byte_count);
+
+    const bool both_present = before != nullptr && after != nullptr;
+    diff.stable_packet_identity_changed = both_present
+        && diff.before_stable_packet_identity != diff.after_stable_packet_identity;
+    diff.stable_texture_cache_key_changed = both_present
+        && diff.before_stable_texture_cache_key != diff.after_stable_texture_cache_key;
+    diff.texture_handle_changed = both_present
+        && (diff.before_texture_id != diff.after_texture_id
+            || diff.before_texture_revision != diff.after_texture_revision);
+    diff.texture_extent_changed = both_present
+        && (diff.before_texture_width != diff.after_texture_width
+            || diff.before_texture_height != diff.after_texture_height);
+    diff.sampler_key_changed = both_present && diff.before_sampler_key != diff.after_sampler_key;
+    diff.upload_request_changed = both_present
+        && diff.before_upload_request_id != diff.after_upload_request_id;
+    diff.upload_generation_changed = both_present
+        && diff.before_upload_generation_id != diff.after_upload_generation_id;
+    diff.uploaded_byte_count_changed = both_present
+        && diff.before_uploaded_byte_count != diff.after_uploaded_byte_count;
+    diff.placeholder_changed = both_present
+        && diff.before_placeholder_backed != diff.after_placeholder_backed;
+    diff.readiness_changed = both_present && diff.before_ready != diff.after_ready;
+    diff.blocker_changed = both_present
+        && (diff.before_blocked != diff.after_blocked
+            || diff.before_blocker_summary != diff.after_blocker_summary);
+    diff.stable_packet_identity_quality_changed = both_present
+        && (diff.before_stable_packet_identity_present != diff.after_stable_packet_identity_present
+            || diff.before_duplicate_stable_packet_identity != diff.after_duplicate_stable_packet_identity);
+    diff.ready_regressed = both_present && diff.before_ready && !diff.after_ready;
+    diff.ready_recovered = both_present && !diff.before_ready && diff.after_ready;
+    diff.regression = diff.ready_regressed;
+    diff.improvement = diff.ready_recovered;
+
+    if (before == nullptr && after != nullptr) {
+        diff.status = render_image_texture_frame_resource_packet_consumption_diff_entry_status::added;
+    } else if (before != nullptr && after == nullptr) {
+        diff.status = render_image_texture_frame_resource_packet_consumption_diff_entry_status::removed;
+    } else if (before != nullptr && after != nullptr
+        && !render_image_texture_frame_resource_packet_consumption_entry_equal(*before, *after)) {
+        diff.status = render_image_texture_frame_resource_packet_consumption_diff_entry_status::changed;
+    } else {
+        diff.status = render_image_texture_frame_resource_packet_consumption_diff_entry_status::unchanged;
+    }
+    diff.status_name = render_image_texture_frame_resource_packet_consumption_diff_entry_status_name(diff.status);
+
+    if (diff.status == render_image_texture_frame_resource_packet_consumption_diff_entry_status::unchanged) {
+        diff.diagnostic = "image frame resource packet consumption diff entry unchanged";
+    } else if (diff.regression) {
+        diff.diagnostic = "image frame resource packet consumption diff entry changed with regression";
+    } else if (diff.improvement) {
+        diff.diagnostic = "image frame resource packet consumption diff entry changed with improvement";
+    } else if (diff.stable_packet_identity_changed || diff.texture_handle_changed) {
+        diff.diagnostic = "image frame resource packet consumption diff entry changed identity";
+    } else {
+        diff.diagnostic = "image frame resource packet consumption diff entry changed";
+    }
+    return diff;
+}
+
+inline void count_render_image_texture_frame_resource_packet_consumption_diff_entry(
+    render_image_texture_frame_resource_packet_consumption_diff& diff,
+    const render_image_texture_frame_resource_packet_consumption_entry_diff& entry)
+{
+    switch (entry.status) {
+    case render_image_texture_frame_resource_packet_consumption_diff_entry_status::unchanged:
+        ++diff.unchanged_packet_count;
+        break;
+    case render_image_texture_frame_resource_packet_consumption_diff_entry_status::added:
+        ++diff.added_packet_count;
+        break;
+    case render_image_texture_frame_resource_packet_consumption_diff_entry_status::removed:
+        ++diff.removed_packet_count;
+        break;
+    case render_image_texture_frame_resource_packet_consumption_diff_entry_status::changed:
+        ++diff.changed_packet_count;
+        break;
+    }
+
+    if (entry.stable_packet_identity_changed) {
+        ++diff.stable_packet_identity_changed_count;
+    }
+    if (entry.stable_texture_cache_key_changed) {
+        ++diff.stable_texture_cache_key_changed_count;
+    }
+    if (entry.texture_handle_changed) {
+        ++diff.texture_handle_changed_count;
+    }
+    if (entry.texture_extent_changed) {
+        ++diff.texture_extent_changed_count;
+    }
+    if (entry.sampler_key_changed) {
+        ++diff.sampler_key_changed_count;
+    }
+    if (entry.upload_request_changed) {
+        ++diff.upload_request_changed_count;
+    }
+    if (entry.upload_generation_changed) {
+        ++diff.upload_generation_changed_count;
+    }
+    if (entry.uploaded_byte_count_changed) {
+        ++diff.uploaded_byte_count_changed_count;
+    }
+    if (entry.placeholder_changed) {
+        ++diff.placeholder_changed_count;
+    }
+    if (entry.readiness_changed) {
+        ++diff.readiness_changed_count;
+    }
+    if (entry.blocker_changed) {
+        ++diff.blocker_changed_count;
+    }
+    if (entry.stable_packet_identity_quality_changed) {
+        ++diff.stable_packet_identity_quality_changed_count;
+    }
+    if (entry.ready_regressed) {
+        ++diff.ready_regression_count;
+        append_render_image_texture_frame_upload_handoff_summary_fragment(
+            diff.regression_summary,
+            "request=" + std::to_string(entry.request_index) + ":ready->blocked");
+    }
+    if (entry.ready_recovered) {
+        ++diff.ready_recovery_count;
+        append_render_image_texture_frame_upload_handoff_summary_fragment(
+            diff.improvement_summary,
+            "request=" + std::to_string(entry.request_index) + ":blocked->ready");
+    }
+    if (entry.changed()) {
+        append_render_image_texture_frame_upload_handoff_summary_fragment(
+            diff.changed_summary,
+            "request=" + std::to_string(entry.request_index) + ":" + entry.status_name);
+    }
+
+    diff.has_changes = diff.has_changes || entry.changed();
+    diff.has_regression = diff.has_regression || entry.regression;
+    diff.has_improvement = diff.has_improvement || entry.improvement;
+}
+
+inline render_image_texture_frame_resource_packet_consumption_diff
+diff_render_image_texture_frame_resource_packet_consumption_summaries(
+    const render_image_texture_frame_resource_packet_consumption_summary& before,
+    const render_image_texture_frame_resource_packet_consumption_summary& after)
+{
+    render_image_texture_frame_resource_packet_consumption_diff diff{
+        .before_frame_request_count = before.frame_request_count,
+        .after_frame_request_count = after.frame_request_count,
+        .frame_request_delta = render_image_texture_upload_result_size_delta(
+            before.frame_request_count,
+            after.frame_request_count),
+        .before_packet_count = before.packet_count,
+        .after_packet_count = after.packet_count,
+        .packet_delta = render_image_texture_upload_result_size_delta(before.packet_count, after.packet_count),
+        .before_materialized_packet_count = before.materialized_packet_count,
+        .after_materialized_packet_count = after.materialized_packet_count,
+        .materialized_packet_delta = render_image_texture_upload_result_size_delta(
+            before.materialized_packet_count,
+            after.materialized_packet_count),
+        .before_blocked_packet_count = before.blocked_packet_count,
+        .after_blocked_packet_count = after.blocked_packet_count,
+        .blocked_packet_delta = render_image_texture_upload_result_size_delta(
+            before.blocked_packet_count,
+            after.blocked_packet_count),
+        .before_placeholder_packet_count = before.placeholder_packet_count,
+        .after_placeholder_packet_count = after.placeholder_packet_count,
+        .placeholder_packet_delta = render_image_texture_upload_result_size_delta(
+            before.placeholder_packet_count,
+            after.placeholder_packet_count),
+        .before_removed_packet_count = before.removed_packet_count,
+        .after_removed_packet_count = after.removed_packet_count,
+        .removed_packet_delta = render_image_texture_upload_result_size_delta(
+            before.removed_packet_count,
+            after.removed_packet_count),
+        .before_stable_packet_identity_count = before.stable_packet_identity_count,
+        .after_stable_packet_identity_count = after.stable_packet_identity_count,
+        .stable_packet_identity_delta = render_image_texture_upload_result_size_delta(
+            before.stable_packet_identity_count,
+            after.stable_packet_identity_count),
+        .before_duplicate_stable_packet_identity_count = before.duplicate_stable_packet_identity_count,
+        .after_duplicate_stable_packet_identity_count = after.duplicate_stable_packet_identity_count,
+        .duplicate_stable_packet_identity_delta = render_image_texture_upload_result_size_delta(
+            before.duplicate_stable_packet_identity_count,
+            after.duplicate_stable_packet_identity_count),
+        .before_missing_stable_packet_identity_count = before.missing_stable_packet_identity_count,
+        .after_missing_stable_packet_identity_count = after.missing_stable_packet_identity_count,
+        .missing_stable_packet_identity_delta = render_image_texture_upload_result_size_delta(
+            before.missing_stable_packet_identity_count,
+            after.missing_stable_packet_identity_count),
+        .before_renderer_boundary_ready = before.renderer_boundary_ready,
+        .after_renderer_boundary_ready = after.renderer_boundary_ready,
+    };
+
+    diff.renderer_boundary_regressed = before.renderer_boundary_ready && !after.renderer_boundary_ready;
+    diff.renderer_boundary_recovered = !before.renderer_boundary_ready && after.renderer_boundary_ready;
+    diff.has_duplicate_or_missing_identity_change =
+        before.duplicate_stable_packet_identity_count != after.duplicate_stable_packet_identity_count
+        || before.missing_stable_packet_identity_count != after.missing_stable_packet_identity_count;
+
+    std::map<std::size_t, bool> request_indexes;
+    append_render_image_texture_frame_resource_packet_consumption_request_indexes(request_indexes, before);
+    append_render_image_texture_frame_resource_packet_consumption_request_indexes(request_indexes, after);
+
+    for (const auto& [request_index, _] : request_indexes) {
+        render_image_texture_frame_resource_packet_consumption_entry_diff entry =
+            make_render_image_texture_frame_resource_packet_consumption_entry_diff(
+                render_image_texture_frame_resource_packet_consumption_entry_for_request_index(before, request_index),
+                render_image_texture_frame_resource_packet_consumption_entry_for_request_index(after, request_index),
+                request_index);
+        count_render_image_texture_frame_resource_packet_consumption_diff_entry(diff, entry);
+        diff.entries.push_back(std::move(entry));
+    }
+
+    diff.has_changes = diff.has_changes
+        || before.frame_request_count != after.frame_request_count
+        || before.packet_count != after.packet_count
+        || before.materialized_packet_count != after.materialized_packet_count
+        || before.blocked_packet_count != after.blocked_packet_count
+        || before.placeholder_packet_count != after.placeholder_packet_count
+        || before.removed_packet_count != after.removed_packet_count
+        || before.stable_packet_identity_count != after.stable_packet_identity_count
+        || diff.has_duplicate_or_missing_identity_change
+        || diff.renderer_boundary_regressed
+        || diff.renderer_boundary_recovered;
+    diff.has_regression = diff.has_regression || diff.renderer_boundary_regressed;
+    diff.has_improvement = diff.has_improvement || diff.renderer_boundary_recovered;
+    diff.stable_no_change_frame = !diff.has_changes;
+
+    diff.identity_summary = "identities=" + std::to_string(diff.before_stable_packet_identity_count)
+        + "->" + std::to_string(diff.after_stable_packet_identity_count)
+        + "; duplicate_identities=" + std::to_string(diff.before_duplicate_stable_packet_identity_count)
+        + "->" + std::to_string(diff.after_duplicate_stable_packet_identity_count)
+        + "; missing_identities=" + std::to_string(diff.before_missing_stable_packet_identity_count)
+        + "->" + std::to_string(diff.after_missing_stable_packet_identity_count);
+    if (diff.changed_summary.empty()) {
+        diff.changed_summary = "no resource packet consumption changes";
+    }
+    if (diff.regression_summary.empty()) {
+        diff.regression_summary = diff.renderer_boundary_regressed
+            ? "renderer boundary readiness regressed"
+            : "no resource packet consumption regressions";
+    }
+    if (diff.improvement_summary.empty()) {
+        diff.improvement_summary = diff.renderer_boundary_recovered
+            ? "renderer boundary readiness recovered"
+            : "no resource packet consumption improvements";
+    }
+    if (diff.stable_no_change_frame) {
+        diff.diagnostic = "image frame resource packet consumption diff is unchanged";
+    } else if (diff.has_regression) {
+        diff.diagnostic = "image frame resource packet consumption diff has regressions";
+    } else if (diff.has_improvement) {
+        diff.diagnostic = "image frame resource packet consumption diff has improvements";
+    } else {
+        diff.diagnostic = "image frame resource packet consumption diff changed";
+    }
+    return diff;
+}
+
+inline render_image_texture_frame_resource_packet_consumption_diff
+diff_render_image_texture_frame_resource_packet_consumption(
+    const render_image_texture_frame_resource_packet_materialization& before,
+    const render_image_texture_frame_resource_packet_materialization& after)
+{
+    return diff_render_image_texture_frame_resource_packet_consumption_summaries(
+        make_render_image_texture_frame_resource_packet_consumption_summary(before),
+        make_render_image_texture_frame_resource_packet_consumption_summary(after));
 }
 
 } // namespace quiz_vulkan::render

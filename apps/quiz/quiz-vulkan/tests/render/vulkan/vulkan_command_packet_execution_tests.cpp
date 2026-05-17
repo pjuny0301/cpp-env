@@ -1,8 +1,10 @@
+#include "render/image/image_texture_frame_resource_packet_materialization.h"
 #include "render/vulkan/vulkan_backend_adapter.h"
 
 #include <array>
 #include <cassert>
 #include <cstdio>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -25,6 +27,21 @@ quiz_vulkan::render::vulkan_backend::vulkan_resource_binding_snapshot make_bindi
         .binding = 0,
         .kind = quiz_vulkan::render::vulkan_backend::vulkan_resource_binding_kind::batch_uniform,
         .resource_id = "batch_uniform:packet",
+        .required = true,
+        .available = true,
+    };
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_resource_binding_snapshot make_binding(
+    std::size_t binding,
+    quiz_vulkan::render::vulkan_backend::vulkan_resource_binding_kind kind,
+    std::string resource_id)
+{
+    return quiz_vulkan::render::vulkan_backend::vulkan_resource_binding_snapshot{
+        .set = 0,
+        .binding = binding,
+        .kind = kind,
+        .resource_id = std::move(resource_id),
         .required = true,
         .available = true,
     };
@@ -138,6 +155,50 @@ quiz_vulkan::render::vulkan_backend::vulkan_command_packet_bridge_result make_re
             vulkan_backend::vulkan_batch_kind::debug_bounds,
             3,
             13));
+    return bridge;
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_command_packet_bridge_result
+make_ready_image_resource_bridge(
+    std::string image_resource_id = "fixture://renderer/card.png",
+    std::string sampler_resource_id = "image_sampler:1:1:0:0:0")
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::vulkan_command_packet_bridge_result bridge{
+        .checked = true,
+        .status = vulkan_backend::vulkan_command_packet_bridge_status::ready,
+        .fallback_reason = vulkan_backend::vulkan_backend_fallback_reason::none,
+        .pipeline_checked = true,
+        .pipeline_ready = true,
+        .resource_bindings_checked = true,
+        .resource_bindings_ready = true,
+        .resource_registry_checked = true,
+        .resource_registry_ready = true,
+    };
+
+    vulkan_backend::vulkan_command_packet packet = make_packet(
+        vulkan_backend::vulkan_command_packet_category::image,
+        vulkan_backend::vulkan_batch_kind::image,
+        0,
+        20);
+    packet.bindings = {
+        make_binding(
+            0,
+            vulkan_backend::vulkan_resource_binding_kind::batch_uniform,
+            "batch_uniform:image"),
+        make_binding(
+            1,
+            vulkan_backend::vulkan_resource_binding_kind::image_texture,
+            std::move(image_resource_id)),
+        make_binding(
+            2,
+            vulkan_backend::vulkan_resource_binding_kind::image_sampler,
+            std::move(sampler_resource_id)),
+    };
+    packet.binding_count = packet.bindings.size();
+    packet.descriptor_set_count = 1;
+    append_packet(bridge, std::move(packet));
     return bridge;
 }
 
@@ -365,6 +426,178 @@ make_ready_resource_bindings(
     return state;
 }
 
+quiz_vulkan::render::render_image_texture_frame_resource_packet_materialization
+make_image_materialization(
+    std::string image_resource_id = "fixture://renderer/card.png",
+    quiz_vulkan::render::render_image_texture_frame_resource_packet_materialization_status status =
+        quiz_vulkan::render::render_image_texture_frame_resource_packet_materialization_status::materialized)
+{
+    namespace render = quiz_vulkan::render;
+
+    const bool materialized =
+        render::render_image_texture_frame_resource_packet_materialization_status_is_materialized(
+            status);
+    const bool blocked =
+        render::render_image_texture_frame_resource_packet_materialization_status_is_blocked(
+            status);
+
+    render::render_image_texture_frame_resource_cache_handoff_record cache_record{
+        .materialization_index = 0,
+        .request_index = 0,
+        .render_image_uri = image_resource_id,
+        .normalized_uri = image_resource_id,
+        .cache_key = image_resource_id,
+        .stable_texture_cache_key = image_resource_id + "|image_sampler:1:1:0:0:0",
+        .texture_id = materialized ? 7100u : 0u,
+        .texture_revision = materialized ? 3u : 0u,
+        .texture_width = materialized ? 32u : 0u,
+        .texture_height = materialized ? 16u : 0u,
+        .renderer_boundary_ready = materialized,
+        .diagnostic = materialized
+            ? "image frame resource cache handoff is ready"
+            : "image frame resource cache handoff is blocked",
+    };
+    render::render_image_texture_frame_resource_upload_handoff_record upload_record{
+        .materialization_index = 0,
+        .request_index = 0,
+        .upload_request_id = materialized ? 8100u : 0u,
+        .upload_generation_id = materialized ? 4u : 0u,
+        .mip_level_count = materialized ? 1u : 0u,
+        .uploaded_byte_count = materialized ? 2048u : 0u,
+        .upload_result_present = materialized,
+        .renderer_boundary_ready = materialized,
+        .diagnostic = materialized
+            ? "image frame resource upload handoff is ready"
+            : "image frame resource upload handoff is blocked",
+    };
+    render::render_image_texture_frame_resource_sampler_handoff_record sampler_record{
+        .materialization_index = 0,
+        .request_index = 0,
+        .sampler_key = "image_sampler:1:1:0:0:0",
+        .sampler_summary = "image_sampler:1:1:0:0:0",
+        .renderer_boundary_ready = materialized,
+        .diagnostic = materialized
+            ? "image frame resource sampler handoff is ready"
+            : "image frame resource sampler handoff is blocked",
+    };
+    render::render_image_texture_frame_resource_packet_materialization_entry entry{
+        .materialization_index = 0,
+        .request_index = 0,
+        .status = status,
+        .status_name =
+            render::render_image_texture_frame_resource_packet_materialization_status_name(status),
+        .materialized = materialized,
+        .blocked = blocked,
+        .missing_upload_result =
+            status
+            == render::render_image_texture_frame_resource_packet_materialization_status::
+                blocked_missing_upload_result,
+        .cache_record_present = materialized,
+        .upload_record_present = materialized,
+        .sampler_record_present = materialized,
+        .cache_record = cache_record,
+        .upload_record = upload_record,
+        .sampler_record = sampler_record,
+        .blocker_summary = blocked ? "image materialization blocked" : "",
+        .diagnostic = materialized
+            ? "image frame resource packet materialized"
+            : "image frame resource packet materialization blocked",
+    };
+
+    render::render_image_texture_frame_resource_packet_materialization materialization{
+        .frame_request_count = 1,
+        .planned_packet_count = 1,
+        .materialized_packet_count = materialized ? 1u : 0u,
+        .blocked_packet_count = blocked ? 1u : 0u,
+        .missing_upload_result_count =
+            entry.missing_upload_result ? 1u : 0u,
+        .cache_record_count = materialized ? 1u : 0u,
+        .upload_record_count = materialized ? 1u : 0u,
+        .sampler_record_count = materialized ? 1u : 0u,
+        .renderer_boundary_ready = materialized,
+        .has_blockers = blocked,
+        .entries = {entry},
+        .cache_handoff_records = materialized
+            ? std::vector<render::render_image_texture_frame_resource_cache_handoff_record>{
+                cache_record}
+            : std::vector<render::render_image_texture_frame_resource_cache_handoff_record>{},
+        .upload_handoff_records = materialized
+            ? std::vector<render::render_image_texture_frame_resource_upload_handoff_record>{
+                upload_record}
+            : std::vector<render::render_image_texture_frame_resource_upload_handoff_record>{},
+        .sampler_handoff_records = materialized
+            ? std::vector<render::render_image_texture_frame_resource_sampler_handoff_record>{
+                sampler_record}
+            : std::vector<render::render_image_texture_frame_resource_sampler_handoff_record>{},
+        .blocker_summary = blocked ? "image materialization blocked" : "no materialization blockers",
+        .diagnostic = materialized
+            ? "image frame resource packet materialization is ready"
+            : "image frame resource packet materialization has missing upload results",
+    };
+    return materialization;
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_native_image_descriptor_resource_evidence
+make_native_image_descriptor_resources(
+    std::string texture_resource_id = "fixture://renderer/card.png",
+    std::string sampler_resource_id = "image_sampler:1:1:0:0:0",
+    std::uintptr_t image_view_handle = 12000,
+    std::uintptr_t sampler_handle = 13000,
+    std::uint32_t image_layout = 5)
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const bool available =
+        image_view_handle != 0 && sampler_handle != 0 && image_layout != 0;
+    return vulkan_backend::vulkan_native_image_descriptor_resource_evidence{
+        .checked = true,
+        .resources = {
+            vulkan_backend::vulkan_native_image_descriptor_resource{
+                .texture_resource_id = std::move(texture_resource_id),
+                .sampler_resource_id = std::move(sampler_resource_id),
+                .image_view =
+                    vulkan_backend::vulkan_native_descriptor_image_view_handle{
+                        .value = image_view_handle,
+                    },
+                .sampler =
+                    vulkan_backend::vulkan_native_descriptor_sampler_handle{
+                        .value = sampler_handle,
+                    },
+                .image_layout =
+                    vulkan_backend::vulkan_native_descriptor_image_layout{
+                        .value = image_layout,
+                    },
+                .available = available,
+                .diagnostic = available
+                    ? "native image descriptor resource is ready"
+                    : "native image descriptor resource is missing native handles",
+            },
+        },
+        .diagnostic = available
+            ? "native image descriptor resource evidence is ready"
+            : "native image descriptor resource evidence is incomplete",
+    };
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_native_descriptor_set_allocation_result
+make_ready_image_descriptor_set_allocation(
+    const quiz_vulkan::render::vulkan_backend::vulkan_command_packet_bridge_result& bridge)
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    const vulkan_backend::vulkan_backend_resource_binding_state resource_bindings =
+        make_ready_resource_bindings(bridge);
+    const quiz_vulkan::render::render_image_texture_frame_resource_packet_materialization
+        materialization = make_image_materialization();
+    return vulkan_backend::build_fake_vulkan_native_descriptor_set_allocation_result(
+        bridge,
+        resource_bindings,
+        materialization,
+        vulkan_backend::vulkan_native_descriptor_set_fake_allocator_options{
+            .first_descriptor_set_handle = 9100,
+        });
+}
+
 void test_vulkan_command_packet_execution_names_are_stable()
 {
     using namespace quiz_vulkan::render;
@@ -450,6 +683,64 @@ void test_vulkan_command_packet_execution_names_are_stable()
                 resource_binding_mismatch)
             == std::string_view{"resource_binding_mismatch"},
         "native descriptor set allocation mismatch name is stable");
+    require(
+        vulkan_backend::native_descriptor_set_allocation_status_name(
+            vulkan_backend::vulkan_native_descriptor_set_allocation_status::
+                image_materialization_unavailable)
+            == std::string_view{"image_materialization_unavailable"},
+        "native descriptor set allocation image unavailable name is stable");
+    require(
+        vulkan_backend::native_descriptor_set_allocation_status_name(
+            vulkan_backend::vulkan_native_descriptor_set_allocation_status::
+                image_materialization_blocked)
+            == std::string_view{"image_materialization_blocked"},
+        "native descriptor set allocation image blocked name is stable");
+    require(
+        vulkan_backend::native_descriptor_set_allocation_status_name(
+            vulkan_backend::vulkan_native_descriptor_set_allocation_status::
+                image_materialization_mismatch)
+            == std::string_view{"image_materialization_mismatch"},
+        "native descriptor set allocation image mismatch name is stable");
+    require(
+        vulkan_backend::native_descriptor_write_payload_status_name(
+            vulkan_backend::vulkan_native_descriptor_write_payload_status::ready)
+            == std::string_view{"ready"},
+        "native descriptor write payload ready name is stable");
+    require(
+        vulkan_backend::native_descriptor_write_payload_status_name(
+            vulkan_backend::vulkan_native_descriptor_write_payload_status::
+                descriptor_set_allocation_unavailable)
+            == std::string_view{"descriptor_set_allocation_unavailable"},
+        "native descriptor write payload allocation unavailable name is stable");
+    require(
+        vulkan_backend::native_descriptor_write_payload_status_name(
+            vulkan_backend::vulkan_native_descriptor_write_payload_status::
+                image_descriptor_resource_unavailable)
+            == std::string_view{"image_descriptor_resource_unavailable"},
+        "native descriptor write payload missing resource name is stable");
+    require(
+        vulkan_backend::native_descriptor_write_payload_status_name(
+            vulkan_backend::vulkan_native_descriptor_write_payload_status::
+                image_descriptor_texture_mismatch)
+            == std::string_view{"image_descriptor_texture_mismatch"},
+        "native descriptor write payload texture mismatch name is stable");
+    require(
+        vulkan_backend::native_descriptor_write_payload_status_name(
+            vulkan_backend::vulkan_native_descriptor_write_payload_status::
+                image_descriptor_sampler_mismatch)
+            == std::string_view{"image_descriptor_sampler_mismatch"},
+        "native descriptor write payload sampler mismatch name is stable");
+    require(
+        vulkan_backend::native_descriptor_write_payload_status_name(
+            vulkan_backend::vulkan_native_descriptor_write_payload_status::
+                image_descriptor_resource_incomplete)
+            == std::string_view{"image_descriptor_resource_incomplete"},
+        "native descriptor write payload incomplete resource name is stable");
+    require(
+        vulkan_backend::native_descriptor_write_payload_status_name(
+            vulkan_backend::vulkan_native_descriptor_write_payload_status::duplicate_payload)
+            == std::string_view{"duplicate_payload"},
+        "native descriptor write payload duplicate name is stable");
     require(
         vulkan_backend::scoped_command_packet_execution_status_name(
             vulkan_backend::vulkan_scoped_command_packet_execution_status::completed)
@@ -800,6 +1091,421 @@ void test_vulkan_native_command_packet_executor_completes_with_allocated_descrip
     require(
         native_result.calls[1].descriptor_set_count == 1,
         "allocated descriptor evidence records descriptor set count");
+}
+
+void test_vulkan_native_descriptor_set_allocation_blocks_image_without_materialization()
+{
+    using namespace quiz_vulkan::render;
+
+    const vulkan_backend::vulkan_command_packet_bridge_result bridge =
+        make_ready_image_resource_bridge();
+    const vulkan_backend::vulkan_backend_resource_binding_state resource_bindings =
+        make_ready_resource_bindings(bridge);
+    const vulkan_backend::vulkan_native_descriptor_set_allocation_result allocation =
+        vulkan_backend::build_fake_vulkan_native_descriptor_set_allocation_result(
+            bridge,
+            resource_bindings);
+
+    require(!allocation.completed(), "image descriptor allocation needs materialization evidence");
+    require(
+        allocation.status
+            == vulkan_backend::vulkan_native_descriptor_set_allocation_status::
+                image_materialization_unavailable,
+        "image descriptor allocation reports missing materialization evidence");
+    require(!allocation.image_materialization_checked, "missing image materialization is not checked");
+    require(!allocation.image_materialization_ready, "missing image materialization is not ready");
+    require(
+        allocation.required_image_materialization_count == 1,
+        "image descriptor allocation records required image materialization count");
+    require(
+        allocation.failed_resource_id == "fixture://renderer/card.png",
+        "image descriptor allocation records blocked image resource id");
+}
+
+void test_vulkan_native_descriptor_set_allocation_blocks_blocked_image_materialization()
+{
+    using namespace quiz_vulkan::render;
+
+    const vulkan_backend::vulkan_command_packet_bridge_result bridge =
+        make_ready_image_resource_bridge();
+    const vulkan_backend::vulkan_backend_resource_binding_state resource_bindings =
+        make_ready_resource_bindings(bridge);
+    const render_image_texture_frame_resource_packet_materialization materialization =
+        make_image_materialization(
+            "fixture://renderer/card.png",
+            render_image_texture_frame_resource_packet_materialization_status::
+                blocked_missing_upload_result);
+    const vulkan_backend::vulkan_native_descriptor_set_allocation_result allocation =
+        vulkan_backend::build_fake_vulkan_native_descriptor_set_allocation_result(
+            bridge,
+            resource_bindings,
+            materialization);
+
+    require(!materialization.ok(), "blocked image materialization evidence is not ready");
+    require(!allocation.completed(), "blocked image materialization does not allocate descriptors");
+    require(allocation.image_materialization_checked, "blocked image materialization is checked");
+    require(!allocation.image_materialization_ready, "blocked image materialization is not ready");
+    require(
+        allocation.status
+            == vulkan_backend::vulkan_native_descriptor_set_allocation_status::
+                image_materialization_blocked,
+        "blocked image materialization reports image blocker");
+    require(
+        allocation.failed_resource_id == "fixture://renderer/card.png",
+        "blocked image materialization preserves image resource id");
+}
+
+void test_vulkan_native_descriptor_set_allocation_blocks_mismatched_image_materialization()
+{
+    using namespace quiz_vulkan::render;
+
+    const vulkan_backend::vulkan_command_packet_bridge_result bridge =
+        make_ready_image_resource_bridge("fixture://renderer/card.png");
+    const vulkan_backend::vulkan_backend_resource_binding_state resource_bindings =
+        make_ready_resource_bindings(bridge);
+    const render_image_texture_frame_resource_packet_materialization materialization =
+        make_image_materialization("fixture://renderer/other.png");
+    const vulkan_backend::vulkan_native_descriptor_set_allocation_result allocation =
+        vulkan_backend::build_fake_vulkan_native_descriptor_set_allocation_result(
+            bridge,
+            resource_bindings,
+            materialization);
+
+    require(materialization.ok(), "mismatched image materialization evidence can be otherwise ready");
+    require(!allocation.completed(), "mismatched image materialization does not allocate descriptors");
+    require(
+        allocation.status
+            == vulkan_backend::vulkan_native_descriptor_set_allocation_status::
+                image_materialization_mismatch,
+        "mismatched image materialization reports mismatch");
+    require(
+        allocation.failed_resource_id == "fixture://renderer/card.png",
+        "mismatched image materialization records requested image resource id");
+}
+
+void test_vulkan_native_descriptor_set_allocation_blocks_mismatched_image_sampler_materialization()
+{
+    using namespace quiz_vulkan::render;
+
+    const vulkan_backend::vulkan_command_packet_bridge_result bridge =
+        make_ready_image_resource_bridge(
+            "fixture://renderer/card.png",
+            "image_sampler:mismatched");
+    const vulkan_backend::vulkan_backend_resource_binding_state resource_bindings =
+        make_ready_resource_bindings(bridge);
+    const render_image_texture_frame_resource_packet_materialization materialization =
+        make_image_materialization("fixture://renderer/card.png");
+    const vulkan_backend::vulkan_native_descriptor_set_allocation_result allocation =
+        vulkan_backend::build_fake_vulkan_native_descriptor_set_allocation_result(
+            bridge,
+            resource_bindings,
+            materialization);
+
+    require(materialization.ok(), "sampler mismatch materialization evidence can be otherwise ready");
+    require(!allocation.completed(), "sampler mismatch does not allocate descriptors");
+    require(
+        allocation.status
+            == vulkan_backend::vulkan_native_descriptor_set_allocation_status::
+                image_materialization_mismatch,
+        "sampler mismatch reports materialization mismatch");
+    require(
+        allocation.failed_resource_id == "image_sampler:mismatched",
+        "sampler mismatch records requested sampler resource id");
+}
+
+void test_vulkan_native_descriptor_set_allocation_uses_image_materialization()
+{
+    using namespace quiz_vulkan::render;
+
+    const vulkan_backend::vulkan_command_packet_bridge_result bridge =
+        make_ready_image_resource_bridge();
+    const vulkan_backend::vulkan_backend_resource_binding_state resource_bindings =
+        make_ready_resource_bindings(bridge);
+    const render_image_texture_frame_resource_packet_materialization materialization =
+        make_image_materialization();
+    const vulkan_backend::vulkan_native_descriptor_set_allocation_result allocation =
+        vulkan_backend::build_fake_vulkan_native_descriptor_set_allocation_result(
+            bridge,
+            resource_bindings,
+            materialization,
+            vulkan_backend::vulkan_native_descriptor_set_fake_allocator_options{
+                .first_descriptor_set_handle = 9100,
+            });
+
+    require(materialization.ok(), "matching image materialization evidence is ready");
+    require(allocation.completed(), "matching image materialization allocates descriptors");
+    require(allocation.image_materialization_checked, "matching image materialization is checked");
+    require(allocation.image_materialization_ready, "matching image materialization is ready");
+    require(
+        allocation.required_image_materialization_count == 1,
+        "matching image materialization records required count");
+    require(
+        allocation.materialized_image_resource_count == 1,
+        "matching image materialization records materialized count");
+    require(
+        allocation.descriptor_sets.front().descriptor_set.value == 9100,
+        "matching image materialization keeps stable fake descriptor handle");
+
+    vulkan_backend::vulkan_backend_frame_result frame =
+        make_native_packet_frame_without_descriptor_handles();
+    frame.command_packets = bridge;
+    const vulkan_backend::vulkan_native_command_packet_executor_evidence evidence =
+        vulkan_backend::build_vulkan_native_command_packet_executor_evidence(
+            frame,
+            allocation,
+            make_native_functions());
+    vulkan_backend::vulkan_native_command_packet_executor executor(evidence);
+    const vulkan_backend::vulkan_command_packet_execution_result result =
+        executor.execute_packets(bridge);
+    const vulkan_backend::vulkan_native_command_packet_execution_result native_result =
+        executor.native_execution_result();
+
+    require(result.completed(), "image materialization descriptor evidence completes execution");
+    require(native_result.completed(), "image materialization descriptor evidence completes native execution");
+    require(native_result.descriptor_sets_ready, "image materialization descriptor evidence is ready");
+    require(native_result.calls.size() == 5, "single image packet emits five native calls");
+    require(
+        native_result.calls[1].descriptor_set_count == 1,
+        "single image packet binds one descriptor set");
+}
+
+void test_vulkan_native_descriptor_write_payload_blocks_missing_descriptor_allocation()
+{
+    using namespace quiz_vulkan::render;
+
+    const vulkan_backend::vulkan_command_packet_bridge_result bridge =
+        make_ready_image_resource_bridge();
+    const vulkan_backend::vulkan_native_descriptor_write_payload_handoff_result handoff =
+        vulkan_backend::build_vulkan_native_descriptor_write_payload_handoff_result(
+            bridge,
+            vulkan_backend::vulkan_native_descriptor_set_allocation_result{},
+            make_native_image_descriptor_resources());
+
+    require(!handoff.completed(), "descriptor write payload requires descriptor set allocation");
+    require(
+        handoff.status
+            == vulkan_backend::vulkan_native_descriptor_write_payload_status::
+                descriptor_set_allocation_unavailable,
+        "missing descriptor set allocation blocks descriptor write payload");
+    require(
+        !handoff.descriptor_set_allocation_checked,
+        "missing descriptor set allocation records unchecked allocation evidence");
+}
+
+void test_vulkan_native_descriptor_write_payload_blocks_missing_image_descriptor_evidence()
+{
+    using namespace quiz_vulkan::render;
+
+    const vulkan_backend::vulkan_command_packet_bridge_result bridge =
+        make_ready_image_resource_bridge();
+    const vulkan_backend::vulkan_native_descriptor_set_allocation_result allocation =
+        make_ready_image_descriptor_set_allocation(bridge);
+    const vulkan_backend::vulkan_native_descriptor_write_payload_handoff_result handoff =
+        vulkan_backend::build_vulkan_native_descriptor_write_payload_handoff_result(
+            bridge,
+            allocation,
+            vulkan_backend::vulkan_native_image_descriptor_resource_evidence{});
+
+    require(allocation.completed(), "descriptor sets are allocated before payload handoff");
+    require(!handoff.completed(), "descriptor write payload requires native image descriptor evidence");
+    require(
+        handoff.status
+            == vulkan_backend::vulkan_native_descriptor_write_payload_status::
+                image_descriptor_resource_unavailable,
+        "missing image descriptor evidence blocks descriptor write payload");
+    require(
+        handoff.failed_resource_id == "fixture://renderer/card.png",
+        "missing image descriptor evidence records texture resource id");
+}
+
+void test_vulkan_native_descriptor_write_payload_blocks_mismatched_texture_resource()
+{
+    using namespace quiz_vulkan::render;
+
+    const vulkan_backend::vulkan_command_packet_bridge_result bridge =
+        make_ready_image_resource_bridge();
+    const vulkan_backend::vulkan_native_descriptor_set_allocation_result allocation =
+        make_ready_image_descriptor_set_allocation(bridge);
+    const vulkan_backend::vulkan_native_descriptor_write_payload_handoff_result handoff =
+        vulkan_backend::build_vulkan_native_descriptor_write_payload_handoff_result(
+            bridge,
+            allocation,
+            make_native_image_descriptor_resources(
+                "fixture://renderer/other.png",
+                "image_sampler:1:1:0:0:0"));
+
+    require(!handoff.completed(), "texture mismatch blocks descriptor write payload");
+    require(
+        handoff.status
+            == vulkan_backend::vulkan_native_descriptor_write_payload_status::
+                image_descriptor_texture_mismatch,
+        "texture mismatch reports texture blocker");
+    require(
+        handoff.failed_resource_id == "fixture://renderer/card.png",
+        "texture mismatch records requested texture resource id");
+}
+
+void test_vulkan_native_descriptor_write_payload_blocks_mismatched_sampler_resource()
+{
+    using namespace quiz_vulkan::render;
+
+    const vulkan_backend::vulkan_command_packet_bridge_result bridge =
+        make_ready_image_resource_bridge();
+    const vulkan_backend::vulkan_native_descriptor_set_allocation_result allocation =
+        make_ready_image_descriptor_set_allocation(bridge);
+    const vulkan_backend::vulkan_native_descriptor_write_payload_handoff_result handoff =
+        vulkan_backend::build_vulkan_native_descriptor_write_payload_handoff_result(
+            bridge,
+            allocation,
+            make_native_image_descriptor_resources(
+                "fixture://renderer/card.png",
+                "image_sampler:other"));
+
+    require(!handoff.completed(), "sampler mismatch blocks descriptor write payload");
+    require(
+        handoff.status
+            == vulkan_backend::vulkan_native_descriptor_write_payload_status::
+                image_descriptor_sampler_mismatch,
+        "sampler mismatch reports sampler blocker");
+    require(
+        handoff.failed_resource_id == "image_sampler:1:1:0:0:0",
+        "sampler mismatch records requested sampler resource id");
+}
+
+void test_vulkan_native_descriptor_write_payload_blocks_duplicate_payloads()
+{
+    using namespace quiz_vulkan::render;
+
+    vulkan_backend::vulkan_command_packet_bridge_result bridge =
+        make_ready_image_resource_bridge();
+    bridge.packets.front().bindings.push_back(bridge.packets.front().bindings[1]);
+    bridge.packets.front().binding_count = bridge.packets.front().bindings.size();
+    const vulkan_backend::vulkan_native_descriptor_set_allocation_result allocation =
+        make_ready_image_descriptor_set_allocation(bridge);
+    const vulkan_backend::vulkan_native_descriptor_write_payload_handoff_result handoff =
+        vulkan_backend::build_vulkan_native_descriptor_write_payload_handoff_result(
+            bridge,
+            allocation,
+            make_native_image_descriptor_resources());
+
+    require(allocation.completed(), "duplicate payload test keeps descriptor allocation complete");
+    require(!handoff.completed(), "duplicate packet set/binding blocks descriptor write payload");
+    require(
+        handoff.status
+            == vulkan_backend::vulkan_native_descriptor_write_payload_status::duplicate_payload,
+        "duplicate packet set/binding reports duplicate payload");
+    require(handoff.failed_binding == 1, "duplicate payload records failed binding");
+}
+
+void test_vulkan_native_descriptor_write_payload_blocks_incomplete_native_image_handles()
+{
+    using namespace quiz_vulkan::render;
+
+    const vulkan_backend::vulkan_command_packet_bridge_result bridge =
+        make_ready_image_resource_bridge();
+    const vulkan_backend::vulkan_native_descriptor_set_allocation_result allocation =
+        make_ready_image_descriptor_set_allocation(bridge);
+    const vulkan_backend::vulkan_native_descriptor_write_payload_handoff_result handoff =
+        vulkan_backend::build_vulkan_native_descriptor_write_payload_handoff_result(
+            bridge,
+            allocation,
+            make_native_image_descriptor_resources(
+                "fixture://renderer/card.png",
+                "image_sampler:1:1:0:0:0",
+                0,
+                13000,
+                5));
+
+    require(!handoff.completed(), "missing native image view blocks descriptor write payload");
+    require(
+        handoff.status
+            == vulkan_backend::vulkan_native_descriptor_write_payload_status::
+                image_descriptor_resource_incomplete,
+        "incomplete native image handles report incomplete resource");
+    require(
+        handoff.failed_resource_id == "fixture://renderer/card.png",
+        "incomplete native image handles record texture resource id");
+}
+
+void test_vulkan_native_descriptor_write_payload_handoff_builds_stable_payloads()
+{
+    using namespace quiz_vulkan::render;
+
+    const vulkan_backend::vulkan_command_packet_bridge_result bridge =
+        make_ready_image_resource_bridge();
+    const vulkan_backend::vulkan_native_descriptor_set_allocation_result allocation =
+        make_ready_image_descriptor_set_allocation(bridge);
+    const vulkan_backend::vulkan_native_image_descriptor_resource_evidence image_resources =
+        make_native_image_descriptor_resources();
+    const vulkan_backend::vulkan_native_descriptor_write_payload_handoff_result handoff =
+        vulkan_backend::build_vulkan_native_descriptor_write_payload_handoff_result(
+            bridge,
+            allocation,
+            image_resources);
+
+    require(allocation.completed(), "descriptor allocation is complete for payload handoff");
+    require(image_resources.completed(), "native image descriptor resources are complete");
+    require(handoff.completed(), "matching native image descriptor evidence builds payload handoff");
+    require(
+        handoff.payload_count == 3,
+        "image packet descriptor write handoff emits one payload per packet binding");
+    require(
+        handoff.required_image_descriptor_payload_count == 2,
+        "image packet descriptor write handoff tracks image payload count");
+    require(
+        handoff.ready_image_descriptor_payload_count == 2,
+        "image packet descriptor write handoff tracks ready image payload count");
+
+    const vulkan_backend::vulkan_native_descriptor_write_payload& texture_payload =
+        handoff.payloads[1];
+    require(texture_payload.completed(), "texture descriptor write payload is complete");
+    require(texture_payload.descriptor_set.value == 9100, "texture payload carries descriptor set handle");
+    require(texture_payload.set == 0, "texture payload carries descriptor set index");
+    require(texture_payload.binding == 1, "texture payload carries texture binding");
+    require(
+        texture_payload.descriptor_kind == vulkan_backend::vulkan_resource_binding_kind::image_texture,
+        "texture payload carries descriptor kind");
+    require(
+        texture_payload.resource_id == "fixture://renderer/card.png",
+        "texture payload carries texture resource id");
+    require(texture_payload.image_view.value == 12000, "texture payload carries image view handle");
+    require(texture_payload.sampler.value == 13000, "texture payload carries sampler handle");
+    require(texture_payload.image_layout.value == 5, "texture payload carries image layout");
+
+    const vulkan_backend::vulkan_native_descriptor_write_payload& sampler_payload =
+        handoff.payloads[2];
+    require(sampler_payload.completed(), "sampler descriptor write payload is complete");
+    require(sampler_payload.binding == 2, "sampler payload carries sampler binding");
+    require(
+        sampler_payload.descriptor_kind == vulkan_backend::vulkan_resource_binding_kind::image_sampler,
+        "sampler payload carries descriptor kind");
+    require(
+        sampler_payload.resource_id == "image_sampler:1:1:0:0:0",
+        "sampler payload carries sampler resource id");
+    require(sampler_payload.sampler.value == 13000, "sampler payload carries sampler handle");
+
+    vulkan_backend::vulkan_backend_frame_result frame =
+        make_native_packet_frame_without_descriptor_handles();
+    frame.command_packets = bridge;
+    const vulkan_backend::vulkan_native_command_packet_executor_evidence default_evidence =
+        vulkan_backend::build_vulkan_native_command_packet_executor_evidence(
+            frame,
+            allocation,
+            make_native_functions());
+    require(
+        default_evidence.descriptor_write_payloads.empty(),
+        "default frame/executor evidence does not attach descriptor write payloads");
+
+    const vulkan_backend::vulkan_native_command_packet_executor_evidence merged_evidence =
+        vulkan_backend::merge_vulkan_native_descriptor_write_payload_handoff_result(
+            default_evidence,
+            handoff);
+    require(
+        merged_evidence.descriptor_write_payloads.size() == handoff.payloads.size(),
+        "explicit payload handoff merge attaches descriptor write payloads");
+    require(
+        merged_evidence.descriptor_write_payloads[1].image_view.value == 12000,
+        "merged payload evidence preserves stable image view handle");
 }
 
 void test_vulkan_native_command_packet_evidence_preserves_descriptor_handle_gap()
@@ -1263,6 +1969,18 @@ int main()
     test_vulkan_native_command_packet_executor_translates_packets_to_native_calls();
     test_vulkan_native_descriptor_set_allocation_builds_fake_handles();
     test_vulkan_native_command_packet_executor_completes_with_allocated_descriptor_handles();
+    test_vulkan_native_descriptor_set_allocation_blocks_image_without_materialization();
+    test_vulkan_native_descriptor_set_allocation_blocks_blocked_image_materialization();
+    test_vulkan_native_descriptor_set_allocation_blocks_mismatched_image_materialization();
+    test_vulkan_native_descriptor_set_allocation_blocks_mismatched_image_sampler_materialization();
+    test_vulkan_native_descriptor_set_allocation_uses_image_materialization();
+    test_vulkan_native_descriptor_write_payload_blocks_missing_descriptor_allocation();
+    test_vulkan_native_descriptor_write_payload_blocks_missing_image_descriptor_evidence();
+    test_vulkan_native_descriptor_write_payload_blocks_mismatched_texture_resource();
+    test_vulkan_native_descriptor_write_payload_blocks_mismatched_sampler_resource();
+    test_vulkan_native_descriptor_write_payload_blocks_duplicate_payloads();
+    test_vulkan_native_descriptor_write_payload_blocks_incomplete_native_image_handles();
+    test_vulkan_native_descriptor_write_payload_handoff_builds_stable_payloads();
     test_vulkan_native_command_packet_evidence_preserves_descriptor_handle_gap();
     test_vulkan_native_command_packet_executor_blocks_incomplete_descriptor_evidence();
     test_vulkan_native_command_packet_executor_blocks_duplicate_descriptor_evidence();

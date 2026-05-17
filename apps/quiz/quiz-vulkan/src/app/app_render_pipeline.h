@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/app_demo.h"
+#include "render/text/fake_text_engine.h"
 
 namespace quiz_vulkan {
 
@@ -30,8 +31,27 @@ public:
             return {};
         }
 
-        return render_app_frame(*request.snapshot, request.viewport, request.view_state);
+        return render_app_frame_with_engines(
+            *request.snapshot,
+            request.viewport,
+            request.view_state,
+            text_engine_,
+            renderer_);
     }
+
+    [[nodiscard]] const render::fake_text_engine& text_engine() const
+    {
+        return text_engine_;
+    }
+
+    [[nodiscard]] const render::vulkan_renderer& renderer() const
+    {
+        return renderer_;
+    }
+
+private:
+    render::fake_text_engine text_engine_;
+    render::vulkan_renderer renderer_{render::vulkan_renderer_options{}};
 };
 
 } // namespace quiz_vulkan

@@ -139,10 +139,12 @@ domain::deck make_demo_deck()
     return demo_deck;
 }
 
-app_render_frame render_app_frame(
+app_render_frame render_app_frame_with_engines(
     const domain::app_snapshot& snapshot,
     scene::scene_rect viewport,
-    app_render_view_state view_state)
+    app_render_view_state view_state,
+    render::text_engine_interface& text_engine,
+    render::vulkan_renderer& renderer)
 {
     scene::scene_layout_data scene_data("quiz_app");
 
@@ -183,7 +185,6 @@ app_render_frame render_app_frame(
         environment.keyboard.focused_node_id = scene_data.focus_id();
     }
 
-    render::fake_text_engine text_engine;
     scene::render_text_metrics text_metrics(
         text_engine,
         make_demo_text_style_catalog(),
@@ -194,8 +195,9 @@ app_render_frame render_app_frame(
         text_metrics);
     const ui::ui_draw_list draw_list = ui::ui_renderer{}.build_draw_list(frame.placed_scene);
 
-    render::vulkan_renderer_options renderer_options{.viewport = to_render_rect(environment.viewport)};
-    render::vulkan_renderer renderer(renderer_options);
+    render::vulkan_renderer_options renderer_options = renderer.options();
+    renderer_options.viewport = to_render_rect(environment.viewport);
+    renderer.set_options(std::move(renderer_options));
     renderer.submit(draw_list);
 
     frame.report.node_count = frame.placed_scene.nodes.size();
@@ -204,6 +206,18 @@ app_render_frame render_app_frame(
     frame.report.frame_summary = renderer.last_frame_summary();
     frame.framebuffer = renderer.last_framebuffer();
     return frame;
+}
+
+app_render_frame render_app_frame(
+    const domain::app_snapshot& snapshot,
+    scene::scene_rect viewport,
+    app_render_view_state view_state)
+{
+    render::fake_text_engine text_engine;
+    render::vulkan_renderer renderer(render::vulkan_renderer_options{
+        .viewport = to_render_rect(viewport),
+    });
+    return render_app_frame_with_engines(snapshot, viewport, view_state, text_engine, renderer);
 }
 
 app_render_report render_app_snapshot(const domain::app_snapshot& snapshot, scene::scene_rect viewport)

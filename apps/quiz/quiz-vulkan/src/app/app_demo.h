@@ -4,6 +4,7 @@
 #include "core/domain/quiz_model.hpp"
 #include "core/scene/placed_scene.h"
 #include "core/scene/scene_layout_data.h"
+#include "render/text/text_engine.h"
 #include "render/vulkan/vulkan_renderer.h"
 
 #include <cstddef>
@@ -37,6 +38,12 @@ app_render_frame render_app_frame(
     const domain::app_snapshot& snapshot,
     scene::scene_rect viewport = {0.0f, 0.0f, 1280.0f, 720.0f},
     app_render_view_state view_state = {});
+app_render_frame render_app_frame_with_engines(
+    const domain::app_snapshot& snapshot,
+    scene::scene_rect viewport,
+    app_render_view_state view_state,
+    render::text_engine_interface& text_engine,
+    render::vulkan_renderer& renderer);
 app_render_report render_app_snapshot(
     const domain::app_snapshot& snapshot,
     scene::scene_rect viewport = {0.0f, 0.0f, 1280.0f, 720.0f});

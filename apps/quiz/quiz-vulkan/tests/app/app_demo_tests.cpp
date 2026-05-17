@@ -1,4 +1,5 @@
 #include "app/app_demo.h"
+#include "app/app_render_pipeline.h"
 #include "app/app_state.h"
 #include "core/domain/app_action.hpp"
 
@@ -47,6 +48,15 @@ int main()
     assert(active_report.input_region_count > 0);
     assert(active_report.frame_stats.draw_call_count > 0);
     assert(active_report.frame_summary.nonblank());
+
+    domain::app_snapshot active_snapshot = state.snapshot();
+    default_app_render_pipeline pipeline;
+    app_render_frame pipeline_frame = pipeline.render(app_render_request{
+        .snapshot = &active_snapshot,
+    });
+    assert(pipeline_frame.report.screen_id == "quiz_active");
+    assert(pipeline.renderer().last_frame_stats().command_count == pipeline_frame.report.frame_stats.command_count);
+    assert(pipeline.renderer().last_draw_list().size() == pipeline_frame.report.frame_stats.command_count);
 
     state.dispatch(domain::make_submit_option_action(0), 200);
     app_render_report feedback_report = render_app_snapshot(state.snapshot());

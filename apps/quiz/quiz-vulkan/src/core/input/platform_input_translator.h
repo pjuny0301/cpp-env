@@ -93,6 +93,10 @@ struct platform_wheel_sample {
     float delta_x = 0.0f;
     float delta_y = 0.0f;
     platform_scroll_delta_unit unit = platform_scroll_delta_unit::pixels;
+    bool alt = false;
+    bool ctrl = false;
+    bool shift = false;
+    bool meta = false;
 };
 
 struct platform_key_sample {
@@ -419,6 +423,10 @@ namespace detail {
             .delta_x = sample.delta_x,
             .delta_y = sample.delta_y,
             .unit = to_raw_scroll_delta_unit(sample.unit),
+            .alt = sample.alt,
+            .ctrl = sample.ctrl,
+            .shift = sample.shift,
+            .meta = sample.meta,
         });
 }
 

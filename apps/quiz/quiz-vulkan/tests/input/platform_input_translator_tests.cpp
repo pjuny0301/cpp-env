@@ -51,6 +51,20 @@ void require_rejected(
     require(!result.diagnostic.emitted_event, message);
 }
 
+void require_modifiers(
+    quiz_vulkan::input::input_modifier_state modifiers,
+    bool alt,
+    bool ctrl,
+    bool shift,
+    bool meta,
+    const char* message)
+{
+    require(modifiers.alt == alt, message);
+    require(modifiers.ctrl == ctrl, message);
+    require(modifiers.shift == shift, message);
+    require(modifiers.meta == meta, message);
+}
+
 template <typename T>
 const T& require_translated_event(
     const quiz_vulkan::input::platform_input_translation_result& result,
@@ -193,6 +207,10 @@ void test_wheel_translates_to_platform_scroll_and_engine_summary()
             .delta_x = 1.0f,
             .delta_y = -3.0f,
             .unit = platform_scroll_delta_unit::lines,
+            .alt = true,
+            .ctrl = false,
+            .shift = true,
+            .meta = false,
         });
     require_accepted(result, platform_input_source_kind::wheel, "wheel is accepted");
     const raw_platform_scroll_event& raw_scroll = require_translated_event<raw_platform_scroll_event>(
@@ -201,6 +219,10 @@ void test_wheel_translates_to_platform_scroll_and_engine_summary()
     require(raw_scroll.unit == raw_platform_scroll_delta_unit::lines, "wheel preserves line unit");
     require(raw_scroll.delta_x == 1.0f, "wheel preserves x delta");
     require(raw_scroll.delta_y == -3.0f, "wheel preserves y delta");
+    require(raw_scroll.alt, "wheel preserves alt modifier");
+    require(!raw_scroll.ctrl, "wheel preserves ctrl modifier");
+    require(raw_scroll.shift, "wheel preserves shift modifier");
+    require(!raw_scroll.meta, "wheel preserves meta modifier");
 
     input_engine engine;
     std::vector<input_event> events = engine.process_raw_event(*result.event);
@@ -209,12 +231,28 @@ void test_wheel_translates_to_platform_scroll_and_engine_summary()
     require(scroll.line_delta_x == 1.0f, "translated wheel normalizes x line delta");
     require(scroll.line_delta_y == -3.0f, "translated wheel normalizes y line delta");
     require(scroll.pixel_delta_x == 0.0f, "translated wheel pixel x is zero");
+    require_modifiers(scroll.modifiers, true, false, true, false,
+        "translated wheel normalizes modifier state");
     require(engine.routing_diagnostics().normalized_events.size() == 1,
         "translated wheel emits one normalized summary");
     require(engine.routing_diagnostics().normalized_events[0].kind == input_event_summary_kind::wheel,
         "translated wheel summary kind is wheel");
     require(engine.routing_diagnostics().normalized_events[0].line_delta_y == -3.0f,
         "translated wheel summary preserves line delta");
+    require_modifiers(
+        engine.routing_diagnostics().normalized_events[0].modifiers,
+        true,
+        false,
+        true,
+        false,
+        "translated wheel summary preserves modifiers");
+    require_modifiers(
+        engine.routing_diagnostics().action_routes[0].normalized_event.modifiers,
+        true,
+        false,
+        true,
+        false,
+        "translated wheel route preserves modifiers");
 }
 
 void test_key_translates_phase_modifiers_and_repeat()

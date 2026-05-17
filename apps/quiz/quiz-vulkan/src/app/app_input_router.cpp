@@ -279,6 +279,10 @@ std::vector<raw_platform_input_event> normalize_platform_input_event(
             .delta_x = event.delta_x,
             .delta_y = event.delta_y,
             .unit = event.scroll_unit,
+            .alt = event.alt,
+            .ctrl = event.ctrl,
+            .shift = event.shift,
+            .meta = event.meta,
         }};
     }
 

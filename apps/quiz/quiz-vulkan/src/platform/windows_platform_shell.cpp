@@ -190,6 +190,10 @@ public:
                 .delta_y = static_cast<float>(GET_WHEEL_DELTA_WPARAM(w_param)) / static_cast<float>(WHEEL_DELTA),
                 .scroll_unit = raw_platform_scroll_delta_unit::lines,
                 .logical_key = {},
+                .alt = virtual_key_down(VK_MENU),
+                .ctrl = virtual_key_down(VK_CONTROL),
+                .shift = virtual_key_down(VK_SHIFT),
+                .meta = virtual_key_down(VK_LWIN) || virtual_key_down(VK_RWIN),
             });
             return 0;
         }

@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- `a15ebf5`: Text engine now diffs renderer glyph quad packet snapshots, tracking added/removed/changed/unchanged packet ids plus layout, atlas, UV, page revision, sampler, upload, readiness regression/recovery, duplicate identity, and missing identity changes before renderer/Vulkan consumption.
+- current: after `a15ebf5`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests` and `quiz_vulkan_text_renderer_glyph_quad_packet_tests`; focused text CTest passed 1/1.
 - `d6aa9cd`: Vulkan backend now builds native descriptor write payload handoff evidence from command packets, descriptor set allocation, and native image descriptor resources, preserving image view/sampler/layout handles and blocking texture/sampler/resource mismatches before native command packet execution.
 - current: after `d6aa9cd`, Windows MinGW built `quiz_vulkan_vulkan_command_packet_execution_tests`, `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_renderer_tests`, and `quiz_vulkan_architecture_boundary_tests`; focused architecture/renderer/Vulkan CTest passed 3/3.
 - `3677875`: Image engine now composes draw-list image handoff entries into texture batch, frame snapshot, and texture resource packet evidence, preserving command/node/bounds/image/sampler/cache identity plus blocked handoff, batch, frame, and resource packet diagnostics before Vulkan consumption.

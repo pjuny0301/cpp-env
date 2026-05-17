@@ -24,7 +24,7 @@ Historical integration notes are kept in git history, not repeated here.
   pulling scene/UI/domain state into the backend.
 - Text: glyph quad packet evidence is now integrated; the next text gap is real
   renderer/font atlas consumption after the image/Vulkan resource contracts
-  settle.
+  settle. Glyph quad packet diff evidence is also integrated.
 - Image: draw-list texture frame composition is now integrated; the next image
   gap is renderer-bound texture quad/resource consumption after Vulkan
   descriptor evidence settles.
@@ -78,8 +78,8 @@ Historical integration notes are kept in git history, not repeated here.
   `7889fa1`.
 - Last full Windows MinGW CTest batch passed `105/105` from
   `C:/aa/build/out/quiz/quiz-vulkan/windows-mingw-ascii`.
-- After `d6aa9cd`, Windows MinGW focused architecture/renderer/Vulkan CTest
-  passed 3/3 for descriptor write payload handoff.
+- After `a15ebf5`, Windows MinGW focused text CTest passed 1/1 for glyph quad
+  packet diff evidence.
 
 ## Useful Commands
 

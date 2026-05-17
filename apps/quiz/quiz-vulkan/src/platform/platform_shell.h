@@ -22,9 +22,26 @@ struct platform_client_size {
     int height = 0;
 };
 
+enum class platform_native_window_kind {
+    none,
+    win32_hwnd,
+};
+
+struct platform_native_window_handle {
+    platform_native_window_kind kind = platform_native_window_kind::none;
+    std::uintptr_t value = 0;
+    std::uintptr_t display = 0;
+
+    [[nodiscard]] bool valid() const noexcept
+    {
+        return kind != platform_native_window_kind::none && value != 0;
+    }
+};
+
 struct platform_shell_state {
     platform_client_size client_size;
     std::string frame_status;
+    platform_native_window_handle native_window;
 };
 
 enum class platform_shell_status {
@@ -75,6 +92,10 @@ public:
     virtual platform_shell_status pump_events() = 0;
     [[nodiscard]] virtual std::vector<platform_input_event> drain_input_events() { return {}; }
     [[nodiscard]] virtual platform_shell_state state() const { return {}; }
+    [[nodiscard]] virtual platform_native_window_handle native_window_handle() const
+    {
+        return state().native_window;
+    }
     virtual void present_framebuffer(std::size_t width, std::size_t height, const unsigned char* rgba)
     {
         (void)width;

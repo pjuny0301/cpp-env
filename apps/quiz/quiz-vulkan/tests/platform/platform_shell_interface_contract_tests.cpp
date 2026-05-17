@@ -27,6 +27,7 @@ concept PlatformShellInterface = requires(
     { shell.pump_events() } -> std::same_as<platform_shell_status>;
     { shell.drain_input_events() } -> std::same_as<std::vector<platform_input_event>>;
     { shell.state() } -> std::same_as<platform_shell_state>;
+    { shell.native_window_handle() } -> std::same_as<platform_native_window_handle>;
     { shell.present_framebuffer(width, height, rgba) } -> std::same_as<void>;
     { shell.set_frame_status(text) } -> std::same_as<void>;
     { shell.show_message(text) } -> std::same_as<void>;
@@ -38,6 +39,18 @@ static_assert(requires(platform_shell_config config) {
     { config.title } -> std::same_as<std::string&>;
     { config.width } -> std::same_as<int&>;
     { config.height } -> std::same_as<int&>;
+});
+
+static_assert(requires(platform_native_window_handle handle) {
+    { handle.kind } -> std::same_as<platform_native_window_kind&>;
+    { handle.value } -> std::same_as<std::uintptr_t&>;
+    { handle.display } -> std::same_as<std::uintptr_t&>;
+    { handle.valid() } -> std::same_as<bool>;
+});
+static_assert(platform_native_window_kind::none != platform_native_window_kind::win32_hwnd);
+
+static_assert(requires(platform_shell_state state) {
+    { state.native_window } -> std::same_as<platform_native_window_handle&>;
 });
 
 static_assert(requires(platform_input_event event) {

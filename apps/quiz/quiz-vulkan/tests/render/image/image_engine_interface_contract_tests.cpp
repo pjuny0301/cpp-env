@@ -333,6 +333,10 @@ static_assert(requires(
         draw_list_texture_frame_composition_entry_status,
     render::render_image_draw_list_texture_frame_composition_entry draw_list_texture_frame_composition_entry,
     render::render_image_draw_list_texture_frame_composition draw_list_texture_frame_composition,
+    render::render_image_renderer_texture_quad_packet_status renderer_texture_quad_packet_status,
+    render::render_image_renderer_texture_quad_packet_summary_status renderer_texture_quad_packet_summary_status,
+    render::render_image_renderer_texture_quad_packet renderer_texture_quad_packet,
+    render::render_image_renderer_texture_quad_packet_summary renderer_texture_quad_packet_summary,
     render::render_image_texture_frame_resource_packet_materialization_status
         texture_frame_resource_packet_materialization_status,
     render::render_image_texture_frame_resource_cache_handoff_record texture_frame_resource_cache_handoff,
@@ -1892,6 +1896,26 @@ static_assert(requires(
     { render::make_render_image_draw_list_texture_frame_composition(
         draw_list_frame_handoff, batch_plan, texture_frame, texture_frame_resource_packet_plan) }
         -> std::same_as<render::render_image_draw_list_texture_frame_composition>;
+    { render::render_image_renderer_texture_quad_packet_status_name(renderer_texture_quad_packet_status) }
+        -> std::same_as<std::string>;
+    { render::render_image_renderer_texture_quad_packet_status_is_blocked(renderer_texture_quad_packet_status) }
+        -> std::same_as<bool>;
+    { render::render_image_renderer_texture_quad_packet_summary_status_name(
+        renderer_texture_quad_packet_summary_status) } -> std::same_as<std::string>;
+    { render::render_image_renderer_texture_quad_packet_identity_for(draw_list_texture_frame_composition_entry) }
+        -> std::same_as<std::string>;
+    { render::render_image_renderer_texture_quad_packet_status_for(renderer_texture_quad_packet) }
+        -> std::same_as<render::render_image_renderer_texture_quad_packet_status>;
+    { render::finalize_render_image_renderer_texture_quad_packet(renderer_texture_quad_packet) }
+        -> std::same_as<void>;
+    { render::make_render_image_renderer_texture_quad_packet(
+        draw_list_texture_frame_composition_entry, std::size_t{}) }
+        -> std::same_as<render::render_image_renderer_texture_quad_packet>;
+    { render::count_render_image_renderer_texture_quad_packet(
+        renderer_texture_quad_packet_summary, renderer_texture_quad_packet) }
+        -> std::same_as<void>;
+    { render::make_render_image_renderer_texture_quad_packet_summary(draw_list_texture_frame_composition) }
+        -> std::same_as<render::render_image_renderer_texture_quad_packet_summary>;
     { render::render_image_texture_frame_resource_packet_materialization_status_name(
         texture_frame_resource_packet_materialization_status) } -> std::same_as<std::string>;
     { render::render_image_texture_frame_resource_packet_materialization_status_is_blocked(
@@ -3155,6 +3179,99 @@ static_assert(requires(
     { draw_list_texture_frame_composition.skipped_command_summary } -> std::same_as<std::string&>;
     { draw_list_texture_frame_composition.diagnostic } -> std::same_as<std::string&>;
     { draw_list_texture_frame_composition.ok() } -> std::same_as<bool>;
+    { renderer_texture_quad_packet.packet_index } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet.frame_label } -> std::same_as<std::string&>;
+    { renderer_texture_quad_packet.draw_command_index } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet.image_command_index } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet.texture_request_index } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet.node_id } -> std::same_as<render::render_node_id&>;
+    { renderer_texture_quad_packet.parent_node_id } -> std::same_as<render::render_node_id&>;
+    { renderer_texture_quad_packet.bounds } -> std::same_as<render::render_rect&>;
+    { renderer_texture_quad_packet.content_bounds } -> std::same_as<render::render_rect&>;
+    { renderer_texture_quad_packet.image } -> std::same_as<render::render_image_ref&>;
+    { renderer_texture_quad_packet.uri } -> std::same_as<std::string&>;
+    { renderer_texture_quad_packet.alt_text } -> std::same_as<std::string&>;
+    { renderer_texture_quad_packet.aspect_ratio } -> std::same_as<float&>;
+    { renderer_texture_quad_packet.sampler } -> std::same_as<render::render_image_sampler_policy&>;
+    { renderer_texture_quad_packet.sampler_policy }
+        -> std::same_as<render::render_image_sampler_policy_diagnostic&>;
+    { renderer_texture_quad_packet.sampler_key } -> std::same_as<std::string&>;
+    { renderer_texture_quad_packet.texture_key } -> std::same_as<render::render_image_texture_key&>;
+    { renderer_texture_quad_packet.texture_key_diagnostic }
+        -> std::same_as<render::render_image_texture_key_diagnostic&>;
+    { renderer_texture_quad_packet.stable_draw_command_identity } -> std::same_as<std::string&>;
+    { renderer_texture_quad_packet.stable_texture_cache_key } -> std::same_as<std::string&>;
+    { renderer_texture_quad_packet.stable_quad_packet_identity } -> std::same_as<std::string&>;
+    { renderer_texture_quad_packet.handoff_status }
+        -> std::same_as<render::render_image_draw_list_frame_handoff_entry_status&>;
+    { renderer_texture_quad_packet.handoff_status_name } -> std::same_as<std::string&>;
+    { renderer_texture_quad_packet.composition_status }
+        -> std::same_as<render::render_image_draw_list_texture_frame_composition_entry_status&>;
+    { renderer_texture_quad_packet.composition_status_name } -> std::same_as<std::string&>;
+    { renderer_texture_quad_packet.resource_packet_status }
+        -> std::same_as<render::render_image_texture_frame_resource_packet_status&>;
+    { renderer_texture_quad_packet.resource_packet_status_name } -> std::same_as<std::string&>;
+    { renderer_texture_quad_packet.texture_id } -> std::same_as<render::render_image_texture_id&>;
+    { renderer_texture_quad_packet.texture_revision } -> std::same_as<render::render_image_revision&>;
+    { renderer_texture_quad_packet.texture_width } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet.texture_height } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet.upload_request_id } -> std::same_as<std::uint64_t&>;
+    { renderer_texture_quad_packet.upload_generation_id } -> std::same_as<std::uint64_t&>;
+    { renderer_texture_quad_packet.uploaded_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet.entered_texture_batch } -> std::same_as<bool&>;
+    { renderer_texture_quad_packet.frame_entry_present } -> std::same_as<bool&>;
+    { renderer_texture_quad_packet.resource_packet_present } -> std::same_as<bool&>;
+    { renderer_texture_quad_packet.resource_packet_ready } -> std::same_as<bool&>;
+    { renderer_texture_quad_packet.renderer_handoff_ready } -> std::same_as<bool&>;
+    { renderer_texture_quad_packet.missing_stable_identity } -> std::same_as<bool&>;
+    { renderer_texture_quad_packet.duplicate_stable_identity } -> std::same_as<bool&>;
+    { renderer_texture_quad_packet.ready } -> std::same_as<bool&>;
+    { renderer_texture_quad_packet.blocked } -> std::same_as<bool&>;
+    { renderer_texture_quad_packet.status }
+        -> std::same_as<render::render_image_renderer_texture_quad_packet_status&>;
+    { renderer_texture_quad_packet.status_name } -> std::same_as<std::string&>;
+    { renderer_texture_quad_packet.blocker_summary } -> std::same_as<std::string&>;
+    { renderer_texture_quad_packet.diagnostic } -> std::same_as<std::string&>;
+    { renderer_texture_quad_packet.ok() } -> std::same_as<bool>;
+    { renderer_texture_quad_packet_summary.status }
+        -> std::same_as<render::render_image_renderer_texture_quad_packet_summary_status&>;
+    { renderer_texture_quad_packet_summary.status_name } -> std::same_as<std::string&>;
+    { renderer_texture_quad_packet_summary.frame_label } -> std::same_as<std::string&>;
+    { renderer_texture_quad_packet_summary.draw_command_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_summary.non_image_command_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_summary.image_command_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_summary.composition_entry_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_summary.packet_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_summary.ready_packet_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_summary.blocked_packet_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_summary.missing_stable_identity_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_summary.duplicate_stable_identity_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_summary.handoff_blocked_packet_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_summary.missing_batch_request_packet_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_summary.batch_blocked_packet_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_summary.missing_frame_entry_packet_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_summary.frame_blocked_packet_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_summary.missing_resource_packet_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_summary.resource_packet_blocked_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_summary.unique_stable_quad_packet_identity_count }
+        -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_summary.unique_texture_cache_key_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_summary.unique_sampler_key_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_summary.uploaded_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_summary.has_non_image_commands } -> std::same_as<bool&>;
+    { renderer_texture_quad_packet_summary.has_blockers } -> std::same_as<bool&>;
+    { renderer_texture_quad_packet_summary.renderer_quad_packets_ready } -> std::same_as<bool&>;
+    { renderer_texture_quad_packet_summary.has_missing_stable_identities } -> std::same_as<bool&>;
+    { renderer_texture_quad_packet_summary.has_duplicate_stable_identities } -> std::same_as<bool&>;
+    { renderer_texture_quad_packet_summary.packets }
+        -> std::same_as<std::vector<render::render_image_renderer_texture_quad_packet>&>;
+    { renderer_texture_quad_packet_summary.skipped_command_summary } -> std::same_as<std::string&>;
+    { renderer_texture_quad_packet_summary.stable_identity_summary } -> std::same_as<std::string&>;
+    { renderer_texture_quad_packet_summary.texture_cache_key_summary } -> std::same_as<std::string&>;
+    { renderer_texture_quad_packet_summary.sampler_summary } -> std::same_as<std::string&>;
+    { renderer_texture_quad_packet_summary.blocker_summary } -> std::same_as<std::string&>;
+    { renderer_texture_quad_packet_summary.diagnostic } -> std::same_as<std::string&>;
+    { renderer_texture_quad_packet_summary.ok() } -> std::same_as<bool>;
     { texture_frame_resource_cache_handoff.materialization_index } -> std::same_as<std::size_t&>;
     { texture_frame_resource_cache_handoff.request_index } -> std::same_as<std::size_t&>;
     { texture_frame_resource_cache_handoff.render_image_uri } -> std::same_as<std::string&>;
@@ -3854,6 +3971,8 @@ static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_resource_packet_plan>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_draw_list_texture_frame_composition_entry>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_draw_list_texture_frame_composition>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_renderer_texture_quad_packet>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_renderer_texture_quad_packet_summary>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_resource_cache_handoff_record>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_resource_upload_handoff_record>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_resource_sampler_handoff_record>);
@@ -3909,6 +4028,8 @@ static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_textur
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_resource_packet_plan>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_draw_list_texture_frame_composition_entry>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_draw_list_texture_frame_composition>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_renderer_texture_quad_packet>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_renderer_texture_quad_packet_summary>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_resource_cache_handoff_record>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_resource_upload_handoff_record>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_resource_sampler_handoff_record>);
@@ -3964,6 +4085,8 @@ static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_resource_packet_plan>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_draw_list_texture_frame_composition_entry>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_draw_list_texture_frame_composition>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_renderer_texture_quad_packet>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_renderer_texture_quad_packet_summary>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_resource_cache_handoff_record>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_resource_upload_handoff_record>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_resource_sampler_handoff_record>);
@@ -4003,6 +4126,8 @@ static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_textu
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_binding_summary>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_binding_summary_diff>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_draw_list_texture_frame_composition>);
+static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_renderer_texture_quad_packet>);
+static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_renderer_texture_quad_packet_summary>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_resource_packet_plan_entry>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_resource_packet_plan>);
 static_assert(

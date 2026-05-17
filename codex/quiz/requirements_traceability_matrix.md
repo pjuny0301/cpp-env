@@ -6,6 +6,9 @@
 
 최근 baseline 통합 증거:
 
+- current: after the text/image/input/Vulkan packet and diagnostics batch
+  through `c84ceba`, Windows MinGW full CTest passed `108/108` from
+  `C:/aa/build/out/quiz/quiz-vulkan/windows-mingw-ascii`.
 - `89b2477`: Image engine now produces renderer texture quad packet evidence from draw-list texture frame composition, preserving source command/node, bounds, image URI/alt/aspect, texture id/revision/size, sampler/cache identity, stable quad identity, and blocker diagnostics.
 - current: after `89b2477`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests` and `quiz_vulkan_image_texture_frame_resource_packet_plan_tests`; focused image CTest passed 1/1.
 - `769d5a9`: Input engine now records suppressed route diagnostics for raw text and shortcut attempts during active IME composition, preserving preedit state, target id, byte counts, keyboard intent, repeat policy, and composition evidence without emitting app/domain actions.

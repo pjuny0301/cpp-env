@@ -35,17 +35,14 @@ Historical integration notes are kept in git history, not repeated here.
 ## Active Workers
 
 - `codex-image-texture-next-20260514`: busy on
-  `codex/image-draw-list-frame-composition-20260517`, integrated as `3677875`.
-  Keep the session alive and assign a fresh baseline branch for the next image
-  task.
-- `codex-text-freetype-prototype-20260514`: busy on
-  `codex/text-renderer-glyph-quad-packets-20260517`, integrated as `7889fa1`.
-  Keep the session alive and assign a fresh baseline branch for the next text
-  task.
+  `codex/image-texture-quad-packet-diff-20260517`.
+- `codex-input-ime`: busy on
+  `codex/input-ime-focus-loss-diagnostics-20260517`.
 - `codex-vulkan-native-descriptor-set-evidence-20260516`: busy on
-  `codex/vulkan-descriptor-write-payload-handoff-20260517`, integrated as
-  `d6aa9cd`. Keep the session alive and assign a fresh baseline branch for the
-  next Vulkan task.
+  `codex/vulkan-descriptor-payload-command-recording-20260517`.
+- `codex-text-freetype-prototype-20260514`: idle on an already-integrated
+  text glyph quad diff branch. Keep the session alive and assign a fresh
+  baseline branch before any new text work.
 - Idle sessions are intentionally kept alive. Give them fresh baseline branches
   before new work; do not re-merge historical ahead commits.
 
@@ -75,14 +72,10 @@ Historical integration notes are kept in git history, not repeated here.
 
 ## Latest Known Verification
 
-- Main branch `codex/quiz-vulkan-remake-baseline` has integrated Vulkan
-  descriptor write payload handoff at `d6aa9cd`, image draw-list texture frame
-  composition at `3677875`, and text renderer glyph quad packet evidence at
-  `7889fa1`.
-- Last full Windows MinGW CTest batch passed `105/105` from
+- Main branch `codex/quiz-vulkan-remake-baseline` is at `c84ceba` after the
+  text/image/input/Vulkan packet and diagnostics batch.
+- Last full Windows MinGW CTest batch passed `108/108` from
   `C:/aa/build/out/quiz/quiz-vulkan/windows-mingw-ascii`.
-- After `89b2477`, Windows MinGW focused image CTest passed 1/1 for renderer
-  texture quad packet evidence.
 
 ## Useful Commands
 

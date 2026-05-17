@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- `769d5a9`: Input engine now records suppressed route diagnostics for raw text and shortcut attempts during active IME composition, preserving preedit state, target id, byte counts, keyboard intent, repeat policy, and composition evidence without emitting app/domain actions.
+- current: after `769d5a9`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_gesture_recognizer_tests`, `quiz_vulkan_text_input_model_tests`, `quiz_vulkan_input_engine_tests`, and `quiz_vulkan_input_engine_ime_tests`; focused input CTest passed 4/4.
 - `a15ebf5`: Text engine now diffs renderer glyph quad packet snapshots, tracking added/removed/changed/unchanged packet ids plus layout, atlas, UV, page revision, sampler, upload, readiness regression/recovery, duplicate identity, and missing identity changes before renderer/Vulkan consumption.
 - current: after `a15ebf5`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests` and `quiz_vulkan_text_renderer_glyph_quad_packet_tests`; focused text CTest passed 1/1.
 - `d6aa9cd`: Vulkan backend now builds native descriptor write payload handoff evidence from command packets, descriptor set allocation, and native image descriptor resources, preserving image view/sampler/layout handles and blocking texture/sampler/resource mismatches before native command packet execution.

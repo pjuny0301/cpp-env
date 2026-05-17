@@ -6,6 +6,10 @@
 
 최근 baseline 통합 증거:
 
+- `76b15da`: Text engine now compares renderer-boundary resource packet materialization snapshots, exposing added/removed/changed packet ids, page deltas, sampler/layout/upload/readiness/blocker changes, duplicate or missing identities, and readiness regressions/improvements before Vulkan consumption.
+- current: after `76b15da`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests` and `quiz_vulkan_text_frame_resource_packet_materialization_tests`; focused text CTest passed 1/1.
+- `aa9550b`: Image engine now compares renderer-boundary texture resource packet materialization snapshots, exposing stable texture/cache/sampler/upload/placeholder/readiness/blocker deltas, duplicate or missing identities, and ready regression/recovery evidence before Vulkan consumption.
+- current: after `aa9550b`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_image_texture_frame_resource_packet_materialization_tests`, `quiz_vulkan_image_texture_frame_resource_materialization_diff_tests`, and `quiz_vulkan_image_texture_pipeline_tests`; focused image CTest passed 3/3.
 - `48b0d50`: Asset system now summarizes shader materialized-byte payload readiness from existing typed payload bundles, exposing stable shader id/cache key/source URI/materialized path/byte count/content hash plus blockers for materialization, byte load, integrity, empty bytes, non-SPIR-V `.spv` magic, and duplicate shader ids before Vulkan shader-module consumption.
 - current: after `48b0d50`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests` and `quiz_vulkan_asset_bytes_provider_tests`; focused asset CTest passed 1/1.
 - `deed0b7`: Text engine now materializes atlas resource packet evidence from frame draw-plan plus upload-handoff records, preserving frame/packet/page ids, sampler summaries, UV/layout/page bounds, uploaded vs clean-reuse readiness, fallback/backend flags, blocker summaries, duplicate packet ids, and missing draw/upload/page data before renderer/Vulkan consumption.

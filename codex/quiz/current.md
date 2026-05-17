@@ -35,10 +35,10 @@ Historical integration notes are kept in git history, not repeated here.
 
 ## Active Workers
 
-- `codex-image-texture-next-20260514`: idle after integration of
-  `codex/image-texture-quad-packet-diff-20260517`.
-- `codex-input-ime`: idle after integration of
-  `codex/input-ime-focus-loss-diagnostics-20260517`.
+- `codex-image-texture-next-20260514`: busy on
+  `codex/image-texture-quad-packet-consumption-20260517`.
+- `codex-input-ime`: busy on
+  `codex/input-wheel-drag-touch-gestures-20260517`.
 - `codex-vulkan-native-descriptor-set-evidence-20260516`: busy on
   `codex/vulkan-descriptor-payload-command-recording-20260517`.
 - `codex-text-freetype-prototype-20260514`: idle on an already-integrated

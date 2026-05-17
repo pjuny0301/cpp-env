@@ -277,6 +277,7 @@ target_sources(
         BASE_DIRS src
         FILES
             src/core/scene/modifier_interface.h
+            src/core/scene/placed_scene.h
             src/core/scene/scene_layout_data.h
             src/core/scene/scene_layout_edit_data.h
             src/core/scene/scene_layout_patch.h

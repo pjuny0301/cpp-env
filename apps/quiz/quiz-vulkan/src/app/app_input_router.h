@@ -2,7 +2,7 @@
 
 #include "core/domain/app_action.hpp"
 #include "core/input/input_event.h"
-#include "core/layout/layout_placer.h"
+#include "core/scene/placed_scene.h"
 #include "platform/platform_input_event.h"
 #include "platform/platform_shell.h"
 

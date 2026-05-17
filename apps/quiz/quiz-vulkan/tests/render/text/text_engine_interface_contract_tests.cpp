@@ -2986,6 +2986,9 @@ static_assert(requires(
     render::render_text_draw_list_frame_handoff_policy draw_list_handoff_policy,
     render::render_text_draw_list_frame_handoff_request draw_list_handoff_request,
     render::render_text_draw_list_frame_handoff_snapshot draw_list_handoff,
+    render::render_text_draw_list_frame_composition_policy draw_list_composition_policy,
+    render::render_text_draw_list_frame_composition_request draw_list_composition_request,
+    render::render_text_draw_list_frame_composition_snapshot draw_list_composition,
     render::render_text_atlas_upload_request_status upload_status,
     render::render_text_atlas_upload_request_snapshot upload_request,
     render::render_text_atlas_upload_request_policy_snapshot upload_policy,
@@ -3227,6 +3230,76 @@ static_assert(requires(
         -> std::same_as<void>;
     { render::make_render_text_draw_list_frame_handoff(draw_list_handoff_request) }
         -> std::same_as<render::render_text_draw_list_frame_handoff_snapshot>;
+    { draw_list_composition_policy.draw_command_count } -> std::same_as<std::size_t&>;
+    { draw_list_composition_policy.text_command_count } -> std::same_as<std::size_t&>;
+    { draw_list_composition_policy.skipped_non_text_command_count } -> std::same_as<std::size_t&>;
+    { draw_list_composition_policy.handoff_entry_count } -> std::same_as<std::size_t&>;
+    { draw_list_composition_policy.composed_entry_count } -> std::same_as<std::size_t&>;
+    { draw_list_composition_policy.blocked_entry_count } -> std::same_as<std::size_t&>;
+    { draw_list_composition_policy.request_batch_item_count } -> std::same_as<std::size_t&>;
+    { draw_list_composition_policy.layout_request_count } -> std::same_as<std::size_t&>;
+    { draw_list_composition_policy.materialization_count } -> std::same_as<std::size_t&>;
+    { draw_list_composition_policy.atlas_update_request_count } -> std::same_as<std::size_t&>;
+    { draw_list_composition_policy.upload_request_count } -> std::same_as<std::size_t&>;
+    { draw_list_composition_policy.fallback_chain_run_count } -> std::same_as<std::size_t&>;
+    { draw_list_composition_policy.fallback_chain_missing_glyph_count } -> std::same_as<std::size_t&>;
+    { draw_list_composition_policy.has_blockers } -> std::same_as<bool&>;
+    { draw_list_composition_policy.has_text_frame } -> std::same_as<bool&>;
+    { draw_list_composition_policy.frame_ready_for_renderer } -> std::same_as<bool&>;
+    { draw_list_composition_policy.deterministic_fallback_used } -> std::same_as<bool&>;
+    { draw_list_composition_request.frame_id } -> std::same_as<std::string&>;
+    { draw_list_composition_request.source_label } -> std::same_as<std::string&>;
+    { draw_list_composition_request.draw_list } -> std::same_as<render::render_draw_list&>;
+    { draw_list_composition_request.font_catalog } -> std::same_as<render::font_face_catalog&>;
+    { draw_list_composition_request.shaping_selection }
+        -> std::same_as<render::render_text_font_backend_selection_result&>;
+    { draw_list_composition_request.materializations_by_handoff_entry_index }
+        -> std::same_as<std::vector<std::vector<render::render_text_glyph_atlas_materialization_snapshot>>&>;
+    { draw_list_composition_request.consumed_atlas_upload_request_ids }
+        -> std::same_as<std::vector<std::string>&>;
+    { draw_list_composition_request.consumed_atlas_update_count } -> std::same_as<std::size_t&>;
+    { draw_list_composition_request.consume_queued_atlas_uploads } -> std::same_as<bool&>;
+    { draw_list_composition.frame_id } -> std::same_as<std::string&>;
+    { draw_list_composition.source_label } -> std::same_as<std::string&>;
+    { draw_list_composition.handoff }
+        -> std::same_as<render::render_text_draw_list_frame_handoff_snapshot&>;
+    { draw_list_composition.request_items }
+        -> std::same_as<std::vector<render::render_text_request_batch_item>&>;
+    { draw_list_composition.composed_entry_ids } -> std::same_as<std::vector<std::string>&>;
+    { draw_list_composition.blocked_entry_ids } -> std::same_as<std::vector<std::string>&>;
+    { draw_list_composition.composed_command_indices } -> std::same_as<std::vector<std::size_t>&>;
+    { draw_list_composition.blocked_command_indices } -> std::same_as<std::vector<std::size_t>&>;
+    { draw_list_composition.materializations }
+        -> std::same_as<std::vector<render::render_text_glyph_atlas_materialization_snapshot>&>;
+    { draw_list_composition.batch_plan }
+        -> std::same_as<render::render_text_request_batch_plan_snapshot&>;
+    { draw_list_composition.fallback_chain_plan }
+        -> std::same_as<render::render_text_font_fallback_chain_plan_snapshot&>;
+    { draw_list_composition.materialization_policy }
+        -> std::same_as<render::render_text_glyph_atlas_materialization_policy_snapshot&>;
+    { draw_list_composition.atlas_upload_bridge }
+        -> std::same_as<render::render_text_atlas_upload_request_bridge_snapshot&>;
+    { draw_list_composition.frame } -> std::same_as<render::render_text_frame_snapshot&>;
+    { draw_list_composition.policy }
+        -> std::same_as<render::render_text_draw_list_frame_composition_policy&>;
+    { draw_list_composition.diagnostic } -> std::same_as<std::string&>;
+    { draw_list_composition.ok() } -> std::same_as<bool>;
+    { draw_list_composition.has_blockers() } -> std::same_as<bool>;
+    { draw_list_composition.ready_for_renderer() } -> std::same_as<bool>;
+    { render::render_text_draw_list_frame_handoff_entry_ready_for_composition(draw_list_handoff_entry) }
+        -> std::same_as<bool>;
+    { render::render_text_draw_list_frame_composition_materializations_for_entry(
+        draw_list_composition_request,
+        std::size_t{}) } -> std::same_as<std::vector<render::render_text_glyph_atlas_materialization_snapshot>>;
+    { render::render_text_draw_list_frame_composition_collect_materializations(items) }
+        -> std::same_as<std::vector<render::render_text_glyph_atlas_materialization_snapshot>>;
+    { render::plan_render_text_draw_list_frame_composition_fallback_chains(
+        items,
+        draw_list_composition_request.font_catalog,
+        draw_list_composition_request.shaping_selection) }
+        -> std::same_as<render::render_text_font_fallback_chain_plan_snapshot>;
+    { render::compose_render_text_draw_list_frame(draw_list_composition_request) }
+        -> std::same_as<render::render_text_draw_list_frame_composition_snapshot>;
     { render::render_text_batch_normalize_font_family(style_key_text) } -> std::same_as<std::string>;
     { render::render_text_batch_float_key(float{}) } -> std::same_as<std::string>;
     { render::render_text_batch_make_style_key(style_key_text, style_catalog.fallback_style) }

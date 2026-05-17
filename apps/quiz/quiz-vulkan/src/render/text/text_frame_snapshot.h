@@ -304,6 +304,230 @@ inline render_text_frame_snapshot render_text_frame_snapshot_with_consumed_atlas
     return snapshot;
 }
 
+struct render_text_draw_list_frame_composition_policy {
+    std::size_t draw_command_count = 0;
+    std::size_t text_command_count = 0;
+    std::size_t skipped_non_text_command_count = 0;
+    std::size_t handoff_entry_count = 0;
+    std::size_t composed_entry_count = 0;
+    std::size_t blocked_entry_count = 0;
+    std::size_t request_batch_item_count = 0;
+    std::size_t layout_request_count = 0;
+    std::size_t materialization_count = 0;
+    std::size_t atlas_update_request_count = 0;
+    std::size_t upload_request_count = 0;
+    std::size_t fallback_chain_run_count = 0;
+    std::size_t fallback_chain_missing_glyph_count = 0;
+    bool has_blockers = false;
+    bool has_text_frame = false;
+    bool frame_ready_for_renderer = false;
+    bool deterministic_fallback_used = false;
+};
+
+struct render_text_draw_list_frame_composition_request {
+    std::string frame_id;
+    std::string source_label;
+    render_draw_list draw_list;
+    font_face_catalog font_catalog;
+    render_text_font_backend_selection_result shaping_selection;
+    std::vector<std::vector<render_text_glyph_atlas_materialization_snapshot>>
+        materializations_by_handoff_entry_index;
+    std::vector<std::string> consumed_atlas_upload_request_ids;
+    std::size_t consumed_atlas_update_count = 0;
+    bool consume_queued_atlas_uploads = false;
+};
+
+struct render_text_draw_list_frame_composition_snapshot {
+    std::string frame_id;
+    std::string source_label;
+    render_text_draw_list_frame_handoff_snapshot handoff;
+    std::vector<render_text_request_batch_item> request_items;
+    std::vector<std::string> composed_entry_ids;
+    std::vector<std::string> blocked_entry_ids;
+    std::vector<std::size_t> composed_command_indices;
+    std::vector<std::size_t> blocked_command_indices;
+    std::vector<render_text_glyph_atlas_materialization_snapshot> materializations;
+    render_text_request_batch_plan_snapshot batch_plan;
+    render_text_font_fallback_chain_plan_snapshot fallback_chain_plan;
+    render_text_glyph_atlas_materialization_policy_snapshot materialization_policy;
+    render_text_atlas_upload_request_bridge_snapshot atlas_upload_bridge;
+    render_text_frame_snapshot frame;
+    render_text_draw_list_frame_composition_policy policy;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return !policy.has_blockers && frame.ok();
+    }
+
+    bool has_blockers() const
+    {
+        return policy.has_blockers;
+    }
+
+    bool ready_for_renderer() const
+    {
+        return policy.frame_ready_for_renderer;
+    }
+};
+
+inline bool render_text_draw_list_frame_handoff_entry_ready_for_composition(
+    const render_text_draw_list_frame_handoff_entry& entry)
+{
+    return entry.status == render_text_draw_list_frame_handoff_entry_status::ready
+        || entry.status == render_text_draw_list_frame_handoff_entry_status::ready_with_fallback_style;
+}
+
+inline std::vector<render_text_glyph_atlas_materialization_snapshot>
+render_text_draw_list_frame_composition_materializations_for_entry(
+    const render_text_draw_list_frame_composition_request& request,
+    const std::size_t handoff_entry_index)
+{
+    if (handoff_entry_index >= request.materializations_by_handoff_entry_index.size()) {
+        return {};
+    }
+    return request.materializations_by_handoff_entry_index[handoff_entry_index];
+}
+
+inline std::vector<render_text_glyph_atlas_materialization_snapshot>
+render_text_draw_list_frame_composition_collect_materializations(
+    const std::vector<render_text_request_batch_item>& items)
+{
+    std::vector<render_text_glyph_atlas_materialization_snapshot> materializations;
+    for (const render_text_request_batch_item& item : items) {
+        materializations.insert(
+            materializations.end(),
+            item.materializations.begin(),
+            item.materializations.end());
+    }
+    return materializations;
+}
+
+inline render_text_font_fallback_chain_plan_snapshot
+plan_render_text_draw_list_frame_composition_fallback_chains(
+    const std::vector<render_text_request_batch_item>& request_items,
+    const font_face_catalog& font_catalog,
+    render_text_font_backend_selection_result shaping_selection = {})
+{
+    render_text_font_fallback_chain_plan_request fallback_request{
+        .shaping_selection = std::move(shaping_selection),
+    };
+    fallback_request.items.reserve(request_items.size());
+    for (const render_text_request_batch_item& item : request_items) {
+        fallback_request.items.push_back(make_render_text_font_fallback_chain_plan_item(
+            item.text_runs,
+            item.style_catalog,
+            item.source_label,
+            item.item_index));
+    }
+    return plan_render_text_font_fallback_chains(fallback_request, font_catalog);
+}
+
+inline render_text_draw_list_frame_composition_snapshot compose_render_text_draw_list_frame(
+    render_text_draw_list_frame_composition_request request)
+{
+    render_text_draw_list_frame_composition_snapshot snapshot{
+        .frame_id = request.frame_id,
+        .source_label = request.source_label,
+    };
+    const render_text_style_catalog style_catalog = request.draw_list.text_styles;
+    snapshot.handoff = make_render_text_draw_list_frame_handoff(
+        render_text_draw_list_frame_handoff_request{
+            .frame_id = request.frame_id,
+            .source_label = request.source_label,
+            .draw_list = std::move(request.draw_list),
+        });
+
+    snapshot.request_items.reserve(snapshot.handoff.entries.size());
+    for (std::size_t entry_index = 0; entry_index < snapshot.handoff.entries.size(); ++entry_index) {
+        const render_text_draw_list_frame_handoff_entry& entry = snapshot.handoff.entries[entry_index];
+        if (!render_text_draw_list_frame_handoff_entry_ready_for_composition(entry)) {
+            snapshot.blocked_command_indices.push_back(entry.draw_command_index);
+            if (!entry.stable_entry_id.empty()) {
+                snapshot.blocked_entry_ids.push_back(entry.stable_entry_id);
+            }
+            continue;
+        }
+
+        render_text_request_batch_item item = make_render_text_request_batch_item(
+            entry,
+            style_catalog,
+            render_text_draw_list_frame_composition_materializations_for_entry(request, entry_index));
+        item.item_index = snapshot.request_items.size();
+        snapshot.composed_command_indices.push_back(entry.draw_command_index);
+        snapshot.composed_entry_ids.push_back(entry.stable_entry_id);
+        snapshot.request_items.push_back(std::move(item));
+    }
+
+    snapshot.materializations =
+        render_text_draw_list_frame_composition_collect_materializations(snapshot.request_items);
+    snapshot.materialization_policy =
+        summarize_render_text_glyph_atlas_materialization_policy(snapshot.materializations);
+    snapshot.batch_plan = plan_render_text_request_batch(snapshot.request_items);
+    snapshot.fallback_chain_plan = plan_render_text_draw_list_frame_composition_fallback_chains(
+        snapshot.request_items,
+        request.font_catalog,
+        std::move(request.shaping_selection));
+    snapshot.atlas_upload_bridge = bridge_render_text_atlas_upload_requests(snapshot.batch_plan);
+
+    std::vector<std::string> consumed_ids = std::move(request.consumed_atlas_upload_request_ids);
+    std::size_t consumed_update_count = request.consumed_atlas_update_count;
+    if (request.consume_queued_atlas_uploads && consumed_ids.empty()) {
+        consumed_ids = snapshot.atlas_upload_bridge.stable_request_ids;
+        consumed_update_count = consumed_ids.size();
+    }
+
+    snapshot.frame = make_render_text_frame_snapshot(render_text_frame_snapshot_request{
+        .frame_id = snapshot.frame_id,
+        .source_label = snapshot.source_label,
+        .batch_plan = snapshot.batch_plan,
+        .fallback_chain_plan = snapshot.fallback_chain_plan,
+        .materializations = snapshot.materializations,
+        .materialization_policy = snapshot.materialization_policy,
+        .atlas_upload_bridge = snapshot.atlas_upload_bridge,
+        .consumed_atlas_upload_request_ids = std::move(consumed_ids),
+        .consumed_atlas_update_count = consumed_update_count,
+    });
+
+    snapshot.policy = render_text_draw_list_frame_composition_policy{
+        .draw_command_count = snapshot.handoff.policy.draw_command_count,
+        .text_command_count = snapshot.handoff.policy.text_command_count,
+        .skipped_non_text_command_count = snapshot.handoff.policy.skipped_non_text_command_count,
+        .handoff_entry_count = snapshot.handoff.policy.entry_count,
+        .composed_entry_count = snapshot.composed_entry_ids.size(),
+        .blocked_entry_count = snapshot.blocked_command_indices.size(),
+        .request_batch_item_count = snapshot.request_items.size(),
+        .layout_request_count = snapshot.batch_plan.policy.layout_request_count,
+        .materialization_count = snapshot.materialization_policy.request_count,
+        .atlas_update_request_count = snapshot.batch_plan.policy.atlas_update_request_count,
+        .upload_request_count = snapshot.atlas_upload_bridge.policy.upload_request_count,
+        .fallback_chain_run_count = snapshot.fallback_chain_plan.policy.run_count,
+        .fallback_chain_missing_glyph_count = snapshot.fallback_chain_plan.policy.missing_glyph_count,
+        .has_blockers = !snapshot.blocked_command_indices.empty(),
+        .has_text_frame = !snapshot.request_items.empty(),
+        .frame_ready_for_renderer =
+            !snapshot.request_items.empty()
+            && snapshot.blocked_command_indices.empty()
+            && snapshot.frame.ready_for_renderer(),
+        .deterministic_fallback_used = snapshot.frame.policy.deterministic_fallback_used,
+    };
+
+    if (snapshot.policy.has_blockers) {
+        snapshot.diagnostic =
+            "text draw-list frame composition preserved blocked handoff entries before layout";
+    } else if (snapshot.request_items.empty()) {
+        snapshot.diagnostic =
+            "text draw-list frame composition found no text commands to compose";
+    } else if (snapshot.frame.ready_for_renderer()) {
+        snapshot.diagnostic =
+            "text draw-list frame composition produced renderer-ready text frame evidence";
+    } else {
+        snapshot.diagnostic =
+            "text draw-list frame composition produced pending text frame evidence";
+    }
+    return snapshot;
+}
+
 enum class render_text_frame_snapshot_regression_status {
     none,
     readiness_regressed,

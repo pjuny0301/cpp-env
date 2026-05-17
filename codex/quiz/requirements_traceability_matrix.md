@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- `bf47c3d`: Text engine now has a draw-list-to-text-frame handoff that preserves text draw command index, node/parent identity, bounds/content bounds, text runs, style fallback evidence, text options, and deterministic blockers for empty text, missing style, invalid bounds, missing stable id, and duplicate stable id before shaping/layout/atlas consumption.
+- current: after `bf47c3d`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests` and `quiz_vulkan_text_draw_list_frame_handoff_tests`; focused text CTest passed 1/1.
 - `76b15da`: Text engine now compares renderer-boundary resource packet materialization snapshots, exposing added/removed/changed packet ids, page deltas, sampler/layout/upload/readiness/blocker changes, duplicate or missing identities, and readiness regressions/improvements before Vulkan consumption.
 - current: after `76b15da`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests` and `quiz_vulkan_text_frame_resource_packet_materialization_tests`; focused text CTest passed 1/1.
 - `aa9550b`: Image engine now compares renderer-boundary texture resource packet materialization snapshots, exposing stable texture/cache/sampler/upload/placeholder/readiness/blocker deltas, duplicate or missing identities, and ready regression/recovery evidence before Vulkan consumption.

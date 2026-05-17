@@ -43,6 +43,10 @@ static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_textu
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_batch_plan>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_batch_plan_entry>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_batch_plan>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_draw_list_frame_handoff_entry>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_draw_list_frame_handoff_snapshot>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_draw_list_frame_handoff_entry>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_draw_list_frame_handoff_snapshot>);
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_batch_execution_entry>);
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_batch_execution_diagnostics>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_batch_execution_entry>);
@@ -1313,6 +1317,277 @@ void test_pipeline_decoder_manifest_reports_placeholder_outcome()
         snapshot.entries[0].decoder_capability_manifest.terminal_decoder_id == "fake_image_texture_placeholder_policy",
         "placeholder entry capability manifest records placeholder policy terminal id");
     require(snapshot.entries[0].cache_reused == false, "first placeholder entry is not cache reuse");
+}
+
+void test_draw_list_frame_handoff_preserves_image_command_identity()
+{
+    using namespace quiz_vulkan::render;
+
+    render_image_sampler_policy sampler;
+    sampler.min_filter = render_image_filter::nearest;
+    sampler.wrap_v = render_image_wrap_mode::repeat;
+
+    render_draw_list draw_list;
+    draw_list.commands = {
+        render_draw_command{
+            .type = render_draw_command_type::quad,
+            .node_id = "background",
+            .bounds = render_rect{.x = 0.0f, .y = 0.0f, .width = 320.0f, .height = 180.0f},
+            .content_bounds = render_rect{.x = 0.0f, .y = 0.0f, .width = 320.0f, .height = 180.0f},
+        },
+        render_draw_command{
+            .type = render_draw_command_type::image,
+            .node_id = "card-image",
+            .parent_node_id = "card",
+            .bounds = render_rect{.x = 10.0f, .y = 20.0f, .width = 64.0f, .height = 32.0f},
+            .content_bounds = render_rect{.x = 12.0f, .y = 22.0f, .width = 60.0f, .height = 28.0f},
+            .image = render_image_ref{
+                .uri = "  ASSET:///./textures\\card.ppm  ",
+                .alt_text = "Card art",
+                .aspect_ratio = 2.0f,
+                .sampler = sampler,
+            },
+        },
+        render_draw_command{
+            .type = render_draw_command_type::text,
+            .node_id = "caption",
+            .parent_node_id = "card",
+            .bounds = render_rect{.x = 8.0f, .y = 58.0f, .width = 72.0f, .height = 20.0f},
+            .content_bounds = render_rect{.x = 8.0f, .y = 58.0f, .width = 72.0f, .height = 20.0f},
+        },
+    };
+
+    const render_image_draw_list_frame_handoff_snapshot snapshot =
+        make_render_image_draw_list_frame_handoff_snapshot(draw_list, "frame-42");
+
+    require(snapshot.ok(), "draw-list handoff is ready for one valid image command");
+    require(
+        snapshot.status == render_image_draw_list_frame_handoff_status::ready,
+        "draw-list handoff records ready status");
+    require(snapshot.status_name == "ready", "draw-list handoff status name is stable");
+    require(snapshot.frame_label == "frame-42", "draw-list handoff preserves frame label");
+    require(snapshot.draw_command_count == 3, "draw-list handoff records draw command count");
+    require(snapshot.non_image_command_count == 2, "draw-list handoff counts skipped non-image commands");
+    require(snapshot.image_command_count == 1, "draw-list handoff counts image commands");
+    require(snapshot.handoff_entry_count == 1, "draw-list handoff only emits image entries");
+    require(snapshot.planned_texture_request_count == 1, "draw-list handoff exposes one planned texture request");
+    require(snapshot.planned_images.size() == 1, "draw-list handoff exposes planned image refs");
+    require(snapshot.planned_requests.size() == 1, "draw-list handoff exposes planned pipeline requests");
+    require(
+        snapshot.skipped_command_summary == "skipped non-image draw commands=2",
+        "draw-list handoff records skipped command evidence");
+
+    const render_image_draw_list_frame_handoff_entry& entry = snapshot.entries[0];
+    require(entry.ok(), "draw-list image entry is ready");
+    require(entry.draw_command_index == 1, "draw-list image entry preserves command index");
+    require(entry.image_command_index == 0, "draw-list image entry records image request index");
+    require(entry.texture_request_index == 0, "draw-list image entry records planned texture request index");
+    require(entry.node_id == "card-image", "draw-list image entry preserves node id");
+    require(entry.parent_node_id == "card", "draw-list image entry preserves parent node id");
+    require(entry.bounds.x == 10.0f && entry.bounds.y == 20.0f, "draw-list image entry preserves bounds origin");
+    require(entry.bounds.width == 64.0f && entry.bounds.height == 32.0f, "draw-list image entry preserves bounds size");
+    require(
+        entry.content_bounds.x == 12.0f && entry.content_bounds.width == 60.0f,
+        "draw-list image entry preserves content bounds");
+    require(entry.uri == "  ASSET:///./textures\\card.ppm  ", "draw-list image entry preserves raw uri");
+    require(entry.alt_text == "Card art", "draw-list image entry preserves alt text");
+    require(entry.aspect_ratio == 2.0f, "draw-list image entry preserves aspect ratio");
+    require(entry.image.uri == entry.uri, "draw-list image entry preserves render image ref");
+    require(entry.pipeline_request.uri == "asset://textures/card.ppm", "draw-list image entry normalizes request uri");
+    require(
+        snapshot.planned_requests[0].uri == "asset://textures/card.ppm",
+        "draw-list handoff planned request uses normalized uri");
+    require(entry.sampler.min_filter == render_image_filter::nearest, "draw-list image entry preserves sampler policy");
+    require(entry.sampler.wrap_v == render_image_wrap_mode::repeat, "draw-list image entry preserves sampler wrap");
+    require(entry.sampler_policy.uses_nearest_filtering, "draw-list image entry records sampler diagnostics");
+    require(entry.valid_bounds, "draw-list image entry records valid command bounds");
+    require(entry.valid_content_bounds, "draw-list image entry records valid content bounds");
+    require(entry.valid_uri, "draw-list image entry records valid uri");
+    require(entry.valid_sampler, "draw-list image entry records valid sampler");
+    require(
+        entry.stable_draw_command_identity == "frame=frame-42|node=card-image|parent=card",
+        "draw-list image entry records stable command identity");
+    require(
+        entry.stable_texture_cache_key.find("source=asset://textures/card.ppm") != std::string::npos,
+        "draw-list image entry records normalized texture cache key");
+    require(
+        entry.stable_texture_cache_key.find("wrap_v=repeat") != std::string::npos,
+        "draw-list image entry records sampler in texture cache key");
+    require(entry.diagnostic == "image draw command handoff ready for texture request planning", "ready diagnostic is stable");
+}
+
+void test_draw_list_frame_handoff_reports_invalid_and_duplicate_identity_diagnostics()
+{
+    using namespace quiz_vulkan::render;
+
+    render_image_sampler_policy invalid_sampler;
+    invalid_sampler.min_filter = static_cast<render_image_filter>(255);
+
+    const render_rect valid_bounds{.x = 0.0f, .y = 0.0f, .width = 16.0f, .height = 16.0f};
+    render_draw_list draw_list;
+    draw_list.commands = {
+        render_draw_command{
+            .type = render_draw_command_type::image,
+            .node_id = "empty-uri",
+            .parent_node_id = "root",
+            .bounds = valid_bounds,
+            .content_bounds = valid_bounds,
+            .image = render_image_ref{.uri = "   "},
+        },
+        render_draw_command{
+            .type = render_draw_command_type::image,
+            .node_id = "bad-uri",
+            .parent_node_id = "root",
+            .bounds = valid_bounds,
+            .content_bounds = valid_bounds,
+            .image = render_image_ref{.uri = "ftp://example.test/card.ppm"},
+        },
+        render_draw_command{
+            .type = render_draw_command_type::image,
+            .node_id = "bad-bounds",
+            .parent_node_id = "root",
+            .bounds = render_rect{.x = 1.0f, .y = 1.0f, .width = 0.0f, .height = 16.0f},
+            .content_bounds = valid_bounds,
+            .image = render_image_ref{.uri = "asset://textures/bad-bounds.ppm"},
+        },
+        render_draw_command{
+            .type = render_draw_command_type::image,
+            .node_id = "bad-sampler",
+            .parent_node_id = "root",
+            .bounds = valid_bounds,
+            .content_bounds = valid_bounds,
+            .image = render_image_ref{.uri = "asset://textures/bad-sampler.ppm", .sampler = invalid_sampler},
+        },
+        render_draw_command{
+            .type = render_draw_command_type::image,
+            .parent_node_id = "root",
+            .bounds = valid_bounds,
+            .content_bounds = valid_bounds,
+            .image = render_image_ref{.uri = "asset://textures/missing-node.ppm"},
+        },
+        render_draw_command{
+            .type = render_draw_command_type::image,
+            .node_id = "duplicate-node",
+            .parent_node_id = "root",
+            .bounds = valid_bounds,
+            .content_bounds = valid_bounds,
+            .image = render_image_ref{.uri = "asset://textures/reused.ppm"},
+        },
+        render_draw_command{
+            .type = render_draw_command_type::image,
+            .node_id = "duplicate-node",
+            .parent_node_id = "root",
+            .bounds = valid_bounds,
+            .content_bounds = valid_bounds,
+            .image = render_image_ref{.uri = "asset://textures/reused.ppm"},
+        },
+    };
+
+    const render_image_draw_list_frame_handoff_snapshot snapshot =
+        make_render_image_draw_list_frame_handoff_snapshot(draw_list, "blocked-frame");
+
+    require(!snapshot.ok(), "invalid draw-list handoff is blocked");
+    require(
+        snapshot.status == render_image_draw_list_frame_handoff_status::blocked,
+        "invalid draw-list handoff records blocked status");
+    require(snapshot.status_name == "blocked", "blocked draw-list handoff status name is stable");
+    require(snapshot.draw_command_count == 7, "blocked handoff records draw command count");
+    require(snapshot.image_command_count == 7, "blocked handoff records image command count");
+    require(snapshot.handoff_entry_count == 7, "blocked handoff emits one entry per image command");
+    require(snapshot.planned_texture_request_count == 1, "blocked handoff plans only unblocked image commands");
+    require(snapshot.blocked_entry_count == 6, "blocked handoff counts blocked entries");
+    require(snapshot.empty_uri_count == 1, "blocked handoff counts empty uri");
+    require(snapshot.invalid_uri_count == 1, "blocked handoff counts invalid uri");
+    require(snapshot.invalid_bounds_count == 1, "blocked handoff counts invalid bounds");
+    require(snapshot.invalid_sampler_count == 1, "blocked handoff counts invalid sampler");
+    require(snapshot.missing_stable_identity_count == 1, "blocked handoff counts missing stable identities");
+    require(snapshot.duplicate_stable_identity_count == 1, "blocked handoff counts duplicate stable identities");
+    require(snapshot.has_duplicate_stable_identities, "blocked handoff records duplicate stable identity flag");
+    require(snapshot.has_missing_stable_identities, "blocked handoff records missing stable identity flag");
+    require(
+        snapshot.diagnostic == "image draw list frame handoff has blocked image commands",
+        "blocked handoff diagnostic is deterministic");
+
+    require(
+        snapshot.entries[0].status == render_image_draw_list_frame_handoff_entry_status::blocked_empty_uri,
+        "empty uri entry status is deterministic");
+    require(snapshot.entries[0].blocker_summary == "image draw command uri is empty", "empty uri blocker is stable");
+    require(
+        snapshot.entries[1].status == render_image_draw_list_frame_handoff_entry_status::blocked_invalid_uri,
+        "unsupported scheme entry status is deterministic");
+    require(
+        snapshot.entries[1].blocker_summary == "image draw command uri scheme is unsupported",
+        "unsupported scheme blocker is stable");
+    require(
+        snapshot.entries[2].status == render_image_draw_list_frame_handoff_entry_status::blocked_invalid_bounds,
+        "invalid bounds entry status is deterministic");
+    require(snapshot.entries[2].invalid_bounds, "invalid bounds entry records bounds flag");
+    require(
+        snapshot.entries[3].status == render_image_draw_list_frame_handoff_entry_status::blocked_invalid_sampler,
+        "invalid sampler entry status is deterministic");
+    require(snapshot.entries[3].blocker_summary.find("sampler") != std::string::npos, "sampler blocker is stable");
+    require(
+        snapshot.entries[4].status == render_image_draw_list_frame_handoff_entry_status::blocked_missing_stable_identity,
+        "missing node identity entry status is deterministic");
+    require(snapshot.entries[4].missing_stable_identity, "missing node entry records missing stable identity");
+    require(
+        snapshot.entries[5].status == render_image_draw_list_frame_handoff_entry_status::ready,
+        "first duplicate candidate remains the stable identity owner");
+    require(
+        snapshot.entries[6].status == render_image_draw_list_frame_handoff_entry_status::blocked_duplicate_stable_identity,
+        "duplicate stable identity entry status is deterministic");
+    require(snapshot.entries[6].duplicate_stable_identity, "duplicate entry records duplicate stable identity");
+    require(
+        snapshot.entries[6].first_stable_draw_command_index == 5,
+        "duplicate entry points to first stable identity owner");
+    require(
+        snapshot.entries[6].blocker_summary == "image draw command stable identity is duplicated",
+        "duplicate stable identity blocker is stable");
+}
+
+void test_draw_list_frame_handoff_reports_texture_request_reuse_without_blocking()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_rect bounds{.x = 0.0f, .y = 0.0f, .width = 32.0f, .height = 32.0f};
+    render_draw_list draw_list;
+    draw_list.commands = {
+        render_draw_command{
+            .type = render_draw_command_type::image,
+            .node_id = "front-card",
+            .parent_node_id = "hand",
+            .bounds = bounds,
+            .content_bounds = bounds,
+            .image = render_image_ref{.uri = "asset://textures/shared-card.ppm"},
+        },
+        render_draw_command{
+            .type = render_draw_command_type::image,
+            .node_id = "back-card",
+            .parent_node_id = "hand",
+            .bounds = bounds,
+            .content_bounds = bounds,
+            .image = render_image_ref{.uri = "asset://textures/shared-card.ppm"},
+        },
+    };
+
+    const render_image_draw_list_frame_handoff_snapshot snapshot =
+        make_render_image_draw_list_frame_handoff_snapshot(draw_list, "reuse-frame");
+
+    require(snapshot.ok(), "request cache reuse does not block draw-list handoff");
+    require(snapshot.planned_texture_request_count == 2, "reuse handoff plans both image commands");
+    require(snapshot.duplicate_texture_key_count == 1, "reuse handoff records one duplicate texture key");
+    require(snapshot.cache_reuse_expected_count == 1, "reuse handoff records cache reuse expectation");
+    require(snapshot.has_request_cache_reuse, "reuse handoff records request cache reuse flag");
+    require(!snapshot.has_duplicate_stable_identities, "distinct node ids are not duplicate command identities");
+    require(!snapshot.entries[0].duplicate_texture_key, "first texture request owns cache key");
+    require(snapshot.entries[1].duplicate_texture_key, "second texture request records duplicate cache key");
+    require(snapshot.entries[1].expected_cache_reuse, "second texture request expects cache reuse");
+    require(
+        snapshot.entries[1].first_texture_key_image_command_index == 0,
+        "second texture request points to first texture key owner");
+    require(
+        snapshot.entries[0].stable_texture_cache_key == snapshot.entries[1].stable_texture_cache_key,
+        "reuse handoff keeps stable request cache key");
 }
 
 void test_batch_plan_normalizes_and_deduplicates_texture_requests()
@@ -3921,6 +4196,9 @@ int main()
     test_external_decoder_selection_diff_reports_adapter_format_and_placeholder_states();
     test_external_decoder_selection_diff_reports_missing_and_version_mismatch_fallbacks();
     test_pipeline_decoder_manifest_reports_placeholder_outcome();
+    test_draw_list_frame_handoff_preserves_image_command_identity();
+    test_draw_list_frame_handoff_reports_invalid_and_duplicate_identity_diagnostics();
+    test_draw_list_frame_handoff_reports_texture_request_reuse_without_blocking();
     test_batch_plan_normalizes_and_deduplicates_texture_requests();
     test_batch_plan_reports_invalid_request_reasons();
     test_batch_plan_reports_placeholder_fallback_policy_without_cache_internals();

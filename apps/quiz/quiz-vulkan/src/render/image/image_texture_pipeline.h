@@ -73,6 +73,161 @@ struct render_image_texture_batch_plan_options {
     bool reject_parent_path_segments = true;
 };
 
+enum class render_image_draw_list_frame_handoff_status {
+    empty,
+    ready,
+    blocked,
+};
+
+inline std::string render_image_draw_list_frame_handoff_status_name(
+    render_image_draw_list_frame_handoff_status status)
+{
+    switch (status) {
+    case render_image_draw_list_frame_handoff_status::empty:
+        return "empty";
+    case render_image_draw_list_frame_handoff_status::ready:
+        return "ready";
+    case render_image_draw_list_frame_handoff_status::blocked:
+        return "blocked";
+    }
+
+    return "unknown";
+}
+
+enum class render_image_draw_list_frame_handoff_entry_status {
+    ready,
+    blocked_empty_uri,
+    blocked_invalid_uri,
+    blocked_invalid_bounds,
+    blocked_invalid_sampler,
+    blocked_missing_stable_identity,
+    blocked_duplicate_stable_identity,
+};
+
+inline std::string render_image_draw_list_frame_handoff_entry_status_name(
+    render_image_draw_list_frame_handoff_entry_status status)
+{
+    switch (status) {
+    case render_image_draw_list_frame_handoff_entry_status::ready:
+        return "ready";
+    case render_image_draw_list_frame_handoff_entry_status::blocked_empty_uri:
+        return "blocked_empty_uri";
+    case render_image_draw_list_frame_handoff_entry_status::blocked_invalid_uri:
+        return "blocked_invalid_uri";
+    case render_image_draw_list_frame_handoff_entry_status::blocked_invalid_bounds:
+        return "blocked_invalid_bounds";
+    case render_image_draw_list_frame_handoff_entry_status::blocked_invalid_sampler:
+        return "blocked_invalid_sampler";
+    case render_image_draw_list_frame_handoff_entry_status::blocked_missing_stable_identity:
+        return "blocked_missing_stable_identity";
+    case render_image_draw_list_frame_handoff_entry_status::blocked_duplicate_stable_identity:
+        return "blocked_duplicate_stable_identity";
+    }
+
+    return "unknown";
+}
+
+inline bool render_image_draw_list_frame_handoff_entry_status_is_blocked(
+    render_image_draw_list_frame_handoff_entry_status status)
+{
+    return status != render_image_draw_list_frame_handoff_entry_status::ready;
+}
+
+struct render_image_draw_list_frame_handoff_entry {
+    std::string frame_label;
+    std::size_t draw_command_index = 0;
+    std::size_t image_command_index = 0;
+    std::size_t texture_request_index = 0;
+    render_node_id node_id;
+    render_node_id parent_node_id;
+    render_rect bounds;
+    render_rect content_bounds;
+    render_image_ref image;
+    std::string uri;
+    std::string alt_text;
+    float aspect_ratio = 0.0f;
+    render_image_sampler_policy sampler;
+    render_image_texture_pipeline_request pipeline_request;
+    render_image_resolve_status resolve_status = render_image_resolve_status::empty_uri;
+    render_resolved_image_source source;
+    render_image_cache_key normalized_source_key;
+    render_image_source_kind source_kind = render_image_source_kind::unsupported;
+    render_image_sampler_policy_diagnostic sampler_policy;
+    render_image_texture_key texture_key;
+    render_image_texture_key_diagnostic texture_key_diagnostic;
+    std::string stable_texture_cache_key;
+    std::string stable_draw_command_identity;
+    std::size_t first_stable_draw_command_index = 0;
+    std::size_t first_texture_key_image_command_index = 0;
+    render_image_draw_list_frame_handoff_entry_status status =
+        render_image_draw_list_frame_handoff_entry_status::blocked_empty_uri;
+    std::string status_name = render_image_draw_list_frame_handoff_entry_status_name(
+        render_image_draw_list_frame_handoff_entry_status::blocked_empty_uri);
+    bool image_command = true;
+    bool planned_texture_request = false;
+    bool valid_uri = false;
+    bool empty_uri = false;
+    bool invalid_uri = false;
+    bool valid_bounds = false;
+    bool valid_content_bounds = false;
+    bool invalid_bounds = false;
+    bool valid_sampler = false;
+    bool stable_identity_present = false;
+    bool missing_stable_identity = false;
+    bool duplicate_stable_identity = false;
+    bool duplicate_texture_key = false;
+    bool expected_cache_reuse = false;
+    bool blocked = true;
+    std::string blocker_summary;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return status == render_image_draw_list_frame_handoff_entry_status::ready;
+    }
+};
+
+struct render_image_draw_list_frame_handoff_snapshot {
+    render_image_draw_list_frame_handoff_status status =
+        render_image_draw_list_frame_handoff_status::empty;
+    std::string status_name = render_image_draw_list_frame_handoff_status_name(
+        render_image_draw_list_frame_handoff_status::empty);
+    std::string frame_label;
+    std::size_t draw_command_count = 0;
+    std::size_t non_image_command_count = 0;
+    std::size_t image_command_count = 0;
+    std::size_t handoff_entry_count = 0;
+    std::size_t planned_texture_request_count = 0;
+    std::size_t blocked_entry_count = 0;
+    std::size_t empty_uri_count = 0;
+    std::size_t invalid_uri_count = 0;
+    std::size_t invalid_bounds_count = 0;
+    std::size_t invalid_sampler_count = 0;
+    std::size_t missing_stable_identity_count = 0;
+    std::size_t duplicate_stable_identity_count = 0;
+    std::size_t duplicate_texture_key_count = 0;
+    std::size_t cache_reuse_expected_count = 0;
+    bool has_image_commands = false;
+    bool has_non_image_commands = false;
+    bool has_blockers = false;
+    bool has_duplicate_stable_identities = false;
+    bool has_missing_stable_identities = false;
+    bool has_request_cache_reuse = false;
+    std::vector<render_image_ref> planned_images;
+    std::vector<render_image_texture_pipeline_request> planned_requests;
+    std::vector<render_image_draw_list_frame_handoff_entry> entries;
+    std::string stable_identity_summary;
+    std::string request_identity_summary;
+    std::string blocker_summary;
+    std::string skipped_command_summary;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return status == render_image_draw_list_frame_handoff_status::ready;
+    }
+};
+
 struct render_image_texture_batch_plan_entry {
     std::size_t request_index = 0;
     render_image_ref image;
@@ -185,7 +340,335 @@ inline bool render_image_texture_batch_plan_rejects_parent_path_segment(
     return false;
 }
 
+inline bool render_image_draw_list_frame_handoff_rect_has_positive_area(
+    const render_rect& rect)
+{
+    return rect.width > 0.0f && rect.height > 0.0f;
+}
+
+inline std::string render_image_draw_list_frame_handoff_frame_label(
+    std::string frame_label)
+{
+    return frame_label.empty() ? "image_draw_list_frame" : std::move(frame_label);
+}
+
+inline void append_render_image_draw_list_frame_handoff_summary_fragment(
+    std::string& summary,
+    const std::string& fragment)
+{
+    if (fragment.empty()) {
+        return;
+    }
+    if (!summary.empty()) {
+        summary += "; ";
+    }
+    summary += fragment;
+}
+
+inline std::string render_image_draw_list_frame_handoff_stable_identity_for(
+    const std::string& frame_label,
+    const render_draw_command& command)
+{
+    if (command.node_id.empty()) {
+        return {};
+    }
+    return "frame=" + frame_label
+        + "|node=" + command.node_id
+        + "|parent=" + command.parent_node_id;
+}
+
+inline render_image_draw_list_frame_handoff_entry_status render_image_draw_list_frame_handoff_entry_status_for(
+    const render_image_draw_list_frame_handoff_entry& entry)
+{
+    if (entry.empty_uri) {
+        return render_image_draw_list_frame_handoff_entry_status::blocked_empty_uri;
+    }
+    if (entry.invalid_uri) {
+        return render_image_draw_list_frame_handoff_entry_status::blocked_invalid_uri;
+    }
+    if (entry.invalid_bounds) {
+        return render_image_draw_list_frame_handoff_entry_status::blocked_invalid_bounds;
+    }
+    if (!entry.valid_sampler) {
+        return render_image_draw_list_frame_handoff_entry_status::blocked_invalid_sampler;
+    }
+    if (entry.missing_stable_identity) {
+        return render_image_draw_list_frame_handoff_entry_status::blocked_missing_stable_identity;
+    }
+    if (entry.duplicate_stable_identity) {
+        return render_image_draw_list_frame_handoff_entry_status::blocked_duplicate_stable_identity;
+    }
+    return render_image_draw_list_frame_handoff_entry_status::ready;
+}
+
+inline std::string render_image_draw_list_frame_handoff_blocker_summary_for(
+    const render_image_draw_list_frame_handoff_entry& entry)
+{
+    switch (entry.status) {
+    case render_image_draw_list_frame_handoff_entry_status::ready:
+        return {};
+    case render_image_draw_list_frame_handoff_entry_status::blocked_empty_uri:
+        return "image draw command uri is empty";
+    case render_image_draw_list_frame_handoff_entry_status::blocked_invalid_uri:
+        return entry.source.kind == render_image_source_kind::unsupported
+            ? "image draw command uri scheme is unsupported"
+            : "image draw command uri is invalid";
+    case render_image_draw_list_frame_handoff_entry_status::blocked_invalid_bounds:
+        return "image draw command bounds are invalid";
+    case render_image_draw_list_frame_handoff_entry_status::blocked_invalid_sampler:
+        return entry.sampler_policy.diagnostic;
+    case render_image_draw_list_frame_handoff_entry_status::blocked_missing_stable_identity:
+        return "image draw command stable identity is missing";
+    case render_image_draw_list_frame_handoff_entry_status::blocked_duplicate_stable_identity:
+        return "image draw command stable identity is duplicated";
+    }
+
+    return "image draw command handoff status is unknown";
+}
+
+inline void finalize_render_image_draw_list_frame_handoff_entry(
+    render_image_draw_list_frame_handoff_entry& entry)
+{
+    entry.status = render_image_draw_list_frame_handoff_entry_status_for(entry);
+    entry.status_name = render_image_draw_list_frame_handoff_entry_status_name(entry.status);
+    entry.blocked = render_image_draw_list_frame_handoff_entry_status_is_blocked(entry.status);
+    entry.planned_texture_request = !entry.blocked;
+    entry.blocker_summary = render_image_draw_list_frame_handoff_blocker_summary_for(entry);
+    entry.diagnostic = entry.blocked
+        ? "image draw command handoff blocked: " + entry.blocker_summary
+        : "image draw command handoff ready for texture request planning";
+}
+
 } // namespace detail
+
+inline render_image_draw_list_frame_handoff_entry make_render_image_draw_list_frame_handoff_entry(
+    const render_draw_command& command,
+    std::size_t draw_command_index,
+    std::size_t image_command_index,
+    const image_resolver_interface& resolver,
+    std::string frame_label = {})
+{
+    frame_label = detail::render_image_draw_list_frame_handoff_frame_label(std::move(frame_label));
+    const render_image_resolve_result resolved = resolver.resolve(render_image_resolve_request{
+        .uri = command.image.uri,
+    });
+    render_image_draw_list_frame_handoff_entry entry{
+        .frame_label = frame_label,
+        .draw_command_index = draw_command_index,
+        .image_command_index = image_command_index,
+        .node_id = command.node_id,
+        .parent_node_id = command.parent_node_id,
+        .bounds = command.bounds,
+        .content_bounds = command.content_bounds,
+        .image = command.image,
+        .uri = command.image.uri,
+        .alt_text = command.image.alt_text,
+        .aspect_ratio = command.image.aspect_ratio,
+        .sampler = command.image.sampler,
+        .pipeline_request = render_image_texture_pipeline_request{
+            .uri = resolved.ok() ? resolved.source.normalized_uri : normalize_image_uri(command.image.uri),
+            .sampler = command.image.sampler,
+        },
+        .resolve_status = resolved.status,
+        .source = resolved.source,
+        .normalized_source_key = resolved.source.cache_key(),
+        .source_kind = resolved.source.kind,
+        .sampler_policy = make_render_image_sampler_policy_diagnostic(command.image.sampler),
+        .texture_key = render_image_texture_key{
+            .source_key = resolved.source.cache_key(),
+            .sampler = command.image.sampler,
+        },
+        .stable_draw_command_identity =
+            detail::render_image_draw_list_frame_handoff_stable_identity_for(frame_label, command),
+    };
+    entry.texture_key_diagnostic = make_render_image_texture_key_diagnostic(entry.texture_key);
+    entry.stable_texture_cache_key = entry.texture_key_diagnostic.valid
+        ? entry.texture_key_diagnostic.stable_cache_key
+        : std::string{};
+    entry.first_stable_draw_command_index = draw_command_index;
+    entry.first_texture_key_image_command_index = image_command_index;
+    entry.valid_uri = resolved.ok();
+    entry.empty_uri = resolved.status == render_image_resolve_status::empty_uri;
+    entry.invalid_uri = resolved.status == render_image_resolve_status::unsupported_scheme;
+    entry.valid_bounds = detail::render_image_draw_list_frame_handoff_rect_has_positive_area(command.bounds);
+    entry.valid_content_bounds =
+        detail::render_image_draw_list_frame_handoff_rect_has_positive_area(command.content_bounds);
+    entry.invalid_bounds = !entry.valid_bounds || !entry.valid_content_bounds;
+    entry.valid_sampler = entry.sampler_policy.valid;
+    entry.stable_identity_present = !entry.stable_draw_command_identity.empty();
+    entry.missing_stable_identity = !entry.stable_identity_present;
+    detail::finalize_render_image_draw_list_frame_handoff_entry(entry);
+    return entry;
+}
+
+inline render_image_draw_list_frame_handoff_entry make_render_image_draw_list_frame_handoff_entry(
+    const render_draw_command& command,
+    std::size_t draw_command_index,
+    std::size_t image_command_index,
+    std::string frame_label = {})
+{
+    const normalizing_image_resolver resolver;
+    return make_render_image_draw_list_frame_handoff_entry(
+        command,
+        draw_command_index,
+        image_command_index,
+        resolver,
+        std::move(frame_label));
+}
+
+inline render_image_draw_list_frame_handoff_snapshot make_render_image_draw_list_frame_handoff_snapshot(
+    const render_draw_list& draw_list,
+    const image_resolver_interface& resolver,
+    std::string frame_label = {})
+{
+    frame_label = detail::render_image_draw_list_frame_handoff_frame_label(std::move(frame_label));
+    render_image_draw_list_frame_handoff_snapshot snapshot{
+        .frame_label = frame_label,
+        .draw_command_count = draw_list.commands.size(),
+    };
+
+    std::map<std::string, std::size_t> first_stable_identity_command_index;
+    std::map<std::string, std::size_t> first_texture_key_image_command_index;
+
+    for (std::size_t command_index = 0; command_index < draw_list.commands.size(); ++command_index) {
+        const render_draw_command& command = draw_list.commands[command_index];
+        if (command.type != render_draw_command_type::image) {
+            ++snapshot.non_image_command_count;
+            continue;
+        }
+
+        render_image_draw_list_frame_handoff_entry entry =
+            make_render_image_draw_list_frame_handoff_entry(
+                command,
+                command_index,
+                snapshot.image_command_count,
+                resolver,
+                frame_label);
+
+        if (entry.stable_identity_present) {
+            const auto stable_identity = first_stable_identity_command_index.find(entry.stable_draw_command_identity);
+            if (stable_identity == first_stable_identity_command_index.end()) {
+                first_stable_identity_command_index.emplace(
+                    entry.stable_draw_command_identity,
+                    command_index);
+            } else {
+                entry.duplicate_stable_identity = true;
+                entry.first_stable_draw_command_index = stable_identity->second;
+                detail::finalize_render_image_draw_list_frame_handoff_entry(entry);
+            }
+        }
+
+        if (!entry.stable_texture_cache_key.empty()) {
+            const auto texture_identity = first_texture_key_image_command_index.find(entry.stable_texture_cache_key);
+            if (texture_identity == first_texture_key_image_command_index.end()) {
+                first_texture_key_image_command_index.emplace(
+                    entry.stable_texture_cache_key,
+                    snapshot.image_command_count);
+            } else {
+                entry.duplicate_texture_key = true;
+                entry.expected_cache_reuse = true;
+                entry.first_texture_key_image_command_index = texture_identity->second;
+            }
+        }
+
+        if (entry.ok()) {
+            entry.texture_request_index = snapshot.planned_texture_request_count;
+            snapshot.planned_images.push_back(entry.image);
+            snapshot.planned_requests.push_back(entry.pipeline_request);
+            ++snapshot.planned_texture_request_count;
+        } else {
+            ++snapshot.blocked_entry_count;
+            snapshot.has_blockers = true;
+            detail::append_render_image_draw_list_frame_handoff_summary_fragment(
+                snapshot.blocker_summary,
+                entry.blocker_summary);
+        }
+
+        if (entry.empty_uri) {
+            ++snapshot.empty_uri_count;
+        }
+        if (entry.invalid_uri) {
+            ++snapshot.invalid_uri_count;
+        }
+        if (entry.invalid_bounds) {
+            ++snapshot.invalid_bounds_count;
+        }
+        if (!entry.valid_sampler) {
+            ++snapshot.invalid_sampler_count;
+        }
+        if (entry.missing_stable_identity) {
+            ++snapshot.missing_stable_identity_count;
+            snapshot.has_missing_stable_identities = true;
+        }
+        if (entry.duplicate_stable_identity) {
+            ++snapshot.duplicate_stable_identity_count;
+            snapshot.has_duplicate_stable_identities = true;
+        }
+        if (entry.duplicate_texture_key) {
+            ++snapshot.duplicate_texture_key_count;
+            if (entry.ok()) {
+                ++snapshot.cache_reuse_expected_count;
+                snapshot.has_request_cache_reuse = true;
+            }
+        }
+
+        detail::append_render_image_draw_list_frame_handoff_summary_fragment(
+            snapshot.stable_identity_summary,
+            entry.stable_draw_command_identity);
+        detail::append_render_image_draw_list_frame_handoff_summary_fragment(
+            snapshot.request_identity_summary,
+            entry.stable_texture_cache_key);
+
+        ++snapshot.image_command_count;
+        snapshot.entries.push_back(std::move(entry));
+    }
+
+    snapshot.handoff_entry_count = snapshot.entries.size();
+    snapshot.has_image_commands = snapshot.image_command_count != 0;
+    snapshot.has_non_image_commands = snapshot.non_image_command_count != 0;
+    snapshot.status = !snapshot.has_image_commands
+        ? render_image_draw_list_frame_handoff_status::empty
+        : (snapshot.has_blockers
+            ? render_image_draw_list_frame_handoff_status::blocked
+            : render_image_draw_list_frame_handoff_status::ready);
+    snapshot.status_name = render_image_draw_list_frame_handoff_status_name(snapshot.status);
+    snapshot.skipped_command_summary = snapshot.non_image_command_count == 0
+        ? "no non-image draw commands skipped"
+        : "skipped non-image draw commands=" + std::to_string(snapshot.non_image_command_count);
+    if (snapshot.stable_identity_summary.empty()) {
+        snapshot.stable_identity_summary = "no image draw command stable identities";
+    }
+    if (snapshot.request_identity_summary.empty()) {
+        snapshot.request_identity_summary = "no image texture request identities";
+    }
+    if (snapshot.blocker_summary.empty()) {
+        snapshot.blocker_summary = "no image draw command handoff blockers";
+    }
+    switch (snapshot.status) {
+    case render_image_draw_list_frame_handoff_status::empty:
+        snapshot.diagnostic = "image draw list frame handoff has no image draw commands";
+        break;
+    case render_image_draw_list_frame_handoff_status::ready:
+        snapshot.diagnostic = "image draw list frame handoff ready";
+        break;
+    case render_image_draw_list_frame_handoff_status::blocked:
+        snapshot.diagnostic = "image draw list frame handoff has blocked image commands";
+        break;
+    }
+
+    return snapshot;
+}
+
+inline render_image_draw_list_frame_handoff_snapshot make_render_image_draw_list_frame_handoff_snapshot(
+    const render_draw_list& draw_list,
+    std::string frame_label = {})
+{
+    const normalizing_image_resolver resolver;
+    return make_render_image_draw_list_frame_handoff_snapshot(
+        draw_list,
+        resolver,
+        std::move(frame_label));
+}
 
 inline render_image_texture_batch_plan plan_render_image_texture_batch(
     const std::vector<render_image_ref>& images,

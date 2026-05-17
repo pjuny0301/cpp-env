@@ -285,6 +285,10 @@ static_assert(requires(
     render::render_image_texture_pipeline_request pipeline_request,
     render::render_image_texture_pipeline_result pipeline_result,
     render::render_image_texture_pipeline_status pipeline_status,
+    render::render_image_draw_list_frame_handoff_status draw_list_frame_handoff_status,
+    render::render_image_draw_list_frame_handoff_entry_status draw_list_frame_handoff_entry_status,
+    render::render_image_draw_list_frame_handoff_entry draw_list_frame_handoff_entry,
+    render::render_image_draw_list_frame_handoff_snapshot draw_list_frame_handoff,
     render::render_image_texture_batch_plan_entry_status batch_plan_entry_status,
     render::render_image_texture_batch_plan_options batch_plan_options,
     render::render_image_texture_batch_plan_entry batch_plan_entry,
@@ -376,6 +380,8 @@ static_assert(requires(
     const render::fake_image_texture_pipeline& pipeline,
     render::fake_image_texture_pipeline& mutable_pipeline,
     render::standard_image_texture_pipeline& standard_pipeline,
+    render::render_draw_command draw_command,
+    render::render_draw_list draw_list,
     render::render_image_ref image_ref,
     std::vector<render::render_image_ref> image_refs,
     render::fake_image_texture_residency texture_residency,
@@ -1661,6 +1667,27 @@ static_assert(requires(
         -> std::same_as<render::render_image_decoder_capability_manifest>;
     { render::render_image_texture_pipeline_decoder_fallback_reason(decoder_capability_manifest) }
         -> std::same_as<std::string>;
+    { render::render_image_draw_list_frame_handoff_status_name(draw_list_frame_handoff_status) }
+        -> std::same_as<std::string>;
+    { render::render_image_draw_list_frame_handoff_entry_status_name(draw_list_frame_handoff_entry_status) }
+        -> std::same_as<std::string>;
+    { render::render_image_draw_list_frame_handoff_entry_status_is_blocked(draw_list_frame_handoff_entry_status) }
+        -> std::same_as<bool>;
+    { render::make_render_image_draw_list_frame_handoff_entry(draw_command, std::size_t{}, std::size_t{}) }
+        -> std::same_as<render::render_image_draw_list_frame_handoff_entry>;
+    { render::make_render_image_draw_list_frame_handoff_entry(
+        draw_command,
+        std::size_t{},
+        std::size_t{},
+        resolver) } -> std::same_as<render::render_image_draw_list_frame_handoff_entry>;
+    { render::make_render_image_draw_list_frame_handoff_snapshot(draw_list) }
+        -> std::same_as<render::render_image_draw_list_frame_handoff_snapshot>;
+    { render::make_render_image_draw_list_frame_handoff_snapshot(draw_list, std::string{}) }
+        -> std::same_as<render::render_image_draw_list_frame_handoff_snapshot>;
+    { render::make_render_image_draw_list_frame_handoff_snapshot(draw_list, resolver) }
+        -> std::same_as<render::render_image_draw_list_frame_handoff_snapshot>;
+    { render::make_render_image_draw_list_frame_handoff_snapshot(draw_list, resolver, std::string{}) }
+        -> std::same_as<render::render_image_draw_list_frame_handoff_snapshot>;
     { render::render_image_texture_batch_plan_entry_status_name(batch_plan_entry_status) }
         -> std::same_as<std::string>;
     { render::plan_render_image_texture_batch(image_refs) }
@@ -2077,6 +2104,91 @@ static_assert(requires(
     stb_selection_status;
     external_selection_diff_state;
     external_selection_diff_entry_status;
+    draw_list_frame_handoff_status;
+    draw_list_frame_handoff_entry_status;
+    { draw_list_frame_handoff_entry.frame_label } -> std::same_as<std::string&>;
+    { draw_list_frame_handoff_entry.draw_command_index } -> std::same_as<std::size_t&>;
+    { draw_list_frame_handoff_entry.image_command_index } -> std::same_as<std::size_t&>;
+    { draw_list_frame_handoff_entry.texture_request_index } -> std::same_as<std::size_t&>;
+    { draw_list_frame_handoff_entry.node_id } -> std::same_as<render::render_node_id&>;
+    { draw_list_frame_handoff_entry.parent_node_id } -> std::same_as<render::render_node_id&>;
+    { draw_list_frame_handoff_entry.bounds } -> std::same_as<render::render_rect&>;
+    { draw_list_frame_handoff_entry.content_bounds } -> std::same_as<render::render_rect&>;
+    { draw_list_frame_handoff_entry.image } -> std::same_as<render::render_image_ref&>;
+    { draw_list_frame_handoff_entry.uri } -> std::same_as<std::string&>;
+    { draw_list_frame_handoff_entry.alt_text } -> std::same_as<std::string&>;
+    { draw_list_frame_handoff_entry.aspect_ratio } -> std::same_as<float&>;
+    { draw_list_frame_handoff_entry.sampler } -> std::same_as<render::render_image_sampler_policy&>;
+    { draw_list_frame_handoff_entry.pipeline_request }
+        -> std::same_as<render::render_image_texture_pipeline_request&>;
+    { draw_list_frame_handoff_entry.resolve_status } -> std::same_as<render::render_image_resolve_status&>;
+    { draw_list_frame_handoff_entry.source } -> std::same_as<render::render_resolved_image_source&>;
+    { draw_list_frame_handoff_entry.normalized_source_key } -> std::same_as<render::render_image_cache_key&>;
+    { draw_list_frame_handoff_entry.source_kind } -> std::same_as<render::render_image_source_kind&>;
+    { draw_list_frame_handoff_entry.sampler_policy }
+        -> std::same_as<render::render_image_sampler_policy_diagnostic&>;
+    { draw_list_frame_handoff_entry.texture_key } -> std::same_as<render::render_image_texture_key&>;
+    { draw_list_frame_handoff_entry.texture_key_diagnostic }
+        -> std::same_as<render::render_image_texture_key_diagnostic&>;
+    { draw_list_frame_handoff_entry.stable_texture_cache_key } -> std::same_as<std::string&>;
+    { draw_list_frame_handoff_entry.stable_draw_command_identity } -> std::same_as<std::string&>;
+    { draw_list_frame_handoff_entry.first_stable_draw_command_index } -> std::same_as<std::size_t&>;
+    { draw_list_frame_handoff_entry.first_texture_key_image_command_index } -> std::same_as<std::size_t&>;
+    { draw_list_frame_handoff_entry.status }
+        -> std::same_as<render::render_image_draw_list_frame_handoff_entry_status&>;
+    { draw_list_frame_handoff_entry.status_name } -> std::same_as<std::string&>;
+    { draw_list_frame_handoff_entry.image_command } -> std::same_as<bool&>;
+    { draw_list_frame_handoff_entry.planned_texture_request } -> std::same_as<bool&>;
+    { draw_list_frame_handoff_entry.valid_uri } -> std::same_as<bool&>;
+    { draw_list_frame_handoff_entry.empty_uri } -> std::same_as<bool&>;
+    { draw_list_frame_handoff_entry.invalid_uri } -> std::same_as<bool&>;
+    { draw_list_frame_handoff_entry.valid_bounds } -> std::same_as<bool&>;
+    { draw_list_frame_handoff_entry.valid_content_bounds } -> std::same_as<bool&>;
+    { draw_list_frame_handoff_entry.invalid_bounds } -> std::same_as<bool&>;
+    { draw_list_frame_handoff_entry.valid_sampler } -> std::same_as<bool&>;
+    { draw_list_frame_handoff_entry.stable_identity_present } -> std::same_as<bool&>;
+    { draw_list_frame_handoff_entry.missing_stable_identity } -> std::same_as<bool&>;
+    { draw_list_frame_handoff_entry.duplicate_stable_identity } -> std::same_as<bool&>;
+    { draw_list_frame_handoff_entry.duplicate_texture_key } -> std::same_as<bool&>;
+    { draw_list_frame_handoff_entry.expected_cache_reuse } -> std::same_as<bool&>;
+    { draw_list_frame_handoff_entry.blocked } -> std::same_as<bool&>;
+    { draw_list_frame_handoff_entry.blocker_summary } -> std::same_as<std::string&>;
+    { draw_list_frame_handoff_entry.diagnostic } -> std::same_as<std::string&>;
+    { draw_list_frame_handoff_entry.ok() } -> std::same_as<bool>;
+    { draw_list_frame_handoff.status } -> std::same_as<render::render_image_draw_list_frame_handoff_status&>;
+    { draw_list_frame_handoff.status_name } -> std::same_as<std::string&>;
+    { draw_list_frame_handoff.frame_label } -> std::same_as<std::string&>;
+    { draw_list_frame_handoff.draw_command_count } -> std::same_as<std::size_t&>;
+    { draw_list_frame_handoff.non_image_command_count } -> std::same_as<std::size_t&>;
+    { draw_list_frame_handoff.image_command_count } -> std::same_as<std::size_t&>;
+    { draw_list_frame_handoff.handoff_entry_count } -> std::same_as<std::size_t&>;
+    { draw_list_frame_handoff.planned_texture_request_count } -> std::same_as<std::size_t&>;
+    { draw_list_frame_handoff.blocked_entry_count } -> std::same_as<std::size_t&>;
+    { draw_list_frame_handoff.empty_uri_count } -> std::same_as<std::size_t&>;
+    { draw_list_frame_handoff.invalid_uri_count } -> std::same_as<std::size_t&>;
+    { draw_list_frame_handoff.invalid_bounds_count } -> std::same_as<std::size_t&>;
+    { draw_list_frame_handoff.invalid_sampler_count } -> std::same_as<std::size_t&>;
+    { draw_list_frame_handoff.missing_stable_identity_count } -> std::same_as<std::size_t&>;
+    { draw_list_frame_handoff.duplicate_stable_identity_count } -> std::same_as<std::size_t&>;
+    { draw_list_frame_handoff.duplicate_texture_key_count } -> std::same_as<std::size_t&>;
+    { draw_list_frame_handoff.cache_reuse_expected_count } -> std::same_as<std::size_t&>;
+    { draw_list_frame_handoff.has_image_commands } -> std::same_as<bool&>;
+    { draw_list_frame_handoff.has_non_image_commands } -> std::same_as<bool&>;
+    { draw_list_frame_handoff.has_blockers } -> std::same_as<bool&>;
+    { draw_list_frame_handoff.has_duplicate_stable_identities } -> std::same_as<bool&>;
+    { draw_list_frame_handoff.has_missing_stable_identities } -> std::same_as<bool&>;
+    { draw_list_frame_handoff.has_request_cache_reuse } -> std::same_as<bool&>;
+    { draw_list_frame_handoff.planned_images } -> std::same_as<std::vector<render::render_image_ref>&>;
+    { draw_list_frame_handoff.planned_requests }
+        -> std::same_as<std::vector<render::render_image_texture_pipeline_request>&>;
+    { draw_list_frame_handoff.entries }
+        -> std::same_as<std::vector<render::render_image_draw_list_frame_handoff_entry>&>;
+    { draw_list_frame_handoff.stable_identity_summary } -> std::same_as<std::string&>;
+    { draw_list_frame_handoff.request_identity_summary } -> std::same_as<std::string&>;
+    { draw_list_frame_handoff.blocker_summary } -> std::same_as<std::string&>;
+    { draw_list_frame_handoff.skipped_command_summary } -> std::same_as<std::string&>;
+    { draw_list_frame_handoff.diagnostic } -> std::same_as<std::string&>;
+    { draw_list_frame_handoff.ok() } -> std::same_as<bool>;
     { batch_plan_options.placeholder_policy } -> std::same_as<render::fake_image_texture_placeholder_policy&>;
     { batch_plan_options.reject_parent_path_segments } -> std::same_as<bool&>;
     { batch_plan_entry.request_index } -> std::same_as<std::size_t&>;
@@ -3579,6 +3691,8 @@ static_assert(requires(
 
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_manifest_texture_entry_snapshot>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_manifest_texture_pipeline_snapshot>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_draw_list_frame_handoff_entry>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_draw_list_frame_handoff_snapshot>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_batch_plan_entry>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_batch_plan>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_batch_execution_entry>);
@@ -3630,6 +3744,8 @@ static_assert(!ExposesFakeImageTextureCacheSnapshot<render::stb_image_decoder_de
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::stb_image_decoder_adapter_selection_result>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_manifest_texture_entry_snapshot>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_manifest_texture_pipeline_snapshot>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_draw_list_frame_handoff_entry>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_draw_list_frame_handoff_snapshot>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_batch_plan_entry>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_batch_plan>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_batch_execution_entry>);
@@ -3681,6 +3797,8 @@ static_assert(!ExposesFakeImageTextureUploadSnapshot<render::stb_image_decoder_d
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::stb_image_decoder_adapter_selection_result>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_manifest_texture_entry_snapshot>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_manifest_texture_pipeline_snapshot>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_draw_list_frame_handoff_entry>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_draw_list_frame_handoff_snapshot>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_batch_plan_entry>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_batch_plan>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_batch_execution_entry>);
@@ -3731,6 +3849,7 @@ static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_externa
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::stb_image_decoder_dependency_manifest>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::stb_image_decoder_adapter_selection_result>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_manifest_texture_pipeline_snapshot>);
+static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_draw_list_frame_handoff_snapshot>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_batch_plan>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_batch_execution_diagnostics>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_residency_budget_plan>);

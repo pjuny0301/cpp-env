@@ -227,6 +227,122 @@ void test_duplicate_and_missing_identities_are_diagnosed()
         "missing stable packet key is explicitly blocked");
 }
 
+void test_glyph_quad_diff_reports_stable_no_change()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_renderer_glyph_quad_packet_snapshot quads =
+        make_quads(resources_for({ready_resource_packet("resource-stable", U'A', 0)}));
+    const render_text_renderer_glyph_quad_packet_diff_snapshot diff =
+        diff_render_text_renderer_glyph_quad_packet_snapshots(quads, quads);
+
+    require(diff.stable_no_change(), "identical glyph quad snapshots report stable no-change");
+    require(!diff.has_changes(), "identical glyph quad snapshots have no changes");
+    require(diff.policy.unchanged_packet_count == 1U, "unchanged packet is counted");
+    require(diff.policy.added_packet_count == 0U, "no-op diff has no added packets");
+    require(diff.policy.removed_packet_count == 0U, "no-op diff has no removed packets");
+    require(diff.policy.changed_packet_count == 0U, "no-op diff has no changed packets");
+    require(diff.unchanged_quad_packet_ids.size() == 1U, "unchanged packet id is exposed");
+    require(!diff.summary.empty(), "no-op diff carries summary text");
+}
+
+void test_glyph_quad_diff_classifies_ready_blocked_transitions()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_frame_resource_packet_materialization_entry ready =
+        ready_resource_packet("resource-transition", U'A', 0);
+    render_text_frame_resource_packet_materialization_entry blocked = ready;
+    blocked.status = render_text_frame_resource_packet_materialization_status::blocked_missing_upload_handoff;
+    blocked.ready = false;
+    blocked.blocked = true;
+    blocked.renderer_boundary_ready = false;
+    blocked.uploaded = false;
+    blocked.upload_rgba_bytes = 0;
+    blocked.blocker_summary = "draw packet has no ready upload handoff evidence";
+
+    const render_text_renderer_glyph_quad_packet_snapshot ready_quads =
+        make_quads(resources_for({ready}));
+    const render_text_renderer_glyph_quad_packet_snapshot blocked_quads =
+        make_quads(resources_for({blocked}));
+    const render_text_renderer_glyph_quad_packet_diff_snapshot regression =
+        diff_render_text_renderer_glyph_quad_packet_snapshots(ready_quads, blocked_quads);
+    const render_text_renderer_glyph_quad_packet_diff_snapshot recovery =
+        diff_render_text_renderer_glyph_quad_packet_snapshots(blocked_quads, ready_quads);
+
+    require(regression.has_changes(), "ready-to-blocked diff reports a change");
+    require(regression.policy.readiness_regression_count == 1U, "ready-to-blocked transition is a regression");
+    require(regression.policy.readiness_changed_count == 1U, "readiness change is counted");
+    require(regression.readiness_regressed_quad_packet_ids.size() == 1U, "regressed packet id is exposed");
+    require(regression.packet_diffs.front().readiness_regressed, "packet diff marks readiness regression");
+    require(recovery.policy.readiness_recovery_count == 1U, "blocked-to-ready transition is a recovery");
+    require(recovery.readiness_recovered_quad_packet_ids.size() == 1U, "recovered packet id is exposed");
+    require(recovery.packet_diffs.front().readiness_recovered, "packet diff marks readiness recovery");
+}
+
+void test_glyph_quad_diff_counts_layout_uv_page_sampler_and_upload_changes()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_renderer_glyph_quad_packet_snapshot before =
+        make_quads(resources_for({ready_resource_packet("resource-change", U'A', 0)}));
+
+    render_text_frame_resource_packet_materialization_entry changed =
+        ready_resource_packet("resource-change", U'A', 0);
+    changed.layout_bounds.x += 2.0f;
+    changed.atlas_bounds.y += 3.0f;
+    changed.uv_bounds.u1 += 0.125f;
+    changed.page_revision += 1;
+    changed.sampler_key = render_text_frame_resource_packet_sampler_key_for(2, changed.page_revision);
+    changed.upload_request_id = "upload-changed";
+    changed.upload_operation_id = "operation-changed";
+    changed.upload_rgba_bytes = 512;
+    const render_text_renderer_glyph_quad_packet_snapshot after =
+        make_quads(resources_for({changed}));
+
+    const render_text_renderer_glyph_quad_packet_diff_snapshot diff =
+        diff_render_text_renderer_glyph_quad_packet_snapshots(before, after);
+
+    require(diff.policy.changed_packet_count == 1U, "field changes produce one changed packet");
+    require(diff.policy.layout_bounds_changed_count == 1U, "layout bounds changes are counted");
+    require(diff.policy.atlas_bounds_changed_count == 1U, "atlas bounds changes are counted");
+    require(diff.policy.uv_bounds_changed_count == 1U, "UV changes are counted");
+    require(diff.policy.page_revision_changed_count == 1U, "page revision changes are counted");
+    require(diff.policy.sampler_key_changed_count == 1U, "sampler changes are counted");
+    require(diff.policy.upload_request_id_changed_count == 1U, "upload request changes are counted");
+    require(diff.policy.upload_operation_id_changed_count == 1U, "upload operation changes are counted");
+    require(diff.policy.uploaded_byte_count_changed_count == 1U, "upload byte changes are counted");
+    require(diff.packet_diffs.front().upload_rgba_bytes_delta == 256, "upload byte delta is preserved");
+}
+
+void test_glyph_quad_diff_reports_added_removed_duplicate_and_missing_identity()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_renderer_glyph_quad_packet_snapshot before =
+        make_quads(resources_for({ready_resource_packet("resource-removed", U'A', 0)}));
+
+    render_text_renderer_glyph_quad_packet_snapshot after =
+        make_quads(resources_for({
+            ready_resource_packet("resource-added", U'B', 1),
+            ready_resource_packet("resource-added", U'C', 2),
+            ready_resource_packet("resource-missing", U'D', 3),
+        }));
+    after.packets.back().quad_packet_id = {};
+
+    const render_text_renderer_glyph_quad_packet_diff_snapshot diff =
+        diff_render_text_renderer_glyph_quad_packet_snapshots(before, after);
+
+    require(diff.has_changes(), "added/removed/identity changes are reported");
+    require(diff.policy.added_packet_count == 3U, "added packet records are counted");
+    require(diff.policy.removed_packet_count == 1U, "removed packet records are counted");
+    require(diff.policy.duplicate_identity_count == 2U, "duplicate current identities are counted deterministically");
+    require(diff.policy.missing_identity_count == 1U, "missing current identity is counted");
+    require(diff.removed_quad_packet_ids.size() == 1U, "removed packet id is exposed");
+    require(diff.added_quad_packet_ids.size() == 1U, "added packet ids are de-duplicated");
+    require(diff.duplicate_identity_quad_packet_ids.size() == 1U, "duplicate identity id is exposed once");
+}
+
 } // namespace
 
 int main()
@@ -235,5 +351,9 @@ int main()
     test_blocked_resource_packet_stays_blocked();
     test_glyph_quad_packet_order_is_deterministic();
     test_duplicate_and_missing_identities_are_diagnosed();
+    test_glyph_quad_diff_reports_stable_no_change();
+    test_glyph_quad_diff_classifies_ready_blocked_transitions();
+    test_glyph_quad_diff_counts_layout_uv_page_sampler_and_upload_changes();
+    test_glyph_quad_diff_reports_added_removed_duplicate_and_missing_identity();
     return 0;
 }

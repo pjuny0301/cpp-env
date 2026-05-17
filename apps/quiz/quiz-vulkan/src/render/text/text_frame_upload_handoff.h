@@ -573,6 +573,104 @@ struct render_text_renderer_glyph_quad_packet_snapshot {
   }
 };
 
+struct render_text_renderer_glyph_quad_packet_diff_policy {
+  std::ptrdiff_t quad_packet_count_delta{};
+  std::ptrdiff_t ready_quad_count_delta{};
+  std::ptrdiff_t blocked_quad_count_delta{};
+  std::ptrdiff_t uploaded_quad_count_delta{};
+  std::ptrdiff_t clean_reuse_quad_count_delta{};
+  std::ptrdiff_t total_upload_rgba_bytes_delta{};
+  std::size_t added_packet_count{};
+  std::size_t removed_packet_count{};
+  std::size_t changed_packet_count{};
+  std::size_t unchanged_packet_count{};
+  std::size_t readiness_regression_count{};
+  std::size_t readiness_recovery_count{};
+  std::size_t layout_bounds_changed_count{};
+  std::size_t atlas_bounds_changed_count{};
+  std::size_t uv_bounds_changed_count{};
+  std::size_t page_revision_changed_count{};
+  std::size_t sampler_key_changed_count{};
+  std::size_t upload_request_id_changed_count{};
+  std::size_t upload_operation_id_changed_count{};
+  std::size_t uploaded_byte_count_changed_count{};
+  std::size_t readiness_changed_count{};
+  std::size_t status_changed_count{};
+  std::size_t duplicate_identity_count{};
+  std::size_t missing_identity_count{};
+  bool frame_id_changed{};
+  bool frame_ready_changed{};
+  bool blockers_changed{};
+  bool stable_no_change{};
+};
+
+struct render_text_renderer_glyph_quad_packet_diff_record {
+  std::string quad_packet_id{};
+  std::string previous_resource_packet_id{};
+  std::string current_resource_packet_id{};
+  std::string previous_sampler_key{};
+  std::string current_sampler_key{};
+  std::string previous_upload_request_id{};
+  std::string current_upload_request_id{};
+  std::string previous_upload_operation_id{};
+  std::string current_upload_operation_id{};
+  bool added{};
+  bool removed{};
+  bool changed{};
+  bool unchanged{};
+  bool missing_identity{};
+  bool duplicate_identity{};
+  bool layout_bounds_changed{};
+  bool atlas_bounds_changed{};
+  bool uv_bounds_changed{};
+  bool page_revision_changed{};
+  bool sampler_key_changed{};
+  bool upload_request_id_changed{};
+  bool upload_operation_id_changed{};
+  bool uploaded_byte_count_changed{};
+  bool readiness_changed{};
+  bool readiness_regressed{};
+  bool readiness_recovered{};
+  bool status_changed{};
+  std::ptrdiff_t upload_rgba_bytes_delta{};
+  bool previous_ready{};
+  bool current_ready{};
+  render_text_atlas_page_id previous_page_id{};
+  render_text_atlas_page_id current_page_id{};
+  render_text_revision previous_page_revision{};
+  render_text_revision current_page_revision{};
+  render_text_renderer_glyph_quad_packet_status previous_status{
+      render_text_renderer_glyph_quad_packet_status::blocked_resource_packet};
+  render_text_renderer_glyph_quad_packet_status current_status{
+      render_text_renderer_glyph_quad_packet_status::blocked_resource_packet};
+};
+
+struct render_text_renderer_glyph_quad_packet_diff_snapshot {
+  std::string previous_frame_id{};
+  std::string current_frame_id{};
+  bool previous_ready_for_renderer{};
+  bool current_ready_for_renderer{};
+  render_text_renderer_glyph_quad_packet_diff_policy policy{};
+  std::vector<render_text_renderer_glyph_quad_packet_diff_record> packet_diffs{};
+  std::vector<std::string> added_quad_packet_ids{};
+  std::vector<std::string> removed_quad_packet_ids{};
+  std::vector<std::string> changed_quad_packet_ids{};
+  std::vector<std::string> unchanged_quad_packet_ids{};
+  std::vector<std::string> readiness_regressed_quad_packet_ids{};
+  std::vector<std::string> readiness_recovered_quad_packet_ids{};
+  std::vector<std::string> duplicate_identity_quad_packet_ids{};
+  std::vector<std::string> missing_identity_quad_packet_ids{};
+  std::string summary{};
+
+  [[nodiscard]] constexpr bool has_changes() const noexcept {
+    return !policy.stable_no_change;
+  }
+
+  [[nodiscard]] constexpr bool stable_no_change() const noexcept {
+    return policy.stable_no_change;
+  }
+};
+
 namespace detail {
 
 [[nodiscard]] inline std::string text_frame_upload_handoff_stable_key_for(
@@ -1950,6 +2048,331 @@ make_render_text_renderer_glyph_quad_packets(
         " glyph quad packet(s) blocked";
   }
   return snapshot;
+}
+
+[[nodiscard]] inline std::ptrdiff_t render_text_renderer_glyph_quad_packet_count_delta(
+    const std::size_t before,
+    const std::size_t after) {
+  return static_cast<std::ptrdiff_t>(after) -
+         static_cast<std::ptrdiff_t>(before);
+}
+
+[[nodiscard]] inline bool render_text_renderer_glyph_quad_packet_identity_duplicate(
+    const std::vector<render_text_renderer_glyph_quad_packet_record>& packets,
+    const std::string& quad_packet_id) {
+  if (quad_packet_id.empty()) {
+    return false;
+  }
+  return std::count_if(
+             packets.begin(), packets.end(),
+             [&](const render_text_renderer_glyph_quad_packet_record& packet) {
+               return packet.quad_packet_id == quad_packet_id;
+             }) > 1;
+}
+
+[[nodiscard]] inline const render_text_renderer_glyph_quad_packet_record*
+find_unmatched_render_text_renderer_glyph_quad_packet(
+    const std::vector<render_text_renderer_glyph_quad_packet_record>& packets,
+    const std::vector<bool>& matched,
+    const std::string& quad_packet_id) {
+  if (quad_packet_id.empty()) {
+    return nullptr;
+  }
+  for (std::size_t index = 0; index < packets.size(); ++index) {
+    if (index < matched.size() && matched[index]) {
+      continue;
+    }
+    if (packets[index].quad_packet_id == quad_packet_id) {
+      return &packets[index];
+    }
+  }
+  return nullptr;
+}
+
+[[nodiscard]] inline std::size_t render_text_renderer_glyph_quad_packet_index(
+    const std::vector<render_text_renderer_glyph_quad_packet_record>& packets,
+    const render_text_renderer_glyph_quad_packet_record* packet) {
+  if (packet == nullptr || packets.empty()) {
+    return packets.size();
+  }
+  const auto index = static_cast<std::size_t>(packet - packets.data());
+  return index < packets.size() ? index : packets.size();
+}
+
+[[nodiscard]] inline render_text_renderer_glyph_quad_packet_diff_record
+diff_render_text_renderer_glyph_quad_packet_records(
+    const render_text_renderer_glyph_quad_packet_record* before,
+    const render_text_renderer_glyph_quad_packet_record* after,
+    const bool duplicate_identity) {
+  const bool added = before == nullptr && after != nullptr;
+  const bool removed = before != nullptr && after == nullptr;
+  const auto* identity_source = after == nullptr ? before : after;
+  const bool missing_identity =
+      identity_source == nullptr || identity_source->quad_packet_id.empty();
+  const bool layout_bounds_changed =
+      before != nullptr && after != nullptr &&
+      !render_text_frame_snapshot_rects_equal(before->layout_bounds,
+                                              after->layout_bounds);
+  const bool atlas_bounds_changed =
+      before != nullptr && after != nullptr &&
+      !render_text_frame_snapshot_rects_equal(before->atlas_bounds,
+                                              after->atlas_bounds);
+  const bool uv_bounds_changed =
+      before != nullptr && after != nullptr &&
+      !render_text_frame_draw_uv_rects_equal(before->uv_bounds, after->uv_bounds);
+  const bool page_revision_changed =
+      before != nullptr && after != nullptr &&
+      before->page_revision != after->page_revision;
+  const bool sampler_key_changed =
+      before != nullptr && after != nullptr &&
+      before->sampler_key != after->sampler_key;
+  const bool upload_request_id_changed =
+      before != nullptr && after != nullptr &&
+      before->upload_request_id != after->upload_request_id;
+  const bool upload_operation_id_changed =
+      before != nullptr && after != nullptr &&
+      before->upload_operation_id != after->upload_operation_id;
+  const bool uploaded_byte_count_changed =
+      before != nullptr && after != nullptr &&
+      before->upload_rgba_bytes != after->upload_rgba_bytes;
+  const bool readiness_changed =
+      before != nullptr && after != nullptr && before->ready != after->ready;
+  const bool readiness_regressed =
+      before != nullptr && after != nullptr && before->ready && after->blocked;
+  const bool readiness_recovered =
+      before != nullptr && after != nullptr && before->blocked && after->ready;
+  const bool status_changed =
+      before != nullptr && after != nullptr && before->status != after->status;
+  const bool changed =
+      !added && !removed &&
+      (layout_bounds_changed || atlas_bounds_changed || uv_bounds_changed ||
+       page_revision_changed || sampler_key_changed ||
+       upload_request_id_changed || upload_operation_id_changed ||
+       uploaded_byte_count_changed || readiness_changed || status_changed ||
+       duplicate_identity || missing_identity);
+  const bool unchanged = !added && !removed && !changed;
+
+  return {
+      .quad_packet_id =
+          identity_source == nullptr ? std::string{} : identity_source->quad_packet_id,
+      .previous_resource_packet_id =
+          before == nullptr ? std::string{} : before->resource_packet_id,
+      .current_resource_packet_id =
+          after == nullptr ? std::string{} : after->resource_packet_id,
+      .previous_sampler_key = before == nullptr ? std::string{} : before->sampler_key,
+      .current_sampler_key = after == nullptr ? std::string{} : after->sampler_key,
+      .previous_upload_request_id =
+          before == nullptr ? std::string{} : before->upload_request_id,
+      .current_upload_request_id =
+          after == nullptr ? std::string{} : after->upload_request_id,
+      .previous_upload_operation_id =
+          before == nullptr ? std::string{} : before->upload_operation_id,
+      .current_upload_operation_id =
+          after == nullptr ? std::string{} : after->upload_operation_id,
+      .added = added,
+      .removed = removed,
+      .changed = changed,
+      .unchanged = unchanged,
+      .missing_identity = missing_identity,
+      .duplicate_identity = duplicate_identity,
+      .layout_bounds_changed = layout_bounds_changed,
+      .atlas_bounds_changed = atlas_bounds_changed,
+      .uv_bounds_changed = uv_bounds_changed,
+      .page_revision_changed = page_revision_changed,
+      .sampler_key_changed = sampler_key_changed,
+      .upload_request_id_changed = upload_request_id_changed,
+      .upload_operation_id_changed = upload_operation_id_changed,
+      .uploaded_byte_count_changed = uploaded_byte_count_changed,
+      .readiness_changed = readiness_changed,
+      .readiness_regressed = readiness_regressed,
+      .readiness_recovered = readiness_recovered,
+      .status_changed = status_changed,
+      .upload_rgba_bytes_delta =
+          render_text_renderer_glyph_quad_packet_count_delta(
+              before == nullptr ? 0U : before->upload_rgba_bytes,
+              after == nullptr ? 0U : after->upload_rgba_bytes),
+      .previous_ready = before != nullptr && before->ready,
+      .current_ready = after != nullptr && after->ready,
+      .previous_page_id = before == nullptr ? 0U : before->page_id,
+      .current_page_id = after == nullptr ? 0U : after->page_id,
+      .previous_page_revision = before == nullptr ? 0U : before->page_revision,
+      .current_page_revision = after == nullptr ? 0U : after->page_revision,
+      .previous_status =
+          before == nullptr
+              ? render_text_renderer_glyph_quad_packet_status::blocked_resource_packet
+              : before->status,
+      .current_status =
+          after == nullptr
+              ? render_text_renderer_glyph_quad_packet_status::blocked_resource_packet
+              : after->status,
+  };
+}
+
+inline void append_render_text_renderer_glyph_quad_packet_diff(
+    render_text_renderer_glyph_quad_packet_diff_snapshot& diff,
+    render_text_renderer_glyph_quad_packet_diff_record packet_diff) {
+  auto& policy = diff.policy;
+  if (packet_diff.added) {
+    ++policy.added_packet_count;
+    detail::append_unique_string(diff.added_quad_packet_ids,
+                                 packet_diff.quad_packet_id);
+  }
+  if (packet_diff.removed) {
+    ++policy.removed_packet_count;
+    detail::append_unique_string(diff.removed_quad_packet_ids,
+                                 packet_diff.quad_packet_id);
+  }
+  if (packet_diff.changed) {
+    ++policy.changed_packet_count;
+    detail::append_unique_string(diff.changed_quad_packet_ids,
+                                 packet_diff.quad_packet_id);
+  }
+  if (packet_diff.unchanged) {
+    ++policy.unchanged_packet_count;
+    detail::append_unique_string(diff.unchanged_quad_packet_ids,
+                                 packet_diff.quad_packet_id);
+  }
+  if (packet_diff.readiness_regressed) {
+    ++policy.readiness_regression_count;
+    detail::append_unique_string(diff.readiness_regressed_quad_packet_ids,
+                                 packet_diff.quad_packet_id);
+  }
+  if (packet_diff.readiness_recovered) {
+    ++policy.readiness_recovery_count;
+    detail::append_unique_string(diff.readiness_recovered_quad_packet_ids,
+                                 packet_diff.quad_packet_id);
+  }
+  if (packet_diff.layout_bounds_changed) {
+    ++policy.layout_bounds_changed_count;
+  }
+  if (packet_diff.atlas_bounds_changed) {
+    ++policy.atlas_bounds_changed_count;
+  }
+  if (packet_diff.uv_bounds_changed) {
+    ++policy.uv_bounds_changed_count;
+  }
+  if (packet_diff.page_revision_changed) {
+    ++policy.page_revision_changed_count;
+  }
+  if (packet_diff.sampler_key_changed) {
+    ++policy.sampler_key_changed_count;
+  }
+  if (packet_diff.upload_request_id_changed) {
+    ++policy.upload_request_id_changed_count;
+  }
+  if (packet_diff.upload_operation_id_changed) {
+    ++policy.upload_operation_id_changed_count;
+  }
+  if (packet_diff.uploaded_byte_count_changed) {
+    ++policy.uploaded_byte_count_changed_count;
+  }
+  if (packet_diff.readiness_changed) {
+    ++policy.readiness_changed_count;
+  }
+  if (packet_diff.status_changed) {
+    ++policy.status_changed_count;
+  }
+  if (packet_diff.duplicate_identity) {
+    ++policy.duplicate_identity_count;
+    detail::append_unique_string(diff.duplicate_identity_quad_packet_ids,
+                                 packet_diff.quad_packet_id);
+  }
+  if (packet_diff.missing_identity) {
+    ++policy.missing_identity_count;
+    detail::append_unique_string(diff.missing_identity_quad_packet_ids,
+                                 packet_diff.quad_packet_id);
+  }
+  diff.packet_diffs.push_back(std::move(packet_diff));
+}
+
+[[nodiscard]] inline render_text_renderer_glyph_quad_packet_diff_snapshot
+diff_render_text_renderer_glyph_quad_packet_snapshots(
+    const render_text_renderer_glyph_quad_packet_snapshot& before,
+    const render_text_renderer_glyph_quad_packet_snapshot& after) {
+  render_text_renderer_glyph_quad_packet_diff_snapshot diff{
+      .previous_frame_id = before.frame_id,
+      .current_frame_id = after.frame_id,
+      .previous_ready_for_renderer = before.frame_ready_for_renderer,
+      .current_ready_for_renderer = after.frame_ready_for_renderer,
+  };
+  diff.policy = {
+      .quad_packet_count_delta =
+          render_text_renderer_glyph_quad_packet_count_delta(
+              before.policy.quad_packet_count, after.policy.quad_packet_count),
+      .ready_quad_count_delta =
+          render_text_renderer_glyph_quad_packet_count_delta(
+              before.policy.ready_quad_count, after.policy.ready_quad_count),
+      .blocked_quad_count_delta =
+          render_text_renderer_glyph_quad_packet_count_delta(
+              before.policy.blocked_quad_count, after.policy.blocked_quad_count),
+      .uploaded_quad_count_delta =
+          render_text_renderer_glyph_quad_packet_count_delta(
+              before.policy.uploaded_quad_count, after.policy.uploaded_quad_count),
+      .clean_reuse_quad_count_delta =
+          render_text_renderer_glyph_quad_packet_count_delta(
+              before.policy.clean_reuse_quad_count,
+              after.policy.clean_reuse_quad_count),
+      .total_upload_rgba_bytes_delta =
+          render_text_renderer_glyph_quad_packet_count_delta(
+              before.policy.total_upload_rgba_bytes,
+              after.policy.total_upload_rgba_bytes),
+      .frame_id_changed = before.frame_id != after.frame_id,
+      .frame_ready_changed =
+          before.frame_ready_for_renderer != after.frame_ready_for_renderer,
+      .blockers_changed = before.policy.has_blockers != after.policy.has_blockers,
+  };
+
+  std::vector<bool> matched_after(after.packets.size(), false);
+  diff.packet_diffs.reserve(before.packets.size() + after.packets.size());
+  for (const auto& previous_packet : before.packets) {
+    const auto* current_packet = find_unmatched_render_text_renderer_glyph_quad_packet(
+        after.packets, matched_after, previous_packet.quad_packet_id);
+    if (current_packet != nullptr) {
+      const std::size_t current_index =
+          render_text_renderer_glyph_quad_packet_index(after.packets, current_packet);
+      if (current_index < matched_after.size()) {
+        matched_after[current_index] = true;
+      }
+    }
+    const bool duplicate_identity =
+        render_text_renderer_glyph_quad_packet_identity_duplicate(
+            before.packets, previous_packet.quad_packet_id) ||
+        render_text_renderer_glyph_quad_packet_identity_duplicate(
+            after.packets, previous_packet.quad_packet_id);
+    append_render_text_renderer_glyph_quad_packet_diff(
+        diff,
+        diff_render_text_renderer_glyph_quad_packet_records(
+            &previous_packet, current_packet, duplicate_identity));
+  }
+
+  for (std::size_t index = 0; index < after.packets.size(); ++index) {
+    if (matched_after[index]) {
+      continue;
+    }
+    const auto& current_packet = after.packets[index];
+    const bool duplicate_identity =
+        render_text_renderer_glyph_quad_packet_identity_duplicate(
+            after.packets, current_packet.quad_packet_id);
+    append_render_text_renderer_glyph_quad_packet_diff(
+        diff,
+        diff_render_text_renderer_glyph_quad_packet_records(
+            nullptr, &current_packet, duplicate_identity));
+  }
+
+  diff.policy.stable_no_change =
+      !diff.policy.frame_id_changed && !diff.policy.frame_ready_changed &&
+      !diff.policy.blockers_changed && diff.policy.added_packet_count == 0U &&
+      diff.policy.removed_packet_count == 0U &&
+      diff.policy.changed_packet_count == 0U &&
+      diff.policy.duplicate_identity_count == 0U &&
+      diff.policy.missing_identity_count == 0U;
+  diff.summary = diff.policy.stable_no_change
+      ? "renderer glyph quad packet diff is stable with no changes"
+      : std::to_string(diff.policy.added_packet_count) + " added, " +
+            std::to_string(diff.policy.removed_packet_count) + " removed, " +
+            std::to_string(diff.policy.changed_packet_count) +
+            " changed renderer glyph quad packet(s)";
+  return diff;
 }
 
 namespace detail {

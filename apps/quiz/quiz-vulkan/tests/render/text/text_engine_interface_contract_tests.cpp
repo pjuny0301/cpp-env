@@ -3032,6 +3032,9 @@ static_assert(requires(
     render::render_text_renderer_glyph_quad_packet_policy_snapshot glyph_quad_policy,
     render::render_text_renderer_glyph_quad_packet_request glyph_quad_request,
     render::render_text_renderer_glyph_quad_packet_snapshot glyph_quad_snapshot,
+    render::render_text_renderer_glyph_quad_packet_diff_policy glyph_quad_diff_policy,
+    render::render_text_renderer_glyph_quad_packet_diff_record glyph_quad_packet_diff,
+    render::render_text_renderer_glyph_quad_packet_diff_snapshot glyph_quad_diff,
     render::render_text_frame_resource_packet_consumption_diff_policy resource_consumption_policy,
     render::render_text_frame_resource_packet_consumption_packet_diff resource_consumption_packet_diff,
     render::render_text_frame_resource_packet_consumption_page_diff resource_consumption_page_diff,
@@ -4008,6 +4011,108 @@ static_assert(requires(
         -> std::same_as<void>;
     { render::make_render_text_renderer_glyph_quad_packets(glyph_quad_request) }
         -> std::same_as<render::render_text_renderer_glyph_quad_packet_snapshot>;
+    { glyph_quad_diff_policy.quad_packet_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { glyph_quad_diff_policy.ready_quad_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { glyph_quad_diff_policy.blocked_quad_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { glyph_quad_diff_policy.uploaded_quad_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { glyph_quad_diff_policy.clean_reuse_quad_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { glyph_quad_diff_policy.total_upload_rgba_bytes_delta } -> std::same_as<std::ptrdiff_t&>;
+    { glyph_quad_diff_policy.added_packet_count } -> std::same_as<std::size_t&>;
+    { glyph_quad_diff_policy.removed_packet_count } -> std::same_as<std::size_t&>;
+    { glyph_quad_diff_policy.changed_packet_count } -> std::same_as<std::size_t&>;
+    { glyph_quad_diff_policy.unchanged_packet_count } -> std::same_as<std::size_t&>;
+    { glyph_quad_diff_policy.readiness_regression_count } -> std::same_as<std::size_t&>;
+    { glyph_quad_diff_policy.readiness_recovery_count } -> std::same_as<std::size_t&>;
+    { glyph_quad_diff_policy.layout_bounds_changed_count } -> std::same_as<std::size_t&>;
+    { glyph_quad_diff_policy.atlas_bounds_changed_count } -> std::same_as<std::size_t&>;
+    { glyph_quad_diff_policy.uv_bounds_changed_count } -> std::same_as<std::size_t&>;
+    { glyph_quad_diff_policy.page_revision_changed_count } -> std::same_as<std::size_t&>;
+    { glyph_quad_diff_policy.sampler_key_changed_count } -> std::same_as<std::size_t&>;
+    { glyph_quad_diff_policy.upload_request_id_changed_count } -> std::same_as<std::size_t&>;
+    { glyph_quad_diff_policy.upload_operation_id_changed_count } -> std::same_as<std::size_t&>;
+    { glyph_quad_diff_policy.uploaded_byte_count_changed_count } -> std::same_as<std::size_t&>;
+    { glyph_quad_diff_policy.readiness_changed_count } -> std::same_as<std::size_t&>;
+    { glyph_quad_diff_policy.status_changed_count } -> std::same_as<std::size_t&>;
+    { glyph_quad_diff_policy.duplicate_identity_count } -> std::same_as<std::size_t&>;
+    { glyph_quad_diff_policy.missing_identity_count } -> std::same_as<std::size_t&>;
+    { glyph_quad_diff_policy.frame_id_changed } -> std::same_as<bool&>;
+    { glyph_quad_diff_policy.frame_ready_changed } -> std::same_as<bool&>;
+    { glyph_quad_diff_policy.blockers_changed } -> std::same_as<bool&>;
+    { glyph_quad_diff_policy.stable_no_change } -> std::same_as<bool&>;
+    { glyph_quad_packet_diff.quad_packet_id } -> std::same_as<std::string&>;
+    { glyph_quad_packet_diff.previous_resource_packet_id } -> std::same_as<std::string&>;
+    { glyph_quad_packet_diff.current_resource_packet_id } -> std::same_as<std::string&>;
+    { glyph_quad_packet_diff.previous_sampler_key } -> std::same_as<std::string&>;
+    { glyph_quad_packet_diff.current_sampler_key } -> std::same_as<std::string&>;
+    { glyph_quad_packet_diff.previous_upload_request_id } -> std::same_as<std::string&>;
+    { glyph_quad_packet_diff.current_upload_request_id } -> std::same_as<std::string&>;
+    { glyph_quad_packet_diff.previous_upload_operation_id } -> std::same_as<std::string&>;
+    { glyph_quad_packet_diff.current_upload_operation_id } -> std::same_as<std::string&>;
+    { glyph_quad_packet_diff.added } -> std::same_as<bool&>;
+    { glyph_quad_packet_diff.removed } -> std::same_as<bool&>;
+    { glyph_quad_packet_diff.changed } -> std::same_as<bool&>;
+    { glyph_quad_packet_diff.unchanged } -> std::same_as<bool&>;
+    { glyph_quad_packet_diff.missing_identity } -> std::same_as<bool&>;
+    { glyph_quad_packet_diff.duplicate_identity } -> std::same_as<bool&>;
+    { glyph_quad_packet_diff.layout_bounds_changed } -> std::same_as<bool&>;
+    { glyph_quad_packet_diff.atlas_bounds_changed } -> std::same_as<bool&>;
+    { glyph_quad_packet_diff.uv_bounds_changed } -> std::same_as<bool&>;
+    { glyph_quad_packet_diff.page_revision_changed } -> std::same_as<bool&>;
+    { glyph_quad_packet_diff.sampler_key_changed } -> std::same_as<bool&>;
+    { glyph_quad_packet_diff.upload_request_id_changed } -> std::same_as<bool&>;
+    { glyph_quad_packet_diff.upload_operation_id_changed } -> std::same_as<bool&>;
+    { glyph_quad_packet_diff.uploaded_byte_count_changed } -> std::same_as<bool&>;
+    { glyph_quad_packet_diff.readiness_changed } -> std::same_as<bool&>;
+    { glyph_quad_packet_diff.readiness_regressed } -> std::same_as<bool&>;
+    { glyph_quad_packet_diff.readiness_recovered } -> std::same_as<bool&>;
+    { glyph_quad_packet_diff.status_changed } -> std::same_as<bool&>;
+    { glyph_quad_packet_diff.upload_rgba_bytes_delta } -> std::same_as<std::ptrdiff_t&>;
+    { glyph_quad_packet_diff.previous_ready } -> std::same_as<bool&>;
+    { glyph_quad_packet_diff.current_ready } -> std::same_as<bool&>;
+    { glyph_quad_packet_diff.previous_page_id } -> std::same_as<render::render_text_atlas_page_id&>;
+    { glyph_quad_packet_diff.current_page_id } -> std::same_as<render::render_text_atlas_page_id&>;
+    { glyph_quad_packet_diff.previous_page_revision } -> std::same_as<render::render_text_revision&>;
+    { glyph_quad_packet_diff.current_page_revision } -> std::same_as<render::render_text_revision&>;
+    { glyph_quad_packet_diff.previous_status }
+        -> std::same_as<render::render_text_renderer_glyph_quad_packet_status&>;
+    { glyph_quad_packet_diff.current_status }
+        -> std::same_as<render::render_text_renderer_glyph_quad_packet_status&>;
+    { glyph_quad_diff.previous_frame_id } -> std::same_as<std::string&>;
+    { glyph_quad_diff.current_frame_id } -> std::same_as<std::string&>;
+    { glyph_quad_diff.previous_ready_for_renderer } -> std::same_as<bool&>;
+    { glyph_quad_diff.current_ready_for_renderer } -> std::same_as<bool&>;
+    { glyph_quad_diff.policy }
+        -> std::same_as<render::render_text_renderer_glyph_quad_packet_diff_policy&>;
+    { glyph_quad_diff.packet_diffs }
+        -> std::same_as<std::vector<render::render_text_renderer_glyph_quad_packet_diff_record>&>;
+    { glyph_quad_diff.added_quad_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { glyph_quad_diff.removed_quad_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { glyph_quad_diff.changed_quad_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { glyph_quad_diff.unchanged_quad_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { glyph_quad_diff.readiness_regressed_quad_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { glyph_quad_diff.readiness_recovered_quad_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { glyph_quad_diff.duplicate_identity_quad_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { glyph_quad_diff.missing_identity_quad_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { glyph_quad_diff.summary } -> std::same_as<std::string&>;
+    { glyph_quad_diff.has_changes() } -> std::same_as<bool>;
+    { glyph_quad_diff.stable_no_change() } -> std::same_as<bool>;
+    { render::render_text_renderer_glyph_quad_packet_count_delta(std::size_t{}, std::size_t{}) }
+        -> std::same_as<std::ptrdiff_t>;
+    { render::render_text_renderer_glyph_quad_packet_identity_duplicate(
+        glyph_quad_snapshot.packets,
+        style_key_text) } -> std::same_as<bool>;
+    { render::find_unmatched_render_text_renderer_glyph_quad_packet(
+        glyph_quad_snapshot.packets,
+        std::vector<bool>{},
+        style_key_text) } -> std::same_as<const render::render_text_renderer_glyph_quad_packet_record*>;
+    { render::render_text_renderer_glyph_quad_packet_index(glyph_quad_snapshot.packets, &glyph_quad_packet) }
+        -> std::same_as<std::size_t>;
+    { render::diff_render_text_renderer_glyph_quad_packet_records(&glyph_quad_packet, &glyph_quad_packet, duplicate) }
+        -> std::same_as<render::render_text_renderer_glyph_quad_packet_diff_record>;
+    { render::append_render_text_renderer_glyph_quad_packet_diff(glyph_quad_diff, glyph_quad_packet_diff) }
+        -> std::same_as<void>;
+    { render::diff_render_text_renderer_glyph_quad_packet_snapshots(glyph_quad_snapshot, glyph_quad_snapshot) }
+        -> std::same_as<render::render_text_renderer_glyph_quad_packet_diff_snapshot>;
     { resource_consumption_policy.resource_packet_count_delta } -> std::same_as<std::ptrdiff_t&>;
     { resource_consumption_policy.ready_packet_count_delta } -> std::same_as<std::ptrdiff_t&>;
     { resource_consumption_policy.blocked_packet_count_delta } -> std::same_as<std::ptrdiff_t&>;

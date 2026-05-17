@@ -27,7 +27,8 @@ Historical integration notes are kept in git history, not repeated here.
   settle. Glyph quad packet diff evidence is also integrated.
 - Image: draw-list texture frame composition is now integrated; the next image
   gap is renderer-bound texture quad/resource consumption after Vulkan
-  descriptor evidence settles.
+  descriptor evidence settles. Renderer texture quad packet evidence is also
+  integrated.
 - Input/IME: suppressed raw text and shortcut attempts during active IME
   composition now emit diagnostics without app/domain dispatch.
 
@@ -80,8 +81,8 @@ Historical integration notes are kept in git history, not repeated here.
   `7889fa1`.
 - Last full Windows MinGW CTest batch passed `105/105` from
   `C:/aa/build/out/quiz/quiz-vulkan/windows-mingw-ascii`.
-- After `769d5a9`, Windows MinGW focused input CTest passed 4/4 for IME
-  suppressed route diagnostics.
+- After `89b2477`, Windows MinGW focused image CTest passed 1/1 for renderer
+  texture quad packet evidence.
 
 ## Useful Commands
 

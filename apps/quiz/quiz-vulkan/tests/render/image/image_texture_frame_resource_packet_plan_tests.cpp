@@ -27,6 +27,8 @@ static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_rende
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_renderer_texture_quad_packet_summary>);
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_renderer_texture_quad_packet_diff_entry>);
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_renderer_texture_quad_packet_summary_diff>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_renderer_texture_quad_draw_payload>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_renderer_texture_quad_draw_payload_frame>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_resource_packet_plan_entry>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_resource_packet_plan>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_draw_list_texture_frame_composition_entry>);
@@ -35,6 +37,8 @@ static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_rend
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_renderer_texture_quad_packet_summary>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_renderer_texture_quad_packet_diff_entry>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_renderer_texture_quad_packet_summary_diff>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_renderer_texture_quad_draw_payload>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_renderer_texture_quad_draw_payload_frame>);
 
 void require(bool condition, const char* message)
 {
@@ -1212,6 +1216,197 @@ void test_renderer_texture_quad_packet_diff_reports_added_removed_duplicate_and_
     require(duplicate->recovery, "renderer texture quad identity diff classifies duplicate identity removal as recovery");
 }
 
+void test_renderer_texture_quad_draw_payloads_preserve_ready_packet_data()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_image_renderer_texture_quad_packet_summary summary =
+        make_test_renderer_texture_quad_summary({
+            make_test_renderer_texture_quad_packet("card", 0, true),
+            make_test_renderer_texture_quad_packet("badge", 1, true),
+        });
+
+    const render_image_renderer_texture_quad_draw_payload_frame frame =
+        make_render_image_renderer_texture_quad_draw_payload_frame(summary);
+
+    require(frame.ok(), "ready renderer texture quad payload frame is ok");
+    require(
+        frame.status == render_image_renderer_texture_quad_draw_payload_frame_status::draw_ready,
+        "ready renderer texture quad payload frame status is draw ready");
+    require(frame.status_name == "draw_ready", "ready renderer texture quad payload frame status name is stable");
+    require(frame.payload_count == 2, "ready renderer texture quad payload frame records payload count");
+    require(frame.draw_ready_payload_count == 2, "ready renderer texture quad payload frame counts draw-ready payloads");
+    require(frame.placeholder_payload_count == 0, "ready renderer texture quad payload frame has no placeholders");
+    require(frame.blocked_payload_count == 0, "ready renderer texture quad payload frame has no blockers");
+    require(frame.draw_payloads_ready, "ready renderer texture quad payload frame marks payloads ready");
+    require(
+        frame.diagnostic == "image renderer texture quad draw payload frame is ready",
+        "ready renderer texture quad payload frame diagnostic is stable");
+
+    const render_image_renderer_texture_quad_draw_payload& first = frame.payloads[0];
+    require(first.ok(), "ready renderer texture quad payload is ok");
+    require(
+        first.status == render_image_renderer_texture_quad_draw_payload_status::draw_ready,
+        "ready renderer texture quad payload status is draw ready");
+    require(first.status_name == "draw_ready", "ready renderer texture quad payload status name is stable");
+    require(first.draw_ready, "ready renderer texture quad payload records draw-ready flag");
+    require(!first.placeholder_backed, "ready renderer texture quad payload is not placeholder-backed");
+    require(!first.blocked, "ready renderer texture quad payload is not blocked");
+    require(first.payload_index == 0, "ready renderer texture quad payload index is deterministic");
+    require(first.source_packet_index == 0, "ready renderer texture quad payload preserves source packet index");
+    require(first.draw_command_index == 0, "ready renderer texture quad payload preserves command index");
+    require(first.node_id == "card", "ready renderer texture quad payload preserves node id");
+    require(first.parent_node_id == "root", "ready renderer texture quad payload preserves parent node id");
+    require(first.bounds.width == 32.0f, "ready renderer texture quad payload preserves bounds");
+    require(first.content_bounds.width == 30.0f, "ready renderer texture quad payload preserves content bounds");
+    require(first.uri == "asset://textures/card.ppm", "ready renderer texture quad payload preserves source uri");
+    require(first.alt_text == "card", "ready renderer texture quad payload preserves alt text");
+    require(first.texture_id == 900, "ready renderer texture quad payload preserves texture id");
+    require(first.texture_revision == 4, "ready renderer texture quad payload preserves texture revision");
+    require(first.texture_width == 64, "ready renderer texture quad payload preserves texture width");
+    require(first.texture_height == 32, "ready renderer texture quad payload preserves texture height");
+    require(first.upload_request_id == 1200, "ready renderer texture quad payload preserves upload request");
+    require(first.upload_generation_id == 8, "ready renderer texture quad payload preserves upload generation");
+    require(first.uploaded_byte_count == 128, "ready renderer texture quad payload preserves uploaded byte count");
+    require(first.sampler_key.find("min=linear") != std::string::npos, "ready renderer texture quad payload preserves sampler key");
+    require(first.stable_texture_cache_key.find("card.ppm") != std::string::npos, "ready renderer texture quad payload preserves cache key");
+    require(
+        first.stable_payload_identity.find("payload=texture:900:4") != std::string::npos,
+        "ready renderer texture quad payload identity includes texture handle");
+    require(
+        first.diagnostic == "image renderer texture quad draw payload is ready",
+        "ready renderer texture quad payload diagnostic is stable");
+}
+
+void test_renderer_texture_quad_draw_payloads_use_policy_placeholder_for_blocked_packets()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_image_renderer_texture_quad_packet_summary summary =
+        make_test_renderer_texture_quad_summary({
+            make_test_renderer_texture_quad_packet("blocked", 0, false),
+        });
+    render_image_renderer_texture_quad_draw_payload_options options;
+    options.placeholder_policy.enabled = true;
+    options.placeholder_policy.width = 3;
+    options.placeholder_policy.height = 5;
+    options.placeholder_policy.source_key_prefix = "placeholder://quad/";
+
+    const render_image_renderer_texture_quad_draw_payload_frame frame =
+        make_render_image_renderer_texture_quad_draw_payload_frame(summary, options);
+
+    require(frame.ok(), "placeholder renderer texture quad payload frame is ok");
+    require(
+        frame.status == render_image_renderer_texture_quad_draw_payload_frame_status::placeholder_backed,
+        "placeholder renderer texture quad payload frame status is placeholder-backed");
+    require(frame.placeholder_policy_enabled, "placeholder renderer texture quad payload frame records policy");
+    require(frame.placeholder_payload_count == 1, "placeholder renderer texture quad payload frame counts placeholder");
+    require(frame.fallback_placeholder_payload_count == 1, "placeholder renderer texture quad payload frame counts fallback placeholder");
+    require(frame.blocked_payload_count == 0, "placeholder renderer texture quad payload frame has no blockers");
+    require(frame.has_fallback_placeholders, "placeholder renderer texture quad payload frame flags fallback placeholders");
+    require(
+        frame.diagnostic == "image renderer texture quad draw payload frame is placeholder-backed",
+        "placeholder renderer texture quad payload frame diagnostic is stable");
+
+    const render_image_renderer_texture_quad_draw_payload& payload = frame.payloads[0];
+    require(payload.ok(), "placeholder renderer texture quad payload is ok");
+    require(
+        payload.status == render_image_renderer_texture_quad_draw_payload_status::placeholder_backed,
+        "placeholder renderer texture quad payload status is placeholder-backed");
+    require(!payload.draw_ready, "fallback placeholder renderer texture quad payload is not real draw-ready");
+    require(payload.placeholder_backed, "fallback placeholder renderer texture quad payload records placeholder");
+    require(payload.fallback_placeholder, "fallback placeholder renderer texture quad payload records fallback flag");
+    require(!payload.blocked, "fallback placeholder renderer texture quad payload is not blocked");
+    require(payload.texture_id == 0, "fallback placeholder renderer texture quad payload does not invent texture id");
+    require(payload.texture_width == 3, "fallback placeholder renderer texture quad payload uses policy width");
+    require(payload.texture_height == 5, "fallback placeholder renderer texture quad payload uses policy height");
+    require(
+        payload.placeholder_key.source_key.find("placeholder://quad/upload_failed/asset://textures/blocked.ppm")
+            == 0,
+        "fallback placeholder renderer texture quad payload uses deterministic placeholder key");
+    require(
+        payload.stable_texture_cache_key.find("placeholder://quad/upload_failed/asset://textures/blocked.ppm")
+            != std::string::npos,
+        "fallback placeholder renderer texture quad payload exposes placeholder cache key");
+    require(
+        payload.stable_payload_identity.find("payload=placeholder:") != std::string::npos,
+        "fallback placeholder renderer texture quad payload identity records placeholder");
+    require(
+        payload.diagnostic.find("using deterministic placeholder texture for upload_failed") == 0,
+        "fallback placeholder renderer texture quad payload diagnostic is stable");
+}
+
+void test_renderer_texture_quad_draw_payloads_keep_blocked_packets_blocked_without_policy()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_image_renderer_texture_quad_packet_summary summary =
+        make_test_renderer_texture_quad_summary({
+            make_test_renderer_texture_quad_packet("blocked", 0, false),
+        });
+
+    const render_image_renderer_texture_quad_draw_payload_frame frame =
+        make_render_image_renderer_texture_quad_draw_payload_frame(summary);
+
+    require(!frame.ok(), "blocked renderer texture quad payload frame is not ok");
+    require(
+        frame.status == render_image_renderer_texture_quad_draw_payload_frame_status::blocked,
+        "blocked renderer texture quad payload frame status is blocked");
+    require(!frame.placeholder_policy_enabled, "blocked renderer texture quad payload frame records disabled policy");
+    require(frame.placeholder_payload_count == 0, "blocked renderer texture quad payload frame has no placeholder");
+    require(frame.blocked_payload_count == 1, "blocked renderer texture quad payload frame counts blocker");
+    require(frame.has_blockers, "blocked renderer texture quad payload frame flags blockers");
+    require(
+        frame.diagnostic == "image renderer texture quad draw payload frame has blocked payloads",
+        "blocked renderer texture quad payload frame diagnostic is stable");
+
+    const render_image_renderer_texture_quad_draw_payload& payload = frame.payloads[0];
+    require(!payload.ok(), "blocked renderer texture quad payload is not ok");
+    require(
+        payload.status == render_image_renderer_texture_quad_draw_payload_status::blocked,
+        "blocked renderer texture quad payload status is blocked");
+    require(!payload.draw_ready, "blocked renderer texture quad payload is not draw ready");
+    require(!payload.placeholder_backed, "blocked renderer texture quad payload is not placeholder-backed");
+    require(payload.blocked, "blocked renderer texture quad payload records blocked flag");
+    require(
+        payload.blocker_summary == "resource packet blocked renderer texture quad packet",
+        "blocked renderer texture quad payload preserves blocker summary");
+    require(
+        payload.stable_payload_identity.find("payload=blocked:blocked_resource_packet") != std::string::npos,
+        "blocked renderer texture quad payload identity records blocked reason");
+    require(
+        payload.diagnostic
+            == "image renderer texture quad draw payload is blocked: "
+               "resource packet blocked renderer texture quad packet",
+        "blocked renderer texture quad payload diagnostic is stable");
+}
+
+void test_renderer_texture_quad_draw_payload_identity_is_stable_and_deterministic()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_image_renderer_texture_quad_packet_summary summary =
+        make_test_renderer_texture_quad_summary({
+            make_test_renderer_texture_quad_packet("card", 0, true),
+            make_test_renderer_texture_quad_packet("badge", 1, true),
+        });
+
+    const render_image_renderer_texture_quad_draw_payload_frame first =
+        make_render_image_renderer_texture_quad_draw_payload_frame(summary);
+    const render_image_renderer_texture_quad_draw_payload_frame second =
+        make_render_image_renderer_texture_quad_draw_payload_frame(summary);
+
+    require(first.payloads.size() == second.payloads.size(), "deterministic payload frame sizes match");
+    require(first.payloads[0].stable_payload_identity == second.payloads[0].stable_payload_identity, "first payload identity is stable");
+    require(first.payloads[1].stable_payload_identity == second.payloads[1].stable_payload_identity, "second payload identity is stable");
+    require(first.payloads[0].source_packet_index == 0, "first payload preserves deterministic packet order");
+    require(first.payloads[1].source_packet_index == 1, "second payload preserves deterministic packet order");
+    require(first.payloads[0].stable_payload_identity != first.payloads[1].stable_payload_identity, "payload identities remain distinct");
+    require(
+        first.payload_identity_summary == second.payload_identity_summary,
+        "payload identity summary is stable across repeated consumption");
+}
+
 void test_resource_packet_status_helpers_are_stable()
 {
     using namespace quiz_vulkan::render;
@@ -1258,6 +1453,16 @@ void test_resource_packet_status_helpers_are_stable()
             render_image_renderer_texture_quad_packet_summary_diff_status::unchanged)
             == "unchanged",
         "renderer texture quad summary diff status name is stable");
+    require(
+        render_image_renderer_texture_quad_draw_payload_status_name(
+            render_image_renderer_texture_quad_draw_payload_status::placeholder_backed)
+            == "placeholder_backed",
+        "renderer texture quad draw payload status name is stable");
+    require(
+        render_image_renderer_texture_quad_draw_payload_frame_status_name(
+            render_image_renderer_texture_quad_draw_payload_frame_status::draw_ready)
+            == "draw_ready",
+        "renderer texture quad draw payload frame status name is stable");
 }
 
 } // namespace
@@ -1274,6 +1479,10 @@ int main()
     test_renderer_texture_quad_packet_diff_classifies_ready_blocked_transitions();
     test_renderer_texture_quad_packet_diff_counts_layout_texture_sampler_cache_and_upload_changes();
     test_renderer_texture_quad_packet_diff_reports_added_removed_duplicate_and_missing_identity_changes();
+    test_renderer_texture_quad_draw_payloads_preserve_ready_packet_data();
+    test_renderer_texture_quad_draw_payloads_use_policy_placeholder_for_blocked_packets();
+    test_renderer_texture_quad_draw_payloads_keep_blocked_packets_blocked_without_policy();
+    test_renderer_texture_quad_draw_payload_identity_is_stable_and_deterministic();
     test_resource_packet_status_helpers_are_stable();
     return 0;
 }

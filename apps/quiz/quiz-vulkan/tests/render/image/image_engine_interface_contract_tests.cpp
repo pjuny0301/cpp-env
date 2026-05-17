@@ -345,6 +345,12 @@ static_assert(requires(
         renderer_texture_quad_packet_summary_diff_status,
     render::render_image_renderer_texture_quad_packet_diff_entry renderer_texture_quad_packet_diff_entry,
     render::render_image_renderer_texture_quad_packet_summary_diff renderer_texture_quad_packet_summary_diff,
+    render::render_image_renderer_texture_quad_draw_payload_status renderer_texture_quad_draw_payload_status,
+    render::render_image_renderer_texture_quad_draw_payload_frame_status
+        renderer_texture_quad_draw_payload_frame_status,
+    render::render_image_renderer_texture_quad_draw_payload_options renderer_texture_quad_draw_payload_options,
+    render::render_image_renderer_texture_quad_draw_payload renderer_texture_quad_draw_payload,
+    render::render_image_renderer_texture_quad_draw_payload_frame renderer_texture_quad_draw_payload_frame,
     render::render_image_texture_frame_resource_packet_materialization_status
         texture_frame_resource_packet_materialization_status,
     render::render_image_texture_frame_resource_cache_handoff_record texture_frame_resource_cache_handoff,
@@ -1953,6 +1959,30 @@ static_assert(requires(
     { render::diff_render_image_renderer_texture_quad_packet_summaries(
         renderer_texture_quad_packet_summary, renderer_texture_quad_packet_summary) }
         -> std::same_as<render::render_image_renderer_texture_quad_packet_summary_diff>;
+    { render::render_image_renderer_texture_quad_draw_payload_status_name(
+        renderer_texture_quad_draw_payload_status) } -> std::same_as<std::string>;
+    { render::render_image_renderer_texture_quad_draw_payload_frame_status_name(
+        renderer_texture_quad_draw_payload_frame_status) } -> std::same_as<std::string>;
+    { render::render_image_renderer_texture_quad_draw_payload_requested_key_for(
+        renderer_texture_quad_packet) } -> std::same_as<render::render_image_texture_key>;
+    { render::render_image_renderer_texture_quad_draw_payload_status_for(
+        renderer_texture_quad_packet, renderer_texture_quad_draw_payload_options) }
+        -> std::same_as<render::render_image_renderer_texture_quad_draw_payload_status>;
+    { render::render_image_renderer_texture_quad_draw_payload_identity_for(
+        renderer_texture_quad_packet,
+        renderer_texture_quad_draw_payload_status,
+        texture_key) } -> std::same_as<std::string>;
+    { render::make_render_image_renderer_texture_quad_draw_payload(
+        renderer_texture_quad_packet, renderer_texture_quad_draw_payload_options, std::size_t{}) }
+        -> std::same_as<render::render_image_renderer_texture_quad_draw_payload>;
+    { render::count_render_image_renderer_texture_quad_draw_payload(
+        renderer_texture_quad_draw_payload_frame, renderer_texture_quad_draw_payload) }
+        -> std::same_as<void>;
+    { render::make_render_image_renderer_texture_quad_draw_payload_frame(renderer_texture_quad_packet_summary) }
+        -> std::same_as<render::render_image_renderer_texture_quad_draw_payload_frame>;
+    { render::make_render_image_renderer_texture_quad_draw_payload_frame(
+        renderer_texture_quad_packet_summary, renderer_texture_quad_draw_payload_options) }
+        -> std::same_as<render::render_image_renderer_texture_quad_draw_payload_frame>;
     { render::render_image_texture_frame_resource_packet_materialization_status_name(
         texture_frame_resource_packet_materialization_status) } -> std::same_as<std::string>;
     { render::render_image_texture_frame_resource_packet_materialization_status_is_blocked(
@@ -3440,6 +3470,76 @@ static_assert(requires(
     { renderer_texture_quad_packet_summary_diff.blocker_transition_summary } -> std::same_as<std::string&>;
     { renderer_texture_quad_packet_summary_diff.diagnostic } -> std::same_as<std::string&>;
     { renderer_texture_quad_packet_summary_diff.ok() } -> std::same_as<bool>;
+    { renderer_texture_quad_draw_payload_options.placeholder_policy }
+        -> std::same_as<render::fake_image_texture_placeholder_policy&>;
+    { renderer_texture_quad_draw_payload_options.placeholder_reason }
+        -> std::same_as<render::fake_image_texture_placeholder_reason&>;
+    { renderer_texture_quad_draw_payload.payload_index } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_draw_payload.source_packet_index } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_draw_payload.frame_label } -> std::same_as<std::string&>;
+    { renderer_texture_quad_draw_payload.draw_command_index } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_draw_payload.image_command_index } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_draw_payload.texture_request_index } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_draw_payload.node_id } -> std::same_as<render::render_node_id&>;
+    { renderer_texture_quad_draw_payload.parent_node_id } -> std::same_as<render::render_node_id&>;
+    { renderer_texture_quad_draw_payload.bounds } -> std::same_as<render::render_rect&>;
+    { renderer_texture_quad_draw_payload.content_bounds } -> std::same_as<render::render_rect&>;
+    { renderer_texture_quad_draw_payload.uri } -> std::same_as<std::string&>;
+    { renderer_texture_quad_draw_payload.alt_text } -> std::same_as<std::string&>;
+    { renderer_texture_quad_draw_payload.aspect_ratio } -> std::same_as<float&>;
+    { renderer_texture_quad_draw_payload.stable_draw_command_identity } -> std::same_as<std::string&>;
+    { renderer_texture_quad_draw_payload.stable_quad_packet_identity } -> std::same_as<std::string&>;
+    { renderer_texture_quad_draw_payload.stable_payload_identity } -> std::same_as<std::string&>;
+    { renderer_texture_quad_draw_payload.texture_key } -> std::same_as<render::render_image_texture_key&>;
+    { renderer_texture_quad_draw_payload.placeholder_key } -> std::same_as<render::render_image_texture_key&>;
+    { renderer_texture_quad_draw_payload.stable_texture_cache_key } -> std::same_as<std::string&>;
+    { renderer_texture_quad_draw_payload.sampler_key } -> std::same_as<std::string&>;
+    { renderer_texture_quad_draw_payload.texture_id } -> std::same_as<render::render_image_texture_id&>;
+    { renderer_texture_quad_draw_payload.texture_revision } -> std::same_as<render::render_image_revision&>;
+    { renderer_texture_quad_draw_payload.texture_width } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_draw_payload.texture_height } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_draw_payload.upload_request_id } -> std::same_as<std::uint64_t&>;
+    { renderer_texture_quad_draw_payload.upload_generation_id } -> std::same_as<std::uint64_t&>;
+    { renderer_texture_quad_draw_payload.uploaded_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_draw_payload.source_packet_status }
+        -> std::same_as<render::render_image_renderer_texture_quad_packet_status&>;
+    { renderer_texture_quad_draw_payload.source_packet_status_name } -> std::same_as<std::string&>;
+    { renderer_texture_quad_draw_payload.resource_packet_status }
+        -> std::same_as<render::render_image_texture_frame_resource_packet_status&>;
+    { renderer_texture_quad_draw_payload.resource_packet_status_name } -> std::same_as<std::string&>;
+    { renderer_texture_quad_draw_payload.status }
+        -> std::same_as<render::render_image_renderer_texture_quad_draw_payload_status&>;
+    { renderer_texture_quad_draw_payload.status_name } -> std::same_as<std::string&>;
+    { renderer_texture_quad_draw_payload.draw_ready } -> std::same_as<bool&>;
+    { renderer_texture_quad_draw_payload.placeholder_backed } -> std::same_as<bool&>;
+    { renderer_texture_quad_draw_payload.placeholder_policy_enabled } -> std::same_as<bool&>;
+    { renderer_texture_quad_draw_payload.fallback_placeholder } -> std::same_as<bool&>;
+    { renderer_texture_quad_draw_payload.blocked } -> std::same_as<bool&>;
+    { renderer_texture_quad_draw_payload.blocker_summary } -> std::same_as<std::string&>;
+    { renderer_texture_quad_draw_payload.diagnostic } -> std::same_as<std::string&>;
+    { renderer_texture_quad_draw_payload.ok() } -> std::same_as<bool>;
+    { renderer_texture_quad_draw_payload_frame.status }
+        -> std::same_as<render::render_image_renderer_texture_quad_draw_payload_frame_status&>;
+    { renderer_texture_quad_draw_payload_frame.status_name } -> std::same_as<std::string&>;
+    { renderer_texture_quad_draw_payload_frame.frame_label } -> std::same_as<std::string&>;
+    { renderer_texture_quad_draw_payload_frame.source_packet_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_draw_payload_frame.payload_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_draw_payload_frame.draw_ready_payload_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_draw_payload_frame.placeholder_payload_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_draw_payload_frame.fallback_placeholder_payload_count }
+        -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_draw_payload_frame.blocked_payload_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_draw_payload_frame.placeholder_policy_enabled } -> std::same_as<bool&>;
+    { renderer_texture_quad_draw_payload_frame.draw_payloads_ready } -> std::same_as<bool&>;
+    { renderer_texture_quad_draw_payload_frame.has_placeholders } -> std::same_as<bool&>;
+    { renderer_texture_quad_draw_payload_frame.has_fallback_placeholders } -> std::same_as<bool&>;
+    { renderer_texture_quad_draw_payload_frame.has_blockers } -> std::same_as<bool&>;
+    { renderer_texture_quad_draw_payload_frame.payloads }
+        -> std::same_as<std::vector<render::render_image_renderer_texture_quad_draw_payload>&>;
+    { renderer_texture_quad_draw_payload_frame.payload_identity_summary } -> std::same_as<std::string&>;
+    { renderer_texture_quad_draw_payload_frame.blocker_summary } -> std::same_as<std::string&>;
+    { renderer_texture_quad_draw_payload_frame.diagnostic } -> std::same_as<std::string&>;
+    { renderer_texture_quad_draw_payload_frame.ok() } -> std::same_as<bool>;
     { texture_frame_resource_cache_handoff.materialization_index } -> std::same_as<std::size_t&>;
     { texture_frame_resource_cache_handoff.request_index } -> std::same_as<std::size_t&>;
     { texture_frame_resource_cache_handoff.render_image_uri } -> std::same_as<std::string&>;
@@ -4143,6 +4243,8 @@ static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_rendere
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_renderer_texture_quad_packet_summary>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_renderer_texture_quad_packet_diff_entry>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_renderer_texture_quad_packet_summary_diff>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_renderer_texture_quad_draw_payload>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_renderer_texture_quad_draw_payload_frame>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_resource_cache_handoff_record>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_resource_upload_handoff_record>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_resource_sampler_handoff_record>);
@@ -4202,6 +4304,8 @@ static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_render
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_renderer_texture_quad_packet_summary>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_renderer_texture_quad_packet_diff_entry>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_renderer_texture_quad_packet_summary_diff>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_renderer_texture_quad_draw_payload>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_renderer_texture_quad_draw_payload_frame>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_resource_cache_handoff_record>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_resource_upload_handoff_record>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_resource_sampler_handoff_record>);
@@ -4261,6 +4365,8 @@ static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_rendere
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_renderer_texture_quad_packet_summary>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_renderer_texture_quad_packet_diff_entry>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_renderer_texture_quad_packet_summary_diff>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_renderer_texture_quad_draw_payload>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_renderer_texture_quad_draw_payload_frame>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_resource_cache_handoff_record>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_resource_upload_handoff_record>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_resource_sampler_handoff_record>);
@@ -4304,6 +4410,8 @@ static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_rende
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_renderer_texture_quad_packet_summary>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_renderer_texture_quad_packet_diff_entry>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_renderer_texture_quad_packet_summary_diff>);
+static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_renderer_texture_quad_draw_payload>);
+static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_renderer_texture_quad_draw_payload_frame>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_resource_packet_plan_entry>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_resource_packet_plan>);
 static_assert(

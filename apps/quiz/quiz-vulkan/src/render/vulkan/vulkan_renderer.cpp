@@ -195,6 +195,24 @@ vulkan_backend::vulkan_backend_frame_result submit_optional_vulkan_backend_frame
         return {};
     }
 
+    if (options.backend_device != nullptr) {
+        if (options.backend_pipeline_cache != nullptr
+            && options.backend_command_recorder != nullptr
+            && options.backend_command_packet_executor != nullptr) {
+            return vulkan_backend::submit_vulkan_backend_frame(
+                *options.backend_device,
+                *options.backend_pipeline_cache,
+                *options.backend_command_recorder,
+                *options.backend_command_packet_executor,
+                draw_list,
+                options.viewport);
+        }
+        return vulkan_backend::submit_vulkan_backend_frame(
+            *options.backend_device,
+            draw_list,
+            options.viewport);
+    }
+
     vulkan_backend::null_vulkan_backend_device device;
     return vulkan_backend::submit_vulkan_backend_frame(device, draw_list, options.viewport);
 }
@@ -336,7 +354,9 @@ vulkan_renderer_frame_summary vulkan_renderer::summarize_cpu_fallback(
     const vulkan_renderer_image_texture_payload_frame* image_texture_payloads)
 {
     vulkan_renderer_frame_summary summary;
-    summary.backend = vulkan_renderer_backend::cpu_fallback;
+    summary.backend = backend_result.completed()
+        ? vulkan_renderer_backend::vulkan
+        : vulkan_renderer_backend::cpu_fallback;
     summary.viewport = options.viewport;
     summary.surface_width = options.fallback_surface_width;
     summary.surface_height = options.fallback_surface_height;

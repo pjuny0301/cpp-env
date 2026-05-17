@@ -69,6 +69,10 @@ struct vulkan_renderer_options {
     std::size_t fallback_surface_width = 160;
     std::size_t fallback_surface_height = 90;
     bool prefer_vulkan = true;
+    vulkan_backend::vulkan_backend_device_interface* backend_device = nullptr;
+    vulkan_backend::vulkan_pipeline_cache_interface* backend_pipeline_cache = nullptr;
+    vulkan_backend::vulkan_command_recorder_interface* backend_command_recorder = nullptr;
+    vulkan_backend::vulkan_command_packet_executor_interface* backend_command_packet_executor = nullptr;
 };
 
 struct vulkan_renderer_frame_summary {

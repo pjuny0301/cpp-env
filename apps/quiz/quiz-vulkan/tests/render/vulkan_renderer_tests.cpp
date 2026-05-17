@@ -881,6 +881,44 @@ void test_renderer_backend_diagnostics_report_vulkan_not_requested()
         "renderer backend result records Vulkan not requested fallback reason");
 }
 
+void test_renderer_can_use_injected_backend_device()
+{
+    using namespace quiz_vulkan::render;
+
+    render_draw_list draw_list;
+    draw_list.commands.push_back(make_quad_command(
+        "quad",
+        render_rect{0.0f, 0.0f, 50.0f, 50.0f},
+        render_color{0.25f, 0.5f, 0.75f, 1.0f}));
+
+    fake_vulkan_backend_device device(vulkan_backend::vulkan_surface_extent{.width = 64, .height = 64});
+    vulkan_renderer renderer(vulkan_renderer_options{
+        .viewport = render_rect{0.0f, 0.0f, 100.0f, 100.0f},
+        .fallback_surface_width = 10,
+        .fallback_surface_height = 10,
+        .prefer_vulkan = true,
+        .backend_device = &device,
+    });
+    renderer.submit(draw_list);
+
+    const vulkan_renderer_frame_summary& summary = renderer.last_frame_summary();
+    require(summary.backend == vulkan_renderer_backend::vulkan, "renderer reports injected Vulkan backend use");
+    require(summary.backend_attempted, "renderer attempts the injected backend device");
+    require(!summary.backend_fallback_required, "renderer does not require fallback when injected backend completes");
+    require(summary.backend_lifecycle_ready, "renderer records injected backend lifecycle readiness");
+    require(summary.backend_surface_ready, "renderer records injected backend surface readiness");
+    require(summary.backend_frame_begun, "renderer records injected backend frame begin");
+    require(summary.backend_commands_recorded, "renderer records injected backend command recording");
+    require(summary.backend_frame_submitted, "renderer records injected backend submit");
+    require(summary.backend_frame_presented, "renderer records injected backend present");
+    require(summary.backend_planned_batch_count == 1, "renderer records injected backend batch planning");
+    require(summary.backend_recorded_batch_count == 1, "renderer records injected backend command recording count");
+    require(summary.backend_surface_width == 64, "renderer records injected backend surface width");
+    require(summary.backend_surface_height == 64, "renderer records injected backend surface height");
+    require(renderer.last_backend_frame_result().completed(), "renderer retains completed injected backend frame");
+    require(device.calls.size() == 6, "renderer drives injected backend lifecycle");
+}
+
 void test_cpu_fallback_clips_and_discards()
 {
     using namespace quiz_vulkan::render;
@@ -2638,6 +2676,7 @@ int main()
     test_draw_list_submission_counts_generic_work();
     test_image_texture_payloads_drive_cpu_fallback_image_fill();
     test_renderer_backend_diagnostics_report_vulkan_not_requested();
+    test_renderer_can_use_injected_backend_device();
     test_cpu_fallback_clips_and_discards();
     test_degenerate_surface_discards_draw_calls();
     test_vulkan_frame_plan_builds_scissored_batches_from_render_contracts();

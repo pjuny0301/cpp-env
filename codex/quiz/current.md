@@ -22,8 +22,9 @@ Historical integration notes are kept in git history, not repeated here.
 - Vulkan: descriptor write payload handoff for native image views, samplers,
   image layouts, and descriptor write records after descriptor allocation
   evidence.
-- Text: renderer-facing glyph quad packet evidence after draw-list frame
-  composition and resource packet materialization.
+- Text: glyph quad packet evidence is now integrated; the next text gap is real
+  renderer/font atlas consumption after the image/Vulkan resource contracts
+  settle.
 - Image: draw-list texture frame composition after image draw-list handoff and
   texture frame resource packet materialization.
 
@@ -33,8 +34,9 @@ Historical integration notes are kept in git history, not repeated here.
   `codex/image-draw-list-frame-composition-20260517`. Merge only after a clean
   commit/report. Watch for stray `image_texture_pipeline_test_data/`.
 - `codex-text-freetype-prototype-20260514`: busy on
-  `codex/text-renderer-glyph-quad-packets-20260517`. Merge only after a clean
-  commit/report.
+  `codex/text-renderer-glyph-quad-packets-20260517`, integrated as `7889fa1`.
+  Keep the session alive and assign a fresh baseline branch for the next text
+  task.
 - `codex-vulkan-native-descriptor-set-evidence-20260516`: busy on
   `codex/vulkan-descriptor-write-payload-handoff-20260517`. It has a
   worker-local Windows/Ninja archive/link issue; do not interrupt.
@@ -67,12 +69,12 @@ Historical integration notes are kept in git history, not repeated here.
 
 ## Latest Known Verification
 
-- Main branch `codex/quiz-vulkan-remake-baseline` was clean and pushed at
-  `f79474e` after recording the text glyph quad packet worker prompt.
+- Main branch `codex/quiz-vulkan-remake-baseline` has integrated text renderer
+  glyph quad packet evidence at `7889fa1`.
 - Last full Windows MinGW CTest batch passed `105/105` from
   `C:/aa/build/out/quiz/quiz-vulkan/windows-mingw-ascii`.
-- Focused Windows checks passed for recent text/image draw-list handoff,
-  draw-list composition, and resource packet consumption integrations.
+- After `7889fa1`, Windows MinGW focused text CTest passed 2/2 for text
+  resource packet materialization and glyph quad packet evidence.
 
 ## Useful Commands
 

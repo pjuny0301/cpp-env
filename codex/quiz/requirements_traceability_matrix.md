@@ -6,6 +6,22 @@
 
 최근 baseline 통합 증거:
 
+- `ea2aa04`: Input engine now emits diagnostic-only IME cancel and focus-loss
+  route policy records when programmatic text focus changes or clears while
+  stale preedit/selection state exists, preserving UTF-8-safe caret/selection
+  before/after snapshots without app/domain dispatch.
+- current: after `ea2aa04`, Windows MinGW built
+  `quiz_vulkan_interface_contract_compile_tests`,
+  `quiz_vulkan_input_engine_ime_tests`, `quiz_vulkan_input_engine_tests`, and
+  `quiz_vulkan_text_input_model_tests`; focused input CTest passed 3/3.
+- `51e6a40`: UI renderer no longer includes the layout placer implementation
+  header; placed scene output is a scene-owned contract, and architecture
+  boundary tests now reject `src/core/ui` dependencies on `core/layout`.
+- current: after `51e6a40`, Windows MinGW built
+  `quiz_vulkan_interface_contract_compile_tests`,
+  `quiz_vulkan_architecture_boundary_tests`, `quiz_vulkan_renderer_tests`, and
+  `quiz_vulkan_app_demo_tests`; focused app/architecture/renderer CTest passed
+  3/3.
 - current: after the text/image/input/Vulkan packet and diagnostics batch
   through `c84ceba`, Windows MinGW full CTest passed `108/108` from
   `C:/aa/build/out/quiz/quiz-vulkan/windows-mingw-ascii`.

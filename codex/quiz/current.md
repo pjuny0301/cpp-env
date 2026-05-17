@@ -30,13 +30,14 @@ Historical integration notes are kept in git history, not repeated here.
   descriptor evidence settles. Renderer texture quad packet evidence is also
   integrated.
 - Input/IME: suppressed raw text and shortcut attempts during active IME
-  composition now emit diagnostics without app/domain dispatch.
+  composition now emit diagnostics without app/domain dispatch. Programmatic
+  text focus changes now also diagnose stale IME preedit/selection cleanup.
 
 ## Active Workers
 
 - `codex-image-texture-next-20260514`: busy on
   `codex/image-texture-quad-packet-diff-20260517`.
-- `codex-input-ime`: busy on
+- `codex-input-ime`: idle after integration of
   `codex/input-ime-focus-loss-diagnostics-20260517`.
 - `codex-vulkan-native-descriptor-set-evidence-20260516`: busy on
   `codex/vulkan-descriptor-payload-command-recording-20260517`.
@@ -54,6 +55,8 @@ Historical integration notes are kept in git history, not repeated here.
 - `layout_placer` reads scene/layout data and must not mutate scene data or call
   UI/render/Vulkan.
 - `ui_renderer` consumes placed UI data and must not call Vulkan or domain/app.
+  It also must not include or call `layout_placer`; it receives placed scene
+  data through the scene-owned `placed_scene` contract.
 - Vulkan consumes renderer-owned command/resource data and must not include
   scene, UI, app, domain, input, or audio.
 - App/domain presentation coupling is allowed only in app-owned bridge files
@@ -72,10 +75,18 @@ Historical integration notes are kept in git history, not repeated here.
 
 ## Latest Known Verification
 
-- Main branch `codex/quiz-vulkan-remake-baseline` is at `c84ceba` after the
-  text/image/input/Vulkan packet and diagnostics batch.
+- Main branch `codex/quiz-vulkan-remake-baseline` is at `ea2aa04` after the
+  placed-scene boundary split and IME focus-loss diagnostics integration.
 - Last full Windows MinGW CTest batch passed `108/108` from
   `C:/aa/build/out/quiz/quiz-vulkan/windows-mingw-ascii`.
+- After `51e6a40`, Windows MinGW built
+  `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_architecture_boundary_tests`,
+  `quiz_vulkan_renderer_tests`, and `quiz_vulkan_app_demo_tests`; focused CTest
+  passed 3/3 for app demo, architecture boundary, and renderer.
+- After `ea2aa04`, Windows MinGW built
+  `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_input_engine_ime_tests`,
+  `quiz_vulkan_input_engine_tests`, and `quiz_vulkan_text_input_model_tests`;
+  focused input CTest passed 3/3.
 
 ## Useful Commands
 

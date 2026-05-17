@@ -334,6 +334,125 @@ void test_ime_composition_suppresses_text_and_key_events()
         "ime commit policy records committed caret after commit");
 }
 
+void test_ime_suppressed_text_and_shortcuts_emit_route_diagnostics()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    engine.focus_text_target("answer");
+
+    require(engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 100, "draft")).size() == 1,
+        "suppressed route setup starts preedit");
+    require(engine.text_model().ime_composition().active, "suppressed route setup has active composition");
+
+    const std::string duplicate_text = "duplicate";
+    std::vector<input_event> events = engine.process_raw_event(text(110, duplicate_text));
+    require(events.empty(), "duplicate raw text during ime emits no text event");
+    require(engine.text_model().text().empty(), "duplicate raw text during ime does not commit");
+    require(engine.text_model().preedit_text() == "draft", "duplicate raw text during ime preserves preedit");
+    require(engine.routing_diagnostics().action_routes.size() == 1,
+        "duplicate raw text during ime emits one suppressed route policy");
+    const action_route_policy_diagnostic& text_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::text_commit_boundary,
+        "duplicate raw text during ime emits commit-boundary diagnostic");
+    require(!text_policy.emits_input_event, "duplicate raw text policy emits no input event");
+    require(text_policy.target_id == "answer", "duplicate raw text policy preserves target id");
+    require(text_policy.text_byte_count == duplicate_text.size(),
+        "duplicate raw text policy records suppressed byte count");
+    require(text_policy.text_byte_count_before == 0,
+        "duplicate raw text policy records committed byte count before suppression");
+    require(text_policy.text_byte_count_after == 0,
+        "duplicate raw text policy records unchanged committed byte count after suppression");
+    require_range(text_policy.caret_before, 5, 5, "duplicate raw text policy records preedit caret before");
+    require_range(text_policy.caret_after, 5, 5, "duplicate raw text policy records unchanged preedit caret after");
+    require(text_policy.composition.active, "duplicate raw text policy carries active composition");
+    require(text_policy.composition.preedit_text == "draft",
+        "duplicate raw text policy carries current preedit text");
+    require(engine.routing_diagnostics().summary.routes.text == 1,
+        "duplicate raw text summary counts one text route");
+    require(engine.routing_diagnostics().summary.routes.ime == 0,
+        "duplicate raw text summary does not count an ime route");
+    require(!engine.routing_diagnostics().summary.preedit_ended_cleanly,
+        "duplicate raw text summary reports active preedit remains");
+
+    events = engine.process_raw_event(key(120, "Enter"));
+    require(events.empty(), "submit shortcut during ime emits no text event");
+    require(engine.text_model().preedit_text() == "draft", "submit shortcut during ime preserves preedit");
+    const action_route_policy_diagnostic& submit_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::text_submit_boundary,
+        "submit shortcut during ime emits submit diagnostic");
+    require(!submit_policy.emits_input_event, "submit shortcut ime policy emits no input event");
+    require(submit_policy.keyboard.intent == keyboard_shortcut_intent::submit,
+        "submit shortcut ime policy records submit intent");
+    require(submit_policy.keyboard.repeat_policy == keyboard_repeat_policy::not_repeat,
+        "submit shortcut ime policy records non-repeat policy");
+    require(submit_policy.composition.preedit_text == "draft",
+        "submit shortcut ime policy carries active preedit");
+
+    events = engine.process_raw_event(key(125, "Enter", true));
+    require(events.empty(), "repeat submit shortcut during ime emits no text event");
+    const action_route_policy_diagnostic& repeat_submit_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::text_submit_boundary,
+        "repeat submit shortcut during ime emits submit diagnostic");
+    require(!repeat_submit_policy.emits_input_event, "repeat submit ime policy emits no input event");
+    require(repeat_submit_policy.keyboard.intent == keyboard_shortcut_intent::submit,
+        "repeat submit ime policy records submit intent");
+    require(repeat_submit_policy.keyboard.repeat, "repeat submit ime policy records repeat state");
+    require(repeat_submit_policy.keyboard.repeat_policy == keyboard_repeat_policy::ignored,
+        "repeat submit ime policy records ignored repeat policy");
+    require(repeat_submit_policy.composition.preedit_text == "draft",
+        "repeat submit ime policy carries active preedit");
+
+    events = engine.process_raw_event(key(130, "Backspace", true));
+    require(events.empty(), "repeat backspace during ime emits no text event");
+    require(engine.text_model().preedit_text() == "draft", "repeat backspace during ime preserves preedit");
+    const action_route_policy_diagnostic& backspace_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::text_backspace_boundary,
+        "repeat backspace during ime emits backspace diagnostic");
+    require(!backspace_policy.emits_input_event, "repeat backspace ime policy emits no input event");
+    require(backspace_policy.keyboard.intent == keyboard_shortcut_intent::delete_backward,
+        "repeat backspace ime policy records delete backward intent");
+    require(backspace_policy.keyboard.repeat, "repeat backspace ime policy records repeat state");
+    require(backspace_policy.keyboard.repeat_policy == keyboard_repeat_policy::allowed,
+        "repeat backspace ime policy records repeat allowance");
+    require(backspace_policy.composition.preedit_text == "draft",
+        "repeat backspace ime policy carries active preedit");
+
+    events = engine.process_raw_event(key(140, "a", false, raw_platform_key_phase::down, true));
+    require(events.empty(), "select-all shortcut during ime emits no selection event");
+    require(!engine.text_model().selection_range().has_value(),
+        "select-all shortcut during ime does not create selection");
+    const action_route_policy_diagnostic& select_all_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::selection_changed,
+        "select-all shortcut during ime emits selection diagnostic");
+    require(!select_all_policy.emits_input_event, "select-all ime policy emits no input event");
+    require(select_all_policy.keyboard.intent == keyboard_shortcut_intent::select_all,
+        "select-all ime policy records select-all intent");
+    require(select_all_policy.keyboard.modifiers.ctrl, "select-all ime policy records ctrl modifier");
+    require(select_all_policy.composition.preedit_text == "draft",
+        "select-all ime policy carries active preedit");
+
+    events = engine.process_raw_event(ime(raw_platform_ime_phase::commit, 150, "final"));
+    require(events.size() == 1, "ime commit succeeds after suppressed text and shortcuts");
+    const ime_event& commit = require_event<ime_event>(events, 0);
+    require(commit.kind == ime_event_kind::commit, "post-suppression ime event commits");
+    require(commit.composition.preedit_text == "draft",
+        "post-suppression commit carries original preedit snapshot");
+    require(engine.text_model().text() == "final", "post-suppression commit updates text model");
+    require(engine.text_model().preedit_text().empty(), "post-suppression commit clears preedit");
+}
+
 void test_ime_preedit_commit_edges()
 {
     using namespace quiz_vulkan;
@@ -711,6 +830,7 @@ int main()
     test_keyboard_navigation_diagnostics_preserve_ime_composition();
     test_text_edit_boundary_diagnostics_replace_utf8_selection();
     test_ime_composition_suppresses_text_and_key_events();
+    test_ime_suppressed_text_and_shortcuts_emit_route_diagnostics();
     test_ime_preedit_commit_edges();
     test_ime_composition_restart_cancels_visible_preedit();
     test_empty_ime_commit_and_end_cancel_preedit();

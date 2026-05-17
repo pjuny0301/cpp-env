@@ -19,9 +19,9 @@ Historical integration notes are kept in git history, not repeated here.
 
 ## Active Bottlenecks
 
-- Vulkan: descriptor write payload handoff for native image views, samplers,
-  image layouts, and descriptor write records after descriptor allocation
-  evidence.
+- Vulkan: descriptor write payload handoff is now integrated; the next Vulkan
+  gap is consuming those payloads in the native command recording path without
+  pulling scene/UI/domain state into the backend.
 - Text: glyph quad packet evidence is now integrated; the next text gap is real
   renderer/font atlas consumption after the image/Vulkan resource contracts
   settle.
@@ -40,8 +40,9 @@ Historical integration notes are kept in git history, not repeated here.
   Keep the session alive and assign a fresh baseline branch for the next text
   task.
 - `codex-vulkan-native-descriptor-set-evidence-20260516`: busy on
-  `codex/vulkan-descriptor-write-payload-handoff-20260517`. It has a
-  worker-local Windows/Ninja archive/link issue; do not interrupt.
+  `codex/vulkan-descriptor-write-payload-handoff-20260517`, integrated as
+  `d6aa9cd`. Keep the session alive and assign a fresh baseline branch for the
+  next Vulkan task.
 - Idle sessions are intentionally kept alive. Give them fresh baseline branches
   before new work; do not re-merge historical ahead commits.
 
@@ -71,13 +72,14 @@ Historical integration notes are kept in git history, not repeated here.
 
 ## Latest Known Verification
 
-- Main branch `codex/quiz-vulkan-remake-baseline` has integrated image
-  draw-list texture frame composition at `3677875` and text renderer glyph quad
-  packet evidence at `7889fa1`.
+- Main branch `codex/quiz-vulkan-remake-baseline` has integrated Vulkan
+  descriptor write payload handoff at `d6aa9cd`, image draw-list texture frame
+  composition at `3677875`, and text renderer glyph quad packet evidence at
+  `7889fa1`.
 - Last full Windows MinGW CTest batch passed `105/105` from
   `C:/aa/build/out/quiz/quiz-vulkan/windows-mingw-ascii`.
-- After `3677875`, Windows MinGW focused image CTest passed 2/2 for image
-  texture frame resource packet planning and image texture pipeline.
+- After `d6aa9cd`, Windows MinGW focused architecture/renderer/Vulkan CTest
+  passed 3/3 for descriptor write payload handoff.
 
 ## Useful Commands
 

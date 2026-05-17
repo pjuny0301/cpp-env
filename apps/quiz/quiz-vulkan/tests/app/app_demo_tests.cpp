@@ -81,12 +81,14 @@ int main()
     assert(pipeline.renderer().last_draw_list().size() == pipeline_frame.report.frame_stats.command_count);
 
     const std::filesystem::path image_fixture = write_ppm_image_fixture();
-    app_state image_state({make_image_demo_deck(image_fixture.generic_string())});
+    app_state image_state({make_image_demo_deck(image_fixture.filename().generic_string())});
     image_state.dispatch(domain::make_select_deck_action("demo_deck"));
     image_state.dispatch(domain::make_select_day_action("day_1"));
     image_state.dispatch(domain::make_start_quiz_action(domain::quiz_mode::normal), 100);
     domain::app_snapshot image_snapshot = image_state.snapshot();
-    default_app_render_pipeline image_pipeline;
+    default_app_render_pipeline image_pipeline(default_app_render_pipeline_config{
+        .image_base_directory = image_fixture.parent_path(),
+    });
     app_render_frame image_frame = image_pipeline.render(app_render_request{
         .snapshot = &image_snapshot,
     });
@@ -110,6 +112,7 @@ int main()
     assert(image_frame.report.image_texture_ready_count == 1);
     assert(image_frame.report.image_texture_mapped_count == 1);
     assert(image_pipeline.image_texture_pipeline().diagnostic_snapshot().ready_count == 1);
+    assert(image_pipeline.image_source_bytes_loader().base_directory() == image_fixture.parent_path());
 
     state.dispatch(domain::make_submit_option_action(0), 200);
     app_render_report feedback_report = render_app_snapshot(state.snapshot());

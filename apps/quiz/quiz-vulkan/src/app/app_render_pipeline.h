@@ -7,7 +7,14 @@
 #include "render/image/standard_image_decoder_chain.h"
 #include "render/text/fake_text_engine.h"
 
+#include <filesystem>
+#include <utility>
+
 namespace quiz_vulkan {
+
+struct default_app_render_pipeline_config {
+    std::filesystem::path image_base_directory;
+};
 
 struct app_render_request {
     const domain::app_snapshot* snapshot = nullptr;
@@ -29,6 +36,13 @@ public:
 
 class default_app_render_pipeline final : public app_render_pipeline_interface {
 public:
+    default_app_render_pipeline() = default;
+
+    explicit default_app_render_pipeline(default_app_render_pipeline_config config)
+    {
+        image_source_bytes_loader_.set_base_directory(std::move(config.image_base_directory));
+    }
+
     app_render_frame render(const app_render_request& request) override
     {
         if (!request.valid()) {
@@ -58,6 +72,11 @@ public:
     [[nodiscard]] const render::fake_image_texture_pipeline& image_texture_pipeline() const
     {
         return image_texture_pipeline_;
+    }
+
+    [[nodiscard]] const render::filesystem_image_source_bytes_loader& image_source_bytes_loader() const
+    {
+        return image_source_bytes_loader_;
     }
 
 private:

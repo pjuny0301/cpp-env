@@ -2,302 +2,84 @@
 
 Last updated: 2026-05-17
 
-## Top priorities
+This file is intentionally short. Use it as the first read before `big_plan.md`,
+`requirements_traceability_matrix.md`, or per-requirement implementation notes.
+Historical integration notes are kept in git history, not repeated here.
 
-- Keep the native C++/Vulkan remake aligned with the Android quiz UX baseline while routing UX actions through app/domain actions.
-- Current Vulkan bottleneck: fake descriptor set allocation now consumes completed resource-binding evidence plus image texture materialization evidence, including sampler-key matching, before native command-packet execution can receive descriptor handles. The next Vulkan-owned gap is real `VkWriteDescriptorSet` payload handoff for native image views, samplers, image layouts, and descriptor write records.
-- Current asset support: shader materialized-byte pipeline summaries now classify ready/blocked shader payloads before Vulkan shader-module consumption, including empty bytes, non-SPIR-V `.spv` magic, integrity failures, blocked loads, blocked materialization, and duplicate shader ids.
-- Current text support: render draw-list text commands now flow into a text-owned frame handoff and composition path preserving command/node/bounds/runs/style/options evidence before text frame snapshot, shaping/layout/atlas work; text atlas draw packets and upload handoff evidence then produce renderer-boundary resource packet materialization records and consumption diffs with sampler, layout, upload, page, readiness, blocker, duplicate-identity, and regression/improvement evidence before renderer/Vulkan consumption.
-- Current image support: render draw-list image commands now flow into an image-owned frame handoff preserving command/node/bounds/image-ref/sampler/cache identity evidence before texture planning; image texture frame resource packet materialization then has compact consumption diffs for texture/cache/sampler/upload/placeholder/readiness/blocker changes, duplicate or missing identities, and ready regression/recovery evidence before renderer/Vulkan consumption.
-- Treat long press as the unknown-question path: UI button contract `mark_question_unknown`, app input route `mark_question_unknown`, domain payload `mark_question_unknown_action`.
-- Keep test status counts derived from the configured build with `ctest -N`; do not freeze global CTest totals in docs.
-- Build the engine stack in dependency order: Vulkan backend implementation, image decode/texture path, text layout/atlas, asset materialization, and input/IME. Audio/backend wiring is intentionally deferred for now.
-- Worker branches should start from the current baseline with a fresh branch. Do not rebase stale worker branches that contain already-cherry-picked historical commits.
-- Native desktop dependency source snapshots live locally under `build/external/lib/cpp/desktop/`, but only `README.md` and `native-deps-manifest.md` are tracked. The downloaded source directories are intentionally ignored until a specific integration decision justifies committing vendored source.
-- Latest integrated baseline includes architecture boundary locks, worker build-lock serialization, input key/pointer/text route policy helpers, keyboard text input test split, input gesture diagnostics split tests, platform input translator boundary, platform input engine adapter, platform input boundary contracts, text line-break/glyph cache/font-resolution/readiness/font-face catalog/source/source-byte/file-byte-loader/file-byte-loader split tests/SFNT font bytes inspector/cmap coverage inspector/Unicode coverage resolver/catalog adapter/glyph-id resolver/font backend capability probe/font backend capability diagnostics/real font backend adapter boundary/fake text backend-adapter injection/shaping backend/shaped-glyph atlas-update tracing/resolved glyph-id atlas diagnostics/line-layout helper split/run-box/caret-hit-test/atlas-page/upload-policy/eviction/rasterizer atlas-readiness diagnostics, fake text layout diagnostics split tests, image sampler/cache/upload queue/retry/lifetime eviction/decoder/decoder-chain/standard decoder chain/data-URI/filesystem source-byte/filesystem pipeline/standard pipeline cache-reuse diagnostics/manifest texture pipeline boundary/manifest texture pipeline header split/manifest texture diagnostics/manifest boundary hardening/placeholder texture/BMP decoder diagnostics, BMP decoder header split, PNG header/chunk/decode-boundary/unfilter/decoder-chain wrapper/zlib stored-block inflater diagnostics, image texture placeholder policy split, image texture upload helper split, image engine boundary lock, image texture cache residency split tests, image texture diagnostics helper split, image upload retry policy split, asset pack index/lookup/fallback/validation/manifest/version-policy split/integrity/runtime resolver/catalog/materialization/byte-provider/materialized byte-integrity/cache-key cache-policy validation/materialized byte-load routing, Vulkan loader probe/global loader-proc resolution, Vulkan instance creation boundary/split, Vulkan device readiness boundary, Vulkan render-pass/framebuffer readiness boundary, Vulkan command-recording readiness boundary, Vulkan command-submit readiness boundary, Vulkan queue submit/present adapter boundary and renderer/backend summary diagnostics, Vulkan shader module readiness boundary, Vulkan pipeline layout readiness boundary, Vulkan graphics pipeline readiness boundary, Vulkan pipeline readiness summary, Vulkan frame lifecycle helper, Vulkan frame/pipeline/command-buffer-submit/command-recorder-gate split tests/resource-binding split tests/pipeline cache split/resource binding split/frame-present/frame-resource/descriptor-validation/swapchain policy/pipeline compatibility diagnostics, Vulkan adapter name diagnostics split, and input routing/action/text-edit/UTF-8-safe IME preedit/selection/IME split tests/gesture-cancel/focus-traversal/pointer-capture arbitration/gesture route-policy/multipointer touch diagnostics. Native stb memory decode handoff is now exercised behind the image adapter boundary. Audio work is not a current priority.
+## Current Focus
 
-## Active Worker Queue
+- Build the native C++23 quiz remake toward the required engine stack:
+  Vulkan backend, image/texture path, text layout/atlas path, asset materialized
+  bytes, input/IME, then audio later.
+- Audio is deferred until render/resource paths are less fragile.
+- Existing Android/editor code is reference material, but the convergence target
+  is `apps/quiz/quiz-vulkan`.
+- Keep `apps/quiz` as code only. Build outputs stay under `build/out`; external
+  dependency snapshots stay under `build/external`.
 
-- `codex-image-texture-next-20260514`: busy on `codex/image-resource-packet-consumption-diff-20260517`, scoped to image resource packet consumption diff evidence. The branch is behind the latest baseline only by README/documentation work; do not interrupt, and inspect/merge only after the worker reports completion or commits.
-- `codex-text-freetype-prototype-20260514`: busy on `codex/text-resource-packet-consumption-diff-20260517`, scoped to text resource packet consumption diff evidence. The branch is behind the latest baseline only by README/documentation work; do not interrupt, and inspect/merge only after the worker reports completion or commits.
-- `codex-vulkan-native-descriptor-set-evidence-20260516`: busy on `codex/vulkan-descriptor-write-payload-handoff-20260517`, scoped to Vulkan descriptor write payload handoff evidence. It is working around a worker-local Windows/Ninja archive/link artifact issue; do not interrupt.
-- `codex-asset-unified-cache-key-20260514`: idle on an already-integrated historical branch. Do not re-merge; assign a fresh baseline branch only if asset becomes the active bottleneck.
-- `codex-text-freetype-raster-payload-handoff-20260516`: idle after integrated raster payload handoff work. Keep alive for future text-only tasks.
-- `codex-vulkan-native-command-packet-executor-20260516` and `codex-vulkan-real-backend-probe-20260514`: idle on historical Vulkan branches. Keep alive; give fresh baseline branches before any new Vulkan-only task.
+## Active Bottlenecks
 
-## Active requirement IDs
+- Vulkan: descriptor write payload handoff for native image views, samplers,
+  image layouts, and descriptor write records after descriptor allocation
+  evidence.
+- Text: renderer-facing glyph quad packet evidence after draw-list frame
+  composition and resource packet materialization.
+- Image: draw-list texture frame composition after image draw-list handoff and
+  texture frame resource packet materialization.
 
-- 06: swipe/known/unknown quiz flow.
-- 20: known/unknown learning state aging.
-- 02: quiz UI/design upgrade through native renderer contracts.
-- 24: FSM/app action routing and input normalization.
-- 30: previous-question swipe routing.
-- 31: keyboard-safe blank input and caret/IME handling.
-- 46: source/translation split-view scene support.
-- 57: known bucket and long-press unknown behavior.
-- 79: verification discipline and interface locks.
-- 82: pure C++/Vulkan remake engine path.
+## Active Workers
 
-## Contracts
+- `codex-image-texture-next-20260514`: busy on
+  `codex/image-draw-list-frame-composition-20260517`. Merge only after a clean
+  commit/report. Watch for stray `image_texture_pipeline_test_data/`.
+- `codex-text-freetype-prototype-20260514`: busy on
+  `codex/text-renderer-glyph-quad-packets-20260517`. Merge only after a clean
+  commit/report.
+- `codex-vulkan-native-descriptor-set-evidence-20260516`: busy on
+  `codex/vulkan-descriptor-write-payload-handoff-20260517`. It has a
+  worker-local Windows/Ninja archive/link issue; do not interrupt.
+- Idle sessions are intentionally kept alive. Give them fresh baseline branches
+  before new work; do not re-merge historical ahead commits.
 
-- Preserve `modifier_interface -> scene_layout_data_modifier -> scene_layout_patch / scene_layout_edit_data -> scene_layout_data -> layout_placer -> ui_renderer -> vulkan_renderer`.
-- Dependency shape to preserve:
+## Architecture Contract
+
+- Required direction:
   `main -> modifier_interface -> scene_layout_data_modifier -> scene_layout_edit_data -> scene_layout_patch -> scene_layout_data -> layout_placer -> ui_renderer -> vulkan_renderer`.
-  `scene_layout_data_modifier` may write only the edit subset and patch flow; `layout_placer`, `ui_renderer`, and `vulkan_renderer` are downstream consumers only.
-- `scene_layout_edit_data` is the only write surface for modifiers; modifiers must not mutate full scene/layout/renderer state directly.
-- `ui_renderer`, `layout_placer`, and `vulkan_renderer` must not include domain headers or infer quiz semantics.
-- `src/app/app_quiz_screens.h` reads `domain::app_snapshot` as the app-owned presentation bridge. Do not move that coupling into `src/core/ui`.
-- Scene/UI modifiers emit actions only; app/domain services own state changes.
-- Renderer layers must not own quiz, domain, UI, input, or audio state.
-- Architecture boundary tests now lock the intended direction: layout does not depend on UI/render, UI does not depend on Vulkan backend, scene layout data does not depend on render, Vulkan backend does not depend on scene/UI/app/domain, and asset/text engine core files do not depend on upper layers except explicit bridge adapters.
-- Scene core is also locked against app/domain/input/audio/assets/platform includes so `scene_layout_data` remains a renderer-agnostic data contract instead of a domain or platform state owner.
-- Architecture boundary tests also reject host-specific source paths such as `/mnt/c/aa`, `C:/aa`, and direct `build/external/lib/cpp/desktop` references in app source. External libraries are selected through engine metadata/adapters, not hard-coded checkout paths.
-- Architecture boundary tests scan private `.inl` fragments as source files, so implementation-only file splits do not bypass dependency-direction checks.
-- Engine workers own only their engine folders. App/runtime, top-level CMake, and aggregate contract wiring stay with the integrator unless explicitly assigned.
-- Large file splitting is allowed when it improves module cohesion, worker ownership, reviewability, or conflict isolation. Do not split files only because they exceed a line-count threshold, and do not move stable public interfaces without explicit integrator approval.
-- Worker pipeline rule: worker sessions are useful for engine-local progress, but stale branches increase review cost. Prefer fresh branch/worktree per new task from the latest pushed baseline; keep existing long-lived sessions only when they preserve active context, and require workers to state whether their branch is behind baseline before editing.
-- Worker pipeline rule: keep tasks bounded to one engine-owned surface plus focused tests. If a worker discovers a cross-engine or app/CMake need, it should finish the engine-local patch and hand off the wiring need instead of editing integrator-owned files.
-- Worker pipeline rule: focused tests are enough for worker handoff; the integrator runs Windows focused verification after cherry-pick and full CTest only after meaningful batches. This keeps throughput without hiding boundary regressions.
-- Build `quiz_vulkan_interface_contract_compile_tests` before handoff.
-- Latest integration note: `bd934a2` adds a Vulkan-owned materialization-aware descriptor allocation overload that blocks image descriptor allocation when image texture cache/upload/sampler handoff evidence is missing, blocked, or mismatched.
-- Latest integration note: `48b0d50` adds an asset-owned shader materialized-byte pipeline summary over existing typed payload bundles so later Vulkan shader-module wiring can consume stable shader id/cache/source/path/hash/readiness evidence without direct file IO or hard-coded paths.
-- Latest verification note: after `48b0d50`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests` and `quiz_vulkan_asset_bytes_provider_tests`; focused asset CTest passed 1/1.
-- Latest integration note: `deed0b7` adds a text-owned atlas resource packet materialization handoff that converts text frame draw-plan plus upload-handoff evidence into renderer-boundary packet/page/sampler records without image, Vulkan, app, or domain dependencies.
-- Latest verification note: after `deed0b7`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_font_shaped_atlas_update_tests`, and `quiz_vulkan_text_frame_resource_packet_materialization_tests`; focused text CTest passed 2/2.
-- Latest integration note: `76b15da` adds text-owned renderer-boundary resource packet consumption diffs over materialized text atlas packets, including packet/page deltas, sampler/layout/upload/readiness/blocker changes, duplicate or missing identities, and readiness regression/improvement summaries.
-- Latest verification note: after `76b15da`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests` and `quiz_vulkan_text_frame_resource_packet_materialization_tests`; focused text CTest passed 1/1.
-- Latest integration note: `aa9550b` adds image-owned renderer-boundary texture resource packet consumption diffs over materialized image packets, including texture/cache/sampler/upload/placeholder/readiness/blocker changes, duplicate or missing identities, and ready regression/recovery summaries.
-- Latest verification note: after `aa9550b`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_image_texture_frame_resource_packet_materialization_tests`, `quiz_vulkan_image_texture_frame_resource_materialization_diff_tests`, and `quiz_vulkan_image_texture_pipeline_tests`; focused image CTest passed 3/3.
-- Latest verification note: after the text/image resource-packet consumption batch and worker build command update, Windows MinGW full CTest passed 105/105 from `C:/aa/build/out/quiz/quiz-vulkan/windows-mingw-ascii`.
-- Latest integration note: `bf47c3d` adds a text-owned draw-list frame handoff that preserves text draw command index, node/parent identity, bounds/content bounds, text runs, style fallback evidence, text options, and deterministic blocker diagnostics before shaping/layout/atlas consumption.
-- Latest verification note: after `bf47c3d`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests` and `quiz_vulkan_text_draw_list_frame_handoff_tests`; focused text CTest passed 1/1.
-- Latest integration note: `431c34c` adds an image-owned draw-list frame handoff that preserves image draw command index, node/parent identity, bounds/content bounds, image ref fields, sampler diagnostics, normalized request/cache identity, and deterministic blocker diagnostics before texture planning/cache/upload consumption.
-- Latest verification note: after `431c34c`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests` and `quiz_vulkan_image_texture_pipeline_tests`; focused image CTest passed 1/1.
-- Latest integration note: `f7c658f` composes text draw-list frame handoff entries into the existing text request batch/frame path while preserving command order, identity, bounds, style/options evidence, and blocked-entry diagnostics before text frame snapshot/materialization work.
-- Latest verification note: after `f7c658f`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_text_draw_list_frame_handoff_tests`, and `quiz_vulkan_text_draw_list_frame_composition_tests`; focused text CTest passed 2/2.
-- Latest build note: `9756b8d` adds MinGW `-Wa,-mbig-obj` only to `quiz_vulkan_renderer`, allowing the large Vulkan renderer translation units to rebuild after public header changes without hitting the COFF section/object-size failure seen in worker builds.
-- Latest integration note: `ef822d5` tightens that descriptor gate so image sampler bindings must match the materialized sampler handoff record, not only the texture resource id.
-- Latest verification note: after `ef822d5`, Windows MinGW built `quiz_vulkan_vulkan_command_packet_execution_tests`, `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_renderer_tests`, and `quiz_vulkan_architecture_boundary_tests`; focused architecture/renderer/Vulkan CTest passed 3/3.
-- Latest integration note: `0ed2aa1` adds a Vulkan-owned fake descriptor set allocation result and merge/build path for native command-packet executor evidence. Default frame evidence still leaves descriptor handles unavailable unless completed allocation evidence is passed explicitly.
-- Latest verification note: after `0ed2aa1`, Windows MinGW built `quiz_vulkan_vulkan_command_packet_execution_tests`, `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_renderer_tests`, and `quiz_vulkan_architecture_boundary_tests`; focused architecture/renderer/Vulkan CTest passed 3/3.
-- Latest verification note: after `f808516`, Windows MinGW full CTest passed 104/104 from `C:/aa/build/out/quiz/quiz-vulkan/windows-mingw-ascii`.
-- Latest integration note: `a629aff` exposes the native Vulkan command packet evidence gap from backend frame data: command buffer, graphics pipeline, pipeline layout, and viewport now flow into `vulkan_native_command_packet_executor_evidence`, while descriptor set handles stay unavailable instead of being fabricated.
-- Latest verification note: after `a629aff`, Windows MinGW built `quiz_vulkan_vulkan_command_packet_execution_tests`, `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_vulkan_frame_pipeline_handoff_tests`, `quiz_vulkan_renderer_tests`, and `quiz_vulkan_architecture_boundary_tests`; focused architecture/renderer/Vulkan CTest passed 4/4.
-- Latest worker note: `ff33706` records the next Vulkan worker prompt for native descriptor set evidence and pushes it to `origin/codex/quiz-vulkan-remake-baseline`.
-- Latest verification note: after `2f97c8b`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`; focused architecture/renderer/Vulkan CTest passed 7/7.
-- Latest integration note: `e78cd75` routes fake text-engine raster payload diagnostics through the FreeType memory-face adapter when file-backed font bytes and backend capability are available, preserving deterministic fallback evidence for missing bytes or unavailable adapters.
-- Latest verification note: after `e78cd75`, Windows MinGW configured the main build, built `quiz_vulkan_fake_text_engine_freetype_raster_payload_tests` and `quiz_vulkan_interface_contract_compile_tests`, and focused text CTest passed 3/3.
-- Latest integration note: `082e9bd` adds a backend-owned native Vulkan command packet executor evidence boundary behind `vulkan_command_packet_executor_interface`, translating prepared packets into `vkCmdBindPipeline`, descriptor set, viewport, scissor, and draw call evidence without app/UI/domain coupling.
-- Latest verification note: after `082e9bd`, Windows MinGW built `quiz_vulkan_vulkan_command_packet_execution_tests`, `quiz_vulkan_interface_contract_compile_tests`, and `quiz_vulkan_renderer_tests`; focused architecture/renderer/Vulkan CTest passed 3/3.
-- Latest integration note: `2f97c8b` attaches default scoped Vulkan command-packet execution evidence to backend frame submission before device command recording, including ready/failure/empty summaries in frame pipeline handoff without app/UI/domain coupling.
-- Latest verification note: after `f783f6f`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`; focused architecture/renderer/Vulkan CTest passed 7/7.
-- Latest integration note: `f783f6f` threads scoped command-packet execution results into Vulkan backend frame result and frame pipeline handoff summaries, including ready/failure state, selected framebuffer/command-buffer evidence, per-category packet counts, first failed packet evidence, and command-recording readiness gating without app/UI/domain coupling.
-- Latest verification note: after `81b2039`, Windows MinGW full CTest passed 103/103. The previous `quiz_vulkan_font_shaped_atlas_update_tests` host permission BAD_COMMAND is resolved by keeping the CTest name stable while shortening the Windows executable output name to `qv_text_atlas_tests.exe`.
-- Latest verification note: after `d5ffb54`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`; focused architecture/renderer/Vulkan CTest passed 5/5.
-- Latest integration note: `d5ffb54` adds scoped Vulkan command-packet execution summaries that compose ready render-pass scope evidence with the packet bridge/executor path, including per-category packet counts, selected framebuffer/command-buffer evidence, first failed packet details, and empty-scope diagnostics without scene/UI/domain coupling.
-- Latest verification note: after `348dfb0`, Windows MinGW full CTest attempted 103 configured tests; 102 executed tests passed and `quiz_vulkan_font_shaped_atlas_update_tests` remained blocked by the known host `permission denied` BAD_COMMAND before process start.
-- Latest integration note: `348dfb0` adds native/fake Vulkan render-pass scope recording readiness after framebuffer target selection, including selected framebuffer/render-pass/extent evidence, command-buffer blockers, begin/end render-pass dispatch records, and narrow empty-scope lifecycle diagnostics; Windows MinGW built the interface contract target and focused Vulkan/renderer/architecture CTest passed 5/5.
-- Latest integration note: `39a3692` adds native/fake Vulkan framebuffer target readiness after swapchain image-view targets, including `vkCreateFramebuffer`/`vkDestroyFramebuffer` dispatch evidence, per-image framebuffer lifecycle records, render-pass/image-view/extent blockers, and per-target destroy evidence; Windows MinGW built the interface contract target and focused Vulkan/renderer/architecture CTest passed 7/7.
-- Latest integration note: architecture boundary scanning now covers private `.inl` source fragments as well as `.h/.hpp/.cpp`, preventing worker file splits from bypassing dependency-direction checks; Windows MinGW architecture CTest passed 1/1.
-- Latest integration note: `bf7a207` splits line/run atlas-upload diagnostics out of `fake_text_engine.cpp` into a private text-owned `.inl` fragment without changing public interfaces or CMake; Windows MinGW built the interface contract target and focused text/architecture CTest passed 3/3.
-- Latest integration note: `f7ac2e1` adds native/fake Vulkan swapchain image-view target readiness behind the backend boundary, including image-view create/destroy dispatch evidence, per-image target lifecycle records, missing-symbol diagnostics, and render-target attachment intent data; Windows MinGW built the interface contract target and focused Vulkan/renderer/architecture CTest passed 6/6.
-- Latest integration note: `3d438c3` adds a HarfBuzz memory shaping adapter behind the text backend contract and links the approved local `harfbuzz-14.2.0` source through `quiz_vulkan_harfbuzz_external`; Windows MinGW configure/build succeeded and focused text/architecture CTest passed 3/3.
-- Latest integration note: `a9f712d` threads HarfBuzz-shaped output into fake text layout diagnostics when materialized font bytes and backend capability are present, while preserving deterministic fallback shaping for unavailable/missing-byte cases; Windows MinGW focused text CTest passed 3/3.
-- Latest integration note: `4dcc126` adds HarfBuzz-to-atlas handoff diagnostics linking shaped glyph records to atlas/cache/materialization readiness and blocker/fallback evidence without renderer/Vulkan calls; Windows MinGW focused text CTest passed 2/2.
-- Latest integration note: `2e58022` adds ordered asset payload request transactions over multiple materialized byte selection requests, preserving per-request results, compact selected snapshots, and summary counts without copying payload byte vectors; Windows MinGW focused asset CTest passed 1/1 and the interface compile target rebuilt.
-- Latest integration note: `78fd030` adds compact diff evidence for ordered asset payload request transactions, including added/removed request ids, changed statuses, selected snapshots, readiness/integrity/cache-key deltas, and summary count changes; Windows MinGW focused asset CTest passed 1/1 and the interface compile target rebuilt.
-- Latest integration note: `9eae4c4` adds image-owned staging payload diff/regression evidence for row-copy, alignment, padding, staging-byte, cache/sampler, mip-readiness, blocker, regression, and recovery changes; Windows MinGW focused image CTest passed 2/2 and the interface compile target rebuilt.
-- Latest integration note: `8512fb8` adds a native Vulkan swapchain create/destroy adapter boundary with dispatch-table evidence, fake create/destroy execution, selected surface format/present mode/extent evidence, and old-swapchain handoff diagnostics; Windows MinGW focused Vulkan/renderer/architecture CTest passed 4/4.
-- Latest integration note: `1d1bcb0` adds text line/run evidence that distinguishes HarfBuzz-shaped cluster advances from deterministic fallback advances while preserving line index, run id, caret span, run-box impact, backend status, and fallback reason; Windows MinGW focused text CTest passed 2/2 and the interface compile target rebuilt.
-- Latest integration note: `cd836f8` adds native/fake Vulkan swapchain image enumeration and acquire execution boundaries, including image handle evidence, timeout/out-of-date/suboptimal/failure diagnostics, sync/readiness gates, and interface-contract locks; Windows MinGW focused Vulkan/renderer/architecture CTest passed 4/4.
-- Latest verification note: after `cd836f8`, Windows MinGW full CTest attempted 103 configured tests; 102 executed tests passed and `quiz_vulkan_font_shaped_atlas_update_tests` remained blocked by the known host `permission denied` BAD_COMMAND before process start.
-- Latest verification note: after `e49db92`, Windows MinGW full CTest attempted 103 configured tests; 102 executed tests passed and `quiz_vulkan_font_shaped_atlas_update_tests` remained blocked by the known host `permission denied` BAD_COMMAND before process start.
-- Latest integration note: `be5533d` adds Vulkan native surface capability query readiness for support/capabilities/formats/present modes and gates native swapchain creation on supplied opaque surface evidence; Windows MinGW focused Vulkan/renderer/architecture CTest passed 5/5.
-- Latest integration note: `9d6a8fd` adds image-owned staging payload plans for decoded texture bytes, including row-copy/alignment/staging-byte evidence carried through upload, result, frame handoff, and resource packet diagnostics; Windows MinGW focused image CTest passed 5/5.
-- Latest integration note: `e428459` adds asset-owned materialized byte payload selection/filter contracts for engine consumers by id/type/cache key/readiness/integrity status, with stable diagnostics for missing, wrong-type, blocked, duplicate, cache-key mismatch, and integrity-failure cases; Windows MinGW focused asset CTest passed 1/1 and the interface compile target rebuilt.
-- Latest integration note: `8565527` threads decoded texture upload payload layout evidence through image diagnostics, upload plans/results, frame handoff, and resource packet materialization without crossing into Vulkan/cache ownership; Windows MinGW focused image CTest passed 5/5.
-- Latest integration note: `b38491c` adds native Vulkan device-extension enumeration/readiness diagnostics before logical device creation, including required-extension availability and missing-extension evidence; Windows MinGW focused Vulkan/renderer/architecture CTest passed 3/3.
-- Latest integration note: `7ec9b69` adds asset-owned materialized byte payload bundle diff evidence for added, removed, and changed font/image/sound/shader/deck payload snapshots; Windows MinGW focused asset CTest passed 1/1 and the interface compile target rebuilt.
-- Latest verification note: after `15a434e`, Windows MinGW full CTest attempted 103 configured tests; 102 executed tests passed and `quiz_vulkan_font_shaped_atlas_update_tests` remained blocked by the known host `permission denied` BAD_COMMAND before process start.
-- Latest integration note: native FreeType source under `build/external/lib/cpp/desktop/freetype-2.14.3` is now wired as `quiz_vulkan_freetype_external` and linked into `quiz_vulkan_text_engine` with optional FreeType dependencies disabled; Windows MinGW focused text CTest passed 2/2.
-- Latest integration note: `560d786` adds asset-owned typed materialized byte payload bundles that group actual loaded bytes for font/image/sound/shader/deck consumers while keeping ownership in the asset layer; Windows MinGW focused asset/architecture CTest passed 2/2 after the batch.
-- Latest integration note: `987753f` maps FreeType raster results into existing glyph-atlas materialization/upload-handoff evidence and keys raster payloads by resolved glyph index; Windows MinGW build compiled the shaped-atlas target, focused text/architecture CTest passed 3/3, and the shaped-atlas executable remains blocked by the known host permission BAD_COMMAND.
-- Latest integration note: `9673e3b` splits the large third-party image decoder adapter into image-owned `.inl` fragments for generic contracts, stb selection, and capability manifest code while preserving the public aggregator header; Windows MinGW focused image/architecture CTest passed 3/3 after the batch.
-- Latest integration note: `8b2443a` adds native Vulkan logical-device dispatch/create readiness for `vkCreateDevice`, `vkGetDeviceQueue`, and `vkDestroyDevice`, consuming physical-device selection and selected queue families without default-test GPU requirements; Windows MinGW focused Vulkan/renderer/architecture CTest passed 3/3 after the batch.
-- Latest verification note: Windows MinGW full CTest attempted 103 configured tests after the text/asset/image/Vulkan batches; 102 executed tests passed and `quiz_vulkan_font_shaped_atlas_update_tests` remained blocked by the known host `permission denied` BAD_COMMAND before process start.
-- Latest integration note: `1bd5c71` adds FreeType-backed glyph metrics and grayscale bitmap raster evidence behind the text raster adapter contract, with deterministic missing-byte and unsupported-glyph fallback diagnostics; Windows MinGW focused text/architecture CTest passed 4/4 after the batch.
-- Latest integration note: `84c2149` splits asset byte/materialization contracts out of the large provider header while preserving the existing include surface and CMake public header registration; Windows MinGW focused asset/architecture CTest passed 2/2 after the batch.
-- Latest integration note: `e32a3ac` adds an architecture guard that requires every `src` header to be registered in CMake so worker-created public headers cannot silently fall out of FILE_SET/source registration; Windows MinGW architecture CTest passed 1/1.
-- Latest integration note: `b52990a` adds native Vulkan queue-family dispatch/query readiness and feeds query results into physical-device selection instead of keeping fake queue data inside the selector; Windows MinGW focused Vulkan/renderer/architecture CTest passed 3/3 after the batch.
-- Latest integration note: `573ea36` makes the standard image pipeline prefer the external `stb_image` adapter for PNG/BMP/PPM when available while preserving internal decoders as fallback diagnostics; Windows MinGW focused image/architecture CTest passed 4/4 after the batch.
-- Latest integration note: `82ef968` adds asset-owned materialized byte handoff summaries that group font/image/sound/shader/deck payloads into ready and blocked lists without depending on engine folders; Windows MinGW focused asset/text/architecture CTest passed 5/5 after the batch.
-- Latest integration note: `291d131` adds a real FreeType memory-face adapter behind the text backend contract, calls `FT_Init_FreeType`/`FT_New_Memory_Face` when the external library is compiled, and preserves deterministic fallback diagnostics for byte/readiness/backend failures; Windows MinGW focused asset/text/architecture CTest passed 5/5 after the batch.
-- Latest integration note: `f677d35` adds data-only native Vulkan physical-device queue-family selection readiness for future logical device creation, including selected device handle, required queue capability matching, candidate diagnostics, and fake selector coverage; Windows MinGW focused Vulkan/renderer/architecture CTest passed 3/3 after the batch.
-- Latest integration note: `3f0e99b` adds image binding payload evidence summaries that join renderer-facing texture binding packets to upload handoff records by request index, preserving cache key, sampler key, texture id, upload id, placeholder/failure state, accepted upload status, decoded byte count, and decoded payload hash; Windows MinGW focused asset/image CTest passed 4/4 after the batch.
-- Latest integration note: `9e3991e` adds typed materialized asset byte diffs for added, removed, and changed font/image/sound/shader/deck payloads, preserving before/after entries and deltas for cache key, source URI, materialized path, content hash, type, and integrity status; Windows MinGW architecture boundary CTest passed 1/1 after the batch.
-- Latest integration note: `b5c8e91` adds FreeType face-load readiness over materialized font bytes, SFNT/cmap evidence, and backend work states, explicitly reporting the remaining `quiz_vulkan_freetype_external`/`FT_New_Memory_Face` wiring needed before real calls; Windows MinGW focused text/Vulkan CTest passed 7/7 after the batch.
-- Latest integration note: `a909eb6` adds native Vulkan physical-device dispatch/enumeration readiness with fake coverage for no instance, missing symbol, zero devices, and usable opaque device handles; Windows MinGW focused text/Vulkan CTest passed 7/7 after the batch.
-- Latest integration note: `c774460` adds typed materialized asset byte summaries for font/image/sound/shader/deck consumers while preserving cache key, source URI, materialized path, byte hash, and integrity status; Windows MinGW focused asset/image CTest passed 5/5 after the batch.
-- Latest integration note: `90166eb` bridges decoded image payload evidence into texture request/upload-result handoff data so renderer-facing image packets can retain cache key, sampler, placeholder/failure, hash, and RGBA sample evidence; Windows MinGW focused asset/image CTest passed 5/5 after the batch.
-- Latest verification note: Windows MinGW full CTest attempted `103` configured tests; `102` executed tests passed and `quiz_vulkan_font_shaped_atlas_update_tests` remained blocked by host `permission denied`/access-denied execution even after a clean target rebuild. Default build was restored successfully afterward.
-- Latest integration note: `3874cfb` records decoded image payload evidence through upload readiness and fake upload snapshots, including stable byte hash and RGBA edge samples; Windows MinGW focused image/Vulkan CTest passed 5/5 after the batch.
-- Latest integration note: `2f1984f` adds instance-scoped Vulkan dispatch readiness and `vkDestroyInstance` dispatch-table destroy gating while keeping real system-loader smoke opt-in; Windows MinGW focused image/Vulkan CTest passed 5/5 after the batch.
-- Latest integration note: `8c54665` keeps font fallback segmentation on UTF-8 cluster boundaries so mixed-script and combining-mark text does not split fallback decisions inside one cluster; Windows MinGW focused text/asset CTest passed 6/6 after the batch.
-- Latest integration note: `fa732ea` adds materialized asset byte cache-policy summaries with content-hash and integrity issue counts for asset resolver/cache diagnostics; Windows MinGW focused text/asset CTest passed 6/6 after the batch.
-- Latest integration note: `1ded041` threads font byte-readiness state into glyph cache/readiness diagnostics and fake text engine layout evidence, distinguishing missing bytes and descriptor-coverage fallback; Windows MinGW focused text CTest passed 3/3.
-- Latest integration note: `170a747` makes generated CTest executables compile as C++23 so worker tests can use the project standard consistently; Windows MinGW focused external/asset/text CTest passed 3/3.
-- Latest integration note: `4782797` tightens native `stb_image` memory decode handoff and source-byte tests behind the image decoder adapter boundary; Windows MinGW focused renderer/image/Vulkan/asset CTest passed 4/4.
-- Latest integration note: `4ecd2f3` routes asset byte loads through validated materialized local paths so source URI validation and actual byte reads stay aligned; Windows MinGW focused renderer/image/Vulkan/asset CTest passed 4/4.
-- Latest integration note: `4507f71` resolves Vulkan global entrypoints through loader `vkGetInstanceProcAddr` where available while preserving direct-export diagnostics; Windows MinGW focused renderer/image/Vulkan/asset CTest passed 4/4.
-- Latest integration note: `29f7aaa` rejects materialized asset rooted paths that do not match the normalized source path, preserving source-vs-materialized path integrity before byte loading; Windows MinGW focused asset CTest passed 2/2.
-- Latest integration note: `bc2d474` uses the linked `utf8proc` runtime in text UTF-8 run diagnostics for decoding, combining mark classification, and grapheme boundaries while preserving fallback behavior; Windows MinGW focused text CTest passed 11/11, with `quiz_vulkan_font_shaped_atlas_update_tests` still blocked by host permission-denied execution after successful build.
-- Latest integration note: `e2704aa` adds deterministic asset byte content-hash evidence for loaded payloads and hash mismatch validation; Windows MinGW focused asset/image/Vulkan CTest batch passed 6/6 after integration.
-- Latest integration note: `bc37ec0` routes standard image texture pipeline requests through the real `stb_image` adapter where policy allows while preserving internal decoder preference and placeholder fallback; Windows MinGW focused asset/image/Vulkan CTest batch passed 6/6.
-- Latest integration note: `c6c7bb3` adds backend-owned native Vulkan instance function-table/create/destroy contracts and smoke coverage; `6368d57` gates actual system loader instance creation behind `QUIZ_VULKAN_RUN_NATIVE_VULKAN_SMOKE=1` so default CTest stays deterministic. Windows MinGW focused asset/image/Vulkan CTest batch passed 6/6.
-- Latest integration note: `915b8c8` adds image decode-to-upload handoff readiness diagnostics for decoded metadata/pixel payload consistency before texture upload; Windows MinGW focused external/Vulkan/asset/image CTest passed 4/4.
-- Latest integration note: `7feda06` classifies asset manifest version compatibility states for supported, older-compatible, newer-required, and incompatible schema cases; Windows MinGW focused external/Vulkan/asset/image CTest passed 4/4.
-- Latest integration note: `51ceecb` records required Vulkan device extension diagnostics after instance readiness and before device creation; Windows MinGW focused external/Vulkan/asset/image CTest passed 4/4.
-- Latest integration note: `44102a7` builds the downloaded `utf8proc` source as `quiz_vulkan_utf8proc_external` and verifies real UTF-8 Hangul decode, Unicode category, NFC compose, and runtime version smoke; Windows MinGW focused utf8proc CTest passed 1/1.
-- Latest integration note: `f4055b9` records required Vulkan instance extension diagnostics with selected/missing extension evidence before device readiness; Windows MinGW focused Vulkan/text/asset CTest batch passed 4/4.
-- Latest integration note: `4f38c36` adds font face byte-readiness diagnostics over source bytes, SFNT inspection, cmap coverage, and future FreeType load readiness states; Windows MinGW focused Vulkan/text/asset CTest batch passed 4/4.
-- Latest integration note: `c079cb7` classifies unsupported asset cache-key source schemes separately from generic invalid source URIs; Windows MinGW focused Vulkan/text/asset CTest batch passed 4/4.
-- Latest integration note: `a5a9663` adds data-only Vulkan loader candidate diagnostics for missing libraries, missing `vkGetInstanceProcAddr`, and usable loader candidates; Windows MinGW focused Vulkan/renderer CTest passed 2/2.
-- Latest integration note: `dbc5fce` adds text external backend work-readiness diagnostics distinguishing approved-header-only, source-ready, library-linked, adapter-ready, and fallback-only states; Windows MinGW focused text CTest passed 1/1.
-- Latest integration note: `b281c0b` exposes asset cache-key type/source/revision components through the existing resolver classification without changing resolver ownership; Windows MinGW focused asset CTest passed 1/1.
-- Latest integration note: `ed01afb` threads Vulkan/VMA external header evidence through SDK native-path readiness and renderer frame pipeline handoff diagnostics, separate from native function-table readiness; Windows MinGW focused Vulkan/renderer CTest passed 3/3.
-- Latest integration note: native `stb_image` memory decode is now available through `quiz_vulkan_image_engine`, with `STB_IMAGE_IMPLEMENTATION` isolated in `third_party_image_decoder_adapter.cpp` instead of public headers; Windows MinGW focused image CTest passed 3/3.
-- Latest integration note: `7ca7699` threads FreeType/HarfBuzz/utf8proc external header probe evidence into fake text engine diagnostics and per-run backend selection snapshots without enabling real font linking; Windows MinGW focused text CTest passed 2/2.
-- Latest integration note: `4eac3e9` adds compact input action resolution replay classification summaries and stable string tokens for churn, regression, improvement, mixed, and stable replay diffs; Windows MinGW focused input CTest passed 1/1.
-- Latest integration note: `556ba09` adds stb compile-time header dependency evidence behind the third-party image decoder adapter without enabling decode or linking implementation code; Windows MinGW focused image CTest passed 2/2.
-- Latest integration note: `592ad24` adds text FreeType/HarfBuzz/utf8proc compile-time external header probes behind the text dependency interface; Windows MinGW focused text CTest passed 2/2.
-- Latest integration note: `73d4ab2` classifies input action replay diff changes as churn, regression, improvement, mixed, or stable without app/domain dispatch; Windows MinGW focused input CTest passed 1/1.
-- Latest integration note: `8d147f3` adds Vulkan/VMA compile-time external header probes behind the Vulkan SDK capability interface; Windows MinGW focused Vulkan/renderer CTest passed 3/3.
-- Latest integration note: CMake now exposes optional desktop external header snapshots through `quiz_vulkan_desktop_external_headers`, so text/image/Vulkan workers can include approved FreeType, HarfBuzz, utf8proc, Vulkan, VMA, stb, and miniaudio headers without hard-coding `build/external` paths in source; focused dependency-boundary CTest passed 3/3.
-- Latest integration note: `e5ab1f2` adds fallback shaped glyph execution diff diagnostics; Windows MinGW focused text CTest passed 2/2.
-- Latest verification note: Windows MinGW full CTest passed `101/101` after image/Vulkan/input/text diff integrations.
-- Latest integration note: `3175eeb` adds semantic-free input action resolution replay diff diagnostics; Windows MinGW focused input CTest passed 1/1.
-- Latest integration note: `e725fbd` threads native frame execution summaries through the Vulkan frame pipeline handoff; Windows MinGW focused Vulkan/renderer CTest passed 3/3.
-- Latest integration note: `2e249f0` classifies image materialization diff regressions, improvements, churn, and failure transitions; Windows MinGW focused image CTest passed 2/2.
-- Latest verification note: Windows MinGW full CTest passed `101/101` on baseline `4fb4227`; after image/Vulkan integration, focused image/Vulkan CTest passed `5/5` and public FILE_SET registration scan reports 0 missing headers.
-- Latest integration note: `93d445c` adds image frame resource materialization diff diagnostics; integrator registered `image_texture_frame_resource_materialization_diff.h`, Windows MinGW focused image CTest passed 2/2, and configured CTest count is now `101`.
-- Latest integration note: `9e9765e` adds fallback shaped glyph execution diagnostics behind the text interface and threads the results into fake text engine diagnostics; Windows MinGW focused text CTest passed 2/2.
-- Latest integration note: `15456bb` adds input action resolution replay summaries behind the input interface; Windows MinGW focused input CTest passed 1/1.
-- Latest integration note: `993039e` adds Vulkan native frame operation diff diagnostics for operation summary deltas, fallback/native readiness changes, and renderer-facing frame lifecycle evidence; Windows MinGW focused Vulkan/renderer CTest passed 2/2.
-- Latest integration note: `2106032` adds image frame resource packet planning diagnostics for texture resource packets, placeholder-backed frames, sampler/cache-key routing, and failure evidence; integrator registered `image_texture_frame_resource_packet_plan.h`, and Windows MinGW focused image CTest passed 1/1.
-- Latest integration note: `ff3e5c6` adds text fallback shaping handoff diagnostics for fallback run planning to shaping-input boundaries; integrator registered `font_fallback_shaping_handoff.h`, and Windows MinGW focused text CTest passed 1/1.
-- Latest integration note: `e789e8c` adds input action candidate planning diagnostics behind the input interface; integrator registered `input_action_candidate_plan.h`, and Windows MinGW focused input CTest passed 2/2.
-- Latest integration note: `857c9be` adds fallback shaped glyph input handoff diagnostics and wires them into fake text engine diagnostics; Windows MinGW focused text CTest passed 2/2.
-- Latest integration note: `eecfc79` adds Vulkan native frame execution planning over acquire/record/submit/present decisions; Windows MinGW focused Vulkan/renderer CTest passed 2/2.
-- Latest integration note: `8968a73` adds image frame resource packet materialization and renderer-boundary cache/upload/sampler handoff records; integrator registered `image_texture_frame_resource_packet_materialization.h`, and Windows MinGW focused image CTest passed 1/1.
-- Latest integration note: `be14dc3` adds input action candidate resolution diagnostics behind the input interface; Windows MinGW focused input CTest passed 1/1.
-- Latest verification note: configured Windows MinGW CTest count is now `100`; public FILE_SET registration scan reports 0 missing headers for input, render text, render image, render Vulkan, and assets.
-- Latest verification note: Windows MinGW full CTest passed `99/99` after input/text/image/Vulkan worker integrations.
-- Latest integration note: `de9860e` splits Vulkan native frame operation diagnostics into `vulkan_backend_native_frame_operation.h`; integrator registered the new public header in the renderer FILE_SET, Windows MinGW focused Vulkan/renderer CTest passed 2/2, and configured CTest count is now `97`.
-- Latest integration note: `7f7ef0a` splits text fallback run planning diagnostics into `font_fallback_run_planning_diagnostics.h`; `5c380cd` splits normalized input replay diff policy helpers into `normalized_input_replay_diff_policy.h` and a focused test. Integrator registered both public headers and Windows MinGW focused text/input CTest passed 4/4.
-- Latest integration note: `dc05a96` splits image frame binding summary diagnostics into `image_texture_frame_binding_summary.h`; integrator registered the new public header in the render contract FILE_SET and Windows MinGW focused image CTest passed 1/1.
-- Latest verification note: after reboot recovery, Windows MinGW full CTest passed `96/96` on baseline `e1f56aa`.
-- Latest verification note: Windows MinGW full CTest passed `95/95` after the image/input/text handoff hardening integrations.
-- Latest integration note: `511f81b` adds image frame binding summary diagnostics for upload-backed, placeholder-backed, missing binding/upload-result, retry/backoff blocker, cache-key, sampler, and frame-to-frame diff evidence.
-- Latest integration note: `b6baeb3` hardens normalized input replay diagnostics for IME preedit start/update/commit/cancel, focus/caret/selection transitions, UTF-8 boundary-safe backspace evidence, pointer capture reset, and wheel diagnostics.
-- Latest integration note: `9090b05` adds text font fallback run planning diagnostics for Latin/Hangul coverage, missing glyph ranges, fallback order, stable run keys, selected face order, and catalog-change diffs.
-- Latest integration note: `aa30a27` adds data-only Vulkan native frame operation summary diagnostics that compose native function-table readiness, swapchain creation/images, acquire, command recording, submit, present, frame completion, fallback, and failure states.
-- Latest integration note: `2199519` hardens text frame upload handoff diagnostics for missing draw packets versus missing upload results, fallback/backend flag changes, page revision/page ID diffs, blocker deltas, and upload byte deltas.
-- Latest integration note: `2dc1c02` hardens platform gesture replay diagnostics for touch/multipointer arbitration, long-press versus swipe/drag threshold evidence, cancel/restart stale-state guards, and replay diff flags.
-- Latest integration note: `e956714` hardens image frame upload handoff diagnostics for placeholders, retry/backoff evidence, cache-key and sampler diffs, and missing upload-result versus missing frame-binding categories.
-- Latest integration note: `e41dbbf` adds text frame upload handoff diagnostics that link glyph draw packets to atlas upload result snapshots, page IDs, upload bytes, materialization blockers, fallback/backend flags, and frame-to-frame diffs.
-- Latest integration note: `9665261` hardens platform input replay edge-case tests for IME lifecycle, UTF-8 backspace safety, pointer cancel/restart, wheel evidence, and replay diff categories.
-- Latest integration note: `f747652` adds image frame upload handoff diagnostics that link frame texture binding packets to upload result snapshots by stable texture/cache key without exposing cache or uploader internals.
-- Latest integration note: `0892ae9` adds data-only Vulkan native queue present operation planning after acquire/submit readiness, reporting queue-present symbol readiness, extension readiness, submitted-frame readiness, out-of-date/suboptimal states, and frame completion readiness.
-- Latest integration note: `7e032b0` adds platform input replay diagnostics for raw/platform-style batches, event-kind counts, text edit replay summaries, gesture/capture/focus summaries, final presentation snapshots, and semantic-free diffs.
-- Latest integration note: `f846177` adds image texture upload result/diff diagnostics and `22a4e3a` adds glyph atlas upload result/diff diagnostics; the integrator registers both new public headers in the render contract FILE_SET.
-- Latest integration note: `baf9470` adds data-only Vulkan native swapchain acquire operation planning after swapchain image enumeration, reporting selected image index, timeout/out-of-date/suboptimal/error states, and command-recording readiness.
-- Latest integration note: `0747af0` adds text edit transaction replay diagnostics for per-step byte/caret/selection/preedit/submit/invalid-edit/UTF-8/replacement evidence, and the integrator registers the public replay header in the input FILE_SET.
-- Latest integration note: `710f05c` adds image texture upload operation planning diagnostics and `3c0b76f` adds glyph atlas upload operation planning diagnostics; the integrator registers both new public headers in the render contract FILE_SET.
-- Latest integration note: `4d207d9` adds data-only Vulkan native swapchain image enumeration operation planning after native swapchain creation readiness, reporting image-count, binding validity, and blocker summaries before real `vkGetSwapchainImagesKHR`.
-- Latest integration note: CMake public FILE_SET registration now covers all current `src/render/text`, `src/render/image`, `src/render/vulkan`, `src/core/input`, and `src/assets` headers; focused asset/input CTest 4/4 passed after registration.
-- Latest integration note: `eee4fcd` splits text edit transaction diagnostics into `text_edit_transaction_diagnostics.h`, and the integrator registers that public header in the input contract FILE_SET.
-- Latest integration note: `3230bfc` splits glyph atlas page planning into `font_glyph_atlas_page_plan.h`, and the integrator registers that public header in the render contract FILE_SET.
-- Latest integration note: `03214fc` adds a data-only native swapchain create operation plan that composes swapchain create-plan results with native entrypoint readiness and reports blockers before `vkCreateSwapchainKHR`.
-- Latest integration note: `fe95a1e` adds text edit transaction diagnostics for before/after text, display, caret, selection, preedit, byte deltas, UTF-8 boundary safety, replacement flags, IME transitions, and invalid-edit evidence.
-- Latest integration note: `eeba461` splits fake image upload snapshot diff diagnostics into `image_texture_upload_snapshot_diff.h`, and the integrator registers that public header in the render contract FILE_SET.
-- Latest integration note: `18c5121` adds glyph atlas page planning diagnostics for page selection, reused placements, synthesized placements, occupancy, overflow, eviction hints, and upload byte totals before renderer/Vulkan upload.
-- Latest integration note: `6208a65` extends Vulkan native function-table readiness to swapchain extension symbols for create, destroy, image enumeration, acquire, and present paths, including required extension and per-entrypoint readiness summaries.
-- Latest integration note: `a4a2513` threads gesture policy route diagnostics into normalized input replay diffs, so replay comparisons report gesture threshold, decision, suppression, and recovery changes alongside pointer/keyboard/IME/focus deltas.
-- Latest integration note: `a065d36` adds fake image upload snapshot diff diagnostics for upload queue/result changes, mipmap byte deltas, retry transitions, queue-depth regressions, invalid/overflow/unsupported plan changes, and texture handle changes.
-- Latest integration note: `90ad12e` adds input gesture policy route diff diagnostics for threshold, decision, emitted-kind, direction, pointer/contact/phase, suppression, and recovery deltas without app/domain dispatch.
-- Latest integration note: `e3bdf20` adds image mipmap upload planning diagnostics with per-level dimensions, byte estimates, overflow/invalid/unsupported/no-mipmap states, and fake uploader snapshot propagation.
-- Latest integration note: `594b795` adds glyph atlas materialization diff diagnostics for upload-ready, clean-reuse, skipped, payload-byte, unsupported, missing-cache, and backend fallback transitions across text atlas batches.
-- Latest integration note: `ef986fe` adds Vulkan swapchain create-plan diagnostics for surface format, present mode, image count, extent, transform, alpha, sharing mode, and recreate compatibility decisions before real Vulkan swapchain creation.
-- Latest integration note: render/layout/UI architecture checks now also reject direct platform includes and `platform::` usage, keeping platform shell ownership outside renderer and layout layers.
-- Latest integration note: `2dd9601` adds Vulkan swapchain recreate policy diagnostics that classify acquire/present out-of-date, suboptimal, timeout, and fatal paths into keep-rendering, recreate-now, recreate-after-frame, skip-submit, or fatal decisions.
-- Latest integration note: `9a5af92` adds external decoder selection diff diagnostics for image pipeline snapshots, comparing internal decoder, adapter-ready, missing dependency, version mismatch, placeholder, and fallback transitions without real `stb_image` coupling.
-- Latest integration note: `cb0b2c1` adds font backend probe diff diagnostics for fake-only, adapter-ready, unavailable, mismatch, and fallback transitions across text layout/backend snapshots without linking external font libraries.
-- Latest integration note: `ff7a822` threads text input presentation snapshots into normalized input replay diagnostics, so fixture replays expose focus/caret/selection/preedit/submit read-model state with diff evidence outside UI/app/domain coupling.
-- Latest integration note: `5597b54` threads Vulkan SDK readiness diagnostics through native function-table, command recording, submit, present, and frame handoff summaries, while preserving default fake-path behavior unless checked SDK data is supplied.
-- Latest integration note: `dd3d5ca` threads stb/external decoder selection diagnostics into image decoder chain and texture pipeline snapshots so internal decoder, adapter-ready, and fallback states are visible per texture request.
-- Latest integration note: `d786fa8` adds text input presentation diff helpers so focus/target/display text/caret/selection/preedit/submit/clean-flag and byte-count changes can be reviewed without UI/app/domain coupling.
-- Latest integration note: `4bfecb0` threads external font backend dependency/capability probe results into fake text engine layout diagnostics, distinguishing fake-only, adapter-ready, and fallback states without linking external libraries.
-- Latest integration note: `0c044e5` adds a Vulkan SDK/header capability boundary for future native backend wiring, modeling API version, header availability, and function/extension readiness without including Vulkan headers yet.
-- Latest integration note: `47763c0` adds a text input presentation snapshot read model for focus, caret, selection, preedit, submit, and byte-count state without UI/app/domain coupling.
-- Latest integration note: `4bfc2ee` adds stb image adapter selection diagnostics for future `stb_image` routing while preserving the current internal decoder chain and avoiding hard-coded external paths.
-- Latest integration note: `6b2507f` adds external font backend dependency probes for future FreeType/HarfBuzz/utf8proc wiring without linking or including those libraries yet.
-- Latest integration note: `93b294d` adds Vulkan swapchain image acquire planning diagnostics after swapchain/frame lifecycle readiness and before command recording, modeling timeout/out-of-date/suboptimal/error gates without real Vulkan calls.
-- Latest integration note: `9696ac1` adds input routing diagnostics diff helpers for comparing semantic-free normalized event, route, keyboard, focus, IME, pointer-capture, and text-edit deltas.
-- Latest integration note: `9e20085` adds image binding plan diff diagnostics for renderer-facing texture binding packet deltas without exposing image cache/uploader internals.
-- Latest integration note: `53336e4` adds text frame draw plan diff diagnostics for renderer-facing glyph packet deltas without Vulkan/domain coupling.
-- Latest integration note: `73755f8` splits input routing diagnostics into `input_routing_diagnostics.h`, keeping `input_engine.h` as the preserved include surface while reducing the engine header payload.
-- Latest integration note: `7dbfb76` splits Vulkan native readiness helpers into `vulkan_backend_native_readiness.h`, keeping `vulkan_backend_adapter.h` as the preserved include surface while isolating data-only readiness threading logic.
-- Latest integration note: `cc58697` adds image frame binding plan diagnostics that turn public image texture frame snapshots into renderer-facing texture binding packet readiness and frame delta data without Vulkan/cache/uploader internals.
-- Latest integration note: `db49c0d` adds text frame draw plan diagnostics that convert text frame snapshots and atlas update/page metadata into renderer-facing glyph packet readiness data without Vulkan/domain coupling.
-- Latest integration note: `345e768` splits normalized input replay diff diagnostics into `normalized_input_replay_diff.h`; the integrator registered both replay public headers in the input contract FILE_SET and verified the interface compile target plus focused replay CTest.
-- Latest integration note: `7644763` splits text frame snapshot diagnostics into `text_frame_snapshot.h`, and `11dec3e` registers that public header in the render contract FILE_SET.
-- Latest integration note: `ef48ce4` splits image texture frame snapshot diagnostics into `image_texture_frame_snapshot.h`, and `95f24d9` registers that public header in the render contract FILE_SET.
-- Latest integration note: `c656cfb` threads Vulkan native function-table readiness through command-buffer recording, submit-batch planning, present-completion planning, and renderer/backend summary diagnostics without calling real Vulkan APIs.
-- Latest integration note: `f4b32aa` adds normalized input replay diff diagnostics for final focus/caret/selection/text/preedit state, pointer capture, gesture timeline, IME timeline, keyboard intent counts, and semantic-free regression summaries.
-- Latest integration note: `56f201b` and `155398b` add text frame snapshot diff diagnostics and image texture frame snapshot diff diagnostics, giving renderer handoff reviews added/removed/changed upload or texture handle deltas without exposing engine internals.
-- Latest integration note: `e340728` routes `input_engine.update_time()` through the app loop, so held pointer gestures such as long press can emit before release and travel through the same app input router as raw platform events.
-- Latest integration note: `23cefb6` bridges platform shell input beyond legacy synthetic taps by forwarding pointer down/move/up/cancel, wheel, key, and focus events into the raw input engine path for long-press, drag, wheel, and keyboard navigation support.
-- Latest integration note: `90e3f43` adds text frame snapshot diagnostics that combine request batch planning, fallback-chain planning, atlas materialization, upload bridge request IDs, and consumed atlas-update IDs into a renderer-agnostic text handoff snapshot.
-- Latest integration note: `33f64bb` adds Vulkan native function table diagnostics with opaque entrypoint availability for command-buffer recording, queue submit, and present paths through injectable fake/system symbol resolvers.
-- Latest integration note: `09ea764` and `004e70c` add focus/caret replay timeline diagnostics and image texture frame snapshot diagnostics, giving input and image engines compact per-frame/replay handoff views without app or Vulkan coupling.
-- Latest integration note: `5c4d0d9` threads atlas upload bridge IDs through fake text engine layout/consume diagnostics so queued atlas updates and consumed upload request IDs can be matched without renderer/Vulkan coupling.
-- Latest integration note: `6201935` adds image texture handle-map diagnostics after batch execution, exposing stable request-index/cache-key to texture-id mappings, sampler policy, placeholder flags, and residency pressure for renderer handoff without Vulkan/cache internals.
-- Latest integration note: `ba8bc04` adds pointer/touch gesture replay timeline diagnostics to normalized input replay, covering tap/long-press/swipe/drag/cancel/wheel entries, pointer capture lifecycle, and final capture state.
-- Latest integration note: `2f60e89` adds a text atlas upload request bridge that turns text request batch/materialization results into deterministic `render_text_atlas_update`-style upload request diagnostics and stable request IDs.
-- Latest integration note: `85dd390` adds Vulkan present-completion planning diagnostics after submit-batch planning, producing present request/result summaries and frame completion status before real `vkQueuePresentKHR`.
-- Latest integration note: `ada6db8` and `f61ffe2` extend fallback-chain diagnostics to text helper paths and thread image residency/budget summaries into batch execution diagnostics.
-- Latest integration note: `4afdd42` adds IME replay timeline diagnostics to normalized input replay, covering composition start/update/commit/cancel, preedit validity, caret/selection snapshots, stale-preedit clearing, and committed text state.
-- Latest integration note: `7004837` and `67d0552` thread fallback-chain diagnostics through fake text layout and add image texture residency/budget planning, keeping both text fallback and image memory pressure reasoning data-only.
-- Latest integration note: `e50a2b0` threads keyboard shortcut/chord diagnostics into normalized input replay summaries so replayed key sequences expose intent counts, modifier/repeat policy, and final focus/text/preedit state.
-- Latest integration note: `6bd7973` adds Vulkan submit-batch planning diagnostics after command-buffer recording, recording wait/signal/present intent and queue submit prerequisites before real Vulkan queue submission.
-- Latest integration note: `85f4b86` and `7f3710b` add image texture batch execution diagnostics and semantic-free keyboard shortcut route diagnostics, keeping image pipeline execution and key/chord intent routing inside their owning engines.
-- Latest integration note: `fb8e404` adds text font fallback chain planning diagnostics for mixed-script batches, producing per-run fallback chains, missing-glyph summaries, and deterministic selected-face order before shaping.
-- Latest integration note: `38466be` adds image texture batch planning diagnostics that normalize image refs into texture requests, deduplicate source/texture keys, and preserve placeholder/fallback intent without exposing cache/uploader internals.
-- Latest integration note: `9c8e7ed` adds Vulkan command-buffer recording diagnostics after recorder operation planning, producing data-only record events/counts/statuses before submit/present.
-- Latest integration note: `94569e6` adds text request batch planning diagnostics that normalize text/layout requests, deduplicate glyph atlas materialization work, and report planned atlas/update summaries before renderer upload.
-- Latest integration note: `5335929` adds normalized input replay diagnostics so pointer, touch, wheel, text, and IME fixture batches can be replayed with end-state summaries without app/domain/renderer coupling.
-- Latest integration note: `da544dc` adds Vulkan command recorder operation plan diagnostics after packet execution, converting approved rect/text/image/debug packets into data-only recorder operation summaries before real Vulkan command recording exists.
-- Latest integration note: `6ac0d43` adds glyph atlas materialization diagnostics to the fake text engine so shaped glyph/layout output, backend selection metadata, atlas requests, and summary policy stay visible before renderer/Vulkan upload exists.
-- Latest integration note: `6170c74` threads image decoder capability manifest snapshots into image texture pipeline diagnostics while preserving decoder selection, fallback, cache reuse, and placeholder outcomes inside the image engine boundary.
-- Latest integration note: `1cbc4cf` adds Vulkan command packet execution diagnostics that verify command packet bridge output can be executed only when frame, resource binding, command recorder, and packet prerequisites are satisfied.
-- Latest integration note: `83e0e1d`, `9bd7bff`, and `4f54fac` thread text backend selection diagnostics through fake layout output, add image decoder capability manifest diagnostics, and add input diagnostic summary counts across normalized events and routed actions.
-- Latest integration note: `81514a6` adds a Vulkan command packet bridge that converts prepared draw-list batches into backend packet diagnostics, counts rect/text/image/debug packets, and blocks command recording on missing pipeline/resource prerequisites.
-- Latest integration note: `77ecf32` wires the optional third-party image decoder adapter through the existing image texture pipeline and preserves adapter diagnostics through fallback; `5b080c8` hardens input gesture/focus diagnostics for wheel, touch cancel, focus traversal, and pointer capture restart/release.
-- Latest integration note: `2656970` adds a Vulkan frame pipeline handoff summary/result that composes loader, instance, device, swapchain, render pass, pipeline, resource binding, command recording, submit, present, and fallback readiness without scene/UI/app/domain coupling.
-- Latest integration note: text/image/input worker commits added font backend selection metadata, optional third-party image decoder adapter boundary, and IME/focus/caret hardening; CMake render contract FILE_SET registration was handled by the integrator.
-- Latest integration note: `15d77ce` reports app scene modifier errors in `app_render_report`; `0a721e2` blocks host/external source paths in architecture tests; `7505a63` tracks native dependency manifest/README while ignoring downloaded source directories.
-- Historical verification notes above record run-specific counts from their own handoffs. For the current authoritative inventory, run `ctest -N` from the configured build directory instead of copying a static count into this file.
+- Modifiers write only through `scene_layout_edit_data` / patch flow.
+- `layout_placer` reads scene/layout data and must not mutate scene data or call
+  UI/render/Vulkan.
+- `ui_renderer` consumes placed UI data and must not call Vulkan or domain/app.
+- Vulkan consumes renderer-owned command/resource data and must not include
+  scene, UI, app, domain, input, or audio.
+- App/domain presentation coupling is allowed only in app-owned bridge files
+  such as `src/app/app_quiz_screens.h`.
+- Engine workers own engine folders and focused tests. App wiring, top-level
+  CMake integration, and cross-engine contracts stay with the integrator unless
+  explicitly delegated.
 
-## Verification commands
+## Verification Policy
 
-```powershell
-# From apps/quiz/quiz-vulkan
-& "C:\Program Files\CMake\bin\cmake.exe" --preset windows-mingw-ascii
-$buildDir = Resolve-Path ..\..\..\build\out\quiz\quiz-vulkan\windows-mingw-ascii
-& "C:\Program Files\CMake\bin\cmake.exe" --build --preset windows-mingw-ascii-debug --target quiz_vulkan_app_input_router_tests
-& "C:\Program Files\CMake\bin\ctest.exe" --test-dir "$buildDir" -R "^quiz_vulkan_app_input_router_tests$" --output-on-failure
-& "C:\Program Files\CMake\bin\cmake.exe" --build --preset windows-mingw-ascii-debug --target quiz_vulkan_interface_contract_compile_tests
-& "C:\Program Files\CMake\bin\ctest.exe" --test-dir "$buildDir" -N
-& "C:\Program Files\CMake\bin\ctest.exe" --test-dir "$buildDir" --output-on-failure
-git diff --check
+- Worker handoff: focused engine tests plus `quiz_vulkan_interface_contract_compile_tests`
+  and `git diff --check`.
+- Integrator after cherry-pick: Windows MinGW focused tests for touched areas.
+- Full Windows CTest: run after meaningful batches, not after every small patch.
+- Do not hard-code global CTest counts in docs; derive them from `ctest -N`.
+
+## Latest Known Verification
+
+- Main branch `codex/quiz-vulkan-remake-baseline` was clean and pushed at
+  `f79474e` after recording the text glyph quad packet worker prompt.
+- Last full Windows MinGW CTest batch passed `105/105` from
+  `C:/aa/build/out/quiz/quiz-vulkan/windows-mingw-ascii`.
+- Focused Windows checks passed for recent text/image draw-list handoff,
+  draw-list composition, and resource packet consumption integrations.
+
+## Useful Commands
+
+```bash
+git status --short --branch
+./codex-workers/worker-status.sh
+tmux capture-pane -pt codex-image-texture-next-20260514 -S -120
+tmux capture-pane -pt codex-text-freetype-prototype-20260514 -S -120
+tmux capture-pane -pt codex-vulkan-native-descriptor-set-evidence-20260516 -S -120
 ```

@@ -204,6 +204,7 @@ int app::run()
     app_state quiz_state(std::move(decks));
     default_app_render_pipeline render_pipeline(default_app_render_pipeline_config{
         .image_base_directory = image_base_directory_for_config(config_),
+        .native_window = shell_->native_window_handle(),
         .renderer_options = {},
     });
     input::input_engine input_engine;

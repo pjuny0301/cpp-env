@@ -82,6 +82,7 @@ int main()
 
     default_app_render_pipeline cpu_pipeline(default_app_render_pipeline_config{
         .image_base_directory = {},
+        .native_window = {},
         .renderer_options = quiz_vulkan::render::vulkan_renderer_options{
             .prefer_vulkan = false,
         },
@@ -102,6 +103,7 @@ int main()
     domain::app_snapshot image_snapshot = image_state.snapshot();
     default_app_render_pipeline image_pipeline(default_app_render_pipeline_config{
         .image_base_directory = image_fixture.parent_path(),
+        .native_window = {},
         .renderer_options = {},
     });
     app_render_frame image_frame = image_pipeline.render(app_render_request{

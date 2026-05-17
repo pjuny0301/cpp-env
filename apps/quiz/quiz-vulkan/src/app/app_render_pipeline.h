@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/app_demo.h"
+#include "platform/platform_shell.h"
 #include "render/image/image_source_bytes_loader.h"
 #include "render/image/image_texture_cache.h"
 #include "render/image/image_texture_pipeline.h"
@@ -14,6 +15,7 @@ namespace quiz_vulkan {
 
 struct default_app_render_pipeline_config {
     std::filesystem::path image_base_directory;
+    platform_native_window_handle native_window;
     render::vulkan_renderer_options renderer_options;
 };
 
@@ -41,6 +43,7 @@ public:
 
     explicit default_app_render_pipeline(default_app_render_pipeline_config config)
         : renderer_(std::move(config.renderer_options))
+        , native_window_(config.native_window)
     {
         image_source_bytes_loader_.set_base_directory(std::move(config.image_base_directory));
     }
@@ -81,9 +84,15 @@ public:
         return image_source_bytes_loader_;
     }
 
+    [[nodiscard]] platform_native_window_handle native_window() const
+    {
+        return native_window_;
+    }
+
 private:
     render::fake_text_engine text_engine_;
     render::vulkan_renderer renderer_{render::vulkan_renderer_options{}};
+    platform_native_window_handle native_window_;
     render::normalizing_image_resolver image_resolver_;
     render::filesystem_image_source_bytes_loader image_source_bytes_loader_;
     render::standard_image_decoder_chain image_decoder_;

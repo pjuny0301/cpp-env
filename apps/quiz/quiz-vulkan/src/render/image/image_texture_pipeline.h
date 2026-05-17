@@ -793,6 +793,22 @@ inline render_image_texture_batch_plan plan_render_image_texture_batch(
     return plan_render_image_texture_batch(images, resolver, std::move(options));
 }
 
+inline render_image_texture_batch_plan plan_render_image_texture_batch(
+    const render_image_draw_list_frame_handoff_snapshot& handoff,
+    const image_resolver_interface& resolver,
+    render_image_texture_batch_plan_options options = {})
+{
+    return plan_render_image_texture_batch(handoff.planned_images, resolver, std::move(options));
+}
+
+inline render_image_texture_batch_plan plan_render_image_texture_batch(
+    const render_image_draw_list_frame_handoff_snapshot& handoff,
+    render_image_texture_batch_plan_options options = {})
+{
+    const normalizing_image_resolver resolver;
+    return plan_render_image_texture_batch(handoff, resolver, std::move(options));
+}
+
 struct fake_image_texture_pipeline_entry_snapshot {
     std::size_t sequence = 0;
     render_image_texture_pipeline_request request;

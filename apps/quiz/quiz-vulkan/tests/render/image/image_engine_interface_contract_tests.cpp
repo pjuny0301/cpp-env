@@ -328,6 +328,11 @@ static_assert(requires(
     render::render_image_texture_frame_resource_packet_status texture_frame_resource_packet_status,
     render::render_image_texture_frame_resource_packet_plan_entry texture_frame_resource_packet_entry,
     render::render_image_texture_frame_resource_packet_plan texture_frame_resource_packet_plan,
+    render::render_image_draw_list_texture_frame_composition_status draw_list_texture_frame_composition_status,
+    render::render_image_draw_list_texture_frame_composition_entry_status
+        draw_list_texture_frame_composition_entry_status,
+    render::render_image_draw_list_texture_frame_composition_entry draw_list_texture_frame_composition_entry,
+    render::render_image_draw_list_texture_frame_composition draw_list_texture_frame_composition,
     render::render_image_texture_frame_resource_packet_materialization_status
         texture_frame_resource_packet_materialization_status,
     render::render_image_texture_frame_resource_cache_handoff_record texture_frame_resource_cache_handoff,
@@ -1698,6 +1703,14 @@ static_assert(requires(
         -> std::same_as<render::render_image_texture_batch_plan>;
     { render::plan_render_image_texture_batch(image_refs, resolver, batch_plan_options) }
         -> std::same_as<render::render_image_texture_batch_plan>;
+    { render::plan_render_image_texture_batch(draw_list_frame_handoff) }
+        -> std::same_as<render::render_image_texture_batch_plan>;
+    { render::plan_render_image_texture_batch(draw_list_frame_handoff, batch_plan_options) }
+        -> std::same_as<render::render_image_texture_batch_plan>;
+    { render::plan_render_image_texture_batch(draw_list_frame_handoff, resolver) }
+        -> std::same_as<render::render_image_texture_batch_plan>;
+    { render::plan_render_image_texture_batch(draw_list_frame_handoff, resolver, batch_plan_options) }
+        -> std::same_as<render::render_image_texture_batch_plan>;
     { render::render_image_texture_batch_execution_entry_status_name(batch_execution_entry_status) }
         -> std::same_as<std::string>;
     { render::batch_execution_status_for_pipeline_status(pipeline_status) }
@@ -1856,6 +1869,29 @@ static_assert(requires(
     { render::make_render_image_texture_frame_resource_packet_plan(
         texture_frame, upload_result_diagnostics_snapshot) }
         -> std::same_as<render::render_image_texture_frame_resource_packet_plan>;
+    { render::render_image_draw_list_texture_frame_composition_status_name(
+        draw_list_texture_frame_composition_status) } -> std::same_as<std::string>;
+    { render::render_image_draw_list_texture_frame_composition_entry_status_name(
+        draw_list_texture_frame_composition_entry_status) } -> std::same_as<std::string>;
+    { render::render_image_draw_list_texture_frame_composition_frame_entry_for_request_index(
+        texture_frame, std::size_t{}) } -> std::same_as<const render::render_image_texture_frame_entry_snapshot*>;
+    { render::render_image_draw_list_texture_frame_composition_resource_packet_for_request_index(
+        texture_frame_resource_packet_plan, std::size_t{}) }
+        -> std::same_as<const render::render_image_texture_frame_resource_packet_plan_entry*>;
+    { render::render_image_draw_list_texture_frame_composition_entry_status_for(
+        draw_list_texture_frame_composition_entry) }
+        -> std::same_as<render::render_image_draw_list_texture_frame_composition_entry_status>;
+    { render::finalize_render_image_draw_list_texture_frame_composition_entry(
+        draw_list_texture_frame_composition_entry) } -> std::same_as<void>;
+    { render::count_render_image_draw_list_texture_frame_composition_entry(
+        draw_list_texture_frame_composition, draw_list_texture_frame_composition_entry) }
+        -> std::same_as<void>;
+    { render::make_render_image_draw_list_texture_frame_composition_entry(
+        draw_list_frame_handoff_entry, batch_plan, texture_frame, texture_frame_resource_packet_plan) }
+        -> std::same_as<render::render_image_draw_list_texture_frame_composition_entry>;
+    { render::make_render_image_draw_list_texture_frame_composition(
+        draw_list_frame_handoff, batch_plan, texture_frame, texture_frame_resource_packet_plan) }
+        -> std::same_as<render::render_image_draw_list_texture_frame_composition>;
     { render::render_image_texture_frame_resource_packet_materialization_status_name(
         texture_frame_resource_packet_materialization_status) } -> std::same_as<std::string>;
     { render::render_image_texture_frame_resource_packet_materialization_status_is_blocked(
@@ -3021,6 +3057,104 @@ static_assert(requires(
     { texture_frame_resource_packet_plan.retry_backoff_summary } -> std::same_as<std::string&>;
     { texture_frame_resource_packet_plan.diagnostic } -> std::same_as<std::string&>;
     { texture_frame_resource_packet_plan.ok() } -> std::same_as<bool>;
+    draw_list_texture_frame_composition_status;
+    draw_list_texture_frame_composition_entry_status;
+    { draw_list_texture_frame_composition_entry.frame_label } -> std::same_as<std::string&>;
+    { draw_list_texture_frame_composition_entry.draw_command_index } -> std::same_as<std::size_t&>;
+    { draw_list_texture_frame_composition_entry.image_command_index } -> std::same_as<std::size_t&>;
+    { draw_list_texture_frame_composition_entry.texture_request_index } -> std::same_as<std::size_t&>;
+    { draw_list_texture_frame_composition_entry.node_id } -> std::same_as<render::render_node_id&>;
+    { draw_list_texture_frame_composition_entry.parent_node_id } -> std::same_as<render::render_node_id&>;
+    { draw_list_texture_frame_composition_entry.bounds } -> std::same_as<render::render_rect&>;
+    { draw_list_texture_frame_composition_entry.content_bounds } -> std::same_as<render::render_rect&>;
+    { draw_list_texture_frame_composition_entry.image } -> std::same_as<render::render_image_ref&>;
+    { draw_list_texture_frame_composition_entry.uri } -> std::same_as<std::string&>;
+    { draw_list_texture_frame_composition_entry.alt_text } -> std::same_as<std::string&>;
+    { draw_list_texture_frame_composition_entry.aspect_ratio } -> std::same_as<float&>;
+    { draw_list_texture_frame_composition_entry.sampler } -> std::same_as<render::render_image_sampler_policy&>;
+    { draw_list_texture_frame_composition_entry.sampler_policy }
+        -> std::same_as<render::render_image_sampler_policy_diagnostic&>;
+    { draw_list_texture_frame_composition_entry.stable_draw_command_identity } -> std::same_as<std::string&>;
+    { draw_list_texture_frame_composition_entry.stable_texture_cache_key } -> std::same_as<std::string&>;
+    { draw_list_texture_frame_composition_entry.handoff_status }
+        -> std::same_as<render::render_image_draw_list_frame_handoff_entry_status&>;
+    { draw_list_texture_frame_composition_entry.handoff_status_name } -> std::same_as<std::string&>;
+    { draw_list_texture_frame_composition_entry.handoff_blocker_summary } -> std::same_as<std::string&>;
+    { draw_list_texture_frame_composition_entry.batch_status }
+        -> std::same_as<render::render_image_texture_batch_plan_entry_status&>;
+    { draw_list_texture_frame_composition_entry.batch_status_name } -> std::same_as<std::string&>;
+    { draw_list_texture_frame_composition_entry.texture_request }
+        -> std::same_as<render::render_image_texture_pipeline_request&>;
+    { draw_list_texture_frame_composition_entry.normalized_source_key }
+        -> std::same_as<render::render_image_cache_key&>;
+    { draw_list_texture_frame_composition_entry.texture_key }
+        -> std::same_as<render::render_image_texture_key&>;
+    { draw_list_texture_frame_composition_entry.texture_key_diagnostic }
+        -> std::same_as<render::render_image_texture_key_diagnostic&>;
+    { draw_list_texture_frame_composition_entry.frame_execution_status }
+        -> std::same_as<render::render_image_texture_batch_execution_entry_status&>;
+    { draw_list_texture_frame_composition_entry.frame_pipeline_status }
+        -> std::same_as<render::render_image_texture_pipeline_status&>;
+    { draw_list_texture_frame_composition_entry.frame_texture_status }
+        -> std::same_as<render::render_image_texture_status&>;
+    { draw_list_texture_frame_composition_entry.frame_handle_status }
+        -> std::same_as<render::render_image_texture_handle_map_entry_status&>;
+    { draw_list_texture_frame_composition_entry.resource_packet_status }
+        -> std::same_as<render::render_image_texture_frame_resource_packet_status&>;
+    { draw_list_texture_frame_composition_entry.resource_packet_status_name } -> std::same_as<std::string&>;
+    { draw_list_texture_frame_composition_entry.texture_id } -> std::same_as<render::render_image_texture_id&>;
+    { draw_list_texture_frame_composition_entry.texture_revision } -> std::same_as<render::render_image_revision&>;
+    { draw_list_texture_frame_composition_entry.texture_width } -> std::same_as<std::size_t&>;
+    { draw_list_texture_frame_composition_entry.texture_height } -> std::same_as<std::size_t&>;
+    { draw_list_texture_frame_composition_entry.upload_request_id } -> std::same_as<std::uint64_t&>;
+    { draw_list_texture_frame_composition_entry.upload_generation_id } -> std::same_as<std::uint64_t&>;
+    { draw_list_texture_frame_composition_entry.uploaded_byte_count } -> std::same_as<std::size_t&>;
+    { draw_list_texture_frame_composition_entry.handoff_blocked } -> std::same_as<bool&>;
+    { draw_list_texture_frame_composition_entry.batch_entry_present } -> std::same_as<bool&>;
+    { draw_list_texture_frame_composition_entry.batch_request_planned } -> std::same_as<bool&>;
+    { draw_list_texture_frame_composition_entry.frame_entry_present } -> std::same_as<bool&>;
+    { draw_list_texture_frame_composition_entry.frame_renderer_handoff_ready } -> std::same_as<bool&>;
+    { draw_list_texture_frame_composition_entry.resource_packet_present } -> std::same_as<bool&>;
+    { draw_list_texture_frame_composition_entry.resource_packet_ready } -> std::same_as<bool&>;
+    { draw_list_texture_frame_composition_entry.resource_packet_blocked } -> std::same_as<bool&>;
+    { draw_list_texture_frame_composition_entry.entered_texture_batch } -> std::same_as<bool&>;
+    { draw_list_texture_frame_composition_entry.ready } -> std::same_as<bool&>;
+    { draw_list_texture_frame_composition_entry.blocked } -> std::same_as<bool&>;
+    { draw_list_texture_frame_composition_entry.status }
+        -> std::same_as<render::render_image_draw_list_texture_frame_composition_entry_status&>;
+    { draw_list_texture_frame_composition_entry.status_name } -> std::same_as<std::string&>;
+    { draw_list_texture_frame_composition_entry.diagnostic } -> std::same_as<std::string&>;
+    { draw_list_texture_frame_composition_entry.ok() } -> std::same_as<bool>;
+    { draw_list_texture_frame_composition.status }
+        -> std::same_as<render::render_image_draw_list_texture_frame_composition_status&>;
+    { draw_list_texture_frame_composition.status_name } -> std::same_as<std::string&>;
+    { draw_list_texture_frame_composition.frame_label } -> std::same_as<std::string&>;
+    { draw_list_texture_frame_composition.draw_command_count } -> std::same_as<std::size_t&>;
+    { draw_list_texture_frame_composition.non_image_command_count } -> std::same_as<std::size_t&>;
+    { draw_list_texture_frame_composition.image_command_count } -> std::same_as<std::size_t&>;
+    { draw_list_texture_frame_composition.handoff_entry_count } -> std::same_as<std::size_t&>;
+    { draw_list_texture_frame_composition.texture_batch_request_count } -> std::same_as<std::size_t&>;
+    { draw_list_texture_frame_composition.batch_planned_request_count } -> std::same_as<std::size_t&>;
+    { draw_list_texture_frame_composition.frame_entry_count } -> std::same_as<std::size_t&>;
+    { draw_list_texture_frame_composition.resource_packet_count } -> std::same_as<std::size_t&>;
+    { draw_list_texture_frame_composition.ready_entry_count } -> std::same_as<std::size_t&>;
+    { draw_list_texture_frame_composition.blocked_entry_count } -> std::same_as<std::size_t&>;
+    { draw_list_texture_frame_composition.handoff_blocked_count } -> std::same_as<std::size_t&>;
+    { draw_list_texture_frame_composition.missing_batch_request_count } -> std::same_as<std::size_t&>;
+    { draw_list_texture_frame_composition.batch_blocked_count } -> std::same_as<std::size_t&>;
+    { draw_list_texture_frame_composition.missing_frame_entry_count } -> std::same_as<std::size_t&>;
+    { draw_list_texture_frame_composition.frame_blocked_count } -> std::same_as<std::size_t&>;
+    { draw_list_texture_frame_composition.missing_resource_packet_count } -> std::same_as<std::size_t&>;
+    { draw_list_texture_frame_composition.resource_packet_blocked_count } -> std::same_as<std::size_t&>;
+    { draw_list_texture_frame_composition.has_non_image_commands } -> std::same_as<bool&>;
+    { draw_list_texture_frame_composition.has_blockers } -> std::same_as<bool&>;
+    { draw_list_texture_frame_composition.renderer_handoff_ready } -> std::same_as<bool&>;
+    { draw_list_texture_frame_composition.resource_packet_ready } -> std::same_as<bool&>;
+    { draw_list_texture_frame_composition.entries }
+        -> std::same_as<std::vector<render::render_image_draw_list_texture_frame_composition_entry>&>;
+    { draw_list_texture_frame_composition.skipped_command_summary } -> std::same_as<std::string&>;
+    { draw_list_texture_frame_composition.diagnostic } -> std::same_as<std::string&>;
+    { draw_list_texture_frame_composition.ok() } -> std::same_as<bool>;
     { texture_frame_resource_cache_handoff.materialization_index } -> std::same_as<std::size_t&>;
     { texture_frame_resource_cache_handoff.request_index } -> std::same_as<std::size_t&>;
     { texture_frame_resource_cache_handoff.render_image_uri } -> std::same_as<std::string&>;
@@ -3718,6 +3852,8 @@ static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_binding_summary_diff>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_resource_packet_plan_entry>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_resource_packet_plan>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_draw_list_texture_frame_composition_entry>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_draw_list_texture_frame_composition>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_resource_cache_handoff_record>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_resource_upload_handoff_record>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_resource_sampler_handoff_record>);
@@ -3771,6 +3907,8 @@ static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_textur
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_binding_summary_diff>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_resource_packet_plan_entry>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_resource_packet_plan>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_draw_list_texture_frame_composition_entry>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_draw_list_texture_frame_composition>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_resource_cache_handoff_record>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_resource_upload_handoff_record>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_resource_sampler_handoff_record>);
@@ -3824,6 +3962,8 @@ static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_binding_summary_diff>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_resource_packet_plan_entry>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_resource_packet_plan>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_draw_list_texture_frame_composition_entry>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_draw_list_texture_frame_composition>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_resource_cache_handoff_record>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_resource_upload_handoff_record>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_resource_sampler_handoff_record>);
@@ -3862,6 +4002,7 @@ static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_textu
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_upload_handoff_summary_diff>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_binding_summary>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_binding_summary_diff>);
+static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_draw_list_texture_frame_composition>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_resource_packet_plan_entry>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_resource_packet_plan>);
 static_assert(

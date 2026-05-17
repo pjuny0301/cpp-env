@@ -20,8 +20,12 @@ concept HasFakeUploadSnapshotField = requires(T value) {
 
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_frame_resource_packet_plan_entry>);
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_frame_resource_packet_plan>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_draw_list_texture_frame_composition_entry>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_draw_list_texture_frame_composition>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_resource_packet_plan_entry>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_resource_packet_plan>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_draw_list_texture_frame_composition_entry>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_draw_list_texture_frame_composition>);
 
 void require(bool condition, const char* message)
 {
@@ -115,6 +119,117 @@ quiz_vulkan::render::render_image_texture_frame_upload_handoff_entry make_blocke
     entry.blocker_summary = "blocked image ref";
     entry.diagnostic = "image frame upload handoff entry is blocked";
     return entry;
+}
+
+quiz_vulkan::render::render_image_texture_batch_execution_diagnostics make_ready_batch_execution(
+    const quiz_vulkan::render::render_image_texture_batch_plan& batch_plan)
+{
+    using namespace quiz_vulkan::render;
+
+    render_image_texture_batch_execution_diagnostics execution;
+    execution.request_count = batch_plan.request_count;
+    execution.planned_request_count = batch_plan.planned_request_count;
+    execution.invalid_request_count = batch_plan.invalid_request_count;
+    execution.all_planned_requests_executed = batch_plan.invalid_request_count == 0;
+
+    for (const render_image_texture_batch_plan_entry& plan_entry : batch_plan.entries) {
+        if (!plan_entry.ok()) {
+            continue;
+        }
+        render_image_texture_batch_execution_entry entry{
+            .sequence = plan_entry.request_index + 1,
+            .request_index = plan_entry.request_index,
+            .plan_status = plan_entry.status,
+            .status = render_image_texture_batch_execution_entry_status::ready,
+            .request = plan_entry.pipeline_request,
+            .pipeline_status = render_image_texture_pipeline_status::ready,
+            .source_bytes_status = render_image_source_bytes_load_status::loaded,
+            .texture_status = render_image_texture_status::ready,
+            .texture_key = plan_entry.texture_key,
+            .texture = render_image_texture_handle{
+                .id = 700 + plan_entry.request_index,
+                .revision = 3,
+                .width = 64 + plan_entry.request_index,
+                .height = 32,
+            },
+            .executed = true,
+            .ready = true,
+            .expected_cache_reuse = plan_entry.expects_cache_reuse,
+            .cache_reuse_expectation_matched = true,
+            .diagnostic = "test frame execution entry is ready",
+        };
+        execution.entries.push_back(entry);
+        ++execution.executed_request_count;
+        ++execution.ready_count;
+    }
+
+    execution.diagnostic = "test frame execution is data-only ready";
+    return execution;
+}
+
+quiz_vulkan::render::render_image_texture_frame_resource_packet_plan make_ready_resource_packet_plan(
+    const quiz_vulkan::render::render_image_texture_batch_plan& batch_plan)
+{
+    using namespace quiz_vulkan::render;
+
+    render_image_texture_frame_upload_handoff_summary handoff;
+    handoff.frame_request_count = batch_plan.request_count;
+    handoff.binding_packet_count = batch_plan.planned_request_count;
+    handoff.current_binding_packet_count = batch_plan.planned_request_count;
+    handoff.upload_packet_count = batch_plan.planned_request_count;
+    handoff.requested_texture_count = batch_plan.planned_request_count;
+    handoff.ready_texture_count = batch_plan.planned_request_count;
+    handoff.renderer_handoff_ready = true;
+
+    for (const render_image_texture_batch_plan_entry& plan_entry : batch_plan.entries) {
+        if (!plan_entry.ok()) {
+            continue;
+        }
+        const std::string sampler_key = render_image_sampler_policy_stable_fragment(plan_entry.sampler);
+        render_image_texture_frame_upload_handoff_entry entry;
+        entry.sequence = plan_entry.request_index + 1;
+        entry.request_index = plan_entry.request_index;
+        entry.status = render_image_texture_frame_upload_handoff_entry_status::ready;
+        entry.status_name = render_image_texture_frame_upload_handoff_entry_status_name(entry.status);
+        entry.render_image_uri = plan_entry.image.uri;
+        entry.normalized_uri = plan_entry.pipeline_request.uri;
+        entry.cache_key = plan_entry.normalized_source_key;
+        entry.source_kind = plan_entry.source_kind;
+        entry.sampler = plan_entry.sampler;
+        entry.sampler_key = sampler_key;
+        entry.texture_key = plan_entry.texture_key;
+        entry.stable_texture_cache_key = plan_entry.stable_texture_cache_key;
+        entry.texture_id = 700 + plan_entry.request_index;
+        entry.texture_revision = 3;
+        entry.texture_width = 64 + plan_entry.request_index;
+        entry.texture_height = 32;
+        entry.upload_request_id = 900 + plan_entry.request_index;
+        entry.upload_generation_id = 11;
+        entry.upload_result_status = render_image_texture_upload_result_packet_status::accepted;
+        entry.upload_result_status_name = render_image_texture_upload_result_packet_status_name(
+            entry.upload_result_status);
+        entry.upload_status = render_image_texture_upload_status::uploaded;
+        entry.upload_status_name = render_image_texture_upload_operation_upload_status_name(entry.upload_status);
+        entry.mip_level_count = 1;
+        entry.accepted_mip_level_count = 1;
+        entry.uploaded_byte_count = 64;
+        entry.requested = true;
+        entry.upload_result_present = true;
+        entry.ready = true;
+        entry.blocked = false;
+        entry.missing_upload_result = false;
+        entry.renderer_handoff_ready = true;
+        entry.expected_cache_reuse = plan_entry.expects_cache_reuse;
+        entry.cache_key_summary = plan_entry.stable_texture_cache_key;
+        entry.sampler_summary = sampler_key;
+        entry.diagnostic = "test upload handoff entry is ready";
+        handoff.entries.push_back(entry);
+        handoff.uploaded_byte_count += entry.uploaded_byte_count;
+        handoff.total_mip_level_count += entry.mip_level_count;
+        handoff.accepted_mip_level_count += entry.accepted_mip_level_count;
+    }
+
+    return make_render_image_texture_frame_resource_packet_plan(handoff);
 }
 
 void test_resource_packet_plan_reports_ready_and_placeholder_entries()
@@ -269,6 +384,214 @@ void test_resource_packet_plan_reports_missing_binding_upload_and_retry_blockers
     require(plan.entries[2].next_retry_sequence == 11, "retry entry preserves next retry sequence");
 }
 
+void test_draw_list_texture_frame_composition_links_ready_commands_to_resources()
+{
+    using namespace quiz_vulkan::render;
+
+    render_image_sampler_policy nearest_sampler;
+    nearest_sampler.min_filter = render_image_filter::nearest;
+    nearest_sampler.wrap_u = render_image_wrap_mode::repeat;
+
+    const render_rect first_bounds{.x = 10.0f, .y = 20.0f, .width = 64.0f, .height = 32.0f};
+    const render_rect first_content{.x = 12.0f, .y = 22.0f, .width = 60.0f, .height = 28.0f};
+    const render_rect second_bounds{.x = 90.0f, .y = 20.0f, .width = 40.0f, .height = 40.0f};
+    render_draw_list draw_list;
+    draw_list.commands = {
+        render_draw_command{
+            .type = render_draw_command_type::quad,
+            .node_id = "background",
+            .bounds = render_rect{.x = 0.0f, .y = 0.0f, .width = 160.0f, .height = 90.0f},
+            .content_bounds = render_rect{.x = 0.0f, .y = 0.0f, .width = 160.0f, .height = 90.0f},
+        },
+        render_draw_command{
+            .type = render_draw_command_type::image,
+            .node_id = "card-image",
+            .parent_node_id = "card",
+            .bounds = first_bounds,
+            .content_bounds = first_content,
+            .image = render_image_ref{
+                .uri = "asset://textures/card-front.ppm",
+                .alt_text = "front",
+                .aspect_ratio = 2.0f,
+                .sampler = nearest_sampler,
+            },
+        },
+        render_draw_command{
+            .type = render_draw_command_type::image,
+            .node_id = "badge-image",
+            .parent_node_id = "card",
+            .bounds = second_bounds,
+            .content_bounds = second_bounds,
+            .image = render_image_ref{
+                .uri = "asset://textures/badge.ppm",
+                .alt_text = "badge",
+                .aspect_ratio = 1.0f,
+            },
+        },
+    };
+
+    const render_image_draw_list_frame_handoff_snapshot handoff =
+        make_render_image_draw_list_frame_handoff_snapshot(draw_list, "composition-frame");
+    const render_image_texture_batch_plan batch_plan = plan_render_image_texture_batch(handoff);
+    const render_image_texture_frame_snapshot frame =
+        make_render_image_texture_frame_snapshot(batch_plan, make_ready_batch_execution(batch_plan));
+    const render_image_texture_frame_resource_packet_plan resources =
+        make_ready_resource_packet_plan(batch_plan);
+
+    const render_image_draw_list_texture_frame_composition composition =
+        make_render_image_draw_list_texture_frame_composition(handoff, batch_plan, frame, resources);
+
+    require(composition.ok(), "draw-list texture frame composition is ready");
+    require(
+        composition.status == render_image_draw_list_texture_frame_composition_status::ready,
+        "composition records ready status");
+    require(composition.status_name == "ready", "composition ready status name is stable");
+    require(composition.frame_label == "composition-frame", "composition preserves frame label");
+    require(composition.draw_command_count == 3, "composition records draw command count");
+    require(composition.non_image_command_count == 1, "composition records skipped non-image commands");
+    require(composition.image_command_count == 2, "composition records image command count");
+    require(composition.handoff_entry_count == 2, "composition records image handoff entries");
+    require(composition.texture_batch_request_count == 2, "composition records texture batch requests");
+    require(composition.batch_planned_request_count == 2, "composition records planned batch requests");
+    require(composition.frame_entry_count == 2, "composition records frame entries");
+    require(composition.resource_packet_count == 2, "composition records resource packet entries");
+    require(composition.ready_entry_count == 2, "composition records ready composed entries");
+    require(composition.blocked_entry_count == 0, "composition has no blockers");
+    require(
+        composition.skipped_command_summary == "skipped non-image draw commands=1",
+        "composition keeps non-image skip evidence");
+    require(
+        composition.diagnostic == "image draw-list texture frame composition ready",
+        "composition ready diagnostic is stable");
+
+    const render_image_draw_list_texture_frame_composition_entry& first = composition.entries[0];
+    require(first.ok(), "first composed image entry is ready");
+    require(first.draw_command_index == 1, "first composed entry preserves draw command index");
+    require(first.image_command_index == 0, "first composed entry preserves image command order");
+    require(first.texture_request_index == 0, "first composed entry preserves texture request index");
+    require(first.node_id == "card-image", "first composed entry preserves node id");
+    require(first.parent_node_id == "card", "first composed entry preserves parent node id");
+    require(first.bounds.x == first_bounds.x && first.bounds.width == first_bounds.width, "first entry preserves bounds");
+    require(
+        first.content_bounds.x == first_content.x && first.content_bounds.width == first_content.width,
+        "first entry preserves content bounds");
+    require(first.uri == "asset://textures/card-front.ppm", "first entry preserves image uri");
+    require(first.alt_text == "front", "first entry preserves alt text");
+    require(first.aspect_ratio == 2.0f, "first entry preserves aspect ratio");
+    require(first.sampler.min_filter == render_image_filter::nearest, "first entry preserves sampler filter");
+    require(first.sampler.wrap_u == render_image_wrap_mode::repeat, "first entry preserves sampler wrap");
+    require(first.texture_request.uri == "asset://textures/card-front.ppm", "first entry carries batch request uri");
+    require(first.batch_entry_present, "first entry links batch plan evidence");
+    require(first.batch_request_planned, "first entry records planned batch request");
+    require(first.frame_entry_present, "first entry links frame snapshot evidence");
+    require(first.frame_renderer_handoff_ready, "first entry records frame handoff readiness");
+    require(first.resource_packet_present, "first entry links resource packet evidence");
+    require(first.resource_packet_ready, "first entry records resource packet readiness");
+    require(first.texture_id == 700, "first entry carries resource texture id");
+    require(first.upload_request_id == 900, "first entry carries upload request id evidence");
+    require(first.uploaded_byte_count == 64, "first entry carries uploaded byte count evidence");
+    require(
+        first.stable_draw_command_identity == "frame=composition-frame|node=card-image|parent=card",
+        "first entry preserves stable draw command identity");
+    require(
+        first.stable_texture_cache_key.find("card-front.ppm") != std::string::npos,
+        "first entry preserves stable texture cache key");
+
+    const render_image_draw_list_texture_frame_composition_entry& second = composition.entries[1];
+    require(second.ok(), "second composed image entry is ready");
+    require(second.draw_command_index == 2, "second composed entry preserves draw command index");
+    require(second.image_command_index == 1, "second composed entry preserves image command order");
+    require(second.texture_request_index == 1, "second composed entry preserves texture request index");
+    require(second.node_id == "badge-image", "second composed entry preserves node id");
+    require(second.resource_packet_present, "second entry links resource packet evidence");
+    require(second.texture_id == 701, "second entry carries second texture id");
+}
+
+void test_draw_list_texture_frame_composition_keeps_blocked_handoff_out_of_batch()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_rect bounds{.x = 0.0f, .y = 0.0f, .width = 16.0f, .height = 16.0f};
+    render_draw_list draw_list;
+    draw_list.commands = {
+        render_draw_command{
+            .type = render_draw_command_type::image,
+            .node_id = "ready-image",
+            .parent_node_id = "root",
+            .bounds = bounds,
+            .content_bounds = bounds,
+            .image = render_image_ref{.uri = "asset://textures/ready.ppm"},
+        },
+        render_draw_command{
+            .type = render_draw_command_type::text,
+            .node_id = "caption",
+            .parent_node_id = "root",
+            .bounds = bounds,
+            .content_bounds = bounds,
+        },
+        render_draw_command{
+            .type = render_draw_command_type::image,
+            .node_id = "blocked-image",
+            .parent_node_id = "root",
+            .bounds = bounds,
+            .content_bounds = bounds,
+            .image = render_image_ref{.uri = "   "},
+        },
+    };
+
+    const render_image_draw_list_frame_handoff_snapshot handoff =
+        make_render_image_draw_list_frame_handoff_snapshot(draw_list, "blocked-composition");
+    const render_image_texture_batch_plan batch_plan = plan_render_image_texture_batch(handoff);
+    const render_image_texture_frame_snapshot frame =
+        make_render_image_texture_frame_snapshot(batch_plan, make_ready_batch_execution(batch_plan));
+    const render_image_texture_frame_resource_packet_plan resources =
+        make_ready_resource_packet_plan(batch_plan);
+
+    const render_image_draw_list_texture_frame_composition composition =
+        make_render_image_draw_list_texture_frame_composition(handoff, batch_plan, frame, resources);
+
+    require(!composition.ok(), "composition with blocked handoff entry is blocked");
+    require(
+        composition.status == render_image_draw_list_texture_frame_composition_status::blocked,
+        "blocked composition records blocked status");
+    require(composition.image_command_count == 2, "blocked composition sees two image commands");
+    require(composition.non_image_command_count == 1, "blocked composition skips non-image command");
+    require(composition.handoff_entry_count == 2, "blocked composition has image-only entries");
+    require(composition.texture_batch_request_count == 1, "blocked handoff entry does not enter batch plan");
+    require(composition.batch_planned_request_count == 1, "only ready handoff entry becomes planned batch request");
+    require(composition.ready_entry_count == 1, "blocked composition keeps ready entry ready");
+    require(composition.blocked_entry_count == 1, "blocked composition counts blocked handoff entry");
+    require(composition.handoff_blocked_count == 1, "blocked composition records handoff blocker");
+    require(composition.missing_batch_request_count == 0, "blocked handoff is not reported as missing batch request");
+    require(
+        composition.diagnostic == "image draw-list texture frame composition has blocked image commands",
+        "blocked composition diagnostic is stable");
+
+    const render_image_draw_list_texture_frame_composition_entry& ready = composition.entries[0];
+    require(ready.ok(), "ready entry still reaches texture frame resources");
+    require(ready.batch_entry_present, "ready entry links batch plan");
+    require(ready.frame_entry_present, "ready entry links frame snapshot");
+    require(ready.resource_packet_present, "ready entry links resource packet");
+
+    const render_image_draw_list_texture_frame_composition_entry& blocked = composition.entries[1];
+    require(
+        blocked.status == render_image_draw_list_texture_frame_composition_entry_status::handoff_blocked,
+        "blocked handoff entry keeps handoff blocked status");
+    require(blocked.handoff_blocked, "blocked entry records handoff blocker");
+    require(!blocked.batch_entry_present, "blocked handoff entry does not link a batch entry");
+    require(!blocked.entered_texture_batch, "blocked handoff entry does not enter texture batch");
+    require(!blocked.frame_entry_present, "blocked handoff entry does not link frame evidence");
+    require(!blocked.resource_packet_present, "blocked handoff entry does not link resource packet evidence");
+    require(blocked.draw_command_index == 2, "blocked entry preserves draw command index");
+    require(blocked.node_id == "blocked-image", "blocked entry preserves node id");
+    require(blocked.handoff_blocker_summary == "image draw command uri is empty", "blocked entry keeps blocker summary");
+    require(
+        blocked.diagnostic
+            == "image draw command texture frame composition blocked by draw-list handoff: "
+               "image draw command uri is empty",
+        "blocked entry diagnostic is stable");
+}
+
 void test_resource_packet_status_helpers_are_stable()
 {
     using namespace quiz_vulkan::render;
@@ -294,6 +617,8 @@ int main()
 {
     test_resource_packet_plan_reports_ready_and_placeholder_entries();
     test_resource_packet_plan_reports_missing_binding_upload_and_retry_blockers();
+    test_draw_list_texture_frame_composition_links_ready_commands_to_resources();
+    test_draw_list_texture_frame_composition_keeps_blocked_handoff_out_of_batch();
     test_resource_packet_status_helpers_are_stable();
     return 0;
 }

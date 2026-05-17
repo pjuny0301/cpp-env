@@ -113,14 +113,14 @@ Build and test the worker-local tree:
 
 ```bash
 cd /mnt/c/aa-workers/text-engine/apps/quiz/quiz-vulkan
-/mnt/c/aa/codex-workers/with-build-lock.sh \
-  "/mnt/c/Program Files/CMake/bin/cmake.exe" \
-  --build --preset windows-mingw-ascii-debug \
-  --target quiz_vulkan_interface_contract_compile_tests
-
 build_dir="$(/mnt/c/aa/codex-workers/quiz-vulkan-worker-build-dir.sh \
   /mnt/c/aa-workers/text-engine \
   windows-mingw-ascii)"
+/mnt/c/aa/codex-workers/with-build-lock.sh \
+  "/mnt/c/Program Files/CMake/bin/cmake.exe" \
+  --build "$build_dir" \
+  --target quiz_vulkan_interface_contract_compile_tests
+
 /mnt/c/aa/codex-workers/with-build-lock.sh \
   "/mnt/c/Program Files/CMake/bin/ctest.exe" \
   --test-dir "$build_dir" \

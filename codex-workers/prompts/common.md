@@ -34,6 +34,6 @@ Useful commands:
 - `git status --short --branch`
 - `git pull --ff-only`
 - `/mnt/c/aa/codex-workers/configure-quiz-vulkan-worker-build.sh "$(pwd)" windows-mingw-ascii`
-- `cd apps/quiz/quiz-vulkan && /mnt/c/aa/codex-workers/with-build-lock.sh "/mnt/c/Program Files/CMake/bin/cmake.exe" --build --preset windows-mingw-ascii-debug --target quiz_vulkan_interface_contract_compile_tests`
+- `build_dir="$(/mnt/c/aa/codex-workers/quiz-vulkan-worker-build-dir.sh "$(pwd)" windows-mingw-ascii)"; /mnt/c/aa/codex-workers/with-build-lock.sh "/mnt/c/Program Files/CMake/bin/cmake.exe" --build "$build_dir" --target quiz_vulkan_interface_contract_compile_tests`
 - `build_dir="$(/mnt/c/aa/codex-workers/quiz-vulkan-worker-build-dir.sh "$(pwd)" windows-mingw-ascii)"; /mnt/c/aa/codex-workers/with-build-lock.sh "/mnt/c/Program Files/CMake/bin/ctest.exe" --test-dir "$build_dir" -R "<focused_test_regex>" --output-on-failure`
 - `git diff --check`

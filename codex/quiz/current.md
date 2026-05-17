@@ -25,14 +25,16 @@ Historical integration notes are kept in git history, not repeated here.
 - Text: glyph quad packet evidence is now integrated; the next text gap is real
   renderer/font atlas consumption after the image/Vulkan resource contracts
   settle.
-- Image: draw-list texture frame composition after image draw-list handoff and
-  texture frame resource packet materialization.
+- Image: draw-list texture frame composition is now integrated; the next image
+  gap is renderer-bound texture quad/resource consumption after Vulkan
+  descriptor evidence settles.
 
 ## Active Workers
 
 - `codex-image-texture-next-20260514`: busy on
-  `codex/image-draw-list-frame-composition-20260517`. Merge only after a clean
-  commit/report. Watch for stray `image_texture_pipeline_test_data/`.
+  `codex/image-draw-list-frame-composition-20260517`, integrated as `3677875`.
+  Keep the session alive and assign a fresh baseline branch for the next image
+  task.
 - `codex-text-freetype-prototype-20260514`: busy on
   `codex/text-renderer-glyph-quad-packets-20260517`, integrated as `7889fa1`.
   Keep the session alive and assign a fresh baseline branch for the next text
@@ -69,12 +71,13 @@ Historical integration notes are kept in git history, not repeated here.
 
 ## Latest Known Verification
 
-- Main branch `codex/quiz-vulkan-remake-baseline` has integrated text renderer
-  glyph quad packet evidence at `7889fa1`.
+- Main branch `codex/quiz-vulkan-remake-baseline` has integrated image
+  draw-list texture frame composition at `3677875` and text renderer glyph quad
+  packet evidence at `7889fa1`.
 - Last full Windows MinGW CTest batch passed `105/105` from
   `C:/aa/build/out/quiz/quiz-vulkan/windows-mingw-ascii`.
-- After `7889fa1`, Windows MinGW focused text CTest passed 2/2 for text
-  resource packet materialization and glyph quad packet evidence.
+- After `3677875`, Windows MinGW focused image CTest passed 2/2 for image
+  texture frame resource packet planning and image texture pipeline.
 
 ## Useful Commands
 

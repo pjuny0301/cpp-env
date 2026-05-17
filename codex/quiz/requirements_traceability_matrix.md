@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- `3677875`: Image engine now composes draw-list image handoff entries into texture batch, frame snapshot, and texture resource packet evidence, preserving command/node/bounds/image/sampler/cache identity plus blocked handoff, batch, frame, and resource packet diagnostics before Vulkan consumption.
+- current: after `3677875`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_image_texture_frame_resource_packet_plan_tests`, and `quiz_vulkan_image_texture_pipeline_tests`; focused image CTest passed 2/2.
 - `7889fa1`: Text engine now produces renderer-facing glyph quad packet evidence from resource packet materialization, preserving source labels/node hints, layout/atlas/UV bounds, atlas page revision, sampler/page/upload identities, readiness, duplicates, and blocker diagnostics before Vulkan consumption.
 - current: after `7889fa1`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_text_frame_resource_packet_materialization_tests`, and `quiz_vulkan_text_renderer_glyph_quad_packet_tests`; focused text CTest passed 2/2.
 - `f7c658f`: Text engine now composes draw-list text handoff entries into the existing text request batch/frame path, preserving command order, node identity, bounds/content bounds, style/options evidence, and blocked-entry diagnostics before text frame snapshot/materialization work.

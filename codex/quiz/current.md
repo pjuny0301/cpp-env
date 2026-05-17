@@ -28,14 +28,14 @@ Historical integration notes are kept in git history, not repeated here.
 - Image: draw-list texture frame composition is now integrated; the next image
   gap is renderer-bound texture quad/resource consumption after Vulkan
   descriptor evidence settles. Renderer texture quad packet evidence is also
-  integrated.
+  integrated, including texture quad packet diff evidence.
 - Input/IME: suppressed raw text and shortcut attempts during active IME
   composition now emit diagnostics without app/domain dispatch. Programmatic
   text focus changes now also diagnose stale IME preedit/selection cleanup.
 
 ## Active Workers
 
-- `codex-image-texture-next-20260514`: busy on
+- `codex-image-texture-next-20260514`: idle after integration of
   `codex/image-texture-quad-packet-diff-20260517`.
 - `codex-input-ime`: idle after integration of
   `codex/input-ime-focus-loss-diagnostics-20260517`.
@@ -75,8 +75,9 @@ Historical integration notes are kept in git history, not repeated here.
 
 ## Latest Known Verification
 
-- Main branch `codex/quiz-vulkan-remake-baseline` is at `ea2aa04` after the
-  placed-scene boundary split and IME focus-loss diagnostics integration.
+- Main branch `codex/quiz-vulkan-remake-baseline` is at `5f35d5a` after the
+  placed-scene boundary split, IME focus-loss diagnostics integration, and image
+  texture quad packet diff evidence.
 - Last full Windows MinGW CTest batch passed `108/108` from
   `C:/aa/build/out/quiz/quiz-vulkan/windows-mingw-ascii`.
 - After `51e6a40`, Windows MinGW built
@@ -87,6 +88,10 @@ Historical integration notes are kept in git history, not repeated here.
   `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_input_engine_ime_tests`,
   `quiz_vulkan_input_engine_tests`, and `quiz_vulkan_text_input_model_tests`;
   focused input CTest passed 3/3.
+- After `5f35d5a`, Windows MinGW built
+  `quiz_vulkan_interface_contract_compile_tests` and
+  `quiz_vulkan_image_texture_frame_resource_packet_plan_tests`; focused image
+  CTest passed 1/1.
 
 ## Useful Commands
 

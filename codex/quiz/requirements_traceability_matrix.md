@@ -6,6 +6,14 @@
 
 최근 baseline 통합 증거:
 
+- `5f35d5a`: Image engine now diffs renderer texture quad packet summaries,
+  tracking added/removed/changed/unchanged stable packet identities plus layout,
+  texture, sampler, cache, upload, blocker, regression, recovery, duplicate
+  identity, and missing identity transitions before renderer/Vulkan consumption.
+- current: after `5f35d5a`, Windows MinGW built
+  `quiz_vulkan_interface_contract_compile_tests` and
+  `quiz_vulkan_image_texture_frame_resource_packet_plan_tests`; focused image
+  CTest passed 1/1.
 - `ea2aa04`: Input engine now emits diagnostic-only IME cancel and focus-loss
   route policy records when programmatic text focus changes or clears while
   stale preedit/selection state exists, preserving UTF-8-safe caret/selection

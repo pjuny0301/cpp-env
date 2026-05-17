@@ -1,6 +1,10 @@
 #pragma once
 
 #include "app/app_demo.h"
+#include "render/image/image_source_bytes_loader.h"
+#include "render/image/image_texture_cache.h"
+#include "render/image/image_texture_pipeline.h"
+#include "render/image/standard_image_decoder_chain.h"
 #include "render/text/fake_text_engine.h"
 
 namespace quiz_vulkan {
@@ -36,7 +40,9 @@ public:
             request.viewport,
             request.view_state,
             text_engine_,
-            renderer_);
+            renderer_,
+            &image_texture_pipeline_,
+            &image_resolver_);
     }
 
     [[nodiscard]] const render::fake_text_engine& text_engine() const
@@ -49,9 +55,28 @@ public:
         return renderer_;
     }
 
+    [[nodiscard]] const render::fake_image_texture_pipeline& image_texture_pipeline() const
+    {
+        return image_texture_pipeline_;
+    }
+
 private:
     render::fake_text_engine text_engine_;
     render::vulkan_renderer renderer_{render::vulkan_renderer_options{}};
+    render::normalizing_image_resolver image_resolver_;
+    render::filesystem_image_source_bytes_loader image_source_bytes_loader_;
+    render::standard_image_decoder_chain image_decoder_;
+    render::fake_image_texture_uploader image_texture_uploader_;
+    render::fake_image_texture_cache image_texture_cache_{
+        image_decoder_,
+        image_texture_uploader_,
+    };
+    render::fake_image_texture_pipeline image_texture_pipeline_{
+        image_resolver_,
+        image_source_bytes_loader_,
+        image_texture_cache_,
+        image_texture_uploader_,
+    };
 };
 
 } // namespace quiz_vulkan

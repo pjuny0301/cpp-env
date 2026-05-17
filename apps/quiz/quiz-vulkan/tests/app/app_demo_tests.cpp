@@ -5,7 +5,12 @@
 
 #include <cassert>
 #include <cstddef>
+#include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <ios>
 #include <string>
+#include <utility>
 
 std::size_t count_nonzero_framebuffer_pixels(
     const quiz_vulkan::render::vulkan_renderer_framebuffer& framebuffer)
@@ -18,6 +23,23 @@ std::size_t count_nonzero_framebuffer_pixels(
         }
     }
     return count;
+}
+
+std::filesystem::path write_ppm_image_fixture()
+{
+    const std::filesystem::path path = std::filesystem::current_path() / "app_demo_image_fixture.ppm";
+    std::ofstream file(path, std::ios::binary);
+    file << "P6\n1 1\n255\n";
+    const unsigned char pixel[] = {0xff, 0x00, 0x00};
+    file.write(reinterpret_cast<const char*>(pixel), sizeof(pixel));
+    return path;
+}
+
+quiz_vulkan::domain::deck make_image_demo_deck(std::string image_uri)
+{
+    quiz_vulkan::domain::deck deck = quiz_vulkan::make_demo_deck();
+    deck.days.front().questions.front().image_uri = std::move(image_uri);
+    return deck;
 }
 
 int main()
@@ -57,6 +79,37 @@ int main()
     assert(pipeline_frame.report.screen_id == "quiz_active");
     assert(pipeline.renderer().last_frame_stats().command_count == pipeline_frame.report.frame_stats.command_count);
     assert(pipeline.renderer().last_draw_list().size() == pipeline_frame.report.frame_stats.command_count);
+
+    const std::filesystem::path image_fixture = write_ppm_image_fixture();
+    app_state image_state({make_image_demo_deck(image_fixture.generic_string())});
+    image_state.dispatch(domain::make_select_deck_action("demo_deck"));
+    image_state.dispatch(domain::make_select_day_action("day_1"));
+    image_state.dispatch(domain::make_start_quiz_action(domain::quiz_mode::normal), 100);
+    domain::app_snapshot image_snapshot = image_state.snapshot();
+    default_app_render_pipeline image_pipeline;
+    app_render_frame image_frame = image_pipeline.render(app_render_request{
+        .snapshot = &image_snapshot,
+    });
+    assert(image_frame.report.screen_id == "quiz_active");
+    assert(image_frame.report.frame_stats.image_count > 0);
+    assert(image_frame.report.image_texture_command_count == 1);
+    assert(image_frame.report.image_texture_request_count == 1);
+    assert(image_frame.report.image_texture_pipeline_ran);
+    assert(image_frame.report.image_texture_handoff_ready);
+    if (!image_frame.report.image_texture_renderer_handoff_ready) {
+        std::fprintf(
+            stderr,
+            "image texture report: requests=%zu ready=%zu failures=%zu mapped=%zu diagnostic=%s\n",
+            image_frame.report.image_texture_request_count,
+            image_frame.report.image_texture_ready_count,
+            image_frame.report.image_texture_failure_count,
+            image_frame.report.image_texture_mapped_count,
+            image_frame.report.image_texture_diagnostic.c_str());
+    }
+    assert(image_frame.report.image_texture_renderer_handoff_ready);
+    assert(image_frame.report.image_texture_ready_count == 1);
+    assert(image_frame.report.image_texture_mapped_count == 1);
+    assert(image_pipeline.image_texture_pipeline().diagnostic_snapshot().ready_count == 1);
 
     state.dispatch(domain::make_submit_option_action(0), 200);
     app_render_report feedback_report = render_app_snapshot(state.snapshot());

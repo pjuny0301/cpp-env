@@ -4,6 +4,8 @@
 #include "core/scene/modifier_interface.h"
 #include "app/app_quiz_screens.h"
 #include "core/ui/ui_renderer.h"
+#include "render/image/image_resolver.h"
+#include "render/image/image_texture_pipeline.h"
 #include "render/text/fake_text_engine.h"
 #include "render/text/scene_text_metrics_adapter.h"
 
@@ -96,6 +98,53 @@ private:
     std::string typed_text_answer_;
 };
 
+void prepare_image_textures_for_frame(
+    const ui::ui_draw_list& draw_list,
+    render::image_texture_pipeline_interface* image_texture_pipeline,
+    const render::image_resolver_interface* image_resolver,
+    app_render_report& report)
+{
+    const render::normalizing_image_resolver fallback_resolver;
+    const render::image_resolver_interface& resolver =
+        image_resolver == nullptr ? fallback_resolver : *image_resolver;
+    const render::render_image_draw_list_frame_handoff_snapshot handoff =
+        render::make_render_image_draw_list_frame_handoff_snapshot(
+            draw_list,
+            resolver,
+            report.screen_id);
+
+    report.image_texture_command_count = handoff.image_command_count;
+    report.image_texture_request_count = handoff.planned_texture_request_count;
+    report.image_texture_handoff_ready = !handoff.has_image_commands || handoff.ok();
+    report.image_texture_renderer_handoff_ready = !handoff.has_image_commands;
+    report.image_texture_diagnostic = handoff.diagnostic;
+
+    if (!handoff.has_image_commands || !handoff.ok()) {
+        return;
+    }
+
+    if (image_texture_pipeline == nullptr) {
+        report.image_texture_failure_count = handoff.planned_texture_request_count;
+        report.image_texture_renderer_handoff_ready = false;
+        report.image_texture_diagnostic = "image texture pipeline is unavailable";
+        return;
+    }
+
+    const render::render_image_texture_batch_plan plan =
+        render::plan_render_image_texture_batch(handoff, resolver);
+    const render::render_image_texture_batch_execution_diagnostics execution =
+        render::execute_render_image_texture_batch_plan(plan, *image_texture_pipeline);
+    const render::render_image_texture_handle_map_diagnostics handle_map =
+        render::make_render_image_texture_handle_map_diagnostics(plan, execution);
+
+    report.image_texture_pipeline_ran = true;
+    report.image_texture_ready_count = execution.ready_count;
+    report.image_texture_failure_count = execution.failure_count;
+    report.image_texture_mapped_count = handle_map.mapped_count;
+    report.image_texture_renderer_handoff_ready = handle_map.ok();
+    report.image_texture_diagnostic = handle_map.ok() ? handle_map.diagnostic : execution.diagnostic;
+}
+
 } // namespace
 
 domain::deck make_demo_deck()
@@ -144,7 +193,9 @@ app_render_frame render_app_frame_with_engines(
     scene::scene_rect viewport,
     app_render_view_state view_state,
     render::text_engine_interface& text_engine,
-    render::vulkan_renderer& renderer)
+    render::vulkan_renderer& renderer,
+    render::image_texture_pipeline_interface* image_texture_pipeline,
+    const render::image_resolver_interface* image_resolver)
 {
     scene::scene_layout_data scene_data("quiz_app");
 
@@ -194,6 +245,11 @@ app_render_frame render_app_frame_with_engines(
         environment,
         text_metrics);
     const ui::ui_draw_list draw_list = ui::ui_renderer{}.build_draw_list(frame.placed_scene);
+    prepare_image_textures_for_frame(
+        draw_list,
+        image_texture_pipeline,
+        image_resolver,
+        frame.report);
 
     render::vulkan_renderer_options renderer_options = renderer.options();
     renderer_options.viewport = to_render_rect(environment.viewport);
@@ -234,6 +290,7 @@ std::string format_render_report(std::string_view label, const app_render_report
            << " inputs=" << report.input_region_count
            << " commands=" << report.frame_stats.command_count
            << " draw_calls=" << report.frame_stats.draw_call_count
+           << " image_textures=" << report.image_texture_ready_count << "/" << report.image_texture_request_count
            << " shaded_pixels=" << report.frame_summary.shaded_pixel_count
            << " nonblank=" << (report.frame_summary.nonblank() ? "true" : "false");
     return stream.str();

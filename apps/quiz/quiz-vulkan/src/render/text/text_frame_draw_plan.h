@@ -286,6 +286,8 @@ inline render_text_frame_draw_packet_snapshot make_render_text_frame_draw_packet
         render_text_frame_draw_uv_rect_for(atlas_bounds, page);
     const render_text_batch_normalized_style_key* style_key =
         render_text_frame_draw_style_key_for(frame, item_index, materialization.run_index);
+    const render_text_batch_layout_request_snapshot* layout_request =
+        render_text_frame_draw_layout_request_for(frame, item_index);
     const render_text_frame_draw_packet_status status =
         render_text_frame_draw_packet_status_for(frame, materialization, has_atlas_bounds, uv_bounds);
 
@@ -324,7 +326,9 @@ inline render_text_frame_draw_packet_snapshot make_render_text_frame_draw_packet
             materialization.cache_key,
             page),
         .frame_id = frame.frame_id,
-        .source_label = frame.source_label,
+        .source_label = layout_request == nullptr || layout_request->source_label.empty()
+            ? frame.source_label
+            : layout_request->source_label,
         .atlas_upload_request_id = upload == nullptr ? std::string{} : upload->request_id,
         .status = status,
         .item_index = item_index,

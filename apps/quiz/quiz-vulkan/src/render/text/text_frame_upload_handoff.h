@@ -452,6 +452,127 @@ struct render_text_frame_resource_packet_consumption_diff_snapshot {
   }
 };
 
+enum class render_text_renderer_glyph_quad_packet_status {
+  quad_ready,
+  blocked_resource_packet,
+  blocked_missing_resource_packet_id,
+  blocked_missing_stable_packet_key,
+  duplicate_packet_id,
+  blocked_missing_atlas_page,
+  blocked_missing_atlas_bounds,
+  blocked_missing_page_extent,
+  blocked_missing_layout_bounds,
+  blocked_missing_uv_bounds,
+  blocked_missing_sampler_key,
+};
+
+struct render_text_renderer_glyph_quad_packet_record {
+  std::string quad_packet_id{};
+  std::string resource_packet_id{};
+  std::string stable_packet_key{};
+  std::string source_label{};
+  render_node_id source_node_id_hint{};
+  std::string draw_packet_id{};
+  std::string upload_handoff_id{};
+  std::string upload_operation_id{};
+  std::string upload_request_id{};
+  std::string stable_page_id{};
+  std::string sampler_key{};
+  std::string sampler_summary{};
+  std::size_t packet_index{};
+  std::size_t materialization_index{};
+  std::size_t run_index{};
+  std::size_t cluster_byte_offset{};
+  std::size_t cluster_byte_count{};
+  glyph_atlas_key cache_key{};
+  std::uint32_t resolved_glyph_id{};
+  font_face_id resolved_face_id{};
+  render_text_atlas_page_id page_id{};
+  render_text_revision page_revision{};
+  std::size_t page_width{};
+  std::size_t page_height{};
+  render_rect layout_bounds{};
+  render_rect atlas_bounds{};
+  render_text_frame_draw_uv_rect uv_bounds{};
+  render_text_frame_resource_packet_materialization_status resource_status{
+      render_text_frame_resource_packet_materialization_status::
+          blocked_missing_upload_handoff};
+  render_text_renderer_glyph_quad_packet_status status{
+      render_text_renderer_glyph_quad_packet_status::blocked_resource_packet};
+  bool ready{};
+  bool blocked{true};
+  bool renderer_boundary_ready{};
+  bool duplicate_packet{};
+  bool missing_identity{};
+  bool missing_stable_packet_key{};
+  bool uploaded{};
+  bool clean_reuse{};
+  bool used_deterministic_fallback{};
+  bool used_real_backend{};
+  bool glyph_supported{};
+  bool upload_consumed{};
+  std::size_t upload_rgba_bytes{};
+  std::string blocker_summary{};
+  std::string diagnostic{};
+
+  [[nodiscard]] constexpr bool drawable() const noexcept {
+    return ready && !blocked;
+  }
+};
+
+struct render_text_renderer_glyph_quad_packet_policy_snapshot {
+  std::size_t resource_packet_count{};
+  std::size_t quad_packet_count{};
+  std::size_t ready_quad_count{};
+  std::size_t blocked_quad_count{};
+  std::size_t uploaded_quad_count{};
+  std::size_t clean_reuse_quad_count{};
+  std::size_t duplicate_packet_id_count{};
+  std::size_t missing_identity_count{};
+  std::size_t missing_stable_packet_key_count{};
+  std::size_t resource_blocked_count{};
+  std::size_t missing_atlas_page_count{};
+  std::size_t missing_atlas_bounds_count{};
+  std::size_t missing_page_extent_count{};
+  std::size_t missing_layout_bounds_count{};
+  std::size_t missing_uv_bounds_count{};
+  std::size_t missing_sampler_key_count{};
+  std::size_t deterministic_fallback_count{};
+  std::size_t real_backend_count{};
+  std::size_t consumed_upload_count{};
+  std::size_t total_upload_rgba_bytes{};
+  bool frame_ready_for_renderer{};
+  bool has_blockers{};
+  bool used_deterministic_fallback{};
+  bool used_real_backend{};
+};
+
+struct render_text_renderer_glyph_quad_packet_request {
+  render_text_frame_resource_packet_materialization resource_packets{};
+};
+
+struct render_text_renderer_glyph_quad_packet_snapshot {
+  std::string frame_id{};
+  std::string source_label{};
+  bool frame_ready_for_renderer{};
+  render_text_renderer_glyph_quad_packet_policy_snapshot policy{};
+  std::vector<render_text_renderer_glyph_quad_packet_record> packets{};
+  std::vector<std::string> ready_quad_packet_ids{};
+  std::vector<std::string> blocker_quad_packet_ids{};
+  std::vector<std::string> duplicate_quad_packet_ids{};
+  std::vector<std::string> missing_identity_quad_packet_ids{};
+  std::string blocker_summary{};
+  std::string diagnostic{};
+
+  [[nodiscard]] constexpr bool ok() const noexcept {
+    return frame_ready_for_renderer && !policy.has_blockers;
+  }
+
+  [[nodiscard]] constexpr bool has_blockers() const noexcept {
+    return policy.has_blockers;
+  }
+};
+
 namespace detail {
 
 [[nodiscard]] inline std::string text_frame_upload_handoff_stable_key_for(
@@ -1482,6 +1603,353 @@ materialize_render_text_frame_resource_packets(
       std::to_string(materialization.policy.sampler_count) +
       " text atlas sampler(s) referenced";
   return materialization;
+}
+
+[[nodiscard]] inline std::string render_text_renderer_glyph_quad_packet_status_name(
+    const render_text_renderer_glyph_quad_packet_status status) {
+  switch (status) {
+    case render_text_renderer_glyph_quad_packet_status::quad_ready:
+      return "quad_ready";
+    case render_text_renderer_glyph_quad_packet_status::blocked_resource_packet:
+      return "blocked_resource_packet";
+    case render_text_renderer_glyph_quad_packet_status::
+        blocked_missing_resource_packet_id:
+      return "blocked_missing_resource_packet_id";
+    case render_text_renderer_glyph_quad_packet_status::
+        blocked_missing_stable_packet_key:
+      return "blocked_missing_stable_packet_key";
+    case render_text_renderer_glyph_quad_packet_status::duplicate_packet_id:
+      return "duplicate_packet_id";
+    case render_text_renderer_glyph_quad_packet_status::
+        blocked_missing_atlas_page:
+      return "blocked_missing_atlas_page";
+    case render_text_renderer_glyph_quad_packet_status::
+        blocked_missing_atlas_bounds:
+      return "blocked_missing_atlas_bounds";
+    case render_text_renderer_glyph_quad_packet_status::
+        blocked_missing_page_extent:
+      return "blocked_missing_page_extent";
+    case render_text_renderer_glyph_quad_packet_status::
+        blocked_missing_layout_bounds:
+      return "blocked_missing_layout_bounds";
+    case render_text_renderer_glyph_quad_packet_status::
+        blocked_missing_uv_bounds:
+      return "blocked_missing_uv_bounds";
+    case render_text_renderer_glyph_quad_packet_status::
+        blocked_missing_sampler_key:
+      return "blocked_missing_sampler_key";
+  }
+  return "unknown";
+}
+
+[[nodiscard]] inline render_node_id render_text_renderer_glyph_quad_node_id_hint_for(
+    const std::string& source_label) {
+  const std::string marker = ":node=";
+  const std::size_t offset = source_label.find(marker);
+  if (offset == std::string::npos) {
+    return {};
+  }
+  return source_label.substr(offset + marker.size());
+}
+
+[[nodiscard]] inline std::string render_text_renderer_glyph_quad_packet_id_for(
+    const render_text_frame_resource_packet_materialization_entry& entry,
+    const std::size_t packet_index) {
+  if (!entry.resource_packet_id.empty()) {
+    return "text-renderer-glyph-quad:v1:resource=" + entry.resource_packet_id;
+  }
+  if (!entry.stable_packet_key.empty()) {
+    return "text-renderer-glyph-quad:v1:stable=" + entry.stable_packet_key;
+  }
+  return "text-renderer-glyph-quad:v1:frame=" + entry.frame_id +
+         ":missing-resource-id:index=" + std::to_string(packet_index);
+}
+
+[[nodiscard]] inline render_text_renderer_glyph_quad_packet_status
+render_text_renderer_glyph_quad_packet_status_for(
+    const render_text_frame_resource_packet_materialization_entry& entry,
+    const bool duplicate_packet_id) {
+  if (duplicate_packet_id) {
+    return render_text_renderer_glyph_quad_packet_status::duplicate_packet_id;
+  }
+  if (entry.resource_packet_id.empty()) {
+    return render_text_renderer_glyph_quad_packet_status::
+        blocked_missing_resource_packet_id;
+  }
+  if (entry.stable_packet_key.empty()) {
+    return render_text_renderer_glyph_quad_packet_status::
+        blocked_missing_stable_packet_key;
+  }
+  if (entry.page_id == 0U) {
+    return render_text_renderer_glyph_quad_packet_status::
+        blocked_missing_atlas_page;
+  }
+  if (entry.status ==
+      render_text_frame_resource_packet_materialization_status::
+          blocked_missing_atlas_bounds) {
+    return render_text_renderer_glyph_quad_packet_status::
+        blocked_missing_atlas_bounds;
+  }
+  if (entry.page_width == 0U || entry.page_height == 0U) {
+    return render_text_renderer_glyph_quad_packet_status::
+        blocked_missing_page_extent;
+  }
+  if (entry.draw_status ==
+      render_text_frame_draw_packet_status::missing_layout_bounds) {
+    return render_text_renderer_glyph_quad_packet_status::
+        blocked_missing_layout_bounds;
+  }
+  if (!entry.uv_bounds.valid) {
+    return render_text_renderer_glyph_quad_packet_status::
+        blocked_missing_uv_bounds;
+  }
+  if (entry.sampler_key.empty()) {
+    return render_text_renderer_glyph_quad_packet_status::
+        blocked_missing_sampler_key;
+  }
+  if (!entry.renderer_boundary_ready || entry.blocked || !entry.ready) {
+    return render_text_renderer_glyph_quad_packet_status::blocked_resource_packet;
+  }
+  return render_text_renderer_glyph_quad_packet_status::quad_ready;
+}
+
+[[nodiscard]] inline std::string render_text_renderer_glyph_quad_blocker_summary_for(
+    const render_text_frame_resource_packet_materialization_entry& entry,
+    const render_text_renderer_glyph_quad_packet_status status) {
+  switch (status) {
+    case render_text_renderer_glyph_quad_packet_status::quad_ready:
+      return {};
+    case render_text_renderer_glyph_quad_packet_status::
+        blocked_missing_resource_packet_id:
+      return "glyph quad packet is missing resource packet identity";
+    case render_text_renderer_glyph_quad_packet_status::
+        blocked_missing_stable_packet_key:
+      return "glyph quad packet is missing stable packet key";
+    case render_text_renderer_glyph_quad_packet_status::duplicate_packet_id:
+      return "glyph quad packet resource identity is duplicated";
+    case render_text_renderer_glyph_quad_packet_status::
+        blocked_missing_atlas_page:
+      return "glyph quad packet is missing atlas page identity";
+    case render_text_renderer_glyph_quad_packet_status::
+        blocked_missing_atlas_bounds:
+      return "glyph quad packet is missing atlas bounds";
+    case render_text_renderer_glyph_quad_packet_status::
+        blocked_missing_page_extent:
+      return "glyph quad packet is missing atlas page extent";
+    case render_text_renderer_glyph_quad_packet_status::
+        blocked_missing_layout_bounds:
+      return "glyph quad packet is missing glyph layout bounds";
+    case render_text_renderer_glyph_quad_packet_status::
+        blocked_missing_uv_bounds:
+      return "glyph quad packet is missing atlas UV bounds";
+    case render_text_renderer_glyph_quad_packet_status::
+        blocked_missing_sampler_key:
+      return "glyph quad packet is missing text atlas sampler key";
+    case render_text_renderer_glyph_quad_packet_status::blocked_resource_packet:
+      if (!entry.blocker_summary.empty()) {
+        return entry.blocker_summary;
+      }
+      return "resource packet is not renderer-boundary ready";
+  }
+  return "unknown glyph quad packet blocker";
+}
+
+[[nodiscard]] inline render_text_renderer_glyph_quad_packet_record
+make_render_text_renderer_glyph_quad_packet(
+    const render_text_frame_resource_packet_materialization_entry& entry,
+    const std::size_t packet_index,
+    const bool duplicate_packet_id) {
+  const render_text_renderer_glyph_quad_packet_status status =
+      render_text_renderer_glyph_quad_packet_status_for(entry, duplicate_packet_id);
+  const bool ready =
+      status == render_text_renderer_glyph_quad_packet_status::quad_ready;
+  const bool missing_identity = entry.resource_packet_id.empty();
+  const bool missing_stable_packet_key = entry.stable_packet_key.empty();
+  const std::string blocker =
+      render_text_renderer_glyph_quad_blocker_summary_for(entry, status);
+  return {
+      .quad_packet_id =
+          render_text_renderer_glyph_quad_packet_id_for(entry, packet_index),
+      .resource_packet_id = entry.resource_packet_id,
+      .stable_packet_key = entry.stable_packet_key,
+      .source_label = entry.source_label,
+      .source_node_id_hint =
+          render_text_renderer_glyph_quad_node_id_hint_for(entry.source_label),
+      .draw_packet_id = entry.draw_packet_id,
+      .upload_handoff_id = entry.upload_handoff_id,
+      .upload_operation_id = entry.upload_operation_id,
+      .upload_request_id = entry.upload_request_id,
+      .stable_page_id = entry.stable_page_id,
+      .sampler_key = entry.sampler_key,
+      .sampler_summary = entry.sampler_summary,
+      .packet_index = packet_index,
+      .materialization_index = entry.materialization_index,
+      .run_index = entry.run_index,
+      .cluster_byte_offset = entry.cluster_byte_offset,
+      .cluster_byte_count = entry.cluster_byte_count,
+      .cache_key = entry.cache_key,
+      .resolved_glyph_id = entry.resolved_glyph_id,
+      .resolved_face_id = entry.resolved_face_id,
+      .page_id = entry.page_id,
+      .page_revision = entry.page_revision,
+      .page_width = entry.page_width,
+      .page_height = entry.page_height,
+      .layout_bounds = entry.layout_bounds,
+      .atlas_bounds = entry.atlas_bounds,
+      .uv_bounds = entry.uv_bounds,
+      .resource_status = entry.status,
+      .status = status,
+      .ready = ready,
+      .blocked = !ready,
+      .renderer_boundary_ready = ready,
+      .duplicate_packet = duplicate_packet_id,
+      .missing_identity = missing_identity,
+      .missing_stable_packet_key = missing_stable_packet_key,
+      .uploaded = entry.uploaded,
+      .clean_reuse = entry.clean_reuse,
+      .used_deterministic_fallback = entry.used_deterministic_fallback,
+      .used_real_backend = entry.used_real_backend,
+      .glyph_supported = entry.glyph_supported,
+      .upload_consumed = entry.upload_consumed,
+      .upload_rgba_bytes = entry.upload_rgba_bytes,
+      .blocker_summary = blocker,
+      .diagnostic = ready
+          ? "glyph quad packet is ready for renderer-boundary consumption"
+          : blocker,
+  };
+}
+
+inline void append_render_text_renderer_glyph_quad_packet(
+    render_text_renderer_glyph_quad_packet_snapshot& snapshot,
+    render_text_renderer_glyph_quad_packet_record packet) {
+  auto& policy = snapshot.policy;
+  ++policy.quad_packet_count;
+  if (packet.ready) {
+    ++policy.ready_quad_count;
+    snapshot.ready_quad_packet_ids.push_back(packet.quad_packet_id);
+  } else {
+    ++policy.blocked_quad_count;
+    snapshot.blocker_quad_packet_ids.push_back(packet.quad_packet_id);
+    policy.has_blockers = true;
+  }
+  if (packet.uploaded) {
+    ++policy.uploaded_quad_count;
+  }
+  if (packet.clean_reuse) {
+    ++policy.clean_reuse_quad_count;
+  }
+  if (packet.duplicate_packet) {
+    ++policy.duplicate_packet_id_count;
+    detail::append_unique_string(snapshot.duplicate_quad_packet_ids,
+                                 packet.quad_packet_id);
+  }
+  if (packet.missing_identity) {
+    ++policy.missing_identity_count;
+    detail::append_unique_string(snapshot.missing_identity_quad_packet_ids,
+                                 packet.quad_packet_id);
+  }
+  if (packet.missing_stable_packet_key) {
+    ++policy.missing_stable_packet_key_count;
+  }
+  switch (packet.status) {
+    case render_text_renderer_glyph_quad_packet_status::quad_ready:
+      break;
+    case render_text_renderer_glyph_quad_packet_status::blocked_resource_packet:
+      ++policy.resource_blocked_count;
+      break;
+    case render_text_renderer_glyph_quad_packet_status::
+        blocked_missing_resource_packet_id:
+      break;
+    case render_text_renderer_glyph_quad_packet_status::
+        blocked_missing_stable_packet_key:
+      break;
+    case render_text_renderer_glyph_quad_packet_status::duplicate_packet_id:
+      break;
+    case render_text_renderer_glyph_quad_packet_status::
+        blocked_missing_atlas_page:
+      ++policy.missing_atlas_page_count;
+      break;
+    case render_text_renderer_glyph_quad_packet_status::
+        blocked_missing_atlas_bounds:
+      ++policy.missing_atlas_bounds_count;
+      break;
+    case render_text_renderer_glyph_quad_packet_status::
+        blocked_missing_page_extent:
+      ++policy.missing_page_extent_count;
+      break;
+    case render_text_renderer_glyph_quad_packet_status::
+        blocked_missing_layout_bounds:
+      ++policy.missing_layout_bounds_count;
+      break;
+    case render_text_renderer_glyph_quad_packet_status::
+        blocked_missing_uv_bounds:
+      ++policy.missing_uv_bounds_count;
+      break;
+    case render_text_renderer_glyph_quad_packet_status::
+        blocked_missing_sampler_key:
+      ++policy.missing_sampler_key_count;
+      break;
+  }
+  if (packet.used_deterministic_fallback) {
+    ++policy.deterministic_fallback_count;
+    policy.used_deterministic_fallback = true;
+  }
+  if (packet.used_real_backend) {
+    ++policy.real_backend_count;
+    policy.used_real_backend = true;
+  }
+  if (packet.upload_consumed) {
+    ++policy.consumed_upload_count;
+  }
+  policy.total_upload_rgba_bytes += packet.upload_rgba_bytes;
+  snapshot.packets.push_back(std::move(packet));
+}
+
+[[nodiscard]] inline render_text_renderer_glyph_quad_packet_snapshot
+make_render_text_renderer_glyph_quad_packets(
+    render_text_renderer_glyph_quad_packet_request request) {
+  render_text_renderer_glyph_quad_packet_snapshot snapshot{
+      .frame_id = request.resource_packets.frame_id,
+      .source_label = request.resource_packets.source_label,
+      .frame_ready_for_renderer =
+          request.resource_packets.frame_ready_for_renderer,
+      .diagnostic =
+          "renderer glyph quad packets built from text resource packet evidence",
+  };
+  snapshot.policy.resource_packet_count = request.resource_packets.entries.size();
+  snapshot.policy.frame_ready_for_renderer =
+      request.resource_packets.frame_ready_for_renderer;
+  snapshot.packets.reserve(request.resource_packets.entries.size());
+
+  std::vector<std::string> seen_resource_packet_ids{};
+  seen_resource_packet_ids.reserve(request.resource_packets.entries.size());
+  for (std::size_t index = 0; index < request.resource_packets.entries.size();
+       ++index) {
+    const auto& entry = request.resource_packets.entries[index];
+    const bool duplicate_packet_id =
+        !entry.resource_packet_id.empty() &&
+        std::find(seen_resource_packet_ids.begin(),
+                  seen_resource_packet_ids.end(),
+                  entry.resource_packet_id) != seen_resource_packet_ids.end();
+    if (!entry.resource_packet_id.empty() && !duplicate_packet_id) {
+      seen_resource_packet_ids.push_back(entry.resource_packet_id);
+    }
+    append_render_text_renderer_glyph_quad_packet(
+        snapshot,
+        make_render_text_renderer_glyph_quad_packet(entry, index,
+                                                    duplicate_packet_id));
+  }
+
+  if (!snapshot.frame_ready_for_renderer && snapshot.packets.empty()) {
+    snapshot.policy.has_blockers = true;
+    snapshot.blocker_summary =
+        "text frame resource packets are not ready for renderer glyph quads";
+  } else if (snapshot.policy.has_blockers) {
+    snapshot.blocker_summary =
+        std::to_string(snapshot.policy.blocked_quad_count) +
+        " glyph quad packet(s) blocked";
+  }
+  return snapshot;
 }
 
 namespace detail {

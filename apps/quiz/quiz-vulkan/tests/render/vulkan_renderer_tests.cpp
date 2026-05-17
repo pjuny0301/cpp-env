@@ -782,6 +782,67 @@ void test_draw_list_submission_counts_generic_work()
     require(renderer.last_framebuffer().rgba.empty(), "clear drops framebuffer bytes");
 }
 
+void test_image_texture_payloads_drive_cpu_fallback_image_fill()
+{
+    using namespace quiz_vulkan::render;
+
+    render_draw_list draw_list;
+    draw_list.commands.push_back(make_image_command(
+        "payload_image",
+        render_rect{0.0f, 0.0f, 100.0f, 100.0f},
+        "fixture://renderer/payload.png"));
+
+    vulkan_renderer_image_texture_payload_frame payloads{
+        .payload_count = 1,
+        .draw_ready_payload_count = 1,
+        .placeholder_payload_count = 0,
+        .blocked_payload_count = 0,
+        .draw_payloads_ready = true,
+    };
+    payloads.payloads.push_back(vulkan_renderer_image_texture_payload{
+        .payload_index = 0,
+        .draw_command_index = 0,
+        .node_id = "payload_image",
+        .bounds = render_rect{0.0f, 0.0f, 100.0f, 100.0f},
+        .content_bounds = render_rect{0.0f, 0.0f, 100.0f, 100.0f},
+        .stable_texture_cache_key = "fixture://renderer/payload.png#rev1",
+        .texture_id = 7,
+        .texture_revision = 1,
+        .texture_width = 8,
+        .texture_height = 8,
+        .draw_ready = true,
+        .placeholder_backed = false,
+        .blocked = false,
+    });
+
+    vulkan_renderer renderer(vulkan_renderer_options{
+        .viewport = render_rect{0.0f, 0.0f, 100.0f, 100.0f},
+        .fallback_surface_width = 10,
+        .fallback_surface_height = 10,
+        .prefer_vulkan = false,
+    });
+    renderer.submit(draw_list, payloads);
+
+    const vulkan_renderer_frame_summary& summary = renderer.last_frame_summary();
+    require(summary.image_texture_payloads_consumed, "renderer records consumed image texture payloads");
+    require(summary.image_texture_payloads_ready, "renderer records ready image texture payload frame");
+    require(summary.image_texture_payload_count == 1, "renderer records image texture payload count");
+    require(summary.image_texture_payload_ready_count == 1, "renderer records ready image texture payload count");
+    require(summary.image_texture_payload_placeholder_count == 0, "renderer records placeholder image payload count");
+    require(summary.image_texture_payload_blocked_count == 0, "renderer records blocked image payload count");
+    require(summary.shaded_pixel_count == 100, "image payload fills the expected fallback surface");
+
+    const vulkan_renderer_framebuffer& framebuffer = renderer.last_framebuffer();
+    require(count_nonzero_framebuffer_pixels(framebuffer) == 100, "image payload colors the fallback framebuffer");
+    const std::size_t center = framebuffer_pixel_offset(framebuffer, 5, 5);
+    require(center + 3 < framebuffer.rgba.size(), "image payload center pixel is addressable");
+    require(framebuffer.rgba[center + 3] == 255, "image payload center pixel is opaque");
+    require(
+        framebuffer.rgba[center] != 255 || framebuffer.rgba[center + 1] != 255
+            || framebuffer.rgba[center + 2] != 255,
+        "image payload center pixel is not the generic white image fallback");
+}
+
 void test_renderer_backend_diagnostics_report_vulkan_not_requested()
 {
     using namespace quiz_vulkan::render;
@@ -2575,6 +2636,7 @@ int main()
     test_vulkan_frame_resource_lifetime_names_are_stable();
     test_vulkan_descriptor_validation_names_are_stable();
     test_draw_list_submission_counts_generic_work();
+    test_image_texture_payloads_drive_cpu_fallback_image_fill();
     test_renderer_backend_diagnostics_report_vulkan_not_requested();
     test_cpu_fallback_clips_and_discards();
     test_degenerate_surface_discards_draw_calls();

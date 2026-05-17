@@ -124,6 +124,12 @@ int main()
     assert(image_frame.report.image_texture_payload_ready_count == 1);
     assert(image_frame.report.image_texture_payload_placeholder_count == 0);
     assert(image_frame.report.image_texture_payload_blocked_count == 0);
+    assert(image_frame.report.frame_summary.image_texture_payloads_consumed);
+    assert(image_frame.report.frame_summary.image_texture_payloads_ready);
+    assert(image_frame.report.frame_summary.image_texture_payload_count == 1);
+    assert(image_frame.report.frame_summary.image_texture_payload_ready_count == 1);
+    assert(image_frame.report.frame_summary.image_texture_payload_placeholder_count == 0);
+    assert(image_frame.report.frame_summary.image_texture_payload_blocked_count == 0);
     assert(image_pipeline.image_texture_pipeline().diagnostic_snapshot().ready_count == 1);
     assert(image_pipeline.image_source_bytes_loader().base_directory() == image_fixture.parent_path());
 

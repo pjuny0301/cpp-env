@@ -2,6 +2,7 @@
 
 #include "render/image/image_texture_frame_resource_packet_plan.h"
 #include "render/image/image_texture_pipeline.h"
+#include "render/vulkan/vulkan_renderer.h"
 
 #include <optional>
 
@@ -139,13 +140,51 @@ std::optional<render::render_image_texture_upload_result_snapshot> upload_result
     return filter_upload_result_snapshot_to_frame(upload_result, frame);
 }
 
+render::vulkan_renderer_image_texture_payload make_vulkan_renderer_image_texture_payload(
+    const render::render_image_renderer_texture_quad_draw_payload& payload)
+{
+    return render::vulkan_renderer_image_texture_payload{
+        .payload_index = payload.payload_index,
+        .draw_command_index = payload.draw_command_index,
+        .node_id = payload.node_id,
+        .bounds = payload.bounds,
+        .content_bounds = payload.content_bounds,
+        .stable_texture_cache_key = payload.stable_texture_cache_key,
+        .texture_id = payload.texture_id,
+        .texture_revision = payload.texture_revision,
+        .texture_width = payload.texture_width,
+        .texture_height = payload.texture_height,
+        .draw_ready = payload.draw_ready,
+        .placeholder_backed = payload.placeholder_backed,
+        .blocked = payload.blocked,
+    };
+}
+
+render::vulkan_renderer_image_texture_payload_frame make_vulkan_renderer_image_texture_payload_frame(
+    const render::render_image_renderer_texture_quad_draw_payload_frame& source)
+{
+    render::vulkan_renderer_image_texture_payload_frame frame{
+        .payload_count = source.payload_count,
+        .draw_ready_payload_count = source.draw_ready_payload_count,
+        .placeholder_payload_count = source.placeholder_payload_count,
+        .blocked_payload_count = source.blocked_payload_count,
+        .draw_payloads_ready = source.draw_payloads_ready,
+    };
+    frame.payloads.reserve(source.payloads.size());
+    for (const render::render_image_renderer_texture_quad_draw_payload& payload : source.payloads) {
+        frame.payloads.push_back(make_vulkan_renderer_image_texture_payload(payload));
+    }
+    return frame;
+}
+
 } // namespace
 
 app_image_texture_payload_report prepare_app_image_texture_payloads(
     const render::render_image_draw_list_frame_handoff_snapshot& handoff,
     const render::render_image_texture_batch_plan& plan,
     const render::render_image_texture_frame_snapshot& texture_frame,
-    const render::image_texture_pipeline_interface& image_texture_pipeline)
+    const render::image_texture_pipeline_interface& image_texture_pipeline,
+    render::vulkan_renderer_image_texture_payload_frame* renderer_payloads)
 {
     app_image_texture_payload_report report;
     const std::optional<render::render_image_texture_upload_result_snapshot> upload_result =
@@ -168,6 +207,9 @@ app_image_texture_payload_report prepare_app_image_texture_payloads(
         render::make_render_image_renderer_texture_quad_packet_summary(composition);
     const render::render_image_renderer_texture_quad_draw_payload_frame draw_payloads =
         render::make_render_image_renderer_texture_quad_draw_payload_frame(quad_packets);
+    if (renderer_payloads != nullptr) {
+        *renderer_payloads = make_vulkan_renderer_image_texture_payload_frame(draw_payloads);
+    }
 
     report.resource_packet_count = resource_packets.entries.size();
     report.resource_ready_count = resource_packets.resource_packet_count;

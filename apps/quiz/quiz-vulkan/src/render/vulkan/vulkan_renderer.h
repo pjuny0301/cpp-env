@@ -4,6 +4,7 @@
 #include "render/vulkan/vulkan_backend_adapter.h"
 
 #include <cstddef>
+#include <string>
 #include <vector>
 
 namespace quiz_vulkan::render {
@@ -33,6 +34,31 @@ struct vulkan_renderer_framebuffer {
     std::vector<unsigned char> rgba;
 };
 
+struct vulkan_renderer_image_texture_payload {
+    std::size_t payload_index = 0;
+    std::size_t draw_command_index = 0;
+    render_node_id node_id;
+    render_rect bounds;
+    render_rect content_bounds;
+    std::string stable_texture_cache_key;
+    render_image_texture_id texture_id = 0;
+    render_image_revision texture_revision = 0;
+    std::size_t texture_width = 0;
+    std::size_t texture_height = 0;
+    bool draw_ready = false;
+    bool placeholder_backed = false;
+    bool blocked = false;
+};
+
+struct vulkan_renderer_image_texture_payload_frame {
+    std::size_t payload_count = 0;
+    std::size_t draw_ready_payload_count = 0;
+    std::size_t placeholder_payload_count = 0;
+    std::size_t blocked_payload_count = 0;
+    bool draw_payloads_ready = false;
+    std::vector<vulkan_renderer_image_texture_payload> payloads;
+};
+
 enum class vulkan_renderer_backend {
     cpu_fallback,
     vulkan,
@@ -57,8 +83,14 @@ struct vulkan_renderer_frame_summary {
     std::size_t backend_surface_height = 0;
     std::size_t backend_planned_batch_count = 0;
     std::size_t backend_recorded_batch_count = 0;
+    std::size_t image_texture_payload_count = 0;
+    std::size_t image_texture_payload_ready_count = 0;
+    std::size_t image_texture_payload_placeholder_count = 0;
+    std::size_t image_texture_payload_blocked_count = 0;
     vulkan_backend::vulkan_backend_frame_stage backend_reached_stage =
         vulkan_backend::vulkan_backend_frame_stage::not_started;
+    bool image_texture_payloads_consumed = false;
+    bool image_texture_payloads_ready = false;
     bool backend_instance_ready = false;
     bool backend_device_ready = false;
     bool backend_swapchain_ready = false;
@@ -117,6 +149,9 @@ public:
     explicit vulkan_renderer(vulkan_renderer_options options);
 
     void submit(const render_draw_list& draw_list);
+    void submit(
+        const render_draw_list& draw_list,
+        const vulkan_renderer_image_texture_payload_frame& image_texture_payloads);
     void submit(const std::vector<render_draw_command>& commands);
     void clear();
 
@@ -130,15 +165,21 @@ public:
     void set_options(vulkan_renderer_options options);
 
 private:
+    void submit(
+        const render_draw_list& draw_list,
+        const vulkan_renderer_image_texture_payload_frame* image_texture_payloads);
+
     static vulkan_renderer_frame_stats count_commands(const render_draw_list& draw_list);
     static vulkan_renderer_frame_summary summarize_cpu_fallback(
         const render_draw_list& draw_list,
         const vulkan_renderer_frame_stats& stats,
         const vulkan_backend::vulkan_backend_frame_result& backend_result,
-        const vulkan_renderer_options& options);
+        const vulkan_renderer_options& options,
+        const vulkan_renderer_image_texture_payload_frame* image_texture_payloads);
     static vulkan_renderer_framebuffer rasterize_cpu_fallback_framebuffer(
         const render_draw_list& draw_list,
-        const vulkan_renderer_options& options);
+        const vulkan_renderer_options& options,
+        const vulkan_renderer_image_texture_payload_frame* image_texture_payloads);
 
     vulkan_renderer_options options_;
     render_draw_list last_draw_list_;

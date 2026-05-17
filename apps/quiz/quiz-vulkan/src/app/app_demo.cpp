@@ -104,7 +104,8 @@ void prepare_image_textures_for_frame(
     const ui::ui_draw_list& draw_list,
     render::image_texture_pipeline_interface* image_texture_pipeline,
     const render::image_resolver_interface* image_resolver,
-    app_render_report& report)
+    app_render_report& report,
+    render::vulkan_renderer_image_texture_payload_frame& renderer_payloads)
 {
     const render::normalizing_image_resolver fallback_resolver;
     const render::image_resolver_interface& resolver =
@@ -153,7 +154,7 @@ void prepare_image_textures_for_frame(
     }
 
     const app_image_texture_payload_report payload_report =
-        prepare_app_image_texture_payloads(handoff, plan, texture_frame, *image_texture_pipeline);
+        prepare_app_image_texture_payloads(handoff, plan, texture_frame, *image_texture_pipeline, &renderer_payloads);
     report.image_texture_resource_packet_count = payload_report.resource_packet_count;
     report.image_texture_resource_ready_count = payload_report.resource_ready_count;
     report.image_texture_quad_packet_count = payload_report.quad_packet_count;
@@ -270,16 +271,22 @@ app_render_frame render_app_frame_with_engines(
         environment,
         text_metrics);
     const ui::ui_draw_list draw_list = ui::ui_renderer{}.build_draw_list(frame.placed_scene);
+    render::vulkan_renderer_image_texture_payload_frame image_texture_payloads;
     prepare_image_textures_for_frame(
         draw_list,
         image_texture_pipeline,
         image_resolver,
-        frame.report);
+        frame.report,
+        image_texture_payloads);
 
     render::vulkan_renderer_options renderer_options = renderer.options();
     renderer_options.viewport = to_render_rect(environment.viewport);
     renderer.set_options(std::move(renderer_options));
-    renderer.submit(draw_list);
+    if (image_texture_payloads.payload_count == 0) {
+        renderer.submit(draw_list);
+    } else {
+        renderer.submit(draw_list, image_texture_payloads);
+    }
 
     frame.report.node_count = frame.placed_scene.nodes.size();
     frame.report.input_region_count = frame.placed_scene.input_regions.size();

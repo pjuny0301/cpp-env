@@ -2981,6 +2981,11 @@ static_assert(requires(
     render::render_text_batch_atlas_update_request_snapshot atlas_request,
     render::render_text_request_batch_plan_policy_snapshot plan_policy,
     render::render_text_request_batch_plan_snapshot plan,
+    render::render_text_draw_list_frame_handoff_entry_status draw_list_handoff_status,
+    render::render_text_draw_list_frame_handoff_entry draw_list_handoff_entry,
+    render::render_text_draw_list_frame_handoff_policy draw_list_handoff_policy,
+    render::render_text_draw_list_frame_handoff_request draw_list_handoff_request,
+    render::render_text_draw_list_frame_handoff_snapshot draw_list_handoff,
     render::render_text_atlas_upload_request_status upload_status,
     render::render_text_atlas_upload_request_snapshot upload_request,
     render::render_text_atlas_upload_request_policy_snapshot upload_policy,
@@ -3026,6 +3031,7 @@ static_assert(requires(
     render::render_text_glyph_atlas_materialization_snapshot snapshot,
     render::render_text_request request,
     render::render_draw_command draw_command,
+    render::render_draw_list draw_list,
     render::render_text_style_catalog style_catalog,
     std::vector<render::render_text_request_batch_item> items,
     std::vector<render::render_text_glyph_atlas_materialization_snapshot> materializations,
@@ -3127,6 +3133,100 @@ static_assert(requires(
     { plan.policy } -> std::same_as<render::render_text_request_batch_plan_policy_snapshot&>;
     { plan.has_layout_requests() } -> std::same_as<bool>;
     { plan.has_atlas_update_requests() } -> std::same_as<bool>;
+    { render::render_text_draw_list_frame_handoff_entry_status_name(draw_list_handoff_status) }
+        -> std::same_as<std::string>;
+    { draw_list_handoff_entry.stable_entry_id } -> std::same_as<std::string&>;
+    { draw_list_handoff_entry.frame_id } -> std::same_as<std::string&>;
+    { draw_list_handoff_entry.source_label } -> std::same_as<std::string&>;
+    { draw_list_handoff_entry.draw_command_index } -> std::same_as<std::size_t&>;
+    { draw_list_handoff_entry.node_id } -> std::same_as<render::render_node_id&>;
+    { draw_list_handoff_entry.parent_node_id } -> std::same_as<render::render_node_id&>;
+    { draw_list_handoff_entry.bounds } -> std::same_as<render::render_rect&>;
+    { draw_list_handoff_entry.content_bounds } -> std::same_as<render::render_rect&>;
+    { draw_list_handoff_entry.text_runs } -> std::same_as<std::vector<render::render_text_run>&>;
+    { draw_list_handoff_entry.requested_style_tokens } -> std::same_as<std::vector<render::render_style_id>&>;
+    { draw_list_handoff_entry.resolved_style_ids } -> std::same_as<std::vector<render::render_style_id>&>;
+    { draw_list_handoff_entry.missing_style_tokens } -> std::same_as<std::vector<render::render_style_id>&>;
+    { draw_list_handoff_entry.primary_requested_style_token } -> std::same_as<render::render_style_id&>;
+    { draw_list_handoff_entry.primary_resolved_style_id } -> std::same_as<render::render_style_id&>;
+    { draw_list_handoff_entry.fallback_style_id } -> std::same_as<render::render_style_id&>;
+    { draw_list_handoff_entry.options } -> std::same_as<render::render_text_options&>;
+    { draw_list_handoff_entry.status }
+        -> std::same_as<render::render_text_draw_list_frame_handoff_entry_status&>;
+    { draw_list_handoff_entry.ready } -> std::same_as<bool&>;
+    { draw_list_handoff_entry.blocked } -> std::same_as<bool&>;
+    { draw_list_handoff_entry.empty_text } -> std::same_as<bool&>;
+    { draw_list_handoff_entry.missing_style } -> std::same_as<bool&>;
+    { draw_list_handoff_entry.fallback_style_available } -> std::same_as<bool&>;
+    { draw_list_handoff_entry.used_fallback_style } -> std::same_as<bool&>;
+    { draw_list_handoff_entry.invalid_bounds } -> std::same_as<bool&>;
+    { draw_list_handoff_entry.missing_stable_id } -> std::same_as<bool&>;
+    { draw_list_handoff_entry.duplicate_stable_id } -> std::same_as<bool&>;
+    { draw_list_handoff_entry.text_run_count } -> std::same_as<std::size_t&>;
+    { draw_list_handoff_entry.missing_style_count } -> std::same_as<std::size_t&>;
+    { draw_list_handoff_entry.blocker_reason } -> std::same_as<std::string&>;
+    { draw_list_handoff_entry.diagnostic } -> std::same_as<std::string&>;
+    { draw_list_handoff_entry.ok() } -> std::same_as<bool>;
+    { draw_list_handoff_policy.draw_command_count } -> std::same_as<std::size_t&>;
+    { draw_list_handoff_policy.text_command_count } -> std::same_as<std::size_t&>;
+    { draw_list_handoff_policy.skipped_non_text_command_count } -> std::same_as<std::size_t&>;
+    { draw_list_handoff_policy.entry_count } -> std::same_as<std::size_t&>;
+    { draw_list_handoff_policy.ready_entry_count } -> std::same_as<std::size_t&>;
+    { draw_list_handoff_policy.blocked_entry_count } -> std::same_as<std::size_t&>;
+    { draw_list_handoff_policy.text_run_count } -> std::same_as<std::size_t&>;
+    { draw_list_handoff_policy.empty_text_count } -> std::same_as<std::size_t&>;
+    { draw_list_handoff_policy.missing_style_count } -> std::same_as<std::size_t&>;
+    { draw_list_handoff_policy.fallback_style_count } -> std::same_as<std::size_t&>;
+    { draw_list_handoff_policy.invalid_bounds_count } -> std::same_as<std::size_t&>;
+    { draw_list_handoff_policy.missing_stable_id_count } -> std::same_as<std::size_t&>;
+    { draw_list_handoff_policy.duplicate_stable_id_count } -> std::same_as<std::size_t&>;
+    { draw_list_handoff_policy.has_blockers } -> std::same_as<bool&>;
+    { draw_list_handoff_policy.has_non_text_commands } -> std::same_as<bool&>;
+    { draw_list_handoff_policy.used_fallback_style } -> std::same_as<bool&>;
+    { draw_list_handoff_request.frame_id } -> std::same_as<std::string&>;
+    { draw_list_handoff_request.source_label } -> std::same_as<std::string&>;
+    { draw_list_handoff_request.draw_list } -> std::same_as<render::render_draw_list&>;
+    { draw_list_handoff.frame_id } -> std::same_as<std::string&>;
+    { draw_list_handoff.source_label } -> std::same_as<std::string&>;
+    { draw_list_handoff.policy } -> std::same_as<render::render_text_draw_list_frame_handoff_policy&>;
+    { draw_list_handoff.entries }
+        -> std::same_as<std::vector<render::render_text_draw_list_frame_handoff_entry>&>;
+    { draw_list_handoff.skipped_non_text_command_indices } -> std::same_as<std::vector<std::size_t>&>;
+    { draw_list_handoff.ready_entry_ids } -> std::same_as<std::vector<std::string>&>;
+    { draw_list_handoff.blocked_entry_ids } -> std::same_as<std::vector<std::string>&>;
+    { draw_list_handoff.duplicate_stable_entry_ids } -> std::same_as<std::vector<std::string>&>;
+    { draw_list_handoff.missing_stable_entry_command_indices } -> std::same_as<std::vector<std::size_t>&>;
+    { draw_list_handoff.diagnostic } -> std::same_as<std::string&>;
+    { draw_list_handoff.ok() } -> std::same_as<bool>;
+    { draw_list_handoff.has_blockers() } -> std::same_as<bool>;
+    { render::render_text_draw_list_frame_handoff_rect_valid(draw_list_handoff_entry.bounds) }
+        -> std::same_as<bool>;
+    { render::render_text_draw_list_frame_handoff_text_empty(draw_list_handoff_entry.text_runs) }
+        -> std::same_as<bool>;
+    { render::render_text_draw_list_frame_handoff_fallback_style_available(style_catalog) }
+        -> std::same_as<bool>;
+    { render::render_text_draw_list_frame_handoff_stable_id_for(style_key_text, draw_command.node_id) }
+        -> std::same_as<std::string>;
+    { render::render_text_draw_list_frame_handoff_entry_status_for(
+        bool{},
+        bool{},
+        bool{},
+        bool{},
+        bool{},
+        bool{}) } -> std::same_as<render::render_text_draw_list_frame_handoff_entry_status>;
+    { render::render_text_draw_list_frame_handoff_blocker_reason_for(draw_list_handoff_status) }
+        -> std::same_as<std::string>;
+    { render::make_render_text_draw_list_frame_handoff_entry(
+        style_key_text,
+        style_key_text,
+        draw_command,
+        style_catalog,
+        std::size_t{},
+        duplicate) } -> std::same_as<render::render_text_draw_list_frame_handoff_entry>;
+    { render::append_render_text_draw_list_frame_handoff_entry(draw_list_handoff, draw_list_handoff_entry) }
+        -> std::same_as<void>;
+    { render::make_render_text_draw_list_frame_handoff(draw_list_handoff_request) }
+        -> std::same_as<render::render_text_draw_list_frame_handoff_snapshot>;
     { render::render_text_batch_normalize_font_family(style_key_text) } -> std::same_as<std::string>;
     { render::render_text_batch_float_key(float{}) } -> std::same_as<std::string>;
     { render::render_text_batch_make_style_key(style_key_text, style_catalog.fallback_style) }
@@ -3138,6 +3238,8 @@ static_assert(requires(
     { render::make_render_text_request_batch_item(text_ref, style_catalog, materializations) }
         -> std::same_as<render::render_text_request_batch_item>;
     { render::make_render_text_request_batch_item(draw_command, style_catalog, materializations) }
+        -> std::same_as<render::render_text_request_batch_item>;
+    { render::make_render_text_request_batch_item(draw_list_handoff_entry, style_catalog, materializations) }
         -> std::same_as<render::render_text_request_batch_item>;
     { render::render_text_batch_materialization_work_key_for(snapshot) }
         -> std::same_as<render::render_text_batch_materialization_work_key>;

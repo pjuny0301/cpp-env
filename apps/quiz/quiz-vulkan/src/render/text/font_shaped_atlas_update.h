@@ -1196,6 +1196,103 @@ struct render_text_request_batch_plan_snapshot {
     }
 };
 
+enum class render_text_draw_list_frame_handoff_entry_status {
+    ready,
+    ready_with_fallback_style,
+    blocked_empty_text,
+    blocked_missing_style,
+    blocked_invalid_bounds,
+    blocked_missing_stable_id,
+    duplicate_stable_id,
+};
+
+struct render_text_draw_list_frame_handoff_entry {
+    std::string stable_entry_id;
+    std::string frame_id;
+    std::string source_label;
+    std::size_t draw_command_index = 0;
+    render_node_id node_id;
+    render_node_id parent_node_id;
+    render_rect bounds;
+    render_rect content_bounds;
+    std::vector<render_text_run> text_runs;
+    std::vector<render_style_id> requested_style_tokens;
+    std::vector<render_style_id> resolved_style_ids;
+    std::vector<render_style_id> missing_style_tokens;
+    render_style_id primary_requested_style_token;
+    render_style_id primary_resolved_style_id;
+    render_style_id fallback_style_id;
+    render_text_options options;
+    render_text_draw_list_frame_handoff_entry_status status =
+        render_text_draw_list_frame_handoff_entry_status::blocked_empty_text;
+    bool ready = false;
+    bool blocked = true;
+    bool empty_text = false;
+    bool missing_style = false;
+    bool fallback_style_available = false;
+    bool used_fallback_style = false;
+    bool invalid_bounds = false;
+    bool missing_stable_id = false;
+    bool duplicate_stable_id = false;
+    std::size_t text_run_count = 0;
+    std::size_t missing_style_count = 0;
+    std::string blocker_reason;
+    std::string diagnostic;
+
+    [[nodiscard]] bool ok() const
+    {
+        return ready && !blocked;
+    }
+};
+
+struct render_text_draw_list_frame_handoff_policy {
+    std::size_t draw_command_count = 0;
+    std::size_t text_command_count = 0;
+    std::size_t skipped_non_text_command_count = 0;
+    std::size_t entry_count = 0;
+    std::size_t ready_entry_count = 0;
+    std::size_t blocked_entry_count = 0;
+    std::size_t text_run_count = 0;
+    std::size_t empty_text_count = 0;
+    std::size_t missing_style_count = 0;
+    std::size_t fallback_style_count = 0;
+    std::size_t invalid_bounds_count = 0;
+    std::size_t missing_stable_id_count = 0;
+    std::size_t duplicate_stable_id_count = 0;
+    bool has_blockers = false;
+    bool has_non_text_commands = false;
+    bool used_fallback_style = false;
+};
+
+struct render_text_draw_list_frame_handoff_request {
+    std::string frame_id;
+    std::string source_label;
+    render_draw_list draw_list;
+};
+
+struct render_text_draw_list_frame_handoff_snapshot {
+    std::string frame_id;
+    std::string source_label;
+    render_text_draw_list_frame_handoff_policy policy;
+    std::vector<render_text_draw_list_frame_handoff_entry> entries;
+    std::vector<std::size_t> skipped_non_text_command_indices;
+    std::vector<std::string> ready_entry_ids;
+    std::vector<std::string> blocked_entry_ids;
+    std::vector<std::string> duplicate_stable_entry_ids;
+    std::vector<std::size_t> missing_stable_entry_command_indices;
+    std::string diagnostic;
+
+    [[nodiscard]] bool ok() const
+    {
+        return !policy.has_blockers;
+    }
+
+    [[nodiscard]] bool has_blockers() const
+    {
+        return policy.has_blockers;
+    }
+};
+
 inline std::string render_text_batch_normalize_font_family(const std::string_view family)
 {
     std::string normalized;
@@ -1258,6 +1355,305 @@ inline render_text_batch_normalized_style_key render_text_batch_normalized_style
         .italic = style.italic,
         .used_fallback_style = resolved == nullptr,
         .key = render_text_batch_make_style_key(normalized_font_family, style),
+    };
+}
+
+inline std::string render_text_draw_list_frame_handoff_entry_status_name(
+    const render_text_draw_list_frame_handoff_entry_status status)
+{
+    switch (status) {
+    case render_text_draw_list_frame_handoff_entry_status::ready:
+        return "ready";
+    case render_text_draw_list_frame_handoff_entry_status::ready_with_fallback_style:
+        return "ready_with_fallback_style";
+    case render_text_draw_list_frame_handoff_entry_status::blocked_empty_text:
+        return "blocked_empty_text";
+    case render_text_draw_list_frame_handoff_entry_status::blocked_missing_style:
+        return "blocked_missing_style";
+    case render_text_draw_list_frame_handoff_entry_status::blocked_invalid_bounds:
+        return "blocked_invalid_bounds";
+    case render_text_draw_list_frame_handoff_entry_status::blocked_missing_stable_id:
+        return "blocked_missing_stable_id";
+    case render_text_draw_list_frame_handoff_entry_status::duplicate_stable_id:
+        return "duplicate_stable_id";
+    }
+    return "unknown";
+}
+
+inline bool render_text_draw_list_frame_handoff_rect_valid(const render_rect& rect)
+{
+    return rect.width > 0.0f && rect.height > 0.0f;
+}
+
+inline bool render_text_draw_list_frame_handoff_text_empty(
+    const std::vector<render_text_run>& runs)
+{
+    if (runs.empty()) {
+        return true;
+    }
+    return std::all_of(runs.begin(), runs.end(), [](const render_text_run& run) {
+        return run.text.empty();
+    });
+}
+
+inline bool render_text_draw_list_frame_handoff_fallback_style_available(
+    const render_text_style_catalog& catalog)
+{
+    return !catalog.fallback_style.id.empty()
+        || !catalog.fallback_style.font_family.empty();
+}
+
+inline std::string render_text_draw_list_frame_handoff_stable_id_for(
+    const std::string& frame_id,
+    const render_node_id& node_id)
+{
+    if (frame_id.empty() || node_id.empty()) {
+        return {};
+    }
+    return "text-draw-list-frame:v1:frame=" + frame_id + ":node=" + node_id;
+}
+
+inline render_text_draw_list_frame_handoff_entry_status
+render_text_draw_list_frame_handoff_entry_status_for(
+    const bool empty_text,
+    const bool invalid_bounds,
+    const bool missing_style,
+    const bool fallback_style_available,
+    const bool missing_stable_id,
+    const bool duplicate_stable_id)
+{
+    if (duplicate_stable_id) {
+        return render_text_draw_list_frame_handoff_entry_status::duplicate_stable_id;
+    }
+    if (missing_stable_id) {
+        return render_text_draw_list_frame_handoff_entry_status::blocked_missing_stable_id;
+    }
+    if (invalid_bounds) {
+        return render_text_draw_list_frame_handoff_entry_status::blocked_invalid_bounds;
+    }
+    if (empty_text) {
+        return render_text_draw_list_frame_handoff_entry_status::blocked_empty_text;
+    }
+    if (missing_style && !fallback_style_available) {
+        return render_text_draw_list_frame_handoff_entry_status::blocked_missing_style;
+    }
+    if (missing_style) {
+        return render_text_draw_list_frame_handoff_entry_status::ready_with_fallback_style;
+    }
+    return render_text_draw_list_frame_handoff_entry_status::ready;
+}
+
+inline std::string render_text_draw_list_frame_handoff_blocker_reason_for(
+    const render_text_draw_list_frame_handoff_entry_status status)
+{
+    switch (status) {
+    case render_text_draw_list_frame_handoff_entry_status::ready:
+    case render_text_draw_list_frame_handoff_entry_status::ready_with_fallback_style:
+        return {};
+    case render_text_draw_list_frame_handoff_entry_status::blocked_empty_text:
+        return "text draw command has no text content";
+    case render_text_draw_list_frame_handoff_entry_status::blocked_missing_style:
+        return "text draw command references a missing style without fallback style evidence";
+    case render_text_draw_list_frame_handoff_entry_status::blocked_invalid_bounds:
+        return "text draw command has invalid bounds or content bounds";
+    case render_text_draw_list_frame_handoff_entry_status::blocked_missing_stable_id:
+        return "text draw command is missing a stable frame or node identity";
+    case render_text_draw_list_frame_handoff_entry_status::duplicate_stable_id:
+        return "text draw command stable identity is duplicated in the draw list";
+    }
+    return "unknown text draw-list handoff blocker";
+}
+
+inline render_text_draw_list_frame_handoff_entry
+make_render_text_draw_list_frame_handoff_entry(
+    const std::string& frame_id,
+    const std::string& source_label,
+    const render_draw_command& command,
+    const render_text_style_catalog& style_catalog,
+    const std::size_t command_index,
+    const bool duplicate_stable_id)
+{
+    const std::string stable_entry_id =
+        render_text_draw_list_frame_handoff_stable_id_for(frame_id, command.node_id);
+    const bool missing_stable_id = stable_entry_id.empty();
+    const bool empty_text =
+        render_text_draw_list_frame_handoff_text_empty(command.text_runs);
+    const bool invalid_bounds =
+        !render_text_draw_list_frame_handoff_rect_valid(command.bounds)
+        || !render_text_draw_list_frame_handoff_rect_valid(command.content_bounds);
+    const bool fallback_available =
+        render_text_draw_list_frame_handoff_fallback_style_available(style_catalog);
+    std::vector<render_style_id> requested_style_tokens;
+    std::vector<render_style_id> resolved_style_ids;
+    std::vector<render_style_id> missing_style_tokens;
+    requested_style_tokens.reserve(command.text_runs.size());
+    resolved_style_ids.reserve(command.text_runs.size());
+    for (const render_text_run& run : command.text_runs) {
+        requested_style_tokens.push_back(run.style_token);
+        const render_text_style* resolved = style_catalog.find(run.style_token);
+        if (resolved == nullptr) {
+            missing_style_tokens.push_back(run.style_token);
+            resolved_style_ids.push_back(style_catalog.fallback_style.id);
+        } else {
+            resolved_style_ids.push_back(resolved->id);
+        }
+    }
+    const bool missing_style = !missing_style_tokens.empty();
+    const auto status = render_text_draw_list_frame_handoff_entry_status_for(
+        empty_text,
+        invalid_bounds,
+        missing_style,
+        fallback_available,
+        missing_stable_id,
+        duplicate_stable_id);
+    const bool ready =
+        status == render_text_draw_list_frame_handoff_entry_status::ready
+        || status == render_text_draw_list_frame_handoff_entry_status::ready_with_fallback_style;
+    const std::string blocker =
+        render_text_draw_list_frame_handoff_blocker_reason_for(status);
+    return render_text_draw_list_frame_handoff_entry{
+        .stable_entry_id = stable_entry_id,
+        .frame_id = frame_id,
+        .source_label = source_label,
+        .draw_command_index = command_index,
+        .node_id = command.node_id,
+        .parent_node_id = command.parent_node_id,
+        .bounds = command.bounds,
+        .content_bounds = command.content_bounds,
+        .text_runs = command.text_runs,
+        .requested_style_tokens = requested_style_tokens,
+        .resolved_style_ids = resolved_style_ids,
+        .missing_style_tokens = missing_style_tokens,
+        .primary_requested_style_token =
+            requested_style_tokens.empty() ? render_style_id{} : requested_style_tokens.front(),
+        .primary_resolved_style_id =
+            resolved_style_ids.empty() ? render_style_id{} : resolved_style_ids.front(),
+        .fallback_style_id = style_catalog.fallback_style.id,
+        .options = command.text_options,
+        .status = status,
+        .ready = ready,
+        .blocked = !ready,
+        .empty_text = empty_text,
+        .missing_style = missing_style,
+        .fallback_style_available = fallback_available,
+        .used_fallback_style = missing_style && fallback_available,
+        .invalid_bounds = invalid_bounds,
+        .missing_stable_id = missing_stable_id,
+        .duplicate_stable_id = duplicate_stable_id,
+        .text_run_count = command.text_runs.size(),
+        .missing_style_count = missing_style_tokens.size(),
+        .blocker_reason = blocker,
+        .diagnostic = ready ? "text draw-list command is ready for text frame handoff"
+                            : blocker,
+    };
+}
+
+inline void append_render_text_draw_list_frame_handoff_entry(
+    render_text_draw_list_frame_handoff_snapshot& snapshot,
+    render_text_draw_list_frame_handoff_entry entry)
+{
+    ++snapshot.policy.entry_count;
+    snapshot.policy.text_run_count += entry.text_run_count;
+    if (entry.ready) {
+        ++snapshot.policy.ready_entry_count;
+        if (!entry.stable_entry_id.empty()) {
+            snapshot.ready_entry_ids.push_back(entry.stable_entry_id);
+        }
+    }
+    if (entry.blocked) {
+        ++snapshot.policy.blocked_entry_count;
+        snapshot.policy.has_blockers = true;
+        if (!entry.stable_entry_id.empty()) {
+            snapshot.blocked_entry_ids.push_back(entry.stable_entry_id);
+        }
+    }
+    if (entry.empty_text) {
+        ++snapshot.policy.empty_text_count;
+    }
+    if (entry.missing_style) {
+        ++snapshot.policy.missing_style_count;
+    }
+    if (entry.used_fallback_style) {
+        ++snapshot.policy.fallback_style_count;
+        snapshot.policy.used_fallback_style = true;
+    }
+    if (entry.invalid_bounds) {
+        ++snapshot.policy.invalid_bounds_count;
+    }
+    if (entry.missing_stable_id) {
+        ++snapshot.policy.missing_stable_id_count;
+        snapshot.missing_stable_entry_command_indices.push_back(entry.draw_command_index);
+    }
+    if (entry.duplicate_stable_id) {
+        ++snapshot.policy.duplicate_stable_id_count;
+        snapshot.duplicate_stable_entry_ids.push_back(entry.stable_entry_id);
+    }
+    snapshot.entries.push_back(std::move(entry));
+}
+
+inline render_text_draw_list_frame_handoff_snapshot
+make_render_text_draw_list_frame_handoff(render_text_draw_list_frame_handoff_request request)
+{
+    render_text_draw_list_frame_handoff_snapshot snapshot{
+        .frame_id = std::move(request.frame_id),
+        .source_label = std::move(request.source_label),
+        .diagnostic = "text draw-list frame handoff preserves text command identity before layout",
+    };
+    snapshot.policy.draw_command_count = request.draw_list.commands.size();
+    snapshot.entries.reserve(request.draw_list.commands.size());
+
+    std::vector<std::string> seen_stable_ids;
+    for (std::size_t command_index = 0;
+         command_index < request.draw_list.commands.size();
+         ++command_index) {
+        const render_draw_command& command = request.draw_list.commands[command_index];
+        if (command.type != render_draw_command_type::text) {
+            ++snapshot.policy.skipped_non_text_command_count;
+            snapshot.policy.has_non_text_commands = true;
+            snapshot.skipped_non_text_command_indices.push_back(command_index);
+            continue;
+        }
+
+        ++snapshot.policy.text_command_count;
+        const std::string stable_id =
+            render_text_draw_list_frame_handoff_stable_id_for(snapshot.frame_id, command.node_id);
+        const bool duplicate_stable_id =
+            !stable_id.empty()
+            && std::find(seen_stable_ids.begin(), seen_stable_ids.end(), stable_id)
+                   != seen_stable_ids.end();
+        if (!stable_id.empty() && !duplicate_stable_id) {
+            seen_stable_ids.push_back(stable_id);
+        }
+        append_render_text_draw_list_frame_handoff_entry(
+            snapshot,
+            make_render_text_draw_list_frame_handoff_entry(
+                snapshot.frame_id,
+                snapshot.source_label,
+                command,
+                request.draw_list.text_styles,
+                command_index,
+                duplicate_stable_id));
+    }
+    if (snapshot.policy.has_blockers) {
+        snapshot.diagnostic =
+            "text draw-list frame handoff found commands blocked before layout";
+    }
+    return snapshot;
+}
+
+inline render_text_request_batch_item make_render_text_request_batch_item(
+    const render_text_draw_list_frame_handoff_entry& entry,
+    render_text_style_catalog style_catalog,
+    std::vector<render_text_glyph_atlas_materialization_snapshot> materializations = {})
+{
+    return render_text_request_batch_item{
+        .node_id = entry.node_id,
+        .source_label = entry.stable_entry_id.empty() ? entry.source_label : entry.stable_entry_id,
+        .text_runs = entry.text_runs,
+        .bounds = entry.content_bounds,
+        .style_catalog = std::move(style_catalog),
+        .options = entry.options,
+        .materializations = std::move(materializations),
     };
 }
 

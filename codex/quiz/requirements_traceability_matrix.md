@@ -6,6 +6,8 @@
 
 최근 baseline 통합 증거:
 
+- `f7c658f`: Text engine now composes draw-list text handoff entries into the existing text request batch/frame path, preserving command order, node identity, bounds/content bounds, style/options evidence, and blocked-entry diagnostics before text frame snapshot/materialization work.
+- current: after `f7c658f`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_text_draw_list_frame_handoff_tests`, and `quiz_vulkan_text_draw_list_frame_composition_tests`; focused text CTest passed 2/2.
 - `431c34c`: Image engine now has a draw-list-to-image-frame handoff that preserves image draw command index, node/parent identity, bounds/content bounds, URI, alt text, aspect ratio, sampler policy, normalized request/cache identity, and deterministic blockers for empty/invalid URI, invalid bounds, invalid sampler, missing stable id, duplicate stable id, and duplicate texture key before texture planning/cache/upload consumption.
 - current: after `431c34c`, Windows MinGW built `quiz_vulkan_interface_contract_compile_tests` and `quiz_vulkan_image_texture_pipeline_tests`; focused image CTest passed 1/1.
 - `bf47c3d`: Text engine now has a draw-list-to-text-frame handoff that preserves text draw command index, node/parent identity, bounds/content bounds, text runs, style fallback evidence, text options, and deterministic blockers for empty text, missing style, invalid bounds, missing stable id, and duplicate stable id before shaping/layout/atlas consumption.

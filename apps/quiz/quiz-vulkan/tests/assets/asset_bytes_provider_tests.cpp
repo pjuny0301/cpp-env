@@ -2256,6 +2256,138 @@ void test_materialized_asset_byte_payload_request_transaction_preserves_order_an
     require(transaction.find_request("not_requested") == nullptr, "payload transaction reports absent requests");
 }
 
+void test_materialized_asset_byte_payload_request_transaction_review_summary_groups_by_expected_type()
+{
+    using namespace quiz_vulkan::assets;
+
+    asset_materialized_byte_payload_bundle bundle;
+    bundle.images.ready.push_back(make_payload_bundle_entry(
+        "card_front",
+        asset_type::image,
+        "asset://cards/front.png",
+        "/assets/cards/front.png",
+        "image bytes",
+        ""));
+    bundle.shaders.blocked.push_back(make_payload_bundle_entry(
+        "rootless_shader",
+        asset_type::shader,
+        "asset://shaders/rootless.vert.spv",
+        "/assets/shaders/rootless.vert.spv",
+        "",
+        "hash:rootless",
+        asset_materialized_bytes_handoff_status::materialization_blocked));
+    bundle.decks.blocked.push_back(make_payload_bundle_entry(
+        "main_deck",
+        asset_type::deck,
+        "asset://decks/main.quiz",
+        "/assets/decks/main.quiz",
+        "deck bytes",
+        "hash:deck-bad",
+        asset_materialized_bytes_handoff_status::integrity_blocked));
+    bundle.fonts.ready.push_back(make_payload_bundle_entry(
+        "duplicate_payload",
+        asset_type::font,
+        "asset://fonts/body.ttf",
+        "/assets/fonts/body.ttf",
+        "font bytes",
+        ""));
+    bundle.sounds.ready.push_back(make_payload_bundle_entry(
+        "duplicate_payload",
+        asset_type::sound,
+        "asset://sounds/correct.ogg",
+        "/assets/sounds/correct.ogg",
+        "sound bytes",
+        ""));
+
+    const std::vector<asset_materialized_byte_payload_selection_request> requests{
+        asset_materialized_byte_payload_selection_request{
+            .id = "card_front",
+            .expected_type = asset_type::image,
+            .expected_cache_key = asset_cache_key{"image|asset://cards/front.png"},
+        },
+        asset_materialized_byte_payload_selection_request{
+            .id = "rootless_shader",
+            .expected_type = asset_type::shader,
+        },
+        asset_materialized_byte_payload_selection_request{
+            .id = "missing_image",
+            .expected_type = asset_type::image,
+        },
+        asset_materialized_byte_payload_selection_request{
+            .id = "card_front",
+            .expected_type = asset_type::sound,
+        },
+        asset_materialized_byte_payload_selection_request{
+            .id = "card_front",
+            .expected_type = asset_type::image,
+            .expected_cache_key = asset_cache_key{"image|asset://cards/back.png"},
+        },
+        asset_materialized_byte_payload_selection_request{
+            .id = "main_deck",
+            .expected_type = asset_type::deck,
+        },
+        asset_materialized_byte_payload_selection_request{
+            .id = "duplicate_payload",
+        },
+    };
+
+    const asset_materialized_byte_payload_request_transaction transaction =
+        make_materialized_asset_byte_payload_request_transaction(bundle, requests);
+    const asset_materialized_byte_payload_request_transaction_review_summary review =
+        summarize_materialized_asset_byte_payload_request_transaction(transaction);
+
+    require(!review.ok(), "payload transaction review summary reports failed requests");
+    require(review.total.request_count == 7U, "payload transaction review keeps total request count");
+    require(review.total.selected_count == 1U, "payload transaction review keeps total selected count");
+    require(review.total.failed_count() == 6U, "payload transaction review keeps total failed count");
+    require(review.type_count() == 5U, "payload transaction review emits expected-type groups with requests");
+    require(
+        review.diagnostic == "materialized byte payload request transaction review summary computed",
+        "payload transaction review diagnostic is stable");
+    require(
+        review.find_expected_type(asset_type::font) == nullptr,
+        "payload transaction review omits expected types with no requests");
+
+    const asset_materialized_byte_payload_request_transaction_type_summary* image =
+        review.find_expected_type(asset_type::image);
+    require(image != nullptr, "payload transaction review groups image requests");
+    require(image->expected_type == asset_type::image, "image review summary preserves expected type");
+    require(image->request_indexes == std::vector<std::size_t>{0U, 2U, 4U}, "image review keeps input indexes");
+    require(image->request_count == 3U, "image review counts image requests");
+    require(image->selected_count == 1U, "image review counts selected image requests");
+    require(image->ready_count == 1U, "image review counts ready selected image requests");
+    require(image->missing_count == 1U, "image review counts missing image requests");
+    require(image->cache_key_mismatch_count == 1U, "image review counts cache-key mismatches");
+    require(image->failed_count() == 2U, "image review totals failed image requests");
+    require(!image->ok(), "image review reports failed image requests");
+
+    const asset_materialized_byte_payload_request_transaction_type_summary* shader =
+        review.find_expected_type(asset_type::shader);
+    require(shader != nullptr, "payload transaction review groups shader requests");
+    require(shader->request_indexes == std::vector<std::size_t>{1U}, "shader review keeps input index");
+    require(shader->blocked_count == 1U, "shader review counts blocked shader requests");
+    require(shader->failed_count() == 1U, "shader review totals failed shader requests");
+
+    const asset_materialized_byte_payload_request_transaction_type_summary* sound =
+        review.find_expected_type(asset_type::sound);
+    require(sound != nullptr, "payload transaction review groups sound requests");
+    require(sound->request_indexes == std::vector<std::size_t>{3U}, "sound review keeps input index");
+    require(sound->wrong_type_count == 1U, "sound review counts wrong-type requests");
+
+    const asset_materialized_byte_payload_request_transaction_type_summary* deck =
+        review.find_expected_type(asset_type::deck);
+    require(deck != nullptr, "payload transaction review groups deck requests");
+    require(deck->request_indexes == std::vector<std::size_t>{5U}, "deck review keeps input index");
+    require(deck->integrity_failure_count == 1U, "deck review counts integrity failures");
+
+    const asset_materialized_byte_payload_request_transaction_type_summary* generic =
+        review.find_expected_type(asset_type::generic);
+    require(generic != nullptr, "payload transaction review groups generic requests");
+    require(generic->request_indexes == std::vector<std::size_t>{6U}, "generic review keeps input index");
+    require(generic->duplicate_count == 1U, "generic review counts duplicate-id requests");
+    require(generic->failed_count() == 1U, "generic review totals failed duplicate requests");
+}
+
 void test_materialized_asset_byte_payload_request_transaction_diff_tracks_status_and_count_deltas()
 {
     using namespace quiz_vulkan::assets;
@@ -2586,6 +2718,7 @@ int main()
     test_shader_materialized_byte_pipeline_summary_classifies_shader_payloads();
     test_materialized_asset_byte_payload_selection_filters_payloads_and_reports_diagnostics();
     test_materialized_asset_byte_payload_request_transaction_preserves_order_and_counts();
+    test_materialized_asset_byte_payload_request_transaction_review_summary_groups_by_expected_type();
     test_materialized_asset_byte_payload_request_transaction_diff_tracks_status_and_count_deltas();
     test_materialized_asset_bytes_integrity_fails_before_provider_for_unmaterialized_sources();
     test_materialized_asset_bytes_integrity_fails_after_provider_for_byte_count_mismatch();

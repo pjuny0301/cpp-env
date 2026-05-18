@@ -755,6 +755,58 @@ struct asset_materialized_byte_payload_request_transaction {
     }
 };
 
+struct asset_materialized_byte_payload_request_transaction_type_summary {
+    asset_type expected_type = asset_type::generic;
+    std::vector<std::size_t> request_indexes;
+    std::size_t request_count = 0U;
+    std::size_t selected_count = 0U;
+    std::size_t ready_count = 0U;
+    std::size_t blocked_count = 0U;
+    std::size_t missing_count = 0U;
+    std::size_t wrong_type_count = 0U;
+    std::size_t cache_key_mismatch_count = 0U;
+    std::size_t integrity_failure_count = 0U;
+    std::size_t duplicate_count = 0U;
+
+    [[nodiscard]] std::size_t failed_count() const
+    {
+        return blocked_count + missing_count + wrong_type_count + cache_key_mismatch_count + integrity_failure_count
+            + duplicate_count;
+    }
+
+    [[nodiscard]] bool ok() const
+    {
+        return failed_count() == 0U;
+    }
+};
+
+struct asset_materialized_byte_payload_request_transaction_review_summary {
+    asset_materialized_byte_payload_request_transaction_summary total;
+    std::vector<asset_materialized_byte_payload_request_transaction_type_summary> by_expected_type;
+    std::string diagnostic = "materialized byte payload request transaction review summary computed";
+
+    [[nodiscard]] bool ok() const
+    {
+        return total.ok();
+    }
+
+    [[nodiscard]] std::size_t type_count() const
+    {
+        return by_expected_type.size();
+    }
+
+    [[nodiscard]] const asset_materialized_byte_payload_request_transaction_type_summary* find_expected_type(
+        asset_type type) const
+    {
+        for (const asset_materialized_byte_payload_request_transaction_type_summary& summary : by_expected_type) {
+            if (summary.expected_type == type) {
+                return &summary;
+            }
+        }
+        return nullptr;
+    }
+};
+
 struct asset_materialized_byte_payload_request_transaction_count_delta {
     std::ptrdiff_t request_delta = 0;
     std::ptrdiff_t selected_delta = 0;
@@ -1363,6 +1415,73 @@ inline void count_materialized_byte_payload_transaction_selection(
         case asset_materialized_byte_payload_selection_status::cache_key_mismatch:
             ++summary.cache_key_mismatch_count;
             break;
+    }
+}
+
+inline void count_materialized_byte_payload_transaction_type_selection(
+    asset_materialized_byte_payload_request_transaction_type_summary& summary,
+    const asset_materialized_byte_payload_request_transaction_item& item)
+{
+    ++summary.request_count;
+    summary.request_indexes.push_back(item.request_index);
+
+    const asset_materialized_byte_payload_selection_result& result = item.selection;
+    if (result.selected()) {
+        ++summary.selected_count;
+    }
+    if (result.selected() && result.snapshot.has_value() && result.snapshot->ready) {
+        ++summary.ready_count;
+    }
+
+    switch (result.status) {
+        case asset_materialized_byte_payload_selection_status::selected:
+            break;
+        case asset_materialized_byte_payload_selection_status::missing_id:
+            ++summary.missing_count;
+            break;
+        case asset_materialized_byte_payload_selection_status::wrong_type:
+            ++summary.wrong_type_count;
+            break;
+        case asset_materialized_byte_payload_selection_status::blocked_payload:
+            ++summary.blocked_count;
+            break;
+        case asset_materialized_byte_payload_selection_status::integrity_failure:
+            ++summary.integrity_failure_count;
+            break;
+        case asset_materialized_byte_payload_selection_status::duplicate_id:
+            ++summary.duplicate_count;
+            break;
+        case asset_materialized_byte_payload_selection_status::cache_key_mismatch:
+            ++summary.cache_key_mismatch_count;
+            break;
+    }
+}
+
+inline asset_materialized_byte_payload_request_transaction_type_summary make_materialized_byte_payload_transaction_type_summary(
+    const asset_materialized_byte_payload_request_transaction& transaction,
+    asset_type expected_type)
+{
+    asset_materialized_byte_payload_request_transaction_type_summary summary{
+        .expected_type = expected_type,
+    };
+    for (const asset_materialized_byte_payload_request_transaction_item& item : transaction.items) {
+        if (item.request.expected_type != expected_type) {
+            continue;
+        }
+        count_materialized_byte_payload_transaction_type_selection(summary, item);
+    }
+    return summary;
+}
+
+inline void add_materialized_byte_payload_transaction_type_summary_if_present(
+    asset_materialized_byte_payload_request_transaction_review_summary& review,
+    const asset_materialized_byte_payload_request_transaction& transaction,
+    asset_type expected_type)
+{
+    asset_materialized_byte_payload_request_transaction_type_summary summary =
+        make_materialized_byte_payload_transaction_type_summary(transaction, expected_type);
+    if (summary.request_count > 0U) {
+        review.by_expected_type.push_back(std::move(summary));
     }
 }
 
@@ -2028,6 +2147,41 @@ inline asset_materialized_byte_payload_request_transaction make_materialized_ass
     }
 
     return transaction;
+}
+
+inline asset_materialized_byte_payload_request_transaction_review_summary summarize_materialized_asset_byte_payload_request_transaction(
+    const asset_materialized_byte_payload_request_transaction& transaction)
+{
+    asset_materialized_byte_payload_request_transaction_review_summary review{
+        .total = transaction.summary,
+    };
+
+    detail::add_materialized_byte_payload_transaction_type_summary_if_present(
+        review,
+        transaction,
+        asset_type::font);
+    detail::add_materialized_byte_payload_transaction_type_summary_if_present(
+        review,
+        transaction,
+        asset_type::image);
+    detail::add_materialized_byte_payload_transaction_type_summary_if_present(
+        review,
+        transaction,
+        asset_type::sound);
+    detail::add_materialized_byte_payload_transaction_type_summary_if_present(
+        review,
+        transaction,
+        asset_type::shader);
+    detail::add_materialized_byte_payload_transaction_type_summary_if_present(
+        review,
+        transaction,
+        asset_type::deck);
+    detail::add_materialized_byte_payload_transaction_type_summary_if_present(
+        review,
+        transaction,
+        asset_type::generic);
+
+    return review;
 }
 
 inline asset_materialized_byte_payload_request_transaction_diff_summary diff_materialized_asset_byte_payload_request_transactions(

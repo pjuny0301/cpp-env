@@ -1,5 +1,6 @@
 #include "assets/asset_bytes_contract.h"
 #include "assets/asset_bytes_provider.h"
+#include "assets/asset_shader_byte_pipeline_source_summary.h"
 #include "assets/asset_typed_materialized_bytes.h"
 
 #include <concepts>

@@ -19,31 +19,28 @@ Historical integration notes are kept in git history, not repeated here.
 
 ## Active Bottlenecks
 
-- Vulkan: descriptor payload command recording and Win32 surface bridge
-  diagnostics are integrated. Active work is swapchain image enumeration/acquire
-  behind the Vulkan-owned boundary.
-- Text: text resource packet handoff, draw-list text frame composition, and
-  FreeType raster payload handoff evidence are integrated. Active work is
-  line/run atlas upload readiness.
-- Image: draw-list texture frame composition coverage is integrated. Active
-  work is image-owned resource packet consumption diff evidence.
-- Asset: materialized byte payload request transaction review is integrated.
-  Active work is shader materialized-byte pipeline summary.
-- Input/IME: focus-loss cleanup diagnostics are integrated. Active work is
-  wheel, drag, and touch-like pointer gesture normalization.
+- Vulkan: swapchain image acquire handoff evidence is integrated. Active worker
+  work is present/finish evidence after acquired image ownership.
+- Text: FreeType raster payload, draw-list frame composition, and line/run atlas
+  reuse evidence are integrated. Active worker work is atlas packet consumption.
+- Image: renderer-bound resource packet consumption diff evidence is integrated;
+  the image worker is idle until the next renderer texture handoff step.
+- Asset: materialized byte payload request/review evidence is integrated. Active
+  worker work is shader byte pipeline summary for render consumers.
+- Input/IME: wheel modifier diagnostics are integrated; input is idle unless
+  gesture routing becomes the active bottleneck again.
 
 ## Active Workers
 
 - `codex-vulkan-real-backend-probe-20260514`: busy on
-  `codex/vulkan-swapchain-image-execution-20260518`.
+  `codex/vulkan-present-image-execution-20260518`.
 - `codex-text-freetype-prototype-20260514`: busy on
-  `codex/text-line-run-atlas-upload-20260515-224725`.
-- `codex-image-texture-next-20260514`: busy on
-  `codex/image-resource-packet-consumption-diff-20260517`.
-- `codex-asset-unified-cache-key-20260514`: busy on shader materialized-byte
-  pipeline work from the latest baseline.
-- `codex-input-ime`: busy on
-  `codex/input-wheel-drag-touch-gestures-20260517`.
+  `codex/text-atlas-packet-consumption-20260518`.
+- `codex-asset-unified-cache-key-20260514`: busy on
+  `codex/asset-shader-byte-pipeline-summary-20260518`.
+- `codex-image-texture-next-20260514`: idle after renderer resource-packet
+  consumption diff work.
+- `codex-input-ime`: idle after wheel/drag/touch-like diagnostics work.
 - Idle sessions are intentionally kept alive. Give them fresh baseline branches
   before new work; do not re-merge historical ahead commits.
 
@@ -75,9 +72,8 @@ Historical integration notes are kept in git history, not repeated here.
 
 ## Latest Known Verification
 
-- Main branch `codex/quiz-vulkan-remake-baseline` is at `1da632d` after
-  assignment doc cleanup plus asset payload transaction review, raw focus-loss
-  diagnostics, and text draw-list frame composition evidence.
+- Main branch `codex/quiz-vulkan-remake-baseline` is at `ad6287e` after
+  swapchain image acquire handoff evidence and source-document cleanup.
 - Last full Windows MinGW CTest batch should be treated as stale. Run focused
   tests during normal integration; run full CTest after the next meaningful
   engine batch.
@@ -97,6 +93,13 @@ Historical integration notes are kept in git history, not repeated here.
   `quiz_vulkan_asset_bytes_provider_tests`, `quiz_vulkan_input_engine_ime_tests`,
   and `quiz_vulkan_text_draw_list_frame_composition_tests`; focused CTest passed
   3/3 for those targets.
+- After `f513fa7`, Windows MinGW built the Vulkan renderer/native frame/swapchain
+  focused targets; focused CTest passed 3/3 for `quiz_vulkan_renderer_tests`,
+  `quiz_vulkan_vulkan_native_frame_operation_tests`, and
+  `quiz_vulkan_vulkan_swapchain_create_plan_tests`.
+- After `ad6287e`, repository assignment source documents were removed; Desktop
+  PDF exports were regenerated and checked for student id, repository URL, and
+  absence of assignment/LMS/source-MD metadata.
 
 ## Useful Commands
 
